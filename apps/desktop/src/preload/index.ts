@@ -15,6 +15,7 @@ function subscribe<T>(channel: string, listener: (message: T) => void): () => vo
 
 export const bridge: TokamaBridge = {
   getConnection: () => ipcRenderer.invoke(CHANNELS.getConnection) as Promise<ConnectionState>,
+  retryConnection: () => ipcRenderer.invoke(CHANNELS.retryConnection) as Promise<void>,
   onConnection: (listener) => subscribe<ConnectionState>(CHANNELS.connectionChanged, listener),
   // The reply's type follows the request's: main validates the request, the client parses the reply.
   query: (query) => ipcRenderer.invoke(CHANNELS.query, query) as never,

@@ -4,12 +4,13 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { connect } from "@tokama/client";
 import { buildEnv, defaultEngineDir, engineEndpoint, err } from "@tokama/core";
-import { app, BrowserWindow, ipcMain, session } from "electron";
+import { app, BrowserWindow, ipcMain, session, shell } from "electron";
 import { CHANNELS } from "../shared/bridge.js";
 import { engineApi } from "./api.js";
 import { type ConnectionWatch, watchConnection } from "./connection.js";
 import { engineCommand, engineDirFor, findExecutable, readLogTail } from "./engine.js";
-import { devServerUrl, guardedHandler, isAppUrl, isDevToolsUrl, sampleEngineEnabled, secureWebPreferences } from "./policy.js";
+import { appIcons } from "./icon.js";
+import { devServerUrl, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, sampleEngineEnabled, secureWebPreferences } from "./policy.js";
 
 const rendererDir = join(import.meta.dirname, "..", "renderer");
 const preloadPath = join(import.meta.dirname, "..", "preload", "index.cjs");
@@ -29,7 +30,11 @@ app.on("web-contents-created", (_event, contents) => {
   contents.on("will-navigate", (event) => event.preventDefault());
   contents.on("will-redirect", (event) => event.preventDefault());
   contents.on("will-attach-webview", (event) => event.preventDefault());
-  contents.setWindowOpenHandler(() => ({ action: "deny" }));
+  // No window opens. The one link in the app, to the product site, goes to the system browser.
+  contents.setWindowOpenHandler(({ url }) => {
+    if (isWebsiteUrl(url)) void shell.openExternal(url);
+    return { action: "deny" };
+  });
 });
 
 function hardenSession(): void {
@@ -70,6 +75,8 @@ function startWatch(): ConnectionWatch {
   });
 }
 
+const icons = appIcons(process.platform, app.getAppPath(), app.isPackaged);
+
 function createWindow(): void {
   const window = new BrowserWindow({
     width: 1200,
@@ -79,6 +86,7 @@ function createWindow(): void {
     title: "Tokama",
     backgroundColor: "#0B0F17",
     show: false,
+    ...(icons.window === undefined ? {} : { icon: icons.window }),
     webPreferences: secureWebPreferences(preloadPath),
   });
   window.once("ready-to-show", () => window.show());
@@ -87,9 +95,11 @@ function createWindow(): void {
 }
 
 void app.whenReady().then(() => {
+  if (icons.dock !== undefined) app.dock?.setIcon(icons.dock);
   hardenSession();
   const watch = startWatch();
   handle(CHANNELS.getConnection, () => watch.state());
+  handle(CHANNELS.retryConnection, () => watch.retry());
   const api = engineApi(() => watch.client());
   handle(CHANNELS.query, (query) => api.query(query));
   handle(CHANNELS.command, (command) => api.command(command));

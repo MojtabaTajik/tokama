@@ -45,12 +45,12 @@ describe("App shell", () => {
     expect($('img[alt="Tokama"]')).not.toBeNull();
   });
 
-  it("has every rail destination and the user, and no usage rings", async () => {
+  it("has every rail destination and the user (who opens About), and no usage rings", async () => {
     await render(fakeBridge(CONNECTED).bridge);
     const labels = $$(".rail button").map((button) => button.getAttribute("aria-label"));
-    expect(labels).toEqual(["Sidebar", "Board", "Needs you · 1", "Insights", "Settings", "Attention"]);
+    expect(labels).toEqual(["Sidebar", "Board", "Needs you · 1", "Insights", "Settings", "Attention", "About Tokama"]);
     expect($(".usage-ring")).toBeNull();
-    expect($('.rail-user[aria-label="You"]')).not.toBeNull();
+    expect($('.rail-user[aria-label="About Tokama"]')).not.toBeNull();
   });
 
   it("lists every AI CLI with its state in the Insights tooltip", async () => {
@@ -119,7 +119,6 @@ describe("App shell", () => {
       "Needs you · 1",
       "Insights",
       "Settings",
-      "Attention",
     ]);
     expect($('button[aria-label="Sidebar"]')?.hasAttribute("aria-disabled")).toBe(false);
   });

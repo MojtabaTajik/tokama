@@ -148,4 +148,68 @@ describe("watchConnection", () => {
     expect(client.close).toHaveBeenCalledOnce();
     expect(states).toEqual([]);
   });
+
+  describe("retry", () => {
+    const refused: ConnectError = { code: "start_failed", message: "cannot start the engine: node was not found on PATH" };
+
+    it("connects again after a failure: starting, then connected", async () => {
+      const { client } = fakeClient("engine-9");
+      const connect = vi.fn<() => Promise<Result<EngineClient, ConnectError>>>().mockResolvedValueOnce(err(refused)).mockResolvedValueOnce(ok(client));
+      const { watcher, states } = watch(connect, ["Error: boom"]);
+      await settle();
+      expect(watcher.state().status).toBe("failed");
+      watcher.retry();
+      expect(watcher.state()).toEqual({ status: "starting" });
+      await settle();
+      expect(states.map((s) => s.status)).toEqual(["failed", "starting", "connected"]);
+      expect(watcher.state()).toEqual({ status: "connected", engineId: "engine-9" });
+      expect(connect).toHaveBeenCalledTimes(2);
+    });
+
+    it("fails again with the new reason when the engine still does not start", async () => {
+      const connect = vi.fn<() => Promise<Result<EngineClient, ConnectError>>>().mockResolvedValueOnce(err(refused)).mockResolvedValueOnce(err({ code: "start_failed", message: "still no" }));
+      const { watcher } = watch(connect);
+      await settle();
+      watcher.retry();
+      await settle();
+      expect(watcher.state()).toMatchObject({ status: "failed", reason: "still no" });
+    });
+
+    it("does nothing unless the state is failed", async () => {
+      const { client } = fakeClient();
+      const connect = vi.fn(async () => ok(client));
+      const { watcher } = watch(connect);
+      watcher.retry();
+      await settle();
+      watcher.retry();
+      expect(connect).toHaveBeenCalledOnce();
+      expect(watcher.state().status).toBe("connected");
+    });
+
+    it("closes the failed client and ignores its later events", async () => {
+      const first = fakeClient("engine-1");
+      const second = fakeClient("engine-2");
+      const connect = vi.fn<() => Promise<Result<EngineClient, ConnectError>>>().mockResolvedValueOnce(ok(first.client)).mockResolvedValueOnce(ok(second.client));
+      const { watcher, states } = watch(connect);
+      await settle();
+      first.push({ kind: "failed", error: { code: "unauthorized", message: "bad token" } });
+      await settle();
+      watcher.retry();
+      await settle();
+      expect(first.client.close).toHaveBeenCalledOnce();
+      first.push({ kind: "disconnected" });
+      await settle();
+      expect(states.map((s) => s.status)).toEqual(["connected", "failed", "starting", "connected"]);
+      expect(watcher.state()).toEqual({ status: "connected", engineId: "engine-2" });
+    });
+
+    it("does nothing after close", async () => {
+      const connect = vi.fn(async () => err(refused));
+      const { watcher } = watch(connect);
+      await settle();
+      await watcher.close();
+      watcher.retry();
+      expect(connect).toHaveBeenCalledOnce();
+    });
+  });
 });

@@ -38,6 +38,7 @@ export const BRIDGE_ERROR_CODES = {
 export const CHANNELS = {
   getConnection: "tokama:connection:get",
   connectionChanged: "tokama:connection:changed",
+  retryConnection: "tokama:connection:retry",
   query: "tokama:engine:query",
   command: "tokama:engine:command",
   event: "tokama:engine:event",
@@ -46,6 +47,8 @@ export const CHANNELS = {
 /** What the preload script exposes to the renderer as `window.tokama`. */
 export interface TokamaBridge {
   getConnection(): Promise<ConnectionState>;
+  /** After a failed connection: tries to start and reach the engine again. Does nothing in any other state. */
+  retryConnection(): Promise<void>;
   /** Calls `listener` on every change; returns a function that stops it. */
   onConnection(listener: (state: ConnectionState) => void): () => void;
   /** Any engine API query. The main process validates it before it reaches the engine. */

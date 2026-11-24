@@ -184,7 +184,7 @@ describe("status filter", () => {
     await mount();
     await click(sidebarRow("checkout-web"));
     await click(segment("Needs you"));
-    expect($(".pl-empty")?.textContent).toBe("Nothing here for checkout-web");
+    expect($(".pl-empty")?.textContent).toBe("Nothing waiting for checkout-web");
     await click(sidebarRow("All work"));
     await click(segment("Failed"));
     await click(segment("Needs you"));

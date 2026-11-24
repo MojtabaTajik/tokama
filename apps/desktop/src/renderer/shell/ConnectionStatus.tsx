@@ -13,6 +13,8 @@ const TEXT = {
   failed: "The engine is not available",
   engineId: "Engine",
   log: "Log",
+  retry: "Retry",
+  hint: "Tokama does not stop other engine processes from here. Fix the cause above, then retry.",
 } as const;
 
 // A symbol with every status, so colour is never the only signal.
@@ -36,7 +38,7 @@ export function EngineHealth({ state }: { readonly state: ConnectionState }) {
   );
 }
 
-export function ConnectionFailure({ state }: { readonly state: Extract<ConnectionState, { status: "failed" }> }) {
+export function ConnectionFailure({ state, onRetry }: { readonly state: Extract<ConnectionState, { status: "failed" }>; readonly onRetry: () => void }) {
   return (
     <section className="failure" aria-label={TEXT.failed}>
       <p className="failure-title">
@@ -51,6 +53,10 @@ export function ConnectionFailure({ state }: { readonly state: Extract<Connectio
         <span className="mono">{state.logPath}</span>
       </p>
       {state.logTail.length > 0 && <pre className="log mono">{state.logTail.join("\n")}</pre>}
+      <p className="detail hint">{TEXT.hint}</p>
+      <button type="button" className="retry" onClick={onRetry}>
+        {TEXT.retry}
+      </button>
     </section>
   );
 }

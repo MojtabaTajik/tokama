@@ -1,7 +1,8 @@
 // What every UI flow test shares: one Electron app per test, on its own sample engine in its own
 // temp dir. The app starts the engine itself, as it does for a user, so a restart test sees the
 // real reconnect path. Linux needs a display (CI uses xvfb-run). Nothing outside the temp dir is
-// touched; the app, then the engine, are stopped at the end of every test.
+// touched (a real engine gets a home folder inside it); the app, then the engine, are stopped at
+// the end of every test.
 import { execFileSync } from "node:child_process";
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -48,27 +49,36 @@ function trace(name: string, phase: string): void {
 const within = <T>(promise: Promise<T>, ms: number): Promise<T | undefined> =>
   Promise.race([promise, new Promise<undefined>((done) => setTimeout(done, ms, undefined))]);
 
+/**
+ * Which engine the app finds:
+ * - `sample` (default): the sample engine, with its repos and items.
+ * - `real`: the real engine on an empty home folder, so no repos and no items, as on a first launch.
+ * - `unavailable`: no `node` on the app's PATH, so the engine cannot start and the connection fails.
+ */
+export type EngineMode = "sample" | "real" | "unavailable";
+
 /** Runs `fn` against a fresh app; on failure, prints the app and engine output and saves a screenshot. */
-export function flow(name: string, fn: (session: Session) => Promise<void>): void {
+export function flow(name: string, fn: (session: Session) => Promise<void>, mode: EngineMode = "sample"): void {
   it(name, async () => {
     const tmp = mkdtempSync(join(tmpdir(), "tk-"));
     const output: string[] = [];
     // The app's engine dir is this plus "sample": the sample engine never shares a dir with a real one.
     const baseDir = join(tmp, "e");
-    const engineDir = join(baseDir, "sample");
+    const engineDir = mode === "sample" ? join(baseDir, "sample") : baseDir;
     let app: ElectronApplication | undefined;
     let page: Page | undefined;
     let closeHung = false;
     try {
       trace(name, "launching");
-      app = await launch(tmp, baseDir, output);
+      app = await launch(tmp, baseDir, output, mode);
       trace(name, "launched");
       page = await app.firstWindow({ timeout: START_TIMEOUT_MS });
       page.setDefaultTimeout(ACTION_TIMEOUT_MS);
       await page.waitForLoadState("load");
       const session = sessionOf(app, page, engineDir);
-      await connected(session);
-      trace(name, "connected");
+      if (mode === "unavailable") await failed(session);
+      else await connected(session);
+      trace(name, mode === "unavailable" ? "failed, as expected" : "connected");
       await fn(session);
       trace(name, "passed");
     } catch (error) {
@@ -95,11 +105,18 @@ export function flow(name: string, fn: (session: Session) => Promise<void>): voi
   });
 }
 
-async function launch(tmp: string, baseDir: string, output: string[]): Promise<ElectronApplication> {
+async function launch(tmp: string, baseDir: string, output: string[], mode: EngineMode): Promise<ElectronApplication> {
   const env: Record<string, string> = {};
   for (const [name, value] of Object.entries(process.env)) if (value !== undefined) env[name] = value;
   env["TOKAMA_ENGINE_DIR"] = baseDir;
-  env["TOKAMA_SAMPLE"] = "1";
+  if (mode === "real") {
+    // The engine keeps its items and its lock in `~/.tokama`: that is a folder of this test.
+    delete env["TOKAMA_SAMPLE"];
+    env["HOME"] = join(tmp, "h");
+    mkdirSync(env["HOME"], { recursive: true });
+  } else env["TOKAMA_SAMPLE"] = "1";
+  // An absolute folder with nothing in it: the app finds no node to start the engine with.
+  if (mode === "unavailable") env["PATH"] = join(tmp, "no-bin");
   // Load the built renderer, never a dev server.
   delete env["ELECTRON_RENDERER_URL"];
   const app = await _electron.launch({
@@ -151,6 +168,18 @@ async function connected(session: Session): Promise<ConnectionState & { status: 
     const state = await session.connection();
     if (state.status === "connected") return state;
     if (state.status === "failed") throw new Error(`the renderer reports "failed": ${state.reason}\n${state.logTail.join("\n")}`);
+    if (Date.now() > deadline) throw new Error(`the renderer still reports "${state.status}" after ${START_TIMEOUT_MS} ms`);
+    await new Promise((done) => setTimeout(done, 100));
+  }
+}
+
+/** Waits until the renderer reports "failed" (the engine could not start). */
+async function failed(session: Session): Promise<void> {
+  const deadline = Date.now() + START_TIMEOUT_MS;
+  for (;;) {
+    const state = await session.connection();
+    if (state.status === "failed") return;
+    if (state.status === "connected") throw new Error('the renderer reports "connected", but no engine should start');
     if (Date.now() > deadline) throw new Error(`the renderer still reports "${state.status}" after ${START_TIMEOUT_MS} ms`);
     await new Promise((done) => setTimeout(done, 100));
   }

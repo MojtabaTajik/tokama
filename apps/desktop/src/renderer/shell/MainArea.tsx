@@ -10,6 +10,7 @@ import { ItemList } from "../list/ItemList.js";
 import { ALL_WORK, groupItems, inView, summaryOf, visibleItems } from "../model.js";
 import type { Layout, ViewState } from "../useViewState.js";
 import { ConnectionFailure } from "./ConnectionStatus.js";
+import { FirstLaunch, NoWork } from "./EmptyStates.js";
 import { RepoIcon } from "./icons.js";
 import { StatusFilter } from "./StatusFilter.js";
 import { TemplateIcon } from "./TemplateIcon.js";
@@ -31,6 +32,8 @@ export interface MainAreaProps {
   readonly connection: ConnectionState;
   readonly loadError: string | undefined;
   readonly onRetry: () => void;
+  /** Starts the engine connection again after it failed. */
+  readonly onRetryConnection: () => void;
   /** Undefined until the first load. */
   readonly setup: Setup | undefined;
   readonly items: readonly ItemRecord[];
@@ -93,8 +96,8 @@ function LayoutSwitch({ layout, onChange }: { readonly layout: Layout; readonly 
 }
 
 function Body(props: MainAreaProps & { readonly template: Setup["templates"][number] | undefined }) {
-  const { connection, loadError, onRetry, setup, items, now, views, selectedItemId, onSelectItem, template } = props;
-  if (connection.status === "failed") return <ConnectionFailure state={connection} />;
+  const { connection, loadError, onRetry, onRetryConnection, setup, items, now, views, selectedItemId, onSelectItem, template } = props;
+  if (connection.status === "failed") return <ConnectionFailure state={connection} onRetry={onRetryConnection} />;
   const scoped = items.filter((item) => inView(item, views.view));
   return (
     <>
@@ -114,6 +117,10 @@ function Body(props: MainAreaProps & { readonly template: Setup["templates"][num
       )}
       {setup === undefined ? (
         loadError === undefined && <p className="placeholder">{waiting(connection)}</p>
+      ) : setup.repos.length === 0 ? (
+        <FirstLaunch />
+      ) : scoped.length === 0 ? (
+        <NoWork />
       ) : (
         <>
           <StatusFilter items={scoped} filter={views.filter} now={now} onChange={views.setFilter} />

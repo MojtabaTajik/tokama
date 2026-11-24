@@ -9,8 +9,8 @@ import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { useFocusFollow } from "./useFocusFollow.js";
 
 const TEXT = {
-  nothing: "Nothing here",
-  nothingFor: (name: string) => `Nothing here for ${name}`,
+  nothing: { needs: "Nothing waiting", running: "Nothing running", done: "Nothing finished", failed: "Nothing failed" },
+  nothingFor: (what: string, name: string) => `${what} for ${name}`,
   steps: "Steps",
 } as const;
 
@@ -39,7 +39,7 @@ export function ItemList({ groups, setup, now, selectedItemId, onSelect, repoId 
             {group.name}
             <span className="pl-group-count mono">{group.items.length}</span>
           </h3>
-          {group.items.length === 0 && <p className="pl-empty">{repoId === undefined ? TEXT.nothing : TEXT.nothingFor(repoId)}</p>}
+          {group.items.length === 0 && <p className="pl-empty">{repoId === undefined ? TEXT.nothing[group.key] : TEXT.nothingFor(TEXT.nothing[group.key], repoId)}</p>}
           {group.items.map((item) => (
             <Row key={item.id} item={item} setup={setup} now={now} selected={item.id === selectedItemId} onSelect={onSelect} />
           ))}

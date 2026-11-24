@@ -10,3 +10,12 @@ declare module "*.svg" {
   const url: string;
   export default url;
 }
+
+declare module "*?raw" {
+  /** The file's text (Vite). */
+  const text: string;
+  export default text;
+}
+
+/** The app's version from package.json, set at build time (electron.vite.config.ts). */
+declare const __APP_VERSION__: string;

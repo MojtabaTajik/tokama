@@ -275,9 +275,26 @@ export function flagOf(item: Pick<ItemRecord, "state" | "steps" | "decision">): 
   return undefined;
 }
 
+/** The AI CLIs that sign in with a command of their own (Ollama runs locally and has none). */
+export type LoginCliId = Exclude<AiCliId, "ollama">;
+
+/** Something wrong with an AI CLI that the engineer has to fix outside Tokama. */
+export interface CliIssue {
+  readonly cliId: LoginCliId;
+  readonly kind: "logged_out";
+}
+
+/** What to run in a terminal to sign in again, as each CLI's own help lists it. Tokama never runs it. */
+export const LOGIN_COMMANDS: Readonly<Record<LoginCliId, string>> = {
+  "claude-code": "claude auth login",
+  "codex-cli": "codex login",
+};
+
 /** The AI CLIs the rail's Insights tooltip lists, with their names. */
 export const AI_CLIS: readonly { readonly id: AiCliId; readonly name: string }[] = [
   { id: "claude-code", name: "Claude Code" },
   { id: "codex-cli", name: "Codex CLI" },
   { id: "ollama", name: "Ollama" },
 ];
+
+export const cliName = (id: AiCliId): string => AI_CLIS.find((cli) => cli.id === id)?.name ?? id;

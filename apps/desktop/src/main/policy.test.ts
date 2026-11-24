@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { devServerUrl, guardedHandler, isAppUrl, isDevToolsUrl, secureWebPreferences, sampleEngineEnabled } from "./policy.js";
+import { devServerUrl, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, secureWebPreferences, sampleEngineEnabled } from "./policy.js";
 
 describe("secureWebPreferences", () => {
   it("isolates and sandboxes the renderer, with no Node", () => {
@@ -141,5 +141,29 @@ describe("sampleEngineEnabled", () => {
     ["0", false, false],
   ] as const)("TOKAMA_SAMPLE=%s, packaged %s: %s", (value, isPackaged, expected) => {
     expect(sampleEngineEnabled(value, isPackaged)).toBe(expected);
+  });
+});
+
+describe("isWebsiteUrl", () => {
+  it.each(["https://tokama.dev", "https://tokama.dev/", "HTTPS://TOKAMA.DEV/"])("accepts %s", (url) => {
+    expect(isWebsiteUrl(url)).toBe(true);
+  });
+
+  it.each([
+    "http://tokama.dev/",
+    "https://tokama.dev/docs",
+    "https://tokama.dev/?a=1",
+    "https://tokama.dev/#x",
+    "https://tokama.dev:8443/",
+    "https://user@tokama.dev/",
+    "https://tokama.dev.evil.example/",
+    "https://evil.example/https://tokama.dev/",
+    "https://tokama.ai/",
+    "file:///etc/passwd",
+    "javascript:alert(1)",
+    "tokama.dev",
+    "",
+  ])("refuses %s", (url) => {
+    expect(isWebsiteUrl(url)).toBe(false);
   });
 });
