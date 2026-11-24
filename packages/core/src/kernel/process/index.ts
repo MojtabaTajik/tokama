@@ -6,7 +6,6 @@ export { posixTree } from "./posix.js";
 export {
   createProcessRunner,
   type OutputSink,
-  type ProcessClock,
   type ProcessCommand,
   type ProcessRunner,
   type ProcessTree,

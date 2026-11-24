@@ -3,6 +3,7 @@ import { closeSync, constants, fchmodSync, openSync, writeSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import type { Readable } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
+import { systemClock, type Clock, type TimerHandle } from "../clock/index.js";
 import { buildEnv } from "./env.js";
 import { posixTree } from "./posix.js";
 
@@ -16,13 +17,6 @@ export interface ProcessTree {
   shellArgv(script: string): string[];
   /** Signals the child and its descendants. Never throws for a tree that is already gone. */
   signalTree(pid: number, signal: TreeSignal): void;
-}
-
-/** Time source and timers, injectable so timeout and grace tests are fast and deterministic. */
-export interface ProcessClock {
-  now(): number;
-  setTimeout(callback: () => void, ms: number): unknown;
-  clearTimeout(handle: unknown): void;
 }
 
 /** argv runs without a shell. A shell runs only when the caller asks for one. */
@@ -87,7 +81,8 @@ export interface ProcessRunner {
 
 export interface RunnerOptions {
   readonly tree?: ProcessTree;
-  readonly clock?: ProcessClock;
+  /** Time and timers; inject a manual clock to make timeout and grace tests deterministic. */
+  readonly clock?: Clock;
   /** Source of the allowlisted variables. Default: process.env. */
   readonly parentEnv?: Readonly<Record<string, string | undefined>>;
   /** Time between SIGTERM and SIGKILL on a stop. */
@@ -99,12 +94,6 @@ export interface RunnerOptions {
 // O_NOFOLLOW does not exist on Windows; the Windows tree implementation will need its own guard.
 const OUTPUT_FLAGS = constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | (constants.O_NOFOLLOW ?? 0);
 
-const realClock: ProcessClock = {
-  now: () => Date.now(),
-  setTimeout: (callback, ms) => setTimeout(callback, ms),
-  clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout),
-};
-
 function defaultTree(): ProcessTree {
   if (process.platform === "win32") throw new Error("process control on Windows is not implemented yet");
   return posixTree;
@@ -112,7 +101,7 @@ function defaultTree(): ProcessTree {
 
 export function createProcessRunner(options: RunnerOptions = {}): ProcessRunner {
   const tree = options.tree ?? defaultTree();
-  const clock = options.clock ?? realClock;
+  const clock = options.clock ?? systemClock;
   const parentEnv = options.parentEnv ?? process.env;
   const killGraceMs = options.killGraceMs ?? 2_000;
   const drainMs = options.drainMs ?? 2_000;
@@ -180,7 +169,7 @@ export function createProcessRunner(options: RunnerOptions = {}): ProcessRunner 
         let failure: { error: unknown } | undefined;
         let exit: { code: number | null; signal: NodeJS.Signals | null; at: number } | undefined;
         let settled = false;
-        const timers = new Set<unknown>();
+        const timers = new Set<TimerHandle>();
         const later = (ms: number, callback: () => void) => {
           const handle = clock.setTimeout(() => {
             timers.delete(handle);
@@ -189,8 +178,8 @@ export function createProcessRunner(options: RunnerOptions = {}): ProcessRunner 
           timers.add(handle);
           return handle;
         };
-        const cancel = (handle: unknown) => {
-          if (timers.delete(handle)) clock.clearTimeout(handle);
+        const cancel = (handle: TimerHandle | undefined) => {
+          if (handle !== undefined && timers.delete(handle)) clock.clearTimeout(handle);
         };
         const signalTree = (signal: TreeSignal) => {
           if (child.pid !== undefined) tree.signalTree(child.pid, signal);
@@ -202,7 +191,7 @@ export function createProcessRunner(options: RunnerOptions = {}): ProcessRunner 
           stopsSent.add(signal);
           signalTree(signal);
         };
-        let grace: unknown;
+        let grace: TimerHandle | undefined;
         function stop(why: "timeout" | "abort" | "failure") {
           // After the exit the tree was already killed; only draining is left.
           if (stopping !== undefined || exit !== undefined) return;

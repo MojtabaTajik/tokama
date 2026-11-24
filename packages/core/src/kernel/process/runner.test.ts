@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { posixTree } from "./posix.js";
-import { createProcessRunner, type ProcessClock, type RunFinished, type RunResult } from "./runner.js";
+import { manualClock, type Clock } from "../clock/index.js";
+import { createProcessRunner, type RunFinished, type RunResult } from "./runner.js";
 
 // Process cases ported from ai-pipeline tests/test_claude_call.py (run_claude, run_claude_stream,
 // env allowlist), plus the tree-kill cases the issue asks for. Fixtures are Node scripts run with
@@ -53,30 +54,15 @@ async function waitFor(condition: () => boolean, what: string, timeoutMs = 5_000
 /** Gone, not merely signalled: a zombie still answers kill(pid, 0) until it is reaped. */
 const waitGone = (pid: number) => waitFor(() => !isAlive(pid), `pid ${pid} to exit`);
 
-/** Timers that fire only when the test says so; `now` advances by 1 ms per call. */
-function manualClock() {
-  let time = 1_000;
-  let nextId = 0;
-  const timers = new Map<number, { ms: number; callback: () => void }>();
-  const clock: ProcessClock = {
-    now: () => time++,
-    setTimeout: (callback, ms) => {
-      timers.set(++nextId, { ms, callback });
-      return nextId;
-    },
-    clearTimeout: (handle) => timers.delete(handle as number),
+/** The kernel's manual clock, plus the delays of the timers the runner set, so a test can wait for one. */
+function testClock(startMs = 1_000) {
+  const clock = manualClock(startMs);
+  const delays: number[] = [];
+  const setTimeout: Clock["setTimeout"] = (callback, ms) => {
+    delays.push(ms);
+    return clock.setTimeout(callback, ms);
   };
-  const find = (ms: number) => [...timers].find(([, timer]) => timer.ms === ms);
-  return {
-    clock,
-    pending: (ms: number) => find(ms) !== undefined,
-    fire(ms: number) {
-      const entry = find(ms);
-      if (entry === undefined) throw new Error(`no pending ${ms} ms timer`);
-      timers.delete(entry[0]);
-      entry[1].callback();
-    },
-  };
+  return { clock: { ...clock, setTimeout }, advance: (ms: number) => clock.advance(ms), delays };
 }
 
 function finished(result: RunResult): RunFinished {
@@ -130,11 +116,15 @@ describe("process runner: exit and signals", SLOW, () => {
   });
 
   it("measures durations with the injected clock", async () => {
-    const { clock } = manualClock();
-    const result = finished(await createProcessRunner({ clock }).run({ command: { argv: node("") }, cwd: dir }));
-    expect(result.startedAt).toBe(1_000);
-    expect(result.endedAt).toBeGreaterThan(result.startedAt);
-    expect(result.durationMs).toBe(result.endedAt - result.startedAt);
+    const time = testClock();
+    const result = finished(
+      await createProcessRunner({ clock: time.clock }).run({
+        command: { argv: node(`console.log("tick"); setTimeout(() => {}, 50);`) },
+        cwd: dir,
+        stdout: { onLine: () => time.advance(250) },
+      }),
+    );
+    expect(result).toMatchObject({ startedAt: 1_000, endedAt: 1_250, durationMs: 250 });
   });
 
   it("returns spawn errors as values", async () => {
@@ -350,7 +340,7 @@ describe("process runner: stop and timeout", SLOW, () => {
   });
 
   it("times out and kills the whole tree", async () => {
-    const timers = manualClock();
+    const timers = testClock();
     const out = lineWaiter("pids ");
     const run = createProcessRunner({ clock: timers.clock }).run({
       command: { argv: node(TREE) },
@@ -359,7 +349,7 @@ describe("process runner: stop and timeout", SLOW, () => {
       stdout: out,
     });
     const [child, grandchild] = pids(await out.ready);
-    timers.fire(60_000);
+    timers.advance(60_000);
     const result = finished(await run);
     expect(result).toMatchObject({ timedOut: true, aborted: false, exitCode: null, signal: "SIGTERM" });
     await waitGone(child);
@@ -438,7 +428,7 @@ describe("process runner: stop and timeout", SLOW, () => {
   });
 
   it("sends SIGKILL after the grace period when the child ignores SIGTERM", async () => {
-    const timers = manualClock();
+    const timers = testClock();
     const controller = new AbortController();
     const out = lineWaiter("ready");
     const run = createProcessRunner({ clock: timers.clock, killGraceMs: 5_000 }).run({
@@ -449,8 +439,8 @@ describe("process runner: stop and timeout", SLOW, () => {
     });
     tracked.push(Number((await out.ready).split(" ")[1]));
     controller.abort();
-    expect(timers.pending(5_000)).toBe(true);
-    timers.fire(5_000);
+    expect(timers.delays).toContain(5_000);
+    timers.advance(5_000);
     expect(finished(await run)).toMatchObject({ aborted: true, signal: "SIGKILL" });
   });
 
@@ -515,7 +505,7 @@ describe("process runner: exit while descendants run", SLOW, () => {
   it("stops waiting for output after the drain period when an escaped process holds the pipe", async () => {
     // Ported from the bounded-wait part of test_timeout_drains_with_bounded_wait. A descendant in
     // its own group is outside the tree; the run still ends, with the output read so far.
-    const timers = manualClock();
+    const timers = testClock();
     const out = lineWaiter("pid ");
     const run = createProcessRunner({ clock: timers.clock, drainMs: 3_000 }).run({
       command: {
@@ -530,9 +520,9 @@ describe("process runner: exit while descendants run", SLOW, () => {
     });
     const escaped = Number((await out.ready).split(" ")[1]);
     tracked.push(escaped);
-    await waitFor(() => timers.pending(3_000), "the drain timer");
+    await waitFor(() => timers.delays.includes(3_000), "the drain timer");
     expect(isAlive(escaped)).toBe(true);
-    timers.fire(3_000);
+    timers.advance(3_000);
     expect(finished(await run)).toMatchObject({ exitCode: 0, timedOut: false });
     expect(out.lines).toEqual([`pid ${escaped}`]);
   });
