@@ -6,6 +6,7 @@
     "declaration": false,
     "declarationMap": false,
     "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
     "types": ["node"]
   },
   "include": ["*.ts"]
