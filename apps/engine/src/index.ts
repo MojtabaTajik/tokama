@@ -1,6 +1,3 @@
-// Entry of the engine service, the background process that will host core and serve the engine API.
-// Placeholder: it does not start anything yet.
-import { packageName as corePackageName } from "@tokama/core";
-
-export const appName = "@tokama/engine";
-export const hosts = corePackageName;
+// Entry of the engine service as a library, for tests and for embedding. The process entry is main.ts.
+export { startEngine, type EngineHandle, type EngineOptions, type StartError } from "./engine.js";
+export { MemoryItemStore, type ItemListener } from "./store.js";

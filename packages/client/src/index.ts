@@ -1,5 +1,12 @@
-// Public entry of @tokama/client, the typed engine API client. Placeholder until the engine API exists.
-import { packageName as corePackageName } from "@tokama/core";
-
-export const packageName = "@tokama/client";
-export const builtOn = corePackageName;
+// Public entry of @tokama/client, the typed engine API client used by desktop and CLI.
+export {
+  connect,
+  type ClientEvent,
+  type ConnectError,
+  type ConnectErrorCode,
+  type ConnectOptions,
+  type EngineClient,
+  type EngineCommand,
+  type RequestOptions,
+  type RequestResult,
+} from "./client.js";
