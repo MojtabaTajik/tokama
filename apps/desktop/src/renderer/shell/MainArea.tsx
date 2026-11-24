@@ -3,6 +3,7 @@
 // the pipeline list or the workflow's kanban. When the engine is not available, its failure
 // details take the place of the list; a failed load shows its reason and a Retry action there.
 import type { ItemRecord, Setup } from "@tokama/core";
+import type { ReactNode } from "react";
 import { Board } from "../board/Board.js";
 import type { ConnectionState } from "../../shared/bridge.js";
 import { ItemList } from "../list/ItemList.js";
@@ -37,6 +38,8 @@ export interface MainAreaProps {
   readonly views: ViewState;
   readonly selectedItemId: string | undefined;
   readonly onSelectItem: (itemId: string) => void;
+  /** Pinned below the board: the New work input. */
+  readonly composer?: ReactNode;
 }
 
 export function MainArea(props: MainAreaProps) {
@@ -72,6 +75,7 @@ export function MainArea(props: MainAreaProps) {
       <section className="board" aria-label={TEXT.board}>
         <Body {...props} template={template} />
       </section>
+      {props.composer}
     </main>
   );
 }

@@ -10,6 +10,8 @@ export type Section = "workflows" | "repos";
 export interface ViewState {
   readonly view: View;
   readonly setView: (view: View) => void;
+  /** Shows a view and makes sure its status switch is on a filter that lists live items (a new item must not be hidden). */
+  readonly reveal: (view: View) => void;
   readonly filter: Filter;
   readonly setFilter: (patch: Partial<Filter>) => void;
   /** Repo and All work views are always lists. */
@@ -32,6 +34,12 @@ export function useViewState(exists: (view: View) => boolean): ViewState {
   return {
     view,
     setView,
+    reveal: (target) => {
+      setView(target);
+      const targetKey = viewKey(target);
+      const current = filters.get(targetKey) ?? DEFAULT_FILTER;
+      if (current.status !== "active" && current.status !== "all") setFilters(new Map(filters).set(targetKey, { ...current, status: "active" }));
+    },
     filter,
     setFilter: (patch) => setFilters(new Map(filters).set(key, { ...filter, ...patch })),
     layout: view.kind === "workflow" ? (layouts.get(key) ?? "list") : "list",

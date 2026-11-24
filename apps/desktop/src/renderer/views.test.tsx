@@ -370,11 +370,11 @@ describe("sidebar", () => {
     expect(sidebarRow("All work").querySelector('.sb-badge[data-kind="failed"] [aria-hidden]')?.textContent).toBe("✕ 1");
   });
 
-  it("shows a disabled + on every workflow and repo row, and highlights the selected row", async () => {
+  it("shows an enabled + on every workflow and repo row, and highlights the selected row", async () => {
     await mount();
     const plus = $$(".sb-plus");
     expect(plus).toHaveLength(8);
-    expect(plus.every((el) => el.getAttribute("aria-disabled") === "true")).toBe(true);
+    expect(plus.some((el) => el.hasAttribute("aria-disabled"))).toBe(false);
     expect(plus[0]?.getAttribute("aria-label")).toBe("Start Emergency investigator");
     await click(sidebarRow("inventory-service"));
     expect($$(".sb-row[data-selected]").map((el) => el.querySelector(".ellipsis")?.textContent)).toEqual(["inventory-service"]);

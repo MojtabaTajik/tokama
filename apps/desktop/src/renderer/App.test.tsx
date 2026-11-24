@@ -120,15 +120,6 @@ describe("App shell", () => {
       "Insights",
       "Settings",
       "Attention",
-      "+ New work",
-      "Start Emergency investigator",
-      "Start DB slow query check",
-      "Start Plan and build",
-      "Start Quick fix",
-      "Start Review only",
-      "Quick task in orders-api",
-      "Quick task in checkout-web",
-      "Quick task in inventory-service",
     ]);
     expect($('button[aria-label="Sidebar"]')?.hasAttribute("aria-disabled")).toBe(false);
   });
