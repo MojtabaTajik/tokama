@@ -39,7 +39,7 @@ Software and platform engineers who run AI coding agents daily and are on call f
 
 In v1:
 
-- One local host.
+- One local host, macOS. The engine runs as a background service, so items keep running when the app window is closed.
 - Workspaces with repos and connections.
 - Templates as files, a template editor, built-in example templates (plan and build, quick fix, review only, emergency investigator, DB slow query check).
 - Agents on Claude Code, Codex CLI, and local models via Ollama driven through Claude Code.
@@ -58,6 +58,8 @@ Not in v1:
 - Insights page beyond per-item usage, history search, benchmark mode.
 - Direct API keys, Gemini CLI, LM Studio, MLX, llama.cpp.
 - Team features, sharing, sync.
+- Linux and Windows builds (the architecture keeps them possible; macOS ships first).
+- Mobile and tablet: later, as a remote client of a host (board, needs you, approvals, notifications) through the engine API and a relay. Agents never run on the phone.
 
 ## 5. Main flows
 
@@ -69,7 +71,7 @@ Not in v1:
 
 ### 5.2 Add a connection
 
-The engineer picks a type (MCP server by command or URL, Postgres, SQL Server, Azure, Kubernetes, log files), enters credentials and a scope, and runs "Test". Credentials go to the macOS Keychain. Tokama shows the scope it got and the health of each connection.
+The engineer picks a type (MCP server by command or URL, Postgres, SQL Server, Azure, Kubernetes, log files), enters credentials and a scope, and runs "Test". Credentials go to the OS secret store (macOS Keychain in v1). Tokama shows the scope it got and the health of each connection.
 
 ### 5.3 Write or edit a template
 

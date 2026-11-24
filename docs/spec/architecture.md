@@ -5,6 +5,8 @@ Status: draft for v1. Product behavior is in `product.md`; this file says how it
 ## 1. Principles
 
 - TypeScript only, strict. No Python, no sidecars.
+- The engine runs as its own background process (the engine service). Desktop, CLI and later mobile and remote clients all talk to it through the same versioned engine API. Runs keep going when the desktop window is closed.
+- Platforms: macOS first, then Linux, then Windows. Every OS-specific piece (process control, shell parsing, secrets, machine metrics, paths) sits behind an interface with one implementation per OS. CI runs on macOS and Linux from the start.
 - The engine (`core`) is headless and knows nothing about Electron. The desktop app is a client of the engine API.
 - Vertical slices: one folder per capability with its use cases, schemas and tests. No cross-cutting `services/` or `utils/` layers.
 - Security primitives exist once, in the kernel. Slices never re-implement them.
@@ -16,7 +18,9 @@ Status: draft for v1. Product behavior is in `product.md`; this file says how it
 ```
 tokama/
   packages/core/        engine: slices, kernel, adapters, engine API
-  apps/desktop/         Electron shell: renderer UI, main process hosts core
+  apps/engine/          engine service: the background process that hosts core and serves the engine API
+  packages/client/      typed engine API client used by desktop, CLI and later mobile
+  apps/desktop/         Electron app: UI only, a client of the engine service
   packages/cli/         later (not v1): thin CLI over the engine API
   tooling/              shared tsconfig, eslint, vitest presets
   .agent/                agent working files (git-ignored)
@@ -30,8 +34,9 @@ pnpm workspaces, `tsc --build` with project references. `desktop` depends on `co
 
 The UI never calls slices directly. It talks to the engine through one typed API: commands (start item, approve step, stop, save template, add connection), queries (board, item, settings) and an event stream (item and step updates, usage, attention).
 
-- v1 transport: Electron IPC between renderer and main process, payloads validated with the same schemas the engine uses.
-- Later: the same API over an authenticated connection to a remote host. A remote host keeps its own agents, models, repos and credentials; only API messages cross.
+- v1 transport: a local socket (Unix domain socket on macOS and Linux, a named pipe on Windows later) owned by the user, with a per-session token. The desktop app starts the engine service if it is not running and reconnects if it restarts.
+- The API is versioned from the first release and fully serializable: no Electron, Node or OS types cross it. Every message is validated with the engine's schemas on both sides.
+- Later: the same API over an authenticated network connection, to a remote host or through a relay for mobile and tablet clients (see product spec). A remote host keeps its own agents, models, repos and credentials; only API messages cross.
 
 ## 4. Core layout
 
@@ -71,12 +76,12 @@ Inside a slice: `index.ts` (public surface), one file per use case, schemas, col
 
 | Module | Why it is single |
 |---|---|
-| `process` | Spawn in own process group, kill group on stop/timeout, env allowlist, stream stdout to disk as it arrives. |
+| `process` | Spawn, kill the whole process tree on stop/timeout (process groups on macOS and Linux, Job Objects on Windows later), env allowlist, stream stdout to disk as it arrives. |
 | `git` | Every git call hardened (`core.hooksPath=/dev/null`, no fsmonitor, no external diff/textconv, `--no-verify`, no signing). |
-| `command-policy` | Quote-aware allowlist parser for checks and step commands. Security boundary. |
+| `command-policy` | Quote-aware allowlist parser for checks and step commands, one parser per shell (POSIX `sh` first, PowerShell later). Security boundary. |
 | `egress` | The single path for any network call that carries user data; enforces data rules and local-only mode, logs what left. Plus a runtime guard in local-only mode, so it does not rely on lint alone. |
 | `fs-safe` | Regular files only, no symlink following, size and line caps. |
-| `secrets` | Keychain access; secrets never returned as plain text to slices that pass them to agents. |
+| `secrets` | OS secret store behind one interface (macOS Keychain first; libsecret and Windows Credential Manager later); secrets never returned as plain text to slices that pass them to agents. |
 | `schemas` | Versioned schemas for config, templates, items, events, API messages. |
 | `ports` | `AgentRuntime`, `ModelHost`, `Connector`, `Sampler` interfaces with shared contract tests. |
 | `result`, `clock`, `ids` | Result type, injectable clock, id formats. |
@@ -100,7 +105,8 @@ Agent runtime and model host are separate ports, so a local model can run under 
 - Host config: `~/.tokama/` (detected CLIs, agents, app settings, workspace list).
 - Workspace config: `~/.tokama/workspaces/<id>.yaml` (repos, connections without secrets, privacy rules).
 - Templates: in a workspace repo under `.tokama/templates/`, versioned with code.
-- Secrets: macOS Keychain.
+- Secrets: the OS secret store (macOS Keychain in v1).
+- Every stored file and record carries a schema version, so upgrades can migrate data.
 - Items: `~/.tokama/items/<id>/` with an append-only event log, raw agent transcripts, evidence and findings; a local index for the board and search. (Store format to be settled before the `items` slice is built.)
 - Worktrees: inside each repo's worktree folder (default `.tokama/wt/`).
 
@@ -119,6 +125,9 @@ Agent runtime and model host are separate ports, so a local model can run under 
 - Abort signals through every long call; stopping always kills the process group and records the partial result.
 - Injected clock and process spawner, so guard and timeout tests are fast and deterministic.
 - Electron: context isolation, sandbox, no Node in the renderer, typed preload, model output rendered as text only.
+- UI text lives in one place per screen so it can be translated later.
+- Plug-in interfaces are versioned and kept stable, so third-party adapters are possible later.
+- No telemetry by default; anything collected is opt-in and listed in settings.
 
 ## 11. What comes from ai-pipeline
 
@@ -139,15 +148,15 @@ Not carried over: run-file compatibility, `summary.json`/`compare.json` formats 
 
 ## 12. v1 build order
 
-Each milestone is one or more issues and PRs.
+Epics, each a GitHub milestone with small issues (1 to 3 days each). Claude Code is the first backend; local models and Codex follow as more adapters. Issues are written for the next one or two epics only.
 
-1. Skeleton: workspace, tooling, lint boundaries with fixtures, CI, empty core and desktop that build.
-2. Kernel: process, git, command-policy, fs-safe, secrets, schemas, ports with contract tests.
-3. Agent runtime: `claude-code` adapter + `execution` (one call with guards and usage) + `host/ollama`. First end-to-end: run one prompt on Opus and on a local model.
-4. Templates + agents + workspaces: schema, validation, files, built-in examples.
-5. Workflow engine + items + verification + worktrees: run a task template end to end (plan, build, checks, review, commit).
-6. Connections + privacy: MCP and Postgres connectors, data rules, redaction, cloud-step approval, egress log. Run an investigation template end to end.
-7. Codex CLI adapter.
-8. Desktop: engine API over IPC, board, drawer, new work, needs you, attention, usage rings.
-9. Desktop: settings, template editor, first run, item full view, notifications.
-10. Usage rollups and sampler.
+- **A. Skeleton**: workspace and strict TypeScript, lint boundaries with fixture tests, adapter removal test, CI on macOS and Linux.
+- **B. Kernel and engine service**: process control, command policy, hardened git, safe file reads, secrets, schemas and ports with contract tests, the engine service process with the versioned local-socket API and a typed client.
+- **C. Claude Code agent**: the adapter, one agent call with usage capture, loop guards, stop and abort.
+- **D. Templates and config**: template format and validation, agents, workspaces and repos, example templates.
+- **E. Running a task**: item store, step sequencing and gates, worktrees, checks, review verdicts, retry, escalation and approval, commit or pull request, tamper checks.
+- **F. Investigations**: connector port and MCP adapter, Postgres connector, data rules and egress, redaction and summaries, cloud-step approval, evidence and findings, investigation to fix task.
+- **G. Local models**: Ollama host adapter, Claude Code runtime routed to Ollama.
+- **H. Desktop**: Electron app as an engine client, board, drawer, new work, needs you and notifications, attention and usage rings, settings, template editor, first run, item full view.
+- **I. Codex CLI**: the adapter.
+- **J. Usage**: rollups, quota windows, machine sampler.

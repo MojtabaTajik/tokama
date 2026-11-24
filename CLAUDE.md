@@ -18,7 +18,8 @@ Don't design anything around a fixed planner/executor/verifier trio, a single pr
 ## Engineering rules
 
 - TypeScript only, strict. No Python anywhere in Tokama, no sidecars.
-- `core` is headless: no Electron, no UI, no platform-specific code outside adapters (macOS pieces such as macmon sit behind a port with a fallback). The UI talks to the engine only through the engine API.
+- `core` is headless: no Electron, no UI. The engine runs as its own background service; desktop, CLI and later mobile are clients of the versioned engine API, never of core directly.
+- Platforms: macOS first, then Linux, then Windows. OS-specific code (process control, shell parsing, secrets, metrics, paths) only behind an interface with one implementation per OS; CI on macOS and Linux.
 - Vertical slices; only `workflow-engine` composes slices. Security primitives (process, git, command policy, egress, secrets, safe file reads) exist once in the kernel. Backends and connectors are adapters (a folder plus one line in `composition.ts`). Boundaries are enforced by lint and CI.
 - Write tests with the code. When porting a part of ai-pipeline, port its tests first.
 - Loop guards on every agent call are required. Never launch an agent with a skip-all-permissions flag.
