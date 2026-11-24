@@ -7,13 +7,12 @@ Don't design anything around a fixed planner/executor/verifier trio, a single pr
 ## Where things are
 
 - Product spec: `docs/spec/product.md` (concepts, v1 scope, flows, templates, privacy, safety). Architecture: `docs/spec/architecture.md` (packages, engine API, slices, kernel, adapters, storage, build order). Read both before planning or building anything; update them when a decision changes.
-- Design: canvas https://claude.ai/artifact/SmJxT6iqmLF3YLXuZVv3jb (page "Tokama v2"; "Archive (v1)" is history only). Source files in `.agent/design-canvas/`; republish from there if the canvas is lost.
-- Agent working files go in `.agent/` (git-ignored): plans, review notes, exports, scratch, and `.agent/ideas.md`. Never put agent scratch elsewhere in the repo.
-- Ideas: suggest them to the owner; only ideas he approves go into `.agent/ideas.md`. They are not v1 scope and get no issues until scheduled.
-- Repo: `MojtabaTajik/tokama` (private for now, to be open-sourced under Apache-2.0; paid cloud features will live outside this repo, so the open engine must work fully without them), default branch `main`. Domains (registered): tokama.dev (primary), tokama.ai (redirects to tokama.dev). Point user-facing URLs (updates, install scripts, docs) at tokama.dev, not GitHub, so a later move to an organization breaks nothing.
-- Never commit employer or customer names, personal paths, secrets or business plans: the repo will be public. Use neutral sample names (e.g. "Northwind prod", `orders-api`) in docs, specs and designs.
-- Status: nothing built yet. No GitHub issues yet; create them from the v1 build order in the architecture spec.
-- Reference only: `ai-pipeline`, the earlier private Python harness, kept outside this repo (local path in `.agent/local.md`). Reuse its hard-won parts and port the tests for them (list in architecture spec, section 11). Do not port it in full, keep its file formats, or call or ship any of its code.
+- Agent working files go in `.agent/` (git-ignored): plans, review notes, exports, scratch. Never put agent scratch elsewhere in the repo.
+- Maintainer-specific notes (status, links, local paths, preferences) live in `CLAUDE.local.md` (git-ignored), loaded next to this file. Keep this file to stable project rules.
+- Repo: `MojtabaTajik/tokama`, Apache-2.0, default branch `main`. Paid cloud features live outside this repo, so the open engine must work fully without them. Domains (registered): tokama.dev (primary), tokama.ai (redirects to tokama.dev). Point user-facing URLs (updates, install scripts, docs) at tokama.dev, not GitHub, so a later move to an organization breaks nothing.
+- Never commit employer or customer names, personal paths, secrets or business plans: the repo is meant to be public. Use neutral sample names (e.g. "Northwind prod", `orders-api`) in docs, specs and designs.
+- `main` is protected by a ruleset: no direct pushes, no force pushes, no deletion, linear history. Every change, docs included, goes through a pull request and is squash-merged by a maintainer. Agents never merge.
+- Reference only: `ai-pipeline`, the earlier private Python harness, kept outside this repo. Reuse its hard-won parts and port the tests for them (list in architecture spec, section 11). Do not port it in full, keep its file formats, or call or ship any of its code.
 
 ## Engineering rules
 
@@ -28,7 +27,7 @@ Don't design anything around a fixed planner/executor/verifier trio, a single pr
 
 ## UI design
 
-- Design every screen on the design canvas with the `artifact-design` skill before building it, and get the owner's OK first. Charts follow the `dataviz` skill. During design iteration don't ask for approval each round; the owner says when he's happy.
+- Design every screen before building it; charts follow the `dataviz` skill.
 - Users are engineers who keep Tokama open all day. Calm and minimal: one dark ground, hairline dividers, flat cards, no colored boxes, little color. Visibility still comes first: every item shows which template step it is in, which agent runs it, and what it waits for; numbers link to their source.
 - Locked layout (v2 board):
   - **Icon rail** (left): panel toggle, Board, Needs you (amber badge), Insights, Settings, Attention "!" (red badge: health issues such as an expiring token, quota at 84%, a host's Ollama down; opens a popup, never shown inline), then one usage ring per installed AI CLI (Claude Code, Codex CLI, Ollama; click for plan, windows, reset times, who uses it), then the user avatar.
@@ -44,15 +43,11 @@ Don't design anything around a fixed planner/executor/verifier trio, a single pr
 
 GitHub issues in `MojtabaTajik/tokama` track actual implementation work only: code to write, bugs, improvements to built code, tooling/CI chores, and open decisions that block code. Every issue and PR gets labels.
 
-- No issues for design iterations, canvas edits, doc housekeeping or unscheduled ideas. Designs live on the design canvas, ideas stay in `.agent/ideas.md`; open an issue only when the work is scheduled to be built.
+- No issues for design iterations, canvas edits, doc housekeeping or unscheduled ideas. Designs live on the design canvas, ideas stay out of the tracker until scheduled; open an issue only when the work is scheduled to be built.
 - Before starting implementation work, find or open its issue. Reference it in the branch and PR (`Closes #N`). Bugs found along the way become issues, not TODO comments.
 - Labels: exactly one type label, plus area labels for the packages touched, plus modifiers when they apply.
   - Type: `feature` (new capability), `bug` (something broken), `improvement` (better version of something built), `documentation`, `chore` (tooling, CI, deps, repo setup).
   - Area: `area:core`, `area:cli`, `area:desktop`.
-  - Modifiers: `security` (sandboxing, process spawn, input handling, egress), `question` (decision needed from the owner).
+  - Modifiers: `security` (sandboxing, process spawn, input handling, egress), `question` (decision needed from a maintainer).
   - Closing: `duplicate`, `wontfix`.
 - Use only these labels. Add a new one only when an existing label can't express it and it will be used on more than one issue; remove labels that stop being used. Update this list when the label set changes.
-
-## Asking questions
-
-When something is unclear or a decision is needed, ask with the CLI question UI (AskUserQuestion), with the recommended option first. Never leave questions inside a summary, plan or other text where they can be missed; a plan's open questions get asked in the UI before the turn ends.
