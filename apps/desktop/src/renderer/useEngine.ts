@@ -1,6 +1,6 @@
-// The renderer's engine state: the connection, the setup and the items. Queries run on
-// every return to "connected" (events may have been missed while away), and `item_updated`
-// events keep the items current in between. A failed load is retried once after a short delay;
+// The renderer's engine state: the connection, the setup and the items. The setup and
+// the board load in parallel on every return to "connected" (events may have been missed while
+// away), and `item_updated` events keep the items current in between. A failed load is retried once after a short delay;
 // after that the last data stays, marked stale, until a retry succeeds. A failed connection
 // drops the data.
 import type { ItemRecord, Setup } from "@tokama/core";

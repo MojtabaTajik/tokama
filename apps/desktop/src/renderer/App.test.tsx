@@ -354,6 +354,22 @@ describe("App failed loads", () => {
     expect($$(".workflow-row")).toHaveLength(5);
   });
 
+  it("shows the failure and offers Retry when the setup loads but the board fails", async () => {
+    let boardFails = true;
+    const fake = fakeBridge(CONNECTED, {
+      reply: (q) => (q.type === "board" && boardFails ? { ok: false, error: { code: "timeout", message: "the board did not answer" } } : undefined),
+    });
+    await render(fake.bridge, 1_000_000);
+    expect(text(".board .failure")).toContain("the board did not answer");
+    expect($(".board .failure-title")?.textContent).toBe("✕Could not load the setup and items");
+    // Nothing is half-shown: no data until both queries succeed.
+    expect($$(".workflow-row")).toHaveLength(0);
+    boardFails = false;
+    await click($$(".board button").find((button) => button.textContent === "Retry")!);
+    expect($(".board .failure")).toBeNull();
+    expect($$(".workflow-row")).toHaveLength(5);
+  });
+
   it("stops after one retry and offers a Retry action", async () => {
     const { fake, control, setupQueries } = failing();
     control.failNext = 2;

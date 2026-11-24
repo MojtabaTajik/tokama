@@ -14,7 +14,6 @@ const TEXT = {
   repos: "Repos",
   needsYou: (count: number) => `${count} need${count === 1 ? "s" : ""} you`,
   running: (count: number) => `${count} running`,
-  nothingLive: "Nothing running",
   stale: "Out of date: the last update failed",
 } as const;
 

@@ -152,7 +152,7 @@ describe("engine API messages", () => {
       requestId: "r1",
       command: {
         type: "start_item",
-              templateId: "plan-and-build",
+        templateId: "plan-and-build",
         repoIds: ["orders-api"],
         text: "Add retries",
         options: { askBeforeCloud: false, notify: true },

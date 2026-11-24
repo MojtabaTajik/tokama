@@ -9,7 +9,7 @@ import { ItemRecordSchema } from "./item.js";
 import { AgentCallUsageSchema } from "./usage.js";
 import { SetupSchema } from "./setup.js";
 
-export const API_VERSION = 1;
+export const API_VERSION = 2;
 
 const apiVersion = z.literal(API_VERSION);
 const requestId = z.string().min(1).max(128);

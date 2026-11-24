@@ -132,6 +132,16 @@ describe("engine service", () => {
     await raw.closed;
   });
 
+  it("refuses a hello of the previous API version", async () => {
+    const dir = tempEngineDir(cleanups);
+    const handle = await engine(dir);
+
+    const raw = await rawConnect(handle.endpoint.socketPath);
+    raw.send({ kind: "hello", apiVersion: API_VERSION - 1, token: readFileSync(handle.endpoint.tokenPath, "utf8") });
+    expect(await raw.next()).toMatchObject({ kind: "connection_error", apiVersion: API_VERSION, code: "unsupported_version" });
+    await raw.closed;
+  });
+
   it("closes a connection that does not start with a hello", async () => {
     const dir = tempEngineDir(cleanups);
     const handle = await engine(dir);

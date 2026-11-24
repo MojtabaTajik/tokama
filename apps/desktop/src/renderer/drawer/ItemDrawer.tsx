@@ -64,7 +64,6 @@ const REFRESH_ON = new Set(["stale_decision", "invalid_state", "not_found"]);
 export interface ItemDrawerProps {
   readonly bridge: TokamaBridge;
   readonly itemId: string;
-  /** For the template name, the agents and the connections the steps name. */
   /** Names the item's template, agents and connections; undefined until the first load. */
   readonly setup: Setup | undefined;
   readonly onClose: () => void;
