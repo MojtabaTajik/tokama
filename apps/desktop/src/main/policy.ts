@@ -92,3 +92,15 @@ export function guardedHandler<T>(
 export function sampleEngineEnabled(value: string | undefined, isPackaged: boolean): boolean {
   return !isPackaged && value === "1";
 }
+
+/** The one address the app opens in the system browser: the product site. Nothing else ever leaves the window. */
+const WEBSITE = "https://tokama.dev/";
+
+/** Whether `url` is exactly the product site (no other host, path, query or credentials). */
+export function isWebsiteUrl(url: string): boolean {
+  try {
+    return new URL(url).href === WEBSITE;
+  } catch {
+    return false;
+  }
+}

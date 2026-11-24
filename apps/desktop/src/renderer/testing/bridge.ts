@@ -27,6 +27,7 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
   });
   const bridge = {
     getConnection: vi.fn(async () => initial),
+    retryConnection: vi.fn(async () => undefined),
     onConnection: vi.fn((listener: (state: ConnectionState) => void) => {
       connectionListener = listener;
       return stops.connection;
@@ -47,5 +48,6 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
       for (const listener of eventListeners) listener({ kind: "event", seq: seq++, event: { type: "item_updated", item } });
     });
   const command = bridge.command as unknown as ReturnType<typeof vi.fn>;
-  return { bridge, query, command, setConnection, pushItem, stops };
+  const retryConnection = bridge.retryConnection as unknown as ReturnType<typeof vi.fn>;
+  return { bridge, query, command, retryConnection, setConnection, pushItem, stops };
 }

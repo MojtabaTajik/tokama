@@ -35,6 +35,6 @@ flow("takes screenshots of the list, workflow board, drawer, New work and an emp
   // "Review only" has no items in the sample data.
   await page.keyboard.press("Escape");
   await sidebarRow(page, "Review only").click();
-  await page.locator(".pl-empty").first().waitFor();
+  await page.locator(".board .state").waitFor();
   await screenshot("5-empty-state");
 });

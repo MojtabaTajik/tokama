@@ -1,0 +1,285 @@
+// @vitest-environment happy-dom
+// The empty and error states, each rendered from the condition that causes it, and About.
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { ConnectionState } from "../shared/bridge.js";
+import { App, type AppProps } from "./App.js";
+import { brand } from "./brand/index.js";
+import { REPOS_EXAMPLE, REPOS_FILE } from "./shell/EmptyStates.js";
+import { CONNECTED, fakeBridge } from "./testing/bridge.js";
+import { ITEMS, NOW, setup } from "./testing/sample.js";
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+let container: HTMLElement;
+let root: Root;
+beforeEach(() => {
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+});
+afterEach(() => {
+  act(() => root.unmount());
+  container.remove();
+});
+
+const mount = async (fake: ReturnType<typeof fakeBridge>, props: Partial<AppProps> = {}) => {
+  await act(async () => root.render(<App bridge={fake.bridge} retryDelayMs={10} now={NOW} {...props} />));
+  return fake;
+};
+const $ = (selector: string) => container.querySelector(selector);
+const $$ = (selector: string) => [...container.querySelectorAll(selector)];
+const text = (selector: string) => $(selector)?.textContent;
+const click = (el: Element | null) => act(async () => (el as HTMLElement).click());
+const press = (key: string) => act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })));
+const sidebarRow = (name: string) => $$(".sb-main").find((el) => el.querySelector(".ellipsis")?.textContent === name)!;
+const segment = (label: string) => $$(".filter-bar .segment").find((el) => el.querySelector("span")?.textContent === label)!;
+
+const noRepos = fakeBridgeWith({ repos: [] });
+function fakeBridgeWith(patch: Partial<typeof setup>, options: Parameters<typeof fakeBridge>[1] = {}) {
+  return (connection: ConnectionState = CONNECTED) => fakeBridge(connection, { ...options, reply: (q) => (q.type === "setup" ? { ok: true, data: { ...setup, ...patch } } : options.reply?.(q)) });
+}
+
+describe("first launch: no repos yet", () => {
+  it("explains where the repos file is and shows an example, in place of the list", async () => {
+    await mount(noRepos());
+    expect(text(".board .state-title")).toBe("Add your first repos");
+    expect(text(".board .state-text")).toContain(REPOS_FILE);
+    expect(REPOS_FILE).toBe("~/.tokama/repos.yaml");
+    expect(text(".board .state-code")).toBe(REPOS_EXAMPLE);
+    expect($(".filter-bar")).toBeNull();
+    expect($(".pipeline-list")).toBeNull();
+  });
+
+  it("describes each field of an entry", async () => {
+    await mount(noRepos());
+    expect($$(".state-fields dt").map((el) => el.textContent)).toEqual(["id", "path", "base_branch"]);
+  });
+
+  it("has an example with the keys the engine reads for a repo: format, id, path and base_branch", () => {
+    expect(REPOS_EXAMPLE.split("\n")).toEqual(["format: 1", "repos:", "  - id: orders-api", "    path: ~/code/orders-api", "    base_branch: main", ""]);
+  });
+
+  it("disables New work and leaves out the input, and says so in the sidebar", async () => {
+    await mount(noRepos());
+    expect(($(".new-work") as HTMLButtonElement).disabled).toBe(true);
+    expect($(".np-text")).toBeNull();
+    expect(text(".sb-empty")).toBe("No repos added yet.");
+  });
+
+  it("is gone once a repo exists", async () => {
+    await mount(fakeBridge(CONNECTED));
+    expect($(".state")).toBeNull();
+    expect(($(".new-work") as HTMLButtonElement).disabled).toBe(false);
+    expect($(".sb-empty")).toBeNull();
+  });
+});
+
+describe("engine not running", () => {
+  const failed: ConnectionState = { status: "failed", reason: "cannot start the engine: node was not found on PATH", logPath: "/home/a/.tokama/run/engine.log", logTail: [] };
+
+  it("shows the reason, the log path and a Retry button", async () => {
+    await mount(fakeBridge(failed));
+    expect(text(".board .failure-title")).toBe("✕The engine is not available");
+    expect(text(".board .failure")).toContain(failed.reason);
+    expect(text(".board .failure")).toContain(failed.logPath);
+    expect($$(".board .failure button").map((el) => el.textContent)).toEqual(["Retry"]);
+  });
+
+  it("asks the main process to connect again when Retry is pressed, and shows the engine starting", async () => {
+    const fake = await mount(fakeBridge(failed));
+    await click($(".board .failure .retry"));
+    expect(fake.retryConnection).toHaveBeenCalledOnce();
+    await fake.setConnection({ status: "starting" });
+    expect($(".board .failure")).toBeNull();
+    expect(text(".board .placeholder")).toBe("Starting the engine");
+  });
+
+  it("returns to the board when the retry connects", async () => {
+    const fake = await mount(fakeBridge(failed));
+    await click($(".board .failure .retry"));
+    await fake.setConnection(CONNECTED);
+    expect($(".pipeline-list")).not.toBeNull();
+    expect($(".board .failure")).toBeNull();
+  });
+
+  it("shows a failure in the engine's log as text, never as markup", async () => {
+    await mount(fakeBridge({ ...failed, reason: "<b>boom</b>" }));
+    expect(text(".board .failure")).toContain("<b>boom</b>");
+    expect($(".board .failure b")).toBeNull();
+  });
+});
+
+describe("no live items", () => {
+  it("keeps the groups and says in each that it is empty", async () => {
+    await mount(fakeBridge(CONNECTED, { boardItems: [ITEMS.done, ITEMS.failed] }));
+    expect($$(".pl-group").map((group) => [group.getAttribute("aria-label"), group.querySelector(".pl-empty")?.textContent])).toEqual([
+      ["Needs you", "Nothing waiting"],
+      ["Running", "Nothing running"],
+    ]);
+    expect($(".state")).toBeNull();
+  });
+
+  it("says Nothing finished and Nothing failed for the other groups", async () => {
+    await mount(fakeBridge(CONNECTED, { boardItems: [ITEMS.queued] }));
+    await click(segment("Done"));
+    expect(text(".pl-empty")).toBe("Nothing finished");
+    await click(segment("Failed"));
+    expect(text(".pl-empty")).toBe("Nothing failed");
+  });
+
+  it("names the repo in a repo view", async () => {
+    await mount(fakeBridge(CONNECTED, { boardItems: [ITEMS.queued, ITEMS.failed] }));
+    await click(sidebarRow("checkout-web"));
+    await click(segment("Needs you"));
+    expect(text(".pl-empty")).toBe("Nothing waiting for checkout-web");
+  });
+});
+
+describe("a view with no work at all", () => {
+  it("shows No work yet and points at the New work input", async () => {
+    await mount(fakeBridge(CONNECTED, { boardItems: [] }));
+    expect(text(".board .state-title")).toBe("No work yet");
+    expect(text(".board .state-text")).toBe("Describe a task or paste an alert below. It starts in the template you pick.");
+    expect($(".filter-bar")).toBeNull();
+    expect($(".np-text")).not.toBeNull();
+  });
+
+  it("shows it in a workflow's board layout too, and in a repo view when only other repos have work", async () => {
+    await mount(fakeBridge(CONNECTED, { boardItems: [ITEMS.queued] }));
+    await click(sidebarRow("checkout-web"));
+    expect(text(".board .state-title")).toBe("No work yet");
+    await click(sidebarRow("DB slow query check"));
+    await click($$(".layout .segment").find((el) => el.textContent === "Board")!);
+    expect(text(".board .state-title")).toBe("No work yet");
+    expect($(".columns")).toBeNull();
+  });
+
+  it("is not shown while the view has items, even when the filter hides them all", async () => {
+    await mount(fakeBridge(CONNECTED, { boardItems: [ITEMS.done] }));
+    expect($(".state")).toBeNull();
+    expect($$(".pl-group")).toHaveLength(2);
+  });
+});
+
+describe("an AI CLI that is logged out", () => {
+  const codex = [{ cliId: "codex-cli", kind: "logged_out" }] as const;
+
+  it("puts a ✕ on the Insights icon and the count on Attention, and names the CLI in the Insights tooltip", async () => {
+    await mount(fakeBridge(CONNECTED), { cliIssues: codex });
+    expect($$(".badge").map((badge) => [badge.getAttribute("data-tone"), badge.textContent])).toEqual([
+      ["warn", "1"],
+      ["fail", "✕"],
+      ["fail", "1"],
+    ]);
+    expect($$('.rail [role="tooltip"] li').map((li) => li.textContent)).toEqual(["Claude Codeusage data comes later", "Codex CLI✕ logged out", "Ollamausage data comes later"]);
+    expect($('.rail button[aria-label="Attention · 1"]')).not.toBeNull();
+  });
+
+  it("shows How to log in with the command in the Attention popup, never inline", async () => {
+    await mount(fakeBridge(CONNECTED), { cliIssues: codex });
+    expect($(".attention-popup")).toBeNull();
+    expect(text(".board")).not.toContain("logged out");
+    await click($('.rail button[aria-label="Attention · 1"]'));
+    const popup = $('[role="dialog"][aria-label="Attention"]')!;
+    expect(popup.textContent).toContain("Codex CLI logged out");
+    expect(popup.querySelector(".attention-howto")?.textContent).toBe("How to log in");
+    expect(popup.querySelector("code")?.textContent).toBe("codex login");
+    expect(popup.querySelectorAll("button, a")).toHaveLength(0);
+  });
+
+  it("gives Claude Code its own login command", async () => {
+    await mount(fakeBridge(CONNECTED), { cliIssues: [{ cliId: "claude-code", kind: "logged_out" }] });
+    await click($('.rail button[aria-label="Attention · 1"]'));
+    expect(text(".attention-item code")).toBe("claude auth login");
+    expect(text(".attention-what")).toBe("Claude Code logged out");
+  });
+
+  it("lists every logged-out CLI", async () => {
+    await mount(fakeBridge(CONNECTED), { cliIssues: [...codex, { cliId: "claude-code", kind: "logged_out" }] });
+    await click($('.rail button[aria-label="Attention · 2"]'));
+    expect($$(".attention-item code").map((el) => el.textContent)).toEqual(["codex login", "claude auth login"]);
+  });
+
+  it("closes the popup on Escape, on a press outside and on the button again", async () => {
+    await mount(fakeBridge(CONNECTED), { cliIssues: codex });
+    const button = () => $('.rail button[aria-label="Attention · 1"]');
+    await click(button());
+    expect(button()?.getAttribute("aria-expanded")).toBe("true");
+    await press("Escape");
+    expect($(".attention-popup")).toBeNull();
+    await click(button());
+    await act(async () => document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
+    expect($(".attention-popup")).toBeNull();
+    await click(button());
+    await click(button());
+    expect($(".attention-popup")).toBeNull();
+  });
+
+  it("says nothing needs attention when there is no issue", async () => {
+    await mount(fakeBridge(CONNECTED));
+    await click($('.rail button[aria-label="Attention"]'));
+    expect(text(".attention-popup")).toContain("Nothing needs attention.");
+    expect($$(".badge").map((badge) => badge.getAttribute("data-tone"))).toEqual(["warn"]);
+  });
+});
+
+describe("About", () => {
+  const notices = readFileSync(join(import.meta.dirname, "..", "..", "THIRD_PARTY_NOTICES.md"), "utf8");
+  const open = async (props: Partial<AppProps> = {}) => {
+    const fake = await mount(fakeBridge(CONNECTED), { version: "1.2.3", ...props });
+    await click($('.rail button[aria-label="About Tokama"]'));
+    return fake;
+  };
+
+  it("opens from the rail's user button and shows the name, the version and the licence", async () => {
+    await open();
+    expect(text("main h1")).toBe("About");
+    expect(text(".about-name")).toBe("Tokama");
+    expect(text(".about-version")).toBe("Version 1.2.3");
+    expect(text(".about-body")).toContain("Apache License 2.0");
+    expect($('.rail-user[aria-label="About Tokama"]')?.getAttribute("aria-current")).toBe("page");
+  });
+
+  it("shows the third-party notices file as text, with the Font Awesome Free credit", async () => {
+    await open();
+    expect(text(".about-notices")).toBe(notices);
+    expect(text(".about-notices")).toContain("Font Awesome Free");
+    expect(text(".about-notices")).toContain("CC BY 4.0");
+    expect($(".about-notices *")).toBeNull();
+  });
+
+  it("links to tokama.dev, opened by the window in the system browser", async () => {
+    await open();
+    const link = $(".about-link") as HTMLAnchorElement;
+    expect([link.textContent, link.getAttribute("href"), link.getAttribute("target"), link.getAttribute("rel")]).toEqual(["tokama.dev", "https://tokama.dev", "_blank", "noreferrer noopener"]);
+  });
+
+  it("takes the logo from the brand assets folder", async () => {
+    await open();
+    expect($(".about-id img")?.getAttribute("src")).toBe(brand.markUrl);
+  });
+
+  it("replaces the board and the drawer, and the way back is the button, the Board icon, the avatar or a sidebar row", async () => {
+    await open();
+    expect($(".pipeline-list")).toBeNull();
+    expect($(".new-work")).not.toBeNull();
+    await click($(".about-back"));
+    expect(text("main h1")).toBe("All work");
+    for (const leave of [() => $('.rail button[aria-label="Board"]'), () => $('.rail button[aria-label="About Tokama"]'), () => sidebarRow("All work")]) {
+      await click($('.rail button[aria-label="About Tokama"]'));
+      expect(text("main h1")).toBe("About");
+      await click(leave());
+      expect(text("main h1")).toBe("All work");
+    }
+  });
+
+  it("shows an unknown version as such when the build gives none", async () => {
+    await mount(fakeBridge(CONNECTED));
+    await click($('.rail button[aria-label="About Tokama"]'));
+    expect(text(".about-version")).toBe("Version unknown");
+  });
+});

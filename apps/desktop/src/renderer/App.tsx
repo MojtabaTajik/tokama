@@ -1,8 +1,9 @@
 // The app shell: icon rail, sidebar, main area, and the item drawer when an item is open.
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TokamaBridge } from "../shared/bridge.js";
+import { About } from "./about/About.js";
 import { ItemDrawer } from "./drawer/ItemDrawer.js";
-import { ALL_WORK, inView, needsYouCount, type View } from "./model.js";
+import { ALL_WORK, type CliIssue, inView, needsYouCount, type View } from "./model.js";
 import { isMac, NewWork, type NewWorkHandle } from "./newwork/NewWork.js";
 import { MainArea } from "./shell/MainArea.js";
 import { Rail } from "./shell/Rail.js";
@@ -13,17 +14,23 @@ import { useViewState } from "./useViewState.js";
 const PANEL_ID = "sidebar";
 /** How often the times in the list move on. */
 const CLOCK_TICK_MS = 30_000;
+const NO_ISSUES: readonly CliIssue[] = [];
 
 export interface AppProps {
   readonly bridge: TokamaBridge;
   readonly retryDelayMs?: number;
   /** A fixed time for tests; otherwise the clock runs. */
   readonly now?: number;
+  /** The app's version, shown in About. */
+  readonly version?: string;
+  /** AI CLIs to sign in to again. The engine does not report CLI health yet, so nothing sets this outside tests. */
+  readonly cliIssues?: readonly CliIssue[];
 }
 
-export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow }: AppProps) {
+export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, version = "unknown", cliIssues = NO_ISSUES }: AppProps) {
   const { connection, data, loadError, stale, retry } = useEngine(bridge, retryDelayMs);
   const [panelOpen, setPanelOpen] = useState(true);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(undefined);
   const composer = useRef<NewWorkHandle>(null);
   const [clock, setClock] = useState(() => Date.now());
@@ -59,7 +66,10 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow }: Ap
         panelId={PANEL_ID}
         onTogglePanel={() => setPanelOpen(!panelOpen)}
         needsYou={stale ? undefined : needsYouCount(items)}
-        attention={0}
+        issues={cliIssues}
+        aboutOpen={aboutOpen}
+        onBoard={() => setAboutOpen(false)}
+        onAbout={() => setAboutOpen(!aboutOpen)}
       />
       {panelOpen && (
         <Sidebar
@@ -70,40 +80,49 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow }: Ap
           stale={stale}
           now={now}
           view={views.view}
-          onSelectView={views.setView}
+          onSelectView={(view) => {
+            setAboutOpen(false);
+            views.setView(view);
+          }}
           collapsed={views.collapsed}
           onToggleSection={views.toggleSection}
           onNewWork={() => composer.current?.open()}
           onStartIn={startIn}
         />
       )}
-      <MainArea
-        connection={connection}
-        loadError={loadError}
-        onRetry={retry}
-        setup={setup}
-        items={items}
-        now={now}
-        views={views}
-        selectedItemId={selectedItemId}
-        onSelectItem={setSelectedItemId}
-        composer={
-          setup !== undefined &&
-          connection.status !== "failed" && (
-            <NewWork
-              ref={composer}
-              bridge={bridge}
-              setup={setup}
-              onStarted={(itemId, started) => {
-                // Show the new item where the user is, or in All work when this view would hide it.
-                views.reveal(inView(started, views.view) ? views.view : ALL_WORK);
-                setSelectedItemId(itemId);
-              }}
-            />
-          )
-        }
-      />
-      {selectedItemId !== undefined && <ItemDrawer bridge={bridge} itemId={selectedItemId} setup={setup} onClose={() => setSelectedItemId(undefined)} />}
+      {aboutOpen ? (
+        <About version={version} onClose={() => setAboutOpen(false)} />
+      ) : (
+        <MainArea
+          connection={connection}
+          loadError={loadError}
+          onRetry={retry}
+          onRetryConnection={() => void bridge.retryConnection()}
+          setup={setup}
+          items={items}
+          now={now}
+          views={views}
+          selectedItemId={selectedItemId}
+          onSelectItem={setSelectedItemId}
+          composer={
+            setup !== undefined &&
+            setup.repos.length > 0 &&
+            connection.status !== "failed" && (
+              <NewWork
+                ref={composer}
+                bridge={bridge}
+                setup={setup}
+                onStarted={(itemId, started) => {
+                  // Show the new item where the user is, or in All work when this view would hide it.
+                  views.reveal(inView(started, views.view) ? views.view : ALL_WORK);
+                  setSelectedItemId(itemId);
+                }}
+              />
+            )
+          }
+        />
+      )}
+      {!aboutOpen && selectedItemId !== undefined && <ItemDrawer bridge={bridge} itemId={selectedItemId} setup={setup} onClose={() => setSelectedItemId(undefined)} />}
     </div>
   );
 }

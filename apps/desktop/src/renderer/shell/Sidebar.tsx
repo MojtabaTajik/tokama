@@ -14,6 +14,7 @@ import { TemplateIcon } from "./TemplateIcon.js";
 const TEXT = {
   panel: "Sidebar",
   newWork: "+ New work",
+  noRepos: "No repos added yet.",
   thisMachine: "This machine",
   allWork: "All work",
   workflows: "Workflows",
@@ -63,7 +64,7 @@ export function Sidebar(props: SidebarProps) {
   );
   return (
     <aside className="panel" id={id} aria-label={TEXT.panel} data-stale={stale || undefined}>
-      <button type="button" className="new-work" onClick={onNewWork}>
+      <button type="button" className="new-work" disabled={setup !== undefined && setup.repos.length === 0} onClick={onNewWork}>
         {TEXT.newWork}
       </button>
       <p className="engine-line">
@@ -89,6 +90,7 @@ export function Sidebar(props: SidebarProps) {
       {!collapsed.has("workflows") && workflows.map((entry) => row(entry, entry.icon, TEXT.start(entry.name)))}
       <SectionHeading section="repos" title={TEXT.repos} collapsed={collapsed} onToggle={onToggleSection} summary={badgesOf(items.filter((item) => repos.some((r) => inView(item, r.view))), now)} />
       {!collapsed.has("repos") && repos.map((entry) => row(entry, <RepoIcon />, TEXT.quickTask(entry.name), true))}
+      {!collapsed.has("repos") && setup !== undefined && repos.length === 0 && <p className="sb-empty">{TEXT.noRepos}</p>}
     </aside>
   );
 }

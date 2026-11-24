@@ -20,7 +20,7 @@ const exposed = [...electron.exposeInMainWorld.mock.calls];
 describe("preload bridge", () => {
   it("exposes window.tokama with only the bridge methods", () => {
     expect(exposed).toEqual([["tokama", bridge]]);
-    expect(Object.keys(bridge).sort()).toEqual(["command", "getConnection", "onConnection", "onEvent", "query"]);
+    expect(Object.keys(bridge).sort()).toEqual(["command", "getConnection", "onConnection", "onEvent", "query", "retryConnection"]);
   });
 
   it("query and command invoke their channels with the request only", async () => {
@@ -48,6 +48,12 @@ describe("preload bridge", () => {
     electron.invoke.mockResolvedValue({ status: "starting" });
     await expect(bridge.getConnection()).resolves.toEqual({ status: "starting" });
     expect(electron.invoke).toHaveBeenCalledWith(CHANNELS.getConnection);
+  });
+
+  it("retryConnection invokes the retry channel with no argument", async () => {
+    electron.invoke.mockResolvedValue(undefined);
+    await bridge.retryConnection();
+    expect(electron.invoke).toHaveBeenCalledWith(CHANNELS.retryConnection);
   });
 
   it("onConnection passes the state without the IPC event, and unsubscribes", () => {
