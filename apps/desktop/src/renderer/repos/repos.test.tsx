@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { App } from "../App.js";
 import { CONNECTED, fakeBridge, type Reply } from "../testing/bridge.js";
-import { NOW } from "../testing/sample.js";
+import { NOW, setup } from "../testing/sample.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -23,10 +23,10 @@ afterEach(() => {
 const FOLDER = "/home/dev/code/billing-api";
 const SUGGESTION = { path: FOLDER, gitRepo: true, branch: "main", id: "billing-api", checks: ["pnpm test", "pnpm lint"], problem: null };
 
-async function mountWith(options: { suggestion?: Reply; picked?: string | null; commandReply?: (command: { type: string }) => Reply } = {}) {
+async function mountWith(options: { suggestion?: Reply; picked?: string | null; commandReply?: (command: { type: string }) => Reply; setup?: () => Reply | undefined } = {}) {
   const fake = fakeBridge(CONNECTED, {
     pickFolder: async () => (options.picked === undefined ? FOLDER : options.picked),
-    reply: (query) => (query.type === "suggest_repo" ? (options.suggestion ?? { ok: true, data: SUGGESTION }) : undefined),
+    reply: (query) => (query.type === "suggest_repo" ? (options.suggestion ?? { ok: true, data: SUGGESTION }) : query.type === "setup" ? options.setup?.() : undefined),
     commandReply: options.commandReply ?? (() => ({ ok: true, data: null })),
   });
   await act(async () => root.render(<App bridge={fake.bridge} retryDelayMs={10} now={NOW} />));
@@ -139,6 +139,18 @@ describe("repo row menu", () => {
     await click(buttonByText("Remove repo"));
     expect(fake.command).toHaveBeenCalledWith({ type: "remove_repo", repoId: "orders-api" });
     expect($("dialog.modal")).toBeNull();
+  });
+
+  it("moves focus to + Add repo once the removed repo's row is gone", async () => {
+    let removed = false;
+    const fake = await mountWith({ setup: () => (removed ? { ok: true, data: { ...setup, repos: setup.repos.filter((repo) => repo.id !== "orders-api") } } : undefined) });
+    await click(menuButton());
+    await click($('[role="menuitem"]'));
+    await click(buttonByText("Remove repo"));
+    removed = true;
+    await fake.pushEvent({ type: "setup_changed" });
+    expect(menuButton()).toBeNull();
+    expect(document.activeElement).toBe(buttonByText("+ Add repo"));
   });
 
   it("keeps the repo when Keep or Escape is chosen, and shows a refusal", async () => {

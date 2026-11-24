@@ -1,6 +1,7 @@
 // Command-line entry of the engine service: `node dist/main.js [--dir <engine dir>] [--home <dir>] [--sample]`.
 // `--home` is Tokama's home folder, where items are stored (default `~/.tokama`).
-// `--sample` starts the fake engine mode with the sample data set (sample/sample.ts); it stores nothing.
+// `--sample` starts the fake engine mode with the sample data set (sample/sample.ts); it stores no
+// items, but repo changes still go to `<home>/repos.yaml`.
 // SIGINT and SIGTERM abort one root controller, which shuts the engine down gracefully;
 // a second signal ends the process at once (default handling).
 // Exit codes: 0 stopped (also when stopped while starting), 1 failed to start, 2 usage error, 3 an engine is already running.

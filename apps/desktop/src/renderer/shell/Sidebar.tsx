@@ -3,7 +3,7 @@
 // appears on hover or focus. Items are never listed here: they appear in the main area. The
 // engine's health sits under "+ New work". Engine text (names) is rendered as React text only.
 import type { ItemRecord, Setup } from "@tokama/core";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import type { ConnectionState } from "../../shared/bridge.js";
 import { RepoMenu } from "../repos/RepoMenu.js";
 import { ALL_WORK, type Badge, badgesOf, inView, sameView, type View, viewKey } from "../model.js";
@@ -55,6 +55,15 @@ export function Sidebar(props: SidebarProps) {
   const { id, connection, setup, items, stale, now, view, onSelectView, collapsed, onToggleSection, onNewWork, onStartIn, onAddRepo, onRemoveRepo } = props;
   const workflows = (setup?.templates ?? []).map((template) => ({ view: { kind: "workflow", id: template.id } as const, name: template.name, icon: <TemplateIcon icon={template.icon} color={template.color} /> }));
   const repos = (setup?.repos ?? []).map((repo) => ({ view: { kind: "repo", id: repo.id } as const, name: repo.id }));
+  // A removed repo's row takes the focus with it: "+ Add repo" gets it instead of the page.
+  const addRepo = useRef<HTMLButtonElement>(null);
+  const repoCount = repos.length;
+  const lastRepoCount = useRef(repoCount);
+  useEffect(() => {
+    const shrank = repoCount < lastRepoCount.current;
+    lastRepoCount.current = repoCount;
+    if (shrank && (document.activeElement === null || document.activeElement === document.body)) addRepo.current?.focus();
+  }, [repoCount]);
   const row = (entry: { readonly view: View; readonly name: string }, icon: ReactNode, startLabel: string, mono = false, menu?: ReactNode) => (
     <Row
       key={viewKey(entry.view)}

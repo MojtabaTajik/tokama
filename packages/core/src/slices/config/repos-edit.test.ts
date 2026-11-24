@@ -2,7 +2,7 @@ import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathS
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Git, WorktreeEntry } from "../../kernel/git/index.js";
+import type { Git, GitError, WorktreeEntry } from "../../kernel/git/index.js";
 import { err, ok } from "../../kernel/result/index.js";
 import { addRepo, loadRepos, removeRepo, suggestRepo, type RepoEditOptions } from "./index.js";
 
@@ -10,16 +10,19 @@ let root: string;
 let home: string;
 /** Folders the fake git treats as repo top folders, with their branch (undefined: detached HEAD). */
 let worktrees: Map<string, string | undefined>;
+/** What the fake git answers for a folder it doesn't know. */
+let gitError: GitError;
 beforeEach(() => {
   root = realpathSync(mkdtempSync(join(tmpdir(), "tokama-repos-edit-")));
   home = join(root, "tokama-home");
   worktrees = new Map();
+  gitError = { reason: "failed", args: [], exitCode: 128, message: "fatal: not a git repository (or any of the parent directories): .git" };
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 const git: Pick<Git, "worktreeList"> = {
   worktreeList: async (repo) => {
-    if (!worktrees.has(repo)) return err({ reason: "failed", args: [], exitCode: 128, message: "not a git repository" });
+    if (!worktrees.has(repo)) return err(gitError);
     const branch = worktrees.get(repo);
     const entry: WorktreeEntry = { path: repo, detached: branch === undefined, bare: false, ...(branch === undefined ? {} : { branch: `refs/heads/${branch}` }) };
     return ok([entry]);
@@ -133,6 +136,20 @@ repos:
     ];
     for (const [path, message] of cases) expect(await addRepo(options(), { path }), path).toEqual({ ok: false, error: { code: "invalid_request", message } });
     expect(() => statSync(reposFile())).toThrow();
+  });
+
+  it("tells when git can't run or refuses the folder, rather than calling it no repo", async () => {
+    mkdirSync(join(root, "plain"));
+    const message = async () => {
+      const result = await addRepo(options(), { path: join(root, "plain") });
+      return result.ok ? "added" : result.error.message;
+    };
+    gitError = { reason: "spawn-error", args: [], exitCode: null, message: "spawn git ENOENT" };
+    expect(await message()).toBe("Tokama couldn't run git to check this folder (spawn-error).");
+    gitError = { reason: "timed-out", args: [], exitCode: null, message: "" };
+    expect(await message()).toBe("Tokama couldn't run git to check this folder (timed-out).");
+    gitError = { reason: "failed", args: [], exitCode: 128, message: "fatal: detected dubious ownership in repository at '/x'\nTo add an exception..." };
+    expect(await message()).toBe("git can't use this folder: detected dubious ownership in repository at '/x'");
   });
 
   it("refuses a check that isn't one simple command, a bad branch, and a bad id", async () => {

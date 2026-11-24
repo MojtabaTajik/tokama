@@ -1,7 +1,8 @@
 // Fake engine mode (`--sample`): serves the sample data set behind the real engine API, so the
 // desktop app can be built against the queries, commands and events it will use with the real
 // slices. Items live in the engine's MemoryItemStore, so every change goes out through the
-// engine's one event path. Nothing is persisted.
+// engine's one event path. No item is persisted. Repo commands are the engine's own: they edit
+// repos.yaml in Tokama's home in this mode too, and setup lists those repos after the sample ones.
 //
 // Removal: delete this folder; in engine.ts the `sample` lines, the SampleEngine and systemClock
 // imports and EngineOptions.clock (if nothing else uses them by then); in main.ts the `--sample`

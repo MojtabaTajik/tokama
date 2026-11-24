@@ -9,7 +9,7 @@ import { access, lstat, mkdir, open, realpath, rename, stat, unlink } from "node
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { Document, isSeq, parseDocument } from "yaml";
 import { readJsonFile } from "../../kernel/fs-safe/index.js";
-import type { Git } from "../../kernel/git/index.js";
+import type { Git, GitError } from "../../kernel/git/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import { type RepoId, RepoIdSchema } from "../../kernel/schemas/index.js";
 import { MAX_CONFIG_BYTES } from "./read.js";
@@ -211,7 +211,7 @@ async function inspectFolder(git: Pick<Git, "worktreeList">, path: string): Prom
     return invalid(`The folder ${quotePath(path)} can't be read (${code ?? "unknown error"}).`);
   }
   const worktrees = await git.worktreeList(real);
-  if (!worktrees.ok) return ok({ path: real, gitProblem: "This folder isn't a git repo." });
+  if (!worktrees.ok) return ok({ path: real, gitProblem: gitFailure(worktrees.error) });
   for (const worktree of worktrees.value) {
     if ((await realpathOr(worktree.path)) !== real) continue;
     if (worktree.bare) return ok({ path: real, gitProblem: "This folder is a bare git repo; Tokama needs one with files checked out." });
@@ -219,6 +219,15 @@ async function inspectFolder(git: Pick<Git, "worktreeList">, path: string): Prom
     return ok({ path: real, ...(branch !== undefined && BRANCH.test(branch) ? { branch } : {}) });
   }
   return ok({ path: real, gitProblem: "This folder is inside a git repo. Pick the repo's top folder, the one that holds .git." });
+}
+
+/** Why git could not list the folder's worktrees, in plain words. */
+function gitFailure(error: GitError): string {
+  if (error.reason !== "failed") return `Tokama couldn't run git to check this folder (${error.reason}).`;
+  if (/not a git repository/i.test(error.message)) return "This folder isn't a git repo.";
+  // Such as "detected dubious ownership": git names the problem on its first line.
+  const first = error.message.split("\n").find((line) => line.trim() !== "") ?? `exit code ${String(error.exitCode)}`;
+  return `git can't use this folder: ${clean(first.replace(/^fatal:\s*/, ""), 200)}`;
 }
 
 /** The id of the repo already added at this real path. */
