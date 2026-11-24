@@ -5,9 +5,18 @@
     "composite": false,
     "declaration": false,
     "declarationMap": false,
-    "lib": ["es2024", "dom", "dom.iterable"],
+    "lib": [
+      "es2024",
+      "dom",
+      "dom.iterable"
+    ],
     "jsx": "react-jsx",
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["src"]
+  "include": [
+    "src",
+    "electron.vite.config.ts"
+  ]
 }

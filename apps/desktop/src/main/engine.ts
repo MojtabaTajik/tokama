@@ -1,28 +1,9 @@
-// How the desktop app starts the engine service: absolute node and entry paths, an explicit
-// engine dir, and a reduced environment instead of the app's own.
+// How the desktop app starts the engine service: absolute node and entry paths and an explicit
+// engine dir. Its reduced environment comes from core's buildEnv.
 import { accessSync, closeSync, constants, fstatSync, openSync, readSync, statSync } from "node:fs";
 import { delimiter, isAbsolute, join } from "node:path";
 import type { EngineCommand } from "@tokama/client";
 import { err, ok, type Result } from "@tokama/core";
-
-// The same names as the kernel's ENV_ALLOWLIST (packages/core/src/kernel/process/env.ts), which
-// core does not export. The engine applies its own allowlist again to every child it starts.
-export const ENGINE_ENV_NAMES: readonly string[] = ["PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "TMPDIR", "TERM"];
-
-/** The engine's environment: only ENGINE_ENV_NAMES from `parent`, PATH with absolute entries only. */
-export function engineEnv(parent: Readonly<Record<string, string | undefined>>): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const name of ENGINE_ENV_NAMES) {
-    const value = parent[name];
-    if (value !== undefined) env[name] = value;
-  }
-  if (env["PATH"] !== undefined) {
-    const path = absoluteEntries(env["PATH"]).join(delimiter);
-    if (path === "") delete env["PATH"];
-    else env["PATH"] = path;
-  }
-  return env;
-}
 
 /** The first executable file `name` in the absolute entries of `path`. POSIX only for now. */
 export function findExecutable(name: string, path: string | undefined): string | undefined {

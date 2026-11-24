@@ -15,11 +15,17 @@ export const ENV_ALLOWLIST: readonly string[] = [
   "TERM",
 ];
 
+// A PATH entry that is a package-manager tool folder, with or without a trailing separator.
+const TOOL_DIR = /(?:^|[\\/])(?:node_modules[\\/]\.bin|node-gyp-bin)[\\/]?$/;
+
 /**
  * Builds a child environment: the allowlisted variables of `parent`, then `extra` on top.
  * `extra` may override an allowlisted variable (e.g. PATH). PATH keeps only absolute entries:
  * an empty entry or `.` means the child's cwd (an agent-written repo), and an unexpanded `~/...`
- * is relative too. PATH is left out if nothing remains, never set to "" (which also means cwd).
+ * is relative too. Package-manager tool folders (`node_modules/.bin`, pnpm's `node-gyp-bin`) are
+ * dropped too: when Tokama itself runs from a package script, they would put Tokama's own dev
+ * tools first on the child's PATH. PATH is left out if nothing remains, never set to "" (which
+ * also means cwd).
  */
 export function buildEnv(
   parent: Readonly<Record<string, string | undefined>>,
@@ -32,7 +38,10 @@ export function buildEnv(
   }
   Object.assign(env, extra);
   if (env["PATH"] !== undefined) {
-    const path = env["PATH"].split(delimiter).filter((entry) => isAbsolute(entry)).join(delimiter);
+    const path = env["PATH"]
+      .split(delimiter)
+      .filter((entry) => isAbsolute(entry) && !TOOL_DIR.test(entry))
+      .join(delimiter);
     if (path === "") delete env["PATH"];
     else env["PATH"] = path;
   }

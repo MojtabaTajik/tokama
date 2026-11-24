@@ -37,9 +37,9 @@ export function devServerUrl(value: string | undefined, isPackaged: boolean): UR
 }
 
 /**
- * Whether the app may load `url`: files of the built renderer, or with a dev server only that
- * server (http, and ws for hot reload). DevTools pages are allowed. Everything else, remote
- * content above all, is refused.
+ * Whether `url` is one of the app's own pages or files: files of the built renderer, or with a
+ * dev server only that server (http, and ws for hot reload). Everything else, remote content
+ * above all, is refused; so is a `file:` URL with a host, which is not a local path.
  */
 export function isAppUrl(url: string, rendererDir: string, devServer: URL | undefined): boolean {
   let parsed: URL;
@@ -48,9 +48,35 @@ export function isAppUrl(url: string, rendererDir: string, devServer: URL | unde
   } catch {
     return false;
   }
-  if (parsed.protocol === "devtools:") return true;
   if (devServer !== undefined) return (parsed.protocol === "http:" || parsed.protocol === "ws:") && parsed.host === devServer.host;
   if (parsed.protocol !== "file:") return false;
-  const rel = relative(rendererDir, fileURLToPath(parsed));
+  let path: string;
+  try {
+    path = fileURLToPath(parsed);
+  } catch {
+    return false;
+  }
+  const rel = relative(rendererDir, path);
   return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+}
+
+/** DevTools pages: the session may load them, but they never count as an app page for IPC. */
+export function isDevToolsUrl(url: string): boolean {
+  return url.startsWith("devtools:");
+}
+
+/** What an IPC handler needs of its event: the frame that sent it. */
+export interface IpcSender {
+  readonly senderFrame?: { readonly url: string } | null;
+}
+
+/**
+ * Wraps an IPC handler so it answers only the app's own pages (`isAppPage` gets the sending
+ * frame's URL). Every bridge channel goes through this, so a new one cannot skip the check.
+ */
+export function guardedHandler<T>(isAppPage: (url: string) => boolean, fn: () => T): (event: IpcSender) => T {
+  return (event) => {
+    if (!isAppPage(event.senderFrame?.url ?? "")) throw new Error("refused: not an app page");
+    return fn();
+  };
 }

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
-import { devServerUrl, isAppUrl, secureWebPreferences } from "./policy.js";
+import { devServerUrl, guardedHandler, isAppUrl, isDevToolsUrl, secureWebPreferences } from "./policy.js";
 
 describe("secureWebPreferences", () => {
   it("isolates and sandboxes the renderer, with no Node", () => {
@@ -62,8 +62,34 @@ describe("isAppUrl", () => {
     expect(isAppUrl(file("/app/dist/renderer/index.html"), rendererDir, dev)).toBe(false);
   });
 
-  it("allows DevTools pages", () => {
-    expect(isAppUrl("devtools://devtools/bundled/devtools_app.html", rendererDir, undefined)).toBe(true);
+  it("does not count DevTools pages as app pages", () => {
+    const devtools = "devtools://devtools/bundled/devtools_app.html";
+    expect(isAppUrl(devtools, rendererDir, undefined)).toBe(false);
+    expect(isAppUrl(devtools, rendererDir, new URL("http://localhost:5173/"))).toBe(false);
+    expect(isDevToolsUrl(devtools)).toBe(true);
+    expect(isDevToolsUrl("https://example.com/devtools:")).toBe(false);
+  });
+
+  it("returns false for a file URL with a host instead of throwing", () => {
+    expect(isAppUrl("file://server/app/dist/renderer/index.html", rendererDir, undefined)).toBe(false);
+  });
+});
+
+describe("guardedHandler", () => {
+  const isAppPage = (url: string) => isAppUrl(url, "/app/dist/renderer", undefined);
+  const handler = guardedHandler(isAppPage, () => "state");
+
+  it("answers the app's own page", () => {
+    expect(handler({ senderFrame: { url: "file:///app/dist/renderer/index.html" } })).toBe("state");
+  });
+
+  it.each([
+    ["a DevTools frame", { senderFrame: { url: "devtools://devtools/bundled/devtools_app.html" } }],
+    ["a remote frame", { senderFrame: { url: "https://example.com/" } }],
+    ["a destroyed frame", { senderFrame: null }],
+    ["no frame", {}],
+  ])("refuses %s", (_what, event) => {
+    expect(() => handler(event)).toThrow("refused: not an app page");
   });
 });
 

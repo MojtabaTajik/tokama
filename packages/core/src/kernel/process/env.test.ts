@@ -36,6 +36,19 @@ describe("buildEnv", () => {
     expect(buildEnv({ PATH: "/usr/bin" }, { PATH: ".:/opt/bin:node_modules/.bin" })).toEqual({ PATH: "/opt/bin" });
   });
 
+  it("drops package-manager tool folders from PATH", () => {
+    const path = [
+      "/repo/node_modules/.bin",
+      "/repo/apps/desktop/node_modules/.bin/",
+      "/usr/local/lib/node_modules/pnpm/dist/node-gyp-bin",
+      "/usr/bin",
+      "/opt/node_modules/.binary",
+      "/opt/node-gyp-bin-extra",
+    ].join(":");
+    expect(buildEnv({ PATH: path })).toEqual({ PATH: "/usr/bin:/opt/node_modules/.binary:/opt/node-gyp-bin-extra" });
+    expect(buildEnv({}, { PATH: "/x/node_modules/.bin:/opt/bin" })).toEqual({ PATH: "/opt/bin" });
+  });
+
   it("leaves PATH out rather than empty when no entry is absolute", () => {
     expect(buildEnv({ PATH: ".:~/bin:" })).toEqual({});
     expect(buildEnv({ PATH: "/usr/bin" }, { PATH: "" })).toEqual({});

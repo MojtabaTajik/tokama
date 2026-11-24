@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ENGINE_ENV_NAMES, engineCommand, engineEnv, findExecutable, readLogTail } from "./engine.js";
+import { engineCommand, findExecutable, readLogTail } from "./engine.js";
 
 let dir: string;
 beforeEach(() => {
@@ -10,32 +10,6 @@ beforeEach(() => {
 });
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
-});
-
-describe("engineEnv", () => {
-  it("keeps only the allowlisted variables", () => {
-    const env = engineEnv({
-      HOME: "/home/a",
-      LANG: "en_US.UTF-8",
-      ANTHROPIC_API_KEY: "secret",
-      SSH_AUTH_SOCK: "/tmp/agent",
-      TOKAMA_ENGINE_DIR: "/elsewhere",
-      ELECTRON_RUN_AS_NODE: "1",
-      NODE_OPTIONS: "--require /tmp/x.js",
-    });
-    expect(env).toEqual({ HOME: "/home/a", LANG: "en_US.UTF-8" });
-  });
-
-  it("keeps only absolute PATH entries, and drops PATH when none remain", () => {
-    expect(engineEnv({ PATH: ["/usr/bin", "", ".", "~/bin", "bin", "/opt/node/bin"].join(delimiter) })).toEqual({
-      PATH: ["/usr/bin", "/opt/node/bin"].join(delimiter),
-    });
-    expect(engineEnv({ PATH: [".", ""].join(delimiter) })).toEqual({});
-  });
-
-  it("mirrors the kernel's allowlist", () => {
-    expect(ENGINE_ENV_NAMES).toEqual(["PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "TMPDIR", "TERM"]);
-  });
 });
 
 describe("findExecutable", () => {

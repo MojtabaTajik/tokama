@@ -141,6 +141,7 @@ const rendererPatterns = [
   ...desktopPatterns,
   sandboxedNode,
   { regex: ELECTRON_REGEX, message: "The renderer reaches the main process through window.tokama (the preload bridge), never Electron." },
+  { regex: "^(?:\\.\\./)+(?:main|preload)(?:/|$)", message: "The renderer reaches the main process and the preload through window.tokama only." },
   {
     regex: "^@tokama/(?:client|core)$",
     allowTypeImports: true,
@@ -151,6 +152,7 @@ const preloadPatterns = [
   ...desktopPatterns,
   sandboxedNode,
   { regex: "^@tokama/", message: "The sandboxed preload imports only electron and ../shared." },
+  { regex: "^\\.\\./(?!shared/)", message: "The sandboxed preload imports only electron and ../shared." },
 ];
 
 const corePolicies = [
@@ -249,10 +251,13 @@ export default defineConfig(
   },
   {
     files: [desktopFiles("renderer/"), desktopFiles("shared/")],
+    // Tests run in Node under Vitest, not in the sandbox.
+    ignores: ["**/*.test.{ts,tsx}"],
     rules: { "@typescript-eslint/no-restricted-imports": ["error", { patterns: rendererPatterns }] },
   },
   {
     files: [desktopFiles("preload/")],
+    ignores: ["**/*.test.{ts,tsx}"],
     rules: { "@typescript-eslint/no-restricted-imports": ["error", { patterns: preloadPatterns }] },
   },
 );

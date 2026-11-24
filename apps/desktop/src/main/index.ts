@@ -3,17 +3,22 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { connect } from "@tokama/client";
-import { defaultEngineDir, engineEndpoint, err } from "@tokama/core";
+import { buildEnv, defaultEngineDir, engineEndpoint, err } from "@tokama/core";
 import { app, BrowserWindow, ipcMain, session } from "electron";
 import { CHANNELS } from "../shared/bridge.js";
 import { type ConnectionWatch, watchConnection } from "./connection.js";
-import { engineCommand, engineEnv, findExecutable, readLogTail } from "./engine.js";
-import { devServerUrl, isAppUrl, secureWebPreferences } from "./policy.js";
+import { engineCommand, findExecutable, readLogTail } from "./engine.js";
+import { devServerUrl, guardedHandler, isAppUrl, isDevToolsUrl, secureWebPreferences } from "./policy.js";
 
 const rendererDir = join(import.meta.dirname, "..", "renderer");
 const preloadPath = join(import.meta.dirname, "..", "preload", "index.cjs");
 const devServer = devServerUrl(process.env["ELECTRON_RENDERER_URL"], app.isPackaged);
-const allowed = (url: string) => isAppUrl(url, rendererDir, devServer);
+const isAppPage = (url: string) => isAppUrl(url, rendererDir, devServer);
+
+/** Registers a bridge channel; it answers app pages only. */
+function handle(channel: string, fn: () => unknown): void {
+  ipcMain.handle(channel, guardedHandler(isAppPage, fn));
+}
 
 app.enableSandbox();
 
@@ -28,7 +33,7 @@ function hardenSession(): void {
   const ses = session.defaultSession;
   ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   ses.setPermissionCheckHandler(() => false);
-  ses.webRequest.onBeforeRequest((details, callback) => callback({ cancel: !allowed(details.url) }));
+  ses.webRequest.onBeforeRequest((details, callback) => callback({ cancel: !(isAppPage(details.url) || isDevToolsUrl(details.url)) }));
 }
 
 function startWatch(): ConnectionWatch {
@@ -42,7 +47,7 @@ function startWatch(): ConnectionWatch {
     node: findExecutable("node", process.env["PATH"]),
     entry: resolve(app.getAppPath(), "..", "engine", "dist", "main.js"),
     dir,
-    env: engineEnv(process.env),
+    env: buildEnv(process.env),
   });
   return watchConnection({
     connect: () => {
@@ -76,10 +81,7 @@ function createWindow(): void {
 void app.whenReady().then(() => {
   hardenSession();
   const watch = startWatch();
-  ipcMain.handle(CHANNELS.getConnection, (event) => {
-    if (!allowed(event.senderFrame?.url ?? "")) throw new Error("refused: not an app page");
-    return watch.state();
-  });
+  handle(CHANNELS.getConnection, () => watch.state());
   app.on("before-quit", () => void watch.close());
   createWindow();
   app.on("activate", () => {

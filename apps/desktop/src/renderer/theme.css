@@ -18,6 +18,15 @@
   --fail: #e07a70;
   --pass: #6fb884;
 
+  /* Primary button border (its fill is --live). */
+  --primary-border: #1f5bff;
+
+  /* Agent identity dots, in join order, then neutral. */
+  --agent-1: #8f73f2;
+  --agent-2: #22a98b;
+  --agent-3: #b23a6e;
+  --agent-neutral: #4a5563;
+
   /* Inter and JetBrains Mono when installed; no remote font loading (the CSP refuses it). */
   --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;

@@ -6,7 +6,7 @@
   "main": "dist/main/index.js",
   "scripts": {
     "dev": "tsc --build ../../tsconfig.json && install-electron && electron-vite dev",
-    "build": "electron-vite build"
+    "build": "electron-vite build && node -e \"for (const f of ['dist/main/index.js', 'dist/preload/index.cjs', 'dist/renderer/index.html']) require('fs').accessSync(f)\""
   },
   "devDependencies": {
     "@tokama/client": "workspace:*",
