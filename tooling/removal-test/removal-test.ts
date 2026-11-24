@@ -309,9 +309,9 @@ if (import.meta.main) {
     ["SIGINT", 130],
     ["SIGTERM", 143],
   ] as const) {
+    // process.exit runs the "exit" handler above, which deletes the temp copies.
     process.on(signal, () => {
       activeChild?.kill("SIGKILL");
-      cleanupAll();
       process.exit(code);
     });
   }
