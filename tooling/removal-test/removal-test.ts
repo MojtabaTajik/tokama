@@ -159,9 +159,14 @@ export function sweepStaleTempDirs(base: string = tmpdir()): string[] {
     const pid = Number(match[1]);
     if (pid === process.pid || isAlive(pid)) continue;
     const path = join(base, name);
-    if (!lstatSync(path).isDirectory()) continue;
-    removeTempDir(path, base);
-    removed.push(path);
+    try {
+      if (!lstatSync(path).isDirectory()) continue;
+      removeTempDir(path, base);
+      removed.push(path);
+    } catch (error) {
+      // Another run may have swept it first, or it is not ours to delete: report and go on.
+      process.stderr.write(`removal-test: could not remove stale temp copy ${path}: ${String(error)}\n`);
+    }
   }
   return removed;
 }

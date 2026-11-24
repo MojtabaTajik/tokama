@@ -117,10 +117,13 @@ async function runChecked(root: string): Promise<Run> {
   return run;
 }
 
-async function waitForTempCopy(tmp: string, pid: number): Promise<string> {
+async function waitForTempCopy(tmp: string, child: ChildProcess): Promise<string> {
+  let exited = false;
+  child.once("exit", () => (exited = true));
   for (;;) {
-    const found = readdirSync(tmp).find((name) => name.startsWith(`tokama-removal-${pid}-`));
+    const found = readdirSync(tmp).find((name) => name.startsWith(`tokama-removal-${child.pid}-`));
     if (found !== undefined) return join(tmp, found);
+    if (exited) throw new Error("removal-test exited before it made a temp copy");
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
 }
@@ -339,7 +342,7 @@ describe("removal-test script", () => {
       const tmp = tempDir("tokama-tmp-");
       const before = snapshot(root);
       const { child, done } = start(root, tmp);
-      await waitForTempCopy(tmp, child.pid ?? -1);
+      await waitForTempCopy(tmp, child);
       child.kill("SIGTERM");
       const run = await done;
       expect(run.code).toBe(143);
@@ -356,7 +359,7 @@ describe("removal-test script", () => {
       const tmp = tempDir("tokama-tmp-");
       const before = snapshot(root);
       const { child, done } = start(root, tmp);
-      const leftover = await waitForTempCopy(tmp, child.pid ?? -1);
+      const leftover = await waitForTempCopy(tmp, child);
       child.kill("SIGKILL");
       expect((await done).signal).toBe("SIGKILL");
       expect(existsSync(leftover)).toBe(true);
