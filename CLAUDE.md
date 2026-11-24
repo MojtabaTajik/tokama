@@ -20,6 +20,7 @@ Don't design anything around a fixed planner/executor/verifier trio, a single pr
 - `core` is headless: no Electron, no UI. The engine runs as its own background service; desktop, CLI and later mobile are clients of the versioned engine API, never of core directly.
 - Platforms: macOS first, then Linux, then Windows. OS-specific code (process control, shell parsing, secrets, metrics, paths) only behind an interface with one implementation per OS; CI on macOS and Linux.
 - Vertical slices; only `workflow-engine` composes slices. Security primitives (process, git, command policy, egress, secrets, safe file reads) exist once in the kernel. Backends and connectors are adapters (a folder plus one line in `composition.ts`). Boundaries are enforced by lint and CI.
+- Code comments and READMEs explain the code itself; they never point to docs, specs or their sections. The specs are written so they can be matched to the code without such links.
 - Write tests with the code. When porting a part of ai-pipeline, port its tests first.
 - Loop guards on every agent call are required. Never launch an agent with a skip-all-permissions flag.
 - Never send data to a cloud agent beyond the step's data rule; in local-only mode, nothing leaves the machine.
