@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -99,7 +99,7 @@ function lineWaiter(prefix: string) {
   };
 }
 
-/** A child that starts a `sleep` grandchild in its own group and prints both pids. */
+/** A child that starts a `sleep` grandchild, which stays in the child's process group, and prints both pids. */
 const TREE = `
   const { spawn } = require("node:child_process");
   const grandchild = spawn("sleep", ["20"], { stdio: "ignore" });
@@ -201,7 +201,7 @@ describe("process runner: command and environment", SLOW, () => {
     const out = lineWaiter("");
     await createProcessRunner({
       parentEnv: {
-        PATH: process.env["PATH"],
+        PATH: "/usr/bin:/bin:relative/bin",
         HOME: "/home/parent",
         LEAK_TOKEN: "secret",
         SSH_AUTH_SOCK: "/a",
@@ -219,7 +219,7 @@ describe("process runner: command and environment", SLOW, () => {
       expect(env).not.toHaveProperty(name);
     }
     // Asserted per name, not as an exact set: macOS adds __CF_USER_TEXT_ENCODING to every process.
-    expect(env).toMatchObject({ PATH: process.env["PATH"], HOME: "/home/override", EXTRA: "1" });
+    expect(env).toMatchObject({ PATH: "/usr/bin:/bin", HOME: "/home/override", EXTRA: "1" });
   });
 });
 
@@ -243,6 +243,40 @@ describe("process runner: output streaming", SLOW, () => {
     expect(err.lines).toEqual(["oops"]);
     expect(readFileSync(stdoutFile, "utf8")).toBe("one\r\ntwo\nlast-without-break");
     expect(readFileSync(stderrFile, "utf8")).toBe("oops\n");
+  });
+
+  it("writes stdout and stderr to one file when both name the same path", async () => {
+    const file = join(dir, "both.txt");
+    await createProcessRunner().run({
+      command: {
+        argv: node(`process.stdout.write("out1\\n"); process.stderr.write("err1\\n");
+          setTimeout(() => process.stdout.write("out2\\n"), 20);`),
+      },
+      cwd: dir,
+      stdout: { file },
+      stderr: { file: join(dir, ".", "both.txt") },
+    });
+    // One fd for both streams: nothing is overwritten.
+    expect(readFileSync(file, "utf8").split("\n").sort()).toEqual(["", "err1", "out1", "out2"]);
+  });
+
+  it("creates output files readable by the owner only, also when the file existed", async () => {
+    const file = join(dir, "out.txt");
+    writeFileSync(file, "old", { mode: 0o644 });
+    await createProcessRunner().run({ command: { argv: node("console.log('new')") }, cwd: dir, stdout: { file } });
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(readFileSync(file, "utf8")).toBe("new\n");
+  });
+
+  it("refuses a symlink at an output path", async () => {
+    const target = join(dir, "target.txt");
+    writeFileSync(target, "keep");
+    const link = join(dir, "link.txt");
+    symlinkSync(target, link);
+    await expect(
+      createProcessRunner().run({ command: { argv: node("console.log('x')") }, cwd: dir, stdout: { file: link } }),
+    ).rejects.toThrow(/ELOOP|EFTYPE/);
+    expect(readFileSync(target, "utf8")).toBe("keep");
   });
 
   it("decodes a UTF-8 character split across chunks", async () => {
@@ -364,6 +398,29 @@ describe("process runner: stop and timeout", SLOW, () => {
     expect(finished(await run)).toMatchObject({ aborted: true, timedOut: false, signal: "SIGTERM" });
     await waitGone(child);
     await waitGone(grandchild);
+  });
+
+  it("does not report a stop that did not end the child", async () => {
+    // The race: the child exits with a code while the stop is processed. A tree whose signals
+    // do nothing makes it deterministic: the abort is sent, the child then exits 0 by itself.
+    const controller = new AbortController();
+    const out = lineWaiter("ready");
+    const sent: string[] = [];
+    const result = finished(
+      await createProcessRunner({ tree: { ...posixTree, signalTree: (_pid, signal) => void sent.push(signal) } }).run({
+        command: { argv: node(`console.log("ready"); setTimeout(() => process.exit(0), 100);`) },
+        cwd: dir,
+        signal: controller.signal,
+        stdout: {
+          onLine: (line) => {
+            out.onLine(line);
+            controller.abort();
+          },
+        },
+      }),
+    );
+    expect(sent[0]).toBe("SIGTERM");
+    expect(result).toMatchObject({ exitCode: 0, signal: null, aborted: false, timedOut: false });
   });
 
   it("sends SIGKILL after the grace period when the child ignores SIGTERM", async () => {

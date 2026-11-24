@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { closeSync, openSync, writeSync } from "node:fs";
+import { closeSync, constants, fchmodSync, openSync, writeSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 import type { Readable } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
 import { buildEnv } from "./env.js";
@@ -28,7 +29,11 @@ export interface ProcessClock {
 export type ProcessCommand = { readonly argv: readonly [string, ...string[]] } | { readonly shell: string };
 
 export interface OutputSink {
-  /** Created or truncated, then raw bytes are written here as they arrive, before any callback runs. */
+  /**
+   * Created or truncated with mode 0600 (transcripts can hold secrets); a symlink at the path is
+   * refused. Raw bytes are written as they arrive, before any callback runs. stdout and stderr
+   * may name the same file.
+   */
   readonly file?: string;
   /** Called once per line, without the line break. A throw stops the process and rejects the run. */
   readonly onLine?: (line: string) => void;
@@ -51,7 +56,13 @@ export interface RunFinished {
   /** null when a signal ended the process. */
   readonly exitCode: number | null;
   readonly signal: NodeJS.Signals | null;
+  /**
+   * The timeout stop ended the child (it died by a signal). A child that exited with a code
+   * before the stop reached it, or that trapped SIGTERM and exited with a code, reports false:
+   * callers then decide from exitCode.
+   */
   readonly timedOut: boolean;
+  /** The abort stop ended the child; same rule as timedOut. */
   readonly aborted: boolean;
   readonly startedAt: number;
   /** When the child exited (output may drain a little later). */
@@ -84,6 +95,9 @@ export interface RunnerOptions {
   readonly drainMs?: number;
 }
 
+// O_NOFOLLOW does not exist on Windows; the Windows tree implementation will need its own guard.
+const OUTPUT_FLAGS = constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | (constants.O_NOFOLLOW ?? 0);
+
 const realClock: ProcessClock = {
   now: () => Date.now(),
   setTimeout: (callback, ms) => setTimeout(callback, ms),
@@ -111,14 +125,23 @@ export function createProcessRunner(options: RunnerOptions = {}): ProcessRunner 
       const [file, ...args] = argv;
       if (file === undefined) return Promise.reject(new TypeError("empty argv"));
       const env = buildEnv(parentEnv, request.env);
-      const fds: number[] = [];
+      const fds = new Map<string, number>();
       const openFile = (path: string | undefined) => {
         if (path === undefined) return undefined;
-        const fd = openSync(path, "w");
-        fds.push(fd);
+        const key = resolvePath(path);
+        let fd = fds.get(key);
+        if (fd === undefined) {
+          fd = openSync(path, OUTPUT_FLAGS, 0o600);
+          fds.set(key, fd);
+          // The mode above applies only to a new file.
+          fchmodSync(fd, 0o600);
+        }
         return fd;
       };
-      const closeFiles = () => fds.splice(0).forEach((fd) => closeSync(fd));
+      const closeFiles = () => {
+        fds.forEach((fd) => closeSync(fd));
+        fds.clear();
+      };
 
       return new Promise<RunResult>((resolve, reject) => {
         let child: ChildProcess;
@@ -206,8 +229,8 @@ export function createProcessRunner(options: RunnerOptions = {}): ProcessRunner 
             pid: child.pid ?? -1,
             exitCode: exit?.code ?? null,
             signal: exit?.signal ?? null,
-            timedOut: stopping === "timeout",
-            aborted: stopping === "abort",
+            timedOut: stopping === "timeout" && exit?.signal != null,
+            aborted: stopping === "abort" && exit?.signal != null,
             startedAt,
             endedAt,
             durationMs: endedAt - startedAt,

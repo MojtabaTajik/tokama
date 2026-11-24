@@ -31,6 +31,16 @@ describe("buildEnv", () => {
     expect(env).toEqual({ PATH: "/opt/bin", ANTHROPIC_BASE_URL: "http://local", ANTHROPIC_API_KEY: "" });
   });
 
+  it("keeps only absolute PATH entries, from the parent and from extras", () => {
+    expect(buildEnv({ PATH: "/usr/bin:~/.dotnet/tools::.:bin:/opt/bin:" })).toEqual({ PATH: "/usr/bin:/opt/bin" });
+    expect(buildEnv({ PATH: "/usr/bin" }, { PATH: ".:/opt/bin:node_modules/.bin" })).toEqual({ PATH: "/opt/bin" });
+  });
+
+  it("leaves PATH out rather than empty when no entry is absolute", () => {
+    expect(buildEnv({ PATH: ".:~/bin:" })).toEqual({});
+    expect(buildEnv({ PATH: "/usr/bin" }, { PATH: "" })).toEqual({});
+  });
+
   it("does not change its inputs", () => {
     const parent = { PATH: "/bin", SECRET: "s" };
     const extra = { X: "1" };
