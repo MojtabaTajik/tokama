@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -148,6 +148,29 @@ describe("process runner: exit and signals", SLOW, () => {
       kind: "not-started",
       reason: "spawn-error",
     });
+  });
+
+  it("returns spawn errors that Node throws as values", async () => {
+    const runner = createProcessRunner();
+    const file = join(dir, "out.txt");
+    writeFileSync(file, "");
+    expect(await runner.run({ command: { argv: node("") }, cwd: file })).toMatchObject({
+      kind: "not-started",
+      reason: "spawn-error",
+      code: "ENOTDIR",
+    });
+    // A single argument far above the OS limit (about 128 KiB on Linux, 1 MiB in total on macOS).
+    expect(await runner.run({ command: { argv: [...node(""), "x".repeat(3_000_000)] }, cwd: dir })).toMatchObject({
+      kind: "not-started",
+      reason: "spawn-error",
+      code: "E2BIG",
+    });
+  });
+
+  it("rejects when an output file cannot be created", async () => {
+    await expect(
+      createProcessRunner().run({ command: { argv: node("") }, cwd: dir, stdout: { file: join(dir, "no", "x.txt") } }),
+    ).rejects.toThrow(/ENOENT/);
   });
 });
 

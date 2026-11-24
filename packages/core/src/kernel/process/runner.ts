@@ -28,7 +28,7 @@ export interface ProcessClock {
 export type Command = { readonly argv: readonly [string, ...string[]] } | { readonly shell: string };
 
 export interface OutputSink {
-  /** Raw bytes are appended here as they arrive, before any callback runs. */
+  /** Created or truncated, then raw bytes are written here as they arrive, before any callback runs. */
   readonly file?: string;
   /** Called once per line, without the line break. A throw stops the process and rejects the run. */
   readonly onLine?: (line: string) => void;
@@ -109,7 +109,7 @@ export function createProcessRunner(options: RunnerOptions = {}): ProcessRunner 
       }
       const argv = "argv" in request.command ? [...request.command.argv] : tree.shellArgv(request.command.shell);
       const [file, ...args] = argv;
-      if (file === undefined) throw new TypeError("empty argv");
+      if (file === undefined) return Promise.reject(new TypeError("empty argv"));
       const env = buildEnv(parentEnv, request.env);
       const fds: number[] = [];
       const openFile = (path: string | undefined) => {
@@ -124,9 +124,17 @@ export function createProcessRunner(options: RunnerOptions = {}): ProcessRunner 
         let child: ChildProcess;
         let startedAt: number;
         const flushers: Array<() => void> = [];
+        let stdoutFd: number | undefined;
+        let stderrFd: number | undefined;
         try {
-          const stdoutFd = openFile(request.stdout?.file);
-          const stderrFd = openFile(request.stderr?.file);
+          stdoutFd = openFile(request.stdout?.file);
+          stderrFd = openFile(request.stderr?.file);
+        } catch (error) {
+          closeFiles();
+          reject(error);
+          return;
+        }
+        try {
           startedAt = clock.now();
           child = spawn(file, args, {
             cwd: request.cwd,
@@ -135,13 +143,14 @@ export function createProcessRunner(options: RunnerOptions = {}): ProcessRunner 
             detached: tree.detached,
             windowsHide: true,
           });
-          flushers.push(pipeOutput(child.stdout, request.stdout, stdoutFd, fail));
-          flushers.push(pipeOutput(child.stderr, request.stderr, stderrFd, fail));
         } catch (error) {
+          // Node throws some spawn failures (ENOTDIR, E2BIG) instead of emitting "error".
           closeFiles();
-          reject(error);
+          resolve(spawnError(error as NodeJS.ErrnoException));
           return;
         }
+        flushers.push(pipeOutput(child.stdout, request.stdout, stdoutFd, fail));
+        flushers.push(pipeOutput(child.stderr, request.stderr, stderrFd, fail));
 
         let stopping: "timeout" | "abort" | "failure" | undefined;
         let failure: { error: unknown } | undefined;
@@ -207,13 +216,7 @@ export function createProcessRunner(options: RunnerOptions = {}): ProcessRunner 
 
         child.once("error", (error: NodeJS.ErrnoException) => {
           // Only a failed spawn has no pid; other child errors come with an exit or close.
-          if (child.pid !== undefined) return;
-          finish({
-            kind: "not-started",
-            reason: "spawn-error",
-            message: error.message,
-            ...(error.code !== undefined && { code: error.code }),
-          });
+          if (child.pid === undefined) finish(spawnError(error));
         });
         child.once("exit", (code, signal) => {
           exit = { code, signal, at: clock.now() };
@@ -231,6 +234,15 @@ export function createProcessRunner(options: RunnerOptions = {}): ProcessRunner 
         });
       });
     },
+  };
+}
+
+function spawnError(error: NodeJS.ErrnoException): RunNotStarted {
+  return {
+    kind: "not-started",
+    reason: "spawn-error",
+    message: error.message,
+    ...(error.code !== undefined && { code: error.code }),
   };
 }
 
