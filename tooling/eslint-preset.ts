@@ -1,7 +1,7 @@
 // Shared ESLint preset. The root `eslint.config.js` re-exports it.
 //
 // Every package gets a base config. `packages/core` also gets the engine boundaries from
-// docs/spec/architecture.md (sections 4-7, 10). `tooling/eslint-preset.test.ts` proves each
+// `tooling/eslint-preset.test.ts` proves each
 // rule with the fixtures in `tooling/eslint-fixtures/`.
 //
 // Lint is a guardrail against honest mistakes by contributors and coding agents, not a security

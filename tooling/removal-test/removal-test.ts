@@ -1,4 +1,4 @@
-// Adapter removal test (docs/spec/architecture.md, sections 7 and 10).
+// Adapter removal test.
 //
 // For each adapter folder packages/core/src/adapters/<kind>/<name>/, proves that the build
 // still passes with that adapter deleted and its import/export statements removed from

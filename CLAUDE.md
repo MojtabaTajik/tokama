@@ -6,7 +6,7 @@ Don't design anything around a fixed planner/executor/verifier trio, a single pr
 
 ## Where things are
 
-- Product spec: `docs/spec/product.md` (concepts, v1 scope, flows, templates, privacy, safety). Architecture: `docs/spec/architecture.md` (packages, engine API, slices, kernel, adapters, storage, build order). Read both before planning or building anything; update them when a decision changes.
+- Product spec: `.agent/spec/product.md` (maintainer-local, not in the repo) (concepts, v1 scope, flows, templates, privacy, safety). Architecture: `.agent/spec/architecture.md` (packages, engine API, slices, kernel, adapters, storage, build order). Read both before planning or building anything; update them when a decision changes.
 - Agent working files go in `.agent/` (git-ignored): plans, review notes, exports, scratch. Never put agent scratch elsewhere in the repo.
 - Maintainer-specific notes (status, links, local paths, preferences) live in `CLAUDE.local.md` (git-ignored), loaded next to this file. Keep this file to stable project rules.
 - Repo: `MojtabaTajik/tokama`, Apache-2.0, default branch `main`. Paid cloud features live outside this repo, so the open engine must work fully without them. Domains (registered): tokama.dev (primary), tokama.ai (redirects to tokama.dev). Point user-facing URLs (updates, install scripts, docs) at tokama.dev, not GitHub, so a later move to an organization breaks nothing.
