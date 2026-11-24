@@ -192,6 +192,32 @@ describe("process runner: command and environment", SLOW, () => {
     expect(out.lines).toEqual(["eof"]);
   });
 
+  it("reports the child's pid at start, which leads the child's process group", async () => {
+    const spawned: number[] = [];
+    const out = lineWaiter("");
+    const script = 'console.log(require("node:child_process").execFileSync("ps", ["-o", "pgid=", "-p", String(process.pid)]).toString().trim());';
+    const result = finished(
+      await createProcessRunner().run({ command: { argv: node(script) }, cwd: dir, stdout: out, onSpawn: (pid) => spawned.push(pid) }),
+    );
+    expect(spawned).toEqual([result.pid]);
+    expect(out.lines).toEqual([String(result.pid)]);
+  });
+
+  it("stops the child and rejects when the spawn callback throws", async () => {
+    let child = 0;
+    const run = createProcessRunner().run({
+      command: { argv: node(LIFETIME) },
+      cwd: dir,
+      onSpawn: (pid) => {
+        child = pid;
+        tracked.push(pid);
+        throw new Error("callback bug");
+      },
+    });
+    await expect(run).rejects.toThrow("callback bug");
+    await waitGone(child);
+  });
+
   it("reports the exit of a child that does not read its stdin", async () => {
     // 1 MiB fills the pipe, so the write fails with EPIPE once the child is gone.
     const result = finished(

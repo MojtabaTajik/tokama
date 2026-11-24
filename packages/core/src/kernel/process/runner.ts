@@ -47,6 +47,12 @@ export interface RunRequest {
   readonly stdin?: string;
   readonly stdout?: OutputSink;
   readonly stderr?: OutputSink;
+  /**
+   * Called once with the child's pid right after it started. On POSIX the pid is also the id of
+   * the child's process group, so a caller can record it and kill a leftover tree after a restart.
+   * A throw stops the process and rejects the run.
+   */
+  readonly onSpawn?: (pid: number) => void;
 }
 
 export interface RunFinished {
@@ -217,6 +223,13 @@ export function createProcessRunner(options: RunnerOptions = {}): ProcessRunner 
         const onAbort = () => stop("abort");
         request.signal?.addEventListener("abort", onAbort, { once: true });
         if (request.timeoutMs !== undefined) later(request.timeoutMs, () => stop("timeout"));
+        if (child.pid !== undefined && request.onSpawn !== undefined) {
+          try {
+            request.onSpawn(child.pid);
+          } catch (error) {
+            fail(error);
+          }
+        }
 
         function finish(result: RunResult) {
           if (settled) return;

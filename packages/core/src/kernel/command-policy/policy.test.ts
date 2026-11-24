@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkCommand, posixSh, type CommandDecision } from "./index.js";
+import { checkCommand, posixSh, rulePrefixes, type CommandDecision } from "./index.js";
 
 const RULES = ["node:*", "npm test:*", "ls:*"];
 const check = (command: string, rules: readonly string[] = RULES): CommandDecision =>
@@ -185,6 +185,17 @@ describe("checkCommand, rules", () => {
   it("refuses a trailing backslash cleanly", () => {
     expect(allowed("ls \\")).toBe(true);
     expect(allowed("\\")).toBe(false);
+  });
+});
+
+describe("rulePrefixes", () => {
+  it("gives each rule's words and drops rules without words", () => {
+    expect(rulePrefixes(["npm test:*", "  git   diff :*", "ls", "npm run test:unit:*", "", ":*", " "])).toEqual([
+      ["npm", "test"],
+      ["git", "diff"],
+      ["ls"],
+      ["npm", "run", "test:unit"],
+    ]);
   });
 });
 

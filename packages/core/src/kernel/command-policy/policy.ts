@@ -38,6 +38,16 @@ export type CommandDecision =
 export const PIPE_HELPERS: readonly string[] = ["head", "tail", "wc"];
 
 /**
+ * The command prefix of each rule, as words: `npm test:*` and `npm test` both give `["npm", "test"]`.
+ * Rules without words (`""`, `:*`) are dropped, never treated as "allow everything".
+ */
+export function rulePrefixes(rules: readonly string[]): string[][] {
+  return rules
+    .map((rule) => rule.trim().replace(/:\*$/, "").split(/[ \t]+/).filter((word) => word !== ""))
+    .filter((words) => words.length > 0);
+}
+
+/**
  * Decides whether a check or step command may run. Allowed only if every part (split on `&&`,
  * `||`, `;`, `|` outside quotes) starts with the words of a rule or of a PIPE_HELPERS command.
  * A rule is a command prefix as in `npm test:*` or `node:*`: its words without a trailing `:*`
@@ -49,9 +59,7 @@ export function checkCommand(command: string, rules: readonly string[], shell: S
   const split = shell.split(command);
   if (!split.ok) return { allowed: false, ...split.error };
 
-  const prefixes = [...rules.map((rule) => rule.trim().replace(/:\*$/, "")), ...PIPE_HELPERS]
-    .map((prefix) => prefix.split(/[ \t]+/).filter((word) => word !== ""))
-    .filter((words) => words.length > 0);
+  const prefixes = rulePrefixes([...rules, ...PIPE_HELPERS]);
 
   for (const part of split.value) {
     if (part.words.length === 0) return { allowed: false, reason: "empty-part", part: part.text };

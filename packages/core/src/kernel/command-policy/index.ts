@@ -3,6 +3,7 @@
 export {
   PIPE_HELPERS,
   checkCommand,
+  rulePrefixes,
   type CommandDecision,
   type CommandPart,
   type ShellGrammar,
