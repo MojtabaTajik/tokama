@@ -57,9 +57,10 @@ export interface RunFinished {
   readonly exitCode: number | null;
   readonly signal: NodeJS.Signals | null;
   /**
-   * The timeout stop ended the child (it died by a signal). A child that exited with a code
-   * before the stop reached it, or that trapped SIGTERM and exited with a code, reports false:
-   * callers then decide from exitCode.
+   * The timeout stop ended the child: it died by a signal, or it exited with the conventional
+   * code for a stop signal the runner sent (143 after SIGTERM, 137 after SIGKILL), as a child
+   * that traps SIGTERM does. A child that exited with any other code (e.g. 0, before the stop
+   * reached it) reports false.
    */
   readonly timedOut: boolean;
   /** The abort stop ended the child; same rule as timedOut. */
@@ -195,13 +196,19 @@ export function createProcessRunner(options: RunnerOptions = {}): ProcessRunner 
           if (child.pid !== undefined) tree.signalTree(child.pid, signal);
         };
 
+        // Stop signals only; the cleanup kill after the exit does not count.
+        const stopsSent = new Set<TreeSignal>();
+        const stopSignal = (signal: TreeSignal) => {
+          stopsSent.add(signal);
+          signalTree(signal);
+        };
         let grace: unknown;
         function stop(why: "timeout" | "abort" | "failure") {
           // After the exit the tree was already killed; only draining is left.
           if (stopping !== undefined || exit !== undefined) return;
           stopping = why;
-          signalTree("SIGTERM");
-          grace = later(killGraceMs, () => signalTree("SIGKILL"));
+          stopSignal("SIGTERM");
+          grace = later(killGraceMs, () => stopSignal("SIGKILL"));
         }
         function fail(error: unknown) {
           failure ??= { error };
@@ -224,13 +231,18 @@ export function createProcessRunner(options: RunnerOptions = {}): ProcessRunner 
         }
         const finished = (): RunFinished => {
           const endedAt = exit?.at ?? clock.now();
+          const stopped =
+            exit !== undefined &&
+            (exit.signal !== null ||
+              (stopsSent.has("SIGTERM") && exit.code === 143) ||
+              (stopsSent.has("SIGKILL") && exit.code === 137));
           return {
             kind: "finished",
             pid: child.pid ?? -1,
             exitCode: exit?.code ?? null,
             signal: exit?.signal ?? null,
-            timedOut: stopping === "timeout" && exit?.signal != null,
-            aborted: stopping === "abort" && exit?.signal != null,
+            timedOut: stopping === "timeout" && stopped,
+            aborted: stopping === "abort" && stopped,
             startedAt,
             endedAt,
             durationMs: endedAt - startedAt,

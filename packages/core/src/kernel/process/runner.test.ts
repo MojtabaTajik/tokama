@@ -423,6 +423,20 @@ describe("process runner: stop and timeout", SLOW, () => {
     expect(result).toMatchObject({ exitCode: 0, signal: null, aborted: false, timedOut: false });
   });
 
+  it("reports a stop that a child trapping SIGTERM ends with exit code 143", async () => {
+    const controller = new AbortController();
+    const out = lineWaiter("ready");
+    const run = createProcessRunner().run({
+      command: { argv: node(`process.on("SIGTERM", () => process.exit(143)); console.log("ready"); ${LIFETIME}`) },
+      cwd: dir,
+      signal: controller.signal,
+      stdout: out,
+    });
+    await out.ready;
+    controller.abort();
+    expect(finished(await run)).toMatchObject({ exitCode: 143, signal: null, aborted: true, timedOut: false });
+  });
+
   it("sends SIGKILL after the grace period when the child ignores SIGTERM", async () => {
     const timers = manualClock();
     const controller = new AbortController();
