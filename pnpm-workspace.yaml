@@ -1,3 +1,11 @@
 packages:
   - packages/*
   - apps/*
+
+# Supply chain: refuse versions younger than one day, fail on unapproved
+# dependency build scripts, refuse git or tarball subdependencies.
+minimumReleaseAge: 1440
+strictDepBuilds: true
+blockExoticSubdeps: true
+# No dependency may run install scripts. Add `<name>: true` only after review.
+allowBuilds: {}
