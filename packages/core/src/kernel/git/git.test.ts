@@ -485,6 +485,32 @@ describe("API on a real repo", () => {
     expect(await git.revParse(repo, "feature")).toMatchObject({ ok: false });
   });
 
+  it("commitTree and updateRef commit an exact tree and move a ref only from its expected value", SLOW, async () => {
+    const base = value(await git.revParse(repo, "HEAD"));
+    write(join(repo, "a.txt"), "staged\n");
+    value(await git.addAll(repo));
+    const tree = value(await git.writeTree(repo));
+    write(join(repo, "a.txt"), "written after the tree\n");
+    const commit = value(await git.commitTree(repo, tree, base, "exact tree\n\nTrailer: x"));
+    expect(value(await git.revParse(repo, `${commit}^{tree}`))).toBe(tree);
+    expect(value(await git.revParse(repo, "HEAD"))).toBe(base);
+    expect(await git.updateRef(repo, "refs/heads/main", commit, commit)).toMatchObject({ ok: false, error: { reason: "failed" } });
+    value(await git.updateRef(repo, "refs/heads/main", commit, base));
+    expect(value(await git.revParse(repo, "main"))).toBe(commit);
+    expect(await plain(repo, "show", "main:a.txt")).toBe("staged\n");
+    expect(await git.updateRef(repo, "HEAD", commit, commit)).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
+    expect(await git.commitTree(repo, "--help", base, "m")).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
+  });
+
+  it("worktreePrune drops an entry whose folder is gone", SLOW, async () => {
+    const path = join(root, "wt");
+    value(await git.worktreeAdd(repo, path, "feature", "main"));
+    rmSync(path, { recursive: true, force: true });
+    expect(value(await git.worktreeList(repo))).toHaveLength(2);
+    value(await git.worktreePrune(repo));
+    expect(value(await git.worktreeList(repo))).toHaveLength(1);
+  });
+
   it("returns git failures as values", SLOW, async () => {
     const missing = await git.revParse(repo, "no-such-branch");
     expect(missing).toMatchObject({ ok: false, error: { reason: "failed", exitCode: 128, args: ["rev-parse", "--verify", "no-such-branch"] } });
@@ -565,7 +591,7 @@ describe("how git is called", () => {
       const argv = argvOf(request);
       expect(argv.slice(0, 2)).toEqual(["git", "--no-pager"]);
       expect(argv.slice(2, 2 + GIT_SAFE_CONFIG.length * 2)).toEqual(GIT_SAFE_CONFIG.flatMap((s) => ["-c", s]));
-      expect(request.env).toEqual({ GIT_TERMINAL_PROMPT: "0", GIT_NO_LAZY_FETCH: "1" });
+      expect(request.env).toEqual({ GIT_TERMINAL_PROMPT: "0", GIT_NO_LAZY_FETCH: "1", GIT_OPTIONAL_LOCKS: "0" });
       expect(request.timeoutMs).toBe(5_000);
       expect(request.cwd).toBe("/repo");
     }

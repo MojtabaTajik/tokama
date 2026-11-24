@@ -41,8 +41,11 @@ export const MIN_GIT_VERSION = { major: 2, minor: 44 } as const;
  * Known gap (#25): a repo nested in the worktree (an embedded repo or submodule) has its own config.
  * git runs `status` inside it as a child process, which gets the settings above but not that
  * repo's filter overrides, so a filter configured there can run.
+ *
+ * No optional locks: `status` polled while an agent works would otherwise refresh the index and
+ * take its lock, and an agent's own git call could then fail on index.lock.
  */
-export const GIT_ENV: Readonly<Record<string, string>> = { GIT_TERMINAL_PROMPT: "0", GIT_NO_LAZY_FETCH: "1" };
+export const GIT_ENV: Readonly<Record<string, string>> = { GIT_TERMINAL_PROMPT: "0", GIT_NO_LAZY_FETCH: "1", GIT_OPTIONAL_LOCKS: "0" };
 
 const FILTER_KEYS = ["clean", "smudge", "process"] as const;
 
@@ -114,6 +117,10 @@ export interface Git {
   writeTree(repo: string): Promise<GitResult<string>>;
   /** `commit -q --no-verify -m <message>` of the index; returns the new commit id. */
   commit(repo: string, message: string): Promise<GitResult<string>>;
+  /** `commit-tree <tree> -p <parent> -m <message>`: a commit of exactly `tree`; returns its id. No ref moves. */
+  commitTree(repo: string, tree: string, parent: string, message: string): Promise<GitResult<string>>;
+  /** `update-ref <ref> <newId> <oldId>`: moves `ref` (under refs/) only if it still points at `oldId`. */
+  updateRef(repo: string, ref: string, newId: string, oldId: string): Promise<GitResult<void>>;
   /** `rev-parse --verify <rev>`: the object id `rev` names. */
   revParse(repo: string, rev: string): Promise<GitResult<string>>;
   /**
@@ -129,6 +136,8 @@ export interface Git {
   worktreeRemove(repo: string, path: string, options?: { readonly force?: boolean }): Promise<GitResult<void>>;
   /** `worktree list --porcelain -z`. */
   worktreeList(repo: string): Promise<GitResult<WorktreeEntry[]>>;
+  /** `worktree prune`: drops entries whose folder is gone. */
+  worktreePrune(repo: string): Promise<GitResult<void>>;
   /** `branch -D <branch>`: deletes a local branch, merged or not. */
   branchDelete(repo: string, branch: string): Promise<GitResult<void>>;
   /** `ls-tree -r -z --name-only --full-tree <rev>`: every file path in the tree of `rev`. */
@@ -289,6 +298,19 @@ export function createGit(options: GitOptions): Git {
       if (!committed.ok) return committed;
       return map(git(repo, ["rev-parse", "--verify", "HEAD"]), trimmed);
     },
+    async commitTree(repo, tree, parent, message) {
+      const args = ["commit-tree", tree, "-p", parent, "-m", message];
+      return refuseOption(args, tree, parent) ?? map(git(repo, args), trimmed);
+    },
+    async updateRef(repo, ref, newId, oldId) {
+      const args = ["update-ref", ref, newId, oldId];
+      const refused = refuseOption(args, ref, newId, oldId);
+      if (refused !== undefined) return refused;
+      if (!ref.startsWith("refs/")) {
+        return err({ reason: "invalid-argument", args, exitCode: null, message: `refused ref outside refs/: ${JSON.stringify(ref)}` });
+      }
+      return map(git(repo, args), none);
+    },
     async revParse(repo, rev) {
       const args = ["rev-parse", "--verify", rev];
       return refuseOption(args, rev) ?? map(git(repo, args), trimmed);
@@ -319,6 +341,7 @@ export function createGit(options: GitOptions): Git {
       return map(git(repo, args), none);
     },
     worktreeList: (repo) => map(git(repo, ["worktree", "list", "--porcelain", "-z"]), parseWorktreeList),
+    worktreePrune: (repo) => map(git(repo, ["worktree", "prune"]), none),
     async branchDelete(repo, branch) {
       const args = ["branch", "-D", branch];
       return refuseOption(args, branch) ?? map(git(repo, args), none);
