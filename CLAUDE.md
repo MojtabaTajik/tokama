@@ -41,6 +41,7 @@ Don't design anything around a fixed planner/executor/verifier trio, a single pr
 - App UI colors: night ground `#0B0F17`, panels `#121826`, raised/selected `#18213A`, inputs `#0F1420`, hairlines `#1F262E`; text `#E6EDF3` / `#D5DCE3` / muted `#7D8894` (lowest grey allowed; 4.5:1 or better); links and focus Tokay sky `#7FB2FF`; "running now", selection and the primary button Blue live `#5C8CFF` (primary button border `#1F5BFF`). Status colors keep their meaning: needs you / warning amber `#D9A93A`, failure red `#E07A70`, pass green `#6FB884`. Agent identity dots: `#8F73F2`, `#22A98B`, `#b23a6e` in join order, then neutral `#4A5563`. Color is never the only signal (pair with ⏸ ● ✓ ✕ or a word). Inter for UI, JetBrains Mono for code, paths, numbers, model names.
 - Logo: a placeholder for now. Keep it swappable: one SVG mark plus the wordmark in a single brand assets location per app, referenced everywhere through that location, never inlined or copied into screens, so replacing the logo is a file swap.
 - Backends are text labels or neutral monograms (CC, CX, OL), never another company's logo.
+- Templates and steps carry a user-chosen icon and tag colour. Icons: Font Awesome Free solid and regular, bundled as SVGs, never the brands set. Tag colours: a fixed set of 8 muted colours distinct from the status colours, applied to the icon only, never as a fill.
 
 ## Issue tracking
 
