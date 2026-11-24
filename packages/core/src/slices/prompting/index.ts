@@ -1,6 +1,7 @@
 // Public surface of the prompting slice.
 export {
   buildPrompt,
+  PROMPT_LIMITS,
   runsInCloud,
   type BuiltPrompt,
   type IncludedInput,

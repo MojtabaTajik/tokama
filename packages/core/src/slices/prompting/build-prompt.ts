@@ -1,10 +1,29 @@
 // Builds what one agent call receives and checks the step's data rule a second time, at the last
 // point before anything is sent. Template validation already refuses these cases; this check
-// holds even for a forged or damaged template record.
+// holds even for a forged or damaged template record. Never throws: every problem is a refusal.
+import { homedir } from "node:os";
+import { isAbsolute } from "node:path";
 import { err, ok, type Result } from "../../kernel/result/index.js";
-import type { AgentId, AiCliId, DataRule, StepId, TemplateRecord, TemplateStepDef } from "../../kernel/schemas/index.js";
+import {
+  connectionDerivedSteps,
+  type AgentId,
+  type AiCliId,
+  type DataRule,
+  type StepId,
+  type TemplateRecord,
+  type TemplateStepDef,
+} from "../../kernel/schemas/index.js";
 import { CHECK_OUTPUT_MAX_BYTES, chooseMark, fence, randomMark, tail } from "./fence.js";
 import { TOKAMA_RULES } from "./rules.js";
+
+/** Larger inputs are refused, never cut: a cut diff or file would mislead the agent. */
+export const PROMPT_LIMITS = {
+  diffBytes: 256 * 1024,
+  repoFileBytes: 64 * 1024,
+  resultBytes: 64 * 1024,
+  userBytes: 1024 * 1024,
+  references: 20,
+} as const;
 
 /** What prompting needs of an agent; the config slice's `Agent` fits as it is. */
 export interface PromptAgent {
@@ -18,7 +37,7 @@ export interface PromptAgent {
 export type StepResults = Readonly<Record<string, Readonly<Record<string, string>>>>;
 
 export interface RepoFile {
-  /** Repo-relative path. */
+  /** Repo-relative path, with no `..` segment. */
   readonly path: string;
   readonly text: string;
 }
@@ -38,8 +57,14 @@ export interface PromptInput {
   /** The output of the last failed checks, for a retry. Only its last part is kept. */
   readonly lastCheckOutput?: string;
   readonly repoContext?: RepoContext;
-  /** For a cloud step with `summary-after-approval`: the summary text the engineer approved. */
+  /** For a cloud step with `summary-after-approval`: the summary text the engineer approved. Sent as it is. */
   readonly approvedSummary?: string;
+  /** Local-only mode: every cloud agent is refused. */
+  readonly localOnly?: boolean;
+  /** The call's worktree: written as `.` in every input. */
+  readonly worktreeRoot?: string;
+  /** Written as `~` in every input. Default: the user's home folder. */
+  readonly home?: string;
   /** Draws the data-block mark. Default: 16 random bytes in hex. */
   readonly drawMark?: () => string;
 }
@@ -65,7 +90,10 @@ export interface PromptRecord {
   readonly mark: string;
   readonly included: readonly IncludedInput[];
   readonly warnings: readonly string[];
-  /** For a cloud agent: the exact text that leaves the machine. */
+  /**
+   * For a cloud agent: the prompt text Tokama sends. What the agent then reads with its tools
+   * (files, command output) is not in it.
+   */
   readonly sentToCloud?: { readonly system: string; readonly user: string };
 }
 
@@ -81,10 +109,13 @@ export type PromptRefusalCode =
   | "unknown-step"
   | "agent-mismatch"
   | "sees-not-earlier"
+  | "local-only"
   | "cloud-data-none"
   | "cloud-connections"
   | "cloud-connection-input"
   | "missing-summary"
+  | "invalid-input"
+  | "too-large"
   | "mark";
 
 export interface PromptRefusal {
@@ -106,53 +137,87 @@ export function runsInCloud(cliId: AiCliId): boolean {
 /** `{{ ... }}` with no braces inside: a nested `{{ {{ x }} }}` only ever matches its inner part. */
 const REFERENCE = /\{\{([^{}]*)\}\}/g;
 const STEP_FIELD = /^\s*([a-z0-9][a-z0-9-]*)\.([A-Za-z0-9_-]{1,64})\s*$/;
+/** Control, format, separator and unassigned characters: not allowed in a block name. */
+const NOT_PRINTABLE = /[\p{C}\p{Zl}\p{Zp}]/u;
 
-const refuse = (code: PromptRefusalCode, message: string) => err<PromptRefusal>({ code, message });
+class Refused extends Error {
+  constructor(readonly refusal: PromptRefusal) {
+    super(refusal.message);
+  }
+}
+const refuse = (code: PromptRefusalCode, message: string): never => {
+  throw new Refused({ code, message });
+};
+const bytesOf = (text: string) => Buffer.byteLength(text, "utf8");
+
+type Block = { kind: IncludedKind; name: string; text: string; cutFromBytes?: number };
 
 export function buildPrompt(input: PromptInput): Result<BuiltPrompt, PromptRefusal> {
+  try {
+    return ok(build(input));
+  } catch (error) {
+    if (error instanceof Refused) return err(error.refusal);
+    return err({ code: "invalid-input", message: `The prompt inputs are not valid: ${error instanceof Error ? error.message : String(error)}` });
+  }
+}
+
+function build(input: PromptInput): BuiltPrompt {
   const { template, stepId, agent } = input;
   const index = template.steps.findIndex((step) => step.id === stepId);
-  if (index < 0) return refuse("unknown-step", `Template ${template.ref} has no step ${JSON.stringify(stepId)}.`);
+  if (index < 0) refuse("unknown-step", `Template ${template.ref} has no step ${JSON.stringify(stepId)}.`);
   const step = template.steps[index]!;
   const name = `Step ${JSON.stringify(step.id)}`;
-  if (agent.id !== step.agentId) {
-    return refuse("agent-mismatch", `${name} runs on agent ${JSON.stringify(step.agentId)}, not ${JSON.stringify(agent.id)}.`);
-  }
+  if (agent.id !== step.agentId) refuse("agent-mismatch", `${name} runs on agent ${JSON.stringify(step.agentId)}, not ${JSON.stringify(agent.id)}.`);
   const earlier = new Set(template.steps.slice(0, index).map((s) => s.id));
   const notEarlier = step.sees.find((seen) => !earlier.has(seen));
-  if (notEarlier !== undefined) {
-    return refuse("sees-not-earlier", `${name} sees ${JSON.stringify(notEarlier)}, which is not an earlier step of the template.`);
-  }
+  if (notEarlier !== undefined) refuse("sees-not-earlier", `${name} sees ${JSON.stringify(notEarlier)}, which is not an earlier step of the template.`);
 
   const cloud = runsInCloud(agent.cliId);
-  if (cloud) {
-    const refusal = cloudRefusal(template, step, input.approvedSummary);
-    if (refusal) return err(refusal);
-  }
+  if (cloud && input.localOnly === true) refuse("local-only", `${name} runs on ${JSON.stringify(agent.id)}, a cloud agent, and this run is local only.`);
+  if (cloud) checkCloud(template, step, input.approvedSummary);
   const summaryOnly = cloud && step.data === "summary-after-approval";
 
+  const scrub = scrubber(input.worktreeRoot, input.home ?? homedir());
+  const text = (value: unknown, what: string): string => {
+    if (typeof value !== "string") refuse("invalid-input", `${what} is not text.`);
+    return scrub(value as string);
+  };
+  const capped = (block: Block, max: number): Block => {
+    const size = bytesOf(block.text);
+    if (size > max) refuse("too-large", `${name}: ${block.name} is ${size} bytes, over the ${max}-byte limit.`);
+    return block;
+  };
+
   // The inputs after the instructions, in order. Each becomes one data block.
-  const warnings: string[] = [];
-  const included: IncludedInput[] = [];
-  type Block = { kind: IncludedKind; name: string; text: string; cutFromBytes?: number };
   const blocks: Block[] = [];
   if (summaryOnly) {
+    // Sent exactly as the engineer approved it.
     blocks.push({ kind: "approved-summary", name: "approved summary", text: input.approvedSummary! });
   } else {
-    blocks.push({ kind: "item-text", name: "item text", text: input.itemText });
-    if (input.repoContext?.diff !== undefined) blocks.push({ kind: "diff", name: "diff", text: input.repoContext.diff });
-    for (const file of input.repoContext?.files ?? []) blocks.push({ kind: "repo-file", name: file.path, text: file.text });
+    blocks.push({ kind: "item-text", name: "item text", text: text(input.itemText, "The item text") });
+    const repo = input.repoContext;
+    if (repo?.diff !== undefined) blocks.push(capped({ kind: "diff", name: "diff", text: text(repo.diff, "The diff") }, PROMPT_LIMITS.diffBytes));
+    for (const file of repo?.files ?? []) {
+      blocks.push(capped({ kind: "repo-file", name: repoPath(file?.path), text: text(file.text, `Repo file ${JSON.stringify(file.path)}`) }, PROMPT_LIMITS.repoFileBytes));
+    }
     if (input.lastCheckOutput !== undefined) {
-      const cut = tail(input.lastCheckOutput, CHECK_OUTPUT_MAX_BYTES);
+      const cut = tail(text(input.lastCheckOutput, "The check output"), CHECK_OUTPUT_MAX_BYTES);
       blocks.push({ kind: "check-output", name: "last check output", text: cut.text, ...(cut.bytes < cut.originalBytes ? { cutFromBytes: cut.originalBytes } : {}) });
     }
   }
 
   // References resolve against the steps this step sees, and never in summary-only mode, where
-  // the approved summary stands in for every earlier result.
+  // the approved summary stands in for every earlier result. Each result is rendered once; a
+  // repeat points to its block.
+  const warnings: string[] = [];
   const visible = new Set<string>(step.sees);
-  const references: Block[] = [];
-  const resolve = (raw: string): Block | undefined => {
+  const occurrences = [...step.instructions.text.matchAll(REFERENCE)].map((match) => match[1]!);
+  if (occurrences.length > PROMPT_LIMITS.references) {
+    refuse("too-large", `${name} has ${occurrences.length} references in its instructions, over the limit of ${PROMPT_LIMITS.references}.`);
+  }
+  const referencedSteps = new Set<string>();
+  const byName = new Map<string, Block>();
+  const resolved = occurrences.map((raw): Block | undefined => {
     const shown = `{{${raw}}}`.slice(0, 100);
     if (summaryOnly) {
       warnings.push(`${shown} left out: this step sends only the approved summary.`);
@@ -160,93 +225,106 @@ export function buildPrompt(input: PromptInput): Result<BuiltPrompt, PromptRefus
     }
     const match = STEP_FIELD.exec(raw);
     const [id, field] = match ? [match[1]!, match[2]!] : [undefined, undefined];
-    const fields = id !== undefined && visible.has(id) && Object.hasOwn(input.results, id) ? input.results[id] : undefined;
-    if (fields === undefined || field === undefined || !Object.hasOwn(fields, field)) {
+    if (id !== undefined) referencedSteps.add(id);
+    const fields: unknown = id !== undefined && visible.has(id) && Object.hasOwn(input.results, id) ? input.results[id] : undefined;
+    if (fields !== undefined && (typeof fields !== "object" || fields === null)) refuse("invalid-input", `The results of step ${JSON.stringify(id)} are not a set of fields.`);
+    if (fields === undefined || field === undefined || !Object.hasOwn(fields as object, field)) {
       warnings.push(`${shown} is not a result this step sees; it was left out.`);
       return undefined;
     }
-    return { kind: "result", name: `${id}.${field}`, text: fields[field]! };
-  };
-  // First pass only finds the references, so the mark can be checked against their values too.
-  const resolved = [...step.instructions.text.matchAll(REFERENCE)].map((match) => resolve(match[1]!));
-  for (const block of resolved) if (block) references.push(block);
+    const blockName = `${id}.${field}`;
+    const known = byName.get(blockName);
+    if (known) return known;
+    const block = capped({ kind: "result", name: blockName, text: text((fields as Record<string, unknown>)[field], `Result ${blockName}`) }, PROMPT_LIMITS.resultBytes);
+    byName.set(blockName, block);
+    return block;
+  });
+  if (!summaryOnly) {
+    for (const seen of step.sees) {
+      if (!referencedSteps.has(seen)) warnings.push(`${name} sees ${JSON.stringify(seen)} but its instructions do not reference it; its results were not sent.`);
+    }
+  }
 
-  const untrusted = [...blocks, ...references].flatMap((block) => [block.name, block.text]);
+  const untrusted = [...blocks, ...byName.values()].flatMap((block) => [block.name, block.text]);
   const mark = chooseMark(untrusted, input.drawMark ?? randomMark);
-  if (!mark.ok) return refuse("mark", mark.error);
+  if (!mark.ok) refuse("mark", mark.error);
+  const markValue = (mark as { value: string }).value;
 
+  const included: IncludedInput[] = [];
   const render = (block: Block): string => {
-    included.push({ kind: block.kind, name: block.name, bytes: Buffer.byteLength(block.text, "utf8"), ...(block.cutFromBytes === undefined ? {} : { cutFromBytes: block.cutFromBytes }) });
-    const note = block.cutFromBytes === undefined ? undefined : `cut to the last ${Buffer.byteLength(block.text, "utf8")} of ${block.cutFromBytes} bytes`;
-    return fence(block.name, block.text, mark.value, note);
+    const bytes = bytesOf(block.text);
+    included.push({ kind: block.kind, name: block.name, bytes, ...(block.cutFromBytes === undefined ? {} : { cutFromBytes: block.cutFromBytes }) });
+    const note = block.cutFromBytes === undefined ? undefined : `cut to the last ${bytes} of ${block.cutFromBytes} bytes`;
+    return fence(block.name, block.text, markValue, note);
   };
 
   // One replace over the instructions only, with a function replacer: values are inserted as they
   // are (no `$&` patterns), and inserted text is never scanned for references again.
+  const rendered = new Set<Block>();
   let next = 0;
   const instructions = step.instructions.text.replace(REFERENCE, () => {
     const block = resolved[next++];
-    return block ? `\n${render(block)}\n` : "";
+    if (!block) return "";
+    if (rendered.has(block)) return `(data block ${JSON.stringify(block.name)} above)`;
+    rendered.add(block);
+    return `\n${render(block)}\n`;
   });
 
-  const system = agent.role.trim() === "" ? TOKAMA_RULES : `${TOKAMA_RULES}\n\n${agent.role.trim()}`;
-  const user = [`Data blocks in this message use the mark ${mark.value}.`, instructions.trim(), ...blocks.map(render)].join("\n\n") + "\n";
+  const role = agent.role.trim();
+  const system = role === "" ? TOKAMA_RULES : `${TOKAMA_RULES}\n\n${role}`;
+  const user = [`Data blocks in this message use the mark ${markValue}.`, instructions.trim(), ...blocks.map(render)].join("\n\n") + "\n";
+  const userBytes = bytesOf(user);
+  if (userBytes > PROMPT_LIMITS.userBytes) refuse("too-large", `${name}: the prompt is ${userBytes} bytes, over the ${PROMPT_LIMITS.userBytes}-byte limit.`);
 
   const record: PromptRecord = {
     stepId: step.id,
     agentId: agent.id,
     cloud,
     data: step.data,
-    mark: mark.value,
+    mark: markValue,
     included,
     warnings,
     ...(cloud ? { sentToCloud: { system, user } } : {}),
   };
-  return ok({ system, user, record });
+  return { system, user, record };
 }
 
-/** The data-rule checks for a cloud step; undefined when the step may run. */
-function cloudRefusal(template: TemplateRecord, step: TemplateStepDef, approvedSummary: string | undefined): PromptRefusal | undefined {
+/** The data-rule checks for a cloud step; refuses when the step may not run. */
+function checkCloud(template: TemplateRecord, step: TemplateStepDef, approvedSummary: string | undefined): void {
   const name = `Step ${JSON.stringify(step.id)}`;
-  if (step.connections.length > 0) {
-    return { code: "cloud-connections", message: `${name} runs on a cloud agent and has connections. Cloud steps never get connections.` };
-  }
+  if (step.connections.length > 0) refuse("cloud-connections", `${name} runs on a cloud agent and has connections. Cloud steps never get connections.`);
   switch (step.data) {
     case "none":
-      return { code: "cloud-data-none", message: `${name} runs on a cloud agent but its data rule is none, so nothing may be sent to it.` };
+      return refuse("cloud-data-none", `${name} runs on a cloud agent but its data rule is none, so nothing may be sent to it.`);
     case "summary-after-approval":
-      if (approvedSummary === undefined || approvedSummary.trim() === "") {
-        return { code: "missing-summary", message: `${name} sends only an approved summary, and no approved summary was given.` };
+      if (typeof approvedSummary !== "string" || approvedSummary.trim() === "") {
+        refuse("missing-summary", `${name} sends only an approved summary, and no approved summary was given.`);
       }
-      return undefined;
+      return;
     case "repo-and-diff": {
-      const tainted = fromConnections(template);
-      const first = step.sees.find((seen) => tainted.has(seen));
+      const derived = connectionDerivedSteps(template.steps);
+      const first = step.sees.find((seen) => derived.has(seen));
       if (first !== undefined) {
-        return {
-          code: "cloud-connection-input",
-          message: `${name} sends the repo and diff to a cloud agent, so it cannot get ${JSON.stringify(first)}, which has results from connections.`,
-        };
+        refuse("cloud-connection-input", `${name} sends the repo and diff to a cloud agent, so it cannot get ${JSON.stringify(first)}, which has results from connections.`);
       }
-      return undefined;
+      return;
     }
   }
 }
 
-/**
- * Steps whose results come from connections: steps with connections, and steps that see one of
- * those, followed to a fixed point so a forged record's forward `sees` cannot hide a chain.
- */
-function fromConnections(template: TemplateRecord): Set<string> {
-  const tainted = new Set<string>(template.steps.filter((step) => step.connections.length > 0).map((step) => step.id));
-  for (let grew = true; grew; ) {
-    grew = false;
-    for (const step of template.steps) {
-      if (!tainted.has(step.id) && step.sees.some((seen) => tainted.has(seen))) {
-        tainted.add(step.id);
-        grew = true;
-      }
-    }
-  }
-  return tainted;
+/** A repo file's path as its block name: relative, with no `..` segment, printable. */
+function repoPath(path: unknown): string {
+  if (typeof path !== "string" || path === "") return refuse("invalid-input", "A repo file has no path.");
+  const shown = JSON.stringify(path.slice(0, 200));
+  if (NOT_PRINTABLE.test(path)) refuse("invalid-input", `Repo file path ${shown} has characters that are not printable.`);
+  if (isAbsolute(path) || /^[\\/]|^[A-Za-z]:/.test(path)) refuse("invalid-input", `Repo file path ${shown} is absolute; it must be relative to the repo.`);
+  if (path.split(/[\\/]/).includes("..")) refuse("invalid-input", `Repo file path ${shown} has a '..' segment.`);
+  return path;
+}
+
+/** Writes the worktree as `.` and the home folder as `~`; longest first, as the worktree is usually inside home. */
+function scrubber(worktreeRoot: string | undefined, home: string): (text: string) => string {
+  const replacements: Array<[string, string]> = [...(worktreeRoot === undefined ? [] : [[worktreeRoot, "."] as [string, string]]), [home, "~"]];
+  const ordered = replacements.filter(([from]) => from.length > 1).sort((a, b) => b[0].length - a[0].length);
+  return (text) => ordered.reduce((out, [from, to]) => out.split(from).join(to), text);
 }
