@@ -128,7 +128,23 @@ describe("loadTemplates", () => {
           ref: "orders-api/linked",
           origin: "orders-api",
           file: ".tokama/templates/linked.yaml",
-          problems: [{ line: 1, message: "The template is a symlink, and Tokama does not follow symlinks in templates." }],
+          problems: [{ line: 1, message: `Tokama doesn't follow links in config folders: ".tokama/templates/linked.yaml"` }],
+        },
+      ]);
+    });
+
+    it("refuses a linked template file that stays inside the templates folder", async () => {
+      const orders = repo("orders-api", { "real.yaml": template("Real") });
+      symlinkSync(join(templatesDir(orders.path), "real.yaml"), join(templatesDir(orders.path), "linked.yaml"));
+      const loads = await loadTemplates({ repos: [orders], agents: AGENTS });
+      expect(loaded(loads).map((t) => t.ref)).toContain("orders-api/real");
+      expect(failures(loads)).toEqual([
+        {
+          ok: false,
+          ref: "orders-api/linked",
+          origin: "orders-api",
+          file: ".tokama/templates/linked.yaml",
+          problems: [{ line: 1, message: `Tokama doesn't follow links in config folders: ".tokama/templates/linked.yaml"` }],
         },
       ]);
     });
@@ -165,18 +181,25 @@ describe("loadTemplates", () => {
       symlinkSync(join(outside, "secret.md"), join(templatesDir(orders.path), "a.md"));
       const [failure] = failures(await loadTemplates({ repos: [orders], agents: AGENTS }));
       expect(failure && !failure.ok && failure.problems).toEqual([
-        { line: 7, message: 'Step "work": the instructions file "a.md" is a symlink, and Tokama does not follow symlinks in templates.' },
+        { line: 7, message: `Step "work": the instructions file "a.md" is not read. Tokama doesn't follow links in config folders: ".tokama/templates/a.md".` },
       ]);
     });
 
-    it("refuses an instructions file reached through a symlinked folder outside the templates folder", async () => {
-      const orders = repo("orders-api", { "a.yaml": template("A", "shared/a.md") });
+    it("refuses an instructions file reached through a linked folder, also one that stays inside", async () => {
+      const orders = repo("orders-api", { "a.yaml": template("A", "shared/deep/a.md"), "real/deep/a.md": "Do the work." });
       writeFileSync(join(outside, "a.md"), "secret");
+      mkdirSync(join(outside, "deep"));
       symlinkSync(outside, join(templatesDir(orders.path), "shared"));
-      const [failure] = failures(await loadTemplates({ repos: [orders], agents: AGENTS }));
-      expect(failure && !failure.ok && failure.problems).toEqual([
-        { line: 7, message: 'Step "work": the instructions file "shared/a.md" is outside the templates folder.' },
-      ]);
+      const refused = `Step "work": the instructions file "shared/deep/a.md" is not read. Tokama doesn't follow links in config folders: `;
+      let [failure] = failures(await loadTemplates({ repos: [orders], agents: AGENTS }));
+      expect(failure && !failure.ok && failure.problems).toEqual([{ line: 7, message: `${refused}".tokama/templates/shared".` }]);
+
+      // A link deeper on the path, to a folder inside the templates folder.
+      rmSync(join(templatesDir(orders.path), "shared"));
+      mkdirSync(join(templatesDir(orders.path), "shared"));
+      symlinkSync(join(templatesDir(orders.path), "real", "deep"), join(templatesDir(orders.path), "shared", "deep"));
+      [failure] = failures(await loadTemplates({ repos: [orders], agents: AGENTS }));
+      expect(failure && !failure.ok && failure.problems).toEqual([{ line: 7, message: `${refused}".tokama/templates/shared/deep".` }]);
     });
 
     it("refuses a templates folder that links outside the repo", async () => {
@@ -186,8 +209,22 @@ describe("loadTemplates", () => {
       symlinkSync(outside, join(path, ".tokama", "templates"));
       const loads = await loadTemplates({ repos: [{ id: "orders-api", path }], agents: AGENTS });
       expect(failures(loads)).toEqual([
-        { ok: false, origin: "orders-api", file: ".tokama/templates", problems: [{ line: 1, message: expect.stringContaining("outside the repo") }] },
+        { ok: false, origin: "orders-api", file: ".tokama/templates", problems: [{ line: 1, message: `Tokama doesn't follow links in config folders: ".tokama/templates"` }] },
       ]);
+    });
+
+    it("refuses a linked templates or .tokama folder that stays inside the repo", async () => {
+      const path = join(root, "orders-api");
+      mkdirSync(join(path, "team", "templates"), { recursive: true });
+      writeFileSync(join(path, "team", "templates", "x.yaml"), template("Team"));
+      mkdirSync(join(path, ".tokama"));
+      symlinkSync(join(path, "team", "templates"), join(path, ".tokama", "templates"));
+      const refused = (file: string) => [{ ok: false, origin: "orders-api", file: ".tokama/templates", problems: [{ line: 1, message: `Tokama doesn't follow links in config folders: "${file}"` }] }];
+      expect(failures(await loadTemplates({ repos: [{ id: "orders-api", path }], agents: AGENTS }))).toEqual(refused(".tokama/templates"));
+
+      rmSync(join(path, ".tokama"), { recursive: true });
+      symlinkSync(join(path, "team"), join(path, ".tokama"));
+      expect(failures(await loadTemplates({ repos: [{ id: "orders-api", path }], agents: AGENTS }))).toEqual(refused(".tokama"));
     });
   });
 });

@@ -182,44 +182,53 @@ describe("loadAgents", () => {
     ]);
   });
 
-  it("follows symlinked files and folders in the personal folder", async () => {
-    const target = writeAgent(join(root, "dotfiles", "agents"), "reviewer", agentFile({}));
-    writeAgent(join(root, "dotfiles", "agents"), "architect", agentFile({ name: "Architect" }));
-    mkdirSync(home, { recursive: true });
+  it("refuses a linked agents folder in the personal folder", async () => {
+    writeAgent(join(root, "dotfiles", "agents"), "reviewer", agentFile({}));
     symlinkSync(join(root, "dotfiles", "agents"), personal());
-    expect(ids(value(await loadAgents({ tokamaHome: home })))).toEqual(["architect", "builder", "reviewer"]);
+    const loaded = await loadAgents({ tokamaHome: home });
+    expect(ids(loaded.agents)).toEqual(["builder"]);
+    expect(messages(loaded)).toEqual(["agents: Tokama doesn't follow links in config folders"]);
 
+    // A link that leads nowhere is refused the same way, not taken for a missing folder.
     rmSync(personal());
+    symlinkSync(join(root, "gone"), personal());
+    expect(messages(await loadAgents({ tokamaHome: home }))).toEqual(["agents: Tokama doesn't follow links in config folders"]);
+  });
+
+  it("refuses a linked agent file in the personal folder, which still claims its id", async () => {
+    const target = writeAgent(join(root, "dotfiles"), "reviewer", agentFile({}));
     mkdirSync(personal());
     symlinkSync(target, join(personal(), "reviewer.md"));
     symlinkSync(join(root, "gone.md"), join(personal(), "dangling.md"));
     const loaded = await loadAgents({ tokamaHome: home });
-    expect(ids(loaded.agents)).toEqual(["builder", "reviewer"]);
-    expect(messages(loaded)).toEqual(["agents/dangling.md: is a symlink to a file that doesn't exist"]);
+    expect(ids(loaded.agents)).toEqual(["builder"]);
+    expect(ids(loaded.broken)).toEqual(["dangling", "reviewer"]);
+    expect(messages(loaded)).toEqual([
+      "agents/dangling.md: Tokama doesn't follow links in config folders",
+      "agents/reviewer.md: Tokama doesn't follow links in config folders",
+    ]);
   });
 
-  it("refuses a symlinked agent file in a repo", async () => {
+  it("refuses a linked agent file in a repo", async () => {
     writeAgent(shared(), "real", agentFile({}));
     symlinkSync(join(shared(), "real.md"), join(shared(), "reviewer.md"));
     const loaded = await loadAgents({ tokamaHome: home, repo: repo() });
-    expect(messages(loaded)).toEqual([
-      "orders-api/.tokama/agents/reviewer.md: is a symlink. Files in a repo's .tokama folder can't be symlinks (files in ~/.tokama can); put the file itself there.",
-    ]);
+    expect(messages(loaded)).toEqual(["orders-api/.tokama/agents/reviewer.md: Tokama doesn't follow links in config folders"]);
     expect(ids(loaded.broken)).toEqual(["reviewer"]);
   });
 
-  it("refuses a shared agents folder that leads outside the repo, and reads one that stays inside", async () => {
-    writeAgent(join(root, "elsewhere"), "reviewer", agentFile({}));
-    mkdirSync(join(repoPath, ".tokama"));
-    symlinkSync(join(root, "elsewhere"), shared());
-    expect(messages(await loadAgents({ tokamaHome: home, repo: repo() }))).toEqual([
-      "orders-api/.tokama/agents: is a symlink that leads outside the repo, so it isn't read. A repo's .tokama/agents may only link inside the repo.",
-    ]);
-
-    rmSync(shared());
+  it("refuses a linked agents or .tokama folder in a repo, also one that stays inside the repo", async () => {
     writeAgent(join(repoPath, "team-agents"), "architect", agentFile({ name: "Architect" }));
+    mkdirSync(join(repoPath, ".tokama"));
     symlinkSync(join(repoPath, "team-agents"), shared());
-    expect(ids(value(await loadAgents({ tokamaHome: home, repo: repo() })))).toEqual(["architect", "builder"]);
+    const loaded = await loadAgents({ tokamaHome: home, repo: repo() });
+    expect(ids(loaded.agents)).toEqual(["builder"]);
+    expect(messages(loaded)).toEqual(["orders-api/.tokama/agents: Tokama doesn't follow links in config folders"]);
+
+    rmSync(join(repoPath, ".tokama"), { recursive: true });
+    writeAgent(join(root, "elsewhere", "agents"), "reviewer", agentFile({}));
+    symlinkSync(join(root, "elsewhere"), join(repoPath, ".tokama"));
+    expect(messages(await loadAgents({ tokamaHome: home, repo: repo() }))).toEqual(["orders-api/.tokama: Tokama doesn't follow links in config folders"]);
   });
 
   it("loads the valid agents next to an invalid file, which still claims its id", async () => {

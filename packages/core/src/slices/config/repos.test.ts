@@ -154,11 +154,16 @@ repos:
     expect(messages(await load())).toEqual(["repos.yaml line 1: must be a list of settings (key: value lines)"]);
   });
 
-  it("follows a symlinked repos.yaml, and refuses an oversized one", async () => {
+  it("refuses a linked repos.yaml, also one that leads nowhere", async () => {
     writeFileSync(join(root, "real.yaml"), "format: 1\nrepos: []\n");
     symlinkSync(join(root, "real.yaml"), join(home, "repos.yaml"));
-    expect(await load()).toEqual({ ok: true, value: [] });
+    expect(messages(await load())).toEqual(["repos.yaml: Tokama doesn't follow links in config folders"]);
     rmSync(join(home, "repos.yaml"));
+    symlinkSync(join(root, "gone.yaml"), join(home, "repos.yaml"));
+    expect(messages(await load())).toEqual(["repos.yaml: Tokama doesn't follow links in config folders"]);
+  });
+
+  it("refuses an oversized repos.yaml", async () => {
     write(`format: 1\nrepos: []\n# ${"x".repeat(70 * 1024)}\n`);
     expect(messages(await load())).toEqual(["repos.yaml: is larger than 64 KB"]);
   });
