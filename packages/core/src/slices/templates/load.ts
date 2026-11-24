@@ -1,6 +1,7 @@
 // Loads every template on the machine: each repo's `.tokama/templates/*.yaml`, then the built-ins.
 // Files are read through the kernel's safe reads; a file that is refused or invalid becomes a list
 // of problems and never hides the other templates.
+import { lstat } from "node:fs/promises";
 import { join } from "node:path";
 import { listFiles, readTextFileInside, type ReadFailure } from "../../kernel/fs-safe/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
@@ -16,6 +17,10 @@ const MAX_TEMPLATE_BYTES = 256 * 1024;
 const MAX_TEMPLATE_LINES = 5_000;
 const MAX_INSTRUCTION_BYTES = 64 * 1024;
 const MAX_TEMPLATES_PER_REPO = 100;
+const LINK_REFUSED = "Tokama doesn't follow links in config folders";
+
+/** The problem message for a linked file or folder; `file` is repo-relative. */
+const linkRefused = (file: string): string => `${LINK_REFUSED}: ${quote(file)}`;
 
 export interface RepoLocation {
   readonly id: string;
@@ -64,7 +69,9 @@ async function loadRepo(repo: RepoLocation, agents: ReadonlyMap<string, AgentLoc
   const repoId = repo.id as RepoId;
 
   const dir = join(repo.path, ...TEMPLATES_DIR.split("/"));
-  // A symlinked templates folder could point anywhere on the machine: listFiles refuses it.
+  // A linked .tokama or templates folder is never listed, even one that stays inside the repo.
+  const link = await firstLink(repo.path, TEMPLATES_DIR);
+  if (link !== undefined) return fail(linkRefused(link));
   const listed = await listFiles(repo.path, TEMPLATES_DIR, { max: MAX_TEMPLATES_PER_REPO });
   if (!listed.ok) {
     switch (listed.error.reason) {
@@ -72,7 +79,7 @@ async function loadRepo(repo: RepoLocation, agents: ReadonlyMap<string, AgentLoc
         return [];
       case "symlink":
       case "outside_root":
-        return fail("The templates folder is a link to a place outside the repo; Tokama does not follow it.");
+        return fail(linkRefused(TEMPLATES_DIR));
       case "too_many_entries":
         return fail(`The templates folder has more than ${MAX_TEMPLATES_PER_REPO} files.`);
       default:
@@ -98,7 +105,8 @@ async function loadRepo(repo: RepoLocation, agents: ReadonlyMap<string, AgentLoc
     const ref = `${repoId}/${id}` as TemplateRef;
     const text = await readTextFileInside(dir, join(dir, name), { maxBytes: MAX_TEMPLATE_BYTES, maxLines: MAX_TEMPLATE_LINES });
     if (!text.ok) {
-      loads.push({ ok: false, ref, origin: repoId, file, problems: [{ line: 1, message: `The template ${readReason(text.error)}.` }] });
+      const message = text.error.reason === "symlink" ? linkRefused(file) : `The template ${readReason(text.error)}.`;
+      loads.push({ ok: false, ref, origin: repoId, file, problems: [{ line: 1, message }] });
       continue;
     }
     const ctx: ValidateContext = {
@@ -113,8 +121,9 @@ async function loadRepo(repo: RepoLocation, agents: ReadonlyMap<string, AgentLoc
 }
 
 async function readInstructions(dir: string, relative: string): Promise<Result<string, string>> {
-  // Checked to be inside the templates folder before it is opened: a symlinked folder on the way
-  // could lead anywhere.
+  // No link anywhere on the path, and inside the templates folder before it is opened.
+  const link = await firstLink(dir, relative);
+  if (link !== undefined) return err(`is not read. ${linkRefused(`${TEMPLATES_DIR}/${link}`)}`);
   const text = await readTextFileInside(dir, join(dir, ...relative.split("/")), { maxBytes: MAX_INSTRUCTION_BYTES });
   return text.ok ? ok(text.value) : err(readReason(text.error));
 }
@@ -124,7 +133,7 @@ function readReason(failure: ReadFailure): string {
     case "not_found":
       return "does not exist";
     case "symlink":
-      return "is a symlink, and Tokama does not follow symlinks in templates";
+      return `is a link, and ${LINK_REFUSED}`;
     case "not_regular_file":
       return "is not a regular file";
     case "too_large":
@@ -137,6 +146,20 @@ function readReason(failure: ReadFailure): string {
     default:
       return `cannot be read (${quote(failure.message)})`;
   }
+}
+
+/** The first part of `relative` (a "/" path under `base`) that is a link, or `undefined`. */
+async function firstLink(base: string, relative: string): Promise<string | undefined> {
+  const parts = relative.split("/");
+  for (let end = 1; end <= parts.length; end++) {
+    try {
+      if ((await lstat(join(base, ...parts.slice(0, end)))).isSymbolicLink()) return parts.slice(0, end).join("/");
+    } catch {
+      // Missing: the read that follows reports it.
+      return undefined;
+    }
+  }
+  return undefined;
 }
 
 function toLoad(result: Result<TemplateRecord, TemplateProblem[]>, origin: string, file: string, ref: TemplateRef): TemplateLoad {
