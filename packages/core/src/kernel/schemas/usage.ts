@@ -18,6 +18,21 @@ export const AgentCallOutcomeSchema = z.enum(["completed", "failed", "aborted"])
 /** One event of an agent call's stream. Every stream ends with exactly one `end` event. */
 export const AgentCallEventSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("text"), text: z.string() }),
+  /** The agent started a new turn. One event per assistant message, however many parts the CLI streams it in. */
+  z.strictObject({ type: z.literal("turn") }),
+  /**
+   * The agent asked for a tool. `kind` tells file edits and shell commands apart from other tools.
+   * `input` holds only the fields that make two calls the same call (for a command, `command`;
+   * no descriptions or notes), so loop guards can spot an agent that repeats itself.
+   */
+  z.strictObject({
+    type: z.literal("tool_call"),
+    /** The CLI's id for the call. A call streamed twice keeps its id. */
+    id: z.string().min(1),
+    name: z.string().min(1),
+    kind: z.enum(["edit", "command", "other"]),
+    input: z.record(z.string(), z.json()),
+  }),
   z.strictObject({
     type: z.literal("end"),
     outcome: AgentCallOutcomeSchema,

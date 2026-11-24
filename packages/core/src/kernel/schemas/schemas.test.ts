@@ -96,7 +96,7 @@ describe("item record", () => {
     ["the removed hint field", { hint: "x" }, ""],
     ["the removed waitingFor field", { steps: [{ name: "x", stage: "working", state: "pending", data: "none", waitingFor: "y" }] }, "steps.0"],
     ["a decision without choices", { decision: { id: DECISION_ID, stepIndex: 0, question: "Go?", choices: [] } }, "decision.choices"],
-    ["an unknown kind", { kind: "chore" }, "kind"],
+    ["a tool call of an unknown kind", { kind: "chore" }, "kind"],
     ["a malformed item id", { id: "item_1" }, "id"],
     ["an empty title", { title: "" }, "title"],
     ["a fractional timestamp", { createdAt: 1.5 }, "createdAt"],
@@ -139,8 +139,25 @@ describe("agent call events", () => {
     expect(parseWith(AgentCallEventSchema, event).ok).toBe(true);
   });
 
+  it.each([
+    [{ type: "turn" }],
+    [{ type: "tool_call", id: "t1", name: "Bash", kind: "command", input: { command: "npm test" } }],
+    [{ type: "tool_call", id: "t2", name: "Edit", kind: "edit", input: { file_path: "a.ts", old: "x", new: { lines: [1, null] } } }],
+  ])("accepts %j", (event) => {
+    expect(parseWith(AgentCallEventSchema, event).ok).toBe(true);
+  });
+
   it("refuses an end without usage", () => {
     expect(parseWith(AgentCallEventSchema, { type: "end", outcome: "completed" }).ok).toBe(false);
+  });
+
+  it.each([
+    ["a tool call without an id", { type: "tool_call", id: "", name: "Bash", kind: "command", input: {} }],
+    ["a tool call of an unknown kind", { type: "tool_call", id: "t1", name: "Bash", kind: "shell", input: {} }],
+    ["a tool call whose input is not an object", { type: "tool_call", id: "t1", name: "Bash", kind: "command", input: "npm test" }],
+    ["extra fields on a turn", { type: "turn", id: "m1" }],
+  ])("refuses %s", (_label, event) => {
+    expect(parseWith(AgentCallEventSchema, event).ok).toBe(false);
   });
 });
 
@@ -196,7 +213,7 @@ describe("engine API messages", () => {
   });
 
   it.each([
-    ["an unknown kind", { apiVersion: API_VERSION, kind: "rpc", requestId: "r1" }],
+    ["a tool call of an unknown kind", { apiVersion: API_VERSION, kind: "rpc", requestId: "r1" }],
     ["an unknown command", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "delete_everything" } }],
     ["an empty requestId", { apiVersion: API_VERSION, kind: "query", requestId: "", query: { type: "item", itemId: ITEM_ID } }],
     ["a decision without an id", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "resolve_decision", itemId: ITEM_ID, choice: "approve" } }],
