@@ -2,6 +2,7 @@
 export {
   connect,
   type ClientEvent,
+  type CommandReply,
   type ConnectError,
   type ConnectErrorCode,
   type ConnectOptions,

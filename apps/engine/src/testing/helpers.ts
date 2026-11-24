@@ -20,9 +20,12 @@ export function sampleItem(title = "Checkout latency spike"): ItemRecord {
     workspaceId: "northwind-prod",
     templateId: "emergency-investigator",
     title,
+    text: "Alert: checkout p95 above 1.5 s",
+    repoIds: [],
+    privacy: "local_only",
     state: "running",
     createdAt: 1_760_000_000_000,
-    steps: [{ name: "Triage", stage: "working", state: "running", agentId: "local-investigator" }],
+    steps: [{ name: "Triage", stage: "working", state: "running", agentId: "local-investigator", data: "none" }],
   });
   if (!parsed.ok) throw new Error("bad sample item");
   return parsed.value;

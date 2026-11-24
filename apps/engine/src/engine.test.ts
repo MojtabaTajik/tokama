@@ -57,6 +57,7 @@ describe("engine service", () => {
     expect(engineClient.engineId).toBe(handle.engineId);
     expect(await engineClient.query({ type: "board", workspaceId: "northwind-prod" })).toEqual({ ok: true, data: { items: [] } });
     expect(await engineClient.query({ type: "item", itemId: ITEM_ID })).toMatchObject({ ok: false, error: { code: "not_found" } });
+    expect(await engineClient.query({ type: "workspaces" })).toEqual({ ok: true, data: { workspaces: [] } });
     expect(await engineClient.command({ type: "stop_item", itemId: ITEM_ID })).toMatchObject({
       ok: false,
       error: { code: "not_implemented" },
