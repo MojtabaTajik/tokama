@@ -96,7 +96,7 @@ describe("item record", () => {
     ["the removed hint field", { hint: "x" }, ""],
     ["the removed waitingFor field", { steps: [{ name: "x", stage: "working", state: "pending", data: "none", waitingFor: "y" }] }, "steps.0"],
     ["a decision without choices", { decision: { id: DECISION_ID, stepIndex: 0, question: "Go?", choices: [] } }, "decision.choices"],
-    ["a tool call of an unknown kind", { kind: "chore" }, "kind"],
+    ["an unknown kind", { kind: "chore" }, "kind"],
     ["a malformed item id", { id: "item_1" }, "id"],
     ["an empty title", { title: "" }, "title"],
     ["a fractional timestamp", { createdAt: 1.5 }, "createdAt"],
@@ -213,7 +213,7 @@ describe("engine API messages", () => {
   });
 
   it.each([
-    ["a tool call of an unknown kind", { apiVersion: API_VERSION, kind: "rpc", requestId: "r1" }],
+    ["an unknown kind", { apiVersion: API_VERSION, kind: "rpc", requestId: "r1" }],
     ["an unknown command", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "delete_everything" } }],
     ["an empty requestId", { apiVersion: API_VERSION, kind: "query", requestId: "", query: { type: "item", itemId: ITEM_ID } }],
     ["a decision without an id", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "resolve_decision", itemId: ITEM_ID, choice: "approve" } }],

@@ -18,7 +18,10 @@ export const AgentCallOutcomeSchema = z.enum(["completed", "failed", "aborted"])
 /** One event of an agent call's stream. Every stream ends with exactly one `end` event. */
 export const AgentCallEventSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("text"), text: z.string() }),
-  /** The agent started a new turn. One event per assistant message, however many parts the CLI streams it in. */
+  /**
+   * The agent started a new turn. One event per assistant message, however many parts the CLI
+   * streams it in. It comes before the `tool_call` events of its message.
+   */
   z.strictObject({ type: z.literal("turn") }),
   /**
    * The agent asked for a tool. `kind` tells file edits and shell commands apart from other tools.

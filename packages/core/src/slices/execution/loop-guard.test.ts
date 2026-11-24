@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { AgentCallEvent } from "../../kernel/schemas/index.js";
 import {
   createFileWatch,
+  claudeCodeGuardDefaults,
   createStreamWatch,
-  DEFAULT_LOOP_GUARD_SETTINGS,
   type FileSnapshot,
   type FileState,
   guardReport,
+  localModelGuardDefaults,
+  LoopGuardSettingsSchema,
   loopGuardSettings,
   pollIntervalMs,
   toolKey,
@@ -32,16 +34,33 @@ const turnWith = (watch: ReturnType<typeof createStreamWatch>, call: AgentCallEv
 };
 
 describe("loop guard settings", () => {
-  it("defaults to the measured values", () => {
-    expect(DEFAULT_LOOP_GUARD_SETTINGS).toEqual({ turnCap: 30, repeatLimit: 6, idleMs: 75_000, timeoutMs: 600_000 });
+  it("has defaults per runtime, each within the bounds", () => {
+    expect(localModelGuardDefaults).toEqual({ turnCap: 30, repeatLimit: 6, idleMs: 75_000, timeoutMs: 600_000 });
+    expect(claudeCodeGuardDefaults).toEqual({ turnCap: 150, repeatLimit: 6, idleMs: 180_000, timeoutMs: 2_700_000 });
+    for (const defaults of [localModelGuardDefaults, claudeCodeGuardDefaults]) expect(LoopGuardSettingsSchema.safeParse(defaults).success).toBe(true);
   });
 
-  it("applies overrides over the defaults", () => {
+  it("applies overrides over the local-model defaults, or over the defaults it is given", () => {
     expect(loopGuardSettings({ turnCap: 80, idleMs: 0 })).toEqual({ ok: true, value: { turnCap: 80, repeatLimit: 6, idleMs: 0, timeoutMs: 600_000 } });
+    expect(loopGuardSettings({ repeatLimit: 0 }, claudeCodeGuardDefaults)).toEqual({ ok: true, value: { ...claudeCodeGuardDefaults, repeatLimit: 0 } });
+    expect(loopGuardSettings(undefined, claudeCodeGuardDefaults)).toEqual({ ok: true, value: claudeCodeGuardDefaults });
   });
 
-  it.each([[{ timeoutMs: 0 }], [{ turnCap: -1 }], [{ repeatLimit: 1.5 }], [{ idle: 10 }], [null]])("refuses %j", (overrides) => {
+  it.each([
+    [{ timeoutMs: 0 }],
+    [{ timeoutMs: 2_147_483_648 }],
+    [{ turnCap: -1 }],
+    [{ repeatLimit: 1.5 }],
+    [{ repeatLimit: 1 }],
+    [{ idleMs: 9_999 }],
+    [{ idle: 10 }],
+    [null],
+  ])("refuses %j", (overrides) => {
     expect(loopGuardSettings(overrides).ok).toBe(false);
+  });
+
+  it("takes the bounds themselves", () => {
+    expect(loopGuardSettings({ timeoutMs: 2_147_483_647, repeatLimit: 2, idleMs: 10_000 }).ok).toBe(true);
   });
 });
 
@@ -110,7 +129,7 @@ describe("stream watch", () => {
 describe("file watch", () => {
   const state = (mtimeMs: number, size: number): FileState => ({ mtimeMs, size });
 
-  const setup = async (idleMs: number, extra: { turnsAfter?: (at: number) => number; onChange?: () => void } = {}) => {
+  const setup = async (idleMs: number, extra: { turnsAfter?: (at: number) => number; turns?: () => number; onChange?: () => void } = {}) => {
     const box = { snap: new Map() as FileSnapshot | undefined, passes: true, checkCalls: [] as number[], checks: undefined as (() => boolean) | undefined };
     const watch = await createFileWatch(
       {
@@ -217,6 +236,45 @@ describe("file watch", () => {
     expect(watch.lastChangeAt()).toBe(7_000);
     expect(await watch.poll(500_000, 1_000_000, live())).toBeUndefined();
     expect(box.checkCalls).toEqual([]);
+  });
+
+  it("counts edits made during a check run as the agent's, and ignores that run's result", async () => {
+    let turns = 3;
+    const { box, watch } = await setup(10_000, { turns: () => turns });
+    box.snap = new Map([["a.js", state(1_000, 5)]]);
+    await watch.poll(2_000, 1_000_000, live());
+    box.checks = () => {
+      // The agent edits b.js in a new turn while the checks run.
+      turns++;
+      box.snap = new Map([
+        ["a.js", state(1_000, 5)],
+        ["b.js", state(16_000, 1)],
+      ]);
+      return true;
+    };
+    expect(await watch.poll(15_000, 1_000_000, live())).toBeUndefined();
+    expect(watch.lastChangeAt()).toBe(15_000); // the poll's time: the edit came after it started
+    expect(watch.stats()).toMatchObject({ checksRun: 1, checkTouchedFiles: [] });
+    box.checks = undefined;
+    expect(await watch.poll(30_000, 1_000_000, live())).toBe("idle"); // a new quiet period, checks again
+  });
+
+  it("treats a snapshot that throws as one that failed", async () => {
+    const box = { fail: true };
+    const watch = await createFileWatch(
+      {
+        snapshot: () => (box.fail ? Promise.reject(new Error("git status failed")) : Promise.resolve(new Map([["a.js", state(1_000, 1)]]))),
+        checksPass: () => Promise.resolve(true),
+        idleMs: 10_000,
+      },
+      0,
+    );
+    expect(await watch.poll(5_000, 100_000, live())).toBeUndefined();
+    await watch.finish(6_000);
+    expect(watch.lastChangeAt()).toBeNull();
+    box.fail = false;
+    await watch.poll(7_000, 100_000, live());
+    expect(watch.lastChangeAt()).toBe(1_000); // the start used an empty map
   });
 
   it("skips a snapshot that failed", async () => {

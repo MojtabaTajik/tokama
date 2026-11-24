@@ -7,11 +7,11 @@ import type { AgentCallEvent } from "../../kernel/schemas/index.js";
 import {
   createFileWatch,
   createStreamWatch,
-  DEFAULT_LOOP_GUARD_SETTINGS,
   type FileWatch,
   type FileWatchOptions,
   type GuardReport,
   guardReport,
+  localModelGuardDefaults,
   type LoopGuardSettings,
   pollIntervalMs,
   type StopReason,
@@ -21,6 +21,7 @@ type EndEvent = Extract<AgentCallEvent, { type: "end" }>;
 
 export interface GuardedCallOptions {
   readonly clock: Clock;
+  /** Default: `localModelGuardDefaults`. */
   readonly settings?: LoopGuardSettings;
   /** Watches the working tree for the idle stop and the wasted-time figures. Without it there is no idle stop. */
   readonly files?: Pick<FileWatchOptions, "snapshot" | "checksPass">;
@@ -42,17 +43,14 @@ const NO_END: EndEvent = {
 
 /**
  * Runs `request` on `runtime` until it ends, `signal` fires, or a guard stops it. A guard stop
- * stands only when the call ended as aborted: a call that completed or failed first keeps its outcome.
+ * stands unless the call completed: a call that completed before the stop took effect keeps it.
  */
 export async function runGuardedCall(runtime: AgentRuntime, request: AgentCallRequest, signal: AbortSignal, options: GuardedCallOptions): Promise<GuardedCallResult> {
   const { clock } = options;
-  const settings = options.settings ?? DEFAULT_LOOP_GUARD_SETTINGS;
+  const settings = options.settings ?? localModelGuardDefaults;
   const startedAt = clock.now();
   const deadline = startedAt + settings.timeoutMs;
   const controller = new AbortController();
-  const forwardAbort = () => controller.abort();
-  signal.addEventListener("abort", forwardAbort, { once: true });
-  if (signal.aborted) controller.abort();
 
   let stop: StopReason | null = null;
   const requestStop = (reason: StopReason) => {
@@ -63,8 +61,15 @@ export async function runGuardedCall(runtime: AgentRuntime, request: AgentCallRe
 
   const stream = createStreamWatch(settings);
   const files: FileWatch | undefined = options.files
-    ? await createFileWatch({ ...options.files, idleMs: settings.idleMs, turnsAfter: stream.turnsAfter, onChange: stream.resetRepeats }, startedAt)
+    ? await createFileWatch(
+        { ...options.files, idleMs: settings.idleMs, turnsAfter: stream.turnsAfter, turns: stream.turns, onChange: stream.resetRepeats },
+        startedAt,
+      )
     : undefined;
+
+  const forwardAbort = () => controller.abort();
+  signal.addEventListener("abort", forwardAbort, { once: true });
+  if (signal.aborted) controller.abort();
 
   const timeout = clock.setTimeout(() => requestStop("timeout"), settings.timeoutMs);
   let pollTimer: TimerHandle | undefined;
@@ -104,5 +109,5 @@ export async function runGuardedCall(runtime: AgentRuntime, request: AgentCallRe
   await polling;
   const endedAt = clock.now();
   await files?.finish(endedAt);
-  return { end, guard: guardReport(stream, files, startedAt, endedAt, end.outcome === "aborted" ? stop : null) };
+  return { end, guard: guardReport(stream, files, startedAt, endedAt, end.outcome === "completed" ? null : stop) };
 }

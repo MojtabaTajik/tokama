@@ -1,7 +1,8 @@
 // Public surface of the execution slice.
 export { runGuardedCall, type GuardedCallOptions, type GuardedCallResult } from "./guarded-call.js";
 export {
-  DEFAULT_LOOP_GUARD_SETTINGS,
+  claudeCodeGuardDefaults,
+  localModelGuardDefaults,
   loopGuardSettings,
   LoopGuardSettingsSchema,
   type FileSnapshot,

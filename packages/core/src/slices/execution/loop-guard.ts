@@ -8,27 +8,51 @@
 // Edit, test, edit, test is work, not a loop: a new edit or a file change starts the repeat counts
 // again. One long file write is not idle: the idle stop needs turns after the last change.
 import { z } from "zod";
-import type { Result } from "../../kernel/result/index.js";
+import { ok, type Result } from "../../kernel/result/index.js";
 import { type AgentCallEvent, parseWith, type ParseError } from "../../kernel/schemas/index.js";
+
+/** The largest delay a platform timer takes. */
+const MAX_TIMER_MS = 2_147_483_647;
 
 export const LoopGuardSettingsSchema = z.strictObject({
   /** 0 turns the turn cap off. */
-  turnCap: z.int().nonnegative().default(30),
-  /** 0 turns the repeat limit off. */
-  repeatLimit: z.int().nonnegative().default(6),
+  turnCap: z.int().nonnegative(),
+  /** 0 turns the repeat limit off; otherwise at least 2, since one call is no repeat. */
+  repeatLimit: z
+    .int()
+    .nonnegative()
+    .refine((limit) => limit === 0 || limit >= 2, { message: "0 or at least 2" }),
   /** 0 turns the idle stop off; file changes are still tracked for the wasted-time figures. */
-  idleMs: z.int().nonnegative().default(75_000),
+  idleMs: z
+    .int()
+    .nonnegative()
+    .refine((ms) => ms === 0 || ms >= 10_000, { message: "0 or at least 10000" }),
   /** Always on: the last stop after the other guards. */
-  timeoutMs: z.int().positive().default(600_000),
+  timeoutMs: z.int().positive().max(MAX_TIMER_MS),
 });
 
 export type LoopGuardSettings = z.output<typeof LoopGuardSettingsSchema>;
 
-export const DEFAULT_LOOP_GUARD_SETTINGS: LoopGuardSettings = LoopGuardSettingsSchema.parse({});
+/** For a small local model, which finishes in few turns and then tends to loop. */
+export const localModelGuardDefaults: LoopGuardSettings = { turnCap: 30, repeatLimit: 6, idleMs: 75_000, timeoutMs: 600_000 };
 
-/** The defaults with `overrides` applied, e.g. from the engine's settings file. */
-export const loopGuardSettings = (overrides: unknown = {}): Result<LoopGuardSettings, ParseError> =>
-  parseWith(LoopGuardSettingsSchema, overrides);
+/** For Claude Code, which takes many more turns on a real task. */
+export const claudeCodeGuardDefaults: LoopGuardSettings = { turnCap: 150, repeatLimit: 6, idleMs: 180_000, timeoutMs: 2_700_000 };
+
+const LoopGuardOverridesSchema = LoopGuardSettingsSchema.partial();
+
+/** A runtime's defaults with `overrides` applied, e.g. from the engine's settings file. */
+export function loopGuardSettings(overrides: unknown = {}, defaults: LoopGuardSettings = localModelGuardDefaults): Result<LoopGuardSettings, ParseError> {
+  const parsed = parseWith(LoopGuardOverridesSchema, overrides);
+  if (!parsed.ok) return parsed;
+  const { turnCap, repeatLimit, idleMs, timeoutMs } = parsed.value;
+  return ok({
+    turnCap: turnCap ?? defaults.turnCap,
+    repeatLimit: repeatLimit ?? defaults.repeatLimit,
+    idleMs: idleMs ?? defaults.idleMs,
+    timeoutMs: timeoutMs ?? defaults.timeoutMs,
+  });
+}
 
 export type StopReason = "turn_cap" | "repeat_limit" | "idle" | "timeout";
 
@@ -117,13 +141,18 @@ export interface FileState {
 export type FileSnapshot = ReadonlyMap<string, FileState | null>;
 
 export interface FileWatchOptions {
-  /** The working tree now; `undefined` when it cannot be read. */
+  /** The working tree now; `undefined` (or a throw) when it cannot be read. */
   readonly snapshot: () => Promise<FileSnapshot | undefined>;
-  /** True when every check of the step passes within `timeoutMs`. Returns promptly once `signal` fires. */
+  /**
+   * True when every check of the step passes within `timeoutMs`; false when the step has no
+   * checks, so a step without checks is never idle-stopped. Returns promptly once `signal` fires.
+   */
   readonly checksPass: (timeoutMs: number, signal: AbortSignal) => Promise<boolean>;
   readonly idleMs: number;
   /** Turns after a time. Without it the idle stop does not wait for turns. */
   readonly turnsAfter?: (at: number) => number;
+  /** Turns so far. With it, a check run during which the agent took a turn decides nothing. */
+  readonly turns?: () => number;
   /** Called after each change seen. */
   readonly onChange?: () => void;
 }
@@ -163,7 +192,7 @@ export function changeTime(before: FileSnapshot, after: FileSnapshot, lo: number
 }
 
 export async function createFileWatch(options: FileWatchOptions, now: number): Promise<FileWatch> {
-  const { idleMs, turnsAfter, onChange } = options;
+  const { idleMs, turnsAfter, turns, onChange } = options;
   const checkTouched = new Set<string>();
   let checksRun = 0;
   let checksFailed = 0;
@@ -173,7 +202,12 @@ export async function createFileWatch(options: FileWatchOptions, now: number): P
   let checkedFor: number | null = null;
 
   const take = async (): Promise<FileSnapshot | undefined> => {
-    const snapshot = await options.snapshot();
+    let snapshot: FileSnapshot | undefined;
+    try {
+      snapshot = await options.snapshot();
+    } catch {
+      return undefined;
+    }
     if (snapshot === undefined) return undefined;
     return new Map([...snapshot].filter(([path]) => !checkTouched.has(path)));
   };
@@ -210,9 +244,15 @@ export async function createFileWatch(options: FileWatchOptions, now: number): P
       }
       checkedFor = lastChangeAt;
       checksRun++;
+      const turnsBefore = turns?.();
       const passed = await options.checksPass(Math.max(1_000, deadline - at), signal);
       const after = await take();
       if (after === undefined) return undefined;
+      if (turnsBefore !== undefined && turns?.() !== turnsBefore) {
+        // The agent kept working during the run: what changed may be its edits, and the result is stale.
+        observeWith(after, at);
+        return undefined;
+      }
       for (const path of changedPaths(before, after)) checkTouched.add(path);
       prev = new Map([...after].filter(([path]) => !checkTouched.has(path)));
       // The poll's start: a lower bound for later change times.

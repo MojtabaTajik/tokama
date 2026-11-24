@@ -162,6 +162,38 @@ describe("guarded agent call", () => {
     expect(guard.stop).toBeNull();
   });
 
+  it("keeps the stop when the call fails after it", async () => {
+    const clock = manualClock();
+    const deaf: AgentRuntime = {
+      async *launch() {
+        for (let i = 0; i < 3; i++) yield* [TURN, readFile(`f${i}`)];
+        yield { type: "end", outcome: "failed", usage: USAGE, error: "killed" };
+      },
+    };
+    const { end, guard } = await runGuardedCall(deaf, REQUEST, live(), { clock, settings: { turnCap: 2, repeatLimit: 0, idleMs: 0, timeoutMs: 60_000 } });
+    expect(end.outcome).toBe("failed");
+    expect(guard.stop).toBe("turn_cap");
+  });
+
+  it("never idle-stops a step without checks", async () => {
+    const clock = manualClock();
+    const tree = workTree(clock);
+    // A step without checks: checksPass answers false.
+    const files = { snapshot: tree.options.snapshot, checksPass: () => Promise.resolve(false) };
+    const agent = scriptedAgent(clock, [TURN, editFile("a.ts", "fix"), tree.write("a.ts"), ...repeat(50, (i) => [TURN, readFile("a.ts", i), { wait: 10_000 }])]);
+    const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, files, settings: { turnCap: 0, repeatLimit: 0, idleMs: 10_000, timeoutMs: 400_000 } });
+    expect(guard.stop).toBe("timeout");
+  });
+
+  it("keeps the call's end and usage when the working tree cannot be read", async () => {
+    const clock = manualClock();
+    const files = { snapshot: () => Promise.reject(new Error("git status failed")), checksPass: () => Promise.resolve(true) };
+    const agent = scriptedAgent(clock, [TURN, editFile("a.ts", "fix"), ...repeat(10, (i) => [TURN, readFile("a.ts", i), { wait: 10_000 }])]);
+    const { end, guard } = await runGuardedCall(agent, REQUEST, live(), { clock, files });
+    expect(end).toEqual({ type: "end", outcome: "completed", usage: USAGE });
+    expect(guard).toMatchObject({ stop: null, lastChangeAt: null });
+  });
+
   it("reports a stream without an end event as a failed call", async () => {
     const clock = manualClock();
     const broken: AgentRuntime = { async *launch() {} };
