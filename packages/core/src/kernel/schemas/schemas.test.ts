@@ -139,8 +139,25 @@ describe("agent call events", () => {
     expect(parseWith(AgentCallEventSchema, event).ok).toBe(true);
   });
 
+  it.each([
+    [{ type: "turn" }],
+    [{ type: "tool_call", id: "t1", name: "Bash", kind: "command", input: { command: "npm test" } }],
+    [{ type: "tool_call", id: "t2", name: "Edit", kind: "edit", input: { file_path: "a.ts", old: "x", new: { lines: [1, null] } } }],
+  ])("accepts %j", (event) => {
+    expect(parseWith(AgentCallEventSchema, event).ok).toBe(true);
+  });
+
   it("refuses an end without usage", () => {
     expect(parseWith(AgentCallEventSchema, { type: "end", outcome: "completed" }).ok).toBe(false);
+  });
+
+  it.each([
+    ["a tool call without an id", { type: "tool_call", id: "", name: "Bash", kind: "command", input: {} }],
+    ["a tool call of an unknown kind", { type: "tool_call", id: "t1", name: "Bash", kind: "shell", input: {} }],
+    ["a tool call whose input is not an object", { type: "tool_call", id: "t1", name: "Bash", kind: "command", input: "npm test" }],
+    ["extra fields on a turn", { type: "turn", id: "m1" }],
+  ])("refuses %s", (_label, event) => {
+    expect(parseWith(AgentCallEventSchema, event).ok).toBe(false);
   });
 });
 
