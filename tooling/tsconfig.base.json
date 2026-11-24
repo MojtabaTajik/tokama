@@ -16,6 +16,9 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
+    // Core's public .d.ts imports zod, and zod's .d.ts names platform globals (URL). The client
+    // and desktop have no DOM or Node types, so checking dependency .d.ts files would fail there.
+    "skipLibCheck": true,
     "types": []
   }
 }
