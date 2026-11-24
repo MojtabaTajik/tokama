@@ -69,8 +69,9 @@ export function stepAgent(step: Pick<StepRecord, "agentId" | "data">, agents: re
 }
 
 /**
- * Where a step runs and what it sees: "local", "local · App Insights (prod) (query), Postgres main
- * (read-only)", or, for a cloud step, what its data rule lets leave the machine.
+ * Where a step runs and what it sees: "local", "local · App Insights (query), Postgres (read-only)"
+ * (each connection by its connector type), or, for a cloud step, what its data rule lets leave the
+ * machine.
  */
 export function whereLine(step: Pick<StepRecord, "agentId" | "data" | "uses">, agents: readonly AgentSummary[], connections: readonly ConnectionSummary[]): string {
   if (stepAgent(step, agents).runsOn === "cloud") {
@@ -78,7 +79,7 @@ export function whereLine(step: Pick<StepRecord, "agentId" | "data" | "uses">, a
     if (step.data === "repo-and-diff") return "cloud · sees the repo and the diff";
     return "cloud";
   }
-  const uses = (step.uses ?? []).map((use) => `${connections.find((c) => c.id === use.connectionId)?.name ?? use.connectionId} (${use.access})`);
+  const uses = (step.uses ?? []).map((use) => `${connections.find((c) => c.id === use.connectionId)?.type ?? use.connectionId} (${use.access})`);
   return uses.length > 0 ? `local · ${uses.join(", ")}` : "local";
 }
 

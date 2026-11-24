@@ -58,7 +58,7 @@ describe("stepAgent", () => {
 
 describe("whereLine", () => {
   it("lists a local step's connections with their access", () => {
-    expect(whereLine(needsYou.steps[1]!, agents, connections)).toBe("local · App Insights (prod) (query), Postgres main (read-only)");
+    expect(whereLine(needsYou.steps[1]!, agents, connections)).toBe("local · App Insights (query), Postgres (read-only)");
     expect(whereLine(needsYou.steps[0]!, agents, connections)).toBe("local");
   });
 

@@ -19,6 +19,7 @@ type Reply = { ok: true; data: unknown } | { ok: false; error: { code: string; m
 function fakeBridge(start: ItemRecord[]) {
   const store = new Map<string, ItemRecord>(start.map((item) => [item.id, item]));
   const eventListeners = new Set<(event: BridgeEvent) => void>();
+  const connectionListeners = new Set<(state: ConnectionState) => void>();
   let commandReply: (command: { type: string }) => Promise<Reply> = async () => ({ ok: true, data: null });
   const query = vi.fn(async (q: { type: string; workspaceId?: string; itemId?: string }): Promise<Reply> => {
     if (q.type === "workspaces") return { ok: true, data: { workspaces: [workspace] } };
@@ -30,7 +31,10 @@ function fakeBridge(start: ItemRecord[]) {
   const command = vi.fn((c: { type: string }) => commandReply(c));
   const bridge = {
     getConnection: vi.fn(async (): Promise<ConnectionState> => ({ status: "connected", engineId: "e-1" })),
-    onConnection: vi.fn(() => () => {}),
+    onConnection: vi.fn((listener: (state: ConnectionState) => void) => {
+      connectionListeners.add(listener);
+      return () => connectionListeners.delete(listener);
+    }),
     query,
     command,
     onEvent: vi.fn((listener: (event: BridgeEvent) => void) => {
@@ -47,7 +51,11 @@ function fakeBridge(start: ItemRecord[]) {
     });
   const set = (item: ItemRecord) => store.set(item.id, item);
   const replyWith = (reply: (command: { type: string }) => Promise<Reply>) => (commandReply = reply);
-  return { bridge, query, command, push, set, replyWith, listeners: eventListeners };
+  const reconnect = () =>
+    act(async () => {
+      for (const listener of connectionListeners) listener({ status: "connected", engineId: "e-2" });
+    });
+  return { bridge, query, command, push, set, replyWith, reconnect, listeners: eventListeners };
 }
 
 let container: HTMLElement;
@@ -115,7 +123,7 @@ describe("ItemDrawer sections", () => {
         mark: "✓",
         name: "Query logs and metrics, passed",
         dot: "2",
-        where: "Local investigator · local · App Insights (prod) (query), Postgres main (read-only)",
+        where: "Local investigator · local · App Insights (query), Postgres (read-only)",
         detail: "6 queries · 41 rows",
       },
       { mark: "✓", name: "Find the cause, passed", dot: "2", where: "Local investigator · local", detail: undefined },
@@ -318,6 +326,17 @@ describe("ItemDrawer live updates", () => {
       for (const listener of listeners) listener({ kind: "event", seq: 1, event: { type: "item_updated", item: approved } });
     });
     await act(async () => pending.resolve({ ok: true, data: { item: needsYou } }));
+    expect(text(".drawer-state")).toBe("●running · step 4 of 4 · Propose a fix");
+  });
+
+  it("queries the item again after the engine connection comes back", async () => {
+    const { bridge, query, set, reconnect } = fakeBridge([needsYou]);
+    await renderDrawer(bridge, needsYou.id);
+    // Missed while away: the engine moved the item on.
+    set(approved);
+    await reconnect();
+    expect(query.mock.calls.filter(([q]) => q.type === "item")).toHaveLength(2);
+    expect($(".needs-you")).toBeNull();
     expect(text(".drawer-state")).toBe("●running · step 4 of 4 · Propose a fix");
   });
 
