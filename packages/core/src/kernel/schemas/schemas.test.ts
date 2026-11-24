@@ -3,13 +3,22 @@ import {
   API_VERSION,
   AgentCallEventSchema,
   parseAgentCallUsage,
+  parseAgentId,
+  parseCallId,
+  parseClientMessage,
+  parseDecisionId,
   parseEngineMessage,
+  parseItemId,
   parseItemRecord,
+  parseServerMessage,
+  parseTemplateId,
   parseWith,
+  parseWorkspaceId,
 } from "./index.js";
 
 const ITEM_ID = "item_0b9f3c1e-6a2d-4f7b-9c1a-2e3d4f5a6b7c";
 const CALL_ID = "call_1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f";
+const DECISION_ID = "decision_2d3e4f5a-6b7c-4d8e-9f0a-1b2c3d4e5f6a";
 
 const item = () => ({
   schemaVersion: 1,
@@ -121,7 +130,12 @@ describe("engine API messages", () => {
       requestId: "r1",
       command: { type: "start_item", workspaceId: "northwind-prod", templateId: "plan-and-build", title: "Add retries" },
     },
-    { apiVersion: API_VERSION, kind: "command", requestId: "r2", command: { type: "approve_step", itemId: ITEM_ID, stepIndex: 3 } },
+    {
+      apiVersion: API_VERSION,
+      kind: "command",
+      requestId: "r2",
+      command: { type: "resolve_decision", itemId: ITEM_ID, decisionId: DECISION_ID, choice: "approve" },
+    },
     { apiVersion: API_VERSION, kind: "command", requestId: "r3", command: { type: "stop_item", itemId: ITEM_ID } },
     { apiVersion: API_VERSION, kind: "query", requestId: "r4", query: { type: "board", workspaceId: "northwind-prod" } },
     { apiVersion: API_VERSION, kind: "query", requestId: "r5", query: { type: "item", itemId: ITEM_ID } },
@@ -155,11 +169,44 @@ describe("engine API messages", () => {
     ["an unknown kind", { apiVersion: API_VERSION, kind: "rpc", requestId: "r1" }],
     ["an unknown command", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "delete_everything" } }],
     ["an empty requestId", { apiVersion: API_VERSION, kind: "query", requestId: "", query: { type: "item", itemId: ITEM_ID } }],
+    ["a decision without an id", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "resolve_decision", itemId: ITEM_ID, choice: "approve" } }],
+    ["an empty choice", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "resolve_decision", itemId: ITEM_ID, decisionId: DECISION_ID, choice: "" } }],
+    ["the removed approve_step command", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "approve_step", itemId: ITEM_ID, stepIndex: 0 } }],
     ["a negative seq", { apiVersion: API_VERSION, kind: "event", seq: -1, event: { type: "item_updated", item: item() } }],
     ["an event with an invalid record", { apiVersion: API_VERSION, kind: "event", seq: 2, event: { type: "item_updated", item: { ...item(), schemaVersion: 9 } } }],
     ["reply data that is not JSON", { apiVersion: API_VERSION, kind: "reply", requestId: "r1", result: { ok: true, data: () => 1 } }],
     ["extra fields", { ...valid[2], token: "secret" }],
   ])("refuses %s", (_label, message) => {
     expect(parseEngineMessage(message).ok).toBe(false);
+  });
+});
+
+describe("direction-specific parsers", () => {
+  const command = { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "stop_item", itemId: ITEM_ID } };
+  const query = { apiVersion: API_VERSION, kind: "query", requestId: "r2", query: { type: "item", itemId: ITEM_ID } };
+  const reply = { apiVersion: API_VERSION, kind: "reply", requestId: "r2", result: { ok: true, data: null } };
+  const event = { apiVersion: API_VERSION, kind: "event", seq: 0, event: { type: "item_updated", item: item() } };
+
+  it("parseClientMessage accepts commands and queries only", () => {
+    expect([command, query, reply, event].map((message) => parseClientMessage(message).ok)).toEqual([true, true, false, false]);
+  });
+
+  it("parseServerMessage accepts replies and events only", () => {
+    expect([command, query, reply, event].map((message) => parseServerMessage(message).ok)).toEqual([false, false, true, true]);
+  });
+});
+
+describe("id parsers", () => {
+  it.each([
+    ["workspace", parseWorkspaceId, "northwind-prod", "Northwind Prod"],
+    ["template", parseTemplateId, "plan-and-build", "-plan"],
+    ["agent", parseAgentId, "local-investigator", "a".repeat(65)],
+    ["item", parseItemId, ITEM_ID, CALL_ID],
+    ["call", parseCallId, CALL_ID, "call_"],
+    ["decision", parseDecisionId, DECISION_ID, ITEM_ID],
+  ] as const)("%s id: accepts its format, refuses others", (_label, parse, valid, invalid) => {
+    expect(parse(valid)).toEqual({ ok: true, value: valid });
+    expect(parse(invalid).ok).toBe(false);
+    expect(parse(42).ok).toBe(false);
   });
 });

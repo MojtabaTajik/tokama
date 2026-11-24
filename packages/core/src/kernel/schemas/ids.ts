@@ -13,12 +13,15 @@ export const TemplateIdSchema = name.brand<"TemplateId">();
 export const AgentIdSchema = name.brand<"AgentId">();
 export const ItemIdSchema = generated("item").brand<"ItemId">();
 export const CallIdSchema = generated("call").brand<"CallId">();
+/** A question the engine put to the engineer (plan approval, cloud-step approval, retry or stop, quota). */
+export const DecisionIdSchema = generated("decision").brand<"DecisionId">();
 
 export type WorkspaceId = z.output<typeof WorkspaceIdSchema>;
 export type TemplateId = z.output<typeof TemplateIdSchema>;
 export type AgentId = z.output<typeof AgentIdSchema>;
 export type ItemId = z.output<typeof ItemIdSchema>;
 export type CallId = z.output<typeof CallIdSchema>;
+export type DecisionId = z.output<typeof DecisionIdSchema>;
 
 /** Milliseconds since the Unix epoch, as the kernel clock returns them. */
 export const EpochMsSchema = z.int().nonnegative();
