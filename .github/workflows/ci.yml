@@ -60,3 +60,22 @@ jobs:
           else
             pnpm --filter @tokama/desktop smoke
           fi
+
+  # The lowest Node that package.json allows: node:sqlite runs there without a flag (with an
+  # ExperimentalWarning on stderr). Not a required check.
+  node-min:
+    name: node 22.18 (ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.18.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test

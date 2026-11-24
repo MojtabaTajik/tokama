@@ -13,6 +13,7 @@
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { chmodSync, closeSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
 import { connect, createServer, type Server, type Socket } from "node:net";
+import { join } from "node:path";
 import {
   API_VERSION,
   type BoardResult,
@@ -36,7 +37,14 @@ import {
   type SuggestTemplateResult,
   systemClock,
   type SetupResult,
+  ItemStore,
+  loadHostId,
+  posixProcessTable,
+  type ProcessTable,
+  recoverItems,
+  type StoredItem,
 } from "@tokama/core";
+import { ItemIndex } from "./item-index.js";
 import { SampleEngine } from "./sample/sample.js";
 import { MemoryItemStore } from "./store.js";
 
@@ -48,6 +56,13 @@ export interface EngineOptions {
   readonly store?: MemoryItemStore;
   /** Fake engine mode: serve the sample data set and handle commands on it (sample/sample.ts). */
   readonly sample?: boolean;
+  /**
+   * Tokama's home folder (`~/.tokama`): item logs in `items/`, the board index in `tokama.db`.
+   * Without it, or in sample mode, nothing is stored.
+   */
+  readonly home?: string;
+  /** Read and signal leftover agent processes on start. Default: the POSIX process table. */
+  readonly processTable?: ProcessTable;
   /** Default: the system clock. */
   readonly clock?: Clock;
   /** A connection that sends no hello within this time is closed. Default 5 s. */
@@ -62,6 +77,8 @@ export interface EngineHandle {
   readonly engineId: string;
   readonly endpoint: EngineEndpoint;
   readonly store: MemoryItemStore;
+  /** The item logs, when the engine stores items. */
+  readonly items?: ItemStore;
   /** Resolves once the engine has shut down and removed its files. */
   readonly closed: Promise<void>;
   /** Shuts the engine down, as aborting the signal does. */
@@ -69,7 +86,8 @@ export interface EngineHandle {
 }
 
 export interface StartError {
-  readonly code: "already_running" | "invalid_endpoint" | "unsafe_dir" | "start_failed";
+  /** `stopped`: the signal aborted or close() was called before the start finished. */
+  readonly code: "already_running" | "invalid_endpoint" | "unsafe_dir" | "start_failed" | "stopped";
   readonly message: string;
 }
 
@@ -96,6 +114,36 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   const lock = await acquireLock(endpoint.value, lockContent, log);
   if (!lock.ok) return lock;
 
+  // The item store has one writer: the engine that holds the home folder's own lock. Engines with
+  // different engine dirs can share a home, so the engine dir's lock does not cover it.
+  let storage: Storage | undefined;
+  const homeLock = options.home !== undefined && !options.sample ? { lockPath: join(options.home, "engine.lock"), socketPath, dir: options.home } : undefined;
+  const homeLockContent = `${process.pid} ${engineId} ${socketPath}\n`;
+  if (homeLock !== undefined) {
+    const home = homeLock.dir;
+    const opened = await (async (): Promise<Result<Storage, StartError>> => {
+      try {
+        mkdirSync(home, { recursive: true, mode: 0o700 });
+      } catch (error) {
+        return err({ code: "start_failed", message: `cannot create ${home}: ${String(error)}` });
+      }
+      const locked = await acquireLock(homeLock, homeLockContent, log);
+      if (!locked.ok) return locked;
+      const result = await openStorage(home, options.processTable ?? posixProcessTable, options.clock ?? systemClock, log);
+      if (!result.ok) releaseLock(homeLock.lockPath, homeLockContent);
+      return result;
+    })();
+    if (!opened.ok) {
+      releaseLock(lockPath, lockContent);
+      return opened;
+    }
+    storage = opened.value;
+  }
+  const releaseStorage = () => {
+    storage?.close();
+    if (homeLock !== undefined) releaseLock(homeLock.lockPath, homeLockContent);
+  };
+
   // From here on the lock is ours, so the socket and token files at these paths are ours too.
   let server: Server;
   let token: Buffer;
@@ -105,6 +153,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     server = await listen(socketPath);
     chmodSync(socketPath, 0o600);
   } catch (error) {
+    releaseStorage();
     unlinkIfPresent(socketPath);
     unlinkIfPresent(tokenPath);
     releaseLock(lockPath, lockContent);
@@ -278,8 +327,12 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     for (const socket of connections) socket.end();
     await withDeadline(allClosed, shutdownTimeoutMs);
     for (const socket of connections) socket.destroy();
+    // Recovery writes to the item logs; it must be done before another engine may open them.
+    recoveryAbort.abort();
+    await recovering;
     // Closing the server removes the socket file. Only then may another engine take over.
     await new Promise<void>((resolve) => server.close(() => resolve()));
+    releaseStorage();
     if (ownsLock(lockPath, lockContent)) {
       unlinkIfPresent(socketPath);
       unlinkIfPresent(tokenPath);
@@ -290,11 +343,100 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     return closed;
   };
 
+  const recoveryAbort = new AbortController();
+  let recovering: Promise<void> | undefined;
+
   if (options.signal?.aborted) void shutdown();
   else options.signal?.addEventListener("abort", () => void shutdown(), { once: true });
 
+  // Recovery can take seconds (a grace period per leftover tree). It runs once the socket answers,
+  // so an engine starting meanwhile sees this one as live rather than its lock as stale.
+  if (storage !== undefined && !shuttingDown) {
+    const running = storage;
+    recovering = running.recover(recoveryAbort.signal).catch((error: unknown) => log(`restart recovery failed: ${String(error)}`));
+    await recovering;
+  }
+  if (shuttingDown) {
+    await closed;
+    return err({ code: "stopped", message: "the engine was stopped while it started" });
+  }
+
   log(`listening on ${socketPath} (engine ${engineId}${sample ? ", sample data" : ""})`);
-  return ok({ engineId, endpoint: endpoint.value, store, closed, close: shutdown });
+  return ok({ engineId, endpoint: endpoint.value, store, ...(storage && { items: storage.items }), closed, close: shutdown });
+}
+
+interface Storage {
+  readonly items: ItemStore;
+  /** Records a run failure for each step that was running when the engine stopped. */
+  recover(signal: AbortSignal): Promise<void>;
+  close(): void;
+}
+
+/** Loads the item logs and rebuilds the board index from them. The index follows every change after that. */
+async function openStorage(home: string, table: ProcessTable, clock: Clock, log: (message: string) => void): Promise<Result<Storage, StartError>> {
+  let index: ItemIndex | undefined;
+  try {
+    const hostId = loadHostId(home, clock);
+    if (!hostId.ok) return err({ code: "start_failed", message: hostId.error });
+    const { store: items, problems } = ItemStore.open({ home, hostId: hostId.value, clock });
+    for (const problem of problems) log(`item ${problem.itemId} is not loaded: ${problem.message}`);
+    index = openIndex(join(home, "tokama.db"), items.list(), clock, log);
+    const opened = index;
+    const unsubscribe = items.subscribe((item) => {
+      // The event is on disk already; a failed index write must not fail the append.
+      try {
+        opened.put(item);
+      } catch (error) {
+        log(`cannot update the board index for ${item.id}: ${String(error)}`);
+      }
+    });
+    return ok({
+      items,
+      recover: async (signal) => {
+        for (const recovered of await recoverItems(items, { table, clock, signal })) {
+          const kills = recovered.kills.map(({ pid, outcome }) => `${pid} ${outcome.kind}${"reason" in outcome ? ` (${outcome.reason})` : ""}${"message" in outcome ? ` (${outcome.message})` : ""}`);
+          log(`item ${recovered.itemId}: step ${recovered.stepId} was running; asking retry or stop${kills.length > 0 ? `; processes: ${kills.join(", ")}` : ""}${recovered.error ? `; not recorded: ${recovered.error.message}` : ""}`);
+        }
+      },
+      close: () => {
+        unsubscribe();
+        opened.close();
+      },
+    });
+  } catch (error) {
+    index?.close();
+    return err({ code: "start_failed", message: `cannot open item storage in ${home}: ${String(error)}` });
+  }
+}
+
+/**
+ * Opens the board index and rebuilds it from the logs. A database that cannot be opened or
+ * rebuilt is moved aside with its -wal and -shm files (it holds only derived data) and made anew.
+ */
+function openIndex(file: string, items: readonly StoredItem[], clock: Clock, log: (message: string) => void): ItemIndex {
+  try {
+    const index = ItemIndex.open(file);
+    try {
+      index.rebuild(items);
+      return index;
+    } catch (error) {
+      index.close();
+      throw error;
+    }
+  } catch (error) {
+    const aside = `${file}.damaged-${clock.now()}`;
+    log(`the board index ${file} is damaged (${String(error)}); moving it to ${aside} and rebuilding it`);
+    for (const suffix of ["", "-wal", "-shm"]) {
+      try {
+        renameSync(`${file}${suffix}`, `${aside}${suffix}`);
+      } catch (moveError) {
+        if (!hasCode(moveError, "ENOENT")) throw moveError;
+      }
+    }
+    const index = ItemIndex.open(file);
+    index.rebuild(items);
+    return index;
+  }
 }
 
 function ensurePrivateDir(dir: string): Result<void, StartError> {
@@ -312,7 +454,10 @@ function ensurePrivateDir(dir: string): Result<void, StartError> {
   }
 }
 
-async function acquireLock(endpoint: EngineEndpoint, content: string, log: (message: string) => void): Promise<Result<void, StartError>> {
+/** A lock file, the socket of the engine that holds it, and the folder named in messages. */
+type LockSpec = Pick<EngineEndpoint, "lockPath" | "socketPath" | "dir">;
+
+async function acquireLock(endpoint: LockSpec, content: string, log: (message: string) => void): Promise<Result<void, StartError>> {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const fd = openSync(endpoint.lockPath, "wx", 0o600);
@@ -325,28 +470,33 @@ async function acquireLock(endpoint: EngineEndpoint, content: string, log: (mess
     } catch (error) {
       if (!hasCode(error, "EEXIST")) return err({ code: "start_failed", message: `cannot create ${endpoint.lockPath}: ${String(error)}` });
     }
-    if (await lockIsLive(endpoint)) {
-      return err({ code: "already_running", message: `an engine is already running on ${endpoint.socketPath}` });
-    }
-    log(`removing a stale lock and socket in ${endpoint.dir}`);
+    const live = await lockIsLive(endpoint);
+    if (live.live) return err({ code: "already_running", message: `an engine is already running on ${live.socketPath}` });
+    log(`removing a stale lock in ${endpoint.dir}`);
     unlinkIfPresent(endpoint.lockPath);
   }
   return err({ code: "already_running", message: `another engine is starting in ${endpoint.dir}` });
 }
 
-async function lockIsLive(endpoint: EngineEndpoint): Promise<boolean> {
-  if (await socketAnswers(endpoint.socketPath)) return true;
+/**
+ * A lock whose third field names a socket (the home lock) is probed on that socket; the engine
+ * dir's lock is probed on the dir's socket.
+ */
+async function lockIsLive(endpoint: LockSpec): Promise<{ live: boolean; socketPath: string }> {
   let content: string;
   let ageMs: number;
   try {
     content = readFileSync(endpoint.lockPath, "utf8");
     ageMs = Date.now() - lstatSync(endpoint.lockPath).mtimeMs;
   } catch {
-    return false;
+    return { live: await socketAnswers(endpoint.socketPath), socketPath: endpoint.socketPath };
   }
-  const pid = Number.parseInt(content, 10);
-  if (Number.isInteger(pid) && pid > 0 && !pidAlive(pid)) return false;
-  return ageMs < STARTING_GRACE_MS;
+  const [pidField, , socketField] = content.trim().split(" ");
+  const socketPath = socketField || endpoint.socketPath;
+  if (await socketAnswers(socketPath)) return { live: true, socketPath };
+  const pid = Number.parseInt(pidField ?? "", 10);
+  if (Number.isInteger(pid) && pid > 0 && !pidAlive(pid)) return { live: false, socketPath };
+  return { live: ageMs < STARTING_GRACE_MS, socketPath };
 }
 
 /** True when something accepts connections on the socket (or it does not answer in time). */
