@@ -4,11 +4,12 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { connect } from "@tokama/client";
 import { buildEnv, defaultEngineDir, engineEndpoint, err } from "@tokama/core";
-import { app, BrowserWindow, ipcMain, session, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, session, shell } from "electron";
 import { CHANNELS } from "../shared/bridge.js";
 import { engineApi } from "./api.js";
 import { type ConnectionWatch, watchConnection } from "./connection.js";
 import { engineCommand, engineDirFor, findExecutable, readLogTail } from "./engine.js";
+import { pickFolder } from "./folder.js";
 import { appIcons } from "./icon.js";
 import { devServerUrl, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, sampleEngineEnabled, secureWebPreferences } from "./policy.js";
 
@@ -103,6 +104,11 @@ void app.whenReady().then(() => {
   const api = engineApi(() => watch.client());
   handle(CHANNELS.query, (query) => api.query(query));
   handle(CHANNELS.command, (command) => api.command(command));
+  // Looked up on each call, so the UI flow tests can stand in for the native picker.
+  handle(CHANNELS.pickFolder, () => pickFolder((options) => {
+    const window = BrowserWindow.getFocusedWindow();
+    return window === null ? dialog.showOpenDialog(options) : dialog.showOpenDialog(window, options);
+  }));
   app.on("before-quit", () => void watch.close());
   createWindow();
   app.on("activate", () => {

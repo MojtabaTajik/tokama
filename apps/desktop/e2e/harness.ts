@@ -1,8 +1,8 @@
 // What every UI flow test shares: one Electron app per test, on its own sample engine in its own
 // temp dir. The app starts the engine itself, as it does for a user, so a restart test sees the
 // real reconnect path. Linux needs a display (CI uses xvfb-run). Nothing outside the temp dir is
-// touched (a real engine gets a home folder inside it); the app, then the engine, are stopped at
-// the end of every test.
+// touched: HOME points into it in every mode, so the engine's Tokama home (items, repos.yaml) is
+// `<home>/.tokama` of this test. The app, then the engine, are stopped at the end of every test.
 import { execFileSync } from "node:child_process";
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -27,6 +27,10 @@ const CLOSE_TIMEOUT_MS = 3_000;
 export interface Session {
   readonly app: ElectronApplication;
   readonly page: Page;
+  /** The test's temp dir, removed after the test. */
+  readonly tmp: string;
+  /** HOME of the app and its engine, inside `tmp`. */
+  readonly home: string;
   /** What the renderer gets through the preload bridge. */
   connection(): Promise<ConnectionState>;
   /** The running engine's id and pid, from its lock file; undefined while none runs. */
@@ -79,7 +83,7 @@ export function flow(name: string, fn: (session: Session) => Promise<void>, mode
       page = await app.firstWindow({ timeout: START_TIMEOUT_MS });
       page.setDefaultTimeout(ACTION_TIMEOUT_MS);
       await page.waitForLoadState("load");
-      const session = sessionOf(app, page, engineDir);
+      const session = sessionOf(app, page, engineDir, tmp);
       if (mode === "unavailable") await failed(session);
       else await connected(session);
       trace(name, mode === "unavailable" ? "failed, as expected" : "connected");
@@ -112,12 +116,11 @@ async function launch(tmp: string, baseDir: string, output: string[], mode: Engi
   const env: Record<string, string> = {};
   for (const [name, value] of Object.entries(process.env)) if (value !== undefined) env[name] = value;
   env["TOKAMA_ENGINE_DIR"] = baseDir;
-  if (mode === "real") {
-    // The engine keeps its items and its lock in `~/.tokama`: that is a folder of this test.
-    delete env["TOKAMA_SAMPLE"];
-    env["HOME"] = join(tmp, "h");
-    mkdirSync(env["HOME"], { recursive: true });
-  } else env["TOKAMA_SAMPLE"] = "1";
+  // The engine keeps its items, its lock and repos.yaml in `~/.tokama`: that is a folder of this test.
+  env["HOME"] = homeOf(tmp);
+  mkdirSync(env["HOME"], { recursive: true });
+  if (mode === "real") delete env["TOKAMA_SAMPLE"];
+  else env["TOKAMA_SAMPLE"] = "1";
   // An absolute folder with nothing in it: the app finds no node to start the engine with.
   if (mode === "unavailable") env["PATH"] = join(tmp, "no-bin");
   // Load the built renderer, never a dev server.
@@ -144,11 +147,16 @@ async function launch(tmp: string, baseDir: string, output: string[], mode: Engi
   return app;
 }
 
-function sessionOf(app: ElectronApplication, page: Page, engineDir: string): Session {
+/** HOME of the app and its engine in a test. */
+const homeOf = (tmp: string): string => join(tmp, "h");
+
+function sessionOf(app: ElectronApplication, page: Page, engineDir: string, tmp: string): Session {
   const engine = () => readEngine(engineDir);
   return {
     app,
     page,
+    tmp,
+    home: homeOf(tmp),
     connection: () => page.evaluate(() => (globalThis as unknown as { tokama: TokamaBridge }).tokama.getConnection()),
     engine,
     killEngine: () => {

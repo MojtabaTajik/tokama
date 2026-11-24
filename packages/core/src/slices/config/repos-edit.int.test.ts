@@ -1,5 +1,4 @@
 // suggestRepo against real git: the top folder, a subfolder, a linked worktree and a detached HEAD.
-import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,20 +9,27 @@ import { suggestRepo, type RepoEditOptions } from "./index.js";
 
 let root: string;
 let options: RepoEditOptions;
-const run = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, stdio: "pipe", env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" } });
 
-beforeAll(() => {
+/** Plain git for fixtures, never through the wrapper. HOME is the temp dir: no global config. */
+async function run(cwd: string, ...args: string[]): Promise<void> {
+  const errors: string[] = [];
+  const runner = createProcessRunner({ parentEnv: { PATH: process.env["PATH"], HOME: root } });
+  const result = await runner.run({ command: { argv: ["git", ...args] }, cwd, env: { GIT_CONFIG_NOSYSTEM: "1" }, stderr: { onLine: (line) => errors.push(line) } });
+  if (result.kind !== "finished" || result.exitCode !== 0) throw new Error(`git ${args.join(" ")} failed: ${errors.join("\n")}`);
+}
+
+beforeAll(async () => {
   root = realpathSync(mkdtempSync(join(tmpdir(), "tokama-repos-git-")));
   const runner = createProcessRunner({ parentEnv: { PATH: process.env["PATH"], HOME: root } });
   options = { tokamaHome: join(root, "home"), git: createGit({ runner }) };
   const repo = join(root, "orders-api");
   mkdirSync(join(repo, "src"), { recursive: true });
-  run(repo, "init", "-q", "-b", "trunk");
-  run(repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "first");
-  run(repo, "worktree", "add", "-q", "-b", "feature/x", join(root, "orders-wt"));
-  run(root, "init", "-q", "-b", "main", "unborn");
-  run(root, "clone", "-q", repo, "detached");
-  run(join(root, "detached"), "checkout", "-q", "--detach");
+  await run(repo, "init", "-q", "-b", "trunk");
+  await run(repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "first");
+  await run(repo, "worktree", "add", "-q", "-b", "feature/x", join(root, "orders-wt"));
+  await run(root, "init", "-q", "-b", "main", "unborn");
+  await run(root, "clone", "-q", repo, "detached");
+  await run(join(root, "detached"), "checkout", "-q", "--detach");
 });
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 

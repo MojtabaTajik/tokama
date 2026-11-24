@@ -1,0 +1,144 @@
+/* Adding and removing repos: the sidebar's "+ Add repo" and row menu, and the repo dialogs.
+   Colours come from theme.css tokens only (a test checks it). */
+.sb-add {
+  display: block;
+  width: calc(100% - 2px);
+  min-height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.sb-add:hover {
+  background: var(--panel);
+  color: var(--text-2);
+}
+
+.repo-menu {
+  position: relative;
+  flex: none;
+}
+
+.sb-more {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  line-height: 1;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.sb-row:hover .sb-more,
+.sb-row:focus-within .sb-more,
+.sb-more[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.repo-menu-popup {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 10;
+  min-width: 160px;
+  padding: 4px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--raised);
+}
+
+.repo-menu-item {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  text-align: left;
+  cursor: pointer;
+}
+
+.repo-menu-item:hover,
+.repo-menu-item:focus-visible {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.modal {
+  width: min(440px, calc(100vw - 32px));
+  padding: 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.modal::backdrop {
+  background: var(--ground);
+  opacity: 0.7;
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.repo-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.repo-form p {
+  margin: 0;
+  color: var(--text-2);
+}
+
+.repo-form .repo-path {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.repo-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.repo-field label {
+  color: var(--text-2);
+}
+
+.repo-field input,
+.repo-field textarea {
+  padding: 6px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--input);
+  color: var(--text);
+  resize: vertical;
+}
+
+.repo-field input:focus-visible,
+.repo-field textarea:focus-visible {
+  outline: 1px solid var(--link);
+  outline-offset: 0;
+}
+
+.repo-hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.repo-form .repo-problem {
+  color: var(--fail);
+}

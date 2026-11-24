@@ -42,6 +42,7 @@ export const CHANNELS = {
   query: "tokama:engine:query",
   command: "tokama:engine:command",
   event: "tokama:engine:event",
+  pickFolder: "tokama:dialog:pick-folder",
 } as const;
 
 /** What the preload script exposes to the renderer as `window.tokama`. */
@@ -57,4 +58,6 @@ export interface TokamaBridge {
   command<C extends CommandInput>(command: C): Promise<CommandReply<C["type"]>>;
   /** Calls `listener` with every engine event; returns a function that stops it. */
   onEvent(listener: (event: BridgeEvent) => void): () => void;
+  /** The native folder picker; null when cancelled. The engine checks the folder before using it. */
+  pickFolder(): Promise<string | null>;
 }
