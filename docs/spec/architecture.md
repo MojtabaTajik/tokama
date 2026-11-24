@@ -50,6 +50,8 @@ packages/core/src/
   index.ts         public entry
 ```
 
+`api/` imports only the kernel and `slices/workflow-engine/index.ts`: clients reach the engine through workflow-engine, never through another slice or an adapter.
+
 ## 5. Slices
 
 | Slice | Owns |
@@ -110,15 +112,40 @@ Agent runtime and model host are separate ports, so a local model can run under 
 - Items: `~/.tokama/items/<id>/` with an append-only event log, raw agent transcripts, evidence and findings; a local index for the board and search. (Store format to be settled before the `items` slice is built.)
 - Worktrees: inside each repo's worktree folder (default `.tokama/wt/`).
 
-## 9. Boundaries in CI
+## 9. Security model
 
-- ESLint rules: slices only via `index.ts`, only `workflow-engine` composes; slices and adapters never import each other; kernel imports neither; no `electron` in core; process, network and dynamic-import escape hatches banned outside `kernel/process`, `kernel/egress` and `adapters/*`; inline lint-disable comments off in core; rules cover `.ts`, `.tsx`, `.mts`, `.cts`.
+Tokama v1 is a desktop app. The engine listens only on a local socket owned by the user; there is no network listener, so remote attackers are out of scope until remote hosts or a relay exist.
+
+The real risks, in order, and their controls:
+
+| Risk | Controls |
+|---|---|
+| 1. AI agents act on untrusted content they read (repo files, issues, logs, connection results) through prompt injection. | Command allowlists, step tool permissions, loop guards, worktrees, tamper checks, never a skip-all-permissions flag; later a sandbox. |
+| 2. Data leaves the machine against a step's data rule. | Data rules, cloud-step approval, redaction, one egress path with a runtime guard, egress log. |
+| 3. Connection credentials leak or are misused. | Least-privilege scopes, OS secret store, never given to agents as text. |
+| 4. Model output rendered in the desktop app. | Text only, Electron hardening (section 11). |
+| 5. Supply chain. | Exact pins, minimum release age, no install scripts. |
+
+Low or out of scope: other software running as the same user, and contributors who deliberately hide code from lint (code review covers it).
+
+Security work and review findings are rated against this model. Lint is a guardrail against honest mistakes, not a security boundary.
+
+## 10. Boundaries in CI
+
+- ESLint rules for `packages/core` (`.ts`, `.tsx`, `.mts`, `.cts`):
+  - slices only through `slices/<name>/index.ts`, and only `workflow-engine` composes slices; slices and adapters never import each other, and adapters not each other; the kernel imports neither; only `src/index.ts` and `src/composition.ts` wire; `api/` imports only the kernel and `slices/workflow-engine/index.ts`;
+  - no `electron` (or its subpaths) anywhere in core;
+  - process and network modules only in `kernel/process`, `kernel/egress` and `adapters/*`: elsewhere only an allowlist of safe built-in modules, for imports, re-exports and literal `import()`; any other built-in, and any `node:` module a newer Node adds, is refused;
+  - the globals `fetch`, `WebSocket` and `EventSource` only in `kernel/egress` and `adapters/*`;
+  - `no-eval` and `no-new-func`.
+- ESLint runs with the root config only (`eslint -c eslint.config.js`); a test fails if another `eslint.config.*` is committed.
+- Lint catches honest mistakes by contributors and coding agents. It does not stop code written to get around it (computed names, aliases, reflection); code review covers that, and the kernel's runtime controls (section 9) are the security boundary.
 - Fixture tests that prove each rule fires, run against the real ESLint config.
 - Adapter removal test that never mutates the working tree.
 - pnpm strict dependencies, exact version pins, lockfile committed, no install scripts allowed by default.
 - GitHub Actions with read-only token, actions pinned by SHA.
 
-## 10. Stability
+## 11. Stability
 
 - Validate every external input at the boundary: CLI event streams, connector results, files, API messages.
 - Expected failures are values, not exceptions; the engine maps each to a step outcome explicitly.
@@ -129,7 +156,7 @@ Agent runtime and model host are separate ports, so a local model can run under 
 - Plug-in interfaces are versioned and kept stable, so third-party adapters are possible later.
 - No telemetry by default; anything collected is opt-in and listed in settings.
 
-## 11. What comes from ai-pipeline
+## 12. What comes from ai-pipeline
 
 `ai-pipeline` (the earlier private Python harness, kept outside this repo) is a reference, not a spec to port in full. Reuse its hard-won parts and port the tests that cover them:
 
@@ -146,7 +173,7 @@ Agent runtime and model host are separate ports, so a local model can run under 
 
 Not carried over: run-file compatibility, `summary.json`/`compare.json` formats and their golden tests, the pricing model as-is, the HTTP dashboard. The plan → build → verify loop becomes a built-in template run by the general engine.
 
-## 12. v1 build order
+## 13. v1 build order
 
 Epics, each a GitHub milestone with small issues (1 to 3 days each). Claude Code is the first backend; local models and Codex follow as more adapters. Issues are written for the next one or two epics only.
 
