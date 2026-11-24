@@ -1,0 +1,226 @@
+// Proves the engine boundaries in eslint-preset.ts with the real root eslint.config.js.
+//
+// The fixtures mirror the repo layout under tooling/eslint-fixtures/, so ESLint runs there with
+// that folder as its cwd. Boundary rules need the imported files to exist on disk, so they can be
+// resolved and classified. ESLINT_PLUGIN_BOUNDARIES_ROOT_PATH points the boundaries plugin at the
+// same folder (the plugin reads it before its `boundaries/root-path` setting).
+import { readdirSync } from "node:fs";
+import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
+import { ESLint } from "eslint";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+const repoRoot = fileURLToPath(new URL("..", import.meta.url));
+const fixtureRoot = fileURLToPath(new URL("./eslint-fixtures/", import.meta.url));
+const core = "packages/core/src";
+const ROOT_PATH_ENV = "ESLINT_PLUGIN_BOUNDARIES_ROOT_PATH";
+
+const IMPORTS = "@typescript-eslint/no-restricted-imports";
+const SYNTAX = "no-restricted-syntax";
+const GLOBALS = "no-restricted-globals";
+const BOUNDARIES = "boundaries/dependencies";
+const REQUIRE_IMPORTS = "@typescript-eslint/no-require-imports";
+
+// Every fixture named bad-*: the rules it must trigger (and no others) and its error count,
+// so one statement that stops firing in a multi-statement fixture fails the test.
+const violations: Record<string, [rules: string[], errors: number]> = {
+  // Slices, adapters, kernel and wiring files.
+  "slices/items/bad-imports-other-slice.ts": [[BOUNDARIES], 1],
+  "slices/items/bad-dynamic-import-other-slice.ts": [[BOUNDARIES], 1],
+  "slices/items/bad-type-query-other-slice.ts": [[BOUNDARIES], 1],
+  "slices/items/bad-import-require-other-slice.cts": [[BOUNDARIES, REQUIRE_IMPORTS], 2],
+  "slices/workflow-engine/bad-imports-slice-internal.ts": [[BOUNDARIES], 1],
+  "slices/items/bad-imports-adapter.ts": [[BOUNDARIES], 1],
+  "slices/items/bad-imports-composition.ts": [[BOUNDARIES], 1],
+  "slices/items/bad-imports-unresolved.ts": [[BOUNDARIES], 1],
+  "adapters/agent/fake/bad-imports-slice.ts": [[BOUNDARIES], 1],
+  "adapters/agent/fake/bad-imports-other-adapter.ts": [[BOUNDARIES], 1],
+  "kernel/schemas/bad-imports-slice.ts": [[BOUNDARIES], 1],
+  "kernel/schemas/bad-imports-adapter.ts": [[BOUNDARIES], 1],
+  "bad-new-root-file.ts": [[BOUNDARIES], 3],
+  // Electron and URL specifiers, also inside the escape zones.
+  "slices/items/bad-electron.ts": [[IMPORTS], 1],
+  "kernel/schemas/bad-electron-main-reexport.ts": [[IMPORTS], 1],
+  "adapters/agent/fake/bad-electron.ts": [[IMPORTS], 1],
+  "kernel/process/bad-electron-dynamic.ts": [[SYNTAX], 1],
+  "slices/items/bad-url-import.ts": [[IMPORTS, SYNTAX], 2],
+  "adapters/agent/fake/bad-url-import.ts": [[IMPORTS], 1],
+  // Process, network and code-loading escape hatches.
+  "slices/items/bad-child-process.ts": [[IMPORTS], 1],
+  "kernel/schemas/bad-node-child-process.ts": [[IMPORTS], 1],
+  "slices/items/bad-reexport-net.ts": [[IMPORTS], 1],
+  "slices/items/bad-type-import.ts": [[IMPORTS], 1],
+  "slices/items/bad-dynamic-import.ts": [[SYNTAX], 1],
+  "slices/items/bad-dynamic-import-non-literal.ts": [[SYNTAX], 2],
+  "slices/items/bad-create-require.ts": [[IMPORTS], 1],
+  "slices/items/bad-get-builtin-module.ts": [[SYNTAX], 1],
+  // `process["_linkedBinding"]` is refused as a member and as a string.
+  "slices/items/bad-process-alias.ts": [[SYNTAX], 4],
+  "slices/items/bad-process-execve.ts": [[SYNTAX], 2],
+  "slices/items/bad-process-import.ts": [[IMPORTS], 1],
+  "slices/items/bad-reflect-get.ts": [[SYNTAX], 1],
+  "slices/items/bad-fetch.ts": [[GLOBALS], 3],
+  "slices/items/bad-global-fetch.ts": [[GLOBALS], 1],
+  "slices/items/bad-global-this-alias.ts": [[GLOBALS], 1],
+  "slices/items/bad-reflect-get-global.ts": [[GLOBALS], 1],
+  "slices/items/bad-require.ts": [[GLOBALS, REQUIRE_IMPORTS], 2],
+  "slices/items/bad-function-constructor.ts": [[SYNTAX, "no-new-func", "no-eval"], 3],
+  // Every TypeScript extension is covered, and JavaScript files are refused.
+  "slices/items/bad-module.mts": [[IMPORTS], 1],
+  "slices/items/bad-import-require.cts": [[IMPORTS, REQUIRE_IMPORTS], 2],
+  "slices/items/bad-component.tsx": [[IMPORTS], 1],
+  "slices/items/bad-javascript.mjs": [[SYNTAX], 1],
+  // Inline disable comments have no effect in core.
+  "slices/items/bad-inline-disable.ts": [[IMPORTS], 1],
+  "adapters/agent/fake/bad-inline-disable.ts": [[IMPORTS], 1],
+};
+
+const ESCAPE_MODULES = [
+  "child_process",
+  "net",
+  "tls",
+  "dgram",
+  "dns",
+  "dns/promises",
+  "http",
+  "https",
+  "http2",
+  "worker_threads",
+  "cluster",
+  "inspector",
+  "inspector/promises",
+  "module",
+  "vm",
+  "process",
+];
+const ESCAPE_SPECIFIERS = [
+  ...ESCAPE_MODULES.flatMap((name) => [name, `node:${name}`]),
+  "undici",
+  "undici/lib/web/fetch",
+  "ws",
+  "ws/lib/websocket",
+];
+const ELECTRON_SPECIFIERS = ["electron", "electron/main", "electron/renderer"];
+const ESCAPE_ZONES = ["kernel/process", "kernel/egress", "adapters/agent/fake"];
+
+let eslint: ESLint;
+let previousRootPath: string | undefined;
+const results = new Map<string, ESLint.LintResult>();
+
+function listFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+    entry.isDirectory() ? listFiles(join(dir, entry.name)) : [join(dir, entry.name)],
+  );
+}
+
+const ruleIds = (result: ESLint.LintResult) =>
+  [...new Set(result.messages.flatMap((m) => (m.ruleId ? [m.ruleId] : [])))].sort();
+
+const errorRules = async (path: string, code: string) => {
+  const [result] = await eslint.lintText(code, { filePath: join(fixtureRoot, path) });
+  if (!result) throw new Error(`no lint result for ${path}`);
+  expect(result.messages.filter((m) => m.fatal)).toEqual([]);
+  return ruleIds(result);
+};
+
+beforeAll(async () => {
+  previousRootPath = process.env[ROOT_PATH_ENV];
+  process.env[ROOT_PATH_ENV] = fixtureRoot;
+  eslint = new ESLint({ cwd: fixtureRoot, overrideConfigFile: join(repoRoot, "eslint.config.js") });
+  for (const result of await eslint.lintFiles(["."])) {
+    results.set(relative(join(fixtureRoot, core), result.filePath), result);
+  }
+}, 60_000);
+
+afterAll(() => {
+  if (previousRootPath === undefined) delete process.env[ROOT_PATH_ENV];
+  else process.env[ROOT_PATH_ENV] = previousRootPath;
+});
+
+describe("eslint preset: fixtures", () => {
+  it("lints every fixture file, including .tsx, .mts and .cts", () => {
+    const onDisk = listFiles(join(fixtureRoot, core)).map((file) => relative(join(fixtureRoot, core), file));
+    expect([...results.keys()].sort()).toEqual(onDisk.sort());
+    for (const path of Object.keys(violations)) expect(results.has(path), path).toBe(true);
+  });
+
+  it.each(Object.entries(violations))("%s triggers %j", (path, [rules, errors]) => {
+    const result = results.get(path);
+    expect(result, path).toBeDefined();
+    if (!result) return;
+    expect(result.messages.filter((m) => m.fatal)).toEqual([]);
+    expect(ruleIds(result)).toEqual([...rules].sort());
+    expect(result.errorCount).toBe(errors);
+  });
+
+  it("lists every bad-* fixture in the violation table", () => {
+    const bad = [...results.keys()].filter((path) => path.split("/").at(-1)?.startsWith("bad-"));
+    expect(bad.sort()).toEqual(Object.keys(violations).sort());
+  });
+
+  it("passes every allowed fixture with no message at all", () => {
+    const allowed = [...results].filter(([path]) => !path.split("/").at(-1)?.startsWith("bad-"));
+    expect(allowed.length).toBeGreaterThan(10);
+    for (const [path, result] of allowed) expect(result.messages, path).toEqual([]);
+  });
+
+  it.each([
+    ["slices/items/bad-inline-disable.ts", 3],
+    ["adapters/agent/fake/bad-inline-disable.ts", 1],
+    ["slices/items/bad-javascript.mjs", 1],
+  ] as const)("reports the inline disable comments in %s as having no effect", (path, count) => {
+    const messages = results.get(path)?.messages ?? [];
+    const ignored = messages.filter((m) => m.ruleId === null && m.message.includes("noInlineConfig"));
+    expect(ignored).toHaveLength(count);
+  });
+});
+
+describe("eslint preset: escape hatches", () => {
+  it.each(ESCAPE_SPECIFIERS)("refuses %s outside the escape zones in every form", async (specifier) => {
+    const path = `${core}/slices/items/virtual.ts`;
+    expect(await errorRules(path, `import "${specifier}";`)).toEqual([IMPORTS]);
+    expect(await errorRules(path, `export * from "${specifier}";`)).toEqual([IMPORTS]);
+    expect(await errorRules(path, `export const m = await import("${specifier}");`)).toEqual([SYNTAX]);
+  });
+
+  it.each(ESCAPE_ZONES)("allows escape hatches in %s", async (zone) => {
+    const code = [
+      ...ESCAPE_SPECIFIERS.map((specifier) => `import "${specifier}";`),
+      'const name = "node:vm";',
+      "export const m = await import(name);",
+      'export const r = fetch("https://example.com");',
+      'export const b = process.getBuiltinModule("node:child_process");',
+      "export const g = globalThis;",
+    ].join("\n");
+    expect(await errorRules(`${core}/${zone}/virtual.ts`, code)).toEqual([]);
+  });
+
+  it.each(ESCAPE_ZONES.flatMap((zone) => ELECTRON_SPECIFIERS.map((s) => [zone, s])))(
+    "refuses Electron in %s (%s)",
+    async (zone, specifier) => {
+      const path = `${core}/${zone}/virtual.ts`;
+      expect(await errorRules(path, `import "${specifier}";`)).toEqual([IMPORTS]);
+      expect(await errorRules(path, `export const e = await import("${specifier}");`)).toEqual([SYNTAX]);
+    },
+  );
+
+  it("applies no boundary or escape rules outside core", async () => {
+    const code = 'import "electron";\nimport "node:child_process";\nexport const r = fetch("https://example.com");';
+    expect(await errorRules("apps/desktop/src/virtual.ts", code)).toEqual([]);
+  });
+});
+
+describe("eslint preset: config", () => {
+  it.each(["ts", "tsx", "mts", "cts"])("applies the core rules to .%s files", async (extension) => {
+    const config = await eslint.calculateConfigForFile(join(fixtureRoot, `${core}/slices/items/virtual.${extension}`));
+    expect(config.linterOptions.noInlineConfig).toBe(true);
+    expect(config.rules[BOUNDARIES]?.[0]).toBe(2);
+    expect(config.rules[IMPORTS]?.[0]).toBe(2);
+  });
+
+  it("keeps inline config and boundary rules out of other packages", async () => {
+    const config = await eslint.calculateConfigForFile(join(fixtureRoot, "apps/desktop/src/index.ts"));
+    expect(config.linterOptions.noInlineConfig).not.toBe(true);
+    expect(config.rules[BOUNDARIES]).toBeUndefined();
+  });
+});
