@@ -2,7 +2,7 @@
 // temp dir. The app starts the engine itself, as it does for a user, so a restart test sees the
 // real reconnect path. Linux needs a display (CI uses xvfb-run). Nothing outside the temp dir is
 // touched; the app, then the engine, are stopped at the end of every test.
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -33,6 +33,20 @@ export interface Session {
   screenshot(name: string): Promise<void>;
 }
 
+/** One timed line per phase of a test, in `<outDir>/trace.log`: it shows where a hung test stood, also when CI cancels the run. */
+function trace(name: string, phase: string): void {
+  try {
+    mkdirSync(outDir, { recursive: true });
+    appendFileSync(join(outDir, "trace.log"), `${new Date().toISOString()} ${name}: ${phase}\n`);
+  } catch {
+    // Tracing never fails a test.
+  }
+}
+
+/** `promise`, or undefined after `ms`. */
+const within = <T>(promise: Promise<T>, ms: number): Promise<T | undefined> =>
+  Promise.race([promise, new Promise<undefined>((done) => setTimeout(done, ms, undefined))]);
+
 /** Runs `fn` against a fresh app; on failure, prints the app and engine output and saves a screenshot. */
 export function flow(name: string, fn: (session: Session) => Promise<void>): void {
   it(name, async () => {
@@ -44,20 +58,32 @@ export function flow(name: string, fn: (session: Session) => Promise<void>): voi
     let app: ElectronApplication | undefined;
     let page: Page | undefined;
     try {
+      trace(name, "launching");
       app = await launch(tmp, baseDir, output);
+      trace(name, "launched");
       page = await app.firstWindow({ timeout: START_TIMEOUT_MS });
       page.setDefaultTimeout(ACTION_TIMEOUT_MS);
       await page.waitForLoadState("load");
       const session = sessionOf(app, page, engineDir);
       await connected(session);
+      trace(name, "connected");
       await fn(session);
+      trace(name, "passed");
     } catch (error) {
+      trace(name, `failed: ${String(error).split("\n")[0]}`);
       await report(name, tmp, engineDir, output, page);
       throw error;
     } finally {
-      await app?.close().catch(() => undefined);
+      trace(name, "closing the app");
+      // A close that hangs must not hang the suite: end the process after 10 s.
+      if ((await within((app?.close() ?? Promise.resolve()).catch(() => undefined).then(() => true), 10_000)) === undefined) {
+        trace(name, "the app did not close; killing it");
+        app?.process().kill("SIGKILL");
+      }
+      trace(name, "stopping the engine");
       await stopEngine(engineDir);
       rmSync(tmp, { recursive: true, force: true });
+      trace(name, "done");
     }
   });
 }
