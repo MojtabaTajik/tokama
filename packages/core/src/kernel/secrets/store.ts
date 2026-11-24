@@ -1,4 +1,5 @@
 import { err, ok, type Result } from "../result/index.js";
+import { WorkspaceIdSchema } from "../schemas/index.js";
 import { Secret } from "./secret.js";
 
 /**
@@ -7,7 +8,7 @@ import { Secret } from "./secret.js";
  * Tokama namespace (another app's Keychain item, say).
  */
 export interface SecretRef {
-  /** A workspace id: lowercase letters, digits and hyphens, at most 64 characters. */
+  /** A workspace id (`WorkspaceIdSchema`): lowercase letters, digits and hyphens, at most 64 characters. */
   readonly workspace: string;
   /** Usually a connection id: letters, digits, `.`, `_` and `-`, at most 128 characters. */
   readonly account: string;
@@ -52,7 +53,6 @@ export const SECRET_SERVICE_PREFIX = "dev.tokama.";
  */
 export const MAX_SECRET_BYTES = 1536;
 
-const WORKSPACE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const ACCOUNT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 export interface StoreName {
@@ -62,7 +62,7 @@ export interface StoreName {
 
 /** The service and account a ref is stored under. These characters need no quoting in `security -i`. */
 export function storeName(ref: SecretRef): Result<StoreName, SecretError> {
-  if (!WORKSPACE.test(ref.workspace)) {
+  if (!WorkspaceIdSchema.safeParse(ref.workspace).success) {
     return err({ code: "invalid_ref", message: "secret ref workspace must be lowercase letters, digits and hyphens (at most 64)" });
   }
   if (!ACCOUNT.test(ref.account)) {

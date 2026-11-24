@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
 import type { ProcessRunner, RunRequest, RunResult } from "../process/index.js";
 import { createKeychainStore, parsePasswordLine } from "./keychain.js";
 import { Secret } from "./secret.js";
@@ -9,6 +12,16 @@ import { Secret } from "./secret.js";
 const VALUE = "s3cr3t-Value";
 const HEX = Buffer.from(VALUE, "utf8").toString("hex");
 const ref = { workspace: "northwind-prod", account: "orders-db" };
+
+// Keychain paths the store checks exist; `security` is never run on them (the runner is scripted).
+const dir = mkdtempSync(join(tmpdir(), "tokama-keychain-"));
+afterAll(() => rmSync(dir, { recursive: true, force: true }));
+function keychainFile(...parts: string[]): string {
+  const path = join(dir, ...parts);
+  mkdirSync(join(path, ".."), { recursive: true });
+  writeFileSync(path, "");
+  return path;
+}
 
 function scripted(exitCode: number | null, stderr: readonly string[] = [], extra: Partial<RunResult> = {}) {
   const requests: RunRequest[] = [];
@@ -36,12 +49,13 @@ function scripted(exitCode: number | null, stderr: readonly string[] = [], extra
 describe("macOS Keychain store: talking to security", () => {
   it("passes the value on stdin as hex, never on the argv", async () => {
     const { runner, requests } = scripted(0);
-    const result = await createKeychainStore({ runner, keychain: "/tmp/k.keychain-db" }).set(ref, new Secret(VALUE));
+    const keychain = keychainFile("k.keychain-db");
+    const result = await createKeychainStore({ runner, keychain }).set(ref, new Secret(VALUE));
     expect(result.ok).toBe(true);
     const request = requests[0];
     expect(request?.command).toEqual({ argv: ["/usr/bin/security", "-i"] });
     expect(request?.stdin).toBe(
-      `add-generic-password -U -s dev.tokama.northwind-prod -a orders-db -X ${HEX} /tmp/k.keychain-db\n`,
+      `add-generic-password -U -s dev.tokama.northwind-prod -a orders-db -X ${HEX} ${keychain}\n`,
     );
     expect(JSON.stringify(request?.command)).not.toContain(VALUE);
     expect(JSON.stringify(request?.command)).not.toContain(HEX);
@@ -73,6 +87,8 @@ describe("macOS Keychain store: talking to security", () => {
     [36, "unavailable"],
     [50, "unavailable"],
     [51, "unavailable"],
+    [128, "unavailable"],
+    [152, "unavailable"],
     [1, "failed"],
     [2, "failed"],
   ])("maps exit %i to %s for every call", async (code, expected) => {
@@ -125,9 +141,22 @@ describe("macOS Keychain store: talking to security", () => {
 
   it("refuses a value too long for one security -i line with this keychain path", async () => {
     const { runner, requests } = scripted(0);
-    const keychain = `/${"k".repeat(900)}`;
+    const keychain = keychainFile(...Array.from({ length: 4 }, () => "k".repeat(210)), "k.keychain-db");
     const result = await createKeychainStore({ runner, keychain }).set(ref, new Secret("a".repeat(1536)));
     expect(!result.ok && result.error.code).toBe("invalid_value");
+    expect(requests).toEqual([]);
+  });
+
+  it("refuses a missing keychain file, so security never falls back to the login keychain", async () => {
+    const { runner, requests } = scripted(0);
+    expect(() => createKeychainStore({ runner, keychain: join(dir, "missing.keychain-db") })).toThrow(TypeError);
+
+    const keychain = keychainFile("removed.keychain-db");
+    const store = createKeychainStore({ runner, keychain });
+    rmSync(keychain);
+    for (const result of [await store.set(ref, new Secret(VALUE)), await store.get(ref), await store.has(ref), await store.delete(ref)]) {
+      expect(!result.ok && result.error.code).toBe("unavailable");
+    }
     expect(requests).toEqual([]);
   });
 

@@ -1,3 +1,4 @@
+import { statSync } from "node:fs";
 import { createProcessRunner, type ProcessRunner } from "../process/index.js";
 import { err, ok, type Result } from "../result/index.js";
 import { Secret } from "./secret.js";
@@ -32,8 +33,11 @@ const MAX_LINE = 4000;
 const NOT_FOUND = 44; // errSecItemNotFound (-25300)
 const UNAVAILABLE = new Map([
   [36, "the keychain is locked or does not allow user interaction"], // errSecInteractionNotAllowed (-25308)
+  // A missing keychain file is refused before `security` runs; kept for a keychain removed mid-call.
   [50, "the keychain does not exist"], // errSecNoSuchKeychain (-25294)
   [51, "the keychain refused access"], // errSecAuthFailed (-25293)
+  [128, "the user cancelled the keychain dialog"], // errSecUserCanceled (-128)
+  [152, "the keychain is locked"], // errAuthorizationInternal (-60008), reported for a locked keychain
 ]);
 
 type Outcome = { readonly code: number; readonly stderr: readonly string[] };
@@ -46,8 +50,16 @@ export function createKeychainStore(options: KeychainStoreOptions = {}): SecretS
   if (options.keychain !== undefined && !/^\/[^\s"'\\]+$/.test(options.keychain)) {
     throw new TypeError("keychain must be an absolute path without whitespace, quotes or backslashes");
   }
+  // `security` given a keychain path that does not exist writes to the default (login) keychain
+  // and exits 0, so a missing file is refused here and again before every call.
+  if (options.keychain !== undefined && !isFile(options.keychain)) {
+    throw new TypeError("keychain file does not exist");
+  }
 
   async function run(command: string, args: readonly string[], stdin?: string): Promise<Result<Outcome, SecretError>> {
+    if (options.keychain !== undefined && !isFile(options.keychain)) {
+      return err({ code: "unavailable", message: "the keychain file does not exist" });
+    }
     const stderr: string[] = [];
     try {
       const result = await runner.run({
@@ -140,4 +152,12 @@ export function parsePasswordLine(stderr: readonly string[]): string | undefined
   if (hex?.[1] !== undefined) return Buffer.from(hex[1], "hex").toString("utf8");
   if (rest.length >= 2 && rest.startsWith('"') && rest.endsWith('"')) return rest.slice(1, -1);
   return undefined;
+}
+
+function isFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
 }
