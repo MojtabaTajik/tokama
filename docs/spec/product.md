@@ -160,6 +160,10 @@ Step fields:
 | `on` | Where to go next by result: `pass`, `fail`, a verdict value or a declared choice, mapped to a step name (earlier steps allowed). Without `on`, the next step in the list. |
 | `max_visits` | How often the step may run in one item (default 1, or `retry + 1`). |
 
+### Files and editor
+
+The YAML file in the repo is the source of truth. The template editor is a form and a flow diagram over the same file: it writes YAML back without losing comments or formatting, and editing the file by hand stays supported. A read-only flow diagram comes first; the full editor is part of the complete desktop epic.
+
 ### Flow
 
 A template is a bounded graph of named steps:
