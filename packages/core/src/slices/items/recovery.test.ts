@@ -8,7 +8,7 @@ import type { DecisionId, ItemEventBody, RepoId, StoredItem } from "../../kernel
 import { countedAttempts, openAttempt, openDecisions } from "./fold.js";
 import { recoverItems } from "./recovery.js";
 import { ItemStore } from "./store.js";
-import { BUILD, DECISION, HOST, OTHER_HOST, REVIEW, TEMPLATE, TEMPLATE_REF } from "./testing/events.js";
+import { BUILD, DECISION, HOST, OTHER_HOST, TEMPLATE } from "./testing/events.js";
 
 const BOOT = Date.UTC(2026, 10, 23, 8, 0, 0);
 
@@ -41,7 +41,7 @@ function open(hostId = HOST) {
 }
 
 function item(store: ItemStore, bodies: ItemEventBody[]): StoredItem {
-  const created = store.create({ templateRef: TEMPLATE_REF, template: TEMPLATE, title: "Fix it", text: "", repoIds: ["orders-api" as RepoId], stepIds: [BUILD, REVIEW] });
+  const created = store.create({ template: TEMPLATE, title: "Fix it", text: "", repoIds: ["orders-api" as RepoId] });
   if (!created.ok) throw new Error(created.error.message);
   if (bodies.length === 0) return created.value;
   const appended = store.append(created.value.id, bodies);

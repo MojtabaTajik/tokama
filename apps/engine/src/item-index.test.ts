@@ -6,6 +6,7 @@ import {
   ItemStore,
   loadHostId,
   manualClock,
+  parseTemplateRecord,
   type ProcessTable,
   type RepoId,
   type StepId,
@@ -38,8 +39,36 @@ function openStore(): ItemStore {
   return ItemStore.open({ home, hostId: hostId.value, clock: manualClock(T0) }).store;
 }
 
+const parsedTemplate = parseTemplateRecord({
+  schemaVersion: 1,
+  ref: REF,
+  id: "quick-fix",
+  source: { kind: "builtin" },
+  name: "Quick fix",
+  uses: { repos: { picked: "edit", named: [] }, connections: [], commands: [] },
+  start: { needs: ["text", "repo"], askBeforeCloud: false, notify: false },
+  steps: [
+    {
+      id: BUILD,
+      name: "Build",
+      agentId: "builder",
+      instructions: { text: "Fix it." },
+      doneWhen: "agent finishes",
+      ifFailed: { action: "ask" },
+      maxAttempts: 1,
+      data: "none",
+      sees: [],
+      connections: [],
+      commands: [],
+    },
+  ],
+  finish: ["commit"],
+});
+if (!parsedTemplate.ok) throw new Error(JSON.stringify(parsedTemplate.error.issues));
+const template = parsedTemplate.value;
+
 function create(store: ItemStore, title: string): StoredItem {
-  const created = store.create({ templateRef: REF, template: { name: title }, title, text: "", repoIds: ["orders-api" as RepoId], stepIds: [BUILD] });
+  const created = store.create({ template, title, text: "", repoIds: ["orders-api" as RepoId] });
   if (!created.ok) throw new Error(created.error.message);
   return created.value;
 }

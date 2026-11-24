@@ -7,7 +7,7 @@ import { manualClock } from "../../kernel/clock/index.js";
 import { HostIdSchema, ItemIdSchema, type ItemId, type RepoId, type StoredItem } from "../../kernel/schemas/index.js";
 import { readLog, type LogFs } from "./log.js";
 import { EVENTS_FILE, ItemStore, loadHostId, templateSnapshot } from "./store.js";
-import { BUILD, HOST, OTHER_HOST, REVIEW, T0, TEMPLATE, TEMPLATE_REF } from "./testing/events.js";
+import { BUILD, HOST, OTHER_HOST, T0, TEMPLATE } from "./testing/events.js";
 
 let home: string;
 beforeEach(() => {
@@ -17,7 +17,7 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-const input = { templateRef: TEMPLATE_REF, template: TEMPLATE, title: "Fix the checkout timeout", text: "Times out", repoIds: ["orders-api" as RepoId], stepIds: [BUILD, REVIEW] };
+const input = { template: TEMPLATE, title: "Fix the checkout timeout", text: "Times out", repoIds: ["orders-api" as RepoId] };
 
 function openStore(options: { fs?: LogFs; hostId?: typeof HOST } = {}) {
   return ItemStore.open({ home, hostId: options.hostId ?? HOST, clock: manualClock(T0), ...(options.fs && { fs: options.fs }) });

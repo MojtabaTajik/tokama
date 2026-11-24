@@ -65,7 +65,10 @@ export const DecisionChoiceSchema = z.strictObject({ id: z.string().min(1).max(6
 export const TemplateSnapshotSchema = z.strictObject({
   /** SHA-256 of the record's canonical JSON (keys sorted). */
   sha256: SHA256,
-  /** The validated template record. */
+  /**
+   * The validated template record. Kept as plain JSON, so an old log still reads after the
+   * template schema changes; the record carries its own schema version.
+   */
   record: z.record(z.string(), z.json()),
 });
 

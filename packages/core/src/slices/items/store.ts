@@ -17,9 +17,8 @@ import {
   type ItemEventBody,
   type ItemId,
   type RepoId,
-  type StepId,
   type StoredItem,
-  type TemplateRef,
+  type TemplateRecord,
   type TemplateSnapshot,
 } from "../../kernel/schemas/index.js";
 import { applyEvent } from "./fold.js";
@@ -37,13 +36,11 @@ export interface ItemStoreOptions {
 }
 
 export interface CreateItem {
-  readonly templateRef: TemplateRef;
-  /** The validated template record; stored as the item's snapshot. */
-  readonly template: Record<string, unknown>;
+  /** The validated template; the item keeps a copy, its ref and its step ids. */
+  readonly template: TemplateRecord;
   readonly title: string;
   readonly text: string;
   readonly repoIds: readonly RepoId[];
-  readonly stepIds: readonly StepId[];
 }
 
 export interface StoreError {
@@ -110,12 +107,12 @@ export class ItemStore {
     const itemId = ItemIdSchema.parse(newId("item", now));
     const body: ItemEventBody = {
       type: "item_created",
-      templateRef: input.templateRef,
+      templateRef: input.template.ref,
       template: templateSnapshot(input.template),
       title: input.title,
       text: input.text,
       repoIds: [...input.repoIds],
-      steps: input.stepIds.map((id) => ({ id })),
+      steps: input.template.steps.map((step) => ({ id: step.id })),
     };
     const events = this.envelop(itemId, -1, [body], now);
     if (!events.ok) return events;
@@ -199,7 +196,7 @@ function foldOnto(item: StoredItem | undefined, events: readonly ItemEvent[]): R
 }
 
 /** The snapshot of a template record: the record and the SHA-256 of its canonical JSON. */
-export function templateSnapshot(record: Record<string, unknown>): TemplateSnapshot {
+export function templateSnapshot(record: TemplateRecord): TemplateSnapshot {
   const canonical = canonicalJson(record);
   return {
     sha256: createHash("sha256").update(canonical).digest("hex"),

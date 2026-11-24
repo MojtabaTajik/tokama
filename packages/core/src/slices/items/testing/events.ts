@@ -2,12 +2,14 @@
 import {
   ITEM_EVENT_SCHEMA_VERSION,
   parseItemEvent,
+  TemplateRecordSchema,
   type HostId,
   type ItemEvent,
   type ItemEventBody,
   type ItemId,
   type RepoId,
   type StepId,
+  type TemplateRecord,
   type TemplateRef,
 } from "../../../kernel/schemas/index.js";
 import { templateSnapshot } from "../store.js";
@@ -20,7 +22,31 @@ export const T0 = Date.UTC(2026, 10, 24, 10, 0, 0);
 export const BUILD = "build" as StepId;
 export const REVIEW = "review" as StepId;
 export const TEMPLATE_REF = "orders-api/quick-fix" as TemplateRef;
-export const TEMPLATE = { schemaVersion: 1, ref: TEMPLATE_REF, name: "Quick fix", steps: [{ id: "build" }, { id: "review" }] };
+const step = (id: string, agentId: string) => ({
+  id,
+  name: id,
+  agentId,
+  instructions: { text: `Do the ${id} step.` },
+  doneWhen: "agent finishes",
+  ifFailed: { action: "ask" },
+  maxAttempts: 1,
+  data: "none",
+  sees: [],
+  connections: [],
+  commands: [],
+});
+/** A valid template with the steps `build` and `review`. */
+export const TEMPLATE: TemplateRecord = TemplateRecordSchema.parse({
+  schemaVersion: 1,
+  ref: TEMPLATE_REF,
+  id: "quick-fix",
+  source: { kind: "repo", repoId: "orders-api", file: ".tokama/templates/quick-fix.yaml" },
+  name: "Quick fix",
+  uses: { repos: { picked: "edit", named: [] }, connections: [], commands: [] },
+  start: { needs: ["text", "repo"], askBeforeCloud: false, notify: false },
+  steps: [step("build", "builder"), step("review", "reviewer")],
+  finish: ["commit"],
+});
 
 export const created = (): ItemEventBody => ({
   type: "item_created",
