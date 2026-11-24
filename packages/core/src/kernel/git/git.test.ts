@@ -265,9 +265,27 @@ describe("repo config, hooks and attributes never run code", () => {
     expect(ran("unsafe")).toBe(false);
   });
 
+  it("no lazy fetch through the remote config of a partial clone", SLOW, async () => {
+    await plain(repo, "config", "uploadpack.allowFilter", "true");
+    const clone = join(root, "clone");
+    await plain(root, "clone", "-q", "--filter=blob:none", "--no-checkout", `file://${repo}`, clone);
+    // Not the `cat` trap: the fetch would wait on its stdin.
+    write(join(markers, "fetch.sh"), `#!/bin/sh\ntouch '${join(markers, "fetch")}'\nexit 1\n`, 0o755);
+    await plain(clone, "config", "remote.origin.uploadpack", join(markers, "fetch.sh"));
+    let result: unknown;
+    await provesBlocked(
+      "fetch",
+      () => plainMayFail(clone, "worktree", "add", "-q", "-b", "control", join(root, "wt-control"), "main"),
+      async () => (result = await git.worktreeAdd(clone, join(root, "wt"), "hardened", "main")),
+    );
+    // The blob is missing and may not be fetched, so the checkout fails as a value.
+    expect(result).toMatchObject({ ok: false, error: { reason: "failed" } });
+  });
+
   // These tools run only on a terminal (pager), on network calls (ssh, credentials, askpass) or
-  // for an interactive message (editor). None of the wrapper's calls should reach them, so there
-  // is no control run: this checks that none of them fires, not that the flags stop them.
+  // for an interactive message (editor). None of the wrapper's calls on a full local repo should
+  // reach them (a partial clone is the case above), so there is no control run: this checks that
+  // none of them fires, not that the flags stop them.
   it("core.pager, core.sshCommand, credential.helper, core.askPass and core.editor never fire", SLOW, async () => {
     await plain(repo, "config", "core.pager", trap("pager"));
     await plain(repo, "config", "core.sshCommand", trap("ssh"));
@@ -399,7 +417,7 @@ describe("how git is called", () => {
     return request.command.argv;
   };
 
-  it("uses argv (never a shell), the safe config, and GIT_TERMINAL_PROMPT=0", async () => {
+  it("uses argv (never a shell), the safe config, and the git env", async () => {
     const { runner, requests } = recordingRunner();
     const stub = createGit({ runner, timeoutMs: 5_000 });
     await stub.diff("/repo", { cached: true });
@@ -408,7 +426,7 @@ describe("how git is called", () => {
       const argv = argvOf(request);
       expect(argv.slice(0, 2)).toEqual(["git", "--no-pager"]);
       expect(argv.slice(2, 2 + GIT_SAFE_CONFIG.length * 2)).toEqual(GIT_SAFE_CONFIG.flatMap((s) => ["-c", s]));
-      expect(request.env).toEqual({ GIT_TERMINAL_PROMPT: "0" });
+      expect(request.env).toEqual({ GIT_TERMINAL_PROMPT: "0", GIT_NO_LAZY_FETCH: "1" });
       expect(request.timeoutMs).toBe(5_000);
       expect(request.cwd).toBe("/repo");
     }

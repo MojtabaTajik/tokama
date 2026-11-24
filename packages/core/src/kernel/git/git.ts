@@ -24,9 +24,15 @@ export const DIFF_SAFE: readonly string[] = ["--no-ext-diff", "--no-textconv", "
 
 /**
  * Variables added to the process runner's allowlisted environment. Git never prompts; editor and
- * askpass variables are not in the allowlist, so they never reach git.
+ * askpass variables are not in the allowlist, so they never reach git. No lazy fetch: in a partial
+ * clone, a missing object would otherwise make a local call (diff, worktree add) fetch it through
+ * the repo's remote config (uploadpack, sshCommand, credential helper). Such a call fails instead.
+ *
+ * Known gap: a repo nested in the worktree (an embedded repo or submodule) has its own config.
+ * git runs `status` inside it as a child process, which gets the settings above but not that
+ * repo's filter overrides, so a filter configured there can run.
  */
-export const GIT_ENV: Readonly<Record<string, string>> = { GIT_TERMINAL_PROMPT: "0" };
+export const GIT_ENV: Readonly<Record<string, string>> = { GIT_TERMINAL_PROMPT: "0", GIT_NO_LAZY_FETCH: "1" };
 
 const FILTER_KEYS = ["clean", "smudge", "process"] as const;
 
