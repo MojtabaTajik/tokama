@@ -249,7 +249,9 @@ export async function createFileWatch(options: FileWatchOptions, now: number): P
       const after = await take();
       if (after === undefined) return undefined;
       if (turnsBefore !== undefined && turns?.() !== turnsBefore) {
-        // The agent kept working during the run: what changed may be its edits, and the result is stale.
+        // The agent kept working during the run: what changed may be its edits, and the result is
+        // stale. The next quiet poll runs the checks again.
+        checkedFor = null;
         observeWith(after, at);
         return undefined;
       }

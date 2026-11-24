@@ -259,6 +259,22 @@ describe("file watch", () => {
     expect(await watch.poll(30_000, 1_000_000, live())).toBe("idle"); // a new quiet period, checks again
   });
 
+  it("runs the checks again after a run during which the agent took a turn but changed nothing", async () => {
+    let turns = 3;
+    const { box, watch } = await setup(10_000, { turns: () => turns });
+    box.snap = new Map([["a.js", state(1_000, 5)]]);
+    await watch.poll(2_000, 1_000_000, live());
+    box.checks = () => {
+      turns++;
+      return true;
+    };
+    expect(await watch.poll(15_000, 1_000_000, live())).toBeUndefined(); // stale: a turn during the run
+    expect(watch.lastChangeAt()).toBe(1_000);
+    box.checks = undefined;
+    expect(await watch.poll(20_000, 1_000_000, live())).toBe("idle");
+    expect(watch.stats()).toMatchObject({ checksRun: 2 });
+  });
+
   it("treats a snapshot that throws as one that failed", async () => {
     const box = { fail: true };
     const watch = await createFileWatch(
