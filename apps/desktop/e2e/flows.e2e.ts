@@ -41,7 +41,8 @@ flow("opens an item and approves its decision", async ({ page }) => {
   await row(page, NEEDS_YOU).waitFor({ state: "detached" });
   // The item runs on: it is in Running under Active.
   await segment(page, "Active").click();
-  await group(page, "Running").locator(".pl-title", { hasText: NEEDS_YOU }).waitFor();
+  // Attached, not visible: the open drawer can squeeze the row on a small window.
+  await group(page, "Running").locator(".pl-title", { hasText: NEEDS_YOU }).waitFor({ state: "attached" });
 });
 
 flow("stops an item after its confirmation", async ({ page }) => {
@@ -108,6 +109,8 @@ flow("switches status filters, workflow and repo views, and List and Board", asy
 
 flow("starts work through the New work input", async ({ page }) => {
   const text = "Slow checkout query on orders-api";
+  // A fresh window may not have keyboard focus yet; a click gives it.
+  await page.locator("main h1").click();
   await page.keyboard.press("ControlOrMeta+n");
   await page.locator("textarea.np-text:focus").waitFor();
   await page.locator("textarea.np-text").fill(text);
