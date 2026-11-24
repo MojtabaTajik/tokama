@@ -11,7 +11,7 @@ import { Secret } from "./secret.js";
 
 const VALUE = "s3cr3t-Value";
 const HEX = Buffer.from(VALUE, "utf8").toString("hex");
-const ref = { workspace: "northwind-prod", account: "orders-db" };
+const ref = { connectionId: "postgres-prod" };
 
 // Keychain paths the store checks exist; `security` is never run on them (the runner is scripted).
 const dir = mkdtempSync(join(tmpdir(), "tokama-keychain-"));
@@ -55,7 +55,7 @@ describe("macOS Keychain store: talking to security", () => {
     const request = requests[0];
     expect(request?.command).toEqual({ argv: ["/usr/bin/security", "-i"] });
     expect(request?.stdin).toBe(
-      `add-generic-password -U -s dev.tokama.northwind-prod -a orders-db -X ${HEX} ${keychain}\n`,
+      `add-generic-password -U -s dev.tokama.connection -a postgres-prod -X ${HEX} ${keychain}\n`,
     );
     expect(JSON.stringify(request?.command)).not.toContain(VALUE);
     expect(JSON.stringify(request?.command)).not.toContain(HEX);
@@ -68,9 +68,9 @@ describe("macOS Keychain store: talking to security", () => {
     await store.has(ref);
     await store.delete(ref);
     expect(requests.map((request) => request.command)).toEqual([
-      { argv: ["/usr/bin/security", "find-generic-password", "-g", "-s", "dev.tokama.northwind-prod", "-a", "orders-db"] },
-      { argv: ["/usr/bin/security", "find-generic-password", "-s", "dev.tokama.northwind-prod", "-a", "orders-db"] },
-      { argv: ["/usr/bin/security", "delete-generic-password", "-s", "dev.tokama.northwind-prod", "-a", "orders-db"] },
+      { argv: ["/usr/bin/security", "find-generic-password", "-g", "-s", "dev.tokama.connection", "-a", "postgres-prod"] },
+      { argv: ["/usr/bin/security", "find-generic-password", "-s", "dev.tokama.connection", "-a", "postgres-prod"] },
+      { argv: ["/usr/bin/security", "delete-generic-password", "-s", "dev.tokama.connection", "-a", "postgres-prod"] },
     ]);
     expect(requests.every((request) => request.stdin === undefined && request.timeoutMs === 30_000)).toBe(true);
   });

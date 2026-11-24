@@ -4,10 +4,10 @@
 // `*Input` types are what a sender builds (ids as plain strings); the other types are what a
 // parser returns (ids branded).
 import { z } from "zod";
-import { DecisionIdSchema, ItemIdSchema, RepoIdSchema, TemplateIdSchema, WorkspaceIdSchema } from "./ids.js";
+import { DecisionIdSchema, ItemIdSchema, RepoIdSchema, TemplateIdSchema } from "./ids.js";
 import { ItemRecordSchema } from "./item.js";
 import { AgentCallUsageSchema } from "./usage.js";
-import { WorkspaceSummarySchema } from "./workspace.js";
+import { SetupSchema } from "./setup.js";
 
 export const API_VERSION = 1;
 
@@ -19,7 +19,6 @@ export const CommandSchema = z.discriminatedUnion("type", [
   // `text` is the description or the pasted alert; the engine derives the title from it.
   z.strictObject({
     type: z.literal("start_item"),
-    workspaceId: WorkspaceIdSchema,
     templateId: TemplateIdSchema,
     repoIds: z.array(RepoIdSchema).max(20),
     text: z.string().max(4000).regex(/\S/, "must not be blank"),
@@ -43,11 +42,12 @@ export const CommandSchema = z.discriminatedUnion("type", [
 ]);
 
 export const QuerySchema = z.discriminatedUnion("type", [
-  z.strictObject({ type: z.literal("workspaces") }),
-  z.strictObject({ type: z.literal("board"), workspaceId: WorkspaceIdSchema }),
+  /** What is set up on this machine: repos, connections, agents and templates. */
+  z.strictObject({ type: z.literal("setup") }),
+  z.strictObject({ type: z.literal("board") }),
   z.strictObject({ type: z.literal("item"), itemId: ItemIdSchema }),
   /** The template the engine suggests for New work text; `templateId` is null when none fits. */
-  z.strictObject({ type: z.literal("suggest_template"), workspaceId: WorkspaceIdSchema, text: z.string().max(4000) }),
+  z.strictObject({ type: z.literal("suggest_template"), text: z.string().max(4000) }),
 ]);
 
 export const EventSchema = z.discriminatedUnion("type", [
@@ -57,7 +57,7 @@ export const EventSchema = z.discriminatedUnion("type", [
 
 /** The data of a successful reply, per query type. */
 export const QueryResultSchemas = {
-  workspaces: z.strictObject({ workspaces: z.array(WorkspaceSummarySchema) }),
+  setup: SetupSchema,
   board: z.strictObject({ items: z.array(ItemRecordSchema) }),
   item: z.strictObject({ item: ItemRecordSchema }),
   suggest_template: z.strictObject({ templateId: TemplateIdSchema.nullable() }),
@@ -192,7 +192,7 @@ export type QueryType = keyof typeof QueryResultSchemas;
 export type QueryResult<T extends QueryType> = z.output<(typeof QueryResultSchemas)[T]>;
 export type BoardResult = QueryResult<"board">;
 export type ItemResult = QueryResult<"item">;
-export type WorkspacesResult = QueryResult<"workspaces">;
+export type SetupResult = QueryResult<"setup">;
 export type SuggestTemplateResult = QueryResult<"suggest_template">;
 export type CommandType = keyof typeof CommandResultSchemas;
 export type CommandResult<T extends CommandType> = z.output<(typeof CommandResultSchemas)[T]>;

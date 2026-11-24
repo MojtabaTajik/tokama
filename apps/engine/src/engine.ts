@@ -35,7 +35,7 @@ import {
   type Result,
   type SuggestTemplateResult,
   systemClock,
-  type WorkspacesResult,
+  type SetupResult,
 } from "@tokama/core";
 import { SampleEngine } from "./sample/sample.js";
 import { MemoryItemStore } from "./store.js";
@@ -164,16 +164,16 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     }
     const query = message.query;
     switch (query.type) {
-      case "workspaces":
-        return { ok: true, data: { workspaces: sample?.workspaces ?? [] } satisfies WorkspacesResult };
+      case "setup":
+        return { ok: true, data: (sample?.setup ?? { repos: [], connections: [], agents: [], templates: [] }) satisfies SetupResult };
       case "board":
-        return { ok: true, data: { items: store.list(query.workspaceId) } satisfies BoardResult };
+        return { ok: true, data: { items: store.list() } satisfies BoardResult };
       case "item": {
         const item = store.get(query.itemId);
         return item ? { ok: true, data: { item } satisfies ItemResult } : { ok: false, error: { code: "not_found", message: `no item ${query.itemId}` } };
       }
       case "suggest_template":
-        return { ok: true, data: { templateId: sample?.suggestTemplate(query.workspaceId, query.text) ?? null } satisfies SuggestTemplateResult };
+        return { ok: true, data: { templateId: sample?.suggestTemplate(query.text) ?? null } satisfies SuggestTemplateResult };
     }
   };
 

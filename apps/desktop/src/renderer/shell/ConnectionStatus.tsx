@@ -1,4 +1,4 @@
-// The local engine connection: its health on the host row of the workspaces panel, and the
+// The local engine connection: its health under "+ New work" in the sidebar, and the
 // failure details (reason, log path, log tail) in the board area when the engine is not
 // available. All of it is React text.
 import type { ConnectionState } from "../../shared/bridge.js";
@@ -24,7 +24,7 @@ const SYMBOL: Record<ConnectionState["status"], string> = {
 };
 
 /** Symbol and word; healthy is a quiet dot whose word only screen readers get. */
-export function HostHealth({ state }: { readonly state: ConnectionState }) {
+export function EngineHealth({ state }: { readonly state: ConnectionState }) {
   const title = state.status === "connected" ? `${TEXT.engineId} ${state.engineId}` : undefined;
   return (
     <span className="health" data-status={state.status} title={title} role="status">

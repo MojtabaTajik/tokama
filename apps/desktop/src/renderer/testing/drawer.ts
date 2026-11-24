@@ -1,18 +1,15 @@
-// Test data for the drawer: a workspace with local and cloud agents and connections, an
+// Test data for the drawer: a setup with local and cloud agents and connections, an
 // investigation waiting for a cloud-step approval, and a task. Plain literals cast to the engine
 // types; drawer/describe.test.ts checks them against the engine schemas.
-import type { ItemRecord, WorkspaceSummary } from "@tokama/core";
+import type { ItemRecord, Setup } from "@tokama/core";
 
 export const DECISION_ID = "decision_5e1c9a7b-3f2d-4c8e-9a6b-1d2e3f4a5b6c";
 
-export const workspace = {
-  id: "northwind-prod",
-  name: "Northwind prod",
-  host: "local",
+export const setup = {
   repos: [{ id: "orders-api", baseBranch: "main" }],
   connections: [
-    { id: "app-insights", name: "App Insights (prod)", type: "App Insights" },
-    { id: "postgres-main", name: "Postgres main", type: "Postgres" },
+    { id: "app-insights-prod", name: "App Insights · prod", type: "App Insights" },
+    { id: "postgres-prod", name: "Postgres · prod", type: "Postgres" },
   ],
   agents: [
     { id: "architect", name: "Architect", cliId: "claude-code", model: "opus", runsOn: "cloud" },
@@ -24,13 +21,12 @@ export const workspace = {
     { id: "emergency-investigator", name: "Emergency investigator", kind: "investigation", connections: [], steps: [{ name: "Triage", stage: "working", data: "none" }] },
     { id: "plan-and-build", name: "Plan and build", kind: "task", connections: [], steps: [{ name: "Plan", stage: "working", data: "none" }] },
   ],
-} as unknown as WorkspaceSummary;
+} as unknown as Setup;
 
 export const needsYou = {
   schemaVersion: 1,
   id: "item_1a2b3c4d-0003-4a1b-8c1d-000000000003",
   kind: "investigation",
-  workspaceId: "northwind-prod",
   templateId: "emergency-investigator",
   title: "Orders API returns 500 after deploy",
   text: "Alert: orders-api 5xx rate at 4% since the 14:02 deploy.",
@@ -58,8 +54,8 @@ export const needsYou = {
       agentId: "local-investigator",
       data: "none",
       uses: [
-        { connectionId: "app-insights", access: "query" },
-        { connectionId: "postgres-main", access: "read-only" },
+        { connectionId: "app-insights-prod", access: "query" },
+        { connectionId: "postgres-prod", access: "read-only" },
       ],
       detail: "6 queries · 41 rows",
     },
@@ -81,7 +77,6 @@ export const task = {
   schemaVersion: 1,
   id: "item_1a2b3c4d-0008-4a1b-8c1d-000000000008",
   kind: "task",
-  workspaceId: "northwind-prod",
   templateId: "plan-and-build",
   title: "Paginate the orders list",
   text: "Add cursor pagination.",

@@ -9,7 +9,7 @@ export { createKeychainStore, type KeychainStoreOptions } from "./keychain.js";
 export { Secret } from "./secret.js";
 export {
   MAX_SECRET_BYTES,
-  SECRET_SERVICE_PREFIX,
+  SECRET_SERVICE,
   createMemorySecretStore,
   unsupportedSecretStore,
   type SecretError,

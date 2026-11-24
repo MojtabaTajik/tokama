@@ -1,15 +1,15 @@
-// The renderer's engine state: the connection, the workspaces and their items. Queries run on
+// The renderer's engine state: the connection, the setup and the items. Queries run on
 // every return to "connected" (events may have been missed while away), and `item_updated`
 // events keep the items current in between. A failed load is retried once after a short delay;
 // after that the last data stays, marked stale, until a retry succeeds. A failed connection
 // drops the data.
-import type { ItemRecord, WorkspaceSummary } from "@tokama/core";
+import type { ItemRecord, Setup } from "@tokama/core";
 import { useEffect, useRef, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../shared/bridge.js";
 
 export interface EngineData {
-  readonly workspaces: readonly WorkspaceSummary[];
-  /** Every workspace's items by id, in board order, with items started later at the end. */
+  readonly setup: Setup;
+  /** Every item by id, in board order, with items started later at the end. */
   readonly items: ReadonlyMap<string, ItemRecord>;
 }
 
@@ -30,18 +30,12 @@ export const RETRY_DELAY_MS = 2_000;
 
 type Loaded = { readonly ok: true; readonly data: EngineData } | { readonly ok: false; readonly error: string };
 
-/** The workspaces, then each workspace's board. There is no all-items query. */
+/** The setup, then the board. */
 async function load(bridge: TokamaBridge): Promise<Loaded> {
-  const reply = await bridge.query({ type: "workspaces" });
-  if (!reply.ok) return { ok: false, error: reply.error.message };
-  const workspaces = reply.data.workspaces;
-  const boards = await Promise.all(workspaces.map((workspace) => bridge.query({ type: "board", workspaceId: workspace.id })));
-  const items = new Map<string, ItemRecord>();
-  for (const board of boards) {
-    if (!board.ok) return { ok: false, error: board.error.message };
-    for (const item of board.data.items) items.set(item.id, item);
-  }
-  return { ok: true, data: { workspaces, items } };
+  const [setup, board] = await Promise.all([bridge.query({ type: "setup" }), bridge.query({ type: "board" })]);
+  if (!setup.ok) return { ok: false, error: setup.error.message };
+  if (!board.ok) return { ok: false, error: board.error.message };
+  return { ok: true, data: { setup: setup.data, items: new Map(board.data.items.map((item) => [item.id, item])) } };
 }
 
 export function useEngine(bridge: TokamaBridge, retryDelayMs = RETRY_DELAY_MS): EngineView {
@@ -103,7 +97,7 @@ export function useEngine(bridge: TokamaBridge, retryDelayMs = RETRY_DELAY_MS): 
           const items = new Map(result.data.items);
           for (const [id, item] of updated) items.set(id, item);
           setLoadError(undefined);
-          setData({ workspaces: result.data.workspaces, items });
+          setData({ setup: result.data.setup, items });
         });
     };
     run(0);

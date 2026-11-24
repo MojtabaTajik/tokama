@@ -41,7 +41,6 @@ export {
   parseQueryResult,
   parseServerMessage,
   parseTemplateId,
-  parseWorkspaceId,
   type AgentCallOutcome,
   type BoardResult,
   type AgentCallUsage,
@@ -99,7 +98,6 @@ export {
   type TemplateSummary,
   type TokenUsage,
   type WelcomeMessage,
-  type WorkspaceId,
-  type WorkspacesResult,
-  type WorkspaceSummary,
+  type Setup,
+  type SetupResult,
 } from "./kernel/schemas/index.js";

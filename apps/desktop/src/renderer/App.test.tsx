@@ -6,23 +6,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BridgeEvent, ConnectionState, TokamaBridge } from "../shared/bridge.js";
 import { App } from "./App.js";
 import { brand } from "./brand/index.js";
-import { ITEMS, items, workspaces } from "./testing/sample.js";
+import { ITEMS, items, setup } from "./testing/sample.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 type Reply = { ok: true; data: unknown } | { ok: false; error: { code: string; message: string } };
 
-/** A bridge over the test data: `workspaces` and `board` answer from it, events are pushed by hand. */
+/** A bridge over the test data: `setup` and `board` answer from it, events are pushed by hand. */
 function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | undefined } = {}) {
   let connectionListener: ((state: ConnectionState) => void) | undefined;
   let eventListener: ((event: BridgeEvent) => void) | undefined;
   const stops = { connection: vi.fn(), event: vi.fn() };
   const boardItems = options.boardItems ?? items;
-  const query = vi.fn(async (q: { type: string; workspaceId?: string }): Promise<Reply> => {
+  const query = vi.fn(async (q: { type: string }): Promise<Reply> => {
     const custom = options.reply?.(q);
     if (custom) return custom;
-    if (q.type === "workspaces") return { ok: true, data: { workspaces } };
-    if (q.type === "board") return { ok: true, data: { items: boardItems.filter((item) => item.workspaceId === q.workspaceId) } };
+    if (q.type === "setup") return { ok: true, data: setup };
+    if (q.type === "board") return { ok: true, data: { items: boardItems } };
     return { ok: false, error: { code: "not_implemented", message: q.type } };
   });
   const bridge = {
@@ -66,14 +66,15 @@ const $ = (selector: string) => container.querySelector(selector);
 const $$ = (selector: string) => [...container.querySelectorAll(selector)];
 const text = (selector: string) => $(selector)?.textContent;
 const liveTitles = () => $$(".live-item .ellipsis").map((el) => el.textContent);
-const workspaceRow = (name: string) => $$(".workspace-row").find((row) => row.textContent?.includes(name)) as HTMLButtonElement;
+const workflowRow = (name: string) => $$(".workflow-row").find((row) => row.textContent?.includes(name))!;
+const repoRow = (name: string) => $$(".repo-row").find((row) => row.textContent?.includes(name))!;
 const click = (el: Element) => act(async () => (el as HTMLElement).click());
 
 describe("App shell", () => {
-  it("renders the rail, the workspaces panel and the main area with the brand mark", async () => {
+  it("renders the rail, the sidebar and the main area with the brand mark", async () => {
     await render(fakeBridge(CONNECTED).bridge);
     expect($('nav[aria-label="App"]')).not.toBeNull();
-    expect($('aside[aria-label="Workspaces"]')).not.toBeNull();
+    expect($('aside[aria-label="Sidebar"]')).not.toBeNull();
     expect($("main")).not.toBeNull();
     expect($("img")?.getAttribute("src")).toBe(brand.markUrl);
     expect($('img[alt="Tokama"]')).not.toBeNull();
@@ -83,7 +84,7 @@ describe("App shell", () => {
     await render(fakeBridge(CONNECTED).bridge);
     const labels = $$(".rail button").map((button) => button.getAttribute("aria-label"));
     expect(labels).toEqual([
-      "Workspaces panel",
+      "Sidebar",
       "Board",
       "Needs you · 1",
       "Insights",
@@ -102,66 +103,63 @@ describe("App shell", () => {
     expect($$(".badge").map((badge) => [badge.getAttribute("data-tone"), badge.textContent])).toEqual([["warn", "1"]]);
   });
 
-  it("counts needs-you items across all workspaces", async () => {
-    const waiting = { ...ITEMS.tailspin, state: "needs_you" } as ItemRecord;
-    await render(fakeBridge(CONNECTED, { boardItems: [...items.filter((item) => item !== ITEMS.tailspin), waiting] }).bridge);
+  it("counts needs-you items across all workflows", async () => {
+    const waiting = { ...ITEMS.stock, state: "needs_you" } as ItemRecord;
+    await render(fakeBridge(CONNECTED, { boardItems: [...items.filter((item) => item !== ITEMS.stock), waiting] }).bridge);
     expect(text('.badge[data-tone="warn"]')).toBe("2");
   });
 
-  it("queries the workspaces, then each workspace's board", async () => {
+  it("queries the setup and the board", async () => {
     const { bridge, query } = fakeBridge(CONNECTED);
     await render(bridge);
-    expect(query.mock.calls.map(([q]) => q)).toEqual([
-      { type: "workspaces" },
-      { type: "board", workspaceId: "northwind-prod" },
-      { type: "board", workspaceId: "tailspin-staging" },
-    ]);
+    expect(query.mock.calls.map(([q]) => q)).toEqual([{ type: "setup" }, { type: "board" }]);
   });
 
-  it("groups workspaces by host and shows the first one's live items with markers", async () => {
+  it("lists the workflows with their live items and markers, directly", async () => {
     await render(fakeBridge(CONNECTED).bridge);
-    expect(text(".host-heading")).toContain("This machine");
-    expect(text(".host-count")).toBe("2 workspaces");
-    expect($$(".workspace-row .ellipsis").map((el) => el.textContent)).toEqual(["Northwind prod", "Tailspin staging"]);
-    expect(workspaceRow("Northwind prod").getAttribute("aria-expanded")).toBe("true");
-    expect(workspaceRow("Tailspin staging").getAttribute("aria-expanded")).toBe("false");
+    expect($$(".panel-heading").map((el) => el.textContent)).toEqual(["Workflows", "Repos"]);
+    expect(text(".engine-line")).toContain("This machine");
+    expect($$(".workflow-row .ellipsis").map((el) => el.textContent)).toEqual([
+      "emergency-investigator",
+      "db-slow-query",
+      "plan-and-build",
+      "quick-fix",
+      "review-only",
+    ]);
     expect($$(".live-item").map((li) => [li.querySelector(".marker")?.textContent, li.querySelector(".ellipsis")?.textContent, li.querySelector(".marker-word")?.textContent])).toEqual([
-      ["◌", "Add retry with backoff", "queued"],
       ["●", "Checkout p95 latency spike", "working"],
       ["⏸", "Orders API returns 500 after deploy", "needs you"],
+      ["◌", "Add retry with backoff", "queued"],
       ["◐", "Fix rounding in invoice totals", "checks"],
+      ["●", "Stock sync drops <b>items</b>", "working"],
     ]);
-    expect($('.workspace-row .waiting [aria-hidden="true"]')?.textContent).toBe("⏸ 1");
-    expect(text(".workspace-row .waiting .visually-hidden")).toBe("1 needs you");
+    // Each item sits under its own workflow, and engine text stays text.
+    expect($$('ul[aria-label="emergency-investigator"] .live-item')).toHaveLength(2);
+    expect($$('ul[aria-label="quick-fix"] .live-item')).toHaveLength(3);
+    expect($("b")).toBeNull();
+    expect($('.workflow-row .waiting [aria-hidden="true"]')?.textContent).toBe("⏸ 1");
+    expect(text(".workflow-row .waiting .visually-hidden")).toBe("1 needs you");
+    expect(workflowRow("quick-fix").querySelector(".waiting")).toBeNull();
   });
 
-  it("shows the selected workspace's header line and the board placeholder", async () => {
+  it("lists the repos with a count of their running items", async () => {
     await render(fakeBridge(CONNECTED).bridge);
-    expect(text(".main-header h1")).toBe("Northwind prod");
-    expect(text(".summary")).toBe("2 repos · 4 connections · 5 templates");
+    expect($$(".repo-row .ellipsis").map((el) => el.textContent)).toEqual(["orders-api", "checkout-web", "inventory-service"]);
+    expect(repoRow("orders-api").querySelector(".count")?.textContent).toBe("3 running");
+    expect(repoRow("checkout-web").querySelector(".count")).toBeNull();
+    expect(repoRow("inventory-service").querySelector(".count")?.textContent).toBe("1 running");
+  });
+
+  it("shows the All work header and the board placeholder", async () => {
+    await render(fakeBridge(CONNECTED).bridge);
+    expect(text(".main-header h1")).toBe("All work");
     expect($('section[aria-label="Board"]')).not.toBeNull();
-    const settings = $(".main-header .link");
-    expect(settings?.textContent).toBe("Workspace settings");
-    expect(settings?.getAttribute("aria-disabled")).toBe("true");
     expect(text(".main-header")).not.toContain("connected");
   });
 
-  it("selects and expands another workspace on click, and collapses it on a second click", async () => {
+  it("hides and shows the sidebar from the rail, controlling it only while it exists", async () => {
     await render(fakeBridge(CONNECTED).bridge);
-    await click(workspaceRow("Tailspin staging"));
-    expect(text(".main-header h1")).toBe("Tailspin staging");
-    expect(text(".summary")).toBe("1 repo · 1 connection · 2 templates");
-    expect(workspaceRow("Tailspin staging").getAttribute("aria-expanded")).toBe("true");
-    expect(liveTitles()).toContain("Stock sync drops <b>items</b>");
-    expect($("b")).toBeNull();
-    await click(workspaceRow("Tailspin staging"));
-    expect(workspaceRow("Tailspin staging").getAttribute("aria-expanded")).toBe("false");
-    expect(text(".main-header h1")).toBe("Tailspin staging");
-  });
-
-  it("hides and shows the workspaces panel from the rail, controlling it only while it exists", async () => {
-    await render(fakeBridge(CONNECTED).bridge);
-    const toggle = $('button[aria-label="Workspaces panel"]')!;
+    const toggle = $('button[aria-label="Sidebar"]')!;
     expect(toggle.getAttribute("aria-pressed")).toBe("true");
     expect(toggle.getAttribute("aria-controls")).toBe($("aside")?.id);
     await click(toggle);
@@ -184,21 +182,13 @@ describe("App shell", () => {
       "Codex CLI · usage not measured yet",
       "Ollama · usage not measured yet",
       "+ New work",
-      "Workspace settings",
     ]);
-    expect($('button[aria-label="Workspaces panel"]')?.hasAttribute("aria-disabled")).toBe(false);
-  });
-
-  it("controls a workspace's item list only while it is open", async () => {
-    await render(fakeBridge(CONNECTED).bridge);
-    const row = workspaceRow("Northwind prod");
-    expect($(`#${row.getAttribute("aria-controls")}`)?.tagName).toBe("UL");
-    expect(workspaceRow("Tailspin staging").hasAttribute("aria-controls")).toBe(false);
+    expect($('button[aria-label="Sidebar"]')?.hasAttribute("aria-disabled")).toBe(false);
   });
 });
 
 describe("App live updates", () => {
-  it("updates a panel item from an item_updated event", async () => {
+  it("updates a sidebar item from an item_updated event", async () => {
     const fake = fakeBridge(CONNECTED);
     await render(fake.bridge);
     await fake.pushItem({ ...ITEMS.working, state: "needs_you" } as ItemRecord);
@@ -207,7 +197,7 @@ describe("App live updates", () => {
     expect(text('.badge[data-tone="warn"]')).toBe("2");
   });
 
-  it("drops an item from the panel when it ends, and adds a newly started item", async () => {
+  it("drops an item from the sidebar when it ends, and adds a newly started item", async () => {
     const fake = fakeBridge(CONNECTED);
     await render(fake.bridge);
     await fake.pushItem({ ...ITEMS.verifying, state: "done" } as ItemRecord);
@@ -236,11 +226,11 @@ describe("App live updates", () => {
   it("queries again on every return to connected", async () => {
     const fake = fakeBridge(CONNECTED);
     await render(fake.bridge);
-    expect(fake.query).toHaveBeenCalledTimes(3);
+    expect(fake.query).toHaveBeenCalledTimes(2);
     await fake.setConnection({ status: "reconnecting" });
-    expect(fake.query).toHaveBeenCalledTimes(3);
+    expect(fake.query).toHaveBeenCalledTimes(2);
     await fake.setConnection({ status: "connected", engineId: "e-1" });
-    expect(fake.query).toHaveBeenCalledTimes(6);
+    expect(fake.query).toHaveBeenCalledTimes(4);
   });
 
   it("does not query before the engine is connected", async () => {
@@ -248,11 +238,11 @@ describe("App live updates", () => {
     await render(fake.bridge);
     expect(fake.query).not.toHaveBeenCalled();
     await fake.setConnection(CONNECTED);
-    expect(fake.query).toHaveBeenCalledTimes(3);
+    expect(fake.query).toHaveBeenCalledTimes(2);
   });
 
   it("shows a failed load as text", async () => {
-    const fake = fakeBridge(CONNECTED, { reply: (q) => (q.type === "workspaces" ? { ok: false, error: { code: "timeout", message: "the engine did not answer" } } : undefined) });
+    const fake = fakeBridge(CONNECTED, { reply: (q) => (q.type === "setup" ? { ok: false, error: { code: "timeout", message: "the engine did not answer" } } : undefined) });
     await render(fake.bridge);
     expect($(".board")?.textContent).toContain("the engine did not answer");
   });
@@ -267,15 +257,15 @@ describe("App live updates", () => {
   });
 });
 
-describe("App engine health on the host row", () => {
-  const health = () => $(".host-heading .health");
+describe("App engine health under New work", () => {
+  const health = () => $(".engine-line .health");
 
   it.each([
     [{ status: "starting" }, "◌", "starting"],
     [{ status: "reconnecting" }, "◐", "reconnecting"],
   ] as const)("shows %j as a symbol and a word", async (state, symbol, word) => {
     await render(fakeBridge(state).bridge);
-    expect(text(".host-heading")).toContain("This machine");
+    expect(text(".engine-line")).toContain("This machine");
     expect(health()?.getAttribute("data-status")).toBe(state.status);
     expect(text(".health .symbol")).toBe(symbol);
     expect(text(".health .health-word")).toBe(word);
@@ -309,7 +299,7 @@ describe("App engine failure", () => {
 
   it("shows the reason, the log path and the log tail in the board area, as text", async () => {
     await render(fakeBridge(failed).bridge);
-    expect(text(".host-heading .health-word")).toBe("not available");
+    expect(text(".engine-line .health-word")).toBe("not available");
     const board = $(".board")!;
     expect(board.querySelector(".failure-title")?.textContent).toBe("✕The engine is not available");
     expect(board.textContent).toContain(failed.reason);
@@ -323,15 +313,16 @@ describe("App engine failure", () => {
     expect($("pre")).toBeNull();
   });
 
-  it("clears the panel and the badge when the connection fails after a load", async () => {
+  it("clears the sidebar and the badge when the connection fails after a load", async () => {
     const fake = fakeBridge(CONNECTED);
     await render(fake.bridge);
-    expect($$(".workspace-row")).toHaveLength(2);
+    expect($$(".workflow-row")).toHaveLength(5);
     await fake.setConnection(failed);
-    expect($$(".workspace-row")).toHaveLength(0);
+    expect($$(".workflow-row")).toHaveLength(0);
+    expect($$(".repo-row")).toHaveLength(0);
     expect($$(".live-item")).toHaveLength(0);
     expect($(".badge")).toBeNull();
-    expect($(".main-header h1")).toBeNull();
+    expect(text(".main-header h1")).toBe("All work");
     expect(text(".board .failure-title")).toBe("✕The engine is not available");
   });
 });
@@ -342,42 +333,42 @@ describe("App failed loads", () => {
     const control = { failNext: 0 };
     const fake = fakeBridge(CONNECTED, {
       reply: (q) => {
-        if (q.type !== "workspaces" || control.failNext === 0) return undefined;
+        if (q.type !== "setup" || control.failNext === 0) return undefined;
         control.failNext--;
         failures++;
         return { ok: false, error: { code: "timeout", message: `the engine did not answer (${failures})` } };
       },
     });
-    const workspaceQueries = () => fake.query.mock.calls.filter(([q]) => q.type === "workspaces").length;
-    return { fake, control, workspaceQueries };
+    const setupQueries = () => fake.query.mock.calls.filter(([q]) => q.type === "setup").length;
+    return { fake, control, setupQueries };
   };
 
   it("retries a failed load once after a short delay", async () => {
-    const { fake, control, workspaceQueries } = failing();
+    const { fake, control, setupQueries } = failing();
     control.failNext = 1;
     await render(fake.bridge, 20);
     expect(text(".board .failure")).toContain("the engine did not answer (1)");
     await wait(40);
-    expect(workspaceQueries()).toBe(2);
+    expect(setupQueries()).toBe(2);
     expect($(".board .failure")).toBeNull();
-    expect($$(".workspace-row")).toHaveLength(2);
+    expect($$(".workflow-row")).toHaveLength(5);
   });
 
   it("stops after one retry and offers a Retry action", async () => {
-    const { fake, control, workspaceQueries } = failing();
+    const { fake, control, setupQueries } = failing();
     control.failNext = 2;
     await render(fake.bridge, 10);
     await wait(40);
-    expect(workspaceQueries()).toBe(2);
+    expect(setupQueries()).toBe(2);
     expect(text(".board .failure")).toContain("the engine did not answer (2)");
     const retry = $$(".board button").find((button) => button.textContent === "Retry")!;
     await click(retry);
-    expect(workspaceQueries()).toBe(3);
+    expect(setupQueries()).toBe(3);
     expect($(".board .failure")).toBeNull();
-    expect($$(".workspace-row")).toHaveLength(2);
+    expect($$(".workflow-row")).toHaveLength(5);
   });
 
-  it("marks the panel and the badge stale when a reload fails, and clears the mark on success", async () => {
+  it("marks the sidebar and the badge stale when a reload fails, and clears the mark on success", async () => {
     const { fake, control } = failing();
     await render(fake.bridge, 10);
     expect(text('.badge[data-tone="warn"]')).toBe("1");

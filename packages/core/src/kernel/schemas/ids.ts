@@ -8,7 +8,6 @@ const name = z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/, "must be lowercase le
 const generated = (prefix: string) =>
   z.string().regex(new RegExp(`^${prefix}_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`), `must be ${prefix}_<uuid>`);
 
-export const WorkspaceIdSchema = name.brand<"WorkspaceId">();
 export const TemplateIdSchema = name.brand<"TemplateId">();
 export const AgentIdSchema = name.brand<"AgentId">();
 export const RepoIdSchema = name.brand<"RepoId">();
@@ -18,7 +17,6 @@ export const CallIdSchema = generated("call").brand<"CallId">();
 /** A question the engine put to the engineer (plan approval, cloud-step approval, retry or stop, quota). */
 export const DecisionIdSchema = generated("decision").brand<"DecisionId">();
 
-export type WorkspaceId = z.output<typeof WorkspaceIdSchema>;
 export type TemplateId = z.output<typeof TemplateIdSchema>;
 export type AgentId = z.output<typeof AgentIdSchema>;
 export type RepoId = z.output<typeof RepoIdSchema>;

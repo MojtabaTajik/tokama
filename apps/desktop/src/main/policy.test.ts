@@ -121,13 +121,13 @@ describe("guardedHandler arguments", () => {
   it("passes the renderer's arguments, without the event, to an app page's handler", () => {
     const fn = vi.fn((...args: unknown[]) => args.length);
     const handler = guardedHandler(() => true, fn);
-    expect(handler({ senderFrame: { url: "x" } }, { type: "workspaces" }, 2)).toBe(2);
-    expect(fn).toHaveBeenCalledWith({ type: "workspaces" }, 2);
+    expect(handler({ senderFrame: { url: "x" } }, { type: "setup" }, 2)).toBe(2);
+    expect(fn).toHaveBeenCalledWith({ type: "setup" }, 2);
   });
 
   it("never calls the handler for a refused frame", () => {
     const fn = vi.fn();
-    expect(() => guardedHandler(() => false, fn)({ senderFrame: null }, { type: "workspaces" })).toThrow("refused");
+    expect(() => guardedHandler(() => false, fn)({ senderFrame: null }, { type: "setup" })).toThrow("refused");
     expect(fn).not.toHaveBeenCalled();
   });
 });

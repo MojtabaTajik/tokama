@@ -1,11 +1,11 @@
 import { itemStage, parseItemRecord, parseQueryResult, type ItemRecord } from "@tokama/core";
 import { describe, expect, it } from "vitest";
-import { AI_CLIS, groupByHost, isLive, markerOf, needsYouCount, stageOf, summaryLine } from "./model.js";
-import { ITEMS, items, workspaces } from "./testing/sample.js";
+import { AI_CLIS, isLive, markerOf, needsYouCount, stageOf } from "./model.js";
+import { ITEMS, items, setup } from "./testing/sample.js";
 
 describe("test data", () => {
   it("matches the engine API schemas", () => {
-    expect(parseQueryResult("workspaces", { workspaces }).ok).toBe(true);
+    expect(parseQueryResult("setup", setup).ok).toBe(true);
     for (const item of items) expect(parseItemRecord(item)).toMatchObject({ ok: true });
   });
 });
@@ -44,23 +44,6 @@ describe("isLive and needsYouCount", () => {
     expect(needsYouCount(items)).toBe(1);
     expect(needsYouCount([ITEMS.needsYou, { ...ITEMS.working, state: "needs_you" }])).toBe(2);
     expect(needsYouCount([])).toBe(0);
-  });
-});
-
-describe("summaryLine", () => {
-  it("counts repos, connections and templates, singular for one", () => {
-    expect(summaryLine(workspaces[0]!)).toBe("2 repos · 4 connections · 5 templates");
-    expect(summaryLine(workspaces[1]!)).toBe("1 repo · 1 connection · 2 templates");
-  });
-});
-
-describe("groupByHost", () => {
-  it("groups workspaces by host in first-seen order", () => {
-    const remote = { ...workspaces[1]!, host: "build-box" };
-    expect(groupByHost([workspaces[0]!, remote, workspaces[1]!]).map((group) => [group.host, group.workspaces.map((w) => w.name)])).toEqual([
-      ["local", ["Northwind prod", "Tailspin staging"]],
-      ["build-box", ["Tailspin staging"]],
-    ]);
   });
 });
 

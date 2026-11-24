@@ -1,6 +1,6 @@
 // In-memory item store: the engine's state until the items slice exists. It holds no sample data;
 // it is empty unless code puts items in it. Listeners hear about every change.
-import type { ItemId, ItemRecord, WorkspaceId } from "@tokama/core";
+import type { ItemId, ItemRecord } from "@tokama/core";
 
 export type ItemListener = (item: ItemRecord) => void;
 
@@ -8,8 +8,8 @@ export class MemoryItemStore {
   private readonly items = new Map<ItemId, ItemRecord>();
   private readonly listeners = new Set<ItemListener>();
 
-  list(workspaceId: WorkspaceId): ItemRecord[] {
-    return [...this.items.values()].filter((item) => item.workspaceId === workspaceId);
+  list(): ItemRecord[] {
+    return [...this.items.values()];
   }
 
   get(id: ItemId): ItemRecord | undefined {

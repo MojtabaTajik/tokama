@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
-import type { ItemRecord, WorkspaceSummary } from "@tokama/core";
+import type { ItemRecord, Setup } from "@tokama/core";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BridgeEvent, ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { App } from "../App.js";
-import { approved, DECISION_ID, needsYou, task, workspace } from "../testing/drawer.js";
+import { approved, DECISION_ID, needsYou, setup, task } from "../testing/drawer.js";
 import { ItemDrawer } from "./ItemDrawer.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -13,7 +13,7 @@ import { ItemDrawer } from "./ItemDrawer.js";
 type Reply = { ok: true; data: unknown } | { ok: false; error: { code: string; message: string } };
 
 /**
- * A bridge over a set of items: `workspaces`, `board` and `item` answer from it, commands answer
+ * A bridge over a set of items: `setup`, `board` and `item` answer from it, commands answer
  * with `commandReply` (null by default), and events are pushed by hand to every listener.
  */
 function fakeBridge(start: ItemRecord[]) {
@@ -21,9 +21,9 @@ function fakeBridge(start: ItemRecord[]) {
   const eventListeners = new Set<(event: BridgeEvent) => void>();
   const connectionListeners = new Set<(state: ConnectionState) => void>();
   let commandReply: (command: { type: string }) => Promise<Reply> = async () => ({ ok: true, data: null });
-  const query = vi.fn(async (q: { type: string; workspaceId?: string; itemId?: string }): Promise<Reply> => {
-    if (q.type === "workspaces") return { ok: true, data: { workspaces: [workspace] } };
-    if (q.type === "board") return { ok: true, data: { items: [...store.values()].filter((item) => item.workspaceId === q.workspaceId) } };
+  const query = vi.fn(async (q: { type: string; itemId?: string }): Promise<Reply> => {
+    if (q.type === "setup") return { ok: true, data: setup };
+    if (q.type === "board") return { ok: true, data: { items: [...store.values()] } };
     const item = q.itemId === undefined ? undefined : store.get(q.itemId);
     if (q.type === "item" && item) return { ok: true, data: { item } };
     return { ok: false, error: { code: "not_found", message: `no item ${String(q.itemId)}` } };
@@ -71,8 +71,8 @@ afterEach(() => {
   container.remove();
 });
 
-const renderDrawer = async (bridge: TokamaBridge, itemId: string, onClose = vi.fn(), workspaces: WorkspaceSummary[] = [workspace]) => {
-  await act(async () => root.render(<ItemDrawer bridge={bridge} itemId={itemId} workspaces={workspaces} onClose={onClose} />));
+const renderDrawer = async (bridge: TokamaBridge, itemId: string, onClose = vi.fn(), setupData: Setup | undefined = setup) => {
+  await act(async () => root.render(<ItemDrawer bridge={bridge} itemId={itemId} setup={setupData} onClose={onClose} />));
   return onClose;
 };
 const $ = (selector: string) => container.querySelector(selector);
@@ -426,7 +426,7 @@ describe("ItemDrawer in the app: open, focus and close", () => {
     expect(document.activeElement).toBe(row);
   });
 
-  it("closes when the engine connection fails, never showing ids without their workspace", async () => {
+  it("closes when the engine connection fails, never showing ids without their setup", async () => {
     const { row, setConnection } = await openFromPanel();
     await setConnection({ status: "failed", reason: "engine exited", logPath: "/tmp/engine.log", logTail: [] });
     expect($("aside.drawer")).toBeNull();

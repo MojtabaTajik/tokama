@@ -7,7 +7,7 @@ describe("@tokama/core", () => {
   });
 
   it("exposes the engine API parser", () => {
-    const message = { apiVersion: API_VERSION, kind: "query", requestId: "r1", query: { type: "board", workspaceId: "northwind-prod" } };
+    const message = { apiVersion: API_VERSION, kind: "query", requestId: "r1", query: { type: "board" } };
     expect(parseEngineMessage(message)).toEqual({ ok: true, value: message });
   });
 });
