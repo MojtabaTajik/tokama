@@ -2,10 +2,9 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Result } from "../../kernel/result/index.js";
 import { AgentIdSchema, RepoIdSchema } from "../../kernel/schemas/index.js";
 import { BUILTIN_AGENT_FILES, parseAgentFile } from "./agents.js";
-import { formatProblem, loadAgents, type Agent, type ConfigError } from "./index.js";
+import { formatProblem, loadAgents, type Agent, type LoadedAgents } from "./index.js";
 
 let root: string;
 let home: string;
@@ -38,15 +37,16 @@ function writeAgent(folder: string, id: string, content: string): string {
 const personal = () => join(home, "agents");
 const shared = () => join(repoPath, ".tokama", "agents");
 
-function value(result: Result<Agent[], ConfigError>): Agent[] {
-  if (!result.ok) throw new Error(result.error.problems.map(formatProblem).join("\n"));
-  return result.value;
+/** The agents of a load that must have no problems. */
+function value(loaded: LoadedAgents): readonly Agent[] {
+  if (loaded.problems.length > 0) throw new Error(loaded.problems.map(formatProblem).join("\n"));
+  return loaded.agents;
 }
-function messages(result: Result<Agent[], ConfigError>): string[] {
-  if (result.ok) throw new Error("expected problems");
-  return result.error.problems.map(formatProblem);
+function messages(loaded: LoadedAgents): string[] {
+  if (loaded.problems.length === 0) throw new Error("expected problems");
+  return loaded.problems.map(formatProblem);
 }
-const ids = (agents: Agent[]) => agents.map((agent) => agent.id);
+const ids = (agents: readonly { id: string }[]) => agents.map((agent) => agent.id);
 
 describe("loadAgents", () => {
   it("loads an agent file into a record", async () => {
@@ -97,10 +97,13 @@ describe("loadAgents", () => {
     expect(ids(value(await loadAgents({ tokamaHome: home })))).toEqual(["builder"]);
   });
 
-  it("reads only .md files", async () => {
+  it("reads only .md files, and skips READMEs and dotfiles", async () => {
     writeAgent(personal(), "reviewer", agentFile({}));
     writeFileSync(join(personal(), "notes.txt"), "not an agent");
     writeFileSync(join(personal(), ".DS_Store"), "");
+    writeFileSync(join(personal(), "README.md"), "# My agents\n");
+    writeFileSync(join(personal(), "readme.md"), "# My agents\n");
+    writeFileSync(join(personal(), ".draft.md"), "unfinished");
     expect(ids(value(await loadAgents({ tokamaHome: home })))).toEqual(["builder", "reviewer"]);
   });
 
@@ -179,21 +182,90 @@ describe("loadAgents", () => {
     ]);
   });
 
-  it("refuses a symlinked agent file", async () => {
-    const target = writeAgent(join(root, "elsewhere"), "reviewer", agentFile({}));
+  it("follows symlinked files and folders in the personal folder", async () => {
+    const target = writeAgent(join(root, "dotfiles", "agents"), "reviewer", agentFile({}));
+    writeAgent(join(root, "dotfiles", "agents"), "architect", agentFile({ name: "Architect" }));
+    mkdirSync(home, { recursive: true });
+    symlinkSync(join(root, "dotfiles", "agents"), personal());
+    expect(ids(value(await loadAgents({ tokamaHome: home })))).toEqual(["architect", "builder", "reviewer"]);
+
+    rmSync(personal());
     mkdirSync(personal());
     symlinkSync(target, join(personal(), "reviewer.md"));
-    expect(messages(await loadAgents({ tokamaHome: home }))).toEqual([
-      "agents/reviewer.md: is a symlink, and Tokama doesn't follow links in config folders. Put the file itself there.",
-    ]);
+    symlinkSync(join(root, "gone.md"), join(personal(), "dangling.md"));
+    const loaded = await loadAgents({ tokamaHome: home });
+    expect(ids(loaded.agents)).toEqual(["builder", "reviewer"]);
+    expect(messages(loaded)).toEqual(["agents/dangling.md: is a symlink to a file that doesn't exist"]);
   });
 
-  it("refuses a shared agents folder that leads outside the repo", async () => {
+  it("refuses a symlinked agent file in a repo", async () => {
+    writeAgent(shared(), "real", agentFile({}));
+    symlinkSync(join(shared(), "real.md"), join(shared(), "reviewer.md"));
+    const loaded = await loadAgents({ tokamaHome: home, repo: repo() });
+    expect(messages(loaded)).toEqual([
+      "orders-api/.tokama/agents/reviewer.md: is a symlink. Files in a repo's .tokama folder can't be symlinks (files in ~/.tokama can); put the file itself there.",
+    ]);
+    expect(ids(loaded.broken)).toEqual(["reviewer"]);
+  });
+
+  it("refuses a shared agents folder that leads outside the repo, and reads one that stays inside", async () => {
     writeAgent(join(root, "elsewhere"), "reviewer", agentFile({}));
     mkdirSync(join(repoPath, ".tokama"));
     symlinkSync(join(root, "elsewhere"), shared());
     expect(messages(await loadAgents({ tokamaHome: home, repo: repo() }))).toEqual([
-      "orders-api/.tokama/agents: leads outside the repo through a symlink, so it isn't read",
+      "orders-api/.tokama/agents: is a symlink that leads outside the repo, so it isn't read. A repo's .tokama/agents may only link inside the repo.",
+    ]);
+
+    rmSync(shared());
+    writeAgent(join(repoPath, "team-agents"), "architect", agentFile({ name: "Architect" }));
+    symlinkSync(join(repoPath, "team-agents"), shared());
+    expect(ids(value(await loadAgents({ tokamaHome: home, repo: repo() })))).toEqual(["architect", "builder"]);
+  });
+
+  it("loads the valid agents next to an invalid file, which still claims its id", async () => {
+    writeAgent(personal(), "builder", agentFile({ runs_on: "claud-code" }));
+    writeAgent(shared(), "reviewer", agentFile({ tools: "all" }));
+    writeAgent(shared(), "architect", agentFile({ name: "Architect" }));
+    writeAgent(shared(), "Bad Name", agentFile({}));
+    const loaded = await loadAgents({ tokamaHome: home, repo: repo() });
+    expect(ids(loaded.agents)).toEqual(["architect"]);
+    // The broken personal builder hides the built-in one: a step that uses it fails with its problem.
+    expect(loaded.broken).toEqual([
+      {
+        id: "builder",
+        owner: { kind: "personal" },
+        problems: [{ file: "agents/builder.md", line: 4, message: "runs_on 'claud-code' isn't known. Did you mean claude-code?" }],
+      },
+      { id: "reviewer", owner: { kind: "repo", repoId: "orders-api" }, problems: [expect.objectContaining({ line: 6 })] },
+    ]);
+    expect(messages(loaded)).toEqual([
+      "agents/builder.md line 4: runs_on 'claud-code' isn't known. Did you mean claude-code?",
+      "orders-api/.tokama/agents/Bad Name.md: 'Bad Name' isn't a valid agent id: use lowercase letters, digits and hyphens (at most 64)",
+      "orders-api/.tokama/agents/reviewer.md line 6: tools 'all' isn't known. Use read-only or edit.",
+    ]);
+  });
+
+  it("reports a shadowed invalid file but uses the agent that wins", async () => {
+    writeAgent(personal(), "reviewer", agentFile({}));
+    writeAgent(shared(), "reviewer", agentFile({ tools: "all" }));
+    const loaded = await loadAgents({ tokamaHome: home, repo: repo() });
+    expect(loaded.agents.find((agent) => agent.id === "reviewer")?.owner).toEqual({ kind: "personal" });
+    expect(loaded.broken).toEqual([]);
+    expect(loaded.problems).toHaveLength(1);
+  });
+
+  it("strips a byte order mark and keeps '---' lines in the role", async () => {
+    writeAgent(personal(), "reviewer", `\uFEFF${agentFile({}, "First part.\n---\nSecond part.")}`);
+    expect(value(await loadAgents({ tokamaHome: home })).find((agent) => agent.id === "reviewer")?.role).toBe("First part.\n---\nSecond part.");
+  });
+
+  it("prints raw values escaped and cut short", async () => {
+    writeAgent(personal(), "a", agentFile({ runs_on: '"claude\\u001b[31mcode"', ["x".repeat(100)]: "1" }));
+    writeAgent(personal(), "b", agentFile({ name: '"Line one\\nLine two"' }));
+    expect(messages(await loadAgents({ tokamaHome: home }))).toEqual([
+      "agents/a.md line 4: runs_on 'claude\\u001b[31mcode' isn't known. Use claude-code, codex-cli or ollama.",
+      `agents/a.md line 7: '${"x".repeat(60)}…' isn't a known field.`,
+      "agents/b.md line 3: name must be one line, with no control characters",
     ]);
   });
 

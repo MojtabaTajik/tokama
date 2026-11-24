@@ -11,7 +11,7 @@ import { err, ok, type Result } from "../../kernel/result/index.js";
 import { type AgentId, AgentIdSchema, type AiCliId, AiCliIdSchema, type RepoId } from "../../kernel/schemas/index.js";
 import { readConfigFile } from "./read.js";
 import type { Repo } from "./repos.js";
-import { CONFIG_FORMAT, type ConfigError, type ConfigProblem, parseYaml } from "./yaml-file.js";
+import { CONFIG_FORMAT, type ConfigProblem, parseYaml, quote } from "./yaml-file.js";
 
 /** Who owns an agent definition. Never a path: records stay valid on another machine. */
 export type AgentOwner = { readonly kind: "builtin" } | { readonly kind: "personal" } | { readonly kind: "repo"; readonly repoId: RepoId };
@@ -40,7 +40,7 @@ const text = (max: number) => z.string().trim().min(1).max(max);
 const AgentFileSchema = z
   .strictObject({
     format: z.literal(CONFIG_FORMAT),
-    name: text(100),
+    name: text(100).regex(/^[^\p{Cc}]*$/u, "must be one line, with no control characters"),
     runs_on: AiCliIdSchema,
     driven_by: z.enum(DRIVERS).optional(),
     model: text(100).refine((model) => !model.startsWith("-") && !/\s/.test(model), "must be a model name: no spaces, not starting with '-'"),
@@ -113,71 +113,99 @@ export interface LoadAgentsOptions {
   readonly repo?: Pick<Repo, "id" | "path">;
 }
 
+/** An id whose winning file is invalid. A step that uses it fails with these problems. */
+export interface BrokenAgent {
+  readonly id: AgentId;
+  readonly owner: AgentOwner;
+  readonly problems: readonly ConfigProblem[];
+}
+
+export interface LoadedAgents {
+  /** The usable agents, sorted by id. */
+  readonly agents: readonly Agent[];
+  /** Ids claimed by an invalid file, sorted by id. A lower-precedence agent never takes their place. */
+  readonly broken: readonly BrokenAgent[];
+  /** Every problem found, in folder order: broken agents', shadowed files' and folders'. */
+  readonly problems: readonly ConfigProblem[];
+}
+
+type Entry = { readonly ok: true; readonly agent: Agent } | { readonly ok: false; readonly broken: BrokenAgent };
+
 /**
  * The agents a step can use: personal, then the repo's shared ones, then the built-ins; on the
- * same id the first wins. Sorted by id. A missing folder has no agents. Any invalid file fails
- * the load, with every problem found.
+ * same id the first file wins, valid or not. A missing folder has no agents. A bad file never
+ * blocks the others: it is reported, and it still claims its id.
  */
-export async function loadAgents(options: LoadAgentsOptions): Promise<Result<Agent[], ConfigError>> {
+export async function loadAgents(options: LoadAgentsOptions): Promise<LoadedAgents> {
   const problems: ConfigProblem[] = [];
-  const sources: Agent[][] = [];
+  const entries: Entry[] = [];
 
-  sources.push(await loadFolder(join(options.tokamaHome, "agents"), "agents", { kind: "personal" }, problems));
+  // The engineer's own folder: symlinked files and folders are followed.
+  entries.push(...(await loadFolder(join(options.tokamaHome, "agents"), "agents", { kind: "personal" }, true, problems)));
   if (options.repo !== undefined) {
     const { id, path } = options.repo;
     const folder = join(path, ".tokama", "agents");
     const shown = `${id}/.tokama/agents`;
-    // fs-safe refuses a symlinked file; a symlinked folder could still lead out of the repo.
+    // In a repo, fs-safe refuses symlinked files; a symlinked folder may only lead somewhere inside the repo.
     if ((await exists(folder)) && !(await isInside(path, folder))) {
-      problems.push({ file: shown, message: "leads outside the repo through a symlink, so it isn't read" });
+      problems.push({ file: shown, message: "is a symlink that leads outside the repo, so it isn't read. A repo's .tokama/agents may only link inside the repo." });
     } else {
-      sources.push(await loadFolder(folder, shown, { kind: "repo", repoId: id }, problems));
+      entries.push(...(await loadFolder(folder, shown, { kind: "repo", repoId: id }, false, problems)));
     }
   }
-  const builtins: Agent[] = [];
   for (const [id, content] of Object.entries(BUILTIN_AGENT_FILES)) {
-    const agent = parseAgentFile(content, AgentIdSchema.parse(id), { kind: "builtin" }, `builtin/${id}.md`);
-    if (agent.ok) builtins.push(agent.value);
-    else problems.push(...agent.error);
+    entries.push(toEntry(parseAgentFile(content, AgentIdSchema.parse(id), { kind: "builtin" }, `builtin/${id}.md`), AgentIdSchema.parse(id), { kind: "builtin" }, problems));
   }
-  sources.push(builtins);
 
-  if (problems.length > 0) return err({ problems });
-  const byId = new Map<AgentId, Agent>();
-  for (const agent of sources.flat()) if (!byId.has(agent.id)) byId.set(agent.id, agent);
-  return ok([...byId.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)));
+  const winners = new Map<AgentId, Entry>();
+  for (const entry of entries) {
+    const id = entry.ok ? entry.agent.id : entry.broken.id;
+    if (!winners.has(id)) winners.set(id, entry);
+  }
+  const won = [...winners.values()];
+  return {
+    agents: won.flatMap((entry) => (entry.ok ? [entry.agent] : [])).sort(byId),
+    broken: won.flatMap((entry) => (entry.ok ? [] : [entry.broken])).sort(byId),
+    problems,
+  };
 }
 
-async function loadFolder(folder: string, shown: string, owner: AgentOwner, problems: ConfigProblem[]): Promise<Agent[]> {
+const byId = (a: { id: AgentId }, b: { id: AgentId }): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
+function toEntry(result: Result<Agent, ConfigProblem[]>, id: AgentId, owner: AgentOwner, problems: ConfigProblem[]): Entry {
+  if (result.ok) return { ok: true, agent: result.value };
+  problems.push(...result.error);
+  return { ok: false, broken: { id, owner, problems: result.error } };
+}
+
+/** Names never read as agents: a README for the folder, and dotfiles (editor and OS files). */
+const isSkipped = (name: string): boolean => name.startsWith(".") || name.toLowerCase() === "readme.md";
+
+async function loadFolder(folder: string, shown: string, owner: AgentOwner, followSymlink: boolean, problems: ConfigProblem[]): Promise<Entry[]> {
   let names: string[];
   try {
-    names = (await readdir(folder)).filter((name) => name.endsWith(".md")).sort();
+    names = (await readdir(folder)).filter((name) => name.endsWith(".md") && !isSkipped(name)).sort();
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code !== "ENOENT") problems.push({ file: shown, message: code === "ENOTDIR" ? "isn't a folder" : `can't be listed (${code ?? "unknown error"})` });
     return [];
   }
-  const agents: Agent[] = [];
+  const entries: Entry[] = [];
   for (const name of names) {
     const file = `${shown}/${name}`;
     const stem = name.slice(0, -".md".length);
     const id = AgentIdSchema.safeParse(stem);
     if (!id.success) {
-      problems.push({ file, message: `'${stem}' isn't a valid agent id: use lowercase letters, digits and hyphens (at most 64)` });
+      problems.push({ file, message: `${quote(stem)} isn't a valid agent id: use lowercase letters, digits and hyphens (at most 64)` });
       continue;
     }
-    const content = await readConfigFile(join(folder, name), file);
-    if (!content.ok) {
-      problems.push(content.error);
-      continue;
-    }
+    const content = await readConfigFile(join(folder, name), file, { followSymlink });
     // Removed between the listing and the read.
-    if (content.value === undefined) continue;
-    const agent = parseAgentFile(content.value, id.data, owner, file);
-    if (agent.ok) agents.push(agent.value);
-    else problems.push(...agent.error);
+    if (content.ok && content.value === undefined) continue;
+    const parsed = content.ok ? parseAgentFile(content.value!, id.data, owner, file) : err([content.error]);
+    entries.push(toEntry(parsed, id.data, owner, problems));
   }
-  return agents;
+  return entries;
 }
 
 async function exists(path: string): Promise<boolean> {

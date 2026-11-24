@@ -30,6 +30,7 @@ repos:
     remote: https://example.com/northwind/orders-api.git
     base_branch: main
     worktree_folder: .worktrees
+    checks: [pnpm test, "pnpm lint --max-warnings 0"]
   - id: billing
     path: ~/code/billing/
     base_branch: release/2.x
@@ -43,8 +44,9 @@ repos:
           remote: "https://example.com/northwind/orders-api.git",
           baseBranch: "main",
           worktreeFolder: ".worktrees",
+          checks: ["pnpm test", "pnpm lint --max-warnings 0"],
         },
-        { id: "billing", path: "/home/dev/code/billing/", baseBranch: "release/2.x", worktreeFolder: ".tokama/wt" },
+        { id: "billing", path: "/home/dev/code/billing", baseBranch: "release/2.x", worktreeFolder: ".tokama/wt", checks: [] },
       ],
     });
   });
@@ -72,8 +74,64 @@ repos:
       "repos.yaml line 4: path must be a full path, such as /home/me/code/orders-api or ~/code/orders-api",
       "repos.yaml line 5: 'baseBranch' isn't a known field. Did you mean base_branch?",
       "repos.yaml line 8: base_branch must be a branch name, such as main",
-      "repos.yaml line 9: worktree_folder must be a folder inside the repo, such as .tokama/wt",
-      "repos.yaml line 10: remote must be a URL with no spaces, not starting with '-'",
+      "repos.yaml line 9: worktree_folder must be a folder inside the repo and outside .git, such as .tokama/wt",
+      "repos.yaml line 10: remote must be a URL with no spaces or control characters, not starting with '-'",
+    ]);
+  });
+
+  it("gives the same lines with CRLF line breaks", async () => {
+    write("format: 1\r\nrepos:\r\n  - id: a\r\n    path: /a\r\n    base_branch: -x\r\n");
+    expect(messages(await load())).toEqual(["repos.yaml line 5: base_branch must be a branch name, such as main"]);
+  });
+
+  it("refuses branch names git reads as something else", async () => {
+    for (const branch of ["+main", "'@'", "HEAD", "-main", "a..b", "main.lock", "a b"]) {
+      write(`format: 1\nrepos:\n  - { id: a, path: /a, base_branch: ${branch} }\n`);
+      expect(messages(await load()), branch).toEqual(["repos.yaml line 3: base_branch must be a branch name, such as main"]);
+    }
+    write("format: 1\nrepos:\n  - { id: a, path: /a, base_branch: feature/HEAD-fix }\n");
+    expect((await load()).ok).toBe(true);
+  });
+
+  it("refuses a worktree folder that is the repo itself or inside .git", async () => {
+    for (const folder of [".", "./", "a/..", ".git", ".git/wt", "./.GIT/wt", "/tmp/wt", "~/wt", "../wt"]) {
+      write(`format: 1\nrepos:\n  - { id: a, path: /a, base_branch: main, worktree_folder: "${folder}" }\n`);
+      expect(messages(await load()), folder).toEqual([
+        "repos.yaml line 3: worktree_folder must be a folder inside the repo and outside .git, such as .tokama/wt",
+      ]);
+    }
+  });
+
+  it("refuses NUL characters in path and remote", async () => {
+    write('format: 1\nrepos:\n  - id: a\n    path: "/a\\0b"\n    remote: "https://x\\0y"\n    base_branch: main\n');
+    expect(messages(await load())).toEqual([
+      "repos.yaml line 4: path can't contain a NUL character",
+      "repos.yaml line 5: remote must be a URL with no spaces or control characters, not starting with '-'",
+    ]);
+  });
+
+  it("refuses checks that are not one simple command", async () => {
+    write(`format: 1
+repos:
+  - id: a
+    path: /a
+    base_branch: main
+    checks:
+      - pnpm test
+      - pnpm build && pnpm test
+      - pnpm test | tail -5
+      - pnpm test > out.txt
+      - echo $(whoami)
+      - "pnpm test 'unclosed"
+      - ""
+`);
+    expect(messages(await load())).toEqual([
+      "repos.yaml line 8: checks item 2 must be one command, with no &&, ||, ; or |",
+      "repos.yaml line 9: checks item 3 must be one command, with no &&, ||, ; or |",
+      "repos.yaml line 10: checks item 4 can't use a redirect (>, <)",
+      "repos.yaml line 11: checks item 5 can't use command substitution ($(...) or backticks)",
+      "repos.yaml line 12: checks item 6 can't use an unclosed quote",
+      "repos.yaml line 13: checks item 7 has no command words",
     ]);
   });
 
@@ -91,12 +149,10 @@ repos:
     expect(messages(await load())).toEqual(["repos.yaml line 1: must be a list of settings (key: value lines)"]);
   });
 
-  it("refuses a symlinked or oversized repos.yaml", async () => {
+  it("follows a symlinked repos.yaml, and refuses an oversized one", async () => {
     writeFileSync(join(root, "real.yaml"), "format: 1\nrepos: []\n");
     symlinkSync(join(root, "real.yaml"), join(home, "repos.yaml"));
-    expect(messages(await load())).toEqual([
-      "repos.yaml: is a symlink, and Tokama doesn't follow links in config folders. Put the file itself there.",
-    ]);
+    expect(await load()).toEqual({ ok: true, value: [] });
     rmSync(join(home, "repos.yaml"));
     write(`format: 1\nrepos: []\n# ${"x".repeat(70 * 1024)}\n`);
     expect(messages(await load())).toEqual(["repos.yaml: is larger than 64 KB"]);

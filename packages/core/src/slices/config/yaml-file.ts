@@ -59,7 +59,23 @@ export function parseYaml<S extends z.ZodType>(
 }
 
 // The yaml package's messages name the problem first, then where it is; the line is ours.
-const yamlMessage = (message: string): string => message.split(/ at line \d+/)[0]!.trim();
+const yamlMessage = (message: string): string => clean(message.split(/ at line \d+/)[0]!.trim(), 200);
+
+const MAX_SHOWN = 60;
+// JSON.stringify escapes C0 controls; these also reorder or break a terminal line.
+const UNSAFE = /[\u007f-\u009f\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+
+/** Text from a file made safe to print: control characters escaped, cut to `max` characters. */
+function clean(text: string, max: number): string {
+  const escaped = JSON.stringify(text)
+    .slice(1, -1)
+    .replace(UNSAFE, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`);
+  return escaped.length > max ? `${escaped.slice(0, max)}…` : escaped;
+}
+
+/** A raw value for a message: `'claud-code'`, escaped and cut to about 60 characters. */
+export const quote = (value: unknown): string =>
+  typeof value === "string" ? `'${clean(value, MAX_SHOWN)}'` : clean(JSON.stringify(value) ?? String(value), MAX_SHOWN).replaceAll('\\"', '"');
 
 interface Described {
   /** Path of the node whose line the problem gets. */
@@ -73,7 +89,7 @@ function describe(issue: z.core.$ZodIssue, schema: z.ZodType): Described[] {
   if (issue.code === "unrecognized_keys") {
     return issue.keys.map((key) => ({
       path: [...path, key],
-      message: `'${key}' isn't a known field.${suggestion(key, keysAt(schema, path))}`,
+      message: `${quote(key)} isn't a known field.${suggestion(key, keysAt(schema, path))}`,
     }));
   }
   if (path.length === 0) {
@@ -89,9 +105,9 @@ function describe(issue: z.core.$ZodIssue, schema: z.ZodType): Described[] {
       return [{ path, message: `${label} must be ${typeWord(issue.expected)}` }];
     case "invalid_value": {
       const values = issue.values.map(String);
-      if (values.length === 1) return [{ path, message: `${label} ${show(input)} isn't supported. Use ${values[0]}.` }];
+      if (values.length === 1) return [{ path, message: `${label} ${quote(input)} isn't supported. Use ${values[0]}.` }];
       const hint = suggestion(String(input), values) || ` Use ${oneOf(values)}.`;
-      return [{ path, message: `${label} ${show(input)} isn't known.${hint}` }];
+      return [{ path, message: `${label} ${quote(input)} isn't known.${hint}` }];
     }
     case "too_small":
       return [{ path, message: `${label} must not be empty` }];
@@ -135,7 +151,6 @@ function labelOf(path: readonly PropertyKey[]): string {
   return parent === undefined ? `item ${last + 1}` : `${String(parent)} item ${last + 1}`;
 }
 
-const show = (value: unknown): string => (typeof value === "string" ? `'${value}'` : JSON.stringify(value) ?? String(value));
 
 const oneOf = (values: readonly string[]): string =>
   values.length === 1 ? values[0]! : `${values.slice(0, -1).join(", ")} or ${values.at(-1)!}`;
