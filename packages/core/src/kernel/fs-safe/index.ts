@@ -3,8 +3,10 @@
 // huge file.
 export {
   isInside,
+  listFiles,
   readJsonFile,
   readTextFile,
+  readTextFileInside,
   type ReadFailure,
   type ReadFailureReason,
   type ReadTextOptions,

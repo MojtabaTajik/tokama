@@ -12,6 +12,16 @@ export const TemplateIdSchema = name.brand<"TemplateId">();
 export const AgentIdSchema = name.brand<"AgentId">();
 export const RepoIdSchema = name.brand<"RepoId">();
 export const ConnectionIdSchema = name.brand<"ConnectionId">();
+/** A step's id inside its template (`build`); `back: <id>` and references use it. */
+export const StepIdSchema = name.brand<"StepId">();
+/**
+ * A template as the engine refers to it: `<repo id>/<template id>` for a repo's template,
+ * `builtin/<template id>` for one that ships with Tokama. Two repos can each have a `quick-fix`.
+ */
+export const TemplateRefSchema = z
+  .string()
+  .regex(/^[a-z0-9][a-z0-9-]{0,63}\/[a-z0-9][a-z0-9-]{0,63}$/, "must be <repo>/<template id> or builtin/<template id>")
+  .brand<"TemplateRef">();
 export const ItemIdSchema = generated("item").brand<"ItemId">();
 export const CallIdSchema = generated("call").brand<"CallId">();
 /** A question the engine put to the engineer (plan approval, cloud-step approval, retry or stop, quota). */
@@ -21,6 +31,8 @@ export type TemplateId = z.output<typeof TemplateIdSchema>;
 export type AgentId = z.output<typeof AgentIdSchema>;
 export type RepoId = z.output<typeof RepoIdSchema>;
 export type ConnectionId = z.output<typeof ConnectionIdSchema>;
+export type StepId = z.output<typeof StepIdSchema>;
+export type TemplateRef = z.output<typeof TemplateRefSchema>;
 export type ItemId = z.output<typeof ItemIdSchema>;
 export type CallId = z.output<typeof CallIdSchema>;
 export type DecisionId = z.output<typeof DecisionIdSchema>;

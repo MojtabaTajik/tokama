@@ -4,7 +4,15 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createProcessRunner } from "../process/index.js";
 import type { Result } from "../result/index.js";
-import { isInside, readJsonFile, readTextFile, type ReadFailure, type ReadFailureReason } from "./index.js";
+import {
+  isInside,
+  listFiles,
+  readJsonFile,
+  readTextFile,
+  readTextFileInside,
+  type ReadFailure,
+  type ReadFailureReason,
+} from "./index.js";
 
 // Cases ported from ai-pipeline tests/test_summarize.py (read_text refuses FIFO, symlink and big
 // files) and tests/test_serve.py (FIFO run file refused, run dir must resolve inside runs_dir).
@@ -169,5 +177,60 @@ describe("isInside", () => {
     expect(await isInside(dir, outside)).toBe(false);
     expect(await isInside(dir, join(dir, "missing"))).toBe(false);
     expect(await isInside(join(dir, "missing"), dir)).toBe(false);
+  });
+});
+
+describe("readTextFileInside", () => {
+  it("reads a file inside the root", async () => {
+    expect(await readTextFileInside(dir, write("a.txt", "x"), BIG)).toEqual({ ok: true, value: "x" });
+  });
+
+  it("does not open a file reached through a symlinked folder outside the root", async () => {
+    write("secret.txt", "secret", outside);
+    symlinkSync(outside, join(dir, "linked"));
+    expect(reason(await readTextFileInside(dir, join(dir, "linked", "secret.txt"), BIG))).toBe("outside_root");
+  });
+
+  it("names a missing file and a symlink to outside", async () => {
+    expect(reason(await readTextFileInside(dir, join(dir, "gone.txt"), BIG))).toBe("not_found");
+    symlinkSync(write("secret.txt", "secret", outside), join(dir, "link.txt"));
+    expect(reason(await readTextFileInside(dir, join(dir, "link.txt"), BIG))).toBe("symlink");
+  });
+
+  it("still refuses a symlink that stays inside the root", async () => {
+    symlinkSync(write("real.txt", "x"), join(dir, "link.txt"));
+    expect(reason(await readTextFileInside(dir, join(dir, "link.txt"), BIG))).toBe("symlink");
+  });
+});
+
+describe("listFiles", () => {
+  it("lists the entries that are not folders, sorted", async () => {
+    mkdirSync(join(dir, "sub", "folder"), { recursive: true });
+    write("sub/b.yaml", "");
+    write("sub/a.yaml", "");
+    symlinkSync(join(dir, "sub", "a.yaml"), join(dir, "sub", "c.yaml"));
+    expect(await listFiles(dir, "sub", { max: 10 })).toEqual({ ok: true, value: ["a.yaml", "b.yaml", "c.yaml"] });
+  });
+
+  it("refuses a folder that links outside the root, before listing it", async () => {
+    symlinkSync(outside, join(dir, "sub"));
+    expect(reason(await listFiles(dir, "sub", { max: 10 }))).toBe("symlink");
+    mkdirSync(join(dir, "real"));
+    symlinkSync(outside, join(dir, "real", "nested"));
+    write("x.yaml", "", outside);
+    expect(reason(await listFiles(dir, "real/nested", { max: 10 }))).toBe("symlink");
+  });
+
+  it("refuses a folder inside a symlinked folder outside the root", async () => {
+    mkdirSync(join(outside, "inner"));
+    symlinkSync(outside, join(dir, "linked"));
+    expect(reason(await listFiles(dir, "linked/inner", { max: 10 }))).toBe("outside_root");
+  });
+
+  it("names a missing folder and too many entries", async () => {
+    expect(reason(await listFiles(dir, "gone", { max: 10 }))).toBe("not_found");
+    mkdirSync(join(dir, "many"));
+    for (let i = 0; i < 3; i++) write(`many/${i}`, "");
+    expect(reason(await listFiles(dir, "many", { max: 2 }))).toBe("too_many_entries");
   });
 });
