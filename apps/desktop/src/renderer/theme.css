@@ -18,8 +18,10 @@
   --fail: #e07a70;
   --pass: #6fb884;
 
-  /* Primary button border (its fill is --live). */
+  /* Primary button: deep blue fill, light text, brand-blue border (text on fill over 4.5:1). */
   --primary-border: #1f5bff;
+  --primary-fill: #0f2257;
+  --primary-text: #e4ecff;
 
   /* Agent identity dots, in join order, then neutral. */
   --agent-1: #8f73f2;

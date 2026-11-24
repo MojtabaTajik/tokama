@@ -19,6 +19,8 @@ const TOKENS: Record<string, string> = {
   "--link": "#7fb2ff",
   "--live": "#5c8cff",
   "--primary-border": "#1f5bff",
+  "--primary-fill": "#0f2257",
+  "--primary-text": "#e4ecff",
   "--warn": "#d9a93a",
   "--fail": "#e07a70",
   "--pass": "#6fb884",
@@ -32,15 +34,33 @@ describe("theme.css", () => {
   it.each(Object.entries(TOKENS))("defines %s as %s", (name, value) => {
     expect(theme).toMatch(new RegExp(`${name}:\\s*${value};`, "i"));
   });
+  it("gives primary button text at least 4.5:1 contrast on its fill", () => {
+    expect(contrast(TOKENS["--primary-text"]!, TOKENS["--primary-fill"]!)).toBeGreaterThanOrEqual(4.5);
+  });
 });
 
-describe("app.css", () => {
+/** The WCAG contrast ratio of two #rrggbb colours. */
+function contrast(a: string, b: string): number {
+  const luminance = (hex: string) => {
+    const [r, g, bl] = [1, 3, 5].map((i) => {
+      const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * bl!;
+  };
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi! + 0.05) / (lo! + 0.05);
+}
+
+const SCREENS = { "app.css": app, "drawer/drawer.css": readFileSync(join(import.meta.dirname, "drawer", "drawer.css"), "utf8") };
+
+describe.each(Object.entries(SCREENS))("%s", (_name, css) => {
   it("takes every colour from the theme tokens: no colour literals", () => {
-    expect(app.match(/#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?)\(/gi) ?? []).toEqual([]);
+    expect(css.match(/#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?)\(/gi) ?? []).toEqual([]);
   });
 
   it("uses only tokens that theme.css defines", () => {
-    const used = new Set([...app.matchAll(/var\((--[a-z0-9-]+)\)/g)].map((match) => match[1]));
+    const used = new Set([...css.matchAll(/var\((--[a-z0-9-]+)\)/g)].map((match) => match[1]));
     const missing = [...used].filter((name) => !theme.includes(`${name}:`));
     expect(missing).toEqual([]);
   });
