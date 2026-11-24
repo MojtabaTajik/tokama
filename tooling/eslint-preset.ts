@@ -1,17 +1,16 @@
 // Shared ESLint preset. The root `eslint.config.js` re-exports it.
 //
 // Every package gets a base config. `packages/core` also gets the engine boundaries from
-// docs/spec/architecture.md (sections 4-7, 9). `tooling/eslint-preset.test.ts` proves each
+// docs/spec/architecture.md (sections 4-7, 10). `tooling/eslint-preset.test.ts` proves each
 // rule with the fixtures in `tooling/eslint-fixtures/`.
 //
-// Known gaps (lint cannot see them; the kernel's runtime guards must not rely on lint alone):
-// - computed access with a built key, e.g. `process["get" + "BuiltinModule"]`;
-// - non-literal `import()` inside the escape zones, which can load any module (also Electron)
-//   and is invisible to the boundary rules;
-// - third-party packages that wrap process or network calls (a denylist cannot name them all);
-// - type-position `import("node:child_process")` queries escape the module bans (no runtime
-//   effect; the boundary rules do see type-position imports of local files);
-// - `#name` subpath imports, whose targets are set in package.json, not in code.
+// Lint is a guardrail against honest mistakes by contributors and coding agents, not a security
+// boundary (architecture.md, section 9). Code written to hide from these rules is caught in
+// review; the real controls are the kernel's process runner, command policy and egress guard.
+//
+// Run ESLint with `-c eslint.config.js` (the `lint` script does): flat config otherwise uses the
+// nearest eslint.config.* of each file, so a nested one would replace these rules for its folder.
+import { builtinModules } from "node:module";
 import { fileURLToPath } from "node:url";
 import js from "@eslint/js";
 import type { ESLint } from "eslint";
@@ -29,83 +28,77 @@ const TS_FILES = "**/*.{ts,tsx,mts,cts}";
 const CORE = "packages/core/src";
 const coreFiles = (dir: string) => `${CORE}/${dir}**/*.{ts,tsx,mts,cts}`;
 
-// Code that may spawn processes or open network connections: process control, egress, adapters.
-const ESCAPE_ZONES = [coreFiles("kernel/process/"), coreFiles("kernel/egress/"), coreFiles("adapters/")];
+// Code that may use process and network modules: process control, egress, adapters.
+const MODULE_ZONES = [coreFiles("kernel/process/"), coreFiles("kernel/egress/"), coreFiles("adapters/")];
+// Code that may use the network globals: egress and adapters (process control does not need them).
+const NETWORK_ZONES = [coreFiles("kernel/egress/"), coreFiles("adapters/")];
 
-// Modules that reach processes, the network, or a way to load or run arbitrary code.
-// `process` is listed so `import { getBuiltinModule } from "node:process"` cannot hide the call.
-const ESCAPE_MODULE_REGEX =
-  "^(?:node:)?(?:child_process|net|tls|dgram|dns|http|https|http2|worker_threads|cluster|inspector|module|vm|process)(?:/.*)?$|^(?:undici|ws)(?:/.*)?$";
+// The only built-in modules core may use outside MODULE_ZONES: they reach neither processes nor
+// the network. Every other built-in is refused. The bare names come from `module.builtinModules`
+// of the Node that runs ESLint, and any `node:` specifier outside this set is refused, so a
+// `node:` module that a newer Node adds is refused without a change here. `tty` is not safe:
+// its streams are sockets.
+const SAFE_BUILTINS = [
+  "assert",
+  "assert/strict",
+  "async_hooks",
+  "buffer",
+  "crypto",
+  "diagnostics_channel",
+  "events",
+  "fs",
+  "fs/promises",
+  "os",
+  "path",
+  "path/posix",
+  "path/win32",
+  "perf_hooks",
+  "punycode",
+  "querystring",
+  "readline",
+  "readline/promises",
+  "stream",
+  "stream/consumers",
+  "stream/promises",
+  "stream/web",
+  "string_decoder",
+  "timers",
+  "timers/promises",
+  "url",
+  "util",
+  "util/types",
+  "zlib",
+];
+const UNSAFE_BARE_BUILTINS = builtinModules.filter((name) => !name.startsWith("node:") && !SAFE_BUILTINS.includes(name));
+// undici and ws are the network packages Node code reaches for.
+const PROCESS_NETWORK_MODULE_REGEX = [
+  `^node:(?!(?:${SAFE_BUILTINS.join("|")})$)`,
+  `^(?:${UNSAFE_BARE_BUILTINS.join("|")})$`,
+  "^(?:undici|ws)(?:/.*)?$",
+].join("|");
 const ELECTRON_REGEX = "^electron(?:/.*)?$";
-// `data:`, `file:` and other URL specifiers load code the other rules cannot classify.
-const URL_SPECIFIER_REGEX = "^(?!node:)[a-z][a-z0-9+.-]*:";
 // esquery regex literals end at an unescaped "/".
 const selectorRegex = (source: string) => `/${source.replaceAll("/", "\\/")}/i`;
 
-// Property names that reach native bindings, built-in modules or the Function constructor,
-// whatever object they are read from (so `const p = process; p.binding()` is caught too).
-const ESCAPE_PROPERTY_REGEX =
-  "/^(?:binding|_linkedBinding|dlopen|execve|kill|getBuiltinModule|createRequire|mainModule|require|constructor)$/";
-
-const electronImports = {
+const electron = {
   regex: ELECTRON_REGEX,
   message: "core is headless: no Electron (architecture.md, section 1).",
 };
-const urlImports = {
-  regex: URL_SPECIFIER_REGEX,
-  message: "core imports modules by name or relative path, never by URL.",
+const processNetwork = {
+  regex: PROCESS_NETWORK_MODULE_REGEX,
+  message:
+    "Process and network modules are allowed only in kernel/process, kernel/egress and adapters/*; elsewhere core uses the safe built-ins (SAFE_BUILTINS in tooling/eslint-preset.ts).",
 };
-// Refused everywhere in core, also in the escape zones.
-const alwaysImports = [electronImports, urlImports];
-const escapeImports = {
-  regex: ESCAPE_MODULE_REGEX,
-  message: "Process, network and code-loading modules are allowed only in kernel/process, kernel/egress and adapters/*.",
-};
-
-const alwaysSyntax = alwaysImports.map(({ regex, message }) => ({
+// The same bans for literal dynamic `import("...")`, which no-restricted-imports does not see.
+const dynamicImport = ({ regex, message }: { regex: string; message: string }) => ({
   selector: `ImportExpression[source.value=${selectorRegex(regex)}]`,
   message,
-}));
-const escapeSyntax = [
-  {
-    selector: `ImportExpression[source.value=${selectorRegex(ESCAPE_MODULE_REGEX)}]`,
-    message: escapeImports.message,
-  },
-  {
-    selector: "ImportExpression:not([source.type='Literal'])",
-    message: "Dynamic import() needs a string literal outside kernel/process, kernel/egress and adapters/*.",
-  },
-  {
-    selector: `MemberExpression[computed=false][property.name=${ESCAPE_PROPERTY_REGEX}]`,
-    message: "This property reaches native bindings, built-in modules or the Function constructor.",
-  },
-  {
-    selector: `MemberExpression[computed=true][property.value=${ESCAPE_PROPERTY_REGEX}]`,
-    message: "This property reaches native bindings, built-in modules or the Function constructor.",
-  },
-  {
-    selector: `ObjectPattern > Property[key.name=${ESCAPE_PROPERTY_REGEX}]`,
-    message: "This property reaches native bindings, built-in modules or the Function constructor.",
-  },
-  {
-    selector: `Literal[value=${ESCAPE_PROPERTY_REGEX}]`,
-    message: "This name reaches native bindings, built-in modules or the Function constructor (e.g. through Reflect.get).",
-  },
-  {
-    selector: `TemplateLiteral[expressions.length=0] > TemplateElement[value.cooked=${ESCAPE_PROPERTY_REGEX}]`,
-    message: "This name reaches native bindings, built-in modules or the Function constructor (e.g. through Reflect.get).",
-  },
-];
-
-const restrictedGlobal = (name: string) => ({
-  name,
-  message: "Network and global-object access is allowed only in kernel/process, kernel/egress and adapters/*.",
 });
-// `globalThis`, `global`, `self` and `window` are banned as identifiers, so aliases such as
-// `const g = globalThis; g.fetch` and `Reflect.get(globalThis, "fetch")` fail at the reference.
-const ESCAPE_GLOBALS = ["fetch", "WebSocket", "EventSource", "require", "module", "globalThis", "global", "self", "window"].map(
-  restrictedGlobal,
-);
+
+const NETWORK_GLOBALS = ["fetch", "WebSocket", "EventSource"].map((name) => ({
+  name,
+  message: "Network calls are allowed only in kernel/egress and adapters/*.",
+}));
 
 // Element types of packages/core/src. Patterns are full paths from the repo root.
 const coreElements = [
@@ -125,13 +118,17 @@ const coreFileCategories = [
 const internal = { dependency: { relationship: { to: "internal" } } };
 const toKernel = { to: { element: { type: "kernel" } } };
 const toSlicePublicEntry = { to: { element: { type: "slice", fileInternalPath: "index.ts" } } };
+const toWorkflowEngineEntry = {
+  to: { element: { type: "slice", captured: { slice: "workflow-engine" }, fileInternalPath: "index.ts" } },
+};
 
 const corePolicies = [
   { from: { element: { type: "slice" } }, allow: [internal, toKernel] },
   { from: { element: { type: "slice", captured: { slice: "workflow-engine" } } }, allow: [toSlicePublicEntry] },
   { from: { element: { type: "kernel" } }, allow: [internal] },
   { from: { element: { type: "adapter" } }, allow: [internal, toKernel] },
-  { from: { element: { type: "api" } }, allow: [internal, toKernel] },
+  // The API reaches the engine through workflow-engine's public entry only (architecture.md, section 4).
+  { from: { element: { type: "api" } }, allow: [internal, toKernel, toWorkflowEngineEntry] },
   // Any other file in src may use the kernel and the API, but gets no wiring rights.
   { from: { element: { type: "root" } }, allow: [toKernel, { to: { element: { type: "api" } } }] },
   // Root tests may import the public entry they test.
@@ -149,9 +146,11 @@ const corePolicies = [
 ];
 
 export default defineConfig(
+  // Anchored, so a `dist` or `coverage` folder inside src is still linted (tsc builds it).
   globalIgnores([
-    "**/dist/**",
-    "**/coverage/**",
+    "packages/*/dist/**",
+    "apps/*/dist/**",
+    "coverage/**",
     ".worktrees/**",
     ".agent/**",
     // Fixtures break the rules on purpose; the preset test lints them with its own cwd.
@@ -168,19 +167,9 @@ export default defineConfig(
     linterOptions: { reportUnusedDisableDirectives: "error" },
   },
 
-  // packages/core is TypeScript only, so a JavaScript file cannot slip past the rules below.
-  {
-    files: [`${CORE}/**/*.{js,jsx,mjs,cjs}`],
-    linterOptions: { noInlineConfig: true },
-    rules: {
-      "no-restricted-syntax": ["error", { selector: "Program", message: "packages/core is TypeScript only." }],
-    },
-  },
-
   // packages/core: engine boundaries.
   {
     files: [coreFiles("")],
-    linterOptions: { noInlineConfig: true },
     plugins: { boundaries: boundariesPlugin },
     settings: {
       "boundaries/root-path": repoRoot,
@@ -194,20 +183,23 @@ export default defineConfig(
         { default: "disallow", checkInternals: true, checkUnknownLocals: true, policies: corePolicies },
       ],
       "boundaries/no-unknown-files": "error",
-      "@typescript-eslint/no-restricted-imports": ["error", { patterns: [...alwaysImports, escapeImports] }],
-      "no-restricted-syntax": ["error", ...alwaysSyntax, ...escapeSyntax],
-      "no-restricted-globals": ["error", ...ESCAPE_GLOBALS],
+      "@typescript-eslint/no-restricted-imports": ["error", { patterns: [electron, processNetwork] }],
+      "no-restricted-syntax": ["error", dynamicImport(electron), dynamicImport(processNetwork)],
+      "no-restricted-globals": ["error", ...NETWORK_GLOBALS],
       "no-eval": "error",
       "no-new-func": "error",
     },
   },
   {
-    // Flat config replaces rule options, so the bans that hold everywhere are restated here.
-    files: ESCAPE_ZONES,
+    // Flat config replaces rule options, so the Electron ban is restated here.
+    files: MODULE_ZONES,
     rules: {
-      "@typescript-eslint/no-restricted-imports": ["error", { patterns: alwaysImports }],
-      "no-restricted-syntax": ["error", ...alwaysSyntax],
-      "no-restricted-globals": "off",
+      "@typescript-eslint/no-restricted-imports": ["error", { patterns: [electron] }],
+      "no-restricted-syntax": ["error", dynamicImport(electron)],
     },
+  },
+  {
+    files: NETWORK_ZONES,
+    rules: { "no-restricted-globals": "off" },
   },
 );
