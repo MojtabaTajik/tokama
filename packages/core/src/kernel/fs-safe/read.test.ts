@@ -76,9 +76,16 @@ describe("readTextFile", () => {
     expect(await readTextFile(write("ok", "x".repeat(10)), { maxBytes: 10 })).toEqual({ ok: true, value: "x".repeat(10) });
     const big = await readTextFile(write("big", "x".repeat(11)), { maxBytes: 10 });
     expect(big).toEqual({ ok: false, error: expect.objectContaining({ reason: "too_large" }) });
-    // Larger than one read chunk, so the cap holds across chunks.
+    // Larger than one read chunk; the size check refuses it before any read.
     expect(reason(await readTextFile(write("huge", Buffer.alloc(200_000, 0x61)), { maxBytes: 199_999 }))).toBe("too_large");
     expect(reason(await readTextFile(join(dir, "huge"), { maxBytes: 200_000 }))).toBe("ok");
+  });
+
+  // procfs files are regular files whose fstat size is 0, so only the read loop sees how big they are,
+  // as with a file that grows after fstat.
+  it.runIf(process.platform === "linux")("caps the bytes read when fstat reports a smaller size", async () => {
+    expect(reason(await readTextFile("/proc/self/status", { maxBytes: 8 }))).toBe("too_large");
+    expect(reason(await readTextFile("/proc/self/status", { maxBytes: 1024 * 1024 }))).toBe("ok");
   });
 
   it("caps the line count at maxLines", async () => {
