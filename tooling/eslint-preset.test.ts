@@ -222,6 +222,75 @@ describe("eslint preset: process and network modules", () => {
   });
 });
 
+describe("eslint preset: desktop", () => {
+  const desktop = "apps/desktop/src";
+  const everyZone = ["main", "renderer", "preload", "shared"];
+
+  it.each(
+    everyZone.flatMap((zone) =>
+      ['import "@tokama/core/dist/kernel/process/env.js";', 'import "@tokama/engine";', 'import "../../../../packages/core/src/index.js";'].map(
+        (code) => [zone, code],
+      ),
+    ),
+  )("refuses core internals, the engine app and package paths in %s: %s", async (zone, code) => {
+    expect(await errorRules(`${desktop}/${zone}/virtual.ts`, code)).toEqual([IMPORTS]);
+  });
+
+  it("lets main use the client, core's public entry, Electron and Node", async () => {
+    const code = 'export { connect } from "@tokama/client";\nexport { err } from "@tokama/core";\nimport "electron";\nimport "node:child_process";';
+    expect(await errorRules(`${desktop}/main/virtual.ts`, code)).toEqual([]);
+  });
+
+  it.each(["renderer/virtual.tsx", "shared/virtual.ts"])("keeps Node, Electron and engine values out of %s", async (path) => {
+    for (const code of [
+      'import "electron";',
+      'import "electron/renderer";',
+      'import "node:fs";',
+      'import "fs/promises";',
+      'import "child_process";',
+      'export { connect } from "@tokama/client";',
+      'export { err } from "@tokama/core";',
+    ]) {
+      expect(await errorRules(`${desktop}/${path}`, code), code).toEqual([IMPORTS]);
+    }
+    expect(await errorRules(`${desktop}/${path}`, 'export type { ItemRecord } from "@tokama/core";\nimport "react";')).toEqual([]);
+  });
+
+  it.each([
+    ["renderer/virtual.tsx", "../main/connection.js"],
+    ["renderer/virtual.tsx", "../preload/index.js"],
+    ["renderer/virtual.tsx", "../main"],
+    ["renderer/brand/virtual.ts", "../../main/policy.js"],
+    ["shared/virtual.ts", "../preload/index.js"],
+  ])("keeps %s from importing %s", async (path, specifier) => {
+    expect(await errorRules(`${desktop}/${path}`, `export * from "${specifier}";`)).toEqual([IMPORTS]);
+    expect(await errorRules(`${desktop}/renderer/virtual.tsx`, 'export * from "../shared/bridge.js";\nexport * from "./brand/index.js";')).toEqual([]);
+  });
+
+  it("lets desktop tests use Node, but not core internals", async () => {
+    expect(await errorRules(`${desktop}/renderer/virtual.test.tsx`, 'import "node:fs";\nimport "../main/policy.js";')).toEqual([]);
+    expect(await errorRules(`${desktop}/preload/virtual.test.ts`, 'import "node:fs";')).toEqual([]);
+    expect(await errorRules(`${desktop}/renderer/virtual.test.tsx`, 'import "@tokama/core/dist/index.js";')).toEqual([IMPORTS]);
+  });
+
+  it("lets the preload import only electron", async () => {
+    const path = `${desktop}/preload/virtual.ts`;
+    for (const code of [
+      'import "node:fs";',
+      'import "path";',
+      'import "@tokama/client";',
+      'export type { Result } from "@tokama/core";',
+      'import "../main/connection.js";',
+      'import "../renderer/App.js";',
+      'import "../../package.json";',
+      'import "../shared-evil/x.js";',
+    ]) {
+      expect(await errorRules(path, code), code).toEqual([IMPORTS]);
+    }
+    expect(await errorRules(path, 'export { contextBridge } from "electron";\nexport { CHANNELS } from "../shared/bridge.js";')).toEqual([]);
+  });
+});
+
 describe("eslint preset: boundaries", () => {
   it("lets a root test import its subject but not a root source file", async () => {
     const code = 'export { engine } from "./composition.js";';

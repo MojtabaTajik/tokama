@@ -30,6 +30,15 @@ tokama/
 
 pnpm workspaces, `tsc --build` with project references. `desktop` depends on `core` only through its public entry.
 
+### Desktop stack
+
+`apps/desktop` is Electron with a React renderer, built by electron-vite (Vite for all three bundles: main, preload, renderer). electron-vite was chosen over plain Vite plus a hand-written dev script because it builds the sandboxed preload as one CommonJS file, runs the renderer dev server and restarts Electron on main-process changes, with one small config; it adds one dev dependency and nothing at runtime.
+
+- Main process: the only desktop code with Node and Electron. It connects through `@tokama/client` and starts the engine with absolute paths (the `node` found on PATH, `apps/engine/dist/main.js`), `--dir` set to the dir the client uses, and a reduced environment from core's `buildEnv` (the kernel allowlist; PATH without relative entries or package-manager tool folders), not `process.env`. A packaged app will ship its own engine and runtime (not yet).
+- Preload: a typed bridge, `window.tokama` (`src/shared/bridge.ts`), over two IPC channels. Nothing else reaches the renderer. Main registers every channel through one `handle` helper that answers app pages only (not DevTools or any other frame).
+- Renderer: React, rendered as text only. Every window has context isolation, sandbox, no Node, web security on, a strict Content-Security-Policy (no inline code, no remote content), and blocked navigation, `window.open`, webviews and permissions; the session refuses every request outside the app's own files (or, in dev, the loopback dev server).
+- Colours and fonts are CSS tokens in `src/renderer/theme.css`; the logo lives only in `src/renderer/brand/`.
+
 ## 3. Engine API (host boundary)
 
 The UI never calls slices directly. It talks to the engine through one typed API: commands (start item, approve step, stop, save template, add connection), queries (board, item, settings) and an event stream (item and step updates, usage, attention).
@@ -140,6 +149,7 @@ Security work and review findings are rated against this model. Lint is a guardr
   - process and network modules only in `kernel/process`, `kernel/egress` and `adapters/*`: elsewhere only an allowlist of safe built-in modules, for imports, re-exports and literal `import()`; any other built-in, and any `node:` module a newer Node adds, is refused;
   - the globals `fetch`, `WebSocket` and `EventSource` only in `kernel/egress` and `adapters/*`;
   - `no-eval` and `no-new-func`.
+- ESLint rules for `apps/desktop/src`: core through its public entry only, never the engine app or a workspace package by path; the renderer and `shared/` import no Node module, no Electron, no client or core values (core types are allowed) and nothing from `main/` or `preload/`; the preload imports only `electron` and `../shared`. Tests are exempt from the renderer and preload rules, since they run in Node.
 - ESLint runs with the root config only (`eslint -c eslint.config.js`); a test fails if another `eslint.config.*` is committed.
 - Lint catches honest mistakes by contributors and coding agents. It does not stop code written to get around it (computed names, aliases, reflection); code review covers that, and the kernel's runtime controls (section 9) are the security boundary.
 - Fixture tests that prove each rule fires, run against the real ESLint config.
