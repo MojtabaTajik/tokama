@@ -10,7 +10,7 @@ export type Reply = { ok: true; data: unknown } | { ok: false; error: { code: st
 
 export const CONNECTED: ConnectionState = { status: "connected", engineId: "e-1" };
 
-export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | Promise<Reply> | undefined; commandReply?: (command: { type: string }) => Reply } = {}) {
+export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | Promise<Reply> | undefined; commandReply?: (command: { type: string }) => Reply; pickFolder?: () => Promise<string | null> } = {}) {
   let connectionListener: ((state: ConnectionState) => void) | undefined;
   // Every subscriber hears every event: the app and the open drawer both listen.
   const eventListeners = new Set<(event: BridgeEvent) => void>();
@@ -34,6 +34,7 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
     }),
     query,
     command: vi.fn(async (c: { type: string }): Promise<Reply> => options.commandReply?.(c) ?? { ok: false, error: { code: "not_implemented", message: c.type } }),
+    pickFolder: vi.fn(options.pickFolder ?? (async () => null)),
     onEvent: vi.fn((listener: (event: BridgeEvent) => void) => {
       eventListeners.add(listener);
       return () => {
@@ -47,7 +48,10 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
   const pushItem = (item: ItemRecord) => act(async () => {
       for (const listener of eventListeners) listener({ kind: "event", seq: seq++, event: { type: "item_updated", item } });
     });
+  const pushEvent = (event: BridgeEvent["event"]) => act(async () => {
+      for (const listener of eventListeners) listener({ kind: "event", seq: seq++, event });
+    });
   const command = bridge.command as unknown as ReturnType<typeof vi.fn>;
   const retryConnection = bridge.retryConnection as unknown as ReturnType<typeof vi.fn>;
-  return { bridge, query, command, retryConnection, setConnection, pushItem, stops };
+  return { bridge, query, command, retryConnection, setConnection, pushItem, pushEvent, stops };
 }

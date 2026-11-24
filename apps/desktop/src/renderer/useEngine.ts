@@ -1,6 +1,6 @@
 // The renderer's engine state: the connection, the setup and the items. The setup and
 // the board load in parallel on every return to "connected" (events may have been missed while
-// away), and `item_updated` events keep the items current in between. A failed load is retried once after a short delay;
+// away) and on a `setup_changed` event, and `item_updated` events keep the items current in between. A failed load is retried once after a short delay;
 // after that the last data stays, marked stale, until a retry succeeds. A failed connection
 // drops the data.
 import type { ItemRecord, Setup } from "@tokama/core";
@@ -66,7 +66,10 @@ export function useEngine(bridge: TokamaBridge, retryDelayMs = RETRY_DELAY_MS): 
   useEffect(() => {
     let live = true;
     const stop = bridge.onEvent(({ event }) => {
-      if (!live || event.type !== "item_updated") return;
+      if (!live) return;
+      // Repos (or other setup) changed: load the setup and the board again.
+      if (event.type === "setup_changed") return setReloads((count) => count + 1);
+      if (event.type !== "item_updated") return;
       const item = event.item;
       updatedDuringLoad.current?.set(item.id, item);
       setData((current) => (current === undefined ? current : { ...current, items: new Map(current.items).set(item.id, item) }));

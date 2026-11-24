@@ -5,8 +5,8 @@ import { isAbsolute, join, normalize, posix, sep } from "node:path";
 import { z } from "zod";
 import { posixSh, type SyntaxRefusalReason } from "../../kernel/command-policy/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
-import { type RepoId, RepoIdSchema } from "../../kernel/schemas/index.js";
-import { readHomeConfigFile } from "./read.js";
+import { MAX_CHECK_CHARS, type RepoId, RepoIdSchema } from "../../kernel/schemas/index.js";
+import { readConfigFile, resolveHomePath } from "./read.js";
 import { CONFIG_FORMAT, type ConfigError, parseYaml } from "./yaml-file.js";
 
 export interface Repo {
@@ -25,7 +25,7 @@ export interface Repo {
 export const DEFAULT_WORKTREE_FOLDER = ".tokama/wt";
 
 // Branch names and remotes reach git as arguments: nothing that reads as an option or a range.
-const BRANCH = /^(?![-+/.])(?!.*\.\.)(?!.*\/\/)(?!.*@\{)(?!(?:@|HEAD)$)[A-Za-z0-9._/@+-]+(?<![/.])(?<!\.lock)$/;
+export const BRANCH = /^(?![-+/.])(?!.*\.\.)(?!.*\/\/)(?!.*@\{)(?!(?:@|HEAD)$)[A-Za-z0-9._/@+-]+(?<![/.])(?<!\.lock)$/;
 // No whitespace and no control characters (NUL included).
 const REMOTE = /^(?!-)[^\s\p{Cc}]+$/u;
 
@@ -40,7 +40,7 @@ const REFUSAL_WORDS: Record<SyntaxRefusalReason, string> = {
 };
 
 /** Why a check isn't one simple command, or undefined when it is. Parsed as the command policy parses checks. */
-function checkProblem(command: string): string | undefined {
+export function checkProblem(command: string): string | undefined {
   const split = posixSh.split(command);
   if (!split.ok) return `can't use ${REFUSAL_WORDS[split.error.reason]}`;
   if (split.value.length !== 1) return "must be one command, with no &&, ||, ; or |";
@@ -72,7 +72,7 @@ const RepoEntrySchema = z.strictObject({
     .optional(),
   checks: z
     .array(
-      z.string().superRefine((command, ctx) => {
+      z.string().max(MAX_CHECK_CHARS).superRefine((command, ctx) => {
         const problem = checkProblem(command);
         if (problem !== undefined) ctx.addIssue({ code: "custom", message: problem });
       }),
@@ -80,7 +80,7 @@ const RepoEntrySchema = z.strictObject({
     .optional(),
 });
 
-const ReposFileSchema = z
+export const ReposFileSchema = z
   .strictObject({
     format: z.literal(CONFIG_FORMAT),
     repos: z.array(RepoEntrySchema),
@@ -100,17 +100,39 @@ export interface LoadReposOptions {
   readonly home?: string;
 }
 
+export const REPOS_FILE = "repos.yaml";
+
+/** `repos.yaml` as it is now. */
+export interface ReposFile {
+  /** The file to write: the real file behind a link, or where a new file goes. */
+  readonly path: string;
+  /** Undefined when there is no file yet. */
+  readonly text: string | undefined;
+  readonly repos: Repo[];
+}
+
 /** The repos in `repos.yaml`, in file order. No file: no repos. A linked file is followed. */
 export async function loadRepos(options: LoadReposOptions): Promise<Result<Repo[], ConfigError>> {
-  const file = "repos.yaml";
-  const content = await readHomeConfigFile(join(options.tokamaHome, file), file);
+  const file = await readReposFile(options);
+  return file.ok ? ok(file.value.repos) : file;
+}
+
+/** `repos.yaml` with its text and repos; `loadRepos` and the edits read it through this. */
+export async function readReposFile(options: LoadReposOptions): Promise<Result<ReposFile, ConfigError>> {
+  const link = join(options.tokamaHome, REPOS_FILE);
+  const real = await resolveHomePath(link, REPOS_FILE);
+  if (!real.ok) return err({ problems: [real.error] });
+  const content = real.value === undefined ? ok(undefined) : await readConfigFile(real.value, REPOS_FILE);
   if (!content.ok) return err({ problems: [content.error] });
-  if (content.value === undefined) return ok([]);
-  const parsed = parseYaml(ReposFileSchema, content.value, file);
+  const path = real.value ?? link;
+  if (content.value === undefined) return ok({ path, text: undefined, repos: [] });
+  const parsed = parseYaml(ReposFileSchema, content.value, REPOS_FILE);
   if (!parsed.ok) return err({ problems: parsed.error });
   const home = options.home ?? homedir();
-  return ok(
-    parsed.value.repos.map((entry) => ({
+  return ok({
+    path,
+    text: content.value,
+    repos: parsed.value.repos.map((entry) => ({
       id: entry.id,
       path: withoutTrailingSep(normalize(entry.path.startsWith("~/") ? join(home, entry.path.slice(2)) : entry.path)),
       ...(entry.remote === undefined ? {} : { remote: entry.remote }),
@@ -118,7 +140,7 @@ export async function loadRepos(options: LoadReposOptions): Promise<Result<Repo[
       worktreeFolder: entry.worktree_folder ?? DEFAULT_WORKTREE_FOLDER,
       checks: entry.checks?.map((command) => command.trim()) ?? [],
     })),
-  );
+  });
 }
 
 const withoutTrailingSep = (path: string): string => (path.length > 1 && path.endsWith(sep) ? path.slice(0, -1) : path);

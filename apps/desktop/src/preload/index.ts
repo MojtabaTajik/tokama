@@ -21,6 +21,7 @@ export const bridge: TokamaBridge = {
   query: (query) => ipcRenderer.invoke(CHANNELS.query, query) as never,
   command: (command) => ipcRenderer.invoke(CHANNELS.command, command) as never,
   onEvent: (listener) => subscribe<BridgeEvent>(CHANNELS.event, listener),
+  pickFolder: () => ipcRenderer.invoke(CHANNELS.pickFolder) as Promise<string | null>,
 };
 
 contextBridge.exposeInMainWorld("tokama", bridge);

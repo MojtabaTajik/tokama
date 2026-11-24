@@ -69,7 +69,7 @@ function contrast(a: string, b: string): number {
   return (hi! + 0.05) / (lo! + 0.05);
 }
 
-const SCREENS = { "app.css": app, "drawer/drawer.css": readFileSync(join(import.meta.dirname, "drawer", "drawer.css"), "utf8"), "newwork/newwork.css": readFileSync(join(import.meta.dirname, "newwork", "newwork.css"), "utf8"), "shell/states.css": readFileSync(join(import.meta.dirname, "shell", "states.css"), "utf8"), "about/about.css": readFileSync(join(import.meta.dirname, "about", "about.css"), "utf8") };
+const SCREENS = { "app.css": app, "drawer/drawer.css": readFileSync(join(import.meta.dirname, "drawer", "drawer.css"), "utf8"), "newwork/newwork.css": readFileSync(join(import.meta.dirname, "newwork", "newwork.css"), "utf8"), "shell/states.css": readFileSync(join(import.meta.dirname, "shell", "states.css"), "utf8"), "about/about.css": readFileSync(join(import.meta.dirname, "about", "about.css"), "utf8"), "repos/repos.css": readFileSync(join(import.meta.dirname, "repos", "repos.css"), "utf8") };
 
 describe.each(Object.entries(SCREENS))("%s", (_name, css) => {
   it("takes every colour from the theme tokens: no colour literals", () => {

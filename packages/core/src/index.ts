@@ -53,6 +53,24 @@ export {
   type StartItemInput,
   type Verdict,
 } from "./slices/workflow-engine/index.js";
+// Process control and git, for the engine service to hand to the slices that need them.
+export { createProcessRunner, type ProcessRunner } from "./kernel/process/index.js";
+export { createGit, type Git } from "./kernel/git/index.js";
+// repos.yaml: load it, and the changes the engine makes to it.
+export {
+  addRepo,
+  formatProblem,
+  loadRepos,
+  removeRepo,
+  suggestRepo,
+  type AddRepoInput,
+  type ConfigError,
+  type LoadReposOptions,
+  type Repo,
+  type RepoEditError,
+  type RepoEditOptions,
+  type RepoSuggestion,
+} from "./slices/config/index.js";
 export {
   API_VERSION,
   COMMAND_ERROR_CODES,
@@ -78,6 +96,7 @@ export {
   parseServerMessage,
   parseTemplateId,
   parseTemplateRecord,
+  type AddRepoResult,
   type AgentCallOutcome,
   type BoardResult,
   type AgentCallUsage,
@@ -143,6 +162,7 @@ export {
   type StepRecord,
   type StepId,
   type StepState,
+  type SuggestRepoResult,
   type SuggestTemplateResult,
   type TemplateId,
   type TemplateRecord,

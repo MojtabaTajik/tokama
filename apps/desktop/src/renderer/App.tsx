@@ -5,6 +5,7 @@ import { About } from "./about/About.js";
 import { ItemDrawer } from "./drawer/ItemDrawer.js";
 import { ALL_WORK, type CliIssue, inView, needsYouCount, type View } from "./model.js";
 import { isMac, NewWork, type NewWorkHandle } from "./newwork/NewWork.js";
+import { AddRepoDialog } from "./repos/AddRepoDialog.js";
 import { MainArea } from "./shell/MainArea.js";
 import { Rail } from "./shell/Rail.js";
 import { Sidebar } from "./shell/Sidebar.js";
@@ -33,6 +34,8 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
   const [aboutOpen, setAboutOpen] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(undefined);
   const composer = useRef<NewWorkHandle>(null);
+  // The folder the picker returned, while the Add repo dialog is open.
+  const [addingRepo, setAddingRepo] = useState<string | undefined>(undefined);
   const [clock, setClock] = useState(() => Date.now());
   useEffect(() => {
     if (fixedNow !== undefined) return;
@@ -57,6 +60,14 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, []);
+  const pickRepoFolder = async () => {
+    const path = await bridge.pickFolder().catch(() => null);
+    if (path !== null) setAddingRepo(path);
+  };
+  const removeRepo = async (repoId: string) => {
+    const reply = await bridge.command({ type: "remove_repo", repoId });
+    return reply.ok ? undefined : reply.error.message;
+  };
   const startIn = (target: View) => composer.current?.open(target.kind === "workflow" ? { templateId: target.id } : target.kind === "repo" ? { repoId: target.id } : undefined);
 
   return (
@@ -88,6 +99,8 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
           onToggleSection={views.toggleSection}
           onNewWork={() => composer.current?.open()}
           onStartIn={startIn}
+          onAddRepo={() => void pickRepoFolder()}
+          onRemoveRepo={removeRepo}
         />
       )}
       {aboutOpen ? (
@@ -122,6 +135,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
           }
         />
       )}
+      {addingRepo !== undefined && <AddRepoDialog bridge={bridge} path={addingRepo} onClose={() => setAddingRepo(undefined)} />}
       {!aboutOpen && selectedItemId !== undefined && <ItemDrawer bridge={bridge} itemId={selectedItemId} setup={setup} onClose={() => setSelectedItemId(undefined)} />}
     </div>
   );

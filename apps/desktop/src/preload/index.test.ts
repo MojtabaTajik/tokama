@@ -20,7 +20,7 @@ const exposed = [...electron.exposeInMainWorld.mock.calls];
 describe("preload bridge", () => {
   it("exposes window.tokama with only the bridge methods", () => {
     expect(exposed).toEqual([["tokama", bridge]]);
-    expect(Object.keys(bridge).sort()).toEqual(["command", "getConnection", "onConnection", "onEvent", "query", "retryConnection"]);
+    expect(Object.keys(bridge).sort()).toEqual(["command", "getConnection", "onConnection", "onEvent", "pickFolder", "query", "retryConnection"]);
   });
 
   it("query and command invoke their channels with the request only", async () => {
@@ -42,6 +42,12 @@ describe("preload bridge", () => {
     expect(listener.mock.calls).toEqual([[message]]);
     stop();
     expect(electron.removeListener).toHaveBeenCalledWith(CHANNELS.event, handler);
+  });
+
+  it("pickFolder invokes its channel with no arguments", async () => {
+    electron.invoke.mockResolvedValue("/home/dev/code/orders-api");
+    await expect(bridge.pickFolder()).resolves.toBe("/home/dev/code/orders-api");
+    expect(electron.invoke).toHaveBeenCalledWith(CHANNELS.pickFolder);
   });
 
   it("getConnection invokes the connection channel", async () => {
