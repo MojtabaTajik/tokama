@@ -2,49 +2,14 @@
 import type { ItemRecord } from "@tokama/core";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { BridgeEvent, ConnectionState, TokamaBridge } from "../shared/bridge.js";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { ConnectionState, TokamaBridge } from "../shared/bridge.js";
 import { App } from "./App.js";
 import { brand } from "./brand/index.js";
-import { ITEMS, items, setup } from "./testing/sample.js";
+import { CONNECTED, fakeBridge } from "./testing/bridge.js";
+import { ITEMS, items, NOW } from "./testing/sample.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
-type Reply = { ok: true; data: unknown } | { ok: false; error: { code: string; message: string } };
-
-/** A bridge over the test data: `setup` and `board` answer from it, events are pushed by hand. */
-function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | undefined } = {}) {
-  let connectionListener: ((state: ConnectionState) => void) | undefined;
-  let eventListener: ((event: BridgeEvent) => void) | undefined;
-  const stops = { connection: vi.fn(), event: vi.fn() };
-  const boardItems = options.boardItems ?? items;
-  const query = vi.fn(async (q: { type: string }): Promise<Reply> => {
-    const custom = options.reply?.(q);
-    if (custom) return custom;
-    if (q.type === "setup") return { ok: true, data: setup };
-    if (q.type === "board") return { ok: true, data: { items: boardItems } };
-    return { ok: false, error: { code: "not_implemented", message: q.type } };
-  });
-  const bridge = {
-    getConnection: vi.fn(async () => initial),
-    onConnection: vi.fn((listener: (state: ConnectionState) => void) => {
-      connectionListener = listener;
-      return stops.connection;
-    }),
-    query,
-    command: vi.fn(),
-    onEvent: vi.fn((listener: (event: BridgeEvent) => void) => {
-      eventListener = listener;
-      return stops.event;
-    }),
-  } as unknown as TokamaBridge;
-  const setConnection = (state: ConnectionState) => act(async () => connectionListener?.(state));
-  let seq = 0;
-  const pushItem = (item: ItemRecord) => act(async () => eventListener?.({ kind: "event", seq: seq++, event: { type: "item_updated", item } }));
-  return { bridge, query, setConnection, pushItem, stops };
-}
-
-const CONNECTED: ConnectionState = { status: "connected", engineId: "e-1" };
 
 let container: HTMLElement;
 let root: Root;
@@ -59,15 +24,15 @@ afterEach(() => {
 });
 
 const render = async (bridge: TokamaBridge, retryDelayMs = 10) => {
-  await act(async () => root.render(<App bridge={bridge} retryDelayMs={retryDelayMs} />));
+  await act(async () => root.render(<App bridge={bridge} retryDelayMs={retryDelayMs} now={NOW} />));
 };
 const wait = (ms: number) => act(async () => new Promise((resolve) => setTimeout(resolve, ms)));
 const $ = (selector: string) => container.querySelector(selector);
 const $$ = (selector: string) => [...container.querySelectorAll(selector)];
 const text = (selector: string) => $(selector)?.textContent;
-const liveTitles = () => $$(".live-item .ellipsis").map((el) => el.textContent);
-const workflowRow = (name: string) => $$(".workflow-row").find((row) => row.textContent?.includes(name))!;
-const repoRow = (name: string) => $$(".repo-row").find((row) => row.textContent?.includes(name))!;
+const rowTitles = () => $$(".pl-title").map((el) => el.textContent);
+/** The sidebar rows: "All work", every workflow and every repo. */
+const SIDEBAR_ROWS = 1 + 5 + 3;
 const click = (el: Element) => act(async () => (el as HTMLElement).click());
 
 describe("App shell", () => {
@@ -80,22 +45,24 @@ describe("App shell", () => {
     expect($('img[alt="Tokama"]')).not.toBeNull();
   });
 
-  it("has every rail destination, a usage ring per AI CLI with its monogram, and the user", async () => {
+  it("has every rail destination and the user, and no usage rings", async () => {
     await render(fakeBridge(CONNECTED).bridge);
     const labels = $$(".rail button").map((button) => button.getAttribute("aria-label"));
-    expect(labels).toEqual([
-      "Sidebar",
-      "Board",
-      "Needs you · 1",
-      "Insights",
-      "Settings",
-      "Attention",
-      "Claude Code · usage not measured yet",
-      "Codex CLI · usage not measured yet",
-      "Ollama · usage not measured yet",
-    ]);
-    expect($$(".usage-ring .mono").map((el) => el.textContent)).toEqual(["CC", "CX", "OL"]);
+    expect(labels).toEqual(["Sidebar", "Board", "Needs you · 1", "Insights", "Settings", "Attention"]);
+    expect($(".usage-ring")).toBeNull();
     expect($('.rail-user[aria-label="You"]')).not.toBeNull();
+  });
+
+  it("lists every AI CLI with its state in the Insights tooltip", async () => {
+    await render(fakeBridge(CONNECTED).bridge);
+    const insights = $('.rail button[aria-label="Insights"]')!;
+    const tip = $('.rail [role="tooltip"]')!;
+    expect(insights.getAttribute("aria-describedby")).toBe(tip.id);
+    expect([...tip.querySelectorAll("li")].map((li) => li.textContent)).toEqual([
+      "Claude Codeusage data comes later",
+      "Codex CLIusage data comes later",
+      "Ollamausage data comes later",
+    ]);
   });
 
   it("shows the needs-you count as an amber badge and no attention badge at zero", async () => {
@@ -115,45 +82,10 @@ describe("App shell", () => {
     expect(query.mock.calls.map(([q]) => q)).toEqual([{ type: "setup" }, { type: "board" }]);
   });
 
-  it("lists the workflows with their live items and markers, directly", async () => {
-    await render(fakeBridge(CONNECTED).bridge);
-    expect($$(".panel-heading").map((el) => el.textContent)).toEqual(["Workflows", "Repos"]);
-    expect(text(".engine-line")).toContain("This machine");
-    expect($$(".workflow-row .ellipsis").map((el) => el.textContent)).toEqual([
-      "emergency-investigator",
-      "db-slow-query",
-      "plan-and-build",
-      "quick-fix",
-      "review-only",
-    ]);
-    expect($$(".live-item").map((li) => [li.querySelector(".marker")?.textContent, li.querySelector(".ellipsis")?.textContent, li.querySelector(".marker-word")?.textContent])).toEqual([
-      ["●", "Checkout p95 latency spike", "working"],
-      ["⏸", "Orders API returns 500 after deploy", "needs you"],
-      ["◌", "Add retry with backoff", "queued"],
-      ["◐", "Fix rounding in invoice totals", "checks"],
-      ["●", "Stock sync drops <b>items</b>", "working"],
-    ]);
-    // Each item sits under its own workflow, and engine text stays text.
-    expect($$('ul[aria-label="emergency-investigator"] .live-item')).toHaveLength(2);
-    expect($$('ul[aria-label="quick-fix"] .live-item')).toHaveLength(3);
-    expect($("b")).toBeNull();
-    expect($('.workflow-row .waiting [aria-hidden="true"]')?.textContent).toBe("⏸ 1");
-    expect(text(".workflow-row .waiting .visually-hidden")).toBe("1 needs you");
-    expect(workflowRow("quick-fix").querySelector(".waiting")).toBeNull();
-  });
-
-  it("lists the repos with a count of their running items", async () => {
-    await render(fakeBridge(CONNECTED).bridge);
-    expect($$(".repo-row .ellipsis").map((el) => el.textContent)).toEqual(["orders-api", "checkout-web", "inventory-service"]);
-    expect(repoRow("orders-api").querySelector(".count")?.textContent).toBe("3 running");
-    expect(repoRow("checkout-web").querySelector(".count")).toBeNull();
-    expect(repoRow("inventory-service").querySelector(".count")?.textContent).toBe("1 running");
-  });
-
-  it("shows the All work header and the board placeholder", async () => {
+  it("shows the All work header and the list", async () => {
     await render(fakeBridge(CONNECTED).bridge);
     expect(text(".main-header h1")).toBe("All work");
-    expect($('section[aria-label="Board"]')).not.toBeNull();
+    expect($('section[aria-label="Board"] .pipeline-list')).not.toBeNull();
     expect(text(".main-header")).not.toContain("connected");
   });
 
@@ -178,35 +110,21 @@ describe("App shell", () => {
       "Insights",
       "Settings",
       "Attention",
-      "Claude Code · usage not measured yet",
-      "Codex CLI · usage not measured yet",
-      "Ollama · usage not measured yet",
       "+ New work",
+      "Start Emergency investigator",
+      "Start DB slow query check",
+      "Start Plan and build",
+      "Start Quick fix",
+      "Start Review only",
+      "Quick task in orders-api",
+      "Quick task in checkout-web",
+      "Quick task in inventory-service",
     ]);
     expect($('button[aria-label="Sidebar"]')?.hasAttribute("aria-disabled")).toBe(false);
   });
 });
 
 describe("App live updates", () => {
-  it("updates a sidebar item from an item_updated event", async () => {
-    const fake = fakeBridge(CONNECTED);
-    await render(fake.bridge);
-    await fake.pushItem({ ...ITEMS.working, state: "needs_you" } as ItemRecord);
-    const row = $$(".live-item").find((li) => li.textContent?.includes("Checkout p95 latency spike"));
-    expect(row?.querySelector(".marker-word")?.textContent).toBe("needs you");
-    expect(text('.badge[data-tone="warn"]')).toBe("2");
-  });
-
-  it("drops an item from the sidebar when it ends, and adds a newly started item", async () => {
-    const fake = fakeBridge(CONNECTED);
-    await render(fake.bridge);
-    await fake.pushItem({ ...ITEMS.verifying, state: "done" } as ItemRecord);
-    expect(liveTitles()).not.toContain("Fix rounding in invoice totals");
-    const started = { ...ITEMS.queued, id: "item_1a2b3c4d-0009-4a1b-8c1d-000000000009", title: "New investigation" } as ItemRecord;
-    await fake.pushItem(started);
-    expect(liveTitles().at(-1)).toBe("New investigation");
-  });
-
   it("keeps an event that arrives while the first load is in flight", async () => {
     let releaseBoards: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => (releaseBoards = resolve));
@@ -219,8 +137,8 @@ describe("App live updates", () => {
     await render(fake.bridge);
     await fake.pushItem({ ...ITEMS.working, state: "needs_you" } as ItemRecord);
     await act(async () => releaseBoards?.());
-    const row = $$(".live-item").find((li) => li.textContent?.includes("Checkout p95 latency spike"));
-    expect(row?.querySelector(".marker-word")?.textContent).toBe("needs you");
+    const row = $$(".pl-row").find((el) => el.textContent?.includes("Checkout p95 latency spike"));
+    expect(row?.closest("section")?.getAttribute("aria-label")).toBe("Needs you");
   });
 
   it("queries again on every return to connected", async () => {
@@ -316,11 +234,10 @@ describe("App engine failure", () => {
   it("clears the sidebar and the badge when the connection fails after a load", async () => {
     const fake = fakeBridge(CONNECTED);
     await render(fake.bridge);
-    expect($$(".workflow-row")).toHaveLength(5);
+    expect($$(".sb-row")).toHaveLength(SIDEBAR_ROWS);
     await fake.setConnection(failed);
-    expect($$(".workflow-row")).toHaveLength(0);
-    expect($$(".repo-row")).toHaveLength(0);
-    expect($$(".live-item")).toHaveLength(0);
+    expect($$(".sb-row")).toHaveLength(1);
+    expect($$(".pl-row")).toHaveLength(0);
     expect($(".badge")).toBeNull();
     expect(text(".main-header h1")).toBe("All work");
     expect(text(".board .failure-title")).toBe("✕The engine is not available");
@@ -351,7 +268,7 @@ describe("App failed loads", () => {
     await wait(40);
     expect(setupQueries()).toBe(2);
     expect($(".board .failure")).toBeNull();
-    expect($$(".workflow-row")).toHaveLength(5);
+    expect($$(".sb-row")).toHaveLength(SIDEBAR_ROWS);
   });
 
   it("shows the failure and offers Retry when the setup loads but the board fails", async () => {
@@ -363,11 +280,11 @@ describe("App failed loads", () => {
     expect(text(".board .failure")).toContain("the board did not answer");
     expect($(".board .failure-title")?.textContent).toBe("✕Could not load the setup and items");
     // Nothing is half-shown: no data until both queries succeed.
-    expect($$(".workflow-row")).toHaveLength(0);
+    expect($$(".sb-row")).toHaveLength(1);
     boardFails = false;
     await click($$(".board button").find((button) => button.textContent === "Retry")!);
     expect($(".board .failure")).toBeNull();
-    expect($$(".workflow-row")).toHaveLength(5);
+    expect($$(".sb-row")).toHaveLength(SIDEBAR_ROWS);
   });
 
   it("stops after one retry and offers a Retry action", async () => {
@@ -381,7 +298,7 @@ describe("App failed loads", () => {
     await click(retry);
     expect(setupQueries()).toBe(3);
     expect($(".board .failure")).toBeNull();
-    expect($$(".workflow-row")).toHaveLength(5);
+    expect($$(".sb-row")).toHaveLength(SIDEBAR_ROWS);
   });
 
   it("marks the sidebar and the badge stale when a reload fails, and clears the mark on success", async () => {
@@ -394,7 +311,7 @@ describe("App failed loads", () => {
     await wait(40);
     expect(text(".panel .stale")).toBe("!Out of date: the last update failed");
     expect($(".panel")?.hasAttribute("data-stale")).toBe(true);
-    expect(liveTitles()).toContain("Orders API returns 500 after deploy");
+    expect(rowTitles()).toContain("Orders API returns 500 after deploy");
     expect($(".badge")).toBeNull();
     expect($(".rail button[aria-label='Needs you · out of date']")).not.toBeNull();
     await click($$(".board button").find((button) => button.textContent === "Retry")!);

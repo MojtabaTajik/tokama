@@ -1,11 +1,16 @@
-// Test data shaped like the fake engine's sample set: one setup and items
-// in every state. Plain literals cast to the engine types; model.test.ts checks them against the
-// engine schemas, so they cannot drift from the API.
+// Test data shaped like the fake engine's sample set: one setup and items in every state, at
+// fixed times before NOW (local time, so the tests do not depend on the machine's time zone).
+// Plain literals cast to the engine types; model.test.ts checks them against the engine schemas,
+// so they cannot drift from the API.
 import type { ItemRecord, Setup } from "@tokama/core";
 
-const id = (n: number) => `item_1a2b3c4d-000${n}-4a1b-8c1d-00000000000${n}`;
+/** 15:00 local on 20 October 2025. */
+export const NOW = new Date(2025, 9, 20, 15, 0, 0).getTime();
+const MINUTE = 60_000;
+
+const id = (n: number) => `item_1a2b3c4d-${String(n).padStart(4, "0")}-4a1b-8c1d-${String(n).padStart(12, "0")}`;
 const step = (name: string, stage: string, state: string, agentId?: string) => ({ name, stage, state, data: "none", ...(agentId ? { agentId } : {}) });
-const template = (templateId: string, kind: string) => ({ id: templateId, name: templateId, kind, connections: [], steps: [{ name: "Work", stage: "working", data: "none" }] });
+const tplStep = (name: string, stage: string, agentId?: string) => ({ name, stage, data: "none", ...(agentId ? { agentId } : {}) });
 
 export const setup = {
   repos: [
@@ -13,24 +18,34 @@ export const setup = {
     { id: "checkout-web", baseBranch: "main" },
     { id: "inventory-service", baseBranch: "develop" },
   ],
-  connections: [
-    { id: "app-insights-prod", name: "App Insights · prod", type: "App Insights" },
-    { id: "postgres-prod", name: "Postgres · prod", type: "Postgres" },
-    { id: "postgres-staging", name: "Postgres · staging", type: "Postgres" },
-    { id: "azure-prod", name: "Azure · prod", type: "Azure" },
-    { id: "grafana-prod", name: "Grafana · prod", type: "MCP server" },
+  connections: [{ id: "app-insights-prod", name: "App Insights · prod", type: "App Insights" }],
+  agents: [
+    { id: "architect", name: "Architect", cliId: "claude-code", model: "opus", runsOn: "cloud" },
+    { id: "local-builder", name: "Local builder", cliId: "claude-code", model: "qwen3-coder:30b", runsOn: "local" },
+    { id: "reviewer", name: "Reviewer", cliId: "codex-cli", model: "gpt-5-codex", runsOn: "cloud" },
   ],
-  agents: [{ id: "local-builder", name: "Local builder", cliId: "claude-code", model: "qwen3-coder:30b", runsOn: "local" }],
   templates: [
-    template("emergency-investigator", "investigation"),
-    template("db-slow-query", "investigation"),
-    template("plan-and-build", "task"),
-    template("quick-fix", "task"),
-    template("review-only", "task"),
+    {
+      id: "emergency-investigator",
+      name: "Emergency investigator",
+      kind: "investigation",
+      connections: [],
+      steps: [tplStep("Triage", "working", "local-builder"), tplStep("Query logs", "working", "local-builder"), tplStep("Propose a fix", "review", "architect")],
+    },
+    { id: "db-slow-query", name: "DB slow query check", kind: "investigation", connections: [], steps: [tplStep("Explain plans", "working", "local-builder")] },
+    {
+      id: "plan-and-build",
+      name: "Plan and build",
+      kind: "task",
+      connections: [],
+      steps: [tplStep("Plan", "working", "architect"), tplStep("Build", "working", "local-builder"), tplStep("Run checks", "verifying"), tplStep("Review", "review", "reviewer")],
+    },
+    { id: "quick-fix", name: "Quick fix", kind: "task", connections: [], steps: [tplStep("Fix", "working", "local-builder"), tplStep("Run checks", "verifying")] },
+    { id: "review-only", name: "Review only", kind: "task", connections: [], steps: [tplStep("Review", "review", "reviewer")] },
   ],
 } as unknown as Setup;
 
-const item = (n: number, fields: Record<string, unknown>) => ({
+const item = (n: number, minutesAgo: number, fields: Record<string, unknown>) => ({
   schemaVersion: 1,
   id: id(n),
   kind: "task",
@@ -38,36 +53,58 @@ const item = (n: number, fields: Record<string, unknown>) => ({
   text: "",
   repoIds: [],
   privacy: "local_only",
-  createdAt: 1_760_000_000_000 + n,
+  createdAt: NOW - minutesAgo * MINUTE,
   ...fields,
 });
 
 export const ITEMS = {
-  queued: item(1, { title: "Add retry with backoff", repoIds: ["orders-api"], state: "queued", steps: [step("Fix", "working", "pending", "local-builder")] }),
-  working: item(2, {
+  queued: item(1, 2, {
+    templateId: "plan-and-build",
+    title: "Add retry with backoff",
+    repoIds: ["orders-api"],
+    state: "queued",
+    steps: [step("Plan", "working", "pending", "architect"), step("Build", "working", "pending", "local-builder"), step("Run checks", "verifying", "pending"), step("Review", "review", "pending", "reviewer")],
+  }),
+  working: item(2, 14, {
     kind: "investigation",
     templateId: "emergency-investigator",
     title: "Checkout p95 latency spike",
+    repoIds: ["checkout-web"],
     state: "running",
-    steps: [step("Triage", "working", "passed"), step("Query logs", "working", "running"), step("Propose a fix", "review", "pending")],
+    steps: [step("Triage", "working", "passed", "local-builder"), step("Query logs", "working", "running", "local-builder"), step("Propose a fix", "review", "pending", "architect")],
   }),
-  needsYou: item(3, {
+  needsYou: item(3, 41, {
     kind: "investigation",
     templateId: "emergency-investigator",
     repoIds: ["orders-api"],
+    privacy: "local_and_cloud",
     title: "Orders API returns 500 after deploy",
     state: "needs_you",
-    steps: [step("Find the cause", "working", "passed"), step("Propose a fix", "review", "needs_you")],
+    decision: {
+      id: "decision_5e1c9a7b-3f2d-4c8e-9a6b-1d2e3f4a5b6c",
+      stepIndex: 2,
+      question: "Send the redacted findings summary to Architect on Claude Code?",
+      choices: [{ id: "approve", label: "Approve and send" }],
+    },
+    steps: [step("Triage", "working", "passed", "local-builder"), step("Query logs", "working", "passed", "local-builder"), step("Propose a fix", "review", "needs_you", "architect")],
   }),
-  verifying: item(4, { title: "Fix rounding in invoice totals", repoIds: ["orders-api"], state: "running", steps: [step("Fix", "working", "passed"), step("Run checks", "verifying", "running")] }),
-  done: item(5, { title: "Bump the Postgres driver", state: "done", steps: [step("Fix", "working", "passed")] }),
-  failed: item(6, { title: "Flaky checkout test", state: "failed", steps: [step("Fix", "working", "failed")] }),
-  stock: item(7, {
+  verifying: item(4, 23, {
+    title: "Fix rounding in invoice totals",
+    repoIds: ["orders-api"],
+    state: "running",
+    steps: [step("Fix", "working", "passed", "local-builder"), step("Run checks", "verifying", "running")],
+  }),
+  done: item(5, 120, { title: "Bump the Postgres driver", state: "done", steps: [step("Fix", "working", "passed", "local-builder"), step("Run checks", "verifying", "passed")] }),
+  failed: item(6, 130, { title: "Flaky checkout test", repoIds: ["checkout-web"], state: "failed", steps: [step("Fix", "working", "failed", "local-builder"), step("Run checks", "verifying", "pending")] }),
+  stock: item(7, 6, {
     repoIds: ["inventory-service"],
     title: "Stock sync drops <b>items</b>",
     state: "running",
-    steps: [step("Fix", "working", "running")],
+    steps: [step("Fix", "working", "running", "local-builder"), step("Run checks", "verifying", "pending")],
   }),
-} as unknown as Record<"queued" | "working" | "needsYou" | "verifying" | "done" | "failed" | "stock", ItemRecord>;
+  stopped: item(8, 90, { title: "Try a cache for prices", state: "stopped", steps: [step("Fix", "working", "stopped", "local-builder"), step("Run checks", "verifying", "pending")] }),
+  doneLastWeek: item(9, 3 * 24 * 60, { title: "Remove the old export flag", state: "done", steps: [step("Fix", "working", "passed", "local-builder"), step("Run checks", "verifying", "passed")] }),
+  failedLastMonth: item(10, 20 * 24 * 60, { title: "Upgrade the build image", state: "failed", steps: [step("Fix", "working", "failed", "local-builder"), step("Run checks", "verifying", "pending")] }),
+} as unknown as Record<"queued" | "working" | "needsYou" | "verifying" | "done" | "failed" | "stock" | "stopped" | "doneLastWeek" | "failedLastMonth", ItemRecord>;
 
 export const items: ItemRecord[] = Object.values(ITEMS);

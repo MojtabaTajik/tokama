@@ -1,29 +1,158 @@
-// What the shell derives from engine records. Pure functions, so they are tested without React.
-// The renderer may import core types only (no values), so the board-column rule is restated here
-// and pinned to core's `itemStage` by a test.
-import type { AiCliId, ItemRecord, Stage } from "@tokama/core";
+// What the shell derives from engine records: views, status filters, groups, badges, pipelines
+// and board columns. Pure functions that take the clock as an argument, so they are tested
+// without React or a real time.
+import type { AgentSummary, AiCliId, ItemRecord, TemplateSummary } from "@tokama/core";
+import { type Mark, stepAgent, type StepAgent, stepMark } from "./drawer/describe.js";
 
-/** The board column of an item: the same rule as core's `itemStage`. */
-export function stageOf(item: Pick<ItemRecord, "state" | "steps">): Stage {
-  if (item.state === "queued") return "queued";
-  if (item.state === "done" || item.state === "stopped" || item.state === "failed") return "done";
-  return item.steps.find((step) => step.state !== "passed")?.stage ?? "done";
+/** What the main area shows: everything, one workflow's items, or one repo's items. */
+export type View = { readonly kind: "all" } | { readonly kind: "workflow"; readonly id: string } | { readonly kind: "repo"; readonly id: string };
+
+export const ALL_WORK: View = { kind: "all" };
+
+/** The key a view's filter choice is remembered under. */
+export const viewKey = (view: View): string => (view.kind === "all" ? "all" : `${view.kind}:${view.id}`);
+
+export const sameView = (a: View, b: View): boolean => viewKey(a) === viewKey(b);
+
+export const inView = (item: Pick<ItemRecord, "templateId" | "repoIds">, view: View): boolean =>
+  view.kind === "all" || (view.kind === "workflow" ? item.templateId === view.id : (item.repoIds as readonly string[]).includes(view.id));
+
+/** Where an item counts for the status filter and the groups. A stopped item counts as done. */
+export type Bucket = "needs" | "active" | "done" | "failed";
+
+export function bucketOf(item: Pick<ItemRecord, "state">): Bucket {
+  switch (item.state) {
+    case "needs_you":
+      return "needs";
+    case "failed":
+      return "failed";
+    case "done":
+    case "stopped":
+      return "done";
+    default:
+      return "active";
+  }
 }
 
-/** Items that are still going: the sidebar lists only these. */
-export function isLive(item: Pick<ItemRecord, "state">): boolean {
-  return item.state === "queued" || item.state === "running" || item.state === "needs_you";
+export type StatusFilter = "active" | "needs" | "done" | "failed" | "all";
+export const STATUS_FILTERS: readonly { readonly id: StatusFilter; readonly label: string }[] = [
+  { id: "active", label: "Active" },
+  { id: "needs", label: "Needs you" },
+  { id: "done", label: "Done" },
+  { id: "failed", label: "Failed" },
+  { id: "all", label: "All" },
+];
+
+export type Range = "today" | "7d" | "30d";
+export const RANGES: readonly { readonly id: Range; readonly label: string }[] = [
+  { id: "today", label: "Today" },
+  { id: "7d", label: "7 days" },
+  { id: "30d", label: "30 days" },
+];
+const RANGE_DAYS: Readonly<Record<Range, number>> = { today: 0, "7d": 7, "30d": 30 };
+
+export interface Filter {
+  readonly status: StatusFilter;
+  readonly range: Range;
+}
+export const DEFAULT_FILTER: Filter = { status: "active", range: "today" };
+
+/** The range that applies: only Done and Failed offer a choice, the other filters count today. */
+export const effectiveRange = (filter: Filter): Range => (filter.status === "done" || filter.status === "failed" ? filter.range : "today");
+
+/** Whether the item was created within the range (local calendar days; the engine records no end time). */
+export function inRange(item: Pick<ItemRecord, "createdAt">, range: Range, now: number): boolean {
+  const today = new Date(now);
+  const from = new Date(today.getFullYear(), today.getMonth(), today.getDate() - RANGE_DAYS[range]);
+  return item.createdAt >= from.getTime();
 }
 
-export type Marker = { readonly symbol: "⏸" | "●" | "◐" | "◌"; readonly word: string; readonly tone: "warn" | "live" | "muted" };
+/** Whether an item shows under a status filter. Live items always show; finished ones only within the range. */
+export function matches(item: Pick<ItemRecord, "state" | "createdAt">, status: StatusFilter, range: Range, now: number): boolean {
+  const bucket = bucketOf(item);
+  switch (status) {
+    case "active":
+      return bucket === "active" || bucket === "needs";
+    case "needs":
+      return bucket === "needs";
+    case "done":
+      return bucket === "done" && inRange(item, range, now);
+    case "failed":
+      return bucket === "failed" && inRange(item, range, now);
+    case "all":
+      return bucket === "active" || bucket === "needs" || inRange(item, range, now);
+  }
+}
 
-/** A live item's marker in the sidebar: a symbol and a word, so colour is never the only signal. */
-export function markerOf(item: Pick<ItemRecord, "state" | "steps">): Marker {
-  if (item.state === "needs_you") return { symbol: "⏸", word: "needs you", tone: "warn" };
-  if (item.state === "queued") return { symbol: "◌", word: "queued", tone: "muted" };
-  const stage = stageOf(item);
-  if (stage === "verifying") return { symbol: "◐", word: "checks", tone: "muted" };
-  return { symbol: "●", word: stage === "review" ? "review" : "working", tone: "live" };
+/** The counts on the status switch: how many items each filter would show, with the range that applies. */
+export function filterCounts(items: readonly ItemRecord[], filter: Filter, now: number): Record<Exclude<StatusFilter, "all">, number> {
+  const range = effectiveRange(filter);
+  const count = (status: StatusFilter) => items.filter((item) => matches(item, status, range, now)).length;
+  return { active: count("active"), needs: count("needs"), done: count("done"), failed: count("failed") };
+}
+
+export const visibleItems = (items: readonly ItemRecord[], filter: Filter, now: number): ItemRecord[] =>
+  items.filter((item) => matches(item, filter.status, effectiveRange(filter), now));
+
+export type GroupKey = "needs" | "running" | "done" | "failed";
+export interface ItemGroup {
+  readonly key: GroupKey;
+  readonly name: string;
+  readonly items: readonly ItemRecord[];
+}
+
+const RANGE_WORDS: Readonly<Record<Range, string>> = { today: "today", "7d": "last 7 days", "30d": "last 30 days" };
+/** Which groups each filter shows. */
+const GROUPS_OF: Readonly<Record<StatusFilter, readonly GroupKey[]>> = {
+  active: ["needs", "running"],
+  needs: ["needs"],
+  done: ["done"],
+  failed: ["failed"],
+  all: ["needs", "running", "done", "failed"],
+};
+
+/**
+ * The list's groups for a filter: Needs you, Running (running items, then queued ones), Done and
+ * Failed (newest first). The items are those already scoped to the view.
+ */
+export function groupItems(items: readonly ItemRecord[], filter: Filter, now: number): ItemGroup[] {
+  const shown = visibleItems(items, filter, now);
+  const words = RANGE_WORDS[effectiveRange(filter)];
+  const newestFirst = (a: ItemRecord, b: ItemRecord) => b.createdAt - a.createdAt;
+  const by: Record<GroupKey, { name: string; items: ItemRecord[] }> = {
+    needs: { name: "Needs you", items: shown.filter((item) => bucketOf(item) === "needs") },
+    running: {
+      name: "Running",
+      items: [...shown.filter((item) => item.state === "running"), ...shown.filter((item) => item.state === "queued")],
+    },
+    done: { name: `Done ${words}`, items: shown.filter((item) => bucketOf(item) === "done").sort(newestFirst) },
+    failed: { name: `Failed ${words}`, items: shown.filter((item) => bucketOf(item) === "failed").sort(newestFirst) },
+  };
+  return GROUPS_OF[filter.status].map((key) => ({ key, name: by[key].name, items: by[key].items }));
+}
+
+export type BadgeKind = "needs" | "failed" | "running";
+export interface Badge {
+  readonly kind: BadgeKind;
+  readonly symbol: "⏸" | "✕" | "●";
+  readonly count: number;
+  readonly word: string;
+}
+
+/**
+ * The sidebar badges of a set of items: needs you, failed today, running. Only counts above zero
+ * come back, in that order. Queued items count nowhere.
+ */
+export function badgesOf(items: readonly ItemRecord[], now: number): Badge[] {
+  const needs = items.filter((item) => item.state === "needs_you").length;
+  const failed = items.filter((item) => item.state === "failed" && inRange(item, "today", now)).length;
+  const running = items.filter((item) => item.state === "running").length;
+  const badges: Badge[] = [
+    { kind: "needs", symbol: "⏸", count: needs, word: needs === 1 ? "needs you" : "need you" },
+    { kind: "failed", symbol: "✕", count: failed, word: "failed" },
+    { kind: "running", symbol: "●", count: running, word: "running" },
+  ];
+  return badges.filter((badge) => badge.count > 0);
 }
 
 export function needsYouCount(items: Iterable<Pick<ItemRecord, "state">>): number {
@@ -32,9 +161,105 @@ export function needsYouCount(items: Iterable<Pick<ItemRecord, "state">>): numbe
   return count;
 }
 
-/** The AI CLIs the rail shows a usage ring for, with their text monograms (never a logo). */
-export const AI_CLIS: readonly { readonly id: AiCliId; readonly monogram: string; readonly name: string }[] = [
-  { id: "claude-code", monogram: "CC", name: "Claude Code" },
-  { id: "codex-cli", monogram: "CX", name: "Codex CLI" },
-  { id: "ollama", monogram: "OL", name: "Ollama" },
+/** The index of the step the item is in: the first that has not passed; undefined when all passed. */
+export function currentStep(item: Pick<ItemRecord, "steps">): number | undefined {
+  const index = item.steps.findIndex((step) => step.state !== "passed");
+  return index === -1 ? undefined : index;
+}
+
+export interface PipelineStep {
+  readonly mark: Mark;
+  readonly name: string;
+  /** Only the step the item is in carries its name in the row. */
+  readonly current: boolean;
+}
+
+/** The item's own steps as a small pipeline. A running step in a verifying stage reads as checking. */
+export function pipelineOf(item: Pick<ItemRecord, "state" | "steps">): PipelineStep[] {
+  const at = currentStep(item);
+  return item.steps.map((step, index) => ({
+    mark: step.state === "running" && step.stage === "verifying" ? { symbol: "◐", word: "checking", tone: "live" } : stepMark(step.state),
+    name: step.name,
+    current: index === at,
+  }));
+}
+
+/** The agent shown for an item: the one of the step it is in, or of the last step when all passed. */
+export function rowAgent(item: Pick<ItemRecord, "steps">, agents: readonly AgentSummary[]): StepAgent | undefined {
+  const step = item.steps[currentStep(item) ?? item.steps.length - 1];
+  return step && stepAgent(step, agents);
+}
+
+const clock = (at: Date) => at.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
+const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+
+export interface ItemTime {
+  readonly text: string;
+  readonly title: string;
+}
+
+/**
+ * The row's time. A live item shows how long ago it started ("14 min", "1 h 35"); a finished one
+ * shows its start as a clock time today or a date earlier. The engine records no end time, so
+ * this is the start.
+ */
+export function timeOf(item: Pick<ItemRecord, "state" | "createdAt">, now: number): ItemTime {
+  const start = new Date(item.createdAt);
+  const title = `started ${sameDay(start, new Date(now)) ? clock(start) : `${start.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} ${clock(start)}`}`;
+  if (bucketOf(item) === "done" || bucketOf(item) === "failed") {
+    const text = sameDay(start, new Date(now)) ? clock(start) : start.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+    return { text, title };
+  }
+  const minutes = Math.max(0, Math.floor((now - item.createdAt) / 60_000));
+  if (minutes < 60) return { text: `${minutes} min`, title };
+  const rest = minutes % 60;
+  return { text: `${Math.floor(minutes / 60)} h${rest === 0 ? "" : ` ${rest}`}`, title };
+}
+
+export interface BoardColumn {
+  readonly key: string;
+  readonly name: string;
+  readonly items: readonly ItemRecord[];
+}
+
+/**
+ * One workflow's kanban columns: Queued, one per step of its template (by position, since names
+ * may repeat) and Done. A running item sits in the step it is in; finished items and items whose
+ * steps all passed sit in Done. An item with more steps than the template's summary stays in the
+ * last step column. The items are those already scoped to the workflow.
+ */
+export function boardColumns(items: readonly ItemRecord[], template: TemplateSummary): BoardColumn[] {
+  const last = template.steps.length - 1;
+  const columnOf = (item: ItemRecord): number => {
+    if (item.state === "queued") return -1;
+    const at = currentStep(item);
+    if (bucketOf(item) === "done" || bucketOf(item) === "failed" || at === undefined) return template.steps.length;
+    return Math.min(at, last);
+  };
+  const at = (column: number) => items.filter((item) => columnOf(item) === column);
+  return [
+    { key: "queued", name: "Queued", items: at(-1) },
+    ...template.steps.map((step, index) => ({ key: `step-${index}`, name: step.name, items: at(index) })),
+    { key: "done", name: "Done", items: at(template.steps.length) },
+  ];
+}
+
+export type Flag = { readonly mark: Mark; readonly text: string };
+
+/** The card's flag line: what a needs-you item asks, where a failed item failed, or that it was stopped. */
+export function flagOf(item: Pick<ItemRecord, "state" | "steps" | "decision">): Flag | undefined {
+  if (item.state === "needs_you") return { mark: { symbol: "⏸", word: "needs you", tone: "warn" }, text: item.decision?.question ?? "needs you" };
+  if (item.state === "failed") {
+    const step = item.steps.find((s) => s.state === "failed");
+    return { mark: { symbol: "✕", word: "failed", tone: "fail" }, text: step ? `failed at ${step.name}` : "failed" };
+  }
+  if (item.state === "stopped") return { mark: { symbol: "■", word: "stopped", tone: "muted" }, text: "stopped" };
+  return undefined;
+}
+
+/** The AI CLIs the rail's Insights tooltip lists, with their names. */
+export const AI_CLIS: readonly { readonly id: AiCliId; readonly name: string }[] = [
+  { id: "claude-code", name: "Claude Code" },
+  { id: "codex-cli", name: "Codex CLI" },
+  { id: "ollama", name: "Ollama" },
 ];
