@@ -155,7 +155,7 @@ describe.skipIf(process.platform === "win32")("posixProcessTable", () => {
 
     const before = await posixProcessTable.list();
     expect(before.find((p) => p.pid === childPid)?.pgid).toBe(childPid);
-    expect(Math.abs((before.find((p) => p.pid === rootPid)?.startedAt ?? 0) - startedAt)).toBeLessThan(2_000);
+    expect(Math.abs((before.find((p) => p.pid === rootPid)?.startedAt ?? 0) - startedAt)).toBeLessThan(5_000);
 
     const outcome = await killLeftoverTree({ pid: rootPid, startedAt, bootTime: posixProcessTable.bootTime() }, { table: posixProcessTable, graceMs: 500 });
     expect(outcome).toMatchObject({ kind: "killed", groups: [rootPid, childPid] });

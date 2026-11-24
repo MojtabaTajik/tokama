@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -15,7 +15,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { startEngine } from "./engine.js";
 import { ItemIndex } from "./item-index.js";
-import { tempEngineDir } from "./testing/helpers.js";
+import { tempEngineDir, waitFor } from "./testing/helpers.js";
 
 const T0 = Date.UTC(2026, 10, 24, 10, 0, 0);
 const BUILD = "build" as StepId;
@@ -149,6 +149,41 @@ describe("engine start with a home folder", () => {
     const raw = new DatabaseSync(join(home, "tokama.db"), { readOnly: true });
     cleanups.push(() => raw.close());
     expect(raw.prepare("SELECT id, state, needs_you FROM items").all()).toEqual([{ id: item.id, state: "needs_you", needs_you: 1 }]);
+  });
+
+  it("answers on its socket while recovery runs, so a second engine does not take its lock", { timeout: 20_000 }, async () => {
+    const store = openStore();
+    const item = create(store, "Fix it");
+    store.append(item.id, [
+      { type: "step_started", stepId: BUILD },
+      { type: "attempt_started", stepId: BUILD, attempt: 1 },
+      { type: "process_started", stepId: BUILD, attempt: 1, role: "agent", pid: 4242, bootTime: T0 },
+    ]);
+    // Reading the process table hangs until the test lets it go.
+    let release = () => {};
+    const blocked = new Promise<void>((resolve) => (release = resolve));
+    const table: ProcessTable = {
+      list: async () => {
+        await blocked;
+        return [];
+      },
+      bootTime: () => T0,
+      signalGroup: () => {},
+    };
+    const dir = tempEngineDir(cleanups);
+    const first = startEngine({ dir, home, processTable: table });
+    await waitFor(() => existsSync(join(dir, "engine.sock")), 10_000, "socket");
+    // Old enough that a lock whose engine does not answer counts as stale.
+    const old = new Date(Date.now() - 60_000);
+    utimesSync(join(dir, "engine.lock"), old, old);
+
+    expect(await startEngine({ dir, home })).toMatchObject({ ok: false, error: { code: "already_running" } });
+
+    release();
+    const started = await first;
+    if (!started.ok) throw new Error(started.error.message);
+    cleanups.push(() => started.value.close());
+    expect(started.value.items?.get(item.id)?.state).toBe("needs_you");
   });
 
   it("does not open item storage in sample mode or for an engine that finds another running", async () => {

@@ -41,10 +41,12 @@ export async function recoverItems(store: ItemStore, options: RecoveryOptions): 
   const recovered: RecoveredItem[] = [];
   for (const item of store.list()) {
     if (item.deleted || item.outcome !== undefined || item.hostId !== store.hostId) continue;
-    const step = item.steps.find((s) => s.id === item.currentStepId);
-    if (step === undefined || step.state !== "running") continue;
-
+    // An open attempt was running, even if it had asked a question meanwhile; a running step
+    // without one was between attempts.
     const open = openAttempt(item);
+    const step = open?.step ?? item.steps.find((s) => s.id === item.currentStepId);
+    if (step === undefined || (open === undefined && step.state !== "running")) continue;
+
     const kills: Array<{ pid: number; outcome: KillReport }> = [];
     for (const proc of open?.attempt.processes ?? []) {
       let outcome: KillReport;

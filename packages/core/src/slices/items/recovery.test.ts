@@ -120,6 +120,25 @@ describe("recoverItems", () => {
     expect(store.get(started.id)?.state).toBe("needs_you");
   });
 
+  it("recovers an attempt that was running while it waited on a question, and keeps that question open", async () => {
+    const { store: before } = open();
+    const started = item(before, [
+      ...running(100),
+      { type: "decision_opened", decisionId: DECISION as DecisionId, kind: "cloud_summary", stepId: BUILD, choices: [{ id: "send", label: "Send" }] },
+    ]);
+    expect(started.steps[0]?.state).toBe("needs_you");
+    const startedAt = started.steps[0]?.attempts[0]?.processes[0]?.startedAt ?? 0;
+    const { store } = open();
+    const { table, alive } = fakeTable(agentTree(startedAt));
+
+    const recovered = await recoverItems(store, { table, graceMs: 0 });
+    expect(recovered[0]?.kills).toEqual([{ pid: 100, outcome: { kind: "killed", groups: [100, 110], forced: [] } }]);
+    expect(alive()).toEqual([50]);
+    const after = store.get(started.id) as StoredItem;
+    expect(openAttempt(after)).toBeUndefined();
+    expect(openDecisions(after).map((d) => d.kind)).toEqual(["cloud_summary", "run_failure"]);
+  });
+
   it("asks Retry step / Stop for a step that was running between attempts, with nothing to kill", async () => {
     const { store: before } = open();
     const started = item(before, [...running(), { type: "attempt_ended", stepId: BUILD, attempt: 1, result: "passed" }]);

@@ -323,19 +323,28 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   if (options.signal?.aborted) void shutdown();
   else options.signal?.addEventListener("abort", () => void shutdown(), { once: true });
 
+  // Recovery can take seconds (a grace period per leftover tree). It runs once the socket answers,
+  // so an engine starting meanwhile sees this one as live rather than its lock as stale.
+  if (storage !== undefined) {
+    try {
+      await storage.recover();
+    } catch (error) {
+      log(`restart recovery failed: ${String(error)}`);
+    }
+  }
+
   log(`listening on ${socketPath} (engine ${engineId}${sample ? ", sample data" : ""})`);
   return ok({ engineId, endpoint: endpoint.value, store, ...(storage && { items: storage.items }), closed, close: shutdown });
 }
 
 interface Storage {
   readonly items: ItemStore;
+  /** Records a run failure for each step that was running when the engine stopped. */
+  recover(): Promise<void>;
   close(): void;
 }
 
-/**
- * Loads the item logs, rebuilds the board index from them, then recovers the steps that were
- * running when the engine stopped. The index follows every change after that.
- */
+/** Loads the item logs and rebuilds the board index from them. The index follows every change after that. */
 async function openStorage(home: string, table: ProcessTable, clock: Clock, log: (message: string) => void): Promise<Result<Storage, StartError>> {
   let index: ItemIndex | undefined;
   try {
@@ -347,13 +356,22 @@ async function openStorage(home: string, table: ProcessTable, clock: Clock, log:
     index = ItemIndex.open(join(home, "tokama.db"));
     index.rebuild(items.list());
     const opened = index;
-    const unsubscribe = items.subscribe((item) => opened.put(item));
-    for (const recovered of await recoverItems(items, { table, clock })) {
-      const kills = recovered.kills.map(({ pid, outcome }) => `${pid} ${outcome.kind}${"reason" in outcome ? ` (${outcome.reason})` : ""}${"message" in outcome ? ` (${outcome.message})` : ""}`);
-      log(`item ${recovered.itemId}: step ${recovered.stepId} was running; asking retry or stop${kills.length > 0 ? `; processes: ${kills.join(", ")}` : ""}${recovered.error ? `; not recorded: ${recovered.error.message}` : ""}`);
-    }
+    const unsubscribe = items.subscribe((item) => {
+      // The event is on disk already; a failed index write must not fail the append.
+      try {
+        opened.put(item);
+      } catch (error) {
+        log(`cannot update the board index for ${item.id}: ${String(error)}`);
+      }
+    });
     return ok({
       items,
+      recover: async () => {
+        for (const recovered of await recoverItems(items, { table, clock })) {
+          const kills = recovered.kills.map(({ pid, outcome }) => `${pid} ${outcome.kind}${"reason" in outcome ? ` (${outcome.reason})` : ""}${"message" in outcome ? ` (${outcome.message})` : ""}`);
+          log(`item ${recovered.itemId}: step ${recovered.stepId} was running; asking retry or stop${kills.length > 0 ? `; processes: ${kills.join(", ")}` : ""}${recovered.error ? `; not recorded: ${recovered.error.message}` : ""}`);
+        }
+      },
       close: () => {
         unsubscribe();
         opened.close();
