@@ -4,21 +4,26 @@
 // `*Input` types are what a sender builds (ids as plain strings); the other types are what a
 // parser returns (ids branded).
 import { z } from "zod";
-import { DecisionIdSchema, ItemIdSchema, TemplateIdSchema, WorkspaceIdSchema } from "./ids.js";
+import { DecisionIdSchema, ItemIdSchema, RepoIdSchema, TemplateIdSchema, WorkspaceIdSchema } from "./ids.js";
 import { ItemRecordSchema } from "./item.js";
 import { AgentCallUsageSchema } from "./usage.js";
+import { WorkspaceSummarySchema } from "./workspace.js";
 
 export const API_VERSION = 1;
 
 const apiVersion = z.literal(API_VERSION);
 const requestId = z.string().min(1).max(128);
 
+// A successful start_item reply carries `{ itemId }`; the other commands reply with `null`. Every
+// change a command makes also goes out as events.
 export const CommandSchema = z.discriminatedUnion("type", [
+  // `text` is the description or the pasted alert; the engine derives the title from it.
   z.strictObject({
     type: z.literal("start_item"),
     workspaceId: WorkspaceIdSchema,
     templateId: TemplateIdSchema,
-    title: z.string().min(1).max(200),
+    repoIds: z.array(RepoIdSchema).max(20),
+    text: z.string().max(4000).regex(/\S/, "must not be blank"),
   }),
   // Answers one decision by id, so a stale button cannot answer a newer question.
   z.strictObject({
@@ -31,6 +36,7 @@ export const CommandSchema = z.discriminatedUnion("type", [
 ]);
 
 export const QuerySchema = z.discriminatedUnion("type", [
+  z.strictObject({ type: z.literal("workspaces") }),
   z.strictObject({ type: z.literal("board"), workspaceId: WorkspaceIdSchema }),
   z.strictObject({ type: z.literal("item"), itemId: ItemIdSchema }),
 ]);
@@ -42,6 +48,7 @@ export const EventSchema = z.discriminatedUnion("type", [
 
 /** The data of a successful reply, per query type. */
 export const QueryResultSchemas = {
+  workspaces: z.strictObject({ workspaces: z.array(WorkspaceSummarySchema) }),
   board: z.strictObject({ items: z.array(ItemRecordSchema) }),
   item: z.strictObject({ item: ItemRecordSchema }),
 } as const satisfies Record<z.output<typeof QuerySchema>["type"], z.ZodType>;
@@ -158,3 +165,4 @@ export type QueryType = keyof typeof QueryResultSchemas;
 export type QueryResult<T extends QueryType> = z.output<(typeof QueryResultSchemas)[T]>;
 export type BoardResult = QueryResult<"board">;
 export type ItemResult = QueryResult<"item">;
+export type WorkspacesResult = QueryResult<"workspaces">;

@@ -17,6 +17,7 @@ import {
   API_VERSION,
   type BoardResult,
   checkEngineDir,
+  type Clock,
   type ConnectionErrorCode,
   type ClientMessage,
   encodeLine,
@@ -31,7 +32,10 @@ import {
   parseHelloMessage,
   type ParseError,
   type Result,
+  systemClock,
+  type WorkspacesResult,
 } from "@tokama/core";
+import { SampleEngine } from "./sample/sample.js";
 import { MemoryItemStore } from "./store.js";
 
 export interface EngineOptions {
@@ -40,6 +44,10 @@ export interface EngineOptions {
   /** Aborting it shuts the engine down. */
   readonly signal?: AbortSignal;
   readonly store?: MemoryItemStore;
+  /** Fake engine mode: serve the sample data set and handle commands on it (sample/sample.ts). */
+  readonly sample?: boolean;
+  /** Default: the system clock. */
+  readonly clock?: Clock;
   /** A connection that sends no hello within this time is closed. Default 5 s. */
   readonly helloTimeoutMs?: number;
   /** How long shutdown waits for in-flight requests and open connections. Default 5 s. */
@@ -102,6 +110,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   }
 
   const store = options.store ?? new MemoryItemStore();
+  const sample = options.sample ? new SampleEngine(store, options.clock ?? systemClock) : undefined;
   const helloTimeoutMs = options.helloTimeoutMs ?? 5_000;
   const shutdownTimeoutMs = options.shutdownTimeoutMs ?? 5_000;
   const connections = new Set<Socket>();
@@ -144,10 +153,16 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
 
   const dispatch = async (message: ClientMessage): Promise<ReplyResult> => {
     if (message.kind === "command") {
-      return { ok: false, error: { code: "not_implemented", message: `command "${message.command.type}" is not implemented yet` } };
+      if (!sample) {
+        return { ok: false, error: { code: "not_implemented", message: `command "${message.command.type}" is not implemented yet` } };
+      }
+      const result = sample.command(message.command);
+      return result.ok ? { ok: true, data: result.value } : { ok: false, error: result.error };
     }
     const query = message.query;
     switch (query.type) {
+      case "workspaces":
+        return { ok: true, data: { workspaces: sample?.workspaces ?? [] } satisfies WorkspacesResult };
       case "board":
         return { ok: true, data: { items: store.list(query.workspaceId) } satisfies BoardResult };
       case "item": {
@@ -240,12 +255,15 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     for (const socket of ready) write(socket, line.value);
   });
 
+  const stopTicking = sample?.startTicking();
+
   let resolveClosed = () => {};
   const closed = new Promise<void>((resolve) => (resolveClosed = resolve));
 
   const shutdown = async () => {
     if (shuttingDown) return closed;
     shuttingDown = true;
+    stopTicking?.();
     unsubscribe();
     await withDeadline(Promise.allSettled([...inFlight]), shutdownTimeoutMs);
     const allClosed = new Promise<void>((resolve) => {
@@ -270,7 +288,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   if (options.signal?.aborted) void shutdown();
   else options.signal?.addEventListener("abort", () => void shutdown(), { once: true });
 
-  log(`listening on ${socketPath} (engine ${engineId})`);
+  log(`listening on ${socketPath} (engine ${engineId}${sample ? ", sample data" : ""})`);
   return ok({ engineId, endpoint: endpoint.value, store, closed, close: shutdown });
 }
 

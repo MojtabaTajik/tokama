@@ -6,6 +6,7 @@ export { err, ok, type Result } from "./kernel/result/index.js";
 // The child-process env allowlist, so clients that start the engine reduce its env the same way.
 // From env.js, not the process module's index, so the public entry does not load the runner.
 export { buildEnv, ENV_ALLOWLIST } from "./kernel/process/env.js";
+export { manualClock, systemClock, type Clock, type ManualClock, type TimerHandle } from "./kernel/clock/index.js";
 export {
   checkEngineDir,
   defaultEngineDir,
@@ -21,6 +22,8 @@ export {
 export {
   API_VERSION,
   CONNECTION_ERROR_CODES,
+  currentStepIndex,
+  itemStage,
   parseAgentCallUsage,
   parseAgentId,
   parseCallId,
@@ -38,6 +41,7 @@ export {
   type AgentCallOutcome,
   type BoardResult,
   type AgentCallUsage,
+  type AgentSummary,
   type AgentId,
   type CallId,
   type ClientMessage,
@@ -46,6 +50,10 @@ export {
   type CommandInput,
   type CommandMessage,
   type CommandMessageInput,
+  type ConnectionId,
+  type ConnectionSummary,
+  type DataRule,
+  type Decision,
   type ConnectionErrorCode,
   type ConnectionErrorMessage,
   type DecisionId,
@@ -61,19 +69,26 @@ export {
   type ItemState,
   type ParseError,
   type ParseIssue,
+  type Privacy,
   type Query,
   type QueryInput,
   type QueryMessage,
   type QueryMessageInput,
   type QueryResult,
   type QueryType,
+  type RepoId,
+  type RepoSummary,
   type ReplyMessage,
   type ServerMessage,
   type Stage,
   type StepRecord,
   type StepState,
   type TemplateId,
+  type TemplateStep,
+  type TemplateSummary,
   type TokenUsage,
   type WelcomeMessage,
   type WorkspaceId,
+  type WorkspacesResult,
+  type WorkspaceSummary,
 } from "./kernel/schemas/index.js";

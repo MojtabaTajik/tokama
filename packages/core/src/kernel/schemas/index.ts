@@ -38,6 +38,7 @@ export * from "./api.js";
 export * from "./ids.js";
 export * from "./item.js";
 export * from "./usage.js";
+export * from "./workspace.js";
 export { parseWith, type ParseError, type ParseIssue } from "./parse.js";
 
 export const parseClientMessage = (input: unknown): Result<ClientMessage, ParseError> => parseWith(ClientMessageSchema, input);

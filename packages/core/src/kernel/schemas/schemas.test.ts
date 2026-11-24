@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   API_VERSION,
   AgentCallEventSchema,
+  itemStage,
   parseAgentCallUsage,
   parseAgentId,
   parseCallId,
@@ -30,11 +31,14 @@ const item = () => ({
   workspaceId: "northwind-prod",
   templateId: "emergency-investigator",
   title: "Checkout latency spike",
+  text: "Alert: checkout p95 above 1.5 s",
+  repoIds: ["orders-api"],
+  privacy: "local_only",
   state: "running",
   createdAt: 1_760_000_000_000,
   steps: [
-    { name: "Triage", stage: "working", state: "passed", agentId: "local-investigator" },
-    { name: "Run checks", stage: "verifying", state: "pending" },
+    { name: "Triage", stage: "working", state: "passed", agentId: "local-investigator", data: "none" },
+    { name: "Run checks", stage: "verifying", state: "pending", data: "none", waitingFor: "checks: pnpm test" },
   ],
 });
 
@@ -74,8 +78,11 @@ describe("item record", () => {
   });
 
   it.each([
-    ["an unknown stage", { steps: [{ name: "x", stage: "doing", state: "pending" }] }, "steps.0.stage"],
-    ["an unknown step state", { steps: [{ name: "x", stage: "working", state: "skipped" }] }, "steps.0.state"],
+    ["an unknown stage", { steps: [{ name: "x", stage: "doing", state: "pending", data: "none" }] }, "steps.0.stage"],
+    ["an unknown step state", { steps: [{ name: "x", stage: "working", state: "skipped", data: "none" }] }, "steps.0.state"],
+    ["an unknown data rule", { steps: [{ name: "x", stage: "working", state: "pending", data: "everything" }] }, "steps.0.data"],
+    ["an unknown privacy mode", { privacy: "public" }, "privacy"],
+    ["a decision without choices", { decision: { id: DECISION_ID, stepIndex: 0, question: "Go?", choices: [] } }, "decision.choices"],
     ["an unknown kind", { kind: "chore" }, "kind"],
     ["a malformed item id", { id: "item_1" }, "id"],
     ["an uppercase workspace id", { workspaceId: "Northwind" }, "workspaceId"],
@@ -131,7 +138,7 @@ describe("engine API messages", () => {
       apiVersion: API_VERSION,
       kind: "command",
       requestId: "r1",
-      command: { type: "start_item", workspaceId: "northwind-prod", templateId: "plan-and-build", title: "Add retries" },
+      command: { type: "start_item", workspaceId: "northwind-prod", templateId: "plan-and-build", repoIds: ["orders-api"], text: "Add retries" },
     },
     {
       apiVersion: API_VERSION,
@@ -142,6 +149,7 @@ describe("engine API messages", () => {
     { apiVersion: API_VERSION, kind: "command", requestId: "r3", command: { type: "stop_item", itemId: ITEM_ID } },
     { apiVersion: API_VERSION, kind: "query", requestId: "r4", query: { type: "board", workspaceId: "northwind-prod" } },
     { apiVersion: API_VERSION, kind: "query", requestId: "r5", query: { type: "item", itemId: ITEM_ID } },
+    { apiVersion: API_VERSION, kind: "query", requestId: "r6", query: { type: "workspaces" } },
     { apiVersion: API_VERSION, kind: "reply", requestId: "r4", result: { ok: true, data: { items: [] } } },
     { apiVersion: API_VERSION, kind: "reply", requestId: "r5", result: { ok: false, error: { code: "not_found", message: "no item" } } },
     { apiVersion: API_VERSION, kind: "event", seq: 0, event: { type: "item_updated", item: item() } },
@@ -173,6 +181,7 @@ describe("engine API messages", () => {
     ["an unknown command", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "delete_everything" } }],
     ["an empty requestId", { apiVersion: API_VERSION, kind: "query", requestId: "", query: { type: "item", itemId: ITEM_ID } }],
     ["a decision without an id", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "resolve_decision", itemId: ITEM_ID, choice: "approve" } }],
+    ["a blank start text", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "start_item", workspaceId: "northwind-prod", templateId: "quick-fix", repoIds: [], text: " \n " } }],
     ["an empty choice", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "resolve_decision", itemId: ITEM_ID, decisionId: DECISION_ID, choice: "" } }],
     ["the removed approve_step command", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "approve_step", itemId: ITEM_ID, stepIndex: 0 } }],
     ["a negative seq", { apiVersion: API_VERSION, kind: "event", seq: -1, event: { type: "item_updated", item: item() } }],
@@ -251,5 +260,57 @@ describe("query results", () => {
   it("refuses data of the wrong shape", () => {
     expect(parseQueryResult("board", { item: item() }).ok).toBe(false);
     expect(parseQueryResult("item", { item: { ...item(), state: "lost" } }).ok).toBe(false);
+  });
+});
+
+describe("itemStage", () => {
+  const steps = (...states: string[]) =>
+    states.map((state, index) => ({ name: `s${index}`, stage: index === 0 ? "working" : "review", state, data: "none" }));
+  const stageOf = (state: string, stepStates: string[]) => {
+    const parsed = parseItemRecord({ ...item(), state, steps: steps(...stepStates) });
+    if (!parsed.ok) throw new Error(JSON.stringify(parsed.error));
+    return itemStage(parsed.value);
+  };
+
+  it.each([
+    ["queued", ["pending", "pending"], "queued"],
+    ["running", ["running", "pending"], "working"],
+    ["needs_you", ["passed", "needs_you"], "review"],
+    ["done", ["passed", "passed"], "done"],
+    ["stopped", ["stopped", "pending"], "done"],
+  ])("puts a %s item with steps %j in %s", (state, stepStates, stage) => {
+    expect(stageOf(state, stepStates)).toBe(stage);
+  });
+});
+
+describe("workspaces query result", () => {
+  const workspace = {
+    id: "northwind-prod",
+    name: "Northwind prod",
+    host: "local",
+    repos: [{ id: "orders-api", baseBranch: "main" }],
+    connections: [{ id: "postgres-main", name: "Postgres main", type: "Postgres" }],
+    agents: [{ id: "architect", name: "Architect", cli: "Claude Code", model: "opus", runsOn: "cloud" }],
+    templates: [
+      {
+        id: "review-only",
+        name: "Review only",
+        kind: "task",
+        connections: [{ id: "postgres-main", access: "read-only" }],
+        steps: [{ name: "Review", stage: "review", agentId: "architect", data: "repo-and-diff" }],
+      },
+    ],
+  };
+
+  it("accepts a valid result", () => {
+    expect(parseQueryResult("workspaces", { workspaces: [workspace] })).toEqual({ ok: true, value: { workspaces: [workspace] } });
+  });
+
+  it.each([
+    ["a template without steps", { templates: [{ ...workspace.templates[0], steps: [] }] }, "workspaces.0.templates.0.steps"],
+    ["an agent that runs nowhere", { agents: [{ ...workspace.agents[0], runsOn: "edge" }] }, "workspaces.0.agents.0.runsOn"],
+    ["an uppercase repo id", { repos: [{ id: "Orders", baseBranch: "main" }] }, "workspaces.0.repos.0.id"],
+  ])("refuses %s", (_label, patch, path) => {
+    expect(paths(parseQueryResult("workspaces", { workspaces: [{ ...workspace, ...patch }] }))).toContain(path);
   });
 });

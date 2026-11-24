@@ -98,6 +98,19 @@ describe("engine process", () => {
     expect(readFileSync(`${dir}/engine.token`, "utf8")).toBe(token);
   });
 
+  it("serves the sample data set with --sample", { timeout: 30_000 }, async () => {
+    const dir = tempEngineDir(cleanups);
+    killEngineAfter(dir);
+    const connected = await connect({ dir, start: { command: process.execPath, args: [MAIN, "--dir", dir, "--sample"] }, startTimeoutMs: 15_000 });
+    if (!connected.ok) throw new Error(connected.error.message);
+    cleanups.push(() => connected.value.close());
+
+    const workspaces = await connected.value.query({ type: "workspaces" });
+    expect(workspaces.ok && workspaces.data.workspaces.map((workspace) => workspace.name)).toEqual(["Northwind prod", "Tailspin staging"]);
+    const board = await connected.value.query({ type: "board", workspaceId: "northwind-prod" });
+    expect(board.ok && board.data.items.length).toBeGreaterThan(0);
+  });
+
   it("reports start_failed when the engine command cannot run", async () => {
     const dir = tempEngineDir(cleanups);
     const connected = await connect({ dir, start: { command: `${dir}/no-such-engine`, args: [] }, startTimeoutMs: 5_000 });
