@@ -3,7 +3,10 @@
 // - git: the shared git dir's config, config.worktree, hooks/ and info/ attributes and exclude,
 //   the worktree's config.worktree and HEAD, the item branch's commit, and the worktree's `.git`
 //   file. These steer Tokama's own git calls and what gets committed; a commit or checkout made
-//   by an agent or a check moves HEAD or the branch.
+//   by an agent or a check moves HEAD or the branch. The config files count by the entries git
+//   reads from them, in file order, without the remote and tracking keys a `git push -u` or
+//   `git remote set-url` writes (IGNORED_KEYS); every other key counts. Files they include count
+//   by content. The rest by content.
 // - tokama: `.tokama/` in the worktree and in the main repo (minus the worktree folder).
 // - in the worktree, see protected.ts: base-commit tests and snapshots, test config, package
 //   config, CI files, lockfiles, .gitattributes. Pattern files are found in the base commit, in
@@ -14,7 +17,8 @@
 import { createHash } from "node:crypto";
 import { constants, type Dirent } from "node:fs";
 import { lstat, open, readdir, readlink } from "node:fs/promises";
-import { join, posix, relative, sep } from "node:path";
+import { dirname, join, posix, relative, resolve, sep } from "node:path";
+import { readTextFile } from "../../kernel/fs-safe/index.js";
 import type { Git } from "../../kernel/git/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import { baseCategory, CI_DIRS, patternCategory, type ProtectedCategory, TOKAMA_DIR } from "./protected.js";
@@ -72,6 +76,20 @@ export interface IntegrityError {
 }
 
 const SHARED_GIT_FILES = ["config", "config.worktree", "info/attributes", "info/exclude"];
+/**
+ * The only config keys that do not count, by section and variable name (lowercase, as git lists
+ * them): where to fetch and push and what a branch tracks; a url or pushurl only when it names a
+ * network host (networkUrl), a branch remote or pushRemote only when it is a name (remoteName). Every other `remote.<name>.*` and `branch.<name>.*` key counts;
+ * `uploadpack`, `receivepack` and `vcs` name commands git runs.
+ */
+const IGNORED_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
+  remote: new Set(["url", "pushurl", "fetch", "push", "tagopt", "prune"]),
+  branch: new Set(["remote", "merge", "pushremote", "rebase"]),
+};
+/** Bounds on included config files: nesting depth, files in all, bytes each. */
+const MAX_INCLUDE_DEPTH = 5;
+const MAX_INCLUDED_FILES = 50;
+const MAX_INCLUDE_BYTES = 1024 * 1024;
 const SHARED_GIT_DIRS = ["hooks"];
 
 const toPosix = (path: string) => path.split(sep).join("/");
@@ -95,6 +113,103 @@ async function hashPath(path: string): Promise<string | undefined> {
     if (code === "ENOENT" || code === "ENOTDIR") return undefined;
     return `error:${code ?? "unknown"}`;
   }
+}
+
+/** A `config --list` record split at its first line break: the key, and the value unless the key stands alone. */
+function splitRecord(record: string): { key: string; value: string | undefined } {
+  const newline = record.indexOf("\n");
+  return newline === -1 ? { key: record, value: undefined } : { key: record.slice(0, newline), value: record.slice(newline + 1) };
+}
+
+/** The schemes of network URLs: `https://host/...`, `ssh://host/...` and the like. */
+const NETWORK_URL = /^(?:https?|ssh|git|git\+ssh|ssh\+git):\/\/[^/\s]/i;
+/** An scp-style ssh address, `[user@]host:path`: no slash before the colon, and not `<helper>::`. */
+const SCP_ADDRESS = /^(?:[^@/:\s]+@)?(?:\[[^\]/\s]+\]|[A-Za-z0-9_.~][A-Za-z0-9_.~-]*):(?!:)[^\s]/;
+
+/**
+ * Whether a remote's url or pushurl names a network host. A local path (absolute, relative,
+ * `~`, `file://`) runs that repo's hooks on a push, and a transport helper (`ext::`, `fd::`, any
+ * `<helper>::` or other scheme) runs a command: those count. Any `scheme://` is judged by its
+ * scheme alone; only a value without one can be scp-style.
+ */
+function networkUrl(value: string | undefined): boolean {
+  if (value === undefined) return false;
+  return value.includes("://") ? NETWORK_URL.test(value) : SCP_ADDRESS.test(value);
+}
+
+/** A remote name, never a path or URL (git accepts both in `branch.<name>.remote` and `.pushremote`). */
+const remoteName = (value: string | undefined): boolean => value !== undefined && value !== "" && !/[/:]/.test(value);
+
+/** By section and variable name: a subsection may hold dots, so they are the first and last parts. */
+function ignoredRecord(record: string): boolean {
+  const { key, value } = splitRecord(record);
+  const first = key.indexOf(".");
+  const last = key.lastIndexOf(".");
+  // No subsection (e.g. remote.pushdefault): counts.
+  if (first === -1 || first === last) return false;
+  const section = key.slice(0, first);
+  const name = key.slice(last + 1);
+  if (IGNORED_KEYS[section]?.has(name) !== true) return false;
+  if (section === "remote" && (name === "url" || name === "pushurl")) return networkUrl(value);
+  if (section === "branch" && (name === "remote" || name === "pushremote")) return remoteName(value);
+  return true;
+}
+
+/** Whether git reads another config file from this key: `include.path` or `includeIf.<condition>.path`. */
+const includeKey = (key: string): boolean =>
+  key === "include.path" || (key.startsWith("includeif.") && key.endsWith(".path") && key.length > "includeif..path".length);
+
+/**
+ * An include path as git resolves it: absolute, or relative to the including file's folder.
+ * Undefined for a form this check does not resolve (`~/`, whose home is git's, `~user/`,
+ * `%(prefix)/`, no value or an empty one): the check then fails closed.
+ */
+function resolveInclude(value: string | undefined, including: string): string | undefined {
+  if (value === undefined || value === "" || value.startsWith("~") || value.startsWith("%(")) return undefined;
+  return resolve(dirname(including), value);
+}
+
+/**
+ * Content hashes of the files `records` (read from `including`) include, depth first in file
+ * order, each followed by the files it includes. Every include condition counts, matched or not.
+ * An error when an included file cannot be read whole or a bound is passed: the check fails closed.
+ */
+async function includedHashes(git: Git, records: readonly string[], including: string, depth: number, count: { files: number }): Promise<Result<string[], string>> {
+  const hashes: string[] = [];
+  for (const record of records) {
+    const { key, value } = splitRecord(record);
+    if (!includeKey(key)) continue;
+    if (depth >= MAX_INCLUDE_DEPTH) return err(`includes nested more than ${MAX_INCLUDE_DEPTH} deep`);
+    if (++count.files > MAX_INCLUDED_FILES) return err(`more than ${MAX_INCLUDED_FILES} included files`);
+    const path = resolveInclude(value, including);
+    if (path === undefined) return err(`cannot resolve the path of ${key}`);
+    // Never follows a symlink; a file git would skip (missing) fails the check too.
+    const text = await readTextFile(path, { maxBytes: MAX_INCLUDE_BYTES });
+    if (!text.ok) return err(`cannot read the file ${key} names (${text.error.reason})`);
+    const listed = await git.configList(path);
+    if (!listed.ok) return err(`the file ${key} names is not valid git config`);
+    hashes.push(createHash("sha256").update(text.value).digest("hex"));
+    const nested = await includedHashes(git, listed.value, path, depth + 1, count);
+    if (!nested.ok) return nested;
+    hashes.push(...nested.value);
+  }
+  return ok(hashes);
+}
+
+/**
+ * A stable hash of a git config file's entries and of the content of the files it includes, or
+ * of the path as hashPath gives it when it is not a regular file. An error when git cannot read
+ * the file or a file it includes: never "absent". `name` names the file in errors (no absolute path).
+ */
+async function hashConfig(git: Git, path: string, name: string): Promise<Result<string | undefined, IntegrityError>> {
+  const plain = await hashPath(path);
+  if (plain === undefined || !plain.startsWith("sha256:")) return ok(plain);
+  const listed = await git.configList(path);
+  if (!listed.ok) return err({ message: `cannot read git config: ${listed.error.message}` });
+  const counted = listed.value.filter((record) => !ignoredRecord(record));
+  const included = await includedHashes(git, listed.value, path, 0, { files: 0 });
+  if (!included.ok) return err({ message: `cannot read git config ${name}: ${included.error}` });
+  return ok(`config:${createHash("sha256").update(JSON.stringify([counted, included.value])).digest("hex")}`);
 }
 
 /** Every non-directory under `dir`, as paths relative to `root`; symlinked folders are not entered. */
@@ -165,6 +280,8 @@ export async function protectedSet(git: Git, input: ProtectedSetInput): Promise<
 
   const worktreeGitPrefix = worktreeGitDir === "" ? "" : `${worktreeGitDir}/`;
   const branchRef = `refs/heads/${input.branch}`;
+  // Hashed by the entries git reads from them, not their bytes.
+  const configs = new Set(["config", "config.worktree", ...(worktreeGitDir === "" ? [] : [`${worktreeGitPrefix}config.worktree`])]);
 
   async function hash(): Promise<Result<ProtectedHashes, IntegrityError>> {
     const status = await git.status(input.worktreePath);
@@ -199,7 +316,13 @@ export async function protectedSet(git: Git, input: ProtectedSetInput): Promise<
     const roots: Record<ProtectedArea, string> = { git: commonDir, repo: input.repoPath, worktree: input.worktreePath };
     const hashes = new Map<string, ProtectedFile & { hash: string }>();
     for (const [key, file] of files) {
-      const hashed = await hashPath(join(roots[file.area], ...file.path.split("/")));
+      const path = join(roots[file.area], ...file.path.split("/"));
+      let hashed: string | undefined;
+      if (file.area === "git" && configs.has(file.path)) {
+        const config = await hashConfig(git, path, file.path);
+        if (!config.ok) return config;
+        hashed = config.value;
+      } else hashed = await hashPath(path);
       if (hashed !== undefined) hashes.set(key, { ...file, hash: hashed });
     }
     // The branch may live in packed-refs: hash the commit it names, not a file.

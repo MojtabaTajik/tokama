@@ -42,6 +42,7 @@ describe("ItemStore", () => {
     expect(statSync(join(home, "items", item.id)).mode & 0o777).toBe(0o700);
     expect(statSync(logFile(item.id)).mode & 0o777).toBe(0o600);
     expect(item.template).toEqual(templateSnapshot(TEMPLATE));
+    expect(store.itemDir(item.id)).toBe(join(home, "items", item.id));
   });
 
   it("appends events without rewriting earlier lines, and reloads the same item from the log", () => {

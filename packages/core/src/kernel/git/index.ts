@@ -7,6 +7,7 @@ export {
   MIN_GIT_VERSION,
   createGit,
   parseGitVersion,
+  parseDiffTreeRaw,
   parseNumstat,
   parseStatus,
   parseWorktreeList,
@@ -18,5 +19,6 @@ export {
   type GitResult,
   type NumstatEntry,
   type StatusEntry,
+  type TreeChange,
   type WorktreeEntry,
 } from "./git.js";

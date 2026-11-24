@@ -8,6 +8,7 @@ import { err, ok, type Result } from "../../kernel/result/index.js";
 import { RepoIdSchema, TemplateIdSchema, type RepoId, type TemplateRecord, type TemplateRef } from "../../kernel/schemas/index.js";
 import { BUILTIN_TEMPLATES } from "./builtin.js";
 import { quote } from "./quote.js";
+import { templateWarnings } from "./warnings.js";
 import { validateTemplate, type AgentLocation, type TemplateProblem, type ValidateContext } from "./validate.js";
 
 /** The folder inside a repo that holds its templates. */
@@ -35,7 +36,7 @@ export interface LoadInput {
 
 /** One template file, loaded or not. `ref` is absent when the file name is not a valid id. */
 export type TemplateLoad =
-  | { readonly ok: true; readonly template: TemplateRecord }
+  | { readonly ok: true; readonly template: TemplateRecord; readonly warnings: readonly string[] }
   | {
       readonly ok: false;
       readonly ref?: TemplateRef;
@@ -163,5 +164,5 @@ async function firstLink(base: string, relative: string): Promise<string | undef
 }
 
 function toLoad(result: Result<TemplateRecord, TemplateProblem[]>, origin: string, file: string, ref: TemplateRef): TemplateLoad {
-  return result.ok ? { ok: true, template: result.value } : { ok: false, ref, origin, file, problems: result.error };
+  return result.ok ? { ok: true, template: result.value, warnings: templateWarnings(result.value) } : { ok: false, ref, origin, file, problems: result.error };
 }

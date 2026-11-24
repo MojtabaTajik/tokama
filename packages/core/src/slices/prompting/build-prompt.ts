@@ -56,6 +56,12 @@ export interface PromptInput {
   readonly itemText: string;
   /** The output of the last failed checks, for a retry. Only its last part is kept. */
   readonly lastCheckOutput?: string;
+  /**
+   * What a later step said about this step's work (a reviewer's requested changes), for the next
+   * attempt. Its first line is kept; the rest keeps its last part. Refused for a cloud agent when
+   * the step that wrote it has results from connections.
+   */
+  readonly feedback?: { readonly fromStepId: StepId; readonly text: string };
   readonly repoContext?: RepoContext;
   /** For a cloud step with `summary-after-approval`: the summary text the engineer approved. Sent as it is. */
   readonly approvedSummary?: string;
@@ -69,7 +75,7 @@ export interface PromptInput {
   readonly drawMark?: () => string;
 }
 
-export type IncludedKind = "item-text" | "result" | "diff" | "repo-file" | "check-output" | "approved-summary";
+export type IncludedKind = "item-text" | "result" | "diff" | "repo-file" | "check-output" | "feedback" | "approved-summary";
 
 export interface IncludedInput {
   readonly kind: IncludedKind;
@@ -199,6 +205,18 @@ function build(input: PromptInput): BuiltPrompt {
     if (repo?.diff !== undefined) blocks.push(capped({ kind: "diff", name: "diff", text: text(repo.diff, "The diff") }, PROMPT_LIMITS.diffBytes));
     for (const file of repo?.files ?? []) {
       blocks.push(capped({ kind: "repo-file", name: repoPath(file?.path), text: text(file.text, `Repo file ${JSON.stringify(file.path)}`) }, PROMPT_LIMITS.repoFileBytes));
+    }
+    if (input.feedback !== undefined) {
+      const { fromStepId, text: said } = input.feedback;
+      if (cloud && connectionDerivedSteps(template.steps).has(fromStepId)) {
+        refuse("cloud-connection-input", `${name} runs on a cloud agent, so it cannot get the feedback of ${JSON.stringify(fromStepId)}, which has results from connections.`);
+      }
+      const whole = text(said, "The feedback");
+      const newline = whole.indexOf("\n");
+      const [header, rest] = newline === -1 ? [whole, ""] : [whole.slice(0, newline + 1), whole.slice(newline + 1)];
+      const cut = tail(rest, Math.max(0, CHECK_OUTPUT_MAX_BYTES - bytesOf(header)));
+      const kept = `${header}${cut.text}`;
+      blocks.push({ kind: "feedback", name: `feedback from ${fromStepId}`, text: kept, ...(cut.bytes < cut.originalBytes ? { cutFromBytes: bytesOf(whole) } : {}) });
     }
     if (input.lastCheckOutput !== undefined) {
       const cut = tail(text(input.lastCheckOutput, "The check output"), CHECK_OUTPUT_MAX_BYTES);

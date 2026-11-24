@@ -4,6 +4,7 @@ export { worktreeSnapshot, type FileSnapshot, type FileState } from "./snapshot.
 export {
   createWorktree,
   discardWorktree,
+  findItemWorktree,
   itemBranch,
   removeWorktree,
   shortItemId,

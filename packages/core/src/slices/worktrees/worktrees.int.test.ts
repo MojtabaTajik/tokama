@@ -10,6 +10,7 @@ import {
   commitMessage,
   createWorktree,
   discardWorktree,
+  findItemWorktree,
   type ItemWorktree,
   removeWorktree,
   shortItemId,
@@ -117,6 +118,15 @@ describe("createWorktree", () => {
     value(await finish(a, ITEM_A, "A"));
     expect(await plain(worktreePath(repo.path, b), "status", "--porcelain")).toBe("");
     expect(await plain(repo.path, "log", "-1", "--format=%s", "tokama/7e6d5c4b")).toBe("seed");
+  });
+
+  it("finds an item's registered worktree after a start that crashed before recording it", SLOW, async () => {
+    expect(value(await findItemWorktree(git, repo, ITEM_A))).toBeUndefined();
+    const created = value(await createWorktree(git, repo, ITEM_A));
+    expect(await createWorktree(git, repo, ITEM_A)).toMatchObject({ ok: false, error: { reason: "exists" } });
+    expect(value(await findItemWorktree(git, repo, ITEM_A))).toEqual(created);
+    // Another item's worktree is not this item's.
+    expect(value(await findItemWorktree(git, repo, ITEM_B))).toBeUndefined();
   });
 
   it("takes the short id from the random tail of the item id", () => {

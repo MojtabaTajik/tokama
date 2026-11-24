@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -462,6 +462,61 @@ describe("API on a real repo", () => {
     value(await git.worktreeRemove(repo, path, { force: true }));
     expect(value(await git.worktreeList(repo))).toHaveLength(1);
     expect(existsSync(path)).toBe(false);
+  });
+
+  it("cleanIgnored removes ignored files at the top of a linked worktree only", SLOW, async () => {
+    write(join(repo, ".gitignore"), "node_modules/\n*.log\n");
+    await plain(repo, "add", "-A");
+    await plain(repo, "commit", "-q", "-m", "ignore");
+    const path = join(root, "wt");
+    value(await git.worktreeAdd(repo, path, "feature", "main"));
+    mkdirSync(join(path, "node_modules", ".bin"), { recursive: true });
+    write(join(path, "node_modules", ".bin", "vitest"), "#!/bin/sh\nexit 0\n", 0o755);
+    write(join(path, "debug.log"), "x\n");
+    write(join(path, "new.txt"), "untracked, not ignored\n");
+    write(join(path, "a.txt"), "changed\n");
+    value(await git.cleanIgnored(path));
+    expect(existsSync(join(path, "node_modules"))).toBe(false);
+    expect(existsSync(join(path, "debug.log"))).toBe(false);
+    expect(readFileSync(join(path, "new.txt"), "utf8")).toBe("untracked, not ignored\n");
+    expect(readFileSync(join(path, "a.txt"), "utf8")).toBe("changed\n");
+
+    // The main worktree, a subfolder, and a worktree whose .git file is gone are all refused.
+    write(join(repo, "main.log"), "x\n");
+    expect(await git.cleanIgnored(repo)).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
+    mkdirSync(join(path, "sub"));
+    expect(await git.cleanIgnored(join(path, "sub"))).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
+    const inside = join(repo, "inner");
+    value(await git.worktreeAdd(repo, inside, "inner", "main"));
+    rmSync(join(inside, ".git"));
+    expect(await git.cleanIgnored(inside)).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
+    expect(existsSync(join(repo, "main.log"))).toBe(true);
+  });
+
+  it("diffTreeRaw lists changed paths with blob ids; diffTrees shows the text diff between two trees", SLOW, async () => {
+    const base = value(await git.revParse(repo, "HEAD^{tree}"));
+    write(join(repo, "a.txt"), "two\n");
+    write(join(repo, "new file.txt"), "x\n");
+    value(await git.addAll(repo));
+    const tree = value(await git.writeTree(repo));
+    const blob = (await plain(repo, "rev-parse", ":a.txt")).trim();
+    expect(value(await git.diffTreeRaw(repo, base, tree))).toEqual([
+      { path: "a.txt", status: "M", oldMode: "100644", newMode: "100644", oldBlob: expect.stringMatching(/^[0-9a-f]{40,64}$/), newBlob: blob },
+      { path: "new file.txt", status: "A", oldMode: "000000", newMode: "100644", oldBlob: null, newBlob: expect.stringMatching(/^[0-9a-f]{40,64}$/) },
+    ]);
+    expect(value(await git.diffTrees(repo, base, tree))).toContain("-one\n+two\n");
+    expect(await git.diffTreeRaw(repo, "--output=x", tree)).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
+  });
+
+  it("configList: one file's entries in file order, valueless keys alone, no includes", SLOW, async () => {
+    const file = join(root, "listed.config");
+    write(join(root, "included.config"), "[core]\n\tpager = less\n");
+    write(file, `[core]\n\tHooksPath = hooks\n[alias]\n\tflag\n[include]\n\tpath = ${join(root, "included.config")}\n[core]\n\thooksPath = other\n`);
+    expect(value(await git.configList(file))).toEqual(["core.hookspath\nhooks", "alias.flag", `include.path\n${join(root, "included.config")}`, "core.hookspath\nother"]);
+    expect(await git.configList(join(root, "missing.config"))).toMatchObject({ ok: false, error: { reason: "failed" } });
+    write(join(root, "bad.config"), "[broken");
+    expect(await git.configList(join(root, "bad.config"))).toMatchObject({ ok: false, error: { reason: "failed" } });
+    expect(await git.configList("listed.config")).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
   });
 
   it("branchDelete, lsTree and gitDirs", SLOW, async () => {

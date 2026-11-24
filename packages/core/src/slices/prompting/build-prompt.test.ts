@@ -202,6 +202,27 @@ describe("buildPrompt: runtime data rules", () => {
     expect(error.message).toContain('"plan"');
   });
 
+  it("sends review feedback in its own block, keeps its first line when cut, and refuses connection-derived feedback for a cloud step", () => {
+    const fromReview = { fromStepId: "review" as StepId, text: "The reviewer asked for changes:\nAdd a test." };
+    const prompt = built(base("build", { feedback: fromReview }));
+    expect(prompt.user).toContain(block("feedback from review", "The reviewer asked for changes:\nAdd a test."));
+    expect(prompt.record.included.map((i) => i.kind)).toContain("feedback");
+
+    const long = { fromStepId: "review" as StepId, text: `The reviewer asked for changes:\n${"é".repeat(CHECK_OUTPUT_MAX_BYTES)}END` };
+    const cut = built(base("build", { feedback: long })).record.included.find((i) => i.kind === "feedback")!;
+    expect(cut.bytes).toBeLessThanOrEqual(CHECK_OUTPUT_MAX_BYTES);
+    expect(cut.cutFromBytes).toBeGreaterThan(CHECK_OUTPUT_MAX_BYTES);
+    const cutText = built(base("build", { feedback: long })).user;
+    expect(cutText).toContain("The reviewer asked for changes:\n");
+    expect(cutText).toContain("END\n");
+
+    // The investigation step has connections: its words may not reach a cloud builder.
+    const derived = refusal(base("build", { feedback: { fromStepId: "investigate" as StepId, text: "Found SECRET-LOG-LINE" } }));
+    expect(derived.code).toBe("cloud-connection-input");
+    // A local step may get it.
+    expect(built(base("plan", { feedback: { fromStepId: "investigate" as StepId, text: "Found it" } })).user).toContain("Found it");
+  });
+
   it("follows a forged forward sees chain to the connection", () => {
     const forged = template([
       { id: "relay", agentId: "planner", text: "Relay.", sees: ["investigate"] },

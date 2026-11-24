@@ -1,6 +1,6 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { err, ok, type Result } from "../result/index.js";
 import type { ProcessRunner } from "../process/index.js";
 
@@ -94,6 +94,18 @@ export interface NumstatEntry {
   readonly removed: number | null;
 }
 
+/** One entry of `git diff-tree --raw`: a path that differs between two trees. */
+export interface TreeChange {
+  readonly path: string;
+  /** A added, D deleted, M modified, T type changed. */
+  readonly status: string;
+  /** "000000" and null blob on the side where the path does not exist. */
+  readonly oldMode: string;
+  readonly newMode: string;
+  readonly oldBlob: string | null;
+  readonly newBlob: string | null;
+}
+
 export interface WorktreeEntry {
   readonly path: string;
   /** Absent in a bare repo or before the first commit. */
@@ -111,8 +123,19 @@ export interface Git {
   addAll(repo: string): Promise<GitResult<void>>;
   /** `diff --cached --numstat -z --no-renames`. */
   diffCachedNumstat(repo: string): Promise<GitResult<NumstatEntry[]>>;
+  /** `diff-tree -r -z --raw --no-abbrev --no-renames <from> <to>`: every path that differs, with blob ids. */
+  diffTreeRaw(repo: string, from: string, to: string): Promise<GitResult<TreeChange[]>>;
+  /** Unified diff from one tree (or commit) to another; no rename detection. */
+  diffTrees(repo: string, from: string, to: string): Promise<GitResult<string>>;
   /** Unified diff of the worktree against the index, or of the index against HEAD with `cached`. */
   diff(repo: string, options?: { readonly cached?: boolean }): Promise<GitResult<string>>;
+  /**
+   * `clean -ffdX` at the top of a linked worktree: removes ignored files and folders (installed
+   * dependencies too, nested repos included), so a check cannot run a tool an agent swapped in
+   * there. Refused unless `repo` is the top of a linked worktree, so a missing or replaced `.git`
+   * file can never point the clean at the main repo.
+   */
+  cleanIgnored(repo: string): Promise<GitResult<void>>;
   /** `write-tree`: the tree id of the index. */
   writeTree(repo: string): Promise<GitResult<string>>;
   /** `commit -q --no-verify -m <message>` of the index; returns the new commit id. */
@@ -147,6 +170,12 @@ export interface Git {
    * is `<common>/worktrees/<name>`; in the main worktree both are the same.
    */
   gitDirs(repo: string): Promise<GitResult<GitDirs>>;
+  /**
+   * `config --file <file> --list -z`: the entries of one config file, in file order, as git
+   * reads them. Each record is `key` alone (a key with no value) or `key\nvalue`; section and key
+   * names come lowercased. Includes are not followed. `file` must be absolute.
+   */
+  configList(file: string): Promise<GitResult<string[]>>;
   /** `git --version`, refused below MIN_GIT_VERSION. The engine calls it once at startup. */
   checkGitVersion(): Promise<GitResult<string>>;
 }
@@ -291,7 +320,26 @@ export function createGit(options: GitOptions): Git {
     addAll: (repo) => map(git(repo, ["add", "-A"]), none),
     diffCachedNumstat: (repo) =>
       map(git(repo, ["diff", "--cached", "--numstat", "-z", "--no-renames", ...DIFF_SAFE]), parseNumstat),
+    async diffTreeRaw(repo, from, to) {
+      const args = ["diff-tree", "-r", "-z", "--raw", "--no-abbrev", "--no-renames", from, to, "--"];
+      return refuseOption(args, from, to) ?? map(git(repo, args), parseDiffTreeRaw);
+    },
+    async diffTrees(repo, from, to) {
+      const args = ["diff", "--no-renames", ...DIFF_SAFE, from, to, "--"];
+      return refuseOption(args, from, to) ?? git(repo, args);
+    },
     diff: (repo, diffOptions = {}) => git(repo, ["diff", ...(diffOptions.cached === true ? ["--cached"] : []), ...DIFF_SAFE]),
+    async cleanIgnored(repo) {
+      const args = ["clean", "-ffdX"];
+      const where = await git(repo, ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-dir", "--git-common-dir"]);
+      if (!where.ok) return where;
+      const [top, gitDir, commonDir] = where.value.split("\n");
+      const [realTop, realRepo] = await Promise.all([realpath(top ?? "").catch(() => ""), realpath(repo).catch(() => repo)]);
+      if (realTop !== realRepo || gitDir === commonDir) {
+        return err({ reason: "invalid-argument", args, exitCode: null, message: `refused: ${repo} is not the top of a linked worktree` });
+      }
+      return map(git(repo, args), none);
+    },
     writeTree: (repo) => map(git(repo, ["write-tree"]), trimmed),
     async commit(repo, message) {
       const committed = await git(repo, ["commit", "-q", "--no-verify", "-m", message]);
@@ -355,6 +403,12 @@ export function createGit(options: GitOptions): Git {
         const [gitDir = "", commonDir = ""] = out.split("\n");
         return { gitDir, commonDir };
       }),
+    async configList(file) {
+      const args = ["config", "--file", file, "--list", "-z"];
+      if (!isAbsolute(file)) return err({ reason: "invalid-argument", args, exitCode: null, message: `refused relative path: ${JSON.stringify(file)}` });
+      // Outside any repo: only the named file is read.
+      return map(raw(tmpdir(), args), (out) => out.split("\0").filter((record) => record !== ""));
+    },
     async checkGitVersion() {
       const args = ["--version"];
       const out = await raw(tmpdir(), args);
@@ -413,6 +467,28 @@ export function parseNumstat(out: string): NumstatEntry[] {
       const [added = "", removed = "", ...path] = field.split("\t");
       return { path: path.join("\t"), added: count(added), removed: count(removed) };
     });
+}
+
+const NO_BLOB = /^0+$/;
+
+/** Parses `diff-tree -r -z --raw`: `:<mode> <mode> <blob> <blob> <status>` then the path, NUL-separated. */
+export function parseDiffTreeRaw(out: string): TreeChange[] {
+  const fields = out.split("\0");
+  const changes: TreeChange[] = [];
+  for (let i = 0; i + 1 < fields.length; i += 2) {
+    const meta = fields[i]!;
+    if (!meta.startsWith(":")) continue;
+    const [oldMode = "", newMode = "", oldBlob = "", newBlob = "", status = ""] = meta.slice(1).split(" ");
+    changes.push({
+      path: fields[i + 1]!,
+      status: status.slice(0, 1),
+      oldMode,
+      newMode,
+      oldBlob: NO_BLOB.test(oldBlob) ? null : oldBlob,
+      newBlob: NO_BLOB.test(newBlob) ? null : newBlob,
+    });
+  }
+  return changes;
 }
 
 /** Parses `worktree list --porcelain -z`: attribute fields, each worktree ended by an empty field. */
