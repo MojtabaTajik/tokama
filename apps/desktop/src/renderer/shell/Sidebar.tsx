@@ -8,7 +8,8 @@ import type { ConnectionState } from "../../shared/bridge.js";
 import { ALL_WORK, type Badge, badgesOf, inView, sameView, type View, viewKey } from "../model.js";
 import type { Section } from "../useViewState.js";
 import { EngineHealth } from "./ConnectionStatus.js";
-import { AllWorkIcon, RepoIcon, WorkflowIcon } from "./icons.js";
+import { AllWorkIcon, RepoIcon } from "./icons.js";
+import { TemplateIcon } from "./TemplateIcon.js";
 
 const TEXT = {
   panel: "Sidebar",
@@ -41,7 +42,7 @@ export interface SidebarProps {
 
 export function Sidebar(props: SidebarProps) {
   const { id, connection, setup, items, stale, now, view, onSelectView, collapsed, onToggleSection } = props;
-  const workflows = (setup?.templates ?? []).map((template) => ({ view: { kind: "workflow", id: template.id } as const, name: template.name }));
+  const workflows = (setup?.templates ?? []).map((template) => ({ view: { kind: "workflow", id: template.id } as const, name: template.name, icon: <TemplateIcon icon={template.icon} color={template.color} /> }));
   const repos = (setup?.repos ?? []).map((repo) => ({ view: { kind: "repo", id: repo.id } as const, name: repo.id }));
   const row = (entry: { readonly view: View; readonly name: string }, icon: ReactNode, startLabel: string, mono = false) => (
     <Row
@@ -80,7 +81,7 @@ export function Sidebar(props: SidebarProps) {
         onSelect={() => onSelectView(ALL_WORK)}
       />
       <SectionHeading section="workflows" title={TEXT.workflows} collapsed={collapsed} onToggle={onToggleSection} summary={badgesOf(items.filter((item) => workflows.some((w) => inView(item, w.view))), now)} />
-      {!collapsed.has("workflows") && workflows.map((entry) => row(entry, <WorkflowIcon />, TEXT.start(entry.name)))}
+      {!collapsed.has("workflows") && workflows.map((entry) => row(entry, entry.icon, TEXT.start(entry.name)))}
       <SectionHeading section="repos" title={TEXT.repos} collapsed={collapsed} onToggle={onToggleSection} summary={badgesOf(items.filter((item) => repos.some((r) => inView(item, r.view))), now)} />
       {!collapsed.has("repos") && repos.map((entry) => row(entry, <RepoIcon />, TEXT.quickTask(entry.name), true))}
     </aside>

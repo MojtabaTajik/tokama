@@ -521,3 +521,34 @@ describe("live updates", () => {
     expect(segment("Active").getAttribute("aria-pressed")).toBe("true");
   });
 });
+
+describe("template icons", () => {
+  const TEMPLATES = [
+    ["Emergency investigator", "emergency-investigator", "fire", "rose"],
+    ["DB slow query check", "db-slow-query", "database", "clay"],
+    ["Plan and build", "plan-and-build", "hammer", "sky"],
+    ["Quick fix", "quick-fix", "wrench", "moss"],
+    ["Review only", "review-only", "eye", "slate"],
+  ] as const;
+  const iconOf = (el: Element | null | undefined) => [el?.querySelector(".tpl-icon")?.getAttribute("data-icon"), el?.querySelector(".tpl-icon")?.getAttribute("data-tag")];
+
+  it.each(TEMPLATES)("%s shows its icon in its colour in the sidebar, the list, the board header and the drawer", async (name, templateId, icon, color) => {
+    const own = { ...ITEMS.queued, id: "item_1a2b3c4d-0098-4a1b-8c1d-000000000098", title: `Item of ${name}`, templateId } as ItemRecord;
+    await mount(fakeBridge(CONNECTED, { boardItems: [own] }));
+
+    expect(iconOf(sidebarRow(name))).toEqual([icon, color]);
+
+    await click(row(own.title));
+    expect(iconOf($(".drawer-kind"))).toEqual([icon, color]);
+
+    await click(sidebarRow(name));
+    expect(iconOf($(".crumb-here"))).toEqual([icon, color]);
+    expect(iconOf(row(own.title).querySelector(".pl-meta"))).toEqual([icon, color]);
+  });
+
+  it("draws the neutral icon, with no tint, for a template the setup does not list", async () => {
+    const orphan = { ...ITEMS.queued, id: "item_1a2b3c4d-0097-4a1b-8c1d-000000000097", title: "Orphan", templateId: "retired-template" } as ItemRecord;
+    await mount(fakeBridge(CONNECTED, { boardItems: [orphan] }));
+    expect(iconOf(row("Orphan").querySelector(".pl-meta"))).toEqual(["diagram-project", null]);
+  });
+});

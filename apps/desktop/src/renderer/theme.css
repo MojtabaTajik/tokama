@@ -29,6 +29,16 @@
   --agent-3: #b23a6e;
   --agent-neutral: #4a5563;
 
+  /* Tag colours: for a template's icon only, never a fill. Apart from the status, agent and link colours. */
+  --tag-slate: #aeb6c0;
+  --tag-sky: #6f9fd8;
+  --tag-teal: #58b8bc;
+  --tag-moss: #a9a862;
+  --tag-sand: #dccba6;
+  --tag-clay: #b9866f;
+  --tag-rose: #d08ab2;
+  --tag-plum: #a288c8;
+
   /* Inter and JetBrains Mono when installed; no remote font loading (the CSP refuses it). */
   --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;

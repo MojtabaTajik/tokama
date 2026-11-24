@@ -367,7 +367,14 @@ describe("setup query result", () => {
     expect(parseQueryResult("setup", setup)).toEqual({ ok: true, value: setup });
   });
 
+  it("passes a template's icon and tag colour through", () => {
+    const tagged = { ...setup, templates: [{ ...setup.templates[0], icon: "screwdriver-wrench", color: "moss" }] };
+    expect(parseQueryResult("setup", tagged)).toEqual({ ok: true, value: tagged });
+  });
+
   it.each([
+    ["a template colour outside the 8 tag colours", { templates: [{ ...setup.templates[0], color: "red" }] }, "templates.0.color"],
+    ["a template icon that is not an icon name", { templates: [{ ...setup.templates[0], icon: "Fire Icon" }] }, "templates.0.icon"],
     ["a template without steps", { templates: [{ ...setup.templates[0], steps: [] }] }, "templates.0.steps"],
     ["an unknown AI CLI", { agents: [{ ...setup.agents[0], cliId: "gemini" }] }, "agents.0.cliId"],
     ["an agent that runs nowhere", { agents: [{ ...setup.agents[0], runsOn: "edge" }] }, "agents.0.runsOn"],

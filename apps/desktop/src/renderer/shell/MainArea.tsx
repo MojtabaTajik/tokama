@@ -9,8 +9,9 @@ import { ItemList } from "../list/ItemList.js";
 import { ALL_WORK, groupItems, inView, summaryOf, visibleItems } from "../model.js";
 import type { Layout, ViewState } from "../useViewState.js";
 import { ConnectionFailure } from "./ConnectionStatus.js";
-import { RepoIcon, WorkflowIcon } from "./icons.js";
+import { RepoIcon } from "./icons.js";
 import { StatusFilter } from "./StatusFilter.js";
+import { TemplateIcon } from "./TemplateIcon.js";
 
 const TEXT = {
   allWork: "All work",
@@ -59,7 +60,7 @@ export function MainArea(props: MainAreaProps) {
                 ›
               </li>
               <li className="crumb-here" aria-current="page">
-                {view.kind === "workflow" ? <WorkflowIcon size={13} /> : <RepoIcon size={13} />}
+                {view.kind === "workflow" ? <TemplateIcon icon={template?.icon} color={template?.color} size={13} /> : <RepoIcon size={13} />}
                 <h1 className={view.kind === "repo" ? "ellipsis mono" : "ellipsis"}>{template?.name ?? view.id}</h1>
               </li>
             </ol>

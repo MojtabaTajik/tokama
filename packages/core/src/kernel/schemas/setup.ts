@@ -4,6 +4,7 @@
 import { z } from "zod";
 import { AgentIdSchema, ConnectionIdSchema, RepoIdSchema, TemplateIdSchema } from "./ids.js";
 import { ConnectionUsesSchema, DataRuleSchema, ItemKindSchema, StageSchema } from "./item.js";
+import { IconNameSchema, TagColorSchema } from "./template.js";
 
 const label = z.string().min(1).max(100);
 
@@ -47,6 +48,10 @@ export const TemplateSummarySchema = z.strictObject({
   id: TemplateIdSchema,
   name: label,
   kind: ItemKindSchema,
+  /** A Font Awesome Free icon name; clients draw a neutral icon for a name they do not know. */
+  icon: IconNameSchema.optional(),
+  /** The tag colour of the icon. */
+  color: TagColorSchema.optional(),
   /** The connections the template may use, with the access it asks for ("query", "read-only"). */
   connections: ConnectionUsesSchema,
   steps: z.array(TemplateStepSchema).min(1),

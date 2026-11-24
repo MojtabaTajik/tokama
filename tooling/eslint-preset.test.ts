@@ -236,6 +236,10 @@ describe("eslint preset: desktop", () => {
     expect(await errorRules(`${desktop}/${zone}/virtual.ts`, code)).toEqual([IMPORTS]);
   });
 
+  it.each(["@fortawesome/free-brands-svg-icons", "@fortawesome/free-brands-svg-icons/faGithub"])("refuses the Font Awesome brands set: %s", async (specifier) => {
+    for (const zone of everyZone) expect(await errorRules(`${desktop}/${zone}/virtual.ts`, `import "${specifier}";`)).toEqual([IMPORTS]);
+  });
+
   it("lets main use the client, core's public entry, Electron and Node", async () => {
     const code = 'export { connect } from "@tokama/client";\nexport { err } from "@tokama/core";\nimport "electron";\nimport "node:child_process";';
     expect(await errorRules(`${desktop}/main/virtual.ts`, code)).toEqual([]);

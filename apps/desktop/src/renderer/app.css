@@ -945,3 +945,41 @@ button:focus-visible {
   font-size: 12px;
   color: var(--muted);
 }
+
+/* A template's icon: inherits the colour of its surroundings unless it carries a tag colour. */
+.tpl-icon {
+  flex: none;
+  vertical-align: -2px;
+}
+
+.tpl-icon[data-tag="slate"] {
+  color: var(--tag-slate);
+}
+
+.tpl-icon[data-tag="sky"] {
+  color: var(--tag-sky);
+}
+
+.tpl-icon[data-tag="teal"] {
+  color: var(--tag-teal);
+}
+
+.tpl-icon[data-tag="moss"] {
+  color: var(--tag-moss);
+}
+
+.tpl-icon[data-tag="sand"] {
+  color: var(--tag-sand);
+}
+
+.tpl-icon[data-tag="clay"] {
+  color: var(--tag-clay);
+}
+
+.tpl-icon[data-tag="rose"] {
+  color: var(--tag-rose);
+}
+
+.tpl-icon[data-tag="plum"] {
+  color: var(--tag-plum);
+}

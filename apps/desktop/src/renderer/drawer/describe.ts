@@ -83,7 +83,8 @@ export function whereLine(step: Pick<StepRecord, "agentId" | "data" | "uses">, a
   return uses.length > 0 ? `local · ${uses.join(", ")}` : "local";
 }
 
+/** The setup's summary of the item's template; undefined when the setup does not list it. */
+export const templateOf = (item: Pick<ItemRecord, "templateId">, setup: Setup | undefined) => setup?.templates.find((template) => template.id === item.templateId);
+
 /** The template's name, or its id when the setup does not list it. */
-export function templateName(item: Pick<ItemRecord, "templateId">, setup: Setup | undefined): string {
-  return setup?.templates.find((template) => template.id === item.templateId)?.name ?? item.templateId;
-}
+export const templateName = (item: Pick<ItemRecord, "templateId">, setup: Setup | undefined): string => templateOf(item, setup)?.name ?? item.templateId;
