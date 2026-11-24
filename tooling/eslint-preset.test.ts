@@ -59,10 +59,11 @@ const violations: Record<string, [rules: string[], errors: number]> = {
   "slices/items/bad-fetch.ts": [[GLOBALS], 3],
   "kernel/process/bad-fetch.ts": [[GLOBALS], 1],
   "slices/items/bad-function-constructor.ts": [["no-new-func", "no-eval"], 2],
-  // Every TypeScript extension is covered.
+  // Every TypeScript extension is covered, and JavaScript files are refused.
   "slices/items/bad-module.mts": [[IMPORTS], 1],
   "slices/items/bad-import-require.cts": [[IMPORTS, REQUIRE_IMPORTS], 2],
   "slices/items/bad-component.tsx": [[IMPORTS], 1],
+  "slices/items/bad-javascript.mjs": [[SYNTAX], 1],
 };
 
 // The safe built-ins, written out here so the test does not trust the preset's own list.

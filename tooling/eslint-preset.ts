@@ -167,6 +167,14 @@ export default defineConfig(
     linterOptions: { reportUnusedDisableDirectives: "error" },
   },
 
+  // packages/core is TypeScript only, so a JavaScript file cannot slip past the rules below.
+  {
+    files: [`${CORE}/**/*.{js,jsx,mjs,cjs}`],
+    rules: {
+      "no-restricted-syntax": ["error", { selector: "Program", message: "packages/core is TypeScript only." }],
+    },
+  },
+
   // packages/core: engine boundaries.
   {
     files: [coreFiles("")],
