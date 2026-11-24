@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -647,6 +647,44 @@ describe("run loop: protection", () => {
       expect(item(id).state).toBe("done");
     });
 
+    it("a real `git push -u` and `git remote set-url` in the main checkout during a step do not stop the item", SLOW, async () => {
+      const bare = join(root, "origin.git");
+      await plain(root, "init", "-q", "--bare", bare);
+      await plain(repo.path, "remote", "add", "origin", bare);
+      const push = async () => {
+        await plain(repo.path, "push", "-q", "-u", "origin", "main");
+        await plain(repo.path, "remote", "set-url", "origin", "https://example.invalid/orders-api.git");
+      };
+      const id = await start(engine(fakeRuntime([after(push, edits(FIXED))])), template([BUILD_CHECKED]));
+      expect(item(id).state).toBe("done");
+    });
+
+    it("an agent setting remote.origin.uploadpack stops the item", SLOW, async () => {
+      await plain(repo.path, "remote", "add", "origin", "https://example.invalid/orders-api.git");
+      const uploadpack = () => plain(repo.path, "config", "remote.origin.uploadpack", "touch pwned");
+      const id = await start(engine(fakeRuntime([after(uploadpack, edits(FIXED))])), template([BUILD_CHECKED]));
+      expect(item(id)).toMatchObject({ state: "failed", outcome: { detail: expect.stringContaining("modified git:config (git)") } });
+      expect(commitOf(id)).toBeUndefined();
+    });
+
+    it("an agent editing a file the git config includes stops the item", SLOW, async () => {
+      const included = join(root, "shared.config");
+      writeFileSync(included, "[core]\n\tpager = less\n");
+      appendFileSync(sharedConfig(), `[include]\n\tpath = ${included}\n`);
+      const id = await start(engine(fakeRuntime([after(() => appendFileSync(included, "\tfsmonitor = touch pwned\n"), edits(FIXED))])), template([BUILD_CHECKED]));
+      expect(item(id)).toMatchObject({ state: "failed", outcome: { detail: expect.stringContaining("modified git:config (git)") } });
+      expect(commitOf(id)).toBeUndefined();
+    });
+
+    it("an included file that goes missing fails closed", SLOW, async () => {
+      const included = join(root, "shared.config");
+      writeFileSync(included, "[core]\n\tpager = less\n");
+      appendFileSync(sharedConfig(), `[include]\n\tpath = ${included}\n`);
+      const id = await start(engine(fakeRuntime([after(() => unlinkSync(included), edits(FIXED))])), template([BUILD_CHECKED]));
+      expect(item(id)).toMatchObject({ state: "failed", outcome: { detail: expect.stringContaining("could not be read") } });
+      expect(commitOf(id)).toBeUndefined();
+    });
+
     it.each([
       ["core.hooksPath", "[core]\n\thooksPath = elsewhere\n"],
       ["core.fsmonitor", "[core]\n\tfsmonitor = touch pwned\n"],
@@ -654,6 +692,8 @@ describe("run loop: protection", () => {
       ["include.path", "[include]\n\tpath = ../evil.config\n"],
     ])("an agent setting %s after setup stops the item", SLOW, async (_key, content) => {
       await huskySetup();
+      // The file the include names exists: a missing one fails closed (its own test).
+      writeFileSync(join(repo.path, "evil.config"), "[core]\n\tpager = less\n");
       const loop = engine(fakeRuntime([after(() => appendFileSync(sharedConfig(), content), edits(FIXED))]));
       const id = await start(loop, template([BUILD_CHECKED], { setup: "sh setup.sh" }));
       expect(item(id)).toMatchObject({ state: "failed", outcome: { detail: expect.stringContaining("modified git:config (git)") } });

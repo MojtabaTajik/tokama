@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -129,6 +129,87 @@ describe("a tamper event for each protected category", () => {
     for (const [key, value] of [["core.sshCommand", "touch pwned"], ["alias.st", "!touch pwned"], ["credential.helper", "!touch pwned"], ["url.https://example.invalid/.insteadOf", "x"]] as const) {
       expect(await changesAfter(() => plain(repo, "config", key, value)), key).toEqual([{ area: "git", path: "config", category: "git", change: "modified" }]);
     }
+  });
+
+  it("only the listed remote and branch keys do not count: a real `git push -u` and `git remote set-url` do not", SLOW, async () => {
+    const bare = join(root, "origin.git");
+    await plain(root, "init", "-q", "--bare", bare);
+    expect(
+      await changesAfter(async () => {
+        await plain(repo, "remote", "add", "origin", bare);
+        await plain(repo, "push", "-q", "-u", "origin", "main");
+        await plain(repo, "remote", "set-url", "origin", "https://example.invalid/orders-api.git");
+        await plain(repo, "remote", "set-url", "--push", "origin", "https://example.invalid/push.git");
+        for (const [key, value] of [["remote.origin.push", "refs/heads/main"], ["remote.origin.tagOpt", "--no-tags"], ["remote.origin.prune", "true"], ["branch.main.pushRemote", "origin"], ["branch.main.rebase", "true"]]) {
+          await plain(repo, "config", key!, value!);
+        }
+      }),
+    ).toEqual([]);
+    const watched = [
+      ["remote.origin.uploadpack", "touch pwned"],
+      ["remote.origin.receivepack", "touch pwned"],
+      ["remote.origin.vcs", "pwned"],
+      ["remote.origin.proxy", "http://example.invalid"],
+      ["remote.pushDefault", "origin"],
+      ["branch.main.description", "notes"],
+      ["branch.autoSetupMerge", "always"],
+      // A value or subsection that ends like an ignored key does not hide the key.
+      ["remote.origin.uploadpack", "x\nremote.origin.url"],
+      ["remote.origin.url.uploadpack", "touch pwned"],
+    ];
+    for (const [key, value] of watched) {
+      expect(await changesAfter(() => plain(repo, "config", key!, value!)), key).toEqual([{ area: "git", path: "config", category: "git", change: "modified" }]);
+    }
+  });
+
+  it("files a git config includes count by content, resolved from the including file's folder", SLOW, async () => {
+    const config = join(repo, ".git", "config");
+    // Relative to .git/, then relative to the included file's own folder.
+    write(join(repo, "conf", "first.config"), "[include]\n\tpath = nested/second.config\n");
+    write(join(repo, "conf", "nested", "second.config"), "[core]\n\tpager = less\n");
+    write(join(root, "cond.config"), "[core]\n\tpager = less\n");
+    appendFileSync(config, `[include]\n\tpath = ../conf/first.config\n[includeIf "onbranch:nomatch/**"]\n\tpath = ${join(root, "cond.config")}\n`);
+    for (const file of [join(repo, "conf", "first.config"), join(repo, "conf", "nested", "second.config"), join(root, "cond.config")]) {
+      expect(await changesAfter(() => appendFileSync(file, "\tpager = touch pwned\n")), file).toEqual([{ area: "git", path: "config", category: "git", change: "modified" }]);
+    }
+  });
+
+  it("an included file that is missing, a symlink, too large or nested too deep makes the hash an error", SLOW, async () => {
+    const config = join(repo, ".git", "config");
+    const before = readFileSync(config, "utf8");
+    /** level1.config includes level2.config and so on; the last includes nothing. */
+    const chain = (levels: number) => {
+      for (let level = 1; level <= levels; level++) write(join(root, `level${level}.config`), level < levels ? `[include]\n\tpath = level${level + 1}.config\n` : "");
+      appendFileSync(config, `[include]\n\tpath = ${join(root, "level1.config")}\n`);
+    };
+    chain(5);
+    expect((await set.hash()).ok).toBe(true);
+    const cases: [string, () => void, RegExp][] = [
+      ["missing", () => appendFileSync(config, "[include]\n\tpath = missing.config\n"), /include\.path.*not_found/],
+      ["symlink", () => {
+        write(join(root, "target.config"), "[core]\n\tpager = less\n");
+        symlinkSync(join(root, "target.config"), join(root, "link.config"));
+        appendFileSync(config, `[include]\n\tpath = ${join(root, "link.config")}\n`);
+      }, /symlink/],
+      ["too large", () => {
+        write(join(root, "large.config"), `# ${"x".repeat(1024 * 1024)}\n`);
+        appendFileSync(config, `[include]\n\tpath = ${join(root, "large.config")}\n`);
+      }, /too_large/],
+      ["too deep", () => chain(6), /nested more than 5 deep/],
+      ["no value", () => {
+        // Under a condition that does not match, so git itself never reads it.
+        write(join(root, "novalue.config"), "[include]\n\tpath\n");
+        appendFileSync(config, `[includeIf "onbranch:nomatch/**"]\n\tpath = ${join(root, "novalue.config")}\n`);
+      }, /cannot resolve the path of include\.path/],
+      ["home", () => appendFileSync(config, "[include]\n\tpath = ~/home.config\n"), /cannot resolve/],
+    ];
+    for (const [name, change, message] of cases) {
+      writeFileSync(config, before);
+      change();
+      expect(await set.hash(), name).toMatchObject({ ok: false, error: { message: expect.stringMatching(message) } });
+    }
+    writeFileSync(config, before);
+    expect((await set.hash()).ok).toBe(true);
   });
 
   it("git config git cannot read makes the hash an error, never absent", SLOW, async () => {
