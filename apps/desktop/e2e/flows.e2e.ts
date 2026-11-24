@@ -41,9 +41,39 @@ flow("opens an item and approves its decision", async ({ page }) => {
   await row(page, NEEDS_YOU).waitFor({ state: "detached" });
   // The item runs on: it is in Running under Active.
   await segment(page, "Active").click();
-  // Attached, not visible: the open drawer can squeeze the row to nothing on a small window (bug #74).
-  // Wait for "visible" again once #74 is fixed.
-  await group(page, "Running").locator(".pl-title", { hasText: NEEDS_YOU }).waitFor({ state: "attached" });
+  await group(page, "Running").locator(".pl-title", { hasText: NEEDS_YOU }).waitFor({ state: "visible" });
+});
+
+flow("keeps list rows readable and apart with the drawer open", async ({ page, resize }) => {
+  await row(page, VERIFYING).click();
+  await drawer(page).getByRole("heading", { name: VERIFYING }).waitFor();
+  // 1200 is the default window, 1024 the macOS CI screen; the others are narrower than any title needs.
+  for (const [width, readable] of [[1200, true], [1024, true], [900, false], [720, false]] as const) {
+    await resize(width, 700);
+    const rows = await page.evaluate(() => {
+      const PARTS = [".pl-title", ".pl-meta", ".pl-ask", ".pl-pipe", ".pl-agent", ".pl-time"];
+      return [...document.querySelectorAll(".pl-row")].map((element) => {
+        const outer = element.getBoundingClientRect();
+        const parts = PARTS.flatMap((selector) => [...element.querySelectorAll(selector)].map((part) => ({ selector, box: part.getBoundingClientRect() })))
+          .filter(({ box }) => box.width > 0 && box.height > 0)
+          .map(({ selector, box }) => ({ selector, left: box.left, right: box.right, top: box.top, bottom: box.bottom }));
+        const title = element.querySelector(".pl-title");
+        return { text: title?.textContent ?? "", titleWidth: title?.clientWidth ?? 0, left: outer.left, right: outer.right, parts };
+      });
+    });
+    expect(rows.length, `rows at ${width}`).toBeGreaterThan(0);
+    for (const item of rows) {
+      const where = `"${item.text}" at ${width}`;
+      for (const [index, a] of item.parts.entries()) {
+        expect(a.left >= item.left - 1 && a.right <= item.right + 1, `${a.selector} stays inside the row: ${where}`).toBe(true);
+        for (const b of item.parts.slice(index + 1)) {
+          const apart = a.right <= b.left + 0.5 || b.right <= a.left + 0.5 || a.bottom <= b.top + 0.5 || b.bottom <= a.top + 0.5;
+          expect(apart, `${a.selector} and ${b.selector} overlap: ${where}`).toBe(true);
+        }
+      }
+      if (readable) expect(item.titleWidth, `the title's width: ${where}`).toBeGreaterThanOrEqual(120);
+    }
+  }
 });
 
 flow("stops an item after its confirmation", async ({ page }) => {

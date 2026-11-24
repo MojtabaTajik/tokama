@@ -12,10 +12,10 @@
 // between them) the client gives up with `start_failed`. A started engine's output goes to
 // `engine.log` in the engine dir; if it exits before a connection (other than with code 3, "an
 // engine already runs"), the client gives up at once and names the exit code and the log.
-import { type ChildProcess, spawn } from "node:child_process";
-import { closeSync, fchmodSync, mkdirSync, openSync, readFileSync } from "node:fs";
+import { type ChildProcess, type StdioOptions, spawn } from "node:child_process";
+import { closeSync, fchmodSync, mkdirSync, openSync, readdirSync, readFileSync } from "node:fs";
 import { connect as connectSocket, type Socket } from "node:net";
-import { homedir } from "node:os";
+import { devNull, homedir } from "node:os";
 import {
   API_VERSION,
   checkEngineDir,
@@ -311,11 +311,18 @@ class Client implements EngineClient {
   private startEngine(start: EngineCommand): Result<void, ConnectError> {
     const { dir, logPath } = this.endpoint;
     let logFd: number;
+    let nullFd: number;
     try {
       mkdirSync(dir, { recursive: true, mode: 0o700 });
       const check = checkEngineDir(dir);
       if (!check.ok) return err({ code: "unsafe_dir", message: check.error.message });
       logFd = openSync(logPath, "a", 0o600);
+      try {
+        nullFd = openSync(devNull, "r");
+      } catch (error) {
+        closeSync(logFd);
+        throw error;
+      }
     } catch (error) {
       return err({ code: "start_failed", message: `cannot prepare ${logPath}: ${String(error)}` });
     }
@@ -324,9 +331,15 @@ class Client implements EngineClient {
       fchmodSync(logFd, 0o600);
       // Detached and unreferenced: the engine keeps running when this client exits. Its stdout and
       // stderr go to the log through the fd, which works for a detached child.
-      child = spawn(start.command, [...start.args], { detached: true, stdio: ["ignore", logFd, logFd], env: start.env ?? process.env });
+      // Every other descriptor this process has open is pointed at the null device: the engine would
+      // otherwise keep them. Electron on Linux leaves pipes and files open in its children, and a
+      // parent that waits for its pipes to close (Playwright, on `app.close()`) then waits for the
+      // detached engine to exit.
+      const stdio: StdioOptions = ["ignore", logFd, logFd, ...Array.from({ length: openFdCount() - 3 }, () => nullFd)];
+      child = spawn(start.command, [...start.args], { detached: true, stdio, env: start.env ?? process.env });
     } finally {
       closeSync(logFd);
+      closeSync(nullFd);
     }
     this.child = child;
     child.once("error", (error) => (this.startError = `cannot start the engine: ${error.message}`));
@@ -489,5 +502,14 @@ function parseJson(line: string): unknown {
     return JSON.parse(line);
   } catch {
     return undefined;
+  }
+}
+
+/** One more than the highest descriptor this process has open, at least 3. POSIX; 3 where `/dev/fd` is missing. */
+function openFdCount(): number {
+  try {
+    return Math.max(3, ...readdirSync("/dev/fd").map((name) => Number.parseInt(name, 10) + 1));
+  } catch {
+    return 3;
   }
 }

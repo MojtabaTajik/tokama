@@ -1,8 +1,10 @@
 // Client behavior against fake engines. The full client-engine tests live in apps/engine.
+import { spawnSync } from "node:child_process";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { API_VERSION, parseClientMessage, type CommandMessageInput, type QueryMessageInput } from "@tokama/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { connect } from "./index.js";
@@ -124,6 +126,24 @@ describe("@tokama/client", () => {
     expect(statSync(dir).mode & 0o777).toBe(0o700);
     expect(statSync(`${dir}/engine.log`).mode & 0o777).toBe(0o600);
     expect(readFileSync(`${dir}/engine.log`, "utf8")).toContain("engine broke");
+  });
+
+  // Bug #75: Electron on Linux leaves pipes open in its children; an engine that kept them held the
+  // pipes of Playwright, which then never saw the app close. A host process stands in for Electron.
+  it("starts the engine without the open descriptors of its parent", () => {
+    const dir = `${tempDir()}/run`;
+    const probe = join(tempDir(), "fds");
+    const engine = `const fs = require("fs"); fs.writeFileSync(process.env.PROBE, [3, 4].map((fd) => { try { const stat = fs.fstatSync(fd); return stat.isFIFO() || stat.isSocket() ? "pipe" : "other"; } catch { return "closed"; } }).join(" "));`;
+    const host = `const { connect } = await import(process.env.CLIENT);
+      await connect({ dir: process.env.DIR, start: { command: process.execPath, args: ["-e", ${JSON.stringify(engine)}], env: process.env }, startTimeoutMs: 10_000 });`;
+    // "pipe" entries past stderr give the host descriptors 3 and 4 that its children inherit unless told otherwise.
+    const ran = spawnSync(process.execPath, ["--input-type=module", "-e", host], {
+      env: { ...process.env, CLIENT: fileURLToPath(new URL("../dist/index.js", import.meta.url)), DIR: dir, PROBE: probe },
+      stdio: ["ignore", "inherit", "inherit", "pipe", "pipe"],
+      timeout: 20_000,
+    });
+    expect(ran.status).toBe(0);
+    expect(readFileSync(probe, "utf8")).toBe("other other");
   });
 
   it("reports a protocol error when the engine does not answer the hello", async () => {

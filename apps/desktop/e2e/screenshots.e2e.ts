@@ -3,7 +3,7 @@
 // fonts and anti-aliasing differ between systems.
 import { drawer, flow, row, segment, sidebarRow } from "./harness.js";
 
-flow("takes screenshots of the list, workflow board, drawer, New work and an empty state", async ({ page, screenshot }) => {
+flow("takes screenshots of the list, workflow board, drawer, New work and an empty state", async ({ page, resize, screenshot }) => {
   await row(page, "Fix rounding in invoice totals").waitFor();
   await screenshot("1-list");
 
@@ -17,6 +17,10 @@ flow("takes screenshots of the list, workflow board, drawer, New work and an emp
   await row(page, "Orders API returns 500 after deploy").click();
   await drawer(page).locator(".needs-you").waitFor();
   await screenshot("3-drawer");
+  // The macOS CI screen: the list is narrower there and drops more of its columns.
+  await resize(1024, 642);
+  await screenshot("3-drawer-1024");
+  await resize(1200, 800);
 
   await page.keyboard.press("Escape");
   await drawer(page).waitFor({ state: "detached" });
