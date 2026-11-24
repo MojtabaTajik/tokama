@@ -6,12 +6,18 @@
   "scripts": {
     "build": "tsc --build",
     "clean": "tsc --build --clean",
-    "typecheck": "tsc --build && pnpm --recursive exec tsc --project tsconfig.test.json",
+    "typecheck": "tsc --build && pnpm --recursive exec tsc --project tsconfig.test.json && tsc --project tooling/tsconfig.json",
+    "lint": "eslint .",
     "test": "vitest run --config tooling/vitest.config.ts"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
     "@types/node": "26.6.6",
+    "eslint": "10.15.0",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-boundaries": "7.4.4",
     "typescript": "6.0.3",
+    "typescript-eslint": "8.73.0",
     "vitest": "5.1.1"
   }
 }
