@@ -40,6 +40,11 @@ export interface RunRequest {
   readonly env?: Readonly<Record<string, string>>;
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
+  /**
+   * Written to the child's stdin, which is then closed. Use it for data that must stay off the argv
+   * (visible to every local user in `ps`), such as a secret. Without it, stdin is /dev/null.
+   */
+  readonly stdin?: string;
   readonly stdout?: OutputSink;
   readonly stderr?: OutputSink;
 }
@@ -152,7 +157,7 @@ export function createProcessRunner(options: RunnerOptions = {}): ProcessRunner 
           child = spawn(file, args, {
             cwd: request.cwd,
             env,
-            stdio: ["ignore", "pipe", "pipe"],
+            stdio: [request.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],
             detached: tree.detached,
             windowsHide: true,
           });
@@ -161,6 +166,12 @@ export function createProcessRunner(options: RunnerOptions = {}): ProcessRunner 
           closeFiles();
           resolve(spawnError(error as NodeJS.ErrnoException));
           return;
+        }
+        if (request.stdin !== undefined) {
+          // A child that exits without reading its input makes the write fail with EPIPE; its exit
+          // code still reports what happened.
+          child.stdin?.on("error", () => {});
+          child.stdin?.end(request.stdin);
         }
         flushers.push(pipeOutput(child.stdout, request.stdout, stdoutFd, fail));
         flushers.push(pipeOutput(child.stderr, request.stderr, stderrFd, fail));
