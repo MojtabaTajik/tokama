@@ -1,14 +1,15 @@
 // Turns the text of one template file into a TemplateRecord, or into a list of problems in plain
 // words, each with the line it is on. Problems with the file's shape (unknown fields, wrong words)
 // come first, all at once; the rules that need the whole template run once the shape is right.
+// Every value from the file goes into a message through `quote` or `clean`.
 import { isMap, LineCounter, parseDocument, type Document, type Node } from "yaml";
 import type { z } from "zod";
+import { posixSh, type SyntaxRefusalReason } from "../../kernel/command-policy/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import {
   TemplateRecordSchema,
   type AgentId,
   type ConnectionId,
-  type DataRule,
   type RepoId,
   type StepId,
   type TemplateId,
@@ -17,6 +18,7 @@ import {
   type TemplateStepDef,
 } from "../../kernel/schemas/index.js";
 import { DURATION, FIELD_WORDS, knownFields, TemplateFileSchema, type StepFile, type TemplateFile } from "./format.js";
+import { clean, quote } from "./quote.js";
 import { didYouMean } from "./suggest.js";
 
 export interface TemplateProblem {
@@ -43,9 +45,15 @@ export interface ValidateContext {
 }
 
 type Path = readonly PropertyKey[];
+type Report = (path: Path, message: string) => void;
 
-/** A one-line value ending in `.md` with no spaces names a file; anything else is the text itself. */
-export const isInstructionFile = (value: string): boolean => /^\S+\.md$/.test(value);
+/** A one-line value ending in `.md` (any case) with no spaces names a file; anything else is the text itself. */
+export const isInstructionFile = (value: string): boolean => /^\S+\.md$/i.test(value);
+const INSTRUCTION_FILE_CHARS = /^[A-Za-z0-9._/-]+$/;
+const MAX_INSTRUCTION_FILE_CHARS = 200;
+/** `{{ build.diff }}`: a reference to an earlier step's result, by step id. */
+const STEP_REFERENCE = /\{\{\s*([a-z0-9][a-z0-9-]*)\.[^}]*\}\}/g;
+const DEFAULT_RETRY_ATTEMPTS = 3;
 
 export async function validateTemplate(text: string, ctx: ValidateContext): Promise<Result<TemplateRecord, TemplateProblem[]>> {
   const lines = new LineCounter();
@@ -60,7 +68,7 @@ export async function validateTemplate(text: string, ctx: ValidateContext): Prom
   try {
     data = doc.toJS({ maxAliasCount: 50 });
   } catch (error) {
-    return err([{ line: 1, message: `The file cannot be read as a template: ${(error as Error).message}.` }]);
+    return err([{ line: 1, message: `The file cannot be read as a template: ${clean((error as Error).message)}.` }]);
   }
 
   const lineOf = (path: Path, key?: string) => findLine(doc, path, key, lineAt);
@@ -73,14 +81,14 @@ export async function validateTemplate(text: string, ctx: ValidateContext): Prom
   }
 
   const problems: TemplateProblem[] = [];
-  const report = (path: Path, message: string) => problems.push({ line: lineOf(path), message });
+  const report: Report = (path, message) => problems.push({ line: lineOf(path), message });
   const record = await buildRecord(parsed.data, ctx, report);
   problems.sort((a, b) => a.line - b.line);
   if (problems.length > 0) return err(problems);
   // The file schema's limits match the record's, so this only fails on a bug here; it keeps a
   // record that items could not store from ever being returned.
   const checked = TemplateRecordSchema.safeParse(record);
-  if (!checked.success) return err([{ line: 1, message: `The template cannot be stored: ${checked.error.issues[0]?.message ?? "invalid"}.` }]);
+  if (!checked.success) return err([{ line: 1, message: `The template cannot be stored: ${clean(checked.error.issues[0]?.message ?? "invalid")}.` }]);
   return ok(record);
 }
 
@@ -91,13 +99,14 @@ function yamlProblem(code: string, message: string, offset: number, text: string
   const source = text.split("\n")[line - 1] ?? "";
   const inlineBack = /^\s*(?:-\s+)?([a-z_]+):\s*back:\s*(\S+)/.exec(source);
   if (code === "BLOCK_AS_IMPLICIT_KEY" && inlineBack) {
-    const [, field, target] = inlineBack;
-    return { line, message: `Write "${field}: { back: ${target} }", or put "back: ${target}" on its own line under "${field}:".` };
+    const [, field = "", target = ""] = inlineBack;
+    const map = quote(`${field}: { back: ${target} }`);
+    return { line, message: `Write ${map}, or put ${quote(`back: ${target}`)} on its own line under ${quote(`${field}:`)}.` };
   }
   if (code === "DUPLICATE_KEY") return { line, message: "This field appears twice; keep one." };
   if (code === "MULTIPLE_DOCS") return { line, message: "A template file holds one template; remove the second document (after ---)." };
   const first = (message.split("\n")[0] ?? message).replace(/ at line \d+, column \d+:?$/, "");
-  return { line, message: `The file is not valid YAML: ${first}.` };
+  return { line, message: `The file is not valid YAML: ${clean(first)}.` };
 }
 
 // zod issue shapes, reduced to the fields used here.
@@ -108,10 +117,11 @@ function issueProblems(issue: Issue, prefix: Path, data: unknown, lineOf: (path:
   const value = valueAt(data, path);
   const subject = subjectOf(path, data);
   const field = fieldOf(path);
+  const name = quote(field);
 
   if (value === undefined && (issue.code === "invalid_type" || issue.code === "invalid_value")) {
     if (path.length === 1 && field === "format") return [{ line: 1, message: '"format" is missing: add format: 1 at the top of the file.' }];
-    return [{ line: lineOf(path.slice(0, -1)), message: prefixed(subject, `"${field}" is missing.`) }];
+    return [{ line: lineOf(path.slice(0, -1)), message: prefixed(subject, `${name} is missing.`) }];
   }
 
   switch (issue.code) {
@@ -119,7 +129,7 @@ function issueProblems(issue: Issue, prefix: Path, data: unknown, lineOf: (path:
       const known = knownFields(path);
       return issue.keys.map((key) => ({
         line: lineOf(path, key),
-        message: `${capitalize(ownerOf(path, subject))} has an unknown field "${key}".${didYouMean(key, known)}`,
+        message: `${capitalize(ownerOf(path, subject))} has an unknown field ${quote(key)}.${didYouMean(key, known)}`,
       }));
     }
     case "invalid_union": {
@@ -129,31 +139,32 @@ function issueProblems(issue: Issue, prefix: Path, data: unknown, lineOf: (path:
         (errors) => !errors.some((e) => e.path.length === 0 && (e.code === "invalid_type" || e.code === "invalid_value")),
       );
       if (fits) return fits.flatMap((inner) => issueProblems(inner, path, data, lineOf));
-      return [{ line: lineOf(path), message: prefixed(subject, `"${field}" ${wordsMessage(field, value)}`) }];
+      return [{ line: lineOf(path), message: prefixed(subject, `${name} ${wordsMessage(field, value)}`) }];
     }
     case "invalid_value":
-      return [{ line: lineOf(path), message: prefixed(subject, `"${field}" ${wordsMessage(field, value, issue.values.map(String))}`) }];
+      return [{ line: lineOf(path), message: prefixed(subject, `${name} ${wordsMessage(field, value, issue.values.map(String))}`) }];
     case "invalid_type":
-      return [{ line: lineOf(path), message: prefixed(subject, `"${field}" must be ${kindName(issue.expected)}.`) }];
+      return [{ line: lineOf(path), message: prefixed(subject, `${name} must be ${kindName(issue.expected)}.`) }];
     case "invalid_key": {
       const reason = issue.issues[0]?.message ?? "is not valid";
-      return [{ line: lineOf(path), message: prefixed(subject, `"${field}" is not a valid id: it ${reason}.`) }];
+      return [{ line: lineOf(path), message: prefixed(subject, `${name} is not a valid id: it ${reason}.`) }];
     }
     case "too_small":
     case "too_big":
-      return [{ line: lineOf(path), message: prefixed(subject, `"${field}" ${sizeMessage(issue)}.`) }];
+      return [{ line: lineOf(path), message: prefixed(subject, `${name} ${sizeMessage(issue)}.`) }];
     case "invalid_format":
     case "custom":
-      return [{ line: lineOf(path), message: prefixed(subject, `"${field}" ${issue.message}.`) }];
+      return [{ line: lineOf(path), message: prefixed(subject, `${name} ${issue.message}.`) }];
     default:
-      return [{ line: lineOf(path), message: prefixed(subject, `"${field}" is not valid.`) }];
+      return [{ line: lineOf(path), message: prefixed(subject, `${name} is not valid.`) }];
   }
 }
 
 function wordsMessage(field: string, value: unknown, values?: readonly string[]): string {
   const words = FIELD_WORDS[field] ?? values ?? [];
   const list = words.length > 1 ? `${words.slice(0, -1).join(", ")} or ${words.at(-1)}` : (words[0] ?? "");
-  const hint = typeof value === "string" ? didYouMean(value, words.filter((word) => !word.includes("<"))) : "";
+  // Only real words are suggested, not placeholders such as "back: <step id>".
+  const hint = typeof value === "string" ? didYouMean(value, words.filter((word) => !/[<\s]/.test(word))) : "";
   return `must be ${list}.${hint}`;
 }
 
@@ -176,16 +187,35 @@ function kindName(expected: string): string {
     number: "a whole number",
     boolean: "true or false",
   };
-  return names[expected] ?? expected;
+  return names[expected] ?? "of another kind";
+}
+
+const REFUSAL_WORDS: Record<SyntaxRefusalReason, string> = {
+  substitution: "command substitution ($(...) or backticks)",
+  "ansi-c-quote": "$'...' quoting",
+  redirect: "a redirect (>, <)",
+  background: "a background &",
+  subshell: "a subshell ( ... )",
+  newline: "a line break",
+  "unbalanced-quote": "an unclosed quote",
+};
+
+/** Why a check or setup command is not one simple command, parsed as the command policy parses it. */
+function commandProblem(command: string): string | undefined {
+  const split = posixSh.split(command);
+  if (!split.ok) return `cannot use ${REFUSAL_WORDS[split.error.reason]}`;
+  if (split.value.length !== 1) return "must be one command, with no &&, ||, ; or |";
+  if (split.value[0]!.words.length === 0) return "has no command words";
+  return undefined;
 }
 
 // ---- Rules that need the whole file and the agents
 
-async function buildRecord(file: TemplateFile, ctx: ValidateContext, report: (path: Path, message: string) => void): Promise<TemplateRecord> {
+async function buildRecord(file: TemplateFile, ctx: ValidateContext, report: Report): Promise<TemplateRecord> {
   const stepIds = file.steps.map((step) => step.id);
   const indexOf = new Map<string, number>();
   file.steps.forEach((step, i) => {
-    if (indexOf.has(step.id)) report(["steps", i, "id"], `Two steps have the id "${step.id}"; step ids must be different.`);
+    if (indexOf.has(step.id)) report(["steps", i, "id"], `Two steps have the id ${quote(step.id)}; step ids must be different.`);
     else indexOf.set(step.id, i);
   });
 
@@ -197,7 +227,18 @@ async function buildRecord(file: TemplateFile, ctx: ValidateContext, report: (pa
   if (typeof repos === "string" && !picksRepos) {
     report(["uses", "repos"], `"repos: ${repos}" gives access to the repos picked at Start, but start.needs asks for no repo. Add repo to start.needs, or name the repos.`);
   }
+  const picked = picksRepos ? (typeof repos === "string" ? repos : "read") : undefined;
+  const named = typeof repos === "object" ? Object.entries(repos).map(([repoId, access]) => ({ repoId: repoId as RepoId, access })) : [];
   if (new Set(file.finish).size !== file.finish.length) report(["finish"], `"finish" lists the same thing twice.`);
+  const changesRepo = file.finish.filter((finish) => finish === "commit" || finish === "pull-request");
+  if (changesRepo.length > 0 && picked !== "edit" && !named.some((repo) => repo.access === "edit")) {
+    report(["finish"], `"finish: ${changesRepo.join(", ")}" needs a repo with edit access, but uses.repos gives none.`);
+  }
+
+  if (file.setup !== undefined) {
+    const problem = commandProblem(file.setup);
+    if (problem) report(["setup"], `The setup command ${problem}.`);
+  }
 
   let budget: TemplateRecord["budget"];
   if (file.budget) {
@@ -207,11 +248,22 @@ async function buildRecord(file: TemplateFile, ctx: ValidateContext, report: (pa
     budget = { timeMinutes: total };
   }
 
-  const templateConnections = new Map(Object.entries(file.uses?.connections ?? {}));
+  const backTargets = new Set(
+    file.steps.flatMap((step) => [step.if_failed, step.if_changes_requested].flatMap((rule) => (typeof rule === "object" ? [rule.back] : []))),
+  );
+  const scope: StepScope = {
+    file,
+    ctx,
+    stepIds,
+    indexOf,
+    backTargets,
+    templateConnections: new Map(Object.entries(file.uses?.connections ?? {})),
+    templateCommands: file.uses?.commands ?? [],
+    report,
+  };
   const steps: TemplateStepDef[] = [];
-  for (const [i, step] of file.steps.entries()) {
-    steps.push(await buildStep(step, i, { file, ctx, stepIds, indexOf, templateConnections, report }));
-  }
+  for (const [i, step] of file.steps.entries()) steps.push(await buildStep(step, i, scope));
+  checkCloudData(file, steps, scope);
 
   const record: TemplateRecord = {
     schemaVersion: 1,
@@ -220,12 +272,9 @@ async function buildRecord(file: TemplateFile, ctx: ValidateContext, report: (pa
     source: ctx.source,
     name: file.name,
     uses: {
-      repos: {
-        ...(picksRepos ? { picked: typeof repos === "string" ? repos : "read" } : {}),
-        named: typeof repos === "object" ? Object.entries(repos).map(([repoId, access]) => ({ repoId: repoId as RepoId, access })) : [],
-      },
-      connections: [...templateConnections].map(([connectionId, access]) => ({ connectionId: connectionId as ConnectionId, access })),
-      commands: file.uses?.commands ?? [],
+      repos: { ...(picked ? { picked } : {}), named },
+      connections: [...scope.templateConnections].map(([connectionId, access]) => ({ connectionId: connectionId as ConnectionId, access })),
+      commands: [...scope.templateCommands],
     },
     start: { needs, askBeforeCloud: file.start?.ask_before_cloud ?? false, notify: file.start?.notify ?? false },
     steps,
@@ -243,29 +292,36 @@ interface StepScope {
   readonly ctx: ValidateContext;
   readonly stepIds: readonly string[];
   readonly indexOf: ReadonlyMap<string, number>;
+  readonly backTargets: ReadonlySet<string>;
   readonly templateConnections: ReadonlyMap<string, string>;
-  readonly report: (path: Path, message: string) => void;
+  readonly templateCommands: readonly string[];
+  readonly report: Report;
 }
 
+const isCloud = (scope: StepScope, step: StepFile) => scope.ctx.agents.get(step.agent)?.cloud ?? false;
+/** A cloud step that sends the repo and diff: what it sees leaves the machine with no one reading it first. */
+const sendsRepo = (scope: StepScope, step: StepFile) => isCloud(scope, step) && step.data === "repo-and-diff";
+
 async function buildStep(step: StepFile, i: number, scope: StepScope): Promise<TemplateStepDef> {
-  const { file, ctx, stepIds, indexOf, templateConnections, report } = scope;
+  const { ctx, stepIds, indexOf, templateConnections, templateCommands, report } = scope;
   const at = (...rest: PropertyKey[]): Path => ["steps", i, ...rest];
-  const name = `Step "${step.id}"`;
+  const name = `Step ${quote(step.id)}`;
 
   const agent = ctx.agents.get(step.agent);
   if (agent === undefined) {
     const known = [...ctx.agents.keys()];
-    const list = known.length > 0 && known.length <= 8 ? ` Agents set up: ${known.join(", ")}.` : "";
-    report(at("agent"), `${name} uses agent "${step.agent}", which is not set up.${didYouMean(step.agent, known) || list}`);
+    const list = known.length > 0 && known.length <= 8 ? ` Agents set up: ${known.map(clean).join(", ")}.` : "";
+    report(at("agent"), `${name} uses agent ${quote(step.agent)}, which is not set up.${didYouMean(step.agent, known) || list}`);
   }
-  const cloud = agent?.cloud ?? false;
+  const cloud = isCloud(scope, step);
 
   // A back target must be a step of this template, and this step or an earlier one: a loop
   // only ever goes back, so each pass re-runs steps whose max_attempts bound it.
   const checkBack = (field: string, target: string) => {
     const index = indexOf.get(target);
-    if (index === undefined) report(at(field, "back"), `${name}: "${field}" goes back to "${target}", which is not a step in this template.${didYouMean(target, stepIds)}`);
-    else if (index > i) report(at(field, "back"), `${name}: "${field}" goes back to "${target}", which comes later; back can only go to this step or an earlier one.`);
+    const goes = `${name}: "${field}" goes back to ${quote(target)}`;
+    if (index === undefined) report(at(field, "back"), `${goes}, which is not a step in this template.${didYouMean(target, stepIds)}`);
+    else if (index > i) report(at(field, "back"), `${goes}, which comes later; back can only go to this step or an earlier one.`);
   };
   if (typeof step.if_failed === "object") checkBack("if_failed", step.if_failed.back);
   if (typeof step.if_changes_requested === "object") checkBack("if_changes_requested", step.if_changes_requested.back);
@@ -274,61 +330,61 @@ async function buildStep(step: StepFile, i: number, scope: StepScope): Promise<T
   if (step.if_changes_requested !== undefined && doneWhen !== "reviewer approves") {
     report(at("if_changes_requested"), `${name}: "if_changes_requested" applies only with done_when: reviewer approves.`);
   }
-  if (step.checks !== undefined && step.checks.length > 0 && doneWhen !== "checks pass") {
-    report(at("checks"), `${name} lists checks, but checks run only with done_when: checks pass.`);
-  }
-  if (doneWhen === "reviewer approves") {
-    const target = typeof step.if_changes_requested === "object" ? indexOf.get(step.if_changes_requested.back) : undefined;
-    const reviewed = target !== undefined && target < i ? file.steps[target] : file.steps[i - 1];
-    if (reviewed === undefined) report(at("done_when"), `${name} waits for a reviewer, but there is no earlier step for it to review.`);
-    else if (reviewed.agent === step.agent) {
-      report(at("agent"), `${name} reviews step "${reviewed.id}", so it needs a different agent; both use "${step.agent}".`);
-    }
-  }
+  if (doneWhen === "reviewer approves") checkReviewer(step, i, scope, name);
 
-  const data: DataRule = step.data ?? "none";
+  const checks = buildChecks(step, doneWhen, name, at, report);
+
   if (cloud && step.data === undefined) {
-    report(at("agent"), `${name} runs on "${step.agent}", a cloud agent, so it must say what may leave this machine: add data: summary-after-approval or data: repo-and-diff.`);
+    report(at("agent"), `${name} runs on ${quote(step.agent)}, a cloud agent, so it must say what may leave this machine: add data: summary-after-approval or data: repo-and-diff.`);
   } else if (cloud && step.data === "none") {
-    report(at("data"), `${name} has data: none, but "${step.agent}" is a cloud agent and would get nothing. Use summary-after-approval or repo-and-diff, or a local agent.`);
+    report(at("data"), `${name} has data: none, but ${quote(step.agent)} is a cloud agent and would get nothing. Use summary-after-approval or repo-and-diff, or a local agent.`);
   }
 
   const stepConnections = Object.entries(step.uses?.connections ?? {});
   if (cloud && stepConnections.length > 0) {
-    report(at("uses", "connections"), `${name} runs on "${step.agent}", a cloud agent, and cloud steps cannot use connections. Remove them or use a local agent.`);
+    report(at("uses", "connections"), `${name} runs on ${quote(step.agent)}, a cloud agent, and cloud steps cannot use connections. Remove them or use a local agent.`);
   }
   for (const [connectionId] of stepConnections) {
     if (!templateConnections.has(connectionId)) {
       report(
         at("uses", "connections", connectionId),
-        `${name} uses connection "${connectionId}", which the template does not list in uses.connections.${didYouMean(connectionId, templateConnections.keys())}`,
+        `${name} uses connection ${quote(connectionId)}, which the template does not list in uses.connections.${didYouMean(connectionId, templateConnections.keys())}`,
       );
+    }
+  }
+  for (const [j, command] of (step.uses?.commands ?? []).entries()) {
+    if (!templateCommands.includes(command)) {
+      report(at("uses", "commands", j), `${name} uses command ${quote(command)}, which the template does not list in uses.commands.${didYouMean(command, templateCommands)}`);
     }
   }
 
   for (const [j, seen] of (step.sees ?? []).entries()) {
     const index = indexOf.get(seen);
-    if (index === undefined) report(at("sees", j), `${name} sees "${seen}", which is not a step in this template.${didYouMean(seen, stepIds)}`);
-    else if (index >= i) report(at("sees", j), `${name} sees "${seen}", but a step can only see the results of earlier steps.`);
+    if (index === undefined) report(at("sees", j), `${name} sees ${quote(seen)}, which is not a step in this template.${didYouMean(seen, stepIds)}`);
+    else if (index >= i) report(at("sees", j), `${name} sees ${quote(seen)}, but a step can only see the results of earlier steps.`);
   }
 
   const ifFailed: TemplateStepDef["ifFailed"] =
     typeof step.if_failed === "object" ? { action: "back", stepId: step.if_failed.back } : { action: step.if_failed ?? "ask" };
+  // A step that is retried or sent back to must be able to run more than once.
+  const loops = ifFailed.action === "retry" || scope.backTargets.has(step.id);
   const def: TemplateStepDef = {
     id: step.id,
     name: step.name,
     agentId: step.agent as AgentId,
     instructions: await instructions(step.instructions, name, at("instructions"), ctx, report),
     doneWhen,
-    checks: step.checks ?? [],
     ifFailed,
-    maxAttempts: step.max_attempts ?? (ifFailed.action === "retry" ? 3 : 1),
-    data,
+    maxAttempts: step.max_attempts ?? (loops ? DEFAULT_RETRY_ATTEMPTS : 1),
+    data: step.data ?? "none",
     // Cloud steps see only what they declare; local steps see every earlier step by default.
     sees: step.sees ?? (cloud ? [] : (stepIds.slice(0, i) as StepId[])),
     connections: stepConnections.map(([connectionId, access]) => ({ connectionId: connectionId as ConnectionId, access })),
+    // A step that sends the repo out gets only the commands it lists itself.
+    commands: step.uses?.commands ?? (sendsRepo(scope, step) ? [] : [...templateCommands]),
   };
-  if (step.if_changes_requested !== undefined) {
+  if (checks !== undefined) def.checks = checks;
+  if (doneWhen === "reviewer approves") {
     def.ifChangesRequested =
       typeof step.if_changes_requested === "object" ? { action: "back", stepId: step.if_changes_requested.back } : { action: "ask" };
   }
@@ -337,33 +393,112 @@ async function buildStep(step: StepFile, i: number, scope: StepScope): Promise<T
   return def;
 }
 
-async function instructions(
-  value: string,
-  name: string,
-  path: Path,
-  ctx: ValidateContext,
-  report: (path: Path, message: string) => void,
-): Promise<TemplateStepDef["instructions"]> {
-  if (!isInstructionFile(value)) return { text: value };
-  if (value.length > 200) {
-    report(path, `${name}: the instructions file name "${value.slice(0, 40)}..." is longer than 200 characters.`);
+/**
+ * A reviewer must be independent of the work it reviews: its agent may run none of the steps in
+ * its range. The range starts at the `if_changes_requested` back target, or else after the
+ * previous reviewer (or at the first step), and ends just before the reviewer.
+ */
+function checkReviewer(step: StepFile, i: number, scope: StepScope, name: string): void {
+  const { file, indexOf, report } = scope;
+  const target = typeof step.if_changes_requested === "object" ? indexOf.get(step.if_changes_requested.back) : undefined;
+  let start = 0;
+  if (target !== undefined && target < i) start = target;
+  else {
+    for (let j = i - 1; j >= 0; j--) {
+      if ((file.steps[j]!.done_when ?? "agent finishes") === "reviewer approves") {
+        start = j + 1;
+        break;
+      }
+    }
+  }
+  const range = file.steps.slice(start, i);
+  if (range.length === 0) {
+    report(["steps", i, "done_when"], `${name} waits for a reviewer, but there is no earlier step for it to review.`);
+    return;
+  }
+  const own = range.find((reviewed) => reviewed.agent === step.agent);
+  if (own) report(["steps", i, "agent"], `${name} reviews step ${quote(own.id)}, so it needs a different agent; both use ${quote(step.agent)}.`);
+}
+
+function buildChecks(step: StepFile, doneWhen: string, name: string, at: (...rest: PropertyKey[]) => Path, report: Report): TemplateStepDef["checks"] {
+  const listed = step.checks === "from-repo" || (step.checks !== undefined && step.checks.length > 0);
+  if (doneWhen !== "checks pass") {
+    if (listed) report(at("checks"), `${name} lists checks, but checks run only with done_when: checks pass.`);
+    return undefined;
+  }
+  if (step.checks === "from-repo") return { from: "repo" };
+  if (step.checks === undefined || step.checks.length === 0) {
+    report(at("done_when"), `${name} waits for checks to pass but lists none: add checks: from-repo or a list of commands.`);
+    return undefined;
+  }
+  for (const [j, command] of step.checks.entries()) {
+    const problem = commandProblem(command);
+    if (problem) report(at("checks", j), `${name}: the check ${quote(command)} ${problem}.`);
+  }
+  return { commands: step.checks };
+}
+
+/**
+ * A cloud step with data: repo-and-diff sends what it sees with no one reading it first, so it
+ * may not see results that came from connections (directly or through other steps), and every
+ * `{{ step.x }}` its instructions use must be in its `sees`. Summary steps are exempt: the
+ * engineer reads the summary before it is sent.
+ */
+function checkCloudData(file: TemplateFile, steps: readonly TemplateStepDef[], scope: StepScope): void {
+  const fromConnections = new Set<string>();
+  for (const step of steps) {
+    if (step.connections.length > 0 || step.sees.some((seen) => fromConnections.has(seen))) fromConnections.add(step.id);
+  }
+  for (const [i, step] of steps.entries()) {
+    if (!sendsRepo(scope, file.steps[i]!)) continue;
+    const name = `Step ${quote(step.id)}`;
+    for (const [j, seen] of step.sees.entries()) {
+      if (fromConnections.has(seen)) {
+        scope.report(
+          ["steps", i, "sees", j],
+          `${name} sends the repo to a cloud agent with no summary to approve, so it cannot see ${quote(seen)}, which has results from connections. Use data: summary-after-approval.`,
+        );
+      }
+    }
+    const referenced = new Set([...step.instructions.text.matchAll(STEP_REFERENCE)].map((match) => match[1]!));
+    for (const id of referenced) {
+      if (scope.indexOf.has(id) && !step.sees.includes(id as StepId)) {
+        scope.report(["steps", i, "instructions"], `${name} uses {{ ${clean(id)}... }} in its instructions, but does not list ${quote(id)} in sees.`);
+      }
+    }
+  }
+}
+
+async function instructions(value: string, name: string, path: Path, ctx: ValidateContext, report: Report): Promise<TemplateStepDef["instructions"]> {
+  if (!isInstructionFile(value)) {
+    if (/^\S+$/.test(value) && (value.includes("/") || /\.[A-Za-z0-9]{1,8}$/.test(value))) {
+      report(path, `${name}: ${quote(value)} looks like a file name, but instruction files must end in .md. Inline instructions are a sentence.`);
+    }
     return { text: value };
   }
-  const segments = value.split(/[\\/]/);
-  if (value.startsWith("/") || /^[a-zA-Z]:/.test(value) || segments.includes("..")) {
-    report(path, `${name}: the instructions file "${value}" must be a path inside the templates folder, without "..".`);
-    return { file: value, text: value };
+  const file = { file: value, text: value };
+  if (!INSTRUCTION_FILE_CHARS.test(value)) {
+    report(path, `${name}: the instructions file name ${quote(value)} may use only letters, digits, ".", "_", "/" and "-".`);
+    return file;
+  }
+  if (value.length > MAX_INSTRUCTION_FILE_CHARS) {
+    report(path, `${name}: the instructions file name ${quote(value)} is longer than ${MAX_INSTRUCTION_FILE_CHARS} characters.`);
+    return file;
+  }
+  if (value.startsWith("/") || value.split("/").includes("..")) {
+    report(path, `${name}: the instructions file ${quote(value)} must be a path inside the templates folder, without "..".`);
+    return file;
   }
   if (ctx.readInstructions === undefined) {
-    report(path, `${name}: built-in templates keep their instructions inline, not in "${value}".`);
-    return { file: value, text: value };
+    report(path, `${name}: built-in templates keep their instructions inline, not in ${quote(value)}.`);
+    return file;
   }
   const read = await ctx.readInstructions(value);
   if (!read.ok) {
-    report(path, `${name}: the instructions file "${value}" ${read.error}.`);
-    return { file: value, text: value };
+    report(path, `${name}: the instructions file ${quote(value)} ${read.error}.`);
+    return file;
   }
-  if (read.value.trim() === "") report(path, `${name}: the instructions file "${value}" is empty.`);
+  if (read.value.trim() === "") report(path, `${name}: the instructions file ${quote(value)} is empty.`);
   return { file: value, text: read.value };
 }
 
@@ -397,7 +532,7 @@ function valueAt(data: unknown, path: Path): unknown {
 function subjectOf(path: Path, data: unknown): string | undefined {
   if (path[0] !== "steps" || typeof path[1] !== "number") return undefined;
   const id = valueAt(data, ["steps", path[1], "id"]);
-  return typeof id === "string" && id !== "" ? `step "${id}"` : `step ${path[1] + 1}`;
+  return typeof id === "string" && id !== "" ? `step ${quote(id)}` : `step ${path[1] + 1}`;
 }
 
 /** The field a problem is about: the last name in the path; for a list entry, the list's name. */
@@ -410,8 +545,8 @@ function fieldOf(path: Path): string {
 /** Whose field an unknown field is: the template, a step, or a named field such as "uses". */
 function ownerOf(path: Path, subject: string | undefined): string {
   if (path.length === 0) return "the template";
-  if (subject === undefined) return `"${fieldOf(path)}"`;
-  return path.length === 2 ? subject : `${subject}: "${fieldOf(path)}"`;
+  if (subject === undefined) return quote(fieldOf(path));
+  return path.length === 2 ? subject : `${subject}: ${quote(fieldOf(path))}`;
 }
 
 const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);

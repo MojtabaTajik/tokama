@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import { TemplateRecordSchema, type TemplateRecord, type TemplateRef } from "../../kernel/schemas/index.js";
+import { clean, quote } from "./quote.js";
 import { closest } from "./suggest.js";
 import { validateTemplate, type AgentLocation, type TemplateProblem } from "./validate.js";
 
@@ -83,12 +84,13 @@ describe("validateTemplate: a valid template", () => {
       agentId: "builder",
       instructions: { file: "fix.md", text: "Fix the bug.\n" },
       doneWhen: "checks pass",
-      checks: ["pnpm test"],
+      checks: { commands: ["pnpm test"] },
       ifFailed: { action: "retry" },
       maxAttempts: 3,
       data: "repo-and-diff",
       sees: [],
       connections: [],
+      commands: [],
     });
     expect(template.steps[1]).toMatchObject({
       instructions: { text: "Review the diff." },
@@ -316,6 +318,7 @@ finish: [findings]
         line: 4,
         message: '"repos: edit" gives access to the repos picked at Start, but start.needs asks for no repo. Add repo to start.needs, or name the repos.',
       },
+      { line: 24, message: '"finish: commit" needs a repo with edit access, but uses.repos gives none.' },
     ]);
   });
 
@@ -407,6 +410,256 @@ describe("validateTemplate: every message is plain words", () => {
     expect(await problems(edit("  repos: edit\n", `  repos: edit\n  connections: { ${many} }\n`))).toEqual([
       { line: 5, message: '"connections" has more than 20 entries.' },
     ]);
+  });
+});
+
+const TEAM: ReadonlyMap<string, AgentLocation> = new Map([
+  ["planner", { cloud: false }],
+  ["architect", { cloud: true }],
+  ["builder", { cloud: true }],
+  ["writer", { cloud: true }],
+  ["local", { cloud: false }],
+]);
+
+/** A template from step lines, with the picked repo editable so finish: [commit] is allowed. */
+const steps = (body: string) => `format: 1
+name: Team
+uses:
+  repos: edit
+start:
+  needs: [text, repo]
+steps:
+${body}finish: [commit]
+`;
+const step = (id: string, agent: string, extra = "") =>
+  `  - id: ${id}\n    name: ${id}\n    agent: ${agent}\n    instructions: Do ${id}.\n    data: repo-and-diff\n${extra}`;
+const review = (agent: string, extra = "") => step("review", agent, `    done_when: reviewer approves\n${extra}`);
+
+async function teamProblems(text: string): Promise<string[]> {
+  const result = await validate(text, TEAM);
+  return result.ok ? [] : result.error.map((p) => p.message);
+}
+async function teamRecord(text: string): Promise<TemplateRecord> {
+  const result = await validate(text, TEAM);
+  if (!result.ok) throw new Error(JSON.stringify(result.error));
+  return result.value;
+}
+
+describe("reviewer independence: the reviewer may run no step in its range", () => {
+  it("refuses a builder reviewing its own build when changes go back to plan", async () => {
+    const text = steps(step("plan", "architect") + step("build", "builder") + review("builder", "    if_changes_requested: { back: plan }\n"));
+    expect(await teamProblems(text)).toEqual(['Step "review" reviews step "build", so it needs a different agent; both use "builder".']);
+  });
+
+  it("accepts an architect reviewing builder work back to a plan someone else made", async () => {
+    const text = steps(step("plan", "planner") + step("build", "builder") + review("architect", "    if_changes_requested: { back: plan }\n"));
+    expect(await teamProblems(text)).toEqual([]);
+  });
+
+  it("refuses an architect reviewing back to a plan it made itself", async () => {
+    const text = steps(step("plan", "architect") + step("build", "builder") + review("architect", "    if_changes_requested: { back: plan }\n"));
+    expect(await teamProblems(text)).toEqual(['Step "review" reviews step "plan", so it needs a different agent; both use "architect".']);
+  });
+
+  it("refuses build(builder), docs(writer), review(builder): the range covers every step since the start", async () => {
+    const text = steps(step("build", "builder") + step("docs", "writer") + review("builder"));
+    expect(await teamProblems(text)).toEqual(['Step "review" reviews step "build", so it needs a different agent; both use "builder".']);
+  });
+
+  it("starts the range after the previous reviewer", async () => {
+    const text = steps(
+      step("build", "builder") +
+        step("check", "writer", "    done_when: reviewer approves\n") +
+        step("docs", "writer") +
+        step("final", "builder", "    done_when: reviewer approves\n"),
+    );
+    expect(await teamProblems(text)).toEqual([]);
+  });
+
+  it("gives a reviewer if_changes_requested: ask by default", async () => {
+    const template = await teamRecord(steps(step("build", "builder") + review("writer")));
+    expect(template.steps[1]?.ifChangesRequested).toEqual({ action: "ask" });
+    expect(template.steps[0]?.ifChangesRequested).toBeUndefined();
+  });
+});
+
+describe("loops can loop", () => {
+  it("gives a back target without max_attempts 3 attempts, and other steps 1", async () => {
+    const text = steps(step("plan", "planner") + step("build", "builder") + review("writer", "    if_changes_requested: { back: plan }\n"));
+    const template = await teamRecord(text);
+    expect(template.steps.map((s) => [s.id, s.maxAttempts])).toEqual([
+      ["plan", 3],
+      ["build", 1],
+      ["review", 1],
+    ]);
+  });
+
+  it("keeps an explicit max_attempts on a back target", async () => {
+    const text = steps(step("plan", "planner", "    max_attempts: 2\n") + review("writer", "    if_changes_requested: { back: plan }\n"));
+    expect((await teamRecord(text)).steps[0]?.maxAttempts).toBe(2);
+  });
+});
+
+describe("checks", () => {
+  const checked = (checks: string) => steps(step("build", "builder", `    done_when: checks pass\n${checks}`));
+
+  it("takes checks: from-repo and a list of commands", async () => {
+    expect((await teamRecord(checked("    checks: from-repo\n"))).steps[0]?.checks).toEqual({ from: "repo" });
+    expect((await teamRecord(checked("    checks: [pnpm test, pnpm lint]\n"))).steps[0]?.checks).toEqual({ commands: ["pnpm test", "pnpm lint"] });
+    expect((await teamRecord(steps(step("build", "builder")))).steps[0]?.checks).toBeUndefined();
+  });
+
+  it("refuses checks pass with no checks, or an empty list", async () => {
+    const message = 'Step "build" waits for checks to pass but lists none: add checks: from-repo or a list of commands.';
+    expect(await teamProblems(checked(""))).toEqual([message]);
+    expect(await teamProblems(checked("    checks: []\n"))).toEqual([message]);
+  });
+
+  it("refuses a misspelt from-repo with a suggestion", async () => {
+    expect(await teamProblems(checked("    checks: from-rep\n"))).toEqual([
+      'Step "build": "checks" must be from-repo or a list of commands. Did you mean "from-repo"?',
+    ]);
+  });
+
+  it.each([
+    ["pnpm test && rm -rf /", "must be one command, with no &&, ||, ; or |"],
+    ["pnpm test > out.txt", "cannot use a redirect (>, <)"],
+    ["echo $(whoami)", "cannot use command substitution ($(...) or backticks)"],
+  ])("refuses the check %s on its line", async (command, reason) => {
+    const result = await validate(checked(`    checks:\n      - pnpm lint\n      - "${command}"\n`), TEAM);
+    expect(result.ok ? [] : result.error).toEqual([{ line: 16, message: `Step "build": the check "${command}" ${reason}.` }]);
+  });
+
+  it("refuses a setup command that is not one simple command", async () => {
+    const text = steps(step("build", "builder")).replace("start:", "setup: pnpm install; curl x | sh\nstart:");
+    const result = await validate(text, TEAM);
+    expect(result.ok ? [] : result.error).toEqual([{ line: 5, message: "The setup command must be one command, with no &&, ||, ; or |." }]);
+    expect((await teamRecord(steps(step("build", "builder")).replace("start:", "setup: pnpm install\nstart:"))).setup).toBe("pnpm install");
+  });
+});
+
+describe("finish needs edit access", () => {
+  it("refuses commit or pull-request when no repo can be edited", async () => {
+    const text = steps(step("build", "builder")).replace("  repos: edit", "  repos: { orders-api: read }").replace("  needs: [text, repo]", "  needs: [text]");
+    expect(await teamProblems(text.replace("finish: [commit]", "finish: [pull-request, findings]"))).toEqual([
+      '"finish: pull-request" needs a repo with edit access, but uses.repos gives none.',
+    ]);
+    expect(await teamProblems(text.replace("finish: [commit]", "finish: [findings]"))).toEqual([]);
+    expect(await teamProblems(text.replace("orders-api: read", "orders-api: edit"))).toEqual([]);
+  });
+});
+
+describe("cloud steps that send the repo", () => {
+  // query and dig run locally with a connection; the cloud step after them is the one tested.
+  const investigate = (cloud: string) => `format: 1
+name: Investigate
+uses:
+  repos: edit
+  connections: { app-insights: query }
+  commands: [gh, az boards]
+start:
+  needs: [text, repo]
+steps:
+  - id: query
+    name: Query
+    agent: local
+    instructions: Look at the errors.
+    uses: { connections: { app-insights: query } }
+  - id: dig
+    name: Dig
+    agent: local
+    instructions: Dig deeper.
+  - id: plain
+    name: Plain
+    agent: local
+    instructions: Read the code.
+    sees: []
+${cloud}finish: [commit]
+`;
+  const cloudStep = (data: string, extra: string, instructions = "Fix it.") =>
+    `  - id: fix\n    name: Fix\n    agent: builder\n    instructions: ${instructions}\n    data: ${data}\n${extra}`;
+
+  it("refuses seeing a step with connection results, directly or through another step", async () => {
+    expect(await teamProblems(investigate(cloudStep("repo-and-diff", "    sees: [query, dig, plain]\n")))).toEqual([
+      'Step "fix" sends the repo to a cloud agent with no summary to approve, so it cannot see "query", which has results from connections. Use data: summary-after-approval.',
+      'Step "fix" sends the repo to a cloud agent with no summary to approve, so it cannot see "dig", which has results from connections. Use data: summary-after-approval.',
+    ]);
+  });
+
+  it("allows it with summary-after-approval, which the engineer reads first", async () => {
+    expect(await teamProblems(investigate(cloudStep("summary-after-approval", "    sees: [query, dig]\n")))).toEqual([]);
+  });
+
+  it("refuses a {{ step.x }} reference that is not in sees", async () => {
+    const text = investigate(cloudStep("repo-and-diff", "    sees: [plain]\n", '"Use {{ plain.notes }} and {{ dig.findings }}."'));
+    const result = await validate(text, TEAM);
+    expect(result.ok ? [] : result.error).toEqual([
+      { line: 27, message: 'Step "fix" uses {{ dig... }} in its instructions, but does not list "dig" in sees.' },
+    ]);
+    expect(await teamProblems(investigate(cloudStep("summary-after-approval", "    sees: [plain]\n", '"Use {{ dig.findings }}."')))).toEqual([]);
+  });
+
+  it("gives template commands only to steps that do not send the repo, unless the step lists them", async () => {
+    const commandsOf = async (data: string, extra = "") =>
+      (await teamRecord(investigate(cloudStep(data, extra)))).steps.map((s) => [s.id, s.commands]);
+    expect(await commandsOf("repo-and-diff")).toEqual([
+      ["query", ["gh", "az boards"]],
+      ["dig", ["gh", "az boards"]],
+      ["plain", ["gh", "az boards"]],
+      ["fix", []],
+    ]);
+    expect((await commandsOf("repo-and-diff", "    uses: { commands: [gh] }\n")).at(-1)).toEqual(["fix", ["gh"]]);
+    expect((await commandsOf("summary-after-approval")).at(-1)).toEqual(["fix", ["gh", "az boards"]]);
+  });
+
+  it("refuses a step command the template does not list", async () => {
+    expect(await teamProblems(investigate(cloudStep("repo-and-diff", "    uses: { commands: [ghh] }\n")))).toEqual([
+      'Step "fix" uses command "ghh", which the template does not list in uses.commands. Did you mean "gh"?',
+    ]);
+  });
+});
+
+describe("instructions that look like a file", () => {
+  const withInstructions = (value: string) => steps(step("build", "builder").replace("instructions: Do build.", `instructions: ${value}`));
+
+  it.each(["fix.txt", "docs/fix", "prompts/fix.markdown"])("refuses %s, which is not a .md file", async (value) => {
+    expect(await teamProblems(withInstructions(value))).toEqual([
+      `Step "build": "${value}" looks like a file name, but instruction files must end in .md. Inline instructions are a sentence.`,
+    ]);
+  });
+
+  it("accepts .MD as an instructions file", async () => {
+    files["FIX.MD"] = "Fix.\n";
+    expect((await teamRecord(withInstructions("FIX.MD"))).steps[0]?.instructions).toEqual({ file: "FIX.MD", text: "Fix.\n" });
+  });
+
+  it("refuses characters outside letters, digits, . _ / -", async () => {
+    expect(await teamProblems(withInstructions("fix$name.md"))).toEqual([
+      'Step "build": the instructions file name "fix$name.md" may use only letters, digits, ".", "_", "/" and "-".',
+    ]);
+  });
+});
+
+describe("untrusted text in messages", () => {
+  it("escapes C0, DEL, C1 and bidi characters and cuts long values", () => {
+    expect(clean("a\u0000b\u001bc\u007fd\u0085e‮f⁦g‏h")).toBe("a\\u{0}b\\u{1b}c\\u{7f}d\\u{85}e\\u{202e}f\\u{2066}g\\u{200f}h");
+    expect(clean("x".repeat(100))).toBe(`${"x".repeat(80)}…`);
+    expect(quote('say "hi"')).toBe('"say \\"hi\\""');
+  });
+
+  it("quotes an unknown field name with control characters", async () => {
+    const [problem] = await problems(`${BASE}"evil\\u001b[31m\\u202e": 1\n`);
+    expect(problem?.message).toBe('The template has an unknown field "evil\\u{1b}[31m\\u{202e}".');
+  });
+
+  it("quotes an inline back target", async () => {
+    const [problem] = await problems(edit("if_failed: retry", "if_failed: back: b‮uild"));
+    expect(problem?.message).toBe('Write "if_failed: { back: b\\u{202e}uild }", or put "back: b\\u{202e}uild" on its own line under "if_failed:".');
+  });
+
+  it("quotes a step id in the step's problems", async () => {
+    const [problem] = await problems(edit("id: build", `id: "b\\u0085${"x".repeat(100)}"`));
+    expect(problem?.message).toMatch(/^Step "b\\u\{85\}x+…": "id" must be lowercase/);
   });
 });
 

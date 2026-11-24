@@ -16,7 +16,7 @@ steps:
     agent: builder
     instructions: ${instructions}
     data: repo-and-diff
-finish: [commit]
+finish: [findings]
 `;
 
 let root: string;
@@ -94,8 +94,8 @@ describe("loadTemplates", () => {
     expect(loaded(loads).map((t) => t.ref)).toContain("orders-api/good");
   });
 
-  it("ignores files that are not .yaml, and a repo without a templates folder", async () => {
-    const orders = repo("orders-api", { "notes.md": "x", "old.yml": "x" });
+  it("ignores files that are not .yaml, folders, and a repo without a templates folder", async () => {
+    const orders = repo("orders-api", { "notes.md": "x", "sub/inner.yaml": template("Nested") });
     const bare = { id: "billing", path: join(root, "billing") };
     mkdirSync(bare.path);
     expect(await loadTemplates({ repos: [orders, bare], agents: AGENTS })).toHaveLength(BUILTIN_TEMPLATES.size);
@@ -139,11 +139,24 @@ describe("loadTemplates", () => {
       expect(failure && !failure.ok && failure.problems[0]?.message).toMatch(/^The template is too big/);
     });
 
-    it("refuses a template that is a folder", async () => {
-      const orders = repo("orders-api");
-      mkdirSync(join(templatesDir(orders.path), "folder.yaml"));
+    it("reports a .yml file and asks for .yaml", async () => {
+      const orders = repo("orders-api", { "old.yml": template("Old") });
+      expect(failures(await loadTemplates({ repos: [orders], agents: AGENTS }))).toEqual([
+        {
+          ok: false,
+          origin: "orders-api",
+          file: ".tokama/templates/old.yml",
+          problems: [{ line: 1, message: 'The file "old.yml" ends in .yml; Tokama reads only .yaml templates, so rename it to "old.yaml".' }],
+        },
+      ]);
+    });
+
+    it("quotes an unsafe file name instead of printing its control characters", async () => {
+      const orders = repo("orders-api", { "bad\u001b[2Jname\u202e.yaml": template("A") });
       const [failure] = failures(await loadTemplates({ repos: [orders], agents: AGENTS }));
-      expect(failure && !failure.ok && failure.problems[0]?.message).toBe("The template is not a regular file.");
+      const message = failure && !failure.ok ? (failure.problems[0]?.message ?? "") : "";
+      expect(message).toContain('"bad\\u{1b}[2Jname\\u{202e}.yaml"');
+      expect(message.includes("\u001b") || message.includes("\u202e")).toBe(false);
     });
 
     it("refuses a symlinked instructions file", async () => {

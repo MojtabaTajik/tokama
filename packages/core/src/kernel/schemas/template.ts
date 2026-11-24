@@ -38,8 +38,11 @@ export const TemplateStepDefSchema = z.strictObject({
     text: z.string().min(1).max(65_536),
   }),
   doneWhen: DoneWhenSchema,
-  /** Commands Tokama runs itself after the agent; empty when the step lists none. */
-  checks: z.array(z.string().min(1).max(500)).max(20),
+  /**
+   * Only on a `checks pass` step: the checks Tokama runs itself after the agent, either the ones
+   * the repo's config lists or the template's own commands.
+   */
+  checks: z.union([z.strictObject({ from: z.literal("repo") }), z.strictObject({ commands: z.array(z.string().min(1).max(500)).min(1).max(20) })]).optional(),
   ifFailed: IfFailedSchema,
   /** Only on a `reviewer approves` step. */
   ifChangesRequested: IfChangesRequestedSchema.optional(),
@@ -50,6 +53,8 @@ export const TemplateStepDefSchema = z.strictObject({
   sees: z.array(StepIdSchema).max(20),
   /** The template connections this step may use. */
   connections: z.array(ConnectionUseSchema).max(20),
+  /** The template commands this step's agent may run. */
+  commands: z.array(z.string().min(1).max(200)).max(50),
   icon: IconNameSchema.optional(),
   color: TagColorSchema.optional(),
 });

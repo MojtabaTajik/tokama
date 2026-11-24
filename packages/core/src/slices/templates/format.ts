@@ -32,13 +32,14 @@ export const StepFileSchema = z.strictObject({
   /** A `.md` file next to the template (one line, no spaces), or the instruction text itself. */
   instructions: z.string().min(1).max(65_536),
   done_when: DoneWhenSchema.optional(),
-  checks: z.array(z.string().min(1).max(500)).max(20).optional(),
+  /** `from-repo` runs the checks the repo's config lists; a list names the commands. */
+  checks: z.union([z.literal("from-repo"), z.array(z.string().min(1).max(500)).max(20)]).optional(),
   if_failed: z.union([z.enum(["retry", "ask", "stop"]), back]).optional(),
   if_changes_requested: z.union([z.literal("ask"), back]).optional(),
   max_attempts: z.int().min(1).max(10).optional(),
   data: DataRuleSchema.optional(),
   sees: z.array(StepIdSchema).max(20).optional(),
-  uses: z.strictObject({ connections: connections.optional() }).optional(),
+  uses: z.strictObject({ connections: connections.optional(), commands: z.array(z.string().min(1).max(200)).max(50).optional() }).optional(),
   icon: IconNameSchema.optional(),
   color: TagColorSchema.optional(),
 });
@@ -86,6 +87,7 @@ export const FIELD_WORDS: Readonly<Record<string, readonly string[]>> = {
   data: DataRuleSchema.options,
   if_failed: ["retry", "ask", "stop", "back: <step id>"],
   if_changes_requested: ["ask", "back: <step id>"],
+  checks: ["from-repo", "a list of commands"],
 };
 
 /** The field names allowed at a place in the file, for "did you mean" on an unknown field. */
@@ -97,7 +99,7 @@ export function knownFields(path: readonly PropertyKey[]): readonly string[] {
   if (first === "start" && path.length === 1) return ["needs", "ask_before_cloud", "notify"];
   if (first === "budget" && path.length === 1) return ["time"];
   if (first === "steps" && path.length === 2) return shape(StepFileSchema);
-  if (first === "steps" && path.length === 3 && third === "uses") return ["connections"];
+  if (first === "steps" && path.length === 3 && third === "uses") return ["connections", "commands"];
   if (first === "steps" && path.length === 3) return ["back"];
   return [];
 }

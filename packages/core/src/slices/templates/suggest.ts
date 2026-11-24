@@ -1,4 +1,5 @@
 // "Did you mean" for misspelt field names, words and ids.
+import { quote } from "./quote.js";
 
 /** The closest candidate to `input`, or undefined when none is close enough to be a typo. */
 export function closest(input: string, candidates: Iterable<string>): string | undefined {
@@ -18,7 +19,7 @@ export function closest(input: string, candidates: Iterable<string>): string | u
 /** ` Did you mean "x"?`, or an empty string. */
 export function didYouMean(input: string, candidates: Iterable<string>): string {
   const match = closest(input, candidates);
-  return match === undefined ? "" : ` Did you mean "${match}"?`;
+  return match === undefined ? "" : ` Did you mean ${quote(match)}?`;
 }
 
 // Optimal string alignment distance: insertions, deletions, substitutions and swaps of two

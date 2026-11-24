@@ -1,6 +1,6 @@
 import { constants, type promises } from "node:fs";
-import { open, realpath } from "node:fs/promises";
-import { isAbsolute, relative, sep } from "node:path";
+import { lstat, open, readdir, realpath, stat } from "node:fs/promises";
+import { isAbsolute, join, relative, sep } from "node:path";
 import { err, ok, type Result } from "../result/index.js";
 
 export type ReadFailureReason =
@@ -11,6 +11,8 @@ export type ReadFailureReason =
   | "too_many_lines"
   | "invalid_utf8"
   | "invalid_json"
+  | "outside_root"
+  | "too_many_entries"
   | "io_error";
 
 export interface ReadFailure {
@@ -128,4 +130,46 @@ export async function isInside(root: string, path: string): Promise<boolean> {
   const rel = relative(realRoot, realPath);
   // Not `startsWith(root)`: that would accept `/root-evil` for `/root`. A name like `..x` is inside.
   return !isAbsolute(rel) && rel.split(sep)[0] !== "..";
+}
+
+/**
+ * `readTextFile`, but only after `isInside(root, path)` passes, so nothing outside `root` is
+ * opened. A path that is not inside is `not_found` when it does not exist, `symlink` when it is
+ * a link, and `outside_root` otherwise (a symlinked folder on the way).
+ */
+export async function readTextFileInside(root: string, path: string, options: ReadTextOptions): Promise<Result<string, ReadFailure>> {
+  if (!(await isInside(root, path))) return notInside(path, "file");
+  return readTextFile(path, options);
+}
+
+/**
+ * The names of the entries in the folder `root/rel` that are not folders, sorted. The folder's
+ * real path must be `root` or inside it; that is checked before listing. Symlinks and other
+ * non-regular entries are listed, so a read of them is refused with its own reason.
+ */
+export async function listFiles(root: string, rel: string, options: { readonly max: number }): Promise<Result<string[], ReadFailure>> {
+  const dir = join(root, rel);
+  if (!(await isInside(root, dir))) return notInside(dir, "folder");
+  let names: string[];
+  try {
+    const entries = await readdir(dir, { withFileTypes: true });
+    names = entries.filter((entry) => !entry.isDirectory()).map((entry) => entry.name);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? "UNKNOWN";
+    if (code === "ENOENT") return failure(dir, "not_found", "folder does not exist");
+    if (code === "ENOTDIR") return failure(dir, "not_regular_file", "not a folder");
+    return failure(dir, "io_error", `cannot list: ${code}`, code);
+  }
+  if (names.length > options.max) return failure(dir, "too_many_entries", `more than ${options.max} entries`);
+  return ok(names.sort());
+}
+
+async function notInside(path: string, what: "file" | "folder"): Promise<Result<never, ReadFailure>> {
+  try {
+    if ((await lstat(path)).isSymbolicLink()) return failure(path, "symlink", "path is a symlink");
+    await stat(path);
+  } catch {
+    return failure(path, "not_found", `${what} does not exist`);
+  }
+  return failure(path, "outside_root", `${what} is outside the allowed folder`);
 }

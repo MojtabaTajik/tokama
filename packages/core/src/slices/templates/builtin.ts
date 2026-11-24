@@ -17,6 +17,7 @@ steps:
       Make the change described below in this repository, keeping the diff small.
       Run the project's tests before you finish, and fix what they report.
     done_when: checks pass
+    checks: from-repo
     if_failed: retry
     max_attempts: 3
     data: repo-and-diff
