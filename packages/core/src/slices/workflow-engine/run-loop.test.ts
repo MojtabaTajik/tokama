@@ -665,6 +665,7 @@ describe("run loop: protection", () => {
     it.each([
       ["a local path", "/srv/evil.git"],
       ["a transport helper", "ext::sh -c touch% pwned"],
+      ["a file:// URL", "file:///srv/evil.git"],
     ])("an agent setting the remote url to %s stops the item", SLOW, async (_kind, url) => {
       await plain(repo.path, "remote", "add", "origin", "https://example.invalid/orders-api.git");
       const setUrl = () => plain(repo.path, "remote", "set-url", "origin", url);

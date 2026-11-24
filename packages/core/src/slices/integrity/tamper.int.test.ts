@@ -170,10 +170,23 @@ describe("a tamper event for each protected category", () => {
       ["remote.origin.url", "custom::anything"],
       ["remote.origin.url", "custom://example.invalid/x"],
       ["remote.origin.pushurl", "/srv/evil.git"],
+      ["remote.origin.pushurl", "file:///srv/evil.git"],
+      ["remote.origin.pushurl", "custom://example.invalid/x"],
       ["remote.origin.pushurl", "ext::sh -c touch% pwned"],
+      // A branch remote that is a path or URL, not a remote name.
+      ["branch.main.remote", "/srv/evil.git"],
+      ["branch.main.remote", "../evil.git"],
+      ["branch.main.remote", "file:///srv/evil.git"],
+      ["branch.main.pushRemote", "/srv/evil.git"],
+      ["branch.main.pushRemote", "git@example.invalid:evil.git"],
     ];
     for (const [key, value] of watched) {
-      expect(await changesAfter(() => plain(repo, "config", key!, value!)), key).toEqual([{ area: "git", path: "config", category: "git", change: "modified" }]);
+      // From network URLs and remote names each time, so each case tests its own value.
+      await plain(repo, "config", "remote.origin.url", "https://example.invalid/orders-api.git");
+      await plain(repo, "config", "remote.origin.pushurl", "https://example.invalid/orders-api.git");
+      await plain(repo, "config", "branch.main.remote", "origin");
+      await plain(repo, "config", "branch.main.pushRemote", "origin");
+      expect(await changesAfter(() => plain(repo, "config", key!, value!)), `${key} = ${value}`).toEqual([{ area: "git", path: "config", category: "git", change: "modified" }]);
     }
   });
 

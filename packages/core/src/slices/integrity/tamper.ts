@@ -79,7 +79,7 @@ const SHARED_GIT_FILES = ["config", "config.worktree", "info/attributes", "info/
 /**
  * The only config keys that do not count, by section and variable name (lowercase, as git lists
  * them): where to fetch and push and what a branch tracks; a url or pushurl only when it names a
- * network host (networkUrl). Every other `remote.<name>.*` and `branch.<name>.*` key counts;
+ * network host (networkUrl), a branch remote or pushRemote only when it is a name (remoteName). Every other `remote.<name>.*` and `branch.<name>.*` key counts;
  * `uploadpack`, `receivepack` and `vcs` name commands git runs.
  */
 const IGNORED_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
@@ -121,7 +121,7 @@ function splitRecord(record: string): { key: string; value: string | undefined }
   return newline === -1 ? { key: record, value: undefined } : { key: record.slice(0, newline), value: record.slice(newline + 1) };
 }
 
-/** A network URL by scheme: `https://host/...`, `ssh://host/...` and the like. */
+/** The schemes of network URLs: `https://host/...`, `ssh://host/...` and the like. */
 const NETWORK_URL = /^(?:https?|ssh|git|git\+ssh|ssh\+git):\/\/[^/\s]/i;
 /** An scp-style ssh address, `[user@]host:path`: no slash before the colon, and not `<helper>::`. */
 const SCP_ADDRESS = /^(?:[^@/:\s]+@)?(?:\[[^\]/\s]+\]|[A-Za-z0-9_.~][A-Za-z0-9_.~-]*):(?!:)[^\s]/;
@@ -129,9 +129,16 @@ const SCP_ADDRESS = /^(?:[^@/:\s]+@)?(?:\[[^\]/\s]+\]|[A-Za-z0-9_.~][A-Za-z0-9_.
 /**
  * Whether a remote's url or pushurl names a network host. A local path (absolute, relative,
  * `~`, `file://`) runs that repo's hooks on a push, and a transport helper (`ext::`, `fd::`, any
- * `<helper>::` or other scheme) runs a command: those count.
+ * `<helper>::` or other scheme) runs a command: those count. Any `scheme://` is judged by its
+ * scheme alone; only a value without one can be scp-style.
  */
-const networkUrl = (value: string | undefined): boolean => value !== undefined && (NETWORK_URL.test(value) || SCP_ADDRESS.test(value));
+function networkUrl(value: string | undefined): boolean {
+  if (value === undefined) return false;
+  return value.includes("://") ? NETWORK_URL.test(value) : SCP_ADDRESS.test(value);
+}
+
+/** A remote name, never a path or URL (git accepts both in `branch.<name>.remote` and `.pushremote`). */
+const remoteName = (value: string | undefined): boolean => value !== undefined && value !== "" && !/[/:]/.test(value);
 
 /** By section and variable name: a subsection may hold dots, so they are the first and last parts. */
 function ignoredRecord(record: string): boolean {
@@ -143,7 +150,9 @@ function ignoredRecord(record: string): boolean {
   const section = key.slice(0, first);
   const name = key.slice(last + 1);
   if (IGNORED_KEYS[section]?.has(name) !== true) return false;
-  return section !== "remote" || (name !== "url" && name !== "pushurl") || networkUrl(value);
+  if (section === "remote" && (name === "url" || name === "pushurl")) return networkUrl(value);
+  if (section === "branch" && (name === "remote" || name === "pushremote")) return remoteName(value);
+  return true;
 }
 
 /** Whether git reads another config file from this key: `include.path` or `includeIf.<condition>.path`. */
