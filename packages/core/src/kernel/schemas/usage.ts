@@ -1,5 +1,5 @@
 // Agent call shapes: the events an agent runtime emits and the usage record stored per call.
-// Usage carries what product.md section 9 names and v1 can measure now: tokens by type and wall time.
+// Usage carries what v1 can measure now: tokens by type and wall time.
 import { z } from "zod";
 import { AgentIdSchema, CallIdSchema, EpochMsSchema, ItemIdSchema } from "./ids.js";
 

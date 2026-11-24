@@ -1,4 +1,4 @@
-// Engine API messages (architecture.md, section 3). Every message carries the API version and
+// Engine API messages. Every message carries the API version and
 // is plain JSON: no Node, OS or Electron types. Clients send commands and queries; the engine
 // answers each with a reply carrying the same requestId, and pushes events.
 // `*Input` types are what a sender builds (ids as plain strings); the other types are what a

@@ -1,4 +1,4 @@
-// Item and step records (product.md, section 3). Steps are stored inside their item, so the
+// Item and step records. Steps are stored inside their item, so the
 // item's schema version covers them.
 import { z } from "zod";
 import { AgentIdSchema, ConnectionIdSchema, DecisionIdSchema, EpochMsSchema, ItemIdSchema, RepoIdSchema, TemplateIdSchema, WorkspaceIdSchema } from "./ids.js";
@@ -8,7 +8,7 @@ export const StageSchema = z.enum(["queued", "working", "verifying", "review", "
 export const ItemKindSchema = z.enum(["task", "investigation"]);
 export const StepStateSchema = z.enum(["pending", "running", "needs_you", "passed", "failed", "stopped"]);
 export const ItemStateSchema = z.enum(["queued", "running", "needs_you", "done", "failed", "stopped"]);
-/** What a step may send off the machine (product.md, section 6, field `data`). */
+/** What a step may send off the machine. */
 export const DataRuleSchema = z.enum(["none", "summary-after-approval", "repo-and-diff"]);
 /** The card's privacy label: "local only" when no step may send anything out. */
 export const PrivacySchema = z.enum(["local_only", "local_and_cloud"]);
@@ -35,7 +35,7 @@ export const DecisionSchema = z.strictObject({
   question: z.string().min(1).max(500),
   /** Why the engine asks, e.g. the step's data rule sends data to a cloud agent. */
   why: z.string().min(1).max(500).optional(),
-  /** For a cloud-step approval: the exact text that would leave the machine (product.md, section 7). */
+  /** For a cloud-step approval: the exact text that would leave the machine. */
   summaryText: z.string().min(1).max(20_000).optional(),
   choices: z
     .array(z.strictObject({ id: z.string().min(1).max(64), label: z.string().min(1).max(64) }))

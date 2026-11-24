@@ -1,5 +1,5 @@
 // Injectable clock: time and timers, so guard and timeout code is testable without real time
-// (architecture.md, section 11). The one clock of the kernel; other modules take a Clock.
+//. The one clock of the kernel; other modules take a Clock.
 declare const timerBrand: unique symbol;
 /** Opaque handle returned by `setTimeout`. */
 export type TimerHandle = { readonly [timerBrand]: true };

@@ -115,7 +115,7 @@ export async function readJsonFile(path: string, options: ReadTextOptions): Prom
  * True when `path` exists and its real path (every symlink resolved, `..` applied after each
  * link as the OS does) is `root` or inside it. False for a missing path or root.
  * The check and a later open are two steps: a process that can swap a directory between them
- * can still escape. That is out of scope (architecture.md, section 9); it stops planted links.
+ * can still escape. That is out of scope; it stops planted links.
  */
 export async function isInside(root: string, path: string): Promise<boolean> {
   let realRoot: string;

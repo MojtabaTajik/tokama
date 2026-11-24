@@ -1,4 +1,4 @@
-// Ports: the interfaces adapters implement (architecture.md, sections 6 and 7). Agent runtime and
+// Ports: the interfaces adapters implement. Agent runtime and
 // model host are separate ports, so a local model can run under any runtime.
 //
 // Rules every adapter follows, checked by the contract suites in `testing/`:

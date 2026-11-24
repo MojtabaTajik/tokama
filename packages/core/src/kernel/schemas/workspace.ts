@@ -1,6 +1,5 @@
 // Workspace records as the engine API serves them: what the workspaces panel, the workspace
-// header, the New work input and the per-template board view need (product.md, sections 3
-// and 6). Templates here are summaries; the full template file format comes with the
+// header, the New work input and the per-template board view need. Templates here are summaries; the full template file format comes with the
 // templates slice.
 import { z } from "zod";
 import { AgentIdSchema, ConnectionIdSchema, RepoIdSchema, TemplateIdSchema, WorkspaceIdSchema } from "./ids.js";
