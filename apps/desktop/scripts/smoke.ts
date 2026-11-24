@@ -21,7 +21,8 @@ const engineEntry = resolve(appDir, "..", "engine", "dist", "main.js");
 const electronPath = createRequire(import.meta.url)("electron") as string;
 
 const deadline = Date.now() + TIMEOUT_MS;
-const remaining = () => Math.max(0, deadline - Date.now());
+// Never 0: Playwright reads a timeout of 0 as "no timeout".
+const remaining = () => Math.max(1, deadline - Date.now());
 const pause = (ms: number) => new Promise((done) => setTimeout(done, ms));
 const log = (message: string) => process.stdout.write(`smoke: ${message}\n`);
 
@@ -33,7 +34,7 @@ async function startEngine(dir: string, output: string[]): Promise<{ child: Chil
   let exited: string | undefined;
   child.once("exit", (code, signal) => (exited = `the engine exited (code ${String(code)}, signal ${String(signal)})`));
   child.once("error", (error) => (exited = `cannot start the engine: ${error.message}`));
-  while (remaining() > 0) {
+  while (Date.now() < deadline) {
     if (exited !== undefined) throw new Error(exited);
     // Without a start command, connect() tries once and never starts an engine.
     const client = await connect({ dir, reconnect: false });
@@ -83,6 +84,8 @@ async function run(tmp: string): Promise<void> {
 
     app = await _electron.launch({
       executablePath: electronPath,
+      // Playwright adds --no-sandbox on Linux unless told otherwise; the app runs sandboxed.
+      chromiumSandbox: true,
       args: [appDir, `--user-data-dir=${join(tmp, "user-data")}`],
       env,
       timeout: remaining(),
@@ -100,7 +103,7 @@ async function run(tmp: string): Promise<void> {
 
     // What the renderer gets through the preload bridge: the state the UI shows.
     let state: Connection = { status: "unknown" };
-    while (remaining() > 0) {
+    while (Date.now() < deadline) {
       state = await page.evaluate(() => (globalThis as unknown as { tokama: { getConnection(): Promise<Connection> } }).tokama.getConnection());
       if (state.status === "connected" || state.status === "failed") break;
       await pause(100);
