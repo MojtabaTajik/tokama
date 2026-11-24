@@ -6,6 +6,10 @@ import {
   ClientMessageSchema,
   type EngineMessage,
   EngineMessageSchema,
+  type HandshakeReply,
+  HandshakeReplySchema,
+  type HelloMessage,
+  HelloMessageSchema,
   type ServerMessage,
   ServerMessageSchema,
 } from "./api.js";
@@ -36,6 +40,8 @@ export { parseWith, type ParseError, type ParseIssue } from "./parse.js";
 export const parseClientMessage = (input: unknown): Result<ClientMessage, ParseError> => parseWith(ClientMessageSchema, input);
 export const parseServerMessage = (input: unknown): Result<ServerMessage, ParseError> => parseWith(ServerMessageSchema, input);
 export const parseEngineMessage = (input: unknown): Result<EngineMessage, ParseError> => parseWith(EngineMessageSchema, input);
+export const parseHelloMessage = (input: unknown): Result<HelloMessage, ParseError> => parseWith(HelloMessageSchema, input);
+export const parseHandshakeReply = (input: unknown): Result<HandshakeReply, ParseError> => parseWith(HandshakeReplySchema, input);
 export const parseItemRecord = (input: unknown): Result<ItemRecord, ParseError> => parseWith(ItemRecordSchema, input);
 export const parseAgentCallUsage = (input: unknown): Result<AgentCallUsage, ParseError> =>
   parseWith(AgentCallUsageSchema, input);

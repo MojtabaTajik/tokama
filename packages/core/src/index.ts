@@ -4,13 +4,26 @@ export const packageName = "@tokama/core";
 // Engine API messages and the records they carry, for the engine service and its clients.
 export { err, ok, type Result } from "./kernel/result/index.js";
 export {
+  defaultEngineDir,
+  encodeLine,
+  engineEndpoint,
+  LineDecoder,
+  MAX_MESSAGE_BYTES,
+  type EndpointError,
+  type EngineEndpoint,
+  type FrameTooLarge,
+} from "./api/index.js";
+export {
   API_VERSION,
+  CONNECTION_ERROR_CODES,
   parseAgentCallUsage,
   parseAgentId,
   parseCallId,
   parseClientMessage,
   parseDecisionId,
   parseEngineMessage,
+  parseHandshakeReply,
+  parseHelloMessage,
   parseItemId,
   parseItemRecord,
   parseServerMessage,
@@ -26,10 +39,14 @@ export {
   type CommandInput,
   type CommandMessage,
   type CommandMessageInput,
+  type ConnectionErrorCode,
+  type ConnectionErrorMessage,
   type DecisionId,
   type EngineEvent,
   type EngineMessage,
   type EventMessage,
+  type HandshakeReply,
+  type HelloMessage,
   type ItemId,
   type ItemKind,
   type ItemRecord,
@@ -47,5 +64,6 @@ export {
   type StepState,
   type TemplateId,
   type TokenUsage,
+  type WelcomeMessage,
   type WorkspaceId,
 } from "./kernel/schemas/index.js";

@@ -73,6 +73,47 @@ export const EventMessageSchema = z.strictObject({
   event: EventSchema,
 });
 
+// Handshake: the first message each way on a connection. Unlike the messages above, these carry
+// any integer apiVersion and allow unknown fields, so every client and engine version can read
+// them: a newer client still gets a clear `unsupported_version` from an older engine.
+
+/** The client's first message: its API version and the engine's per-session token. */
+export const HelloMessageSchema = z.object({
+  kind: z.literal("hello"),
+  apiVersion: z.int(),
+  token: z.string().min(1).max(256),
+});
+
+/** The engine accepted the hello. `engineId` is new on each engine start: a new id means `seq` restarted. */
+export const WelcomeMessageSchema = z.object({
+  kind: z.literal("welcome"),
+  apiVersion: z.int(),
+  engineId: z.string().min(1).max(128),
+});
+
+/** The codes this engine sends in a connection error. Clients accept any code. */
+export const CONNECTION_ERROR_CODES = [
+  "unsupported_version",
+  "unauthorized",
+  "bad_message",
+  "message_too_large",
+  "hello_timeout",
+] as const;
+
+/**
+ * A connection-level error: a refused hello, or a message the engine cannot answer with a reply
+ * (it has no requestId). The engine closes the connection after it. `apiVersion` is the engine's.
+ */
+export const ConnectionErrorMessageSchema = z.object({
+  kind: z.literal("connection_error"),
+  apiVersion: z.int(),
+  code: z.string().min(1).max(64),
+  message: z.string().max(1000),
+});
+
+/** What the engine answers to a hello. */
+export const HandshakeReplySchema = z.discriminatedUnion("kind", [WelcomeMessageSchema, ConnectionErrorMessageSchema]);
+
 /** What a client sends; the engine parses with this. */
 export const ClientMessageSchema = z.discriminatedUnion("kind", [CommandMessageSchema, QueryMessageSchema]);
 /** What the engine sends; a client parses with this. */
@@ -100,3 +141,9 @@ export type QueryInput = z.input<typeof QuerySchema>;
 export type CommandMessageInput = z.input<typeof CommandMessageSchema>;
 export type QueryMessageInput = z.input<typeof QueryMessageSchema>;
 export type ClientMessageInput = z.input<typeof ClientMessageSchema>;
+
+export type HelloMessage = z.output<typeof HelloMessageSchema>;
+export type WelcomeMessage = z.output<typeof WelcomeMessageSchema>;
+export type ConnectionErrorMessage = z.output<typeof ConnectionErrorMessageSchema>;
+export type ConnectionErrorCode = (typeof CONNECTION_ERROR_CODES)[number];
+export type HandshakeReply = z.output<typeof HandshakeReplySchema>;
