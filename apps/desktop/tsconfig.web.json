@@ -10,5 +10,6 @@
     "types": []
   },
   "include": ["src/renderer", "src/shared"],
-  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/testing/**"],
+  "references": [{ "path": "../../packages/core" }, { "path": "../../packages/client" }]
 }

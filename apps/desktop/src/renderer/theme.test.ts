@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 // Read as a file: Vitest turns CSS imports into empty modules.
 const theme = readFileSync(join(import.meta.dirname, "theme.css"), "utf8");
+const app = readFileSync(join(import.meta.dirname, "app.css"), "utf8");
 
 // The app UI colours from CLAUDE.md ("App UI colors"), each a token in theme.css.
 const TOKENS: Record<string, string> = {
@@ -30,5 +31,17 @@ const TOKENS: Record<string, string> = {
 describe("theme.css", () => {
   it.each(Object.entries(TOKENS))("defines %s as %s", (name, value) => {
     expect(theme).toMatch(new RegExp(`${name}:\\s*${value};`, "i"));
+  });
+});
+
+describe("app.css", () => {
+  it("takes every colour from the theme tokens: no colour literals", () => {
+    expect(app.match(/#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?)\(/gi) ?? []).toEqual([]);
+  });
+
+  it("uses only tokens that theme.css defines", () => {
+    const used = new Set([...app.matchAll(/var\((--[a-z0-9-]+)\)/g)].map((match) => match[1]));
+    const missing = [...used].filter((name) => !theme.includes(`${name}:`));
+    expect(missing).toEqual([]);
   });
 });

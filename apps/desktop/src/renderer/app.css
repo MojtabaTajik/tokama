@@ -1,70 +1,462 @@
+/* The app shell. Colours and fonts come from theme.css tokens only (a test checks it). */
 #root {
   height: 100%;
 }
 
+button {
+  font: inherit;
+  color: inherit;
+}
+
+button:focus-visible {
+  outline: 1px solid var(--link);
+  outline-offset: 1px;
+}
+
 .shell {
   display: flex;
-  flex-direction: column;
   height: 100%;
+  overflow: hidden;
 }
 
-.brand {
+.mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+[aria-disabled="true"] {
+  cursor: default;
+}
+
+.ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Icon rail */
+
+.rail {
+  flex: 0 0 60px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 0;
+  border-right: 1px solid var(--hairline);
+  /* Scrolls in very short windows, without a scrollbar eating the rail's width. */
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.rail-mark {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.rail-button {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--hairline);
+  justify-content: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
 }
 
-.brand img {
-  display: block;
+.rail-button:hover {
+  color: var(--text-2);
 }
 
-.connection {
-  margin: auto;
-  width: min(560px, calc(100% - 32px));
-  padding: 20px;
-  background: var(--panel);
-  border: 1px solid var(--hairline);
-  border-radius: 6px;
-}
-
-.status {
-  margin: 0;
-  font-size: 15px;
+.rail-button[aria-current="page"] {
+  background: var(--raised);
   color: var(--text);
 }
 
-.status .symbol {
-  display: inline-block;
-  width: 1.4em;
+.rail-button[data-tone="warn"] {
+  color: var(--warn);
 }
 
-.status[data-status="connected"] .symbol {
-  color: var(--pass);
-}
-
-.status[data-status="starting"] .symbol,
-.status[data-status="reconnecting"] .symbol {
-  color: var(--live);
-}
-
-.status[data-status="failed"] .symbol {
+.rail-button[data-tone="fail"] {
   color: var(--fail);
 }
 
-.detail {
-  margin: 8px 0 0;
+.badge {
+  position: absolute;
+  top: 5px;
+  right: 4px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  color: var(--ground);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+}
+
+.badge[data-tone="warn"] {
+  background: var(--warn);
+}
+
+.badge[data-tone="fail"] {
+  background: var(--fail);
+}
+
+.rail-spacer {
+  flex: 1 1 auto;
+  min-height: 8px;
+}
+
+.usage-ring {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
   color: var(--text-2);
+  cursor: pointer;
+}
+
+.usage-ring svg {
+  position: absolute;
+  inset: 2px;
+}
+
+.usage-ring circle {
+  fill: none;
+  stroke: var(--hairline);
+  stroke-width: 3;
+}
+
+.usage-ring .mono {
+  position: relative;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.rail-user {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--raised);
+  color: var(--text-2);
+}
+
+/* Workspaces panel */
+
+.panel {
+  flex: 0 0 264px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 8px;
+  border-right: 1px solid var(--hairline);
+  overflow-y: auto;
+}
+
+.new-work {
+  display: flex;
+  align-items: center;
+  flex: none;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text-2);
+  text-align: left;
+  cursor: pointer;
+}
+
+.panel-heading {
+  margin: 0;
+  padding: 14px 10px 6px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.host {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 8px;
+}
+
+.host-heading {
+  display: flex;
+  align-items: center;
+  min-height: 26px;
+  margin: 0;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.host-count {
+  margin-left: auto;
+  font-size: 11.5px;
+}
+
+.health {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  font-size: 11.5px;
+}
+
+.health[data-status="connected"] .symbol {
+  color: var(--pass);
+  font-size: 8px;
+}
+
+.health[data-status="starting"] .symbol,
+.health[data-status="reconnecting"] .symbol {
+  color: var(--live);
+}
+
+.health[data-status="failed"] {
+  color: var(--text-2);
+}
+
+.health[data-status="failed"] .symbol {
+  color: var(--fail);
+}
+
+.stale {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--warn);
+}
+
+.workspace-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.workspace-row:hover,
+.workspace-row[aria-current="true"] {
+  background: var(--raised);
+}
+
+.tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  border: 1px solid var(--hairline);
+  background: var(--input);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.workspace-row .ellipsis {
+  margin-right: auto;
+}
+
+.waiting {
+  color: var(--warn);
+}
+
+.chevron {
+  flex: none;
+  width: 10px;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.live-items {
+  margin: 0;
+  padding: 2px 0 8px;
+  list-style: none;
+}
+
+.live-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+  padding: 0 10px 0 38px;
+  color: var(--text-2);
+}
+
+.live-item.empty {
+  color: var(--muted);
+}
+
+.marker {
+  display: flex;
+  justify-content: center;
+  flex: none;
+  width: 14px;
+}
+
+.marker-word {
+  flex: none;
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+[data-tone="warn"].marker,
+[data-tone="warn"].marker-word {
+  color: var(--warn);
+}
+
+[data-tone="live"].marker {
+  color: var(--live);
+}
+
+[data-tone="muted"].marker {
+  color: var(--muted);
+}
+
+/* Main area */
+
+.main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 22px 0;
+}
+
+.main-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.main-header h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.summary {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--link);
+  font-size: 12.5px;
+}
+
+.board {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding-top: 14px;
+}
+
+.placeholder {
+  margin: 0;
+  color: var(--muted);
+}
+
+.failure {
+  max-width: 640px;
+  margin-bottom: 16px;
+}
+
+.failure-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.failure-title .symbol {
+  display: inline-block;
+  width: 1.4em;
+  color: var(--fail);
+}
+
+.retry {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--primary-border);
+  border-radius: 6px;
+  background: var(--live);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.detail {
+  margin: 0 0 8px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
 }
 
 .label {
   color: var(--muted);
 }
 
-.mono {
-  font-family: var(--font-mono);
-  font-size: 12px;
+.failure .mono {
   overflow-wrap: anywhere;
 }
 

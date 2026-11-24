@@ -20,6 +20,14 @@ export function findExecutable(name: string, path: string | undefined): string |
   return undefined;
 }
 
+/**
+ * The engine dir to use: the sample engine gets its own subdir, so a dev sample engine and a real
+ * engine never share a socket, token or lock.
+ */
+export function engineDirFor(baseDir: string, sample: boolean): string {
+  return sample ? join(baseDir, "sample") : baseDir;
+}
+
 export interface EngineCommandInput {
   /** Absolute path of the node binary. */
   readonly node: string | undefined;
@@ -28,6 +36,8 @@ export interface EngineCommandInput {
   /** Engine dir, passed as `--dir` so the engine and the client agree on it. */
   readonly dir: string;
   readonly env: Readonly<Record<string, string>>;
+  /** Start the fake engine mode with sample data (`--sample`); dev only. Default false. */
+  readonly sample?: boolean;
 }
 
 export function engineCommand(input: EngineCommandInput): Result<EngineCommand, string> {
@@ -39,7 +49,8 @@ export function engineCommand(input: EngineCommandInput): Result<EngineCommand, 
   ] as const) {
     if (!isAbsolute(path)) return err(`cannot start the engine: the ${what} path is not absolute: ${path}`);
   }
-  return ok({ command: input.node, args: [input.entry, "--dir", input.dir], env: { ...input.env } });
+  const args = [input.entry, "--dir", input.dir, ...(input.sample === true ? ["--sample"] : [])];
+  return ok({ command: input.node, args, env: { ...input.env } });
 }
 
 /** The last `maxLines` non-empty lines of a regular file, read from its last `maxBytes`; [] on any error. */

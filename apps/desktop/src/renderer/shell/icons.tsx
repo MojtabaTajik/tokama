@@ -1,0 +1,61 @@
+// Line icons of the icon rail (18 px, stroke in the current colour). Decorative: every button
+// that shows one has its own label.
+import type { ReactNode } from "react";
+
+function Icon({ children }: { readonly children: ReactNode }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {children}
+    </svg>
+  );
+}
+
+export const PanelIcon = () => (
+  <Icon>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M9 4v16" />
+  </Icon>
+);
+
+export const BoardIcon = () => (
+  <Icon>
+    <rect x="3" y="4" width="5" height="16" rx="1" />
+    <rect x="10" y="4" width="5" height="10" rx="1" />
+    <rect x="17" y="4" width="4" height="13" rx="1" />
+  </Icon>
+);
+
+export const InboxIcon = () => (
+  <Icon>
+    <path d="M22 12h-6l-2 3h-4l-2-3H2" />
+    <path d="M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z" />
+  </Icon>
+);
+
+export const InsightsIcon = () => (
+  <Icon>
+    <path d="M3 3v18h18" />
+    <path d="M7 15l4-4 3 3 5-6" />
+  </Icon>
+);
+
+export const SettingsIcon = () => (
+  <Icon>
+    <circle cx="12" cy="12" r="3" />
+    <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" />
+  </Icon>
+);
+
+export const AttentionIcon = () => (
+  <Icon>
+    <path d="M12 3 2 20h20z" />
+    <path d="M12 10v4M12 17h.01" />
+  </Icon>
+);
+
+export const UserIcon = () => (
+  <Icon>
+    <circle cx="12" cy="8" r="4" />
+    <path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" />
+  </Icon>
+);

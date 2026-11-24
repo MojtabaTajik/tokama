@@ -1,7 +1,7 @@
 // The desktop app's engine connection state. No Electron here, so it is tested with a fake client.
 import type { ConnectError, EngineClient } from "@tokama/client";
 import type { Result } from "@tokama/core";
-import type { ConnectionState } from "../shared/bridge.js";
+import type { BridgeEvent, ConnectionState } from "../shared/bridge.js";
 
 export interface WatchOptions {
   /** Connects to the engine (and starts it when needed), e.g. `() => connect({ dir, start })`. */
@@ -12,11 +12,15 @@ export interface WatchOptions {
   readonly readLogTail: (path: string) => string[];
   /** Called on every change after the initial "starting". */
   readonly onState: (state: ConnectionState) => void;
+  /** Called with every engine event (item and usage updates). */
+  readonly onEvent: (event: BridgeEvent) => void;
 }
 
 export interface ConnectionWatch {
   /** The current state. */
   state(): ConnectionState;
+  /** The client while connected (or reconnecting), for queries and commands; undefined before and after. */
+  client(): EngineClient | undefined;
   /** Closes the client. The engine keeps running. */
   close(): Promise<void>;
 }
@@ -51,6 +55,7 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
       if (event.kind === "disconnected") set({ status: "reconnecting" });
       else if (event.kind === "reconnected") set({ status: "connected", engineId: event.engineId });
       else if (event.kind === "failed") fail(event.error.message);
+      else options.onEvent(event);
     }
   };
   run().catch((error: unknown) => {
@@ -59,6 +64,7 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
 
   return {
     state: () => state,
+    client: () => (state.status === "connected" || state.status === "reconnecting" ? client : undefined),
     close: async () => {
       closed = true;
       await client?.close();

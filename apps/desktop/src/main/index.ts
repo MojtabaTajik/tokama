@@ -6,17 +6,20 @@ import { connect } from "@tokama/client";
 import { buildEnv, defaultEngineDir, engineEndpoint, err } from "@tokama/core";
 import { app, BrowserWindow, ipcMain, session } from "electron";
 import { CHANNELS } from "../shared/bridge.js";
+import { engineApi } from "./api.js";
 import { type ConnectionWatch, watchConnection } from "./connection.js";
-import { engineCommand, findExecutable, readLogTail } from "./engine.js";
-import { devServerUrl, guardedHandler, isAppUrl, isDevToolsUrl, secureWebPreferences } from "./policy.js";
+import { engineCommand, engineDirFor, findExecutable, readLogTail } from "./engine.js";
+import { devServerUrl, guardedHandler, isAppUrl, isDevToolsUrl, sampleEngineEnabled, secureWebPreferences } from "./policy.js";
 
 const rendererDir = join(import.meta.dirname, "..", "renderer");
 const preloadPath = join(import.meta.dirname, "..", "preload", "index.cjs");
 const devServer = devServerUrl(process.env["ELECTRON_RENDERER_URL"], app.isPackaged);
 const isAppPage = (url: string) => isAppUrl(url, rendererDir, devServer);
+// Dev only: `pnpm dev` sets TOKAMA_SAMPLE=1 to start the engine's fake mode with sample data.
+const sample = sampleEngineEnabled(process.env["TOKAMA_SAMPLE"], app.isPackaged);
 
 /** Registers a bridge channel; it answers app pages only. */
-function handle(channel: string, fn: () => unknown): void {
+function handle(channel: string, fn: (...args: unknown[]) => unknown): void {
   ipcMain.handle(channel, guardedHandler(isAppPage, fn));
 }
 
@@ -36,10 +39,15 @@ function hardenSession(): void {
   ses.webRequest.onBeforeRequest((details, callback) => callback({ cancel: !(isAppPage(details.url) || isDevToolsUrl(details.url)) }));
 }
 
+/** Pushes a message to every window; each loads only the app's own pages. */
+function send(channel: string, message: unknown): void {
+  for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, message);
+}
+
 function startWatch(): ConnectionWatch {
   // One dir for both sides: the client gets it directly, the engine as `--dir`, since the
   // engine's reduced env has no TOKAMA_ENGINE_DIR or XDG_RUNTIME_DIR to find it by itself.
-  const dir = defaultEngineDir(process.env, homedir());
+  const dir = engineDirFor(defaultEngineDir(process.env, homedir()), sample);
   const endpoint = engineEndpoint(dir);
   // Dev layout: apps/desktop is the app path, the engine is built to apps/engine/dist.
   // A packaged app will ship the engine and a runtime with it (not yet).
@@ -48,6 +56,7 @@ function startWatch(): ConnectionWatch {
     entry: resolve(app.getAppPath(), "..", "engine", "dist", "main.js"),
     dir,
     env: buildEnv(process.env),
+    sample,
   });
   return watchConnection({
     connect: () => {
@@ -56,9 +65,8 @@ function startWatch(): ConnectionWatch {
     },
     logPath: endpoint.ok ? endpoint.value.logPath : join(dir, "engine.log"),
     readLogTail: (path) => readLogTail(path),
-    onState: (state) => {
-      for (const window of BrowserWindow.getAllWindows()) window.webContents.send(CHANNELS.connectionChanged, state);
-    },
+    onState: (state) => send(CHANNELS.connectionChanged, state),
+    onEvent: (event) => send(CHANNELS.event, event),
   });
 }
 
@@ -82,6 +90,9 @@ void app.whenReady().then(() => {
   hardenSession();
   const watch = startWatch();
   handle(CHANNELS.getConnection, () => watch.state());
+  const api = engineApi(() => watch.client());
+  handle(CHANNELS.query, (query) => api.query(query));
+  handle(CHANNELS.command, (command) => api.command(command));
   app.on("before-quit", () => void watch.close());
   createWindow();
   app.on("activate", () => {

@@ -1,80 +1,57 @@
-import { useEffect, useState } from "react";
-import type { ConnectionState, TokamaBridge } from "../shared/bridge.js";
-import { brand } from "./brand/index.js";
+// The app shell: icon rail, workspaces panel, main area.
+import { useMemo, useState } from "react";
+import type { TokamaBridge } from "../shared/bridge.js";
+import { needsYouCount } from "./model.js";
+import { MainArea } from "./shell/MainArea.js";
+import { Rail } from "./shell/Rail.js";
+import { WorkspacesPanel } from "./shell/WorkspacesPanel.js";
+import { RETRY_DELAY_MS, useEngine } from "./useEngine.js";
 
-// UI text of this screen, in one place.
-const TEXT = {
-  starting: "Starting the engine",
-  connected: "Connected to the engine",
-  reconnecting: "Reconnecting to the engine",
-  failed: "The engine is not available",
-  engineId: "Engine",
-  log: "Log",
-} as const;
+const PANEL_ID = "workspaces-panel";
 
-// A symbol with every status, so colour is never the only signal.
-const SYMBOL: Record<ConnectionState["status"], string> = {
-  starting: "◌",
-  connected: "●",
-  reconnecting: "◐",
-  failed: "✕",
-};
+export function App({ bridge, retryDelayMs = RETRY_DELAY_MS }: { readonly bridge: TokamaBridge; readonly retryDelayMs?: number }) {
+  const { connection, data, loadError, stale, retry } = useEngine(bridge, retryDelayMs);
+  const [panelOpen, setPanelOpen] = useState(true);
+  // Undefined until the engineer picks: then the first workspace is selected and expanded.
+  const [picked, setPicked] = useState<string | undefined>(undefined);
+  const [expanded, setExpanded] = useState<ReadonlySet<string> | undefined>(undefined);
 
-export function App({ bridge }: { readonly bridge: TokamaBridge }) {
-  const [state, setState] = useState<ConnectionState>({ status: "starting" });
+  const workspaces = data?.workspaces ?? [];
+  const items = useMemo(() => [...(data?.items.values() ?? [])], [data]);
+  const selected = workspaces.find((workspace) => workspace.id === picked) ?? workspaces[0];
+  const open = expanded ?? new Set(selected ? [selected.id] : []);
 
-  useEffect(() => {
-    let live = true;
-    // Subscribe first, then read the current state, so a change in between is not lost.
-    const stop = bridge.onConnection((next) => {
-      if (live) setState(next);
-    });
-    void bridge.getConnection().then((current) => {
-      if (live) setState(current);
-    });
-    return () => {
-      live = false;
-      stop();
-    };
-  }, [bridge]);
+  const pick = (id: string) => {
+    const next = new Set(open);
+    // A new pick opens its items; picking the selected workspace again opens or closes them.
+    if (id !== selected?.id || !next.has(id)) next.add(id);
+    else next.delete(id);
+    setPicked(id);
+    setExpanded(next);
+  };
 
   return (
     <div className="shell">
-      <header className="brand">
-        <img src={brand.markUrl} alt="" width={24} height={24} />
-        <img src={brand.wordmarkUrl} alt={brand.name} height={20} />
-      </header>
-      <main className="connection" aria-live="polite">
-        <p className="status" data-status={state.status}>
-          <span className="symbol" aria-hidden="true">
-            {SYMBOL[state.status]}
-          </span>
-          {TEXT[state.status]}
-        </p>
-        <Details state={state} />
-      </main>
+      <Rail
+        panelOpen={panelOpen}
+        panelId={PANEL_ID}
+        onTogglePanel={() => setPanelOpen(!panelOpen)}
+        needsYou={stale ? undefined : needsYouCount(items)}
+        attention={0}
+      />
+      {panelOpen && (
+        <WorkspacesPanel
+          id={PANEL_ID}
+          connection={connection}
+          workspaces={workspaces}
+          items={items}
+          stale={stale}
+          selectedId={selected?.id}
+          expanded={open}
+          onPick={pick}
+        />
+      )}
+      <MainArea connection={connection} workspace={selected} loaded={data !== undefined} loadError={loadError} onRetry={retry} />
     </div>
-  );
-}
-
-function Details({ state }: { readonly state: ConnectionState }) {
-  if (state.status === "connected") {
-    return (
-      <p className="detail">
-        <span className="label">{TEXT.engineId} </span>
-        <span className="mono">{state.engineId}</span>
-      </p>
-    );
-  }
-  if (state.status !== "failed") return null;
-  return (
-    <>
-      <p className="detail">{state.reason}</p>
-      <p className="detail">
-        <span className="label">{TEXT.log} </span>
-        <span className="mono">{state.logPath}</span>
-      </p>
-      {state.logTail.length > 0 && <pre className="log mono">{state.logTail.join("\n")}</pre>}
-    </>
   );
 }

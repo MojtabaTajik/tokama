@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { engineCommand, findExecutable, readLogTail } from "./engine.js";
+import { engineCommand, engineDirFor, findExecutable, readLogTail } from "./engine.js";
 
 let dir: string;
 beforeEach(() => {
@@ -41,11 +41,26 @@ describe("engineCommand", () => {
     });
   });
 
+  it("adds --sample for the fake engine mode", () => {
+    expect(engineCommand({ ...input, sample: true })).toMatchObject({
+      ok: true,
+      value: { args: ["/repo/apps/engine/dist/main.js", "--dir", "/run/tokama", "--sample"] },
+    });
+  });
+
   it("refuses a missing node and relative paths", () => {
     expect(engineCommand({ ...input, node: undefined })).toEqual({ ok: false, error: "cannot start the engine: node was not found on PATH" });
     expect(engineCommand({ ...input, node: "node" })).toMatchObject({ ok: false, error: expect.stringContaining("node binary") });
     expect(engineCommand({ ...input, entry: "dist/main.js" })).toMatchObject({ ok: false, error: expect.stringContaining("engine entry") });
     expect(engineCommand({ ...input, dir: "run" })).toMatchObject({ ok: false, error: expect.stringContaining("engine dir") });
+  });
+});
+
+describe("engineDirFor", () => {
+  it("gives the sample engine its own subdir and the real engine the base dir", () => {
+    expect(engineDirFor("/home/a/.tokama/run", false)).toBe("/home/a/.tokama/run");
+    expect(engineDirFor("/home/a/.tokama/run", true)).toBe("/home/a/.tokama/run/sample");
+    expect(engineDirFor("/home/a/.tokama/run", true)).not.toBe(engineDirFor("/home/a/.tokama/run", false));
   });
 });
 

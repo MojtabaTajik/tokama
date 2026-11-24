@@ -18,9 +18,30 @@ const { bridge } = await import("./index.js");
 const exposed = [...electron.exposeInMainWorld.mock.calls];
 
 describe("preload bridge", () => {
-  it("exposes window.tokama with only getConnection and onConnection", () => {
+  it("exposes window.tokama with only the bridge methods", () => {
     expect(exposed).toEqual([["tokama", bridge]]);
-    expect(Object.keys(bridge).sort()).toEqual(["getConnection", "onConnection"]);
+    expect(Object.keys(bridge).sort()).toEqual(["command", "getConnection", "onConnection", "onEvent", "query"]);
+  });
+
+  it("query and command invoke their channels with the request only", async () => {
+    electron.invoke.mockResolvedValue({ ok: true, data: { workspaces: [] } });
+    await expect(bridge.query({ type: "workspaces" })).resolves.toEqual({ ok: true, data: { workspaces: [] } });
+    expect(electron.invoke).toHaveBeenCalledWith(CHANNELS.query, { type: "workspaces" });
+    electron.invoke.mockResolvedValue({ ok: true, data: null });
+    await bridge.command({ type: "stop_item", itemId: "item_x" });
+    expect(electron.invoke).toHaveBeenLastCalledWith(CHANNELS.command, { type: "stop_item", itemId: "item_x" });
+  });
+
+  it("onEvent passes the event without the IPC event, and unsubscribes", () => {
+    const listener = vi.fn();
+    const stop = bridge.onEvent(listener);
+    const [channel, handler] = electron.on.mock.calls[0] as [string, (event: unknown, message: unknown) => void];
+    expect(channel).toBe(CHANNELS.event);
+    const message = { kind: "event", seq: 3, event: { type: "item_updated" } };
+    handler({ sender: "ipc" }, message);
+    expect(listener.mock.calls).toEqual([[message]]);
+    stop();
+    expect(electron.removeListener).toHaveBeenCalledWith(CHANNELS.event, handler);
   });
 
   it("getConnection invokes the connection channel", async () => {

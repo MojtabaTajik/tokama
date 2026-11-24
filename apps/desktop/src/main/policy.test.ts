@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { describe, expect, it } from "vitest";
-import { devServerUrl, guardedHandler, isAppUrl, isDevToolsUrl, secureWebPreferences } from "./policy.js";
+import { describe, expect, it, vi } from "vitest";
+import { devServerUrl, guardedHandler, isAppUrl, isDevToolsUrl, secureWebPreferences, sampleEngineEnabled } from "./policy.js";
 
 describe("secureWebPreferences", () => {
   it("isolates and sandboxes the renderer, with no Node", () => {
@@ -114,5 +114,32 @@ describe("renderer Content-Security-Policy", () => {
 
   it("allows no inline code, eval or remote hosts", () => {
     expect(csp).not.toMatch(/unsafe-|https?:|data:|blob:|\*/);
+  });
+});
+
+describe("guardedHandler arguments", () => {
+  it("passes the renderer's arguments, without the event, to an app page's handler", () => {
+    const fn = vi.fn((...args: unknown[]) => args.length);
+    const handler = guardedHandler(() => true, fn);
+    expect(handler({ senderFrame: { url: "x" } }, { type: "workspaces" }, 2)).toBe(2);
+    expect(fn).toHaveBeenCalledWith({ type: "workspaces" }, 2);
+  });
+
+  it("never calls the handler for a refused frame", () => {
+    const fn = vi.fn();
+    expect(() => guardedHandler(() => false, fn)({ senderFrame: null }, { type: "workspaces" })).toThrow("refused");
+    expect(fn).not.toHaveBeenCalled();
+  });
+});
+
+describe("sampleEngineEnabled", () => {
+  it.each([
+    ["1", false, true],
+    ["1", true, false],
+    [undefined, false, false],
+    ["true", false, false],
+    ["0", false, false],
+  ] as const)("TOKAMA_SAMPLE=%s, packaged %s: %s", (value, isPackaged, expected) => {
+    expect(sampleEngineEnabled(value, isPackaged)).toBe(expected);
   });
 });
