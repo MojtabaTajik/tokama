@@ -116,10 +116,32 @@ describe("a tamper event for each protected category", () => {
     expect(changes).toEqual([{ area: "git", path: "config", category: "git", change: "modified" }]);
   });
 
+  it("git config counts by its keys: layout and remote and branch keys do not count; a watched key does", SLOW, async () => {
+    const config = join(repo, ".git", "config");
+    expect(
+      await changesAfter(async () => {
+        appendFileSync(config, "\n\n# a comment\n");
+        await plain(repo, "config", "remote.origin.url", "https://example.invalid/orders-api.git");
+        await plain(repo, "config", "branch.main.remote", "origin");
+        await plain(repo, "config", "branch.main.merge", "refs/heads/main");
+      }),
+    ).toEqual([]);
+    for (const [key, value] of [["core.sshCommand", "touch pwned"], ["alias.st", "!touch pwned"], ["credential.helper", "!touch pwned"], ["url.https://example.invalid/.insteadOf", "x"]] as const) {
+      expect(await changesAfter(() => plain(repo, "config", key, value)), key).toEqual([{ area: "git", path: "config", category: "git", change: "modified" }]);
+    }
+  });
+
+  it("git config git cannot read makes the hash an error, never absent", SLOW, async () => {
+    expect((await set.hash()).ok).toBe(true);
+    // Not read by `status` here (no extensions.worktreeConfig), so only the config hash sees it.
+    write(join(repo, ".git", "worktrees", "0b9f12ab", "config.worktree"), "[broken");
+    expect(await set.hash()).toMatchObject({ ok: false, error: { message: expect.stringMatching(/^cannot read git config/) } });
+  });
+
   it("a hook added and the config changed together, sorted", SLOW, async () => {
     const changes = await changesAfter(() => {
       write(join(repo, ".git", "hooks", "pre-commit"), "#!/bin/sh\n");
-      appendFileSync(join(repo, ".git", "config"), "\n");
+      appendFileSync(join(repo, ".git", "config"), "\n[core]\n\tpager = touch pwned\n");
     });
     expect(changes.map((change) => [change.path, change.change])).toEqual([
       ["config", "modified"],

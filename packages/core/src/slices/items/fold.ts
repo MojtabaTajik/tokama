@@ -78,9 +78,16 @@ export function applyEvent(item: StoredItem | undefined, event: ItemEvent): Resu
         branch: event.branch,
         dir: event.dir,
         ...(event.baseCommit !== undefined && { baseCommit: event.baseCommit }),
-        ...(event.protectedDigest !== undefined && { protectedDigest: event.protectedDigest }),
       });
       break;
+
+    case "baseline_recorded": {
+      const worktree = next.worktrees.find((w) => w.repoId === event.repoId);
+      if (worktree === undefined) return fail(`the item has no worktree for ${event.repoId}`);
+      if (worktree.protectedDigest !== undefined) return fail(`the worktree for ${event.repoId} already has a baseline`);
+      worktree.protectedDigest = event.protectedDigest;
+      break;
+    }
 
     case "step_started":
       if (openAttempt(next) !== undefined) return fail("an attempt is still running");

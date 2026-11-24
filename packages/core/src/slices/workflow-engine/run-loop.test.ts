@@ -204,6 +204,7 @@ describe("run loop: done_when", () => {
     expect(story(id)).toEqual([
       "item_created",
       "worktree_added",
+      "baseline_recorded",
       "step_started build",
       "attempt build#1",
       "process_started",
@@ -602,6 +603,69 @@ describe("run loop: protection", () => {
     const loop = engine(fakeRuntime([after(() => appendFileSync(join(repo.path, ".git", "config"), "[core]\n\thooksPath = hooks\n"), edits(FIXED))]));
     const id = await start(loop, template([BUILD_CHECKED]));
     expect(item(id)).toMatchObject({ state: "failed", outcome: { detail: expect.stringContaining("modified git:config (git)") } });
+  });
+
+  describe("the baseline is taken after setup, and git config counts by its keys", () => {
+    const sharedConfig = () => join(repo.path, ".git", "config");
+    /** Like husky's `prepare`: setup points git at the repo's hooks folder. */
+    const huskySetup = async () => {
+      appendFileSync(join(repo.path, "setup.sh"), "git config core.hooksPath .husky/_\n");
+      await plain(repo.path, "add", "-A");
+      await plain(repo.path, "commit", "-q", "-m", "husky");
+    };
+
+    it("a setup command that sets core.hooksPath does not stop the item, at Start or before the checks", SLOW, async () => {
+      await huskySetup();
+      const id = await start(engine(fakeRuntime([edits(FIXED)])), template([BUILD_CHECKED], { setup: "sh setup.sh" }));
+      expect(item(id).state).toBe("done");
+      expect(await plain(repo.path, "config", "core.hooksPath")).toBe(".husky/_");
+      expect(story(id).slice(0, 4)).toEqual(["item_created", "worktree_added", "baseline_recorded", "step_started build"]);
+    });
+
+    it("a `git push -u` in the main checkout during a step does not stop the item", SLOW, async () => {
+      const pushU = () =>
+        appendFileSync(
+          sharedConfig(),
+          '[remote "origin"]\n\turl = https://example.invalid/orders-api.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch "main"]\n\tremote = origin\n\tmerge = refs/heads/main\n',
+        );
+      const id = await start(engine(fakeRuntime([after(pushU, edits(FIXED))])), template([BUILD_CHECKED]));
+      expect(item(id).state).toBe("done");
+    });
+
+    it.each([
+      ["core.hooksPath", "[core]\n\thooksPath = elsewhere\n"],
+      ["core.fsmonitor", "[core]\n\tfsmonitor = touch pwned\n"],
+      ["filter.x.clean", '[filter "x"]\n\tclean = touch pwned\n'],
+      ["include.path", "[include]\n\tpath = ../evil.config\n"],
+    ])("an agent setting %s after setup stops the item", SLOW, async (_key, content) => {
+      await huskySetup();
+      const loop = engine(fakeRuntime([after(() => appendFileSync(sharedConfig(), content), edits(FIXED))]));
+      const id = await start(loop, template([BUILD_CHECKED], { setup: "sh setup.sh" }));
+      expect(item(id)).toMatchObject({ state: "failed", outcome: { detail: expect.stringContaining("modified git:config (git)") } });
+      expect(commitOf(id)).toBeUndefined();
+    });
+
+    it("a hooks file change still stops the item", SLOW, async () => {
+      const hook = () => writeFileSync(join(repo.path, ".git", "hooks", "pre-commit"), "#!/bin/sh\ntouch pwned\n");
+      const id = await start(engine(fakeRuntime([after(hook, edits(FIXED))])), template([BUILD_CHECKED]));
+      expect(item(id)).toMatchObject({ state: "failed", outcome: { detail: expect.stringContaining("added git:hooks/pre-commit (git)") } });
+    });
+
+    it("after a restart, the recorded baseline is used, never a new one", SLOW, async () => {
+      await huskySetup();
+      const id = await start(engine(fakeRuntime([edits(FIXED)])), template([{ id: "plan", doneWhen: "you approve" }], { setup: "sh setup.sh" }));
+      expect(openDecision(id)?.kind).toBe("plan_approval");
+      const digest = item(id).worktrees[0]!.protectedDigest;
+      appendFileSync(sharedConfig(), "[core]\n\tfsmonitor = touch pwned\n");
+
+      store = ItemStore.open({ home: tokamaHome, hostId: HOST, clock }).store;
+      const second = engine(fakeRuntime([]));
+      await second.ready;
+      await answer(second, id, "approve");
+      expect(item(id)).toMatchObject({ state: "failed", outcome: { detail: expect.stringContaining("modified git:config (git)") } });
+      expect(item(id).worktrees[0]!.protectedDigest).toBe(digest);
+      expect(story(id).filter((line) => line === "baseline_recorded")).toHaveLength(1);
+    });
   });
 
   it("the reviewer reviews the checked tree; a check that rewrote the worktree asks first; Finish commits that tree", SLOW, async () => {

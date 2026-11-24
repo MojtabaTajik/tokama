@@ -128,10 +128,15 @@ describe("foldItem", () => {
     expect(foldError([...startBuild, { type: "attempt_ended", stepId: BUILD, attempt: 1, result: "failed", tree }])).toMatch(/only on a passed attempt/);
     const asked = fold([
       created(),
-      { type: "worktree_added", repoId: "orders-api" as never, branch: "tokama/0190a000", dir: ".tokama/wt/0190a000", protectedDigest: "d".repeat(64) },
+      { type: "worktree_added", repoId: "orders-api" as never, branch: "tokama/0190a000", dir: ".tokama/wt/0190a000" },
+      { type: "baseline_recorded", repoId: "orders-api" as never, protectedDigest: "d".repeat(64) },
       { type: "decision_opened", decisionId, kind: "tamper", choices: [{ id: "approve", label: "Approve" }], covers: [{ path: "package.json", mode: "100644", blob: tree }], tree },
     ]);
     expect(asked.worktrees[0]?.protectedDigest).toBe("d".repeat(64));
+    const added = { type: "worktree_added", repoId: "orders-api" as never, branch: "tokama/0190a000", dir: ".tokama/wt/0190a000" } as const;
+    const baseline = { type: "baseline_recorded", repoId: "orders-api" as never, protectedDigest: "d".repeat(64) } as const;
+    expect(foldError([created(), baseline])).toMatch(/no worktree for orders-api/);
+    expect(foldError([created(), added, baseline, { ...baseline, protectedDigest: "e".repeat(64) }])).toMatch(/already has a baseline/);
     expect(asked.decisions[0]).toMatchObject({ covers: [{ path: "package.json", mode: "100644", blob: tree }], tree });
     expect(foldError([created(), { type: "item_ended", outcome: "stopped", commits: [{ repoId: "orders-api" as never, commit }] }])).toMatch(/only when the item is done/);
   });

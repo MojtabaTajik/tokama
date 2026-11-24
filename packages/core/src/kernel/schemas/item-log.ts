@@ -100,12 +100,13 @@ const WorktreeAddedSchema = z.strictObject({
   dir: RepoDirSchema,
   /** The commit the branch started from; the item's commit has it as its parent. */
   baseCommit: GIT_ID.optional(),
-  /**
-   * SHA-256 over the git and Tokama files that steer Tokama (git config, hooks, attributes, HEAD,
-   * `.tokama/`) as they were when the worktree was made. Any later difference stops the item.
-   */
-  protectedDigest: SHA256.optional(),
 });
+/**
+ * The item's protected baseline, taken once after setup passed at Start: SHA-256 over the files
+ * that steer Tokama (git config entries, hooks, attributes, HEAD, `.tokama/`). Any later
+ * difference stops the item. Recorded once per worktree; never replaced.
+ */
+const BaselineRecordedSchema = z.strictObject({ type: z.literal("baseline_recorded"), repoId: RepoIdSchema, protectedDigest: SHA256 });
 /** The item enters a step: the next one, the same one again, or an earlier one (`back`). */
 const StepStartedSchema = z.strictObject({ type: z.literal("step_started"), stepId: StepIdSchema });
 /** `attempt` numbers every attempt of the step, counted or not, from 1. */
@@ -181,6 +182,7 @@ const TombstoneSchema = z.strictObject({ type: z.literal("tombstone"), reason: z
 export const ItemEventBodySchema = z.discriminatedUnion("type", [
   ItemCreatedSchema,
   WorktreeAddedSchema,
+  BaselineRecordedSchema,
   StepStartedSchema,
   AttemptStartedSchema,
   ProcessStartedSchema,
@@ -206,6 +208,7 @@ const envelope = {
 export const ItemEventSchema = z.discriminatedUnion("type", [
   ItemCreatedSchema.extend(envelope),
   WorktreeAddedSchema.extend(envelope),
+  BaselineRecordedSchema.extend(envelope),
   StepStartedSchema.extend(envelope),
   AttemptStartedSchema.extend(envelope),
   ProcessStartedSchema.extend(envelope),

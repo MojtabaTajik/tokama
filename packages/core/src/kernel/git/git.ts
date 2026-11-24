@@ -1,6 +1,6 @@
 import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { err, ok, type Result } from "../result/index.js";
 import type { ProcessRunner } from "../process/index.js";
 
@@ -170,6 +170,12 @@ export interface Git {
    * is `<common>/worktrees/<name>`; in the main worktree both are the same.
    */
   gitDirs(repo: string): Promise<GitResult<GitDirs>>;
+  /**
+   * `config --file <file> --list -z`: the entries of one config file, in file order, as git
+   * reads them. Each record is `key` alone (a key with no value) or `key\nvalue`; section and key
+   * names come lowercased. Includes are not followed. `file` must be absolute.
+   */
+  configList(file: string): Promise<GitResult<string[]>>;
   /** `git --version`, refused below MIN_GIT_VERSION. The engine calls it once at startup. */
   checkGitVersion(): Promise<GitResult<string>>;
 }
@@ -397,6 +403,12 @@ export function createGit(options: GitOptions): Git {
         const [gitDir = "", commonDir = ""] = out.split("\n");
         return { gitDir, commonDir };
       }),
+    async configList(file) {
+      const args = ["config", "--file", file, "--list", "-z"];
+      if (!isAbsolute(file)) return err({ reason: "invalid-argument", args, exitCode: null, message: `refused relative path: ${JSON.stringify(file)}` });
+      // Outside any repo: only the named file is read.
+      return map(raw(tmpdir(), args), (out) => out.split("\0").filter((record) => record !== ""));
+    },
     async checkGitVersion() {
       const args = ["--version"];
       const out = await raw(tmpdir(), args);

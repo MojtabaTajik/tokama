@@ -508,6 +508,17 @@ describe("API on a real repo", () => {
     expect(await git.diffTreeRaw(repo, "--output=x", tree)).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
   });
 
+  it("configList: one file's entries in file order, valueless keys alone, no includes", SLOW, async () => {
+    const file = join(root, "listed.config");
+    write(join(root, "included.config"), "[core]\n\tpager = less\n");
+    write(file, `[core]\n\tHooksPath = hooks\n[alias]\n\tflag\n[include]\n\tpath = ${join(root, "included.config")}\n[core]\n\thooksPath = other\n`);
+    expect(value(await git.configList(file))).toEqual(["core.hookspath\nhooks", "alias.flag", `include.path\n${join(root, "included.config")}`, "core.hookspath\nother"]);
+    expect(await git.configList(join(root, "missing.config"))).toMatchObject({ ok: false, error: { reason: "failed" } });
+    write(join(root, "bad.config"), "[broken");
+    expect(await git.configList(join(root, "bad.config"))).toMatchObject({ ok: false, error: { reason: "failed" } });
+    expect(await git.configList("listed.config")).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
+  });
+
   it("branchDelete, lsTree and gitDirs", SLOW, async () => {
     mkdirSync(join(repo, "dir"));
     write(join(repo, "dir", "b c.txt"), "x\n");

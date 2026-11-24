@@ -1,8 +1,8 @@
 // What protects an item's work from the agent and from the commands Tokama runs for it.
 //
-// - Files that steer Tokama (git config, hooks, attributes, HEAD, the `.git` file, `.tokama/`):
-//   hashed once when the worktree is made. Any later difference stops the item, wherever it came
-//   from: an agent call, a failed run, setup, a check.
+// - Files that steer Tokama (git config entries, hooks, attributes, HEAD, the `.git` file,
+//   `.tokama/`): hashed once, after setup passed at Start. Any later difference stops the item,
+//   wherever it came from: an agent call, a failed run, setup, a check.
 // - Files the checks run on (package and test config, lockfiles, CI, the base commit's tests):
 //   judged in the tree Tokama stages, against the base commit, so a change made at any time is
 //   seen before checks run on it and before it is committed. The engineer approves exact content:

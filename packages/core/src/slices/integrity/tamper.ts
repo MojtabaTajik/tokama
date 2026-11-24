@@ -3,7 +3,9 @@
 // - git: the shared git dir's config, config.worktree, hooks/ and info/ attributes and exclude,
 //   the worktree's config.worktree and HEAD, the item branch's commit, and the worktree's `.git`
 //   file. These steer Tokama's own git calls and what gets committed; a commit or checkout made
-//   by an agent or a check moves HEAD or the branch.
+//   by an agent or a check moves HEAD or the branch. The config files count by the entries git
+//   reads from them, without `remote.*` and `branch.*` (a `git push -u` writes those, and they
+//   name no command git runs); every other key counts, in file order. The rest by content.
 // - tokama: `.tokama/` in the worktree and in the main repo (minus the worktree folder).
 // - in the worktree, see protected.ts: base-commit tests and snapshots, test config, package
 //   config, CI files, lockfiles, .gitattributes. Pattern files are found in the base commit, in
@@ -72,6 +74,8 @@ export interface IntegrityError {
 }
 
 const SHARED_GIT_FILES = ["config", "config.worktree", "info/attributes", "info/exclude"];
+/** Config sections that do not count: tracking and remote settings. */
+const IGNORED_CONFIG = /^(?:remote|branch)\./;
 const SHARED_GIT_DIRS = ["hooks"];
 
 const toPosix = (path: string) => path.split(sep).join("/");
@@ -95,6 +99,19 @@ async function hashPath(path: string): Promise<string | undefined> {
     if (code === "ENOENT" || code === "ENOTDIR") return undefined;
     return `error:${code ?? "unknown"}`;
   }
+}
+
+/**
+ * A stable hash of a git config file's entries, or of the path as hashPath gives it when it is not
+ * a regular file. An error when git cannot read the file: never "absent".
+ */
+async function hashConfig(git: Git, path: string): Promise<Result<string | undefined, IntegrityError>> {
+  const plain = await hashPath(path);
+  if (plain === undefined || !plain.startsWith("sha256:")) return ok(plain);
+  const listed = await git.configList(path);
+  if (!listed.ok) return err({ message: `cannot read git config: ${listed.error.message}` });
+  const counted = listed.value.filter((record) => !IGNORED_CONFIG.test(record));
+  return ok(`config:${createHash("sha256").update(JSON.stringify(counted)).digest("hex")}`);
 }
 
 /** Every non-directory under `dir`, as paths relative to `root`; symlinked folders are not entered. */
@@ -165,6 +182,8 @@ export async function protectedSet(git: Git, input: ProtectedSetInput): Promise<
 
   const worktreeGitPrefix = worktreeGitDir === "" ? "" : `${worktreeGitDir}/`;
   const branchRef = `refs/heads/${input.branch}`;
+  // Hashed by the entries git reads from them, not their bytes.
+  const configs = new Set(["config", "config.worktree", ...(worktreeGitDir === "" ? [] : [`${worktreeGitPrefix}config.worktree`])]);
 
   async function hash(): Promise<Result<ProtectedHashes, IntegrityError>> {
     const status = await git.status(input.worktreePath);
@@ -199,7 +218,13 @@ export async function protectedSet(git: Git, input: ProtectedSetInput): Promise<
     const roots: Record<ProtectedArea, string> = { git: commonDir, repo: input.repoPath, worktree: input.worktreePath };
     const hashes = new Map<string, ProtectedFile & { hash: string }>();
     for (const [key, file] of files) {
-      const hashed = await hashPath(join(roots[file.area], ...file.path.split("/")));
+      const path = join(roots[file.area], ...file.path.split("/"));
+      let hashed: string | undefined;
+      if (file.area === "git" && configs.has(file.path)) {
+        const config = await hashConfig(git, path);
+        if (!config.ok) return config;
+        hashed = config.value;
+      } else hashed = await hashPath(path);
       if (hashed !== undefined) hashes.set(key, { ...file, hash: hashed });
     }
     // The branch may live in packed-refs: hash the commit it names, not a file.

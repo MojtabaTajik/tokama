@@ -6,9 +6,9 @@
 // log. After a restart, recovery turns a step that was running into a run_failure decision; items
 // that were starting or finishing pick up where they were.
 //
-// Protection (protect.ts): the files that steer Tokama are hashed once, when the worktree is made,
-// and compared after every agent call, setup and check run, at each attempt start and before the
-// commit; any change stops the item. Every tree Tokama stages is judged against the base commit
+// Protection (protect.ts): the files that steer Tokama are hashed once, after setup passed at
+// Start, and compared after every agent call, setup and check run, at each attempt start and before
+// the commit; any change stops the item. Recovery and resume use that recorded baseline. Every tree Tokama stages is judged against the base commit
 // before checks run on it and before it is committed; protected changes the engineer has not
 // approved ask. One tree flows through: the checks pass on it, the reviewer sees its diff, Finish
 // commits it. For `checks pass`: remove ignored files, run setup again, stage, judge, then check.
@@ -384,7 +384,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     return hashes.ok ? ok(steeringEntries(hashes.value, worktree.branch)) : err(hashes.error.message);
   };
 
-  /** Hashes the steering files of a new worktree: the item's baseline, kept beside the log. */
+  /** Hashes the steering files after setup at Start: the item's baseline, kept beside the log. */
   const baselineOf = async (itemId: ItemId, repo: Repo, worktree: Worktree): Promise<Result<string, string>> => {
     const entries = await steeringNow(itemId, repo, worktree);
     if (!entries.ok) return entries;
@@ -464,27 +464,42 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     let current = ctx;
     if (item.worktrees.length === 0) {
       let created = await createWorktree(git, repo, item.id);
-      // A start that crashed after making the worktree: nothing has run in it yet, so it is reused.
+      // A start that crashed after making the worktree: at most setup ran in it, and setup runs
+      // again before the baseline, so it is reused.
       if (!created.ok && created.error.reason === "exists") {
         const found = await findItemWorktree(git, repo, item.id);
         if (found.ok && found.value !== undefined) created = ok(found.value);
       }
       if (!created.ok) return askRunFailure(item, `Cannot create the worktree: ${created.error.message}`);
-      const digest = await baselineOf(item.id, repo, located(item.id, repo, created.value));
-      if (!digest.ok) return askRunFailure(item, `Cannot read the files that steer Tokama: ${digest.error}`);
       const { branch, folder, baseCommit } = created.value;
-      current = { ...ctx, item: append(item.id, [{ type: "worktree_added", repoId: repo.id, branch, dir: folder, baseCommit, protectedDigest: digest.value }]) };
+      current = { ...ctx, item: append(item.id, [{ type: "worktree_added", repoId: repo.id, branch, dir: folder, baseCommit }]) };
     }
-    const worktree = worktreeOf(current);
+    let worktree = worktreeOf(current);
     if (worktree === undefined) return { kind: "end", outcome: "failed", detail: "The item's worktree has no recorded base commit." };
-    const before = await intact(current, worktree);
-    if (before !== undefined) return before;
+    // Once recorded, the baseline is never taken again.
+    const recorded = worktree.protectedDigest !== undefined;
+    if (recorded) {
+      const before = await intact(current, worktree);
+      if (before !== undefined) return before;
+    }
     if (template.setup !== undefined) {
       const setup = await runOne(deps.runner, template.setup, worktree.path, signal, itemPath(item.id, "setup.log"));
       if (signal.aborted) return WAIT;
-      const after = await intact(current, worktree);
-      if (after !== undefined) return after;
+      if (recorded) {
+        const after = await intact(current, worktree);
+        if (after !== undefined) return after;
+      }
       if (setup.outcome !== "passed") return askRunFailure(current.item, `The setup command failed: ${commandFailure(setup)} Its output is in the item's setup.log.`);
+    }
+    if (!recorded) {
+      // After setup, so what setup writes (husky's core.hooksPath, an install's files) is part of it.
+      const digest = await baselineOf(item.id, repo, worktree);
+      if (!digest.ok) return askRunFailure(current.item, `Cannot read the files that steer Tokama: ${digest.error}`);
+      current = { ...current, item: append(item.id, [{ type: "baseline_recorded", repoId: repo.id, protectedDigest: digest.value }]) };
+      worktree = { ...worktree, protectedDigest: digest.value };
+      // Setup may not move the item branch.
+      const settled = await intact(current, worktree);
+      if (settled !== undefined) return settled;
     }
     const first = template.steps[0]!.id;
     append(item.id, [{ type: "step_started", stepId: first }]);
