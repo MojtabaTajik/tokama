@@ -464,6 +464,53 @@ describe("API on a real repo", () => {
     expect(existsSync(path)).toBe(false);
   });
 
+  it("branchDelete, lsTree and gitDirs", SLOW, async () => {
+    mkdirSync(join(repo, "dir"));
+    write(join(repo, "dir", "b c.txt"), "x\n");
+    await plain(repo, "add", "-A");
+    await plain(repo, "commit", "-q", "-m", "second");
+    const path = join(root, "wt");
+    value(await git.worktreeAdd(repo, path, "feature", "main"));
+    expect(value(await git.lsTree(path, "HEAD"))).toEqual(["a.txt", "dir/b c.txt"]);
+    // --full-tree: the whole tree from a subfolder too.
+    expect(value(await git.lsTree(join(path, "dir"), "HEAD"))).toEqual(["a.txt", "dir/b c.txt"]);
+
+    const commonDir = join(repo, ".git");
+    expect(value(await git.gitDirs(repo))).toEqual({ gitDir: commonDir, commonDir });
+    expect(value(await git.gitDirs(path))).toEqual({ gitDir: join(commonDir, "worktrees", "wt"), commonDir });
+
+    expect(await git.branchDelete(repo, "feature")).toMatchObject({ ok: false, error: { reason: "failed" } });
+    value(await git.worktreeRemove(repo, path));
+    value(await git.branchDelete(repo, "feature"));
+    expect(await git.revParse(repo, "feature")).toMatchObject({ ok: false });
+  });
+
+  it("commitTree and updateRef commit an exact tree and move a ref only from its expected value", SLOW, async () => {
+    const base = value(await git.revParse(repo, "HEAD"));
+    write(join(repo, "a.txt"), "staged\n");
+    value(await git.addAll(repo));
+    const tree = value(await git.writeTree(repo));
+    write(join(repo, "a.txt"), "written after the tree\n");
+    const commit = value(await git.commitTree(repo, tree, base, "exact tree\n\nTrailer: x"));
+    expect(value(await git.revParse(repo, `${commit}^{tree}`))).toBe(tree);
+    expect(value(await git.revParse(repo, "HEAD"))).toBe(base);
+    expect(await git.updateRef(repo, "refs/heads/main", commit, commit)).toMatchObject({ ok: false, error: { reason: "failed" } });
+    value(await git.updateRef(repo, "refs/heads/main", commit, base));
+    expect(value(await git.revParse(repo, "main"))).toBe(commit);
+    expect(await plain(repo, "show", "main:a.txt")).toBe("staged\n");
+    expect(await git.updateRef(repo, "HEAD", commit, commit)).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
+    expect(await git.commitTree(repo, "--help", base, "m")).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
+  });
+
+  it("worktreePrune drops an entry whose folder is gone", SLOW, async () => {
+    const path = join(root, "wt");
+    value(await git.worktreeAdd(repo, path, "feature", "main"));
+    rmSync(path, { recursive: true, force: true });
+    expect(value(await git.worktreeList(repo))).toHaveLength(2);
+    value(await git.worktreePrune(repo));
+    expect(value(await git.worktreeList(repo))).toHaveLength(1);
+  });
+
   it("returns git failures as values", SLOW, async () => {
     const missing = await git.revParse(repo, "no-such-branch");
     expect(missing).toMatchObject({ ok: false, error: { reason: "failed", exitCode: 128, args: ["rev-parse", "--verify", "no-such-branch"] } });
@@ -494,6 +541,8 @@ describe("API on a real repo", () => {
     expect(await git.worktreeAdd(repo, join(root, "wt"), "-b", "main")).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
     expect(await git.worktreeAdd(repo, join(root, "wt"), "b", "")).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
     expect(await git.worktreeRemove(repo, "-f")).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
+    expect(await git.branchDelete(repo, "-r")).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
+    expect(await git.lsTree(repo, "--abbrev")).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
   });
 
   it("reports a git binary that does not start", SLOW, async () => {
@@ -542,7 +591,7 @@ describe("how git is called", () => {
       const argv = argvOf(request);
       expect(argv.slice(0, 2)).toEqual(["git", "--no-pager"]);
       expect(argv.slice(2, 2 + GIT_SAFE_CONFIG.length * 2)).toEqual(GIT_SAFE_CONFIG.flatMap((s) => ["-c", s]));
-      expect(request.env).toEqual({ GIT_TERMINAL_PROMPT: "0", GIT_NO_LAZY_FETCH: "1" });
+      expect(request.env).toEqual({ GIT_TERMINAL_PROMPT: "0", GIT_NO_LAZY_FETCH: "1", GIT_OPTIONAL_LOCKS: "0" });
       expect(request.timeoutMs).toBe(5_000);
       expect(request.cwd).toBe("/repo");
     }
