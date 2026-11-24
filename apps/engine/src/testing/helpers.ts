@@ -38,9 +38,10 @@ export interface RawConnection {
   destroy(): void;
 }
 
-export function rawConnect(socketPath: string): Promise<RawConnection> {
+/** `allowHalfOpen`: keep the connection open after the engine ends it, as a stuck client would. */
+export function rawConnect(socketPath: string, options: { allowHalfOpen?: boolean } = {}): Promise<RawConnection> {
   return new Promise((resolve, reject) => {
-    const socket: Socket = connect(socketPath);
+    const socket: Socket = connect({ path: socketPath, allowHalfOpen: options.allowHalfOpen ?? false });
     const decoder = new LineDecoder(64 * 1024 * 1024);
     const received: unknown[] = [];
     const waiting: { resolve: (message: unknown) => void; reject: (error: Error) => void }[] = [];

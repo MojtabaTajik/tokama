@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ClientEvent, connect, type EngineClient } from "@tokama/client";
@@ -98,7 +98,7 @@ describe("engine service", () => {
     expect(statSync(socketPath).mode & 0o777).toBe(0o600);
     expect(statSync(tokenPath).mode & 0o777).toBe(0o600);
     expect(readFileSync(tokenPath, "utf8")).toMatch(/^[0-9a-f]{64}$/);
-    expect(readFileSync(lockPath, "utf8").trim()).toBe(String(process.pid));
+    expect(readFileSync(lockPath, "utf8")).toBe(`${process.pid} ${handle.engineId}\n`);
 
     await handle.close();
     expect([socketPath, tokenPath, lockPath].filter((path) => existsSync(path))).toEqual([]);
@@ -185,6 +185,29 @@ describe("engine service", () => {
     expect(readFileSync(handle.endpoint.tokenPath, "utf8")).toBe(token);
     const engineClient = await client(dir);
     expect(engineClient.engineId).toBe(handle.engineId);
+  });
+
+  it("refuses to start while an old engine drains, and the old one leaves the next one's files alone", async () => {
+    const dir = tempEngineDir(cleanups);
+    const started = await startEngine({ dir, shutdownTimeoutMs: 300 });
+    if (!started.ok) throw new Error(started.error.message);
+    const old = started.value;
+    // An engine that has run for a while: its lock is older than the starting grace.
+    const longAgo = new Date(Date.now() - 3_600_000);
+    utimesSync(old.endpoint.lockPath, longAgo, longAgo);
+    // A client that does not close when asked keeps the old engine draining.
+    const stuck = await rawConnect(old.endpoint.socketPath, { allowHalfOpen: true });
+    cleanups.push(() => stuck.destroy());
+    stuck.send({ kind: "hello", apiVersion: API_VERSION, token: readFileSync(old.endpoint.tokenPath, "utf8") });
+    await stuck.next();
+
+    const closing = old.close();
+    expect(await startEngine({ dir })).toMatchObject({ ok: false, error: { code: "already_running" } });
+    await closing;
+
+    const next = await engine(dir);
+    expect((await client(dir)).engineId).toBe(next.engineId);
+    expect(readFileSync(next.endpoint.lockPath, "utf8")).toContain(next.engineId);
   });
 
   it("cleans up a stale lock and socket file left by a dead engine", async () => {

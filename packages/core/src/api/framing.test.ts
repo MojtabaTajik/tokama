@@ -16,12 +16,12 @@ describe("LineDecoder", () => {
   });
 
   it("decodes a multi-byte character split across chunks", () => {
-    const bytes = Buffer.from('"پرگار"\n');
+    const bytes = Buffer.from('"crème brûlée €"\n');
     const decoder = new LineDecoder();
     const first = decoder.push(bytes.subarray(0, 3));
     const second = decoder.push(bytes.subarray(3));
     expect(first).toEqual({ ok: true, value: [] });
-    expect(second).toEqual({ ok: true, value: ['"پرگار"'] });
+    expect(second).toEqual({ ok: true, value: ['"crème brûlée €"'] });
   });
 
   it("accepts a line of exactly the cap", () => {

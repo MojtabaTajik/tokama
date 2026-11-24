@@ -5,8 +5,10 @@
 // carrying the token and the client's API version; after the welcome, the client sends commands
 // and queries (one JSON message per line) and receives replies and events.
 //
-// Shutdown, when the signal aborts or close() is called: stop accepting, wait for in-flight
-// requests (bounded), close the connections, remove the socket, token and lock files.
+// Shutdown, when the signal aborts or close() is called: refuse new connections, wait for
+// in-flight requests (bounded), close the connections, stop listening, then remove the socket,
+// token and lock files if the lock is still this engine's. The socket keeps answering until the
+// drain ends, so an engine starting meanwhile sees a live engine instead of a stale lock.
 // Threat model: architecture.md, section 9 (local desktop, no network listener).
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { chmodSync, closeSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
@@ -75,7 +77,10 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
 
   const dir = ensurePrivateDir(endpoint.value.dir);
   if (!dir.ok) return dir;
-  const lock = await acquireLock(endpoint.value, log);
+  const engineId = randomUUID();
+  // Unique per engine instance (two engines in one process share the pid).
+  const lockContent = `${process.pid} ${engineId}\n`;
+  const lock = await acquireLock(endpoint.value, lockContent, log);
   if (!lock.ok) return lock;
 
   // From here on the lock is ours, so the socket and token files at these paths are ours too.
@@ -89,11 +94,10 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   } catch (error) {
     unlinkIfPresent(socketPath);
     unlinkIfPresent(tokenPath);
-    releaseLock(lockPath);
+    releaseLock(lockPath, lockContent);
     return err({ code: "start_failed", message: `could not listen on ${socketPath}: ${String(error)}` });
   }
 
-  const engineId = randomUUID();
   const store = options.store ?? new MemoryItemStore();
   const helloTimeoutMs = options.helloTimeoutMs ?? 5_000;
   const shutdownTimeoutMs = options.shutdownTimeoutMs ?? 5_000;
@@ -102,6 +106,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   const inFlight = new Set<Promise<void>>();
   let seq = 0;
   let shuttingDown = false;
+  let onAllClosed: (() => void) | undefined;
 
   const write = (socket: Socket, line: string) => {
     if (socket.destroyed || socket.writableEnded) return;
@@ -218,6 +223,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       clearTimeout(helloTimer);
       connections.delete(socket);
       ready.delete(socket);
+      if (connections.size === 0) onAllClosed?.();
     });
   });
 
@@ -235,15 +241,21 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     if (shuttingDown) return closed;
     shuttingDown = true;
     unsubscribe();
-    const serverClosed = new Promise<void>((resolve) => server.close(() => resolve()));
     await withDeadline(Promise.allSettled([...inFlight]), shutdownTimeoutMs);
+    const allClosed = new Promise<void>((resolve) => {
+      onAllClosed = resolve;
+      if (connections.size === 0) resolve();
+    });
     for (const socket of connections) socket.end();
-    await withDeadline(serverClosed, shutdownTimeoutMs);
+    await withDeadline(allClosed, shutdownTimeoutMs);
     for (const socket of connections) socket.destroy();
-    await serverClosed;
-    unlinkIfPresent(socketPath);
-    unlinkIfPresent(tokenPath);
-    releaseLock(lockPath);
+    // Closing the server removes the socket file. Only then may another engine take over.
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    if (ownsLock(lockPath, lockContent)) {
+      unlinkIfPresent(socketPath);
+      unlinkIfPresent(tokenPath);
+      releaseLock(lockPath, lockContent);
+    }
     log("stopped");
     resolveClosed();
     return closed;
@@ -270,12 +282,12 @@ function ensurePrivateDir(dir: string): Result<void, StartError> {
   }
 }
 
-async function acquireLock(endpoint: EngineEndpoint, log: (message: string) => void): Promise<Result<void, StartError>> {
+async function acquireLock(endpoint: EngineEndpoint, content: string, log: (message: string) => void): Promise<Result<void, StartError>> {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const fd = openSync(endpoint.lockPath, "wx", 0o600);
       try {
-        writeSync(fd, `${process.pid}\n`);
+        writeSync(fd, content);
       } finally {
         closeSync(fd);
       }
@@ -332,9 +344,18 @@ function pidAlive(pid: number): boolean {
   }
 }
 
-function releaseLock(lockPath: string): void {
+function ownsLock(lockPath: string, content: string): boolean {
   try {
-    if (Number.parseInt(readFileSync(lockPath, "utf8"), 10) === process.pid) unlinkSync(lockPath);
+    return readFileSync(lockPath, "utf8") === content;
+  } catch {
+    return false;
+  }
+}
+
+function releaseLock(lockPath: string, content: string): void {
+  if (!ownsLock(lockPath, content)) return;
+  try {
+    unlinkSync(lockPath);
   } catch {
     // Already gone.
   }
