@@ -12,7 +12,8 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { connect } from "@tokama/client";
-import { _electron, type ElectronApplication } from "playwright-core";
+import { _electron, type ElectronApplication, type Page } from "playwright-core";
+import type { ConnectionState, TokamaBridge } from "../src/shared/bridge.ts";
 
 const TIMEOUT_MS = 60_000;
 const appDir = resolve(import.meta.dirname, "..");
@@ -59,13 +60,6 @@ async function stopEngine(child: ChildProcess): Promise<void> {
   clearTimeout(timer);
 }
 
-interface Connection {
-  readonly status: string;
-  readonly engineId?: string;
-  readonly reason?: string;
-  readonly logTail?: readonly string[];
-}
-
 async function run(tmp: string): Promise<void> {
   const engineDir = join(tmp, "engine");
   mkdirSync(engineDir, { mode: 0o700 });
@@ -94,26 +88,36 @@ async function run(tmp: string): Promise<void> {
     });
     app.process().stdout?.on("data", (chunk: Buffer) => appOutput.push(chunk.toString()));
     app.process().stderr?.on("data", (chunk: Buffer) => appOutput.push(chunk.toString()));
+    // Renderer errors go to the failure output, from the first one on. A window can already
+    // exist when launch() returns, so the open ones are watched as well as new ones.
+    const watched = new WeakSet<Page>();
+    const watch = (page: Page) => {
+      if (watched.has(page)) return;
+      watched.add(page);
+      page.on("pageerror", (error) => appOutput.push(`renderer error: ${error.message}\n`));
+      page.on("console", (message) => {
+        if (message.type() === "error") appOutput.push(`renderer console: ${message.text()}\n`);
+      });
+    };
+    app.on("window", watch);
+    for (const page of app.windows()) watch(page);
     const page = await app.firstWindow({ timeout: remaining() });
-    page.on("pageerror", (error) => appOutput.push(`renderer error: ${error.message}\n`));
-    page.on("console", (message) => {
-      if (message.type() === "error") appOutput.push(`renderer console: ${message.text()}\n`);
-    });
     await page.waitForLoadState("load", { timeout: remaining() });
     await page.locator("#root > *").first().waitFor({ timeout: remaining() });
     log(`window "${await page.title()}" loaded`);
 
     // What the renderer gets through the preload bridge: the state the UI shows.
-    let state: Connection = { status: "unknown" };
+    let state: ConnectionState | undefined;
     while (Date.now() < deadline) {
-      state = await page.evaluate(() => (globalThis as unknown as { tokama: { getConnection(): Promise<Connection> } }).tokama.getConnection());
+      state = await page.evaluate(() => (globalThis as unknown as { tokama: TokamaBridge }).tokama.getConnection());
       if (state.status === "connected" || state.status === "failed") break;
       await pause(100);
     }
-    if (state.status !== "connected") {
-      const tail = state.logTail?.length ? `\n${state.logTail.join("\n")}` : "";
-      throw new Error(`the renderer reports "${state.status}"${state.reason ? `: ${state.reason}` : ""}${tail}`);
+    if (state?.status === "failed") {
+      const tail = state.logTail.length > 0 ? `\n${state.logTail.join("\n")}` : "";
+      throw new Error(`the renderer reports "failed": ${state.reason}${tail}`);
     }
+    if (state?.status !== "connected") throw new Error(`the renderer still reports "${state?.status ?? "nothing"}" at the timeout`);
     if (state.engineId !== started.engineId) {
       throw new Error(`the app connected to engine ${String(state.engineId)}, not to the sample engine ${started.engineId}`);
     }
