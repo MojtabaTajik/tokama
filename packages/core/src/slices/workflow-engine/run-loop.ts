@@ -464,8 +464,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     let current = ctx;
     if (item.worktrees.length === 0) {
       let created = await createWorktree(git, repo, item.id);
-      // A start that crashed after making the worktree: at most setup ran in it, and setup runs
-      // again before the baseline, so it is reused.
+      // A start that crashed after making the worktree: nothing has run in it yet, so it is reused.
       if (!created.ok && created.error.reason === "exists") {
         const found = await findItemWorktree(git, repo, item.id);
         if (found.ok && found.value !== undefined) created = ok(found.value);

@@ -622,6 +622,21 @@ describe("run loop: protection", () => {
       expect(story(id).slice(0, 4)).toEqual(["item_created", "worktree_added", "baseline_recorded", "step_started build"]);
     });
 
+    it("a setup that fails takes no baseline; Retry runs setup again and takes it once", SLOW, async () => {
+      // Sets core.hooksPath, then fails the first time only (the marker is outside the worktree).
+      const marker = join(root, "setup-ran");
+      appendFileSync(join(repo.path, "setup.sh"), `git config core.hooksPath .husky/_\n[ -f '${marker}' ] || { touch '${marker}'; exit 1; }\n`);
+      await plain(repo.path, "add", "-A");
+      await plain(repo.path, "commit", "-q", "-m", "flaky setup");
+      const loop = engine(fakeRuntime([edits(FIXED)]));
+      const id = await start(loop, template([BUILD_CHECKED], { setup: "sh setup.sh" }));
+      expect(openDecision(id)?.kind).toBe("run_failure");
+      expect(item(id).worktrees[0]?.protectedDigest).toBeUndefined();
+      await answer(loop, id, "retry_step");
+      expect(item(id).state).toBe("done");
+      expect(story(id).filter((line) => line === "baseline_recorded")).toHaveLength(1);
+    });
+
     it("a `git push -u` in the main checkout during a step does not stop the item", SLOW, async () => {
       const pushU = () =>
         appendFileSync(
