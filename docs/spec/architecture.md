@@ -152,11 +152,12 @@ Epics, each a GitHub milestone with small issues (1 to 3 days each). Claude Code
 
 - **A. Skeleton**: workspace and strict TypeScript, lint boundaries with fixture tests, adapter removal test, CI on macOS and Linux.
 - **B. Kernel and engine service**: process control, command policy, hardened git, safe file reads, secrets, schemas and ports with contract tests, the engine service process with the versioned local-socket API and a typed client.
-- **C. Claude Code agent**: the adapter, one agent call with usage capture, loop guards, stop and abort.
-- **D. Templates and config**: template format and validation, agents, workspaces and repos, example templates.
-- **E. Running a task**: item store, step sequencing and gates, worktrees, checks, review verdicts, retry, escalation and approval, commit or pull request, tamper checks.
-- **F. Investigations**: connector port and MCP adapter, Postgres connector, data rules and egress, redaction and summaries, cloud-step approval, evidence and findings, investigation to fix task.
-- **G. Local models**: Ollama host adapter, Claude Code runtime routed to Ollama.
-- **H. Desktop**: Electron app as an engine client, board, drawer, new work, needs you and notifications, attention and usage rings, settings, template editor, first run, item full view.
-- **I. Codex CLI**: the adapter.
-- **J. Usage**: rollups, quota windows, machine sampler.
+- **C. Desktop shell on a fake engine**: the Electron app as an engine client, with board, item drawer and new work running against a fake engine that serves sample data through the real engine API. Real engine data replaces the fake later without UI changes.
+- **D. Claude Code agent**: the adapter, one agent call with usage capture, loop guards, stop and abort.
+- **E. Templates and config**: template format and validation, agents, workspaces and repos, example templates.
+- **F. Running a task**: item store, step sequencing and gates, worktrees, checks, review verdicts, retry, escalation and approval, commit or pull request, tamper checks.
+- **G. Investigations**: connector port and MCP adapter, Postgres connector, data rules and egress, redaction and summaries, cloud-step approval, evidence and findings, investigation to fix task.
+- **H. Local models**: Ollama host adapter, Claude Code runtime routed to Ollama.
+- **I. Desktop, complete**: needs you and notifications, attention and usage rings, settings, template editor, first run, item full view, all wired to the real engine.
+- **J. Codex CLI**: the adapter.
+- **K. Usage**: rollups, quota windows, machine sampler.
