@@ -35,6 +35,8 @@ pnpm workspaces, `tsc --build` with project references. `desktop` depends on `co
 The UI never calls slices directly. It talks to the engine through one typed API: commands (start item, approve step, stop, save template, add connection), queries (board, item, settings) and an event stream (item and step updates, usage, attention).
 
 - v1 transport: a local socket (Unix domain socket on macOS and Linux, a named pipe on Windows later) owned by the user, with a per-session token. The desktop app starts the engine service if it is not running and reconnects if it restarts.
+- Socket, token and single-instance lock live in one 0700 directory: `TOKAMA_ENGINE_DIR`, else `$XDG_RUNTIME_DIR/tokama` on Linux, else `~/.tokama/run`. The socket and token file are 0600; the token is new on each engine start. Messages are newline-delimited JSON, at most 1 MiB each.
+- Each connection starts with a handshake: the client sends `hello` (its `apiVersion`, any integer, and the token); the engine answers `welcome` (with an `engineId` that is new on each start) or a `connection_error` (`unauthorized`, `unsupported_version`, ...) and closes. Handshake messages accept unknown fields, so any two versions can read them. Event `seq` restarts with the engine, so a client re-runs its queries after every reconnect.
 - The API is versioned from the first release and fully serializable: no Electron, Node or OS types cross it. Every message is validated with the engine's schemas on both sides.
 - Later: the same API over an authenticated network connection, to a remote host or through a relay for mobile and tablet clients (see product spec). A remote host keeps its own agents, models, repos and credentials; only API messages cross.
 
