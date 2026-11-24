@@ -12,7 +12,9 @@
     "clean": "tsc --build --clean",
     "typecheck": "tsc --build && pnpm --recursive exec tsc --project tsconfig.test.json && tsc --project tooling/tsconfig.json && tsc --project tooling/removal-test",
     "lint": "eslint -c eslint.config.js .",
-    "test": "vitest run --config tooling/vitest.config.ts",
+    "test": "vitest run --config tooling/vitest.config.ts --project fast",
+    "test:int": "vitest run --config tooling/vitest.config.ts --project int",
+    "test:all": "vitest run --config tooling/vitest.config.ts",
     "removal-test": "tsc --project tooling/removal-test && node tooling/removal-test/removal-test.ts"
   },
   "devDependencies": {
