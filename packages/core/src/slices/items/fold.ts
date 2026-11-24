@@ -73,7 +73,7 @@ export function applyEvent(item: StoredItem | undefined, event: ItemEvent): Resu
 
     case "worktree_added":
       if (next.worktrees.some((w) => w.repoId === event.repoId)) return fail(`the item already has a worktree for ${event.repoId}`);
-      next.worktrees.push({ repoId: event.repoId, branch: event.branch, dir: event.dir });
+      next.worktrees.push({ repoId: event.repoId, branch: event.branch, dir: event.dir, ...(event.baseCommit !== undefined && { baseCommit: event.baseCommit }) });
       break;
 
     case "step_started":
@@ -96,7 +96,14 @@ export function applyEvent(item: StoredItem | undefined, event: ItemEvent): Resu
     case "process_started": {
       const running = runningAttempt(must(step), event.attempt);
       if (running === undefined) return fail(`attempt ${event.attempt} of ${event.stepId} is not running`);
-      running.processes.push({ role: event.role, pid: event.pid, startedAt: event.at, bootTime: event.bootTime, hostId: event.hostId });
+      running.processes.push({
+        role: event.role,
+        pid: event.pid,
+        startedAt: event.at,
+        bootTime: event.bootTime,
+        ...(event.pgid !== undefined && { pgid: event.pgid }),
+        hostId: event.hostId,
+      });
       break;
     }
 
@@ -121,6 +128,10 @@ export function applyEvent(item: StoredItem | undefined, event: ItemEvent): Resu
       running.result = event.result;
       if (event.failure !== undefined) running.failure = event.failure;
       if (event.detail !== undefined) running.detail = event.detail;
+      if (event.tree !== undefined) {
+        if (event.result !== "passed") return fail("tree is given only on a passed attempt");
+        running.tree = event.tree;
+      }
       break;
     }
 
@@ -163,7 +174,13 @@ export function applyEvent(item: StoredItem | undefined, event: ItemEvent): Resu
       const current = next.steps.find((s) => s.id === next.currentStepId);
       if (current !== undefined && (current.state === "running" || current.state === "needs_you")) current.state = "stopped";
       delete next.currentStepId;
-      next.outcome = { kind: event.outcome, ...(event.detail !== undefined && { detail: event.detail }), at: event.at };
+      if (event.commits !== undefined && event.outcome !== "done") return fail("commits are given only when the item is done");
+      next.outcome = {
+        kind: event.outcome,
+        ...(event.detail !== undefined && { detail: event.detail }),
+        ...(event.commits !== undefined && { commits: event.commits }),
+        at: event.at,
+      };
       break;
     }
 

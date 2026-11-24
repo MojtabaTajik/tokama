@@ -101,6 +101,11 @@ export class ItemStore {
     return this.items.get(id);
   }
 
+  /** This machine's folder of the item, for the files beside its log (check output, transcripts). */
+  itemDir(id: ItemId): string {
+    return join(this.itemsDir, id);
+  }
+
   /** Returns a function that removes the listener. */
   subscribe(listener: ItemListener): () => void {
     this.listeners.add(listener);

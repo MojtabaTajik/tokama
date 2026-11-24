@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { err, ok, type Result } from "../result/index.js";
@@ -113,6 +113,13 @@ export interface Git {
   diffCachedNumstat(repo: string): Promise<GitResult<NumstatEntry[]>>;
   /** Unified diff of the worktree against the index, or of the index against HEAD with `cached`. */
   diff(repo: string, options?: { readonly cached?: boolean }): Promise<GitResult<string>>;
+  /**
+   * `clean -ffdX` at the top of a linked worktree: removes ignored files and folders (installed
+   * dependencies too, nested repos included), so a check cannot run a tool an agent swapped in
+   * there. Refused unless `repo` is the top of a linked worktree, so a missing or replaced `.git`
+   * file can never point the clean at the main repo.
+   */
+  cleanIgnored(repo: string): Promise<GitResult<void>>;
   /** `write-tree`: the tree id of the index. */
   writeTree(repo: string): Promise<GitResult<string>>;
   /** `commit -q --no-verify -m <message>` of the index; returns the new commit id. */
@@ -292,6 +299,17 @@ export function createGit(options: GitOptions): Git {
     diffCachedNumstat: (repo) =>
       map(git(repo, ["diff", "--cached", "--numstat", "-z", "--no-renames", ...DIFF_SAFE]), parseNumstat),
     diff: (repo, diffOptions = {}) => git(repo, ["diff", ...(diffOptions.cached === true ? ["--cached"] : []), ...DIFF_SAFE]),
+    async cleanIgnored(repo) {
+      const args = ["clean", "-ffdX"];
+      const where = await git(repo, ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-dir", "--git-common-dir"]);
+      if (!where.ok) return where;
+      const [top, gitDir, commonDir] = where.value.split("\n");
+      const [realTop, realRepo] = await Promise.all([realpath(top ?? "").catch(() => ""), realpath(repo).catch(() => repo)]);
+      if (realTop !== realRepo || gitDir === commonDir) {
+        return err({ reason: "invalid-argument", args, exitCode: null, message: `refused: ${repo} is not the top of a linked worktree` });
+      }
+      return map(git(repo, args), none);
+    },
     writeTree: (repo) => map(git(repo, ["write-tree"]), trimmed),
     async commit(repo, message) {
       const committed = await git(repo, ["commit", "-q", "--no-verify", "-m", message]);

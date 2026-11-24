@@ -57,6 +57,8 @@ export const ItemFileSchema = relativePath;
 export const RepoDirSchema = relativePath;
 
 const SHA256 = z.string().regex(/^[0-9a-f]{64}$/, "must be a lowercase hex SHA-256");
+/** A git object id: SHA-1 or SHA-256, lowercase hex. */
+const GIT_ID = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/, "must be a git object id");
 const attempt = z.int().min(1);
 
 export const DecisionChoiceSchema = z.strictObject({ id: z.string().min(1).max(64), label: z.string().min(1).max(64) });
@@ -89,6 +91,8 @@ const WorktreeAddedSchema = z.strictObject({
   repoId: RepoIdSchema,
   branch: z.string().min(1).max(200),
   dir: RepoDirSchema,
+  /** The commit the branch started from; the item's commit has it as its parent. */
+  baseCommit: GIT_ID.optional(),
 });
 /** The item enters a step: the next one, the same one again, or an earlier one (`back`). */
 const StepStartedSchema = z.strictObject({ type: z.literal("step_started"), stepId: StepIdSchema });
@@ -106,6 +110,8 @@ const ProcessStartedSchema = z.strictObject({
   role: z.enum(["agent", "check"]),
   pid: z.int().min(2),
   bootTime: EpochMsSchema,
+  /** The process group the root leads, when the platform has groups. */
+  pgid: z.int().min(2).optional(),
 });
 const CheckResultSchema = z.strictObject({
   type: z.literal("check_result"),
@@ -125,6 +131,8 @@ const AttemptEndedSchema = z.strictObject({
   /** Present when result is `run_failed`. */
   failure: RunFailureSchema.optional(),
   detail: z.string().min(1).max(500).optional(),
+  /** On a passed `checks pass` attempt: the tree the checks ran on, the one the item commits. */
+  tree: GIT_ID.optional(),
 });
 const StepEndedSchema = z.strictObject({ type: z.literal("step_ended"), stepId: StepIdSchema, result: StepResultSchema });
 /** The event's `at` is when the engine asked. */
@@ -141,10 +149,14 @@ const DecisionResolvedSchema = z.strictObject({
   decisionId: DecisionIdSchema,
   choice: z.string().min(1).max(64),
 });
+/** A commit Tokama made on an item branch. */
+const ItemCommitSchema = z.strictObject({ repoId: RepoIdSchema, commit: GIT_ID });
 const ItemEndedSchema = z.strictObject({
   type: z.literal("item_ended"),
   outcome: ItemOutcomeSchema,
   detail: z.string().min(1).max(500).optional(),
+  /** The commits the item made, as Tokama recorded them. */
+  commits: z.array(ItemCommitSchema).max(20).optional(),
 });
 /** Deletes the item. The log keeps its history; nothing may follow a tombstone. */
 const TombstoneSchema = z.strictObject({ type: z.literal("tombstone"), reason: z.string().min(1).max(200).optional() });
@@ -195,6 +207,7 @@ const ProcessRecordSchema = z.strictObject({
   pid: z.int().min(2),
   startedAt: EpochMsSchema,
   bootTime: EpochMsSchema,
+  pgid: z.int().min(2).optional(),
   /** The host that started it; only that host may signal it. */
   hostId: HostIdSchema,
 });
@@ -215,6 +228,7 @@ export const AttemptRecordSchema = z.strictObject({
   result: AttemptResultSchema.optional(),
   failure: RunFailureSchema.optional(),
   detail: z.string().optional(),
+  tree: GIT_ID.optional(),
   processes: z.array(ProcessRecordSchema),
   checks: z.array(CheckRecordSchema),
 });
@@ -246,13 +260,13 @@ export const StoredItemSchema = z.strictObject({
   title: z.string(),
   text: z.string(),
   repoIds: z.array(RepoIdSchema),
-  worktrees: z.array(z.strictObject({ repoId: RepoIdSchema, branch: z.string(), dir: RepoDirSchema })),
+  worktrees: z.array(z.strictObject({ repoId: RepoIdSchema, branch: z.string(), dir: RepoDirSchema, baseCommit: GIT_ID.optional() })),
   state: ItemStateSchema,
   /** The step the item is in; absent before the first step and between steps. */
   currentStepId: StepIdSchema.optional(),
   steps: z.array(StoredStepSchema),
   decisions: z.array(StoredDecisionSchema),
-  outcome: z.strictObject({ kind: ItemOutcomeSchema, detail: z.string().optional(), at: EpochMsSchema }).optional(),
+  outcome: z.strictObject({ kind: ItemOutcomeSchema, detail: z.string().optional(), commits: z.array(ItemCommitSchema).optional(), at: EpochMsSchema }).optional(),
   deleted: z.boolean(),
   createdAt: EpochMsSchema,
   updatedAt: EpochMsSchema,

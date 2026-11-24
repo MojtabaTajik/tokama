@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -462,6 +462,35 @@ describe("API on a real repo", () => {
     value(await git.worktreeRemove(repo, path, { force: true }));
     expect(value(await git.worktreeList(repo))).toHaveLength(1);
     expect(existsSync(path)).toBe(false);
+  });
+
+  it("cleanIgnored removes ignored files at the top of a linked worktree only", SLOW, async () => {
+    write(join(repo, ".gitignore"), "node_modules/\n*.log\n");
+    await plain(repo, "add", "-A");
+    await plain(repo, "commit", "-q", "-m", "ignore");
+    const path = join(root, "wt");
+    value(await git.worktreeAdd(repo, path, "feature", "main"));
+    mkdirSync(join(path, "node_modules", ".bin"), { recursive: true });
+    write(join(path, "node_modules", ".bin", "vitest"), "#!/bin/sh\nexit 0\n", 0o755);
+    write(join(path, "debug.log"), "x\n");
+    write(join(path, "new.txt"), "untracked, not ignored\n");
+    write(join(path, "a.txt"), "changed\n");
+    value(await git.cleanIgnored(path));
+    expect(existsSync(join(path, "node_modules"))).toBe(false);
+    expect(existsSync(join(path, "debug.log"))).toBe(false);
+    expect(readFileSync(join(path, "new.txt"), "utf8")).toBe("untracked, not ignored\n");
+    expect(readFileSync(join(path, "a.txt"), "utf8")).toBe("changed\n");
+
+    // The main worktree, a subfolder, and a worktree whose .git file is gone are all refused.
+    write(join(repo, "main.log"), "x\n");
+    expect(await git.cleanIgnored(repo)).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
+    mkdirSync(join(path, "sub"));
+    expect(await git.cleanIgnored(join(path, "sub"))).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
+    const inside = join(repo, "inner");
+    value(await git.worktreeAdd(repo, inside, "inner", "main"));
+    rmSync(join(inside, ".git"));
+    expect(await git.cleanIgnored(inside)).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
+    expect(existsSync(join(repo, "main.log"))).toBe(true);
   });
 
   it("branchDelete, lsTree and gitDirs", SLOW, async () => {

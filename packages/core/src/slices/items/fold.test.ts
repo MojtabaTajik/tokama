@@ -77,6 +77,8 @@ describe("foldItem", () => {
   it("process_started: records pid, start time, boot time and host on the attempt", () => {
     const item = fold([...startBuild, { type: "process_started", stepId: BUILD, attempt: 1, role: "agent", pid: 4242, bootTime: T0 - 86_400_000 }]);
     expect(item.steps[0]?.attempts[0]?.processes).toEqual([{ role: "agent", pid: 4242, startedAt: T0 + 3000, bootTime: T0 - 86_400_000, hostId: HOST }]);
+    const grouped = fold([...startBuild, { type: "process_started", stepId: BUILD, attempt: 1, role: "check", pid: 77, bootTime: T0, pgid: 77 }]);
+    expect(grouped.steps[0]?.attempts[0]?.processes[0]).toMatchObject({ pid: 77, pgid: 77 });
   });
 
   it("check_result: records each check on the attempt", () => {
@@ -106,6 +108,25 @@ describe("foldItem", () => {
     expect(countedAttempts(build ?? { id: BUILD, state: "pending", attempts: [] })).toBe(2);
     expect(foldError([...startBuild, { type: "attempt_ended", stepId: BUILD, attempt: 1, result: "run_failed" }])).toMatch(/failure is given/);
     expect(foldError([...startBuild, { type: "attempt_ended", stepId: BUILD, attempt: 1, result: "failed", failure: "crash" }])).toMatch(/failure is given/);
+  });
+
+  it("attempt_ended and item_ended: the checked tree on a passed attempt, the commits on a done item", () => {
+    const tree = "a".repeat(40);
+    const commit = "b".repeat(40);
+    const item = fold([
+      created(),
+      { type: "worktree_added", repoId: "orders-api" as never, branch: "tokama/0190a000", dir: ".tokama/wt/0190a000", baseCommit: "c".repeat(40) },
+      { type: "step_started", stepId: BUILD },
+      { type: "attempt_started", stepId: BUILD, attempt: 1 },
+      { type: "attempt_ended", stepId: BUILD, attempt: 1, result: "passed", tree },
+      { type: "step_ended", stepId: BUILD, result: "passed" },
+      { type: "item_ended", outcome: "done", commits: [{ repoId: "orders-api" as never, commit }] },
+    ]);
+    expect(item.worktrees[0]?.baseCommit).toBe("c".repeat(40));
+    expect(item.steps[0]?.attempts[0]?.tree).toBe(tree);
+    expect(item.outcome?.commits).toEqual([{ repoId: "orders-api", commit }]);
+    expect(foldError([...startBuild, { type: "attempt_ended", stepId: BUILD, attempt: 1, result: "failed", tree }])).toMatch(/only on a passed attempt/);
+    expect(foldError([created(), { type: "item_ended", outcome: "stopped", commits: [{ repoId: "orders-api" as never, commit }] }])).toMatch(/only when the item is done/);
   });
 
   it("step_ended: sets the step's result and leaves no current step; back to a step continues its attempt count", () => {
