@@ -1,6 +1,7 @@
-// The app shell: icon rail, workspaces panel, main area.
+// The app shell: icon rail, workspaces panel, main area, and the item drawer when an item is open.
 import { useMemo, useState } from "react";
 import type { TokamaBridge } from "../shared/bridge.js";
+import { ItemDrawer } from "./drawer/ItemDrawer.js";
 import { needsYouCount } from "./model.js";
 import { MainArea } from "./shell/MainArea.js";
 import { Rail } from "./shell/Rail.js";
@@ -15,6 +16,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS }: { readonly bridge
   // Undefined until the engineer picks: then the first workspace is selected and expanded.
   const [picked, setPicked] = useState<string | undefined>(undefined);
   const [expanded, setExpanded] = useState<ReadonlySet<string> | undefined>(undefined);
+  const [selectedItemId, setSelectedItemId] = useState<string | undefined>(undefined);
 
   const workspaces = data?.workspaces ?? [];
   const items = useMemo(() => [...(data?.items.values() ?? [])], [data]);
@@ -49,9 +51,14 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS }: { readonly bridge
           selectedId={selected?.id}
           expanded={open}
           onPick={pick}
+          selectedItemId={selectedItemId}
+          onSelectItem={setSelectedItemId}
         />
       )}
       <MainArea connection={connection} workspace={selected} loaded={data !== undefined} loadError={loadError} onRetry={retry} />
+      {selectedItemId !== undefined && (
+        <ItemDrawer bridge={bridge} itemId={selectedItemId} workspaces={workspaces} onClose={() => setSelectedItemId(undefined)} />
+      )}
     </div>
   );
 }

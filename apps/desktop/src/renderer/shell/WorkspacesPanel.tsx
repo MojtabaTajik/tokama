@@ -40,9 +40,14 @@ export interface WorkspacesPanelProps {
   readonly expanded: ReadonlySet<string>;
   /** Selects the workspace and opens or closes its item list. */
   readonly onPick: (workspaceId: string) => void;
+  /** The item whose drawer is open. */
+  readonly selectedItemId: string | undefined;
+  /** Opens an item's drawer. */
+  readonly onSelectItem: (itemId: string) => void;
 }
 
-export function WorkspacesPanel({ id, connection, workspaces, items, stale, selectedId, expanded, onPick }: WorkspacesPanelProps) {
+export function WorkspacesPanel(props: WorkspacesPanelProps) {
+  const { id, connection, workspaces, items, stale, selectedId, expanded, onPick, selectedItemId, onSelectItem } = props;
   return (
     <aside className="panel" id={id} aria-label={TEXT.panel} data-stale={stale || undefined}>
       <button type="button" className="new-work" aria-disabled="true">
@@ -72,6 +77,8 @@ export function WorkspacesPanel({ id, connection, workspaces, items, stale, sele
               selected={workspace.id === selectedId}
               open={expanded.has(workspace.id)}
               onPick={() => onPick(workspace.id)}
+              selectedItemId={selectedItemId}
+              onSelectItem={onSelectItem}
             />
           ))}
         </section>
@@ -86,9 +93,11 @@ interface WorkspaceProps {
   readonly selected: boolean;
   readonly open: boolean;
   readonly onPick: () => void;
+  readonly selectedItemId: string | undefined;
+  readonly onSelectItem: (itemId: string) => void;
 }
 
-function Workspace({ workspace, items, selected, open, onPick }: WorkspaceProps) {
+function Workspace({ workspace, items, selected, open, onPick, selectedItemId, onSelectItem }: WorkspaceProps) {
   const waiting = needsYouCount(items);
   const listId = `workspace-items-${workspace.id}`;
   return (
@@ -122,13 +131,20 @@ function Workspace({ workspace, items, selected, open, onPick }: WorkspaceProps)
             const marker = markerOf(item);
             return (
               <li key={item.id} className="live-item" data-state={item.state} title={item.title}>
-                <span className="marker" data-tone={marker.tone} aria-hidden="true">
-                  {marker.symbol}
-                </span>
-                <span className="ellipsis">{item.title}</span>
-                <span className="marker-word" data-tone={marker.tone}>
-                  {marker.word}
-                </span>
+                <button
+                  type="button"
+                  className="live-item-button"
+                  aria-current={item.id === selectedItemId ? "true" : undefined}
+                  onClick={() => onSelectItem(item.id)}
+                >
+                  <span className="marker" data-tone={marker.tone} aria-hidden="true">
+                    {marker.symbol}
+                  </span>
+                  <span className="ellipsis">{item.title}</span>
+                  <span className="marker-word" data-tone={marker.tone}>
+                    {marker.word}
+                  </span>
+                </button>
               </li>
             );
           })}

@@ -34,13 +34,15 @@ describe("theme.css", () => {
   });
 });
 
-describe("app.css", () => {
+const SCREENS = { "app.css": app, "drawer/drawer.css": readFileSync(join(import.meta.dirname, "drawer", "drawer.css"), "utf8") };
+
+describe.each(Object.entries(SCREENS))("%s", (_name, css) => {
   it("takes every colour from the theme tokens: no colour literals", () => {
-    expect(app.match(/#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?)\(/gi) ?? []).toEqual([]);
+    expect(css.match(/#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?)\(/gi) ?? []).toEqual([]);
   });
 
   it("uses only tokens that theme.css defines", () => {
-    const used = new Set([...app.matchAll(/var\((--[a-z0-9-]+)\)/g)].map((match) => match[1]));
+    const used = new Set([...css.matchAll(/var\((--[a-z0-9-]+)\)/g)].map((match) => match[1]));
     const missing = [...used].filter((name) => !theme.includes(`${name}:`));
     expect(missing).toEqual([]);
   });

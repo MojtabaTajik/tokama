@@ -336,6 +336,29 @@ button:focus-visible {
   color: var(--text-2);
 }
 
+.live-item:has(.live-item-button[aria-current="true"]) {
+  border-radius: 6px;
+  background: var(--raised);
+}
+
+.live-item-button {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 26px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.live-item-button:hover {
+  color: var(--text);
+}
+
 .live-item.empty {
   color: var(--muted);
 }
