@@ -122,6 +122,37 @@ const toWorkflowEngineEntry = {
   to: { element: { type: "slice", captured: { slice: "workflow-engine" }, fileInternalPath: "index.ts" } },
 };
 
+// apps/desktop is a client of the engine API (architecture.md, sections 2 and 3): it reaches
+// core through its public entry only, and never the engine app. The renderer and the shared
+// contract run without Node or Electron and get engine data through the preload bridge
+// (window.tokama); the sandboxed preload may import only electron and ../shared.
+const DESKTOP = "apps/desktop/src";
+const desktopFiles = (dir: string) => `${DESKTOP}/${dir}**/*.{ts,tsx,mts,cts}`;
+const desktopPatterns = [
+  { regex: "^@tokama/core/.+", message: "desktop uses @tokama/core's public entry only, never core internals." },
+  { regex: "^@tokama/engine(?:/.*)?$", message: "desktop talks to the engine through @tokama/client, never the engine app." },
+  { regex: "(?:^|/)(?:packages|apps)/", message: "Import workspace packages by name (@tokama/client, @tokama/core), never by path." },
+];
+const sandboxedNode = {
+  regex: `^node:|^(?:${builtinModules.filter((name) => !name.startsWith("node:")).join("|")})(?:/.*)?$`,
+  message: "The renderer and the preload run sandboxed: no Node modules.",
+};
+const rendererPatterns = [
+  ...desktopPatterns,
+  sandboxedNode,
+  { regex: ELECTRON_REGEX, message: "The renderer reaches the main process through window.tokama (the preload bridge), never Electron." },
+  {
+    regex: "^@tokama/(?:client|core)$",
+    allowTypeImports: true,
+    message: "The renderer gets engine data through window.tokama; it may import core types only.",
+  },
+];
+const preloadPatterns = [
+  ...desktopPatterns,
+  sandboxedNode,
+  { regex: "^@tokama/", message: "The sandboxed preload imports only electron and ../shared." },
+];
+
 const corePolicies = [
   { from: { element: { type: "slice" } }, allow: [internal, toKernel] },
   { from: { element: { type: "slice", captured: { slice: "workflow-engine" } } }, allow: [toSlicePublicEntry] },
@@ -209,5 +240,19 @@ export default defineConfig(
   {
     files: NETWORK_ZONES,
     rules: { "no-restricted-globals": "off" },
+  },
+
+  // apps/desktop: flat config replaces rule options, so each zone lists all its patterns.
+  {
+    files: [desktopFiles("")],
+    rules: { "@typescript-eslint/no-restricted-imports": ["error", { patterns: desktopPatterns }] },
+  },
+  {
+    files: [desktopFiles("renderer/"), desktopFiles("shared/")],
+    rules: { "@typescript-eslint/no-restricted-imports": ["error", { patterns: rendererPatterns }] },
+  },
+  {
+    files: [desktopFiles("preload/")],
+    rules: { "@typescript-eslint/no-restricted-imports": ["error", { patterns: preloadPatterns }] },
   },
 );

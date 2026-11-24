@@ -1,0 +1,14 @@
+{
+  "extends": "../../tooling/tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist/tsc/web",
+    "tsBuildInfoFile": "dist/tsc/web.tsbuildinfo",
+    "emitDeclarationOnly": true,
+    "lib": ["es2024", "dom", "dom.iterable"],
+    "jsx": "react-jsx",
+    "types": []
+  },
+  "include": ["src/renderer", "src/shared"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
+}
