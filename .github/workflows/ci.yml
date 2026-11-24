@@ -46,6 +46,11 @@ jobs:
         with:
           path: ${{ runner.temp }}/electron-cache
           key: electron-${{ runner.os }}-${{ runner.arch }}-${{ steps.electron.outputs.version }}
+      # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor, which Chromium's
+      # sandbox needs. Lift it on the runner rather than run the app with --no-sandbox.
+      - name: Allow the Chromium sandbox
+        if: runner.os == 'Linux'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Desktop smoke test
         env:
           electron_config_cache: ${{ runner.temp }}/electron-cache

@@ -29,6 +29,8 @@ const log = (message: string) => process.stdout.write(`smoke: ${message}\n`);
 /** Starts the sample engine and waits until a client can say hello; returns its engine id. */
 async function startEngine(dir: string, output: string[]): Promise<{ child: ChildProcess; engineId: string }> {
   const child = spawn(process.execPath, [engineEntry, "--dir", dir, "--sample"], { stdio: ["ignore", "pipe", "pipe"] });
+  // Last resort: Playwright can end this process on a failed launch before any finally runs.
+  process.once("exit", () => child.kill("SIGKILL"));
   child.stdout.on("data", (chunk: Buffer) => output.push(chunk.toString()));
   child.stderr.on("data", (chunk: Buffer) => output.push(chunk.toString()));
   let exited: string | undefined;
@@ -132,12 +134,12 @@ async function run(tmp: string): Promise<void> {
 }
 
 const tmp = mkdtempSync(join(tmpdir(), "tokama-smoke-"));
+// Removed on exit, also when Playwright ends the process early.
+process.once("exit", () => rmSync(tmp, { recursive: true, force: true }));
 try {
   await run(tmp);
   log("passed");
 } catch (error) {
   process.stderr.write(`smoke: FAILED: ${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;
-} finally {
-  rmSync(tmp, { recursive: true, force: true });
 }
