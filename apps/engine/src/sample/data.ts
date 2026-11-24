@@ -29,6 +29,8 @@ const templates = {
     id: "emergency-investigator",
     name: "Emergency investigator",
     kind: "investigation",
+    icon: "fire",
+    color: "rose",
     connections: [
       { connectionId: "app-insights-prod", access: "query" },
       { connectionId: "postgres-prod", access: "read-only" },
@@ -54,6 +56,8 @@ const templates = {
     id: "db-slow-query",
     name: "DB slow query check",
     kind: "investigation",
+    icon: "database",
+    color: "clay",
     connections: [{ connectionId: "postgres-prod", access: "read-only" }],
     steps: [
       {
@@ -71,6 +75,8 @@ const templates = {
     id: "plan-and-build",
     name: "Plan and build",
     kind: "task",
+    icon: "hammer",
+    color: "sky",
     connections: [],
     steps: [
       { name: "Plan", stage: "working", agentId: "architect", data: "repo-and-diff" },
@@ -83,6 +89,8 @@ const templates = {
     id: "quick-fix",
     name: "Quick fix",
     kind: "task",
+    icon: "wrench",
+    color: "moss",
     connections: [],
     steps: [
       { name: "Fix", stage: "working", agentId: "local-builder", data: "none" },
@@ -93,6 +101,8 @@ const templates = {
     id: "review-only",
     name: "Review only",
     kind: "task",
+    icon: "eye",
+    color: "slate",
     connections: [],
     steps: [{ name: "Review", stage: "review", agentId: "reviewer", data: "repo-and-diff" }],
   },

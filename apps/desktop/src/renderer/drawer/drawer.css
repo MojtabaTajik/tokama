@@ -47,6 +47,10 @@
   color: var(--muted);
 }
 
+.drawer-kind .tpl-icon {
+  margin-right: 4px;
+}
+
 .drawer-close {
   flex: none;
   margin-left: auto;

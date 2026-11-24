@@ -97,6 +97,13 @@ describe("fake engine mode", () => {
       for (const connection of template.connections) expect(connectionIds).toContain(connection.connectionId);
       for (const step of template.steps) for (const use of step.uses ?? []) expect(template.connections.map((c) => c.connectionId)).toContain(use.connectionId);
     }
+    expect(setup.templates.map((template) => `${template.id}/${template.icon}/${template.color}`)).toEqual([
+      "emergency-investigator/fire/rose",
+      "db-slow-query/database/clay",
+      "plan-and-build/hammer/sky",
+      "quick-fix/wrench/moss",
+      "review-only/eye/slate",
+    ]);
     const emergency = setup.templates.find((template) => template.id === "emergency-investigator");
     expect(emergency?.steps.map((step) => `${step.name}/${step.stage}/${step.agentId ?? "-"}/${step.data}`)).toEqual([
       "Triage/working/local-investigator/none",

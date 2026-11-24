@@ -18,8 +18,8 @@ export const setup = {
     { id: "local-builder", name: "Local builder", cliId: "claude-code", model: "qwen3-coder:30b", runsOn: "local" },
   ],
   templates: [
-    { id: "emergency-investigator", name: "Emergency investigator", kind: "investigation", connections: [], steps: [{ name: "Triage", stage: "working", data: "none" }] },
-    { id: "plan-and-build", name: "Plan and build", kind: "task", connections: [], steps: [{ name: "Plan", stage: "working", data: "none" }] },
+    { id: "emergency-investigator", name: "Emergency investigator", icon: "fire", color: "rose", kind: "investigation", connections: [], steps: [{ name: "Triage", stage: "working", data: "none" }] },
+    { id: "plan-and-build", name: "Plan and build", icon: "hammer", color: "sky", kind: "task", connections: [], steps: [{ name: "Plan", stage: "working", data: "none" }] },
   ],
 } as unknown as Setup;
 

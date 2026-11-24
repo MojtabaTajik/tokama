@@ -28,20 +28,24 @@ export const setup = {
     {
       id: "emergency-investigator",
       name: "Emergency investigator",
+      icon: "fire",
+      color: "rose",
       kind: "investigation",
       connections: [],
       steps: [tplStep("Triage", "working", "local-builder"), tplStep("Query logs", "working", "local-builder"), tplStep("Propose a fix", "review", "architect")],
     },
-    { id: "db-slow-query", name: "DB slow query check", kind: "investigation", connections: [], steps: [tplStep("Explain plans", "working", "local-builder")] },
+    { id: "db-slow-query", name: "DB slow query check", icon: "database", color: "clay", kind: "investigation", connections: [], steps: [tplStep("Explain plans", "working", "local-builder")] },
     {
       id: "plan-and-build",
       name: "Plan and build",
+      icon: "hammer",
+      color: "sky",
       kind: "task",
       connections: [],
       steps: [tplStep("Plan", "working", "architect"), tplStep("Build", "working", "local-builder"), tplStep("Run checks", "verifying"), tplStep("Review", "review", "reviewer")],
     },
-    { id: "quick-fix", name: "Quick fix", kind: "task", connections: [], steps: [tplStep("Fix", "working", "local-builder"), tplStep("Run checks", "verifying")] },
-    { id: "review-only", name: "Review only", kind: "task", connections: [], steps: [tplStep("Review", "review", "reviewer")] },
+    { id: "quick-fix", name: "Quick fix", icon: "wrench", color: "moss", kind: "task", connections: [], steps: [tplStep("Fix", "working", "local-builder"), tplStep("Run checks", "verifying")] },
+    { id: "review-only", name: "Review only", icon: "eye", color: "slate", kind: "task", connections: [], steps: [tplStep("Review", "review", "reviewer")] },
   ],
 } as unknown as Setup;
 

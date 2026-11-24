@@ -132,6 +132,7 @@ const desktopPatterns = [
   { regex: "^@tokama/core/.+", message: "desktop uses @tokama/core's public entry only, never core internals." },
   { regex: "^@tokama/engine(?:/.*)?$", message: "desktop talks to the engine through @tokama/client, never the engine app." },
   { regex: "(?:^|/)(?:packages|apps)/", message: "Import workspace packages by name (@tokama/client, @tokama/core), never by path." },
+  { regex: "^@fortawesome/free-brands-svg-icons(?:/.*)?$", message: "Template icons use the Font Awesome Free solid set, never the brands set." },
 ];
 const sandboxedNode = {
   regex: `^node:|^(?:${builtinModules.filter((name) => !name.startsWith("node:")).join("|")})(?:/.*)?$`,

@@ -6,7 +6,8 @@ import type { CommandErrorCode, Decision, ItemRecord, Setup } from "@tokama/core
 import { type KeyboardEvent, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
 import { itemElement } from "../list/useFocusFollow.js";
-import { hasEnded, itemMark, KIND, PRIVACY, stepAgent, stepMark, stepPosition, templateName, whereLine } from "./describe.js";
+import { TemplateIcon } from "../shell/TemplateIcon.js";
+import { hasEnded, itemMark, KIND, PRIVACY, stepAgent, stepMark, stepPosition, templateOf, whereLine } from "./describe.js";
 import { useItem } from "./useItem.js";
 
 const TEXT = {
@@ -158,6 +159,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose }: ItemDrawerProps) 
     if (item) void send({ type: "stop_item", itemId: item.id });
   };
 
+  const template = item && templateOf(item, setup);
   const tabs = item ? tabsOf(item) : [];
   const shown = tabs.includes(tab) ? tab : "Steps";
 
@@ -167,7 +169,8 @@ export function ItemDrawer({ bridge, itemId, setup, onClose }: ItemDrawerProps) 
         {item ? (
           <div className="drawer-heading">
             <p className="drawer-kind">
-              {KIND[item.kind].symbol} {KIND[item.kind].word} · {templateName(item, setup)} · {PRIVACY[item.privacy]}
+              {KIND[item.kind].symbol} {KIND[item.kind].word} · <TemplateIcon icon={template?.icon} color={template?.color} />
+              {template?.name ?? item.templateId} · {PRIVACY[item.privacy]}
             </p>
             <h2 id={titleId}>{item.title}</h2>
             <StateLine item={item} />

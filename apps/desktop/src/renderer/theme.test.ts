@@ -28,6 +28,14 @@ const TOKENS: Record<string, string> = {
   "--agent-2": "#22a98b",
   "--agent-3": "#b23a6e",
   "--agent-neutral": "#4a5563",
+  "--tag-slate": "#aeb6c0",
+  "--tag-sky": "#6f9fd8",
+  "--tag-teal": "#58b8bc",
+  "--tag-moss": "#a9a862",
+  "--tag-sand": "#dccba6",
+  "--tag-clay": "#b9866f",
+  "--tag-rose": "#d08ab2",
+  "--tag-plum": "#a288c8",
 };
 
 describe("theme.css", () => {
@@ -36,6 +44,15 @@ describe("theme.css", () => {
   });
   it("gives primary button text at least 4.5:1 contrast on its fill", () => {
     expect(contrast(TOKENS["--primary-text"]!, TOKENS["--primary-fill"]!)).toBeGreaterThanOrEqual(4.5);
+  });
+  it.each(Object.keys(TOKENS).filter((name) => name.startsWith("--tag-")))("reads %s at 4.5:1 or better on the ground and the panel", (name) => {
+    for (const ground of ["--ground", "--panel"]) expect(contrast(TOKENS[name]!, TOKENS[ground]!)).toBeGreaterThanOrEqual(4.5);
+  });
+  it("tints a template icon with each tag colour, and only the icon", () => {
+    for (const tag of ["slate", "sky", "teal", "moss", "sand", "clay", "rose", "plum"]) {
+      expect(app).toMatch(new RegExp(`\\.tpl-icon\\[data-tag="${tag}"\\]\\s*\\{\\s*color:\\s*var\\(--tag-${tag}\\);\\s*\\}`));
+    }
+    expect(app).not.toMatch(/(?:background|fill|border)[a-z-]*:\s*var\(--tag-/);
   });
 });
 

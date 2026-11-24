@@ -3,9 +3,9 @@
 // its agent and its time. A row is a native button, so Enter and Space select it as a click does.
 // Engine text (titles, questions, names) is rendered as React text only.
 import type { ItemRecord, Setup } from "@tokama/core";
-import { templateName } from "../drawer/describe.js";
+import { templateOf } from "../drawer/describe.js";
 import { type ItemGroup, pipelineOf, rowAgent, rowMark, timeOf } from "../model.js";
-import { WorkflowIcon } from "../shell/icons.js";
+import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { useFocusFollow } from "./useFocusFollow.js";
 
 const TEXT = {
@@ -62,6 +62,7 @@ function Row({ item, setup, now, selected, onSelect }: RowProps) {
   const steps = pipelineOf(item);
   const agent = rowAgent(item, setup?.agents ?? []);
   const time = timeOf(item, now);
+  const template = templateOf(item, setup);
   const ask = item.state === "needs_you" ? (item.decision?.question ?? mark.word) : undefined;
   return (
     <button type="button" className="pl-row" data-item-id={item.id} data-state={item.state} aria-current={selected ? "true" : undefined} onClick={() => onSelect(item.id)}>
@@ -72,8 +73,8 @@ function Row({ item, setup, now, selected, onSelect }: RowProps) {
       <span className="pl-main">
         <span className="pl-title">{item.title}</span>
         <span className="pl-meta">
-          <WorkflowIcon />
-          <span className="pl-workflow">{templateName(item, setup)}</span>
+          <TemplateIcon icon={template?.icon} color={template?.color} />
+          <span className="pl-workflow">{template?.name ?? item.templateId}</span>
           {item.repoIds.length > 0 && (
             <>
               <span aria-hidden="true">·</span>
