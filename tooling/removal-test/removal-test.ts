@@ -281,7 +281,9 @@ function linkNodeModules(root: string, workDir: string, rel: string, packages: s
     } catch {
       return; // Dangling link: nothing to resolve through it.
     }
-    if (isInside(target, root) && !isInside(target, rootModules)) {
+    // Only a link can point at a workspace package. A real entry (e.g. pnpm's .bin folder) is
+    // linked to itself in the real tree, read-only like the rest of node_modules.
+    if (lstatSync(from).isSymbolicLink() && isInside(target, root) && !isInside(target, rootModules)) {
       const inRoot = relative(root, target);
       if (!packages.some((pkg) => isInside(inRoot, pkg))) {
         throw new Error(`${from} points to ${target}, a path in the real tree that is not copied`);

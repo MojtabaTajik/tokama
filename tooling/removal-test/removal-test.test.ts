@@ -66,6 +66,8 @@ function makeFixture(files: Record<string, string>, { engine = false } = {}): st
     for (const rel of ["apps/engine/package.json", "apps/engine/tsconfig.json", "apps/engine/tsconfig.test.json"]) copyFromRepo(root, rel);
     mkdirSync(join(root, "apps/engine/node_modules/@tokama"), { recursive: true });
     symlinkSync("../../../../packages/core", join(root, "apps/engine/node_modules/@tokama/core"), "dir");
+    // pnpm puts real files next to the links, e.g. .bin when a dependency has a bin.
+    write(root, "apps/engine/node_modules/.bin/tool", "#!/bin/sh\n");
     write(root, "packages/core/dist/index.d.ts", "export declare const packageName: string;\nexport declare const sampleName: string;\n");
     write(root, "packages/core/dist/index.js", 'export const packageName = "@tokama/core";\nexport const sampleName = "sample";\n');
     write(root, "apps/engine/src/index.ts", 'import { packageName } from "@tokama/core";\nexport const hosts: string = packageName;\n');
