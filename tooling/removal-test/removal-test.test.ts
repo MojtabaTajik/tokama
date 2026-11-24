@@ -458,8 +458,8 @@ describe("removal-test script", () => {
     async () => {
       const root = makeFixture(sampleWired);
       const outside = tempDir("tokama-outside-");
-      mkdirSync(join(root, "packages/core/coverage"));
-      symlinkSync(outside, join(root, "packages/core/coverage/linked"), "dir");
+      // Ignored by the repo's `.env.*` rule.
+      symlinkSync(outside, join(root, "packages/core/.env.local"), "dir");
       const run = await runChecked(root);
       expect(run.output).toContain("removal-test: PASS");
       expect(run.code).toBe(0);
