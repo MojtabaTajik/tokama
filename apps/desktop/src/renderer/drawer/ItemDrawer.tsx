@@ -80,6 +80,9 @@ export function ItemDrawer({ bridge, itemId, workspaces, onClose }: ItemDrawerPr
   const stopLink = useRef<HTMLButtonElement>(null);
   const refocusStop = useRef(false);
   const titleId = useId();
+  // The item shown now, so a command reply for an item shown before is dropped.
+  const currentId = useRef(itemId);
+  currentId.current = itemId;
 
   // Focus moves into the drawer when it opens or shows another item; the opener is what had it
   // before, unless that was inside the drawer already.
@@ -89,6 +92,8 @@ export function ItemDrawer({ bridge, itemId, workspaces, onClose }: ItemDrawerPr
     drawer.current?.focus();
     setNotice(undefined);
     setConfirmingStop(false);
+    setBusy(false);
+    setTab("Steps");
   }, [itemId]);
   // On close, focus goes back to the opener, if it is still on the screen.
   useEffect(
@@ -128,10 +133,15 @@ export function ItemDrawer({ bridge, itemId, workspaces, onClose }: ItemDrawerPr
 
   /** Sends a command; the item itself changes through the engine's `item_updated` event. */
   const send = async (command: Parameters<TokamaBridge["command"]>[0]) => {
+    const sentFor = currentId.current;
     setBusy(true);
     setNotice(undefined);
     const reply = await bridge.command(command).catch((cause: unknown) => ({ ok: false as const, error: { code: "bridge_error", message: String(cause) } }));
+    // The drawer shows another item now: this reply, its notice and its busy state are not its own.
+    if (currentId.current !== sentFor) return;
     setBusy(false);
+    // The button that sent it can be gone (the Stop confirmation): keep focus in the drawer.
+    if (document.activeElement === document.body || document.activeElement === null) drawer.current?.focus();
     if (reply.ok) return;
     setNotice(problem(reply.error.code, reply.error.message));
     if (REFRESH_ON.has(reply.error.code)) refresh();

@@ -190,8 +190,8 @@
 
 .choice.primary {
   border-color: var(--primary-border);
-  background: var(--live);
-  color: var(--text);
+  background: var(--primary-fill);
+  color: var(--primary-text);
 }
 
 .choice.danger {

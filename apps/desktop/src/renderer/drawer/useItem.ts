@@ -1,6 +1,7 @@
 // One item, kept current for the drawer: the `item` query when the drawer opens, on every return
 // to "connected" and on refresh(); `item_updated` events for that item in between. An event that
-// arrives while a query is in flight is newer than the query's answer, so the answer is dropped.
+// arrives while a query is in flight is newer than the query's answer, so the answer is dropped;
+// so is an answer for an item the drawer no longer shows.
 import type { ItemRecord } from "@tokama/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
@@ -20,6 +21,9 @@ export function useItem(bridge: TokamaBridge, itemId: string): ItemView {
   // Moves on with every event for this item, every item change and unmount: a query answer that
   // finds it moved is out of date and is dropped.
   const epoch = useRef(0);
+  // The item shown now. A refresh() kept from an earlier render can still ask for an older item.
+  const current = useRef(itemId);
+  current.current = itemId;
 
   const refresh = useCallback(() => {
     const seen = epoch.current;
@@ -27,7 +31,7 @@ export function useItem(bridge: TokamaBridge, itemId: string): ItemView {
       .query({ type: "item", itemId })
       .catch((cause: unknown) => ({ ok: false as const, error: { code: "bridge_error", message: String(cause) } }))
       .then((reply) => {
-        if (epoch.current !== seen) return;
+        if (epoch.current !== seen || current.current !== itemId) return;
         if (reply.ok) {
           setItem(reply.data.item);
           setError(undefined);

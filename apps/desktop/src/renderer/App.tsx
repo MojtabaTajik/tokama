@@ -17,6 +17,8 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS }: { readonly bridge
   const [picked, setPicked] = useState<string | undefined>(undefined);
   const [expanded, setExpanded] = useState<ReadonlySet<string> | undefined>(undefined);
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(undefined);
+  // Without an engine the drawer has no workspaces to name things by: it closes.
+  if (connection.status === "failed" && selectedItemId !== undefined) setSelectedItemId(undefined);
 
   const workspaces = data?.workspaces ?? [];
   const items = useMemo(() => [...(data?.items.values() ?? [])], [data]);

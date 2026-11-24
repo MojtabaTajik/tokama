@@ -51,11 +51,12 @@ function fakeBridge(start: ItemRecord[]) {
     });
   const set = (item: ItemRecord) => store.set(item.id, item);
   const replyWith = (reply: (command: { type: string }) => Promise<Reply>) => (commandReply = reply);
-  const reconnect = () =>
+  const setConnection = (state: ConnectionState) =>
     act(async () => {
-      for (const listener of connectionListeners) listener({ status: "connected", engineId: "e-2" });
+      for (const listener of connectionListeners) listener(state);
     });
-  return { bridge, query, command, push, set, replyWith, reconnect, listeners: eventListeners };
+  const reconnect = () => setConnection({ status: "connected", engineId: "e-2" });
+  return { bridge, query, command, push, set, replyWith, reconnect, setConnection, listeners: eventListeners };
 }
 
 let container: HTMLElement;
@@ -263,6 +264,36 @@ describe("ItemDrawer decisions", () => {
   });
 });
 
+describe("ItemDrawer switching items", () => {
+  it("drops a command reply for the item shown before, with its notice and busy state", async () => {
+    const { bridge, query, replyWith } = fakeBridge([needsYou, task]);
+    const pending = deferred();
+    replyWith(() => pending.promise);
+    await renderDrawer(bridge, needsYou.id);
+    await click(button("Evidence"));
+    await click(button("Approve and send"));
+    await renderDrawer(bridge, task.id);
+    expect(text('[role="tab"][aria-selected="true"]')).toBe("Steps");
+    const queries = query.mock.calls.length;
+    await act(async () => pending.resolve({ ok: false, error: { code: "stale_decision", message: "decision is not open" } }));
+    expect(text(".drawer h2")).toBe(task.title);
+    expect($('[role="status"]')).toBeNull();
+    expect(button("Stop")?.disabled).toBe(false);
+    // No refresh of the earlier item either.
+    expect(query.mock.calls.length).toBe(queries);
+  });
+
+  it("drops an item query answer for the item shown before", async () => {
+    const { bridge, query } = fakeBridge([needsYou, task]);
+    const pending = deferred();
+    query.mockImplementationOnce(() => pending.promise);
+    await renderDrawer(bridge, needsYou.id);
+    await renderDrawer(bridge, task.id);
+    await act(async () => pending.resolve({ ok: true, data: { item: needsYou } }));
+    expect(text(".drawer h2")).toBe(task.title);
+  });
+});
+
 describe("ItemDrawer stop", () => {
   it("asks in the drawer first, then sends stop_item; never window.confirm", async () => {
     const confirm = vi.fn(() => true);
@@ -292,6 +323,20 @@ describe("ItemDrawer stop", () => {
     expect(document.activeElement).toBe(button("Stop"));
     expect(onClose).not.toHaveBeenCalled();
     expect(command).not.toHaveBeenCalled();
+  });
+
+  it("keeps focus in the drawer after a failed stop", async () => {
+    const { bridge, replyWith } = fakeBridge([task]);
+    replyWith(async () => ({ ok: false, error: { code: "internal", message: "boom" } }));
+    await renderDrawer(bridge, task.id);
+    await click(button("Stop"));
+    // The confirmation goes away with the click, taking the focused button with it.
+    await act(async () => {
+      button("Stop item")?.click();
+      (document.activeElement as HTMLElement | null)?.blur();
+    });
+    expect(text('[role="status"]')).toBe("✕Could not send it: boom");
+    expect(document.activeElement).toBe($("aside.drawer"));
   });
 
   it("on invalid_state, says the item had ended and queries it again", async () => {
@@ -379,6 +424,14 @@ describe("ItemDrawer in the app: open, focus and close", () => {
     await click(button("Close"));
     expect($("aside.drawer")).toBeNull();
     expect(document.activeElement).toBe(row);
+  });
+
+  it("closes when the engine connection fails, never showing ids without their workspace", async () => {
+    const { row, setConnection } = await openFromPanel();
+    await setConnection({ status: "failed", reason: "engine exited", logPath: "/tmp/engine.log", logTail: [] });
+    expect($("aside.drawer")).toBeNull();
+    expect(container.textContent).not.toContain("emergency-investigator");
+    expect(row.isConnected).toBe(false);
   });
 
   it("approving through the drawer updates the drawer and the panel row", async () => {
