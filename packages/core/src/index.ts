@@ -41,6 +41,18 @@ export {
   type StoreError,
 } from "./slices/items/index.js";
 export { posixProcessTable, type LeftoverOutcome, type ProcessInfo, type ProcessTable } from "./kernel/process/leftover.js";
+// The run loop and its commands, for the engine service.
+export {
+  createRunLoop,
+  parseVerdict,
+  titleFrom,
+  VERDICT_RULE,
+  type CommandError,
+  type RunLoop,
+  type RunLoopDeps,
+  type StartItemInput,
+  type Verdict,
+} from "./slices/workflow-engine/index.js";
 export {
   API_VERSION,
   COMMAND_ERROR_CODES,
