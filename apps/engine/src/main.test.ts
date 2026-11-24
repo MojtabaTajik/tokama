@@ -3,6 +3,7 @@
 // `./x.js`. `pnpm build` runs before `pnpm test` in CI.
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type ClientEvent, connect, type EngineClient } from "@tokama/client";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -11,6 +12,9 @@ import { tempEngineDir, waitFor } from "./testing/helpers.js";
 const MAIN = fileURLToPath(new URL("../dist/main.js", import.meta.url));
 
 let cleanups: (() => unknown)[] = [];
+
+/** Tokama's home folder for a test engine: next to its engine dir, never the real `~/.tokama`. */
+const homeOf = (dir: string) => join(dirname(dir), "home");
 
 afterEach(async () => {
   for (const cleanup of cleanups.reverse()) await cleanup();
@@ -43,7 +47,7 @@ function killEngineAfter(dir: string): void {
 }
 
 async function connectStarting(dir: string): Promise<EngineClient> {
-  const connected = await connect({ dir, start: { command: process.execPath, args: [MAIN, "--dir", dir] }, startTimeoutMs: 15_000 });
+  const connected = await connect({ dir, start: { command: process.execPath, args: [MAIN, "--dir", dir, "--home", homeOf(dir)] }, startTimeoutMs: 15_000 });
   if (!connected.ok) throw new Error(`${connected.error.code}: ${connected.error.message}`);
   cleanups.push(() => connected.value.close());
   return connected.value;
@@ -60,6 +64,8 @@ describe("engine process", () => {
     })();
 
     expect(await engineClient.query({ type: "board" })).toEqual({ ok: true, data: { items: [] } });
+    // Item storage is open in the home folder.
+    for (const file of ["host.json", "items", "tokama.db"]) expect(existsSync(join(homeOf(dir), file))).toBe(true);
     const firstPid = lockPid(dir);
     const firstEngine = engineClient.engineId;
     expect(firstPid).toBeGreaterThan(0);
@@ -77,7 +83,7 @@ describe("engine process", () => {
   it("removes its files on SIGTERM", { timeout: 30_000 }, async () => {
     const dir = tempEngineDir(cleanups);
     killEngineAfter(dir);
-    const connected = await connect({ dir, start: { command: process.execPath, args: [MAIN, "--dir", dir] }, startTimeoutMs: 15_000, reconnect: false });
+    const connected = await connect({ dir, start: { command: process.execPath, args: [MAIN, "--dir", dir, "--home", homeOf(dir)] }, startTimeoutMs: 15_000, reconnect: false });
     if (!connected.ok) throw new Error(connected.error.message);
     cleanups.push(() => connected.value.close());
 
@@ -92,7 +98,7 @@ describe("engine process", () => {
     await connectStarting(dir);
     const token = readFileSync(`${dir}/engine.token`, "utf8");
 
-    const second = spawnSync(process.execPath, [MAIN, "--dir", dir], { encoding: "utf8", timeout: 15_000 });
+    const second = spawnSync(process.execPath, [MAIN, "--dir", dir, "--home", homeOf(dir)], { encoding: "utf8", timeout: 15_000 });
     expect(second.status).toBe(3);
     expect(second.stderr).toContain("already running");
     expect(readFileSync(`${dir}/engine.token`, "utf8")).toBe(token);
@@ -101,7 +107,7 @@ describe("engine process", () => {
   it("serves the sample data set with --sample", { timeout: 30_000 }, async () => {
     const dir = tempEngineDir(cleanups);
     killEngineAfter(dir);
-    const connected = await connect({ dir, start: { command: process.execPath, args: [MAIN, "--dir", dir, "--sample"] }, startTimeoutMs: 15_000 });
+    const connected = await connect({ dir, start: { command: process.execPath, args: [MAIN, "--dir", dir, "--home", homeOf(dir), "--sample"] }, startTimeoutMs: 15_000 });
     if (!connected.ok) throw new Error(connected.error.message);
     cleanups.push(() => connected.value.close());
 

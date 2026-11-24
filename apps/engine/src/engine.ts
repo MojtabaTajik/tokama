@@ -13,6 +13,7 @@
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { chmodSync, closeSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
 import { connect, createServer, type Server, type Socket } from "node:net";
+import { join } from "node:path";
 import {
   API_VERSION,
   type BoardResult,
@@ -36,7 +37,13 @@ import {
   type SuggestTemplateResult,
   systemClock,
   type SetupResult,
+  ItemStore,
+  loadHostId,
+  posixProcessTable,
+  type ProcessTable,
+  recoverItems,
 } from "@tokama/core";
+import { ItemIndex } from "./item-index.js";
 import { SampleEngine } from "./sample/sample.js";
 import { MemoryItemStore } from "./store.js";
 
@@ -48,6 +55,13 @@ export interface EngineOptions {
   readonly store?: MemoryItemStore;
   /** Fake engine mode: serve the sample data set and handle commands on it (sample/sample.ts). */
   readonly sample?: boolean;
+  /**
+   * Tokama's home folder (`~/.tokama`): item logs in `items/`, the board index in `tokama.db`.
+   * Without it, or in sample mode, nothing is stored.
+   */
+  readonly home?: string;
+  /** Read and signal leftover agent processes on start. Default: the POSIX process table. */
+  readonly processTable?: ProcessTable;
   /** Default: the system clock. */
   readonly clock?: Clock;
   /** A connection that sends no hello within this time is closed. Default 5 s. */
@@ -62,6 +76,8 @@ export interface EngineHandle {
   readonly engineId: string;
   readonly endpoint: EngineEndpoint;
   readonly store: MemoryItemStore;
+  /** The item logs, when the engine stores items. */
+  readonly items?: ItemStore;
   /** Resolves once the engine has shut down and removed its files. */
   readonly closed: Promise<void>;
   /** Shuts the engine down, as aborting the signal does. */
@@ -96,6 +112,18 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   const lock = await acquireLock(endpoint.value, lockContent, log);
   if (!lock.ok) return lock;
 
+  // Only the engine that holds the lock opens the item store, so a second engine starting never
+  // runs recovery against the live engine's agents.
+  let storage: Storage | undefined;
+  if (options.home !== undefined && !options.sample) {
+    const opened = await openStorage(options.home, options.processTable ?? posixProcessTable, options.clock ?? systemClock, log);
+    if (!opened.ok) {
+      releaseLock(lockPath, lockContent);
+      return opened;
+    }
+    storage = opened.value;
+  }
+
   // From here on the lock is ours, so the socket and token files at these paths are ours too.
   let server: Server;
   let token: Buffer;
@@ -105,6 +133,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     server = await listen(socketPath);
     chmodSync(socketPath, 0o600);
   } catch (error) {
+    storage?.close();
     unlinkIfPresent(socketPath);
     unlinkIfPresent(tokenPath);
     releaseLock(lockPath, lockContent);
@@ -280,6 +309,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     for (const socket of connections) socket.destroy();
     // Closing the server removes the socket file. Only then may another engine take over.
     await new Promise<void>((resolve) => server.close(() => resolve()));
+    storage?.close();
     if (ownsLock(lockPath, lockContent)) {
       unlinkIfPresent(socketPath);
       unlinkIfPresent(tokenPath);
@@ -294,7 +324,45 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   else options.signal?.addEventListener("abort", () => void shutdown(), { once: true });
 
   log(`listening on ${socketPath} (engine ${engineId}${sample ? ", sample data" : ""})`);
-  return ok({ engineId, endpoint: endpoint.value, store, closed, close: shutdown });
+  return ok({ engineId, endpoint: endpoint.value, store, ...(storage && { items: storage.items }), closed, close: shutdown });
+}
+
+interface Storage {
+  readonly items: ItemStore;
+  close(): void;
+}
+
+/**
+ * Loads the item logs, rebuilds the board index from them, then recovers the steps that were
+ * running when the engine stopped. The index follows every change after that.
+ */
+async function openStorage(home: string, table: ProcessTable, clock: Clock, log: (message: string) => void): Promise<Result<Storage, StartError>> {
+  let index: ItemIndex | undefined;
+  try {
+    mkdirSync(home, { recursive: true, mode: 0o700 });
+    const hostId = loadHostId(home, clock);
+    if (!hostId.ok) return err({ code: "start_failed", message: hostId.error });
+    const { store: items, problems } = ItemStore.open({ home, hostId: hostId.value, clock });
+    for (const problem of problems) log(`item ${problem.itemId} is not loaded: ${problem.message}`);
+    index = ItemIndex.open(join(home, "tokama.db"));
+    index.rebuild(items.list());
+    const opened = index;
+    const unsubscribe = items.subscribe((item) => opened.put(item));
+    for (const recovered of await recoverItems(items, { table, clock })) {
+      const kills = recovered.kills.map(({ pid, outcome }) => `${pid} ${outcome.kind}${"reason" in outcome ? ` (${outcome.reason})` : ""}${"message" in outcome ? ` (${outcome.message})` : ""}`);
+      log(`item ${recovered.itemId}: step ${recovered.stepId} was running; asking retry or stop${kills.length > 0 ? `; processes: ${kills.join(", ")}` : ""}${recovered.error ? `; not recorded: ${recovered.error.message}` : ""}`);
+    }
+    return ok({
+      items,
+      close: () => {
+        unsubscribe();
+        opened.close();
+      },
+    });
+  } catch (error) {
+    index?.close();
+    return err({ code: "start_failed", message: `cannot open item storage in ${home}: ${String(error)}` });
+  }
 }
 
 function ensurePrivateDir(dir: string): Result<void, StartError> {
