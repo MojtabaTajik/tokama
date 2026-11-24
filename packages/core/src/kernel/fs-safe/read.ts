@@ -30,7 +30,8 @@ export interface ReadTextOptions {
 
 // O_NONBLOCK: opening a FIFO with no writer returns at once instead of hanging; fstat then refuses it.
 // O_NOFOLLOW: a symlink as the last path component fails the open (ELOOP; EMLINK on FreeBSD).
-const FLAGS = constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK;
+// O_NOCTTY: opening a terminal device never makes it the engine's controlling terminal (Linux).
+const FLAGS = constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK | constants.O_NOCTTY;
 const CHUNK_BYTES = 64 * 1024;
 
 const failure = (path: string, reason: ReadFailureReason, message: string, code?: string): Result<never, ReadFailure> =>
