@@ -19,11 +19,11 @@ function parse(lines: readonly string[], cwd = "/tmp/fixture/repo") {
 const line = (value: unknown) => JSON.stringify(value);
 
 describe("Claude Code stream parser", () => {
-  it("turns a recorded run into text, edit, command and rate-limit events", () => {
+  it("turns a recorded run into turns, text, tool calls and rate-limit events", () => {
     const { events } = parse(fixture("success"));
-    expect(events.map((event) => event.type)).toEqual(["rate_limit", "text", "edit", "text", "command", "text"]);
-    expect(events).toContainEqual({ type: "edit", tool: "Write", path: "hello.py" });
-    expect(events).toContainEqual({ type: "command", command: "python3 hello.py" });
+    expect(events.map((event) => event.type)).toEqual(["rate_limit", "turn", "text", "tool_call", "turn", "text", "tool_call", "turn", "text"]);
+    expect(events).toContainEqual({ type: "tool_call", id: "call_cv9c3hv0", name: "Write", kind: "edit", input: { file_path: "hello.py", change: expect.stringMatching(/^[0-9a-f]{16}$/) } });
+    expect(events).toContainEqual({ type: "tool_call", id: "call_va0yxsz1", name: "Bash", kind: "command", input: { command: "python3 hello.py" } });
   });
 
   it("keeps the session id and sums tokens by type from modelUsage", () => {
@@ -76,31 +76,52 @@ describe("Claude Code stream parser", () => {
     expect(single.events).toEqual([{ type: "rate_limit", status: "allowed_warning", windows: [{ window: "seven_day", usedPercent: 90 }] }]);
   });
 
-  it("records no absolute path: edits outside the working directory have no path", () => {
-    const edit = (path: string) => line({ type: "assistant", message: { content: [{ type: "tool_use", name: "Edit", input: { file_path: path } }] } });
+  const toolUse = (id: string, name: string, input: Record<string, unknown>, messageId = id) =>
+    line({ type: "assistant", message: { id: messageId, content: [{ type: "tool_use", id, name, input }] } });
+  const calls = (events: AgentCallEvent[]) => events.filter((event) => event.type === "tool_call");
+
+  it("records no absolute path: paths outside the working directory become outside: true", () => {
     const { events } = parse(
       [
         line({ type: "system", subtype: "init", cwd: "/private/tmp/repo" }),
-        edit("/private/tmp/repo/src/a.ts"),
-        edit("/tmp/repo/src/b.ts"),
-        edit("/Users/someone/.ssh/config"),
-        edit("/private/tmp/repo-other/c.ts"),
-        edit("../outside.txt"),
+        toolUse("t1", "Read", { file_path: "/private/tmp/repo/src/a.ts", offset: 10, limit: 20 }),
+        toolUse("t2", "Read", { file_path: "/tmp/repo/src/b.ts" }),
+        toolUse("t3", "Read", { file_path: "/Users/someone/.ssh/config" }),
+        toolUse("t4", "Grep", { pattern: "x", path: "/private/tmp/repo-other" }),
+        toolUse("t5", "Glob", { pattern: "*.ts", path: "/tmp/repo" }),
       ],
       "/tmp/repo",
     );
-    expect(events).toEqual([
-      { type: "edit", tool: "Edit", path: "src/a.ts" },
-      { type: "edit", tool: "Edit", path: "src/b.ts" },
-      { type: "edit", tool: "Edit" },
-      { type: "edit", tool: "Edit" },
-      { type: "edit", tool: "Edit" },
+    expect(calls(events).map((event) => event.type === "tool_call" && event.input)).toEqual([
+      { file_path: "src/a.ts", offset: 10, limit: 20 },
+      { file_path: "src/b.ts" },
+      { outside: true },
+      { pattern: "x", outside: true },
+      { pattern: "*.ts", path: "." },
     ]);
   });
 
-  it("reports other tools by name", () => {
-    const { events } = parse([line({ type: "assistant", message: { content: [{ type: "tool_use", name: "Grep", input: { pattern: "x" } }] } })]);
-    expect(events).toEqual([{ type: "tool_call", tool: "Grep" }]);
+  it("keeps only identity fields: no descriptions, and an edit's change as a short hash", () => {
+    const { events } = parse([
+      toolUse("t1", "Bash", { command: "npm test", description: "Run the tests", timeout: 60000 }),
+      toolUse("t2", "Edit", { file_path: "src/a.ts", old_string: "a", new_string: "b" }),
+      toolUse("t3", "Edit", { file_path: "src/a.ts", old_string: "a", new_string: "c" }),
+      toolUse("t4", "Edit", { file_path: "src/a.ts", old_string: "a", new_string: "b" }),
+      toolUse("t5", "WebFetch", { url: "https://tokama.dev", prompt: "summarize", nested: { x: 1 } }),
+    ]);
+    const inputs = calls(events).map((event) => (event.type === "tool_call" ? event.input : {}));
+    expect(inputs[0]).toEqual({ command: "npm test", timeout: 60000 });
+    expect(inputs[1]?.["change"]).not.toBe(inputs[2]?.["change"]);
+    expect(inputs[1]).toEqual(inputs[3]);
+    expect(inputs[1]).toEqual({ file_path: "src/a.ts", change: expect.any(String) });
+    expect(inputs[4]).toEqual({ url: "https://tokama.dev", prompt: "summarize" });
+    expect(calls(events).map((event) => event.type === "tool_call" && event.kind)).toEqual(["command", "edit", "edit", "edit", "other"]);
+  });
+
+  it("emits one turn per message and one tool call per tool-use id", () => {
+    const text = (id: string) => line({ type: "assistant", message: { id, content: [{ type: "text", text: "x" }] } });
+    const { events } = parse([text("m1"), toolUse("t1", "Bash", { command: "ls" }, "m1"), toolUse("t1", "Bash", { command: "ls" }, "m1"), text("m2")]);
+    expect(events.map((event) => event.type)).toEqual(["turn", "text", "tool_call", "turn", "text"]);
   });
 
   it("skips lines that are not JSON, not objects, or not in the expected shape", () => {

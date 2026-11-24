@@ -69,7 +69,7 @@ describe.skipIf(!enabled)("Claude Code runtime against the real CLI", () => {
       expect(existsSync(join(root, "outside.txt"))).toBe(false);
       expect(existsSync(join(repo, "made-by-touch"))).toBe(true);
       expect(existsSync(join(repo, "made-by-mkdir"))).toBe(false);
-      expect(events).toContainEqual({ type: "edit", tool: "Write", path: "inside.txt" });
+      expect(events).toContainEqual(expect.objectContaining({ type: "tool_call", name: "Write", kind: "edit", input: expect.objectContaining({ file_path: "inside.txt" }) }));
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
