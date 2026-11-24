@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc --build",
     "clean": "tsc --build --clean",
+    "typecheck": "tsc --build && pnpm --recursive exec tsc --project tsconfig.test.json",
     "test": "vitest run --config tooling/vitest.config.ts"
   },
   "devDependencies": {
