@@ -7,10 +7,10 @@ import type { AgentCallEvent } from "../../../kernel/schemas/index.js";
 import { createClaudeCodeRuntime } from "./index.js";
 
 // One call to the real `claude` CLI, on the user's own login. Opt in with TOKAMA_REAL_CLAUDE=1;
-// it costs a few cents and never runs in CI. It checks the permission flags for real: an edit
-// inside the working directory and a command with a rule work; an edit outside it and a command
-// without a rule are denied. (Claude Code itself allows commands it judges read-only, such as
-// `ls` or `whoami`, without a rule, so the denied command here is one that writes.)
+// it costs a few cents and never runs in CI. It checks the permissions for real: an edit inside
+// the working directory and a command with a rule work; an edit outside it, a command without a
+// rule (also a read-only one such as `whoami`, which only Tokama's hook denies) and reading a file
+// outside it with `cat` are denied.
 
 const enabled = process.env["TOKAMA_REAL_CLAUDE"] === "1";
 
@@ -20,6 +20,7 @@ describe.skipIf(!enabled)("Claude Code runtime against the real CLI", () => {
     const repo = join(root, "repo");
     mkdirSync(repo);
     writeFileSync(join(repo, "notes.txt"), "the word is gecko\n");
+    writeFileSync(join(root, "secret.txt"), "the secret is agama\n");
     // The CLI's raw lines, to print what the events leave out (cost, denials).
     const raw: string[] = [];
     const base = createProcessRunner();
@@ -44,9 +45,13 @@ describe.skipIf(!enabled)("Claude Code runtime against the real CLI", () => {
         "3. Create ../outside.txt containing the same word.",
         "4. Run the shell command `touch made-by-touch`.",
         "5. Run the shell command `mkdir made-by-mkdir`.",
+        "6. Run the shell command `whoami`.",
+        "7. Run the shell command `cat ../secret.txt`.",
         "Then reply with one line: which steps worked.",
       ].join("\n");
-      const runtime = createClaudeCodeRuntime({ runner });
+      // The hook runs from source here; the engine runs the built hook.js.
+      const hookCommand: [string, ...string[]] = [process.execPath, "--import", join(import.meta.dirname, "testing", "resolve-ts.ts"), join(import.meta.dirname, "hook.ts")];
+      const runtime = createClaudeCodeRuntime({ runner, hookCommand });
       for await (const event of runtime.launch(
         { model: "haiku", prompt, cwd: repo, role: "You are terse.", limits: { edit: true, commands: ["touch:*"], web: false }, timeoutMs: 150_000 },
         new AbortController().signal,
@@ -69,6 +74,23 @@ describe.skipIf(!enabled)("Claude Code runtime against the real CLI", () => {
       expect(existsSync(join(root, "outside.txt"))).toBe(false);
       expect(existsSync(join(repo, "made-by-touch"))).toBe(true);
       expect(existsSync(join(repo, "made-by-mkdir"))).toBe(false);
+      // Each shell command's tool result: an error for the denied ones.
+      const commandIds = new Map<string, string>();
+      const results = new Map<string, boolean>();
+      for (const line of lines) {
+        const content = ((line["message"] as { content?: unknown } | undefined)?.content ?? []) as Array<Record<string, unknown>>;
+        if (!Array.isArray(content)) continue;
+        for (const block of content) {
+          const input = block["input"] as { command?: string } | undefined;
+          if (block["type"] === "tool_use" && block["name"] === "Bash" && input?.command) commandIds.set(input.command, String(block["id"]));
+          if (block["type"] === "tool_result") results.set(String(block["tool_use_id"]), block["is_error"] === true);
+        }
+      }
+      const failedCommand = (command: string) => results.get(commandIds.get(command) ?? "");
+      expect(failedCommand("touch made-by-touch")).toBe(false);
+      expect(failedCommand("whoami")).toBe(true);
+      expect(failedCommand("cat ../secret.txt")).toBe(true);
+      expect(JSON.stringify(events)).not.toContain("agama");
       expect(events).toContainEqual(expect.objectContaining({ type: "tool_call", name: "Write", kind: "edit", input: expect.objectContaining({ file_path: "inside.txt" }) }));
     } finally {
       rmSync(root, { recursive: true, force: true });

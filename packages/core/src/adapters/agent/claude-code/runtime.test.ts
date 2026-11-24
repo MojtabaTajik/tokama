@@ -38,7 +38,13 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-const request = (prompt: string, extra: Partial<AgentCallRequest> = {}): AgentCallRequest => ({ model: "claude-haiku-5-5", prompt, cwd: dir, ...extra });
+const request = (prompt: string, extra: Partial<AgentCallRequest> = {}): AgentCallRequest => ({
+  model: "claude-haiku-5-5",
+  prompt,
+  cwd: dir,
+  timeoutMs: 60_000,
+  ...extra,
+});
 
 async function collect(stream: AsyncIterable<AgentCallEvent>): Promise<AgentCallEvent[]> {
   const events: AgentCallEvent[] = [];
@@ -98,12 +104,15 @@ describe("Claude Code runtime", SLOW, () => {
     );
     const said = events.find((event) => event.type === "text");
     if (said?.type !== "text") throw new Error("no text event");
-    const echo = JSON.parse(said.text) as { argv: string[]; cwd: string; env: string[] };
+    const echo = JSON.parse(said.text) as { argv: string[]; cwd: string; env: string[]; settings?: { mode: number; text: string; outside: boolean } };
     expect(echo.cwd).toMatch(new RegExp(`${dir.split("/").at(-1) ?? ""}$`));
     expect(echo.argv).toContain("--model=claude-haiku-5-5");
     expect(echo.argv).toContain("Bash(npm test:*)");
     expect(echo.argv).toContain("--append-system-prompt=You review code.");
     expect(echo.env).toContain("EXTRA_VAR");
+    // The hook settings sit in a folder of their own outside the worktree, readable by the user only.
+    expect(echo.settings).toMatchObject({ mode: 0o700, outside: true });
+    expect(JSON.parse(echo.settings?.text ?? "{}")).toMatchObject({ hooks: { PreToolUse: [{ matcher: "Bash" }] } });
     expect(echo.env).not.toContain("SSH_AUTH_SOCK");
     expect(echo.env.every((name) => ["PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "TMPDIR", "TERM", "EXTRA_VAR", "__CF_USER_TEXT_ENCODING"].includes(name))).toBe(true);
   });
@@ -192,9 +201,48 @@ describe("Claude Code runtime", SLOW, () => {
     await waitGone(pid);
   });
 
-  it("counts a result that arrived before the timeout as completed", async () => {
-    // Long enough for a slow CI start to print the result first.
-    const result = end(await collect(runtime().launch(request("result-then-hang", { timeoutMs: 5_000 }), new AbortController().signal)));
-    expect(result.outcome).toBe("completed");
+  /** Runs `prompt` with the stop-after-result grace on a manual clock that a real interval advances. */
+  async function withGrace(prompt: string) {
+    const clock = manualClock();
+    const graced = createClaudeCodeRuntime({ command: [process.execPath, FAKE], clock, resultGraceMs: 10_000, runner: createProcessRunner({ killGraceMs: 200, drainMs: 500 }) });
+    const ticker = setInterval(() => clock.advance(1_000), 5);
+    try {
+      return await collect(graced.launch(request(prompt, { timeoutMs: 600_000 }), new AbortController().signal));
+    } finally {
+      clearInterval(ticker);
+    }
+  }
+
+  it("stops a CLI that lingers after a success result, and reports it completed", async () => {
+    expect(end(await withGrace("result-then-hang"))).toMatchObject({ outcome: "completed", sessionId: "d4bc8b9c-641c-40df-bc38-952463fb9366" });
+  });
+
+  it("stops a CLI that lingers after an error result, and classifies the error, not the stop", async () => {
+    expect(end(await withGrace("error-then-hang"))).toMatchObject({ outcome: "failed", errorKind: "auth", error: "Not logged in · Please run /login" });
+  });
+
+  it("refuses a request without a timeout, since the runtime owns it", async () => {
+    const untimed: AgentCallRequest = { model: "claude-haiku-5-5", prompt: "success", cwd: dir };
+    expect(await collect(runtime().launch(untimed, new AbortController().signal))).toEqual([
+      { type: "end", outcome: "failed", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, error: "a Claude Code call needs timeoutMs", errorKind: "crash" },
+    ]);
+  });
+
+  it("sends SIGTERM first on a stop, so Claude Code can stop its own tools", async () => {
+    const controller = new AbortController();
+    const texts: string[] = [];
+    let outcome = "";
+    for await (const event of runtime().launch(request("trap-term"), controller.signal)) {
+      if (event.type === "text") texts.push(event.text);
+      if (event.type === "text" && event.text === "ready") controller.abort();
+      if (event.type === "end") outcome = event.outcome;
+    }
+    expect(texts).toEqual(["ready", "got SIGTERM"]);
+    expect(outcome).toBe("aborted");
+  });
+
+  it("puts the error subtype in the message and no absolute path", async () => {
+    const result = end(await collect(runtime().launch(request("execution-error"), new AbortController().signal)));
+    expect(result.error).toBe("error_during_execution");
   });
 });

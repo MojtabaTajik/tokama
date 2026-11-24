@@ -22,9 +22,11 @@ const UNSAFE_WORD = /[(),]/;
  *   `whoami`, ...) without a rule.
  * - `--tools`: only the tools the limits allow exist in the session.
  * - `--strict-mcp-config` without `--mcp-config`: no MCP servers from the user's config.
+ * - `--settings`: when the shell is on, a PreToolUse hook that denies every command the step's
+ *   rules do not allow, read-only ones included (see hook.ts). `--restricted` still applies it.
  * - Single-value flags use `--flag=value`, so a value that starts with `-` is never read as a flag.
  */
-export function buildArgs(request: AgentCallRequest): Result<string[], string> {
+export function buildArgs(request: AgentCallRequest, settingsPath?: string): Result<string[], string> {
   const limits = request.limits ?? READ_ONLY;
   if (request.model === "" || request.model.startsWith("-")) return err(`not a model name: "${request.model}"`);
   const prefixes = rulePrefixes(limits.commands);
@@ -57,9 +59,13 @@ export function buildArgs(request: AgentCallRequest): Result<string[], string> {
   // The list flags take every following word up to the next flag.
   if (allow.length > 0) args.push("--allowedTools", ...allow);
   args.push("--disallowedTools", ...deny);
+  if (settingsPath !== undefined) args.push(`--settings=${settingsPath}`);
   if (request.role !== undefined && request.role !== "") args.push(`--append-system-prompt=${request.role}`);
   return ok(args);
 }
+
+/** True when the step allows any shell command, so the session has the Bash tool. */
+export const usesShell = (request: AgentCallRequest): boolean => rulePrefixes(request.limits?.commands ?? []).length > 0;
 
 /** The prompt as the one stream-json user message on stdin. */
 export function userMessage(prompt: string): string {

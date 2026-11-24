@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentCallRequest, ToolLimits } from "../../../kernel/ports/index.js";
-import { buildArgs, userMessage } from "./args.js";
+import { buildArgs, userMessage, usesShell } from "./args.js";
 
 const request = (limits?: ToolLimits, extra: Partial<AgentCallRequest> = {}): AgentCallRequest => ({
   model: "claude-haiku-5-5",
@@ -67,6 +67,16 @@ describe("Claude Code args", () => {
     const argv = args(request(undefined, { role: "--dangerously-skip-permissions\nYou review code." }));
     expect(argv.at(-1)).toBe("--append-system-prompt=--dangerously-skip-permissions\nYou review code.");
     expect(args(request()).some((word) => word.startsWith("--append-system-prompt"))).toBe(false);
+  });
+
+  it("passes the hook settings file when given, and says when the shell is on", () => {
+    const shell = request({ edit: false, commands: ["npm test:*"], web: false });
+    const result = buildArgs(shell, "/tmp/call/settings.json");
+    expect(result.ok && value(result.value, "--settings")).toBe("/tmp/call/settings.json");
+    expect(args(shell).some((word) => word.startsWith("--settings"))).toBe(false);
+    expect(usesShell(shell)).toBe(true);
+    expect(usesShell(request())).toBe(false);
+    expect(usesShell(request({ edit: true, commands: ["", ":*"], web: true }))).toBe(false);
   });
 
   it("never passes a flag that skips permission checks", () => {

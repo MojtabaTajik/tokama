@@ -80,7 +80,7 @@ describe("Claude Code stream parser", () => {
     line({ type: "assistant", message: { id: messageId, content: [{ type: "tool_use", id, name, input }] } });
   const calls = (events: AgentCallEvent[]) => events.filter((event) => event.type === "tool_call");
 
-  it("records no absolute path: paths outside the working directory become outside: true", () => {
+  it("records no absolute path: a path outside the working directory becomes a distinct hash", () => {
     const { events } = parse(
       [
         line({ type: "system", subtype: "init", cwd: "/private/tmp/repo" }),
@@ -89,16 +89,25 @@ describe("Claude Code stream parser", () => {
         toolUse("t3", "Read", { file_path: "/Users/someone/.ssh/config" }),
         toolUse("t4", "Grep", { pattern: "x", path: "/private/tmp/repo-other" }),
         toolUse("t5", "Glob", { pattern: "*.ts", path: "/tmp/repo" }),
+        toolUse("t6", "Read", { file_path: "/Users/someone/.ssh/id_rsa" }),
+        toolUse("t7", "Read", { file_path: "src/../../escape.txt" }),
+        toolUse("t8", "Read", { file_path: "src/../ok.txt" }),
       ],
       "/tmp/repo",
     );
     expect(calls(events).map((event) => event.type === "tool_call" && event.input)).toEqual([
       { file_path: "src/a.ts", offset: 10, limit: 20 },
       { file_path: "src/b.ts" },
-      { outside: true },
-      { pattern: "x", outside: true },
+      { file_path: expect.stringMatching(/^outside:[0-9a-f]{16}$/) },
+      { pattern: "x", path: expect.stringMatching(/^outside:[0-9a-f]{16}$/) },
       { pattern: "*.ts", path: "." },
+      { file_path: expect.stringMatching(/^outside:[0-9a-f]{16}$/) },
+      { file_path: expect.stringMatching(/^outside:/) },
+      { file_path: "ok.txt" },
     ]);
+    const inputs = calls(events).map((event) => (event.type === "tool_call" ? event.input : {}));
+    expect(inputs[2]?.["file_path"]).not.toBe(inputs[5]?.["file_path"]);
+    expect(JSON.stringify(events)).not.toContain("someone");
   });
 
   it("keeps only identity fields: no descriptions, and an edit's change as a short hash", () => {
@@ -114,8 +123,39 @@ describe("Claude Code stream parser", () => {
     expect(inputs[1]?.["change"]).not.toBe(inputs[2]?.["change"]);
     expect(inputs[1]).toEqual(inputs[3]);
     expect(inputs[1]).toEqual({ file_path: "src/a.ts", change: expect.any(String) });
-    expect(inputs[4]).toEqual({ url: "https://tokama.dev", prompt: "summarize" });
+    expect(inputs[4]).toEqual({ url: "https://tokama.dev", prompt: "summarize", nested: expect.stringMatching(/^[0-9a-f]{16}$/) });
     expect(calls(events).map((event) => event.type === "tool_call" && event.kind)).toEqual(["command", "edit", "edit", "edit", "other"]);
+  });
+
+  it("keeps objects and arrays as a hash, so two different todo lists are not a repeat", () => {
+    const { events } = parse([
+      toolUse("t1", "TodoWrite", { todos: [{ content: "a", status: "pending" }] }),
+      toolUse("t2", "TodoWrite", { todos: [{ content: "a", status: "completed" }] }),
+    ]);
+    const inputs = calls(events).map((event) => (event.type === "tool_call" ? event.input : {}));
+    expect(inputs[0]?.["todos"]).toMatch(/^[0-9a-f]{16}$/);
+    expect(inputs[0]).not.toEqual(inputs[1]);
+  });
+
+  it("writes the working directory as . and the home directory as ~ in other strings", () => {
+    const parser = createStreamParser("/home/dev/work/repo", "/home/dev");
+    const events = [
+      line({ type: "system", subtype: "init", cwd: "/private/home/dev/work/repo" }),
+      toolUse("t1", "Bash", { command: "cd /home/dev/work/repo && cat /home/dev/.npmrc /private/home/dev/work/repo/a" }),
+    ].flatMap((text) => parser.line(text));
+    expect(calls(events)[0]).toMatchObject({ input: { command: "cd . && cat ~/.npmrc ./a" } });
+    expect(parser.scrub("ENOENT: /home/dev/work/repo/x and /home/dev/y")).toBe("ENOENT: ./x and ~/y");
+  });
+
+  it("does not count a subagent's messages as the parent's turns or tool calls", () => {
+    const sub = line({ type: "assistant", parent_tool_use_id: "toolu_task", message: { id: "s1", content: [{ type: "tool_use", id: "st1", name: "Bash", input: { command: "ls" } }], usage: { input_tokens: 7 } } });
+    const { events, state } = parse([sub, toolUse("t1", "Bash", { command: "ls" })]);
+    expect(events.map((event) => event.type)).toEqual(["turn", "tool_call"]);
+    expect(state.usage.input).toBe(7);
+  });
+
+  it("keeps the result's subtype", () => {
+    expect(parse(fixture("execution-error")).state.result).toMatchObject({ isError: true, subtype: "error_during_execution" });
   });
 
   it("emits one turn per message and one tool call per tool-use id", () => {

@@ -8,8 +8,8 @@
 //
 // Run with `node fake-claude.ts <claude args...>`; Node runs the TypeScript as is.
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, realpathSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 const FIXTURES = join(import.meta.dirname, "fixtures");
 const SESSION = "44444444-4444-4444-8444-444444444444";
@@ -20,6 +20,14 @@ const hang = () => setInterval(() => {}, 1_000);
 const init = () => emit({ type: "system", subtype: "init", cwd: process.cwd(), session_id: SESSION, tools: [], model: "fake" });
 const text = (value: string) => emit({ type: "assistant", message: { id: "msg_fake", content: [{ type: "text", text: value }] }, session_id: SESSION });
 const success = () => emit({ type: "result", subtype: "success", is_error: false, result: "done", session_id: SESSION, usage: { input_tokens: 1, output_tokens: 1 } });
+
+/** The `--settings` file, if any: its text, its folder's mode, and whether it is outside the cwd. */
+function settings() {
+  const path = process.argv.find((arg) => arg.startsWith("--settings="))?.slice("--settings=".length);
+  if (path === undefined) return undefined;
+  const folder = dirname(path);
+  return { text: readFileSync(path, "utf8"), mode: statSync(folder).mode & 0o777, outside: !realpathSync(folder).startsWith(realpathSync(process.cwd())) };
+}
 
 const REPLAYS: Record<string, number> = { success: 0, "logged-out": 1, quota: 1, "rate-limited": 1, "execution-error": 1 };
 
@@ -34,7 +42,7 @@ function run(prompt: string): void {
   switch (prompt) {
     case "echo":
       init();
-      text(JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), env: Object.keys(process.env).sort() }));
+      text(JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), env: Object.keys(process.env).sort(), settings: settings() }));
       success();
       return;
     case "crash":
@@ -56,6 +64,20 @@ function run(prompt: string): void {
     }
     case "result-then-hang":
       replay("success");
+      hang();
+      return;
+    case "error-then-hang":
+      replay("logged-out");
+      hang();
+      return;
+    case "trap-term":
+      // Reports the SIGTERM it gets, as Claude Code stops its own tools on one.
+      process.on("SIGTERM", () => {
+        text("got SIGTERM");
+        process.exit(143);
+      });
+      init();
+      text("ready");
       hang();
       return;
     default:

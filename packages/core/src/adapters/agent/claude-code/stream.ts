@@ -2,7 +2,8 @@
 // keeps what the end event needs: usage, session id, the result, and the error signals.
 // The stream is outside input: every line is validated, and a line that does not fit is skipped.
 import { createHash } from "node:crypto";
-import { isAbsolute, relative } from "node:path";
+import { homedir } from "node:os";
+import { isAbsolute, normalize, relative, sep } from "node:path";
 import { z } from "zod";
 import type { AgentCallErrorKind, AgentCallEvent, RateLimitWindow, TokenUsage } from "../../../kernel/schemas/index.js";
 
@@ -40,6 +41,8 @@ const SystemLine = z.looseObject({
 
 const AssistantLine = z.looseObject({
   type: z.literal("assistant"),
+  /** Set on a subagent's message: the id of the parent's tool call that started the subagent. */
+  parent_tool_use_id: z.string().nullable().optional().catch(undefined),
   message: z.looseObject({
     id: z.string().optional().catch(undefined),
     content: z.array(ContentBlock).catch([]),
@@ -65,6 +68,7 @@ const RateLimitLine = z.looseObject({
 
 const ResultLine = z.looseObject({
   type: z.literal("result"),
+  subtype: z.string().optional().catch(undefined),
   is_error: z.boolean().catch(true),
   result: z.unknown().optional(),
   session_id: z.string().min(1).optional().catch(undefined),
@@ -87,11 +91,14 @@ const CHANGE_FIELDS: Record<string, readonly string[]> = {
   NotebookEdit: ["cell_id", "new_source", "edit_mode"],
 };
 type ToolInput = Record<string, string | number | boolean>;
+const hash = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 16);
 const NO_TOKENS: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 export interface CallResult {
   readonly isError: boolean;
   readonly text: string;
+  /** The CLI's word for how the call ended, e.g. `success`, `error_during_execution`. */
+  readonly subtype?: string;
   readonly apiErrorStatus?: number;
 }
 
@@ -111,10 +118,12 @@ export interface StreamParser {
   /** The events in one stdout line. Never throws. */
   line(line: string): AgentCallEvent[];
   state(): StreamState;
+  /** `text` with the working directory written as `.` and the home directory as `~`. */
+  scrub(text: string): string;
 }
 
-/** `cwd` is the call's working directory, used to make edited paths relative. */
-export function createStreamParser(cwd: string): StreamParser {
+/** `cwd` is the call's working directory: paths in tool calls are recorded relative to it. */
+export function createStreamParser(cwd: string, home: string = homedir()): StreamParser {
   // Claude reports its own view of the cwd (on macOS /tmp is /private/tmp); both are tried.
   const roots = [cwd];
   let sessionId: string | undefined;
@@ -126,37 +135,47 @@ export function createStreamParser(cwd: string): StreamParser {
   const messageUsage = new Map<string, TokenUsage>();
   const seenMessages = new Set<string>();
 
+  const inside = (rel: string) => rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
   const relativePath = (path: string): string | undefined => {
-    if (!isAbsolute(path)) return path.startsWith("..") ? undefined : path;
+    if (!isAbsolute(path)) {
+      const rel = normalize(path);
+      return inside(rel) ? rel : undefined;
+    }
     for (const root of roots) {
       const rel = relative(root, path);
       if (rel === "") return ".";
-      if (!rel.startsWith("..") && !isAbsolute(rel)) return rel;
+      if (inside(rel)) return rel;
     }
     return undefined;
   };
 
+  const scrub = (text: string): string => {
+    let out = text;
+    // Longest first, so the cwd is replaced before the home folder that may hold it.
+    const replacements: Array<[string, string]> = [...roots.map((root): [string, string] => [root, "."]), [home, "~"]];
+    for (const [from, to] of replacements.filter(([from]) => from.length > 1).sort((a, b) => b[0].length - a[0].length)) {
+      out = out.split(from).join(to);
+    }
+    return out;
+  };
+
   /**
-   * The fields that make two tool calls the same call. Paths are relative to the working
-   * directory, or replaced by `outside: true`, so no absolute path is recorded.
+   * The fields that make two tool calls the same call. A path is relative to the working
+   * directory; a path outside it is recorded as `outside:<hash>`, so two outside paths stay
+   * distinct without the path being stored. Other strings have the cwd and home folder replaced.
+   * Objects and arrays (an edit list, a todo list) are kept as a short hash.
    */
   const identity = (name: string, input: Record<string, unknown>): ToolInput => {
     const out: ToolInput = {};
     const change = CHANGE_FIELDS[name];
     for (const [key, value] of Object.entries(input)) {
-      if (NOT_IDENTITY.has(key) || change?.includes(key)) continue;
-      if (/path$/.test(key) && typeof value === "string") {
-        const path = relativePath(value);
-        if (path !== undefined) out[key] = path;
-        else out["outside"] = true;
-      } else if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-        out[key] = value;
-      }
+      if (NOT_IDENTITY.has(key) || change?.includes(key) || value === null || value === undefined) continue;
+      if (/path$/.test(key) && typeof value === "string") out[key] = relativePath(value) ?? `outside:${hash(value)}`;
+      else if (typeof value === "string") out[key] = scrub(value);
+      else if (typeof value === "number" || typeof value === "boolean") out[key] = value;
+      else out[key] = hash(JSON.stringify(value) ?? "");
     }
-    if (change !== undefined) {
-      const changed = JSON.stringify(change.map((key) => input[key] ?? null));
-      out["change"] = createHash("sha256").update(changed).digest("hex").slice(0, 16);
-    }
+    if (change !== undefined) out["change"] = hash(JSON.stringify(change.map((key) => input[key] ?? null)));
     return out;
   };
 
@@ -196,6 +215,8 @@ export function createStreamParser(cwd: string): StreamParser {
           const said = message.content.map((block) => block.text ?? "").join("").trim();
           assistantError = { code: line.error, text: said };
         }
+        // A subagent's turns and tool calls are not the parent's; its tokens still count.
+        if (typeof line.parent_tool_use_id === "string") return [];
         // One turn per API message, which arrives as one line per content block.
         const newTurn = message.id === undefined || !seenMessages.has(message.id);
         if (message.id !== undefined) seenMessages.add(message.id);
@@ -207,7 +228,7 @@ export function createStreamParser(cwd: string): StreamParser {
       case "result": {
         sessionId = line.session_id ?? sessionId;
         const said = typeof line.result === "string" ? line.result : "";
-        result = { isError: line.is_error, text: said, ...(typeof line.api_error_status === "number" && { apiErrorStatus: line.api_error_status }) };
+        result = { isError: line.is_error, text: said, ...(line.subtype !== undefined && { subtype: line.subtype }), ...(typeof line.api_error_status === "number" && { apiErrorStatus: line.api_error_status }) };
         const models = Object.entries(line.modelUsage ?? {});
         if (models.length > 0) {
           const modelUsage = Object.fromEntries(models.map(([name, usage]) => [name, fromModelUsage(usage)]));
@@ -228,6 +249,7 @@ export function createStreamParser(cwd: string): StreamParser {
         return [];
       }
     },
+    scrub,
     state() {
       return {
         ...(sessionId !== undefined && { sessionId }),
