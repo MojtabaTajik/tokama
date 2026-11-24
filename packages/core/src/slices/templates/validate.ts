@@ -7,6 +7,7 @@ import type { z } from "zod";
 import { posixSh, type SyntaxRefusalReason } from "../../kernel/command-policy/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import {
+  connectionDerivedSteps,
   TemplateRecordSchema,
   type AgentId,
   type ConnectionId,
@@ -445,10 +446,7 @@ function buildChecks(step: StepFile, doneWhen: string, name: string, at: (...res
  * engineer reads the summary before it is sent.
  */
 function checkCloudData(file: TemplateFile, steps: readonly TemplateStepDef[], scope: StepScope): void {
-  const fromConnections = new Set<string>();
-  for (const step of steps) {
-    if (step.connections.length > 0 || step.sees.some((seen) => fromConnections.has(seen))) fromConnections.add(step.id);
-  }
+  const fromConnections = connectionDerivedSteps(steps);
   for (const [i, step] of steps.entries()) {
     if (!sendsRepo(scope, file.steps[i]!)) continue;
     const name = `Step ${quote(step.id)}`;

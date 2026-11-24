@@ -3,7 +3,7 @@
 // carries its own schema version. The YAML file format that produces it belongs to the templates
 // slice.
 import { z } from "zod";
-import { AgentIdSchema, ConnectionIdSchema, RepoIdSchema, StepIdSchema, TemplateIdSchema, TemplateRefSchema } from "./ids.js";
+import { AgentIdSchema, ConnectionIdSchema, RepoIdSchema, StepIdSchema, TemplateIdSchema, TemplateRefSchema, type StepId } from "./ids.js";
 import { DataRuleSchema } from "./item.js";
 
 /** The 8 tag colours; a template or step colours its icon with one. */
@@ -106,3 +106,21 @@ export type IfFailed = z.output<typeof IfFailedSchema>;
 export type IfChangesRequested = z.output<typeof IfChangesRequestedSchema>;
 export type TemplateStepDef = z.output<typeof TemplateStepDefSchema>;
 export type TemplateRecord = z.output<typeof TemplateRecordSchema>;
+
+/**
+ * The steps whose results come from connections: steps that use a connection, and steps that see
+ * one of those, followed until nothing changes, so a `sees` that points forward cannot hide a chain.
+ */
+export function connectionDerivedSteps(steps: readonly Pick<TemplateStepDef, "id" | "connections" | "sees">[]): Set<StepId> {
+  const derived = new Set<StepId>(steps.filter((step) => step.connections.length > 0).map((step) => step.id));
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const step of steps) {
+      if (!derived.has(step.id) && step.sees.some((seen) => derived.has(seen))) {
+        derived.add(step.id);
+        grew = true;
+      }
+    }
+  }
+  return derived;
+}
