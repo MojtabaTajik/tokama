@@ -157,8 +157,23 @@ Step fields:
 | `on_fail` | `retry: n`, `escalate: <agent>`, `then: ask | stop`. |
 | `data` | What may leave the machine: `none` (default for local agents), `summary-after-approval`, `repo-and-diff`. |
 | `on_done` | Follow-up, e.g. create a task from a template. |
+| `on` | Where to go next by result: `pass`, `fail`, a verdict value or a declared choice, mapped to a step name (earlier steps allowed). Without `on`, the next step in the list. |
+| `max_visits` | How often the step may run in one item (default 1, or `retry + 1`). |
 
-The engine validates templates before a run: unknown agents, connections the template does not declare, a cloud agent on a step with `data: none`, missing prompts. The board's per-template view uses the step names; the default view uses `stage`.
+### Flow
+
+A template is a bounded graph of named steps:
+
+- It always starts at the first step and always ends: done, failed, stopped, or handed off as a new task. Waiting for the engineer is a pause, not an end.
+- Without `on`, steps run in order, so simple templates stay a list.
+- `on` maps a step's result to the next step, including an earlier one (fix loops, review loops). A step can let its agent choose the next step, but only among the choices the template declares; the choice is validated.
+- Every loop is bounded: `max_visits` per step and a per-item `budget` (time, agent calls). Hitting a bound never loops on: the item stops and asks the engineer.
+- Recurring work is a schedule that starts new items, not an endless workflow.
+- Not in v1: parallel branches, nested templates, an expression language for conditions, agent-written workflows.
+
+On the board an item can move back a column; its card shows the step and attempt (for example "↺ Build, attempt 2").
+
+The engine validates templates before a run: unknown agents, connections the template does not declare, `on` targets that do not exist, loops without a bound, a cloud agent on a step with `data: none`, missing prompts. The board's per-template view uses the step names; the default view uses `stage`.
 
 ## 7. Privacy
 
