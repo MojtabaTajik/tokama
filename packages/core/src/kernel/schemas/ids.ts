@@ -1,0 +1,24 @@
+// Id formats.
+// - Names are ids the engineer writes in config and templates (`local-investigator`, `app-insights`):
+//   lowercase letters, digits and hyphens, starting with a letter or digit, at most 64 characters.
+// - Generated ids are `<prefix>_<lowercase UUID>` (`item_0b9f...`), made by the engine.
+import { z } from "zod";
+
+const name = z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/, "must be lowercase letters, digits and hyphens (at most 64)");
+const generated = (prefix: string) =>
+  z.string().regex(new RegExp(`^${prefix}_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`), `must be ${prefix}_<uuid>`);
+
+export const WorkspaceIdSchema = name.brand<"WorkspaceId">();
+export const TemplateIdSchema = name.brand<"TemplateId">();
+export const AgentIdSchema = name.brand<"AgentId">();
+export const ItemIdSchema = generated("item").brand<"ItemId">();
+export const CallIdSchema = generated("call").brand<"CallId">();
+
+export type WorkspaceId = z.output<typeof WorkspaceIdSchema>;
+export type TemplateId = z.output<typeof TemplateIdSchema>;
+export type AgentId = z.output<typeof AgentIdSchema>;
+export type ItemId = z.output<typeof ItemIdSchema>;
+export type CallId = z.output<typeof CallIdSchema>;
+
+/** Milliseconds since the Unix epoch, as the kernel clock returns them. */
+export const EpochMsSchema = z.int().nonnegative();

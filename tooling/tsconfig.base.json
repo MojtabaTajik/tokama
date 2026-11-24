@@ -16,6 +16,9 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
+    // Dependencies' .d.ts files are not ours to check, and some name platform globals (zod's name
+    // URL), which packages without DOM or Node types, such as the client, do not declare.
+    "skipLibCheck": true,
     "types": []
   }
 }
