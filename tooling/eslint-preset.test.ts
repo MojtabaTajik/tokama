@@ -19,50 +19,60 @@ const IMPORTS = "@typescript-eslint/no-restricted-imports";
 const SYNTAX = "no-restricted-syntax";
 const GLOBALS = "no-restricted-globals";
 const BOUNDARIES = "boundaries/dependencies";
+const REQUIRE_IMPORTS = "@typescript-eslint/no-require-imports";
 
-// Every fixture named bad-* and the rules it must trigger (and no others).
-const violations: Record<string, string[]> = {
+// Every fixture named bad-*: the rules it must trigger (and no others) and its error count,
+// so one statement that stops firing in a multi-statement fixture fails the test.
+const violations: Record<string, [rules: string[], errors: number]> = {
   // Slices, adapters, kernel and wiring files.
-  "slices/items/bad-imports-other-slice.ts": [BOUNDARIES],
-  "slices/items/bad-dynamic-import-other-slice.ts": [BOUNDARIES],
-  "slices/workflow-engine/bad-imports-slice-internal.ts": [BOUNDARIES],
-  "slices/items/bad-imports-adapter.ts": [BOUNDARIES],
-  "slices/items/bad-imports-composition.ts": [BOUNDARIES],
-  "slices/items/bad-imports-unresolved.ts": [BOUNDARIES],
-  "adapters/agent/fake/bad-imports-slice.ts": [BOUNDARIES],
-  "adapters/agent/fake/bad-imports-other-adapter.ts": [BOUNDARIES],
-  "kernel/schemas/bad-imports-slice.ts": [BOUNDARIES],
-  "kernel/schemas/bad-imports-adapter.ts": [BOUNDARIES],
-  "bad-new-root-file.ts": [BOUNDARIES],
-  // Electron, also inside the escape zones.
-  "slices/items/bad-electron.ts": [IMPORTS],
-  "kernel/schemas/bad-electron-main-reexport.ts": [IMPORTS],
-  "adapters/agent/fake/bad-electron.ts": [IMPORTS],
-  "kernel/process/bad-electron-dynamic.ts": [SYNTAX],
+  "slices/items/bad-imports-other-slice.ts": [[BOUNDARIES], 1],
+  "slices/items/bad-dynamic-import-other-slice.ts": [[BOUNDARIES], 1],
+  "slices/items/bad-type-query-other-slice.ts": [[BOUNDARIES], 1],
+  "slices/items/bad-import-require-other-slice.cts": [[BOUNDARIES, REQUIRE_IMPORTS], 2],
+  "slices/workflow-engine/bad-imports-slice-internal.ts": [[BOUNDARIES], 1],
+  "slices/items/bad-imports-adapter.ts": [[BOUNDARIES], 1],
+  "slices/items/bad-imports-composition.ts": [[BOUNDARIES], 1],
+  "slices/items/bad-imports-unresolved.ts": [[BOUNDARIES], 1],
+  "adapters/agent/fake/bad-imports-slice.ts": [[BOUNDARIES], 1],
+  "adapters/agent/fake/bad-imports-other-adapter.ts": [[BOUNDARIES], 1],
+  "kernel/schemas/bad-imports-slice.ts": [[BOUNDARIES], 1],
+  "kernel/schemas/bad-imports-adapter.ts": [[BOUNDARIES], 1],
+  "bad-new-root-file.ts": [[BOUNDARIES], 3],
+  // Electron and URL specifiers, also inside the escape zones.
+  "slices/items/bad-electron.ts": [[IMPORTS], 1],
+  "kernel/schemas/bad-electron-main-reexport.ts": [[IMPORTS], 1],
+  "adapters/agent/fake/bad-electron.ts": [[IMPORTS], 1],
+  "kernel/process/bad-electron-dynamic.ts": [[SYNTAX], 1],
+  "slices/items/bad-url-import.ts": [[IMPORTS, SYNTAX], 2],
+  "adapters/agent/fake/bad-url-import.ts": [[IMPORTS], 1],
   // Process, network and code-loading escape hatches.
-  "slices/items/bad-child-process.ts": [IMPORTS],
-  "kernel/schemas/bad-node-child-process.ts": [IMPORTS],
-  "slices/items/bad-reexport-net.ts": [IMPORTS],
-  "slices/items/bad-type-import.ts": [IMPORTS],
-  "slices/items/bad-dynamic-import.ts": [SYNTAX],
-  "slices/items/bad-dynamic-import-non-literal.ts": [SYNTAX],
-  "slices/items/bad-create-require.ts": [IMPORTS],
-  "slices/items/bad-get-builtin-module.ts": [SYNTAX],
-  "slices/items/bad-process-alias.ts": [SYNTAX],
-  "slices/items/bad-process-import.ts": [IMPORTS],
-  "slices/items/bad-reflect-get.ts": [SYNTAX],
-  "slices/items/bad-fetch.ts": [GLOBALS],
-  "slices/items/bad-global-fetch.ts": [GLOBALS],
-  "slices/items/bad-global-this-alias.ts": [GLOBALS],
-  "slices/items/bad-reflect-get-global.ts": [GLOBALS],
-  "slices/items/bad-require.ts": [GLOBALS, "@typescript-eslint/no-require-imports"],
-  "slices/items/bad-function-constructor.ts": [SYNTAX, "no-new-func", "no-eval"],
-  // Every TypeScript extension is covered.
-  "slices/items/bad-module.mts": [IMPORTS],
-  "slices/items/bad-import-require.cts": [IMPORTS, "@typescript-eslint/no-require-imports"],
-  "slices/items/bad-component.tsx": [IMPORTS],
+  "slices/items/bad-child-process.ts": [[IMPORTS], 1],
+  "kernel/schemas/bad-node-child-process.ts": [[IMPORTS], 1],
+  "slices/items/bad-reexport-net.ts": [[IMPORTS], 1],
+  "slices/items/bad-type-import.ts": [[IMPORTS], 1],
+  "slices/items/bad-dynamic-import.ts": [[SYNTAX], 1],
+  "slices/items/bad-dynamic-import-non-literal.ts": [[SYNTAX], 2],
+  "slices/items/bad-create-require.ts": [[IMPORTS], 1],
+  "slices/items/bad-get-builtin-module.ts": [[SYNTAX], 1],
+  // `process["_linkedBinding"]` is refused as a member and as a string.
+  "slices/items/bad-process-alias.ts": [[SYNTAX], 4],
+  "slices/items/bad-process-execve.ts": [[SYNTAX], 2],
+  "slices/items/bad-process-import.ts": [[IMPORTS], 1],
+  "slices/items/bad-reflect-get.ts": [[SYNTAX], 1],
+  "slices/items/bad-fetch.ts": [[GLOBALS], 3],
+  "slices/items/bad-global-fetch.ts": [[GLOBALS], 1],
+  "slices/items/bad-global-this-alias.ts": [[GLOBALS], 1],
+  "slices/items/bad-reflect-get-global.ts": [[GLOBALS], 1],
+  "slices/items/bad-require.ts": [[GLOBALS, REQUIRE_IMPORTS], 2],
+  "slices/items/bad-function-constructor.ts": [[SYNTAX, "no-new-func", "no-eval"], 3],
+  // Every TypeScript extension is covered, and JavaScript files are refused.
+  "slices/items/bad-module.mts": [[IMPORTS], 1],
+  "slices/items/bad-import-require.cts": [[IMPORTS, REQUIRE_IMPORTS], 2],
+  "slices/items/bad-component.tsx": [[IMPORTS], 1],
+  "slices/items/bad-javascript.mjs": [[SYNTAX], 1],
   // Inline disable comments have no effect in core.
-  "slices/items/bad-inline-disable.ts": [IMPORTS],
+  "slices/items/bad-inline-disable.ts": [[IMPORTS], 1],
+  "adapters/agent/fake/bad-inline-disable.ts": [[IMPORTS], 1],
 };
 
 const ESCAPE_MODULES = [
@@ -134,13 +144,18 @@ describe("eslint preset: fixtures", () => {
     for (const path of Object.keys(violations)) expect(results.has(path), path).toBe(true);
   });
 
-  it.each(Object.entries(violations))("%s triggers %j", (path, expected) => {
+  it.each(Object.entries(violations))("%s triggers %j", (path, [rules, errors]) => {
     const result = results.get(path);
     expect(result, path).toBeDefined();
     if (!result) return;
     expect(result.messages.filter((m) => m.fatal)).toEqual([]);
-    expect(ruleIds(result)).toEqual([...expected].sort());
-    expect(result.errorCount).toBeGreaterThan(0);
+    expect(ruleIds(result)).toEqual([...rules].sort());
+    expect(result.errorCount).toBe(errors);
+  });
+
+  it("lists every bad-* fixture in the violation table", () => {
+    const bad = [...results.keys()].filter((path) => path.split("/").at(-1)?.startsWith("bad-"));
+    expect(bad.sort()).toEqual(Object.keys(violations).sort());
   });
 
   it("passes every allowed fixture with no message at all", () => {
@@ -149,10 +164,14 @@ describe("eslint preset: fixtures", () => {
     for (const [path, result] of allowed) expect(result.messages, path).toEqual([]);
   });
 
-  it("reports inline disable comments as having no effect", () => {
-    const messages = results.get("slices/items/bad-inline-disable.ts")?.messages ?? [];
+  it.each([
+    ["slices/items/bad-inline-disable.ts", 3],
+    ["adapters/agent/fake/bad-inline-disable.ts", 1],
+    ["slices/items/bad-javascript.mjs", 1],
+  ] as const)("reports the inline disable comments in %s as having no effect", (path, count) => {
+    const messages = results.get(path)?.messages ?? [];
     const ignored = messages.filter((m) => m.ruleId === null && m.message.includes("noInlineConfig"));
-    expect(ignored).toHaveLength(3);
+    expect(ignored).toHaveLength(count);
   });
 });
 

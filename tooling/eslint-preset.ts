@@ -9,7 +9,9 @@
 // - non-literal `import()` inside the escape zones, which can load any module (also Electron)
 //   and is invisible to the boundary rules;
 // - third-party packages that wrap process or network calls (a denylist cannot name them all);
-// - type-only `typeof import("node:child_process")` queries (no runtime effect).
+// - type-position `import("node:child_process")` queries escape the module bans (no runtime
+//   effect; the boundary rules do see type-position imports of local files);
+// - `#name` subpath imports, whose targets are set in package.json, not in code.
 import { fileURLToPath } from "node:url";
 import js from "@eslint/js";
 import type { ESLint } from "eslint";
@@ -35,29 +37,35 @@ const ESCAPE_ZONES = [coreFiles("kernel/process/"), coreFiles("kernel/egress/"),
 const ESCAPE_MODULE_REGEX =
   "^(?:node:)?(?:child_process|net|tls|dgram|dns|http|https|http2|worker_threads|cluster|inspector|module|vm|process)(?:/.*)?$|^(?:undici|ws)(?:/.*)?$";
 const ELECTRON_REGEX = "^electron(?:/.*)?$";
+// `data:`, `file:` and other URL specifiers load code the other rules cannot classify.
+const URL_SPECIFIER_REGEX = "^(?!node:)[a-z][a-z0-9+.-]*:";
 // esquery regex literals end at an unescaped "/".
 const selectorRegex = (source: string) => `/${source.replaceAll("/", "\\/")}/i`;
 
 // Property names that reach native bindings, built-in modules or the Function constructor,
 // whatever object they are read from (so `const p = process; p.binding()` is caught too).
 const ESCAPE_PROPERTY_REGEX =
-  "/^(?:binding|_linkedBinding|dlopen|getBuiltinModule|createRequire|mainModule|require|constructor)$/";
+  "/^(?:binding|_linkedBinding|dlopen|execve|kill|getBuiltinModule|createRequire|mainModule|require|constructor)$/";
 
 const electronImports = {
   regex: ELECTRON_REGEX,
   message: "core is headless: no Electron (architecture.md, section 1).",
 };
+const urlImports = {
+  regex: URL_SPECIFIER_REGEX,
+  message: "core imports modules by name or relative path, never by URL.",
+};
+// Refused everywhere in core, also in the escape zones.
+const alwaysImports = [electronImports, urlImports];
 const escapeImports = {
   regex: ESCAPE_MODULE_REGEX,
   message: "Process, network and code-loading modules are allowed only in kernel/process, kernel/egress and adapters/*.",
 };
 
-const electronSyntax = [
-  {
-    selector: `ImportExpression[source.value=${selectorRegex(ELECTRON_REGEX)}]`,
-    message: electronImports.message,
-  },
-];
+const alwaysSyntax = alwaysImports.map(({ regex, message }) => ({
+  selector: `ImportExpression[source.value=${selectorRegex(regex)}]`,
+  message,
+}));
 const escapeSyntax = [
   {
     selector: `ImportExpression[source.value=${selectorRegex(ESCAPE_MODULE_REGEX)}]`,
@@ -160,6 +168,15 @@ export default defineConfig(
     linterOptions: { reportUnusedDisableDirectives: "error" },
   },
 
+  // packages/core is TypeScript only, so a JavaScript file cannot slip past the rules below.
+  {
+    files: [`${CORE}/**/*.{js,jsx,mjs,cjs}`],
+    linterOptions: { noInlineConfig: true },
+    rules: {
+      "no-restricted-syntax": ["error", { selector: "Program", message: "packages/core is TypeScript only." }],
+    },
+  },
+
   // packages/core: engine boundaries.
   {
     files: [coreFiles("")],
@@ -177,19 +194,19 @@ export default defineConfig(
         { default: "disallow", checkInternals: true, checkUnknownLocals: true, policies: corePolicies },
       ],
       "boundaries/no-unknown-files": "error",
-      "@typescript-eslint/no-restricted-imports": ["error", { patterns: [electronImports, escapeImports] }],
-      "no-restricted-syntax": ["error", ...electronSyntax, ...escapeSyntax],
+      "@typescript-eslint/no-restricted-imports": ["error", { patterns: [...alwaysImports, escapeImports] }],
+      "no-restricted-syntax": ["error", ...alwaysSyntax, ...escapeSyntax],
       "no-restricted-globals": ["error", ...ESCAPE_GLOBALS],
       "no-eval": "error",
       "no-new-func": "error",
     },
   },
   {
-    // Flat config replaces rule options, so the Electron ban is restated here.
+    // Flat config replaces rule options, so the bans that hold everywhere are restated here.
     files: ESCAPE_ZONES,
     rules: {
-      "@typescript-eslint/no-restricted-imports": ["error", { patterns: [electronImports] }],
-      "no-restricted-syntax": ["error", ...electronSyntax],
+      "@typescript-eslint/no-restricted-imports": ["error", { patterns: alwaysImports }],
+      "no-restricted-syntax": ["error", ...alwaysSyntax],
       "no-restricted-globals": "off",
     },
   },
