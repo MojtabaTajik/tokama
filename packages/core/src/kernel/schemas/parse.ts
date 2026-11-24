@@ -1,5 +1,6 @@
-// Parse helpers: invalid input is a value, never a thrown error. The schema library stays
-// out of the public types, so it can be swapped without touching callers.
+// Parse helpers: invalid input is a value, never a thrown error. Errors are plain issue lists,
+// not zod errors. zod still shows in the public .d.ts through the record types (z.output) and
+// the id brands.
 import type { z } from "zod";
 import { err, ok, type Result } from "../result/index.js";
 

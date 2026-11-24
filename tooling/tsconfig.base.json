@@ -16,8 +16,8 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    // Dependencies' .d.ts files are not ours to check, and some name platform globals (zod's name
-    // URL), which packages without DOM or Node types, such as the client, do not declare.
+    // Core's public .d.ts imports zod, and zod's .d.ts names platform globals (URL). The client
+    // and desktop have no DOM or Node types, so checking dependency .d.ts files would fail there.
     "skipLibCheck": true,
     "types": []
   }
