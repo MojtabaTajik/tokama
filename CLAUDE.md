@@ -12,7 +12,7 @@ Don't design anything around a fixed planner/executor/verifier trio, a single pr
 - Repo: `MojtabaTajik/tokama`, Apache-2.0, default branch `main`. Paid cloud features live outside this repo, so the open engine must work fully without them. Domains (registered): tokama.dev (primary), tokama.ai (redirects to tokama.dev). Point user-facing URLs (updates, install scripts, docs) at tokama.dev, not GitHub, so a later move to an organization breaks nothing.
 - Never commit employer or customer names, personal paths, secrets or business plans: the repo is meant to be public. Use neutral sample names (e.g. "Northwind prod", `orders-api`) in docs, specs and designs.
 - `main` is protected by a ruleset: no direct pushes, no force pushes, no deletion, linear history. Every change, docs included, goes through a pull request and is squash-merged by a maintainer. Agents never merge.
-- Reference only: `ai-pipeline`, the earlier private Python harness, kept outside this repo. Reuse its hard-won parts and port the tests for them (list in architecture spec, section 11). Do not port it in full, keep its file formats, or call or ship any of its code.
+- Reference only: `ai-pipeline`, the earlier private Python harness, kept outside this repo. Reuse its hard-won parts and port the tests for them (list in architecture spec, section 12). Do not port it in full, keep its file formats, or call or ship any of its code.
 
 ## Engineering rules
 

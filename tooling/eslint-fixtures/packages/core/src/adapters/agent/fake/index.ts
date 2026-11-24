@@ -3,4 +3,4 @@ import { execFile } from "child_process";
 import { start } from "../../../kernel/process/spawn.js";
 import { describe } from "./runtime.js";
 
-export const fakeRuntime = { describe, start, execFile, ping: () => globalThis.fetch("http://localhost") };
+export const fakeRuntime = { describe, start, execFile, ping: () => fetch("http://localhost") };
