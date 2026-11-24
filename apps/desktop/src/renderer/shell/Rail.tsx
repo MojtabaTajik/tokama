@@ -7,7 +7,7 @@ import { AttentionIcon, BoardIcon, InboxIcon, InsightsIcon, PanelIcon, SettingsI
 
 const TEXT = {
   rail: "App",
-  panel: "Workspaces panel",
+  panel: "Sidebar",
   board: "Board",
   needsYou: "Needs you",
   outOfDate: "out of date",
@@ -20,7 +20,7 @@ const TEXT = {
 
 export interface RailProps {
   readonly panelOpen: boolean;
-  /** The id of the workspaces panel, which the toggle controls while it is shown. */
+  /** The id of the sidebar, which the toggle controls while it is shown. */
   readonly panelId: string;
   readonly onTogglePanel: () => void;
   /** Items that need you; undefined when the count is out of date (the last load failed). */

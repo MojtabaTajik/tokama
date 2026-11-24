@@ -55,16 +55,16 @@ describe("engine service", () => {
     const engineClient = await client(dir);
 
     expect(engineClient.engineId).toBe(handle.engineId);
-    expect(await engineClient.query({ type: "board", workspaceId: "northwind-prod" })).toEqual({ ok: true, data: { items: [] } });
+    expect(await engineClient.query({ type: "board" })).toEqual({ ok: true, data: { items: [] } });
     expect(await engineClient.query({ type: "item", itemId: ITEM_ID })).toMatchObject({ ok: false, error: { code: "not_found" } });
-    expect(await engineClient.query({ type: "workspaces" })).toEqual({ ok: true, data: { workspaces: [] } });
+    expect(await engineClient.query({ type: "setup" })).toEqual({ ok: true, data: { repos: [], connections: [], agents: [], templates: [] } });
     expect(await engineClient.command({ type: "stop_item", itemId: ITEM_ID })).toMatchObject({
       ok: false,
       error: { code: "not_implemented" },
     });
 
     // The client validates before sending.
-    expect(await engineClient.query({ type: "board", workspaceId: "Not Valid" })).toMatchObject({
+    expect(await engineClient.query({ type: "board", extra: 1 })).toMatchObject({
       ok: false,
       error: { code: "invalid_request" },
     });
@@ -72,7 +72,7 @@ describe("engine service", () => {
     handle.store.put(sampleItem());
     expect(await engineClient.query({ type: "item", itemId: ITEM_ID })).toEqual({ ok: true, data: { item: sampleItem() } });
     // Query data is typed per query: no casts.
-    const board = await engineClient.query({ type: "board", workspaceId: "northwind-prod" });
+    const board = await engineClient.query({ type: "board" });
     expect(board.ok && board.data.items.map((item) => item.title)).toEqual(["Checkout latency spike"]);
   });
 
@@ -132,12 +132,22 @@ describe("engine service", () => {
     await raw.closed;
   });
 
+  it("refuses a hello of the previous API version", async () => {
+    const dir = tempEngineDir(cleanups);
+    const handle = await engine(dir);
+
+    const raw = await rawConnect(handle.endpoint.socketPath);
+    raw.send({ kind: "hello", apiVersion: API_VERSION - 1, token: readFileSync(handle.endpoint.tokenPath, "utf8") });
+    expect(await raw.next()).toMatchObject({ kind: "connection_error", apiVersion: API_VERSION, code: "unsupported_version" });
+    await raw.closed;
+  });
+
   it("closes a connection that does not start with a hello", async () => {
     const dir = tempEngineDir(cleanups);
     const handle = await engine(dir);
 
     const raw = await rawConnect(handle.endpoint.socketPath);
-    raw.send({ apiVersion: API_VERSION, kind: "query", requestId: "r1", query: { type: "board", workspaceId: "northwind-prod" } });
+    raw.send({ apiVersion: API_VERSION, kind: "query", requestId: "r1", query: { type: "board" } });
     expect(await raw.next()).toMatchObject({ kind: "connection_error", code: "bad_message" });
     await raw.closed;
   });
@@ -169,10 +179,10 @@ describe("engine service", () => {
     const handle = await engine(dir);
     const raw = await handshaken(handle);
 
-    raw.send({ apiVersion: API_VERSION, kind: "query", requestId: "r1", query: { type: "board", workspaceId: "Not Valid" } });
+    raw.send({ apiVersion: API_VERSION, kind: "query", requestId: "r1", query: { type: "board", extra: 1 } });
     expect(await raw.next()).toMatchObject({ kind: "reply", requestId: "r1", result: { ok: false, error: { code: "invalid_message" } } });
 
-    raw.send({ apiVersion: API_VERSION, kind: "query", requestId: "r2", query: { type: "board", workspaceId: "northwind-prod" } });
+    raw.send({ apiVersion: API_VERSION, kind: "query", requestId: "r2", query: { type: "board" } });
     expect(await raw.next()).toEqual({ apiVersion: API_VERSION, kind: "reply", requestId: "r2", result: { ok: true, data: { items: [] } } });
 
     raw.write("not json\n");
@@ -254,7 +264,7 @@ describe("engine service", () => {
     await first.close();
     await waitFor(() => events.some((event) => event.kind === "disconnected"), 5_000, "disconnected");
     // In flight or not, a request while disconnected fails as a value; it is never queued.
-    expect(await engineClient.query({ type: "board", workspaceId: "northwind-prod" })).toMatchObject({
+    expect(await engineClient.query({ type: "board" })).toMatchObject({
       ok: false,
       error: { code: "disconnected" },
     });
@@ -265,7 +275,7 @@ describe("engine service", () => {
     expect(second.engineId).not.toBe(first.engineId);
     expect(engineClient.engineId).toBe(second.engineId);
 
-    expect(await engineClient.query({ type: "board", workspaceId: "northwind-prod" })).toEqual({ ok: true, data: { items: [] } });
+    expect(await engineClient.query({ type: "board" })).toEqual({ ok: true, data: { items: [] } });
     second.store.put(sampleItem());
     // seq restarted with the new engine.
     await waitFor(() => events.length === 4, 5_000, "event from the new engine");

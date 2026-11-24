@@ -2,7 +2,7 @@
 // note with the decision's buttons; the tabs; the actions. It keeps its own copy of the item
 // (useItem), so it works next to any list that opens it. Engine text (titles, questions, the
 // cloud summary, step details) is rendered as React text only.
-import type { CommandErrorCode, Decision, ItemRecord, WorkspaceSummary } from "@tokama/core";
+import type { CommandErrorCode, Decision, ItemRecord, Setup } from "@tokama/core";
 import { type KeyboardEvent, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
 import { hasEnded, itemMark, KIND, PRIVACY, stepAgent, stepMark, stepPosition, templateName, whereLine } from "./describe.js";
@@ -64,12 +64,12 @@ const REFRESH_ON = new Set(["stale_decision", "invalid_state", "not_found"]);
 export interface ItemDrawerProps {
   readonly bridge: TokamaBridge;
   readonly itemId: string;
-  /** For the template name, the agents and the connections the steps name. */
-  readonly workspaces: readonly WorkspaceSummary[];
+  /** Names the item's template, agents and connections; undefined until the first load. */
+  readonly setup: Setup | undefined;
   readonly onClose: () => void;
 }
 
-export function ItemDrawer({ bridge, itemId, workspaces, onClose }: ItemDrawerProps) {
+export function ItemDrawer({ bridge, itemId, setup, onClose }: ItemDrawerProps) {
   const { item, error, refresh } = useItem(bridge, itemId);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<Notice | undefined>(undefined);
@@ -155,7 +155,6 @@ export function ItemDrawer({ bridge, itemId, workspaces, onClose }: ItemDrawerPr
     if (item) void send({ type: "stop_item", itemId: item.id });
   };
 
-  const workspace = item && workspaces.find((candidate) => candidate.id === item.workspaceId);
   const tabs = item ? tabsOf(item) : [];
   const shown = tabs.includes(tab) ? tab : "Steps";
 
@@ -165,7 +164,7 @@ export function ItemDrawer({ bridge, itemId, workspaces, onClose }: ItemDrawerPr
         {item ? (
           <div className="drawer-heading">
             <p className="drawer-kind">
-              {KIND[item.kind].symbol} {KIND[item.kind].word} · {templateName(item, workspace)} · {PRIVACY[item.privacy]}
+              {KIND[item.kind].symbol} {KIND[item.kind].word} · {templateName(item, setup)} · {PRIVACY[item.privacy]}
             </p>
             <h2 id={titleId}>{item.title}</h2>
             <StateLine item={item} />
@@ -195,7 +194,7 @@ export function ItemDrawer({ bridge, itemId, workspaces, onClose }: ItemDrawerPr
         <>
           <Tabs tabs={tabs} shown={shown} onPick={setTab} />
           <div className="drawer-panel" role="tabpanel" id={panelId(shown)} aria-labelledby={tabId(shown)}>
-            {shown === "Steps" ? <Steps item={item} workspace={workspace} /> : <p className="placeholder">{TEXT.later(shown)}</p>}
+            {shown === "Steps" ? <Steps item={item} setup={setup} /> : <p className="placeholder">{TEXT.later(shown)}</p>}
           </div>
           {confirmingStop ? (
             <ConfirmStop busy={busy} onStop={stop} onCancel={cancelStop} />
@@ -344,10 +343,10 @@ function Tabs({ tabs, shown, onPick }: { readonly tabs: readonly Tab[]; readonly
   );
 }
 
-function Steps({ item, workspace }: { readonly item: ItemRecord; readonly workspace: WorkspaceSummary | undefined }) {
+function Steps({ item, setup }: { readonly item: ItemRecord; readonly setup: Setup | undefined }) {
   if (item.steps.length === 0) return <p className="placeholder">{TEXT.noSteps}</p>;
-  const agents = workspace?.agents ?? [];
-  const connections = workspace?.connections ?? [];
+  const agents = setup?.agents ?? [];
+  const connections = setup?.connections ?? [];
   return (
     <ol className="steps">
       {item.steps.map((step, index) => {

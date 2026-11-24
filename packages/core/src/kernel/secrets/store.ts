@@ -1,17 +1,15 @@
 import { err, ok, type Result } from "../result/index.js";
-import { WorkspaceIdSchema } from "../schemas/index.js";
+import { ConnectionIdSchema } from "../schemas/index.js";
 import { Secret } from "./secret.js";
 
 /**
- * Names one secret: a connection credential of a workspace. The store keeps it under service
- * `dev.tokama.<workspace>` and account `<account>`, so a ref can never name an item outside the
- * Tokama namespace (another app's Keychain item, say).
+ * Names one secret: the credential of a connection. The store keeps it under service
+ * `dev.tokama.connection` and the connection id as account, so a ref can never name an item
+ * outside the Tokama namespace (another app's Keychain item, say).
  */
 export interface SecretRef {
-  /** A workspace id (`WorkspaceIdSchema`): lowercase letters, digits and hyphens, at most 64 characters. */
-  readonly workspace: string;
-  /** Usually a connection id: letters, digits, `.`, `_` and `-`, at most 128 characters. */
-  readonly account: string;
+  /** A connection id (`ConnectionIdSchema`): lowercase letters, digits and hyphens, at most 64 characters. */
+  readonly connectionId: string;
 }
 
 export type SecretErrorCode =
@@ -44,7 +42,7 @@ export interface SecretStore {
   has(ref: SecretRef): Promise<Result<boolean, SecretError>>;
 }
 
-export const SECRET_SERVICE_PREFIX = "dev.tokama.";
+export const SECRET_SERVICE = "dev.tokama.connection";
 
 /**
  * Largest value, in UTF-8 bytes, every store accepts. The macOS store passes the value to
@@ -53,8 +51,6 @@ export const SECRET_SERVICE_PREFIX = "dev.tokama.";
  */
 export const MAX_SECRET_BYTES = 1536;
 
-const ACCOUNT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-
 export interface StoreName {
   readonly service: string;
   readonly account: string;
@@ -62,13 +58,10 @@ export interface StoreName {
 
 /** The service and account a ref is stored under. These characters need no quoting in `security -i`. */
 export function storeName(ref: SecretRef): Result<StoreName, SecretError> {
-  if (!WorkspaceIdSchema.safeParse(ref.workspace).success) {
-    return err({ code: "invalid_ref", message: "secret ref workspace must be lowercase letters, digits and hyphens (at most 64)" });
+  if (!ConnectionIdSchema.safeParse(ref.connectionId).success) {
+    return err({ code: "invalid_ref", message: "secret ref connectionId must be lowercase letters, digits and hyphens (at most 64)" });
   }
-  if (!ACCOUNT.test(ref.account)) {
-    return err({ code: "invalid_ref", message: "secret ref account must be letters, digits, '.', '_' and '-' (at most 128)" });
-  }
-  return ok({ service: SECRET_SERVICE_PREFIX + ref.workspace, account: ref.account });
+  return ok({ service: SECRET_SERVICE, account: ref.connectionId });
 }
 
 export function checkValue(value: Secret): Result<string, SecretError> {

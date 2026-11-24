@@ -24,9 +24,9 @@ describe("preload bridge", () => {
   });
 
   it("query and command invoke their channels with the request only", async () => {
-    electron.invoke.mockResolvedValue({ ok: true, data: { workspaces: [] } });
-    await expect(bridge.query({ type: "workspaces" })).resolves.toEqual({ ok: true, data: { workspaces: [] } });
-    expect(electron.invoke).toHaveBeenCalledWith(CHANNELS.query, { type: "workspaces" });
+    electron.invoke.mockResolvedValue({ ok: true, data: { items: [] } });
+    await expect(bridge.query({ type: "setup" })).resolves.toEqual({ ok: true, data: { items: [] } });
+    expect(electron.invoke).toHaveBeenCalledWith(CHANNELS.query, { type: "setup" });
     electron.invoke.mockResolvedValue({ ok: true, data: null });
     await bridge.command({ type: "stop_item", itemId: "item_x" });
     expect(electron.invoke).toHaveBeenLastCalledWith(CHANNELS.command, { type: "stop_item", itemId: "item_x" });

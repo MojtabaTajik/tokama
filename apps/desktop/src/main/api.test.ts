@@ -6,7 +6,7 @@ const ITEM_ID = "item_0b9f3c1e-6a2d-4f7b-9c1a-2e3d4f5a6b7c";
 
 /** A client whose query and command mocks the tests inspect. */
 function fakeClient() {
-  const query = vi.fn<(request: unknown) => Promise<unknown>>(async () => ({ ok: true, data: { workspaces: [] } }));
+  const query = vi.fn<(request: unknown) => Promise<unknown>>(async () => ({ ok: true, data: { items: [] } }));
   const command = vi.fn<(request: unknown) => Promise<unknown>>(async () => ({ ok: true, data: null }));
   const client = { engineId: "engine-1", query, command, events: vi.fn(), close: vi.fn() } as unknown as EngineClient;
   return { client, query, command };
@@ -16,9 +16,9 @@ describe("engineApi.query", () => {
   it("forwards a valid query to the client and returns its reply", async () => {
     const { client, query } = fakeClient();
     const api = engineApi(() => client);
-    await expect(api.query({ type: "workspaces" })).resolves.toEqual({ ok: true, data: { workspaces: [] } });
-    await api.query({ type: "board", workspaceId: "northwind-prod" });
-    expect(query.mock.calls).toEqual([[{ type: "workspaces" }], [{ type: "board", workspaceId: "northwind-prod" }]]);
+    await expect(api.query({ type: "setup" })).resolves.toEqual({ ok: true, data: { items: [] } });
+    await api.query({ type: "board" });
+    expect(query.mock.calls).toEqual([[{ type: "setup" }], [{ type: "board" }]]);
   });
 
   it("returns the engine's error reply as it is", async () => {
@@ -32,10 +32,10 @@ describe("engineApi.query", () => {
 
   it.each([
     ["an unknown type", { type: "drop_tables" }],
-    ["a bad id", { type: "board", workspaceId: "../etc" }],
-    ["an extra field", { type: "workspaces", extra: 1 }],
+    ["a bad id", { type: "item", itemId: "../etc" }],
+    ["an extra field", { type: "setup", extra: 1 }],
     ["a command", { type: "stop_item", itemId: ITEM_ID }],
-    ["no object", "workspaces"],
+    ["no object", "setup"],
     ["nothing", undefined],
   ])("refuses %s without reaching the engine", async (_what, input) => {
     const { client, query } = fakeClient();
@@ -45,7 +45,7 @@ describe("engineApi.query", () => {
   });
 
   it("answers not_connected when there is no client", async () => {
-    await expect(engineApi(() => undefined).query({ type: "workspaces" })).resolves.toEqual({
+    await expect(engineApi(() => undefined).query({ type: "setup" })).resolves.toEqual({
       ok: false,
       error: { code: "not_connected", message: "the app is not connected to the engine" },
     });
@@ -61,14 +61,14 @@ describe("engineApi.command", () => {
 
   it("refuses an invalid command, naming the bad field, without reaching the engine", async () => {
     const { client, command } = fakeClient();
-    const reply = await engineApi(() => client).command({ type: "start_item", workspaceId: "northwind-prod", templateId: "quick-fix", repoIds: [], text: "   " });
+    const reply = await engineApi(() => client).command({ type: "start_item", templateId: "quick-fix", repoIds: [], text: "   " });
     expect(reply).toMatchObject({ ok: false, error: { code: "invalid_request", message: expect.stringContaining("text") } });
     expect(command).not.toHaveBeenCalled();
   });
 
   it("refuses a query sent as a command", async () => {
     const { client, command } = fakeClient();
-    expect(await engineApi(() => client).command({ type: "workspaces" })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
+    expect(await engineApi(() => client).command({ type: "setup" })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
     expect(command).not.toHaveBeenCalled();
   });
 

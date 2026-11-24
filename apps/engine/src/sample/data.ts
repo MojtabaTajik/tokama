@@ -1,10 +1,8 @@
-// The sample data set of the fake engine mode: two workspaces on the local host, and items in
+// The sample data set of the fake engine mode: one set of repos, connections, agents and templates, and items in
 // every board stage, of both kinds and both privacy modes, one of them waiting for a decision.
 // Plain JSON shapes; sample.ts parses them with the engine's schemas when it loads them.
 // The "working" investigation is the one the tick moves (and loops); the others stay put.
 
-export const NORTHWIND = "northwind-prod";
-export const TAILSPIN = "tailspin-staging";
 export const DECISION_ID = "decision_5e1c9a7b-3f2d-4c8e-9a6b-1d2e3f4a5b6c";
 
 export const ITEM_IDS = {
@@ -14,7 +12,7 @@ export const ITEM_IDS = {
   verifying: "item_1a2b3c4d-0004-4a1b-8c1d-000000000004",
   review: "item_1a2b3c4d-0005-4a1b-8c1d-000000000005",
   done: "item_1a2b3c4d-0006-4a1b-8c1d-000000000006",
-  tailspinWorking: "item_1a2b3c4d-0007-4a1b-8c1d-000000000007",
+  flaky: "item_1a2b3c4d-0007-4a1b-8c1d-000000000007",
   building: "item_1a2b3c4d-0008-4a1b-8c1d-000000000008",
   failed: "item_1a2b3c4d-0009-4a1b-8c1d-000000000009",
 } as const;
@@ -32,8 +30,8 @@ const templates = {
     name: "Emergency investigator",
     kind: "investigation",
     connections: [
-      { connectionId: "app-insights", access: "query" },
-      { connectionId: "postgres-main", access: "read-only" },
+      { connectionId: "app-insights-prod", access: "query" },
+      { connectionId: "postgres-prod", access: "read-only" },
       { connectionId: "azure-prod", access: "reader" },
     ],
     steps: [
@@ -44,8 +42,8 @@ const templates = {
         agentId: "local-investigator",
         data: "none",
         uses: [
-          { connectionId: "app-insights", access: "query" },
-          { connectionId: "postgres-main", access: "read-only" },
+          { connectionId: "app-insights-prod", access: "query" },
+          { connectionId: "postgres-prod", access: "read-only" },
         ],
       },
       { name: "Find the cause", stage: "working", agentId: "local-investigator", data: "none" },
@@ -56,14 +54,14 @@ const templates = {
     id: "db-slow-query",
     name: "DB slow query check",
     kind: "investigation",
-    connections: [{ connectionId: "postgres-main", access: "read-only" }],
+    connections: [{ connectionId: "postgres-prod", access: "read-only" }],
     steps: [
       {
         name: "Collect slow queries",
         stage: "working",
         agentId: "local-investigator",
         data: "none",
-        uses: [{ connectionId: "postgres-main", access: "read-only" }],
+        uses: [{ connectionId: "postgres-prod", access: "read-only" }],
       },
       { name: "Explain plans", stage: "working", agentId: "local-investigator", data: "none" },
       { name: "Summarize", stage: "review", agentId: "local-investigator", data: "none" },
@@ -100,34 +98,22 @@ const templates = {
   },
 };
 
-export const sampleWorkspaces = [
-  {
-    id: NORTHWIND,
-    name: "Northwind prod",
-    host: "local",
-    repos: [
-      { id: "orders-api", baseBranch: "main" },
-      { id: "checkout-web", baseBranch: "main" },
-    ],
-    connections: [
-      { id: "app-insights", name: "App Insights (prod)", type: "App Insights" },
-      { id: "postgres-main", name: "Postgres main", type: "Postgres" },
-      { id: "azure-prod", name: "Azure prod", type: "Azure" },
-      { id: "grafana", name: "Grafana", type: "MCP server" },
-    ],
-    agents: [agents.architect, agents.investigator, agents.reviewer, agents.builder],
-    templates: [templates.emergency, templates.slowQuery, templates.planAndBuild, templates.quickFix, templates.reviewOnly],
-  },
-  {
-    id: TAILSPIN,
-    name: "Tailspin staging",
-    host: "local",
-    repos: [{ id: "inventory-service", baseBranch: "develop" }],
-    connections: [{ id: "postgres-staging", name: "Postgres staging", type: "Postgres" }],
-    agents: [agents.builder, agents.reviewer],
-    templates: [templates.quickFix, templates.reviewOnly],
-  },
-];
+export const sampleSetup = {
+  repos: [
+    { id: "orders-api", baseBranch: "main" },
+    { id: "checkout-web", baseBranch: "main" },
+    { id: "inventory-service", baseBranch: "develop" },
+  ],
+  connections: [
+    { id: "app-insights-prod", name: "App Insights · prod", type: "App Insights" },
+    { id: "postgres-prod", name: "Postgres · prod", type: "Postgres" },
+    { id: "postgres-staging", name: "Postgres · staging", type: "Postgres" },
+    { id: "azure-prod", name: "Azure · prod", type: "Azure" },
+    { id: "grafana-prod", name: "Grafana · prod", type: "MCP server" },
+  ],
+  agents: [agents.architect, agents.investigator, agents.reviewer, agents.builder],
+  templates: [templates.emergency, templates.slowQuery, templates.planAndBuild, templates.quickFix, templates.reviewOnly],
+};
 
 type StepState = "pending" | "running" | "needs_you" | "passed" | "failed";
 
@@ -150,7 +136,6 @@ export function sampleItems(now: number) {
       ...base,
       id: ITEM_IDS.queued,
       kind: "task",
-      workspaceId: NORTHWIND,
       templateId: templates.planAndBuild.id,
       title: "Add retry with backoff to the payment client",
       text: "Add retry with backoff to the payment client in orders-api. Retry 5xx and timeouts, at most 3 times.",
@@ -165,7 +150,6 @@ export function sampleItems(now: number) {
       ...base,
       id: ITEM_IDS.working,
       kind: "investigation",
-      workspaceId: NORTHWIND,
       templateId: templates.emergency.id,
       title: "Checkout latency spike",
       text: "Alert: checkout p95 latency above 1.5 s for 10 minutes (orders-api, prod).",
@@ -180,7 +164,6 @@ export function sampleItems(now: number) {
       ...base,
       id: ITEM_IDS.building,
       kind: "task",
-      workspaceId: NORTHWIND,
       templateId: templates.planAndBuild.id,
       title: "Paginate the orders list",
       text: "The orders list loads every order at once. Add cursor pagination to the API and the list.",
@@ -195,7 +178,6 @@ export function sampleItems(now: number) {
       ...base,
       id: ITEM_IDS.needsYou,
       kind: "investigation",
-      workspaceId: NORTHWIND,
       templateId: templates.emergency.id,
       title: "Orders API returns 500 after deploy",
       text: "Alert: orders-api 5xx rate at 4% since the 14:02 deploy.",
@@ -224,7 +206,6 @@ export function sampleItems(now: number) {
       ...base,
       id: ITEM_IDS.verifying,
       kind: "task",
-      workspaceId: NORTHWIND,
       templateId: templates.quickFix.id,
       title: "Fix rounding in invoice totals",
       text: "Invoice totals are off by one cent for some multi-currency orders.",
@@ -239,7 +220,6 @@ export function sampleItems(now: number) {
       ...base,
       id: ITEM_IDS.review,
       kind: "task",
-      workspaceId: NORTHWIND,
       templateId: templates.planAndBuild.id,
       title: "Add order export endpoint",
       text: "Add GET /orders/export that streams orders as CSV, filtered by date range.",
@@ -254,7 +234,6 @@ export function sampleItems(now: number) {
       ...base,
       id: ITEM_IDS.done,
       kind: "investigation",
-      workspaceId: NORTHWIND,
       templateId: templates.slowQuery.id,
       title: "Slow query on order_items",
       text: "order_items lookups take 900 ms at peak.",
@@ -269,7 +248,6 @@ export function sampleItems(now: number) {
       ...base,
       id: ITEM_IDS.failed,
       kind: "task",
-      workspaceId: NORTHWIND,
       templateId: templates.quickFix.id,
       title: "Upgrade the Postgres driver in orders-api",
       text: "Upgrade the Postgres driver in orders-api to the next major version.",
@@ -282,9 +260,8 @@ export function sampleItems(now: number) {
     },
     {
       ...base,
-      id: ITEM_IDS.tailspinWorking,
+      id: ITEM_IDS.flaky,
       kind: "task",
-      workspaceId: TAILSPIN,
       templateId: templates.quickFix.id,
       title: "Flaky inventory sync test",
       text: "InventorySyncTest fails about one run in ten on CI.",

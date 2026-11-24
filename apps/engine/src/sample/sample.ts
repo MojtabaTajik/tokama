@@ -25,11 +25,10 @@ import {
   type StepRecord,
   type TemplateId,
   type TimerHandle,
-  type WorkspaceId,
-  type WorkspaceSummary,
+  type Setup,
 } from "@tokama/core";
 import type { MemoryItemStore } from "../store.js";
-import { ITEM_IDS, sampleItems, sampleWorkspaces } from "./data.js";
+import { ITEM_IDS, sampleItems, sampleSetup } from "./data.js";
 
 /** How often the fake engine moves a working item on by one step. */
 export const SAMPLE_TICK_MS = 20_000;
@@ -45,7 +44,7 @@ const APPROVE = "approve";
 const INVESTIGATION_WORDS = ["alert", "500", "5xx", "error", "errors", "latency", "spike", "slow", "down", "incident", "timeout"];
 
 export class SampleEngine {
-  readonly workspaces: WorkspaceSummary[];
+  readonly setup: Setup;
   /** The items the tick moves: the looping sample item and the items started or approved since. */
   private readonly live = new Set<string>([ITEM_IDS.working]);
   /** Started items that wait for approval before a step that sends data to a cloud agent. */
@@ -56,9 +55,9 @@ export class SampleEngine {
     private readonly store: MemoryItemStore,
     private readonly clock: Clock,
   ) {
-    const workspaces = parseQueryResult("workspaces", { workspaces: sampleWorkspaces });
-    if (!workspaces.ok) throw new Error(`invalid sample workspaces: ${JSON.stringify(workspaces.error.issues)}`);
-    this.workspaces = workspaces.value.workspaces;
+    const setup = parseQueryResult("setup", sampleSetup);
+    if (!setup.ok) throw new Error(`invalid sample setup: ${JSON.stringify(setup.error.issues)}`);
+    this.setup = setup.value;
     for (const raw of sampleItems(clock.now())) {
       const item = parseItemRecord(raw);
       if (!item.ok) throw new Error(`invalid sample item ${raw.id}: ${JSON.stringify(item.error.issues)}`);
@@ -78,11 +77,11 @@ export class SampleEngine {
   }
 
   /**
-   * The workspace's template whose name shares the most words with the text; a template of the
+   * The template whose name shares the most words with the text; a template of the
    * kind the text suggests (an alert or a bug report reads as an investigation) wins a tie.
    */
-  suggestTemplate(workspaceId: WorkspaceId, text: string): TemplateId | null {
-    const templates = this.workspaces.find((workspace) => workspace.id === workspaceId)?.templates ?? [];
+  suggestTemplate(text: string): TemplateId | null {
+    const templates = this.setup.templates;
     const words = new Set(text.toLowerCase().match(/[a-z0-9]+/g) ?? []);
     const kind = INVESTIGATION_WORDS.some((word) => words.has(word)) ? "investigation" : "task";
     let best: { id: TemplateId; score: number } | undefined;
@@ -131,12 +130,10 @@ export class SampleEngine {
   }
 
   private startItem(command: Extract<Command, { type: "start_item" }>): Result<CommandResult<"start_item">, CommandError> {
-    const workspace = this.workspaces.find((candidate) => candidate.id === command.workspaceId);
-    if (!workspace) return err({ code: "not_found", message: `no workspace ${command.workspaceId}` });
-    const template = workspace.templates.find((candidate) => candidate.id === command.templateId);
-    if (!template) return err({ code: "not_found", message: `no template ${command.templateId} in ${workspace.id}` });
-    const unknownRepo = command.repoIds.find((repoId) => !workspace.repos.some((repo) => repo.id === repoId));
-    if (unknownRepo) return err({ code: "not_found", message: `no repo ${unknownRepo} in ${workspace.id}` });
+    const template = this.setup.templates.find((candidate) => candidate.id === command.templateId);
+    if (!template) return err({ code: "not_found", message: `no template ${command.templateId}` });
+    const unknownRepo = command.repoIds.find((repoId) => !this.setup.repos.some((repo) => repo.id === repoId));
+    if (unknownRepo) return err({ code: "not_found", message: `no repo ${unknownRepo}` });
     if (template.kind === "task" && command.repoIds.length === 0) {
       return err({ code: "invalid_request", message: "a task needs at least one repo" });
     }
@@ -144,7 +141,6 @@ export class SampleEngine {
       schemaVersion: 1,
       id: `item_${randomUUID()}` as ItemId,
       kind: template.kind,
-      workspaceId: workspace.id,
       templateId: template.id,
       title: titleOf(command.text),
       text: command.text,
@@ -205,7 +201,7 @@ export class SampleEngine {
   private enter(item: ItemRecord, index: number): ItemRecord {
     const step = item.steps[index];
     if (!step || step.data === "none" || !this.askBeforeCloud.has(item.id)) return this.run(item, index);
-    const agent = this.agent(item, step);
+    const agent = this.agent(step);
     const target = agent ? `${agent.name} on ${agent.model}` : "a cloud agent";
     return {
       ...item,
@@ -230,7 +226,7 @@ export class SampleEngine {
   private run(item: ItemRecord, index: number, prefix = ""): ItemRecord {
     const step = item.steps[index];
     if (!step) return item;
-    const agent = this.agent(item, step);
+    const agent = this.agent(step);
     return {
       ...item,
       state: "running",
@@ -253,9 +249,9 @@ export class SampleEngine {
     return this.enter({ ...withoutDecision(item), steps }, 0);
   }
 
-  private agent(item: ItemRecord, step: StepRecord): AgentSummary | undefined {
+  private agent(step: StepRecord): AgentSummary | undefined {
     if (!step.agentId) return undefined;
-    return this.workspaces.find((workspace) => workspace.id === item.workspaceId)?.agents.find((agent) => agent.id === step.agentId);
+    return this.setup.agents.find((agent) => agent.id === step.agentId);
   }
 }
 

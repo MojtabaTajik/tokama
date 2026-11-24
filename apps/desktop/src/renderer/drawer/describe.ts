@@ -1,6 +1,6 @@
 // What the item drawer says about an item and its steps. Pure functions, tested without React.
 // Every state comes as a symbol and a word, so colour is never the only signal.
-import type { AgentSummary, ConnectionSummary, ItemKind, ItemRecord, ItemState, Privacy, StepRecord, StepState, WorkspaceSummary } from "@tokama/core";
+import type { AgentSummary, ConnectionSummary, ItemKind, ItemRecord, ItemState, Privacy, StepRecord, StepState, Setup } from "@tokama/core";
 
 export type Tone = "warn" | "live" | "pass" | "fail" | "muted";
 export interface Mark {
@@ -51,7 +51,7 @@ export function stepPosition(item: Pick<ItemRecord, "state" | "steps">): string 
 /** Who runs a step: its agent, with an identity dot by join order (1 to 3, then neutral). */
 export interface StepAgent {
   readonly name: string;
-  /** 1, 2 or 3 for the first three agents of the workspace; "neutral" for later ones and for Tokama itself. */
+  /** 1, 2 or 3 for the first three agents; "neutral" for later ones and for Tokama itself. */
   readonly dot: 1 | 2 | 3 | "neutral";
   readonly runsOn: "local" | "cloud";
 }
@@ -63,7 +63,7 @@ export function stepAgent(step: Pick<StepRecord, "agentId" | "data">, agents: re
   if (step.agentId === undefined) return TOKAMA;
   const index = agents.findIndex((agent) => agent.id === step.agentId);
   const agent = agents[index];
-  // An agent the workspace no longer lists: its id is all there is, and only the data rule tells where it runs.
+  // An agent the setup no longer lists: its id is all there is, and only the data rule tells where it runs.
   if (!agent) return { name: step.agentId, dot: "neutral", runsOn: step.data === "none" ? "local" : "cloud" };
   return { name: agent.name, dot: index < 3 ? ((index + 1) as 1 | 2 | 3) : "neutral", runsOn: agent.runsOn };
 }
@@ -83,7 +83,7 @@ export function whereLine(step: Pick<StepRecord, "agentId" | "data" | "uses">, a
   return uses.length > 0 ? `local · ${uses.join(", ")}` : "local";
 }
 
-/** The template's name, or its id when the workspace does not list it. */
-export function templateName(item: Pick<ItemRecord, "templateId">, workspace: WorkspaceSummary | undefined): string {
-  return workspace?.templates.find((template) => template.id === item.templateId)?.name ?? item.templateId;
+/** The template's name, or its id when the setup does not list it. */
+export function templateName(item: Pick<ItemRecord, "templateId">, setup: Setup | undefined): string {
+  return setup?.templates.find((template) => template.id === item.templateId)?.name ?? item.templateId;
 }

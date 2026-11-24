@@ -76,7 +76,7 @@ describe("@tokama/client", () => {
     if (!connected.ok) throw new Error(connected.error.message);
     cleanups.push(() => connected.value.close());
 
-    const started = await connected.value.command({ type: "start_item", workspaceId: "northwind-prod", templateId: "quick-fix", repoIds: [], text: "x" });
+    const started = await connected.value.command({ type: "start_item", templateId: "quick-fix", repoIds: [], text: "x" });
     // Typed per command: no cast needed to read itemId.
     expect(started.ok && started.data.itemId).toBe(itemId);
     expect(await connected.value.command({ type: "stop_item", itemId })).toMatchObject({ ok: false, error: { code: "invalid_reply" } });

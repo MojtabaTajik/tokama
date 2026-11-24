@@ -1,7 +1,7 @@
 // Item and step records. Steps are stored inside their item, so the
 // item's schema version covers them.
 import { z } from "zod";
-import { AgentIdSchema, ConnectionIdSchema, DecisionIdSchema, EpochMsSchema, ItemIdSchema, RepoIdSchema, TemplateIdSchema, WorkspaceIdSchema } from "./ids.js";
+import { AgentIdSchema, ConnectionIdSchema, DecisionIdSchema, EpochMsSchema, ItemIdSchema, RepoIdSchema, TemplateIdSchema } from "./ids.js";
 
 /** The board column a step counts as. */
 export const StageSchema = z.enum(["queued", "working", "verifying", "review", "done"]);
@@ -49,7 +49,6 @@ export const ItemRecordSchema = z.strictObject({
   schemaVersion: z.literal(ITEM_SCHEMA_VERSION),
   id: ItemIdSchema,
   kind: ItemKindSchema,
-  workspaceId: WorkspaceIdSchema,
   templateId: TemplateIdSchema,
   title: z.string().min(1).max(200),
   /** What the engineer asked for: the description or the pasted alert. */

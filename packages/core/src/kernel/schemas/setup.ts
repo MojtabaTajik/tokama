@@ -1,8 +1,8 @@
-// Workspace records as the engine API serves them: what the workspaces panel, the workspace
-// header, the New work input and the per-template board view need. Templates here are summaries; the full template file format comes with the
-// templates slice.
+// The records the engine API serves for what is set up on this machine: what the sidebar, the New
+// work input and the per-template board view need. Templates here are summaries; the full
+// template file format comes with the templates slice.
 import { z } from "zod";
-import { AgentIdSchema, ConnectionIdSchema, RepoIdSchema, TemplateIdSchema, WorkspaceIdSchema } from "./ids.js";
+import { AgentIdSchema, ConnectionIdSchema, RepoIdSchema, TemplateIdSchema } from "./ids.js";
 import { ConnectionUsesSchema, DataRuleSchema, ItemKindSchema, StageSchema } from "./item.js";
 
 const label = z.string().min(1).max(100);
@@ -52,11 +52,8 @@ export const TemplateSummarySchema = z.strictObject({
   steps: z.array(TemplateStepSchema).min(1),
 });
 
-export const WorkspaceSummarySchema = z.strictObject({
-  id: WorkspaceIdSchema,
-  name: label,
-  /** The host that runs the workspace. v1: "local" only. */
-  host: label,
+/** Everything set up on this machine: one set of repos, connections, agents and templates. */
+export const SetupSchema = z.strictObject({
   repos: z.array(RepoSummarySchema),
   connections: z.array(ConnectionSummarySchema),
   agents: z.array(AgentSummarySchema),
@@ -69,4 +66,4 @@ export type ConnectionSummary = z.output<typeof ConnectionSummarySchema>;
 export type AgentSummary = z.output<typeof AgentSummarySchema>;
 export type TemplateStep = z.output<typeof TemplateStepSchema>;
 export type TemplateSummary = z.output<typeof TemplateSummarySchema>;
-export type WorkspaceSummary = z.output<typeof WorkspaceSummarySchema>;
+export type Setup = z.output<typeof SetupSchema>;

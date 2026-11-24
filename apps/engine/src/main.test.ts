@@ -59,7 +59,7 @@ describe("engine process", () => {
       for await (const event of engineClient.events()) events.push(event);
     })();
 
-    expect(await engineClient.query({ type: "board", workspaceId: "northwind-prod" })).toEqual({ ok: true, data: { items: [] } });
+    expect(await engineClient.query({ type: "board" })).toEqual({ ok: true, data: { items: [] } });
     const firstPid = lockPid(dir);
     const firstEngine = engineClient.engineId;
     expect(firstPid).toBeGreaterThan(0);
@@ -71,7 +71,7 @@ describe("engine process", () => {
 
     expect(engineClient.engineId).not.toBe(firstEngine);
     expect(lockPid(dir)).not.toBe(firstPid);
-    expect(await engineClient.query({ type: "board", workspaceId: "northwind-prod" })).toEqual({ ok: true, data: { items: [] } });
+    expect(await engineClient.query({ type: "board" })).toEqual({ ok: true, data: { items: [] } });
   });
 
   it("removes its files on SIGTERM", { timeout: 30_000 }, async () => {
@@ -105,9 +105,9 @@ describe("engine process", () => {
     if (!connected.ok) throw new Error(connected.error.message);
     cleanups.push(() => connected.value.close());
 
-    const workspaces = await connected.value.query({ type: "workspaces" });
-    expect(workspaces.ok && workspaces.data.workspaces.map((workspace) => workspace.name)).toEqual(["Northwind prod", "Tailspin staging"]);
-    const board = await connected.value.query({ type: "board", workspaceId: "northwind-prod" });
+    const setup = await connected.value.query({ type: "setup" });
+    expect(setup.ok && setup.data.repos.map((repo) => repo.id)).toEqual(["orders-api", "checkout-web", "inventory-service"]);
+    const board = await connected.value.query({ type: "board" });
     expect(board.ok && board.data.items.length).toBeGreaterThan(0);
   });
 

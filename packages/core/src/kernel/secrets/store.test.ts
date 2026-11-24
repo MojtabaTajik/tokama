@@ -44,14 +44,14 @@ function error(result: Result<unknown, SecretError>): SecretError {
 
 function contract(makeStore: () => SecretStore) {
   let store: SecretStore;
-  const workspace = `test-${randomUUID().slice(0, 8)}`;
-  const ref: SecretRef = { workspace, account: "orders-db" };
+  const suffix = randomUUID().slice(0, 8);
+  const id = (name: string): SecretRef => ({ connectionId: `${name}-${suffix}` });
+  const ref = id("postgres-prod");
   beforeAll(() => {
     store = makeStore();
   });
   afterAll(async () => {
-    for (const account of ["orders-db", "other", "too-long"]) await store.delete({ workspace, account });
-    await store.delete({ workspace: `${workspace}-b`, account: "orders-db" });
+    for (const name of ["postgres-prod", "other", "too-long"]) await store.delete(id(name));
   });
 
   it("reports a missing secret", async () => {
@@ -72,26 +72,23 @@ function contract(makeStore: () => SecretStore) {
   it("replaces, isolates and deletes", async () => {
     value(await store.set(ref, new Secret("first")));
     value(await store.set(ref, new Secret("second")));
-    value(await store.set({ workspace, account: "other" }, new Secret("other-value")));
-    value(await store.set({ workspace: `${workspace}-b`, account: "orders-db" }, new Secret("b-value")));
+    value(await store.set(id("other"), new Secret("other-value")));
     expect(value(await store.get(ref)).reveal()).toBe("second");
-    expect(value(await store.get({ workspace, account: "other" })).reveal()).toBe("other-value");
-    expect(value(await store.get({ workspace: `${workspace}-b`, account: "orders-db" })).reveal()).toBe("b-value");
+    expect(value(await store.get(id("other"))).reveal()).toBe("other-value");
 
     value(await store.delete(ref));
     expect(value(await store.has(ref))).toBe(false);
-    expect(value(await store.has({ workspace, account: "other" }))).toBe(true);
+    expect(value(await store.has(id("other")))).toBe(true);
   });
 
   it.each([
-    { workspace: "Has Space", account: "a" },
-    { workspace: "UPPER", account: "a" },
-    { workspace: "", account: "a" },
-    { workspace: "ok", account: "" },
-    { workspace: "ok", account: "two words" },
-    { workspace: "ok", account: '"quoted"' },
-    { workspace: "ok", account: "-starts-with-dash" },
-    { workspace: "ok", account: "x".repeat(129) },
+    { connectionId: "Has Space" },
+    { connectionId: "UPPER" },
+    { connectionId: "" },
+    { connectionId: "two words" },
+    { connectionId: '"quoted"' },
+    { connectionId: "-starts-with-dash" },
+    { connectionId: "x".repeat(65) },
   ])("refuses the ref %j", async (bad) => {
     expect(error(await store.set(bad, new Secret("v"))).code).toBe("invalid_ref");
     expect(error(await store.get(bad)).code).toBe("invalid_ref");
@@ -100,7 +97,7 @@ function contract(makeStore: () => SecretStore) {
   });
 
   it("refuses an empty or oversized value and stores nothing", async () => {
-    const tooLong = { workspace, account: "too-long" };
+    const tooLong = id("too-long");
     expect(error(await store.set(tooLong, new Secret(""))).code).toBe("invalid_value");
     const big = "Zq".repeat(MAX_SECRET_BYTES / 2) + "!";
     const failure = error(await store.set(tooLong, new Secret(big)));
@@ -141,7 +138,7 @@ describe.runIf(process.platform === "darwin")("macOS Keychain secret store", { t
 describe("createSecretStore", () => {
   it.each(["linux", "win32"] as const)("returns unsupported_platform on %s", async (platform) => {
     const store = createSecretStore({ platform });
-    const ref = { workspace: "w", account: "a" };
+    const ref = { connectionId: "a" };
     for (const result of [await store.set(ref, new Secret("v")), await store.get(ref), await store.has(ref), await store.delete(ref)]) {
       expect(error(result).code).toBe("unsupported_platform");
     }

@@ -1,13 +1,13 @@
 import { type ItemState, parseItemRecord, parseQueryResult, type StepState } from "@tokama/core";
 import { describe, expect, it } from "vitest";
-import { approved, needsYou, task, workspace } from "../testing/drawer.js";
+import { approved, needsYou, task, setup } from "../testing/drawer.js";
 import { hasEnded, itemMark, stepAgent, stepMark, stepPosition, templateName, whereLine } from "./describe.js";
 
-const { agents, connections } = workspace;
+const { agents, connections } = setup;
 
 describe("drawer test data", () => {
   it("matches the engine schemas", () => {
-    expect(parseQueryResult("workspaces", { workspaces: [workspace] }).ok).toBe(true);
+    expect(parseQueryResult("setup", setup).ok).toBe(true);
     for (const item of [needsYou, approved, task]) expect(parseItemRecord(item)).toMatchObject({ ok: true });
   });
 });
@@ -50,7 +50,7 @@ describe("stepAgent", () => {
     expect(stepAgent({ data: "none" }, agents)).toEqual({ name: "Tokama", dot: "neutral", runsOn: "local" });
   });
 
-  it("falls back to the id and the data rule for an agent the workspace does not list", () => {
+  it("falls back to the id and the data rule for an agent the setup does not list", () => {
     expect(stepAgent({ agentId: "gone" as never, data: "repo-and-diff" }, agents)).toEqual({ name: "gone", dot: "neutral", runsOn: "cloud" });
     expect(stepAgent({ agentId: "gone" as never, data: "none" }, agents).runsOn).toBe("local");
   });
@@ -67,15 +67,15 @@ describe("whereLine", () => {
     expect(whereLine(task.steps[0]!, agents, connections)).toBe("cloud · sees the repo and the diff");
   });
 
-  it("shows a connection the workspace does not list by its id", () => {
-    expect(whereLine({ data: "none", uses: [{ connectionId: "grafana" as never, access: "query" }] }, agents, connections)).toBe("local · grafana (query)");
+  it("shows a connection the setup does not list by its id", () => {
+    expect(whereLine({ data: "none", uses: [{ connectionId: "grafana-prod" as never, access: "query" }] }, agents, connections)).toBe("local · grafana-prod (query)");
   });
 });
 
 describe("templateName", () => {
-  it("uses the workspace's template name, else the id", () => {
-    expect(templateName(needsYou, workspace)).toBe("Emergency investigator");
-    expect(templateName({ templateId: "unknown" as never }, workspace)).toBe("unknown");
+  it("uses the setup's template name, else the id", () => {
+    expect(templateName(needsYou, setup)).toBe("Emergency investigator");
+    expect(templateName({ templateId: "unknown" as never }, setup)).toBe("unknown");
     expect(templateName(needsYou, undefined)).toBe("emergency-investigator");
   });
 });

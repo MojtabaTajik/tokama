@@ -5,7 +5,7 @@ import { type CommandInput, type EngineEvent, type ItemRecord, itemStage, manual
 import { afterEach, describe, expect, it } from "vitest";
 import { startEngine } from "../engine.js";
 import { tempEngineDir, waitFor } from "../testing/helpers.js";
-import { DECISION_ID, ITEM_IDS, NORTHWIND, TAILSPIN } from "./data.js";
+import { DECISION_ID, ITEM_IDS } from "./data.js";
 import { SAMPLE_TICK_MS } from "./sample.js";
 
 const NOW = 1_780_000_000_000;
@@ -60,8 +60,8 @@ function itemUpdate(event: ClientEvent): { seq: number; item: ItemRecord } | und
   return engineEvent.type === "item_updated" ? { seq: event.seq, item: engineEvent.item } : undefined;
 }
 
-async function board(client: EngineClient, workspaceId: string): Promise<ItemRecord[]> {
-  const reply = await client.query({ type: "board", workspaceId });
+async function board(client: EngineClient): Promise<ItemRecord[]> {
+  const reply = await client.query({ type: "board" });
   if (!reply.ok) throw new Error(reply.error.message);
   return reply.data.items;
 }
@@ -73,30 +73,31 @@ async function item(client: EngineClient, itemId: string): Promise<ItemRecord> {
 }
 
 describe("fake engine mode", () => {
-  it("serves the workspaces with repos, connections, agents and templates with steps", async () => {
+  it("serves one set of repos, connections, agents and templates with steps", async () => {
     const { client } = await sampleEngine();
-    const reply = await client.query({ type: "workspaces" });
+    const reply = await client.query({ type: "setup" });
     if (!reply.ok) throw new Error(reply.error.message);
-    const [northwind, tailspin] = reply.data.workspaces;
+    const setup = reply.data;
 
-    expect(reply.data.workspaces.map((workspace) => [workspace.id, workspace.name, workspace.host])).toEqual([
-      [NORTHWIND, "Northwind prod", "local"],
-      [TAILSPIN, "Tailspin staging", "local"],
+    expect(setup.repos.map((repo) => repo.id)).toEqual(["orders-api", "checkout-web", "inventory-service"]);
+    expect(setup.connections.map((connection) => connection.name)).toEqual([
+      "App Insights · prod",
+      "Postgres · prod",
+      "Postgres · staging",
+      "Azure · prod",
+      "Grafana · prod",
     ]);
-    expect([northwind?.repos.length, northwind?.connections.length, northwind?.templates.length]).toEqual([2, 4, 5]);
-    expect(tailspin?.repos.map((repo) => repo.id)).toEqual(["inventory-service"]);
+    expect(setup.templates.length).toBe(5);
 
-    // Every template step names a known agent of its workspace, or none for checks run by Tokama.
-    for (const workspace of reply.data.workspaces) {
-      const agentIds = new Set(workspace.agents.map((agent) => agent.id));
-      const connectionIds = new Set(workspace.connections.map((connection) => connection.id));
-      for (const template of workspace.templates) {
-        for (const step of template.steps) if (step.agentId) expect(agentIds).toContain(step.agentId);
-        for (const connection of template.connections) expect(connectionIds).toContain(connection.connectionId);
-        for (const step of template.steps) for (const use of step.uses ?? []) expect(template.connections.map((c) => c.connectionId)).toContain(use.connectionId);
-      }
+    // Every template step names a known agent, or none for checks run by Tokama.
+    const agentIds = new Set(setup.agents.map((agent) => agent.id));
+    const connectionIds = new Set(setup.connections.map((connection) => connection.id));
+    for (const template of setup.templates) {
+      for (const step of template.steps) if (step.agentId) expect(agentIds).toContain(step.agentId);
+      for (const connection of template.connections) expect(connectionIds).toContain(connection.connectionId);
+      for (const step of template.steps) for (const use of step.uses ?? []) expect(template.connections.map((c) => c.connectionId)).toContain(use.connectionId);
     }
-    const emergency = northwind?.templates.find((template) => template.id === "emergency-investigator");
+    const emergency = setup.templates.find((template) => template.id === "emergency-investigator");
     expect(emergency?.steps.map((step) => `${step.name}/${step.stage}/${step.agentId ?? "-"}/${step.data}`)).toEqual([
       "Triage/working/local-investigator/none",
       "Query logs and metrics/working/local-investigator/none",
@@ -107,7 +108,7 @@ describe("fake engine mode", () => {
 
   it("has items in every stage, of both kinds and privacy modes, and one that needs a decision", async () => {
     const { client } = await sampleEngine();
-    const items = await board(client, NORTHWIND);
+    const items = await board(client);
 
     expect(new Set(items.map(itemStage))).toEqual(new Set(["queued", "working", "verifying", "review", "done"]));
     expect(new Set(items.map((entry) => entry.kind))).toEqual(new Set(["task", "investigation"]));
@@ -118,8 +119,7 @@ describe("fake engine mode", () => {
     expect(items.every((entry) => entry.cardLine !== undefined)).toBe(true);
     expect(items.flatMap((entry) => entry.steps).every((step) => step.state === "pending" || step.detail !== undefined)).toBe(true);
     expect(items.every((entry) => entry.createdAt <= NOW)).toBe(true);
-    expect((await board(client, TAILSPIN)).map((entry) => entry.id)).toEqual([ITEM_IDS.tailspinWorking]);
-    expect(await board(client, "no-such-workspace")).toEqual([]);
+    expect(items.map((entry) => entry.id)).toContain(ITEM_IDS.flaky);
   });
 
   it("shows the decision, and which agent runs each step and what it waits for", async () => {
@@ -138,8 +138,8 @@ describe("fake engine mode", () => {
       detail: "waits for your approval of the cloud step",
     });
     expect(needsYou.steps[1]?.uses).toEqual([
-      { connectionId: "app-insights", access: "query" },
-      { connectionId: "postgres-main", access: "read-only" },
+      { connectionId: "app-insights-prod", access: "query" },
+      { connectionId: "postgres-prod", access: "read-only" },
     ]);
     const verifying = await item(client, ITEM_IDS.verifying);
     expect(verifying.steps[1]).toMatchObject({ name: "Run checks", state: "running", detail: "runs pnpm test" });
@@ -150,7 +150,6 @@ describe("fake engine mode", () => {
     const { client, next } = await sampleEngine();
     const reply = await client.command({
       type: "start_item",
-      workspaceId: NORTHWIND,
       templateId: "quick-fix",
       repoIds: ["checkout-web"],
       text: "\n  Cart badge shows a stale count  \nafter removing an item on mobile.",
@@ -176,33 +175,26 @@ describe("fake engine mode", () => {
       ["Run checks", "pending", undefined],
     ]);
     expect(await item(client, itemId)).toEqual(update.item);
-    expect((await board(client, NORTHWIND)).some((entry) => entry.id === itemId)).toBe(true);
+    expect((await board(client)).some((entry) => entry.id === itemId)).toBe(true);
   });
 
-  it("start_item refuses unknown workspaces, templates and repos, and a task without repos, with no event", async () => {
+  it("start_item refuses unknown templates and repos, and a task without repos, with no event", async () => {
     const { client, next } = await sampleEngine();
     const start: Extract<CommandInput, { type: "start_item" }> = {
       type: "start_item",
-      workspaceId: NORTHWIND,
       templateId: "plan-and-build",
       repoIds: ["orders-api"],
       text: "Add retries",
     };
 
-    expect(await client.command({ ...start, workspaceId: "no-such-workspace" })).toMatchObject({ ok: false, error: { code: "not_found" } });
     expect(await client.command({ ...start, templateId: "no-such-template" })).toMatchObject({ ok: false, error: { code: "not_found" } });
-    // A template of another workspace is not offered here.
-    expect(await client.command({ ...start, workspaceId: TAILSPIN, repoIds: ["inventory-service"] })).toMatchObject({
-      ok: false,
-      error: { code: "not_found" },
-    });
-    expect(await client.command({ ...start, repoIds: ["inventory-service"] })).toMatchObject({ ok: false, error: { code: "not_found" } });
+    expect(await client.command({ ...start, repoIds: ["no-such-repo"] })).toMatchObject({ ok: false, error: { code: "not_found" } });
     expect(await client.command({ ...start, repoIds: [] })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
     expect(await client.command({ ...start, text: "   " })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
 
     // An investigation needs no repo. Its event is the first one: the refusals emitted none.
     expect(
-      await client.command({ type: "start_item", workspaceId: NORTHWIND, templateId: "emergency-investigator", repoIds: [], text: "5xx on /cart" }),
+      await client.command({ type: "start_item", templateId: "emergency-investigator", repoIds: [], text: "5xx on /cart" }),
     ).toMatchObject({ ok: true });
     expect(await next()).toMatchObject({ seq: 0, item: { kind: "investigation", privacy: "local_and_cloud", repoIds: [] } });
   });
@@ -295,7 +287,7 @@ describe("fake engine mode", () => {
     expect(restarted.item.steps.map((step) => step.state)).toEqual(["running", "pending", "pending", "pending"]);
 
     // A started item runs through its steps to done.
-    const started = await client.command({ type: "start_item", workspaceId: TAILSPIN, templateId: "quick-fix", repoIds: ["inventory-service"], text: "Fix it" });
+    const started = await client.command({ type: "start_item", templateId: "quick-fix", repoIds: ["inventory-service"], text: "Fix it" });
     if (!started.ok) throw new Error(started.error.message);
     const { itemId } = started.data;
     expect(await next()).toMatchObject({ seq: 3, item: { id: itemId, state: "queued" } });
@@ -309,7 +301,7 @@ describe("fake engine mode", () => {
     clock.advance(50 * SAMPLE_TICK_MS);
     for (let tick = 0; tick < 4; tick++) {
       clock.advance(SAMPLE_TICK_MS);
-      expect(new Set((await board(client, NORTHWIND)).map(itemStage))).toEqual(new Set(["queued", "working", "verifying", "review", "done"]));
+      expect(new Set((await board(client)).map(itemStage))).toEqual(new Set(["queued", "working", "verifying", "review", "done"]));
     }
     expect(await item(client, ITEM_IDS.needsYou)).toEqual(needsYou);
   });
@@ -319,7 +311,6 @@ describe("fake engine mode", () => {
     const start = (askBeforeCloud: boolean) =>
       client.command({
         type: "start_item",
-        workspaceId: NORTHWIND,
         templateId: "plan-and-build",
         repoIds: ["orders-api"],
         text: "Add rate limits to /orders",
@@ -349,15 +340,14 @@ describe("fake engine mode", () => {
 
   it("suggests a template from the New work text", async () => {
     const { client } = await sampleEngine();
-    const suggest = async (workspaceId: string, text: string) => {
-      const reply = await client.query({ type: "suggest_template", workspaceId, text });
+    const suggest = async (text: string) => {
+      const reply = await client.query({ type: "suggest_template", text });
       if (!reply.ok) throw new Error(reply.error.message);
       return reply.data.templateId;
     };
-    expect(await suggest(NORTHWIND, "Slow query on order_items at peak")).toBe("db-slow-query");
-    expect(await suggest(NORTHWIND, "Alert: 5xx on checkout")).toBe("emergency-investigator");
-    expect(await suggest(NORTHWIND, "Fix the rounding in invoice totals")).toBe("quick-fix");
-    expect(await suggest(NORTHWIND, "Please review my branch")).toBe("review-only");
-    expect(await suggest("no-such-workspace", "anything")).toBeNull();
+    expect(await suggest("Slow query on order_items at peak")).toBe("db-slow-query");
+    expect(await suggest("Alert: 5xx on checkout")).toBe("emergency-investigator");
+    expect(await suggest("Fix the rounding in invoice totals")).toBe("quick-fix");
+    expect(await suggest("Please review my branch")).toBe("review-only");
   });
 });
