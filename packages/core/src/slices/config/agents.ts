@@ -11,7 +11,7 @@ import { err, ok, type Result } from "../../kernel/result/index.js";
 import { type AgentId, AgentIdSchema, type AiCliId, AiCliIdSchema, type RepoId } from "../../kernel/schemas/index.js";
 import { readConfigFile } from "./read.js";
 import type { Repo } from "./repos.js";
-import { CONFIG_FORMAT, type ConfigProblem, parseYaml, quote } from "./yaml-file.js";
+import { clean, CONFIG_FORMAT, type ConfigProblem, parseYaml, quote } from "./yaml-file.js";
 
 /** Who owns an agent definition. Never a path: records stay valid on another machine. */
 export type AgentOwner = { readonly kind: "builtin" } | { readonly kind: "personal" } | { readonly kind: "repo"; readonly repoId: RepoId };
@@ -192,7 +192,8 @@ async function loadFolder(folder: string, shown: string, owner: AgentOwner, foll
   }
   const entries: Entry[] = [];
   for (const name of names) {
-    const file = `${shown}/${name}`;
+    // A file name can hold any character but "/": escape it like a value.
+    const file = `${shown}/${clean(name, 100)}`;
     const stem = name.slice(0, -".md".length);
     const id = AgentIdSchema.safeParse(stem);
     if (!id.success) {

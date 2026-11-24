@@ -66,7 +66,7 @@ const MAX_SHOWN = 60;
 const UNSAFE = /[\u007f-\u009f\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 
 /** Text from a file made safe to print: control characters escaped, cut to `max` characters. */
-function clean(text: string, max: number): string {
+export function clean(text: string, max: number): string {
   const escaped = JSON.stringify(text)
     .slice(1, -1)
     .replace(UNSAFE, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`);

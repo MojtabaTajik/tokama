@@ -269,6 +269,15 @@ describe("loadAgents", () => {
     ]);
   });
 
+  it("escapes bidi characters in values and file names", async () => {
+    writeAgent(personal(), "a", agentFile({ runs_on: "claude\u202Ecode" }));
+    writeAgent(personal(), "evil\u202Eb\nx", agentFile({}));
+    expect(messages(await loadAgents({ tokamaHome: home }))).toEqual([
+      "agents/a.md line 4: runs_on 'claude\\u202ecode' isn't known. Did you mean claude-code?",
+      "agents/evil\\u202eb\\nx.md: 'evil\\u202eb\\nx' isn't a valid agent id: use lowercase letters, digits and hyphens (at most 64)",
+    ]);
+  });
+
   it("refuses an oversized file, a folder named like an agent, and an agents path that is a file", async () => {
     writeAgent(personal(), "big", agentFile({}, "x".repeat(70 * 1024)));
     mkdirSync(join(personal(), "dir.md"));

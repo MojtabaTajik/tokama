@@ -102,6 +102,11 @@ repos:
     }
   });
 
+  it("refuses a NUL character in worktree_folder", async () => {
+    write('format: 1\nrepos:\n  - { id: a, path: /a, base_branch: main, worktree_folder: "wt\\0x" }\n');
+    expect(messages(await load())).toContain("repos.yaml line 3: worktree_folder can't contain a NUL character");
+  });
+
   it("refuses NUL characters in path and remote", async () => {
     write('format: 1\nrepos:\n  - id: a\n    path: "/a\\0b"\n    remote: "https://x\\0y"\n    base_branch: main\n');
     expect(messages(await load())).toEqual([

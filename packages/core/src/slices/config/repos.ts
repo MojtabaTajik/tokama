@@ -67,6 +67,7 @@ const RepoEntrySchema = z.strictObject({
   worktree_folder: z
     .string()
     .min(1)
+    .refine((folder) => !folder.includes("\0"), "can't contain a NUL character")
     .refine(isWorktreeFolder, "must be a folder inside the repo and outside .git, such as .tokama/wt")
     .optional(),
   checks: z
