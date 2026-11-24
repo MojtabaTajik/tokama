@@ -19,8 +19,18 @@ export const GIT_SAFE_CONFIG: readonly string[] = [
   "maintenance.auto=false",
 ];
 
-/** On every diff form: no external diff driver (diff.<driver>.command), no textconv, no color. */
-export const DIFF_SAFE: readonly string[] = ["--no-ext-diff", "--no-textconv", "--no-color"];
+/**
+ * On every diff form: no external diff driver (diff.<driver>.command), no textconv, no color, and
+ * a nested repo shown as a commit range only (`diff.submodule=diff` would run a diff inside it,
+ * with that repo's own drivers).
+ */
+export const DIFF_SAFE: readonly string[] = ["--no-ext-diff", "--no-textconv", "--no-color", "--submodule=short"];
+
+/**
+ * The oldest git the wrapper supports: GIT_NO_LAZY_FETCH needs 2.44 (`worktree list -z` needs
+ * 2.36). Older git ignores the variable, so a partial clone could fetch through repo config.
+ */
+export const MIN_GIT_VERSION = { major: 2, minor: 44 } as const;
 
 /**
  * Variables added to the process runner's allowlisted environment. Git never prompts; editor and
@@ -28,7 +38,7 @@ export const DIFF_SAFE: readonly string[] = ["--no-ext-diff", "--no-textconv", "
  * clone, a missing object would otherwise make a local call (diff, worktree add) fetch it through
  * the repo's remote config (uploadpack, sshCommand, credential helper). Such a call fails instead.
  *
- * Known gap: a repo nested in the worktree (an embedded repo or submodule) has its own config.
+ * Known gap (#25): a repo nested in the worktree (an embedded repo or submodule) has its own config.
  * git runs `status` inside it as a child process, which gets the settings above but not that
  * repo's filter overrides, so a filter configured there can run.
  */
@@ -44,8 +54,13 @@ export type GitErrorReason =
   | "failed"
   /** An argument was refused before git ran (e.g. it starts with "-" and would be read as an option). */
   | "invalid-argument"
-  /** The repo config names a filter driver that cannot be disabled safely; nothing ran. */
-  | "unsafe-config";
+  /**
+   * The repo config names a filter driver that cannot be disabled safely, or a required one that
+   * git refused to skip; no filter ran.
+   */
+  | "unsafe-config"
+  /** git is older than MIN_GIT_VERSION, or its version could not be read. */
+  | "unsupported-version";
 
 export interface GitError {
   readonly reason: GitErrorReason;
@@ -101,12 +116,21 @@ export interface Git {
   commit(repo: string, message: string): Promise<GitResult<string>>;
   /** `rev-parse --verify <rev>`: the object id `rev` names. */
   revParse(repo: string, rev: string): Promise<GitResult<string>>;
-  /** `worktree add -b <branch> <path> <startPoint>`. */
+  /**
+   * `worktree add --no-checkout -b <branch> <path> <startPoint>`, then `reset --hard` inside the
+   * new worktree, so the filter overrides come from the config that worktree sees (includeIf
+   * gitdir, config.worktree).
+   */
   worktreeAdd(repo: string, path: string, branch: string, startPoint: string): Promise<GitResult<void>>;
-  /** `worktree remove [--force] <path>`. */
+  /**
+   * Without `force`: refuses a worktree with changes or untracked files (checked by `status`
+   * inside it). Then `worktree remove --force <path>`; a locked worktree is still refused.
+   */
   worktreeRemove(repo: string, path: string, options?: { readonly force?: boolean }): Promise<GitResult<void>>;
   /** `worktree list --porcelain -z`. */
   worktreeList(repo: string): Promise<GitResult<WorktreeEntry[]>>;
+  /** `git --version`, refused below MIN_GIT_VERSION. The engine calls it once at startup. */
+  checkGitVersion(): Promise<GitResult<string>>;
 }
 
 export interface GitOptions {
@@ -148,10 +172,12 @@ export function createGit(options: GitOptions): Git {
       const failure = (reason: GitErrorReason, exitCode: number | null, message: string): GitResult<string> =>
         err({ reason, args, exitCode, message });
       if (result.kind === "not-started") return failure("spawn-error", null, result.message);
-      const message = stderr.join("\n").slice(0, STDERR_CAP);
+      const stdout = await readFile(stdoutFile, "utf8");
+      // Some failures are reported on stdout only (commit: "nothing to commit").
+      const message = (stderr.length > 0 ? stderr.join("\n") : stdout).slice(0, STDERR_CAP);
       if (result.timedOut) return failure("timed-out", result.exitCode, message);
       if (result.exitCode !== 0) return failure("failed", result.exitCode, message);
-      return ok(await readFile(stdoutFile, "utf8"));
+      return ok(stdout);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -162,21 +188,32 @@ export function createGit(options: GitOptions): Git {
    * scope, includes too). A clean or smudge filter is a command named by config and chosen by
    * .gitattributes or .git/info/attributes, so `add`, `status`, `diff` and `worktree add` would
    * run it. Drivers only in the user's global or system config (e.g. git-lfs) stay on.
+   * `required` is left as configured: git then fails on a required driver (e.g. encryption)
+   * instead of storing the plain content.
    */
-  async function filterOverrides(repo: string, args: readonly string[]): Promise<GitResult<string[]>> {
+  async function filterOverrides(
+    repo: string,
+    args: readonly string[],
+  ): Promise<GitResult<{ config: string[]; required: string[] }>> {
     const listed = await raw(repo, ["config", "-z", "--show-scope", "--name-only", "--get-regexp", "^filter\\."]);
-    // Exit 1: no filter configured.
-    if (!listed.ok) return listed.error.reason === "failed" && listed.error.exitCode === 1 ? ok([]) : listed;
+    if (!listed.ok) {
+      // Exit 1: no filter configured.
+      if (listed.error.reason === "failed" && listed.error.exitCode === 1) return ok({ config: [], required: [] });
+      return err({ ...listed.error, args });
+    }
     const fields = listed.value.split("\0");
     const drivers = new Set<string>();
+    const required = new Set<string>();
     for (let i = 0; i + 1 < fields.length; i += 2) {
       const scope = fields[i] ?? "";
       const name = fields[i + 1] ?? "";
+      const dot = name.lastIndexOf(".");
+      const driver = name.slice("filter.".length, dot);
+      if (name.slice(dot + 1) === "required") required.add(driver);
       if (scope === "global" || scope === "system") continue;
-      const driver = name.slice("filter.".length, name.lastIndexOf("."));
-      if (driver === "") continue;
-      // `-c` splits at the first "="; such a name cannot be overridden, so nothing runs.
-      if (driver.includes("=") || driver.includes("\n")) {
+      // `-c` splits at the first "="; git also ignores a `-c` override of the empty name. Such a
+      // driver cannot be disabled, so nothing runs.
+      if (driver === "" || driver.includes("=") || driver.includes("\n")) {
         return err({
           reason: "unsafe-config",
           args,
@@ -186,17 +223,31 @@ export function createGit(options: GitOptions): Git {
       }
       drivers.add(driver);
     }
-    return ok(
-      [...drivers].flatMap((driver) => [
-        ...FILTER_KEYS.map((key) => `filter.${driver}.${key}=`),
-        `filter.${driver}.required=false`,
-      ]),
-    );
+    return ok({
+      config: [...drivers].flatMap((driver) => FILTER_KEYS.map((key) => `filter.${driver}.${key}=`)),
+      required: [...drivers].filter((driver) => required.has(driver)),
+    });
   }
 
   async function git(repo: string, args: readonly string[]): Promise<GitResult<string>> {
     const overrides = await filterOverrides(repo, args);
-    return overrides.ok ? raw(repo, args, overrides.value) : overrides;
+    if (!overrides.ok) return overrides;
+    const result = await raw(repo, args, overrides.value.config);
+    const { required } = overrides.value;
+    const refusedRequired =
+      !result.ok &&
+      result.error.reason === "failed" &&
+      required.length > 0 &&
+      /filter '.*' failed/.test(result.error.message);
+    if (refusedRequired) {
+      const names = required.map((driver) => JSON.stringify(driver)).join(", ");
+      return err({
+        ...result.error,
+        reason: "unsafe-config",
+        message: `the repo requires filter driver(s) ${names}, which Tokama does not run; git refused: ${result.error.message}`,
+      });
+    }
+    return result;
   }
 
   const refuseOption = (args: readonly string[], ...values: string[]): GitResult<never> | undefined => {
@@ -229,18 +280,60 @@ export function createGit(options: GitOptions): Git {
       return refuseOption(args, rev) ?? map(git(repo, args), trimmed);
     },
     async worktreeAdd(repo, path, branch, startPoint) {
-      const args = ["worktree", "add", "-b", branch, "--", path, startPoint];
-      return refuseOption(args, path, branch, startPoint) ?? map(git(repo, args), none);
+      const args = ["worktree", "add", "-q", "--no-checkout", "-b", branch, "--", path, startPoint];
+      const refused = refuseOption(args, path, branch, startPoint);
+      if (refused !== undefined) return refused;
+      const added = await git(repo, args);
+      if (!added.ok) return added;
+      // The checkout runs in the new worktree, with overrides for the config it sees.
+      return map(git(path, ["reset", "-q", "--hard"]), none);
     },
     async worktreeRemove(repo, path, removeOptions = {}) {
-      const args = ["worktree", "remove", ...(removeOptions.force === true ? ["--force"] : []), "--", path];
-      return refuseOption(args, path) ?? map(git(repo, args), none);
+      const args = ["worktree", "remove", "--force", "--", path];
+      const refused = refuseOption(args, path);
+      if (refused !== undefined) return refused;
+      if (removeOptions.force !== true) {
+        // git's own clean check runs `status` in the worktree with the main repo's overrides.
+        const statusArgs = ["status", "--porcelain", "-z", "--untracked-files=all"];
+        const status = await git(path, statusArgs);
+        if (!status.ok) return status;
+        if (status.value !== "") {
+          return err({ reason: "failed", args, exitCode: null, message: `worktree has changes or untracked files: ${path}` });
+        }
+      }
+      // One --force skips the clean check done above; a locked worktree still needs two.
+      return map(git(repo, args), none);
     },
     worktreeList: (repo) => map(git(repo, ["worktree", "list", "--porcelain", "-z"]), parseWorktreeList),
+    async checkGitVersion() {
+      const args = ["--version"];
+      const out = await raw(tmpdir(), args);
+      if (!out.ok) return out;
+      const version = parseGitVersion(out.value);
+      const supported =
+        version !== undefined &&
+        (version.major > MIN_GIT_VERSION.major ||
+          (version.major === MIN_GIT_VERSION.major && version.minor >= MIN_GIT_VERSION.minor));
+      if (!supported) {
+        return err({
+          reason: "unsupported-version",
+          args,
+          exitCode: 0,
+          message: `git ${MIN_GIT_VERSION.major}.${MIN_GIT_VERSION.minor} or newer is required; found: ${out.value.trim()}`,
+        });
+      }
+      return ok(out.value.trim());
+    },
   };
 }
 
-/** Parses `status --porcelain -z` (v1): "XY path\0", plus "orig\0" after a rename or copy. */
+/** Reads major and minor from `git --version` ("git version 2.54.0 (Apple Git-157)"). */
+export function parseGitVersion(out: string): { major: number; minor: number } | undefined {
+  const match = /^git version (\d+)\.(\d+)/.exec(out.trim());
+  return match === null ? undefined : { major: Number(match[1]), minor: Number(match[2]) };
+}
+
+/** Parses `status --porcelain -z` (v1): "XY path\0", plus "orig\0" after a rename or copy in either column. */
 export function parseStatus(out: string): StatusEntry[] {
   const fields = out.split("\0");
   const entries: StatusEntry[] = [];
@@ -250,7 +343,7 @@ export function parseStatus(out: string): StatusEntry[] {
     const index = field.charAt(0);
     const worktree = field.charAt(1);
     const path = field.slice(3);
-    if (index === "R" || index === "C") {
+    if ("RC".includes(index) || "RC".includes(worktree)) {
       const origPath = fields[++i] ?? "";
       entries.push({ index, worktree, path, origPath });
     } else {

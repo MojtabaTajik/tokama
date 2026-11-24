@@ -3,7 +3,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createProcessRunner, type ProcessRunner, type RunRequest, type RunResult } from "../process/index.js";
-import { DIFF_SAFE, GIT_SAFE_CONFIG, createGit, parseNumstat, parseStatus, parseWorktreeList, type Git } from "./git.js";
+import {
+  DIFF_SAFE,
+  GIT_SAFE_CONFIG,
+  createGit,
+  parseGitVersion,
+  parseNumstat,
+  parseStatus,
+  parseWorktreeList,
+  type Git,
+} from "./git.js";
 
 // Hardening cases ported from ai-pipeline tests/test_loop_stub.py (commit hooks do not run,
 // fsmonitor written into .git/config does not run), plus one case per configured tool the issue
@@ -196,7 +205,7 @@ describe("repo config, hooks and attributes never run code", () => {
     );
   });
 
-  it("clean filter chosen by .gitattributes, on add", SLOW, async () => {
+  it("clean filter chosen by .gitattributes, on add (not required: the call succeeds unfiltered)", SLOW, async () => {
     await plain(repo, "config", "filter.evil.clean", trap("clean"));
     write(join(repo, ".gitattributes"), "* filter=evil\n");
     write(join(repo, "a.txt"), "two\n");
@@ -211,6 +220,7 @@ describe("repo config, hooks and attributes never run code", () => {
         value(await git.commit(repo, "hardened"));
       },
     );
+    expect(await plain(repo, "show", "HEAD:a.txt")).toBe("three\n");
   });
 
   it("required process filter chosen by .git/info/attributes, on add", SLOW, async () => {
@@ -222,8 +232,100 @@ describe("repo config, hooks and attributes never run code", () => {
       "process",
       () => plainMayFail(repo, "add", "-A"),
       async () => {
-        value(await git.addAll(repo));
-        value(await git.status(repo));
+        // A required driver (e.g. encryption) fails closed: git refuses, nothing is staged.
+        const added = await git.addAll(repo);
+        expect(added).toMatchObject({ ok: false, error: { reason: "unsafe-config", args: ["add", "-A"] } });
+        if (!added.ok) expect(added.error.message).toMatch(/requires filter driver\(s\) "evil"/);
+      },
+    );
+    expect(await plain(repo, "diff", "--cached", "--name-only")).toBe("");
+  });
+
+  it("refuses a filter driver with the empty name", SLOW, async () => {
+    await plain(repo, "config", "filter..clean", trap("empty"));
+    write(join(repo, ".gitattributes"), "* filter=\n");
+    write(join(repo, "a.txt"), "two\n");
+    await provesBlocked(
+      "empty",
+      () => plain(repo, "add", "-A"),
+      async () => {
+        write(join(repo, "a.txt"), "three\n");
+        expect(await git.addAll(repo)).toMatchObject({ ok: false, error: { reason: "unsafe-config" } });
+      },
+    );
+  });
+
+  it("diff.submodule=diff does not run a nested repo's diff driver", SLOW, async () => {
+    const inner = join(repo, "inner");
+    mkdirSync(inner);
+    await plain(inner, "init", "-q", "-b", "main");
+    await plain(inner, "config", "user.name", "Test");
+    await plain(inner, "config", "user.email", "test@example.com");
+    write(join(inner, ".gitattributes"), "* diff=evil\n");
+    write(join(inner, "f"), "1\n");
+    await plain(inner, "add", "-A");
+    await plain(inner, "commit", "-q", "-m", "1");
+    await plain(inner, "config", "diff.evil.textconv", trap("submodule"));
+    await plain(inner, "config", "diff.evil.command", trap("submodule"));
+    await plain(repo, "add", "inner");
+    await plain(repo, "commit", "-q", "-m", "gitlink");
+    write(join(inner, "f"), "2\n");
+    await plain(inner, "commit", "-q", "-am", "2");
+    await plain(repo, "config", "diff.submodule", "diff");
+    await provesBlocked(
+      "submodule",
+      () => plainMayFail(repo, "diff"),
+      async () => {
+        expect(value(await git.diff(repo))).toContain("+Subproject commit ");
+        await plain(repo, "add", "inner");
+        value(await git.diff(repo, { cached: true }));
+        value(await git.diffCachedNumstat(repo));
+      },
+    );
+  });
+
+  it("worktree calls use the config the worktree sees (includeIf gitdir)", SLOW, async () => {
+    write(join(repo, ".gitattributes"), "* filter=evil\n");
+    await plain(repo, "add", "-A");
+    await plain(repo, "commit", "-q", "-m", "attributes");
+    const included = join(root, "worktrees.cfg");
+    write(included, `[filter "evil"]\n\tsmudge = '${trap("wt-smudge")}'\n\tclean = '${trap("wt-clean")}'\n`);
+    await plain(repo, "config", "includeIf.gitdir:**/worktrees/**.path", included);
+    await provesBlocked(
+      "wt-smudge",
+      () => plain(repo, "worktree", "add", "-q", "-b", "control", join(root, "wt-control"), "main"),
+      async () => value(await git.worktreeAdd(repo, join(root, "wt"), "hardened", "main")),
+    );
+    const wt = join(root, "wt");
+    expect(await plain(wt, "status", "--porcelain")).toBe("");
+    write(join(root, "wt-control", "a.txt"), "dirty\n");
+    write(join(wt, "a.txt"), "dirty\n");
+    await provesBlocked(
+      "wt-clean",
+      () => plainMayFail(repo, "worktree", "remove", join(root, "wt-control")),
+      async () => {
+        expect(await git.worktreeRemove(repo, wt)).toMatchObject({ ok: false, error: { reason: "failed" } });
+        value(await git.worktreeRemove(repo, wt, { force: true }));
+      },
+    );
+    expect(existsSync(wt)).toBe(false);
+  });
+
+  it("worktree remove uses the worktree's config.worktree", SLOW, async () => {
+    await plain(repo, "config", "extensions.worktreeConfig", "true");
+    write(join(repo, ".gitattributes"), "* filter=evil\n");
+    await plain(repo, "add", "-A");
+    await plain(repo, "commit", "-q", "-m", "attributes");
+    const wt = join(root, "wt");
+    value(await git.worktreeAdd(repo, wt, "hardened", "main"));
+    await plain(wt, "config", "--worktree", "filter.evil.clean", trap("wt-config"));
+    write(join(wt, "a.txt"), "dirty\n");
+    await provesBlocked(
+      "wt-config",
+      () => plainMayFail(repo, "worktree", "remove", wt),
+      async () => {
+        expect(await git.worktreeRemove(repo, wt)).toMatchObject({ ok: false, error: { reason: "failed" } });
+        value(await git.worktreeRemove(repo, wt, { force: true }));
       },
     );
   });
@@ -370,6 +472,20 @@ describe("API on a real repo", () => {
     if (!notRepo.ok) expect(notRepo.error.message).toMatch(/not a git repository/);
     const noCommit = await git.commit(repo, "nothing staged");
     expect(noCommit).toMatchObject({ ok: false, error: { reason: "failed", exitCode: 1 } });
+    if (!noCommit.ok) expect(noCommit.error.message).toMatch(/nothing to commit/);
+  });
+
+  it("filter lookup errors carry the caller's args", SLOW, async () => {
+    write(join(repo, ".git", "config"), "[broken\n");
+    const status = await git.status(repo);
+    expect(status).toMatchObject({
+      ok: false,
+      error: { reason: "failed", args: ["status", "--porcelain", "-z", "--untracked-files=all"] },
+    });
+  });
+
+  it("checkGitVersion accepts the installed git", SLOW, async () => {
+    expect(value(await git.checkGitVersion())).toMatch(/^git version /);
   });
 
   it("refuses arguments git would read as options", SLOW, async () => {
@@ -447,6 +563,18 @@ describe("how git is called", () => {
     );
   });
 
+  it("checkGitVersion refuses git older than 2.44", async () => {
+    const runner: ProcessRunner = {
+      run: (request) => {
+        if (request.stdout?.file !== undefined) writeFileSync(request.stdout.file, "git version 2.43.0\n");
+        return Promise.resolve({ kind: "finished", pid: 1, exitCode: 0, signal: null, timedOut: false, aborted: false, startedAt: 0, endedAt: 0, durationMs: 0 });
+      },
+    };
+    const result = await createGit({ runner }).checkGitVersion();
+    expect(result).toMatchObject({ ok: false, error: { reason: "unsupported-version" } });
+    if (!result.ok) expect(result.error.message).toMatch(/2\.44 or newer.*2\.43\.0/);
+  });
+
   it("maps a timeout to an error value", async () => {
     const { runner } = recordingRunner({ exitCode: null, signal: "SIGTERM", timedOut: true });
     expect(await createGit({ runner }).writeTree("/repo")).toMatchObject({ ok: false, error: { reason: "timed-out" } });
@@ -460,6 +588,10 @@ describe("parsers", () => {
       { index: "?", worktree: "?", path: "x y" },
       { index: " ", worktree: "M", path: "a" },
     ]);
+    expect(parseStatus(" R new\0old\0C  copy\0src\0")).toEqual([
+      { index: " ", worktree: "R", path: "new", origPath: "old" },
+      { index: "C", worktree: " ", path: "copy", origPath: "src" },
+    ]);
     expect(parseStatus("")).toEqual([]);
   });
 
@@ -468,6 +600,13 @@ describe("parsers", () => {
       { path: "a", added: 1, removed: 2 },
       { path: "b\tc", added: null, removed: null },
     ]);
+  });
+
+  it("parseGitVersion reads release and vendor version strings", () => {
+    expect(parseGitVersion("git version 2.54.0 (Apple Git-157)\n")).toEqual({ major: 2, minor: 54 });
+    expect(parseGitVersion("git version 2.43.0.windows.1")).toEqual({ major: 2, minor: 43 });
+    expect(parseGitVersion("git version 3.0.0-rc1")).toEqual({ major: 3, minor: 0 });
+    expect(parseGitVersion("not git")).toBeUndefined();
   });
 
   it("parseWorktreeList reads bare, detached and branch entries", () => {
