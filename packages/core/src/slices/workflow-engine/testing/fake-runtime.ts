@@ -84,3 +84,24 @@ export const after = (effect: () => void, then: Behavior): Behavior =>
     effect();
     yield* then(call);
   };
+
+const write = (cwd: string, files: Readonly<Record<string, string>>) => {
+  for (const [path, content] of Object.entries(files)) {
+    mkdirSync(dirname(join(cwd, path)), { recursive: true });
+    writeFileSync(join(cwd, path), content);
+  }
+};
+
+/** Writes the files, then the CLI crashes. */
+export const editsThenCrashes = (files: Readonly<Record<string, string>>, errorKind: AgentCallErrorKind = "crash"): Behavior =>
+  async function* ({ request }) {
+    write(request.cwd, files);
+    yield { type: "end", outcome: "failed", usage: NO_TOKENS, error: "the CLI crashed", errorKind };
+  };
+
+/** Writes the files, then runs until stopped (or a guard's timeout). */
+export const editsThenHangs = (files: Readonly<Record<string, string>>): Behavior =>
+  async function* (call) {
+    write(call.request.cwd, files);
+    yield* hangs()(call);
+  };

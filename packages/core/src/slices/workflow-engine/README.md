@@ -1,7 +1,8 @@
 # workflow-engine
 
-Runs an item through its template: Start (worktree, setup), each step's attempts under the loop guards, tamper checks, done_when, if_failed, decisions, and Finish (the commit). The only slice that composes others.
+Runs an item through its template: Start (worktree, setup), each step's attempts under the loop guards, done_when, if_failed, decisions, and Finish (the commit). The only slice that composes others.
 The log is the state: every change is an event before the loop acts on it, and the loop resumes from the log after a decision or a restart. Commands (`startItem`, `resolveDecision`, `stopItem`) wait for restart recovery first.
-Run failures (crash, quota, auth, timeout) ask and never count as attempts; work failures (checks, reviewer changes) count. A `checks pass` attempt removes ignored files, runs setup, fixes the tree, then runs the checks; Finish commits that tree.
-Git and Tokama file changes stop the item; package, test and CI file changes ask. A reviewer's reply must end with `VERDICT: approve` or `VERDICT: changes`.
+Run failures (crash, quota, auth, timeout) ask and never count as attempts; work failures (checks, reviewer changes) count. Counters, grants and the budget come from the log (`counters.ts`).
+Protection (`protect.ts`): files that steer Tokama (git config, hooks, attributes, HEAD, `.tokama/`) are hashed when the worktree is made; any later change stops the item. Each staged tree is judged against the base commit; protected changes ask, and an approval covers that exact content. The checked, reviewed and committed tree is one tree.
+Results: a step that sees an earlier step gets `{{ <step>.summary }}`, that step's final reply. A reviewer's reply must end with `VERDICT: approve` or `VERDICT: changes`; changes go back as a feedback block.
 Must not spawn processes, run git or read config itself: the kernel and the other slices do, through the ports it is given.

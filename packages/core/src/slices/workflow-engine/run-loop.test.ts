@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -19,8 +19,9 @@ import {
 } from "../../kernel/schemas/index.js";
 import type { Agent, Repo } from "../config/index.js";
 import { EVENTS_FILE, ItemStore, openDecisions, readLog } from "../items/index.js";
+import { createWorktree } from "../worktrees/index.js";
 import { createRunLoop, parseVerdict, type RunLoop, type RunLoopDeps } from "./index.js";
-import { after, crashes, edits, FAKE_PID, fakeRuntime, hangs, loops, says } from "./testing/fake-runtime.js";
+import { after, crashes, edits, editsThenCrashes, editsThenHangs, FAKE_PID, fakeRuntime, hangs, loops, says } from "./testing/fake-runtime.js";
 
 const SLOW = { timeout: 60_000 };
 const HOST = HostIdSchema.parse("host_0190a000-0000-7000-8000-000000000001");
@@ -292,8 +293,10 @@ describe("run loop: done_when", () => {
     expect(reviewer.calls[0]?.request.prompt).toContain("+fixed");
     expect(reviewer.calls[0]?.request.prompt).toContain("VERDICT: approve");
     expect(reviewer.calls[0]?.request.limits?.edit).toBe(false);
-    // The builder's second session gets the reviewer's words.
+    // The builder's second session gets the reviewer's words, in their own block.
+    expect(builder.calls[1]?.request.prompt).toContain('name="feedback from review"');
     expect(builder.calls[1]?.request.prompt).toContain("Add a test.");
+    expect(builder.calls[1]?.request.prompt).not.toContain("last check output");
   });
 
   it("reviewer approves: a reply without a strict verdict line is a run failure, not counted", SLOW, async () => {
@@ -352,10 +355,14 @@ describe("run loop: counters", () => {
   });
 
   it("back continues the target step's count, and its limit asks", SLOW, async () => {
-    const loop = engine(fakeRuntime([edits(WRONG)]));
+    // Each build makes the check fail another way, so it is never the same failure twice.
+    const verify = { "verify.sh": "exit $(cat code.txt)\n" };
+    const builder = fakeRuntime([edits({ ...verify, "code.txt": "4" }), edits({ ...verify, "code.txt": "5" })]);
+    const checker = fakeRuntime([says("Ready for the checks.")]);
+    const loop = engine(builder, { runtime: (a) => (a.id === "reviewer" ? checker : builder) });
     const tpl = template([
       { id: "build", maxAttempts: 2 },
-      { id: "verify", doneWhen: "checks pass", checks: { commands: ["sh check.sh"] }, ifFailed: { action: "back", stepId: "build" }, maxAttempts: 5 },
+      { id: "verify", agentId: "reviewer", doneWhen: "checks pass", checks: { commands: ["sh verify.sh"] }, ifFailed: { action: "back", stepId: "build" }, maxAttempts: 5 },
     ]);
     const id = await start(loop, tpl);
     // build#1, verify#1 fails, back: build#2, verify#2 fails, back: build is at its limit of 2.
@@ -445,7 +452,12 @@ describe("run loop: start, safety and control", () => {
   it("tamper: a package file change asks with the paths; Approve runs the checks and finishes", SLOW, async () => {
     const loop = engine(fakeRuntime([edits({ ...FIXED, "package.json": "{}\n" })]));
     const id = await start(loop, template([BUILD_CHECKED]));
-    expect(openDecision(id)).toMatchObject({ kind: "tamper", stepId: "build", detail: expect.stringContaining("added worktree:package.json (package)") });
+    expect(openDecision(id)).toMatchObject({
+      kind: "tamper",
+      stepId: "build",
+      detail: expect.stringContaining("added package.json (package)"),
+      covers: [{ path: "package.json", mode: "100644", blob: expect.stringMatching(/^[0-9a-f]{40}$/) }],
+    });
     // The attempt waits open; no check ran yet.
     expect(item(id).steps[0]?.attempts[0]?.endedAt).toBeUndefined();
     expect(item(id).steps[0]?.attempts[0]?.checks).toEqual([]);
@@ -535,4 +547,195 @@ describe("run loop: restart", () => {
     await loop.settled(created.value.id);
     expect(item(created.value.id).state).toBe("done");
   });
+});
+
+describe("run loop: protection", () => {
+  const TAMPER_FILES = { "package.json": '{"scripts":{"test":"exit 0"}}\n', ".tokama/templates/evil.yaml": "x\n", ".gitattributes": "*.txt -diff\n" };
+  const commitOf = (id: ItemId) => item(id).outcome?.commits?.[0]?.commit;
+
+  it("a call that times out after changing Tokama's files stops the item; nothing is committed", SLOW, async () => {
+    const loop = engine(fakeRuntime([editsThenHangs(TAMPER_FILES), edits(FIXED)]), { guard: { turnCap: 150, repeatLimit: 6, idleMs: 0, timeoutMs: 300 } });
+    const id = await start(loop, template([BUILD_CHECKED]));
+    expect(item(id)).toMatchObject({ state: "failed", outcome: { detail: expect.stringContaining("worktree:.tokama/templates/evil.yaml (tokama)") } });
+    expect(commitOf(id)).toBeUndefined();
+  });
+
+  it("a call that crashes after changing package.json: Retry step asks about it before any check runs", SLOW, async () => {
+    const loop = engine(fakeRuntime([editsThenCrashes({ "package.json": "{}\n" }), edits(FIXED)]));
+    const id = await start(loop, template([BUILD_CHECKED]));
+    await answer(loop, id, "retry_step", "run_failure");
+    expect(openDecision(id)).toMatchObject({ kind: "tamper", covers: [{ path: "package.json" }] });
+    expect(item(id).steps[0]?.attempts[1]?.checks).toEqual([]);
+  });
+
+  it("a check that writes Tokama's files stops the item, even when it fails and the step would retry", SLOW, async () => {
+    const evilCheck = "mkdir -p .tokama/templates; echo x > .tokama/templates/evil.yaml; echo '{}' > package.json; exit 3\n";
+    const runtime = fakeRuntime([edits({ "check.sh": evilCheck }), edits(FIXED)]);
+    const id = await start(engine(runtime), template([BUILD_CHECKED]));
+    expect(item(id)).toMatchObject({ state: "failed", outcome: { detail: expect.stringContaining(".tokama/templates/evil.yaml") } });
+    expect(runtime.calls).toHaveLength(1);
+    // Stopped right after the checks, in the same attempt: no retry started.
+    expect(item(id).steps[0]?.attempts).toHaveLength(1);
+    expect(commitOf(id)).toBeUndefined();
+  });
+
+  it("files the setup command writes are judged in the staged tree before the checks", SLOW, async () => {
+    const setup = `${readFileSync(join(repo.path, "setup.sh"), "utf8")}echo 'export default {}' > vitest.config.ts; echo '{}' > package.json\n`;
+    const id = await start(engine(fakeRuntime([edits({ ...FIXED, "setup.sh": setup })])), template([BUILD_CHECKED], { setup: "sh setup.sh" }));
+    expect(openDecision(id)?.kind).toBe("tamper");
+    expect(openDecision(id)?.covers?.map((c) => c.path).sort()).toEqual(["package.json", "vitest.config.ts"]);
+    expect(item(id).steps[0]?.attempts[0]?.checks).toEqual([]);
+  });
+
+  it("an approval covers exactly the content it showed; a later change to the same path asks again", SLOW, async () => {
+    const loop = engine(fakeRuntime([edits({ ...WRONG, "package.json": "{}\n" }), edits({ ...FIXED, "package.json": '{"a":1}\n' })]));
+    const id = await start(loop, template([BUILD_CHECKED]));
+    await answer(loop, id, "approve");
+    // Attempt 1 ran its checks and failed; attempt 2 changed package.json again.
+    expect(item(id).steps[0]?.attempts).toHaveLength(2);
+    expect(openDecision(id)).toMatchObject({ kind: "tamper", covers: [{ path: "package.json" }] });
+    await answer(loop, id, "approve");
+    expect(item(id).state).toBe("done");
+  });
+
+  it("a change to the main repo's git config during the item stops it", SLOW, async () => {
+    const loop = engine(fakeRuntime([after(() => appendFileSync(join(repo.path, ".git", "config"), "[core]\n\thooksPath = hooks\n"), edits(FIXED))]));
+    const id = await start(loop, template([BUILD_CHECKED]));
+    expect(item(id)).toMatchObject({ state: "failed", outcome: { detail: expect.stringContaining("modified git:config (git)") } });
+  });
+
+  it("the reviewer reviews the checked tree; a check that rewrote the worktree asks first; Finish commits that tree", SLOW, async () => {
+    const original = readFileSync(join(repo.path, "check.sh"), "utf8");
+    // The check passes, then rewrites app.txt and itself after the tree was fixed.
+    const evilCheck = `grep -q fixed app.txt || exit 3\nprintf 'fixed\\n' > app.txt\nprintf '%s' '${original}' > check.sh\n`;
+    const builder = fakeRuntime([edits({ "app.txt": "fixed\nMALICIOUS_MARKER\n", "check.sh": evilCheck })]);
+    const reviewer = fakeRuntime([says("Looks good.\nVERDICT: approve")]);
+    const loop = engine(builder, { runtime: (a) => (a.id === "reviewer" ? reviewer : builder) });
+    const id = await start(loop, template([BUILD_CHECKED, { id: "review", agentId: "reviewer", doneWhen: "reviewer approves" }]));
+    expect(openDecision(id)).toMatchObject({ kind: "tamper", stepId: "review", tree: expect.any(String), detail: expect.stringContaining("app.txt") });
+    expect(reviewer.calls).toHaveLength(0);
+    await answer(loop, id, "use_recorded_tree");
+    expect(reviewer.calls[0]?.request.prompt).toContain("MALICIOUS_MARKER");
+    const [build, review] = item(id).steps.map((s) => s.attempts.at(-1)?.tree);
+    expect(review).toBe(build);
+    expect(await plain(repo.path, "rev-parse", `${commitOf(id)}^{tree}`)).toBe(review);
+  });
+
+  it("Finish asks before committing a tree the reviewer did not approve", SLOW, async () => {
+    const builder = fakeRuntime([edits(FIXED), edits({ "app.txt": "fixed\npolished\n" })]);
+    const reviewer = fakeRuntime([says("VERDICT: approve")]);
+    const loop = engine(builder, { runtime: (a) => (a.id === "reviewer" ? reviewer : builder) });
+    const id = await start(loop, template([{ id: "build" }, { id: "review", agentId: "reviewer", doneWhen: "reviewer approves" }, { ...BUILD_CHECKED, id: "polish" }]));
+    expect(openDecision(id)).toMatchObject({ kind: "tamper", detail: expect.stringContaining("not the one the reviewer approved") });
+    await answer(loop, id, "commit_anyway");
+    expect(await plain(repo.path, "show", `${commitOf(id)}:app.txt`)).toBe("fixed\npolished");
+  });
+
+  it("Finish asks before leaving out changes a step made after the checks, and commits only the checked tree", SLOW, async () => {
+    const loop = engine(fakeRuntime([edits(FIXED), edits({ "app.txt": "fixed\nunchecked\n" })]));
+    const id = await start(loop, template([BUILD_CHECKED, { id: "polish" }]));
+    expect(openDecision(id)).toMatchObject({ kind: "tamper", detail: expect.stringContaining("app.txt") });
+    await answer(loop, id, "commit_checked_tree");
+    expect(await plain(repo.path, "show", `${commitOf(id)}:app.txt`)).toBe("fixed");
+  });
+
+  it("refuses a reviewer that uses the same agent as the step it reviews", SLOW, async () => {
+    const id = await start(engine(fakeRuntime([edits(FIXED), says("VERDICT: approve")])), template([{ id: "build" }, { id: "review", doneWhen: "reviewer approves" }]));
+    expect(openDecision(id)).toMatchObject({ kind: "run_failure", stepId: "review", detail: expect.stringContaining("same agent") });
+  });
+
+  it("refuses a reviewer's words for a cloud builder when the reviewer sees connection results", SLOW, async () => {
+    const cloud: Agent = { ...agent("cloud-builder"), cliId: "claude-code", model: "haiku" };
+    const agents: Record<string, Agent> = { ...AGENTS, "cloud-builder": cloud, logs: agent("logs", false) };
+    const builder = fakeRuntime([edits(FIXED)]);
+    const reviewer = fakeRuntime([says("Log line: CUSTOMER_SECRET_123\nVERDICT: changes")]);
+    const logs = fakeRuntime([says("Found CUSTOMER_SECRET_123 in the logs.")]);
+    const loop = engine(builder, { agent: (_r, id) => agents[id], runtime: (a) => (a.id === "reviewer" ? reviewer : a.id === "logs" ? logs : builder) });
+    const uses = [{ connectionId: "northwind-logs", access: "read" }];
+    const tpl = template(
+      [
+        { id: "logs", agentId: "logs", connections: uses },
+        { id: "build", agentId: "cloud-builder", data: "repo-and-diff", maxAttempts: 2 },
+        { id: "review", agentId: "reviewer", sees: ["logs"], doneWhen: "reviewer approves", ifChangesRequested: { action: "back", stepId: "build" }, maxAttempts: 2 },
+      ],
+      { uses: { repos: { picked: "edit", named: [] }, connections: uses, commands: [] } },
+    );
+    const id = await start(loop, tpl);
+    expect(openDecision(id)).toMatchObject({ kind: "run_failure", stepId: "build", detail: expect.stringContaining("results from connections") });
+    expect(builder.calls).toHaveLength(1);
+  });
+});
+
+describe("run loop: review fixes", () => {
+  it("with the defaults (max 1, if_failed ask), Retry step at the limit grants the attempt", SLOW, async () => {
+    const loop = engine(fakeRuntime([edits(WRONG), edits(FIXED)]));
+    const id = await start(loop, template([{ ...BUILD_CHECKED, ifFailed: { action: "ask" }, maxAttempts: 1 }]));
+    await answer(loop, id, "retry_step");
+    expect(item(id).steps[0]?.attempts.map((a) => a.result)).toEqual(["failed", "passed"]);
+    expect(item(id).state).toBe("done");
+  });
+
+  it("the same failure twice asks before if_failed sends the item back", SLOW, async () => {
+    const builder = fakeRuntime([edits(WRONG)]);
+    const checker = fakeRuntime([says("Ready.")]);
+    const loop = engine(builder, { runtime: (a) => (a.id === "reviewer" ? checker : builder) });
+    const tpl = template([
+      { id: "build", maxAttempts: 5 },
+      { id: "verify", agentId: "reviewer", doneWhen: "checks pass", checks: { commands: ["sh check.sh"] }, ifFailed: { action: "back", stepId: "build" }, maxAttempts: 5 },
+    ]);
+    const id = await start(loop, tpl);
+    expect(item(id).steps.map((s) => s.attempts.length)).toEqual([2, 2]);
+    expect(openDecision(id)).toMatchObject({ kind: "after_failure", stepId: "verify", detail: expect.stringContaining("twice in a row") });
+  });
+
+  it("a step's final reply reaches the steps that see it as {{ <step>.summary }}", SLOW, async () => {
+    const runtime = fakeRuntime([says("Use a lookup table."), edits(FIXED)]);
+    const tpl = template([{ id: "plan" }, { ...BUILD_CHECKED, sees: ["plan"], instructions: { text: "Build it as planned: {{ plan.summary }}" } }]);
+    const id = await start(engine(runtime), tpl);
+    expect(runtime.calls[1]?.request.prompt).toContain("Use a lookup table.");
+    expect(item(id).state).toBe("done");
+  });
+
+  it("reuses the worktree a crashed start made but did not record", SLOW, async () => {
+    const created = store.create({ template: template([BUILD_CHECKED]), title: "Fix it", text: "Fix it", repoIds: [repo.id] });
+    if (!created.ok) throw new Error(created.error.message);
+    const made = await createWorktree(git, repo, created.value.id);
+    if (!made.ok) throw new Error(made.error.message);
+    const loop = engine(fakeRuntime([edits(FIXED)]));
+    await loop.settled(created.value.id);
+    expect(item(created.value.id)).toMatchObject({ state: "done", worktrees: [{ dir: made.value.folder, baseCommit: made.value.baseCommit }] });
+  });
+
+  it("records the commit a crashed Finish made but did not record", SLOW, async () => {
+    const loop = engine(fakeRuntime([edits(FIXED)]));
+    const id = await start(loop, template([{ id: "plan", doneWhen: "you approve" }]));
+    // The crash window: Tokama's commit is on the branch, and the log does not have it.
+    const wt = worktreeDir(id);
+    await plain(wt, "add", "-A");
+    const tree = await plain(wt, "write-tree");
+    const base = item(id).worktrees[0]!.baseCommit!;
+    const commit = await plain(wt, "commit-tree", tree, "-p", base, "-m", "tokama: Fix the app");
+    await plain(wt, "update-ref", `refs/heads/${item(id).worktrees[0]!.branch}`, commit, base);
+    await answer(loop, id, "approve");
+    expect(item(id)).toMatchObject({ state: "done", outcome: { commits: [{ commit }] } });
+  });
+
+  for (const order of [["run_failure", "tamper"], ["tamper", "run_failure"]] as const) {
+    it(`a tamper question and a run failure across two restarts, answered ${order.join(" then ")}, do not get stuck`, SLOW, async () => {
+      const id = await start(engine(fakeRuntime([edits({ ...FIXED, "package.json": "{}\n" })])), template([BUILD_CHECKED]));
+      expect(openDecision(id)?.kind).toBe("tamper");
+      const restart = async () => {
+        store = ItemStore.open({ home: tokamaHome, hostId: HOST, clock }).store;
+        const loop = engine(fakeRuntime([edits(FIXED)]));
+        await loop.ready;
+        return loop;
+      };
+      const choiceFor = { run_failure: "retry_step", tamper: "approve" } as const;
+      let loop = await restart();
+      await answer(loop, id, choiceFor[order[0]], order[0]);
+      loop = await restart();
+      await answer(loop, id, choiceFor[order[1]], order[1]);
+      expect(item(id).state).toBe("done");
+    });
+  }
 });
