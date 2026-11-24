@@ -4,8 +4,10 @@ import type { Result } from "../result/index.js";
 import {
   type ClientMessage,
   ClientMessageSchema,
+  type Command,
   type CommandResult,
   CommandResultSchemas,
+  CommandSchema,
   type CommandType,
   type EngineMessage,
   EngineMessageSchema,
@@ -13,8 +15,10 @@ import {
   HandshakeReplySchema,
   type HelloMessage,
   HelloMessageSchema,
+  type Query,
   type QueryResult,
   QueryResultSchemas,
+  QuerySchema,
   type QueryType,
   type ServerMessage,
   ServerMessageSchema,
@@ -47,6 +51,10 @@ export { parseWith, type ParseError, type ParseIssue } from "./parse.js";
 export const parseClientMessage = (input: unknown): Result<ClientMessage, ParseError> => parseWith(ClientMessageSchema, input);
 export const parseServerMessage = (input: unknown): Result<ServerMessage, ParseError> => parseWith(ServerMessageSchema, input);
 export const parseEngineMessage = (input: unknown): Result<EngineMessage, ParseError> => parseWith(EngineMessageSchema, input);
+/** Parses a query on its own, e.g. one a desktop renderer asks for through the preload bridge. */
+export const parseQuery = (input: unknown): Result<Query, ParseError> => parseWith(QuerySchema, input);
+/** Parses a command on its own, e.g. one a desktop renderer sends through the preload bridge. */
+export const parseCommand = (input: unknown): Result<Command, ParseError> => parseWith(CommandSchema, input);
 export const parseHelloMessage = (input: unknown): Result<HelloMessage, ParseError> => parseWith(HelloMessageSchema, input);
 export const parseHandshakeReply = (input: unknown): Result<HandshakeReply, ParseError> => parseWith(HandshakeReplySchema, input);
 /** Parses a successful reply's data for the query type that asked for it. */

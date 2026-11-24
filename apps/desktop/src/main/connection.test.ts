@@ -1,7 +1,7 @@
 import type { ClientEvent, ConnectError, EngineClient } from "@tokama/client";
 import { err, ok, type Result } from "@tokama/core";
 import { describe, expect, it, vi } from "vitest";
-import type { ConnectionState } from "../shared/bridge.js";
+import type { BridgeEvent, ConnectionState } from "../shared/bridge.js";
 import { watchConnection } from "./connection.js";
 
 /** A client whose events the test pushes by hand. */
@@ -38,9 +38,16 @@ function fakeClient(engineId = "engine-1") {
 
 function watch(connect: () => Promise<Result<EngineClient, ConnectError>>, logTail: string[] = []) {
   const states: ConnectionState[] = [];
+  const events: BridgeEvent[] = [];
   const readLogTail = vi.fn(() => logTail);
-  const watcher = watchConnection({ connect, logPath: "/run/tokama/engine.log", readLogTail, onState: (s) => states.push(s) });
-  return { watcher, states, readLogTail };
+  const watcher = watchConnection({
+    connect,
+    logPath: "/run/tokama/engine.log",
+    readLogTail,
+    onState: (s) => states.push(s),
+    onEvent: (e) => events.push(e),
+  });
+  return { watcher, states, events, readLogTail };
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -83,15 +90,34 @@ describe("watchConnection", () => {
     ]);
   });
 
-  it("ignores engine events and fails when the client gives up", async () => {
+  it("passes engine events on without a state change, and fails when the client gives up", async () => {
     const { client, push } = fakeClient();
-    const { watcher, states } = watch(async () => ok(client));
+    const { watcher, states, events } = watch(async () => ok(client));
     await settle();
-    push({ kind: "event", seq: 1, event: { type: "item_updated" } } as unknown as ClientEvent);
+    const event = { kind: "event", seq: 1, event: { type: "item_updated" } } as unknown as ClientEvent;
+    push(event);
+    push({ kind: "disconnected" });
     push({ kind: "failed", error: { code: "unauthorized", message: "bad token" } });
     await settle();
-    expect(states.map((s) => s.status)).toEqual(["connected", "failed"]);
+    expect(events).toEqual([event]);
+    expect(states.map((s) => s.status)).toEqual(["connected", "reconnecting", "failed"]);
     expect(watcher.state()).toMatchObject({ status: "failed", reason: "bad token" });
+  });
+
+  it("gives out the client only while connected or reconnecting", async () => {
+    const { client, push } = fakeClient();
+    let resolve: (value: Result<EngineClient, ConnectError>) => void = () => {};
+    const { watcher } = watch(() => new Promise((r) => (resolve = r)));
+    expect(watcher.client()).toBeUndefined();
+    resolve(ok(client));
+    await settle();
+    expect(watcher.client()).toBe(client);
+    push({ kind: "disconnected" });
+    await settle();
+    expect(watcher.client()).toBe(client);
+    push({ kind: "failed", error: { code: "start_failed", message: "gone" } });
+    await settle();
+    expect(watcher.client()).toBeUndefined();
   });
 
   it("reports an unexpected throw from connect as a failure", async () => {

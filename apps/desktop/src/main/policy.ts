@@ -73,10 +73,22 @@ export interface IpcSender {
 /**
  * Wraps an IPC handler so it answers only the app's own pages (`isAppPage` gets the sending
  * frame's URL). Every bridge channel goes through this, so a new one cannot skip the check.
+ * `fn` gets the renderer's arguments as `unknown`: it validates them itself.
  */
-export function guardedHandler<T>(isAppPage: (url: string) => boolean, fn: () => T): (event: IpcSender) => T {
-  return (event) => {
+export function guardedHandler<T>(
+  isAppPage: (url: string) => boolean,
+  fn: (...args: unknown[]) => T,
+): (event: IpcSender, ...args: unknown[]) => T {
+  return (event, ...args) => {
     if (!isAppPage(event.senderFrame?.url ?? "")) throw new Error("refused: not an app page");
-    return fn();
+    return fn(...args);
   };
+}
+
+/**
+ * Whether the app starts the engine in its fake mode (`--sample`, sample data): only outside a
+ * packaged app, and only when the dev script sets TOKAMA_SAMPLE=1.
+ */
+export function sampleEngineEnabled(value: string | undefined, isPackaged: boolean): boolean {
+  return !isPackaged && value === "1";
 }

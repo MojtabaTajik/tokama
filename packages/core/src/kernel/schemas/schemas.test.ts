@@ -9,12 +9,14 @@ import {
   parseAgentId,
   parseCallId,
   parseClientMessage,
+  parseCommand,
   parseDecisionId,
   parseEngineMessage,
   parseHandshakeReply,
   parseHelloMessage,
   parseItemId,
   parseItemRecord,
+  parseQuery,
   parseQueryResult,
   parseServerMessage,
   parseTemplateId,
@@ -227,6 +229,15 @@ describe("direction-specific parsers", () => {
 
   it("parseServerMessage accepts replies and events only", () => {
     expect([command, query, reply, event].map((message) => parseServerMessage(message).ok)).toEqual([false, false, true, true]);
+  });
+
+  it("parseQuery and parseCommand take a bare query or command", () => {
+    expect(parseQuery(query.query)).toEqual({ ok: true, value: query.query });
+    expect(parseCommand(command.command)).toEqual({ ok: true, value: command.command });
+    expect(parseQuery(command.command).ok).toBe(false);
+    expect(parseCommand(query.query).ok).toBe(false);
+    expect(parseQuery({ type: "board", workspaceId: "Not An Id" }).ok).toBe(false);
+    expect(parseQuery(query).ok).toBe(false);
   });
 });
 
