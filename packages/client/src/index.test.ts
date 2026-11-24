@@ -47,6 +47,41 @@ describe("@tokama/client", () => {
     expect(parseClientMessage(command)).toEqual({ ok: true, value: command });
   });
 
+  it("parses command reply data per command type, and reports invalid_reply for the wrong shape", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "engine.token"), "t0k");
+    const itemId = "item_0b9f3c1e-6a2d-4f7b-9c1a-2e3d4f5a6b7c";
+    // Answers the hello, then each command: start_item with a good id, stop_item with data it must not have.
+    const server = createServer((socket) => {
+      let buffer = "";
+      socket.on("data", (chunk) => {
+        buffer += chunk.toString();
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          const message = JSON.parse(line) as { kind: string; requestId?: string; command?: { type: string } };
+          if (message.kind === "hello") {
+            socket.write(`${JSON.stringify({ kind: "welcome", apiVersion: API_VERSION, engineId: "e1" })}\n`);
+            continue;
+          }
+          const data = { itemId };
+          socket.write(`${JSON.stringify({ apiVersion: API_VERSION, kind: "reply", requestId: message.requestId, result: { ok: true, data } })}\n`);
+        }
+      });
+      socket.on("error", () => {});
+    });
+    await new Promise<void>((resolve) => server.listen(join(dir, "engine.sock"), resolve));
+    cleanups.push(() => new Promise((resolve) => server.close(resolve)));
+    const connected = await connect({ dir, reconnect: false });
+    if (!connected.ok) throw new Error(connected.error.message);
+    cleanups.push(() => connected.value.close());
+
+    const started = await connected.value.command({ type: "start_item", workspaceId: "northwind-prod", templateId: "quick-fix", repoIds: [], text: "x" });
+    // Typed per command: no cast needed to read itemId.
+    expect(started.ok && started.data.itemId).toBe(itemId);
+    expect(await connected.value.command({ type: "stop_item", itemId })).toMatchObject({ ok: false, error: { code: "invalid_reply" } });
+  });
+
   it("reports not_running without a start command", async () => {
     expect(await connect({ dir: tempDir() })).toMatchObject({ ok: false, error: { code: "not_running" } });
   });

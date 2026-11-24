@@ -4,7 +4,7 @@
 // templates slice.
 import { z } from "zod";
 import { AgentIdSchema, ConnectionIdSchema, RepoIdSchema, TemplateIdSchema, WorkspaceIdSchema } from "./ids.js";
-import { DataRuleSchema, ItemKindSchema, StageSchema } from "./item.js";
+import { ConnectionUsesSchema, DataRuleSchema, ItemKindSchema, StageSchema } from "./item.js";
 
 const label = z.string().min(1).max(100);
 
@@ -20,12 +20,15 @@ export const ConnectionSummarySchema = z.strictObject({
   type: label,
 });
 
+/** The AI CLIs and model hosts Tokama drives. Clients map the id to a label. */
+export const AiCliIdSchema = z.enum(["claude-code", "codex-cli", "ollama"]);
+
 /** Listed in join order; clients give identity dots by that order. */
 export const AgentSummarySchema = z.strictObject({
   id: AgentIdSchema,
   name: label,
-  /** The AI CLI that runs it, e.g. "Claude Code". */
-  cli: label,
+  /** The AI CLI that runs it. */
+  cliId: AiCliIdSchema,
   model: label,
   /** Where the model runs: on this machine or at a cloud provider. */
   runsOn: z.enum(["local", "cloud"]),
@@ -37,6 +40,8 @@ export const TemplateStepSchema = z.strictObject({
   /** Absent for steps Tokama runs itself, such as checks. */
   agentId: AgentIdSchema.optional(),
   data: DataRuleSchema,
+  /** The connections this step may use: a subset of the template's. */
+  uses: ConnectionUsesSchema.optional(),
 });
 
 export const TemplateSummarySchema = z.strictObject({
@@ -44,7 +49,7 @@ export const TemplateSummarySchema = z.strictObject({
   name: label,
   kind: ItemKindSchema,
   /** The connections the template may use, with the access it asks for ("query", "read-only"). */
-  connections: z.array(z.strictObject({ id: ConnectionIdSchema, access: label })),
+  connections: ConnectionUsesSchema,
   steps: z.array(TemplateStepSchema).min(1),
 });
 
@@ -59,6 +64,7 @@ export const WorkspaceSummarySchema = z.strictObject({
   templates: z.array(TemplateSummarySchema),
 });
 
+export type AiCliId = z.output<typeof AiCliIdSchema>;
 export type RepoSummary = z.output<typeof RepoSummarySchema>;
 export type ConnectionSummary = z.output<typeof ConnectionSummarySchema>;
 export type AgentSummary = z.output<typeof AgentSummarySchema>;

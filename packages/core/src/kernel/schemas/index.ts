@@ -4,6 +4,9 @@ import type { Result } from "../result/index.js";
 import {
   type ClientMessage,
   ClientMessageSchema,
+  type CommandResult,
+  CommandResultSchemas,
+  type CommandType,
   type EngineMessage,
   EngineMessageSchema,
   type HandshakeReply,
@@ -50,6 +53,10 @@ export const parseHandshakeReply = (input: unknown): Result<HandshakeReply, Pars
 export function parseQueryResult<T extends QueryType>(type: T, data: unknown): Result<QueryResult<T>, ParseError> {
   // The schema map is indexed by a generic key, which TypeScript widens to the union of schemas.
   return parseWith(QueryResultSchemas[type], data) as Result<QueryResult<T>, ParseError>;
+}
+/** Parses a successful reply's data for the command type that sent it. */
+export function parseCommandResult<T extends CommandType>(type: T, data: unknown): Result<CommandResult<T>, ParseError> {
+  return parseWith(CommandResultSchemas[type], data) as Result<CommandResult<T>, ParseError>;
 }
 export const parseItemRecord = (input: unknown): Result<ItemRecord, ParseError> => parseWith(ItemRecordSchema, input);
 export const parseAgentCallUsage = (input: unknown): Result<AgentCallUsage, ParseError> =>

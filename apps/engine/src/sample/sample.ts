@@ -3,13 +3,18 @@
 // slices. Items live in the engine's MemoryItemStore, so every change goes out through the
 // engine's one event path. Nothing is persisted.
 //
-// Removal: delete this folder, the lines in engine.ts and main.ts that mention `sample`, and
-// EngineOptions.clock in engine.ts if nothing else uses it by then.
+// Removal: delete this folder; in engine.ts the `sample` lines, the SampleEngine and systemClock
+// imports and EngineOptions.clock (if nothing else uses them by then); in main.ts the `--sample`
+// flag; and in main.test.ts the test "serves the sample data set with --sample".
 import { randomUUID } from "node:crypto";
 import {
+  type AgentSummary,
   type Clock,
   type Command,
+  type CommandErrorCode,
+  type CommandResult,
   currentStepIndex,
+  type DecisionId,
   err,
   type ItemId,
   type ItemRecord,
@@ -18,7 +23,9 @@ import {
   parseQueryResult,
   type Result,
   type StepRecord,
+  type TemplateId,
   type TimerHandle,
+  type WorkspaceId,
   type WorkspaceSummary,
 } from "@tokama/core";
 import type { MemoryItemStore } from "../store.js";
@@ -28,17 +35,21 @@ import { ITEM_IDS, sampleItems, sampleWorkspaces } from "./data.js";
 export const SAMPLE_TICK_MS = 20_000;
 
 export interface CommandError {
-  readonly code: "not_found" | "invalid_request" | "stale_decision" | "invalid_choice" | "invalid_state";
+  readonly code: CommandErrorCode;
   readonly message: string;
 }
 
-/** The choice of a sample decision that lets the item go on; any other offered choice stops it. */
+/** The choice of a decision that lets the item go on; any other offered choice stops it. */
 const APPROVE = "approve";
+/** Words that make New work text look like an investigation rather than a task. */
+const INVESTIGATION_WORDS = ["alert", "500", "5xx", "error", "errors", "latency", "spike", "slow", "down", "incident", "timeout"];
 
 export class SampleEngine {
   readonly workspaces: WorkspaceSummary[];
-  /** The items the tick moves: the looping sample item and the items started since. */
+  /** The items the tick moves: the looping sample item and the items started or approved since. */
   private readonly live = new Set<string>([ITEM_IDS.working]);
+  /** Started items that wait for approval before a step that sends data to a cloud agent. */
+  private readonly askBeforeCloud = new Set<string>();
 
   /** Puts the sample items into the store; the store must not have subscribers yet, or they hear about them. */
   constructor(
@@ -55,7 +66,7 @@ export class SampleEngine {
     }
   }
 
-  command(command: Command): Result<unknown, CommandError> {
+  command(command: Command): Result<CommandResult<Command["type"]>, CommandError> {
     switch (command.type) {
       case "start_item":
         return this.startItem(command);
@@ -67,6 +78,23 @@ export class SampleEngine {
   }
 
   /**
+   * The workspace's template whose name shares the most words with the text; a template of the
+   * kind the text suggests (an alert or a bug report reads as an investigation) wins a tie.
+   */
+  suggestTemplate(workspaceId: WorkspaceId, text: string): TemplateId | null {
+    const templates = this.workspaces.find((workspace) => workspace.id === workspaceId)?.templates ?? [];
+    const words = new Set(text.toLowerCase().match(/[a-z0-9]+/g) ?? []);
+    const kind = INVESTIGATION_WORDS.some((word) => words.has(word)) ? "investigation" : "task";
+    let best: { id: TemplateId; score: number } | undefined;
+    for (const template of templates) {
+      const nameWords = template.name.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+      const score = 2 * nameWords.filter((word) => word.length > 2 && words.has(word)).length + (template.kind === kind ? 1 : 0);
+      if (!best || score > best.score) best = { id: template.id, score };
+    }
+    return best?.id ?? null;
+  }
+
+  /**
    * Moves each live item on by one step: a queued item starts, a running step passes. The
    * looping sample item starts over instead of finishing, and the other sample items never
    * move, so the board keeps an item in every stage. Items that need you are left alone.
@@ -74,15 +102,15 @@ export class SampleEngine {
   tick(): void {
     for (const id of this.live) {
       const item = this.store.get(id as ItemId);
-      if (!item || item.state === "done" || item.state === "stopped" || item.state === "failed") {
+      if (!item || ended(item)) {
         this.live.delete(id);
         continue;
       }
       const index = currentStepIndex(item);
-      if (item.state === "queued") this.store.put(start(item));
+      if (item.state === "queued") this.store.put(this.enter(item, 0));
       else if (item.steps[index]?.state !== "running") continue;
-      else if (id === ITEM_IDS.working && index === item.steps.length - 1) this.store.put(restart(item));
-      else this.store.put(advance(item));
+      else if (id === ITEM_IDS.working && index === item.steps.length - 1) this.store.put(this.restart(item));
+      else this.store.put(this.advance(item));
     }
   }
 
@@ -102,7 +130,7 @@ export class SampleEngine {
     };
   }
 
-  private startItem(command: Extract<Command, { type: "start_item" }>): Result<{ itemId: ItemId }, CommandError> {
+  private startItem(command: Extract<Command, { type: "start_item" }>): Result<CommandResult<"start_item">, CommandError> {
     const workspace = this.workspaces.find((candidate) => candidate.id === command.workspaceId);
     if (!workspace) return err({ code: "not_found", message: `no workspace ${command.workspaceId}` });
     const template = workspace.templates.find((candidate) => candidate.id === command.templateId);
@@ -124,10 +152,12 @@ export class SampleEngine {
       privacy: template.steps.every((step) => step.data === "none") ? "local_only" : "local_and_cloud",
       state: "queued",
       createdAt: this.clock.now(),
+      cardLine: `queued · ${template.steps.length} steps`,
       steps: template.steps.map((step) => ({ ...step, state: "pending" })),
     };
     this.store.put(item);
     this.live.add(item.id);
+    if (command.options?.askBeforeCloud ?? true) this.askBeforeCloud.add(item.id);
     return ok({ itemId: item.id });
   }
 
@@ -140,19 +170,97 @@ export class SampleEngine {
     if (!item.decision.choices.some((choice) => choice.id === command.choice)) {
       return err({ code: "invalid_choice", message: `"${command.choice}" is not a choice of decision ${command.decisionId}` });
     }
-    this.store.put(command.choice === APPROVE ? advance(item) : stop(item));
+    if (command.choice !== APPROVE) {
+      this.store.put(stop(item));
+      return ok(null);
+    }
+    // Approved: the waiting step runs now, and the tick moves the item on from here.
+    this.store.put(this.run(withoutDecision(item), item.decision.stepIndex, "approved · "));
+    this.live.add(item.id);
     return ok(null);
   }
 
   private stopItem(itemId: ItemId): Result<null, CommandError> {
     const item = this.store.get(itemId);
     if (!item) return err({ code: "not_found", message: `no item ${itemId}` });
-    if (item.state === "done" || item.state === "stopped" || item.state === "failed") {
-      return err({ code: "invalid_state", message: `item ${itemId} has already ended (${item.state})` });
-    }
+    if (ended(item)) return err({ code: "invalid_state", message: `item ${itemId} has already ended (${item.state})` });
     this.store.put(stop(item));
     return ok(null);
   }
+
+  /** The current step passes; the next one starts, or the item is done. */
+  private advance(item: ItemRecord): ItemRecord {
+    const index = currentStepIndex(item);
+    const steps = item.steps.map((step, i) => (i === index ? { ...step, state: "passed" as const, detail: `passed in ${SAMPLE_TICK_MS / 1000} s` } : step));
+    if (index === -1 || index === item.steps.length - 1) {
+      return { ...withoutDecision(item), state: "done", cardLine: `done · ${item.steps.length} steps`, steps };
+    }
+    return this.enter({ ...item, steps }, index + 1);
+  }
+
+  /**
+   * The item enters step `index`: it runs, or, for a started item that asks before cloud steps
+   * and a step whose data rule sends data out, it waits for your approval.
+   */
+  private enter(item: ItemRecord, index: number): ItemRecord {
+    const step = item.steps[index];
+    if (!step || step.data === "none" || !this.askBeforeCloud.has(item.id)) return this.run(item, index);
+    const agent = this.agent(item, step);
+    const target = agent ? `${agent.name} on ${agent.model}` : "a cloud agent";
+    return {
+      ...item,
+      state: "needs_you",
+      cardLine: "needs you · cloud step approval",
+      decision: {
+        id: `decision_${randomUUID()}` as DecisionId,
+        stepIndex: index,
+        question: `Send ${step.data === "repo-and-diff" ? "the repo and the diff" : "the redacted summary"} to ${target}?`,
+        why: `${step.name} runs on a cloud agent; its data rule is ${step.data}.`,
+        summaryText: summaryOf(item),
+        choices: [
+          { id: APPROVE, label: "Approve and send" },
+          { id: "stop", label: "Stop" },
+        ],
+      },
+      steps: replaceStep(item.steps, index, { ...step, state: "needs_you", detail: "waits for your approval of the cloud step" }),
+    };
+  }
+
+  /** Step `index` runs; the item is running. */
+  private run(item: ItemRecord, index: number, prefix = ""): ItemRecord {
+    const step = item.steps[index];
+    if (!step) return item;
+    const agent = this.agent(item, step);
+    return {
+      ...item,
+      state: "running",
+      cardLine: `${step.name} · ${agent?.name ?? "checks"}`,
+      steps: replaceStep(item.steps, index, {
+        ...step,
+        state: "running",
+        detail: `${prefix}${agent ? `runs on ${agent.name} (${agent.model})` : "Tokama runs the checks"}`,
+      }),
+    };
+  }
+
+  /** The item starts over at its first step. */
+  private restart(item: ItemRecord): ItemRecord {
+    const steps = item.steps.map((step): StepRecord => {
+      const pending = { ...step, state: "pending" as const };
+      delete pending.detail;
+      return pending;
+    });
+    return this.enter({ ...withoutDecision(item), steps }, 0);
+  }
+
+  private agent(item: ItemRecord, step: StepRecord): AgentSummary | undefined {
+    if (!step.agentId) return undefined;
+    return this.workspaces.find((workspace) => workspace.id === item.workspaceId)?.agents.find((agent) => agent.id === step.agentId);
+  }
+}
+
+function ended(item: ItemRecord): boolean {
+  return item.state === "done" || item.state === "stopped" || item.state === "failed";
 }
 
 /** The first non-blank line of the text, cut to a card title. */
@@ -162,43 +270,26 @@ function titleOf(text: string): string {
   return title.length > 120 ? `${title.slice(0, 119)}…` : title;
 }
 
-/** The current step passes; the next one runs, or the item is done. Clears the decision and the hint. */
-function advance(item: ItemRecord): ItemRecord {
-  const index = currentStepIndex(item);
-  if (index === -1) return { ...withoutExtras(item), state: "done" };
-  const steps = item.steps.map((step, i): StepRecord => {
-    if (i === index) return settle(step, "passed");
-    if (i === index + 1) return { ...step, state: "running" };
-    return step;
-  });
-  return { ...withoutExtras(item), state: index === item.steps.length - 1 ? "done" : "running", steps };
-}
-
-/** A queued item starts its first step. */
-function start(item: ItemRecord): ItemRecord {
-  return { ...item, state: "running", steps: item.steps.map((step, i) => (i === 0 ? { ...step, state: "running" } : step)) };
-}
-
-/** The item starts over at its first step. */
-function restart(item: ItemRecord): ItemRecord {
-  return start({ ...withoutExtras(item), steps: item.steps.map((step) => settle(step, "pending")) });
+/** The text a cloud-step approval shows: what would leave the machine. */
+function summaryOf(item: ItemRecord): string {
+  const done = item.steps.filter((step) => step.state === "passed").map((step) => `- ${step.name}: ${step.detail ?? "passed"}`);
+  return [`Request: ${item.text}`, `Repos: ${item.repoIds.join(", ") || "none"}`, ...(done.length ? ["Steps so far:", ...done] : [])].join("\n");
 }
 
 /** The item stops; its running or waiting step is marked stopped, later steps stay pending. */
 function stop(item: ItemRecord): ItemRecord {
-  const steps = item.steps.map((step) => (step.state === "running" || step.state === "needs_you" ? settle(step, "stopped") : step));
-  return { ...withoutExtras(item), state: "stopped", steps };
+  const steps = item.steps.map((step) =>
+    step.state === "running" || step.state === "needs_you" ? { ...step, state: "stopped" as const, detail: "stopped by you" } : step,
+  );
+  return { ...withoutDecision(item), state: "stopped", cardLine: "stopped by you", steps };
 }
 
-function settle(step: StepRecord, state: "passed" | "stopped" | "pending"): StepRecord {
-  const settled = { ...step, state };
-  delete settled.waitingFor;
-  return settled;
+function replaceStep(steps: readonly StepRecord[], index: number, step: StepRecord): StepRecord[] {
+  return steps.map((current, i) => (i === index ? step : current));
 }
 
-function withoutExtras(item: ItemRecord): ItemRecord {
+function withoutDecision(item: ItemRecord): ItemRecord {
   const rest = { ...item };
   delete rest.decision;
-  delete rest.hint;
   return rest;
 }

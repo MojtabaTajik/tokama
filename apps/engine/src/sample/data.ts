@@ -16,13 +16,14 @@ export const ITEM_IDS = {
   done: "item_1a2b3c4d-0006-4a1b-8c1d-000000000006",
   tailspinWorking: "item_1a2b3c4d-0007-4a1b-8c1d-000000000007",
   building: "item_1a2b3c4d-0008-4a1b-8c1d-000000000008",
+  failed: "item_1a2b3c4d-0009-4a1b-8c1d-000000000009",
 } as const;
 
 const agents = {
-  architect: { id: "architect", name: "Architect", cli: "Claude Code", model: "opus", runsOn: "cloud" },
-  investigator: { id: "local-investigator", name: "Local investigator", cli: "Claude Code", model: "qwen3-coder:30b", runsOn: "local" },
-  reviewer: { id: "reviewer", name: "Reviewer", cli: "Codex CLI", model: "gpt-5-codex", runsOn: "cloud" },
-  builder: { id: "local-builder", name: "Local builder", cli: "Claude Code", model: "qwen3-coder:30b", runsOn: "local" },
+  architect: { id: "architect", name: "Architect", cliId: "claude-code", model: "opus", runsOn: "cloud" },
+  investigator: { id: "local-investigator", name: "Local investigator", cliId: "claude-code", model: "qwen3-coder:30b", runsOn: "local" },
+  reviewer: { id: "reviewer", name: "Reviewer", cliId: "codex-cli", model: "gpt-5-codex", runsOn: "cloud" },
+  builder: { id: "local-builder", name: "Local builder", cliId: "claude-code", model: "qwen3-coder:30b", runsOn: "local" },
 };
 
 const templates = {
@@ -31,13 +32,22 @@ const templates = {
     name: "Emergency investigator",
     kind: "investigation",
     connections: [
-      { id: "app-insights", access: "query" },
-      { id: "postgres-main", access: "read-only" },
-      { id: "azure-prod", access: "reader" },
+      { connectionId: "app-insights", access: "query" },
+      { connectionId: "postgres-main", access: "read-only" },
+      { connectionId: "azure-prod", access: "reader" },
     ],
     steps: [
       { name: "Triage", stage: "working", agentId: "local-investigator", data: "none" },
-      { name: "Query logs and metrics", stage: "working", agentId: "local-investigator", data: "none" },
+      {
+        name: "Query logs and metrics",
+        stage: "working",
+        agentId: "local-investigator",
+        data: "none",
+        uses: [
+          { connectionId: "app-insights", access: "query" },
+          { connectionId: "postgres-main", access: "read-only" },
+        ],
+      },
       { name: "Find the cause", stage: "working", agentId: "local-investigator", data: "none" },
       { name: "Propose a fix", stage: "review", agentId: "architect", data: "summary-after-approval" },
     ],
@@ -46,9 +56,15 @@ const templates = {
     id: "db-slow-query",
     name: "DB slow query check",
     kind: "investigation",
-    connections: [{ id: "postgres-main", access: "read-only" }],
+    connections: [{ connectionId: "postgres-main", access: "read-only" }],
     steps: [
-      { name: "Collect slow queries", stage: "working", agentId: "local-investigator", data: "none" },
+      {
+        name: "Collect slow queries",
+        stage: "working",
+        agentId: "local-investigator",
+        data: "none",
+        uses: [{ connectionId: "postgres-main", access: "read-only" }],
+      },
       { name: "Explain plans", stage: "working", agentId: "local-investigator", data: "none" },
       { name: "Summarize", stage: "review", agentId: "local-investigator", data: "none" },
     ],
@@ -113,15 +129,15 @@ export const sampleWorkspaces = [
   },
 ];
 
-type StepState = "pending" | "running" | "needs_you" | "passed";
+type StepState = "pending" | "running" | "needs_you" | "passed" | "failed";
 
-/** The template's steps with these states (and optional waits), in order. */
-function steps(template: { steps: readonly object[] }, states: readonly StepState[], waits: Record<number, string> = {}) {
-  return template.steps.map((step, index) => ({
-    ...step,
-    state: states[index] ?? "pending",
-    ...(waits[index] ? { waitingFor: waits[index] } : {}),
-  }));
+/** The template's steps with these states and detail lines (a passed step without one says "passed"). */
+function steps(template: { steps: readonly object[] }, states: readonly StepState[], details: Record<number, string> = {}) {
+  return template.steps.map((step, index) => {
+    const state = states[index] ?? "pending";
+    const detail = details[index] ?? (state === "passed" ? "passed" : undefined);
+    return { ...step, state, ...(detail ? { detail } : {}) };
+  });
 }
 
 const MINUTE = 60_000;
@@ -142,7 +158,7 @@ export function sampleItems(now: number) {
       privacy: "local_and_cloud",
       state: "queued",
       createdAt: now - 2 * MINUTE,
-      hint: "waiting for a free agent",
+      cardLine: "waiting for a free agent",
       steps: steps(templates.planAndBuild, []),
     },
     {
@@ -157,8 +173,8 @@ export function sampleItems(now: number) {
       privacy: "local_and_cloud",
       state: "running",
       createdAt: now - 14 * MINUTE,
-      hint: "p95 1.8s · 3 of 10 queries",
-      steps: steps(templates.emergency, ["passed", "running"], { 1: "App Insights query results" }),
+      cardLine: "p95 1.8s · 3 of 10 queries",
+      steps: steps(templates.emergency, ["passed", "running"], { 0: "scope: checkout, last 30 min", 1: "waits for App Insights query results" }),
     },
     {
       ...base,
@@ -172,8 +188,8 @@ export function sampleItems(now: number) {
       privacy: "local_and_cloud",
       state: "running",
       createdAt: now - 33 * MINUTE,
-      hint: "turn 18 of 40",
-      steps: steps(templates.planAndBuild, ["passed", "running"], { 1: "Local builder on Ollama" }),
+      cardLine: "turn 18 of 40",
+      steps: steps(templates.planAndBuild, ["passed", "running"], { 0: "plan approved", 1: "waits for Local builder on Ollama" }),
     },
     {
       ...base,
@@ -187,17 +203,22 @@ export function sampleItems(now: number) {
       privacy: "local_and_cloud",
       state: "needs_you",
       createdAt: now - 41 * MINUTE,
-      hint: "cause found · null customer region",
+      cardLine: "cause found · null customer region",
       decision: {
         id: DECISION_ID,
         stepIndex: 3,
         question: "Send the redacted findings summary (1.2 KB) to Architect on Claude Code?",
+        why: "Propose a fix runs on a cloud agent; its data rule sends a summary after your approval.",
+        summaryText:
+          "orders-api returns 500 on POST /orders since the 14:02 deploy. Cause: customers without a region " +
+          "(about 3% of requests) hit a null reference in TaxCalculator. Evidence: 6 queries, error rate 4.1%. " +
+          "Customer names and ids are redacted.",
         choices: [
           { id: "approve", label: "Approve and send" },
           { id: "stop", label: "Stop" },
         ],
       },
-      steps: steps(templates.emergency, ["passed", "passed", "passed", "needs_you"], { 3: "your approval of the cloud step" }),
+      steps: steps(templates.emergency, ["passed", "passed", "passed", "needs_you"], { 0: "scope: orders-api, last 2 h", 1: "6 queries · 41 rows", 2: "null customer region in TaxCalculator", 3: "waits for your approval of the cloud step" }),
     },
     {
       ...base,
@@ -211,8 +232,8 @@ export function sampleItems(now: number) {
       privacy: "local_only",
       state: "running",
       createdAt: now - 23 * MINUTE,
-      hint: "pnpm test · 212 of 340",
-      steps: steps(templates.quickFix, ["passed", "running"], { 1: "checks: pnpm test" }),
+      cardLine: "pnpm test · 212 of 340",
+      steps: steps(templates.quickFix, ["passed", "running"], { 0: "2 files changed", 1: "runs pnpm test" }),
     },
     {
       ...base,
@@ -226,8 +247,8 @@ export function sampleItems(now: number) {
       privacy: "local_and_cloud",
       state: "running",
       createdAt: now - 95 * MINUTE,
-      hint: "+184 −21 · 6 files",
-      steps: steps(templates.planAndBuild, ["passed", "passed", "passed", "running"], { 3: "Reviewer verdict" }),
+      cardLine: "+184 −21 · 6 files",
+      steps: steps(templates.planAndBuild, ["passed", "passed", "passed", "running"], { 1: "+184 −21 · 6 files", 2: "pnpm test · 340 passed", 3: "waits for the Reviewer verdict" }),
     },
     {
       ...base,
@@ -241,8 +262,23 @@ export function sampleItems(now: number) {
       privacy: "local_only",
       state: "done",
       createdAt: now - 180 * MINUTE,
-      hint: "missing index on order_items(order_id)",
+      cardLine: "missing index on order_items(order_id)",
       steps: steps(templates.slowQuery, ["passed", "passed", "passed"]),
+    },
+    {
+      ...base,
+      id: ITEM_IDS.failed,
+      kind: "task",
+      workspaceId: NORTHWIND,
+      templateId: templates.quickFix.id,
+      title: "Upgrade the Postgres driver in orders-api",
+      text: "Upgrade the Postgres driver in orders-api to the next major version.",
+      repoIds: ["orders-api"],
+      privacy: "local_only",
+      state: "failed",
+      createdAt: now - 130 * MINUTE,
+      cardLine: "checks failed 3 times",
+      steps: steps(templates.quickFix, ["passed", "failed"], { 1: "pnpm test: 4 failing after 3 attempts" }),
     },
     {
       ...base,
@@ -256,8 +292,8 @@ export function sampleItems(now: number) {
       privacy: "local_only",
       state: "running",
       createdAt: now - 6 * MINUTE,
-      hint: "attempt 2 of 3",
-      steps: steps(templates.quickFix, ["running"], { 0: "Local builder on Ollama" }),
+      cardLine: "attempt 2 of 3",
+      steps: steps(templates.quickFix, ["running"], { 0: "waits for Local builder on Ollama" }),
     },
   ];
 }

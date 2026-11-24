@@ -18,6 +18,7 @@ import {
   type BoardResult,
   checkEngineDir,
   type Clock,
+  type CommandErrorCode,
   type ConnectionErrorCode,
   type ClientMessage,
   encodeLine,
@@ -32,6 +33,7 @@ import {
   parseHelloMessage,
   type ParseError,
   type Result,
+  type SuggestTemplateResult,
   systemClock,
   type WorkspacesResult,
 } from "@tokama/core";
@@ -154,7 +156,8 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   const dispatch = async (message: ClientMessage): Promise<ReplyResult> => {
     if (message.kind === "command") {
       if (!sample) {
-        return { ok: false, error: { code: "not_implemented", message: `command "${message.command.type}" is not implemented yet` } };
+        const code: CommandErrorCode = "not_implemented";
+        return { ok: false, error: { code, message: `command "${message.command.type}" is not implemented yet` } };
       }
       const result = sample.command(message.command);
       return result.ok ? { ok: true, data: result.value } : { ok: false, error: result.error };
@@ -169,6 +172,8 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
         const item = store.get(query.itemId);
         return item ? { ok: true, data: { item } satisfies ItemResult } : { ok: false, error: { code: "not_found", message: `no item ${query.itemId}` } };
       }
+      case "suggest_template":
+        return { ok: true, data: { templateId: sample?.suggestTemplate(query.workspaceId, query.text) ?? null } satisfies SuggestTemplateResult };
     }
   };
 
