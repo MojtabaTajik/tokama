@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 const theme = readFileSync(join(import.meta.dirname, "theme.css"), "utf8");
 const app = readFileSync(join(import.meta.dirname, "app.css"), "utf8");
 
-// The app UI colours from CLAUDE.md ("App UI colors"), each a token in theme.css.
+// The app UI colours, each a token in theme.css.
 const TOKENS: Record<string, string> = {
   "--ground": "#0b0f17",
   "--panel": "#121826",
