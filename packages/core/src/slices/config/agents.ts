@@ -1,6 +1,7 @@
 // Agents: `<id>.md` files with YAML front matter (name, runs_on, model, tools) and the role text
 // as the body. Personal agents (`<tokama home>/agents/`) win over the repo's shared ones
-// (`<repo>/.tokama/agents/`), which win over the built-ins.
+// (`<repo>/.tokama/agents/`), which win over the built-ins. Links are followed in the home
+// folder only: a repo's content can come from anyone.
 import { lstat, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
@@ -8,7 +9,7 @@ import { rulePrefixes } from "../../kernel/command-policy/index.js";
 import type { ToolLimits } from "../../kernel/ports/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import { type AgentId, AgentIdSchema, type AiCliId, AiCliIdSchema, type RepoId } from "../../kernel/schemas/index.js";
-import { LINK_REFUSED, readConfigFile } from "./read.js";
+import { LINK_REFUSED, readConfigFile, readHomeConfigFile, resolveHomePath } from "./read.js";
 import type { Repo } from "./repos.js";
 import { clean, CONFIG_FORMAT, type ConfigProblem, parseYaml, quote } from "./yaml-file.js";
 
@@ -139,12 +140,15 @@ export async function loadAgents(options: LoadAgentsOptions): Promise<LoadedAgen
   const problems: ConfigProblem[] = [];
   const entries: Entry[] = [];
 
-  entries.push(...(await loadFolder(join(options.tokamaHome, "agents"), "agents", { kind: "personal" }, problems)));
+  // The home folder is the engineer's own: links in it are followed, so dotfile managers work.
+  const personal = await resolveHomePath(join(options.tokamaHome, "agents"), "agents");
+  if (!personal.ok) problems.push(personal.error);
+  else if (personal.value !== undefined) entries.push(...(await loadFolder(personal.value, "agents", { kind: "personal" }, problems, readHomeConfigFile)));
   if (options.repo !== undefined) {
     const { id, path } = options.repo;
     // The repo itself is the engineer's; a linked .tokama in it could lead anywhere.
     if (await isLink(join(path, ".tokama"))) problems.push({ file: `${id}/.tokama`, message: LINK_REFUSED });
-    else entries.push(...(await loadFolder(join(path, ".tokama", "agents"), `${id}/.tokama/agents`, { kind: "repo", repoId: id }, problems)));
+    else entries.push(...(await loadFolder(join(path, ".tokama", "agents"), `${id}/.tokama/agents`, { kind: "repo", repoId: id }, problems, readConfigFile)));
   }
   for (const [id, content] of Object.entries(BUILTIN_AGENT_FILES)) {
     entries.push(toEntry(parseAgentFile(content, AgentIdSchema.parse(id), { kind: "builtin" }, `builtin/${id}.md`), AgentIdSchema.parse(id), { kind: "builtin" }, problems));
@@ -174,8 +178,10 @@ function toEntry(result: Result<Agent, ConfigProblem[]>, id: AgentId, owner: Age
 /** Names never read as agents: a README for the folder, and dotfiles (editor and OS files). */
 const isSkipped = (name: string): boolean => name.startsWith(".") || name.toLowerCase() === "readme.md";
 
-async function loadFolder(folder: string, shown: string, owner: AgentOwner, problems: ConfigProblem[]): Promise<Entry[]> {
-  // A linked folder is never listed; fs-safe refuses a linked file in it.
+type ReadFile = typeof readConfigFile;
+
+/** `read` decides whether a linked file is followed; a linked folder is never listed. */
+async function loadFolder(folder: string, shown: string, owner: AgentOwner, problems: ConfigProblem[], read: ReadFile): Promise<Entry[]> {
   if (await isLink(folder)) {
     problems.push({ file: shown, message: LINK_REFUSED });
     return [];
@@ -198,7 +204,7 @@ async function loadFolder(folder: string, shown: string, owner: AgentOwner, prob
       problems.push({ file, message: `${quote(stem)} isn't a valid agent id: use lowercase letters, digits and hyphens (at most 64)` });
       continue;
     }
-    const content = await readConfigFile(join(folder, name), file);
+    const content = await read(join(folder, name), file);
     // Removed between the listing and the read.
     if (content.ok && content.value === undefined) continue;
     const parsed = content.ok ? parseAgentFile(content.value!, id.data, owner, file) : err([content.error]);

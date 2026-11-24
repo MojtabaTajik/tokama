@@ -6,7 +6,7 @@ import { z } from "zod";
 import { posixSh, type SyntaxRefusalReason } from "../../kernel/command-policy/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import { type RepoId, RepoIdSchema } from "../../kernel/schemas/index.js";
-import { readConfigFile } from "./read.js";
+import { readHomeConfigFile } from "./read.js";
 import { CONFIG_FORMAT, type ConfigError, parseYaml } from "./yaml-file.js";
 
 export interface Repo {
@@ -100,10 +100,10 @@ export interface LoadReposOptions {
   readonly home?: string;
 }
 
-/** The repos in `repos.yaml`, in file order. No file: no repos. */
+/** The repos in `repos.yaml`, in file order. No file: no repos. A linked file is followed. */
 export async function loadRepos(options: LoadReposOptions): Promise<Result<Repo[], ConfigError>> {
   const file = "repos.yaml";
-  const content = await readConfigFile(join(options.tokamaHome, file), file);
+  const content = await readHomeConfigFile(join(options.tokamaHome, file), file);
   if (!content.ok) return err({ problems: [content.error] });
   if (content.value === undefined) return ok([]);
   const parsed = parseYaml(ReposFileSchema, content.value, file);
