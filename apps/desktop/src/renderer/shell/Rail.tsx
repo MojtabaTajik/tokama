@@ -1,6 +1,7 @@
-// The icon rail: panel toggle, Board, Needs you, Insights, Settings,
-// Attention, one usage ring per AI CLI, then the user. Only the panel toggle acts for now; the
-// other buttons are marked aria-disabled until their screens exist.
+// The icon rail: panel toggle, Board, Needs you, Insights, Settings, Attention, then the user.
+// Insights is the one usage entry: hovering or focusing it lists each AI CLI. Only the panel
+// toggle acts for now; the other buttons are marked aria-disabled until their screens exist.
+import { useEffect, useId, useState } from "react";
 import { brand } from "../brand/index.js";
 import { AI_CLIS } from "../model.js";
 import { AttentionIcon, BoardIcon, InboxIcon, InsightsIcon, PanelIcon, SettingsIcon, UserIcon } from "./icons.js";
@@ -14,7 +15,7 @@ const TEXT = {
   insights: "Insights",
   settings: "Settings",
   attention: "Attention",
-  usageUnknown: "usage not measured yet",
+  usageLater: "usage data comes later",
   user: "You",
 } as const;
 
@@ -33,6 +34,16 @@ export interface RailProps {
 const withCount = (label: string, count: number) => (count > 0 ? `${label} · ${count}` : label);
 
 export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, attention }: RailProps) {
+  const tipId = useId();
+  // Escape closes the tooltip while the pointer or focus stays on Insights; leaving brings it back.
+  const [tipDismissed, setTipDismissed] = useState(false);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setTipDismissed(true);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
   const needsYouLabel = needsYou === undefined ? `${TEXT.needsYou} · ${TEXT.outOfDate}` : withCount(TEXT.needsYou, needsYou);
   return (
     <nav className="rail" aria-label={TEXT.rail}>
@@ -62,9 +73,22 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, attention }:
         <InboxIcon />
         <Badge count={needsYou ?? 0} tone="warn" />
       </button>
-      <button type="button" className="rail-button" aria-label={TEXT.insights} title={TEXT.insights} aria-disabled="true">
-        <InsightsIcon />
-      </button>
+      <div className="insights" data-dismissed={tipDismissed || undefined} onMouseEnter={() => setTipDismissed(false)} onMouseLeave={() => setTipDismissed(false)} onFocus={() => setTipDismissed(false)}>
+        <button type="button" className="rail-button" aria-label={TEXT.insights} aria-describedby={tipId} aria-disabled="true">
+          <InsightsIcon />
+        </button>
+        <div role="tooltip" id={tipId} className="insights-tip">
+          <p className="insights-title">{TEXT.insights}</p>
+          <ul>
+            {AI_CLIS.map((cli) => (
+              <li key={cli.id}>
+                <span>{cli.name}</span>
+                <span className="insights-state">{TEXT.usageLater}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
       <button type="button" className="rail-button" aria-label={TEXT.settings} title={TEXT.settings} aria-disabled="true">
         <SettingsIcon />
       </button>
@@ -80,9 +104,6 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, attention }:
         <Badge count={attention} tone="fail" />
       </button>
       <div className="rail-spacer" />
-      {AI_CLIS.map((cli) => (
-        <UsageRing key={cli.id} monogram={cli.monogram} label={`${cli.name} · ${TEXT.usageUnknown}`} />
-      ))}
       <span className="rail-user" role="img" aria-label={TEXT.user} title={TEXT.user}>
         <UserIcon />
       </span>
@@ -96,17 +117,5 @@ function Badge({ count, tone }: { readonly count: number; readonly tone: "warn" 
     <span className="badge" data-tone={tone} aria-hidden="true">
       {count > 99 ? "99+" : count}
     </span>
-  );
-}
-
-/** A usage ring with its text monogram. Only the track for now: usage sources come later. */
-function UsageRing({ monogram, label }: { readonly monogram: string; readonly label: string }) {
-  return (
-    <button type="button" className="usage-ring" aria-label={label} title={label} aria-disabled="true">
-      <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true">
-        <circle cx="20" cy="20" r="16" />
-      </svg>
-      <span className="mono">{monogram}</span>
-    </button>
   );
 }

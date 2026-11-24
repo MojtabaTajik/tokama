@@ -5,6 +5,7 @@
 import type { CommandErrorCode, Decision, ItemRecord, Setup } from "@tokama/core";
 import { type KeyboardEvent, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
+import { itemElement } from "../list/useFocusFollow.js";
 import { hasEnded, itemMark, KIND, PRIVACY, stepAgent, stepMark, stepPosition, templateName, whereLine } from "./describe.js";
 import { useItem } from "./useItem.js";
 
@@ -95,11 +96,13 @@ export function ItemDrawer({ bridge, itemId, setup, onClose }: ItemDrawerProps) 
     setBusy(false);
     setTab("Steps");
   }, [itemId]);
-  // On close, focus goes back to the opener, if it is still on the screen.
+  // On close, focus goes back to the opener, if it is still on the screen; if the item moved to
+  // another group or column meanwhile, to the item's current row or card.
   useEffect(
     () => () => {
       const target = opener.current;
       if (target instanceof HTMLElement && target.isConnected) target.focus();
+      else itemElement(currentId.current)?.focus();
     },
     [],
   );

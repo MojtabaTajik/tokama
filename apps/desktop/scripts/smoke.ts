@@ -1,7 +1,8 @@
 // Smoke test of the built desktop app: `node scripts/smoke.ts` (after `pnpm build` and
 // `install-electron`). It starts the engine in sample mode in a temp dir, launches the app on
 // that dir with Playwright's Electron driver, and passes when the window loads and the renderer
-// reports "connected" to that same engine. Linux needs a display (CI uses xvfb-run).
+// reports "connected" to that same engine and Enter and Space select list rows. Linux needs a
+// display (CI uses xvfb-run).
 //
 // The script starts the engine itself because the app starts engines without `--sample`; with
 // one already running, the app connects to it. Nothing outside the temp dir is touched: the
@@ -122,6 +123,24 @@ async function run(tmp: string): Promise<void> {
       throw new Error(`the app connected to engine ${String(state.engineId)}, not to the sample engine ${started.engineId}`);
     }
     log(`the renderer reports "connected" to engine ${state.engineId}`);
+
+    // List rows are native buttons: Enter and Space select them and open the drawer. Two
+    // finished sample items, which the sample tick never moves; the 30 days range keeps them
+    // in view at any time of day.
+    for (const [key, status, title] of [
+      ["Enter", "Done", "Slow query on order_items"],
+      ["Space", "Failed", "Upgrade the Postgres driver in orders-api"],
+    ] as const) {
+      await page.locator(".segment", { hasText: new RegExp(`^${status}`) }).click({ timeout: remaining() });
+      await page.locator(".range").selectOption("30d", { timeout: remaining() });
+      const row = page.locator(".pl-row", { has: page.locator(".pl-title", { hasText: title }) });
+      await row.focus({ timeout: remaining() });
+      await page.keyboard.press(key);
+      await page.locator('.pl-row[aria-current="true"]', { hasText: title }).waitFor({ timeout: remaining() });
+      await page.locator("aside.drawer h2", { hasText: title }).waitFor({ timeout: remaining() });
+      if ((await page.locator('.pl-row[aria-current="true"]').count()) !== 1) throw new Error(`${key} did not move the selection to one row`);
+    }
+    log("Enter and Space select list rows");
   } catch (error) {
     if (appOutput.length > 0) process.stderr.write(`--- app output ---\n${appOutput.join("")}\n`);
     if (engineOutput.length > 0) process.stderr.write(`--- engine output ---\n${engineOutput.join("")}\n`);

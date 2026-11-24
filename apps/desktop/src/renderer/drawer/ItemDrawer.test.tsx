@@ -395,24 +395,24 @@ describe("ItemDrawer live updates", () => {
 });
 
 describe("ItemDrawer in the app: open, focus and close", () => {
-  const openFromPanel = async () => {
+  const openFromList = async () => {
     const fake = fakeBridge([needsYou, task]);
     await act(async () => root.render(<App bridge={fake.bridge} retryDelayMs={10} />));
-    const row = $$(".live-item-button").find((el) => el.textContent?.includes(needsYou.title)) as HTMLButtonElement;
+    const row = $$(".pl-row").find((el) => el.textContent?.includes(needsYou.title)) as HTMLButtonElement;
     row.focus();
     await click(row);
     return { ...fake, row };
   };
 
-  it("opens from a live item row, moves focus into the drawer and marks the row", async () => {
-    const { row } = await openFromPanel();
+  it("opens from a list row, moves focus into the drawer and marks the row", async () => {
+    const { row } = await openFromList();
     expect(text(".drawer h2")).toBe(needsYou.title);
     expect(document.activeElement).toBe($("aside.drawer"));
     expect(row.getAttribute("aria-current")).toBe("true");
   });
 
   it("closes on Esc and gives focus back to the row that opened it", async () => {
-    const { row } = await openFromPanel();
+    const { row } = await openFromList();
     await key("Escape");
     expect($("aside.drawer")).toBeNull();
     expect(document.activeElement).toBe(row);
@@ -420,27 +420,27 @@ describe("ItemDrawer in the app: open, focus and close", () => {
   });
 
   it("closes with the close button and gives focus back to the row", async () => {
-    const { row } = await openFromPanel();
+    const { row } = await openFromList();
     await click(button("Close"));
     expect($("aside.drawer")).toBeNull();
     expect(document.activeElement).toBe(row);
   });
 
   it("closes when the engine connection fails, never showing ids without their setup", async () => {
-    const { row, setConnection } = await openFromPanel();
+    const { row, setConnection } = await openFromList();
     await setConnection({ status: "failed", reason: "engine exited", logPath: "/tmp/engine.log", logTail: [] });
     expect($("aside.drawer")).toBeNull();
     expect(container.textContent).not.toContain("emergency-investigator");
     expect(row.isConnected).toBe(false);
   });
 
-  it("approving through the drawer updates the drawer and the panel row", async () => {
-    const { push, command } = await openFromPanel();
+  it("approving through the drawer updates the drawer and the list row", async () => {
+    const { push, command } = await openFromList();
     await click(button("Approve and send"));
     expect(command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: needsYou.id, decisionId: DECISION_ID, choice: "approve" });
     await push(approved);
     expect($(".needs-you")).toBeNull();
-    const row = $$(".live-item").find((el) => el.textContent?.includes(needsYou.title));
-    expect(row?.querySelector(".marker-word")?.textContent).toBe("review");
+    const row = $$(".pl-row").find((el) => el.textContent?.includes(needsYou.title));
+    expect(row?.closest("section")?.getAttribute("aria-label")).toBe("Running");
   });
 });

@@ -1,10 +1,10 @@
-// Line icons of the icon rail (18 px, stroke in the current colour). Decorative: every button
+// Line icons: the rail's (18 px) and the small ones of sidebar rows and headers (12 px), stroke in the current colour. Decorative: every button
 // that shows one has its own label.
 import type { ReactNode } from "react";
 
-function Icon({ children }: { readonly children: ReactNode }) {
+function Icon({ children, size = 18 }: { readonly children: ReactNode; readonly size?: number }) {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       {children}
     </svg>
   );
@@ -57,5 +57,30 @@ export const UserIcon = () => (
   <Icon>
     <circle cx="12" cy="8" r="4" />
     <path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" />
+  </Icon>
+);
+
+/** The generic workflow icon: three linked steps. The engine sends no per-workflow icon yet. */
+export const WorkflowIcon = ({ size = 12 }: { readonly size?: number }) => (
+  <Icon size={size}>
+    <circle cx="5" cy="12" r="2.5" />
+    <circle cx="12" cy="12" r="2.5" />
+    <circle cx="19" cy="12" r="2.5" />
+    <path d="M7.5 12h2M14.5 12h2" />
+  </Icon>
+);
+
+export const RepoIcon = ({ size = 12 }: { readonly size?: number }) => (
+  <Icon size={size}>
+    <circle cx="6" cy="5" r="2.5" />
+    <circle cx="6" cy="19" r="2.5" />
+    <circle cx="18" cy="7" r="2.5" />
+    <path d="M6 7.5v9M18 9.5c0 5-7 4-11.5 7.5" />
+  </Icon>
+);
+
+export const AllWorkIcon = ({ size = 12 }: { readonly size?: number }) => (
+  <Icon size={size}>
+    <path d="M4 6h16M4 12h16M4 18h16" />
   </Icon>
 );
