@@ -3,6 +3,9 @@ export const packageName = "@tokama/core";
 
 // Engine API messages and the records they carry, for the engine service and its clients.
 export { err, ok, type Result } from "./kernel/result/index.js";
+// The child-process env allowlist, so clients that start the engine reduce its env the same way.
+// From env.js, not the process module's index, so the public entry does not load the runner.
+export { buildEnv, ENV_ALLOWLIST } from "./kernel/process/env.js";
 export {
   checkEngineDir,
   defaultEngineDir,

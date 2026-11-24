@@ -55,3 +55,9 @@ describe("repo config: Node type stripping", () => {
     expect(readJson("package.json")).toMatchObject({ engines: { node: ">=22.18" } });
   });
 });
+
+describe("repo config: desktop app", () => {
+  it("runs the desktop app from the root dev script", () => {
+    expect(readJson("package.json")).toMatchObject({ scripts: { dev: "pnpm --filter @tokama/desktop dev" } });
+  });
+});

@@ -1,0 +1,42 @@
+/* The app's colours and fonts (CLAUDE.md, "App UI colors"). Screens use these tokens only. */
+:root {
+  color-scheme: dark;
+
+  --ground: #0b0f17;
+  --panel: #121826;
+  --raised: #18213a;
+  --input: #0f1420;
+  --hairline: #1f262e;
+
+  --text: #e6edf3;
+  --text-2: #d5dce3;
+  --muted: #7d8894;
+  --link: #7fb2ff;
+  --live: #5c8cff;
+
+  --warn: #d9a93a;
+  --fail: #e07a70;
+  --pass: #6fb884;
+
+  /* Primary button border (its fill is --live). */
+  --primary-border: #1f5bff;
+
+  /* Agent identity dots, in join order, then neutral. */
+  --agent-1: #8f73f2;
+  --agent-2: #22a98b;
+  --agent-3: #b23a6e;
+  --agent-neutral: #4a5563;
+
+  /* Inter and JetBrains Mono when installed; no remote font loading (the CSP refuses it). */
+  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--ground);
+  color: var(--text);
+  font: 13px/1.5 var(--font-ui);
+}

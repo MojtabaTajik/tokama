@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Placeholder mark. Replace this file to change the logo everywhere. -->
+  <rect x="2" y="2" width="28" height="28" rx="8" fill="#1F5BFF"/>
+  <path d="M10 11h12M16 11v12" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" fill="none"/>
+  <circle cx="22.5" cy="21.5" r="2" fill="#14C8C8"/>
+</svg>

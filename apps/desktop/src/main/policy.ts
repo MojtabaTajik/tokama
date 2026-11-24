@@ -1,0 +1,82 @@
+// Window hardening that does not need Electron to test: the web preferences of every window and
+// the rule for which URLs the app may load.
+import { isAbsolute, relative } from "node:path";
+import { fileURLToPath } from "node:url";
+
+/** Web preferences of every window. Electron's secure defaults, stated so a change shows in review. */
+export function secureWebPreferences(preload: string) {
+  return {
+    preload,
+    contextIsolation: true,
+    sandbox: true,
+    nodeIntegration: false,
+    nodeIntegrationInWorker: false,
+    nodeIntegrationInSubFrames: false,
+    webSecurity: true,
+    allowRunningInsecureContent: false,
+    webviewTag: false,
+    navigateOnDragDrop: false,
+    spellcheck: false,
+  } as const;
+}
+
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
+ * The renderer's dev server (electron-vite's ELECTRON_RENDERER_URL), accepted only as an http
+ * URL on a loopback host. Undefined in a packaged app or when the value is anything else.
+ */
+export function devServerUrl(value: string | undefined, isPackaged: boolean): URL | undefined {
+  if (isPackaged || value === undefined) return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" && LOOPBACK.has(url.hostname) ? url : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Whether `url` is one of the app's own pages or files: files of the built renderer, or with a
+ * dev server only that server (http, and ws for hot reload). Everything else, remote content
+ * above all, is refused; so is a `file:` URL with a host, which is not a local path.
+ */
+export function isAppUrl(url: string, rendererDir: string, devServer: URL | undefined): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (devServer !== undefined) return (parsed.protocol === "http:" || parsed.protocol === "ws:") && parsed.host === devServer.host;
+  if (parsed.protocol !== "file:") return false;
+  let path: string;
+  try {
+    path = fileURLToPath(parsed);
+  } catch {
+    return false;
+  }
+  const rel = relative(rendererDir, path);
+  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+}
+
+/** DevTools pages: the session may load them, but they never count as an app page for IPC. */
+export function isDevToolsUrl(url: string): boolean {
+  return url.startsWith("devtools:");
+}
+
+/** What an IPC handler needs of its event: the frame that sent it. */
+export interface IpcSender {
+  readonly senderFrame?: { readonly url: string } | null;
+}
+
+/**
+ * Wraps an IPC handler so it answers only the app's own pages (`isAppPage` gets the sending
+ * frame's URL). Every bridge channel goes through this, so a new one cannot skip the check.
+ */
+export function guardedHandler<T>(isAppPage: (url: string) => boolean, fn: () => T): (event: IpcSender) => T {
+  return (event) => {
+    if (!isAppPage(event.senderFrame?.url ?? "")) throw new Error("refused: not an app page");
+    return fn();
+  };
+}
