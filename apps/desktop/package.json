@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsc --build ../../tsconfig.json && install-electron && TOKAMA_SAMPLE=1 electron-vite dev",
     "build": "electron-vite build && node -e \"for (const f of ['dist/main/index.js', 'dist/preload/index.cjs', 'dist/renderer/index.html']) require('fs').accessSync(f)\"",
-    "smoke": "install-electron && node scripts/smoke.ts"
+    "e2e": "install-electron && vitest run --config e2e/vitest.config.ts"
   },
   "devDependencies": {
     "@fortawesome/free-solid-svg-icons": "7.3.1",

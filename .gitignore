@@ -10,3 +10,4 @@ node_modules/
 /coverage/
 .DS_Store
 CLAUDE.local.md
+/apps/desktop/e2e-output/

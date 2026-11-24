@@ -152,6 +152,23 @@ describe("App live updates", () => {
     expect(fake.query).toHaveBeenCalledTimes(4);
   });
 
+  it("replaces the board with the engine's current one after a reconnect, whatever the events said", async () => {
+    // The engine restarted while the app was away: its seq started over, an item changed and
+    // another is gone. The reload wins over what was shown before.
+    const fake = fakeBridge(CONNECTED);
+    await render(fake.bridge);
+    expect(rowTitles()).toContain("Orders API returns 500 after deploy");
+    const answer = fake.query.getMockImplementation()!;
+    const current = items.filter((item) => item.id !== ITEMS.needsYou.id).map((item) => (item.id === ITEMS.working.id ? { ...item, state: "needs_you" } : item));
+    fake.query.mockImplementation(async (q) => (q.type === "board" ? { ok: true, data: { items: current } } : answer(q)));
+    await fake.setConnection({ status: "reconnecting" });
+    expect(text('.health[data-status="reconnecting"]')).toContain("reconnecting");
+    await fake.setConnection({ status: "connected", engineId: "e-2" });
+    expect(rowTitles()).not.toContain("Orders API returns 500 after deploy");
+    const row = $$(".pl-row").find((el) => el.textContent?.includes("Checkout p95 latency spike"));
+    expect(row?.closest("section")?.getAttribute("aria-label")).toBe("Needs you");
+  });
+
   it("does not query before the engine is connected", async () => {
     const fake = fakeBridge({ status: "starting" });
     await render(fake.bridge);

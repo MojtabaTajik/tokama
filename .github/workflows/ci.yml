@@ -34,9 +34,9 @@ jobs:
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm lint
-      - run: pnpm test
+      - run: pnpm test:all
       - run: pnpm removal-test
-      # Desktop smoke test: the built app on a sample engine. install-electron downloads the
+      # Desktop UI flow tests: the built app on a sample engine. install-electron downloads the
       # Electron binary into this cache and checks it against electron's checksums.json, on a
       # cache hit too.
       - name: Read the Electron version
@@ -51,15 +51,23 @@ jobs:
       - name: Allow the Chromium sandbox
         if: runner.os == 'Linux'
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - name: Desktop smoke test
+      - name: Desktop UI flow tests
         env:
           electron_config_cache: ${{ runner.temp }}/electron-cache
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
-            xvfb-run --auto-servernum pnpm --filter @tokama/desktop smoke
+            xvfb-run --auto-servernum pnpm --filter @tokama/desktop e2e
           else
-            pnpm --filter @tokama/desktop smoke
+            pnpm --filter @tokama/desktop e2e
           fi
+      # Screenshots of the main screens, and of any failed flow, to check a change without running the app.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: desktop-screenshots-${{ matrix.os }}
+          path: apps/desktop/e2e-output
+          if-no-files-found: ignore
+          retention-days: 14
 
   # The lowest Node that package.json allows: node:sqlite runs there without a flag (with an
   # ExperimentalWarning on stderr). Not a required check.
@@ -78,4 +86,4 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm test
+      - run: pnpm test:all

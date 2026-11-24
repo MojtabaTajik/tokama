@@ -5,7 +5,7 @@
 //
 // Removal: delete this folder; in engine.ts the `sample` lines, the SampleEngine and systemClock
 // imports and EngineOptions.clock (if nothing else uses them by then); in main.ts the `--sample`
-// flag; and in main.test.ts the test "serves the sample data set with --sample".
+// flag; and in main.int.test.ts the test "serves the sample data set with --sample".
 import { randomUUID } from "node:crypto";
 import {
   type AgentSummary,
