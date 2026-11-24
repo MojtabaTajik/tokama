@@ -135,6 +135,20 @@ describe("agent call events", () => {
     [{ type: "text", text: "hello" }],
     [{ type: "end", outcome: "completed", usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 } }],
     [{ type: "end", outcome: "failed", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, error: "exit 1" }],
+    [{ type: "started", pid: 4242 }],
+    [{ type: "rate_limit", status: "allowed", windows: [{ window: "five_hour", usedPercent: 12.5, resetsAt: 1_760_000_000_000 }] }],
+    [
+      {
+        type: "end",
+        outcome: "failed",
+        usage: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 },
+        modelUsage: { "claude-haiku-5-5": { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 } },
+        error: "Not logged in",
+        errorKind: "auth",
+        sessionId: "49dd4f9f-cdba-4d4c-ba9f-3c815dc5dc14",
+        durationMs: 25,
+      },
+    ],
   ])("accepts %j", (event) => {
     expect(parseWith(AgentCallEventSchema, event).ok).toBe(true);
   });
@@ -156,6 +170,9 @@ describe("agent call events", () => {
     ["a tool call of an unknown kind", { type: "tool_call", id: "t1", name: "Bash", kind: "shell", input: {} }],
     ["a tool call whose input is not an object", { type: "tool_call", id: "t1", name: "Bash", kind: "command", input: "npm test" }],
     ["extra fields on a turn", { type: "turn", id: "m1" }],
+    ["a started event without a pid", { type: "started", pid: 0 }],
+    ["an unknown error kind", { type: "end", outcome: "failed", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, errorKind: "network" }],
+    ["a negative rate-limit percent", { type: "rate_limit", status: "allowed", windows: [{ window: "five_hour", usedPercent: -1 }] }],
   ])("refuses %s", (_label, event) => {
     expect(parseWith(AgentCallEventSchema, event).ok).toBe(false);
   });

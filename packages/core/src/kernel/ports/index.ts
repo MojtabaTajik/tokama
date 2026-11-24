@@ -14,11 +14,36 @@ export interface PortError {
   readonly message: string;
 }
 
+/**
+ * What an agent may do in one call. Each runtime maps this onto its CLI's own permission flags.
+ * Reading files in the working directory is always allowed.
+ */
+export interface ToolLimits {
+  /** Edit files, only inside the call's working directory. */
+  readonly edit: boolean;
+  /**
+   * Shell commands the agent may run, as command-policy rules (`npm test:*`). Empty: no shell.
+   * A runtime may also allow commands its CLI judges read-only once the shell is on.
+   */
+  readonly commands: readonly string[];
+  /** Web search and fetch. */
+  readonly web: boolean;
+}
+
+/** Read only: no edits, no shell, no web. */
+export const READ_ONLY: ToolLimits = { edit: false, commands: [], web: false };
+
 export interface AgentCallRequest {
   readonly model: string;
   readonly prompt: string;
   /** Working directory of the call: the task's worktree, or a scratch folder for investigations. */
   readonly cwd: string;
+  /** The agent's role instructions, added to the CLI's own system prompt. */
+  readonly role?: string;
+  /** Default: READ_ONLY. */
+  readonly limits?: ToolLimits;
+  /** The call is stopped and fails once it runs this long. */
+  readonly timeoutMs?: number;
 }
 
 /** Drives one AI CLI (Claude Code, Codex CLI, ...) headless. */
