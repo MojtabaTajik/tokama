@@ -536,7 +536,7 @@ button:focus-visible {
   font-size: 15px;
   line-height: 1;
   opacity: 0;
-  cursor: default;
+  cursor: pointer;
 }
 
 .sb-row:hover .sb-plus,

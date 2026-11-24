@@ -38,10 +38,14 @@ export interface SidebarProps {
   readonly onSelectView: (view: View) => void;
   readonly collapsed: ReadonlySet<Section>;
   readonly onToggleSection: (section: Section) => void;
+  /** "+ New work": opens the input as it is. */
+  readonly onNewWork: () => void;
+  /** The "+" on a workflow row (that template) or a repo row (that repo): opens the input filled in. */
+  readonly onStartIn: (view: View) => void;
 }
 
 export function Sidebar(props: SidebarProps) {
-  const { id, connection, setup, items, stale, now, view, onSelectView, collapsed, onToggleSection } = props;
+  const { id, connection, setup, items, stale, now, view, onSelectView, collapsed, onToggleSection, onNewWork, onStartIn } = props;
   const workflows = (setup?.templates ?? []).map((template) => ({ view: { kind: "workflow", id: template.id } as const, name: template.name, icon: <TemplateIcon icon={template.icon} color={template.color} /> }));
   const repos = (setup?.repos ?? []).map((repo) => ({ view: { kind: "repo", id: repo.id } as const, name: repo.id }));
   const row = (entry: { readonly view: View; readonly name: string }, icon: ReactNode, startLabel: string, mono = false) => (
@@ -53,12 +57,13 @@ export function Sidebar(props: SidebarProps) {
       badges={badgesOf(items.filter((item) => inView(item, entry.view)), now)}
       selected={sameView(view, entry.view)}
       startLabel={startLabel}
+      onStart={() => onStartIn(entry.view)}
       onSelect={() => onSelectView(entry.view.kind === "repo" && sameView(view, entry.view) ? ALL_WORK : entry.view)}
     />
   );
   return (
     <aside className="panel" id={id} aria-label={TEXT.panel} data-stale={stale || undefined}>
-      <button type="button" className="new-work" aria-disabled="true">
+      <button type="button" className="new-work" onClick={onNewWork}>
         {TEXT.newWork}
       </button>
       <p className="engine-line">
@@ -123,11 +128,12 @@ interface RowProps {
   readonly selected: boolean;
   readonly onSelect: () => void;
   readonly mono?: boolean;
-  /** The label of the "+" shown on hover; the "+" is not wired yet. */
+  /** The label of the "+" shown on hover. */
   readonly startLabel?: string;
+  readonly onStart?: () => void;
 }
 
-function Row({ name, icon, badges, selected, onSelect, mono, startLabel }: RowProps) {
+function Row({ name, icon, badges, selected, onSelect, mono, startLabel, onStart }: RowProps) {
   return (
     <div className="sb-row" data-selected={selected || undefined}>
       <button type="button" className="sb-main" aria-current={selected ? "page" : undefined} onClick={onSelect}>
@@ -136,7 +142,7 @@ function Row({ name, icon, badges, selected, onSelect, mono, startLabel }: RowPr
         <Badges badges={badges} />
       </button>
       {startLabel !== undefined && (
-        <button type="button" className="sb-plus" aria-disabled="true" aria-label={startLabel} title={startLabel}>
+        <button type="button" className="sb-plus" aria-label={startLabel} title={startLabel} onClick={onStart}>
           +
         </button>
       )}

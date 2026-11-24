@@ -1,8 +1,8 @@
 // Smoke test of the built desktop app: `node scripts/smoke.ts` (after `pnpm build` and
 // `install-electron`). It starts the engine in sample mode in a temp dir, launches the app on
-// that dir with Playwright's Electron driver, and passes when the window loads and the renderer
-// reports "connected" to that same engine and Enter and Space select list rows. Linux needs a
-// display (CI uses xvfb-run).
+// that dir with Playwright's Electron driver, and passes when the window loads, the renderer
+// reports "connected" to that same engine, Enter and Space select list rows, and New work
+// starts an item. Linux needs a display (CI uses xvfb-run).
 //
 // The script starts the engine itself because the app starts engines without `--sample`; with
 // one already running, the app connects to it. Nothing outside the temp dir is touched: the
@@ -141,6 +141,19 @@ async function run(tmp: string): Promise<void> {
       if ((await page.locator('.pl-row[aria-current="true"]').count()) !== 1) throw new Error(`${key} did not move the selection to one row`);
     }
     log("Enter and Space select list rows");
+
+    // New work: Cmd or Ctrl and N focus the input, a template and text are enough for an
+    // investigation, and Cmd or Ctrl and Enter starts it. The new item is selected and its drawer opens.
+    const text = "Smoke test: slow checkout query";
+    await page.keyboard.press("ControlOrMeta+n");
+    await page.locator("textarea.np-text:focus").waitFor({ timeout: remaining() });
+    await page.locator("textarea.np-text").fill(text, { timeout: remaining() });
+    await page.locator(".np-trigger", { hasText: "Template" }).click({ timeout: remaining() });
+    await page.locator('[role="option"]', { hasText: "DB slow query check" }).click({ timeout: remaining() });
+    await page.keyboard.press("ControlOrMeta+Enter");
+    await page.locator('.pl-row[aria-current="true"]', { hasText: text }).waitFor({ timeout: remaining() });
+    await page.locator("aside.drawer h2", { hasText: text }).waitFor({ timeout: remaining() });
+    log("New work starts an item and opens its drawer");
   } catch (error) {
     if (appOutput.length > 0) process.stderr.write(`--- app output ---\n${appOutput.join("")}\n`);
     if (engineOutput.length > 0) process.stderr.write(`--- engine output ---\n${engineOutput.join("")}\n`);
