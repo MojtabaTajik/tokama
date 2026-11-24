@@ -27,7 +27,7 @@ export function Board({ items, agents, template, selectedItemId, onSelect }: Boa
             <span className="column-count mono">{column.items.length}</span>
           </h3>
           {column.items.map((item) => (
-            <Card key={item.id} item={item} agents={agents} selected={item.id === selectedItemId} onSelect={onSelect} />
+            <Card key={item.id} item={item} agents={agents} template={template} selected={item.id === selectedItemId} onSelect={onSelect} />
           ))}
         </section>
       ))}

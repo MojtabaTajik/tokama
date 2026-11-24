@@ -60,16 +60,6 @@ export const UserIcon = () => (
   </Icon>
 );
 
-/** The generic workflow icon: three linked steps. The engine sends no per-workflow icon yet. */
-export const WorkflowIcon = ({ size = 12 }: { readonly size?: number }) => (
-  <Icon size={size}>
-    <circle cx="5" cy="12" r="2.5" />
-    <circle cx="12" cy="12" r="2.5" />
-    <circle cx="19" cy="12" r="2.5" />
-    <path d="M7.5 12h2M14.5 12h2" />
-  </Icon>
-);
-
 export const RepoIcon = ({ size = 12 }: { readonly size?: number }) => (
   <Icon size={size}>
     <circle cx="6" cy="5" r="2.5" />

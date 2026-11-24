@@ -544,6 +544,9 @@ describe("template icons", () => {
     await click(sidebarRow(name));
     expect(iconOf($(".crumb-here"))).toEqual([icon, color]);
     expect(iconOf(row(own.title).querySelector(".pl-meta"))).toEqual([icon, color]);
+
+    await click(byText('[aria-label="Layout"] button', "Board"));
+    expect(iconOf($(".card"))).toEqual([icon, color]);
   });
 
   it("draws the neutral icon, with no tint, for a template the setup does not list", async () => {
