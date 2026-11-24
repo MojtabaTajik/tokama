@@ -70,8 +70,13 @@ describe("runCommand", () => {
     expect(readFileSync(file, "utf8").split("\n")).toHaveLength(2001);
   });
 
-  it("interleaves stderr with stdout", SLOW, async () => {
-    expect((await runCommand(runner, "echo out && printenv NOPE || echo err", options())).output).toBe("out\nerr");
+  it("keeps stderr with stdout, in arrival order", SLOW, async () => {
+    const result = await runCommand(runner, "echo out && ls no-such-file || echo after", options({ rules: [...RULES, "ls:*"] }));
+    const lines = result.output.split("\n");
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toBe("out");
+    expect(lines[1]).toContain("no-such-file");
+    expect(lines[2]).toBe("after");
   });
 });
 

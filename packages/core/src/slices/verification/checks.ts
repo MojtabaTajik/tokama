@@ -104,7 +104,7 @@ export async function runCommand(runner: ProcessRunner, command: string, options
 }
 
 /** Runs every command in order, each with its own timeout, and returns every result. */
-export async function runChecks(runner: ProcessRunner, commands: readonly string[], options: RunCommandOptions): Promise<CheckResult[]> {
+export async function runChecks(runner: ProcessRunner, commands: readonly string[], options: Omit<RunCommandOptions, "outputFile">): Promise<CheckResult[]> {
   const results: CheckResult[] = [];
   for (const command of commands) results.push(await runCommand(runner, command, options));
   return results;
