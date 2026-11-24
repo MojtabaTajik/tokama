@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   copyFileSync,
@@ -79,6 +79,9 @@ function makeFixture(files: Record<string, string>, { engine = false } = {}): st
     "packages/core/src/adapters/README.md": "# adapters\n",
   };
   for (const [rel, content] of Object.entries({ ...defaults, ...files })) write(root, rel, content);
+  // The script copies what git lists, so a fixture is a work tree with the repo's ignore rules.
+  copyFromRepo(root, ".gitignore");
+  execFileSync("git", ["init", "--quiet"], { cwd: root });
   return root;
 }
 
@@ -225,17 +228,14 @@ describe("discoverAdapters", () => {
 });
 
 describe("findSymlinks", () => {
-  it("finds links in the sources and their ancestors, and skips package node_modules and dist", () => {
+  it("finds paths that are links or sit below a linked folder, without following links", () => {
     const root = tempDir("tokama-links-");
     write(root, "pkg/src/a.ts", "");
     symlinkSync(join(root, "pkg/src/a.ts"), join(root, "pkg/src/b.ts"), "file");
-    mkdirSync(join(root, "pkg/node_modules"));
-    symlinkSync(root, join(root, "pkg/node_modules/dep"), "dir");
-    mkdirSync(join(root, "pkg/dist"));
-    symlinkSync(root, join(root, "pkg/dist/link"), "dir");
     write(root, "real/tsconfig.json", "{}");
     symlinkSync(join(root, "real"), join(root, "linked"), "dir");
-    expect(findSymlinks(root, ["pkg", join("linked", "tsconfig.json")], ["pkg"])).toEqual(["linked", join("pkg", "src", "b.ts")]);
+    const paths = [join("pkg", "src", "a.ts"), join("pkg", "src", "b.ts"), join("linked", "tsconfig.json"), join("pkg", "missing.ts")];
+    expect(findSymlinks(root, paths)).toEqual(["linked", join("pkg", "src", "b.ts")]);
   });
 });
 
@@ -423,6 +423,60 @@ describe("removal-test script", () => {
       expect(run.code).toBe(1);
       expect(run.output).toContain("FAIL  agent/sample: the build fails without it");
       expect(run.output).toMatch(/apps\/engine\/src\/index\.ts\(1,\d+\): error TS2305: .*has no exported member 'sampleName'/);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "never links a real node_modules folder into the copy, so tsc cannot write into it",
+    async () => {
+      const root = makeFixture({
+        ...sampleWired,
+        "node_modules/.cache/keep.txt": "keep",
+        "packages/core/tsconfig.json": `${JSON.stringify(
+          {
+            extends: "../../tooling/tsconfig.base.json",
+            compilerOptions: { rootDir: "src", outDir: "dist", tsBuildInfoFile: "../../node_modules/.cache/core.tsbuildinfo", types: ["node"] },
+            include: ["src"],
+            exclude: ["src/**/*.test.ts"],
+          },
+          null,
+          2,
+        )}\n`,
+      });
+      const cacheBefore = snapshot(join(root, "node_modules/.cache"));
+      const run = await runChecked(root);
+      expect(snapshot(join(root, "node_modules/.cache"))).toEqual(cacheBefore);
+      expect(run.output).toContain("ok    agent/sample");
+      expect(run.code).toBe(0);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "ignores git-ignored output, even when it holds symlinks",
+    async () => {
+      const root = makeFixture(sampleWired);
+      const outside = tempDir("tokama-outside-");
+      mkdirSync(join(root, "packages/core/coverage"));
+      symlinkSync(outside, join(root, "packages/core/coverage/linked"), "dir");
+      const run = await runChecked(root);
+      expect(run.output).toContain("removal-test: PASS");
+      expect(run.code).toBe(0);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "fails with a plain message when a node_modules link points to a path that is not copied",
+    async () => {
+      const root = makeFixture({ ...sampleWired, "packages/other/package.json": "{}\n" }, { engine: true });
+      symlinkSync("../../../../packages/other", join(root, "apps/engine/node_modules/@tokama/other"), "dir");
+      const run = await runChecked(root);
+      expect(run.code).toBe(1);
+      expect(run.output).toContain("FAIL  apps/engine/node_modules/@tokama/other: points to packages/other, a path in the real tree that is not copied");
+      expect(run.output).toContain("removal-test: FAIL (the copy cannot be made)");
+      expect(run.output).not.toMatch(/^\s+at /m);
     },
     TIMEOUT,
   );

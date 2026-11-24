@@ -15,8 +15,9 @@
 // Usage: node tooling/removal-test/removal-test.ts [--root <repo root>]
 // Exit codes: 0 pass, 1 an adapter is not removable or the tree is not testable, 2 usage error.
 
+import { execFileSync } from "node:child_process";
 import {
-  cpSync,
+  copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -46,6 +47,8 @@ const COMPOSITION = join(CORE, "src", "composition.ts");
 const NOT_COPIED = new Set(["node_modules", "dist"]);
 
 class UsageError extends Error {}
+/** The copy cannot be made safely; reported as a FAIL line, not a stack trace. */
+class CopyError extends Error {}
 
 export interface Adapter {
   /** `<kind>/<name>`, e.g. `agent/claude-code`. */
@@ -152,43 +155,66 @@ function readPackages(root: string): string[] {
   return packages;
 }
 
-/** What a copy contains, relative to the repo root. */
-function copySources(root: string, packages: string[]): string[] {
-  const tooling = readdirSync(join(root, "tooling"))
-    .filter((name) => /^tsconfig.*\.json$/.test(name))
-    .map((name) => join("tooling", name));
-  return ["tsconfig.json", ...tooling, ...packages];
+/** The roots a copy is made from, relative to the repo root. */
+function copyRoots(packages: string[]): string[] {
+  return ["tsconfig.json", "tooling", ...packages];
 }
 
 /**
- * Symlinks in the copied sources, in the paths leading to them, or as the sources themselves.
- * Skips each package's node_modules and dist, which are never copied. Never follows a link.
+ * The files a copy contains: what git tracks or would track (`--exclude-standard`) under the
+ * roots, so ignored build output is never copied. From tooling/, only the tsconfig presets.
  */
-export function findSymlinks(root: string, sources: string[], packages: string[]): string[] {
+function listCopyFiles(root: string, packages: string[]): string[] {
+  let stdout: string;
+  try {
+    stdout = execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", ...copyRoots(packages)], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (error) {
+    throw new UsageError(`git ls-files failed in ${root}; the removal test needs a git work tree: ${String(error)}`);
+  }
+  const skipped = packages.flatMap((pkg) => [...NOT_COPIED].map((name) => join(pkg, name)));
+  return stdout
+    .split("\0")
+    .filter((rel) => rel !== "")
+    .map((rel) => rel.split("/").join(sep))
+    .filter((rel) => !rel.startsWith(`tooling${sep}`) || /^tooling[\\/]tsconfig[^\\/]*\.json$/.test(rel))
+    .filter((rel) => !skipped.some((dir) => isInside(rel, dir)))
+    .filter((rel) => {
+      try {
+        lstatSync(join(root, rel));
+        return true;
+      } catch {
+        return false; // Tracked but deleted in the working tree: not part of the copy.
+      }
+    })
+    .sort();
+}
+
+/** Each path, or a folder leading to it, that is a symlink. Never follows a link. */
+export function findSymlinks(root: string, paths: string[]): string[] {
   const found = new Set<string>();
-  const walk = (rel: string): void => {
-    const stat = lstatSync(join(root, rel));
-    if (stat.isSymbolicLink()) {
-      found.add(rel);
-      return;
-    }
-    if (!stat.isDirectory()) return;
-    for (const name of readdirSync(join(root, rel))) {
-      if (packages.includes(rel) && NOT_COPIED.has(name)) continue;
-      walk(join(rel, name));
-    }
-  };
-  for (const source of sources) {
-    const parts = source.split(sep);
-    let ancestorIsLink = false;
-    for (let i = 1; i < parts.length && !ancestorIsLink; i++) {
-      const ancestor = parts.slice(0, i).join(sep);
-      if (lstatSync(join(root, ancestor)).isSymbolicLink()) {
-        found.add(ancestor);
-        ancestorIsLink = true;
+  const checked = new Set<string>();
+  for (const path of paths) {
+    const parts = path.split(sep);
+    for (let i = 1; i <= parts.length; i++) {
+      const prefix = parts.slice(0, i).join(sep);
+      if (found.has(prefix)) break;
+      if (checked.has(prefix)) continue;
+      checked.add(prefix);
+      let isLink: boolean;
+      try {
+        isLink = lstatSync(join(root, prefix)).isSymbolicLink();
+      } catch {
+        break; // Missing: nothing to copy through it.
+      }
+      if (isLink) {
+        found.add(prefix);
+        break;
       }
     }
-    if (!ancestorIsLink) walk(source);
   }
   return [...found].sort();
 }
@@ -265,32 +291,33 @@ function assertInCopy(workDir: string, target: string): void {
 }
 
 /**
- * Recreates `<rel>/node_modules` in the copy as a real folder of links (one level into @scope
- * folders). A link into a workspace package points at that package's copy; any other link
- * points at its real target, which must not be in the real tree outside root node_modules.
+ * Recreates `<rel>/node_modules` in the copy as a real folder holding only its links (one level
+ * into @scope folders). Real files and folders (.bin, .cache, .vite, .modules.yaml) are skipped:
+ * a linked real folder would let tsc write into the real tree. A link into a workspace package
+ * points at that package's copy; any other link points at its real target.
  */
 function linkNodeModules(root: string, workDir: string, rel: string, packages: string[]): void {
   const source = join(root, rel, "node_modules");
   if (!existsSync(source)) return;
-  if (!lstatSync(source).isDirectory()) throw new Error(`${source} is not a real folder`);
+  if (!lstatSync(source).isDirectory()) throw new CopyError(`${join(rel, "node_modules")}: is not a real folder`);
   const rootModules = join(root, "node_modules");
   const linkEntry = (from: string, to: string): void => {
+    if (!lstatSync(from).isSymbolicLink()) return;
     let target: string;
     try {
       target = realpathSync(from);
     } catch {
       return; // Dangling link: nothing to resolve through it.
     }
-    // Only a link can point at a workspace package. A real entry (e.g. pnpm's .bin folder) is
-    // linked to itself in the real tree, read-only like the rest of node_modules.
-    if (lstatSync(from).isSymbolicLink() && isInside(target, root) && !isInside(target, rootModules)) {
+    const type = statSync(target).isDirectory() ? "dir" : "file";
+    if (isInside(target, root) && !isInside(target, rootModules)) {
       const inRoot = relative(root, target);
       if (!packages.some((pkg) => isInside(inRoot, pkg))) {
-        throw new Error(`${from} points to ${target}, a path in the real tree that is not copied`);
+        throw new CopyError(`${relative(root, from)}: points to ${inRoot}, a path in the real tree that is not copied`);
       }
       target = join(workDir, inRoot);
     }
-    symlinkSync(target, to, statSync(target).isDirectory() ? "dir" : "file");
+    symlinkSync(target, to, type);
   };
   const dest = join(workDir, rel, "node_modules");
   mkdirSync(dest, { recursive: true });
@@ -307,14 +334,14 @@ function linkNodeModules(root: string, workDir: string, rel: string, packages: s
 }
 
 /** Copies the sources into a fresh temp dir. Reads the real tree only. */
-function makeCopy(root: string, packages: string[]): string {
+function makeCopy(root: string, packages: string[], files: string[]): string {
   const workDir = mkdtempSync(join(tempBase, `${TEMP_PREFIX}${process.pid}-`));
   activeTempDirs.add(workDir);
-  const skip = new Set(packages.flatMap((pkg) => [...NOT_COPIED].map((name) => join(root, pkg, name))));
-  // findSymlinks already refused links; the filter drops any that appeared since.
-  const filter = (src: string): boolean => !skip.has(src) && !lstatSync(src).isSymbolicLink();
-  for (const source of copySources(root, packages)) {
-    cpSync(join(root, source), join(workDir, source), { recursive: true, filter });
+  for (const rel of files) {
+    // findSymlinks already refused links; one that appeared since is not copied.
+    if (lstatSync(join(root, rel)).isSymbolicLink()) throw new CopyError(`${rel}: became a symlink during the run`);
+    mkdirSync(dirname(join(workDir, rel)), { recursive: true });
+    copyFileSync(join(root, rel), join(workDir, rel));
   }
   for (const rel of ["", ...packages]) linkNodeModules(root, workDir, rel, packages);
   return workDir;
@@ -381,6 +408,8 @@ export async function main(argv: string[]): Promise<number> {
   try {
     return await run(argv);
   } catch (error) {
+    // The "exit" handler deletes a half-made copy.
+    if (error instanceof CopyError) return fail([error.message], "the copy cannot be made");
     if (!(error instanceof UsageError)) throw error;
     process.stderr.write(`removal-test: ${error.message}\nusage: node tooling/removal-test/removal-test.ts [--root <repo root>]\n`);
     return 2;
@@ -401,7 +430,10 @@ async function run(argv: string[]): Promise<number> {
 
   for (const dir of sweepStaleTempDirs(tempBase)) process.stdout.write(`removal-test: removed stale temp copy ${dir}\n`);
 
-  const links = findSymlinks(root, copySources(root, packages), packages);
+  // Roots first: git refuses to list paths beyond a symlink.
+  let links = findSymlinks(root, copyRoots(packages));
+  const files = links.length > 0 ? [] : listCopyFiles(root, packages);
+  if (links.length === 0) links = findSymlinks(root, files);
   if (links.length > 0) {
     const lines = links.map((rel) => `${rel}: is a symlink (-> ${readlinkSync(join(root, rel))}); the copy holds real files only, so nothing was tested`);
     return fail(lines, `symlinks in the copied tree: ${links.join(", ")}`);
@@ -414,7 +446,7 @@ async function run(argv: string[]): Promise<number> {
   }
 
   process.stdout.write(`removal-test: ${adapters.length} adapter(s) under ${ADAPTERS}; checking ${packages.join(", ")}\n`);
-  const baselineDir = makeCopy(root, packages);
+  const baselineDir = makeCopy(root, packages, files);
   const baseline = await check(baselineDir, tscBin, packages);
   removeCopy(baselineDir);
   if (!baseline.ok) {
@@ -424,7 +456,7 @@ async function run(argv: string[]): Promise<number> {
 
   const failed: string[] = [];
   for (const adapter of adapters) {
-    const workDir = makeCopy(root, packages);
+    const workDir = makeCopy(root, packages, files);
     const adapterDir = join(workDir, ADAPTERS, adapter.rel);
     const compositionPath = join(workDir, COMPOSITION);
     assertInCopy(workDir, adapterDir);
