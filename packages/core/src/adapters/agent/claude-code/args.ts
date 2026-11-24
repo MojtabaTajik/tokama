@@ -17,7 +17,9 @@ const UNSAFE_WORD = /[(),]/;
  * - `--restricted`: ignores user, project and local settings (a repo's `.claude/settings.json`
  *   could add allow rules or hooks), keeps file tools inside the working directory, and refuses
  *   writes to git and settings files without a person's approval.
- * - `--permission-mode dontAsk`: anything not allowed below is denied; nobody is asked.
+ * - `--permission-mode dontAsk`: anything not allowed below is denied; nobody is asked. One
+ *   exception: once Bash is a tool, Claude Code also runs commands it judges read-only (`ls`,
+ *   `whoami`, ...) without a rule.
  * - `--tools`: only the tools the limits allow exist in the session.
  * - `--strict-mcp-config` without `--mcp-config`: no MCP servers from the user's config.
  * - Single-value flags use `--flag=value`, so a value that starts with `-` is never read as a flag.

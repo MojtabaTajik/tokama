@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { manualClock } from "../../../kernel/clock/index.js";
 import { createProcessRunner } from "../../../kernel/process/index.js";
 import type { AgentCallRequest, AgentRuntime } from "../../../kernel/ports/index.js";
 import { describeAgentRuntimeContract } from "../../../kernel/ports/testing/contracts.js";
@@ -145,7 +146,15 @@ describe("Claude Code runtime", SLOW, () => {
   });
 
   it("times out, kills the process group, and reports a timeout", async () => {
-    const events = await collect(runtime().launch(request("hang-with-child", { timeoutMs: 300 }), new AbortController().signal));
+    // The timeout runs on a manual clock, advanced once the fake has started its child, so a slow
+    // start on CI cannot win the race.
+    const clock = manualClock();
+    const timed = createClaudeCodeRuntime({ command: [process.execPath, FAKE], runner: createProcessRunner({ clock, killGraceMs: 200, drainMs: 500 }) });
+    const events: AgentCallEvent[] = [];
+    for await (const event of timed.launch(request("hang-with-child", { timeoutMs: 60_000 }), new AbortController().signal)) {
+      events.push(event);
+      if (event.type === "text") clock.advance(60_000);
+    }
     expect(end(events)).toMatchObject({ outcome: "failed", errorKind: "timeout", sessionId: "44444444-4444-4444-8444-444444444444" });
     const started = events[0];
     const child = events.find((event) => event.type === "text");
@@ -184,7 +193,8 @@ describe("Claude Code runtime", SLOW, () => {
   });
 
   it("counts a result that arrived before the timeout as completed", async () => {
-    const result = end(await collect(runtime().launch(request("result-then-hang", { timeoutMs: 500 }), new AbortController().signal)));
+    // Long enough for a slow CI start to print the result first.
+    const result = end(await collect(runtime().launch(request("result-then-hang", { timeoutMs: 5_000 }), new AbortController().signal)));
     expect(result.outcome).toBe("completed");
   });
 });

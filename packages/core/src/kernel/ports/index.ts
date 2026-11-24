@@ -21,7 +21,10 @@ export interface PortError {
 export interface ToolLimits {
   /** Edit files, only inside the call's working directory. */
   readonly edit: boolean;
-  /** Shell commands the agent may run, as command-policy rules (`npm test:*`). Empty: no shell. */
+  /**
+   * Shell commands the agent may run, as command-policy rules (`npm test:*`). Empty: no shell.
+   * A runtime may also allow commands its CLI judges read-only once the shell is on.
+   */
   readonly commands: readonly string[];
   /** Web search and fetch. */
   readonly web: boolean;
