@@ -12,7 +12,8 @@ Don't design anything around a fixed planner/executor/verifier trio, a single pr
 - Ideas: suggest them to the owner; only ideas he approves go into `.agent/ideas.md`. They are not v1 scope and get no issues until scheduled.
 - Repo: `MojtabaTajik/tokama` (private for now, to be open-sourced under Apache-2.0; paid cloud features will live outside this repo, so the open engine must work fully without them), default branch `main`. Domains (registered): tokama.dev (primary), tokama.ai (redirects to tokama.dev). Point user-facing URLs (updates, install scripts, docs) at tokama.dev, not GitHub, so a later move to an organization breaks nothing.
 - Never commit employer or customer names, personal paths, secrets or business plans: the repo will be public. Use neutral sample names (e.g. "Northwind prod", `orders-api`) in docs, specs and designs.
-- Status: nothing built yet. No GitHub issues yet; create them from the v1 build order in the architecture spec.
+- Status: epic A (skeleton) in progress; issues exist for epics A and B as GitHub milestones. Write issues for later epics when the previous epic is nearly done, after discussing them with the owner.
+- `main` is protected by a ruleset: no direct pushes, no force pushes, no deletion, linear history. Every change, docs included, goes through a pull request and is squash-merged by the owner. Never merge a PR yourself.
 - Reference only: `ai-pipeline`, the earlier private Python harness, kept outside this repo (local path in `.agent/local.md`). Reuse its hard-won parts and port the tests for them (list in architecture spec, section 11). Do not port it in full, keep its file formats, or call or ship any of its code.
 
 ## Engineering rules
