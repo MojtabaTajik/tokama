@@ -15,6 +15,8 @@ import { chmodSync, closeSync, lstatSync, mkdirSync, openSync, readFileSync, ren
 import { connect, createServer, type Server, type Socket } from "node:net";
 import { join } from "node:path";
 import {
+  addRepo,
+  type AddRepoResult,
   API_VERSION,
   type BoardResult,
   checkEngineDir,
@@ -22,18 +24,28 @@ import {
   type CommandErrorCode,
   type ConnectionErrorCode,
   type ClientMessage,
+  type Command,
+  createGit,
+  createProcessRunner,
   encodeLine,
+  type EngineEvent,
+  formatProblem,
+  type Git,
   type EngineEndpoint,
   engineEndpoint,
   err,
   type ItemResult,
   LineDecoder,
+  loadRepos,
   MAX_MESSAGE_BYTES,
   ok,
   parseClientMessage,
   parseHelloMessage,
   type ParseError,
+  removeRepo,
   type Result,
+  suggestRepo,
+  type SuggestRepoResult,
   type SuggestTemplateResult,
   systemClock,
   type SetupResult,
@@ -57,8 +69,8 @@ export interface EngineOptions {
   /** Fake engine mode: serve the sample data set and handle commands on it (sample/sample.ts). */
   readonly sample?: boolean;
   /**
-   * Tokama's home folder (`~/.tokama`): item logs in `items/`, the board index in `tokama.db`.
-   * Without it, or in sample mode, nothing is stored.
+   * Tokama's home folder (`~/.tokama`): item logs in `items/`, the board index in `tokama.db`, and
+   * `repos.yaml`. Without it nothing is stored; in sample mode only repos.yaml is.
    */
   readonly home?: string;
   /** Read and signal leftover agent processes on start. Default: the POSIX process table. */
@@ -202,19 +214,60 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     if (tooLarge.ok) write(socket, tooLarge.value);
   };
 
+  // repos.yaml changes one at a time, so two adds cannot both read the file before either writes.
+  let git: Git | undefined;
+  let repoChanges: Promise<unknown> = Promise.resolve();
+  const repoOptions = (tokamaHome: string) => ({ tokamaHome, git: (git ??= createGit({ runner: createProcessRunner() })) });
+
+  const repoCommand = async (command: Extract<Command, { type: "add_repo" | "remove_repo" }>): Promise<ReplyResult> => {
+    const home = options.home;
+    if (home === undefined) return { ok: false, error: { code: "not_implemented" satisfies CommandErrorCode, message: "this engine has no Tokama home folder for repos.yaml" } };
+    const change = repoChanges.then(() =>
+      command.type === "add_repo"
+        ? addRepo(repoOptions(home), {
+            path: command.path,
+            ...(command.id === undefined ? {} : { id: command.id }),
+            ...(command.baseBranch === undefined ? {} : { baseBranch: command.baseBranch }),
+            ...(command.checks === undefined ? {} : { checks: command.checks }),
+          })
+        : removeRepo(repoOptions(home), command.repoId),
+    );
+    repoChanges = change.catch(() => undefined);
+    const result = await change;
+    if (!result.ok) return { ok: false, error: result.error };
+    broadcast({ type: "setup_changed" });
+    log(`${command.type === "add_repo" ? "added" : "removed"} repo ${result.value.id}`);
+    return { ok: true, data: command.type === "add_repo" ? ({ repo: { id: result.value.id, baseBranch: result.value.baseBranch } } satisfies AddRepoResult) : null };
+  };
+
+  /** The sample setup in sample mode, with the repos of repos.yaml after its own. */
+  const setup = async (): Promise<SetupResult> => {
+    const base: SetupResult = sample?.setup ?? { repos: [], connections: [], agents: [], templates: [] };
+    if (options.home === undefined) return base;
+    const loaded = await loadRepos({ tokamaHome: options.home });
+    if (!loaded.ok) {
+      log(`repos.yaml is not loaded: ${loaded.error.problems.map(formatProblem).join("; ")}`);
+      return base;
+    }
+    const added = loaded.value.filter((repo) => !base.repos.some((known) => known.id === repo.id));
+    return { ...base, repos: [...base.repos, ...added.map((repo) => ({ id: repo.id, baseBranch: repo.baseBranch }))] };
+  };
+
   const dispatch = async (message: ClientMessage): Promise<ReplyResult> => {
     if (message.kind === "command") {
+      const command = message.command;
+      if (command.type === "add_repo" || command.type === "remove_repo") return repoCommand(command);
       if (!sample) {
         const code: CommandErrorCode = "not_implemented";
         return { ok: false, error: { code, message: `command "${message.command.type}" is not implemented yet` } };
       }
-      const result = sample.command(message.command);
+      const result = sample.command(command);
       return result.ok ? { ok: true, data: result.value } : { ok: false, error: result.error };
     }
     const query = message.query;
     switch (query.type) {
       case "setup":
-        return { ok: true, data: (sample?.setup ?? { repos: [], connections: [], agents: [], templates: [] }) satisfies SetupResult };
+        return { ok: true, data: await setup() };
       case "board":
         return { ok: true, data: { items: store.list() } satisfies BoardResult };
       case "item": {
@@ -223,6 +276,13 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       }
       case "suggest_template":
         return { ok: true, data: { templateId: sample?.suggestTemplate(query.text) ?? null } satisfies SuggestTemplateResult };
+      case "suggest_repo": {
+        if (options.home === undefined) return { ok: false, error: { code: "not_implemented", message: "this engine has no Tokama home folder for repos.yaml" } };
+        const suggested = await suggestRepo(repoOptions(options.home), query.path);
+        if (!suggested.ok) return { ok: false, error: suggested.error };
+        const { path, gitRepo, branch, id, checks, problem } = suggested.value;
+        return { ok: true, data: { path, gitRepo, branch: branch ?? null, id: id ?? null, checks: [...checks], problem: problem ?? null } satisfies SuggestRepoResult };
+      }
     }
   };
 
@@ -303,11 +363,12 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   });
 
   // Events go out only when something changes; there is no heartbeat.
-  const unsubscribe = store.subscribe((item) => {
-    const line = encodeLine({ apiVersion: API_VERSION, kind: "event", seq: seq++, event: { type: "item_updated", item } });
+  function broadcast(event: EngineEvent): void {
+    const line = encodeLine({ apiVersion: API_VERSION, kind: "event", seq: seq++, event });
     if (!line.ok) return log(`dropped an event larger than ${MAX_MESSAGE_BYTES} bytes`);
     for (const socket of ready) write(socket, line.value);
-  });
+  }
+  const unsubscribe = store.subscribe((item) => broadcast({ type: "item_updated", item }));
 
   const stopTicking = sample?.startTicking();
 

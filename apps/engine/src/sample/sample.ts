@@ -65,7 +65,8 @@ export class SampleEngine {
     }
   }
 
-  command(command: Command): Result<CommandResult<Command["type"]>, CommandError> {
+  /** Item commands; repo commands are the engine's own, on repos.yaml. */
+  command(command: Exclude<Command, { type: "add_repo" | "remove_repo" }>): Result<CommandResult<Command["type"]>, CommandError> {
     switch (command.type) {
       case "start_item":
         return this.startItem(command);

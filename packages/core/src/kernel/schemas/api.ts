@@ -7,12 +7,14 @@ import { z } from "zod";
 import { DecisionIdSchema, ItemIdSchema, RepoIdSchema, TemplateIdSchema } from "./ids.js";
 import { ItemRecordSchema } from "./item.js";
 import { AgentCallUsageSchema } from "./usage.js";
-import { SetupSchema } from "./setup.js";
+import { RepoSummarySchema, SetupSchema } from "./setup.js";
 
 export const API_VERSION = 2;
 
 const apiVersion = z.literal(API_VERSION);
 const requestId = z.string().min(1).max(128);
+/** A folder on the engine's machine. The engine checks it: a full path to a git repo's top folder. */
+const folderPath = z.string().min(1).max(4096);
 
 // Every change a command makes also goes out as events. Reply data per command: CommandResultSchemas.
 export const CommandSchema = z.discriminatedUnion("type", [
@@ -39,6 +41,17 @@ export const CommandSchema = z.discriminatedUnion("type", [
     choice: z.string().min(1).max(64),
   }),
   z.strictObject({ type: z.literal("stop_item"), itemId: ItemIdSchema }),
+  // Adds a folder to repos.yaml. Omitted fields take the suggest_repo values. The engine checks
+  // every field and answers a bad one in plain words, so the id is free text here.
+  z.strictObject({
+    type: z.literal("add_repo"),
+    path: folderPath,
+    id: z.string().max(100).optional(),
+    baseBranch: z.string().max(255).optional(),
+    checks: z.array(z.string().max(1000)).max(20).optional(),
+  }),
+  // Removes a repo from repos.yaml. Its items and worktrees are kept.
+  z.strictObject({ type: z.literal("remove_repo"), repoId: RepoIdSchema }),
 ]);
 
 export const QuerySchema = z.discriminatedUnion("type", [
@@ -48,12 +61,29 @@ export const QuerySchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("item"), itemId: ItemIdSchema }),
   /** The template the engine suggests for New work text; `templateId` is null when none fits. */
   z.strictObject({ type: z.literal("suggest_template"), text: z.string().max(4000) }),
+  /** What the engine proposes for a folder before add_repo: id, base branch and checks. */
+  z.strictObject({ type: z.literal("suggest_repo"), path: folderPath }),
 ]);
 
 export const EventSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("item_updated"), item: ItemRecordSchema }),
   z.strictObject({ type: z.literal("usage_recorded"), usage: AgentCallUsageSchema }),
+  /** Repos, connections, agents or templates changed: run the setup query again. */
+  z.strictObject({ type: z.literal("setup_changed") }),
 ]);
+
+export const RepoSuggestionSchema = z.strictObject({
+  /** The folder's real path. */
+  path: folderPath,
+  gitRepo: z.boolean(),
+  /** The current branch; null when HEAD is detached or the folder isn't a repo. */
+  branch: z.string().max(255).nullable(),
+  /** From the folder name; null when it gives no valid id. */
+  id: RepoIdSchema.nullable(),
+  checks: z.array(z.string().max(1000)).max(20),
+  /** Why the folder can't be added as it is, in plain words; null when it can. */
+  problem: z.string().max(1000).nullable(),
+});
 
 /** The data of a successful reply, per query type. */
 export const QueryResultSchemas = {
@@ -61,6 +91,7 @@ export const QueryResultSchemas = {
   board: z.strictObject({ items: z.array(ItemRecordSchema) }),
   item: z.strictObject({ item: ItemRecordSchema }),
   suggest_template: z.strictObject({ templateId: TemplateIdSchema.nullable() }),
+  suggest_repo: RepoSuggestionSchema,
 } as const satisfies Record<z.output<typeof QuerySchema>["type"], z.ZodType>;
 
 /** The data of a successful reply, per command type. */
@@ -68,6 +99,8 @@ export const CommandResultSchemas = {
   start_item: z.strictObject({ itemId: ItemIdSchema }),
   resolve_decision: z.null(),
   stop_item: z.null(),
+  add_repo: z.strictObject({ repo: RepoSummarySchema }),
+  remove_repo: z.null(),
 } as const satisfies Record<z.output<typeof CommandSchema>["type"], z.ZodType>;
 
 /** The codes this engine sends in a command's error reply. Clients accept any code. */
@@ -78,6 +111,10 @@ export const COMMAND_ERROR_CODES = [
   "invalid_choice",
   "invalid_state",
   "not_implemented",
+  "already_exists",
+  /** repos.yaml (or another config file) has problems the engineer must fix first. */
+  "invalid_config",
+  "write_failed",
 ] as const;
 
 export const CommandMessageSchema = z.strictObject({
@@ -194,7 +231,9 @@ export type BoardResult = QueryResult<"board">;
 export type ItemResult = QueryResult<"item">;
 export type SetupResult = QueryResult<"setup">;
 export type SuggestTemplateResult = QueryResult<"suggest_template">;
+export type SuggestRepoResult = QueryResult<"suggest_repo">;
 export type CommandType = keyof typeof CommandResultSchemas;
 export type CommandResult<T extends CommandType> = z.output<(typeof CommandResultSchemas)[T]>;
 export type StartItemResult = CommandResult<"start_item">;
+export type AddRepoResult = CommandResult<"add_repo">;
 export type CommandErrorCode = (typeof COMMAND_ERROR_CODES)[number];
