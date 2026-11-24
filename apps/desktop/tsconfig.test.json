@@ -17,6 +17,7 @@
   },
   "include": [
     "src",
+    "scripts",
     "electron.vite.config.ts"
   ]
 }

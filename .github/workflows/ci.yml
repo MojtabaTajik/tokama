@@ -36,3 +36,27 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm removal-test
+      # Desktop smoke test: the built app on a sample engine. install-electron downloads the
+      # Electron binary into this cache and checks it against electron's checksums.json, on a
+      # cache hit too.
+      - name: Read the Electron version
+        id: electron
+        run: echo "version=$(node -p "require('./apps/desktop/node_modules/electron/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/electron-cache
+          key: electron-${{ runner.os }}-${{ runner.arch }}-${{ steps.electron.outputs.version }}
+      # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor, which Chromium's
+      # sandbox needs. Lift it on the runner rather than run the app with --no-sandbox.
+      - name: Allow the Chromium sandbox
+        if: runner.os == 'Linux'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Desktop smoke test
+        env:
+          electron_config_cache: ${{ runner.temp }}/electron-cache
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            xvfb-run --auto-servernum pnpm --filter @tokama/desktop smoke
+          else
+            pnpm --filter @tokama/desktop smoke
+          fi
