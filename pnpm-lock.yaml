@@ -217,6 +217,10 @@ importers:
       '@tokama/core':
         specifier: workspace:*
         version: link:../../packages/core
+    devDependencies:
+      '@tokama/client':
+        specifier: workspace:*
+        version: link:../../packages/client
 
   packages/client:
     dependencies:

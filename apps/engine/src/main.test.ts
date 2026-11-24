@@ -1,0 +1,106 @@
+// The engine as a real background process, started on demand by the client. Runs the built
+// entry (dist/main.js): Node cannot run the TypeScript sources directly, because they import
+// `./x.js`. `pnpm build` runs before `pnpm test` in CI.
+import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { type ClientEvent, connect, type EngineClient } from "@tokama/client";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { tempEngineDir, waitFor } from "./testing/helpers.js";
+
+const MAIN = fileURLToPath(new URL("../dist/main.js", import.meta.url));
+
+let cleanups: (() => unknown)[] = [];
+
+afterEach(async () => {
+  for (const cleanup of cleanups.reverse()) await cleanup();
+  cleanups = [];
+});
+
+beforeAll(() => {
+  if (!existsSync(MAIN)) throw new Error(`${MAIN} is missing: run \`pnpm build\` first`);
+});
+
+const lockPid = (dir: string): number | undefined => {
+  try {
+    return Number.parseInt(readFileSync(`${dir}/engine.lock`, "utf8"), 10);
+  } catch {
+    return undefined;
+  }
+};
+
+/** Kills whatever engine owns `dir` when the test ends, even if the test failed. */
+function killEngineAfter(dir: string): void {
+  cleanups.push(async () => {
+    const pid = lockPid(dir);
+    if (pid === undefined) return;
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // Already gone.
+    }
+  });
+}
+
+async function connectStarting(dir: string): Promise<EngineClient> {
+  const connected = await connect({ dir, start: { command: process.execPath, args: [MAIN, "--dir", dir] }, startTimeoutMs: 15_000 });
+  if (!connected.ok) throw new Error(`${connected.error.code}: ${connected.error.message}`);
+  cleanups.push(() => connected.value.close());
+  return connected.value;
+}
+
+describe("engine process", () => {
+  it("is started on demand, stops on SIGTERM, and the client reconnects to a restarted engine", { timeout: 40_000 }, async () => {
+    const dir = tempEngineDir(cleanups);
+    killEngineAfter(dir);
+    const engineClient = await connectStarting(dir);
+    const events: ClientEvent[] = [];
+    void (async () => {
+      for await (const event of engineClient.events()) events.push(event);
+    })();
+
+    expect(await engineClient.query({ type: "board", workspaceId: "northwind-prod" })).toEqual({ ok: true, data: { items: [] } });
+    const firstPid = lockPid(dir);
+    const firstEngine = engineClient.engineId;
+    expect(firstPid).toBeGreaterThan(0);
+
+    // SIGTERM: graceful shutdown. The client then starts a new engine and reconnects.
+    process.kill(firstPid ?? 0, "SIGTERM");
+    await waitFor(() => events.some((event) => event.kind === "disconnected"), 15_000, "disconnected");
+    await waitFor(() => events.some((event) => event.kind === "reconnected"), 20_000, "reconnected");
+
+    expect(engineClient.engineId).not.toBe(firstEngine);
+    expect(lockPid(dir)).not.toBe(firstPid);
+    expect(await engineClient.query({ type: "board", workspaceId: "northwind-prod" })).toEqual({ ok: true, data: { items: [] } });
+  });
+
+  it("removes its files on SIGTERM", { timeout: 30_000 }, async () => {
+    const dir = tempEngineDir(cleanups);
+    killEngineAfter(dir);
+    const connected = await connect({ dir, start: { command: process.execPath, args: [MAIN, "--dir", dir] }, startTimeoutMs: 15_000, reconnect: false });
+    if (!connected.ok) throw new Error(connected.error.message);
+    cleanups.push(() => connected.value.close());
+
+    process.kill(lockPid(dir) ?? 0, "SIGTERM");
+    const files = ["engine.sock", "engine.token", "engine.lock"].map((name) => `${dir}/${name}`);
+    await waitFor(() => files.every((file) => !existsSync(file)), 15_000, "engine files removed");
+  });
+
+  it("exits with code 3 when an engine already runs in the dir", { timeout: 30_000 }, async () => {
+    const dir = tempEngineDir(cleanups);
+    killEngineAfter(dir);
+    await connectStarting(dir);
+    const token = readFileSync(`${dir}/engine.token`, "utf8");
+
+    const second = spawnSync(process.execPath, [MAIN, "--dir", dir], { encoding: "utf8", timeout: 15_000 });
+    expect(second.status).toBe(3);
+    expect(second.stderr).toContain("already running");
+    expect(readFileSync(`${dir}/engine.token`, "utf8")).toBe(token);
+  });
+
+  it("reports start_failed when the engine command cannot run", async () => {
+    const dir = tempEngineDir(cleanups);
+    const connected = await connect({ dir, start: { command: `${dir}/no-such-engine`, args: [] }, startTimeoutMs: 5_000 });
+    expect(connected).toMatchObject({ ok: false, error: { code: "start_failed" } });
+  });
+});

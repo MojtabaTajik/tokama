@@ -6,10 +6,11 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 export default defineConfig({
   root: repoRoot,
   resolve: {
-    // Tests run against core's source, so they never read a stale or missing dist.
+    // Tests run against core's and the client's source, so they never read a stale or missing dist.
     // `tsc --build` still resolves @tokama/core through its package exports.
     alias: {
       "@tokama/core": fileURLToPath(new URL("../packages/core/src/index.ts", import.meta.url)),
+      "@tokama/client": fileURLToPath(new URL("../packages/client/src/index.ts", import.meta.url)),
     },
   },
   test: {

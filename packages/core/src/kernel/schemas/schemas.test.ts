@@ -8,8 +8,11 @@ import {
   parseClientMessage,
   parseDecisionId,
   parseEngineMessage,
+  parseHandshakeReply,
+  parseHelloMessage,
   parseItemId,
   parseItemRecord,
+  parseQueryResult,
   parseServerMessage,
   parseTemplateId,
   parseWith,
@@ -208,5 +211,45 @@ describe("id parsers", () => {
     expect(parse(valid)).toEqual({ ok: true, value: valid });
     expect(parse(invalid).ok).toBe(false);
     expect(parse(42).ok).toBe(false);
+  });
+});
+
+describe("handshake messages", () => {
+  it("accepts a hello with any integer apiVersion and unknown fields", () => {
+    const hello = { kind: "hello", apiVersion: API_VERSION + 7, token: "t0k", client: "future" };
+    expect(parseHelloMessage(hello)).toMatchObject({ ok: true, value: { apiVersion: API_VERSION + 7 } });
+  });
+
+  it.each([
+    ["no token", { kind: "hello", apiVersion: 1 }],
+    ["an empty token", { kind: "hello", apiVersion: 1, token: "" }],
+    ["a fractional version", { kind: "hello", apiVersion: 1.5, token: "t" }],
+    ["a query instead", { apiVersion: 1, kind: "query", requestId: "r1", query: { type: "item", itemId: ITEM_ID } }],
+  ])("refuses a hello with %s", (_label, hello) => {
+    expect(parseHelloMessage(hello).ok).toBe(false);
+  });
+
+  it("reads welcomes and connection errors of any version", () => {
+    expect(parseHandshakeReply({ kind: "welcome", apiVersion: 1, engineId: "e1" }).ok).toBe(true);
+    const refusal = { kind: "connection_error", apiVersion: 9, code: "unsupported_version", message: "engine speaks 9" };
+    expect(parseHandshakeReply(refusal)).toEqual({ ok: true, value: refusal });
+    expect(parseHandshakeReply({ kind: "connection_error", apiVersion: 1, code: "", message: "" }).ok).toBe(false);
+  });
+
+  it("keeps handshake messages out of the normal message parsers", () => {
+    expect(parseClientMessage({ kind: "hello", apiVersion: API_VERSION, token: "t" }).ok).toBe(false);
+    expect(parseServerMessage({ kind: "welcome", apiVersion: API_VERSION, engineId: "e1" }).ok).toBe(false);
+  });
+});
+
+describe("query results", () => {
+  it("parses board and item data", () => {
+    expect(parseQueryResult("board", { items: [item()] })).toEqual({ ok: true, value: { items: [item()] } });
+    expect(parseQueryResult("item", { item: item() })).toEqual({ ok: true, value: { item: item() } });
+  });
+
+  it("refuses data of the wrong shape", () => {
+    expect(parseQueryResult("board", { item: item() }).ok).toBe(false);
+    expect(parseQueryResult("item", { item: { ...item(), state: "lost" } }).ok).toBe(false);
   });
 });
