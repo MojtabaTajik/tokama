@@ -1,0 +1,157 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { AgentCallEventSchema, type AgentCallEvent } from "../../../kernel/schemas/index.js";
+import { classifyFailure, createStreamParser, type StreamState } from "./stream.js";
+
+// Stream parsing cases ported from ai-pipeline tests/test_claude_call.py (metrics from the result,
+// fallback to `usage`, garbage lines), on the stream-json fixtures the fake CLI replays.
+
+const fixture = (name: string) => readFileSync(join(import.meta.dirname, "testing", "fixtures", `${name}.jsonl`), "utf8").split("\n");
+
+function parse(lines: readonly string[], cwd = "/tmp/fixture/repo") {
+  const parser = createStreamParser(cwd);
+  const events: AgentCallEvent[] = lines.flatMap((line) => parser.line(line));
+  for (const event of events) expect(AgentCallEventSchema.safeParse(event).success).toBe(true);
+  return { events, state: parser.state() };
+}
+
+const line = (value: unknown) => JSON.stringify(value);
+
+describe("Claude Code stream parser", () => {
+  it("turns a recorded run into text, edit, command and rate-limit events", () => {
+    const { events } = parse(fixture("success"));
+    expect(events.map((event) => event.type)).toEqual(["rate_limit", "text", "edit", "text", "command", "text"]);
+    expect(events).toContainEqual({ type: "edit", tool: "Write", path: "hello.py" });
+    expect(events).toContainEqual({ type: "command", command: "python3 hello.py" });
+  });
+
+  it("keeps the session id and sums tokens by type from modelUsage", () => {
+    const { state } = parse(fixture("success"));
+    expect(state.sessionId).toBe("d4bc8b9c-641c-40df-bc38-952463fb9366");
+    expect(state.result?.isError).toBe(false);
+    expect(state.usage).toEqual({ input: 5440, output: 213, cacheRead: 10831, cacheWrite: 0 });
+    expect(state.modelUsage).toEqual({ "qwen3-coder:30b": { input: 5440, output: 213, cacheRead: 10831, cacheWrite: 0 } });
+  });
+
+  it("sums modelUsage over every model the call used", () => {
+    const { state } = parse([
+      line({
+        type: "result",
+        is_error: false,
+        modelUsage: {
+          "claude-opus-5-5": { inputTokens: 4, outputTokens: 191, cacheReadInputTokens: 7385, cacheCreationInputTokens: 7479 },
+          "claude-haiku-5-5": { inputTokens: 10, outputTokens: 5, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 },
+        },
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }),
+    ]);
+    expect(state.usage).toEqual({ input: 14, output: 196, cacheRead: 7385, cacheWrite: 7479 });
+  });
+
+  it("falls back to the result's usage when modelUsage is empty", () => {
+    const { state } = parse([line({ type: "result", is_error: false, modelUsage: {}, usage: { input_tokens: 5, output_tokens: 7 } })]);
+    expect(state.usage).toEqual({ input: 5, output: 7, cacheRead: 0, cacheWrite: 0 });
+    expect(state.modelUsage).toBeUndefined();
+  });
+
+  it("without a result, counts each message's usage once, not once per content block", () => {
+    const message = (id: string, input: number) =>
+      line({ type: "assistant", message: { id, content: [{ type: "text", text: "x" }], usage: { input_tokens: input, output_tokens: 1 } } });
+    const { state } = parse([message("m1", 100), message("m1", 100), message("m2", 50)]);
+    expect(state.usage).toEqual({ input: 150, output: 2, cacheRead: 0, cacheWrite: 0 });
+  });
+
+  it("converts rate-limit utilization to percent and reset times to epoch ms", () => {
+    const { events } = parse(fixture("success"));
+    expect(events[0]).toEqual({
+      type: "rate_limit",
+      status: "allowed",
+      windows: [
+        { window: "five_hour", usedPercent: 42, resetsAt: 1_795_000_000_000 },
+        { window: "seven_day", usedPercent: 12.34, resetsAt: 1_795_500_000_000 },
+      ],
+    });
+    const single = parse([line({ type: "rate_limit_event", rate_limit_info: { status: "allowed_warning", rateLimitType: "seven_day", utilization: 0.9 } })]);
+    expect(single.events).toEqual([{ type: "rate_limit", status: "allowed_warning", windows: [{ window: "seven_day", usedPercent: 90 }] }]);
+  });
+
+  it("records no absolute path: edits outside the working directory have no path", () => {
+    const edit = (path: string) => line({ type: "assistant", message: { content: [{ type: "tool_use", name: "Edit", input: { file_path: path } }] } });
+    const { events } = parse(
+      [
+        line({ type: "system", subtype: "init", cwd: "/private/tmp/repo" }),
+        edit("/private/tmp/repo/src/a.ts"),
+        edit("/tmp/repo/src/b.ts"),
+        edit("/Users/someone/.ssh/config"),
+        edit("/private/tmp/repo-other/c.ts"),
+        edit("../outside.txt"),
+      ],
+      "/tmp/repo",
+    );
+    expect(events).toEqual([
+      { type: "edit", tool: "Edit", path: "src/a.ts" },
+      { type: "edit", tool: "Edit", path: "src/b.ts" },
+      { type: "edit", tool: "Edit" },
+      { type: "edit", tool: "Edit" },
+      { type: "edit", tool: "Edit" },
+    ]);
+  });
+
+  it("reports other tools by name", () => {
+    const { events } = parse([line({ type: "assistant", message: { content: [{ type: "tool_use", name: "Grep", input: { pattern: "x" } }] } })]);
+    expect(events).toEqual([{ type: "tool_call", tool: "Grep" }]);
+  });
+
+  it("skips lines that are not JSON, not objects, or not in the expected shape", () => {
+    const { events, state } = parse([
+      "",
+      "warning: something",
+      "{not json",
+      "[1,2]",
+      line({ type: "user", message: { content: [] } }),
+      line({ type: "assistant", message: "not an object" }),
+      line({ type: "rate_limit_event" }),
+      line({ type: "something_new", x: 1 }),
+    ]);
+    expect(events).toEqual([]);
+    expect(state).toEqual({ usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, limitRejected: false });
+  });
+
+  it("keeps a line whose counts are odd, counting them as absent", () => {
+    const { state } = parse([line({ type: "result", is_error: false, usage: { input_tokens: -3, output_tokens: 2.5, cache_read_input_tokens: 4 } })]);
+    expect(state.usage).toEqual({ input: 0, output: 0, cacheRead: 4, cacheWrite: 0 });
+  });
+});
+
+describe("Claude Code failure classification", () => {
+  const classified = (name: string, stderr = "") => classifyFailure(parse(fixture(name)).state, stderr);
+  const state = (patch: Partial<StreamState>): StreamState => ({ usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, limitRejected: false, ...patch });
+
+  it("classifies the recorded and constructed samples", () => {
+    expect(classified("logged-out")).toBe("auth");
+    expect(classified("quota")).toBe("quota");
+    expect(classified("rate-limited")).toBe("rate_limit");
+    expect(classified("execution-error")).toBe("crash");
+  });
+
+  it("uses the assistant message's error value first", () => {
+    for (const code of ["authentication_failed", "oauth_org_not_allowed", "account_on_hold", "verification_required", "cloud_credential_error"]) {
+      expect(classifyFailure(state({ assistantError: { code, text: "" } }), "")).toBe("auth");
+    }
+    expect(classifyFailure(state({ assistantError: { code: "billing_error", text: "" } }), "")).toBe("quota");
+    expect(classifyFailure(state({ assistantError: { code: "rate_limit", text: "" } }), "")).toBe("rate_limit");
+    expect(classifyFailure(state({ assistantError: { code: "rate_limit", text: "" }, limitRejected: true }), "")).toBe("quota");
+    expect(classifyFailure(state({ assistantError: { code: "server_error", text: "" } }), "")).toBe("crash");
+  });
+
+  it("falls back to the API status, then to the words of the result and stderr", () => {
+    expect(classifyFailure(state({ result: { isError: true, text: "", apiErrorStatus: 401 } }), "")).toBe("auth");
+    expect(classifyFailure(state({ result: { isError: true, text: "", apiErrorStatus: 429 } }), "")).toBe("rate_limit");
+    expect(classifyFailure(state({ result: { isError: true, text: "Claude AI usage limit reached|1795000000" } }), "")).toBe("quota");
+    expect(classifyFailure(state({}), "Invalid API key · Please run /login")).toBe("auth");
+    expect(classifyFailure(state({}), "API Error: 429 rate_limit_error")).toBe("rate_limit");
+    expect(classifyFailure(state({ result: { isError: true, text: "Context limit reached" } }), "")).toBe("crash");
+    expect(classifyFailure(state({}), "Error: something broke")).toBe("crash");
+  });
+});
