@@ -131,15 +131,18 @@ describe("a tamper event for each protected category", () => {
     }
   });
 
-  it("only the listed remote and branch keys do not count: a real `git push -u` and `git remote set-url` do not", SLOW, async () => {
-    const bare = join(root, "origin.git");
-    await plain(root, "init", "-q", "--bare", bare);
+  it("only the listed remote and branch keys do not count: a real `git push -u` and `git remote set-url` to network URLs do not", SLOW, async () => {
+    // The https URL reaches a local bare repo through a rewrite set before the baseline.
+    await plain(root, "init", "-q", "--bare", join(root, "origin.git"));
+    await plain(repo, "config", `url.${root}/.insteadOf`, "https://example.invalid/");
     expect(
       await changesAfter(async () => {
-        await plain(repo, "remote", "add", "origin", bare);
+        await plain(repo, "remote", "add", "origin", "https://example.invalid/origin.git");
         await plain(repo, "push", "-q", "-u", "origin", "main");
-        await plain(repo, "remote", "set-url", "origin", "https://example.invalid/orders-api.git");
-        await plain(repo, "remote", "set-url", "--push", "origin", "https://example.invalid/push.git");
+        for (const url of ["ssh://git@example.invalid/orders-api.git", "git@example.invalid:orders-api.git", "git://example.invalid/orders-api.git", "http://example.invalid/orders-api.git"]) {
+          await plain(repo, "remote", "set-url", "origin", url);
+        }
+        await plain(repo, "remote", "set-url", "--push", "origin", "git@example.invalid:team/push.git");
         for (const [key, value] of [["remote.origin.push", "refs/heads/main"], ["remote.origin.tagOpt", "--no-tags"], ["remote.origin.prune", "true"], ["branch.main.pushRemote", "origin"], ["branch.main.rebase", "true"]]) {
           await plain(repo, "config", key!, value!);
         }
@@ -156,6 +159,18 @@ describe("a tamper event for each protected category", () => {
       // A value or subsection that ends like an ignored key does not hide the key.
       ["remote.origin.uploadpack", "x\nremote.origin.url"],
       ["remote.origin.url.uploadpack", "touch pwned"],
+      // A url or pushurl that is a local path or a transport helper.
+      ["remote.origin.url", "/srv/evil.git"],
+      ["remote.origin.url", "../evil.git"],
+      ["remote.origin.url", "./evil:repo"],
+      ["remote.origin.url", "~/evil.git"],
+      ["remote.origin.url", "file:///srv/evil.git"],
+      ["remote.origin.url", "ext::sh -c touch% pwned"],
+      ["remote.origin.url", "fd::3"],
+      ["remote.origin.url", "custom::anything"],
+      ["remote.origin.url", "custom://example.invalid/x"],
+      ["remote.origin.pushurl", "/srv/evil.git"],
+      ["remote.origin.pushurl", "ext::sh -c touch% pwned"],
     ];
     for (const [key, value] of watched) {
       expect(await changesAfter(() => plain(repo, "config", key!, value!)), key).toEqual([{ area: "git", path: "config", category: "git", change: "modified" }]);

@@ -78,8 +78,9 @@ export interface IntegrityError {
 const SHARED_GIT_FILES = ["config", "config.worktree", "info/attributes", "info/exclude"];
 /**
  * The only config keys that do not count, by section and variable name (lowercase, as git lists
- * them): where to fetch and push and what a branch tracks. Every other `remote.<name>.*` and
- * `branch.<name>.*` key counts; `uploadpack`, `receivepack` and `vcs` name commands git runs.
+ * them): where to fetch and push and what a branch tracks; a url or pushurl only when it names a
+ * network host (networkUrl). Every other `remote.<name>.*` and `branch.<name>.*` key counts;
+ * `uploadpack`, `receivepack` and `vcs` name commands git runs.
  */
 const IGNORED_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   remote: new Set(["url", "pushurl", "fetch", "push", "tagopt", "prune"]),
@@ -120,13 +121,29 @@ function splitRecord(record: string): { key: string; value: string | undefined }
   return newline === -1 ? { key: record, value: undefined } : { key: record.slice(0, newline), value: record.slice(newline + 1) };
 }
 
+/** A network URL by scheme: `https://host/...`, `ssh://host/...` and the like. */
+const NETWORK_URL = /^(?:https?|ssh|git|git\+ssh|ssh\+git):\/\/[^/\s]/i;
+/** An scp-style ssh address, `[user@]host:path`: no slash before the colon, and not `<helper>::`. */
+const SCP_ADDRESS = /^(?:[^@/:\s]+@)?(?:\[[^\]/\s]+\]|[A-Za-z0-9_.~][A-Za-z0-9_.~-]*):(?!:)[^\s]/;
+
+/**
+ * Whether a remote's url or pushurl names a network host. A local path (absolute, relative,
+ * `~`, `file://`) runs that repo's hooks on a push, and a transport helper (`ext::`, `fd::`, any
+ * `<helper>::` or other scheme) runs a command: those count.
+ */
+const networkUrl = (value: string | undefined): boolean => value !== undefined && (NETWORK_URL.test(value) || SCP_ADDRESS.test(value));
+
 /** By section and variable name: a subsection may hold dots, so they are the first and last parts. */
-function ignoredKey(key: string): boolean {
+function ignoredRecord(record: string): boolean {
+  const { key, value } = splitRecord(record);
   const first = key.indexOf(".");
   const last = key.lastIndexOf(".");
   // No subsection (e.g. remote.pushdefault): counts.
   if (first === -1 || first === last) return false;
-  return IGNORED_KEYS[key.slice(0, first)]?.has(key.slice(last + 1)) === true;
+  const section = key.slice(0, first);
+  const name = key.slice(last + 1);
+  if (IGNORED_KEYS[section]?.has(name) !== true) return false;
+  return section !== "remote" || (name !== "url" && name !== "pushurl") || networkUrl(value);
 }
 
 /** Whether git reads another config file from this key: `include.path` or `includeIf.<condition>.path`. */
@@ -180,7 +197,7 @@ async function hashConfig(git: Git, path: string, name: string): Promise<Result<
   if (plain === undefined || !plain.startsWith("sha256:")) return ok(plain);
   const listed = await git.configList(path);
   if (!listed.ok) return err({ message: `cannot read git config: ${listed.error.message}` });
-  const counted = listed.value.filter((record) => !ignoredKey(splitRecord(record).key));
+  const counted = listed.value.filter((record) => !ignoredRecord(record));
   const included = await includedHashes(git, listed.value, path, 0, { files: 0 });
   if (!included.ok) return err({ message: `cannot read git config ${name}: ${included.error}` });
   return ok(`config:${createHash("sha256").update(JSON.stringify([counted, included.value])).digest("hex")}`);

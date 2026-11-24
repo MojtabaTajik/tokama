@@ -647,16 +647,30 @@ describe("run loop: protection", () => {
       expect(item(id).state).toBe("done");
     });
 
-    it("a real `git push -u` and `git remote set-url` in the main checkout during a step do not stop the item", SLOW, async () => {
-      const bare = join(root, "origin.git");
-      await plain(root, "init", "-q", "--bare", bare);
-      await plain(repo.path, "remote", "add", "origin", bare);
+    it("a real `git push -u` and `git remote set-url` to an https or ssh URL in the main checkout during a step do not stop the item", SLOW, async () => {
+      // The https URL reaches a local bare repo through a rewrite set before the baseline.
+      await plain(root, "init", "-q", "--bare", join(root, "origin.git"));
+      await plain(repo.path, "config", `url.${root}/.insteadOf`, "https://example.invalid/");
+      await plain(repo.path, "remote", "add", "origin", "https://example.invalid/origin.git");
       const push = async () => {
         await plain(repo.path, "push", "-q", "-u", "origin", "main");
         await plain(repo.path, "remote", "set-url", "origin", "https://example.invalid/orders-api.git");
+        await plain(repo.path, "remote", "set-url", "origin", "ssh://git@example.invalid/orders-api.git");
+        await plain(repo.path, "remote", "set-url", "--push", "origin", "git@example.invalid:orders-api.git");
       };
       const id = await start(engine(fakeRuntime([after(push, edits(FIXED))])), template([BUILD_CHECKED]));
       expect(item(id).state).toBe("done");
+    });
+
+    it.each([
+      ["a local path", "/srv/evil.git"],
+      ["a transport helper", "ext::sh -c touch% pwned"],
+    ])("an agent setting the remote url to %s stops the item", SLOW, async (_kind, url) => {
+      await plain(repo.path, "remote", "add", "origin", "https://example.invalid/orders-api.git");
+      const setUrl = () => plain(repo.path, "remote", "set-url", "origin", url);
+      const id = await start(engine(fakeRuntime([after(setUrl, edits(FIXED))])), template([BUILD_CHECKED]));
+      expect(item(id)).toMatchObject({ state: "failed", outcome: { detail: expect.stringContaining("modified git:config (git)") } });
+      expect(commitOf(id)).toBeUndefined();
     });
 
     it("an agent setting remote.origin.uploadpack stops the item", SLOW, async () => {
