@@ -2,7 +2,7 @@
 import type { ItemRecord, Setup } from "@tokama/core";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { App } from "../App.js";
 import { CONNECTED, fakeBridge, type Reply } from "../testing/bridge.js";
 import { ITEMS, NOW, setup } from "../testing/sample.js";
@@ -17,6 +17,7 @@ beforeEach(() => {
   root = createRoot(container);
 });
 afterEach(() => {
+  vi.restoreAllMocks();
   act(() => root.unmount());
   container.remove();
 });
@@ -29,10 +30,13 @@ interface Options {
   readonly suggest?: string | null;
   readonly commandReply?: Reply;
   readonly setup?: Setup;
+  /** Answers `suggest_template` by hand, per text, instead of at once. */
+  readonly suggestReply?: (text: string) => Promise<Reply>;
 }
 const mount = async (options: Options = {}) => {
   const fake = fakeBridge(CONNECTED, {
     reply: (q) => {
+      if (q.type === "suggest_template" && options.suggestReply) return options.suggestReply((q as unknown as { text: string }).text);
       if (q.type === "suggest_template") return { ok: true, data: { templateId: options.suggest === undefined ? SUGGEST : options.suggest } };
       if (q.type === "setup" && options.setup) return { ok: true, data: options.setup };
       if (q.type === "item" && (q as { itemId?: string }).itemId === NEW_ID) return { ok: true, data: { item: newItem } };
@@ -97,6 +101,60 @@ describe("New work input", () => {
     expect($$(".np-tag").map((el) => el.parentElement?.textContent)).toEqual(["Plan and buildsuggested"]);
   });
 
+  it("counts a suggestion only for the text it was made for, whatever order the replies arrive in", async () => {
+    const waiting = new Map<string, (reply: Reply) => void>();
+    await mount({ suggestReply: (text) => new Promise((resolve) => waiting.set(text, resolve)) });
+    const answer = (text: string, templateId: string | null) => act(async () => waiting.get(text)!({ ok: true, data: { templateId } }));
+    await focusInput();
+    await type(input(), "a");
+    await wait(300);
+    await type(input(), "ab");
+    await wait(300);
+    expect([...waiting.keys()]).toEqual(["a", "ab"]);
+    // The newer answer first, then the older one, which must not replace it.
+    await answer("ab", "plan-and-build");
+    await answer("a", "quick-fix");
+    expect(trigger("Template").textContent).toBe("TemplatePlan and build (suggested)▾");
+    await click(trigger("Repos"));
+    await click($$('[role="option"]')[0]);
+    await click(trigger("Repos"));
+    expect(start().disabled).toBe(false);
+
+    // More typing: the old name stays, but Start waits for the answer to the current text.
+    await type(input(), "abc");
+    expect(trigger("Template").textContent).toBe("TemplatePlan and build (suggested)▾");
+    expect(start().disabled).toBe(true);
+    expect(reason()).toBe("Choose a template");
+    await wait(300);
+    await answer("abc", "quick-fix");
+    expect(trigger("Template").textContent).toBe("TemplateQuick fix (suggested)▾");
+    expect(start().disabled).toBe(false);
+
+    // An error clears the suggestion.
+    await type(input(), "abcd");
+    await wait(300);
+    await act(async () => waiting.get("abcd")!({ ok: false, error: { code: "not_implemented", message: "x" } }));
+    expect(trigger("Template").textContent).toBe("TemplateChoose…▾");
+    expect(reason()).toBe("Choose a template");
+    // So does blank text.
+    await type(input(), "abcde");
+    await wait(300);
+    await answer("abcde", "quick-fix");
+    expect(trigger("Template").textContent).toBe("TemplateQuick fix (suggested)▾");
+    await type(input(), "  ");
+    expect(trigger("Template").textContent).toBe("TemplateChoose…▾");
+  });
+
+  it("does not let a stale suggestion override the user's own choice", async () => {
+    const waiting = new Map<string, (reply: Reply) => void>();
+    await mount({ suggestReply: (text) => new Promise((resolve) => waiting.set(text, resolve)) });
+    await focusInput();
+    await click(trigger("Template"));
+    await click($$('[role="option"]').find((el) => el.textContent?.includes("Emergency investigator"))!);
+    await type(input(), "5xx on checkout");
+    expect(start().disabled).toBe(false);
+  });
+
   it("asks nothing for blank text and shows no mark when the engine has no suggestion", async () => {
     const fake = await mount({ suggest: null });
     await focusInput();
@@ -131,12 +189,14 @@ describe("New work input", () => {
     await type(input(), "Fix the retry loop");
     expect(reason()).toBe("Choose at least one repo");
     expect(trigger("Repos").textContent).toBe("ReposChoose…▾");
+    // The blocked form sends nothing, by Ctrl+Enter or by a submit.
+    await press(input(), "Enter", { ctrlKey: true });
+    await act(async () => void $(".np-form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(fake.command).not.toHaveBeenCalled();
     await click(trigger("Repos"));
     await click($$('[role="option"]').find((el) => el.textContent?.includes("orders-api"))!);
     expect(reason()).toBe("");
     expect(start().disabled).toBe(false);
-    // Start with the blocked form sends nothing; Ctrl+Enter obeys the same rule.
-    expect(fake.command).not.toHaveBeenCalled();
   });
 
   it("needs no repo for an investigation, and says so", async () => {
@@ -180,6 +240,25 @@ describe("New work input", () => {
     await click(trigger("Template"));
     await click($$('[role="option"]').find((el) => el.textContent?.includes("Quick fix"))!);
     expect($(".np-uses")).toBeNull();
+  });
+
+  it("uses a dialog popup and a status line for 'No match', and keeps the active option in view", async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    // happy-dom has no scrollIntoView of its own: remove the stand-in when the test ends.
+    onTestFinished(() => void delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView);
+    await mount({ suggest: null });
+    await focusInput();
+    expect(trigger("Template").getAttribute("aria-haspopup")).toBe("dialog");
+    await click(trigger("Template"));
+    expect(scroll).toHaveBeenCalledWith({ block: "nearest" });
+    scroll.mockClear();
+    await press(search(), "ArrowDown");
+    expect(scroll).toHaveBeenCalledWith({ block: "nearest" });
+    await type(search(), "zzz");
+    expect($('[role="listbox"]')?.textContent).toBe("");
+    expect($('.np-popup [role="status"]')?.textContent).toBe("No match");
+    expect($('[role="listbox"] [role="status"]')).toBeNull();
   });
 
   it("moves through a dropdown with the arrow keys and picks with Enter", async () => {
@@ -282,7 +361,7 @@ describe("New work input", () => {
   });
 
   it("shows the new item in All work when the current view would hide it", async () => {
-    await mount({ suggest: null });
+    const fake = await mount({ suggest: null });
     await click($$(".sb-main").find((el) => el.querySelector(".ellipsis")?.textContent === "Review only")!);
     expect($("main h1")?.textContent).toBe("Review only");
     await focusInput();
@@ -293,10 +372,31 @@ describe("New work input", () => {
     await click($$('[role="option"]')[0]);
     await click(start());
     expect($("main h1")?.textContent).toBe("All work");
+    await wait(0);
+    await fake.pushItem(newItem);
+    expect($('.pl-row[aria-current="true"] .pl-title')?.textContent).toBe("Fix the retry loop");
+    expect($("aside.drawer h2")?.textContent).toBe("Fix the retry loop");
+  });
+
+  it("switches the status filter from Done to Active so the new item is not hidden", async () => {
+    const fake = await mount({ suggest: null });
+    const pressed = () => $$(".filter-bar .segment").filter((el) => el.getAttribute("aria-pressed") === "true").map((el) => el.getAttribute("data-kind"));
+    await click($(".filter-bar .segment[data-kind=\"done\"]"));
+    expect(pressed()).toEqual(["done"]);
+    await focusInput();
+    await click(trigger("Template"));
+    await click($$('[role="option"]').find((el) => el.textContent?.includes("Emergency investigator"))!);
+    await type(input(), "5xx on checkout");
+    await click(start());
+    expect(fake.command).toHaveBeenCalledTimes(1);
+    expect(pressed()).toEqual(["active"]);
   });
 });
 
 describe("opening New work", () => {
+  const platform = (name: string) => vi.spyOn(navigator, "platform", "get").mockReturnValue(name);
+  beforeEach(() => platform("MacIntel"));
+
   it("opens from '+ New work' and focuses the input", async () => {
     await mount();
     await click($(".new-work"));
@@ -305,19 +405,30 @@ describe("opening New work", () => {
     expect($(".np-body")).not.toBeNull();
   });
 
-  it("opens from Cmd+N and Ctrl+N, and keeps what was typed", async () => {
+  it("opens from Cmd+N on macOS, and keeps what was typed; Ctrl+N is not ours there", async () => {
     await mount();
+    await press(document.body, "n", { ctrlKey: true });
+    expect($(".np-body")).toBeNull();
     await press(document.body, "n", { metaKey: true });
     expect(document.activeElement).toBe(input());
     await type(input(), "draft");
     await press(input(), "Escape");
-    await press(document.body, "n", { ctrlKey: true });
+    await press(document.body, "n", { metaKey: true });
     expect(input().value).toBe("draft");
     expect($(".np-body")).not.toBeNull();
-    // Plain N and Cmd+Shift+N are not ours.
+    // Cmd+Shift+N is not ours.
     await press(input(), "Escape");
     await press(document.body, "n", { metaKey: true, shiftKey: true });
     expect($(".np-body")).toBeNull();
+  });
+
+  it("opens from Ctrl+N elsewhere, and ignores Cmd+N", async () => {
+    platform("Linux x86_64");
+    await mount();
+    await press(document.body, "n", { metaKey: true });
+    expect($(".np-body")).toBeNull();
+    await press(document.body, "n", { ctrlKey: true });
+    expect(document.activeElement).toBe(input());
   });
 
   it("opens from Cmd+N with the sidebar closed", async () => {

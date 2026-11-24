@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { TokamaBridge } from "../shared/bridge.js";
 import { ItemDrawer } from "./drawer/ItemDrawer.js";
 import { ALL_WORK, inView, needsYouCount, type View } from "./model.js";
-import { NewWork, type NewWorkHandle } from "./newwork/NewWork.js";
+import { isMac, NewWork, type NewWorkHandle } from "./newwork/NewWork.js";
 import { MainArea } from "./shell/MainArea.js";
 import { Rail } from "./shell/Rail.js";
 import { Sidebar } from "./shell/Sidebar.js";
@@ -40,10 +40,10 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow }: Ap
   const setup = data?.setup;
   const views = useViewState((view) => view.kind === "all" || (view.kind === "workflow" ? setup?.templates : setup?.repos)?.some((entry) => entry.id === view.id) === true);
 
-  // Cmd or Ctrl and N open New work from anywhere; the sidebar may be closed, so this lives here.
+  // Cmd (macOS) or Ctrl (elsewhere) and N open New work from anywhere; the sidebar may be closed, so this lives here.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() !== "n" || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || composer.current === null) return;
+      if (event.key.toLowerCase() !== "n" || !(isMac() ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey) || event.altKey || event.shiftKey || composer.current === null) return;
       event.preventDefault();
       composer.current.open();
     };

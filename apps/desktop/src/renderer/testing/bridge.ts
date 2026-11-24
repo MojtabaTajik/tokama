@@ -10,7 +10,7 @@ export type Reply = { ok: true; data: unknown } | { ok: false; error: { code: st
 
 export const CONNECTED: ConnectionState = { status: "connected", engineId: "e-1" };
 
-export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | undefined; commandReply?: (command: { type: string }) => Reply } = {}) {
+export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | Promise<Reply> | undefined; commandReply?: (command: { type: string }) => Reply } = {}) {
   let connectionListener: ((state: ConnectionState) => void) | undefined;
   // Every subscriber hears every event: the app and the open drawer both listen.
   const eventListeners = new Set<(event: BridgeEvent) => void>();

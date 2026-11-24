@@ -32,7 +32,8 @@ const TEXT = {
   failed: (message: string) => `Could not start the work: ${message}`,
 } as const;
 
-const SHORTCUT = typeof navigator !== "undefined" && /mac/i.test(navigator.platform) ? "⌘↵" : "Ctrl+↵";
+/** macOS uses Cmd for shortcuts, other systems Ctrl. */
+export const isMac = (): boolean => typeof navigator !== "undefined" && /mac/i.test(navigator.platform);
 /** The longest text `start_item` accepts. */
 const MAX_TEXT = 4000;
 
@@ -62,12 +63,15 @@ export function NewWork({ bridge, setup, ref, onStarted }: NewWorkProps) {
   const origin = useRef<HTMLElement | undefined>(undefined);
   const reasonId = useId();
 
-  const suggestedId = useSuggestion(bridge, text);
-  // The user's own choice wins; until then the engine's suggestion applies.
-  const template = setup.templates.find((candidate) => candidate.id === (picked ?? suggestedId));
-  const reason = missing({ template, text, repoIds });
+  const suggestion = useSuggestion(bridge, text);
+  const suggestedId = suggestion?.templateId;
+  // The user's own choice wins; until then the engine's suggestion applies. An out-of-date
+  // suggestion is still shown, so the name does not flicker, but Start waits for the current one.
+  const shown = setup.templates.find((candidate) => candidate.id === (picked ?? suggestedId));
+  const template = picked !== undefined || suggestion?.fresh === true ? shown : undefined;
   // In the setup's order; a repo that left the setup since it was chosen drops out.
   const chosenRepos = setup.repos.filter((repo) => repoIds.includes(repo.id)).map((repo) => repo.id);
+  const reason = missing({ template, text, repoIds: chosenRepos });
 
   useImperativeHandle(ref, () => ({
     open(prefill) {
@@ -123,7 +127,7 @@ export function NewWork({ bridge, setup, ref, onStarted }: NewWorkProps) {
   };
 
   const toggleRepo = (id: string) => setRepoIds(repoIds.includes(id) ? repoIds.filter((repoId) => repoId !== id) : [...repoIds, id]);
-  const uses = template ? usesOf(template, setup.connections) : [];
+  const uses = shown ? usesOf(shown, setup.connections) : [];
 
   return (
     <div className="np">
@@ -157,10 +161,10 @@ export function NewWork({ bridge, setup, ref, onStarted }: NewWorkProps) {
             <div className="np-row">
               <Picker
                 label={TEXT.template}
-                summary={template ? `${template.name}${picked === undefined ? ` (${TEXT.suggested})` : ""}` : TEXT.chooseTemplate}
+                summary={shown ? `${shown.name}${picked === undefined ? ` (${TEXT.suggested})` : ""}` : TEXT.chooseTemplate}
                 searchLabel={TEXT.searchTemplates}
                 multi={false}
-                selected={new Set(template ? [template.id] : [])}
+                selected={new Set(shown ? [shown.id] : [])}
                 groups={KIND_GROUPS.map(({ kind, heading }) => ({
                   heading,
                   options: setup.templates.filter((candidate) => candidate.kind === kind).map((candidate) => ({ id: candidate.id, label: candidate.name, tag: candidate.id === suggestedId ? TEXT.suggested : undefined })),
@@ -169,7 +173,7 @@ export function NewWork({ bridge, setup, ref, onStarted }: NewWorkProps) {
               />
               <Picker
                 label={TEXT.repos}
-                summary={chosenRepos.length === 0 ? (template === undefined || needsRepo(template) ? TEXT.chooseRepos : TEXT.optional) : chosenRepos.length === 1 ? (chosenRepos[0] ?? "") : TEXT.repoCount(chosenRepos.length)}
+                summary={chosenRepos.length === 0 ? (shown === undefined || needsRepo(shown) ? TEXT.chooseRepos : TEXT.optional) : chosenRepos.length === 1 ? (chosenRepos[0] ?? "") : TEXT.repoCount(chosenRepos.length)}
                 searchLabel={TEXT.searchRepos}
                 multi
                 selected={new Set(chosenRepos)}
@@ -187,10 +191,10 @@ export function NewWork({ bridge, setup, ref, onStarted }: NewWorkProps) {
                 </span>
               )}
             </div>
-            {template && (
-              <p className="np-steps mono ellipsis" title={stepsLine(template, setup.agents)}>
+            {shown && (
+              <p className="np-steps mono ellipsis" title={stepsLine(shown, setup.agents)}>
                 <span className="visually-hidden">{TEXT.steps}: </span>
-                {stepsLine(template, setup.agents)}
+                {stepsLine(shown, setup.agents)}
               </p>
             )}
             <div className="np-row np-foot">
@@ -201,7 +205,7 @@ export function NewWork({ bridge, setup, ref, onStarted }: NewWorkProps) {
                 {reason}
               </span>
               <button type="submit" className="np-start" disabled={reason !== undefined || busy} aria-describedby={reason !== undefined ? reasonId : undefined}>
-                {busy ? TEXT.starting : TEXT.start} <span className="mono np-keys">{SHORTCUT}</span>
+                {busy ? TEXT.starting : TEXT.start} <span className="mono np-keys">{isMac() ? "⌘↵" : "Ctrl+↵"}</span>
               </button>
             </div>
             {error !== undefined && (

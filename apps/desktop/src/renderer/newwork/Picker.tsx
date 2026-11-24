@@ -65,6 +65,11 @@ export function Picker({ label, summary, searchLabel, groups, selected, multi, o
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
+  // The active option stays in view while the arrow keys move through a long list.
+  useEffect(() => {
+    if (open) root.current?.querySelector('[role="option"][data-active]')?.scrollIntoView?.({ block: "nearest" });
+  }, [open, index, query]);
+
   const pick = (id: string) => {
     onPick(id);
     if (!multi) close(true);
@@ -99,7 +104,7 @@ export function Picker({ label, summary, searchLabel, groups, selected, multi, o
         type="button"
         ref={trigger}
         className="np-trigger"
-        aria-haspopup="listbox"
+        aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => (open ? close(true) : show())}
         onKeyDown={(event) => {
@@ -161,8 +166,12 @@ export function Picker({ label, summary, searchLabel, groups, selected, multi, o
                 ))}
               </div>
             ))}
-            {flat.length === 0 && <p className="np-empty">{NO_MATCH}</p>}
           </div>
+          {flat.length === 0 && (
+            <p className="np-empty" role="status">
+              {NO_MATCH}
+            </p>
+          )}
         </div>
       )}
     </div>
