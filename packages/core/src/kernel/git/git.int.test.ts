@@ -493,6 +493,21 @@ describe("API on a real repo", () => {
     expect(existsSync(join(repo, "main.log"))).toBe(true);
   });
 
+  it("diffTreeRaw lists changed paths with blob ids; diffTrees shows the text diff between two trees", SLOW, async () => {
+    const base = value(await git.revParse(repo, "HEAD^{tree}"));
+    write(join(repo, "a.txt"), "two\n");
+    write(join(repo, "new file.txt"), "x\n");
+    value(await git.addAll(repo));
+    const tree = value(await git.writeTree(repo));
+    const blob = (await plain(repo, "rev-parse", ":a.txt")).trim();
+    expect(value(await git.diffTreeRaw(repo, base, tree))).toEqual([
+      { path: "a.txt", status: "M", oldMode: "100644", newMode: "100644", oldBlob: expect.stringMatching(/^[0-9a-f]{40,64}$/), newBlob: blob },
+      { path: "new file.txt", status: "A", oldMode: "000000", newMode: "100644", oldBlob: null, newBlob: expect.stringMatching(/^[0-9a-f]{40,64}$/) },
+    ]);
+    expect(value(await git.diffTrees(repo, base, tree))).toContain("-one\n+two\n");
+    expect(await git.diffTreeRaw(repo, "--output=x", tree)).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
+  });
+
   it("branchDelete, lsTree and gitDirs", SLOW, async () => {
     mkdirSync(join(repo, "dir"));
     write(join(repo, "dir", "b c.txt"), "x\n");

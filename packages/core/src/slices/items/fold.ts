@@ -73,7 +73,13 @@ export function applyEvent(item: StoredItem | undefined, event: ItemEvent): Resu
 
     case "worktree_added":
       if (next.worktrees.some((w) => w.repoId === event.repoId)) return fail(`the item already has a worktree for ${event.repoId}`);
-      next.worktrees.push({ repoId: event.repoId, branch: event.branch, dir: event.dir, ...(event.baseCommit !== undefined && { baseCommit: event.baseCommit }) });
+      next.worktrees.push({
+        repoId: event.repoId,
+        branch: event.branch,
+        dir: event.dir,
+        ...(event.baseCommit !== undefined && { baseCommit: event.baseCommit }),
+        ...(event.protectedDigest !== undefined && { protectedDigest: event.protectedDigest }),
+      });
       break;
 
     case "step_started":
@@ -153,6 +159,8 @@ export function applyEvent(item: StoredItem | undefined, event: ItemEvent): Resu
         askedAt: event.at,
         choices: event.choices,
         ...(event.detail !== undefined && { detail: event.detail }),
+        ...(event.covers !== undefined && { covers: event.covers }),
+        ...(event.tree !== undefined && { tree: event.tree }),
       });
       if (step !== undefined && step.state === "running") step.state = "needs_you";
       break;

@@ -142,6 +142,25 @@ export async function createWorktree(git: Git, repo: WorktreeRepo, itemId: ItemI
 }
 
 /**
+ * The item's worktree when git has it registered at the item's folder on the item's branch, with
+ * the branch's commit as its base: for a start that crashed after `createWorktree` and before the
+ * worktree was recorded. Only for an item that has not started a step, so nothing ran in it.
+ */
+export async function findItemWorktree(git: Git, repo: WorktreeRepo, itemId: ItemId): Promise<Result<ItemWorktree | undefined, WorktreeError>> {
+  const branch = itemBranch(itemId);
+  const folder = posix.join(normalizeFolder(repo.worktreeFolder), shortItemId(itemId));
+  const listed = await git.worktreeList(repo.path);
+  if (!listed.ok) return fail("add", listed.error);
+  const target = await real(worktreePath(repo.path, { folder }));
+  for (const entry of listed.value) {
+    if (entry.branch === `refs/heads/${branch}` && entry.head !== undefined && (await real(entry.path)) === target) {
+      return ok({ branch, folder, baseCommit: entry.head });
+    }
+  }
+  return ok(undefined);
+}
+
+/**
  * Removes a finished item's worktree; the branch stays. Without `force` it is refused while the
  * worktree has changes (after a commit, those are files the checks wrote).
  */

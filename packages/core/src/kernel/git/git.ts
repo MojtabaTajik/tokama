@@ -94,6 +94,18 @@ export interface NumstatEntry {
   readonly removed: number | null;
 }
 
+/** One entry of `git diff-tree --raw`: a path that differs between two trees. */
+export interface TreeChange {
+  readonly path: string;
+  /** A added, D deleted, M modified, T type changed. */
+  readonly status: string;
+  /** "000000" and null blob on the side where the path does not exist. */
+  readonly oldMode: string;
+  readonly newMode: string;
+  readonly oldBlob: string | null;
+  readonly newBlob: string | null;
+}
+
 export interface WorktreeEntry {
   readonly path: string;
   /** Absent in a bare repo or before the first commit. */
@@ -111,6 +123,10 @@ export interface Git {
   addAll(repo: string): Promise<GitResult<void>>;
   /** `diff --cached --numstat -z --no-renames`. */
   diffCachedNumstat(repo: string): Promise<GitResult<NumstatEntry[]>>;
+  /** `diff-tree -r -z --raw --no-abbrev --no-renames <from> <to>`: every path that differs, with blob ids. */
+  diffTreeRaw(repo: string, from: string, to: string): Promise<GitResult<TreeChange[]>>;
+  /** Unified diff from one tree (or commit) to another; no rename detection. */
+  diffTrees(repo: string, from: string, to: string): Promise<GitResult<string>>;
   /** Unified diff of the worktree against the index, or of the index against HEAD with `cached`. */
   diff(repo: string, options?: { readonly cached?: boolean }): Promise<GitResult<string>>;
   /**
@@ -298,6 +314,14 @@ export function createGit(options: GitOptions): Git {
     addAll: (repo) => map(git(repo, ["add", "-A"]), none),
     diffCachedNumstat: (repo) =>
       map(git(repo, ["diff", "--cached", "--numstat", "-z", "--no-renames", ...DIFF_SAFE]), parseNumstat),
+    async diffTreeRaw(repo, from, to) {
+      const args = ["diff-tree", "-r", "-z", "--raw", "--no-abbrev", "--no-renames", from, to, "--"];
+      return refuseOption(args, from, to) ?? map(git(repo, args), parseDiffTreeRaw);
+    },
+    async diffTrees(repo, from, to) {
+      const args = ["diff", "--no-renames", ...DIFF_SAFE, from, to, "--"];
+      return refuseOption(args, from, to) ?? git(repo, args);
+    },
     diff: (repo, diffOptions = {}) => git(repo, ["diff", ...(diffOptions.cached === true ? ["--cached"] : []), ...DIFF_SAFE]),
     async cleanIgnored(repo) {
       const args = ["clean", "-ffdX"];
@@ -431,6 +455,28 @@ export function parseNumstat(out: string): NumstatEntry[] {
       const [added = "", removed = "", ...path] = field.split("\t");
       return { path: path.join("\t"), added: count(added), removed: count(removed) };
     });
+}
+
+const NO_BLOB = /^0+$/;
+
+/** Parses `diff-tree -r -z --raw`: `:<mode> <mode> <blob> <blob> <status>` then the path, NUL-separated. */
+export function parseDiffTreeRaw(out: string): TreeChange[] {
+  const fields = out.split("\0");
+  const changes: TreeChange[] = [];
+  for (let i = 0; i + 1 < fields.length; i += 2) {
+    const meta = fields[i]!;
+    if (!meta.startsWith(":")) continue;
+    const [oldMode = "", newMode = "", oldBlob = "", newBlob = "", status = ""] = meta.slice(1).split(" ");
+    changes.push({
+      path: fields[i + 1]!,
+      status: status.slice(0, 1),
+      oldMode,
+      newMode,
+      oldBlob: NO_BLOB.test(oldBlob) ? null : oldBlob,
+      newBlob: NO_BLOB.test(newBlob) ? null : newBlob,
+    });
+  }
+  return changes;
 }
 
 /** Parses `worktree list --porcelain -z`: attribute fields, each worktree ended by an empty field. */

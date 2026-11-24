@@ -63,6 +63,13 @@ const attempt = z.int().min(1);
 
 export const DecisionChoiceSchema = z.strictObject({ id: z.string().min(1).max(64), label: z.string().min(1).max(64) });
 
+/** One protected path as a tree holds it; a null blob is a deletion. Approving covers exactly this. */
+export const CoveredPathSchema = z.strictObject({
+  path: z.string().min(1).max(500),
+  mode: z.string().regex(/^[0-7]{6}$/, "must be a git file mode"),
+  blob: GIT_ID.nullable(),
+});
+
 /** The template as the item started with it; later edits to the file do not change the item. */
 export const TemplateSnapshotSchema = z.strictObject({
   /** SHA-256 of the record's canonical JSON (keys sorted). */
@@ -93,6 +100,11 @@ const WorktreeAddedSchema = z.strictObject({
   dir: RepoDirSchema,
   /** The commit the branch started from; the item's commit has it as its parent. */
   baseCommit: GIT_ID.optional(),
+  /**
+   * SHA-256 over the git and Tokama files that steer Tokama (git config, hooks, attributes, HEAD,
+   * `.tokama/`) as they were when the worktree was made. Any later difference stops the item.
+   */
+  protectedDigest: SHA256.optional(),
 });
 /** The item enters a step: the next one, the same one again, or an earlier one (`back`). */
 const StepStartedSchema = z.strictObject({ type: z.literal("step_started"), stepId: StepIdSchema });
@@ -143,6 +155,10 @@ const DecisionOpenedSchema = z.strictObject({
   stepId: StepIdSchema.optional(),
   choices: z.array(DecisionChoiceSchema).min(1).max(5),
   detail: z.string().min(1).max(500).optional(),
+  /** For a `tamper` question about paths: the exact content an approval covers. */
+  covers: z.array(CoveredPathSchema).min(1).max(200).optional(),
+  /** For a question about a whole tree (it changed after the checks, or was not reviewed): that tree. */
+  tree: GIT_ID.optional(),
 });
 const DecisionResolvedSchema = z.strictObject({
   type: z.literal("decision_resolved"),
@@ -246,6 +262,8 @@ export const StoredDecisionSchema = z.strictObject({
   askedAt: EpochMsSchema,
   choices: z.array(DecisionChoiceSchema),
   detail: z.string().optional(),
+  covers: z.array(CoveredPathSchema).optional(),
+  tree: GIT_ID.optional(),
   resolved: z.strictObject({ choice: z.string(), at: EpochMsSchema }).optional(),
 });
 
@@ -260,7 +278,7 @@ export const StoredItemSchema = z.strictObject({
   title: z.string(),
   text: z.string(),
   repoIds: z.array(RepoIdSchema),
-  worktrees: z.array(z.strictObject({ repoId: RepoIdSchema, branch: z.string(), dir: RepoDirSchema, baseCommit: GIT_ID.optional() })),
+  worktrees: z.array(z.strictObject({ repoId: RepoIdSchema, branch: z.string(), dir: RepoDirSchema, baseCommit: GIT_ID.optional(), protectedDigest: SHA256.optional() })),
   state: ItemStateSchema,
   /** The step the item is in; absent before the first step and between steps. */
   currentStepId: StepIdSchema.optional(),
@@ -279,6 +297,7 @@ export type ItemOutcome = z.output<typeof ItemOutcomeSchema>;
 export type AttemptResult = z.output<typeof AttemptResultSchema>;
 export type RunFailure = z.output<typeof RunFailureSchema>;
 export type DecisionChoice = z.output<typeof DecisionChoiceSchema>;
+export type CoveredPath = z.output<typeof CoveredPathSchema>;
 export type TemplateSnapshot = z.output<typeof TemplateSnapshotSchema>;
 export type ItemEventBody = z.output<typeof ItemEventBodySchema>;
 export type ItemEvent = z.output<typeof ItemEventSchema>;
