@@ -154,13 +154,23 @@ repos:
     expect(messages(await load())).toEqual(["repos.yaml line 1: must be a list of settings (key: value lines)"]);
   });
 
-  it("refuses a linked repos.yaml, also one that leads nowhere", async () => {
-    writeFileSync(join(root, "real.yaml"), "format: 1\nrepos: []\n");
-    symlinkSync(join(root, "real.yaml"), join(home, "repos.yaml"));
-    expect(messages(await load())).toEqual(["repos.yaml: Tokama doesn't follow links in config folders"]);
-    rmSync(join(home, "repos.yaml"));
+  it("follows a linked repos.yaml, as dotfile managers make", async () => {
+    mkdirSync(join(root, "dotfiles"));
+    writeFileSync(join(root, "dotfiles", "repos.yaml"), "format: 1\nrepos:\n  - { id: a, path: /a, base_branch: main }\n");
+    symlinkSync(join(root, "dotfiles", "repos.yaml"), join(home, "repos.yaml"));
+    const loaded = await load();
+    expect(loaded.ok && loaded.value.map((repo) => repo.id)).toEqual(["a"]);
+  });
+
+  it("reports a linked repos.yaml that leads nowhere, not taken for a missing file", async () => {
     symlinkSync(join(root, "gone.yaml"), join(home, "repos.yaml"));
-    expect(messages(await load())).toEqual(["repos.yaml: Tokama doesn't follow links in config folders"]);
+    expect(messages(await load())).toEqual(["repos.yaml: is a link to a file or folder that doesn't exist"]);
+  });
+
+  it("checks the target of a linked repos.yaml like any file", async () => {
+    writeFileSync(join(root, "big.yaml"), `format: 1\nrepos: []\n# ${"x".repeat(70 * 1024)}\n`);
+    symlinkSync(join(root, "big.yaml"), join(home, "repos.yaml"));
+    expect(messages(await load())).toEqual(["repos.yaml: is larger than 64 KB"]);
   });
 
   it("refuses an oversized repos.yaml", async () => {

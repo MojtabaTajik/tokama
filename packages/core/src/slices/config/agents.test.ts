@@ -182,31 +182,45 @@ describe("loadAgents", () => {
     ]);
   });
 
-  it("refuses a linked agents folder in the personal folder", async () => {
+  it("follows a linked agents folder in the personal folder, as dotfile managers make", async () => {
     writeAgent(join(root, "dotfiles", "agents"), "reviewer", agentFile({}));
     symlinkSync(join(root, "dotfiles", "agents"), personal());
     const loaded = await loadAgents({ tokamaHome: home });
-    expect(ids(loaded.agents)).toEqual(["builder"]);
-    expect(messages(loaded)).toEqual(["agents: Tokama doesn't follow links in config folders"]);
-
-    // A link that leads nowhere is refused the same way, not taken for a missing folder.
-    rmSync(personal());
-    symlinkSync(join(root, "gone"), personal());
-    expect(messages(await loadAgents({ tokamaHome: home }))).toEqual(["agents: Tokama doesn't follow links in config folders"]);
+    expect(ids(loaded.agents)).toEqual(["builder", "reviewer"]);
+    expect(loaded.agents.find((agent) => agent.id === "reviewer")?.owner).toEqual({ kind: "personal" });
+    expect(loaded.problems).toEqual([]);
   });
 
-  it("refuses a linked agent file in the personal folder, which still claims its id", async () => {
+  it("follows a linked Tokama home folder", async () => {
+    writeAgent(join(root, "dotfiles", "tokama", "agents"), "reviewer", agentFile({}));
+    const linkedHome = join(root, "linked-home");
+    symlinkSync(join(root, "dotfiles", "tokama"), linkedHome);
+    expect(ids((await loadAgents({ tokamaHome: linkedHome })).agents)).toEqual(["builder", "reviewer"]);
+  });
+
+  it("reports a linked agents folder that leads nowhere, not taken for a missing folder", async () => {
+    symlinkSync(join(root, "gone"), personal());
+    const loaded = await loadAgents({ tokamaHome: home });
+    expect(ids(loaded.agents)).toEqual(["builder"]);
+    expect(messages(loaded)).toEqual(["agents: is a link to a file or folder that doesn't exist"]);
+  });
+
+  it("follows a linked agent file in the personal folder; one that leads nowhere is reported and claims its id", async () => {
     const target = writeAgent(join(root, "dotfiles"), "reviewer", agentFile({}));
     mkdirSync(personal());
     symlinkSync(target, join(personal(), "reviewer.md"));
-    symlinkSync(join(root, "gone.md"), join(personal(), "dangling.md"));
+    symlinkSync(join(root, "gone.md"), join(personal(), "builder.md"));
     const loaded = await loadAgents({ tokamaHome: home });
-    expect(ids(loaded.agents)).toEqual(["builder"]);
-    expect(ids(loaded.broken)).toEqual(["dangling", "reviewer"]);
-    expect(messages(loaded)).toEqual([
-      "agents/dangling.md: Tokama doesn't follow links in config folders",
-      "agents/reviewer.md: Tokama doesn't follow links in config folders",
-    ]);
+    expect(ids(loaded.agents)).toEqual(["reviewer"]);
+    expect(ids(loaded.broken)).toEqual(["builder"]);
+    expect(messages(loaded)).toEqual(["agents/builder.md: is a link to a file or folder that doesn't exist"]);
+  });
+
+  it("follows a link to an agent file only to a regular file", async () => {
+    mkdirSync(personal());
+    mkdirSync(join(root, "a-folder"));
+    symlinkSync(join(root, "a-folder"), join(personal(), "reviewer.md"));
+    expect(messages(await loadAgents({ tokamaHome: home }))).toEqual(["agents/reviewer.md: isn't a regular file"]);
   });
 
   it("refuses a linked agent file in a repo", async () => {
