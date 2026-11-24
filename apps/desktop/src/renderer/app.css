@@ -613,6 +613,7 @@ button:focus-visible {
 /* Pipeline list */
 
 .pipeline-list {
+  container: list / inline-size;
   display: flex;
   flex-direction: column;
   padding-bottom: 24px;
@@ -716,6 +717,7 @@ button:focus-visible {
   align-items: center;
   gap: 6px;
   min-width: 0;
+  overflow: hidden;
   font-size: 12px;
   color: var(--muted);
 }
@@ -725,6 +727,9 @@ button:focus-visible {
 }
 
 .pl-workflow {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -737,6 +742,7 @@ button:focus-visible {
   display: flex;
   align-items: center;
   min-width: 0;
+  overflow: hidden;
   font-size: 12px;
 }
 
@@ -814,6 +820,68 @@ button:focus-visible {
 .pl-step-mark[data-tone="muted"],
 .card-flag[data-tone="muted"] {
   color: var(--muted);
+}
+
+/* The list is as wide as the main area, which the open drawer narrows. The secondary columns go
+   before the title does: first the pipeline and agent move under the title and the current step's
+   name is dropped, then the agent, then the time. */
+@container list (max-width: 719px) {
+  .pl-row {
+    grid-template-columns: 22px minmax(0, 1fr) fit-content(110px);
+    grid-template-areas:
+      "mark main time"
+      ".    pipe agent";
+  }
+
+  .pl-mark {
+    grid-area: mark;
+  }
+
+  .pl-main {
+    grid-area: main;
+  }
+
+  .pl-pipe {
+    grid-area: pipe;
+  }
+
+  .pl-agent {
+    grid-area: agent;
+    justify-content: flex-end;
+  }
+
+  .pl-time {
+    grid-area: time;
+  }
+
+  .pl-step-name {
+    display: none;
+  }
+}
+
+@container list (max-width: 379px) {
+  .pl-row {
+    grid-template-areas:
+      "mark main time"
+      ".    pipe pipe";
+  }
+
+  .pl-agent {
+    display: none;
+  }
+}
+
+@container list (max-width: 259px) {
+  .pl-row {
+    grid-template-columns: 22px minmax(0, 1fr);
+    grid-template-areas:
+      "mark main"
+      ".    pipe";
+  }
+
+  .pl-time {
+    display: none;
+  }
 }
 
 .agent-dot {

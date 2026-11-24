@@ -20,6 +20,8 @@ export const outDir = process.env["TOKAMA_E2E_OUT"] ?? join(appDir, "e2e-output"
 /** Playwright's wait for one element or action: shorter than the test's own timeout, so a miss names its locator. */
 const ACTION_TIMEOUT_MS = 15_000;
 const START_TIMEOUT_MS = 60_000;
+/** The app quits in well under a second; this is the margin for a slow CI runner. */
+const CLOSE_TIMEOUT_MS = 3_000;
 
 export interface Session {
   readonly app: ElectronApplication;
@@ -30,6 +32,8 @@ export interface Session {
   engine(): { readonly engineId: string; readonly pid: number } | undefined;
   /** Stops the running engine; the app starts a new one by itself. */
   killEngine(): void;
+  /** Sizes the window's content area, like a user dragging its edge. */
+  resize(width: number, height: number): Promise<void>;
   /** A screenshot into `<outDir>/screenshots`. */
   screenshot(name: string): Promise<void>;
 }
@@ -77,13 +81,12 @@ export function flow(name: string, fn: (session: Session) => Promise<void>): voi
       throw error;
     } finally {
       trace(name, "closing the app");
-      // On Linux CI a graceful close never returns (bug #75, seen in trace.log), and the tests have
-      // nothing left to check, so the process is ended after 3 s. Elsewhere a hanging close fails the test.
-      const closed = await within((app?.close() ?? Promise.resolve()).catch(() => undefined).then(() => true), 3_000);
+      // A close that hangs fails the test on every OS; the process is ended only so it cannot outlive the run.
+      const closed = await within((app?.close() ?? Promise.resolve()).catch(() => undefined).then(() => true), CLOSE_TIMEOUT_MS);
       if (closed === undefined) {
         trace(name, "the app did not close; killing it");
         app?.process().kill("SIGKILL");
-        closeHung = process.platform !== "linux";
+        closeHung = true;
       }
       trace(name, "stopping the engine");
       await stopEngine(engineDir);
@@ -91,7 +94,7 @@ export function flow(name: string, fn: (session: Session) => Promise<void>): voi
       trace(name, "done");
     }
     // Reached only when the flow passed: a failed one has thrown already.
-    if (closeHung) throw new Error("the app did not close within 3 s");
+    if (closeHung) throw new Error(`the app did not close within ${CLOSE_TIMEOUT_MS} ms`);
   });
 }
 
@@ -135,6 +138,10 @@ function sessionOf(app: ElectronApplication, page: Page, engineDir: string): Ses
       const running = engine();
       if (running === undefined) throw new Error("no engine is running: engine.lock is missing");
       process.kill(running.pid, "SIGTERM");
+    },
+    resize: async (width, height) => {
+      await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setContentSize(size.width, size.height), { width, height });
+      await page.waitForFunction((size) => window.innerWidth === size, width);
     },
     screenshot: async (name) => {
       const dir = join(outDir, "screenshots");
