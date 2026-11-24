@@ -25,7 +25,7 @@ export interface ProcessClock {
 }
 
 /** argv runs without a shell. A shell runs only when the caller asks for one. */
-export type Command = { readonly argv: readonly [string, ...string[]] } | { readonly shell: string };
+export type ProcessCommand = { readonly argv: readonly [string, ...string[]] } | { readonly shell: string };
 
 export interface OutputSink {
   /** Created or truncated, then raw bytes are written here as they arrive, before any callback runs. */
@@ -35,7 +35,7 @@ export interface OutputSink {
 }
 
 export interface RunRequest {
-  readonly command: Command;
+  readonly command: ProcessCommand;
   readonly cwd: string;
   /** Added to the allowlisted parent variables; may override them. */
   readonly env?: Readonly<Record<string, string>>;

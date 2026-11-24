@@ -5,9 +5,9 @@ export { ENV_ALLOWLIST, buildEnv } from "./env.js";
 export { posixTree } from "./posix.js";
 export {
   createProcessRunner,
-  type Command,
   type OutputSink,
   type ProcessClock,
+  type ProcessCommand,
   type ProcessRunner,
   type ProcessTree,
   type RunFinished,
