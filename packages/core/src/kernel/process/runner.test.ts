@@ -175,6 +175,31 @@ describe("process runner: command and environment", SLOW, () => {
     expect(out.lines).toEqual(["$HOME; echo injected"]);
   });
 
+  it("writes stdin to the child and closes it", async () => {
+    const out = lineWaiter("");
+    const script = 'let s = ""; process.stdin.on("data", (c) => (s += c)); process.stdin.on("end", () => console.log(JSON.stringify(s)));';
+    finished(await createProcessRunner().run({ command: { argv: node(script) }, cwd: dir, stdin: "a b\nc", stdout: out }));
+    expect(out.lines).toEqual([JSON.stringify("a b\nc")]);
+  });
+
+  it("gives the child an empty stdin by default", async () => {
+    const out = lineWaiter("");
+    await createProcessRunner().run({
+      command: { argv: node('process.stdin.on("data", () => {}); process.stdin.on("end", () => console.log("eof"));') },
+      cwd: dir,
+      stdout: out,
+    });
+    expect(out.lines).toEqual(["eof"]);
+  });
+
+  it("reports the exit of a child that does not read its stdin", async () => {
+    // 1 MiB fills the pipe, so the write fails with EPIPE once the child is gone.
+    const result = finished(
+      await createProcessRunner().run({ command: { argv: node("process.exit(5)") }, cwd: dir, stdin: "x".repeat(1 << 20) }),
+    );
+    expect(result.exitCode).toBe(5);
+  });
+
   it("runs a shell only when asked, in the given cwd", async () => {
     const out = lineWaiter("");
     const result = finished(
