@@ -75,8 +75,8 @@ export function flow(name: string, fn: (session: Session) => Promise<void>): voi
       throw error;
     } finally {
       trace(name, "closing the app");
-      // A close that hangs must not hang the suite: end the process after 10 s.
-      if ((await within((app?.close() ?? Promise.resolve()).catch(() => undefined).then(() => true), 10_000)) === undefined) {
+      // On Linux CI a graceful close never returns (seen in trace.log); the tests have nothing left to check, so the process is ended after 3 s.
+      if ((await within((app?.close() ?? Promise.resolve()).catch(() => undefined).then(() => true), 3_000)) === undefined) {
         trace(name, "the app did not close; killing it");
         app?.process().kill("SIGKILL");
       }
