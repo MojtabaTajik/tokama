@@ -103,6 +103,24 @@ describe("guarded agent call", () => {
     expect(guard.idleWatch).toMatchObject({ checksRun: 1, checksFailed: 1 });
   });
 
+  it("ends a check run still in flight when another guard stops the call", async () => {
+    const clock = manualClock();
+    const tree = workTree(clock);
+    const signals: AbortSignal[] = [];
+    const files = {
+      snapshot: tree.options.snapshot,
+      checksPass: (_timeoutMs: number, signal: AbortSignal) => {
+        signals.push(signal);
+        return new Promise<boolean>((resolve) => signal.addEventListener("abort", () => resolve(false), { once: true }));
+      },
+    };
+    const agent = scriptedAgent(clock, [TURN, editFile("a.ts", "fix"), tree.write("a.ts"), ...repeat(20, (i) => [{ wait: 2_000 }, TURN, readFile("a.ts", i)])]);
+    const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, files, settings: { turnCap: 12, repeatLimit: 0, idleMs: 10_000, timeoutMs: 60_000 } });
+    expect(guard).toMatchObject({ stop: "turn_cap", turns: 12 });
+    expect(guard.idleWatch?.checksRun).toBe(1);
+    expect(signals.map((signal) => signal.aborted)).toEqual([true]);
+  });
+
   it("stops a hung agent at the timeout and counts the whole call as wasted", async () => {
     const clock = manualClock(1_000_000);
     const events: AgentCallEvent[] = [];
