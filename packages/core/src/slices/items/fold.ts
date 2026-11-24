@@ -78,6 +78,8 @@ export function applyEvent(item: StoredItem | undefined, event: ItemEvent): Resu
 
     case "step_started":
       if (openAttempt(next) !== undefined) return fail("an attempt is still running");
+      if (next.currentStepId !== undefined && next.currentStepId !== event.stepId) return fail(`the item is still in step ${next.currentStepId}`);
+      if (next.decisions.some((d) => d.stepId === event.stepId && d.resolved === undefined)) return fail(`step ${event.stepId} waits on a decision`);
       next.currentStepId = event.stepId;
       must(step).state = "running";
       break;

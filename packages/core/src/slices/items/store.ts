@@ -80,9 +80,15 @@ export class ItemStore {
       if (!entry.isDirectory()) continue;
       const id = ItemIdSchema.safeParse(entry.name);
       if (!id.success) continue;
-      const loaded = store.load(id.data);
-      if (loaded.ok) store.items.set(id.data, loaded.value);
-      else problems.push({ itemId: entry.name, message: loaded.error });
+      // One bad log is a problem to report, never a failed start.
+      try {
+        if (store.removeUnstarted(id.data)) continue;
+        const loaded = store.load(id.data);
+        if (loaded.ok) store.items.set(id.data, loaded.value);
+        else problems.push({ itemId: entry.name, message: loaded.error });
+      } catch (error) {
+        problems.push({ itemId: entry.name, message: String(error) });
+      }
     }
     return { store, problems };
   }
@@ -149,7 +155,7 @@ export class ItemStore {
     } catch (error) {
       // Part of the batch may be on disk; take the item from the log again.
       const reloaded = this.load(itemId);
-      if (reloaded.ok) this.items.set(itemId, reloaded.value);
+      if (reloaded.ok) this.commit(reloaded.value);
       return err({ code: "write_failed", message: `cannot append to ${itemId}: ${String(error)}` });
     }
     return ok(this.commit(folded.value));
@@ -167,6 +173,23 @@ export class ItemStore {
       events.push(event.value);
     }
     return ok(events);
+  }
+
+  /**
+   * Removes the folder of an item whose creation crashed before its first event was on disk: no
+   * log, or a log with no complete line, and nothing else in the folder. No event was ever
+   * committed, so nothing of the item's history is lost.
+   */
+  private removeUnstarted(itemId: ItemId): boolean {
+    const dir = join(this.itemsDir, itemId);
+    const entries = nodeFs.readdirSync(dir);
+    if (entries.some((name) => name !== EVENTS_FILE)) return false;
+    if (entries.length === 1) {
+      const log = readLog(join(dir, EVENTS_FILE), this.fs);
+      if (!log.ok || log.value.events.length > 0) return false;
+    }
+    nodeFs.rmSync(dir, { recursive: true, force: true });
+    return true;
   }
 
   private load(itemId: ItemId): Result<StoredItem, string> {

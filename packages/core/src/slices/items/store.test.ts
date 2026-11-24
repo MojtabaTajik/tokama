@@ -189,6 +189,72 @@ describe("ItemStore", () => {
   });
 });
 
+describe("ItemStore robustness", () => {
+  it("tells listeners about the item reloaded after a failed write, so the index matches the log", () => {
+    let failNext = false;
+    const failing: LogFs = {
+      ...nodeFs,
+      // Writes the first event of the batch, then the disk fills up.
+      writeSync: ((fd: number, data: Buffer, offset: number, length: number) => {
+        if (!failNext) return nodeFs.writeSync(fd, data, offset, length);
+        failNext = false;
+        const firstLine = data.subarray(offset, offset + length).indexOf(0x0a) + 1;
+        nodeFs.writeSync(fd, data, offset, firstLine);
+        throw Object.assign(new Error("ENOSPC: no space left on device"), { code: "ENOSPC" });
+      }) as LogFs["writeSync"],
+    };
+    const { store } = openStore({ fs: failing });
+    const item = createItem(store);
+    const heard: StoredItem[] = [];
+    store.subscribe((changed) => heard.push(changed));
+    failNext = true;
+    const result = store.append(item.id, [
+      { type: "step_started", stepId: BUILD },
+      { type: "attempt_started", stepId: BUILD, attempt: 1 },
+    ]);
+    expect(result).toMatchObject({ ok: false, error: { code: "write_failed" } });
+    // The first event is on disk; the store and its listeners both have it.
+    expect(store.get(item.id)?.lastSeq).toBe(1);
+    expect(heard.map((changed) => changed.lastSeq)).toEqual([1]);
+    expect(openStore().store.get(item.id)).toEqual(store.get(item.id));
+  });
+
+  it("removes the folder of an item whose creation crashed before its first event, without a problem", () => {
+    const { store } = openStore();
+    createItem(store);
+    const empty = join(home, "items", "item_0190a000-0000-7000-8000-0000000000e1");
+    const torn = join(home, "items", "item_0190a000-0000-7000-8000-0000000000e2");
+    nodeFs.mkdirSync(empty);
+    nodeFs.mkdirSync(torn);
+    writeFileSync(join(torn, EVENTS_FILE), '{"schemaVersion":1,"ite');
+    const { store: reopened, problems } = openStore();
+    expect(problems).toEqual([]);
+    expect(reopened.list()).toHaveLength(1);
+    expect(nodeFs.existsSync(empty)).toBe(false);
+    expect(nodeFs.existsSync(torn)).toBe(false);
+  });
+
+  it("keeps a folder with other files even when its log has no event, and reports it", () => {
+    const dir = join(home, "items", "item_0190a000-0000-7000-8000-0000000000e3");
+    nodeFs.mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "notes.md"), "keep me");
+    const { problems } = openStore();
+    expect(problems).toEqual([{ itemId: "item_0190a000-0000-7000-8000-0000000000e3", message: expect.stringMatching(/cannot read/) }]);
+    expect(nodeFs.existsSync(join(dir, "notes.md"))).toBe(true);
+  });
+
+  it("reports a log that throws while it is parsed (deeply nested JSON) as a problem, and loads the others", () => {
+    const { store } = openStore();
+    const good = createItem(store);
+    const bad = createItem(store);
+    const line = readFileSync(logFile(bad.id), "utf8").replace('"record":{', `"record":{"deep":${"[".repeat(100_000)}${"]".repeat(100_000)},`);
+    writeFileSync(logFile(bad.id), line);
+    const { store: reopened, problems } = openStore();
+    expect(problems).toEqual([{ itemId: bad.id, message: expect.stringMatching(/RangeError/) }]);
+    expect(reopened.get(good.id)).toBeDefined();
+  });
+});
+
 describe("loadHostId", () => {
   it("makes a host id once, keeps it in a 0600 file, and returns the same id afterwards", () => {
     const first = loadHostId(home, manualClock(T0));

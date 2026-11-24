@@ -6,7 +6,8 @@
 // the next start finds the attempt still open and tries again; written first, a crash would
 // leave the attempt closed and its agent running with nothing left to kill it.
 import { systemClock, type Clock } from "../../kernel/clock/index.js";
-import { killLeftoverTree, type LeftoverOutcome, type ProcessTable } from "../../kernel/process/index.js";
+// leftover.js, not the process index, so the public entry does not load the runner.
+import { killLeftoverTree, type LeftoverOutcome, type ProcessTable } from "../../kernel/process/leftover.js";
 import { DecisionIdSchema, newId, type ItemEventBody, type ItemId, type StepId } from "../../kernel/schemas/index.js";
 import { openAttempt } from "./fold.js";
 import type { ItemStore, StoreError } from "./store.js";
@@ -21,6 +22,8 @@ export interface RecoveryOptions {
   readonly clock?: Clock;
   /** Time between SIGTERM and SIGKILL for a leftover tree. */
   readonly graceMs?: number;
+  /** Stops recovery before the next kill or write; items not reached yet are left for the next start. */
+  readonly signal?: AbortSignal;
 }
 
 export type KillReport =
@@ -40,6 +43,7 @@ export async function recoverItems(store: ItemStore, options: RecoveryOptions): 
   const clock = options.clock ?? systemClock;
   const recovered: RecoveredItem[] = [];
   for (const item of store.list()) {
+    if (options.signal?.aborted) break;
     if (item.deleted || item.outcome !== undefined || item.hostId !== store.hostId) continue;
     // An open attempt was running, even if it had asked a question meanwhile; a running step
     // without one was between attempts.
@@ -80,6 +84,8 @@ export async function recoverItems(store: ItemStore, options: RecoveryOptions): 
       choices: RUN_FAILURE_CHOICES.map((choice) => ({ ...choice })),
       detail: "The engine stopped while this step ran. Retry the step, or stop the item.",
     });
+    // Aborted during the kills: write nothing, the attempt stays open for the next start.
+    if (options.signal?.aborted) break;
     const appended = store.append(item.id, events);
     recovered.push({ itemId: item.id, stepId: step.id, kills, ...(!appended.ok && { error: appended.error }) });
   }

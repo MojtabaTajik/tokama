@@ -1,4 +1,5 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -213,6 +214,102 @@ describe("engine start with a home folder", () => {
     if (!started.ok) throw new Error(started.error.message);
     cleanups.push(() => started.value.close());
     expect(started.value.items?.get(item.id)?.state).toBe("needs_you");
+  });
+
+  it("refuses a second engine on the same home folder, even with another engine dir", async () => {
+    const first = await startEngine({ dir: tempEngineDir(cleanups), home });
+    if (!first.ok) throw new Error(first.error.message);
+    cleanups.push(() => first.value.close());
+    const secondDir = tempEngineDir(cleanups);
+    const second = await startEngine({ dir: secondDir, home });
+    expect(second).toMatchObject({ ok: false, error: { code: "already_running" } });
+    // It released its own engine lock, and the first engine still holds the home lock.
+    expect(existsSync(join(secondDir, "engine.lock"))).toBe(false);
+    expect(readFileSync(join(home, "engine.lock"), "utf8")).toContain(first.value.endpoint.socketPath);
+
+    // Once the first engine stops, the home folder is free again.
+    await first.value.close();
+    expect(existsSync(join(home, "engine.lock"))).toBe(false);
+    const third = await startEngine({ dir: secondDir, home });
+    if (!third.ok) throw new Error(third.error.message);
+    cleanups.push(() => third.value.close());
+  });
+
+  it("takes over a home lock whose engine is gone", async () => {
+    const gone = spawnSync(process.execPath, ["-e", "process.pid"]).pid;
+    writeFileSync(join(home, "engine.lock"), `${gone} old-engine /nowhere/engine.sock\n`, { mode: 0o600 });
+    const started = await startEngine({ dir: tempEngineDir(cleanups), home });
+    if (!started.ok) throw new Error(started.error.message);
+    cleanups.push(() => started.value.close());
+    expect(readFileSync(join(home, "engine.lock"), "utf8")).toContain(started.value.endpoint.socketPath);
+  });
+
+  it("finishes recovery before it releases the home folder when stopped during recovery", { timeout: 20_000 }, async () => {
+    const store = openStore();
+    const first = create(store, "First");
+    const second = create(store, "Second");
+    for (const item of [first, second]) {
+      store.append(item.id, [
+        { type: "step_started", stepId: BUILD },
+        { type: "attempt_started", stepId: BUILD, attempt: 1 },
+        { type: "process_started", stepId: BUILD, attempt: 1, role: "agent", pid: 4242, bootTime: T0 },
+      ]);
+    }
+    let release = () => {};
+    const blocked = new Promise<void>((resolve) => (release = resolve));
+    const table: ProcessTable = {
+      list: async () => {
+        await blocked;
+        return [];
+      },
+      bootTime: () => T0,
+      signalGroup: () => {},
+    };
+    const dir = tempEngineDir(cleanups);
+    const stop = new AbortController();
+    const starting = startEngine({ dir, home, processTable: table, signal: stop.signal });
+    await waitFor(() => existsSync(join(dir, "engine.sock")), 10_000, "socket");
+    stop.abort();
+    // Shutdown waits for the recovery that is in the middle of a kill.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(existsSync(join(home, "engine.lock"))).toBe(true);
+    release();
+    expect(await starting).toMatchObject({ ok: false, error: { code: "stopped" } });
+    expect(existsSync(join(home, "engine.lock"))).toBe(false);
+
+    // Nothing was written after the stop; the logs reload cleanly and the next start recovers both.
+    const { store: reloaded, problems } = ItemStore.open({ home, hostId: store.hostId });
+    expect(problems).toEqual([]);
+    expect(reloaded.list().map((item) => item.lastSeq)).toEqual([3, 3]);
+    const next = await startEngine({ dir: tempEngineDir(cleanups), home, processTable: { ...table, list: async () => [] } });
+    if (!next.ok) throw new Error(next.error.message);
+    cleanups.push(() => next.value.close());
+    for (const item of [first, second]) {
+      const lines = readFileSync(join(home, "items", item.id, "events.jsonl"), "utf8").trim().split("\n");
+      expect(lines.map((line) => (JSON.parse(line) as { seq: number }).seq)).toEqual([0, 1, 2, 3, 4, 5]);
+      expect(next.value.items?.get(item.id)?.state).toBe("needs_you");
+    }
+  });
+
+  it("moves a damaged database aside and rebuilds the index from the logs", async () => {
+    const store = openStore();
+    const item = create(store, "Fix it");
+    writeFileSync(join(home, "tokama.db"), "this is not a database, just garbage bytes ".repeat(200));
+    writeFileSync(join(home, "tokama.db-wal"), "garbage");
+    const logs: string[] = [];
+    const started = await startEngine({ dir: tempEngineDir(cleanups), home, log: (line) => logs.push(line) });
+    if (!started.ok) throw new Error(started.error.message);
+    cleanups.push(() => started.value.close());
+
+    expect(logs.some((line) => line.includes("is damaged"))).toBe(true);
+    const aside = readdirSync(home).filter((name) => name.includes(".damaged-") && !name.endsWith("-wal") && !name.endsWith("-shm"));
+    expect(aside).toHaveLength(1);
+    expect(readFileSync(join(home, aside[0] ?? ""), "utf8")).toContain("garbage bytes");
+    // The garbage WAL is gone from beside the new database (moved aside, or dropped by SQLite).
+    if (existsSync(join(home, "tokama.db-wal"))) expect(readFileSync(join(home, "tokama.db-wal"), "utf8")).not.toBe("garbage");
+    const raw = new DatabaseSync(join(home, "tokama.db"), { readOnly: true });
+    cleanups.push(() => raw.close());
+    expect(raw.prepare("SELECT id FROM items").all()).toEqual([{ id: item.id }]);
   });
 
   it("does not open item storage in sample mode or for an engine that finds another running", async () => {

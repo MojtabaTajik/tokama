@@ -3,7 +3,7 @@
 // `--sample` starts the fake engine mode with the sample data set (sample/sample.ts); it stores nothing.
 // SIGINT and SIGTERM abort one root controller, which shuts the engine down gracefully;
 // a second signal ends the process at once (default handling).
-// Exit codes: 0 stopped, 1 failed to start, 2 usage error, 3 an engine is already running.
+// Exit codes: 0 stopped (also when stopped while starting), 1 failed to start, 2 usage error, 3 an engine is already running.
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
@@ -32,6 +32,7 @@ async function main(): Promise<number> {
   const started = await startEngine({ dir, home, signal: root.signal, log, sample });
   if (!started.ok) {
     log(started.error.message);
+    if (started.error.code === "stopped") return 0;
     return started.error.code === "already_running" ? 3 : 1;
   }
   await started.value.closed;

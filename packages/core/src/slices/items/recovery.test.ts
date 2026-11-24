@@ -174,6 +174,27 @@ describe("recoverItems", () => {
     for (const other of [queued, ended, deleted]) expect(store.get(other.id)).toEqual(other);
   });
 
+  it("stops before the next write once aborted, and leaves the attempt open for the next start", async () => {
+    const { store: before } = open();
+    const first = item(before, running(100));
+    const second = item(before, running(200));
+    const { store } = open();
+    const abort = new AbortController();
+    // The first kill reads the table; the engine shuts down meanwhile.
+    const table: ProcessTable = {
+      list: async () => {
+        abort.abort();
+        return [];
+      },
+      bootTime: () => BOOT,
+      signalGroup: () => {},
+    };
+    expect(await recoverItems(store, { table, graceMs: 0, signal: abort.signal })).toEqual([]);
+    for (const id of [first.id, second.id]) expect(openAttempt(store.get(id) as StoredItem)).toBeDefined();
+    const { store: next } = open();
+    expect(next.list().map((i) => i.lastSeq)).toEqual([3, 3]);
+  });
+
   it("records the run failure even when reading the process table fails", async () => {
     const { store: before } = open();
     const started = item(before, running(100));

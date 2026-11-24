@@ -207,6 +207,17 @@ describe("foldItem", () => {
     expect(foldError([created(), { type: "step_started", stepId: BUILD }, { type: "attempt_started", stepId: BUILD, attempt: 2 }])).toMatch(/expected attempt 1/);
     expect(foldError([...startBuild, { type: "attempt_started", stepId: BUILD, attempt: 2 }])).toMatch(/still running/);
     expect(foldError([...startBuild, { type: "step_started", stepId: REVIEW }])).toMatch(/still running/);
+    // Another step while the item is still in one (no step_ended in between).
+    expect(foldError([created(), { type: "step_started", stepId: BUILD }, { type: "step_started", stepId: REVIEW }])).toMatch(/still in step build/);
+    // A step that waits on a decision cannot be started again before the answer.
+    expect(
+      foldError([
+        created(),
+        { type: "step_started", stepId: BUILD },
+        { type: "decision_opened", decisionId, kind: "after_failure", stepId: BUILD, choices: [{ id: "retry_step", label: "Retry step" }] },
+        { type: "step_started", stepId: BUILD },
+      ]),
+    ).toMatch(/waits on a decision/);
     expect(foldError([...startBuild, { type: "step_ended", stepId: BUILD, result: "passed" }])).toMatch(/still running/);
     expect(foldError([created(), { type: "step_started", stepId: BUILD }, { type: "step_ended", stepId: REVIEW, result: "passed" }])).toMatch(/not the current step/);
     expect(foldError([...startBuild, { type: "process_started", stepId: BUILD, attempt: 2, role: "agent", pid: 5, bootTime: 0 }])).toMatch(/not running/);
