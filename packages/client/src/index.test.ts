@@ -1,5 +1,5 @@
 // Client behavior against fake engines. The full client-engine tests live in apps/engine.
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -65,6 +65,30 @@ describe("@tokama/client", () => {
     const dir = tempDir();
     await fakeEngine(dir, `${JSON.stringify({ kind: "welcome", apiVersion: API_VERSION + 1, engineId: "e1" })}\n`);
     expect(await connect({ dir })).toMatchObject({ ok: false, error: { code: "unsupported_version" } });
+  });
+
+  it("refuses to send the token into a dir that others can read, or a symlinked dir", async () => {
+    const dir = tempDir();
+    await fakeEngine(dir, `${JSON.stringify({ kind: "welcome", apiVersion: API_VERSION, engineId: "e1" })}\n`);
+    symlinkSync(dir, `${dir}-link`);
+    cleanups.push(() => rmSync(`${dir}-link`, { force: true }));
+    expect(await connect({ dir: `${dir}-link` })).toMatchObject({ ok: false, error: { code: "unsafe_dir" } });
+
+    chmodSync(dir, 0o755);
+    expect(await connect({ dir })).toMatchObject({ ok: false, error: { code: "unsafe_dir" } });
+    chmodSync(dir, 0o700);
+    expect((await connect({ dir })).ok).toBe(true);
+  });
+
+  it("reports an engine that exits before it serves, with its exit code and log", async () => {
+    const dir = `${tempDir()}/run`;
+    const start = { command: process.execPath, args: ["-e", "process.stderr.write('engine broke'); process.exit(1)"] };
+    const connected = await connect({ dir, start, startTimeoutMs: 10_000 });
+    expect(connected).toMatchObject({ ok: false, error: { code: "start_failed", message: expect.stringContaining("with code 1") } });
+    expect(!connected.ok && connected.error.message).toContain(`${dir}/engine.log`);
+    expect(statSync(dir).mode & 0o777).toBe(0o700);
+    expect(statSync(`${dir}/engine.log`).mode & 0o777).toBe(0o600);
+    expect(readFileSync(`${dir}/engine.log`, "utf8")).toContain("engine broke");
   });
 
   it("reports a protocol error when the engine does not answer the hello", async () => {

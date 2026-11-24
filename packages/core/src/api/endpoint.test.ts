@@ -1,5 +1,8 @@
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { defaultEngineDir, engineEndpoint } from "./endpoint.js";
+import { checkEngineDir, defaultEngineDir, engineEndpoint } from "./endpoint.js";
 
 describe("engineEndpoint", () => {
   it("puts the socket, token and lock in the directory", () => {
@@ -10,6 +13,7 @@ describe("engineEndpoint", () => {
         socketPath: "/home/dev/.tokama/run/engine.sock",
         tokenPath: "/home/dev/.tokama/run/engine.token",
         lockPath: "/home/dev/.tokama/run/engine.lock",
+        logPath: "/home/dev/.tokama/run/engine.log",
       },
     });
   });
@@ -41,5 +45,26 @@ describe("defaultEngineDir", () => {
   it("falls back to ~/.tokama/run", () => {
     expect(defaultEngineDir({ XDG_RUNTIME_DIR: "/run/user/501" }, "/Users/dev", "darwin")).toBe("/Users/dev/.tokama/run");
     expect(defaultEngineDir({ XDG_RUNTIME_DIR: "relative" }, "/home/dev", "linux")).toBe("/home/dev/.tokama/run");
+  });
+});
+
+describe("checkEngineDir", () => {
+  const root = () => mkdtempSync(join(tmpdir(), "tk-"));
+
+  it("accepts a private directory and reports a missing one", () => {
+    const dir = root();
+    expect(checkEngineDir(dir)).toEqual({ ok: true, value: undefined });
+    expect(checkEngineDir(join(dir, "nope"))).toMatchObject({ ok: false, error: { code: "missing" } });
+    rmSync(dir, { recursive: true });
+  });
+
+  it("refuses a symlink and a directory others can read", () => {
+    const dir = root();
+    mkdirSync(join(dir, "open"), { mode: 0o755 });
+    chmodSync(join(dir, "open"), 0o755);
+    symlinkSync(dir, join(dir, "link"));
+    expect(checkEngineDir(join(dir, "open"))).toMatchObject({ ok: false, error: { code: "too_open" } });
+    expect(checkEngineDir(join(dir, "link"))).toMatchObject({ ok: false, error: { code: "not_directory" } });
+    rmSync(dir, { recursive: true });
   });
 });

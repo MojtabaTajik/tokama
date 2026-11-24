@@ -7,6 +7,7 @@ export {
   type ConnectOptions,
   type EngineClient,
   type EngineCommand,
+  type QueryReply,
   type RequestOptions,
   type RequestResult,
 } from "./client.js";

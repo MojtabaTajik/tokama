@@ -70,6 +70,9 @@ describe("engine service", () => {
 
     handle.store.put(sampleItem());
     expect(await engineClient.query({ type: "item", itemId: ITEM_ID })).toEqual({ ok: true, data: { item: sampleItem() } });
+    // Query data is typed per query: no casts.
+    const board = await engineClient.query({ type: "board", workspaceId: "northwind-prod" });
+    expect(board.ok && board.data.items.map((item) => item.title)).toEqual(["Checkout latency spike"]);
   });
 
   it("pushes an item_updated event only when the store changes", async () => {
@@ -266,6 +269,23 @@ describe("engine service", () => {
     // seq restarted with the new engine.
     await waitFor(() => events.length === 4, 5_000, "event from the new engine");
     expect(events.at(-1)).toMatchObject({ kind: "event", seq: 0 });
+  });
+
+  it("gives up after a bounded number of engine starts that never come up", { timeout: 30_000 }, async () => {
+    const dir = tempEngineDir(cleanups);
+    const handle = await engine(dir);
+    // An engine command that never serves: it exits at once with the "already running" code.
+    const connected = await connect({ dir, start: { command: process.execPath, args: ["-e", "process.exit(3)"] } });
+    if (!connected.ok) throw new Error(connected.error.message);
+    cleanups.push(() => connected.value.close());
+    const events = collect(connected.value);
+
+    await handle.close();
+    await waitFor(() => events.some((event) => event.kind === "failed"), 25_000, "failed");
+    expect(events).toEqual([
+      { kind: "disconnected" },
+      { kind: "failed", error: { code: "start_failed", message: expect.stringContaining("after 5 starts") } },
+    ]);
   });
 
   it("ends the client's event streams on close", async () => {

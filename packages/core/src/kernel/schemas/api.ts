@@ -40,6 +40,12 @@ export const EventSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("usage_recorded"), usage: AgentCallUsageSchema }),
 ]);
 
+/** The data of a successful reply, per query type. */
+export const QueryResultSchemas = {
+  board: z.strictObject({ items: z.array(ItemRecordSchema) }),
+  item: z.strictObject({ item: ItemRecordSchema }),
+} as const satisfies Record<z.output<typeof QuerySchema>["type"], z.ZodType>;
+
 export const CommandMessageSchema = z.strictObject({
   apiVersion,
   kind: z.literal("command"),
@@ -147,3 +153,8 @@ export type WelcomeMessage = z.output<typeof WelcomeMessageSchema>;
 export type ConnectionErrorMessage = z.output<typeof ConnectionErrorMessageSchema>;
 export type ConnectionErrorCode = (typeof CONNECTION_ERROR_CODES)[number];
 export type HandshakeReply = z.output<typeof HandshakeReplySchema>;
+
+export type QueryType = keyof typeof QueryResultSchemas;
+export type QueryResult<T extends QueryType> = z.output<(typeof QueryResultSchemas)[T]>;
+export type BoardResult = QueryResult<"board">;
+export type ItemResult = QueryResult<"item">;

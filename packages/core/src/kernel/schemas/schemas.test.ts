@@ -12,6 +12,7 @@ import {
   parseHelloMessage,
   parseItemId,
   parseItemRecord,
+  parseQueryResult,
   parseServerMessage,
   parseTemplateId,
   parseWith,
@@ -238,5 +239,17 @@ describe("handshake messages", () => {
   it("keeps handshake messages out of the normal message parsers", () => {
     expect(parseClientMessage({ kind: "hello", apiVersion: API_VERSION, token: "t" }).ok).toBe(false);
     expect(parseServerMessage({ kind: "welcome", apiVersion: API_VERSION, engineId: "e1" }).ok).toBe(false);
+  });
+});
+
+describe("query results", () => {
+  it("parses board and item data", () => {
+    expect(parseQueryResult("board", { items: [item()] })).toEqual({ ok: true, value: { items: [item()] } });
+    expect(parseQueryResult("item", { item: item() })).toEqual({ ok: true, value: { item: item() } });
+  });
+
+  it("refuses data of the wrong shape", () => {
+    expect(parseQueryResult("board", { item: item() }).ok).toBe(false);
+    expect(parseQueryResult("item", { item: { ...item(), state: "lost" } }).ok).toBe(false);
   });
 });

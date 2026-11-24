@@ -15,12 +15,15 @@ import { chmodSync, closeSync, lstatSync, mkdirSync, openSync, readFileSync, ren
 import { connect, createServer, type Server, type Socket } from "node:net";
 import {
   API_VERSION,
+  type BoardResult,
+  checkEngineDir,
   type ConnectionErrorCode,
   type ClientMessage,
   encodeLine,
   type EngineEndpoint,
   engineEndpoint,
   err,
+  type ItemResult,
   LineDecoder,
   MAX_MESSAGE_BYTES,
   ok,
@@ -146,10 +149,10 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     const query = message.query;
     switch (query.type) {
       case "board":
-        return { ok: true, data: { items: store.list(query.workspaceId) } };
+        return { ok: true, data: { items: store.list(query.workspaceId) } satisfies BoardResult };
       case "item": {
         const item = store.get(query.itemId);
-        return item ? { ok: true, data: { item } } : { ok: false, error: { code: "not_found", message: `no item ${query.itemId}` } };
+        return item ? { ok: true, data: { item } satisfies ItemResult } : { ok: false, error: { code: "not_found", message: `no item ${query.itemId}` } };
       }
     }
   };
@@ -192,6 +195,9 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     inFlight.add(work);
     void work.finally(() => inFlight.delete(work));
   };
+
+  // An accept error (e.g. EMFILE) must not end the engine; the server keeps listening.
+  server.on("error", (error) => log(`socket server error: ${String(error)}`));
 
   server.on("connection", (socket) => {
     if (shuttingDown) {
@@ -271,12 +277,13 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
 function ensurePrivateDir(dir: string): Result<void, StartError> {
   try {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
-    const stat = lstatSync(dir);
-    if (!stat.isDirectory()) return err({ code: "unsafe_dir", message: `${dir} is not a directory (or is a symlink)` });
-    const uid = process.getuid?.();
-    if (uid !== undefined && stat.uid !== uid) return err({ code: "unsafe_dir", message: `${dir} is not owned by the current user` });
-    if ((stat.mode & 0o077) !== 0) chmodSync(dir, 0o700);
-    return ok(undefined);
+    let check = checkEngineDir(dir);
+    // Our own directory with a loose mode is fixed; anything else is refused.
+    if (!check.ok && check.error.code === "too_open") {
+      chmodSync(dir, 0o700);
+      check = checkEngineDir(dir);
+    }
+    return check.ok ? check : err({ code: "unsafe_dir", message: check.error.message });
   } catch (error) {
     return err({ code: "unsafe_dir", message: `cannot prepare ${dir}: ${String(error)}` });
   }

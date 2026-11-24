@@ -7,12 +7,18 @@
 // engine may have restarted and `seq` restarted with it, so the consumer re-runs its queries.
 // Requests in flight when the connection drops fail with `disconnected`; they are never resent,
 // because commands are not idempotent.
-import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+//
+// Starts are bounded: after MAX_STARTS starts in a row without a connection (with a growing delay
+// between them) the client gives up with `start_failed`. A started engine's output goes to
+// `engine.log` in the engine dir; if it exits before a connection (other than with code 3, "an
+// engine already runs"), the client gives up at once and names the exit code and the log.
+import { type ChildProcess, spawn } from "node:child_process";
+import { closeSync, fchmodSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { connect as connectSocket, type Socket } from "node:net";
 import { homedir } from "node:os";
 import {
   API_VERSION,
+  checkEngineDir,
   type ClientMessageInput,
   type CommandInput,
   defaultEngineDir,
@@ -25,8 +31,11 @@ import {
   ok,
   parseClientMessage,
   parseHandshakeReply,
+  parseQueryResult,
   parseServerMessage,
   type QueryInput,
+  type QueryResult,
+  type QueryType,
   type ReplyMessage,
   type Result,
 } from "@tokama/core";
@@ -53,6 +62,7 @@ export interface ConnectOptions {
 
 export type ConnectErrorCode =
   | "invalid_endpoint"
+  | "unsafe_dir"
   | "not_running"
   | "start_failed"
   | "timeout"
@@ -67,6 +77,10 @@ export interface ConnectError {
 
 /** A reply's result: `data` on success, or an error code such as `not_found`, `not_implemented`, `disconnected`, `timeout`. */
 export type RequestResult = ReplyMessage["result"];
+type RequestError = Extract<RequestResult, { ok: false }>;
+
+/** A query's result, with `data` parsed for that query type (`invalid_reply` if it does not match). */
+export type QueryReply<T extends QueryType> = { readonly ok: true; readonly data: QueryResult<T> } | RequestError;
 
 export type ClientEvent =
   | { readonly kind: "event"; readonly seq: number; readonly event: EngineEvent }
@@ -84,16 +98,27 @@ export interface RequestOptions {
 export interface EngineClient {
   /** The engine this client is connected to, or was connected to last. */
   readonly engineId: string;
-  query(query: QueryInput, options?: RequestOptions): Promise<RequestResult>;
+  query<Q extends QueryInput>(query: Q, options?: RequestOptions): Promise<QueryReply<Q["type"]>>;
   command(command: CommandInput, options?: RequestOptions): Promise<RequestResult>;
   /** Events from the time of this call on. The iteration ends when the client closes or fails. */
   events(): AsyncIterable<ClientEvent>;
   close(): Promise<void>;
 }
 
-const TERMINAL: ReadonlySet<ConnectErrorCode> = new Set(["unauthorized", "unsupported_version", "protocol_error", "start_failed"]);
+const TERMINAL: ReadonlySet<ConnectErrorCode> = new Set([
+  "unsafe_dir",
+  "unauthorized",
+  "unsupported_version",
+  "protocol_error",
+  "start_failed",
+]);
 const ATTEMPT_TIMEOUT_MS = 2_000;
-const RESTART_INTERVAL_MS = 2_000;
+/** Starts in a row without a connection before the client gives up. */
+const MAX_STARTS = 5;
+/** Delay before the second start; it doubles for each further start (200 ms ... 3.2 s). */
+const START_BACKOFF_MS = 200;
+/** Exit code of an engine that found another engine running: not a failure. */
+const EXIT_ALREADY_RUNNING = 3;
 
 export async function connect(options: ConnectOptions = {}): Promise<Result<EngineClient, ConnectError>> {
   const endpoint = engineEndpoint(options.dir ?? defaultEngineDir(process.env, homedir()));
@@ -126,7 +151,11 @@ class Client implements EngineClient {
   private closing = false;
   private nextRequest = 0;
   private lastStart = Number.NEGATIVE_INFINITY;
-  private startError: Error | undefined;
+  /** Starts since the last good connection. */
+  private starts = 0;
+  /** The engine this client started and has not connected to yet. */
+  private child: ChildProcess | undefined;
+  private startError: string | undefined;
   private readonly wakeups = new Set<() => void>();
 
   constructor(
@@ -146,8 +175,12 @@ class Client implements EngineClient {
     }
   }
 
-  query(query: QueryInput, options?: RequestOptions): Promise<RequestResult> {
-    return this.request({ apiVersion: API_VERSION, kind: "query", requestId: this.requestId(), query }, options);
+  async query<Q extends QueryInput>(query: Q, options?: RequestOptions): Promise<QueryReply<Q["type"]>> {
+    const reply = await this.request({ apiVersion: API_VERSION, kind: "query", requestId: this.requestId(), query }, options);
+    if (!reply.ok) return reply;
+    const data = parseQueryResult<Q["type"]>(query.type, reply.data);
+    if (data.ok) return { ok: true, data: data.value };
+    return failure("invalid_reply", `the engine sent ${query.type} data of the wrong shape`) as RequestError;
   }
 
   command(command: CommandInput, options?: RequestOptions): Promise<RequestResult> {
@@ -236,7 +269,7 @@ class Client implements EngineClient {
 
   /** One connection attempt; starts the engine (at most every few seconds) when it is not running. */
   private async attempt(): Promise<Result<void, ConnectError>> {
-    if (this.startError) return err({ code: "start_failed", message: `cannot start the engine: ${this.startError.message}` });
+    if (this.startError) return err({ code: "start_failed", message: this.startError });
     const session = await openSession(this.endpoint, ATTEMPT_TIMEOUT_MS, {
       onLine: (line) => this.onLine(line),
       onClose: () => this.onClose(),
@@ -248,21 +281,54 @@ class Client implements EngineClient {
       }
       this.socket = session.value.socket;
       this.engineId = session.value.engineId;
+      this.starts = 0;
+      this.child = undefined;
       return ok(undefined);
     }
-    if (session.error.code === "not_running" && this.options.start && Date.now() - this.lastStart >= RESTART_INTERVAL_MS) {
-      this.lastStart = Date.now();
-      this.startEngine(this.options.start);
+    const start = this.options.start;
+    if (session.error.code !== "not_running" || !start) return session;
+    // The first start is immediate; each further one waits twice as long as the one before.
+    const delay = this.starts === 0 ? 0 : START_BACKOFF_MS * 2 ** (this.starts - 1);
+    if (Date.now() - this.lastStart < delay) return session;
+    if (this.starts >= MAX_STARTS) {
+      return err({ code: "start_failed", message: `the engine did not come up after ${MAX_STARTS} starts; see ${this.endpoint.logPath}` });
     }
-    return session;
+    this.lastStart = Date.now();
+    this.starts++;
+    const started = this.startEngine(start);
+    return started.ok ? session : started;
   }
 
-  private startEngine(start: EngineCommand): void {
-    // Detached and unreferenced: the engine keeps running when this client exits. An engine that
-    // loses a start race to another one exits on its own; the client then connects to the winner.
-    const child = spawn(start.command, [...start.args], { detached: true, stdio: "ignore", env: start.env ?? process.env });
-    child.once("error", (error) => (this.startError = error));
+  private startEngine(start: EngineCommand): Result<void, ConnectError> {
+    const { dir, logPath } = this.endpoint;
+    let logFd: number;
+    try {
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      const check = checkEngineDir(dir);
+      if (!check.ok) return err({ code: "unsafe_dir", message: check.error.message });
+      logFd = openSync(logPath, "a", 0o600);
+    } catch (error) {
+      return err({ code: "start_failed", message: `cannot prepare ${logPath}: ${String(error)}` });
+    }
+    let child: ChildProcess;
+    try {
+      fchmodSync(logFd, 0o600);
+      // Detached and unreferenced: the engine keeps running when this client exits. Its stdout and
+      // stderr go to the log through the fd, which works for a detached child.
+      child = spawn(start.command, [...start.args], { detached: true, stdio: ["ignore", logFd, logFd], env: start.env ?? process.env });
+    } finally {
+      closeSync(logFd);
+    }
+    this.child = child;
+    child.once("error", (error) => (this.startError = `cannot start the engine: ${error.message}`));
+    child.once("exit", (code, signal) => {
+      // An engine that lost a start race exits with code 3; the client connects to the winner.
+      if (this.child !== child || code === EXIT_ALREADY_RUNNING) return;
+      const how = code === null ? `by signal ${signal}` : `with code ${code}`;
+      this.startError = `the engine exited ${how} before it accepted a connection; see ${logPath}`;
+    });
     child.unref();
+    return ok(undefined);
   }
 
   private onLine(line: string): void {
@@ -338,6 +404,13 @@ class Client implements EngineClient {
 /** Connects and handshakes. The handlers get every line after the welcome, and the close. */
 function openSession(endpoint: EngineEndpoint, timeoutMs: number, handlers: SessionHandlers): Promise<Result<Session, ConnectError>> {
   return new Promise((resolve) => {
+    // Send the token only into a directory that is ours and private, as the engine made it.
+    const dir = checkEngineDir(endpoint.dir);
+    if (!dir.ok) {
+      const code = dir.error.code === "missing" ? "not_running" : "unsafe_dir";
+      resolve(err({ code, message: dir.error.message }));
+      return;
+    }
     let token: string;
     try {
       // Read on every attempt: the token changes each time the engine starts.
