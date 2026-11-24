@@ -6,7 +6,7 @@ Don't design anything around a fixed planner/executor/verifier trio, a single pr
 
 ## Where things are
 
-- Product spec: `docs/spec/product.md` (concepts, v1 scope, flows, templates, privacy, safety). Architecture: `docs/spec/architecture.md` (packages, engine API, slices, kernel, adapters, storage, build order). Read both before planning or building anything; update them when a decision changes.
+- Product spec: `.agent/spec/product.md` (maintainer-local, not in the repo) (concepts, v1 scope, flows, templates, privacy, safety). Architecture: `.agent/spec/architecture.md` (packages, engine API, slices, kernel, adapters, storage, build order). Read both before planning or building anything; update them when a decision changes.
 - Agent working files go in `.agent/` (git-ignored): plans, review notes, exports, scratch. Never put agent scratch elsewhere in the repo.
 - Maintainer-specific notes (status, links, local paths, preferences) live in `CLAUDE.local.md` (git-ignored), loaded next to this file. Keep this file to stable project rules.
 - Repo: `MojtabaTajik/tokama`, Apache-2.0, default branch `main`. Paid cloud features live outside this repo, so the open engine must work fully without them. Domains (registered): tokama.dev (primary), tokama.ai (redirects to tokama.dev). Point user-facing URLs (updates, install scripts, docs) at tokama.dev, not GitHub, so a later move to an organization breaks nothing.
@@ -20,6 +20,7 @@ Don't design anything around a fixed planner/executor/verifier trio, a single pr
 - `core` is headless: no Electron, no UI. The engine runs as its own background service; desktop, CLI and later mobile are clients of the versioned engine API, never of core directly.
 - Platforms: macOS first, then Linux, then Windows. OS-specific code (process control, shell parsing, secrets, metrics, paths) only behind an interface with one implementation per OS; CI on macOS and Linux.
 - Vertical slices; only `workflow-engine` composes slices. Security primitives (process, git, command policy, egress, secrets, safe file reads) exist once in the kernel. Backends and connectors are adapters (a folder plus one line in `composition.ts`). Boundaries are enforced by lint and CI.
+- Code comments and READMEs explain the code itself; they never point to docs, specs or their sections. The specs are written so they can be matched to the code without such links.
 - Write tests with the code. When porting a part of ai-pipeline, port its tests first.
 - Loop guards on every agent call are required. Never launch an agent with a skip-all-permissions flag.
 - Never send data to a cloud agent beyond the step's data rule; in local-only mode, nothing leaves the machine.

@@ -1,4 +1,4 @@
-// Versioned schemas for records and engine API messages (architecture.md, section 6).
+// Versioned schemas for records and engine API messages.
 // Stored records carry `schemaVersion`; API messages carry `apiVersion`.
 import type { Result } from "../result/index.js";
 import {

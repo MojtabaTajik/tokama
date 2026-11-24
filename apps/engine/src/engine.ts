@@ -9,7 +9,7 @@
 // in-flight requests (bounded), close the connections, stop listening, then remove the socket,
 // token and lock files if the lock is still this engine's. The socket keeps answering until the
 // drain ends, so an engine starting meanwhile sees a live engine instead of a stale lock.
-// Threat model: architecture.md, section 9 (local desktop, no network listener).
+// Threat model: local desktop, no network listener.
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { chmodSync, closeSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
 import { connect, createServer, type Server, type Socket } from "node:net";

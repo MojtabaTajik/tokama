@@ -1,11 +1,11 @@
 // Shared ESLint preset. The root `eslint.config.js` re-exports it.
 //
 // Every package gets a base config. `packages/core` also gets the engine boundaries from
-// docs/spec/architecture.md (sections 4-7, 10). `tooling/eslint-preset.test.ts` proves each
+// `tooling/eslint-preset.test.ts` proves each
 // rule with the fixtures in `tooling/eslint-fixtures/`.
 //
 // Lint is a guardrail against honest mistakes by contributors and coding agents, not a security
-// boundary (architecture.md, section 9). Code written to hide from these rules is caught in
+// boundary. Code written to hide from these rules is caught in
 // review; the real controls are the kernel's process runner, command policy and egress guard.
 //
 // Run ESLint with `-c eslint.config.js` (the `lint` script does): flat config otherwise uses the
@@ -82,7 +82,7 @@ const selectorRegex = (source: string) => `/${source.replaceAll("/", "\\/")}/i`;
 
 const electron = {
   regex: ELECTRON_REGEX,
-  message: "core is headless: no Electron (architecture.md, section 1).",
+  message: "core is headless: no Electron.",
 };
 const processNetwork = {
   regex: PROCESS_NETWORK_MODULE_REGEX,
@@ -122,7 +122,7 @@ const toWorkflowEngineEntry = {
   to: { element: { type: "slice", captured: { slice: "workflow-engine" }, fileInternalPath: "index.ts" } },
 };
 
-// apps/desktop is a client of the engine API (architecture.md, sections 2 and 3): it reaches
+// apps/desktop is a client of the engine API: it reaches
 // core through its public entry only, and never the engine app. The renderer and the shared
 // contract run without Node or Electron and get engine data through the preload bridge
 // (window.tokama); the sandboxed preload may import only electron and ../shared.
@@ -160,7 +160,7 @@ const corePolicies = [
   { from: { element: { type: "slice", captured: { slice: "workflow-engine" } } }, allow: [toSlicePublicEntry] },
   { from: { element: { type: "kernel" } }, allow: [internal] },
   { from: { element: { type: "adapter" } }, allow: [internal, toKernel] },
-  // The API reaches the engine through workflow-engine's public entry only (architecture.md, section 4).
+  // The API reaches the engine through workflow-engine's public entry only.
   { from: { element: { type: "api" } }, allow: [internal, toKernel, toWorkflowEngineEntry] },
   // Any other file in src may use the kernel and the API, but gets no wiring rights.
   { from: { element: { type: "root" } }, allow: [toKernel, { to: { element: { type: "api" } } }] },

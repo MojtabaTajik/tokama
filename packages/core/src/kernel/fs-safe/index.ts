@@ -1,6 +1,6 @@
 // kernel/fs-safe: read files that agents or repos may have written (transcripts, evidence,
 // templates, prompt files) without following a planted symlink, hanging on a FIFO or loading a
-// huge file. See docs/spec/architecture.md, sections 6 and 9.
+// huge file.
 export {
   isInside,
   readJsonFile,

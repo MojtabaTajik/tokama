@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../shared/bridge.js";
 import { brand } from "./brand/index.js";
 
-// UI text of this screen, in one place (architecture.md, section 11).
+// UI text of this screen, in one place.
 const TEXT = {
   starting: "Starting the engine",
   connected: "Connected to the engine",

@@ -1,7 +1,6 @@
 // kernel/secrets: connection credentials in the OS secret store (macOS Keychain first; libsecret
 // and Windows Credential Manager later), behind one interface. Values travel as `Secret`, which
 // never prints itself, so they stay out of logs, agent prompts and errors.
-// See docs/spec/architecture.md, sections 6, 8 and 9.
 import type { ProcessRunner } from "../process/index.js";
 import { createKeychainStore } from "./keychain.js";
 import { unsupportedSecretStore, type SecretStore } from "./store.js";
