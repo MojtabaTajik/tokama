@@ -103,7 +103,7 @@ export interface LoadReposOptions {
 /** The repos in `repos.yaml`, in file order. No file: no repos. */
 export async function loadRepos(options: LoadReposOptions): Promise<Result<Repo[], ConfigError>> {
   const file = "repos.yaml";
-  const content = await readConfigFile(join(options.tokamaHome, file), file, { followSymlink: true });
+  const content = await readConfigFile(join(options.tokamaHome, file), file);
   if (!content.ok) return err({ problems: [content.error] });
   if (content.value === undefined) return ok([]);
   const parsed = parseYaml(ReposFileSchema, content.value, file);

@@ -1,15 +1,14 @@
 // Agents: `<id>.md` files with YAML front matter (name, runs_on, model, tools) and the role text
 // as the body. Personal agents (`<tokama home>/agents/`) win over the repo's shared ones
 // (`<repo>/.tokama/agents/`), which win over the built-ins.
-import { readdir, stat } from "node:fs/promises";
+import { lstat, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { rulePrefixes } from "../../kernel/command-policy/index.js";
-import { isInside } from "../../kernel/fs-safe/index.js";
 import type { ToolLimits } from "../../kernel/ports/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import { type AgentId, AgentIdSchema, type AiCliId, AiCliIdSchema, type RepoId } from "../../kernel/schemas/index.js";
-import { readConfigFile } from "./read.js";
+import { LINK_REFUSED, readConfigFile } from "./read.js";
 import type { Repo } from "./repos.js";
 import { clean, CONFIG_FORMAT, type ConfigProblem, parseYaml, quote } from "./yaml-file.js";
 
@@ -140,18 +139,12 @@ export async function loadAgents(options: LoadAgentsOptions): Promise<LoadedAgen
   const problems: ConfigProblem[] = [];
   const entries: Entry[] = [];
 
-  // The engineer's own folder: symlinked files and folders are followed.
-  entries.push(...(await loadFolder(join(options.tokamaHome, "agents"), "agents", { kind: "personal" }, true, problems)));
+  entries.push(...(await loadFolder(join(options.tokamaHome, "agents"), "agents", { kind: "personal" }, problems)));
   if (options.repo !== undefined) {
     const { id, path } = options.repo;
-    const folder = join(path, ".tokama", "agents");
-    const shown = `${id}/.tokama/agents`;
-    // In a repo, fs-safe refuses symlinked files; a symlinked folder may only lead somewhere inside the repo.
-    if ((await exists(folder)) && !(await isInside(path, folder))) {
-      problems.push({ file: shown, message: "is a symlink that leads outside the repo, so it isn't read. A repo's .tokama/agents may only link inside the repo." });
-    } else {
-      entries.push(...(await loadFolder(folder, shown, { kind: "repo", repoId: id }, false, problems)));
-    }
+    // The repo itself is the engineer's; a linked .tokama in it could lead anywhere.
+    if (await isLink(join(path, ".tokama"))) problems.push({ file: `${id}/.tokama`, message: LINK_REFUSED });
+    else entries.push(...(await loadFolder(join(path, ".tokama", "agents"), `${id}/.tokama/agents`, { kind: "repo", repoId: id }, problems)));
   }
   for (const [id, content] of Object.entries(BUILTIN_AGENT_FILES)) {
     entries.push(toEntry(parseAgentFile(content, AgentIdSchema.parse(id), { kind: "builtin" }, `builtin/${id}.md`), AgentIdSchema.parse(id), { kind: "builtin" }, problems));
@@ -181,7 +174,12 @@ function toEntry(result: Result<Agent, ConfigProblem[]>, id: AgentId, owner: Age
 /** Names never read as agents: a README for the folder, and dotfiles (editor and OS files). */
 const isSkipped = (name: string): boolean => name.startsWith(".") || name.toLowerCase() === "readme.md";
 
-async function loadFolder(folder: string, shown: string, owner: AgentOwner, followSymlink: boolean, problems: ConfigProblem[]): Promise<Entry[]> {
+async function loadFolder(folder: string, shown: string, owner: AgentOwner, problems: ConfigProblem[]): Promise<Entry[]> {
+  // A linked folder is never listed; fs-safe refuses a linked file in it.
+  if (await isLink(folder)) {
+    problems.push({ file: shown, message: LINK_REFUSED });
+    return [];
+  }
   let names: string[];
   try {
     names = (await readdir(folder)).filter((name) => name.endsWith(".md") && !isSkipped(name)).sort();
@@ -200,7 +198,7 @@ async function loadFolder(folder: string, shown: string, owner: AgentOwner, foll
       problems.push({ file, message: `${quote(stem)} isn't a valid agent id: use lowercase letters, digits and hyphens (at most 64)` });
       continue;
     }
-    const content = await readConfigFile(join(folder, name), file, { followSymlink });
+    const content = await readConfigFile(join(folder, name), file);
     // Removed between the listing and the read.
     if (content.ok && content.value === undefined) continue;
     const parsed = content.ok ? parseAgentFile(content.value!, id.data, owner, file) : err([content.error]);
@@ -209,10 +207,9 @@ async function loadFolder(folder: string, shown: string, owner: AgentOwner, foll
   return entries;
 }
 
-async function exists(path: string): Promise<boolean> {
+async function isLink(path: string): Promise<boolean> {
   try {
-    await stat(path);
-    return true;
+    return (await lstat(path)).isSymbolicLink();
   } catch {
     return false;
   }
