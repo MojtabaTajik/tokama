@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_CHECK_CHARS,
   API_VERSION,
   AgentCallEventSchema,
   COMMAND_ERROR_CODES,
@@ -310,6 +311,18 @@ describe("handshake messages", () => {
   it("keeps handshake messages out of the normal message parsers", () => {
     expect(parseClientMessage({ kind: "hello", apiVersion: API_VERSION, token: "t" }).ok).toBe(false);
     expect(parseServerMessage({ kind: "welcome", apiVersion: API_VERSION, engineId: "e1" }).ok).toBe(false);
+  });
+});
+
+describe("check command length", () => {
+  it("allows MAX_CHECK_CHARS (500) characters per check in add_repo and in a repo suggestion, and no more", () => {
+    expect(MAX_CHECK_CHARS).toBe(500);
+    const check = (length: number) => "x".repeat(length);
+    expect(parseCommand({ type: "add_repo", path: "/a", checks: [check(500)] }).ok).toBe(true);
+    expect(parseCommand({ type: "add_repo", path: "/a", checks: [check(501)] }).ok).toBe(false);
+    const suggestion = { path: "/a", gitRepo: true, branch: "main", id: "a", problem: null };
+    expect(parseQueryResult("suggest_repo", { ...suggestion, checks: [check(500)] }).ok).toBe(true);
+    expect(parseQueryResult("suggest_repo", { ...suggestion, checks: [check(501)] }).ok).toBe(false);
   });
 });
 

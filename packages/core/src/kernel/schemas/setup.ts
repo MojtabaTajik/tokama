@@ -11,6 +11,8 @@ const label = z.string().min(1).max(100);
 export const RepoSummarySchema = z.strictObject({
   id: RepoIdSchema,
   baseBranch: label,
+  /** Set only on the fake engine's sample repos: they aren't in repos.yaml, so they can't be removed. */
+  sample: z.literal(true).optional(),
 });
 
 export const ConnectionSummarySchema = z.strictObject({

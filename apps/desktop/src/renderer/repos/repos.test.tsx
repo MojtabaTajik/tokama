@@ -153,6 +153,12 @@ describe("repo row menu", () => {
     expect(document.activeElement).toBe(buttonByText("+ Add repo"));
   });
 
+  it("offers no menu on a sample repo, which isn't in repos.yaml", async () => {
+    await mountWith({ setup: () => ({ ok: true, data: { ...setup, repos: setup.repos.map((repo) => (repo.id === "orders-api" ? { ...repo, sample: true } : repo)) } }) });
+    expect(menuButton()).toBeNull();
+    expect($('button[aria-label="Actions for checkout-web"]')).not.toBeNull();
+  });
+
   it("keeps the repo when Keep or Escape is chosen, and shows a refusal", async () => {
     const fake = await mountWith({ commandReply: () => ({ ok: false, error: { code: "not_found", message: "No repo has the id 'orders-api'." } }) });
     await click(menuButton());

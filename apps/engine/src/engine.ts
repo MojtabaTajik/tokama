@@ -217,11 +217,16 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   // repos.yaml changes one at a time, so two adds cannot both read the file before either writes.
   let git: Git | undefined;
   let repoChanges: Promise<unknown> = Promise.resolve();
-  const repoOptions = (tokamaHome: string) => ({ tokamaHome, git: (git ??= createGit({ runner: createProcessRunner() })) });
+  // In sample mode the sample repos keep their ids: a repos.yaml repo can't take one.
+  const sampleRepoIds = sample?.setup.repos.map((repo) => repo.id) ?? [];
+  const repoOptions = (tokamaHome: string) => ({ tokamaHome, git: (git ??= createGit({ runner: createProcessRunner() })), reservedIds: sampleRepoIds });
 
   const repoCommand = async (command: Extract<Command, { type: "add_repo" | "remove_repo" }>): Promise<ReplyResult> => {
     const home = options.home;
     if (home === undefined) return { ok: false, error: { code: "not_implemented" satisfies CommandErrorCode, message: "this engine has no Tokama home folder for repos.yaml" } };
+    if (command.type === "remove_repo" && sampleRepoIds.includes(command.repoId)) {
+      return { ok: false, error: { code: "not_found" satisfies CommandErrorCode, message: `${command.repoId} is a sample repo; it isn't in repos.yaml, so it can't be removed.` } };
+    }
     const change = repoChanges.then(() =>
       command.type === "add_repo"
         ? addRepo(repoOptions(home), {
@@ -242,7 +247,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
 
   /** The sample setup in sample mode, with the repos of repos.yaml after its own. */
   const setup = async (): Promise<SetupResult> => {
-    const base: SetupResult = sample?.setup ?? { repos: [], connections: [], agents: [], templates: [] };
+    const base: SetupResult = sample ? { ...sample.setup, repos: sample.setup.repos.map((repo) => ({ ...repo, sample: true as const })) } : { repos: [], connections: [], agents: [], templates: [] };
     if (options.home === undefined) return base;
     const loaded = await loadRepos({ tokamaHome: options.home });
     if (!loaded.ok) {

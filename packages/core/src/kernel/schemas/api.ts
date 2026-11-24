@@ -15,6 +15,9 @@ const apiVersion = z.literal(API_VERSION);
 const requestId = z.string().min(1).max(128);
 /** A folder on the engine's machine. The engine checks it: a full path to a git repo's top folder. */
 const folderPath = z.string().min(1).max(4096);
+/** The longest check command a repo may have, in repos.yaml and in every message that carries one. */
+export const MAX_CHECK_CHARS = 500;
+const checkCommand = z.string().max(MAX_CHECK_CHARS);
 
 // Every change a command makes also goes out as events. Reply data per command: CommandResultSchemas.
 export const CommandSchema = z.discriminatedUnion("type", [
@@ -48,7 +51,7 @@ export const CommandSchema = z.discriminatedUnion("type", [
     path: folderPath,
     id: z.string().max(100).optional(),
     baseBranch: z.string().max(255).optional(),
-    checks: z.array(z.string().max(1000)).max(20).optional(),
+    checks: z.array(checkCommand).max(20).optional(),
   }),
   // Removes a repo from repos.yaml. Its items and worktrees are kept.
   z.strictObject({ type: z.literal("remove_repo"), repoId: RepoIdSchema }),
@@ -80,7 +83,7 @@ export const RepoSuggestionSchema = z.strictObject({
   branch: z.string().max(255).nullable(),
   /** From the folder name; null when it gives no valid id. */
   id: RepoIdSchema.nullable(),
-  checks: z.array(z.string().max(1000)).max(20),
+  checks: z.array(checkCommand).max(20),
   /** Why the folder can't be added as it is, in plain words; null when it can. */
   problem: z.string().max(1000).nullable(),
 });

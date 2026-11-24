@@ -5,7 +5,7 @@ import { isAbsolute, join, normalize, posix, sep } from "node:path";
 import { z } from "zod";
 import { posixSh, type SyntaxRefusalReason } from "../../kernel/command-policy/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
-import { type RepoId, RepoIdSchema } from "../../kernel/schemas/index.js";
+import { MAX_CHECK_CHARS, type RepoId, RepoIdSchema } from "../../kernel/schemas/index.js";
 import { readConfigFile, resolveHomePath } from "./read.js";
 import { CONFIG_FORMAT, type ConfigError, parseYaml } from "./yaml-file.js";
 
@@ -72,7 +72,7 @@ const RepoEntrySchema = z.strictObject({
     .optional(),
   checks: z
     .array(
-      z.string().superRefine((command, ctx) => {
+      z.string().max(MAX_CHECK_CHARS).superRefine((command, ctx) => {
         const problem = checkProblem(command);
         if (problem !== undefined) ctx.addIssue({ code: "custom", message: problem });
       }),

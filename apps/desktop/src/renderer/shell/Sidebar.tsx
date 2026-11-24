@@ -54,7 +54,7 @@ export interface SidebarProps {
 export function Sidebar(props: SidebarProps) {
   const { id, connection, setup, items, stale, now, view, onSelectView, collapsed, onToggleSection, onNewWork, onStartIn, onAddRepo, onRemoveRepo } = props;
   const workflows = (setup?.templates ?? []).map((template) => ({ view: { kind: "workflow", id: template.id } as const, name: template.name, icon: <TemplateIcon icon={template.icon} color={template.color} /> }));
-  const repos = (setup?.repos ?? []).map((repo) => ({ view: { kind: "repo", id: repo.id } as const, name: repo.id }));
+  const repos = (setup?.repos ?? []).map((repo) => ({ view: { kind: "repo", id: repo.id } as const, name: repo.id, removable: repo.sample !== true }));
   // A removed repo's row takes the focus with it: "+ Add repo" gets it instead of the page.
   const addRepo = useRef<HTMLButtonElement>(null);
   const repoCount = repos.length;
@@ -107,7 +107,7 @@ export function Sidebar(props: SidebarProps) {
       <SectionHeading section="repos" title={TEXT.repos} collapsed={collapsed} onToggle={onToggleSection} summary={badgesOf(items.filter((item) => repos.some((r) => inView(item, r.view))), now)} />
       {!collapsed.has("repos") && (
         <>
-          {repos.map((entry) => row(entry, <RepoIcon />, TEXT.quickTask(entry.name), true, <RepoMenu name={entry.name} onRemove={() => onRemoveRepo(entry.view.id)} />))}
+          {repos.map((entry) => row(entry, <RepoIcon />, TEXT.quickTask(entry.name), true, entry.removable && <RepoMenu name={entry.name} onRemove={() => onRemoveRepo(entry.view.id)} />))}
           {setup !== undefined && repos.length === 0 && <p className="sb-empty">{TEXT.noRepos}</p>}
           <button ref={addRepo} type="button" className="sb-add" onClick={onAddRepo}>
             {TEXT.addRepo}

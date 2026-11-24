@@ -73,6 +73,22 @@ describe("repo commands", () => {
     expect(await client.command({ type: "remove_repo", repoId: "billing-api" })).toMatchObject({ ok: false, error: { code: "not_found" } });
   });
 
+  it("keeps the sample repo ids in sample mode and marks the sample repos", async () => {
+    const { root, home, client } = await setUp();
+    const setup = await client.query({ type: "setup" });
+    expect(setup.ok && setup.data.repos.every((repo) => repo.sample === true)).toBe(true);
+    const path = gitRepo(root, "orders-api");
+    expect(await client.query({ type: "suggest_repo", path })).toMatchObject({ ok: true, data: { id: "orders-api-2" } });
+    expect(await client.command({ type: "add_repo", path, id: "orders-api" })).toMatchObject({ ok: false, error: { code: "already_exists" } });
+    expect(await client.command({ type: "add_repo", path })).toEqual({ ok: true, data: { repo: { id: "orders-api-2", baseBranch: "main" } } });
+    const after = await client.query({ type: "setup" });
+    expect(after.ok && after.data.repos.find((repo) => repo.id === "orders-api-2")).toEqual({ id: "orders-api-2", baseBranch: "main" });
+    // A sample repo is not in repos.yaml: removing it is refused and the file is left alone.
+    const before = readFileSync(join(home, "repos.yaml"), "utf8");
+    expect(await client.command({ type: "remove_repo", repoId: "orders-api" })).toMatchObject({ ok: false, error: { code: "not_found" } });
+    expect(readFileSync(join(home, "repos.yaml"), "utf8")).toBe(before);
+  });
+
   it("answers in plain words for a folder that isn't a repo, and runs two adds one after the other", async () => {
     const { root, client } = await setUp({ sample: false });
     mkdirSync(join(root, "notes"));

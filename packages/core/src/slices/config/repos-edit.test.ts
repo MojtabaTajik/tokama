@@ -168,6 +168,28 @@ repos:
     expect(readFileSync(reposFile(), "utf8")).toContain("- pnpm test\n");
   });
 
+  it("keeps check commands to 500 characters, as loading does", async () => {
+    const path = repo("a");
+    const long = `pnpm test ${"x".repeat(491)}`;
+    expect(long).toHaveLength(501);
+    expect(await addRepo(options(), { path, checks: [long] })).toMatchObject({ ok: false, error: { code: "invalid_request", message: expect.stringContaining("must be at most 500 characters") } });
+    expect((await addRepo(options(), { path, checks: [long.slice(0, 500)] })).ok).toBe(true);
+    writeFileSync(reposFile(), `format: 1\nrepos:\n  - { id: b, path: /b, base_branch: main, checks: ["${long}"] }\n`);
+    const loaded = await loadRepos({ tokamaHome: home });
+    expect(loaded.ok ? "loaded" : loaded.error.problems[0]?.message).toBe("checks item 1 must be at most 500 characters");
+  });
+
+  it("never takes a reserved id, such as a sample repo's, and suggests the next one", async () => {
+    const reserved = { ...options(), reservedIds: ["orders-api"] };
+    const path = repo("orders-api");
+    expect(await suggestRepo(reserved, path)).toMatchObject({ ok: true, value: { id: "orders-api-2", problem: undefined } });
+    expect(await addRepo(reserved, { path, id: "orders-api" })).toEqual({
+      ok: false,
+      error: { code: "already_exists", message: "The id 'orders-api' is taken by a sample repo. Pick another id." },
+    });
+    expect(await addRepo(reserved, { path })).toMatchObject({ ok: true, value: { id: "orders-api-2" } });
+  });
+
   it("needs a base branch when HEAD is detached", async () => {
     const path = repo("a", {}, null);
     expect(await addRepo(options(), { path })).toEqual({

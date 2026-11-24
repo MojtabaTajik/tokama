@@ -11,7 +11,7 @@ import { Document, isSeq, parseDocument } from "yaml";
 import { readJsonFile } from "../../kernel/fs-safe/index.js";
 import type { Git, GitError } from "../../kernel/git/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
-import { type RepoId, RepoIdSchema } from "../../kernel/schemas/index.js";
+import { MAX_CHECK_CHARS, type RepoId, RepoIdSchema } from "../../kernel/schemas/index.js";
 import { MAX_CONFIG_BYTES } from "./read.js";
 import { BRANCH, checkProblem, DEFAULT_WORKTREE_FOLDER, type LoadReposOptions, type Repo, readReposFile, REPOS_FILE, type ReposFile, ReposFileSchema } from "./repos.js";
 import { clean, CONFIG_FORMAT, formatProblem, parseYaml, quote, type ConfigProblem } from "./yaml-file.js";
@@ -25,6 +25,8 @@ export interface RepoEditError {
 export interface RepoEditOptions extends LoadReposOptions {
   /** Tells whether a folder is a git repo's top folder, and its branch. */
   readonly git: Pick<Git, "worktreeList">;
+  /** Ids a new repo can't take though repos.yaml doesn't hold them, such as the sample engine's repos. */
+  readonly reservedIds?: readonly string[];
 }
 
 /** What the engine proposes for a folder before it is added. */
@@ -67,7 +69,7 @@ export async function suggestRepo(options: RepoEditOptions, path: string): Promi
     path: folder.value.path,
     gitRepo: folder.value.gitProblem === undefined,
     branch: folder.value.branch,
-    id: suggestId(folder.value.path, repos),
+    id: suggestId(folder.value.path, takenIds(options, repos)),
     checks: await suggestChecks(folder.value.path),
     problem: folder.value.gitProblem ?? (added === undefined ? undefined : `This folder is already added as ${quote(added)}.`),
   });
@@ -81,10 +83,11 @@ export async function addRepo(options: RepoEditOptions, input: AddRepoInput): Pr
   if (!file.ok) return file;
   const { repos } = file.value;
 
-  const id = input.id?.trim() || suggestId(folder.value.path, repos);
+  const id = input.id?.trim() || suggestId(folder.value.path, takenIds(options, repos));
   if (id === undefined) return invalid("Give the repo an id: lowercase letters, digits and hyphens.");
   if (!RepoIdSchema.safeParse(id).success) return invalid(`The id ${quote(id)} must be lowercase letters, digits and hyphens (at most 64).`);
   if (repos.some((repo) => repo.id === id)) return refused("already_exists", `A repo with the id ${quote(id)} is already added.`);
+  if (options.reservedIds?.includes(id)) return refused("already_exists", `The id ${quote(id)} is taken by a sample repo. Pick another id.`);
   const added = await addedAs(repos, folder.value.path);
   if (added !== undefined) return refused("already_exists", `This folder is already added as ${quote(added)}.`);
 
@@ -94,6 +97,7 @@ export async function addRepo(options: RepoEditOptions, input: AddRepoInput): Pr
 
   const checks = (input.checks ?? []).map((command) => command.trim()).filter((command) => command !== "");
   for (const command of checks) {
+    if (command.length > MAX_CHECK_CHARS) return invalid(`The check ${quote(command)} must be at most ${MAX_CHECK_CHARS} characters.`);
     const problem = checkProblem(command);
     if (problem !== undefined) return invalid(`The check ${quote(command)} ${problem}.`);
   }
@@ -245,10 +249,11 @@ async function realpathOr(path: string): Promise<string> {
 }
 
 /** The folder name as an id (`Orders_API` gives `orders-api`), made unique with `-2`, `-3`, ... */
-function suggestId(path: string, repos: readonly Repo[]): RepoId | undefined {
+const takenIds = (options: RepoEditOptions, repos: readonly Repo[]): Set<string> => new Set([...repos.map((repo) => repo.id), ...(options.reservedIds ?? [])]);
+
+function suggestId(path: string, taken: ReadonlySet<string>): RepoId | undefined {
   const base = basename(path).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
   if (!RepoIdSchema.safeParse(base).success) return undefined;
-  const taken = new Set<string>(repos.map((repo) => repo.id));
   for (let n = 1; n < 100; n++) {
     const id = n === 1 ? base : `${base}-${n}`;
     if (!taken.has(id)) return id as RepoId;
