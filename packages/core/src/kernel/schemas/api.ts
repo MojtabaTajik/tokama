@@ -4,21 +4,33 @@
 // `*Input` types are what a sender builds (ids as plain strings); the other types are what a
 // parser returns (ids branded).
 import { z } from "zod";
-import { DecisionIdSchema, ItemIdSchema, TemplateIdSchema, WorkspaceIdSchema } from "./ids.js";
+import { DecisionIdSchema, ItemIdSchema, RepoIdSchema, TemplateIdSchema, WorkspaceIdSchema } from "./ids.js";
 import { ItemRecordSchema } from "./item.js";
 import { AgentCallUsageSchema } from "./usage.js";
+import { WorkspaceSummarySchema } from "./workspace.js";
 
 export const API_VERSION = 1;
 
 const apiVersion = z.literal(API_VERSION);
 const requestId = z.string().min(1).max(128);
 
+// Every change a command makes also goes out as events. Reply data per command: CommandResultSchemas.
 export const CommandSchema = z.discriminatedUnion("type", [
+  // `text` is the description or the pasted alert; the engine derives the title from it.
   z.strictObject({
     type: z.literal("start_item"),
     workspaceId: WorkspaceIdSchema,
     templateId: TemplateIdSchema,
-    title: z.string().min(1).max(200),
+    repoIds: z.array(RepoIdSchema).max(20),
+    text: z.string().max(4000).regex(/\S/, "must not be blank"),
+    options: z
+      .strictObject({
+        /** Wait for approval before each step that sends data to a cloud agent. Default true. */
+        askBeforeCloud: z.boolean().optional(),
+        /** Send a desktop notification when the item needs you or ends. */
+        notify: z.boolean().optional(),
+      })
+      .optional(),
   }),
   // Answers one decision by id, so a stale button cannot answer a newer question.
   z.strictObject({
@@ -31,8 +43,11 @@ export const CommandSchema = z.discriminatedUnion("type", [
 ]);
 
 export const QuerySchema = z.discriminatedUnion("type", [
+  z.strictObject({ type: z.literal("workspaces") }),
   z.strictObject({ type: z.literal("board"), workspaceId: WorkspaceIdSchema }),
   z.strictObject({ type: z.literal("item"), itemId: ItemIdSchema }),
+  /** The template the engine suggests for New work text; `templateId` is null when none fits. */
+  z.strictObject({ type: z.literal("suggest_template"), workspaceId: WorkspaceIdSchema, text: z.string().max(4000) }),
 ]);
 
 export const EventSchema = z.discriminatedUnion("type", [
@@ -42,9 +57,28 @@ export const EventSchema = z.discriminatedUnion("type", [
 
 /** The data of a successful reply, per query type. */
 export const QueryResultSchemas = {
+  workspaces: z.strictObject({ workspaces: z.array(WorkspaceSummarySchema) }),
   board: z.strictObject({ items: z.array(ItemRecordSchema) }),
   item: z.strictObject({ item: ItemRecordSchema }),
+  suggest_template: z.strictObject({ templateId: TemplateIdSchema.nullable() }),
 } as const satisfies Record<z.output<typeof QuerySchema>["type"], z.ZodType>;
+
+/** The data of a successful reply, per command type. */
+export const CommandResultSchemas = {
+  start_item: z.strictObject({ itemId: ItemIdSchema }),
+  resolve_decision: z.null(),
+  stop_item: z.null(),
+} as const satisfies Record<z.output<typeof CommandSchema>["type"], z.ZodType>;
+
+/** The codes this engine sends in a command's error reply. Clients accept any code. */
+export const COMMAND_ERROR_CODES = [
+  "not_found",
+  "invalid_request",
+  "stale_decision",
+  "invalid_choice",
+  "invalid_state",
+  "not_implemented",
+] as const;
 
 export const CommandMessageSchema = z.strictObject({
   apiVersion,
@@ -158,3 +192,9 @@ export type QueryType = keyof typeof QueryResultSchemas;
 export type QueryResult<T extends QueryType> = z.output<(typeof QueryResultSchemas)[T]>;
 export type BoardResult = QueryResult<"board">;
 export type ItemResult = QueryResult<"item">;
+export type WorkspacesResult = QueryResult<"workspaces">;
+export type SuggestTemplateResult = QueryResult<"suggest_template">;
+export type CommandType = keyof typeof CommandResultSchemas;
+export type CommandResult<T extends CommandType> = z.output<(typeof CommandResultSchemas)[T]>;
+export type StartItemResult = CommandResult<"start_item">;
+export type CommandErrorCode = (typeof COMMAND_ERROR_CODES)[number];

@@ -11,6 +11,8 @@ const generated = (prefix: string) =>
 export const WorkspaceIdSchema = name.brand<"WorkspaceId">();
 export const TemplateIdSchema = name.brand<"TemplateId">();
 export const AgentIdSchema = name.brand<"AgentId">();
+export const RepoIdSchema = name.brand<"RepoId">();
+export const ConnectionIdSchema = name.brand<"ConnectionId">();
 export const ItemIdSchema = generated("item").brand<"ItemId">();
 export const CallIdSchema = generated("call").brand<"CallId">();
 /** A question the engine put to the engineer (plan approval, cloud-step approval, retry or stop, quota). */
@@ -19,6 +21,8 @@ export const DecisionIdSchema = generated("decision").brand<"DecisionId">();
 export type WorkspaceId = z.output<typeof WorkspaceIdSchema>;
 export type TemplateId = z.output<typeof TemplateIdSchema>;
 export type AgentId = z.output<typeof AgentIdSchema>;
+export type RepoId = z.output<typeof RepoIdSchema>;
+export type ConnectionId = z.output<typeof ConnectionIdSchema>;
 export type ItemId = z.output<typeof ItemIdSchema>;
 export type CallId = z.output<typeof CallIdSchema>;
 export type DecisionId = z.output<typeof DecisionIdSchema>;

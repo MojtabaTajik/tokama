@@ -21,6 +21,8 @@ import {
   checkEngineDir,
   type ClientMessageInput,
   type CommandInput,
+  type CommandResult,
+  type CommandType,
   defaultEngineDir,
   encodeLine,
   type EngineEndpoint,
@@ -30,6 +32,7 @@ import {
   LineDecoder,
   ok,
   parseClientMessage,
+  parseCommandResult,
   parseHandshakeReply,
   parseQueryResult,
   parseServerMessage,
@@ -81,6 +84,8 @@ type RequestError = Extract<RequestResult, { ok: false }>;
 
 /** A query's result, with `data` parsed for that query type (`invalid_reply` if it does not match). */
 export type QueryReply<T extends QueryType> = { readonly ok: true; readonly data: QueryResult<T> } | RequestError;
+/** A command's result, with `data` parsed for that command type (`invalid_reply` if it does not match). */
+export type CommandReply<T extends CommandType> = { readonly ok: true; readonly data: CommandResult<T> } | RequestError;
 
 export type ClientEvent =
   | { readonly kind: "event"; readonly seq: number; readonly event: EngineEvent }
@@ -99,7 +104,7 @@ export interface EngineClient {
   /** The engine this client is connected to, or was connected to last. */
   readonly engineId: string;
   query<Q extends QueryInput>(query: Q, options?: RequestOptions): Promise<QueryReply<Q["type"]>>;
-  command(command: CommandInput, options?: RequestOptions): Promise<RequestResult>;
+  command<C extends CommandInput>(command: C, options?: RequestOptions): Promise<CommandReply<C["type"]>>;
   /** Events from the time of this call on. The iteration ends when the client closes or fails. */
   events(): AsyncIterable<ClientEvent>;
   close(): Promise<void>;
@@ -183,8 +188,12 @@ class Client implements EngineClient {
     return failure("invalid_reply", `the engine sent ${query.type} data of the wrong shape`) as RequestError;
   }
 
-  command(command: CommandInput, options?: RequestOptions): Promise<RequestResult> {
-    return this.request({ apiVersion: API_VERSION, kind: "command", requestId: this.requestId(), command }, options);
+  async command<C extends CommandInput>(command: C, options?: RequestOptions): Promise<CommandReply<C["type"]>> {
+    const reply = await this.request({ apiVersion: API_VERSION, kind: "command", requestId: this.requestId(), command }, options);
+    if (!reply.ok) return reply;
+    const data = parseCommandResult<C["type"]>(command.type, reply.data);
+    if (data.ok) return { ok: true, data: data.value };
+    return failure("invalid_reply", `the engine sent ${command.type} data of the wrong shape`) as RequestError;
   }
 
   events(): AsyncIterable<ClientEvent> {
