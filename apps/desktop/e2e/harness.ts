@@ -2,6 +2,7 @@
 // temp dir. The app starts the engine itself, as it does for a user, so a restart test sees the
 // real reconnect path. Linux needs a display (CI uses xvfb-run). Nothing outside the temp dir is
 // touched; the app, then the engine, are stopped at the end of every test.
+import { execFileSync } from "node:child_process";
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -57,6 +58,7 @@ export function flow(name: string, fn: (session: Session) => Promise<void>): voi
     const engineDir = join(baseDir, "sample");
     let app: ElectronApplication | undefined;
     let page: Page | undefined;
+    let closeHung = false;
     try {
       trace(name, "launching");
       app = await launch(tmp, baseDir, output);
@@ -75,16 +77,21 @@ export function flow(name: string, fn: (session: Session) => Promise<void>): voi
       throw error;
     } finally {
       trace(name, "closing the app");
-      // On Linux CI a graceful close never returns (seen in trace.log); the tests have nothing left to check, so the process is ended after 3 s.
-      if ((await within((app?.close() ?? Promise.resolve()).catch(() => undefined).then(() => true), 3_000)) === undefined) {
+      // On Linux CI a graceful close never returns (bug #75, seen in trace.log), and the tests have
+      // nothing left to check, so the process is ended after 3 s. Elsewhere a hanging close fails the test.
+      const closed = await within((app?.close() ?? Promise.resolve()).catch(() => undefined).then(() => true), 3_000);
+      if (closed === undefined) {
         trace(name, "the app did not close; killing it");
         app?.process().kill("SIGKILL");
+        closeHung = process.platform !== "linux";
       }
       trace(name, "stopping the engine");
       await stopEngine(engineDir);
       rmSync(tmp, { recursive: true, force: true });
       trace(name, "done");
     }
+    // Reached only when the flow passed: a failed one has thrown already.
+    if (closeHung) throw new Error("the app did not close within 3 s");
   });
 }
 
@@ -162,19 +169,39 @@ function readEngine(engineDir: string): { engineId: string; pid: number } | unde
   }
 }
 
-/** Stops whichever engine the app started; the app is already closed, so none is started again. */
+/**
+ * The pids of the engines of this test: the one in `engine.lock` and any started but not yet locked,
+ * found by their `--dir` argument (a test can fail between the app starting the engine and the lock).
+ */
+function engineProcesses(engineDir: string): number[] {
+  const pids = new Set<number>();
+  const locked = readEngine(engineDir);
+  if (locked !== undefined) pids.add(locked.pid);
+  try {
+    const found = execFileSync("pgrep", ["-f", "--", `--dir ${engineDir}`], { encoding: "utf8" });
+    for (const line of found.split("\n")) if (/^\d+$/.test(line.trim())) pids.add(Number.parseInt(line, 10));
+  } catch {
+    // pgrep exits with 1 when nothing matches.
+  }
+  pids.delete(process.pid);
+  return [...pids];
+}
+
+/** Stops whichever engines the app started; the app is already closed, so none is started again. */
 async function stopEngine(engineDir: string): Promise<void> {
   for (const signal of ["SIGTERM", "SIGKILL"] as const) {
     const deadline = Date.now() + 5_000;
-    for (let running = readEngine(engineDir); running !== undefined && Date.now() < deadline; running = readEngine(engineDir)) {
-      try {
-        process.kill(running.pid, signal);
-      } catch {
-        return;
+    for (let pids = engineProcesses(engineDir); pids.length > 0 && Date.now() < deadline; pids = engineProcesses(engineDir)) {
+      for (const pid of pids) {
+        try {
+          process.kill(pid, signal);
+        } catch {
+          // Already gone.
+        }
       }
       await new Promise((done) => setTimeout(done, 100));
     }
-    if (readEngine(engineDir) === undefined) return;
+    if (engineProcesses(engineDir).length === 0) return;
   }
 }
 

@@ -41,7 +41,8 @@ flow("opens an item and approves its decision", async ({ page }) => {
   await row(page, NEEDS_YOU).waitFor({ state: "detached" });
   // The item runs on: it is in Running under Active.
   await segment(page, "Active").click();
-  // Attached, not visible: the open drawer can squeeze the row on a small window.
+  // Attached, not visible: the open drawer can squeeze the row to nothing on a small window (bug #74).
+  // Wait for "visible" again once #74 is fixed.
   await group(page, "Running").locator(".pl-title", { hasText: NEEDS_YOU }).waitFor({ state: "attached" });
 });
 
