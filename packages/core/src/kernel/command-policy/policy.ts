@@ -6,7 +6,14 @@ export interface CommandPart {
   readonly words: readonly string[];
 }
 
-export type SyntaxRefusalReason = "substitution" | "redirect" | "background" | "subshell" | "newline" | "unbalanced-quote";
+export type SyntaxRefusalReason =
+  | "substitution"
+  | "ansi-c-quote"
+  | "redirect"
+  | "background"
+  | "subshell"
+  | "newline"
+  | "unbalanced-quote";
 
 /** Shell syntax the policy refuses: the offending token and where it starts in the command. */
 export interface SyntaxRefusal {
@@ -33,7 +40,8 @@ export const PIPE_HELPERS: readonly string[] = ["head", "tail", "wc"];
 /**
  * Decides whether a check or step command may run. Allowed only if every part (split on `&&`,
  * `||`, `;`, `|` outside quotes) starts with the words of a rule or of a PIPE_HELPERS command.
- * A rule is a command prefix as in `npm test:*` or `node:*`: the words before the first `:`.
+ * A rule is a command prefix as in `npm test:*` or `node:*`: its words without a trailing `:*`
+ * (so `npm run test:unit:*` is the prefix `npm run test:unit`; `ls` and `ls:*` are the same).
  * Rules without words (`""`, `:*`) are ignored, never treated as "allow everything".
  * Never throws: bad input is refused with a reason and the offending part.
  */
@@ -41,7 +49,7 @@ export function checkCommand(command: string, rules: readonly string[], shell: S
   const split = shell.split(command);
   if (!split.ok) return { allowed: false, ...split.error };
 
-  const prefixes = [...rules.map((rule) => rule.split(":")[0] ?? ""), ...PIPE_HELPERS]
+  const prefixes = [...rules.map((rule) => rule.trim().replace(/:\*$/, "")), ...PIPE_HELPERS]
     .map((prefix) => prefix.split(/[ \t]+/).filter((word) => word !== ""))
     .filter((words) => words.length > 0);
 

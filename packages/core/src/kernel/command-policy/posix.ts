@@ -5,9 +5,11 @@ import type { CommandPart, ShellGrammar, SyntaxRefusal } from "./policy.js";
 // command on `&&`, `||`, `;` and `|` outside quotes, and refuses everything else that could run
 // code outside the allowlist. Ported from ai-pipeline's `split_check`; keep the branch order.
 //
-// Refused: `` ` `` or `$(` outside single quotes (also inside double quotes, where sh still
-// substitutes), and unquoted `<`, `>` (except `2>&1`), `&`, `(`, `)`, newline; unbalanced quotes.
-// A backslash outside single quotes escapes the next character.
+// Refused: any newline, quoted or escaped (so a `#` comment cannot hide a second line); `` ` ``
+// or `$(` outside single quotes (also inside double quotes, where sh still substitutes);
+// unquoted `$'` (ANSI-C quoting in bash, which is /bin/sh on macOS); unquoted `<`, `>` (except
+// `2>&1`), `&`, `(`, `)`; unbalanced quotes. A backslash outside single quotes escapes the next
+// character.
 
 function split(command: string): ReturnType<ShellGrammar["split"]> {
   const parts: string[] = [];
@@ -16,6 +18,9 @@ function split(command: string): ReturnType<ShellGrammar["split"]> {
   let quoteStart = 0;
   let i = 0;
   const refuse = (reason: SyntaxRefusal["reason"], part: string) => err<SyntaxRefusal>({ reason, part, index: i });
+
+  const newline = command.indexOf("\n");
+  if (newline !== -1) return err({ reason: "newline", part: "\n", index: newline });
 
   while (i < command.length) {
     const ch = command.charAt(i);
@@ -30,6 +35,8 @@ function split(command: string): ReturnType<ShellGrammar["split"]> {
     if (quote !== undefined) {
       if (ch === quote) quote = undefined;
       current += ch;
+    } else if (command.startsWith("$'", i)) {
+      return refuse("ansi-c-quote", "$'");
     } else if (ch === "'" || ch === '"') {
       quote = ch;
       quoteStart = i;
@@ -52,8 +59,6 @@ function split(command: string): ReturnType<ShellGrammar["split"]> {
       return refuse("background", ch);
     } else if (ch === "(" || ch === ")") {
       return refuse("subshell", ch);
-    } else if (ch === "\n") {
-      return refuse("newline", ch);
     } else {
       current += ch;
     }

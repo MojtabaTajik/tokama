@@ -62,6 +62,8 @@ describe("checkCommand, refusals", () => {
     ["(rm x)", "subshell", "(", 0],
     ["ls )", "subshell", ")", 3],
     ["ls\nrm x", "newline", "\n", 2],
+    ["ls 'a\nb'", "newline", "\n", 5],
+    ["ls $'x'", "ansi-c-quote", "$'", 3],
     ["node -e 'x", "unbalanced-quote", "'", 8],
     ['node -e "x', "unbalanced-quote", '"', 8],
   ])("refuses %j as %s", (command, reason, part, index) => {
@@ -88,7 +90,8 @@ describe("checkCommand, refusals", () => {
 describe("checkCommand, quotes", () => {
   it.each([
     ["single quotes keep operators and substitution literal", "node -e 'a; b | c && $(d) `e` > f & (g)'"],
-    ["double quotes keep operators literal", 'node -e "a; b | c && d > f & (g)\nh"'],
+    ["double quotes keep operators literal", 'node -e "a; b | c && d > f & (g)"'],
+    ["$' inside quotes is literal", `node -e "$'x'" '$'`],
     ["escaped double quote inside double quotes", 'node -e "say \\"hi\\" || x"'],
     ["escaped operators outside quotes", "ls a\\;b a\\|b a\\&b a\\>b a\\(b\\)"],
     ["escaped backtick and dollar are literal", 'ls \\` "\\`" \\$\\(x'],
@@ -111,6 +114,9 @@ describe("checkCommand, quotes", () => {
     ["a single quote inside double quotes does not protect $(", `node -e "'$(rm x)'"`, "substitution"],
     ["a closed single quote does not protect what follows", "node -e 'a' > out", "redirect"],
     ["a backslash does not escape inside single quotes", "node -e 'a\\' > out", "redirect"],
+    ["a newline inside double quotes", 'node -e "a\nb"', "newline"],
+    ["a newline inside single quotes", "node -e 'a\nb'", "newline"],
+    ["an escaped newline", "ls a\\\nb", "newline"],
   ])("refuses: %s", (_name, command, reason) => {
     expect(check(command)).toMatchObject({ allowed: false, reason });
   });
@@ -156,7 +162,13 @@ describe("checkCommand, rules", () => {
     }
   });
 
-  it("takes the words before the first colon, with or without :*", () => {
+  it("removes only a trailing :* from a rule", () => {
+    expect(allowed("npm run test:unit -- x", ["npm run test:unit:*"])).toBe(true);
+    expect(allowed("npm run test", ["npm run test:unit:*"])).toBe(false);
+    expect(allowed("npm run test:e2e", ["npm run test:unit:*"])).toBe(false);
+  });
+
+  it("takes the rule's words, with or without :*", () => {
     expect(allowed("git diff --stat", ["git diff:*"])).toBe(true);
     expect(allowed("git status", ["git diff:*"])).toBe(false);
     expect(allowed("ls -la", ["ls"])).toBe(true);
@@ -173,6 +185,22 @@ describe("checkCommand, rules", () => {
   it("refuses a trailing backslash cleanly", () => {
     expect(allowed("ls \\")).toBe(true);
     expect(allowed("\\")).toBe(false);
+  });
+});
+
+// Bypasses found in review of #21, each proven with `/bin/sh -c` (the reference had them too):
+// a `#` comment that hides a second line, `$'...'` quoting, and a split `$(`. Each has an
+// allowed twin without the injection, so the refusal comes from the injection alone.
+describe("checkCommand, review regressions", () => {
+  it.each([
+    ["npm test #'\ntouch PWNED1 #'", "newline", "npm test"],
+    ["npm test #\\\ntouch PWNED2", "newline", "npm test #"],
+    ['npm test -- "$\\\n(touch PWNED3)"', "newline", 'npm test -- "$x"'],
+    ["ls $'\\'' ; touch PWNED ; #'", "ansi-c-quote", "ls '\\'"],
+    ['ls #"\ntouch PWNED #"', "newline", 'ls #"x"'],
+  ])("refuses %j as %s; allows its twin %j", (command, reason, twin) => {
+    expect(check(command)).toMatchObject({ allowed: false, reason });
+    expect(check(twin)).toMatchObject({ allowed: true });
   });
 });
 
