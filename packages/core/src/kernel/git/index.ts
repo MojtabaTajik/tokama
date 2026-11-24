@@ -11,6 +11,7 @@ export {
   parseStatus,
   parseWorktreeList,
   type Git,
+  type GitDirs,
   type GitError,
   type GitErrorReason,
   type GitOptions,

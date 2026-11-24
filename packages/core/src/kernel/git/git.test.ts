@@ -464,6 +464,27 @@ describe("API on a real repo", () => {
     expect(existsSync(path)).toBe(false);
   });
 
+  it("branchDelete, lsTree and gitDirs", SLOW, async () => {
+    mkdirSync(join(repo, "dir"));
+    write(join(repo, "dir", "b c.txt"), "x\n");
+    await plain(repo, "add", "-A");
+    await plain(repo, "commit", "-q", "-m", "second");
+    const path = join(root, "wt");
+    value(await git.worktreeAdd(repo, path, "feature", "main"));
+    expect(value(await git.lsTree(path, "HEAD"))).toEqual(["a.txt", "dir/b c.txt"]);
+    // --full-tree: the whole tree from a subfolder too.
+    expect(value(await git.lsTree(join(path, "dir"), "HEAD"))).toEqual(["a.txt", "dir/b c.txt"]);
+
+    const commonDir = join(repo, ".git");
+    expect(value(await git.gitDirs(repo))).toEqual({ gitDir: commonDir, commonDir });
+    expect(value(await git.gitDirs(path))).toEqual({ gitDir: join(commonDir, "worktrees", "wt"), commonDir });
+
+    expect(await git.branchDelete(repo, "feature")).toMatchObject({ ok: false, error: { reason: "failed" } });
+    value(await git.worktreeRemove(repo, path));
+    value(await git.branchDelete(repo, "feature"));
+    expect(await git.revParse(repo, "feature")).toMatchObject({ ok: false });
+  });
+
   it("returns git failures as values", SLOW, async () => {
     const missing = await git.revParse(repo, "no-such-branch");
     expect(missing).toMatchObject({ ok: false, error: { reason: "failed", exitCode: 128, args: ["rev-parse", "--verify", "no-such-branch"] } });
@@ -494,6 +515,8 @@ describe("API on a real repo", () => {
     expect(await git.worktreeAdd(repo, join(root, "wt"), "-b", "main")).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
     expect(await git.worktreeAdd(repo, join(root, "wt"), "b", "")).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
     expect(await git.worktreeRemove(repo, "-f")).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
+    expect(await git.branchDelete(repo, "-r")).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
+    expect(await git.lsTree(repo, "--abbrev")).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
   });
 
   it("reports a git binary that does not start", SLOW, async () => {

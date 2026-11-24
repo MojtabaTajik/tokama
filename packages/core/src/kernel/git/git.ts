@@ -129,8 +129,22 @@ export interface Git {
   worktreeRemove(repo: string, path: string, options?: { readonly force?: boolean }): Promise<GitResult<void>>;
   /** `worktree list --porcelain -z`. */
   worktreeList(repo: string): Promise<GitResult<WorktreeEntry[]>>;
+  /** `branch -D <branch>`: deletes a local branch, merged or not. */
+  branchDelete(repo: string, branch: string): Promise<GitResult<void>>;
+  /** `ls-tree -r -z --name-only --full-tree <rev>`: every file path in the tree of `rev`. */
+  lsTree(repo: string, rev: string): Promise<GitResult<string[]>>;
+  /**
+   * Absolute paths of the repo's git dir and of its common dir. In a linked worktree the git dir
+   * is `<common>/worktrees/<name>`; in the main worktree both are the same.
+   */
+  gitDirs(repo: string): Promise<GitResult<GitDirs>>;
   /** `git --version`, refused below MIN_GIT_VERSION. The engine calls it once at startup. */
   checkGitVersion(): Promise<GitResult<string>>;
+}
+
+export interface GitDirs {
+  readonly gitDir: string;
+  readonly commonDir: string;
 }
 
 export interface GitOptions {
@@ -305,6 +319,19 @@ export function createGit(options: GitOptions): Git {
       return map(git(repo, args), none);
     },
     worktreeList: (repo) => map(git(repo, ["worktree", "list", "--porcelain", "-z"]), parseWorktreeList),
+    async branchDelete(repo, branch) {
+      const args = ["branch", "-D", branch];
+      return refuseOption(args, branch) ?? map(git(repo, args), none);
+    },
+    async lsTree(repo, rev) {
+      const args = ["ls-tree", "-r", "-z", "--name-only", "--full-tree", rev];
+      return refuseOption(args, rev) ?? map(git(repo, args), (out) => out.split("\0").filter((path) => path !== ""));
+    },
+    gitDirs: (repo) =>
+      map(git(repo, ["rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"]), (out) => {
+        const [gitDir = "", commonDir = ""] = out.split("\n");
+        return { gitDir, commonDir };
+      }),
     async checkGitVersion() {
       const args = ["--version"];
       const out = await raw(tmpdir(), args);
