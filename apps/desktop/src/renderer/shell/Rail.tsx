@@ -1,16 +1,16 @@
-// The icon rail (CLAUDE.md, locked layout): panel toggle, Board, Needs you, Insights, Settings,
-// Attention, one usage ring per AI CLI, then the user. Only the panel toggle acts for now;
-// the other destinations come with their screens.
+// The icon rail: panel toggle, Board, Needs you, Insights, Settings,
+// Attention, one usage ring per AI CLI, then the user. Only the panel toggle acts for now; the
+// other buttons are marked aria-disabled until their screens exist.
 import { brand } from "../brand/index.js";
 import { AI_CLIS } from "../model.js";
 import { AttentionIcon, BoardIcon, InboxIcon, InsightsIcon, PanelIcon, SettingsIcon, UserIcon } from "./icons.js";
 
 const TEXT = {
   rail: "App",
-  showPanel: "Show workspaces",
-  hidePanel: "Hide workspaces",
+  panel: "Workspaces panel",
   board: "Board",
   needsYou: "Needs you",
+  outOfDate: "out of date",
   insights: "Insights",
   settings: "Settings",
   attention: "Attention",
@@ -20,8 +20,11 @@ const TEXT = {
 
 export interface RailProps {
   readonly panelOpen: boolean;
+  /** The id of the workspaces panel, which the toggle controls while it is shown. */
+  readonly panelId: string;
   readonly onTogglePanel: () => void;
-  readonly needsYou: number;
+  /** Items that need you; undefined when the count is out of date (the last load failed). */
+  readonly needsYou: number | undefined;
   /** Health issues (expiring token, quota, a host's model server down). None are reported yet. */
   readonly attention: number;
 }
@@ -29,28 +32,50 @@ export interface RailProps {
 /** "Needs you · 2", or just "Needs you" when there are none. */
 const withCount = (label: string, count: number) => (count > 0 ? `${label} · ${count}` : label);
 
-export function Rail({ panelOpen, onTogglePanel, needsYou, attention }: RailProps) {
-  const panelLabel = panelOpen ? TEXT.hidePanel : TEXT.showPanel;
+export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, attention }: RailProps) {
+  const needsYouLabel = needsYou === undefined ? `${TEXT.needsYou} · ${TEXT.outOfDate}` : withCount(TEXT.needsYou, needsYou);
   return (
     <nav className="rail" aria-label={TEXT.rail}>
       <img className="rail-mark" src={brand.markUrl} alt={brand.name} width={22} height={22} />
-      <button type="button" className="rail-button" aria-label={panelLabel} title={panelLabel} aria-pressed={panelOpen} onClick={onTogglePanel}>
+      <button
+        type="button"
+        className="rail-button"
+        aria-label={TEXT.panel}
+        title={TEXT.panel}
+        aria-pressed={panelOpen}
+        aria-controls={panelOpen ? panelId : undefined}
+        onClick={onTogglePanel}
+      >
         <PanelIcon />
       </button>
       <button type="button" className="rail-button" aria-label={TEXT.board} title={TEXT.board} aria-current="page">
         <BoardIcon />
       </button>
-      <button type="button" className="rail-button" data-tone={needsYou > 0 ? "warn" : undefined} aria-label={withCount(TEXT.needsYou, needsYou)} title={withCount(TEXT.needsYou, needsYou)}>
+      <button
+        type="button"
+        className="rail-button"
+        data-tone={needsYou !== undefined && needsYou > 0 ? "warn" : undefined}
+        aria-label={needsYouLabel}
+        title={needsYouLabel}
+        aria-disabled="true"
+      >
         <InboxIcon />
-        <Badge count={needsYou} tone="warn" />
+        <Badge count={needsYou ?? 0} tone="warn" />
       </button>
-      <button type="button" className="rail-button" aria-label={TEXT.insights} title={TEXT.insights}>
+      <button type="button" className="rail-button" aria-label={TEXT.insights} title={TEXT.insights} aria-disabled="true">
         <InsightsIcon />
       </button>
-      <button type="button" className="rail-button" aria-label={TEXT.settings} title={TEXT.settings}>
+      <button type="button" className="rail-button" aria-label={TEXT.settings} title={TEXT.settings} aria-disabled="true">
         <SettingsIcon />
       </button>
-      <button type="button" className="rail-button" data-tone={attention > 0 ? "fail" : undefined} aria-label={withCount(TEXT.attention, attention)} title={withCount(TEXT.attention, attention)}>
+      <button
+        type="button"
+        className="rail-button"
+        data-tone={attention > 0 ? "fail" : undefined}
+        aria-label={withCount(TEXT.attention, attention)}
+        title={withCount(TEXT.attention, attention)}
+        aria-disabled="true"
+      >
         <AttentionIcon />
         <Badge count={attention} tone="fail" />
       </button>
@@ -77,7 +102,7 @@ function Badge({ count, tone }: { readonly count: number; readonly tone: "warn" 
 /** A usage ring with its text monogram. Only the track for now: usage sources come later. */
 function UsageRing({ monogram, label }: { readonly monogram: string; readonly label: string }) {
   return (
-    <button type="button" className="usage-ring" aria-label={label} title={label}>
+    <button type="button" className="usage-ring" aria-label={label} title={label} aria-disabled="true">
       <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true">
         <circle cx="20" cy="20" r="16" />
       </svg>

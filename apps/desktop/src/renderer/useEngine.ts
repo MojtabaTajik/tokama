@@ -1,6 +1,8 @@
 // The renderer's engine state: the connection, the workspaces and their items. Queries run on
 // every return to "connected" (events may have been missed while away), and `item_updated`
-// events keep the items current in between.
+// events keep the items current in between. A failed load is retried once after a short delay;
+// after that the last data stays, marked stale, until a retry succeeds. A failed connection
+// drops the data.
 import type { ItemRecord, WorkspaceSummary } from "@tokama/core";
 import { useEffect, useRef, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../shared/bridge.js";
@@ -13,11 +15,18 @@ export interface EngineData {
 
 export interface EngineView {
   readonly connection: ConnectionState;
-  /** Undefined until the first load after connecting. */
+  /** Undefined until the first load after connecting, and after the connection failed. */
   readonly data: EngineData | undefined;
   /** Why the last load failed, as the engine or the bridge said it. */
   readonly loadError: string | undefined;
+  /** The data is from an earlier load: the last one failed. */
+  readonly stale: boolean;
+  /** Loads again now. */
+  readonly retry: () => void;
 }
+
+/** Delay before the one automatic retry of a failed load. */
+export const RETRY_DELAY_MS = 2_000;
 
 type Loaded = { readonly ok: true; readonly data: EngineData } | { readonly ok: false; readonly error: string };
 
@@ -35,10 +44,12 @@ async function load(bridge: TokamaBridge): Promise<Loaded> {
   return { ok: true, data: { workspaces, items } };
 }
 
-export function useEngine(bridge: TokamaBridge): EngineView {
+export function useEngine(bridge: TokamaBridge, retryDelayMs = RETRY_DELAY_MS): EngineView {
   const [connection, setConnection] = useState<ConnectionState>({ status: "starting" });
   const [data, setData] = useState<EngineData | undefined>(undefined);
   const [loadError, setLoadError] = useState<string | undefined>(undefined);
+  // Bumped by retry(), which re-runs the load effect.
+  const [reloads, setReloads] = useState(0);
   // Items updated by events while a load is in flight: newer than what the load returns.
   const updatedDuringLoad = useRef<Map<string, ItemRecord> | undefined>(undefined);
 
@@ -75,24 +86,40 @@ export function useEngine(bridge: TokamaBridge): EngineView {
   useEffect(() => {
     if (connection.status !== "connected") return;
     let live = true;
-    const updated = new Map<string, ItemRecord>();
-    updatedDuringLoad.current = updated;
-    void load(bridge)
-      .catch((error: unknown): Loaded => ({ ok: false, error: String(error) }))
-      .then((result) => {
-        if (!live) return;
-        updatedDuringLoad.current = undefined;
-        if (!result.ok) return setLoadError(result.error);
-        const items = new Map(result.data.items);
-        for (const [id, item] of updated) items.set(id, item);
-        setLoadError(undefined);
-        setData({ workspaces: result.data.workspaces, items });
-      });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const run = (attempt: number) => {
+      const updated = new Map<string, ItemRecord>();
+      updatedDuringLoad.current = updated;
+      void load(bridge)
+        .catch((error: unknown): Loaded => ({ ok: false, error: String(error) }))
+        .then((result) => {
+          if (!live) return;
+          updatedDuringLoad.current = undefined;
+          if (!result.ok) {
+            setLoadError(result.error);
+            if (attempt === 0) timer = setTimeout(() => run(1), retryDelayMs);
+            return;
+          }
+          const items = new Map(result.data.items);
+          for (const [id, item] of updated) items.set(id, item);
+          setLoadError(undefined);
+          setData({ workspaces: result.data.workspaces, items });
+        });
+    };
+    run(0);
     return () => {
       live = false;
-      if (updatedDuringLoad.current === updated) updatedDuringLoad.current = undefined;
+      clearTimeout(timer);
+      updatedDuringLoad.current = undefined;
     };
-  }, [bridge, connection]);
+  }, [bridge, connection, reloads, retryDelayMs]);
 
-  return { connection, data, loadError };
+  const failed = connection.status === "failed";
+  return {
+    connection,
+    data: failed ? undefined : data,
+    loadError: failed ? undefined : loadError,
+    stale: !failed && data !== undefined && loadError !== undefined,
+    retry: () => setReloads((count) => count + 1),
+  };
 }

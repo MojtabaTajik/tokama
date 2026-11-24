@@ -20,6 +20,14 @@ export function findExecutable(name: string, path: string | undefined): string |
   return undefined;
 }
 
+/**
+ * The engine dir to use: the sample engine gets its own subdir, so a dev sample engine and a real
+ * engine never share a socket, token or lock.
+ */
+export function engineDirFor(baseDir: string, sample: boolean): string {
+  return sample ? join(baseDir, "sample") : baseDir;
+}
+
 export interface EngineCommandInput {
   /** Absolute path of the node binary. */
   readonly node: string | undefined;

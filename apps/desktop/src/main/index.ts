@@ -8,7 +8,7 @@ import { app, BrowserWindow, ipcMain, session } from "electron";
 import { CHANNELS } from "../shared/bridge.js";
 import { engineApi } from "./api.js";
 import { type ConnectionWatch, watchConnection } from "./connection.js";
-import { engineCommand, findExecutable, readLogTail } from "./engine.js";
+import { engineCommand, engineDirFor, findExecutable, readLogTail } from "./engine.js";
 import { devServerUrl, guardedHandler, isAppUrl, isDevToolsUrl, sampleEngineEnabled, secureWebPreferences } from "./policy.js";
 
 const rendererDir = join(import.meta.dirname, "..", "renderer");
@@ -47,7 +47,7 @@ function send(channel: string, message: unknown): void {
 function startWatch(): ConnectionWatch {
   // One dir for both sides: the client gets it directly, the engine as `--dir`, since the
   // engine's reduced env has no TOKAMA_ENGINE_DIR or XDG_RUNTIME_DIR to find it by itself.
-  const dir = defaultEngineDir(process.env, homedir());
+  const dir = engineDirFor(defaultEngineDir(process.env, homedir()), sample);
   const endpoint = engineEndpoint(dir);
   // Dev layout: apps/desktop is the app path, the engine is built to apps/engine/dist.
   // A packaged app will ship the engine and a runtime with it (not yet).

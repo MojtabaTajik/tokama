@@ -24,6 +24,22 @@ button:focus-visible {
   font-size: 12px;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+[aria-disabled="true"] {
+  cursor: default;
+}
+
 .ellipsis {
   min-width: 0;
   overflow: hidden;
@@ -219,6 +235,41 @@ button:focus-visible {
   font-size: 11.5px;
 }
 
+.health {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  font-size: 11.5px;
+}
+
+.health[data-status="connected"] .symbol {
+  color: var(--pass);
+  font-size: 8px;
+}
+
+.health[data-status="starting"] .symbol,
+.health[data-status="reconnecting"] .symbol {
+  color: var(--live);
+}
+
+.health[data-status="failed"] {
+  color: var(--text-2);
+}
+
+.health[data-status="failed"] .symbol {
+  color: var(--fail);
+}
+
+.stale {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--warn);
+}
+
 .workspace-row {
   display: flex;
   align-items: center;
@@ -348,36 +399,12 @@ button:focus-visible {
   color: var(--muted);
 }
 
-.main-spacer {
-  flex: 1 1 auto;
-}
-
-.status {
-  margin: 0;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.status .symbol {
-  display: inline-block;
-  width: 1.4em;
-}
-
-.status[data-status="connected"] .symbol {
-  color: var(--pass);
-}
-
-.status[data-status="starting"] .symbol,
-.status[data-status="reconnecting"] .symbol {
-  color: var(--live);
-}
-
-.status[data-status="failed"] {
-  color: var(--text);
-}
-
-.status[data-status="failed"] .symbol {
-  color: var(--fail);
+.link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--link);
+  font-size: 12.5px;
 }
 
 .board {
@@ -394,6 +421,29 @@ button:focus-visible {
 
 .failure {
   max-width: 640px;
+  margin-bottom: 16px;
+}
+
+.failure-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.failure-title .symbol {
+  display: inline-block;
+  width: 1.4em;
+  color: var(--fail);
+}
+
+.retry {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--primary-border);
+  border-radius: 6px;
+  background: var(--live);
+  color: var(--text);
+  cursor: pointer;
 }
 
 .detail {
