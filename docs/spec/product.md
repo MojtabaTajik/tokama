@@ -186,9 +186,14 @@ Carried over from ai-pipeline, where each was learned from real runs:
 
 Per agent call: tokens by type, plan quota used (where the CLI reports it), API-equivalent cost at list prices (labelled as an estimate on plans), wall time, guard stops, wasted time. Per local call: GPU, power, temperature, model memory (macmon on macOS, fallback elsewhere). Rolled up per step, item, template and AI CLI. The rail's usage rings show each CLI's current plan window.
 
-## 10. Open questions
+## 10. Decisions and open questions
+
+- Decided: pull requests are opened with the user's logged-in `gh` CLI (no token in Tokama; GitHub first, other hosts through their CLIs later).
+- Decided: release work (signing and notarisation, auto-update, the tokama.dev landing page) starts once the first real task runs end to end.
+
+Open:
+
 
 - Codex CLI: exact headless flags, event format and usage reporting, to be checked against the installed version.
 - Redaction: built-in rules plus per-workspace patterns; how to preview what was removed without showing it.
-- Pull requests: through `gh`, or the git host's API with a token in the Keychain.
 - Where item history lives long-term and how long evidence is kept.

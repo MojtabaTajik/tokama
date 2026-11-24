@@ -195,6 +195,7 @@ Epics, each a GitHub milestone with small issues (1 to 3 days each). Claude Code
 - **A. Skeleton**: workspace and strict TypeScript, lint boundaries with fixture tests, adapter removal test, CI on macOS and Linux.
 - **B. Kernel and engine service**: process control, command policy, hardened git, safe file reads, secrets, schemas and ports with contract tests, the engine service process with the versioned local-socket API and a typed client.
 - **C. Desktop shell on a fake engine**: the Electron app as an engine client, with board, item drawer and new work running against a fake engine that serves sample data through the real engine API. Real engine data replaces the fake later without UI changes.
+- **D0. First real task, end to end**: one thin path through D, E and F before either is complete: a built-in two-step quick-fix template, one guarded Claude Code call per step, a worktree per repo, checks run by Tokama, a commit on a branch, and the item moving live on the real board in place of the fake engine. From here Tokama is used to build Tokama; D, E and F then fill out around this path.
 - **D. Claude Code agent**: the adapter, one agent call with usage capture, loop guards, stop and abort.
 - **E. Templates and config**: template format and validation, agents, workspaces and repos, example templates.
 - **F. Running a task**: item store, step sequencing and gates, worktrees, checks, review verdicts, retry, escalation and approval, commit or pull request, tamper checks.
