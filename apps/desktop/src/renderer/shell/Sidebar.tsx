@@ -5,7 +5,7 @@
 import type { ItemRecord, Setup } from "@tokama/core";
 import type { ReactNode } from "react";
 import type { ConnectionState } from "../../shared/bridge.js";
-import { ALL_WORK, type Badge, badgesOf, inView, sameView, type View } from "../model.js";
+import { ALL_WORK, type Badge, badgesOf, inView, sameView, type View, viewKey } from "../model.js";
 import type { Section } from "../useViewState.js";
 import { EngineHealth } from "./ConnectionStatus.js";
 import { AllWorkIcon, RepoIcon, WorkflowIcon } from "./icons.js";
@@ -45,14 +45,14 @@ export function Sidebar(props: SidebarProps) {
   const repos = (setup?.repos ?? []).map((repo) => ({ view: { kind: "repo", id: repo.id } as const, name: repo.id }));
   const row = (entry: { readonly view: View; readonly name: string }, icon: ReactNode, startLabel: string, mono = false) => (
     <Row
-      key={entry.name}
+      key={viewKey(entry.view)}
       name={entry.name}
       icon={icon}
       mono={mono}
       badges={badgesOf(items.filter((item) => inView(item, entry.view)), now)}
       selected={sameView(view, entry.view)}
       startLabel={startLabel}
-      onSelect={() => onSelectView(entry.view)}
+      onSelect={() => onSelectView(entry.view.kind === "repo" && sameView(view, entry.view) ? ALL_WORK : entry.view)}
     />
   );
   return (

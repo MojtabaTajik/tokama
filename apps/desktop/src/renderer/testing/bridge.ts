@@ -12,7 +12,8 @@ export const CONNECTED: ConnectionState = { status: "connected", engineId: "e-1"
 
 export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | undefined } = {}) {
   let connectionListener: ((state: ConnectionState) => void) | undefined;
-  let eventListener: ((event: BridgeEvent) => void) | undefined;
+  // Every subscriber hears every event: the app and the open drawer both listen.
+  const eventListeners = new Set<(event: BridgeEvent) => void>();
   const stops = { connection: vi.fn(), event: vi.fn() };
   const boardItems = options.boardItems ?? items;
   const query = vi.fn(async (q: { type: string; itemId?: string }): Promise<Reply> => {
@@ -33,12 +34,17 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
     query,
     command: vi.fn(),
     onEvent: vi.fn((listener: (event: BridgeEvent) => void) => {
-      eventListener = listener;
-      return stops.event;
+      eventListeners.add(listener);
+      return () => {
+        eventListeners.delete(listener);
+        stops.event();
+      };
     }),
   } as unknown as TokamaBridge;
   const setConnection = (state: ConnectionState) => act(async () => connectionListener?.(state));
   let seq = 0;
-  const pushItem = (item: ItemRecord) => act(async () => eventListener?.({ kind: "event", seq: seq++, event: { type: "item_updated", item } }));
+  const pushItem = (item: ItemRecord) => act(async () => {
+      for (const listener of eventListeners) listener({ kind: "event", seq: seq++, event: { type: "item_updated", item } });
+    });
   return { bridge, query, setConnection, pushItem, stops };
 }

@@ -251,6 +251,11 @@ button:focus-visible {
   color: var(--text);
 }
 
+.summary {
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .main-header .layout {
   margin-left: auto;
 }
@@ -356,14 +361,17 @@ button:focus-visible {
 /* Rail: the Insights tooltip */
 
 .insights {
-  position: relative;
   flex: none;
+  anchor-name: --insights;
 }
 
+/* Fixed and anchored to the button, so the scrolling rail does not clip it. */
 .insights-tip {
-  position: absolute;
-  top: -6px;
-  left: 50px;
+  position: fixed;
+  position-anchor: --insights;
+  top: anchor(top);
+  left: anchor(right);
+  margin: -6px 0 0 10px;
   z-index: 9;
   display: none;
   flex-direction: column;
@@ -378,8 +386,18 @@ button:focus-visible {
   color: var(--text-2);
 }
 
-.insights:hover .insights-tip,
-.insights:focus-within .insights-tip {
+/* Bridges the gap to the button, so the pointer can move onto the tooltip. */
+.insights-tip::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -12px;
+  width: 12px;
+}
+
+.insights:not([data-dismissed]):hover .insights-tip,
+.insights:not([data-dismissed]):focus-within .insights-tip {
   display: flex;
 }
 

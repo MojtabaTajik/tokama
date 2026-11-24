@@ -65,6 +65,16 @@ describe("App shell", () => {
     ]);
   });
 
+  it("closes the Insights tooltip on Escape and brings it back when the pointer or focus returns", async () => {
+    await render(fakeBridge(CONNECTED).bridge);
+    const insights = $(".insights")!;
+    expect(insights.hasAttribute("data-dismissed")).toBe(false);
+    await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(insights.hasAttribute("data-dismissed")).toBe(true);
+    await act(async () => insights.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
+    expect(insights.hasAttribute("data-dismissed")).toBe(false);
+  });
+
   it("shows the needs-you count as an amber badge and no attention badge at zero", async () => {
     await render(fakeBridge(CONNECTED).bridge);
     expect($$(".badge").map((badge) => [badge.getAttribute("data-tone"), badge.textContent])).toEqual([["warn", "1"]]);

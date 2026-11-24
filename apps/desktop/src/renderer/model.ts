@@ -1,8 +1,8 @@
 // What the shell derives from engine records: views, status filters, groups, badges, pipelines
 // and board columns. Pure functions that take the clock as an argument, so they are tested
 // without React or a real time.
-import type { AgentSummary, AiCliId, ItemRecord, TemplateSummary } from "@tokama/core";
-import { type Mark, stepAgent, type StepAgent, stepMark } from "./drawer/describe.js";
+import type { AgentSummary, AiCliId, ItemRecord, StepRecord, TemplateSummary } from "@tokama/core";
+import { itemMark, type Mark, stepAgent, type StepAgent, stepMark } from "./drawer/describe.js";
 
 /** What the main area shows: everything, one workflow's items, or one repo's items. */
 export type View = { readonly kind: "all" } | { readonly kind: "workflow"; readonly id: string } | { readonly kind: "repo"; readonly id: string };
@@ -49,7 +49,8 @@ export const RANGES: readonly { readonly id: Range; readonly label: string }[] =
   { id: "7d", label: "7 days" },
   { id: "30d", label: "30 days" },
 ];
-const RANGE_DAYS: Readonly<Record<Range, number>> = { today: 0, "7d": 7, "30d": 30 };
+/** Whole days before today that a range reaches back: "7 days" is today and the 6 days before it. */
+const RANGE_DAYS: Readonly<Record<Range, number>> = { today: 0, "7d": 6, "30d": 29 };
 
 export interface Filter {
   readonly status: StatusFilter;
@@ -57,7 +58,7 @@ export interface Filter {
 }
 export const DEFAULT_FILTER: Filter = { status: "active", range: "today" };
 
-/** The range that applies: only Done and Failed offer a choice, the other filters count today. */
+/** The range that applies to the list: only Done and Failed offer a choice, the other filters show today. */
 export const effectiveRange = (filter: Filter): Range => (filter.status === "done" || filter.status === "failed" ? filter.range : "today");
 
 /** Whether the item was created within the range (local calendar days; the engine records no end time). */
@@ -84,11 +85,17 @@ export function matches(item: Pick<ItemRecord, "state" | "createdAt">, status: S
   }
 }
 
-/** The counts on the status switch: how many items each filter would show, with the range that applies. */
+/** The counts on the status switch: how many items each filter opens, Done and Failed within the view's range. */
 export function filterCounts(items: readonly ItemRecord[], filter: Filter, now: number): Record<Exclude<StatusFilter, "all">, number> {
-  const range = effectiveRange(filter);
-  const count = (status: StatusFilter) => items.filter((item) => matches(item, status, range, now)).length;
-  return { active: count("active"), needs: count("needs"), done: count("done"), failed: count("failed") };
+  const count = (status: StatusFilter, range: Range) => items.filter((item) => matches(item, status, range, now)).length;
+  return { active: count("active", "today"), needs: count("needs", "today"), done: count("done", filter.range), failed: count("failed", filter.range) };
+}
+
+/** The header's summary of a view: "5 live · 2 done today". */
+export function summaryOf(items: readonly ItemRecord[], now: number): string {
+  const live = items.filter((item) => bucketOf(item) === "active" || bucketOf(item) === "needs").length;
+  const done = items.filter((item) => bucketOf(item) === "done" && inRange(item, "today", now)).length;
+  return `${live} live · ${done} done today`;
 }
 
 export const visibleItems = (items: readonly ItemRecord[], filter: Filter, now: number): ItemRecord[] =>
@@ -174,11 +181,22 @@ export interface PipelineStep {
   readonly current: boolean;
 }
 
-/** The item's own steps as a small pipeline. A running step in a verifying stage reads as checking. */
+/** A step's mark: a running step in a verifying stage reads as checking. */
+const markOfStep = (step: Pick<StepRecord, "state" | "stage">): Mark =>
+  step.state === "running" && step.stage === "verifying" ? { symbol: "◐", word: "checking", tone: "live" } : stepMark(step.state);
+
+/** The row's status mark: the item's own, except that an item in a checking step reads as checking, as its pipeline does. */
+export function rowMark(item: Pick<ItemRecord, "state" | "steps">): Mark {
+  const step = item.steps[currentStep(item) ?? -1];
+  const checking = step !== undefined && markOfStep(step).word === "checking";
+  return item.state === "running" && checking ? markOfStep(step) : itemMark(item.state);
+}
+
+/** The item's own steps as a small pipeline. */
 export function pipelineOf(item: Pick<ItemRecord, "state" | "steps">): PipelineStep[] {
   const at = currentStep(item);
   return item.steps.map((step, index) => ({
-    mark: step.state === "running" && step.stage === "verifying" ? { symbol: "◐", word: "checking", tone: "live" } : stepMark(step.state),
+    mark: markOfStep(step),
     name: step.name,
     current: index === at,
   }));

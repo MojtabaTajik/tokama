@@ -18,7 +18,7 @@ export function Card({ item, agents, selected, onSelect }: CardProps) {
   const flag = flagOf(item);
   const agent = rowAgent(item, agents);
   return (
-    <button type="button" className="card" data-state={item.state} aria-current={selected ? "true" : undefined} onClick={() => onSelect(item.id)}>
+    <button type="button" className="card" data-item-id={item.id} data-state={item.state} aria-current={selected ? "true" : undefined} onClick={() => onSelect(item.id)}>
       <span className="card-meta">
         <WorkflowIcon />
         <span className="ellipsis mono">{item.repoIds.length > 0 ? item.repoIds.join(", ") : ""}</span>

@@ -14,6 +14,8 @@ import {
   needsYouCount,
   pipelineOf,
   rowAgent,
+  rowMark,
+  summaryOf,
   timeOf,
   viewKey,
 } from "./model.js";
@@ -58,8 +60,9 @@ describe("inRange", () => {
   it("counts local calendar days: today starts at midnight, 7 and 30 days go back whole days", () => {
     const at = (daysAgo: number, hour: number) => ({ createdAt: new Date(2025, 9, 20 - daysAgo, hour).getTime() });
     expect([inRange(at(0, 0), "today", NOW), inRange(at(1, 23), "today", NOW)]).toEqual([true, false]);
-    expect([inRange(at(7, 0), "7d", NOW), inRange(at(8, 23), "7d", NOW)]).toEqual([true, false]);
-    expect([inRange(at(30, 0), "30d", NOW), inRange(at(31, 23), "30d", NOW)]).toEqual([true, false]);
+    // "7 days" is today and the 6 days before it; "30 days" is today and the 29 before it.
+    expect([inRange(at(6, 0), "7d", NOW), inRange(at(7, 23), "7d", NOW)]).toEqual([true, false]);
+    expect([inRange(at(29, 0), "30d", NOW), inRange(at(30, 23), "30d", NOW)]).toEqual([true, false]);
   });
 });
 
@@ -68,10 +71,11 @@ describe("filterCounts", () => {
     expect(filterCounts(items, DEFAULT_FILTER, NOW)).toEqual({ active: 5, needs: 1, done: 2, failed: 1 });
   });
 
-  it("widens the Done and Failed counts with the range, and only while one of them is selected", () => {
+  it("counts Done and Failed within the view's range whichever filter is selected, so each number matches the list it opens", () => {
     expect(filterCounts(items, { status: "done", range: "7d" }, NOW)).toEqual({ active: 5, needs: 1, done: 3, failed: 1 });
     expect(filterCounts(items, { status: "failed", range: "30d" }, NOW)).toEqual({ active: 5, needs: 1, done: 3, failed: 2 });
-    expect(filterCounts(items, { status: "needs", range: "30d" }, NOW).done).toBe(2);
+    expect(filterCounts(items, { status: "needs", range: "30d" }, NOW)).toEqual({ active: 5, needs: 1, done: 3, failed: 2 });
+    expect(filterCounts(items, { status: "active", range: "7d" }, NOW).done).toBe(3);
   });
 });
 
@@ -115,6 +119,27 @@ describe("badgesOf", () => {
 
   it("says need for several", () => {
     expect(badgesOf([ITEMS.needsYou, { ...ITEMS.working, state: "needs_you" } as ItemRecord], NOW)[0]).toMatchObject({ count: 2, word: "need you" });
+  });
+});
+
+describe("summaryOf", () => {
+  it("counts live items and items done today", () => {
+    expect(summaryOf(items, NOW)).toBe("5 live · 2 done today");
+    expect(summaryOf([], NOW)).toBe("0 live · 0 done today");
+  });
+});
+
+describe("rowMark", () => {
+  it("reads an item in a checking step as checking, as its pipeline does", () => {
+    expect(rowMark(ITEMS.verifying)).toEqual({ symbol: "◐", word: "checking", tone: "live" });
+    expect(pipelineOf(ITEMS.verifying)[1]?.mark).toEqual(rowMark(ITEMS.verifying));
+  });
+
+  it("keeps the item's own mark otherwise", () => {
+    expect(rowMark(ITEMS.working)).toMatchObject({ symbol: "●", word: "running" });
+    expect(rowMark(ITEMS.needsYou)).toMatchObject({ symbol: "⏸" });
+    expect(rowMark(ITEMS.queued)).toMatchObject({ symbol: "◌" });
+    expect(rowMark(ITEMS.done)).toMatchObject({ symbol: "✓" });
   });
 });
 

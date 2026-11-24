@@ -3,9 +3,10 @@
 // its agent and its time. A row is a native button, so Enter and Space select it as a click does.
 // Engine text (titles, questions, names) is rendered as React text only.
 import type { ItemRecord, Setup } from "@tokama/core";
-import { itemMark, templateName } from "../drawer/describe.js";
-import { type ItemGroup, pipelineOf, rowAgent, timeOf } from "../model.js";
+import { templateName } from "../drawer/describe.js";
+import { type ItemGroup, pipelineOf, rowAgent, rowMark, timeOf } from "../model.js";
 import { WorkflowIcon } from "../shell/icons.js";
+import { useFocusFollow } from "./useFocusFollow.js";
 
 const TEXT = {
   nothing: "Nothing here",
@@ -26,8 +27,9 @@ export interface ItemListProps {
 const GROUP_SYMBOL = { needs: "⏸", running: "●", done: "✓", failed: "✕" } as const;
 
 export function ItemList({ groups, setup, now, selectedItemId, onSelect, repoId }: ItemListProps) {
+  const focus = useFocusFollow();
   return (
-    <div className="pipeline-list">
+    <div className="pipeline-list" onFocus={focus.onFocus} onBlur={focus.onBlur}>
       {groups.map((group) => (
         <section key={group.key} className="pl-group" aria-label={group.name}>
           <h3 className="pl-group-heading">
@@ -56,13 +58,13 @@ interface RowProps {
 }
 
 function Row({ item, setup, now, selected, onSelect }: RowProps) {
-  const mark = itemMark(item.state);
+  const mark = rowMark(item);
   const steps = pipelineOf(item);
   const agent = rowAgent(item, setup?.agents ?? []);
   const time = timeOf(item, now);
   const ask = item.state === "needs_you" ? (item.decision?.question ?? mark.word) : undefined;
   return (
-    <button type="button" className="pl-row" data-state={item.state} aria-current={selected ? "true" : undefined} onClick={() => onSelect(item.id)}>
+    <button type="button" className="pl-row" data-item-id={item.id} data-state={item.state} aria-current={selected ? "true" : undefined} onClick={() => onSelect(item.id)}>
       <span className="pl-mark" data-tone={mark.tone}>
         <span aria-hidden="true">{mark.symbol}</span>
         <span className="visually-hidden">{mark.word}: </span>

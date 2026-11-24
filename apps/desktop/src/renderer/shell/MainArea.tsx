@@ -6,7 +6,7 @@ import type { ItemRecord, Setup } from "@tokama/core";
 import { Board } from "../board/Board.js";
 import type { ConnectionState } from "../../shared/bridge.js";
 import { ItemList } from "../list/ItemList.js";
-import { ALL_WORK, groupItems, inView, visibleItems } from "../model.js";
+import { ALL_WORK, groupItems, inView, summaryOf, visibleItems } from "../model.js";
 import type { Layout, ViewState } from "../useViewState.js";
 import { ConnectionFailure } from "./ConnectionStatus.js";
 import { RepoIcon, WorkflowIcon } from "./icons.js";
@@ -65,6 +65,7 @@ export function MainArea(props: MainAreaProps) {
             </ol>
           </nav>
         )}
+        {setup !== undefined && <span className="summary mono">{summaryOf(props.items.filter((item) => inView(item, view)), props.now)}</span>}
         {template !== undefined && <LayoutSwitch layout={views.layout} onChange={views.setLayout} />}
       </header>
       <section className="board" aria-label={TEXT.board}>

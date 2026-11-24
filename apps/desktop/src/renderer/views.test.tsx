@@ -97,6 +97,20 @@ describe("pipeline list", () => {
     expect($("b")).toBeNull();
   });
 
+  it("marks an item in a checking step as checking, and gives every row its item id", async () => {
+    await mount();
+    expect(row("Fix rounding in invoice totals").querySelector(".pl-mark")?.textContent).toBe("◐checking: ");
+    expect(row("Checkout p95 latency spike").querySelector(".pl-mark")?.textContent).toBe("●running: ");
+    expect(row("Checkout p95 latency spike").getAttribute("data-item-id")).toBe(ITEMS.working.id);
+  });
+
+  it("shows live and done-today counts next to the view's name", async () => {
+    await mount();
+    expect(text(".main-header .summary")).toBe("5 live · 2 done today");
+    await click(sidebarRow("Quick fix"));
+    expect(text(".main-header .summary")).toBe("2 live · 2 done today");
+  });
+
   it("selects a row and marks it", async () => {
     await mount();
     await click(row("Checkout p95 latency spike"));
@@ -156,6 +170,16 @@ describe("status filter", () => {
     expect(segment("Failed").getAttribute("aria-pressed")).toBe("true");
   });
 
+  it("counts Done and Failed in the view's range, so each number matches the list it opens", async () => {
+    await mount();
+    await click(segment("Done"));
+    await choose($(".range"), "7d");
+    await click(segment("Active"));
+    expect(counts()).toEqual(["Active5", "Needs you1", "Done3", "Failed1", "All"]);
+    await click(segment("Done"));
+    expect($$(".pl-row")).toHaveLength(3);
+  });
+
   it("says so when a group is empty", async () => {
     await mount();
     await click(sidebarRow("checkout-web"));
@@ -192,6 +216,15 @@ describe("workflow and repo views", () => {
       ["Running", ["Fix rounding in invoice totals", "Add retry with backoff"]],
     ]);
     expect($('[aria-label="Layout"]')).toBeNull();
+  });
+
+  it("clears the repo filter when the selected repo row is clicked again", async () => {
+    await mount();
+    await click(sidebarRow("orders-api"));
+    expect(text(".main-header h1")).toBe("orders-api");
+    await click(sidebarRow("orders-api"));
+    expect(text(".main-header h1")).toBe("All work");
+    expect(sidebarRow("All work").getAttribute("aria-current")).toBe("page");
   });
 
   it("goes back to All work from the breadcrumb", async () => {
@@ -399,6 +432,58 @@ describe("keyboard", () => {
     card.focus();
     await click(card);
     expect(document.activeElement).toBe($("aside.drawer"));
+  });
+});
+
+describe("focus when items move", () => {
+  it("puts focus on the item's row when the drawer closes and the row has moved to another group", async () => {
+    const fake = await mount();
+    const opener = row("Orders API returns 500 after deploy") as HTMLButtonElement;
+    opener.focus();
+    await click(opener);
+    expect(document.activeElement).toBe($("aside.drawer"));
+    // Approving moves the item from Needs you to Running: its row is rendered anew.
+    await fake.pushItem({ ...ITEMS.needsYou, state: "running", steps: ITEMS.needsYou.steps.map((step, index) => (index === 2 ? { ...step, state: "running" } : step)) } as ItemRecord);
+    expect(opener.isConnected).toBe(false);
+    await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect($("aside.drawer")).toBeNull();
+    const moved = row("Orders API returns 500 after deploy");
+    expect(moved.closest("section")?.getAttribute("aria-label")).toBe("Running");
+    expect(document.activeElement).toBe(moved);
+  });
+
+  it("puts focus on the item's card when the drawer closes and the card has moved to another column", async () => {
+    const fake = await mount();
+    await click(sidebarRow("Emergency investigator"));
+    await click(byText('[aria-label="Layout"] button', "Board"));
+    const opener = $$(".card").find((el) => el.textContent?.includes("Checkout p95"))! as HTMLButtonElement;
+    opener.focus();
+    await click(opener);
+    const [triage, query, propose] = ITEMS.working.steps as [ItemRecord["steps"][number], ItemRecord["steps"][number], ItemRecord["steps"][number]];
+    await fake.pushItem({ ...ITEMS.working, steps: [triage, { ...query, state: "passed" }, { ...propose, state: "running" }] } as ItemRecord);
+    await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(document.activeElement).toBe($$(".card").find((el) => el.getAttribute("data-item-id") === ITEMS.working.id));
+    expect(document.activeElement?.closest(".column")?.querySelector(".column-name")?.textContent).toBe("Propose a fix");
+  });
+
+  it("keeps focus on a focused row that moves to another group, without a drawer", async () => {
+    const fake = await mount();
+    const target = row("Checkout p95 latency spike") as HTMLButtonElement;
+    target.focus();
+    await fake.pushItem({ ...ITEMS.working, state: "needs_you" } as ItemRecord);
+    expect(target.isConnected).toBe(false);
+    const moved = row("Checkout p95 latency spike");
+    expect(moved.closest("section")?.getAttribute("aria-label")).toBe("Needs you");
+    expect(document.activeElement).toBe(moved);
+  });
+
+  it("does not take focus back once the user moved it elsewhere", async () => {
+    const fake = await mount();
+    const target = row("Checkout p95 latency spike") as HTMLButtonElement;
+    target.focus();
+    (document.activeElement as HTMLElement).blur();
+    await fake.pushItem({ ...ITEMS.working, state: "needs_you" } as ItemRecord);
+    expect(document.activeElement).toBe(document.body);
   });
 });
 

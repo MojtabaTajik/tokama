@@ -1,7 +1,7 @@
 // The icon rail: panel toggle, Board, Needs you, Insights, Settings, Attention, then the user.
 // Insights is the one usage entry: hovering or focusing it lists each AI CLI. Only the panel
 // toggle acts for now; the other buttons are marked aria-disabled until their screens exist.
-import { useId } from "react";
+import { useEffect, useId, useState } from "react";
 import { brand } from "../brand/index.js";
 import { AI_CLIS } from "../model.js";
 import { AttentionIcon, BoardIcon, InboxIcon, InsightsIcon, PanelIcon, SettingsIcon, UserIcon } from "./icons.js";
@@ -35,6 +35,15 @@ const withCount = (label: string, count: number) => (count > 0 ? `${label} · ${
 
 export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, attention }: RailProps) {
   const tipId = useId();
+  // Escape closes the tooltip while the pointer or focus stays on Insights; leaving brings it back.
+  const [tipDismissed, setTipDismissed] = useState(false);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setTipDismissed(true);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
   const needsYouLabel = needsYou === undefined ? `${TEXT.needsYou} · ${TEXT.outOfDate}` : withCount(TEXT.needsYou, needsYou);
   return (
     <nav className="rail" aria-label={TEXT.rail}>
@@ -64,7 +73,7 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, attention }:
         <InboxIcon />
         <Badge count={needsYou ?? 0} tone="warn" />
       </button>
-      <div className="insights">
+      <div className="insights" data-dismissed={tipDismissed || undefined} onMouseEnter={() => setTipDismissed(false)} onMouseLeave={() => setTipDismissed(false)} onFocus={() => setTipDismissed(false)}>
         <button type="button" className="rail-button" aria-label={TEXT.insights} aria-describedby={tipId} aria-disabled="true">
           <InsightsIcon />
         </button>
