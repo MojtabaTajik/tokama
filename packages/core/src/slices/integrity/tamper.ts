@@ -50,6 +50,13 @@ export interface ProtectedSetInput {
   readonly baseCommit: string;
   /** The item branch, e.g. `tokama/0b9f12ab`. */
   readonly branch: string;
+  /** Limits of the worktree walk. Default: 8 folders deep, 50 000 entries. */
+  readonly walkLimits?: WalkLimits;
+}
+
+export interface WalkLimits {
+  readonly maxDepth: number;
+  readonly maxEntries: number;
 }
 
 export interface ProtectedSet {
@@ -109,29 +116,29 @@ async function walk(root: string, dir: string, skip: string | undefined): Promis
 }
 
 const WALK_SKIP = new Set([".git", "node_modules"]);
-const WALK_MAX_DEPTH = 8;
-const WALK_MAX_ENTRIES = 50_000;
+const DEFAULT_WALK_LIMITS: WalkLimits = { maxDepth: 8, maxEntries: 50_000 };
 
 /**
- * Files under `root`, breadth first, at most WALK_MAX_DEPTH folders deep and WALK_MAX_ENTRIES
- * entries read; skips .git and node_modules and never enters a symlinked folder.
+ * Files under `root`, breadth first; skips .git and node_modules and never enters a symlinked
+ * folder. Undefined when a limit stopped the walk before it saw everything (fails closed).
  */
-async function boundedWalk(root: string): Promise<string[]> {
+async function boundedWalk(root: string, limits: WalkLimits): Promise<string[] | undefined> {
   const files: string[] = [];
   let level = [""];
   let read = 0;
-  for (let depth = 0; depth <= WALK_MAX_DEPTH && level.length > 0 && read < WALK_MAX_ENTRIES; depth++) {
+  for (let depth = 0; level.length > 0; depth++) {
+    if (depth > limits.maxDepth) return undefined;
     const next: string[] = [];
     for (const dir of level) {
       const entries = await readdir(join(root, dir), { withFileTypes: true }).catch(() => [] as Dirent[]);
       read += entries.length;
+      if (read > limits.maxEntries) return undefined;
       for (const entry of entries) {
         const path = dir === "" ? entry.name : `${dir}/${entry.name}`;
         if (entry.isDirectory()) {
           if (!WALK_SKIP.has(entry.name)) next.push(path);
         } else files.push(path);
       }
-      if (read >= WALK_MAX_ENTRIES) break;
     }
     level = next;
   }
@@ -178,7 +185,9 @@ export async function protectedSet(git: Git, input: ProtectedSetInput): Promise<
     for (const { path, category } of baseFiles) add("worktree", path, category);
     // Pattern files wherever they are now: tracked in the base commit, changed or untracked (git
     // status), or on disk (bounded walk; the CI and `.tokama` folders whole).
-    const candidates = [...baseTree, ...changed, ...(await boundedWalk(input.worktreePath))];
+    const walked = await boundedWalk(input.worktreePath, input.walkLimits ?? DEFAULT_WALK_LIMITS);
+    if (walked === undefined) return err({ message: "the worktree is too large or too deep to check whole" });
+    const candidates = [...baseTree, ...changed, ...walked];
     for (const dir of [...CI_DIRS, TOKAMA_DIR]) candidates.push(...(await walk(input.worktreePath, dir, undefined)));
     for (const path of candidates) {
       // Installed dependencies, not the repo's own config.

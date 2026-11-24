@@ -10,4 +10,5 @@ export {
   type ProtectedSet,
   type ProtectedSetInput,
   type TamperChange,
+  type WalkLimits,
 } from "./tamper.js";

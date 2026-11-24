@@ -237,6 +237,20 @@ describe("protectedSet", () => {
     });
   });
 
+  it.each([
+    ["depth", { maxDepth: 2, maxEntries: 50_000 }, "a/b/c/d/x.ts"],
+    ["entry", { maxDepth: 8, maxEntries: 30 }, "many/f.ts"],
+  ] as const)("fails closed when the walk hits its %s limit", SLOW, async (_limit, walkLimits, extra) => {
+    const input = { repoPath: repo, worktreePath: wt, worktreeFolder: ".tokama/wt", baseCommit: await plain(repo, "rev-parse", "main"), branch: "tokama/0b9f12ab" };
+    const limited = value(await protectedSet(git, { ...input, walkLimits }));
+    expect((await limited.hash()).ok).toBe(true);
+    if (extra.startsWith("many/")) for (let i = 0; i < 40; i++) write(join(wt, "many", `f${i}.ts`), "x\n");
+    else write(join(wt, extra), "x\n");
+    const after = await limited.hash();
+    expect(after).toMatchObject({ ok: false });
+    if (!after.ok) expect(after.error.message).toMatch(/too large or too deep/);
+  });
+
   it("names files by area and relative path, never an absolute path", SLOW, async () => {
     const hashes = value(await set.hash());
     expect(hashes.size).toBeGreaterThan(5);

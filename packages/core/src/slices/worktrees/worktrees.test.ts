@@ -140,6 +140,16 @@ describe("createWorktree", () => {
     expect(existsSync(join(repo.path, ".tokama", "wt", "0b9f12ab"))).toBe(false);
   });
 
+  it("leaves another worktree registered at the path alone when the add fails", SLOW, async () => {
+    const path = join(repo.path, ".tokama", "wt", "0b9f12ab");
+    await plain(repo.path, "worktree", "add", "-q", "-b", "other", path, "main");
+    rmSync(path, { recursive: true, force: true });
+    expect(await createWorktree(git, repo, ITEM_A)).toMatchObject({ ok: false, error: { reason: "add" } });
+    expect(await plain(repo.path, "worktree", "list", "--porcelain")).toContain("branch refs/heads/other");
+    expect(await plain(repo.path, "branch", "--list", "other")).toContain("other");
+    expect(await plain(repo.path, "branch", "--list", "tokama/*")).toBe("");
+  });
+
   it("rolls back the branch and worktree it made when the checkout fails", SLOW, async () => {
     // A required filter the wrapper does not run: the add succeeds, the checkout in it fails.
     await plain(repo.path, "config", "filter.crypt.process", "false");

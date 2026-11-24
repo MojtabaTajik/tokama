@@ -131,9 +131,10 @@ export async function createWorktree(git: Git, repo: WorktreeRepo, itemId: ItemI
   const path = worktreePath(repo.path, worktree);
   const added = await git.worktreeAdd(repo.path, path, branch, worktree.baseCommit);
   if (!added.ok) {
-    // Undo what this call made: the branch did not exist before it, so it and its worktree are ours.
+    // Undo what this call made: the branch did not exist before it, so only a worktree on that
+    // branch is ours. Another worktree registered at the path is left alone.
     const entries = await entriesFor(git, repo.path, path, branch);
-    if (entries.ok) await removeEntries(git, repo.path, entries.value, true);
+    if (entries.ok) await removeEntries(git, repo.path, entries.value.filter((entry) => entry.branch === `refs/heads/${branch}`), true);
     if ((await git.revParse(repo.path, `refs/heads/${branch}`)).ok) await git.branchDelete(repo.path, branch);
     return fail("add", added.error);
   }
