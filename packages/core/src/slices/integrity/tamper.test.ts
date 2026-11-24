@@ -58,10 +58,10 @@ const SEED: Record<string, string> = {
 };
 
 /** Hashes, applies `change`, hashes again, and returns what the tamper check reports. */
-async function changesAfter(change: () => void | Promise<void>) {
-  const before = await set.hash();
+async function changesAfter(change: () => unknown) {
+  const before = value(await set.hash());
   await change();
-  const after = await set.hash();
+  const after = value(await set.hash());
   return tamperChanges(before, after);
 }
 
@@ -83,22 +83,22 @@ beforeEach(async () => {
   mkdirSync(dirname(wt), { recursive: true });
   const baseCommit = await plain(repo, "rev-parse", "main");
   value(await git.worktreeAdd(repo, wt, "tokama/0b9f12ab", baseCommit));
-  set = value(await protectedSet(git, { repoPath: repo, worktreePath: wt, worktreeFolder: ".tokama/wt", baseCommit }));
+  set = value(await protectedSet(git, { repoPath: repo, worktreePath: wt, worktreeFolder: ".tokama/wt", baseCommit, branch: "tokama/0b9f12ab" }));
 }, SLOW.timeout);
 afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
 describe("no tamper event for normal work", () => {
-  it("edits, new tests and snapshots, staging and committing, and another item's worktree", SLOW, async () => {
+  it("edits, new tests and snapshots, staging, and another item's worktree", SLOW, async () => {
     const changes = await changesAfter(async () => {
       write(join(wt, "src/total.ts"), "export const total = 2;\n");
       write(join(wt, "src/discount.ts"), "export const discount = 0;\n");
       write(join(wt, "src/discount.test.ts"), "test('discount', () => {});\n");
       write(join(wt, "src/__snapshots__/discount.test.ts.snap"), "exports[`d`] = `0`;\n");
-      write(join(wt, "package.json"), '{"scripts":{"test":"vitest"},"dependencies":{}}\n');
+      write(join(wt, "node_modules", "dep", "package.json"), "{}\n");
+      write(join(wt, "node_modules", "dep", "vitest.config.ts"), "x\n");
       await plain(wt, "add", "-A");
-      await plain(wt, "commit", "-q", "-m", "work");
       // A second item on the same repo: created and discarded through the wrapper.
       const other = join(repo, ".tokama", "wt", "7e6d5c4b");
       value(await git.worktreeAdd(repo, other, "tokama/7e6d5c4b", "main"));
@@ -137,9 +137,30 @@ describe("a tamper event for each protected category", () => {
     expect(changes).toEqual([{ area: "git", path, category: "git", change: expect.stringMatching(/added|modified/) }]);
   });
 
-  it("git: the worktree's .git file pointed elsewhere", SLOW, async () => {
-    const changes = await changesAfter(() => writeFileSync(join(wt, ".git"), `gitdir: ${join(root, "elsewhere")}\n`));
-    expect(changes).toContainEqual({ area: "worktree", path: ".git", category: "git", change: "modified" });
+  it("git: a commit made in the worktree moves the item branch", SLOW, async () => {
+    const changes = await changesAfter(async () => {
+      write(join(wt, "src/total.ts"), "export const total = 2;\n");
+      await plain(wt, "-c", "commit.gpgsign=false", "commit", "-q", "-am", "an agent's own commit");
+    });
+    expect(changes).toEqual([{ area: "git", path: "refs/heads/tokama/0b9f12ab", category: "git", change: "modified" }]);
+  });
+
+  it("git: a checkout of another branch in the worktree changes its HEAD", SLOW, async () => {
+    const changes = await changesAfter(() => plain(wt, "checkout", "-q", "-b", "elsewhere"));
+    expect(changes).toEqual([{ area: "git", path: "worktrees/0b9f12ab/HEAD", category: "git", change: "modified" }]);
+  });
+
+  it("git: a .gitattributes added at any depth", SLOW, async () => {
+    const changes = await changesAfter(() => write(join(wt, "src/.gitattributes"), "*.ts filter=x\n"));
+    expect(changes).toEqual([{ area: "worktree", path: "src/.gitattributes", category: "git", change: "added" }]);
+  });
+
+  it("git: the worktree's .git file pointed elsewhere makes the hash an error, never a clean compare", SLOW, async () => {
+    expect((await set.hash()).ok).toBe(true);
+    writeFileSync(join(wt, ".git"), `gitdir: ${join(root, "elsewhere")}\n`);
+    const after = await set.hash();
+    expect(after).toMatchObject({ ok: false });
+    if (!after.ok) expect(after.error.message).toMatch(/status/);
   });
 
   it.each([
@@ -159,6 +180,7 @@ describe("a tamper event for each protected category", () => {
     ["vitest.config.ts", "test-config"],
     [".github/workflows/ci.yml", "ci"],
     ["pnpm-lock.yaml", "lockfile"],
+    ["package.json", "package"],
   ] as const)("worktree: %s changed (%s)", SLOW, async (path, category) => {
     const changes = await changesAfter(() => appendFileSync(join(wt, path), "// changed\n"));
     expect(changes).toEqual([{ area: "worktree", path, category, change: "modified" }]);
@@ -181,9 +203,24 @@ describe("a tamper event for each protected category", () => {
     ["packages/web/jest.config.js", "test-config"],
     [".github/workflows/release.yml", "ci"],
     ["packages/web/package-lock.json", "lockfile"],
+    ["pnpm-workspace.yaml", "package"],
+    [".pnpmfile.cjs", "package"],
+    [".pnpmfile.mjs", "package"],
+    [".npmrc", "package"],
+    [".yarnrc.yml", "package"],
+    ["packages/web/package.json", "package"],
+    ["vite.config.ts", "test-config"],
+    ["app/tests/conftest.py", "test-config"],
+    ["packages/web/Vitest.Config.TS", "test-config"],
   ] as const)("new file: %s (%s)", SLOW, async (path, category) => {
     const changes = await changesAfter(() => write(join(wt, path), "x\n"));
     expect(changes).toEqual([{ area: "worktree", path, category, change: "added" }]);
+  });
+
+  it("new file: a nested test config hidden by an ignore rule", SLOW, async () => {
+    write(join(wt, ".gitignore"), "jest.config.js\n");
+    const changes = await changesAfter(() => write(join(wt, "packages/web/jest.config.js"), "module.exports = { testMatch: [] };\n"));
+    expect(changes).toEqual([{ area: "worktree", path: "packages/web/jest.config.js", category: "test-config", change: "added" }]);
   });
 
   it("new file: a root test config hidden by an ignore rule", SLOW, async () => {
@@ -195,11 +232,13 @@ describe("a tamper event for each protected category", () => {
 
 describe("protectedSet", () => {
   it("reports a worktree it cannot read as an error value", SLOW, async () => {
-    expect(await protectedSet(git, { repoPath: repo, worktreePath: home, worktreeFolder: ".tokama/wt", baseCommit: "main" })).toMatchObject({ ok: false });
+    expect(await protectedSet(git, { repoPath: repo, worktreePath: home, worktreeFolder: ".tokama/wt", baseCommit: "main", branch: "tokama/0b9f12ab" })).toMatchObject({
+      ok: false,
+    });
   });
 
   it("names files by area and relative path, never an absolute path", SLOW, async () => {
-    const hashes = await set.hash();
+    const hashes = value(await set.hash());
     expect(hashes.size).toBeGreaterThan(5);
     for (const file of hashes.values()) expect(file.path.startsWith("/")).toBe(false);
   });

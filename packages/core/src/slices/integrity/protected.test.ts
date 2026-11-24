@@ -13,7 +13,6 @@ describe("baseCategory", () => {
     ["pkg/total_test.go", "test"],
     ["tests_py/test_total.py", "test"],
     ["app/total_test.py", "test"],
-    ["conftest.py", "test"],
     ["src/__snapshots__/total.test.ts.snap", "snapshot"],
     ["ui/button.snap", "snapshot"],
   ])("%s is %s", (path, category) => {
@@ -44,11 +43,29 @@ describe("patternCategory", () => {
     ["playwright.config.ts", "test-config"],
     [".mocharc.yml", "test-config"],
     ["pytest.ini", "test-config"],
+    ["vite.config.ts", "test-config"],
+    ["Vitest.Config.TS", "test-config"],
+    ["conftest.py", "test-config"],
+    ["app/tests/conftest.py", "test-config"],
+    ["package.json", "package"],
+    ["packages/web/package.json", "package"],
+    ["pnpm-workspace.yaml", "package"],
+    [".pnpmfile.cjs", "package"],
+    [".pnpmfile.mjs", "package"],
+    [".npmrc", "package"],
+    ["packages/web/.npmrc", "package"],
+    [".yarnrc.yml", "package"],
+    [".yarnrc", "package"],
+    [".gitattributes", "git"],
+    ["src/.gitattributes", "git"],
+    ["PNPM-LOCK.YAML", "lockfile"],
+    ["Cargo.lock", "lockfile"],
+    [".GitHub/Workflows/ci.yml", "ci"],
   ])("%s is %s", (path, category) => {
     expect(patternCategory(path)).toBe(category);
   });
 
-  it.each(["package.json", "src/index.ts", "vite.config.ts", "tsconfig.json", ".github/CODEOWNERS", "docs/.tokama-notes.md", "sub/.gitlab-ci.yml"])(
+  it.each(["src/index.ts", "vitest.config.json", "tsconfig.json", ".gitignore", "package.json.bak", ".github/CODEOWNERS", "docs/.tokama-notes.md", "sub/.gitlab-ci.yml"])(
     "%s is not protected",
     (path) => {
       expect(patternCategory(path)).toBeUndefined();

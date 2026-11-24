@@ -1,11 +1,14 @@
 // Tamper checks: hash the protected files before a step and again after it; any difference is a
 // tamper event that names the files. Protected:
 // - git: the shared git dir's config, config.worktree, hooks/ and info/ attributes and exclude,
-//   the worktree's config.worktree, and the worktree's `.git` file. These steer Tokama's own git
-//   calls and what gets committed.
+//   the worktree's config.worktree and HEAD, the item branch's commit, and the worktree's `.git`
+//   file. These steer Tokama's own git calls and what gets committed; a commit or checkout made
+//   by an agent or a check moves HEAD or the branch.
 // - tokama: `.tokama/` in the worktree and in the main repo (minus the worktree folder).
-// - in the worktree, see protected.ts: base-commit tests and snapshots, test config, CI files,
-//   lockfiles.
+// - in the worktree, see protected.ts: base-commit tests and snapshots, test config, package
+//   config, CI files, lockfiles, .gitattributes. Pattern files are found in the base commit, in
+//   `git status`, and by a bounded walk of the folder (skipping .git and node_modules), so an
+//   ignore rule cannot hide one.
 // Symlinks are hashed by their target string and never followed. Records hold no absolute paths:
 // each file is an area plus a path relative to it.
 import { createHash } from "node:crypto";
@@ -45,11 +48,16 @@ export interface ProtectedSetInput {
   readonly worktreeFolder: string;
   /** The commit the item branch started from: its test files and snapshots are protected. */
   readonly baseCommit: string;
+  /** The item branch, e.g. `tokama/0b9f12ab`. */
+  readonly branch: string;
 }
 
 export interface ProtectedSet {
-  /** Hashes every protected file as it is now. */
-  hash(): Promise<ProtectedHashes>;
+  /**
+   * Hashes every protected file as it is now. An error when the set cannot be read whole (git
+   * status fails, e.g. after the `.git` file changed): never compare it; retry or treat it as tamper.
+   */
+  hash(): Promise<Result<ProtectedHashes, IntegrityError>>;
 }
 
 export interface IntegrityError {
@@ -100,6 +108,36 @@ async function walk(root: string, dir: string, skip: string | undefined): Promis
   return files;
 }
 
+const WALK_SKIP = new Set([".git", "node_modules"]);
+const WALK_MAX_DEPTH = 8;
+const WALK_MAX_ENTRIES = 50_000;
+
+/**
+ * Files under `root`, breadth first, at most WALK_MAX_DEPTH folders deep and WALK_MAX_ENTRIES
+ * entries read; skips .git and node_modules and never enters a symlinked folder.
+ */
+async function boundedWalk(root: string): Promise<string[]> {
+  const files: string[] = [];
+  let level = [""];
+  let read = 0;
+  for (let depth = 0; depth <= WALK_MAX_DEPTH && level.length > 0 && read < WALK_MAX_ENTRIES; depth++) {
+    const next: string[] = [];
+    for (const dir of level) {
+      const entries = await readdir(join(root, dir), { withFileTypes: true }).catch(() => [] as Dirent[]);
+      read += entries.length;
+      for (const entry of entries) {
+        const path = dir === "" ? entry.name : `${dir}/${entry.name}`;
+        if (entry.isDirectory()) {
+          if (!WALK_SKIP.has(entry.name)) next.push(path);
+        } else files.push(path);
+      }
+      if (read >= WALK_MAX_ENTRIES) break;
+    }
+    level = next;
+  }
+  return files;
+}
+
 /**
  * Resolves what to protect for one item's worktree: its git dirs (once, before an agent can
  * redirect the `.git` file) and the base commit's test files.
@@ -118,29 +156,33 @@ export async function protectedSet(git: Git, input: ProtectedSetInput): Promise<
   });
   const worktreeFolder = posix.normalize(input.worktreeFolder.replaceAll("\\", "/")).replace(/^\.\/|\/+$/g, "");
 
-  async function hash(): Promise<ProtectedHashes> {
-    // A broken `.git` file makes status fail; the files below are still hashed, so it shows.
+  const worktreeGitPrefix = worktreeGitDir === "" ? "" : `${worktreeGitDir}/`;
+  const branchRef = `refs/heads/${input.branch}`;
+
+  async function hash(): Promise<Result<ProtectedHashes, IntegrityError>> {
     const status = await git.status(input.worktreePath);
-    const changed = status.ok ? status.value.map((entry) => entry.path) : [];
+    if (!status.ok) return err({ message: `cannot read the worktree's status: ${status.error.message}` });
+    const changed = status.value.map((entry) => entry.path);
 
     const files = new Map<string, ProtectedFile>();
     const add = (area: ProtectedArea, path: string, category: ProtectedCategory) => files.set(`${area}:${path}`, { area, path, category });
 
     for (const path of SHARED_GIT_FILES) add("git", path, "git");
     for (const dir of SHARED_GIT_DIRS) for (const path of await walk(commonDir, dir, undefined)) add("git", path, "git");
-    if (worktreeGitDir !== "") add("git", `${worktreeGitDir}/config.worktree`, "git");
+    if (worktreeGitDir !== "") add("git", `${worktreeGitPrefix}config.worktree`, "git");
+    add("git", `${worktreeGitPrefix}HEAD`, "git");
     add("worktree", ".git", "git");
 
     for (const path of await walk(input.repoPath, TOKAMA_DIR, worktreeFolder)) add("repo", path, "tokama");
 
     for (const { path, category } of baseFiles) add("worktree", path, category);
     // Pattern files wherever they are now: tracked in the base commit, changed or untracked (git
-    // status), or at the root and in the CI and `.tokama` folders (read directly, so a file
-    // hidden by an ignore rule is still seen there).
-    const candidates = [...baseTree, ...changed];
-    candidates.push(...(await readdir(input.worktreePath).catch(() => [] as string[])));
+    // status), or on disk (bounded walk; the CI and `.tokama` folders whole).
+    const candidates = [...baseTree, ...changed, ...(await boundedWalk(input.worktreePath))];
     for (const dir of [...CI_DIRS, TOKAMA_DIR]) candidates.push(...(await walk(input.worktreePath, dir, undefined)));
     for (const path of candidates) {
+      // Installed dependencies, not the repo's own config.
+      if (path.split("/").includes("node_modules")) continue;
       const category = patternCategory(path);
       if (category !== undefined) add("worktree", path, category);
     }
@@ -151,7 +193,10 @@ export async function protectedSet(git: Git, input: ProtectedSetInput): Promise<
       const hashed = await hashPath(join(roots[file.area], ...file.path.split("/")));
       if (hashed !== undefined) hashes.set(key, { ...file, hash: hashed });
     }
-    return hashes;
+    // The branch may live in packed-refs: hash the commit it names, not a file.
+    const tip = await git.revParse(input.worktreePath, branchRef);
+    if (tip.ok) hashes.set(`git:${branchRef}`, { area: "git", path: branchRef, category: "git", hash: `commit:${tip.value}` });
+    return ok(hashes);
   }
 
   return ok({ hash });

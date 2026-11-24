@@ -1,8 +1,9 @@
 // Check and setup commands Tokama runs itself in an item's worktree. Each command passes the
-// command policy first, then runs through the process runner: in /bin/sh (the policy has refused
-// every construct that could escape the allowlist), with the allowlisted environment, its own
-// process group and a timeout. Output comes back as a capped tail; the full output can go to a
-// file the caller names, which must be outside the worktree or the item's commit takes it in.
+// command policy first, then runs through the process runner: in /bin/sh, with the allowlisted
+// environment, its own process group and a timeout. The policy controls the command string only
+// (which commands start, no shell syntax that escapes the allowlist), not the code those commands
+// run: `pnpm test` runs whatever the worktree's scripts and config say. Output comes back as a
+// capped tail; the full output can go to a file the caller names, outside the worktree.
 import { checkCommand, posixSh, type CommandDecision } from "../../kernel/command-policy/index.js";
 import type { ProcessRunner } from "../../kernel/process/index.js";
 

@@ -12,14 +12,17 @@ import {
   discardWorktree,
   type ItemWorktree,
   removeWorktree,
+  shortItemId,
+  stageItem,
   worktreePath,
   type WorktreeRepo,
   worktreeSnapshot,
 } from "./index.js";
 
 const SLOW = { timeout: 30_000 };
-const ITEM_A = "item_0b9f12ab-1c2d-4e5f-8a9b-0c1d2e3f4a5b" as ItemId;
-const ITEM_B = "item_7e6d5c4b-1c2d-4e5f-8a9b-0c1d2e3f4a5b" as ItemId;
+// UUIDv7 ids made in the same millisecond: the same timestamp prefix, different random tails.
+const ITEM_A = "item_019a1b2c-3d4e-7f00-8a9b-00000b9f12ab" as ItemId;
+const ITEM_B = "item_019a1b2c-3d4e-7f00-8a9b-00007e6d5c4b" as ItemId;
 
 let root: string;
 let home: string;
@@ -45,6 +48,13 @@ async function plain(cwd: string, ...args: string[]): Promise<string> {
 function value<T>(result: { ok: true; value: T } | { ok: false; error: unknown }): T {
   if (!result.ok) throw new Error(`expected ok, got ${JSON.stringify(result.error)}`);
   return result.value;
+}
+
+/** Stages and commits the worktree, as the engine does around the checks. */
+async function finish(worktree: ItemWorktree, id: ItemId, title: string) {
+  const path = worktreePath(repo.path, worktree);
+  const tree = value(await stageItem(git, path));
+  return commitItem(git, path, worktree, { id, title, tree });
 }
 
 const exclude = () => readFileSync(join(repo.path, ".git", "info", "exclude"), "utf8");
@@ -104,15 +114,43 @@ describe("createWorktree", () => {
     expect([a.branch, b.branch]).toEqual(["tokama/0b9f12ab", "tokama/7e6d5c4b"]);
     writeFileSync(join(worktreePath(repo.path, a), "a.txt"), "from a\n");
     expect(readFileSync(join(worktreePath(repo.path, b), "a.txt"), "utf8")).toBe("one\n");
-    value(await commitItem(git, worktreePath(repo.path, a), { id: ITEM_A, title: "A" }));
+    value(await finish(a, ITEM_A, "A"));
     expect(await plain(worktreePath(repo.path, b), "status", "--porcelain")).toBe("");
     expect(await plain(repo.path, "log", "-1", "--format=%s", "tokama/7e6d5c4b")).toBe("seed");
+  });
+
+  it("takes the short id from the random tail of the item id", () => {
+    expect([shortItemId(ITEM_A), shortItemId(ITEM_B)]).toEqual(["0b9f12ab", "7e6d5c4b"]);
   });
 
   it("returns errors as values: a missing base branch, an item that already has a worktree", SLOW, async () => {
     expect(await createWorktree(git, { ...repo, baseBranch: "develop" }, ITEM_A)).toMatchObject({ ok: false, error: { reason: "base-branch" } });
     value(await createWorktree(git, repo, ITEM_A));
-    expect(await createWorktree(git, repo, ITEM_A)).toMatchObject({ ok: false, error: { reason: "add" } });
+    expect(await createWorktree(git, repo, ITEM_A)).toMatchObject({ ok: false, error: { reason: "exists" } });
+  });
+
+  it("refuses a branch that exists already and leaves it alone", SLOW, async () => {
+    writeFileSync(join(repo.path, "a.txt"), "someone else's work\n");
+    await plain(repo.path, "commit", "-q", "-am", "theirs");
+    await plain(repo.path, "branch", "tokama/0b9f12ab");
+    const tip = await plain(repo.path, "rev-parse", "tokama/0b9f12ab");
+    await plain(repo.path, "reset", "-q", "--hard", "HEAD~1");
+    expect(await createWorktree(git, repo, ITEM_A)).toMatchObject({ ok: false, error: { reason: "exists" } });
+    expect(await plain(repo.path, "rev-parse", "tokama/0b9f12ab")).toBe(tip);
+    expect(existsSync(join(repo.path, ".tokama", "wt", "0b9f12ab"))).toBe(false);
+  });
+
+  it("rolls back the branch and worktree it made when the checkout fails", SLOW, async () => {
+    // A required filter the wrapper does not run: the add succeeds, the checkout in it fails.
+    await plain(repo.path, "config", "filter.crypt.process", "false");
+    await plain(repo.path, "config", "filter.crypt.required", "true");
+    writeFileSync(join(repo.path, ".git", "info", "attributes"), "*.txt filter=crypt\n");
+    const created = await createWorktree(git, repo, ITEM_A);
+    expect(created).toMatchObject({ ok: false, error: { reason: "add" } });
+    if (!created.ok) expect(created.error.message).toMatch(/filter/);
+    expect(await plain(repo.path, "branch", "--list", "tokama/*")).toBe("");
+    expect(await plain(repo.path, "worktree", "list", "--porcelain")).not.toContain("0b9f12ab");
+    expect(existsSync(join(repo.path, ".tokama", "wt", "0b9f12ab"))).toBe(false);
   });
 });
 
@@ -135,17 +173,35 @@ describe("discardWorktree and removeWorktree", () => {
 
   it("discard after a finish deletes the branch that kept the commit", SLOW, async () => {
     writeFileSync(join(path, "a.txt"), "changed\n");
-    value(await commitItem(git, path, { id: ITEM_A, title: "Change" }));
+    value(await finish(worktree, ITEM_A, "Change"));
     value(await removeWorktree(git, repo.path, worktree));
     expect(await plain(repo.path, "branch", "--list", "tokama/*")).toContain("tokama/0b9f12ab");
     value(await discardWorktree(git, repo.path, worktree));
     expect(await plain(repo.path, "branch", "--list", "tokama/*")).toBe("");
   });
 
-  it("remove refuses a worktree with uncommitted changes and keeps it", SLOW, async () => {
+  it("discard finds a worktree whose branch an agent switched, and leaves no folder behind", SLOW, async () => {
+    await plain(path, "checkout", "-q", "-b", "elsewhere");
+    value(await discardWorktree(git, repo.path, worktree));
+    expect(existsSync(path)).toBe(false);
+    expect(await plain(repo.path, "branch", "--list", "tokama/*")).toBe("");
+  });
+
+  it("remove and discard work again after a folder was deleted by hand, and after they ran", SLOW, async () => {
+    rmSync(path, { recursive: true, force: true });
+    value(await removeWorktree(git, repo.path, worktree));
+    expect(await plain(repo.path, "worktree", "list", "--porcelain")).not.toContain("0b9f12ab");
+    value(await removeWorktree(git, repo.path, worktree));
+    value(await discardWorktree(git, repo.path, worktree));
+    expect(await plain(repo.path, "branch", "--list", "tokama/*")).toBe("");
+  });
+
+  it("remove refuses a worktree with uncommitted changes and keeps it; force removes it", SLOW, async () => {
     writeFileSync(join(path, "a.txt"), "changed\n");
     expect(await removeWorktree(git, repo.path, worktree)).toMatchObject({ ok: false, error: { reason: "remove" } });
     expect(readFileSync(join(path, "a.txt"), "utf8")).toBe("changed\n");
+    value(await removeWorktree(git, repo.path, worktree, { force: true }));
+    expect(existsSync(path)).toBe(false);
   });
 
   it("remove after the commit removes the worktree and keeps the branch; ignored files do not block it", SLOW, async () => {
@@ -153,7 +209,7 @@ describe("discardWorktree and removeWorktree", () => {
     mkdirSync(join(path, "node_modules"));
     writeFileSync(join(path, "node_modules", "dep.js"), "x\n");
     writeFileSync(join(path, "a.txt"), "two\n");
-    const commit = value(await commitItem(git, path, { id: ITEM_A, title: "Two" }));
+    const commit = value(await finish(worktree, ITEM_A, "Two"));
     value(await removeWorktree(git, repo.path, worktree));
     expect(existsSync(path)).toBe(false);
     expect(await plain(repo.path, "rev-parse", "tokama/0b9f12ab")).toBe(commit);
@@ -166,7 +222,7 @@ describe("commitItem", () => {
     const path = worktreePath(repo.path, worktree);
     writeFileSync(join(path, "a.txt"), "two\n");
     writeFileSync(join(path, "b.txt"), "new\n");
-    const commit = value(await commitItem(git, path, { id: ITEM_A, title: "Fix the order total" }));
+    const commit = value(await finish(worktree, ITEM_A, "Fix the order total"));
     expect(await plain(repo.path, "rev-parse", "tokama/0b9f12ab")).toBe(commit);
     expect(await plain(repo.path, "rev-parse", "main")).toBe(worktree.baseCommit);
     expect(await plain(path, "log", "-1", "--format=%s")).toBe("tokama: Fix the order total");
@@ -175,18 +231,43 @@ describe("commitItem", () => {
     expect(await plain(path, "status", "--porcelain")).toBe("");
   });
 
+  it("commits the tree staged before the checks, not files the checks wrote after it", SLOW, async () => {
+    const worktree = value(await createWorktree(git, repo, ITEM_A));
+    const path = worktreePath(repo.path, worktree);
+    writeFileSync(join(path, "a.txt"), "the agent's fix\n");
+    const tree = value(await stageItem(git, path));
+    // A check run writes after the tree was fixed.
+    writeFileSync(join(path, "a.txt"), "written by a check\n");
+    writeFileSync(join(path, "planted.txt"), "x\n");
+    value(await commitItem(git, path, worktree, { id: ITEM_A, title: "Fix", tree }));
+    expect(await plain(repo.path, "show", "tokama/0b9f12ab:a.txt")).toBe("the agent's fix");
+    expect(await plain(repo.path, "show", "--name-only", "--format=", "tokama/0b9f12ab")).toBe("a.txt");
+    expect(await plain(repo.path, "rev-parse", "tokama/0b9f12ab^")).toBe(worktree.baseCommit);
+  });
+
+  it("refuses to commit when the branch moved since the item started", SLOW, async () => {
+    const worktree = value(await createWorktree(git, repo, ITEM_A));
+    const path = worktreePath(repo.path, worktree);
+    writeFileSync(join(path, "a.txt"), "two\n");
+    const tree = value(await stageItem(git, path));
+    await plain(path, "-c", "commit.gpgsign=false", "commit", "-q", "-m", "an agent's own commit");
+    const moved = await plain(repo.path, "rev-parse", "tokama/0b9f12ab");
+    expect(await commitItem(git, path, worktree, { id: ITEM_A, title: "Fix", tree })).toMatchObject({ ok: false, error: { reason: "git" } });
+    expect(await plain(repo.path, "rev-parse", "tokama/0b9f12ab")).toBe(moved);
+  });
+
   it("folds a title with line breaks onto one line, so it cannot forge a trailer", SLOW, async () => {
     const worktree = value(await createWorktree(git, repo, ITEM_A));
     const path = worktreePath(repo.path, worktree);
     writeFileSync(join(path, "a.txt"), "two\n");
-    value(await commitItem(git, path, { id: ITEM_A, title: "Fix\n\nTokama-Item: item_forged\r\nSigned-off-by: x" }));
+    value(await finish(worktree, ITEM_A, "Fix\n\nTokama-Item: item_forged\r\nSigned-off-by: x"));
     expect(await plain(path, "log", "-1", "--format=%(trailers:key=Tokama-Item,valueonly)")).toBe(ITEM_A);
     expect(await plain(path, "log", "-1", "--format=%(trailers:key=Signed-off-by)")).toBe("");
   });
 
   it("reports nothing to commit as its own reason", SLOW, async () => {
     const worktree = value(await createWorktree(git, repo, ITEM_A));
-    expect(await commitItem(git, worktreePath(repo.path, worktree), { id: ITEM_A, title: "Nothing" })).toMatchObject({
+    expect(await finish(worktree, ITEM_A, "Nothing")).toMatchObject({
       ok: false,
       error: { reason: "nothing-to-commit" },
     });

@@ -1,9 +1,14 @@
-// The item's commit on its branch, made after its checks pass: every change in the worktree,
-// through the hardened git wrapper (no hooks, no signing), with the message
-// `tokama: <title>` and a `Tokama-Item: <id>` trailer.
+// The item's commit on its branch, in two parts around the checks:
+// - `stageItem` before the checks: stages every change and fixes the tree (`write-tree`);
+// - `commitItem` after they pass: commits exactly that tree on the base commit (`commit-tree`)
+//   and moves the branch only if it still points at the base commit.
+// Files a check writes after the tree was fixed never reach the commit. Every call goes through
+// the hardened git wrapper (no hooks, no signing). Message: `tokama: <title>` plus a
+// `Tokama-Item: <id>` trailer.
 import type { Git } from "../../kernel/git/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import type { ItemId } from "../../kernel/schemas/index.js";
+import type { ItemWorktree } from "./worktree.js";
 
 export type CommitErrorReason = "nothing-to-commit" | "git";
 
@@ -24,13 +29,29 @@ export function commitMessage(itemId: ItemId, title: string): string {
   return `tokama: ${subject === "" ? itemId : subject}\n\nTokama-Item: ${itemId}\n`;
 }
 
-/** Stages every change in the worktree and commits it on the item branch; returns the commit id. */
-export async function commitItem(git: Git, worktreePath: string, item: { readonly id: ItemId; readonly title: string }): Promise<Result<string, CommitError>> {
+const gitFailure = (error: { readonly message: string }): Result<never, CommitError> => err({ reason: "git", message: error.message });
+
+/** Stages every change in the worktree; returns the tree id to commit once the checks pass. */
+export async function stageItem(git: Git, worktreePath: string): Promise<Result<string, CommitError>> {
   const added = await git.addAll(worktreePath);
-  if (!added.ok) return err({ reason: "git", message: added.error.message });
-  const staged = await git.diffCachedNumstat(worktreePath);
-  if (!staged.ok) return err({ reason: "git", message: staged.error.message });
-  if (staged.value.length === 0) return err({ reason: "nothing-to-commit", message: "the worktree has no changes" });
-  const committed = await git.commit(worktreePath, commitMessage(item.id, item.title));
-  return committed.ok ? ok(committed.value) : err({ reason: "git", message: committed.error.message });
+  if (!added.ok) return gitFailure(added.error);
+  const tree = await git.writeTree(worktreePath);
+  return tree.ok ? ok(tree.value) : gitFailure(tree.error);
+}
+
+/** Commits `tree` (from `stageItem`) on the item branch, parent the base commit; returns the commit id. */
+export async function commitItem(
+  git: Git,
+  worktreePath: string,
+  worktree: Pick<ItemWorktree, "branch" | "baseCommit">,
+  item: { readonly id: ItemId; readonly title: string; readonly tree: string },
+): Promise<Result<string, CommitError>> {
+  const baseTree = await git.revParse(worktreePath, `${worktree.baseCommit}^{tree}`);
+  if (!baseTree.ok) return gitFailure(baseTree.error);
+  if (baseTree.value === item.tree) return err({ reason: "nothing-to-commit", message: "the staged tree has no changes" });
+  const commit = await git.commitTree(worktreePath, item.tree, worktree.baseCommit, commitMessage(item.id, item.title));
+  if (!commit.ok) return gitFailure(commit.error);
+  // Refused if anything moved the branch since the item started.
+  const moved = await git.updateRef(worktreePath, `refs/heads/${worktree.branch}`, commit.value, worktree.baseCommit);
+  return moved.ok ? ok(commit.value) : gitFailure(moved.error);
 }
