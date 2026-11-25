@@ -287,6 +287,27 @@ describe("run loop: done_when", () => {
     expect(story(id).slice(-5)).toEqual(["attempt_ended plan#1 passed", "decision plan_approval plan", "resolved approve", "step_ended plan passed", "item_ended done"]);
   });
 
+  it("step output: serves each attempt's final agent message as text, capped, with no path in its errors", SLOW, async () => {
+    const plan = "# Plan\n\n- add a retry\n- test it\n";
+    const loop = engine(fakeRuntime([says(plan), says("x".repeat(70_000)), says("unused")]));
+    const id = await start(loop, template([{ id: "plan", doneWhen: "you approve", maxAttempts: 3 }]));
+    expect(await loop.stepOutput(id, 0)).toEqual({ ok: true, value: { attempt: 1, text: plan, truncated: false } });
+    await answer(loop, id, "request_changes");
+    // The latest attempt by default, any attempt by number; the text stops at the cap.
+    const latest = await loop.stepOutput(id, 0);
+    expect(latest.ok && { attempt: latest.value.attempt, length: latest.value.text.length, truncated: latest.value.truncated }).toEqual({ attempt: 2, length: 64 * 1024, truncated: true });
+    expect(await loop.stepOutput(id, 0, 1)).toMatchObject({ ok: true, value: { attempt: 1, text: plan } });
+    expect(await loop.stepOutput(id, 0, 3)).toMatchObject({ ok: false, error: { code: "not_found" } });
+    expect(await loop.stepOutput(id, 1)).toMatchObject({ ok: false, error: { code: "not_found" } });
+
+    const attempts = join(tokamaHome, "items", id, "attempts");
+    unlinkSync(join(attempts, "plan-1", "agent.txt"));
+    expect(await loop.stepOutput(id, 0, 1)).toEqual({ ok: false, error: { code: "not_found", message: "Attempt 1 has no saved output." } });
+    writeFileSync(join(attempts, "plan-2", "agent.txt"), Buffer.from([0x61, 0x00, 0xff, 0xfe]));
+    const binary = await loop.stepOutput(id, 0, 2);
+    expect(binary).toEqual({ ok: false, error: { code: "invalid_state", message: "The output of attempt 2 is not text." } });
+  });
+
   it("you approve: Request changes starts another attempt; End: no action needed ends the item early without failing", SLOW, async () => {
     const loop = engine(fakeRuntime([edits(FIXED)]));
     const id = await start(loop, template([{ id: "plan", doneWhen: "you approve", maxAttempts: 2 }]));

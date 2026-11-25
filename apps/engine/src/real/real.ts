@@ -27,6 +27,7 @@ import {
   type Result,
   type RunLoop,
   type Setup,
+  type StepOutputResult,
   type StoredItem,
 } from "@tokama/core";
 import type { MemoryItemStore } from "../store.js";
@@ -153,6 +154,11 @@ export class RealEngine {
   /** The change an open decision about a step you approve shows. */
   async decisionDiff(itemId: ItemId, decisionId: DecisionId): Promise<Result<ItemDiff, CommandError>> {
     return this.loop.decisionDiff(itemId, decisionId);
+  }
+
+  /** The final message of the agent of a step's attempt. */
+  async stepOutput(itemId: ItemId, stepIndex: number, attempt?: number): Promise<Result<StepOutputResult, CommandError>> {
+    return this.loop.stepOutput(itemId, stepIndex, attempt);
   }
 
   private async startItem(command: Extract<Command, { type: "start_item" }>): Promise<Result<{ itemId: StoredItem["id"] }, CommandError>> {

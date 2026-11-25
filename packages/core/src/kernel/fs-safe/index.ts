@@ -9,6 +9,7 @@ export {
   readLinesFrom,
   readTextFile,
   readTextFileInside,
+  readTextHead,
   type ReadFailure,
   type ReadFailureReason,
   type ReadLinesOptions,

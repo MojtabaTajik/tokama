@@ -28,13 +28,14 @@ import {
   parseQueryResult,
   REQUEST_CHANGES_ID,
   type Result,
+  type StepOutputResult,
   type StepRecord,
   type TemplateRef,
   type TimerHandle,
   type Setup,
 } from "@tokama/core";
 import type { MemoryItemStore } from "../store.js";
-import { DIFF_DECISION_ID, ITEM_IDS, sampleDiff, sampleItems, sampleSetup } from "./data.js";
+import { DIFF_DECISION_ID, ITEM_IDS, sampleDiff, sampleItems, sampleOutputs, sampleSetup } from "./data.js";
 
 /** How often the fake engine moves a working item on by one step. */
 export const SAMPLE_TICK_MS = 20_000;
@@ -232,6 +233,17 @@ export class SampleEngine {
     const diff = parseQueryResult("decision_diff", sampleDiff);
     if (!diff.ok) throw new Error(`invalid sample diff: ${JSON.stringify(diff.error.issues)}`);
     return ok(diff.value);
+  }
+
+  /** The canned final message of a sample step's attempt; attempts the sample has no text for have none. */
+  stepOutput(itemId: ItemId, stepIndex: number, attempt?: number): Result<StepOutputResult, CommandError> {
+    const item = this.store.get(itemId);
+    if (!item) return err({ code: "not_found", message: `no item ${itemId}` });
+    const attempts = item.steps[stepIndex]?.attempts ?? [];
+    const asked = attempt === undefined ? attempts.at(-1) : attempts.find((a) => a.attempt === attempt);
+    const text = asked === undefined ? undefined : sampleOutputs[itemId]?.[stepIndex]?.[asked.attempt - 1];
+    if (asked === undefined || text === undefined) return err({ code: "not_found", message: asked === undefined ? "The step has not run yet." : `Attempt ${asked.attempt} has no saved output.` });
+    return ok({ attempt: asked.attempt, text, truncated: false });
   }
 
   private stopItem(itemId: ItemId): Result<null, CommandError> {

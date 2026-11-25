@@ -249,6 +249,8 @@ export {
   MAX_NOTE_CHARS,
   REQUEST_CHANGES_ID,
   type DecisionDiffResult,
+  MAX_STEP_OUTPUT_BYTES,
+  type StepOutputResult,
   type DiffFile,
   type DiffHunk,
   type DiffStatus,
