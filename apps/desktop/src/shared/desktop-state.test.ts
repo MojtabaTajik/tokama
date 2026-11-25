@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyLayoutPatch, clampWidth, DEFAULT_DESKTOP_STATE, DRAWER_WIDTH, parseDesktopState, SIDEBAR_WIDTH } from "./desktop-state.js";
+import { applyLayoutPatch, applyNotificationsPatch, clampWidth, DEFAULT_DESKTOP_STATE, DRAWER_WIDTH, parseDesktopState, SIDEBAR_WIDTH } from "./desktop-state.js";
 
 describe("clampWidth", () => {
   it("rounds and holds a width inside the limits", () => {
@@ -21,6 +21,7 @@ describe("parseDesktopState", () => {
       lastView: { kind: "workflow", id: "plan-and-build" },
       lastFilter: { status: "done", range: "7d" },
       lastRepoFolder: "/code/orders-api",
+      notifications: { needsYou: false, finished: true, failed: false, sound: true },
     };
     expect(parseDesktopState(full)).toEqual(full);
   });
@@ -60,5 +61,37 @@ describe("applyLayoutPatch", () => {
   it("ignores a patch that is not an object", () => {
     expect(applyLayoutPatch(base, "x")).toBe(base);
     expect(applyLayoutPatch(base, null)).toBe(base);
+  });
+});
+
+describe("notifications", () => {
+  it("default to the three notifications on and Sound off", () => {
+    expect(DEFAULT_DESKTOP_STATE.notifications).toEqual({ needsYou: true, finished: true, failed: true, sound: false });
+    expect(parseDesktopState({ window: {} }).notifications).toEqual(DEFAULT_DESKTOP_STATE.notifications);
+  });
+
+  it("keep a switch that is a boolean and default each one that is not", () => {
+    expect(parseDesktopState({ notifications: { needsYou: false, finished: "no", failed: 0, sound: true } }).notifications).toEqual({ needsYou: false, finished: true, failed: true, sound: true });
+    for (const bad of [null, 5, "x", [], { sound: null }]) expect(parseDesktopState({ notifications: bad }).notifications).toEqual(DEFAULT_DESKTOP_STATE.notifications);
+  });
+});
+
+describe("applyNotificationsPatch", () => {
+  const base = parseDesktopState({ drawer: { width: 500 }, notifications: { failed: false } });
+
+  it("changes the switches named and leaves everything else alone", () => {
+    const next = applyNotificationsPatch(base, { sound: true, needsYou: false, drawer: { width: 340 }, extra: true });
+    expect(next.notifications).toEqual({ needsYou: false, finished: true, failed: false, sound: true });
+    expect(next.drawer).toEqual({ width: 500 });
+  });
+
+  it("ignores a value that is not a boolean, and a patch that is not an object", () => {
+    expect(applyNotificationsPatch(base, { sound: "yes", finished: 1 }).notifications).toEqual(base.notifications);
+    expect(applyNotificationsPatch(base, "x")).toBe(base);
+    expect(applyNotificationsPatch(base, null)).toBe(base);
+  });
+
+  it("the layout patch leaves the switches alone", () => {
+    expect(applyLayoutPatch(base, { notifications: { sound: true }, drawer: { width: 400 } }).notifications).toEqual(base.notifications);
   });
 });

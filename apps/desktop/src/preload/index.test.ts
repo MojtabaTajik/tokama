@@ -16,11 +16,12 @@ vi.mock("electron", () => ({
 const { bridge } = await import("./index.js");
 // Vitest clears mock calls before each test, so the call made at import time is kept here.
 const exposed = [...electron.exposeInMainWorld.mock.calls];
+const [, pushOpenItem] = electron.on.mock.calls.find(([channel]) => channel === CHANNELS.openItem) as [string, (event: unknown, itemId: unknown) => void];
 
 describe("preload bridge", () => {
   it("exposes window.tokama with only the bridge methods", () => {
     expect(exposed).toEqual([["tokama", bridge]]);
-    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "getAboutInfo", "getConnection", "getDesktopState", "onConnection", "onEvent", "openTemplateFile", "pickFolder", "query", "reportError", "retryConnection", "saveLayout", "showDataFolder"].sort());
+    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "getAboutInfo", "getConnection", "getDesktopState", "onConnection", "onEvent", "onOpenItem", "openTemplateFile", "pickFolder", "query", "reportError", "retryConnection", "saveLayout", "saveNotifications", "setViewedItem", "showDataFolder"].sort());
   });
 
   it("query and command invoke their channels with the request only", async () => {
@@ -101,5 +102,28 @@ describe("preload bridge", () => {
     expect(listener.mock.calls[0]).toHaveLength(1);
     stop();
     expect(electron.removeListener).toHaveBeenCalledWith(CHANNELS.connectionChanged, handler);
+  });
+
+  it("saveNotifications and setViewedItem use their own channels", async () => {
+    electron.invoke.mockResolvedValue(undefined);
+    await bridge.saveNotifications({ sound: true });
+    await bridge.setViewedItem("item_1");
+    await bridge.setViewedItem(undefined);
+    expect(electron.invoke.mock.calls).toEqual([[CHANNELS.saveNotifications, { sound: true }], [CHANNELS.viewedItem, "item_1"], [CHANNELS.viewedItem, undefined]]);
+  });
+
+  it("onOpenItem passes the item id without the IPC event, and keeps one that came before a listener", () => {
+    pushOpenItem({ sender: "ipc" }, "item_early");
+    pushOpenItem({ sender: "ipc" }, 5);
+    const listener = vi.fn();
+    const stop = bridge.onOpenItem(listener);
+    expect(listener.mock.calls).toEqual([["item_early"]]);
+    pushOpenItem({ sender: "ipc" }, "item_live");
+    expect(listener.mock.calls).toEqual([["item_early"], ["item_live"]]);
+    stop();
+    pushOpenItem({ sender: "ipc" }, "item_late");
+    const next = vi.fn();
+    bridge.onOpenItem(next)();
+    expect(next.mock.calls).toEqual([["item_late"]]);
   });
 });

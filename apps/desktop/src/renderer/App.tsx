@@ -116,6 +116,21 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   };
   // The work page shows the item in the full view in place of the list and its composer.
   const itemShown = (page === "board" || page === "needs-you") && selectedItemId !== undefined;
+  // The main process shows no notification about the item the window shows now.
+  const shownItemId = itemShown ? selectedItemId : undefined;
+  useEffect(() => {
+    void bridge.setViewedItem(shownItemId).catch(() => undefined);
+  }, [bridge, shownItemId]);
+  // A click on a notification: leave the pages that hide the drawer, then show the item. Settings,
+  // Insights and About give way to the board; the Needs you page stays.
+  useEffect(
+    () =>
+      bridge.onOpenItem((itemId) => {
+        setPage((current) => (current === "needs-you" ? current : "board"));
+        selectItem(itemId);
+      }),
+    [bridge, selectItem],
+  );
   const full = itemShown && expanded?.page === page;
   // Read by the Cmd+N listener, which is set up once: it opens New work where a composer shows, and from the full view.
   const newWorkKey = useRef({ open: openComposer, full });

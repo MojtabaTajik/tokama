@@ -1,0 +1,278 @@
+/* The Notifications page, in Settings. Colours come from theme.css tokens only. */
+.notes {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+  padding: 28px 32px 48px;
+  overflow-y: auto;
+}
+
+.notes-body {
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+}
+
+.notes-heading {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.notes-intro {
+  margin: 4px 0 18px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.notes-row {
+  display: flex;
+  align-items: center;
+  gap: 6px 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.notes-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.notes-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.notes-glyph {
+  width: 14px;
+  text-align: center;
+}
+
+.notes-warn {
+  color: var(--warn);
+}
+
+.notes-pass {
+  color: var(--pass);
+}
+
+.notes-fail {
+  color: var(--fail);
+}
+
+.notes-quiet {
+  color: var(--text-2);
+}
+
+.notes-help {
+  padding-left: 22px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.notes-switch {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.notes-switch[data-on="true"] {
+  color: var(--text);
+}
+
+.notes-switch:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+
+.notes-word {
+  min-width: 22px;
+  text-align: right;
+}
+
+.notes-track {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  box-sizing: border-box;
+  border-radius: 10px;
+  border: 1px solid var(--hairline);
+  background: var(--input);
+}
+
+.notes-switch[data-on="true"] .notes-track {
+  border-color: var(--primary-border);
+  background: var(--primary-fill);
+}
+
+.notes-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.notes-switch[data-on="true"] .notes-knob {
+  left: 17px;
+  background: var(--primary-text);
+}
+
+.notes-info {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+  padding: 12px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--hairline);
+  background: var(--panel);
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.notes-i {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  margin-top: 1px;
+  border-radius: 50%;
+  border: 1px solid var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 14px;
+  text-align: center;
+}
+
+.notes-preview-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 26px 0 12px;
+}
+
+.notes-preview-title {
+  font-size: 11px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.notes-preview-hint {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.notes-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 22px;
+  border-radius: 10px;
+  border: 1px solid var(--hairline);
+  background: var(--ground);
+}
+
+.notes-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+}
+
+.notes-card {
+  width: 360px;
+  max-width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--hairline);
+  background: var(--panel);
+  box-shadow: 0 10px 30px var(--float-shadow);
+}
+
+.notes-icon {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+}
+
+.notes-card-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.notes-card-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.notes-card-title {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notes-card-time {
+  margin-left: auto;
+  flex: none;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.notes-card-body {
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.notes-card-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.notes-card-off {
+  width: 360px;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px dashed var(--hairline);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.notes-sound-note {
+  align-self: flex-end;
+  font-size: 12px;
+  color: var(--muted);
+}

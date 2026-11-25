@@ -5,9 +5,9 @@ import { join, resolve } from "node:path";
 import { connect } from "@tokama/client";
 import { API_VERSION, buildEnv, defaultEngineDir, engineEndpoint, err } from "@tokama/core";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, screen, session, shell } from "electron";
-import { CHANNELS } from "../shared/bridge.js";
+import { type BridgeEvent, CHANNELS } from "../shared/bridge.js";
 import { buildInfoText } from "../shared/build-info.js";
-import { applyLayoutPatch } from "../shared/desktop-state.js";
+import { applyLayoutPatch, applyNotificationsPatch } from "../shared/desktop-state.js";
 import { aboutInfo } from "./about.js";
 import { engineApi } from "./api.js";
 import { type ConnectionWatch, watchConnection } from "./connection.js";
@@ -15,10 +15,12 @@ import { type DesktopStore, desktopStore } from "./desktop-store.js";
 import { createReporter, mainErrorReport, pidAlive, rateLimit, rendererErrorReport, rendererGoneKind, type Reporter, runMarker } from "./diagnostics.js";
 import { engineCommand, engineDirFor, findExecutable, otherVersionMessage, readLogTail } from "./engine.js";
 import { pickRepoFolder } from "./folder.js";
+import { createNotifier } from "./notifier.js";
 import { appIcons } from "./icon.js";
+import { recordingShow, systemShow } from "./system-notification.js";
 import { openTemplateFile } from "./template-file.js";
 import { fitBounds, trackWindow } from "./window-state.js";
-import { backgroundModeEnabled, devServerUrl, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, sampleEngineEnabled, secureWebPreferences } from "./policy.js";
+import { backgroundModeEnabled, devServerUrl, e2eEnabled, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, sampleEngineEnabled, secureWebPreferences } from "./policy.js";
 
 const rendererDir = join(import.meta.dirname, "..", "renderer");
 const preloadPath = join(import.meta.dirname, "..", "preload", "index.cjs");
@@ -29,6 +31,8 @@ const isAppPage = (url: string) => isAppUrl(url, rendererDir, devServer);
 const sample = sampleEngineEnabled(process.env["TOKAMA_SAMPLE"], app.isPackaged);
 // UI tests only: the harness sets TOKAMA_E2E=1 so the app never takes focus from the developer.
 const background = backgroundModeEnabled(process.env["TOKAMA_E2E"], app.isPackaged, process.platform);
+// UI tests, on every platform: notifications go to a list the test reads, never to the system.
+const recordNotifications = e2eEnabled(process.env["TOKAMA_E2E"], app.isPackaged);
 
 /** Registers a bridge channel; it answers app pages only. */
 function handle(channel: string, fn: (...args: unknown[]) => unknown): void {
@@ -60,7 +64,7 @@ function send(channel: string, message: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, message);
 }
 
-function startWatch(onConnected: () => void): ConnectionWatch {
+function startWatch(onConnected: () => void, onItemEvent: (event: BridgeEvent["event"]) => void): ConnectionWatch {
   // One dir for both sides: the client gets it directly, the engine as `--dir`, since the
   // engine's reduced env has no TOKAMA_ENGINE_DIR or XDG_RUNTIME_DIR to find it by itself.
   const dir = engineDirFor(defaultEngineDir(process.env, homedir()), sample);
@@ -87,7 +91,10 @@ function startWatch(onConnected: () => void): ConnectionWatch {
       send(CHANNELS.connectionChanged, state);
       if (state.status === "connected") onConnected();
     },
-    onEvent: (event) => send(CHANNELS.event, event),
+    onEvent: (event) => {
+      send(CHANNELS.event, event);
+      onItemEvent(event.event);
+    },
     otherVersion: otherVersionMessage(endpoint.ok ? endpoint.value.lockPath : join(dir, "engine.lock")),
   });
 }
@@ -96,7 +103,7 @@ const icons = appIcons(process.platform, app.getAppPath(), app.isPackaged);
 
 const WINDOW = { width: 1200, height: 800, minWidth: 720, minHeight: 480 } as const;
 
-function createWindow(store: DesktopStore, reporter: Reporter): void {
+function createWindow(store: DesktopStore, reporter: Reporter): BrowserWindow {
   const saved = store.get().window;
   // The remembered place, moved onto a display that is there now.
   const placement = fitBounds(saved.bounds, screen.getAllDisplays().map((display) => display.workArea), screen.getPrimaryDisplay().workArea, WINDOW);
@@ -123,6 +130,7 @@ function createWindow(store: DesktopStore, reporter: Reporter): void {
   }
   if (devServer !== undefined) void window.loadURL(devServer.href);
   else void window.loadFile(join(rendererDir, "index.html"));
+  return window;
 }
 
 void app.whenReady().then(() => {
@@ -154,7 +162,45 @@ void app.whenReady().then(() => {
     const report = rendererErrorReport(input);
     if (report !== undefined && rendererReports()) reporter.report(report);
   });
-  const watch = startWatch(() => void reporter.flush());
+  // Notifications: told about every item update, and it learns the board again on each connect.
+  const notifier = createNotifier({
+    settings: () => store.get().notifications,
+    windowFocused: () => BrowserWindow.getAllWindows().some((window) => window.isFocused()),
+    board: async () => {
+      const reply = await engineClient()?.query({ type: "board" });
+      return reply?.ok ? reply.data.items : undefined;
+    },
+    setup: async () => {
+      const reply = await engineClient()?.query({ type: "setup" });
+      return reply?.ok ? reply.data : undefined;
+    },
+    show: recordNotifications ? recordingShow() : systemShow(),
+    open: (itemId) => openItem(itemId),
+    now: () => Date.now(),
+    platform: process.platform,
+  });
+  // A click on a notification: the window comes to the front (made again if it was closed, as on
+  // macOS) and opens the item. The renderer is told once its page has loaded.
+  const openItem = (itemId: string) => {
+    const existing = BrowserWindow.getAllWindows()[0];
+    const window = existing ?? createWindow(store, reporter);
+    if (!background) {
+      if (window.isMinimized()) window.restore();
+      window.show();
+      app.focus({ steal: true });
+      window.focus();
+    }
+    const tell = () => window.webContents.send(CHANNELS.openItem, itemId);
+    // A window made just now is told once its page has loaded, whatever its loading state says yet.
+    if (existing === undefined || window.webContents.isLoading()) window.webContents.once("did-finish-load", tell);
+    else tell();
+  };
+  handle(CHANNELS.saveNotifications, (patch) => store.update((state) => applyNotificationsPatch(state, patch)));
+  handle(CHANNELS.viewedItem, (itemId) => notifier.setViewedItem(typeof itemId === "string" && itemId.length <= 200 ? itemId : undefined));
+  const watch = startWatch(() => {
+    void reporter.flush();
+    void notifier.resync();
+  }, (event) => notifier.onEvent(event));
   engineClient = () => watch.client();
   handle(CHANNELS.getConnection, () => watch.state());
   handle(CHANNELS.retryConnection, () => watch.retry());

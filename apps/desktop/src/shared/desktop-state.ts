@@ -30,6 +30,15 @@ export interface WindowBounds {
   readonly height: number;
 }
 
+/** Which desktop notifications the app shows, and whether they play the system sound. */
+export interface NotificationSettings {
+  readonly needsYou: boolean;
+  readonly finished: boolean;
+  readonly failed: boolean;
+  readonly sound: boolean;
+}
+export const NOTIFICATION_KEYS = ["needsYou", "finished", "failed", "sound"] as const;
+
 export interface DesktopState {
   readonly window: {
     /** The window's normal (not maximized) bounds; absent until the window has been placed once. */
@@ -45,6 +54,7 @@ export interface DesktopState {
   readonly lastFilter: LastFilter;
   /** The repo folder chosen last in the Add repo picker. */
   readonly lastRepoFolder?: string;
+  readonly notifications: NotificationSettings;
 }
 
 /** What the renderer may change; the window and the repo folder belong to the main process. */
@@ -57,6 +67,7 @@ export const DEFAULT_DESKTOP_STATE: DesktopState = {
   collapsedSections: [],
   lastView: { kind: "all" },
   lastFilter: { status: "active", range: "today" },
+  notifications: { needsYou: true, finished: true, failed: true, sound: false },
 };
 
 type Limits = { readonly min: number; readonly max: number };
@@ -97,6 +108,13 @@ function lastFilter(value: unknown): LastFilter {
   };
 }
 
+function notifications(value: unknown): NotificationSettings {
+  const record = isRecord(value) ? value : {};
+  const defaults = DEFAULT_DESKTOP_STATE.notifications;
+  const pick = (key: keyof NotificationSettings): boolean => (typeof record[key] === "boolean" ? record[key] : defaults[key]);
+  return { needsYou: pick("needsYou"), finished: pick("finished"), failed: pick("failed"), sound: pick("sound") };
+}
+
 /** The state in `input` (a parsed file or a renderer message), with every invalid field replaced by its default. */
 export function parseDesktopState(input: unknown): DesktopState {
   const root = isRecord(input) ? input : {};
@@ -113,6 +131,7 @@ export function parseDesktopState(input: unknown): DesktopState {
     collapsedSections: SECTIONS.filter((name) => sections.includes(name)),
     lastView: lastView(root["lastView"]),
     lastFilter: lastFilter(root["lastFilter"]),
+    notifications: notifications(root["notifications"]),
     ...(typeof folder === "string" && folder !== "" && folder.length <= MAX_TEXT ? { lastRepoFolder: folder } : {}),
   };
 }
@@ -122,4 +141,10 @@ export function applyLayoutPatch(state: DesktopState, patch: unknown): DesktopSt
   if (!isRecord(patch)) return state;
   const merged = parseDesktopState({ ...state, ...Object.fromEntries(["sidebar", "drawer", "collapsedSections", "lastView", "lastFilter"].filter((key) => key in patch).map((key) => [key, patch[key]])) });
   return { ...state, sidebar: merged.sidebar, drawer: merged.drawer, collapsedSections: merged.collapsedSections, lastView: merged.lastView, lastFilter: merged.lastFilter };
+}
+
+/** `state` with the switches of `patch` that are true or false; any other field or value is ignored. */
+export function applyNotificationsPatch(state: DesktopState, patch: unknown): DesktopState {
+  if (!isRecord(patch)) return state;
+  return { ...state, notifications: notifications({ ...state.notifications, ...Object.fromEntries(NOTIFICATION_KEYS.filter((key) => typeof patch[key] === "boolean").map((key) => [key, patch[key]])) }) };
 }

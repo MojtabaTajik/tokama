@@ -21,6 +21,7 @@ export const CONNECTED: ConnectionState = { status: "connected", engineId: "e-1"
 
 export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | Promise<Reply> | undefined; commandReply?: (command: { type: string }) => Reply; pickFolder?: () => Promise<string | null>; openTemplateFile?: () => Promise<OpenResult>; about?: AboutInfo; copyBuildInfo?: () => Promise<void>; showDataFolder?: () => Promise<OpenResult>; desktopState?: DesktopState } = {}) {
   let connectionListener: ((state: ConnectionState) => void) | undefined;
+  let openListener: ((itemId: string) => void) | undefined;
   // Every subscriber hears every event: the app and the open drawer both listen.
   const eventListeners = new Set<(event: BridgeEvent) => void>();
   const stops = { connection: vi.fn(), event: vi.fn() };
@@ -51,6 +52,14 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
     getDesktopState: vi.fn(async () => options.desktopState ?? DEFAULT_DESKTOP_STATE),
     saveLayout: vi.fn(async () => undefined),
     reportError: vi.fn(async () => undefined),
+    saveNotifications: vi.fn(async () => undefined),
+    setViewedItem: vi.fn(async () => undefined),
+    onOpenItem: vi.fn((listener: (itemId: string) => void) => {
+      openListener = listener;
+      return () => {
+        openListener = undefined;
+      };
+    }),
     onEvent: vi.fn((listener: (event: BridgeEvent) => void) => {
       eventListeners.add(listener);
       return () => {
@@ -73,5 +82,9 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
   const copyBuildInfo = bridge.copyBuildInfo as unknown as ReturnType<typeof vi.fn>;
   const showDataFolder = bridge.showDataFolder as unknown as ReturnType<typeof vi.fn>;
   const saveLayout = bridge.saveLayout as unknown as ReturnType<typeof vi.fn>;
-  return { bridge, query, saveLayout, copyBuildInfo, showDataFolder, command, retryConnection, openTemplateFile, setConnection, pushItem, pushEvent, stops };
+  const saveNotifications = bridge.saveNotifications as unknown as ReturnType<typeof vi.fn>;
+  const setViewedItem = bridge.setViewedItem as unknown as ReturnType<typeof vi.fn>;
+  /** A click on a notification: the main process asks the window to open the item. */
+  const openItem = (itemId: string) => act(async () => openListener?.(itemId));
+  return { bridge, query, saveLayout, saveNotifications, setViewedItem, openItem, copyBuildInfo, showDataFolder, command, retryConnection, openTemplateFile, setConnection, pushItem, pushEvent, stops };
 }
