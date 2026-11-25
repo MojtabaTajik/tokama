@@ -45,9 +45,15 @@ describe("fitPanels", () => {
           expect(fit.sidebar).toBeGreaterThanOrEqual(SIDEBAR_WIDTH.min);
           expect(fit.sidebar).toBeLessThanOrEqual(sidebar);
           if (!fit.floating) expect(fit.drawer).toBeGreaterThanOrEqual(DRAWER_WIDTH.min);
+          else expect(fit.drawer, `${width} ${sidebar} ${drawer}`).toBeLessThanOrEqual(width - RAIL_WIDTH - fit.sidebar);
         }
       }
     }
+  });
+
+  it("keeps the floating drawer off the sidebar", () => {
+    expect(fitPanels(720, { ...defaults, drawer: 640 })).toEqual({ sidebar: 240, drawer: 420, floating: true });
+    expect(fitPanels(760, { ...defaults, sidebar: 300, drawer: 640 })).toEqual({ sidebar: 280, drawer: 420, floating: true });
   });
 
   it("gives no width to a closed panel", () => {

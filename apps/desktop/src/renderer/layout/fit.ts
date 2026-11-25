@@ -39,8 +39,9 @@ export function fitPanels(windowWidth: number, choice: PanelChoice): PanelFit {
   }
   if (over > 0 && drawer > 0) {
     // The drawer leaves the flow, so the sidebar may be as wide as it chose, as far as the main area allows.
-    const available = windowWidth - RAIL_WIDTH;
-    return { sidebar: sidebar > 0 ? Math.max(SIDEBAR_WIDTH.min, Math.min(choice.sidebar, room)) : 0, drawer: Math.min(choice.drawer, available - sidebar), floating: true };
+    const wide = sidebar > 0 ? Math.max(SIDEBAR_WIDTH.min, Math.min(choice.sidebar, room)) : 0;
+    // The drawer lies over the main area only, never over the sidebar.
+    return { sidebar: wide, drawer: Math.min(choice.drawer, windowWidth - RAIL_WIDTH - wide), floating: true };
   }
   return { sidebar, drawer, floating: false };
 }

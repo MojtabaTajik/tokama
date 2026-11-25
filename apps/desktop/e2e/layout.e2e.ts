@@ -78,8 +78,15 @@ flow("the window comes back where it was, and a broken file gives the defaults",
   const bounds = await next.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.getBounds());
   expect([bounds?.width, bounds?.height]).toEqual([1010, 690]);
 
+  // A window left maximized opens maximized.
+  const maximized = await next.restart(() => {
+    const file = saved(home);
+    writeFileSync(join(home, ".tokama", "desktop.json"), JSON.stringify({ ...file, window: { ...(file["window"] as object), maximized: true } }));
+  });
+  await expect.poll(() => maximized.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isMaximized())).toBe(true);
+
   // The file is damaged while the app is closed; the next start must not fail on it.
-  const again = await next.restart(() => writeFileSync(join(home, ".tokama", "desktop.json"), "{ not json"));
+  const again = await maximized.restart(() => writeFileSync(join(home, ".tokama", "desktop.json"), "{ not json"));
   expect(await widthOf(again.page, ".panel")).toBe(264);
   const size = await again.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.getBounds());
   expect([size?.width, size?.height]).toEqual([1200, 800]);

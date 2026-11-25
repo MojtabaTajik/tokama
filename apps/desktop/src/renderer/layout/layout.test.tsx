@@ -110,6 +110,26 @@ describe("the edges", () => {
     expect(fake.saveLayout).toHaveBeenLastCalledWith({ drawer: { width: 420 } });
   });
 
+  it("keep the chosen width when clicked without a drag, also while a narrow window squeezes the panel", async () => {
+    const fake = await mount();
+    await openDrawer();
+    await resizeWindow(1100);
+    expect(widths()[1]).toBe("356px");
+    await pointer(edge("drawer"), "pointerdown", 700);
+    await pointer(edge("drawer"), "pointerup", 700);
+    expect(fake.saveLayout).not.toHaveBeenCalled();
+  });
+
+  it("move the chosen width with the keys while the panel is squeezed", async () => {
+    const fake = await mount();
+    await openDrawer();
+    await resizeWindow(1100);
+    await press(edge("drawer"), "ArrowLeft");
+    expect(fake.saveLayout).toHaveBeenLastCalledWith({ drawer: { width: 436 } });
+    await resizeWindow(1440);
+    expect(widths()[1]).toBe("436px");
+  });
+
   it("ignore other keys", async () => {
     const fake = await mount();
     await press(edge("sidebar"), "a");

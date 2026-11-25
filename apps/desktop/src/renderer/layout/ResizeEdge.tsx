@@ -12,6 +12,8 @@ export interface ResizeEdgeProps {
   readonly side: "sidebar" | "drawer";
   /** The width shown now. */
   readonly value: number;
+  /** The width the user chose; it differs from `value` while a narrow window squeezes the panel. Key presses move this one. */
+  readonly chosen: number;
   readonly min: number;
   readonly max: number;
   readonly defaultValue: number;
@@ -21,7 +23,7 @@ export interface ResizeEdgeProps {
   readonly onCommit: (width: number) => void;
 }
 
-export function ResizeEdge({ label, side, value, min, max, defaultValue, grow, onChange, onCommit }: ResizeEdgeProps) {
+export function ResizeEdge({ label, side, value, chosen, min, max, defaultValue, grow, onChange, onCommit }: ResizeEdgeProps) {
   const [dragging, setDragging] = useState(false);
   const drag = useRef<{ readonly x: number; readonly from: number; width: number } | undefined>(undefined);
   const clamp = (width: number) => Math.min(max, Math.max(min, Math.round(width)));
@@ -50,11 +52,12 @@ export function ResizeEdge({ label, side, value, min, max, defaultValue, grow, o
     if (start === undefined) return;
     drag.current = undefined;
     setDragging(false);
-    onCommit(start.width);
+    // A click that moved nothing keeps the chosen width: `from` may be a squeezed one.
+    if (start.width !== start.from) onCommit(start.width);
   };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const step = event.key === "ArrowRight" ? KEY_STEP : event.key === "ArrowLeft" ? -KEY_STEP : 0;
-    if (step !== 0) set(clamp(value + grow * step));
+    if (step !== 0) set(clamp(chosen + grow * step));
     else if (event.key === "Home") set(min);
     else if (event.key === "End") set(max);
     else if (event.key === "Enter") set(defaultValue);

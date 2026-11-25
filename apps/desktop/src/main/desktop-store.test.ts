@@ -1,4 +1,5 @@
-import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -32,14 +33,15 @@ describe("writeDesktopState", () => {
     expect(readDesktopState(path)).toEqual(DEFAULT_DESKTOP_STATE);
   });
 
-  it("makes a stale temp file private before it replaces the file", () => {
+  it("never follows a link left at a guessable temp name, and never touches its target", () => {
+    const victim = join(dir, "victim.txt");
+    writeFileSync(victim, "keep me", { mode: 0o644 });
+    mkdirSync(join(dir, ".tokama"), { recursive: true });
+    symlinkSync(victim, `${path}.${process.pid}.tmp`);
     writeDesktopState(path, wide);
-    const stale = `${path}.${process.pid}.tmp`;
-    writeFileSync(stale, "old", { mode: 0o644 });
-    chmodSync(stale, 0o644);
-    writeDesktopState(path, wide);
-    expect(statSync(path).mode & 0o777).toBe(0o600);
-    expect(existsSync(stale)).toBe(false);
+    expect(readFileSync(victim, "utf8")).toBe("keep me");
+    expect(statSync(victim).mode & 0o777).toBe(0o644);
+    expect(readDesktopState(path)).toEqual(wide);
   });
 
   it("keeps the old file and removes the temp file when the write fails", () => {
@@ -71,6 +73,17 @@ describe("readDesktopState", () => {
 
   it("gives the defaults for a file that is far too large", () => {
     writeRaw(JSON.stringify({ ...wide, junk: "x".repeat(70_000) }));
+    expect(readDesktopState(path)).toEqual(DEFAULT_DESKTOP_STATE);
+  });
+
+  it("gives the defaults for a link, and does not wait on a pipe", () => {
+    mkdirSync(join(dir, ".tokama"), { recursive: true });
+    const real = join(dir, "real.json");
+    writeFileSync(real, JSON.stringify(wide));
+    symlinkSync(real, path);
+    expect(readDesktopState(path)).toEqual(DEFAULT_DESKTOP_STATE);
+    rmSync(path);
+    execFileSync("mkfifo", [path]);
     expect(readDesktopState(path)).toEqual(DEFAULT_DESKTOP_STATE);
   });
 

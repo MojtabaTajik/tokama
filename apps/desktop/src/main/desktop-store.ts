@@ -3,7 +3,8 @@
 // are atomic (a temp file, then a rename) and the file is private to the user (mode 0600), so a
 // crash or a second writer cannot leave half a file. Reading never throws: a missing, oversized
 // or broken file gives the defaults, and a file with some bad fields keeps the good ones.
-import { chmodSync, closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeSync } from "node:fs";
+import { closeSync, constants, fstatSync, fsyncSync, mkdirSync, openSync, readSync, renameSync, unlinkSync, writeSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 import { DEFAULT_DESKTOP_STATE, type DesktopState, parseDesktopState } from "../shared/desktop-state.js";
 
@@ -11,30 +12,40 @@ import { DEFAULT_DESKTOP_STATE, type DesktopState, parseDesktopState } from "../
 const MAX_FILE_BYTES = 64 * 1024;
 const SAVE_DELAY_MS = 400;
 
-/** The saved state, or the defaults when the file is missing, too large or not valid JSON. */
+/**
+ * The saved state, or the defaults when the file is missing, is not a plain file (a link, a pipe,
+ * a device), is too large or is not valid JSON. It is opened without following a link and without
+ * waiting on a pipe, so a planted special file cannot stop the app from starting.
+ */
 export function readDesktopState(path: string): DesktopState {
+  let fd: number | undefined;
   try {
-    if (statSync(path).size > MAX_FILE_BYTES) return DEFAULT_DESKTOP_STATE;
-    return parseDesktopState(JSON.parse(readFileSync(path, "utf8")));
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.size > MAX_FILE_BYTES) return DEFAULT_DESKTOP_STATE;
+    const buffer = Buffer.alloc(stat.size);
+    const read = readSync(fd, buffer, 0, stat.size, 0);
+    return parseDesktopState(JSON.parse(buffer.toString("utf8", 0, read)));
   } catch {
     return DEFAULT_DESKTOP_STATE;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
 }
 
 /** Writes `state` so that a reader sees the old file or the new one, never a part. Throws when it cannot write. */
 export function writeDesktopState(path: string, state: DesktopState): void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const temp = `${path}.${process.pid}.tmp`;
+  // A new file with a name nobody can guess, created private; a link already in its place is never followed.
+  const temp = `${path}.${randomUUID()}.tmp`;
   try {
-    const fd = openSync(temp, "w", 0o600);
+    const fd = openSync(temp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
     try {
       writeSync(fd, `${JSON.stringify(state, null, 2)}\n`);
       fsyncSync(fd);
     } finally {
       closeSync(fd);
     }
-    // A temp file left by an earlier run keeps its old mode when reopened.
-    chmodSync(temp, 0o600);
     renameSync(temp, path);
   } catch (error) {
     try {
