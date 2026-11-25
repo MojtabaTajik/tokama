@@ -307,7 +307,6 @@
   gap: var(--space-14);
   max-height: calc(100vh - 18px);
   overflow-y: auto;
-  scrollbar-width: thin;
   box-sizing: border-box;
   padding: var(--space-16);
 }
@@ -417,7 +416,6 @@
   /* Counts of three digits can make the segments wider than the filter: they scroll, nothing is cut off. */
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: thin;
 }
 
 .segment {

@@ -60,6 +60,11 @@ describe.each(SCREENS)("%s", (path) => {
     expect(literal.map(({ line, property, value }) => `${line}: ${property}: ${value}`)).toEqual([]);
   });
 
+  it("keeps the shared scroll bar: no scrollbar-width or scrollbar-color, which would turn it off (hiding it with none is allowed)", () => {
+    const own = declarations(css).filter(({ property, value }) => property === "scrollbar-color" || (property === "scrollbar-width" && value.trim() !== "none"));
+    expect(own.map(({ line, property, value }) => `${line}: ${property}: ${value}`)).toEqual([]);
+  });
+
   it("draws no buttons of its own: the pointer cursor belongs to ui/button.css", () => {
     // A clickable element that is not a button (a summary, an option) says so on the line.
     const pointer = declarations(css).filter(({ property, value, rest }) => property === "cursor" && value.trim() === "pointer" && !rest.includes("pointer: not a button"));

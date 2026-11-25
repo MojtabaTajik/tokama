@@ -16,3 +16,8 @@
   color: var(--text);
   box-shadow: inset 0 -2px 0 var(--link);
 }
+
+/* The focus ring is for the keyboard: a tab chosen with the mouse shows none. */
+.tab:focus:not(:focus-visible) {
+  outline: none;
+}

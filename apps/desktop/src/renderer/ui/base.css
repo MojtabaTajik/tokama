@@ -1,6 +1,7 @@
 /* Page-wide rules every screen builds on, loaded before any component: scroll bars and the
    small utility classes. Components and screens come after, so they can refine them. */
-/* Thin scroll bars from the tokens: a mouse user's always-visible bars stay clean. */
+/* Thin scroll bars from the tokens, on every scroll container: a mouse user's always-visible bars
+   stay clean. A screen that sets scrollbar-width or scrollbar-color would turn them off (a test refuses it). */
 *::-webkit-scrollbar {
   width: var(--scrollbar-size);
   height: var(--scrollbar-size);
