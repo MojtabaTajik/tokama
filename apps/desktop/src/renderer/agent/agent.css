@@ -2,7 +2,9 @@
 
 /* Pulled left so the name lines up with the text above it; it clips to its cell, so a long model never runs into the next column. */
 .al {
+  /* Above the row button's cover, so the label takes the pointer and the focus; the rest of the agent cell still opens the row. */
   position: relative;
+  z-index: 1;
   display: flex;
   min-width: 0;
   max-width: 100%;

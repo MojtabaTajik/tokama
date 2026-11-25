@@ -896,6 +896,8 @@ button:focus-visible {
 
 .pl-step[data-current] {
   flex: 0 1 auto;
+  /* What does not fit is cut here, so it never runs over the next mark. */
+  overflow: hidden;
 }
 
 .pl-link {
@@ -912,24 +914,26 @@ button:focus-visible {
   text-align: center;
 }
 
+/* On a narrow row the name shortens first, but never below a few letters; the attempt clips only after that. */
 .pl-step-name {
+  flex: 0 100 auto;
+  min-width: 1.5em;
   margin-left: 5px;
   color: var(--text-2);
 }
 
-/* The attempt never shortens: on a narrow row the step name does. */
 .pl-step-attempt {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
   margin-left: 5px;
   color: var(--muted);
+  white-space: nowrap;
 }
 
 .pl-agent {
   grid-column: 4;
   grid-row: 1;
-  /* Above the row button's cover, so the label takes the pointer and the focus. */
-  position: relative;
-  z-index: 1;
   display: flex;
   align-items: center;
   gap: 6px;

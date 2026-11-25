@@ -81,7 +81,11 @@ flow("keeps list rows readable and apart with the drawer open", async ({ page, r
           .filter(({ box }) => box.width > 0 && box.height > 0)
           .map(({ selector, box }) => ({ selector, left: box.left, right: box.right, top: box.top, bottom: box.bottom }));
         const title = element.querySelector(".pl-title");
-        return { text: title?.textContent ?? "", titleWidth: title?.clientWidth ?? 0, left: outer.left, right: outer.right, parts };
+        // The pipeline's steps: the current one keeps some of its name, and no step runs over the next.
+        const pipe = element.querySelector(".pl-pipe")?.getBoundingClientRect();
+        const steps = [...element.querySelectorAll(".pl-step")].map((step) => step.getBoundingClientRect());
+        const nameWidth = element.querySelector(".pl-step-name")?.getBoundingClientRect().width;
+        return { text: title?.textContent ?? "", titleWidth: title?.clientWidth ?? 0, left: outer.left, right: outer.right, parts, pipe, steps, nameWidth };
       });
     });
     expect(rows.length, `rows at ${width}`).toBeGreaterThan(0);
@@ -93,6 +97,14 @@ flow("keeps list rows readable and apart with the drawer open", async ({ page, r
           const apart = a.right <= b.left + 0.5 || b.right <= a.left + 0.5 || a.bottom <= b.top + 0.5 || b.bottom <= a.top + 0.5;
           expect(apart, `${a.selector} and ${b.selector} overlap: ${where}`).toBe(true);
         }
+      }
+      if (item.pipe !== undefined) {
+        for (const [index, a] of item.steps.entries()) {
+          expect(a.left >= item.pipe.left - 1 && a.right <= item.pipe.right + 1, `step ${index} stays inside the pipeline: ${where}`).toBe(true);
+          const next = item.steps[index + 1];
+          if (next !== undefined) expect(a.right <= next.left + 0.5, `step ${index} overlaps the next: ${where}`).toBe(true);
+        }
+        if (item.nameWidth !== undefined) expect(item.nameWidth, `the current step's name stays visible: ${where}`).toBeGreaterThanOrEqual(14);
       }
       if (readable) expect(item.titleWidth, `the title's width: ${where}`).toBeGreaterThanOrEqual(120);
     }
