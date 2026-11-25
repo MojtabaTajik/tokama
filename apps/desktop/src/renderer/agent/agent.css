@@ -12,13 +12,18 @@
   overflow: hidden;
 }
 
+/* One line of 24px: the model is the last flex item and wraps onto a second line, which the fixed height clips,
+   when dot, name and model do not fit together. So it is shown whole or not at all, never cut to a few letters. */
 .al-button {
   display: inline-flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
   align-items: center;
-  gap: 6px;
+  gap: 0 6px;
   min-width: 0;
   max-width: 100%;
-  min-height: 24px;
+  height: 24px;
+  overflow: hidden;
   padding: 0 6px;
   border: 0;
   border-radius: 5px;
@@ -40,21 +45,28 @@
   outline-offset: -1px;
 }
 
-/* On a short line the name shortens first; the model shortens only when the name has nothing left to give. */
-.al-button > .ellipsis {
-  flex: 0 100 auto;
-  min-width: 1.5em;
+/* Dot and name are one item that never wraps: it shortens the name, with an ellipsis, only when it is alone on its line and still too wide. */
+.al-who {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  line-height: 24px;
 }
 
 .al-model {
-  flex: 0 1 auto;
-  min-width: 2em;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex: none;
+  line-height: 24px;
   white-space: nowrap;
   font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--muted);
+}
+
+/* In a drawer step the label keeps its natural width; the text after it wraps under it. */
+.step-where > .al {
+  flex: none;
 }
 
 /* In the top layer, so no scrolling list or drawer clips it; placed under the label, or above it when there is no room. */
