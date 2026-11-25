@@ -20,6 +20,9 @@ const NOT_SUPPORTED: readonly { readonly cliId: "codex-cli" | "ollama"; readonly
   { cliId: "ollama", name: "Ollama", description: "Runs models on this machine." },
 ];
 
+/** The schema's limit on names listed under one CLI. */
+const MAX_USED_BY = 200;
+
 const CLAUDE = { name: "Claude Code", description: "Coding agent CLI from Anthropic. Reads code, edits files, runs commands." } as const;
 
 function stateOf(health: CliHealth | undefined): AiCliState {
@@ -56,13 +59,17 @@ function claudeCode(launch: LaunchInfo, input: AiClisInput): AiCli {
     promptVia: launch.promptVia,
     roleArgs: [...launch.roleArgs],
     envNames: [...launch.envNames],
-    usedBy: input.agents.filter((agent) => agent.cliId === "claude-code").map((agent) => agent.name),
+    usedBy: input.agents.filter((agent) => agent.cliId === "claude-code").map((agent) => agent.name).slice(0, MAX_USED_BY),
   };
 }
 
 export function aiClis(input: AiClisInput): AiClisResult {
   const factories: Record<string, unknown> = { ...adapters };
-  const describe = factories["claudeCodeLaunch"] as (() => LaunchInfo) | undefined;
+  return aiClisWith(factories["claudeCodeLaunch"] as (() => LaunchInfo) | undefined, input);
+}
+
+/** `describe` is the adapter's description of a call; undefined when the adapter was removed. */
+export function aiClisWith(describe: (() => LaunchInfo) | undefined, input: AiClisInput): AiClisResult {
   const claude: AiCli = describe === undefined ? { supported: false, cliId: "claude-code", ...CLAUDE } : claudeCode(describe(), input);
   return { clis: [claude, ...NOT_SUPPORTED.map((cli) => ({ supported: false as const, ...cli }))] };
 }

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CliHealth } from "@tokama/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { aiClis } from "./ai-clis.js";
+import { aiClis, aiClisWith } from "./ai-clis.js";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -67,5 +67,15 @@ describe("aiClis", () => {
     expect(claude.envNames).not.toContain("ANTHROPIC_API_KEY");
     const text = JSON.stringify(aiClis({ clis: [READY], agents: [], env }));
     for (const secret of ["secret-home-sentinel", "secret-user-sentinel", "sk-secret-key-sentinel", "secret-socket-sentinel", "sk-other-sentinel"]) expect(text).not.toContain(secret);
+  });
+
+  it("lists Claude Code as not supported when its adapter is removed", () => {
+    const result = aiClisWith(undefined, { clis: [READY], agents: [], env: {} });
+    expect(result.clis.map((cli) => [cli.cliId, cli.supported])).toEqual([["claude-code", false], ["codex-cli", false], ["ollama", false]]);
+  });
+
+  it("caps the names under a CLI at the schema's limit", () => {
+    const agents = Array.from({ length: 250 }, (_, i) => ({ name: `Agent ${i}`, cliId: "claude-code" as const }));
+    expect(claudeOf([READY], {}, agents).usedBy).toHaveLength(200);
   });
 });

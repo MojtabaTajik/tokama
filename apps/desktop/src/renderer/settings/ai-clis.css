@@ -82,19 +82,19 @@
   flex: none;
 }
 
-[data-tone="pass"] {
+.ai-clis [data-tone="pass"] {
   color: var(--pass);
 }
 
-[data-tone="warn"] {
+.ai-clis [data-tone="warn"] {
   color: var(--warn);
 }
 
-[data-tone="fail"] {
+.ai-clis [data-tone="fail"] {
   color: var(--fail);
 }
 
-[data-tone="muted"] {
+.ai-clis [data-tone="muted"] {
   color: var(--muted);
 }
 
