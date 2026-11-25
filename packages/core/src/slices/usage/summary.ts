@@ -34,6 +34,7 @@ export interface SummaryInput {
 
 const DAY_ITEMS = 5;
 const TODAY_ITEMS = 5;
+const MAX_AGENTS = 20;
 const TOP_ITEMS = 50;
 const NO_TOKENS: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
@@ -127,7 +128,8 @@ export function summarizeUsage({ rows, range, now, clis, scope, logs = [], logsF
 
   const byTokens = <T extends { tokens: number }>(a: T, b: T) => b.tokens - a.tokens;
   const totals = { tokens, costUsd, calls: inRange.length, unpricedCalls };
-  const agentList = (agents: Map<string, AgentCallUsage["cliId"]>) => [...agents].map(([agentId, cliId]) => ({ agentId: agentId as AgentCallUsage["agentId"], cliId }));
+  // The report keeps at most 20 agents per item.
+  const agentList = (agents: Map<string, AgentCallUsage["cliId"]>) => [...agents].slice(0, MAX_AGENTS).map(([agentId, cliId]) => ({ agentId: agentId as AgentCallUsage["agentId"], cliId }));
   const report: UsageReport = {
     range,
     asOf: now,

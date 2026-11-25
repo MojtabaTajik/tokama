@@ -81,6 +81,11 @@ describe("summarizeUsage", () => {
     const busy = summarizeUsage({ rows: many, range: 14, now: NOW, clis: [] }).today;
     expect(busy?.items.map((item) => item.title)).toEqual(["Item 6", "Item 5", "Item 4", "Item 3", "Item 2"]);
     expect(busy?.itemCount).toBe(7);
+    // An item with more agents than the report holds keeps the first 20, in the range list and today.
+    const crowded = Array.from({ length: 25 }, (_, n) => row(ITEM_A, "builtin/quick-fix", call({ endedAt: at(0, 9), agentId: `agent-${n}` as AgentCallUsage["agentId"] })));
+    const full = summarizeUsage({ rows: crowded, range: 14, now: NOW, clis: [] });
+    expect([full.items[0]?.agents.length, full.today?.items[0]?.agents.length]).toEqual([20, 20]);
+    expect(UsageReportSchema.safeParse(full).success).toBe(true);
     expect(summarizeUsage({ rows: [], range: 14, now: NOW, clis: [] }).today).toEqual({ items: [], itemCount: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, durationMs: 0 });
   });
 

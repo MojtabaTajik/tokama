@@ -16,7 +16,6 @@ import {
   tickLabel,
   shareText,
   windowLabel,
-  windowLine,
   windowShort,
   levelOf,
   LEVEL_TONE,
@@ -34,12 +33,13 @@ describe("plan window words", () => {
     expect([windowLabel({ window: "weekly_scoped", scope: "Fable" }), windowShort({ window: "weekly_scoped", scope: "Fable" }), windowShort({ window: "session" })]).toEqual(["Fable weekly window", "Fable weekly", "Session"]);
   });
 
-  it("writes a tooltip line per limit, with a scoped limit's share of the weekly limit", () => {
-    const now = at(20, 14, 32);
-    expect(windowLine({ window: "session", usedPercent: 63.4, resetsAt: at(20, 17, 10) }, now)).toBe("Session 63% · resets 17:10");
-    expect(windowLine({ window: "weekly_all", usedPercent: 41 }, now)).toBe("Weekly 41%");
-    expect(windowLine({ window: "weekly_scoped", scope: "Fable", usedPercent: 0, sharePercent: 50, resetsAt: at(23, 9) }, now)).toBe("Fable weekly 0% (50% share) · resets Thu 23 Oct 09:00");
+  it("says how much of the weekly limit a scoped limit may use", () => {
     expect([shareText({ sharePercent: 49.6 }), shareText({})]).toEqual(["50% share of the weekly limit", undefined]);
+  });
+
+  it("levels the rail badge by the shown number, as the meter does", () => {
+    const plan = (usedPercent: number) => ({ cliId: "claude-code" as const, windows: [{ window: "session", usedPercent }] });
+    expect([79.4, 79.6, 99.4, 99.6].map((p) => cliAlert(plan(p), undefined, 0))).toEqual([undefined, "near_limit", "near_limit", "limit"]);
   });
 
   it("levels a window: ok under 60%, high to 79%, near its limit from 80%, at it from 100%, each above ok with a word", () => {

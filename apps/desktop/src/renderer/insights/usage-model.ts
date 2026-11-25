@@ -34,13 +34,6 @@ export function windowLabel(w: Pick<PlanWindow, "window" | "scope">): string {
 export const windowShort = (w: Pick<PlanWindow, "window" | "scope">): string => windowLabel(w).replace(/ window$/, "");
 /** "50% share of the weekly limit" for a scoped limit with a known share. */
 export const shareText = (w: Pick<PlanWindow, "sharePercent">): string | undefined => (w.sharePercent === undefined ? undefined : `${Math.round(w.sharePercent)}% share of the weekly limit`);
-/** The tooltip's line for a window: "Fable weekly 0% (50% share) · resets Thu 23 Oct 09:00". */
-export function windowLine(w: PlanWindow, now: number): string {
-  const share = w.sharePercent === undefined ? "" : ` (${Math.round(w.sharePercent)}% share)`;
-  const reset = w.resetsAt === undefined ? "" : ` · resets ${formatClock(w.resetsAt, now)}`;
-  return `${windowShort(w)} ${Math.round(w.usedPercent)}%${share}${reset}`;
-}
-
 export type Tone = "warn" | "fail";
 
 /**
@@ -67,7 +60,8 @@ export const liveWindows = (plan: CliPlan | undefined, now: number): CliPlan["wi
 /** What the rail badge and the tooltip say about a CLI: a login problem first, then its windows. */
 export function cliAlert(plan: CliPlan | undefined, issue: CliIssue | undefined, now: number): CliAlert | undefined {
   if (issue !== undefined) return issue.kind;
-  const levels = liveWindows(plan, now).map((w) => levelOf(w.usedPercent));
+  // By the shown (rounded) number, so the badge agrees with the meter.
+  const levels = liveWindows(plan, now).map((w) => levelOf(Math.round(w.usedPercent)));
   return levels.includes("limit") ? "limit" : levels.includes("near") ? "near_limit" : undefined;
 }
 
