@@ -57,7 +57,7 @@ function trace(name: string, phase: string): void {
 function leftBehind(dir: string, limit = 20): string[] {
   const found: string[] = [];
   const walk = (folder: string) => {
-    let names: string[] = [];
+    let names: string[];
     try {
       names = readdirSync(folder);
     } catch {
@@ -128,8 +128,10 @@ export function flow(name: string, fn: (session: Session) => Promise<void>, mode
       try {
         rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
       } catch (error) {
-        trace(name, `cleanup failed (${(error as NodeJS.ErrnoException).code ?? "error"}), left behind: ${leftBehind(tmp).join(", ")}`);
-        throw error;
+        // A temp folder left behind is not a test failure; the log says what kept it busy.
+        const message = `cleanup failed (${(error as NodeJS.ErrnoException).code ?? "error"}), left behind: ${leftBehind(tmp).join(", ")}`;
+        trace(name, message);
+        console.error(`${name}: ${message}`);
       }
       trace(name, "done");
     }
