@@ -58,6 +58,7 @@ describe("agents_list", () => {
     const orders = join(root, "ledger-api");
     mkdirSync(orders);
     execFileSync("git", ["init", "-q", "-b", "main"], { cwd: orders });
+    execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "first"], { cwd: orders });
     expect((await client.command({ type: "add_repo", path: orders })).ok).toBe(true);
     const agentsDir = join(home, "agents");
     write(agentsDir, "reviewer.md", agentFile("My reviewer", { runs_on: "ollama", model: "qwen3-coder:30b" }).replace("runs_on: ollama", "runs_on: ollama\ndriven_by: claude-code"));
@@ -96,6 +97,7 @@ describe("agents_list", () => {
       const path = join(root, name);
       mkdirSync(path);
       execFileSync("git", ["init", "-q", "-b", "main"], { cwd: path });
+      execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "first"], { cwd: path });
       expect((await client.command({ type: "add_repo", path })).ok).toBe(true);
       write(join(path, ".tokama", "agents"), "triager.md", agentFile(`Triager of ${name}`));
     }

@@ -137,6 +137,12 @@ export interface WorktreeEntry {
 export interface Git {
   /** `status --porcelain -z --untracked-files=all`. */
   status(repo: string): Promise<GitResult<StatusEntry[]>>;
+  /** `for-each-ref refs/heads`: the local branch names. */
+  branches(repo: string): Promise<GitResult<string[]>>;
+  /** `rev-parse --show-toplevel`: the folder git treats as the work tree of `repo`. */
+  topLevel(repo: string): Promise<GitResult<string>>;
+  /** `init -q -b <branch>`: a new repo in `repo`, which must exist. */
+  init(repo: string, branch: string): Promise<GitResult<void>>;
   /** `add -A`. */
   addAll(repo: string): Promise<GitResult<void>>;
   /** `diff --cached --numstat -z --no-renames`. */
@@ -355,6 +361,12 @@ export function createGit(options: GitOptions): Git {
 
   return {
     status: (repo) => map(git(repo, ["status", "--porcelain", "-z", "--untracked-files=all"]), parseStatus),
+    branches: (repo) => map(git(repo, ["for-each-ref", "--format=%(refname:short)", "refs/heads"]), (out) => out.split("\n").filter((name) => name !== "")),
+    topLevel: (repo) => map(git(repo, ["rev-parse", "--show-toplevel"]), trimmed),
+    async init(repo, branch) {
+      const args = ["init", "-q", "-b", branch];
+      return refuseOption(args, branch) ?? map(git(repo, args), none);
+    },
     addAll: (repo) => map(git(repo, ["add", "-A"]), none),
     diffCachedNumstat: (repo) =>
       map(git(repo, ["diff", "--cached", "--numstat", "-z", "--no-renames", ...DIFF_SAFE]), parseNumstat),

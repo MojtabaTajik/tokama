@@ -377,9 +377,14 @@ describe("check command length", () => {
     const check = (length: number) => "x".repeat(length);
     expect(parseCommand({ type: "add_repo", path: "/a", checks: [check(500)] }).ok).toBe(true);
     expect(parseCommand({ type: "add_repo", path: "/a", checks: [check(501)] }).ok).toBe(false);
-    const suggestion = { path: "/a", gitRepo: true, branch: "main", id: "a", problem: null };
+    expect(parseCommand({ type: "update_repo", repoId: "a", baseBranch: "main", checks: [check(500)] }).ok).toBe(true);
+    expect(parseCommand({ type: "update_repo", repoId: "a", baseBranch: "main", checks: [check(501)] }).ok).toBe(false);
+    const suggestion = { path: "/a", displayPath: "/a", gitRepo: true, hasCommits: true, branch: "main", id: "a", checksFrom: [], branches: ["main"], fallbackCheck: null, fallbackFromPackage: false, firstCommit: null, problem: null };
     expect(parseQueryResult("suggest_repo", { ...suggestion, checks: [check(500)] }).ok).toBe(true);
     expect(parseQueryResult("suggest_repo", { ...suggestion, checks: [check(501)] }).ok).toBe(false);
+    expect(parseCommand({ type: "init_repo", path: "/a", baseBranch: "main" }).ok).toBe(true);
+    expect(parseCommand({ type: "first_commit", path: "/a" }).ok).toBe(true);
+    expect(parseQueryResult("suggest_repo", { ...suggestion, checks: [], firstCommit: { files: 2, bytes: 3, sample: [{ path: "a", bytes: 1 }, { path: "b", bytes: 2 }], more: [], addsGitignore: true, leftOut: [{ name: "node_modules/", files: null }], refusal: null } }).ok).toBe(true);
   });
 });
 

@@ -17,6 +17,7 @@ import { join } from "node:path";
 import {
   addRepo,
   type AddRepoResult,
+  type UpdateRepoResult,
   type AgentsListResult,
   type AiClisResult,
   API_VERSION,
@@ -48,8 +49,12 @@ import {
   parseHelloMessage,
   type ParseError,
   removeRepo,
+  type RepoEditError,
   type Result,
   suggestRepo,
+  initRepo,
+  makeFirstCommit,
+  updateRepo,
   type SuggestRepoResult,
   type SuggestTemplateResult,
   systemClock,
@@ -343,11 +348,28 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   const sampleRepoIds = sample?.setup.repos.map((repo) => repo.id) ?? [];
   const repoOptions = (tokamaHome: string) => ({ tokamaHome, git: (git ??= createGit({ runner: createProcessRunner() })), reservedIds: sampleRepoIds });
 
-  const repoCommand = async (command: Extract<Command, { type: "add_repo" | "remove_repo" }>): Promise<ReplyResult> => {
+  const isRepoCommand = (command: Command): command is Extract<Command, { type: "add_repo" | "init_repo" | "first_commit" | "update_repo" | "remove_repo" }> =>
+    command.type === "add_repo" || command.type === "init_repo" || command.type === "first_commit" || command.type === "update_repo" || command.type === "remove_repo";
+
+  const repoCommand = async (command: Extract<Command, { type: "add_repo" | "init_repo" | "first_commit" | "update_repo" | "remove_repo" }>): Promise<ReplyResult> => {
     const home = options.home;
     if (home === undefined) return { ok: false, error: { code: "not_implemented" satisfies CommandErrorCode, message: "this engine has no Tokama home folder for repos.yaml" } };
-    if (command.type === "remove_repo" && sampleRepoIds.includes(command.repoId)) {
-      return { ok: false, error: { code: "not_found" satisfies CommandErrorCode, message: `${command.repoId} is a sample repo; it isn't in repos.yaml, so it can't be removed.` } };
+    if ((command.type === "update_repo" || command.type === "remove_repo") && sampleRepoIds.includes(command.repoId)) {
+      const verb = command.type === "remove_repo" ? "removed" : "edited";
+      return { ok: false, error: { code: "not_found" satisfies CommandErrorCode, message: `${command.repoId} is a sample repo; it isn't in repos.yaml, so it can't be ${verb}.` } };
+    }
+    if (command.type === "init_repo" || command.type === "first_commit") {
+      // The folder changes, not repos.yaml; it still waits its turn behind the other repo changes.
+      const folderChange = repoChanges.then((): Promise<Result<unknown, RepoEditError>> =>
+        command.type === "init_repo"
+          ? initRepo(repoOptions(home), { path: command.path, ...(command.baseBranch === undefined ? {} : { baseBranch: command.baseBranch }) })
+          : makeFirstCommit(repoOptions(home), { path: command.path }),
+      );
+      repoChanges = folderChange.catch(() => undefined);
+      const done = await folderChange;
+      if (!done.ok) return { ok: false, error: done.error };
+      log(command.type === "init_repo" ? "set up git in a folder" : "made a first commit in a folder");
+      return { ok: true, data: done.value };
     }
     const change = repoChanges.then(() =>
       command.type === "add_repo"
@@ -357,7 +379,9 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
             ...(command.baseBranch === undefined ? {} : { baseBranch: command.baseBranch }),
             ...(command.checks === undefined ? {} : { checks: command.checks }),
           })
-        : removeRepo(repoOptions(home), command.repoId),
+        : command.type === "update_repo"
+          ? updateRepo(repoOptions(home), { repoId: command.repoId, baseBranch: command.baseBranch, checks: command.checks })
+          : removeRepo(repoOptions(home), command.repoId),
     );
     repoChanges = change.catch(() => undefined);
     const result = await change;
@@ -365,8 +389,10 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     // Real mode reads the repos again, so the run loop sees the change at once.
     await (await realEngine)?.refresh();
     broadcast({ type: "setup_changed" });
-    log(`${command.type === "add_repo" ? "added" : "removed"} repo ${result.value.id}`);
-    return { ok: true, data: command.type === "add_repo" ? ({ repo: { id: result.value.id, baseBranch: result.value.baseBranch, checks: [...result.value.checks] } } satisfies AddRepoResult) : null };
+    log(`${{ add_repo: "added", update_repo: "updated", remove_repo: "removed" }[command.type]} repo ${result.value.id}`);
+    if (command.type === "remove_repo") return { ok: true, data: null };
+    const repo = { id: result.value.id, baseBranch: result.value.baseBranch, checks: [...result.value.checks] };
+    return { ok: true, data: command.type === "add_repo" ? ({ repo } satisfies AddRepoResult) : ({ repo } satisfies UpdateRepoResult) };
   };
 
   /** The sample setup in sample mode, with the repos of repos.yaml after its own. */
@@ -409,7 +435,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     if (real !== undefined) {
       if (message.kind === "command") {
         const { command } = message;
-        if (command.type !== "add_repo" && command.type !== "remove_repo") {
+        if (!isRepoCommand(command)) {
           const result = await real.command(command);
           return result.ok ? { ok: true, data: result.value } : { ok: false, error: result.error };
         }
@@ -423,7 +449,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     }
     if (message.kind === "command") {
       const command = message.command;
-      if (command.type === "add_repo" || command.type === "remove_repo") return repoCommand(command);
+      if (isRepoCommand(command)) return repoCommand(command);
       if (!sample) {
         const code: CommandErrorCode = "not_implemented";
         return { ok: false, error: { code, message: `command "${message.command.type}" is not implemented yet` } };
@@ -452,8 +478,8 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
         if (options.home === undefined) return { ok: false, error: { code: "not_implemented", message: "this engine has no Tokama home folder for repos.yaml" } };
         const suggested = await suggestRepo(repoOptions(options.home), query.path);
         if (!suggested.ok) return { ok: false, error: suggested.error };
-        const { path, gitRepo, branch, id, checks, problem } = suggested.value;
-        return { ok: true, data: { path, gitRepo, branch: branch ?? null, id: id ?? null, checks: [...checks], problem: problem ?? null } satisfies SuggestRepoResult };
+        const { path, displayPath, gitRepo, hasCommits, branch, id, checks, checksFrom, branches, fallbackCheck, fallbackFromPackage, firstCommit, problem } = suggested.value;
+        return { ok: true, data: { path, displayPath, gitRepo, hasCommits, branch: branch ?? null, id: id ?? null, checks: [...checks], checksFrom: [...checksFrom], branches: [...branches], fallbackCheck: fallbackCheck ?? null, fallbackFromPackage, firstCommit: firstCommit === undefined ? null : { files: firstCommit.files, bytes: firstCommit.bytes, sample: firstCommit.sample.map((file) => ({ ...file })), more: [...firstCommit.more], addsGitignore: firstCommit.addsGitignore, leftOut: firstCommit.leftOut.map((entry) => ({ ...entry })), refusal: firstCommit.refusal ?? null }, problem: problem ?? null } satisfies SuggestRepoResult };
       }
       case "agents_list":
         if (options.home === undefined) return { ok: false, error: { code: "not_implemented", message: "this engine has no Tokama home folder for agents" } };
