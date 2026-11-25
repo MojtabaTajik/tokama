@@ -628,7 +628,14 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   };
 
   // Items a restart would pause: those running a step, and done items running a Finish action.
-  const runningItems = () => store.list().filter((item) => item.state === "running" || item.finish?.running !== undefined).length;
+  // A store that cannot list leaves the count out, so the handshake still goes through.
+  const runningItems = (): { runningItems?: number } => {
+    try {
+      return { runningItems: store.list().filter((item) => item.state === "running" || item.finish?.running !== undefined).length };
+    } catch {
+      return {};
+    }
+  };
 
   const handleHello = (socket: Socket, line: string): boolean => {
     const hello = parseOpeningMessage(parseJson(line));
@@ -650,10 +657,10 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       return false;
     }
     if (hello.value.apiVersion !== API_VERSION) {
-      fail(socket, "unsupported_version", `engine speaks API version ${API_VERSION}, client sent ${hello.value.apiVersion}`, { runningItems: runningItems() });
+      fail(socket, "unsupported_version", `engine speaks API version ${API_VERSION}, client sent ${hello.value.apiVersion}`, runningItems());
       return false;
     }
-    const welcome = encodeLine({ kind: "welcome", apiVersion: API_VERSION, engineId, runningItems: runningItems() });
+    const welcome = encodeLine({ kind: "welcome", apiVersion: API_VERSION, engineId, ...runningItems() });
     if (welcome.ok) write(socket, welcome.value);
     ready.add(socket);
     return true;
