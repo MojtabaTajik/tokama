@@ -95,7 +95,7 @@ describe("ItemDrawer sections", () => {
     expect(text(".drawer h2")).toBe("Orders API returns 500 after deploy");
     expect(text(".drawer-state")).toBe("⏸needs you · step 4 of 4 · Propose a fix");
     expect($(".drawer-state .mark")?.getAttribute("aria-hidden")).toBe("true");
-    expect($("aside.drawer")?.getAttribute("aria-labelledby")).toBe($(".drawer h2")?.id);
+    expect($(".drawer")?.getAttribute("aria-labelledby")).toBe($(".drawer h2")?.id);
   });
 
   it("shows the needs-you note: question, why, the exact summary and a button per choice", async () => {
@@ -139,16 +139,19 @@ describe("ItemDrawer sections", () => {
     ]);
   });
 
-  it("has only the Steps tab for an investigation: Evidence, Findings, Log, Checks and Diff are hidden", async () => {
+  it("has only the Steps and Output tabs for an investigation: Evidence, Findings, Log, Checks and Diff are hidden", async () => {
     await renderDrawer(fakeBridge([needsYou]).bridge, needsYou.id);
-    expect($$('[role="tab"]').map((tab) => [tab.textContent, tab.getAttribute("aria-selected")])).toEqual([["Steps", "true"]]);
+    expect($$('[role="tab"]').map((tab) => [tab.textContent, tab.getAttribute("aria-selected")])).toEqual([
+      ["Steps", "true"],
+      ["Output", "false"],
+    ]);
     expect($(".step")).not.toBeNull();
     expect(text('[role="tabpanel"]')).not.toContain("comes later");
   });
 
   it("shows a task with the Steps tab only while no decision carries a diff", async () => {
     await renderDrawer(fakeBridge([task]).bridge, task.id);
-    expect($$('[role="tab"]').map((tab) => tab.textContent)).toEqual(["Steps"]);
+    expect($$('[role="tab"]').map((tab) => tab.textContent)).toEqual(["Steps", "Output"]);
     expect(text(".drawer-kind")).toBe("▣ Task · Plan and build · local + cloud");
     expect($(".needs-you")).toBeNull();
     expect($$(".step-where").map((el) => el.textContent)).toEqual([
@@ -596,7 +599,7 @@ describe("ItemDrawer stop", () => {
       (document.activeElement as HTMLElement | null)?.blur();
     });
     expect(text('[role="status"]')).toBe("✕Could not send it: boom");
-    expect(document.activeElement).toBe($("aside.drawer"));
+    expect(document.activeElement).toBe($(".drawer"));
   });
 
   it("on invalid_state, says the item had ended and queries it again", async () => {
@@ -667,14 +670,14 @@ describe("ItemDrawer in the app: open, focus and close", () => {
   it("opens from a list row, moves focus into the drawer and marks the row", async () => {
     const { row } = await openFromList();
     expect(text(".drawer h2")).toBe(needsYou.title);
-    expect(document.activeElement).toBe($("aside.drawer"));
+    expect(document.activeElement).toBe($(".drawer"));
     expect(row.getAttribute("aria-current")).toBe("true");
   });
 
   it("closes on Esc and gives focus back to the row that opened it", async () => {
     const { row } = await openFromList();
     await key("Escape");
-    expect($("aside.drawer")).toBeNull();
+    expect($(".drawer")).toBeNull();
     expect(document.activeElement).toBe(row);
     expect(row.hasAttribute("aria-current")).toBe(false);
   });
@@ -682,14 +685,14 @@ describe("ItemDrawer in the app: open, focus and close", () => {
   it("closes with the close button and gives focus back to the row", async () => {
     const { row } = await openFromList();
     await click(button("Close"));
-    expect($("aside.drawer")).toBeNull();
+    expect($(".drawer")).toBeNull();
     expect(document.activeElement).toBe(row);
   });
 
   it("closes when the engine connection fails, never showing ids without their setup", async () => {
     const { row, setConnection } = await openFromList();
     await setConnection({ status: "failed", reason: "engine exited", logPath: "/tmp/engine.log", logTail: [] });
-    expect($("aside.drawer")).toBeNull();
+    expect($(".drawer")).toBeNull();
     expect(container.textContent).not.toContain("builtin/emergency-investigator");
     expect(row.isConnected).toBe(false);
   });
@@ -924,7 +927,7 @@ describe("Finish: review fixes", () => {
     await openMenu();
     await act(async () => menuItems().find((el) => el.textContent?.startsWith("Open PR"))!.click());
     expect(text(".drawer-notice")).toContain("Local-only mode is on");
-    expect($("aside.drawer h2")?.textContent).toBe(finishable.title);
+    expect($(".drawer h2")?.textContent).toBe(finishable.title);
   });
 
   it("the menu: the arrow toggles it closed, arrows and Home/End move, an off Open PR is reachable but does nothing, a pick returns focus to the row", async () => {
@@ -988,5 +991,264 @@ describe("Finish: git config or hooks changed", () => {
     expect(accept.closest(".finish-row")?.getAttribute("data-action")).toBe("merge");
     await act(async () => accept.click());
     expect(fake.command).toHaveBeenCalledWith({ type: "accept_git_changes", itemId: refused.id });
+  });
+});
+
+describe("ItemDrawer full view", () => {
+  const CHANGE = "decision_00000000-0000-4000-8000-0000000000f1";
+  const PLAN_TEXT = "## Plan\n\nAdd a `stock_reservations` table.\n\n## Risks\n\n- none";
+  const change = {
+    ...task,
+    id: "item_1a2b3c4d-0020-4a1b-8c1d-000000000020",
+    state: "needs_you",
+    decision: {
+      id: CHANGE,
+      kind: "plan_approval",
+      stepIndex: 0,
+      question: "Approve this change and commit it?",
+      why: "Local builder changed 2 files.",
+      hasDiff: true,
+      choices: [
+        { id: "approve", label: "Approve and commit" },
+        { id: "request_changes", label: "Request changes" },
+      ],
+    },
+    steps: [{ name: "Change", stage: "review", state: "needs_you", agentId: "local-builder", data: "none", runs: 1, maxAttempts: 3, attempts: [{ attempt: 1, result: "passed", checks: [] }] }],
+  } as unknown as ItemRecord;
+  const plan = {
+    ...change,
+    id: "item_1a2b3c4d-0021-4a1b-8c1d-000000000021",
+    decision: { ...change.decision!, id: "decision_00000000-0000-4000-8000-0000000000f2", hasDiff: undefined, question: "Approve this step's result?", choices: [{ id: "approve", label: "Approve" }, { id: "request_changes", label: "Request changes" }] },
+    steps: [
+      { name: "Plan", stage: "working", state: "needs_you", agentId: "architect", data: "none", runs: 1, maxAttempts: 3, attempts: [{ attempt: 1, result: "passed", checks: [] }] },
+      { name: "Build", stage: "working", state: "pending", agentId: "local-builder", data: "none" },
+    ],
+  } as unknown as ItemRecord;
+  const hunk = { header: "@@ -1,3 +1,3 @@", lines: [" keep", "-old one", "-old two", "+new one", " end"] };
+  const diff = {
+    files: [
+      { path: "src/a.ts", status: "modified", added: 1, removed: 2, binary: false, cut: false, hunks: [hunk] },
+      { path: "src/b.ts", status: "added", added: 1, removed: 0, binary: false, cut: false, hunks: [{ header: "@@ -0,0 +1 @@", lines: ["+only"] }] },
+    ],
+    moreFiles: 0,
+    cut: false,
+    worktree: { repoId: "orders-api", dir: ".tokama/wt/abc", branch: "tokama/abc", baseCommit: "85a75e3c0ffee0000000000000000000000000ab" },
+  };
+  const bridgeFor = (items: ItemRecord[]) => {
+    const fake = fakeBridge(items);
+    const base = fake.query.getMockImplementation()!;
+    fake.query.mockImplementation(async (q: { type: string; itemId?: string; stepIndex?: number }) =>
+      q.type === "decision_diff" ? { ok: true, data: diff } : q.type === "step_output" ? { ok: true, data: { attempt: 1, text: PLAN_TEXT, truncated: false } } : base(q),
+    );
+    return fake;
+  };
+  const show = (bridge: TokamaBridge, itemId: string, props: Partial<Parameters<typeof ItemDrawer>[0]> = {}) =>
+    act(async () => root.render(<ItemDrawer bridge={bridge} itemId={itemId} setup={setup} onClose={vi.fn()} {...props} />));
+  const full = (onCollapse = vi.fn(), wide = true) => ({ expanded: { back: "All work", wide, onCollapse } });
+  const selected = () => text('[role="tab"][aria-selected="true"]');
+  const tab = (name: string) => $$('[role="tab"]').find((el) => el.textContent === name);
+  const cells = (row: Element) => [...row.querySelectorAll('[role="cell"]')].map((cell) => cell.textContent).join("|");
+
+  it("has the drawer's tabs: Steps and Output, and Diff while a decision carries a diff", async () => {
+    const { bridge } = bridgeFor([task, change]);
+    await show(bridge, task.id, full());
+    expect($$('[role="tab"]').map((el) => el.textContent)).toEqual(["Steps", "Output"]);
+    await show(bridge, change.id, full());
+    expect($$('[role="tab"]').map((el) => el.textContent)).toEqual(["Steps", "Output", "Diff"]);
+  });
+
+  it("has ⤢ left of ✕ only when the full view can open, and it asks for it", async () => {
+    const { bridge } = bridgeFor([task]);
+    await show(bridge, task.id);
+    expect(button("Open full view")).toBeUndefined();
+    const onExpand = vi.fn();
+    await show(bridge, task.id, { onExpand });
+    expect($$(".drawer-header button").map((el) => el.getAttribute("aria-label"))).toEqual(["Open full view", "Close"]);
+    await click(button("Open full view"));
+    expect(onExpand).toHaveBeenCalledTimes(1);
+    // The header's button goes with the drawer's header: focus moves to the full view, and back.
+    await show(bridge, task.id, { onExpand, ...full() });
+    expect(document.activeElement).toBe($(".expanded"));
+    await click(button("Close full view, back to the list with the drawer open (Esc)"));
+    await show(bridge, task.id, { onExpand });
+    expect(document.activeElement).toBe($(".drawer"));
+  });
+
+  it("keeps the tab and the chosen file from the drawer to the full view and back, and focus follows", async () => {
+    const { bridge } = bridgeFor([change]);
+    const onExpand = vi.fn();
+    await show(bridge, change.id, { onExpand });
+    expect(selected()).toBe("Diff");
+    await click($$(".dv-file")[1]);
+    await click(button("Open diff in full view"));
+    expect(onExpand).toHaveBeenCalledTimes(1);
+
+    await show(bridge, change.id, { onExpand, ...full() });
+    expect($(".drawer")).toBeNull();
+    expect(document.activeElement).toBe($(".expanded"));
+    expect(selected()).toBe("Diff");
+    expect($$(".dv-file").map((el) => el.getAttribute("aria-pressed"))).toEqual(["false", "true"]);
+    expect($('[role="table"]')?.getAttribute("aria-label")).toBe("Side-by-side diff of src/b.ts");
+    // The drawer's ⤢ buttons are not in the full view.
+    expect(button("Open full view")).toBeUndefined();
+    expect(button("Open diff in full view")).toBeUndefined();
+
+    await show(bridge, change.id, { onExpand });
+    expect(document.activeElement).toBe($(".drawer"));
+    expect(selected()).toBe("Diff");
+    expect($$(".dv-file").map((el) => el.getAttribute("aria-pressed"))).toEqual(["false", "true"]);
+    expect($('[role="table"]')?.getAttribute("aria-label")).toBe("Unified diff of src/b.ts");
+  });
+
+  it("shows the diff side by side when wide, a missing line as an empty cell named no line, and unified on request", async () => {
+    const { bridge } = bridgeFor([change]);
+    await show(bridge, change.id, full());
+    const table = $('[role="table"]')!;
+    expect(table.getAttribute("aria-label")).toBe("Side-by-side diff of src/a.ts");
+    expect([...table.querySelectorAll('[role="columnheader"]')].map((el) => el.textContent)).toEqual(["Before · main", "After · worktree"]);
+    expect($$(".dv-srow").map(cells)).toEqual(["@@ -1,3 +1,3 @@", "1||keep|1||keep", "2|−|old one|2|+|new one", "3|−|old two|||", "4||end|3||end"]);
+    expect($$(".dv-srow")[3]?.querySelectorAll('[aria-label="no line"]').length).toBe(1);
+    expect(text(".dv-by")).toBe("by Local builder · qwen3-coder:30b");
+    expect($$(".dv[data-layout] .dv-switch .segment").map((el) => [el.textContent, el.getAttribute("aria-pressed")])).toEqual([
+      ["Side by side", "true"],
+      ["Unified", "false"],
+    ]);
+    await click(button("Unified"));
+    expect($('[role="table"]')?.getAttribute("aria-label")).toBe("Unified diff of src/a.ts");
+  });
+
+  it("falls back to unified with a note when the main area is too narrow", async () => {
+    const { bridge } = bridgeFor([change]);
+    await show(bridge, change.id, full(vi.fn(), false));
+    expect($(".dv")?.getAttribute("data-layout")).toBe("narrow");
+    expect($('[role="table"]')?.getAttribute("aria-label")).toBe("Unified diff of src/a.ts");
+    expect(text(".dv-switch")).toBe("Unified · too narrow for side by side");
+    expect(button("Side by side")).toBeUndefined();
+  });
+
+  it("has a page header: ← back, the title as the page heading, state, template and repo, and ⤡ with Esc", async () => {
+    const { bridge } = bridgeFor([plan]);
+    const onCollapse = vi.fn();
+    await show(bridge, plan.id, full(onCollapse));
+    expect(text(".ex-back")).toBe("← All work");
+    expect(text(".expanded h1")).toBe(plan.title);
+    expect($(".expanded")?.getAttribute("aria-labelledby")).toBe($(".expanded h1")?.id);
+    expect(text(".ex-meta")).toBe("⏸needs you · step 1 of 2 · Plantemplate Plan and buildorders-api");
+    const collapse = button("Close full view, back to the list with the drawer open (Esc)")!;
+    expect(collapse.textContent).toBe("Esc");
+    await click(collapse);
+    await click($(".ex-back")!);
+    await key("Escape");
+    expect(onCollapse).toHaveBeenCalledTimes(3);
+  });
+
+  it("pins the decision as a bar with its buttons, without the plan, and Approve sends the answer", async () => {
+    const { bridge, command } = bridgeFor([plan]);
+    await show(bridge, plan.id, full());
+    const bar = $(".ex-decision")!;
+    expect(bar.getAttribute("aria-label")).toBe("Needs you");
+    expect(bar.querySelector(".step-output")).toBeNull();
+    expect([...bar.querySelectorAll(".choice")].map((el) => el.textContent)).toEqual(["Approve", "Request changes"]);
+    await click(button("Approve"));
+    expect(command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: plan.id, decisionId: plan.decision!.id, choice: "approve" });
+  });
+
+  it("closes the Request changes note on Esc first, and Esc while typing in it does nothing", async () => {
+    const { bridge } = bridgeFor([plan]);
+    const onCollapse = vi.fn();
+    await show(bridge, plan.id, full(onCollapse));
+    await click(button("Request changes"));
+    const note = $(".decision-note-text") as HTMLTextAreaElement;
+    expect(document.activeElement).toBe(note);
+    await act(async () => note.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+    expect($(".decision-note")).not.toBeNull();
+    expect(onCollapse).not.toHaveBeenCalled();
+    // A key goes to the focused element, as in the app.
+    const cancel = button("Cancel")!;
+    cancel.focus();
+    await act(async () => cancel.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+    expect($(".decision-note")).toBeNull();
+    expect(onCollapse).not.toHaveBeenCalled();
+    await key("Escape");
+    expect(onCollapse).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the full view on Output from ⤢ on the plan, and Output shows it as a document with an outline and its agent", async () => {
+    const { bridge } = bridgeFor([plan]);
+    const onExpand = vi.fn();
+    await show(bridge, plan.id, { onExpand });
+    await click(button("Open output in full view"));
+    expect(onExpand).toHaveBeenCalledTimes(1);
+    expect(selected()).toBe("Output");
+    // In the drawer the Output tab has no outline.
+    expect($(".ot-aside")).toBeNull();
+
+    await show(bridge, plan.id, { onExpand, ...full() });
+    expect(selected()).toBe("Output");
+    const section = $('.ot-step[aria-label="Plan step · output"]')!;
+    expect(section.querySelector(".ot-head")?.textContent).toBe(`Plan step · outputattempt 1 · ${new TextEncoder().encode(PLAN_TEXT).length} BCopy`);
+    expect([...section.querySelectorAll(".st-heading")].map((el) => el.textContent)).toEqual(["Plan", "Risks"]);
+    expect([...section.querySelectorAll(".ot-link")].map((el) => el.textContent)).toEqual(["Plan", "Risks"]);
+    expect(section.querySelector(".ot-aside .al")?.textContent).toContain("Architect");
+    // Build has not run: it has no output to show.
+    expect($$(".ot-step").length).toBe(1);
+    const scrolled = vi.fn();
+    (section.querySelectorAll(".st-heading")[1] as HTMLElement).scrollIntoView = scrolled;
+    await click(section.querySelectorAll(".ot-link")[1]);
+    expect(scrolled).toHaveBeenCalledWith({ block: "start" });
+  });
+
+  it("keeps a note being written and an answered Discard question as they are when the view switches", async () => {
+    const { bridge } = bridgeFor([plan, finishable]);
+    await show(bridge, plan.id, { onExpand: vi.fn() });
+    await click(button("Request changes"));
+    const note = $(".decision-note-text") as HTMLTextAreaElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(note, "Keep the old index.");
+      note.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await show(bridge, plan.id, { onExpand: vi.fn(), ...full() });
+    expect(($(".decision-note-text") as HTMLTextAreaElement | null)?.value).toBe("Keep the old index.");
+    await show(bridge, plan.id, { onExpand: vi.fn() });
+    expect(($(".decision-note-text") as HTMLTextAreaElement | null)?.value).toBe("Keep the old index.");
+
+    const request = { seq: 1, discard: true as const };
+    await show(bridge, finishable.id, { onExpand: vi.fn(), request });
+    expect($(".finish-confirm")).not.toBeNull();
+    await click(button("Keep"));
+    await show(bridge, finishable.id, { onExpand: vi.fn(), request, ...full() });
+    expect($(".finish-confirm")).toBeNull();
+  });
+
+  it("shows Output when a plan waits in the full view, also when opened from the header", async () => {
+    const { bridge } = bridgeFor([plan]);
+    await show(bridge, plan.id, { onExpand: vi.fn() });
+    expect(selected()).toBe("Steps");
+    await show(bridge, plan.id, { onExpand: vi.fn(), ...full() });
+    expect(selected()).toBe("Output");
+    // Once shown, the engineer may move on: the same question does not pull the tab back.
+    await click(tab("Steps"));
+    await show(bridge, plan.id, { onExpand: vi.fn(), ...full(vi.fn(), false) });
+    expect(selected()).toBe("Steps");
+  });
+
+  it("leaves focus where it is when the view switches without its button going away", async () => {
+    const { bridge } = bridgeFor([task]);
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    await show(bridge, task.id, full());
+    outside.focus();
+    await show(bridge, task.id);
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
+  });
+
+  it("keeps Stop and its confirmation in the full view", async () => {
+    const { bridge, command } = bridgeFor([plan]);
+    await show(bridge, plan.id, full());
+    await click(tab("Steps"));
+    await click(button("Stop"));
+    await click(button("Stop item"));
+    expect(command).toHaveBeenCalledWith({ type: "stop_item", itemId: plan.id });
   });
 });

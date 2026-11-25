@@ -28,7 +28,7 @@ flow("resizing the sidebar and the drawer, a restart finds the same widths and v
   expect(await widthOf(page, ".panel")).toBe(264 - 32);
   await edge(page, "drawer").focus();
   await page.keyboard.press("ArrowLeft");
-  expect(await widthOf(page, "aside.drawer")).toBe(420 + 16);
+  expect(await widthOf(page, ".drawer")).toBe(420 + 16);
 
   // Pointer: drag the drawer's edge 40 px to the left.
   const box = await edge(page, "drawer").boundingBox();
@@ -38,7 +38,7 @@ flow("resizing the sidebar and the drawer, a restart finds the same widths and v
   await page.mouse.move(box.x - 40, box.y + 200, { steps: 4 });
   await screenshot("10-resize-dragging");
   await page.mouse.up();
-  expect(await widthOf(page, "aside.drawer")).toBe(420 + 16 + 40);
+  expect(await widthOf(page, ".drawer")).toBe(420 + 16 + 40);
 
   // Collapse a section; the file is written soon after.
   await page.getByRole("button", { name: "Collapse repos" }).click();
@@ -55,7 +55,7 @@ flow("resizing the sidebar and the drawer, a restart finds the same widths and v
   expect(await next.page.locator(".range").inputValue()).toBe("30d");
   await row(next.page, DONE).click();
   await drawer(next.page).getByRole("heading", { name: DONE }).waitFor();
-  expect(await widthOf(next.page, "aside.drawer")).toBe(476);
+  expect(await widthOf(next.page, ".drawer")).toBe(476);
   expect(await edge(next.page, "drawer").getAttribute("aria-valuenow")).toBe("476");
 
   // A double-click on an edge resets that panel, and the reset is remembered.
@@ -100,7 +100,7 @@ flow("a narrow window makes the drawer give way and then float over the main are
   await screenshot("11-resize-hover");
 
   await resize(1100, 900);
-  await expect.poll(() => widthOf(page, "aside.drawer")).toBe(356);
+  await expect.poll(() => widthOf(page, ".drawer")).toBe(356);
   expect(await widthOf(page, ".panel")).toBe(264);
 
   await resize(760, 700);
@@ -115,5 +115,5 @@ flow("a narrow window makes the drawer give way and then float over the main are
 
   await resize(1500, 900);
   await row(page, DONE).click();
-  await expect.poll(() => widthOf(page, "aside.drawer")).toBe(420);
+  await expect.poll(() => widthOf(page, ".drawer")).toBe(420);
 });

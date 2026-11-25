@@ -12,11 +12,12 @@
   overflow-y: auto;
 }
 
-.drawer:focus {
+.drawer:focus,
+.expanded:focus {
   outline: none;
 }
 
-.drawer p {
+:is(.drawer, .expanded) p {
   margin: 0;
 }
 
@@ -68,29 +69,29 @@
   color: var(--text);
 }
 
-.drawer .mark {
+:is(.drawer, .expanded) .mark {
   display: inline-block;
   width: 1.4em;
   text-align: center;
 }
 
-.drawer [data-tone="warn"] {
+:is(.drawer, .expanded) [data-tone="warn"] {
   color: var(--warn);
 }
 
-.drawer [data-tone="live"] {
+:is(.drawer, .expanded) [data-tone="live"] {
   color: var(--live);
 }
 
-.drawer [data-tone="pass"] {
+:is(.drawer, .expanded) [data-tone="pass"] {
   color: var(--pass);
 }
 
-.drawer [data-tone="fail"] {
+:is(.drawer, .expanded) [data-tone="fail"] {
   color: var(--fail);
 }
 
-.drawer [data-tone="muted"] {
+:is(.drawer, .expanded) [data-tone="muted"] {
   color: var(--muted);
 }
 
@@ -160,7 +161,7 @@
   color: var(--text-2);
 }
 
-.drawer .muted {
+:is(.drawer, .expanded) .muted {
   color: var(--muted);
 }
 
@@ -999,4 +1000,468 @@
     flex-direction: column;
     align-items: flex-start;
   }
+}
+
+/* ⤢ on the drawer's header, output and diff blocks */
+
+.expand-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.expand-button:hover,
+.drawer-expand:hover {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.drawer-expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.drawer-expand + .drawer-close {
+  margin-left: 0;
+}
+
+.step-output-label .expand-button,
+.dv-panel-head .expand-button {
+  margin-left: auto;
+}
+
+/* The Output tab: each step's output, and in the full view an outline and the agent beside it */
+
+.ot {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.ot-step {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 32px 48px;
+}
+
+.ot-doc {
+  display: flex;
+  flex: 1 1 100%;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ot-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.ot-head .mono {
+  font-size: 11.5px;
+}
+
+.ot-copy {
+  margin-left: auto;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ot[data-full] {
+  gap: 40px;
+}
+
+.ot[data-full] .ot-doc {
+  flex: 1 1 560px;
+  max-width: 75ch;
+  gap: 14px;
+}
+
+.ot[data-full] .ot-head {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.ot[data-full] .step-output-text {
+  max-height: none;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+}
+
+.ot[data-full] .step-text {
+  gap: 14px;
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--text-2);
+}
+
+.ot[data-full] .st-heading {
+  /* The pinned decision bar must not cover a heading the outline scrolled to. */
+  scroll-margin-top: 140px;
+  color: var(--text);
+}
+
+.ot[data-full] .st-heading[data-level="1"],
+.ot[data-full] .st-heading[data-level="2"]:first-child {
+  font-size: 19px;
+  line-height: 1.35;
+}
+
+.ot[data-full] .st-heading[data-level="2"],
+.ot[data-full] .st-heading[data-level="3"] {
+  margin-top: 8px;
+  font-size: 15px;
+}
+
+.ot[data-full] .st-list {
+  gap: 6px;
+  padding-left: 24px;
+}
+
+.ot[data-full] .st-code {
+  padding: 1px 5px;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  font-size: 12.5px;
+}
+
+.ot-aside {
+  display: flex;
+  flex: 0 1 280px;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 240px;
+}
+
+.ot-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.ot-label {
+  font-size: 11px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.ot-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* The Diff tab in the full view: no height limit (the page scrolls), and the file list beside the file when there is room */
+
+.dv-by {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.dv-switch {
+  margin-left: auto;
+  font-size: 12px;
+}
+
+.dv-switch .segment {
+  min-height: 26px;
+  padding: 0 10px;
+}
+
+.dv-switch ~ .expand-button {
+  margin-left: 0;
+}
+
+.dv[data-layout="wide"] {
+  display: grid;
+  grid-template-columns: 272px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px 16px;
+}
+
+.dv[data-layout="wide"] > .dv-summary {
+  grid-column: 1 / -1;
+}
+
+.dv[data-layout="wide"] > .dv-panel {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.dv:not([data-layout="drawer"]) .dv-lines {
+  max-height: none;
+}
+
+.dv:not([data-layout="drawer"]) .dv-row {
+  grid-template-columns: 34px 34px 16px max-content;
+}
+
+.dv-split-head,
+.dv-srow {
+  display: grid;
+  grid-template-columns: 38px 16px minmax(0, 1fr) 38px 16px minmax(0, 1fr);
+}
+
+.dv-split-head {
+  border-bottom: 1px solid var(--hairline);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.dv-split-head > span {
+  grid-column: span 3;
+  padding: 2px 10px;
+}
+
+.dv-split-head > span + span,
+.dv-after {
+  border-left: 1px solid var(--hairline);
+}
+
+.dv-split .dv-text {
+  padding-right: 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.dv-srow[data-kind] > .dv-text {
+  grid-column: 1 / -1;
+  padding: 0 10px;
+}
+
+.dv-srow[data-kind="hunk"] {
+  background: var(--panel);
+}
+
+.dv-srow[data-kind="hunk"] > .dv-text {
+  color: var(--link);
+}
+
+.dv-srow[data-kind="note"] > .dv-text {
+  color: var(--muted);
+}
+
+.dv-split [data-kind="added"]:is(.dv-sign, .dv-text) {
+  color: var(--pass);
+}
+
+.dv-split [data-kind="removed"]:is(.dv-sign, .dv-text) {
+  color: var(--fail);
+}
+
+.dv-split [data-kind="none"] {
+  background: var(--ground);
+}
+
+/* The full view: the item in the whole main area, the decision pinned at the top while the page scrolls */
+
+.expanded {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.ex-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 16px;
+  padding: 14px 28px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.ex-heading {
+  display: flex;
+  flex: 1 1 380px;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ex-back {
+  align-self: flex-start;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.ex-heading h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.ex-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.ex-meta .drawer-state {
+  font-size: 12.5px;
+}
+
+.ex-meta-part {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ex-collapse {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.ex-collapse:hover {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.ex-collapse kbd {
+  padding: 0 5px;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.expanded > .drawer-notice {
+  padding: 10px 28px 0;
+}
+
+.ex-decision {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 24px;
+  padding: 12px 28px 12px 26px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.ex-decision > * {
+  grid-column: 1;
+}
+
+.ex-decision > :is(.choices, .decision-note) {
+  grid-column: 2;
+  grid-row: 1 / span 4;
+}
+
+.ex-decision > .decision-note {
+  width: 360px;
+}
+
+.ex-decision .needs-you-why {
+  padding-left: 1.4em;
+}
+
+.expanded > .after {
+  margin: 12px 28px 0;
+}
+
+.expanded > :is(.finish, .finish-ended) {
+  padding: 12px 28px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+/* Finish's three ways side by side, each with what it does under its button's row. */
+.expanded > .finish {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  column-gap: 24px;
+}
+
+.expanded > .finish > :is(.finish-head, .finish-running) {
+  grid-column: 1 / -1;
+}
+
+.expanded > .finish > .finish-row {
+  border-bottom: 0;
+}
+
+.expanded .drawer-tabs {
+  flex: none;
+  gap: 18px;
+  padding: 0 28px;
+}
+
+.expanded .drawer-tabs [role="tab"] {
+  min-height: 40px;
+}
+
+.expanded .drawer-tabs [role="tab"][aria-selected="true"] {
+  box-shadow: inset 0 -2px 0 var(--link);
+}
+
+.expanded .drawer-panel {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 20px 28px 40px;
+}
+
+.expanded .drawer-panel[data-tab="Steps"] {
+  max-width: 980px;
+}
+
+.expanded > :is(.drawer-actions, .drawer-confirm) {
+  padding: 0 28px 24px;
 }

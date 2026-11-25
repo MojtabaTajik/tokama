@@ -1,7 +1,10 @@
 // The item drawer on the right of the board: kind, template, title and state; the "needs you"
 // note with the decision's buttons; the tabs; the actions. It keeps its own copy of the item
-// (useItem), so it works next to any list that opens it. Engine text (titles, questions, the
-// cloud summary, step details, agent output) is rendered as React text only.
+// (useItem), so it works next to any list that opens it. The same component draws the item in the
+// whole main area (the full view): a page header with ← back and ⤡, the decision as a bar pinned
+// at the top while the page scrolls, and wide tabs. Both are one element, so switching keeps
+// everything open in it: the tab, the chosen file, a note being written. Engine text (titles,
+// questions, the cloud summary, step details, agent output) is rendered as React text only.
 import type { CommandErrorCode, Decision, ItemRecord, Setup } from "@tokama/core";
 import { type KeyboardEvent, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
@@ -9,11 +12,13 @@ import { AgentLabel } from "../agent/AgentLabel.js";
 import { agentInfo } from "../agent/agent-info.js";
 import type { AgentTarget } from "../settings/describe.js";
 import { itemElement } from "../list/useFocusFollow.js";
+import { CollapseIcon, ExpandIcon, RepoIcon } from "../shell/icons.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { attemptLine, decisionKind, hasEnded, nextRunLine, runLine, itemMark, KIND, outcomeLine, PRIVACY, stepAgent, stepMark, stepPosition, templateOf, whereLine } from "./describe.js";
-import { DecisionChoices } from "./DecisionChoices.js";
+import { DecisionChoices, inTextField } from "./DecisionChoices.js";
 import { DiffTab, useDecisionDiff } from "./DiffView.js";
 import { Finish } from "./Finish.js";
+import { OutputTab } from "./OutputTab.js";
 import { StepOutput, type OutputState, useStepOutput } from "./StepOutput.js";
 import { finishState, isDiscarded } from "./finish-view.js";
 import { useItem } from "./useItem.js";
@@ -50,11 +55,20 @@ const TEXT = {
   attempt: (attempt: number) => `attempt ${attempt}`,
   seeDiff: "See the changed files in the Diff tab",
   output: "Output",
+  expand: "Open full view",
+  expandOutput: "Open output in full view",
+  expandTip: "Open in full view",
+  collapse: "Close full view, back to the list with the drawer open (Esc)",
+  collapseTip: "Close full view (Esc)",
+  template: (name: string) => `template ${name}`,
 } as const;
 
-type Tab = "Steps" | "Diff";
-/** The tabs the drawer shows: Diff only while a decision carries a diff. Other tabs wait until the engine sends their data. */
-const tabsOf = (diff: unknown): readonly Tab[] => (diff === undefined ? ["Steps"] : ["Steps", "Diff"]);
+export type Tab = "Steps" | "Output" | "Diff";
+/**
+ * The tabs, the same in the drawer and the full view: Diff only while a decision carries a diff.
+ * Other tabs wait until the engine sends their data.
+ */
+const tabsOf = (diff: unknown): readonly Tab[] => (diff === undefined ? ["Steps", "Output"] : ["Steps", "Output", "Diff"]);
 
 export type Notice = { readonly tone: "warn" | "fail"; readonly text: string };
 
@@ -94,9 +108,22 @@ export interface ItemDrawerProps {
    * asks again.
    */
   readonly request?: { readonly seq: number; readonly discard?: true; readonly notice?: string } | undefined;
+  /** ⤢: shows the item in the whole main area. Without it the drawer has no ⤢ buttons. */
+  readonly onExpand?: (() => void) | undefined;
+  /** Set while the item fills the main area instead of the drawer. */
+  readonly expanded?: Expanded | undefined;
 }
 
-export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckAgain, onOpenAgent, request }: ItemDrawerProps) {
+export interface Expanded {
+  /** The list the item was opened from, for "← All work". */
+  readonly back: string;
+  /** The main area has room for a side-by-side diff. */
+  readonly wide: boolean;
+  /** ⤡, Escape and ← back: the list again, with the drawer on the same item and tab. */
+  readonly onCollapse: () => void;
+}
+
+export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckAgain, onOpenAgent, request, onExpand, expanded }: ItemDrawerProps) {
   const { item, error, refresh } = useItem(bridge, itemId);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<Notice | undefined>(undefined);
@@ -122,6 +149,12 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
     setBusy(false);
     setTab("Steps");
   }, [itemId]);
+  // Focus follows the item into the full view and back into the drawer when the button that
+  // switched it went away; focus elsewhere (the rail button that changed the page) stays.
+  const full = expanded !== undefined;
+  useLayoutEffect(() => {
+    if (document.activeElement === null || document.activeElement === document.body) drawer.current?.focus();
+  }, [full]);
   // A refusal of a command the list sent for this item, in the engine's words.
   useEffect(() => {
     if (request?.notice !== undefined) setNotice({ tone: "warn", text: request.notice });
@@ -142,8 +175,11 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
   useEffect(() => {
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
+      // In the full view, Escape in a field you type in belongs to the field.
+      if (expanded !== undefined && inTextField(event.target)) return;
       event.preventDefault();
       if (confirmingStop) cancelStop();
+      else if (expanded !== undefined) expanded.onCollapse();
       else onClose();
     };
     document.addEventListener("keydown", onKey);
@@ -209,6 +245,14 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
   const diff = useDecisionDiff(bridge, itemId, item?.state === "needs_you" ? item.decision : undefined);
   // A step you approve shows what its agent wrote, from the latest attempt, for each new question.
   const approval = item?.state === "needs_you" && item.decision?.kind === "plan_approval" ? item.decision : undefined;
+  // The full view's decision bar has no room for the output: each new question to approve one,
+  // and each entry into the full view with one waiting, shows the Output tab.
+  const outputAsked = full && approval !== undefined && approval.hasDiff !== true ? approval.id : undefined;
+  const outputShownFor = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (outputAsked !== undefined && outputShownFor.current !== outputAsked) setTab("Output");
+    outputShownFor.current = outputAsked;
+  }, [outputAsked]);
   const output = useStepOutput(bridge, itemId, approval?.stepIndex ?? 0, undefined, approval?.id);
   const showDiff = () => {
     setTab("Diff");
@@ -218,28 +262,83 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
   const template = item && templateOf(item, setup);
   const tabs = item ? tabsOf(diff) : [];
   const shown = tabs.includes(tab) ? tab : "Steps";
+  // ⤢ on a block inside the drawer: the full view on that block's tab.
+  const expandTo = onExpand === undefined || full ? undefined : (to: Tab) => () => {
+    setTab(to);
+    onExpand();
+  };
+  const decisionInfo = item?.decision === undefined ? undefined : agentInfo(item, item.decision.stepIndex, setup);
+
+  const header = expanded !== undefined ? (
+    // Keyed apart, so the button that switched the view goes with its header and focus moves to the view.
+    <header key="full" className="ex-header">
+      <div className="ex-heading">
+        <button type="button" className="ex-back" onClick={expanded.onCollapse}>
+          ← {expanded.back}
+        </button>
+        {item ? (
+          <>
+            <h1 id={titleId}>{item.title}</h1>
+            <div className="ex-meta">
+              <StateLine item={item} />
+              <span className="ex-meta-part">
+                <TemplateIcon icon={template?.icon} color={template?.color} />
+                {TEXT.template(template?.name ?? item.templateId)}
+              </span>
+              {item.repoIds.length > 0 && (
+                <span className="ex-meta-part">
+                  <RepoIcon />
+                  <span className="mono">{item.repoIds.join(", ")}</span>
+                </span>
+              )}
+            </div>
+          </>
+        ) : (
+          <Missing error={error} onRetry={refresh} />
+        )}
+      </div>
+      <button type="button" className="ex-collapse" aria-label={TEXT.collapse} title={TEXT.collapseTip} onClick={expanded.onCollapse}>
+        <CollapseIcon />
+        <kbd>Esc</kbd>
+      </button>
+    </header>
+  ) : (
+    <header key="drawer" className="drawer-header">
+      {item ? (
+        <div className="drawer-heading">
+          <p className="drawer-kind">
+            {KIND[item.kind].symbol} {KIND[item.kind].word} · <TemplateIcon icon={template?.icon} color={template?.color} />
+            {template?.name ?? item.templateId} · {PRIVACY[item.privacy]}
+          </p>
+          <h2 id={titleId}>{item.title}</h2>
+          <StateLine item={item} />
+        </div>
+      ) : (
+        <div className="drawer-heading">
+          <Missing error={error} onRetry={refresh} />
+        </div>
+      )}
+      {item && onExpand !== undefined && (
+        <button type="button" className="drawer-close drawer-expand" aria-label={TEXT.expand} title={TEXT.expand} onClick={onExpand}>
+          <ExpandIcon />
+        </button>
+      )}
+      <button type="button" className="drawer-close" aria-label={TEXT.close} title={TEXT.close} onClick={onClose}>
+        <span aria-hidden="true">✕</span>
+      </button>
+    </header>
+  );
 
   return (
-    <aside className="drawer" aria-label={item ? undefined : TEXT.drawer} aria-labelledby={item ? titleId : undefined} tabIndex={-1} ref={drawer}>
-      <header className="drawer-header">
-        {item ? (
-          <div className="drawer-heading">
-            <p className="drawer-kind">
-              {KIND[item.kind].symbol} {KIND[item.kind].word} · <TemplateIcon icon={template?.icon} color={template?.color} />
-              {template?.name ?? item.templateId} · {PRIVACY[item.privacy]}
-            </p>
-            <h2 id={titleId}>{item.title}</h2>
-            <StateLine item={item} />
-          </div>
-        ) : (
-          <div className="drawer-heading">
-            <Missing error={error} onRetry={refresh} />
-          </div>
-        )}
-        <button type="button" className="drawer-close" aria-label={TEXT.close} title={TEXT.close} onClick={onClose}>
-          <span aria-hidden="true">✕</span>
-        </button>
-      </header>
+    <section
+      className={full ? "expanded" : "drawer"}
+      role={full ? "main" : "complementary"}
+      aria-label={item ? undefined : TEXT.drawer}
+      aria-labelledby={item ? titleId : undefined}
+      tabIndex={-1}
+      ref={drawer}
+    >
+      {header}
 
       {notice && (
         <p className="drawer-notice" data-tone={notice.tone} role="status">
@@ -250,7 +349,9 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
         </p>
       )}
 
-      {item?.state === "needs_you" && <NeedsYou item={item} setup={setup} decision={item.decision} busy={busy} output={output} onShowDiff={showDiff} onChoose={resolve} />}
+      {item?.state === "needs_you" && (
+        <NeedsYou item={item} setup={setup} decision={item.decision} busy={busy} output={full ? undefined : output} full={full} onExpandOutput={expandTo?.("Output")} onShowDiff={showDiff} onChoose={resolve} />
+      )}
       {item !== undefined && item.state !== "needs_you" && <After item={item} setup={setup} />}
 
       {item?.state === "done" && (
@@ -268,11 +369,20 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
       {item && (
         <>
           <Tabs tabs={tabs} shown={shown} onPick={setTab} />
-          <div className="drawer-panel" role="tabpanel" id={panelId(shown)} aria-labelledby={tabId(shown)}>
+          <div className="drawer-panel" role="tabpanel" id={panelId(shown)} aria-labelledby={tabId(shown)} data-tab={shown}>
             {shown === "Steps" ? (
               <Steps bridge={bridge} item={item} setup={setup} onOpenAgent={onOpenAgent} />
+            ) : shown === "Output" ? (
+              <OutputTab bridge={bridge} item={item} setup={setup} full={full} onExpand={expandTo?.("Output")} onOpenAgent={onOpenAgent} />
             ) : diff !== undefined ? (
-              <DiffTab key={item.decision?.id} state={diff} baseBranch={setup?.repos.find((repo) => repo.id === item.repoIds[0])?.baseBranch} />
+              <DiffTab
+                key={item.decision?.id}
+                state={diff}
+                baseBranch={setup?.repos.find((repo) => repo.id === item.repoIds[0])?.baseBranch}
+                layout={expanded === undefined ? "drawer" : expanded.wide ? "wide" : "narrow"}
+                onExpand={expandTo?.("Diff")}
+                by={full && decisionInfo !== undefined ? <AgentLabel info={decisionInfo} onOpen={onOpenAgent} /> : undefined}
+              />
             ) : null}
           </div>
           {confirmingStop ? (
@@ -288,7 +398,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
           )}
         </>
       )}
-    </aside>
+    </section>
   );
 }
 
@@ -335,18 +445,22 @@ interface NeedsYouProps {
   readonly setup: Setup | undefined;
   readonly decision: Decision | undefined;
   readonly busy: boolean;
-  /** What the step's agent wrote, for a step you approve. */
+  /** What the step's agent wrote, for a step you approve; the full view shows it on the Output tab instead. */
   readonly output: OutputState | undefined;
+  /** The full view: the decision as a bar pinned at the top, its buttons beside the question. */
+  readonly full: boolean;
+  /** ⤢ on the output: the full view on the Output tab. */
+  readonly onExpandOutput: (() => void) | undefined;
   readonly onShowDiff: () => void;
   readonly onChoose: (decision: Decision, choice: string, note?: string) => void;
 }
 
-function NeedsYou({ item, setup, decision, busy, output, onShowDiff, onChoose }: NeedsYouProps) {
+function NeedsYou({ item, setup, decision, busy, output, full, onExpandOutput, onShowDiff, onChoose }: NeedsYouProps) {
   const step = decision === undefined ? undefined : item.steps[decision.stepIndex];
   const agent = step?.agentId === undefined ? undefined : stepAgent(step, setup?.agents ?? []).name;
   const kind = decision === undefined ? undefined : decisionKind(decision);
   return (
-    <section className="needs-you" aria-label={TEXT.needsYou}>
+    <section className={full ? "needs-you ex-decision" : "needs-you"} aria-label={TEXT.needsYou}>
       {decision ? (
         <>
           {kind !== undefined && <p className="needs-you-kind">{kind}</p>}
@@ -377,6 +491,11 @@ function NeedsYou({ item, setup, decision, busy, output, onShowDiff, onChoose }:
                 {decision.hasDiff === true && (
                   <button type="button" className="link" onClick={onShowDiff}>
                     {TEXT.seeDiff}
+                  </button>
+                )}
+                {onExpandOutput !== undefined && (
+                  <button type="button" className="expand-button" aria-label={TEXT.expandOutput} title={TEXT.expandTip} onClick={onExpandOutput}>
+                    <ExpandIcon />
                   </button>
                 )}
               </p>

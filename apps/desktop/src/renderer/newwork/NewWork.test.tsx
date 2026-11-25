@@ -336,7 +336,7 @@ describe("New work input", () => {
     expect(fake.command).toHaveBeenCalledWith({ type: "start_item", templateId: "builtin/quick-fix", repoIds: ["orders-api"], text: "Fix the retry loop" });
     // The drawer opens at once; the row appears with the engine's event and is the selected one.
     await wait(0);
-    expect($("aside.drawer h2")?.textContent).toBe("Fix the retry loop");
+    expect($(".drawer h2")?.textContent).toBe("Fix the retry loop");
     await fake.pushItem(newItem);
     expect($('.pl-row[aria-current="true"] .pl-title')?.textContent).toBe("Fix the retry loop");
     // The input is empty and collapsed again.
@@ -433,7 +433,7 @@ describe("New work input", () => {
     expect($(".np-error b")).toBeNull();
     expect(input().value).toBe("Fix the retry loop");
     expect($(".np-body")).not.toBeNull();
-    expect($("aside.drawer")).toBeNull();
+    expect($(".drawer")).toBeNull();
     expect(start().disabled).toBe(false);
   });
 
@@ -462,7 +462,7 @@ describe("New work input", () => {
     await wait(0);
     await fake.pushItem(newItem);
     expect($('.pl-row[aria-current="true"] .pl-title')?.textContent).toBe("Fix the retry loop");
-    expect($("aside.drawer h2")?.textContent).toBe("Fix the retry loop");
+    expect($(".drawer h2")?.textContent).toBe("Fix the retry loop");
   });
 
   it("switches the status filter from Done to Active so the new item is not hidden", async () => {
@@ -587,13 +587,13 @@ describe("Escape and focus", () => {
   it("does not close the item drawer when Escape only collapses the input", async () => {
     await mount();
     await click($$(".pl-row")[0]);
-    expect($("aside.drawer")).not.toBeNull();
+    expect($(".drawer")).not.toBeNull();
     await focusInput();
     await press(input(), "Escape");
     expect($(".np-body")).toBeNull();
-    expect($("aside.drawer")).not.toBeNull();
+    expect($(".drawer")).not.toBeNull();
     await press(document.body, "Escape");
-    expect($("aside.drawer")).toBeNull();
+    expect($(".drawer")).toBeNull();
   });
 
   it("closes a dropdown on a click outside it", async () => {

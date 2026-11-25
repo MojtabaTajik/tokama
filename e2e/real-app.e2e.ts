@@ -124,7 +124,7 @@ it("adds the repo, runs Quick fix from New work and shows the commit in the draw
     await page.locator("button.np-start").click();
 
     // The item is on the list and its drawer is open; wait for Done, and stop early on a bad end.
-    const drawer = page.locator("aside.drawer");
+    const drawer = page.locator(".drawer");
     await drawer.getByRole("heading", { name: TASK }).waitFor();
     await shot(page, "3-started");
     const state = drawer.locator(".drawer-state");

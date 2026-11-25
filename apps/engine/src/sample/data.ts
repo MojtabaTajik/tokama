@@ -349,7 +349,7 @@ export function sampleItems(now: number) {
       state: "done",
       createdAt: ago(now, 150),
       cardLine: "commit 3f2a9c1 · tokama/00000011",
-      steps: steps(templates.quickFix, ["passed", "passed"]),
+      steps: steps(templates.quickFix, ["passed", "passed"]).map((step, index) => (index === 0 ? { ...step, attempts: [{ attempt: 1, result: "passed", checks: [] }] } : step)),
       outcome: {
         kind: "done",
         detail: "Committed 3f2a9c1e8b7d on tokama/00000011.",
@@ -474,6 +474,16 @@ export const sampleOutputs: Readonly<Record<string, Readonly<Record<number, read
         "```",
         "",
         "Files to change: 6. Nothing is changed until Build runs.",
+      ].join("\n"),
+    ],
+  },
+  [ITEM_IDS.finished]: {
+    0: [
+      [
+        "Fixed the null check in `cartTotal`: a line without a price now counts as 0 instead of throwing.",
+        "",
+        "- `src/cart/total.ts` reads `line.price ?? 0`.",
+        "- `src/cart/total.test.ts` adds a case for a line with no price.",
       ].join("\n"),
     ],
   },
