@@ -6,6 +6,7 @@ import { useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { TemplatesPage } from "../templates/TemplatesPage.js";
 import { AgentsPage } from "./AgentsPage.js";
+import type { AgentTarget } from "./describe.js";
 import { AiClisPage } from "./AiClisPage.js";
 
 const TEXT = { nav: "Settings", back: "← Back", title: "Settings", later: "comes later" } as const;
@@ -34,9 +35,11 @@ export interface SettingsProps {
   readonly onBack: () => void;
   /** The page Settings opens on. Default: Agents. */
   readonly initialPage?: SettingsPage;
+  /** On the Agents page: the agent to select first. */
+  readonly initialAgent?: AgentTarget;
 }
 
-export function Settings({ bridge, connection, setup, onBack, initialPage = "agents" }: SettingsProps) {
+export function Settings({ bridge, connection, setup, onBack, initialPage = "agents", initialAgent }: SettingsProps) {
   const [page, setPage] = useState<SettingsPage>(initialPage);
   return (
     <div className="settings">
@@ -69,7 +72,7 @@ export function Settings({ bridge, connection, setup, onBack, initialPage = "age
       ) : page === "ai-clis" ? (
         <AiClisPage bridge={bridge} connection={connection} setup={setup} />
       ) : (
-        <AgentsPage bridge={bridge} connection={connection} setup={setup} />
+        <AgentsPage bridge={bridge} connection={connection} setup={setup} initialAgent={initialAgent} />
       )}
     </div>
   );

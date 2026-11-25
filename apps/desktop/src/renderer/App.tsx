@@ -14,6 +14,7 @@ import { ALL_WORK, type CliIssue, cliIssuesOf, healthProblemsOf, inView, needsYo
 import { isMac, NewWork, type NewWorkHandle } from "./newwork/NewWork.js";
 import { RepoDialog, type SetUpNote } from "./repos/RepoDialog.js";
 import { RepoNote } from "./repos/RepoNote.js";
+import type { AgentTarget } from "./settings/describe.js";
 import { Settings, type SettingsPage } from "./settings/Settings.js";
 import { NeedsYou } from "./needsyou/NeedsYou.js";
 import { MainArea } from "./shell/MainArea.js";
@@ -47,6 +48,13 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   const [page, setPage] = useState<"board" | "needs-you" | "insights" | "about" | "settings">("board");
   // The Settings page to open on: the rail's Settings button opens the default, the tooltip AI CLIs.
   const [settingsPage, setSettingsPage] = useState<SettingsPage | undefined>(undefined);
+  // The agent Settings selects on its Agents page: the one an agent tooltip linked to.
+  const [settingsAgent, setSettingsAgent] = useState<AgentTarget | undefined>(undefined);
+  const openAgent = useCallback((target: AgentTarget) => {
+    setSettingsPage("agents");
+    setSettingsAgent(target);
+    setPage("settings");
+  }, []);
   // The tooltip and the page share one report; the page's range picks its days.
   const [usageRange, setUsageRange] = useState<UsageRange>(14);
   // Whose usage the page counts: Tokama's own calls, or every Claude Code call on this machine.
@@ -169,7 +177,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   if (page === "settings") {
     return (
       <div className="shell">
-        <Settings bridge={bridge} connection={connection} setup={setup} onBack={() => setPage("board")} {...(settingsPage !== undefined && { initialPage: settingsPage })} />
+        <Settings bridge={bridge} connection={connection} setup={setup} onBack={() => setPage("board")} {...(settingsPage !== undefined && { initialPage: settingsPage })} {...(settingsAgent !== undefined && { initialAgent: settingsAgent })} />
       </div>
     );
   }
@@ -206,6 +214,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
         onAbout={() => setPage(aboutOpen ? "board" : "about")}
         onSettings={() => {
           setSettingsPage(undefined);
+          setSettingsAgent(undefined);
           setPage("settings");
         }}
         setup={setup}
@@ -299,6 +308,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
           onSelectItem={selectItem}
           onFinish={finishFromRow}
           onDiscard={discardFromRow}
+          onOpenAgent={openAgent}
           composer={composerNode}
         />
       )}
@@ -324,6 +334,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
           diffAsked={diffAsked}
           onClose={() => selectItem(undefined)}
           onCheckAgain={refreshSetup}
+          onOpenAgent={openAgent}
           request={rowRequest?.itemId === selectedItemId ? rowRequest : undefined}
         />
       )}

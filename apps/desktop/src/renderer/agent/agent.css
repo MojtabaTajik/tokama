@@ -1,0 +1,213 @@
+/* The agent label of a list row and a drawer step, and its tooltip. */
+
+/* Pulled left so the name lines up with the text above it; it clips to its cell, so a long model never runs into the next column. */
+.al {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  margin-left: -6px;
+  overflow: hidden;
+}
+
+.al-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 24px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  font-size: 12px;
+  color: inherit;
+  cursor: default;
+  text-decoration: underline dotted var(--muted);
+  text-underline-offset: 3px;
+}
+
+.al-button[data-open] {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.al-button:focus-visible {
+  outline: 1px solid var(--link);
+  outline-offset: -1px;
+}
+
+/* On a short line the name shortens first; the model shortens only when the name has nothing left to give. */
+.al-button > .ellipsis {
+  flex: 0 100 auto;
+  min-width: 1.5em;
+}
+
+.al-model {
+  flex: 0 1 auto;
+  min-width: 2em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* In the top layer, so no scrolling list or drawer clips it; placed under the label, or above it when there is no room. */
+.al-tip {
+  position: fixed;
+  inset: auto;
+  top: calc(anchor(bottom) + 8px);
+  left: calc(anchor(left) - 8px);
+  position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+  margin: 0;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-sizing: border-box;
+  width: 340px;
+  max-width: calc(100vw - 16px);
+  padding: 12px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 10px 30px var(--float-shadow);
+  font-size: 12.5px;
+  color: var(--text-2);
+  text-align: left;
+  white-space: normal;
+}
+
+/* Bridges the gap to the label, so the pointer can move onto the tooltip. */
+.al-tip::before {
+  content: "";
+  position: absolute;
+  top: -10px;
+  left: 0;
+  right: 0;
+  height: 10px;
+}
+
+.al-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.al-name {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.al-owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 20px;
+  margin-left: auto;
+  padding: 0 7px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.al-owner .mono {
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.al-run {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.al-cli {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 20px;
+  border-radius: 4px;
+  background: var(--raised);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.al-run .mono {
+  color: var(--text);
+}
+
+.al-may {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 7px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+  font-size: 12px;
+}
+
+.al-may-label {
+  margin-right: 2px;
+  font-size: 11px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.al-can {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+}
+
+.al-can[data-extra] {
+  color: var(--warn);
+}
+
+.al-command {
+  color: var(--text-2);
+}
+
+.al-sep {
+  color: var(--muted);
+}
+
+.al-glyph {
+  flex: none;
+}
+
+.al-role {
+  margin: 0;
+  font-style: italic;
+  color: var(--muted);
+}
+
+.al-foot {
+  display: flex;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+}
+
+.al-open {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 12.5px;
+  color: var(--link);
+  cursor: pointer;
+}
+
+.al-open:hover {
+  text-decoration: underline;
+}

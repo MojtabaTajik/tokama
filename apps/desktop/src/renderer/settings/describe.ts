@@ -53,6 +53,18 @@ export const agentRows = (agents: readonly AgentDetail[], broken: readonly Broke
   ...broken.map((entry): AgentRow => ({ key: keyOf(entry.owner, entry.id), broken: true, entry })),
 ];
 
+/** An agent to find in the list, as a label's tooltip names it: the owner and repo narrow the match when known. */
+export interface AgentTarget {
+  readonly id: string;
+  readonly owner: AgentOwner["kind"] | undefined;
+  readonly repoId: string | undefined;
+}
+
+export const isTarget = (row: AgentRow, target: AgentTarget): boolean => {
+  const { id, owner } = row.broken ? row.entry : row.agent;
+  return id === target.id && (target.owner === undefined || owner.kind === target.owner) && (target.repoId === undefined || (owner.kind === "repo" && owner.repoId === target.repoId));
+};
+
 export const rowName = (row: AgentRow): string => (row.broken ? row.entry.id : row.agent.name);
 
 /** Rows whose name, id, model or source contain every word of `query`, ignoring case. */

@@ -5,6 +5,9 @@
 import type { CommandErrorCode, Decision, ItemRecord, Setup } from "@tokama/core";
 import { type KeyboardEvent, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
+import { AgentLabel } from "../agent/AgentLabel.js";
+import { agentInfo } from "../agent/agent-info.js";
+import type { AgentTarget } from "../settings/describe.js";
 import { itemElement } from "../list/useFocusFollow.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { attemptLine, decisionKind, hasEnded, nextRunLine, runLine, itemMark, KIND, outcomeLine, PRIVACY, stepAgent, stepMark, stepPosition, templateOf, whereLine } from "./describe.js";
@@ -80,6 +83,8 @@ export interface ItemDrawerProps {
   readonly diffAsked?: number | undefined;
   /** Reads the setup again (Finish's Check again). */
   readonly onCheckAgain?: () => void;
+  /** An agent tooltip's "Open in Settings →". */
+  readonly onOpenAgent?: (agent: AgentTarget) => void;
   /**
    * What the list asked for this item: its Discard question, or a refusal to show. Each new `seq`
    * asks again.
@@ -87,7 +92,7 @@ export interface ItemDrawerProps {
   readonly request?: { readonly seq: number; readonly discard?: true; readonly notice?: string } | undefined;
 }
 
-export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckAgain, request }: ItemDrawerProps) {
+export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckAgain, onOpenAgent, request }: ItemDrawerProps) {
   const { item, error, refresh } = useItem(bridge, itemId);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<Notice | undefined>(undefined);
@@ -254,7 +259,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
           <Tabs tabs={tabs} shown={shown} onPick={setTab} />
           <div className="drawer-panel" role="tabpanel" id={panelId(shown)} aria-labelledby={tabId(shown)}>
             {shown === "Steps" ? (
-              <Steps item={item} setup={setup} />
+              <Steps item={item} setup={setup} onOpenAgent={onOpenAgent} />
             ) : shown === "Diff" && diff !== undefined ? (
               <DiffTab key={item.decision?.id} state={diff} baseBranch={setup?.repos.find((repo) => repo.id === item.repoIds[0])?.baseBranch} />
             ) : (
@@ -434,7 +439,7 @@ function Tabs({ tabs, shown, onPick }: { readonly tabs: readonly Tab[]; readonly
   );
 }
 
-function Steps({ item, setup }: { readonly item: ItemRecord; readonly setup: Setup | undefined }) {
+function Steps({ item, setup, onOpenAgent }: { readonly item: ItemRecord; readonly setup: Setup | undefined; readonly onOpenAgent: ItemDrawerProps["onOpenAgent"] }) {
   if (item.steps.length === 0) return <p className="placeholder">{TEXT.noSteps}</p>;
   const agents = setup?.agents ?? [];
   const connections = setup?.connections ?? [];
@@ -443,6 +448,7 @@ function Steps({ item, setup }: { readonly item: ItemRecord; readonly setup: Set
       {item.steps.map((step, index) => {
         const mark = stepMark(step.state);
         const agent = stepAgent(step, agents);
+        const tip = agentInfo(item, index, setup);
         return (
           <li key={index} className="step" data-state={step.state}>
             <span className="mark" data-tone={mark.tone} aria-hidden="true">
@@ -454,8 +460,15 @@ function Steps({ item, setup }: { readonly item: ItemRecord; readonly setup: Set
                 <span className="visually-hidden">, {mark.word}</span>
               </p>
               <p className="step-where">
-                <span className="dot" data-dot={agent.dot} aria-hidden="true" />
-                {agent.name} · {whereLine(step, agents, connections)}
+                {tip === undefined ? (
+                  <>
+                    <span className="dot" data-dot={agent.dot} aria-hidden="true" />
+                    <span>{agent.name}</span>
+                  </>
+                ) : (
+                  <AgentLabel info={tip} onOpen={onOpenAgent} />
+                )}{" "}
+                <span>· {whereLine(step, agents, connections)}</span>
               </p>
               {step.detail !== undefined && <p className="step-detail mono">{step.detail}</p>}
               {step.attempts !== undefined && step.attempts.length > 0 && (

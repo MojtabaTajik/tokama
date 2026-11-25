@@ -1,6 +1,6 @@
 import type { AgentDetail, BrokenAgentDetail } from "@tokama/core";
 import { describe, expect, it } from "vitest";
-import { agentRows, rowLine, filterRows, limitsNotes, limitsTitle, monogram, ownerLabel, rowName, runsOnName, summaryLine } from "./describe.js";
+import { agentRows, isTarget, rowLine, filterRows, limitsNotes, limitsTitle, monogram, ownerLabel, rowName, runsOnName, summaryLine } from "./describe.js";
 
 const agent = (over: Record<string, unknown> = {}): AgentDetail =>
   ({
@@ -81,5 +81,24 @@ describe("agent rows", () => {
     expect(names("cx sonnet")).toEqual([]);
     expect(names("agents/scribe")).toEqual(["scribe"]);
     expect(names("  builtin  ")).toEqual(["Builder", "Reviewer"]);
+  });
+});
+
+describe("isTarget", () => {
+  const rows = agentRows(
+    [agent(), agent({ owner: { kind: "repo", repoId: "orders-api" } }), agent({ owner: { kind: "repo", repoId: "checkout-web" } })],
+    [brokenEntry({ id: "builder", owner: { kind: "personal" } })],
+  );
+  const matching = (target: Parameters<typeof isTarget>[1]) => rows.map((row) => isTarget(row, target));
+
+  it("matches the id alone when nothing else is known", () => {
+    expect(matching({ id: "builder", owner: undefined, repoId: undefined })).toEqual([true, true, true, true]);
+    expect(matching({ id: "other", owner: undefined, repoId: undefined })).toEqual([false, false, false, false]);
+  });
+
+  it("narrows by the owner, and by the repo of a repo agent", () => {
+    expect(matching({ id: "builder", owner: "builtin", repoId: undefined })).toEqual([true, false, false, false]);
+    expect(matching({ id: "builder", owner: "repo", repoId: "checkout-web" })).toEqual([false, false, true, false]);
+    expect(matching({ id: "builder", owner: "personal", repoId: undefined })).toEqual([false, false, false, true]);
   });
 });

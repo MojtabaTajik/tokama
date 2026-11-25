@@ -74,7 +74,8 @@ flow("keeps list rows readable and apart with the drawer open", async ({ page, r
     await resize(width, 700);
     const rows = await page.evaluate(() => {
       const PARTS = [".pl-title", ".pl-meta", ".pl-ask", ".pl-pipe", ".pl-agent", ".pl-time"];
-      return [...document.querySelectorAll(".pl-row")].map((element) => {
+      // The agent label is the row button's sibling in its wrapper, so the wrapper is the row.
+      return [...document.querySelectorAll(".pl-row-wrap")].map((element) => {
         const outer = element.getBoundingClientRect();
         const parts = PARTS.flatMap((selector) => [...element.querySelectorAll(selector)].map((part) => ({ selector, box: part.getBoundingClientRect() })))
           .filter(({ box }) => box.width > 0 && box.height > 0)

@@ -6,7 +6,7 @@ import type { AgentDetail, AgentsListResult, BrokenAgentDetail, Setup } from "@t
 import { type ReactNode, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
-import { agentRows, filterRows, limitsNotes, limitsTitle, monogram, ownerLabel, rowLine, rowName, runsOnName, summaryLine } from "./describe.js";
+import { type AgentTarget, agentRows, filterRows, isTarget, limitsNotes, limitsTitle, monogram, ownerLabel, rowLine, rowName, runsOnName, summaryLine } from "./describe.js";
 import { useAgents } from "./useAgents.js";
 
 const TEXT = {
@@ -42,16 +42,18 @@ export interface AgentsPageProps {
   readonly bridge: TokamaBridge;
   readonly connection: ConnectionState;
   readonly setup: Setup | undefined;
+  /** The agent the page selects first, when it is in the list: the one a label's tooltip linked to. */
+  readonly initialAgent?: AgentTarget | undefined;
 }
 
-export function AgentsPage({ bridge, connection, setup }: AgentsPageProps) {
+export function AgentsPage({ bridge, connection, setup, initialAgent }: AgentsPageProps) {
   const { state, reload } = useAgents(bridge, connection, setup);
   const [query, setQuery] = useState("");
   const [selectedKey, setSelectedKey] = useState<string | undefined>(undefined);
   const data = state.status === "loaded" ? state.data : undefined;
   const rows = data === undefined ? [] : agentRows(data.agents, data.broken);
   const shown = filterRows(rows, query);
-  const selected = shown.find((row) => row.key === selectedKey) ?? shown[0];
+  const selected = shown.find((row) => row.key === selectedKey) ?? (initialAgent === undefined ? undefined : shown.find((row) => isTarget(row, initialAgent))) ?? shown[0];
 
   return (
     <section className="agents" aria-label={TEXT.heading}>

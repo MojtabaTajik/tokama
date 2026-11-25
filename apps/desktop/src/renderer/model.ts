@@ -177,8 +177,20 @@ export function currentStep(item: Pick<ItemRecord, "steps">): number | undefined
 export interface PipelineStep {
   readonly mark: Mark;
   readonly name: string;
-  /** Only the step the item is in carries its name in the row. */
+  /** Only the step the item is in carries its name and attempt in the row. */
   readonly current: boolean;
+  /** The attempt the step is on; undefined for a step that has not started. */
+  readonly attempt: number | undefined;
+}
+
+/**
+ * The attempt a step is on: the last one the engine recorded, or the next one when the step runs
+ * again after its last attempt ended; the first for a step that has started and recorded none.
+ */
+export function attemptOf(step: Pick<StepRecord, "state" | "attempts">): number | undefined {
+  const last = step.attempts?.at(-1);
+  if (last !== undefined) return last.result !== undefined && step.state === "running" ? last.attempt + 1 : last.attempt;
+  return step.state === "pending" ? undefined : 1;
 }
 
 /** A step's mark: a running step in a verifying stage reads as checking. */
@@ -199,6 +211,7 @@ export function pipelineOf(item: Pick<ItemRecord, "state" | "steps">): PipelineS
     mark: markOfStep(step),
     name: step.name,
     current: index === at,
+    attempt: attemptOf(step),
   }));
 }
 
