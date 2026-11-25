@@ -1,0 +1,98 @@
+import { describe, expect, it } from "vitest";
+import { NOW, setup } from "../testing/sample.js";
+import { usageReport } from "../testing/usage.js";
+import {
+  ageText,
+  chartModel,
+  cliAlert,
+  formatClock,
+  formatCost,
+  formatDuration,
+  formatTokens,
+  niceMax,
+  railBadge,
+  resetText,
+  share,
+  tickLabel,
+  windowLabel,
+  windowTone,
+  workflowName,
+} from "./usage-model.js";
+
+const MINUTE = 60_000;
+const at = (day: number, hour: number, minute = 0) => new Date(2025, 9, day, hour, minute).getTime();
+
+describe("plan window words", () => {
+  it("names the windows Claude Code reports, and any other by its own name", () => {
+    expect([windowLabel("five_hour"), windowLabel("seven_day"), windowLabel("seven_day_opus"), windowLabel("weekly_scoped")]).toEqual(["5-hour window", "Weekly window", "Weekly · Opus", "weekly scoped"]);
+  });
+
+  it("marks a window near its limit from 80% and at its limit from 100%", () => {
+    expect([windowTone(79.9), windowTone(80), windowTone(99), windowTone(100), windowTone(130)]).toEqual([undefined, "warn", "warn", "fail", "fail"]);
+  });
+
+  it("puts a login problem before the windows, and badges the rail with ✕ before !", () => {
+    const near = { cliId: "codex-cli" as const, windows: [{ window: "seven_day", usedPercent: 84 }] };
+    expect(cliAlert(near, undefined, NOW)).toBe("near_limit");
+    expect(cliAlert(near, { cliId: "codex-cli", kind: "logged_out" }, NOW)).toBe("logged_out");
+    expect(cliAlert({ ...near, windows: [{ window: "five_hour", usedPercent: 100 }] }, undefined, NOW)).toBe("limit");
+    expect(cliAlert({ cliId: "claude-code", windows: [] }, undefined, NOW)).toBeUndefined();
+    // A window at its limit whose reset time has passed no longer alerts, even if the report is old.
+    expect(cliAlert({ ...near, windows: [{ window: "five_hour", usedPercent: 100, resetsAt: NOW - 1 }] }, undefined, NOW)).toBeUndefined();
+    expect(railBadge([undefined, "near_limit"])).toEqual({ symbol: "!", tone: "warn" });
+    expect(railBadge(["near_limit", "logged_out"])).toEqual({ symbol: "✕", tone: "fail" });
+    expect(railBadge([undefined, undefined])).toBeUndefined();
+  });
+});
+
+describe("times and numbers", () => {
+  it("writes a time today as the clock, and another day with its weekday and date", () => {
+    expect(formatClock(at(20, 17, 10), NOW)).toBe("17:10");
+    expect(formatClock(at(23, 9), NOW)).toBe("Thu 23 Oct 09:00");
+  });
+
+  it("writes how long until a reset, and leaves it out when it is days away", () => {
+    expect(resetText(NOW + 158 * MINUTE, NOW)).toBe("resets 17:38 · in 2 h 38 min");
+    expect(resetText(at(23, 9), NOW)).toBe("resets Thu 23 Oct 09:00");
+    expect(resetText(undefined, NOW)).toBe("reset time unknown");
+  });
+
+  it("says how old the data is only once it is more than a few minutes old", () => {
+    expect(ageText(NOW - 2 * MINUTE, NOW)).toBeUndefined();
+    expect(ageText(NOW - 34 * MINUTE, NOW)).toBe("data 34 min old");
+    expect(formatDuration(3 * 24 * 60 * MINUTE)).toBe("3 days");
+  });
+
+  it("formats tokens compactly and costs as estimates, unknown when nothing was priced", () => {
+    expect([formatTokens(950), formatTokens(1234), formatTokens(163_000), formatTokens(2_412_000), formatTokens(24_000_000)]).toEqual(["950", "1.2k", "163k", "2.41M", "24.0M"]);
+    expect([formatCost(3.1), formatCost(0), formatCost(12.1), formatCost(1234.5), formatCost(null)]).toEqual(["≈ $3.10", "≈ $0.00", "≈ $12.10", "≈ $1,235", "unknown"]);
+    expect([share(62, 100), share(0.1, 100), share(0, 100), share(5, 0)]).toEqual([62, 1, 0, 0]);
+  });
+});
+
+describe("chartModel", () => {
+  it("has a column per day with segments in the setup's workflow order, whatever their size", () => {
+    const model = chartModel(usageReport, "tokens", setup);
+    expect(model.columns).toHaveLength(14);
+    expect(model.series).toEqual(["builtin/emergency-investigator", "builtin/plan-and-build"]);
+    const today = model.columns.at(-1)!;
+    expect(today).toMatchObject({ date: "2025-10-20", weekday: "Mon", day: "20", total: 300_000 });
+    expect(today.segments.map((s) => s.templateId)).toEqual(["builtin/emergency-investigator", "builtin/plan-and-build"]);
+    expect(model.max).toBe(500_000);
+    expect(model.ticks).toEqual([0, 125_000, 250_000, 375_000, 500_000]);
+  });
+
+  it("stacks estimated cost the same way, and puts workflows the setup no longer lists last", () => {
+    const cost = chartModel(usageReport, "cost", setup);
+    expect(cost.columns.at(-1)?.total).toBeCloseTo(3.5, 10);
+    expect(cost.max).toBe(5);
+    expect(chartModel(usageReport, "tokens", undefined).series).toEqual(["builtin/emergency-investigator", "builtin/plan-and-build"]);
+    expect(workflowName("orders-api/old-flow", setup)).toBe("old-flow");
+    expect(workflowName("builtin/plan-and-build", setup)).toBe("Plan and build");
+  });
+
+  it("rounds the axis top up to 1, 2, 2.5 or 5 times a power of ten, and labels ticks per measure", () => {
+    expect([niceMax(0), niceMax(3), niceMax(180), niceMax(2_400), niceMax(4_800), niceMax(9_100)]).toEqual([1, 5, 200, 2_500, 5_000, 10_000]);
+    expect([tickLabel(0, "tokens"), tickLabel(250_000, "tokens"), tickLabel(2.5, "cost"), tickLabel(5, "cost")]).toEqual(["0", "250k", "$2.50", "$5"]);
+  });
+});

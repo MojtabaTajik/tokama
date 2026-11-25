@@ -8,6 +8,7 @@ import { App } from "./App.js";
 import { brand } from "./brand/index.js";
 import { CONNECTED, fakeBridge } from "./testing/bridge.js";
 import { ITEMS, items, NOW, setup } from "./testing/sample.js";
+import { usageReport } from "./testing/usage.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -53,16 +54,47 @@ describe("App shell", () => {
     expect($('.rail-user[aria-label="About Tokama"]')).not.toBeNull();
   });
 
-  it("lists every AI CLI with its state in the Insights tooltip", async () => {
-    await render(fakeBridge(CONNECTED).bridge);
+  it("lists every AI CLI with its windows, reset times and data age in the Insights tooltip, and marks one near its limit", async () => {
+    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
     const insights = $('.rail button[aria-label="Insights"]')!;
     const tip = $('.rail [role="tooltip"]')!;
     expect(insights.getAttribute("aria-describedby")).toBe(tip.id);
-    expect([...tip.querySelectorAll("li")].map((li) => li.textContent)).toEqual([
-      "Claude Codeusage data comes later",
-      "Codex CLIusage data comes later",
-      "Ollamausage data comes later",
+    expect([...tip.querySelectorAll("li")].map((li) => [...li.children].map((child) => child.textContent))).toEqual([
+      ["Claude Code", "5-hour 36% · resets 17:10", "Weekly 58% · resets Thu 23 Oct 09:00", "as of 14:58"],
+      ["Codex CLI! near limit", "Weekly 84% · resets Sat 25 Oct 06:00", "data 34 min old"],
+      ["Ollama", "no plan limit"],
     ]);
+    // The ! is a symbol on the icon, beside the words in the tooltip.
+    expect($$(".rail .badge").map((badge) => [badge.getAttribute("data-tone"), badge.textContent])).toEqual([
+      ["warn", "1"],
+      ["warn", "!"],
+    ]);
+  });
+
+  it("loads the usage report again when the Insights tooltip opens", async () => {
+    const fake = fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) });
+    await render(fake.bridge);
+    const usageQueries = () => fake.query.mock.calls.filter(([q]) => q.type === "usage").length;
+    expect(usageQueries()).toBe(1);
+    await act(async () => $(".insights")!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, relatedTarget: document.body })));
+    expect(usageQueries()).toBe(2);
+  });
+
+  it("says usage is not loaded yet in the Insights tooltip until the engine answers", async () => {
+    await render(fakeBridge(CONNECTED).bridge);
+    expect($$('.rail [role="tooltip"] li').map((li) => li.textContent)).toEqual(["Claude Codeusage not loaded yet", "Codex CLIusage not loaded yet", "Ollamausage not loaded yet"]);
+  });
+
+  it("opens the Insights page from the rail and goes back with Board", async () => {
+    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
+    await click($('.rail button[aria-label="Insights"]')!);
+    expect(text(".main-header h1")).toBe("Insights");
+    expect($(".insights")?.hasAttribute("data-dismissed")).toBe(true);
+    expect($('.rail button[aria-label="Insights"]')?.getAttribute("aria-current")).toBe("page");
+    expect($('.rail button[aria-label="Board"]')?.hasAttribute("aria-current")).toBe(false);
+    expect($$(".ins-plan").map((plan) => plan.getAttribute("aria-label"))).toEqual(["Claude Code", "Codex CLI", "Ollama"]);
+    await click($('.rail button[aria-label="Board"]')!);
+    expect(text(".main-header h1")).toBe("All work");
   });
 
   it("closes the Insights tooltip on Escape and brings it back when the pointer or focus returns", async () => {
@@ -89,7 +121,7 @@ describe("App shell", () => {
   it("queries the setup and the board", async () => {
     const { bridge, query } = fakeBridge(CONNECTED);
     await render(bridge);
-    expect(query.mock.calls.map(([q]) => q)).toEqual([{ type: "setup" }, { type: "board" }]);
+    expect(query.mock.calls.map(([q]) => q)).toEqual([{ type: "setup" }, { type: "board" }, { type: "usage", range: 14 }]);
   });
 
   it("shows the All work header and the list", async () => {
@@ -115,7 +147,7 @@ describe("App shell", () => {
   it("marks the buttons that are not wired yet as aria-disabled", async () => {
     await render(fakeBridge(CONNECTED).bridge);
     const disabled = $$('[aria-disabled="true"]').map((el) => el.getAttribute("aria-label") ?? el.textContent);
-    expect(disabled).toEqual(["Insights"]);
+    expect(disabled).toEqual([]);
     expect($('button[aria-label="Sidebar"]')?.hasAttribute("aria-disabled")).toBe(false);
   });
 
@@ -154,11 +186,11 @@ describe("App live updates", () => {
   it("queries again on every return to connected", async () => {
     const fake = fakeBridge(CONNECTED);
     await render(fake.bridge);
-    expect(fake.query).toHaveBeenCalledTimes(2);
+    expect(fake.query).toHaveBeenCalledTimes(3);
     await fake.setConnection({ status: "reconnecting" });
-    expect(fake.query).toHaveBeenCalledTimes(2);
+    expect(fake.query).toHaveBeenCalledTimes(3);
     await fake.setConnection({ status: "connected", engineId: "e-1" });
-    expect(fake.query).toHaveBeenCalledTimes(4);
+    expect(fake.query).toHaveBeenCalledTimes(6);
   });
 
   it("replaces the board with the engine's current one after a reconnect, whatever the events said", async () => {
@@ -183,7 +215,7 @@ describe("App live updates", () => {
     await render(fake.bridge);
     expect(fake.query).not.toHaveBeenCalled();
     await fake.setConnection(CONNECTED);
-    expect(fake.query).toHaveBeenCalledTimes(2);
+    expect(fake.query).toHaveBeenCalledTimes(3);
   });
 
   it("shows a failed load as text", async () => {
@@ -197,7 +229,8 @@ describe("App live updates", () => {
     await render(fake.bridge);
     act(() => root.unmount());
     expect(fake.stops.connection).toHaveBeenCalledOnce();
-    expect(fake.stops.event).toHaveBeenCalledOnce();
+    // The engine data and the usage report each listen.
+    expect(fake.stops.event).toHaveBeenCalledTimes(2);
     root = createRoot(container);
   });
 });

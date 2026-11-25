@@ -1,0 +1,516 @@
+/* The Insights page and the rail tooltip's usage lines. Colours come from theme.css tokens only. */
+
+.insights-page .muted,
+.insights-tip .muted {
+  color: var(--muted);
+}
+
+.ins-tabs {
+  display: flex;
+  gap: 18px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.ins-tab {
+  padding: 9px 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ins-tab[aria-selected="true"] {
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 var(--link);
+}
+
+.ins-tab[aria-disabled="true"] {
+  cursor: default;
+}
+
+.ins-body {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 16px 0 28px;
+}
+
+.ins-section {
+  padding: 4px 0 22px;
+  border-bottom: 1px solid var(--hairline);
+  margin-bottom: 18px;
+}
+
+.ins-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-bottom: 10px;
+}
+
+.ins-h2 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ins-section-head .ins-h2 {
+  margin: 0;
+}
+
+/* Plan usage: one column per AI CLI. */
+
+.ins-plans {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0;
+}
+
+.ins-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 20px;
+  border-left: 1px solid var(--hairline);
+}
+
+.ins-plan:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.ins-plan-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.monogram {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--raised);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ins-plan-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  color: var(--text);
+}
+
+.ins-plan-name strong {
+  font-weight: 600;
+}
+
+.ins-asof {
+  margin-left: auto;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.ins-window {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ins-window-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--text-2);
+}
+
+.ins-pct {
+  margin-left: auto;
+  color: var(--text);
+}
+
+.ins-tone[data-tone="warn"],
+.ins-alert[data-tone="warn"],
+.it-alert[data-tone="warn"] {
+  color: var(--warn);
+}
+
+.ins-tone[data-tone="fail"],
+.ins-alert[data-tone="fail"],
+.it-alert[data-tone="fail"] {
+  color: var(--fail);
+}
+
+.ins-alert {
+  margin: 0;
+}
+
+.ins-reset,
+.ins-source {
+  margin: 0;
+  font-size: 12px;
+}
+
+.ins-source {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+}
+
+/* The meter's fill carries severity; its track is one step off the ground. The word beside it says the same. */
+.meter {
+  display: block;
+}
+
+.meter-track {
+  fill: var(--hairline);
+}
+
+.meter-fill {
+  fill: var(--muted);
+}
+
+.meter-fill[data-tone="warn"] {
+  fill: var(--warn);
+}
+
+.meter-fill[data-tone="fail"] {
+  fill: var(--fail);
+}
+
+/* Chart controls, title, headline and legend. */
+
+.ins-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.ins-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 4px 2px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+}
+
+.ins-filter-clear {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ins-filter-clear:hover {
+  color: var(--text);
+}
+
+.ins-headline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  margin: 4px 0 12px;
+}
+
+.ins-hero {
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ins-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.ins-legend-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 9px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ins-legend-entry:hover,
+.ins-legend-entry[aria-pressed="true"] {
+  border-color: var(--hairline);
+  background: var(--panel);
+}
+
+.ins-legend-entry[data-dim] {
+  opacity: 0.6;
+}
+
+/* The chart: tag colours on marks only, text in text tokens. */
+
+.ins-chart {
+  position: relative;
+  width: 100%;
+}
+
+.ins-svg {
+  display: block;
+  overflow: visible;
+}
+
+.ins-grid {
+  stroke: var(--panel);
+  stroke-width: 1;
+}
+
+.ins-baseline {
+  stroke: var(--hairline);
+  stroke-width: 1;
+}
+
+.ins-tick,
+.ins-day {
+  fill: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.ins-day[data-today] {
+  fill: var(--text);
+}
+
+.ins-hit {
+  fill: transparent;
+}
+
+.ins-hit[data-today] {
+  fill: var(--panel);
+}
+
+.ins-col:hover .ins-hit,
+.ins-col:focus .ins-hit {
+  fill: var(--raised);
+}
+
+.ins-col:focus {
+  outline: none;
+}
+
+.ins-col:focus-visible .ins-hit {
+  stroke: var(--link);
+  stroke-width: 1;
+}
+
+.ins-seg {
+  cursor: pointer;
+}
+
+.ins-seg[data-dim] {
+  opacity: 0.28;
+}
+
+.ins-seg:hover {
+  opacity: 0.85;
+}
+
+.ins-seg[data-tag="slate"],
+.ins-key[data-tag="slate"] {
+  fill: var(--tag-slate);
+}
+.ins-seg[data-tag="sky"],
+.ins-key[data-tag="sky"] {
+  fill: var(--tag-sky);
+}
+.ins-seg[data-tag="teal"],
+.ins-key[data-tag="teal"] {
+  fill: var(--tag-teal);
+}
+.ins-seg[data-tag="moss"],
+.ins-key[data-tag="moss"] {
+  fill: var(--tag-moss);
+}
+.ins-seg[data-tag="sand"],
+.ins-key[data-tag="sand"] {
+  fill: var(--tag-sand);
+}
+.ins-seg[data-tag="clay"],
+.ins-key[data-tag="clay"] {
+  fill: var(--tag-clay);
+}
+.ins-seg[data-tag="rose"],
+.ins-key[data-tag="rose"] {
+  fill: var(--tag-rose);
+}
+.ins-seg[data-tag="plum"],
+.ins-key[data-tag="plum"] {
+  fill: var(--tag-plum);
+}
+
+/* The day tooltip sits on the far side of the chart from the hovered day. */
+.ins-tip {
+  position: absolute;
+  top: 0;
+  z-index: 5;
+  width: 300px;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--raised);
+  font-size: 12.5px;
+  color: var(--text-2);
+  pointer-events: none;
+}
+
+.ins-tip[data-side="right"] {
+  right: 0;
+}
+
+.ins-tip[data-side="left"] {
+  left: 52px;
+}
+
+.ins-tip p {
+  margin: 0;
+}
+
+.ins-tip .ins-tip-date {
+  margin-bottom: 6px;
+  color: var(--text);
+}
+
+.ins-tip ul {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0 0 8px;
+  list-style: none;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.ins-tip li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ins-tip-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ins-tip li strong {
+  color: var(--text);
+}
+
+.ins-tip-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 8px;
+}
+
+.ins-hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+}
+
+/* Top items. */
+
+.ins-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.ins-table th {
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 12px;
+  text-align: left;
+}
+
+.ins-table td {
+  padding: 8px 10px 8px 0;
+  border-bottom: 1px solid var(--hairline);
+  vertical-align: top;
+  color: var(--text-2);
+}
+
+.ins-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ins-table td[data-muted] {
+  color: var(--muted);
+}
+
+.ins-item {
+  color: var(--text);
+}
+
+.link-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  color: var(--link);
+  text-decoration: underline;
+}
+
+.ins-wf,
+.ins-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.ins-agents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.ins-estimate {
+  margin: 0;
+  font-size: 12px;
+}
+
+/* Rail tooltip: one block per CLI. */
+
+.insights-tip .it-cli {
+  flex-direction: column;
+  gap: 1px;
+}
+
+.it-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text);
+}

@@ -175,7 +175,7 @@ describe("an AI CLI that is logged out", () => {
       ["fail", "✕"],
       ["fail", "1"],
     ]);
-    expect($$('.rail [role="tooltip"] li').map((li) => li.textContent)).toEqual(["Claude Codeusage data comes later", "Codex CLI✕ logged out", "Ollamausage data comes later"]);
+    expect($$('.rail [role="tooltip"] li').map((li) => li.textContent)).toEqual(["Claude Codeusage not loaded yet", "Codex CLI✕ logged outusage not loaded yet", "Ollamausage not loaded yet"]);
     expect($('.rail button[aria-label="Attention · 1"]')).not.toBeNull();
   });
 
