@@ -2,9 +2,10 @@
 // it. The store keeps every item folded in memory, appends new events (fsync first, then the
 // listeners hear about it), and refuses an event that does not fit the item's history.
 import { createHash } from "node:crypto";
-import * as nodeFs from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { systemClock, type Clock } from "../../kernel/clock/index.js";
+import { replaceTextSync } from "../../kernel/fs-safe/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import {
   HostIdSchema,
@@ -60,7 +61,8 @@ export class ItemStore {
   readonly hostId: HostId;
   private readonly itemsDir: string;
   private readonly clock: Clock;
-  private readonly fs: LogFs;
+  /** Undefined: the log's own default, node:fs. */
+  private readonly fs: LogFs | undefined;
   private readonly items = new Map<ItemId, StoredItem>();
   private readonly listeners = new Set<ItemListener>();
 
@@ -68,15 +70,15 @@ export class ItemStore {
     this.hostId = options.hostId;
     this.itemsDir = join(options.home, "items");
     this.clock = options.clock ?? systemClock;
-    this.fs = options.fs ?? nodeFs;
+    this.fs = options.fs;
   }
 
   /** Creates the items folder (0700) when missing and loads every item log in it. */
   static open(options: ItemStoreOptions): { store: ItemStore; problems: LoadProblem[] } {
     const store = new ItemStore(options);
-    nodeFs.mkdirSync(store.itemsDir, { recursive: true, mode: 0o700 });
+    mkdirSync(store.itemsDir, { recursive: true, mode: 0o700 });
     const problems: LoadProblem[] = [];
-    for (const entry of nodeFs.readdirSync(store.itemsDir, { withFileTypes: true })) {
+    for (const entry of readdirSync(store.itemsDir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       const id = ItemIdSchema.safeParse(entry.name);
       if (!id.success) continue;
@@ -131,7 +133,7 @@ export class ItemStore {
     if (!folded.ok) return folded;
     const dir = join(this.itemsDir, itemId);
     try {
-      nodeFs.mkdirSync(dir, { mode: 0o700 });
+      mkdirSync(dir, { mode: 0o700 });
       appendEvents(join(dir, EVENTS_FILE), events.value, this.fs);
       fsyncDir(dir, this.fs);
       fsyncDir(this.itemsDir, this.fs);
@@ -187,13 +189,13 @@ export class ItemStore {
    */
   private removeUnstarted(itemId: ItemId): boolean {
     const dir = join(this.itemsDir, itemId);
-    const entries = nodeFs.readdirSync(dir);
+    const entries = readdirSync(dir);
     if (entries.some((name) => name !== EVENTS_FILE)) return false;
     if (entries.length === 1) {
       const log = readLog(join(dir, EVENTS_FILE), this.fs);
       if (!log.ok || log.value.events.length > 0) return false;
     }
-    nodeFs.rmSync(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
     return true;
   }
 
@@ -253,7 +255,7 @@ const HOST_SCHEMA_VERSION = 1;
 export function loadHostId(home: string, clock: Clock = systemClock): Result<HostId, string> {
   const file = join(home, HOST_FILE);
   try {
-    const parsed: unknown = JSON.parse(nodeFs.readFileSync(file, "utf8"));
+    const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
     const hostId =
       typeof parsed === "object" && parsed !== null && "schemaVersion" in parsed && parsed.schemaVersion === HOST_SCHEMA_VERSION && "hostId" in parsed
         ? HostIdSchema.safeParse(parsed.hostId)
@@ -264,12 +266,11 @@ export function loadHostId(home: string, clock: Clock = systemClock): Result<Hos
   }
   const hostId = HostIdSchema.parse(newId("host", clock.now()));
   try {
-    nodeFs.mkdirSync(home, { recursive: true, mode: 0o700 });
-    const temp = `${file}.${process.pid}.tmp`;
-    nodeFs.writeFileSync(temp, `${JSON.stringify({ schemaVersion: HOST_SCHEMA_VERSION, hostId })}\n`, { mode: 0o600, flag: "w" });
-    nodeFs.renameSync(temp, file);
+    mkdirSync(home, { recursive: true, mode: 0o700 });
   } catch (error) {
     return err(`cannot write ${file}: ${String(error)}`);
   }
+  const written = replaceTextSync(file, `${JSON.stringify({ schemaVersion: HOST_SCHEMA_VERSION, hostId })}\n`, 0o600);
+  if (!written.ok) return err(`cannot write ${file}: ${written.error.message}`);
   return ok(hostId);
 }

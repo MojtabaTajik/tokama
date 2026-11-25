@@ -339,6 +339,27 @@ describe("engine service", () => {
     expect((await client(dir)).engineId).toBe(handle.engineId);
   });
 
+  it("waits for a fresh lock that names no pid yet: another engine is still writing it", async () => {
+    const dir = tempEngineDir(cleanups);
+    mkdirSync(dir, { mode: 0o700 });
+    writeFileSync(join(dir, "engine.lock"), "", { mode: 0o600 });
+
+    expect(await startEngine({ dir })).toMatchObject({ ok: false, error: { code: "already_running" } });
+    expect(readFileSync(join(dir, "engine.lock"), "utf8")).toBe("");
+  });
+
+  it("removes a symlink in place of the lock without reading or touching its target", async () => {
+    const dir = tempEngineDir(cleanups);
+    mkdirSync(dir, { mode: 0o700 });
+    const target = join(dir, "elsewhere");
+    writeFileSync(target, `${process.pid} e-other\n`);
+    symlinkSync(target, join(dir, "engine.lock"));
+
+    const handle = await engine(dir);
+    expect(readFileSync(handle.endpoint.lockPath, "utf8")).toContain(handle.engineId);
+    expect(readFileSync(target, "utf8")).toBe(`${process.pid} e-other\n`);
+  });
+
   it("refuses an engine dir that is a symlink", async () => {
     const root = mkdtempSync(join(tmpdir(), "tk-"));
     cleanups.push(() => rmSync(root, { recursive: true, force: true }));

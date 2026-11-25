@@ -3,9 +3,9 @@
 // are atomic (a temp file, then a rename) and the file is private to the user (mode 0600), so a
 // crash or a second writer cannot leave half a file. Reading never throws: a missing, oversized
 // or broken file gives the defaults, and a file with some bad fields keeps the good ones.
-import { closeSync, constants, fstatSync, fsyncSync, mkdirSync, openSync, readSync, renameSync, unlinkSync, writeSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { closeSync, constants, fstatSync, mkdirSync, openSync, readSync } from "node:fs";
 import { dirname } from "node:path";
+import { replaceTextSync } from "@tokama/core";
 import { DEFAULT_DESKTOP_STATE, type DesktopState, parseDesktopState } from "../shared/desktop-state.js";
 
 /** A real file is about 400 bytes; anything much larger is not ours. */
@@ -36,25 +36,8 @@ export function readDesktopState(path: string): DesktopState {
 /** Writes `state` so that a reader sees the old file or the new one, never a part. Throws when it cannot write. */
 export function writeDesktopState(path: string, state: DesktopState): void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  // A new file with a name nobody can guess, created private; a link already in its place is never followed.
-  const temp = `${path}.${randomUUID()}.tmp`;
-  try {
-    const fd = openSync(temp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-    try {
-      writeSync(fd, `${JSON.stringify(state, null, 2)}\n`);
-      fsyncSync(fd);
-    } finally {
-      closeSync(fd);
-    }
-    renameSync(temp, path);
-  } catch (error) {
-    try {
-      unlinkSync(temp);
-    } catch {
-      // Nothing to remove.
-    }
-    throw error;
-  }
+  const written = replaceTextSync(path, `${JSON.stringify(state, null, 2)}\n`, 0o600);
+  if (!written.ok) throw new Error(written.error.message);
 }
 
 export interface DesktopStore {

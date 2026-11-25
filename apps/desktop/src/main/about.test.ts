@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -22,6 +22,12 @@ describe("readEnginePid", () => {
       writeFileSync(join(dir, "engine.lock"), content);
       expect(readEnginePid(join(dir, "engine.lock"))).toBeUndefined();
     }
+  });
+
+  it("never follows a symlink in place of the lock", () => {
+    writeFileSync(join(dir, "elsewhere"), "48211 e-1\n");
+    symlinkSync(join(dir, "elsewhere"), join(dir, "engine.lock"));
+    expect(readEnginePid(join(dir, "engine.lock"))).toBeUndefined();
   });
 });
 
