@@ -277,6 +277,21 @@ repos:
     expect(loaded).toMatchObject({ ok: true, value: [{ id: "a", baseBranch: "release/1", checks: ["pnpm test", "pnpm lint"] }, { id: "b", baseBranch: "develop", checks: [] }] });
   });
 
+  it("keeps a comment on a check line that stays, and the flow style of a list", async () => {
+    const a = repo("a");
+    mkdirSync(home, { recursive: true });
+    writeFileSync(reposFile(), `format: 1\nrepos:\n  - id: a\n    path: ${a}\n    base_branch: main\n    checks:\n      - pnpm test # unit tests\n      - pnpm lint # style\n`);
+    expect(await updateRepo(options(), { repoId: "a", baseBranch: "develop", checks: ["pnpm test", "pnpm lint"] })).toMatchObject({ ok: true });
+    let text = readFileSync(reposFile(), "utf8");
+    expect(text).toContain("- pnpm test # unit tests");
+    expect(text).toContain("- pnpm lint # style");
+    expect(await updateRepo(options(), { repoId: "a", baseBranch: "develop", checks: ["pnpm lint", "pnpm build"] })).toMatchObject({ ok: true });
+    text = readFileSync(reposFile(), "utf8");
+    expect(text).toContain("- pnpm lint # style");
+    expect(text).not.toContain("unit tests");
+    expect(text).toContain("- pnpm build");
+  });
+
   it("adds checks to a repo that had none, and removes them with an empty list", async () => {
     await seed();
     expect(await updateRepo(options(), { repoId: "b", baseBranch: "develop", checks: ["npm test"] })).toMatchObject({ ok: true });

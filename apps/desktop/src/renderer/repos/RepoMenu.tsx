@@ -81,7 +81,19 @@ export function RepoMenu({ name, onEdit, onRemove }: RepoMenuProps) {
         ⋯
       </button>
       {open && (
-        <div className="repo-menu-popup" role="menu" aria-label={TEXT.actions(name)}>
+        <div
+          className="repo-menu-popup"
+          role="menu"
+          aria-label={TEXT.actions(name)}
+          onKeyDown={(event) => {
+            const step = { ArrowDown: 1, ArrowUp: -1 }[event.key];
+            if (step === undefined) return;
+            event.preventDefault();
+            const items = [...event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+            const at = items.indexOf(document.activeElement as HTMLElement);
+            items[(at + step + items.length) % items.length]?.focus();
+          }}
+        >
           <button
             ref={firstItem}
             type="button"

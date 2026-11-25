@@ -49,6 +49,7 @@ flow(
     await edit.getByLabel("Base branch", { exact: true }).fill("develop");
     await edit.getByRole("button", { name: "Save" }).click();
     await edit.waitFor({ state: "detached" });
+    await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("aria-label")), { message: "focus returns to the row menu button" }).toBe("Actions for billing-api");
     const edited = readFileSync(file, "utf8");
     expect(edited).toContain("base_branch: develop");
     expect(edited).toContain("- pnpm lint");

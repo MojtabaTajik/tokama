@@ -8,7 +8,7 @@ import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import { access, lstat, mkdir, open, realpath, rename, stat, unlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join } from "node:path";
-import { Document, isMap, isNode, isSeq, parseDocument } from "yaml";
+import { Document, isMap, isScalar, isSeq, parseDocument } from "yaml";
 import { readJsonFile } from "../../kernel/fs-safe/index.js";
 import type { Git, GitError } from "../../kernel/git/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
@@ -143,18 +143,15 @@ export async function updateRepo(options: LoadReposOptions, input: UpdateRepoInp
   const list = doc.get("repos", true);
   const entry = isSeq(list) ? list.items[index] : undefined;
   if (!isMap(entry)) return refused("invalid_config", `${REPOS_FILE} has no repos list.`);
-  const withComments = (node: { commentBefore?: string | null; comment?: string | null }, old: unknown) => {
-    if (!isNode(old)) return;
-    if (old.commentBefore != null) node.commentBefore = old.commentBefore;
-    if (old.comment != null) node.comment = old.comment;
-  };
   entry.set("base_branch", baseBranch);
   if (checks.length === 0) entry.delete("checks");
   else {
-    const node = doc.createNode(checks);
     const old = entry.get("checks", true);
-    withComments(node, old);
-    entry.set("checks", node);
+    if (isSeq(old)) {
+      // The same list node, with the old entry of each command that stays: its comment stays too.
+      const kept = new Map(old.items.filter(isScalar).map((item) => [item.value, item]));
+      old.items = checks.map((command) => kept.get(command) ?? doc.createNode(command));
+    } else entry.set("checks", doc.createNode(checks));
   }
   const written = await write(file.value.path, doc);
   return written.ok ? ok({ ...current, baseBranch, checks }) : written;

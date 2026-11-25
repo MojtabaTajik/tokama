@@ -224,6 +224,11 @@ describe("repo row menu", () => {
     await key(menuButton(), "ArrowDown");
     expect(menuButton().getAttribute("aria-expanded")).toBe("true");
     expect(document.activeElement).toBe(menuItem("Edit repo…"));
+    await key(menuItem("Edit repo…") ?? null, "ArrowDown");
+    expect(document.activeElement).toBe(menuItem("Remove repo…"));
+    await key(menuItem("Remove repo…") ?? null, "ArrowDown");
+    expect(document.activeElement).toBe(menuItem("Edit repo…"));
+    await key(menuItem("Edit repo…") ?? null, "ArrowUp");
     const item = menuItem("Remove repo…");
 
     await click(item);
