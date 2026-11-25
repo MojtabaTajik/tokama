@@ -1,4 +1,5 @@
-// Changes to `repos.yaml`: suggest the settings of a folder, add it as a repo, remove a repo.
+// Changes to `repos.yaml`: suggest the settings of a folder, add it as a repo, change a repo's base
+// branch and checks, remove a repo.
 // Only the engine calls these, one at a time. The file is edited as a YAML document, so its format
 // line, comments and order stay. The result must pass the rules loadRepos uses before it is
 // written: a temp file in the same folder, fsync, rename. A linked repos.yaml keeps its link: the
@@ -7,7 +8,7 @@ import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import { access, lstat, mkdir, open, realpath, rename, stat, unlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join } from "node:path";
-import { Document, isSeq, parseDocument } from "yaml";
+import { Document, isMap, isNode, isSeq, parseDocument } from "yaml";
 import { readJsonFile } from "../../kernel/fs-safe/index.js";
 import type { Git, GitError } from "../../kernel/git/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
@@ -24,7 +25,7 @@ export interface RepoEditError {
 
 export interface RepoEditOptions extends LoadReposOptions {
   /** Tells whether a folder is a git repo's top folder, and its branch. */
-  readonly git: Pick<Git, "worktreeList">;
+  readonly git: Pick<Git, "worktreeList" | "revParse">;
   /** Ids a new repo can't take though repos.yaml doesn't hold them, such as the sample engine's repos. */
   readonly reservedIds?: readonly string[];
 }
@@ -34,12 +35,16 @@ export interface RepoSuggestion {
   /** The folder's real path. */
   readonly path: string;
   readonly gitRepo: boolean;
+  /** False when the repo has no commit yet: work needs a base commit to start from. */
+  readonly hasCommits: boolean;
   /** The current branch; undefined when HEAD is detached or the folder isn't a repo. */
   readonly branch: string | undefined;
   /** From the folder name, not used by another repo; undefined when the name gives none. */
   readonly id: RepoId | undefined;
   /** From package.json scripts: test, then lint, run with the lockfile's package manager. */
   readonly checks: readonly string[];
+  /** For a JS project with no package.json: `node --check` on its entry file, when there is one. */
+  readonly fallbackCheck: string | undefined;
   /** Why the folder can't be added as it is, in plain words. */
   readonly problem: string | undefined;
 }
@@ -58,6 +63,9 @@ export interface AddRepoInput {
 const MAX_BRANCH = 100;
 // The placeholder `npm init` writes; it only fails.
 const NPM_PLACEHOLDER_TEST = "no test specified";
+const NO_COMMITS = "This repo has no commits yet. Make a first commit, then add it.";
+/** The files a plain JS project starts from, in the order `fallbackCheck` tries them. */
+const ENTRY_FILES = ["src/main.js", "main.js", "index.js"] as const;
 
 export async function suggestRepo(options: RepoEditOptions, path: string): Promise<Result<RepoSuggestion, RepoEditError>> {
   const folder = await inspectFolder(options.git, path);
@@ -65,13 +73,16 @@ export async function suggestRepo(options: RepoEditOptions, path: string): Promi
   const file = await readCurrent(options);
   const repos = file.ok ? file.value.repos : [];
   const added = await addedAs(repos, folder.value.path);
+  const checks = await suggestChecks(folder.value.path);
   return ok({
     path: folder.value.path,
     gitRepo: folder.value.gitProblem === undefined,
+    hasCommits: folder.value.hasCommits,
     branch: folder.value.branch,
     id: suggestId(folder.value.path, takenIds(options, repos)),
-    checks: await suggestChecks(folder.value.path),
-    problem: folder.value.gitProblem ?? (added === undefined ? undefined : `This folder is already added as ${quote(added)}.`),
+    checks: checks.commands,
+    fallbackCheck: checks.commands.length === 0 && !checks.hasPackageJson ? await suggestFallbackCheck(folder.value.path) : undefined,
+    problem: folder.value.gitProblem ?? (folder.value.hasCommits ? undefined : NO_COMMITS) ?? (added === undefined ? undefined : `This folder is already added as ${quote(added)}.`),
   });
 }
 
@@ -79,6 +90,7 @@ export async function addRepo(options: RepoEditOptions, input: AddRepoInput): Pr
   const folder = await inspectFolder(options.git, input.path);
   if (!folder.ok) return folder;
   if (folder.value.gitProblem !== undefined) return invalid(folder.value.gitProblem);
+  if (!folder.value.hasCommits) return invalid(NO_COMMITS);
   const file = await readCurrent(options);
   if (!file.ok) return file;
   const { repos } = file.value;
@@ -93,14 +105,9 @@ export async function addRepo(options: RepoEditOptions, input: AddRepoInput): Pr
 
   const baseBranch = input.baseBranch?.trim() || folder.value.branch;
   if (baseBranch === undefined) return invalid("The repo has no current branch (its HEAD is detached). Give a base branch, such as main.");
-  if (!BRANCH.test(baseBranch) || baseBranch.length > MAX_BRANCH) return invalid(`The base branch ${quote(baseBranch)} must be a branch name, such as main.`);
-
-  const checks = (input.checks ?? []).map((command) => command.trim()).filter((command) => command !== "");
-  for (const command of checks) {
-    if (command.length > MAX_CHECK_CHARS) return invalid(`The check ${quote(command)} must be at most ${MAX_CHECK_CHARS} characters.`);
-    const problem = checkProblem(command);
-    if (problem !== undefined) return invalid(`The check ${quote(command)} ${problem}.`);
-  }
+  const settings = checkSettings(baseBranch, input.checks ?? []);
+  if (!settings.ok) return settings;
+  const { checks } = settings.value;
 
   const entry = { id, path: folder.value.path, base_branch: baseBranch, ...(checks.length > 0 ? { checks } : {}) };
   const doc = file.value.text === undefined ? newDocument() : parseDocument(file.value.text, { uniqueKeys: true });
@@ -111,6 +118,46 @@ export async function addRepo(options: RepoEditOptions, input: AddRepoInput): Pr
   const written = await write(file.value.path, doc);
   if (!written.ok) return written;
   return ok({ id: id as RepoId, path: folder.value.path, baseBranch, worktreeFolder: DEFAULT_WORKTREE_FOLDER, checks });
+}
+
+export interface UpdateRepoInput {
+  readonly repoId: string;
+  readonly baseBranch: string;
+  /** Replaces the repo's checks; empty removes them. */
+  readonly checks: readonly string[];
+}
+
+/** Changes the base branch and checks of a repo in repos.yaml, by the rules `addRepo` uses. */
+export async function updateRepo(options: LoadReposOptions, input: UpdateRepoInput): Promise<Result<Repo, RepoEditError>> {
+  const file = await readCurrent(options);
+  if (!file.ok) return file;
+  const index = file.value.repos.findIndex((repo) => repo.id === input.repoId);
+  const current = file.value.repos[index];
+  if (current === undefined || file.value.text === undefined) return refused("not_found", `No repo has the id ${quote(input.repoId)}.`);
+  const baseBranch = input.baseBranch.trim();
+  const settings = checkSettings(baseBranch, input.checks);
+  if (!settings.ok) return settings;
+  const { checks } = settings.value;
+
+  const doc = parseDocument(file.value.text, { uniqueKeys: true });
+  const list = doc.get("repos", true);
+  const entry = isSeq(list) ? list.items[index] : undefined;
+  if (!isMap(entry)) return refused("invalid_config", `${REPOS_FILE} has no repos list.`);
+  const withComments = (node: { commentBefore?: string | null; comment?: string | null }, old: unknown) => {
+    if (!isNode(old)) return;
+    if (old.commentBefore != null) node.commentBefore = old.commentBefore;
+    if (old.comment != null) node.comment = old.comment;
+  };
+  entry.set("base_branch", baseBranch);
+  if (checks.length === 0) entry.delete("checks");
+  else {
+    const node = doc.createNode(checks);
+    const old = entry.get("checks", true);
+    withComments(node, old);
+    entry.set("checks", node);
+  }
+  const written = await write(file.value.path, doc);
+  return written.ok ? ok({ ...current, baseBranch, checks }) : written;
 }
 
 /** Removes the repo from repos.yaml. Its items and worktrees stay where they are. */
@@ -126,6 +173,18 @@ export async function removeRepo(options: LoadReposOptions, id: string): Promise
   list.items.splice(index, 1);
   const written = await write(file.value.path, doc);
   return written.ok ? ok(repo) : written;
+}
+
+/** The base branch and checks a repo may have, trimmed; a bad one is refused in plain words. */
+function checkSettings(baseBranch: string, input: readonly string[]): Result<{ checks: string[] }, RepoEditError> {
+  if (!BRANCH.test(baseBranch) || baseBranch.length > MAX_BRANCH) return invalid(`The base branch ${quote(baseBranch)} must be a branch name, such as main.`);
+  const checks = input.map((command) => command.trim()).filter((command) => command !== "");
+  for (const command of checks) {
+    if (command.length > MAX_CHECK_CHARS) return invalid(`The check ${quote(command)} must be at most ${MAX_CHECK_CHARS} characters.`);
+    const problem = checkProblem(command);
+    if (problem !== undefined) return invalid(`The check ${quote(command)} ${problem}.`);
+  }
+  return ok({ checks });
 }
 
 /** A path for a message: escaped like `quote`, but cut only when very long. */
@@ -199,10 +258,12 @@ interface Folder {
   /** Why the folder isn't a git repo's top folder; undefined when it is. */
   readonly gitProblem?: string;
   readonly branch?: string;
+  /** False when HEAD names no commit yet. */
+  readonly hasCommits: boolean;
 }
 
 /** The path is user input (a folder picker result): a full path to a readable folder. */
-async function inspectFolder(git: Pick<Git, "worktreeList">, path: string): Promise<Result<Folder, RepoEditError>> {
+async function inspectFolder(git: Pick<Git, "worktreeList" | "revParse">, path: string): Promise<Result<Folder, RepoEditError>> {
   if (path === "" || path.includes("\0") || !isAbsolute(path)) return invalid("The folder must be a full path, such as /home/me/code/orders-api.");
   let real: string;
   try {
@@ -215,14 +276,17 @@ async function inspectFolder(git: Pick<Git, "worktreeList">, path: string): Prom
     return invalid(`The folder ${quotePath(path)} can't be read (${code ?? "unknown error"}).`);
   }
   const worktrees = await git.worktreeList(real);
-  if (!worktrees.ok) return ok({ path: real, gitProblem: gitFailure(worktrees.error) });
+  if (!worktrees.ok) return ok({ path: real, hasCommits: false, gitProblem: gitFailure(worktrees.error) });
   for (const worktree of worktrees.value) {
     if ((await realpathOr(worktree.path)) !== real) continue;
-    if (worktree.bare) return ok({ path: real, gitProblem: "This folder is a bare git repo; Tokama needs one with files checked out." });
+    if (worktree.bare) return ok({ path: real, hasCommits: false, gitProblem: "This folder is a bare git repo; Tokama needs one with files checked out." });
     const branch = worktree.branch?.replace(/^refs\/heads\//, "");
-    return ok({ path: real, ...(branch !== undefined && BRANCH.test(branch) ? { branch } : {}) });
+    // A repo with no commit has no HEAD to resolve: git exits non-zero, which is not a failure to run git.
+    const head = await git.revParse(real, "HEAD");
+    if (!head.ok && head.error.reason !== "failed") return ok({ path: real, hasCommits: false, gitProblem: gitFailure(head.error) });
+    return ok({ path: real, hasCommits: head.ok, ...(branch !== undefined && BRANCH.test(branch) ? { branch } : {}) });
   }
-  return ok({ path: real, gitProblem: "This folder is inside a git repo. Pick the repo's top folder, the one that holds .git." });
+  return ok({ path: real, hasCommits: false, gitProblem: "This folder is inside a git repo. Pick the repo's top folder, the one that holds .git." });
 }
 
 /** Why git could not list the folder's worktrees, in plain words. */
@@ -268,11 +332,12 @@ const LOCKFILES = [
 ] as const;
 
 /** Fixed commands only, never script bodies: `pnpm test`, then `pnpm lint` (`npm run lint` for npm). */
-async function suggestChecks(folder: string): Promise<string[]> {
+async function suggestChecks(folder: string): Promise<{ commands: string[]; hasPackageJson: boolean }> {
+  const hasPackageJson = await exists(join(folder, "package.json"));
   const pkg = await readJsonFile(join(folder, "package.json"), { maxBytes: 256 * 1024 });
-  if (!pkg.ok || typeof pkg.value !== "object" || pkg.value === null) return [];
+  if (!pkg.ok || typeof pkg.value !== "object" || pkg.value === null) return { commands: [], hasPackageJson };
   const scripts = (pkg.value as { scripts?: unknown }).scripts;
-  if (typeof scripts !== "object" || scripts === null) return [];
+  if (typeof scripts !== "object" || scripts === null) return { commands: [], hasPackageJson };
   const { test, lint } = scripts as Record<string, unknown>;
   let manager: string = "npm";
   for (const [lockfile, name] of LOCKFILES) {
@@ -284,7 +349,21 @@ async function suggestChecks(folder: string): Promise<string[]> {
   const checks: string[] = [];
   if (typeof test === "string" && test.trim() !== "" && !test.includes(NPM_PLACEHOLDER_TEST)) checks.push(`${manager} test`);
   if (typeof lint === "string" && lint.trim() !== "") checks.push(manager === "npm" ? "npm run lint" : `${manager} lint`);
-  return checks;
+  return { commands: checks, hasPackageJson };
+}
+
+/** `node --check` on the first entry file a plain JS project has: it only proves the file parses. */
+async function suggestFallbackCheck(folder: string): Promise<string | undefined> {
+  for (const file of ENTRY_FILES) if (await isFile(join(folder, file))) return `node --check ${file}`;
+  return undefined;
+}
+
+async function isFile(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isFile();
+  } catch {
+    return false;
+  }
 }
 
 async function exists(path: string): Promise<boolean> {

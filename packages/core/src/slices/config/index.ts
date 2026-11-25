@@ -15,8 +15,10 @@ export {
   addRepo,
   removeRepo,
   suggestRepo,
+  updateRepo,
   type AddRepoInput,
   type RepoEditError,
   type RepoEditOptions,
   type RepoSuggestion,
+  type UpdateRepoInput,
 } from "./repos-edit.js";

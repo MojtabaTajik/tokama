@@ -1,7 +1,7 @@
 // The repo commands over the engine API: suggest_repo, add_repo and remove_repo edit repos.yaml in
 // Tokama's home, the setup query follows, and a setup_changed event tells every client.
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { type ClientEvent, connect, type EngineClient } from "@tokama/client";
 import { afterEach, describe, expect, it } from "vitest";
@@ -35,10 +35,11 @@ function collect(client: EngineClient): ClientEvent[] {
   return events;
 }
 
-function gitRepo(root: string, name: string): string {
+function gitRepo(root: string, name: string, options: { commit?: boolean } = {}): string {
   const path = join(root, name);
   mkdirSync(path);
   execFileSync("git", ["init", "-q", "-b", "main"], { cwd: path });
+  if (options.commit !== false) execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "first"], { cwd: path });
   writeFileSync(join(path, "package.json"), JSON.stringify({ scripts: { test: "vitest run" } }));
   writeFileSync(join(path, "pnpm-lock.yaml"), "");
   return path;
@@ -58,7 +59,7 @@ describe("repo commands", () => {
 
     expect(await client.query({ type: "suggest_repo", path })).toEqual({
       ok: true,
-      data: { path, gitRepo: true, branch: "main", id: "billing-api", checks: ["pnpm test"], problem: null },
+      data: { path, gitRepo: true, hasCommits: true, branch: "main", id: "billing-api", checks: ["pnpm test"], fallbackCheck: null, problem: null },
     });
     expect(await client.command({ type: "add_repo", path, checks: ["pnpm test"] })).toEqual({ ok: true, data: { repo: { id: "billing-api", baseBranch: "main", checks: ["pnpm test"] } } });
     await waitFor(() => events.some((event) => event.kind === "event" && event.event.type === "setup_changed"), 5_000, "setup_changed");
@@ -71,6 +72,55 @@ describe("repo commands", () => {
     expect(await repoIds(client)).toEqual(["orders-api", "checkout-web", "inventory-service"]);
     expect(readFileSync(join(home, "repos.yaml"), "utf8")).not.toContain("billing-api");
     expect(await client.command({ type: "remove_repo", repoId: "billing-api" })).toMatchObject({ ok: false, error: { code: "not_found" } });
+  });
+
+  it("reports a repo without commits and refuses to add it until it has one", async () => {
+    const { root, home, client } = await setUp({ sample: false });
+    const path = gitRepo(root, "fresh", { commit: false });
+    const message = "This repo has no commits yet. Make a first commit, then add it.";
+    expect(await client.query({ type: "suggest_repo", path })).toMatchObject({ ok: true, data: { gitRepo: true, hasCommits: false, problem: message } });
+    expect(await client.command({ type: "add_repo", path })).toEqual({ ok: false, error: { code: "invalid_request", message } });
+    expect(existsSync(join(home, "repos.yaml"))).toBe(false);
+    execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "first", "--allow-empty"], { cwd: path });
+    expect(await client.query({ type: "suggest_repo", path })).toMatchObject({ ok: true, data: { hasCommits: true, problem: null } });
+    expect(await client.command({ type: "add_repo", path })).toMatchObject({ ok: true });
+  });
+
+  it("suggests node --check for a plain JS repo without package.json", async () => {
+    const { root, client } = await setUp({ sample: false });
+    const path = gitRepo(root, "plain-js");
+    rmSync(join(path, "package.json"));
+    writeFileSync(join(path, "index.js"), "console.log(1);\n");
+    expect(await client.query({ type: "suggest_repo", path })).toMatchObject({ ok: true, data: { checks: [], fallbackCheck: "node --check index.js" } });
+  });
+
+  it("updates a repo's base branch and checks, keeps comments, and tells clients", async () => {
+    const { root, home, client } = await setUp();
+    const events = collect(client);
+    const path = gitRepo(root, "billing-api");
+    expect((await client.command({ type: "add_repo", path, checks: ["pnpm test"] })).ok).toBe(true);
+    const file = join(home, "repos.yaml");
+    writeFileSync(file, `# mine\n${readFileSync(file, "utf8")}`);
+    const before = events.length;
+
+    expect(await client.command({ type: "update_repo", repoId: "billing-api", baseBranch: "develop", checks: ["pnpm test", "pnpm lint"] })).toEqual({
+      ok: true,
+      data: { repo: { id: "billing-api", baseBranch: "develop", checks: ["pnpm test", "pnpm lint"] } },
+    });
+    await waitFor(() => events.slice(before).some((event) => event.kind === "event" && event.event.type === "setup_changed"), 5_000, "setup_changed");
+    const text = readFileSync(file, "utf8");
+    expect(text).toContain("# mine\n");
+    expect(text).toContain("base_branch: develop");
+    expect(text).toContain("- pnpm lint");
+    const setup = await client.query({ type: "setup" });
+    expect(setup.ok && setup.data.repos.find((repo) => repo.id === "billing-api")).toEqual({ id: "billing-api", baseBranch: "develop", checks: ["pnpm test", "pnpm lint"] });
+
+    expect(await client.command({ type: "update_repo", repoId: "billing-api", baseBranch: "bad branch", checks: [] })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
+    expect(await client.command({ type: "update_repo", repoId: "billing-api", baseBranch: "main", checks: ["a | b"] })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
+    expect(await client.command({ type: "update_repo", repoId: "nope", baseBranch: "main", checks: [] })).toMatchObject({ ok: false, error: { code: "not_found" } });
+    // A sample repo is not in repos.yaml: editing it is refused and the file is left alone.
+    expect(await client.command({ type: "update_repo", repoId: "orders-api", baseBranch: "main", checks: [] })).toMatchObject({ ok: false, error: { code: "not_found", message: expect.stringContaining("sample repo") } });
+    expect(readFileSync(file, "utf8")).toBe(text);
   });
 
   it("keeps the sample repo ids in sample mode and marks the sample repos", async () => {

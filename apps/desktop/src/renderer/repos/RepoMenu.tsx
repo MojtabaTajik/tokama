@@ -1,5 +1,5 @@
-// The "⋯" menu on a repo row in the sidebar, with one action: Remove repo, after an in-app
-// confirmation. Removing only takes the repo out of repos.yaml; its items and worktrees are kept.
+// The "⋯" menu on a repo row in the sidebar: Edit repo (opens its dialog) and Remove repo, after an
+// in-app confirmation. Removing only takes the repo out of repos.yaml; its items and worktrees are kept.
 // Keyboard: Enter, Space or ArrowDown opens the menu with its first item focused; Escape closes
 // the menu or the confirmation and returns focus to the "⋯" button.
 import { useEffect, useId, useRef, useState } from "react";
@@ -7,6 +7,7 @@ import { Modal, Problem } from "./Modal.js";
 
 const TEXT = {
   actions: (name: string) => `Actions for ${name}`,
+  edit: "Edit repo…",
   remove: "Remove repo…",
   question: (name: string) => `Remove ${name}?`,
   explain: "Tokama stops listing this repo. Its items and worktrees are kept, and nothing in the folder changes.",
@@ -18,11 +19,12 @@ const TEXT = {
 
 export interface RepoMenuProps {
   readonly name: string;
+  readonly onEdit: () => void;
   /** Removes the repo; resolves to the engine's message when it refused. */
   readonly onRemove: () => Promise<string | undefined>;
 }
 
-export function RepoMenu({ name, onRemove }: RepoMenuProps) {
+export function RepoMenu({ name, onEdit, onRemove }: RepoMenuProps) {
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -82,6 +84,17 @@ export function RepoMenu({ name, onRemove }: RepoMenuProps) {
         <div className="repo-menu-popup" role="menu" aria-label={TEXT.actions(name)}>
           <button
             ref={firstItem}
+            type="button"
+            role="menuitem"
+            className="repo-menu-item"
+            onClick={() => {
+              closeMenu();
+              onEdit();
+            }}
+          >
+            {TEXT.edit}
+          </button>
+          <button
             type="button"
             role="menuitem"
             className="repo-menu-item"

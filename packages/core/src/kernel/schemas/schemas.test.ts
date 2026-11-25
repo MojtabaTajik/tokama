@@ -377,7 +377,9 @@ describe("check command length", () => {
     const check = (length: number) => "x".repeat(length);
     expect(parseCommand({ type: "add_repo", path: "/a", checks: [check(500)] }).ok).toBe(true);
     expect(parseCommand({ type: "add_repo", path: "/a", checks: [check(501)] }).ok).toBe(false);
-    const suggestion = { path: "/a", gitRepo: true, branch: "main", id: "a", problem: null };
+    expect(parseCommand({ type: "update_repo", repoId: "a", baseBranch: "main", checks: [check(500)] }).ok).toBe(true);
+    expect(parseCommand({ type: "update_repo", repoId: "a", baseBranch: "main", checks: [check(501)] }).ok).toBe(false);
+    const suggestion = { path: "/a", gitRepo: true, hasCommits: true, branch: "main", id: "a", fallbackCheck: null, problem: null };
     expect(parseQueryResult("suggest_repo", { ...suggestion, checks: [check(500)] }).ok).toBe(true);
     expect(parseQueryResult("suggest_repo", { ...suggestion, checks: [check(501)] }).ok).toBe(false);
   });

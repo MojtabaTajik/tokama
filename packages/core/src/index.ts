@@ -93,6 +93,7 @@ export {
   loadRepos,
   removeRepo,
   suggestRepo,
+  updateRepo,
   type AddRepoInput,
   type ConfigError,
   type LoadReposOptions,
@@ -100,6 +101,7 @@ export {
   type RepoEditError,
   type RepoEditOptions,
   type RepoSuggestion,
+  type UpdateRepoInput,
 } from "./slices/config/index.js";
 export {
   API_VERSION,
@@ -127,6 +129,7 @@ export {
   parseTemplateId,
   parseTemplateRecord,
   type AddRepoResult,
+  type UpdateRepoResult,
   type AgentCallOutcome,
   type BoardResult,
   type AgentCallUsage,

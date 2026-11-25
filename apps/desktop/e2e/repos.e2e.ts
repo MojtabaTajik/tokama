@@ -15,6 +15,7 @@ flow(
     const folder = join(tmp, "billing-api");
     mkdirSync(folder);
     execFileSync("git", ["init", "-q", "-b", "main"], { cwd: folder });
+    execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "first"], { cwd: folder });
     writeFileSync(join(folder, "package.json"), JSON.stringify({ scripts: { test: "vitest run" } }));
     writeFileSync(join(folder, "pnpm-lock.yaml"), "");
     await app.evaluate(({ dialog }, path) => {
@@ -38,6 +39,21 @@ flow(
     expect(written).toContain("- pnpm test");
     expect(statSync(file).mode & 0o777).toBe(0o600);
 
+    // Edit the checks from the row menu, then see repos.yaml change.
+    await page.getByRole("button", { name: "Actions for billing-api" }).click();
+    await page.getByRole("menuitem", { name: "Edit repo…" }).click();
+    const edit = page.getByRole("dialog", { name: "Edit repo" });
+    expect(await edit.getByLabel("Id", { exact: true }).isEditable(), "the id is read-only").toBe(false);
+    expect(await edit.getByLabel("Checks", { exact: true }).inputValue()).toBe("pnpm test");
+    await edit.getByLabel("Checks", { exact: true }).fill("pnpm test\npnpm lint");
+    await edit.getByLabel("Base branch", { exact: true }).fill("develop");
+    await edit.getByRole("button", { name: "Save" }).click();
+    await edit.waitFor({ state: "detached" });
+    const edited = readFileSync(file, "utf8");
+    expect(edited).toContain("base_branch: develop");
+    expect(edited).toContain("- pnpm lint");
+    expect(edited).toContain(`path: ${realpathSync(folder)}`);
+
     // Remove, by keyboard: the row menu opens with ArrowDown, its item takes Enter.
     await page.getByRole("button", { name: "Actions for billing-api" }).focus();
     await page.keyboard.press("ArrowDown");
@@ -49,6 +65,34 @@ flow(
     expect(readFileSync(file, "utf8")).not.toContain("billing-api");
     expect(existsSync(join(folder, "package.json")), "the folder itself is untouched").toBe(true);
     await firstLaunch.waitFor();
+  },
+  "real",
+);
+
+flow(
+  "warns about a repo without commits, and about a repo without checks",
+  async ({ app, page, tmp, screenshot }) => {
+    const fresh = join(tmp, "fresh-repo");
+    mkdirSync(fresh);
+    execFileSync("git", ["init", "-q", "-b", "main"], { cwd: fresh });
+    writeFileSync(join(fresh, "index.js"), "console.log(1);\n");
+    await app.evaluate(({ dialog }, path) => {
+      (dialog as { showOpenDialog: unknown }).showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
+    }, fresh);
+
+    await page.getByRole("button", { name: "+ Add repo" }).click();
+    const add = page.getByRole("dialog", { name: "Add repo" });
+    await add.getByText("This repo has no commits yet. Make a first commit, then add it.").waitFor();
+    expect(await add.getByRole("button", { name: "Add repo" }).isDisabled()).toBe(true);
+    await screenshot("11-add-repo-no-commits");
+    await add.getByRole("button", { name: "Cancel" }).click();
+
+    execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "first"], { cwd: fresh });
+    await page.getByRole("button", { name: "+ Add repo" }).click();
+    await add.getByText("No checks yet.").waitFor();
+    await screenshot("11-add-repo-no-checks");
+    await add.getByRole("button", { name: "Use node --check index.js" }).click();
+    expect(await add.getByLabel("Checks", { exact: true }).inputValue()).toBe("node --check index.js");
   },
   "real",
 );

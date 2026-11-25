@@ -65,6 +65,13 @@ export const CommandSchema = z.discriminatedUnion("type", [
     baseBranch: z.string().max(255).optional(),
     checks: z.array(checkCommand).max(20).optional(),
   }),
+  // Replaces a repo's base branch and checks in repos.yaml, by the add_repo rules. An empty list removes the checks.
+  z.strictObject({
+    type: z.literal("update_repo"),
+    repoId: RepoIdSchema,
+    baseBranch: z.string().max(255),
+    checks: z.array(checkCommand).max(20),
+  }),
   // Removes a repo from repos.yaml. Its items and worktrees are kept.
   z.strictObject({ type: z.literal("remove_repo"), repoId: RepoIdSchema }),
 ]);
@@ -112,11 +119,15 @@ export const RepoSuggestionSchema = z.strictObject({
   /** The folder's real path. */
   path: folderPath,
   gitRepo: z.boolean(),
+  /** False when the repo has no commit yet; add_repo refuses it. */
+  hasCommits: z.boolean(),
   /** The current branch; null when HEAD is detached or the folder isn't a repo. */
   branch: z.string().max(255).nullable(),
   /** From the folder name; null when it gives no valid id. */
   id: RepoIdSchema.nullable(),
   checks: z.array(checkCommand).max(20),
+  /** A check to offer when `checks` is empty: `node --check` on a plain JS project's entry file; null when none fits. */
+  fallbackCheck: checkCommand.nullable(),
   /** Why the folder can't be added as it is, in plain words; null when it can. */
   problem: z.string().max(1000).nullable(),
 });
@@ -143,6 +154,7 @@ export const CommandResultSchemas = {
   resolve_decision: z.null(),
   stop_item: z.null(),
   add_repo: z.strictObject({ repo: RepoSummarySchema }),
+  update_repo: z.strictObject({ repo: RepoSummarySchema }),
   remove_repo: z.null(),
 } as const satisfies Record<z.output<typeof CommandSchema>["type"], z.ZodType>;
 
@@ -298,4 +310,5 @@ export type CommandType = keyof typeof CommandResultSchemas;
 export type CommandResult<T extends CommandType> = z.output<(typeof CommandResultSchemas)[T]>;
 export type StartItemResult = CommandResult<"start_item">;
 export type AddRepoResult = CommandResult<"add_repo">;
+export type UpdateRepoResult = CommandResult<"update_repo">;
 export type CommandErrorCode = (typeof COMMAND_ERROR_CODES)[number];

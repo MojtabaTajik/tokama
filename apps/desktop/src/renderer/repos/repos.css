@@ -142,3 +142,22 @@
 .repo-form .repo-problem {
   color: var(--fail);
 }
+
+.repo-form .repo-note {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--raised);
+}
+
+.repo-note strong {
+  color: var(--text);
+}
+
+.repo-field input[readonly] {
+  color: var(--muted);
+}

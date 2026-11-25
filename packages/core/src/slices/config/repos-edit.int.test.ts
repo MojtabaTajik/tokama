@@ -35,9 +35,9 @@ afterAll(() => rmSync(root, { recursive: true, force: true }));
 
 describe("suggestRepo with git", () => {
   it("reads the branch of the top folder, of a linked worktree and of a repo without commits", async () => {
-    expect(await suggestRepo(options, join(root, "orders-api"))).toMatchObject({ ok: true, value: { gitRepo: true, branch: "trunk", problem: undefined } });
+    expect(await suggestRepo(options, join(root, "orders-api"))).toMatchObject({ ok: true, value: { gitRepo: true, hasCommits: true, branch: "trunk", problem: undefined } });
     expect(await suggestRepo(options, join(root, "orders-wt"))).toMatchObject({ ok: true, value: { gitRepo: true, branch: "feature/x" } });
-    expect(await suggestRepo(options, join(root, "unborn"))).toMatchObject({ ok: true, value: { gitRepo: true, branch: "main" } });
+    expect(await suggestRepo(options, join(root, "unborn"))).toMatchObject({ ok: true, value: { gitRepo: true, hasCommits: false, branch: "main", problem: "This repo has no commits yet. Make a first commit, then add it." } });
   });
 
   it("has no branch for a detached HEAD", async () => {

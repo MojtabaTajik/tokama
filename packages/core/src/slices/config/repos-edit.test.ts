@@ -1,10 +1,10 @@
-import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Git, GitError, WorktreeEntry } from "../../kernel/git/index.js";
 import { err, ok } from "../../kernel/result/index.js";
-import { addRepo, loadRepos, removeRepo, suggestRepo, type RepoEditOptions } from "./index.js";
+import { addRepo, loadRepos, removeRepo, suggestRepo, updateRepo, type RepoEditOptions } from "./index.js";
 
 let root: string;
 let home: string;
@@ -12,15 +12,19 @@ let home: string;
 let worktrees: Map<string, string | undefined>;
 /** What the fake git answers for a folder it doesn't know. */
 let gitError: GitError;
+/** Folders the fake git gives no HEAD commit. */
+let unborn: Set<string>;
 beforeEach(() => {
   root = realpathSync(mkdtempSync(join(tmpdir(), "tokama-repos-edit-")));
   home = join(root, "tokama-home");
   worktrees = new Map();
+  unborn = new Set();
   gitError = { reason: "failed", args: [], exitCode: 128, message: "fatal: not a git repository (or any of the parent directories): .git" };
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-const git: Pick<Git, "worktreeList"> = {
+const git: Pick<Git, "worktreeList" | "revParse"> = {
+  revParse: async (repo) => (unborn.has(repo) ? err({ reason: "failed", args: [], exitCode: 128, message: "fatal: Needed a single revision" }) : ok("a".repeat(40))),
   worktreeList: async (repo) => {
     if (!worktrees.has(repo)) return err(gitError);
     const branch = worktrees.get(repo);
@@ -35,7 +39,10 @@ const reposFile = () => join(home, "repos.yaml");
 function repo(name: string, files: Record<string, string> = {}, branch: string | null = "main"): string {
   const path = join(root, name);
   mkdirSync(path, { recursive: true });
-  for (const [file, content] of Object.entries(files)) writeFileSync(join(path, file), content);
+  for (const [file, content] of Object.entries(files)) {
+    mkdirSync(dirname(join(path, file)), { recursive: true });
+    writeFileSync(join(path, file), content);
+  }
   worktrees.set(path, branch ?? undefined);
   return path;
 }
@@ -212,6 +219,92 @@ repos:
   });
 });
 
+describe("a repo without commits", () => {
+  it("is refused by addRepo and reported by suggestRepo", async () => {
+    const path = repo("fresh");
+    unborn.add(path);
+    const message = "This repo has no commits yet. Make a first commit, then add it.";
+    expect(await suggestRepo(options(), path)).toMatchObject({ ok: true, value: { gitRepo: true, hasCommits: false, branch: "main", problem: message } });
+    expect(await addRepo(options(), { path })).toEqual({ ok: false, error: { code: "invalid_request", message } });
+    expect(existsSync(reposFile())).toBe(false);
+    unborn.delete(path);
+    expect(await addRepo(options(), { path })).toMatchObject({ ok: true });
+  });
+
+  it("is not taken for a git failure: only a git that cannot run is reported as that", async () => {
+    const path = repo("odd");
+    const broken: RepoEditOptions = { ...options(), git: { ...git, revParse: async () => err({ reason: "timed-out", args: [], exitCode: null, message: "" }) } };
+    expect(await suggestRepo(broken, path)).toMatchObject({ ok: true, value: { gitRepo: false, problem: "Tokama couldn't run git to check this folder (timed-out)." } });
+  });
+});
+
+describe("updateRepo", () => {
+  const FILE = `# My repos.
+format: 1
+repos:
+  # first
+  - id: a
+    path: PATH_A
+    base_branch: main # trunk
+    checks:
+      # tests first
+      - pnpm test
+  - id: b
+    path: PATH_B
+    base_branch: develop
+`;
+  async function seed(): Promise<void> {
+    const a = repo("a");
+    const b = repo("b");
+    mkdirSync(home, { recursive: true });
+    writeFileSync(reposFile(), FILE.replace("PATH_A", a).replace("PATH_B", b));
+  }
+
+  it("replaces the base branch and the checks, keeps comments and the other repo, and leaves no temp file", async () => {
+    await seed();
+    const updated = await updateRepo(options(), { repoId: "a", baseBranch: " release/1 ", checks: ["pnpm test", " pnpm lint ", ""] });
+    expect(updated).toMatchObject({ ok: true, value: { id: "a", baseBranch: "release/1", checks: ["pnpm test", "pnpm lint"] } });
+    const text = readFileSync(reposFile(), "utf8");
+    expect(text).toContain("# My repos.");
+    expect(text).toContain("  # first\n");
+    expect(text).toContain("base_branch: release/1 # trunk");
+    expect(text).toContain("# tests first");
+    expect(text).toContain("- pnpm lint");
+    expect(text).toContain("base_branch: develop");
+    expect(readdirSync(home)).toEqual(["repos.yaml"]);
+    expect(statSync(reposFile()).mode & 0o777).toBe(0o600);
+    const loaded = await loadRepos({ tokamaHome: home });
+    expect(loaded).toMatchObject({ ok: true, value: [{ id: "a", baseBranch: "release/1", checks: ["pnpm test", "pnpm lint"] }, { id: "b", baseBranch: "develop", checks: [] }] });
+  });
+
+  it("adds checks to a repo that had none, and removes them with an empty list", async () => {
+    await seed();
+    expect(await updateRepo(options(), { repoId: "b", baseBranch: "develop", checks: ["npm test"] })).toMatchObject({ ok: true });
+    expect(readFileSync(reposFile(), "utf8")).toMatch(/base_branch: develop\n {4}checks:\n {6}- npm test\n/);
+    expect(await updateRepo(options(), { repoId: "a", baseBranch: "main", checks: [] })).toMatchObject({ ok: true, value: { checks: [] } });
+    expect(readFileSync(reposFile(), "utf8")).not.toContain("pnpm test");
+    expect(await loadRepos({ tokamaHome: home })).toMatchObject({ ok: true, value: [{ checks: [] }, { checks: ["npm test"] }] });
+  });
+
+  it("refuses what addRepo refuses, and writes nothing", async () => {
+    await seed();
+    const before = readFileSync(reposFile(), "utf8");
+    expect(await updateRepo(options(), { repoId: "a", baseBranch: "bad branch", checks: [] })).toMatchObject({ ok: false, error: { code: "invalid_request", message: expect.stringContaining("base branch") } });
+    expect(await updateRepo(options(), { repoId: "a", baseBranch: "", checks: [] })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
+    expect(await updateRepo(options(), { repoId: "a", baseBranch: "main", checks: ["a && b"] })).toMatchObject({ ok: false, error: { code: "invalid_request", message: expect.stringContaining("no &&") } });
+    expect(await updateRepo(options(), { repoId: "a", baseBranch: "main", checks: ["x".repeat(501)] })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
+    expect(readFileSync(reposFile(), "utf8")).toBe(before);
+  });
+
+  it("answers not_found for an unknown id, also without a file, and never rewrites a broken file", async () => {
+    expect(await updateRepo(options(), { repoId: "nope", baseBranch: "main", checks: [] })).toMatchObject({ ok: false, error: { code: "not_found" } });
+    await seed();
+    expect(await updateRepo(options(), { repoId: "nope", baseBranch: "main", checks: [] })).toMatchObject({ ok: false, error: { code: "not_found" } });
+    writeFileSync(reposFile(), "format: 9\nrepos: []\n");
+    expect(await updateRepo(options(), { repoId: "a", baseBranch: "main", checks: [] })).toMatchObject({ ok: false, error: { code: "invalid_config" } });
+  });
+});
+
 describe("removeRepo", () => {
   it("removes the repo and leaves its folder alone", async () => {
     const path = repo("a", { "keep.txt": "x" });
@@ -235,7 +328,7 @@ describe("suggestRepo", () => {
     const path = repo("Orders_API", { "package.json": JSON.stringify({ scripts: { test: "vitest run", lint: "eslint .", build: "tsc" } }), "pnpm-lock.yaml": "" }, "develop");
     expect(await suggestRepo(options(), path)).toEqual({
       ok: true,
-      value: { path, gitRepo: true, branch: "develop", id: "orders-api", checks: ["pnpm test", "pnpm lint"], problem: undefined },
+      value: { path, gitRepo: true, hasCommits: true, branch: "develop", id: "orders-api", checks: ["pnpm test", "pnpm lint"], fallbackCheck: undefined, problem: undefined },
     });
   });
 
@@ -251,6 +344,18 @@ describe("suggestRepo", () => {
     const path = repo("y", { "package.json": JSON.stringify({ scripts: { test: "jest" } }), "yarn.lock": "" });
     expect(await suggestRepo(options(), path)).toMatchObject({ ok: true, value: { checks: ["yarn test"] } });
     expect(await suggestRepo(options(), repo("bare-files"))).toMatchObject({ ok: true, value: { checks: [] } });
+  });
+
+  it("offers node --check on the first entry file when there is no package.json", async () => {
+    expect(await suggestRepo(options(), repo("js", { "index.js": "1", "main.js": "1" }))).toMatchObject({ ok: true, value: { checks: [], fallbackCheck: "node --check main.js" } });
+    expect(await suggestRepo(options(), repo("js2", { "index.js": "1", "src/main.js": "1" }))).toMatchObject({ value: { fallbackCheck: "node --check src/main.js" } });
+    expect(await suggestRepo(options(), repo("js3", { "index.js": "1" }))).toMatchObject({ value: { fallbackCheck: "node --check index.js" } });
+    expect((await suggestRepo(options(), repo("none", { "readme.md": "x" }))) as { value: { fallbackCheck: unknown } }).toMatchObject({ value: { fallbackCheck: undefined } });
+  });
+
+  it("offers no fallback with a package.json, or when package.json gives checks", async () => {
+    expect(await suggestRepo(options(), repo("pkg", { "package.json": "{}", "index.js": "1" }))).toMatchObject({ value: { checks: [], fallbackCheck: undefined } });
+    expect(await suggestRepo(options(), repo("pkg2", { "package.json": JSON.stringify({ scripts: { test: "jest" } }), "index.js": "1" }))).toMatchObject({ value: { fallbackCheck: undefined } });
   });
 
   it("makes the suggested id unique and reports a folder added already", async () => {

@@ -8,7 +8,7 @@ import { Insights } from "./insights/Insights.js";
 import { useUsage } from "./insights/useUsage.js";
 import { ALL_WORK, type CliIssue, cliIssuesOf, healthProblemsOf, inView, needsYouCount, type View } from "./model.js";
 import { isMac, NewWork, type NewWorkHandle } from "./newwork/NewWork.js";
-import { AddRepoDialog } from "./repos/AddRepoDialog.js";
+import { RepoDialog } from "./repos/RepoDialog.js";
 import { Settings, type SettingsPage } from "./settings/Settings.js";
 import { NeedsYou } from "./needsyou/NeedsYou.js";
 import { MainArea } from "./shell/MainArea.js";
@@ -49,6 +49,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, cliI
   const composer = useRef<NewWorkHandle>(null);
   // The folder the picker returned, while the Add repo dialog is open.
   const [addingRepo, setAddingRepo] = useState<string | undefined>(undefined);
+  const [editingRepo, setEditingRepo] = useState<string | undefined>(undefined);
   const [clock, setClock] = useState(() => Date.now());
   useEffect(() => {
     if (fixedNow !== undefined) return;
@@ -64,6 +65,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, cliI
   // The engine's startup checks, unless a test gives the issues itself.
   const issues = useMemo(() => cliIssues ?? cliIssuesOf(setup?.health), [cliIssues, setup]);
   const problems = useMemo(() => healthProblemsOf(setup?.health), [setup]);
+  const editedRepo = setup?.repos.find((repo) => repo.id === editingRepo);
   const views = useViewState((view) => view.kind === "all" || (view.kind === "workflow" ? setup?.templates : setup?.repos)?.some((entry) => entry.id === view.id) === true);
 
   // Cmd (macOS) or Ctrl (elsewhere) and N open New work from anywhere; the sidebar may be closed, so this lives here.
@@ -165,6 +167,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, cliI
           onNewWork={() => composer.current?.open()}
           onStartIn={startIn}
           onAddRepo={() => void pickRepoFolder()}
+          onEditRepo={setEditingRepo}
           onRemoveRepo={removeRepo}
         />
       )}
@@ -217,7 +220,8 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, cliI
           composer={composerNode}
         />
       )}
-      {addingRepo !== undefined && <AddRepoDialog bridge={bridge} path={addingRepo} onClose={() => setAddingRepo(undefined)} />}
+      {addingRepo !== undefined && <RepoDialog bridge={bridge} path={addingRepo} onClose={() => setAddingRepo(undefined)} />}
+      {editedRepo !== undefined && <RepoDialog bridge={bridge} repo={editedRepo} onClose={() => setEditingRepo(undefined)} />}
       {!aboutOpen && selectedItemId !== undefined && <ItemDrawer bridge={bridge} itemId={selectedItemId} setup={setup} diffAsked={diffAsked} onClose={() => setSelectedItemId(undefined)} />}
     </div>
   );
