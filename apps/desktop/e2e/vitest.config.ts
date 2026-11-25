@@ -5,6 +5,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   root: import.meta.dirname,
   test: {
+    globalSetup: ["./global-setup.ts"],
     include: ["*.e2e.ts"],
     fileParallelism: false,
     testTimeout: 90_000,
