@@ -59,8 +59,10 @@ export function AgentLabel({ info, onOpen }: AgentLabelProps) {
   return (
     <span ref={wrapper} className="al" onMouseEnter={() => tip.hold("hover", true)} onMouseLeave={() => tip.hold("hover", false)} onFocus={() => tip.hold("focus", true)} onBlur={() => tip.hold("focus", false)}>
       <button ref={button} type="button" className="al-button" data-open={open || undefined} aria-describedby={open ? tipId : undefined} style={{ anchorName: anchor } as CSSProperties}>
-        <span className="agent-dot" data-agent={info.dot} aria-hidden="true" />
-        <span className="ellipsis">{info.name}</span>{" "}
+        <span className="al-who">
+          <span className="agent-dot" data-agent={info.dot} aria-hidden="true" />
+          <span className="ellipsis">{info.name}</span>
+        </span>{" "}
         {info.model !== undefined && <span className="al-model">· {info.model}</span>}
       </button>
       {open && <Tip id={tipId} anchor={anchor} info={info} onOpen={onOpen} />}
