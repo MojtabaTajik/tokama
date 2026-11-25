@@ -7,9 +7,9 @@
 // and it started no later than the lock was written. Then the steps, each only when the one
 // before did not stop it: a shutdown request on the engine's socket, SIGTERM, and SIGKILL.
 import { execFile } from "node:child_process";
-import { closeSync, constants, fstatSync, openSync, readSync } from "node:fs";
 import { systemClock, type Clock } from "../clock/index.js";
 import { LSTART, parseLstart } from "./leftover.js";
+import { readPidFile } from "./pid-file.js";
 
 /** The engine dir's lock: `<pid> <engineId>`. */
 export interface EngineLock {
@@ -73,21 +73,12 @@ export interface StopOptions {
   readonly selfPid?: number;
 }
 
-const MAX_LOCK_BYTES = 512;
-
 /** The lock's pid, engine id and write time; undefined when it is missing, not a plain file, or malformed. */
 export function readEngineLock(lockPath: string): EngineLock | undefined {
-  const read = readSmallFile(lockPath);
-  if (read === undefined) return undefined;
-  const match = /^(\d{1,10}) (\S{1,128})\n?$/.exec(read.text);
-  if (match === null) return undefined;
-  return { pid: Number(match[1]), engineId: match[2] ?? "", writtenAt: read.mtimeMs };
-}
-
-/** The pid a lock file names first; undefined when there is no readable lock. */
-function lockPid(lockPath: string): number | undefined {
-  const pid = Number.parseInt(readSmallFile(lockPath)?.text.split(" ")[0] ?? "", 10);
-  return Number.isInteger(pid) ? pid : undefined;
+  const read = readPidFile(lockPath);
+  if (read?.pid === undefined || read.fields.length !== 2) return undefined;
+  const engineId = read.fields[1] ?? "";
+  return engineId.length > 128 ? undefined : { pid: read.pid, engineId, writtenAt: read.writtenAt };
 }
 
 export async function verifyOwnEngine(engine: OwnEngine, processes: EngineProcesses, selfPid = process.pid): Promise<VerifyOutcome> {
@@ -127,7 +118,7 @@ export async function stopOwnEngine(engine: OwnEngine, options: StopOptions): Pr
     const info = await processes.describe(lock.pid).catch(() => "unknown" as const);
     if (info === "unknown") return false;
     if (info === undefined || info.startedAt !== startedAt) return true;
-    return [engine.lockPath, ...(engine.otherLocks ?? [])].every((path) => lockPid(path) !== lock.pid);
+    return [engine.lockPath, ...(engine.otherLocks ?? [])].every((path) => readPidFile(path)?.pid !== lock.pid);
   };
   const waitStopped = async () => {
     const deadline = clock.now() + stepMs;
@@ -202,21 +193,4 @@ export function parseDescribe(output: string): { startedAt: number; command: str
   if (match === null) return undefined;
   const startedAt = parseLstart(match[1] ?? "");
   return startedAt === undefined || match[2] === undefined || match[2] === "" ? undefined : { startedAt, command: match[2] };
-}
-
-function readSmallFile(path: string): { text: string; mtimeMs: number } | undefined {
-  let fd: number | undefined;
-  try {
-    // Non-blocking, so a FIFO in its place cannot hang the caller.
-    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
-    const stat = fstatSync(fd);
-    if (!stat.isFile() || stat.size > MAX_LOCK_BYTES) return undefined;
-    const buffer = Buffer.alloc(stat.size);
-    const length = readSync(fd, buffer, 0, stat.size, 0);
-    return { text: buffer.subarray(0, length).toString("utf8"), mtimeMs: stat.mtimeMs };
-  } catch {
-    return undefined;
-  } finally {
-    if (fd !== undefined) closeSync(fd);
-  }
 }
