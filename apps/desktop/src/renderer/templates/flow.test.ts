@@ -2,7 +2,7 @@ import type { TemplateStepView, TemplateView } from "@tokama/core";
 import { describe, expect, it } from "vitest";
 import { setup } from "../testing/sample.js";
 import { planAndBuild } from "../testing/templates.js";
-import { dotOf, flowOf, NODE_HEIGHT, SLOT } from "./flow.js";
+import { flowOf, NODE_HEIGHT, SLOT } from "./flow.js";
 
 const [plan, build, review] = planAndBuild.steps as [TemplateStepView, TemplateStepView, TemplateStepView];
 const withSteps = (...steps: TemplateStepView[]) => ({ steps }) as Pick<TemplateView, "steps">;
@@ -75,12 +75,5 @@ describe("flowOf", () => {
     const straight = flowOf(withSteps(plan), setup.agents);
     expect(straight.loops).toEqual([]);
     expect(straight.description).toBe("Start → Plan → Finish. No loops.");
-  });
-});
-
-describe("dotOf", () => {
-  it("gives the first three agents their dots, then neutral", () => {
-    const agents = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
-    expect(["a", "b", "c", "d", "gone"].map((id) => dotOf(id, agents))).toEqual([1, 2, 3, "neutral", "neutral"]);
   });
 });

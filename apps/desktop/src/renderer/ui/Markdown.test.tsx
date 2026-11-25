@@ -2,8 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { previewOf } from "./StepOutput.js";
-import { blocksOf, StepText } from "./StepText.js";
+import { blocksOf, Markdown } from "./Markdown.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -19,10 +18,10 @@ afterEach(() => {
   container.remove();
 });
 
-const render = (text: string) => act(async () => root.render(<StepText text={text} />));
+const render = (text: string) => act(async () => root.render(<Markdown text={text} />));
 const $$ = (selector: string) => [...container.querySelectorAll(selector)];
 
-describe("StepText", () => {
+describe("Markdown", () => {
   it("shows HTML, script tags and Markdown links as their characters, never as elements", async () => {
     const text = [
       "# <script>alert(1)</script>",
@@ -106,11 +105,5 @@ describe("blocksOf", () => {
     const started = performance.now();
     expect(blocksOf(long)).toHaveLength(1);
     expect(performance.now() - started).toBeLessThan(1000);
-  });
-});
-
-describe("previewOf", () => {
-  it("takes the first lines with words, without Markdown marks or fences", () => {
-    expect(previewOf("## Plan\n\n```sql\n- Add a table\n3. Call it\n- Test it")).toBe("Plan\nAdd a table\nCall it");
   });
 });

@@ -9,8 +9,10 @@ import { RepoMenu } from "../repos/RepoMenu.js";
 import { ALL_WORK, type Badge, badgesOf, inView, needsYouCount, sameView, type View, viewKey } from "../model.js";
 import type { Section } from "../useViewState.js";
 import { EngineHealth } from "./ConnectionStatus.js";
-import { AllWorkIcon, RepoIcon } from "./icons.js";
+import { AllWorkIcon, RepoIcon } from "../ui/icons.js";
 import { TemplateIcon } from "./TemplateIcon.js";
+import { Button } from "../ui/Button.js";
+import { StatusCounts } from "../ui/Badge.js";
 
 const TEXT = {
   panel: "Sidebar",
@@ -82,9 +84,9 @@ export function Sidebar(props: SidebarProps) {
   );
   return (
     <aside className="panel" id={id} aria-label={TEXT.panel} data-stale={stale || undefined}>
-      <button type="button" className="new-work" disabled={setup !== undefined && setup.repos.length === 0} onClick={onNewWork}>
+      <Button variant="plain" className="new-work" disabled={setup !== undefined && setup.repos.length === 0} onClick={onNewWork}>
         {TEXT.newWork}
-      </button>
+      </Button>
       <p className="engine-line">
         {TEXT.thisMachine}
         <EngineHealth state={connection} />
@@ -111,9 +113,9 @@ export function Sidebar(props: SidebarProps) {
         <>
           {repos.map((entry) => row(entry, <RepoIcon />, TEXT.quickTask(entry.name), true, entry.removable && <RepoMenu name={entry.name} waiting={needsYouCount(items.filter((item) => inView(item, entry.view)))} onEdit={() => onEditRepo(entry.view.id)} onRemove={() => onRemoveRepo(entry.view.id)} />))}
           {setup !== undefined && repos.length === 0 && <p className="sb-empty">{TEXT.noRepos}</p>}
-          <button ref={addRepo} type="button" className="sb-add" onClick={onAddRepo}>
+          <Button variant="plain" ref={addRepo} className="sb-add" onClick={onAddRepo}>
             {TEXT.addRepo}
-          </button>
+          </Button>
         </>
       )}
     </aside>
@@ -133,8 +135,8 @@ function SectionHeading({ section, title, collapsed, onToggle, summary }: Sectio
   const closed = collapsed.has(section);
   return (
     <h2 className="panel-heading">
-      <button
-        type="button"
+      <Button
+        variant="plain"
         className="section-toggle"
         aria-expanded={!closed}
         aria-label={closed ? TEXT.expand(title) : TEXT.collapse(title)}
@@ -142,8 +144,8 @@ function SectionHeading({ section, title, collapsed, onToggle, summary }: Sectio
       >
         <span aria-hidden="true">{closed ? "▸" : "▾"}</span>
         <span>{title}</span>
-      </button>
-      {closed && <Badges badges={summary} />}
+      </Button>
+      {closed && <StatusCounts counts={summary} />}
     </h2>
   );
 }
@@ -165,36 +167,18 @@ interface RowProps {
 function Row({ name, icon, badges, selected, onSelect, mono, startLabel, onStart, menu }: RowProps) {
   return (
     <div className="sb-row" data-selected={selected || undefined}>
-      <button type="button" className="sb-main" aria-current={selected ? "page" : undefined} onClick={onSelect}>
+      <Button variant="plain" className="sb-main" aria-current={selected ? "page" : undefined} onClick={onSelect}>
         <span className="sb-icon">{icon}</span>
         <span className={mono ? "ellipsis mono" : "ellipsis"}>{name}</span>
-        <Badges badges={badges} />
-      </button>
+        <StatusCounts counts={badges} />
+      </Button>
       {startLabel !== undefined && (
-        <button type="button" className="sb-plus" aria-label={startLabel} title={startLabel} onClick={onStart}>
+        <Button variant="plain" className="sb-plus" aria-label={startLabel} title={startLabel} onClick={onStart}>
           +
-        </button>
+        </Button>
       )}
       {menu}
     </div>
   );
 }
 
-/** Symbol and count per badge, with the word for assistive technology; colour is never the only signal. */
-function Badges({ badges }: { readonly badges: readonly Badge[] }) {
-  if (badges.length === 0) return null;
-  return (
-    <span className="sb-badges mono">
-      {badges.map((badge) => (
-        <span key={badge.kind} className="sb-badge" data-kind={badge.kind} title={`${badge.count} ${badge.word}`}>
-          <span aria-hidden="true">
-            {badge.symbol} {badge.count}
-          </span>
-          <span className="visually-hidden">
-            {badge.count} {badge.word}
-          </span>
-        </span>
-      ))}
-    </span>
-  );
-}

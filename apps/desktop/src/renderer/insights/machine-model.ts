@@ -1,6 +1,7 @@
 // Numbers and shapes for the Machine tab: byte and percent text, and the chart's time window with
 // the runs of readings it draws and the stretches that have none.
 import type { MachinePoint, MachineReport } from "@tokama/core";
+import { clock } from "../format/time.js";
 
 export const WINDOW_MS = 30 * 60_000;
 const MIB = 1024 ** 2;
@@ -23,14 +24,6 @@ export const onePercent = (value: number): string => `${value.toFixed(1)}%`;
 /** Process CPU is a share of one core in the report; the page shows a share of all cores. */
 export const ofAllCores = (cpuPercent: number, cores: number): number => cpuPercent / Math.max(1, cores);
 
-const two = (n: number) => String(n).padStart(2, "0");
-export function formatClock(at: number): string {
-  const date = new Date(at);
-  return `${two(date.getHours())}:${two(date.getMinutes())}`;
-}
-export function formatSeconds(at: number): string {
-  return `${formatClock(at)}:${two(new Date(at).getSeconds())}`;
-}
 
 export interface Tick {
   readonly at: number;
@@ -67,12 +60,12 @@ export function chartModel(report: MachineReport): ChartModel {
       runs.push([point]);
     } else run.push(point);
   }
-  const ticks: Tick[] = [{ at: start, label: formatClock(start), align: "start" }];
+  const ticks: Tick[] = [{ at: start, label: clock(start), align: "start" }];
   // Marks on the ten minute, kept off the two ends so their labels do not touch.
   for (let at = Math.ceil(start / (10 * MINUTE)) * 10 * MINUTE; at < end; at += 10 * MINUTE) {
-    if (at - start > 6 * MINUTE && end - at > 6 * MINUTE) ticks.push({ at, label: formatClock(at), align: "middle" });
+    if (at - start > 6 * MINUTE && end - at > 6 * MINUTE) ticks.push({ at, label: clock(at), align: "middle" });
   }
-  ticks.push({ at: end, label: `${formatClock(end)} now`, align: "end" });
+  ticks.push({ at: end, label: `${clock(end)} now`, align: "end" });
   return { start, end, runs, unsampled, ticks };
 }
 

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { dayLabel, daysBefore, localDay } from "./day.js";
+import { clock, clockSeconds, dayLabel, daysBefore, localDay, sameDay, shortDate, weekdayDate } from "./time.js";
 
 // A zone with DST, so the tests mean the same on a UTC CI runner. Berlin moved its clocks back
 // at 03:00 on 25 Oct 2026 and forward at 02:00 on 29 Mar 2026.
@@ -41,5 +41,23 @@ describe("day keys and labels", () => {
     // 24 hours before 23:30 on the 25-hour day is still that day; the calendar says the 24th.
     expect(daysBefore(local(10, 25, 23, 30), 1)).toBe("2026-10-24");
     expect(daysBefore(local(11, 24, 12), 29)).toBe("2026-10-26");
+  });
+});
+
+describe("clock and dates", () => {
+  it("writes a 24-hour clock, with seconds when asked", () => {
+    expect(clock(local(11, 24, 9, 5))).toBe("09:05");
+    expect(clock(local(11, 24, 17, 10))).toBe("17:10");
+    expect(clockSeconds(local(11, 24, 9, 5) + 7_000)).toBe("09:05:07");
+  });
+
+  it("writes a short date, with the weekday when asked", () => {
+    expect(shortDate(local(10, 17, 15))).toBe("17 Oct");
+    expect(weekdayDate(local(10, 22, 9))).toBe("Thu 22 Oct");
+  });
+
+  it("tells the same local day", () => {
+    expect(sameDay(local(11, 24, 0, 0), local(11, 24, 23, 59))).toBe(true);
+    expect(sameDay(local(11, 24, 23, 59), local(11, 25, 0, 0))).toBe(false);
   });
 });

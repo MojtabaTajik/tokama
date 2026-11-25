@@ -124,7 +124,7 @@ describe("Checks tab", () => {
     const [first, second] = $$(".ck-attempt");
     const rows = [...first!.querySelectorAll(".ck-check")];
     expect(rows.map((row) => [row.getAttribute("data-state"), row.querySelector(".ck-result")?.textContent, row.querySelector(".ck-cmd")?.textContent, row.querySelector(".ck-exit")?.textContent, row.querySelector(".ck-dur")?.textContent, row.querySelector(".ck-sum")?.textContent])).toEqual([
-      ["failed", "✕ failed", "$ pnpm test", "exit 1", "1 min 52 s", "2 failing · 416 passed"],
+      ["failed", "✕ failed", "$ pnpm test", "exit 1", "1 m 52 s", "2 failing · 416 passed"],
       ["passed", "✓ passed", "$ pnpm lint", "exit 0", "–", "No problems found."],
     ]);
     expect(rows.map((row) => (row.querySelector("details") as HTMLDetailsElement).open)).toEqual([true, false]);

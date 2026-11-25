@@ -6,10 +6,12 @@
 // text (bidi controls, line separators) are shown as visible escapes, and a path with a control
 // character is shown quoted, so a line cannot read differently from what it does. Binary files,
 // files over the engine's line limit and anything else left out say so and name the worktree.
-import type { Decision, DiffFile, ItemDiff } from "@tokama/core";
-import { type ReactNode, useEffect, useState } from "react";
-import { ExpandIcon } from "../shell/icons.js";
-import type { TokamaBridge } from "../../shared/bridge.js";
+import type { DiffFile, ItemDiff } from "@tokama/core";
+import { type ReactNode, useState } from "react";
+import { Button } from "./Button.js";
+import { Placeholder } from "./EmptyState.js";
+import { ExpandButton } from "./ExpandButton.js";
+import { StatusMark } from "./status.js";
 
 /** The engine shows the hunks of files with up to this many changed lines. */
 export const FILE_LINES = 1000;
@@ -153,41 +155,11 @@ const count = (value: number) => value.toLocaleString("en");
 
 export type DiffState = { readonly kind: "loading" } | { readonly kind: "failed"; readonly message: string } | { readonly kind: "loaded"; readonly diff: ItemDiff };
 
-const LOADING: DiffState = { kind: "loading" };
-
-/**
- * The change of an open decision, asked for again when the decision changes. An answer is kept
- * with the decision it is for, so a newer question never shows an older change, not even for one frame.
- */
-export function useDecisionDiff(bridge: TokamaBridge, itemId: string, decision: Decision | undefined): DiffState | undefined {
-  const [answer, setAnswer] = useState<{ readonly for: string; readonly state: DiffState } | undefined>(undefined);
-  const decisionId = decision?.hasDiff === true ? decision.id : undefined;
-  useEffect(() => {
-    if (decisionId === undefined) return;
-    let current = true;
-    void bridge
-      .query({ type: "decision_diff", itemId, decisionId })
-      .then((reply) => {
-        if (current) setAnswer({ for: decisionId, state: reply.ok ? { kind: "loaded", diff: reply.data } : { kind: "failed", message: reply.error.message } });
-      })
-      .catch((cause: unknown) => {
-        if (current) setAnswer({ for: decisionId, state: { kind: "failed", message: String(cause) } });
-      });
-    return () => {
-      current = false;
-    };
-  }, [bridge, itemId, decisionId]);
-  if (decisionId === undefined) return undefined;
-  return answer?.for === decisionId ? answer.state : LOADING;
-}
-
 function Status({ state }: { readonly state: Exclude<DiffState, { kind: "loaded" }> }) {
-  if (state.kind === "loading") return <p className="placeholder">{TEXT.loading}</p>;
+  if (state.kind === "loading") return <Placeholder>{TEXT.loading}</Placeholder>;
   return (
-    <p className="drawer-error" role="alert">
-      <span className="symbol" aria-hidden="true">
-        ✕
-      </span>
+    <p className="inline-error" role="alert">
+      <StatusMark status="failed" className="symbol" />
       {TEXT.failed(state.message)}
     </p>
   );
@@ -228,7 +200,7 @@ export function DiffTab({ state, baseBranch, layout = "drawer", onExpand, by }: 
   const [split, setSplit] = useState(true);
   if (state.kind !== "loaded") return <Status state={state} />;
   const { diff } = state;
-  if (diff.files.length === 0 && diff.moreFiles === 0) return <p className="placeholder">{TEXT.none}</p>;
+  if (diff.files.length === 0 && diff.moreFiles === 0) return <Placeholder>{TEXT.none}</Placeholder>;
   const sum = totals(diff);
   const file = diff.files[Math.min(picked, diff.files.length - 1)];
   return (
@@ -258,7 +230,7 @@ export function DiffTab({ state, baseBranch, layout = "drawer", onExpand, by }: 
           const status = STATUS[candidate.status];
           return (
             <li key={`${candidate.oldPath ?? ""}\n${candidate.path}`}>
-              <button type="button" className="dv-file" aria-pressed={candidate === file} onClick={() => setPicked(index)}>
+              <Button variant="plain" className="dv-file" aria-pressed={candidate === file} onClick={() => setPicked(index)}>
                 <span className="dv-status mono" title={status.word}>
                   <span aria-hidden="true">{status.letter}</span>
                   <span className="visually-hidden">{status.word}</span>
@@ -267,7 +239,7 @@ export function DiffTab({ state, baseBranch, layout = "drawer", onExpand, by }: 
                   <bdi>{candidate.oldPath === undefined ? shownPath(candidate.path) : `${shownPath(candidate.oldPath)} → ${shownPath(candidate.path)}`}</bdi>
                 </span>
                 <Counts file={candidate} />
-              </button>
+              </Button>
             </li>
           );
         })}
@@ -302,19 +274,17 @@ function FilePanel({ file, worktree, baseBranch, layout, split, onSplit, onExpan
         <span className="mono dv-muted">{summary}</span>
         {hidden === undefined && layout === "wide" && (
           <span className="segments dv-switch" role="group" aria-label={TEXT.diffView}>
-            <button type="button" className="segment" aria-pressed={split} onClick={() => onSplit(true)}>
+            <Button variant="plain" className="segment" aria-pressed={split} onClick={() => onSplit(true)}>
               {TEXT.sideBySide}
-            </button>
-            <button type="button" className="segment" aria-pressed={!split} onClick={() => onSplit(false)}>
+            </Button>
+            <Button variant="plain" className="segment" aria-pressed={!split} onClick={() => onSplit(false)}>
               {TEXT.unified}
-            </button>
+            </Button>
           </span>
         )}
         {hidden === undefined && layout === "narrow" && <span className="dv-switch dv-muted">{TEXT.tooNarrow}</span>}
         {onExpand !== undefined && (
-          <button type="button" className="expand-button" aria-label={TEXT.expand} title={TEXT.expandTip} onClick={onExpand}>
-            <ExpandIcon />
-          </button>
+          <ExpandButton className="expand-button" label={TEXT.expand} tip={TEXT.expandTip} onClick={onExpand} />
         )}
       </p>
       {hidden === undefined && sideBySide ? (

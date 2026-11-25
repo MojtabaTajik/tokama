@@ -25,25 +25,27 @@ import {
   visibleItems,
 } from "../model.js";
 import type { AgentTarget } from "../settings/describe.js";
-import { SearchIcon } from "../shell/icons.js";
+import { SearchIcon } from "../ui/icons.js";
 import { StatusFilter } from "../shell/StatusFilter.js";
 import type { Layout } from "../useViewState.js";
 import { ItemList } from "./ItemList.js";
 import { type GroupPage, type ListRequest, PAGE_SIZE, useWorkList } from "./useWorkList.js";
+import { Button } from "../ui/Button.js";
+import { markOf } from "../ui/status.js";
 
 /** Wait after the last key before the search goes to the engine. */
 export const SEARCH_DELAY_MS = 200;
 
 const TEXT = {
   loadOlder: "Load older",
-  loadingOlder: "◌ Loading older…",
+  loadingOlder: `${markOf("queued").symbol} Loading older…`,
   showing: (shown: number, total: number) => (
     <>
       Showing <span className="mono">{shown}</span> of <span className="mono">{total}</span>
     </>
   ),
-  olderFailed: "✕ Could not load older work. The engine did not answer.",
-  firstFailed: "✕ Could not load this work. The engine did not answer.",
+  olderFailed: `${markOf("failed").symbol} Could not load older work. The engine did not answer.`,
+  firstFailed: `${markOf("failed").symbol} Could not load this work. The engine did not answer.`,
   tryAgain: "Try again",
   everything: "That is everything.",
   everythingIn: (words: string) => `That is everything in the ${words}.`,
@@ -120,9 +122,9 @@ export function WorkArea(props: WorkAreaProps) {
           <span className="pl-more-failed" role="alert">
             {TEXT.firstFailed}
           </span>
-          <button type="button" className="pl-button" onClick={() => list.retry(group)}>
+          <Button variant="secondary" onClick={() => list.retry(group)}>
             {TEXT.tryAgain}
-          </button>
+          </Button>
         </div>
       );
     }
@@ -130,9 +132,9 @@ export function WorkArea(props: WorkAreaProps) {
       if (page.loading === "older") {
         return (
           <div className="pl-more">
-            <button type="button" className="pl-button" disabled>
+            <Button variant="secondary" disabled>
               {TEXT.loadingOlder}
-            </button>
+            </Button>
           </div>
         );
       }
@@ -143,15 +145,15 @@ export function WorkArea(props: WorkAreaProps) {
               <span className="pl-more-failed" role="alert">
                 {TEXT.olderFailed}
               </span>
-              <button type="button" className="pl-button" onClick={() => list.loadOlder(group)}>
+              <Button variant="secondary" onClick={() => list.loadOlder(group)}>
                 {TEXT.tryAgain}
-              </button>
+              </Button>
             </>
           ) : (
             <>
-              <button type="button" className="pl-button" onClick={() => list.loadOlder(group)}>
+              <Button variant="secondary" onClick={() => list.loadOlder(group)}>
                 {TEXT.loadOlder}
-              </button>
+              </Button>
               <span className="pl-more-note">{TEXT.showing(page.items.length, page.total)}</span>
             </>
           )}
@@ -164,9 +166,9 @@ export function WorkArea(props: WorkAreaProps) {
       <div className="pl-more">
         <span className="pl-more-note">{range === "all" ? TEXT.everything : TEXT.everythingIn(rangeWords(range))}</span>
         {range !== "all" && (
-          <button type="button" className="pl-button" onClick={() => onFilter({ range: "all" })}>
+          <Button variant="secondary" onClick={() => onFilter({ range: "all" })}>
             {TEXT.showAllTime}
-          </button>
+          </Button>
         )}
       </div>
     );
@@ -187,13 +189,13 @@ export function WorkArea(props: WorkAreaProps) {
           </span>
           <span className="pl-more-note">{TEXT.searched(where)}</span>
           <span className="pl-no-match-actions">
-            <button type="button" className="pl-button" onClick={clear}>
+            <Button variant="secondary" onClick={clear}>
               {TEXT.clearSearch}
-            </button>
+            </Button>
             {hasRange(filter.status) && filter.range !== "all" && (
-              <button type="button" className="pl-button" onClick={() => onFilter({ range: "all" })}>
+              <Button variant="secondary" onClick={() => onFilter({ range: "all" })}>
                 {TEXT.searchAllTime}
-              </button>
+              </Button>
             )}
           </span>
         </div>

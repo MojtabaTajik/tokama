@@ -88,7 +88,7 @@ flow("opens the agent tooltip on keyboard focus, reaches its link with Tab, and 
   await tip.waitFor({ state: "visible" });
   await screenshot("14-agent-tooltip-focus");
   await page.keyboard.press("Tab");
-  expect(await page.evaluate(() => document.activeElement?.className)).toBe("al-open");
+  expect(await page.evaluate(() => document.activeElement?.classList.contains("al-open"))).toBe(true);
   expect(await tip.isVisible()).toBe(true);
   await page.keyboard.press("Escape");
   await tip.waitFor({ state: "detached" });

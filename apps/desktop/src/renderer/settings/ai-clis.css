@@ -11,19 +11,19 @@
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-4);
   min-height: 0;
-  padding: 14px 12px;
+  padding: var(--space-14) var(--space-12);
   border-right: 1px solid var(--hairline);
   overflow: auto;
 }
 
 .ai-clis-filter {
   min-height: 34px;
-  margin-bottom: 6px;
-  padding: 0 10px;
+  margin-bottom: var(--space-6);
+  padding: 0 var(--space-10);
   border: 1px solid var(--hairline);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--input);
   color: var(--text);
   font: inherit;
@@ -32,7 +32,7 @@
 .ai-clis-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -41,17 +41,13 @@
 .ai-cli-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-10);
   width: 100%;
   min-height: 36px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
+  padding: 0 var(--space-8);
+  border-radius: var(--radius);
   color: var(--text-2);
-  font: inherit;
   text-align: left;
-  cursor: pointer;
 }
 
 .ai-cli-row:hover,
@@ -95,7 +91,7 @@
   flex: 1 1 auto;
   min-width: 0;
   box-sizing: border-box;
-  padding: 28px 32px 40px;
+  padding: var(--space-28) var(--space-32) var(--space-40);
   overflow: auto;
 }
 
@@ -107,8 +103,8 @@
 .ai-cli-head {
   display: flex;
   align-items: flex-start;
-  gap: 14px;
-  padding-bottom: 18px;
+  gap: var(--space-14);
+  padding-bottom: var(--space-18);
 }
 
 .ai-cli-head-icon {
@@ -118,9 +114,9 @@
   justify-content: center;
   width: 40px;
   height: 40px;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--raised);
-  font-size: 13px;
+  font-size: var(--text-body);
   font-weight: 600;
   color: var(--text-2);
 }
@@ -129,12 +125,12 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2);
 }
 
 .ai-cli-head-text h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--text-title);
   font-weight: 600;
   color: var(--text);
 }
@@ -150,9 +146,9 @@
 .ai-cli-status {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  padding-top: 6px;
-  font-size: 12.5px;
+  gap: var(--space-12);
+  padding-top: var(--space-6);
+  font-size: var(--text-base);
 }
 
 .ai-cli-version {
@@ -161,11 +157,7 @@
 
 .ai-cli-check {
   padding: 0;
-  border: 0;
-  background: transparent;
   color: var(--link);
-  font: inherit;
-  cursor: pointer;
 }
 
 .ai-cli-check:disabled {
@@ -174,23 +166,23 @@
 }
 
 .ai-cli-login {
-  padding-top: 4px;
-  font-size: 12.5px;
+  padding-top: var(--space-4);
+  font-size: var(--text-base);
   color: var(--text-2);
   overflow-wrap: anywhere;
 }
 
 .ai-cli-unsupported {
   margin: 0;
-  padding: 14px 0;
+  padding: var(--space-14) 0;
   border-top: 1px solid var(--hairline);
   color: var(--muted);
 }
 
 .ai-cli-section {
   margin: 0;
-  padding: 18px 0 2px;
-  font-size: 14px;
+  padding: var(--space-18) 0 var(--space-2);
+  font-size: var(--text-lg);
   font-weight: 500;
   color: var(--text);
 }
@@ -198,21 +190,21 @@
 .ai-cli-row-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 14px 0;
+  gap: var(--space-6);
+  padding: var(--space-14) 0;
   border-top: 1px solid var(--hairline);
 }
 
 .ai-cli-row-field[data-inline] {
   flex-direction: row;
   align-items: center;
-  gap: 16px;
+  gap: var(--space-16);
 }
 
 .ai-cli-row-label {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-4);
 }
 
 .ai-cli-row-label h3 {
@@ -224,7 +216,7 @@
 
 .ai-cli-row-label p {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--text-base);
   color: var(--muted);
   overflow-wrap: anywhere;
 }
@@ -236,7 +228,7 @@
 }
 
 .ai-cli-value.mono {
-  font-size: 13px;
+  font-size: var(--text-body);
 }
 
 .ai-cli-instructions {
@@ -251,16 +243,16 @@
 .ai-cli-env {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-6);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .ai-cli-env li {
-  padding: 2px 8px;
-  border-radius: 4px;
+  padding: var(--space-2) var(--space-8);
+  border-radius: var(--radius-sm);
   background: var(--raised);
-  font-size: 12px;
+  font-size: var(--text-md);
   color: var(--text-2);
 }

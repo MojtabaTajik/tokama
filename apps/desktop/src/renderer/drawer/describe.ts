@@ -1,34 +1,13 @@
 // What the item drawer says about an item and its steps. Pure functions, tested without React.
 // Every state comes as a symbol and a word, so colour is never the only signal.
 import type { AgentSummary, AttemptSummary, ConnectionSummary, Decision, DecisionKind, ItemKind, ItemRecord, ItemState, Privacy, StepRecord, StepState, Setup } from "@tokama/core";
+import { type Mark, markOf } from "../ui/status.js";
+import { type AgentDot, agentDot } from "../ui/agent.js";
 
-export type Tone = "warn" | "live" | "pass" | "fail" | "muted";
-export interface Mark {
-  readonly symbol: string;
-  readonly word: string;
-  readonly tone: Tone;
-}
 
-const ITEM_MARKS: Record<ItemState, Mark> = {
-  queued: { symbol: "◌", word: "queued", tone: "muted" },
-  running: { symbol: "●", word: "running", tone: "live" },
-  needs_you: { symbol: "⏸", word: "needs you", tone: "warn" },
-  done: { symbol: "✓", word: "done", tone: "pass" },
-  failed: { symbol: "✕", word: "failed", tone: "fail" },
-  stopped: { symbol: "■", word: "stopped", tone: "muted" },
-};
-
-const STEP_MARKS: Record<StepState, Mark> = {
-  pending: { symbol: "○", word: "pending", tone: "muted" },
-  running: { symbol: "●", word: "running", tone: "live" },
-  needs_you: { symbol: "⏸", word: "needs you", tone: "warn" },
-  passed: { symbol: "✓", word: "passed", tone: "pass" },
-  failed: { symbol: "✕", word: "failed", tone: "fail" },
-  stopped: { symbol: "■", word: "stopped", tone: "muted" },
-};
-
-export const itemMark = (state: ItemState): Mark => ITEM_MARKS[state];
-export const stepMark = (state: StepState): Mark => STEP_MARKS[state];
+// Item and step states share their names with the status table.
+export const itemMark = (state: ItemState): Mark => markOf(state);
+export const stepMark = (state: StepState): Mark => markOf(state);
 
 export const KIND: Record<ItemKind, { readonly symbol: string; readonly word: string }> = {
   investigation: { symbol: "◎", word: "Investigation" },
@@ -69,20 +48,14 @@ export function runLine(step: Pick<StepRecord, "runs" | "maxAttempts">): string 
   return step.maxAttempts === undefined || step.runs === undefined ? undefined : `run ${step.runs} of ${step.maxAttempts}`;
 }
 
-const ATTEMPT_RESULT: Record<NonNullable<AttemptSummary["result"]>, Mark> = {
-  passed: { symbol: "✓", word: "passed", tone: "pass" },
-  failed: { symbol: "✕", word: "failed", tone: "fail" },
-  run_failed: { symbol: "!", word: "run failed", tone: "warn" },
-  stopped: { symbol: "■", word: "stopped", tone: "muted" },
-};
-const RUNNING_ATTEMPT: Mark = { symbol: "●", word: "running", tone: "live" };
+const RUNNING_ATTEMPT: Mark = markOf("running");
 
 /** How an attempt ended, as a symbol and a word. */
-export const attemptMark = (result: NonNullable<AttemptSummary["result"]>): Mark => ATTEMPT_RESULT[result];
+export const attemptMark = (result: NonNullable<AttemptSummary["result"]>): Mark => markOf(result);
 
 /** An attempt as one line: "attempt 2 · failed · sh check.sh exit 1", with its mark. */
 export function attemptLine(attempt: AttemptSummary): { readonly mark: Mark; readonly text: string } {
-  const mark = attempt.result === undefined ? RUNNING_ATTEMPT : ATTEMPT_RESULT[attempt.result];
+  const mark = attempt.result === undefined ? RUNNING_ATTEMPT : markOf(attempt.result);
   const failedCheck = attempt.checks.find((check) => !check.passed);
   const why =
     failedCheck !== undefined
@@ -116,8 +89,7 @@ export function stepPosition(item: Pick<ItemRecord, "state" | "steps">): string 
 /** Who runs a step: its agent, with an identity dot by join order (1 to 3, then neutral). */
 export interface StepAgent {
   readonly name: string;
-  /** 1, 2 or 3 for the first three agents; "neutral" for later ones and for Tokama itself. */
-  readonly dot: 1 | 2 | 3 | "neutral";
+  readonly dot: AgentDot;
   readonly runsOn: "local" | "cloud";
 }
 
@@ -126,11 +98,10 @@ const TOKAMA: StepAgent = { name: "Tokama", dot: "neutral", runsOn: "local" };
 
 export function stepAgent(step: Pick<StepRecord, "agentId" | "data">, agents: readonly AgentSummary[]): StepAgent {
   if (step.agentId === undefined) return TOKAMA;
-  const index = agents.findIndex((agent) => agent.id === step.agentId);
-  const agent = agents[index];
+  const agent = agents.find((candidate) => candidate.id === step.agentId);
   // An agent the setup no longer lists: its id is all there is, and only the data rule tells where it runs.
   if (!agent) return { name: step.agentId, dot: "neutral", runsOn: step.data === "none" ? "local" : "cloud" };
-  return { name: agent.name, dot: index < 3 ? ((index + 1) as 1 | 2 | 3) : "neutral", runsOn: agent.runsOn };
+  return { name: agent.name, dot: agentDot(agent.id, agents), runsOn: agent.runsOn };
 }
 
 /**

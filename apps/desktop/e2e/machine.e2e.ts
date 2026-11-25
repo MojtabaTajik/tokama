@@ -45,3 +45,19 @@ flow(
   },
   "real",
 );
+
+flow("a tab chosen with the mouse shows no focus ring; one reached with the arrow keys does", async ({ page }) => {
+  await page.locator('.rail button[aria-label="Insights"]').click();
+  await page.locator(".main-header h1", { hasText: "Insights" }).waitFor();
+  await page.getByRole("tab", { name: "Machine" }).click();
+  await page.getByRole("tab", { name: "Machine", selected: true }).waitFor();
+  const ring = () =>
+    page.evaluate(() => {
+      const focused = document.activeElement as HTMLElement;
+      return { name: focused.textContent, outline: getComputedStyle(focused).outlineStyle };
+    });
+  expect(await ring()).toEqual({ name: "Machine", outline: "none" });
+  await page.keyboard.press("ArrowLeft");
+  await page.getByRole("tab", { name: "Usage", selected: true }).waitFor();
+  expect(await ring()).toEqual({ name: "Usage", outline: "solid" });
+});

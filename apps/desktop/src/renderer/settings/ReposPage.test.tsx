@@ -124,8 +124,8 @@ describe("Repos page", () => {
       ["inventory-service● 11 running", "~/code/inventory-service", "develop · no checks"],
     ]);
     expect(rows().map((el) => el.getAttribute("aria-pressed"))).toEqual(["true", "false", "false"]);
-    expect(rowText("orders-api").querySelector(".rp-badge")?.getAttribute("title")).toBe("1 needs you");
-    expect($(".rp-badges")?.textContent).toContain("⏸");
+    expect(rowText("orders-api").querySelector(".status-count")?.getAttribute("title")).toBe("1 needs you");
+    expect($(".status-counts")?.textContent).toContain("⏸");
   });
 
   it("shows the selected repo: items line, path, base branch, numbered checks", async () => {
@@ -281,7 +281,7 @@ describe("Add, Edit and Remove", () => {
     await click(buttonByText("Remove…"));
     await click(buttonByText("Remove repo"));
     await render(withRepos([]));
-    expect(text(".rp-empty h2")).toBe("No repos added yet");
+    expect(text(".rp-empty .empty-state-title")).toBe("No repos added yet");
     expect(document.activeElement?.textContent).toBe("+ Add repo");
   });
 });

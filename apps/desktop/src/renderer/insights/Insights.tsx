@@ -9,6 +9,8 @@ import { MachineTab } from "./MachineTab.js";
 import type { Metric } from "./usage-model.js";
 import { UsageTab } from "./UsageTab.js";
 import type { UsageView } from "./useUsage.js";
+import { Tabs } from "../ui/Tabs.js";
+import { Placeholder } from "../ui/EmptyState.js";
 
 const TEXT = {
   title: "Insights",
@@ -37,6 +39,8 @@ export interface InsightsProps {
   readonly onNewWork: () => void;
 }
 
+const TABS = ["usage", "machine"] as const;
+
 export function Insights({ bridge, connection, onRetryConnection, usage, range, onRange, scope, onScope, setup, items, issues, now, onSelectItem, onNewWork }: InsightsProps) {
   const [tab, setTab] = useState<"usage" | "machine">("usage");
   const [metric, setMetric] = useState<Metric>("tokens");
@@ -48,14 +52,7 @@ export function Insights({ bridge, connection, onRetryConnection, usage, range, 
         <h1 className="ellipsis">{TEXT.title}</h1>
         <span className="summary">{TEXT.summary}</span>
       </header>
-      <div className="ins-tabs" role="tablist" aria-label={TEXT.tabs}>
-        <button type="button" role="tab" className="ins-tab" aria-selected={tab === "usage"} onClick={() => setTab("usage")}>
-          {TEXT.usage}
-        </button>
-        <button type="button" role="tab" className="ins-tab" aria-selected={tab === "machine"} onClick={() => setTab("machine")}>
-          {TEXT.machine}
-        </button>
-      </div>
+      <Tabs tabs={TABS} selected={tab} onSelect={setTab} label={TEXT.tabs} labelOf={(id) => (id === "usage" ? TEXT.usage : TEXT.machine)} />
       {tab === "machine" ? (
         <MachineTab bridge={bridge} connection={connection} onRetryConnection={onRetryConnection} setup={setup} items={items} onSelectItem={onSelectItem} onNewWork={onNewWork} />
       ) : (
@@ -63,7 +60,7 @@ export function Insights({ bridge, connection, onRetryConnection, usage, range, 
           {connection.status === "failed" ? (
             <ConnectionFailure state={connection} onRetry={onRetryConnection} />
           ) : report === undefined ? (
-            <p className="placeholder">{usage.error === undefined ? TEXT.loading : `${TEXT.failed}: ${usage.error}`}</p>
+            <Placeholder>{usage.error === undefined ? TEXT.loading : `${TEXT.failed}: ${usage.error}`}</Placeholder>
           ) : (
             <UsageTab
               report={report}

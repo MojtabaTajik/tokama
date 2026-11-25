@@ -5,7 +5,8 @@
 // readings and Tokama's share. A hidden table with one row a minute stands in for the lines.
 import type { MachineReport } from "@tokama/core";
 import { type KeyboardEvent, type MouseEvent, useEffect, useId, useRef, useState } from "react";
-import { chartModel, formatBytes, formatClock, formatSeconds, formatSize, fraction, linePaths, nearestPoint, ofAllCores, onePercent, tableRows, wholePercent, type ChartModel } from "./machine-model.js";
+import { clock, clockSeconds } from "../format/time.js";
+import { chartModel, formatBytes, formatSize, fraction, linePaths, nearestPoint, ofAllCores, onePercent, tableRows, wholePercent, type ChartModel } from "./machine-model.js";
 
 const HEIGHT = 96;
 const DEFAULT_WIDTH = 720;
@@ -81,7 +82,7 @@ function ChartRow({ label, range, aria, model, report, width, value, max, top, h
 export function MachineChart({ report }: { readonly report: MachineReport }) {
   const model = chartModel(report);
   const first = report.points.find((p) => p.at >= model.start);
-  const from = formatClock(first?.at ?? model.start);
+  const from = clock(first?.at ?? model.start);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const plot = useRef<HTMLDivElement | null>(null);
   // The reading under the pointer or the keys, by its time: the report changes every few seconds
@@ -164,7 +165,7 @@ export function MachineChart({ report }: { readonly report: MachineReport }) {
       </div>
       {point !== undefined && (
         <div className="mc-tip" role="status" data-side={fraction(model, point.at) < 0.5 ? "right" : "left"}>
-          <p className="mc-tip-time mono">{formatSeconds(point.at)}</p>
+          <p className="mc-tip-time mono">{clockSeconds(point.at)}</p>
           <p className="mc-tip-line">
             <span>{TEXT.cpu}</span>
             <b className="mono">{wholePercent(point.cpuPercent)}</b>
@@ -195,7 +196,7 @@ export function MachineChart({ report }: { readonly report: MachineReport }) {
         <tbody>
           {tableRows(report, model).map((row) => (
             <tr key={row.at}>
-              <th scope="row">{formatSeconds(row.at)}</th>
+              <th scope="row">{clockSeconds(row.at)}</th>
               <td>{wholePercent(row.cpuPercent)}</td>
               <td>{formatBytes(row.memoryUsedBytes)}</td>
               <td>{onePercent(ofAllCores(row.tokamaCpuPercent, report.cores))}</td>

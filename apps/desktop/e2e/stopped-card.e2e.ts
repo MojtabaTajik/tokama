@@ -19,7 +19,7 @@ flow("a step that stopped at its limit explains itself: what the reviewer said, 
   expect(await fact("Reviewer said").innerText()).toContain("the start card changes layout while it fades out");
   expect(await fact("Then").innerText()).toContain("Build fixed it in attempt 2 (checks passed).");
   expect(await fact("Why it stopped").innerText()).toBe("Review may run once per round, so it has not checked the fix.");
-  expect(await card.locator(".choice").allInnerTexts()).toEqual(["Run Review again", "End: no action needed", "Stop"]);
+  expect(await card.locator(".choices .btn").allInnerTexts()).toEqual(["Run Review again", "End: no action needed", "Stop"]);
   expect(await card.locator("a, script, img").count()).toBe(0);
   await screenshot("70-stopped-card-drawer");
 

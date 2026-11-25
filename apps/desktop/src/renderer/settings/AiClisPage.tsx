@@ -8,6 +8,9 @@ import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { argLine, stateWords } from "./aiClisText.js";
 import { monogram } from "./describe.js";
 import { useAiClis } from "./useAiClis.js";
+import { Button } from "../ui/Button.js";
+import { ErrorRetry } from "../ui/ErrorRetry.js";
+import { Placeholder } from "../ui/EmptyState.js";
 
 const TEXT = {
   heading: "AI CLIs",
@@ -17,7 +20,6 @@ const TEXT = {
   loading: "Loading",
   starting: "Waiting for the engine",
   loadFailed: "Could not load the AI CLIs",
-  retry: "Retry",
   checkAgain: "Check again",
   checking: "Checking…",
   login: "How to log in",
@@ -71,7 +73,7 @@ export function AiClisPage({ bridge, connection, setup }: AiClisPageProps) {
               const words = stateWords(cli);
               return (
                 <li key={cli.cliId}>
-                  <button type="button" className="ai-cli-row" aria-pressed={cli.cliId === selected?.cliId} onClick={() => setSelectedId(cli.cliId)}>
+                  <Button variant="plain" className="ai-cli-row" aria-pressed={cli.cliId === selected?.cliId} onClick={() => setSelectedId(cli.cliId)}>
                     <span className="monogram mono" aria-hidden="true">
                       {monogram(cli.cliId)}
                     </span>
@@ -79,13 +81,13 @@ export function AiClisPage({ bridge, connection, setup }: AiClisPageProps) {
                     <span className="ai-cli-row-state" data-tone={words.tone} title={words.word} role="img" aria-label={words.word}>
                       {words.symbol}
                     </span>
-                  </button>
+                  </Button>
                 </li>
               );
             })}
           </ul>
         )}
-        {state.status === "loaded" && shown.length === 0 && <p className="placeholder">{TEXT.noMatch}</p>}
+        {state.status === "loaded" && shown.length === 0 && <Placeholder>{TEXT.noMatch}</Placeholder>}
       </div>
       <div className="ai-cli-detail">{selected === undefined ? null : <Detail cli={selected} checking={state.status === "loaded" && state.checking} onCheck={reload} />}</div>
     </section>
@@ -93,23 +95,10 @@ export function AiClisPage({ bridge, connection, setup }: AiClisPageProps) {
 }
 
 function Body({ state, connected, onRetry }: { readonly state: ReturnType<typeof useAiClis>["state"]; readonly connected: boolean; readonly onRetry: () => void }) {
-  if (!connected) return <p className="placeholder">{TEXT.starting}</p>;
-  if (state.status === "loading") return <p className="placeholder">{TEXT.loading}</p>;
+  if (!connected) return <Placeholder>{TEXT.starting}</Placeholder>;
+  if (state.status === "loading") return <Placeholder>{TEXT.loading}</Placeholder>;
   if (state.status === "loaded") return null;
-  return (
-    <div className="failure" role="alert">
-      <p className="failure-title">
-        <span className="symbol" aria-hidden="true">
-          ✕
-        </span>
-        {TEXT.loadFailed}
-      </p>
-      <p className="detail">{state.message}</p>
-      <button type="button" className="retry" onClick={onRetry}>
-        {TEXT.retry}
-      </button>
-    </div>
-  );
+  return <ErrorRetry title={TEXT.loadFailed} detail={state.message} onRetry={onRetry} />;
 }
 
 function Row({ label, hint, children, inline = false }: { readonly label: string; readonly hint?: ReactNode; readonly children: ReactNode; readonly inline?: boolean }) {
@@ -142,9 +131,9 @@ function Detail({ cli, checking, onCheck }: { readonly cli: AiCli; readonly chec
             </span>
             {cli.supported && cli.version !== undefined && <span className="ai-cli-version">{cli.version}</span>}
             {cli.supported && (
-              <button type="button" className="ai-cli-check" disabled={checking} onClick={onCheck}>
+              <Button variant="plain" className="ai-cli-check" disabled={checking} onClick={onCheck}>
                 {checking ? TEXT.checking : TEXT.checkAgain}
-              </button>
+              </Button>
             )}
           </p>
           {cli.supported && cli.state === "not_logged_in" && (

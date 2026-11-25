@@ -28,7 +28,7 @@ flow("shows plan usage in the Insights tooltip, opens Insights, shows a day on h
   await page.locator(".main-header h1", { hasText: "Insights" }).waitFor();
   await expect.poll(() => page.locator(".ins-card").count(), { message: "one card per AI CLI" }).toBe(3);
   await expect.poll(() => page.locator('.ins-card[aria-label="Claude Code"] .ins-badge').innerText()).toBe("MAX");
-  await expect.poll(() => page.locator('.ins-card[aria-label="Claude Code"] .ins-countdown').first().textContent()).toMatch(/^↻resets in \d+h \d+m$/);
+  await expect.poll(() => page.locator('.ins-card[aria-label="Claude Code"] .ins-countdown').first().textContent()).toMatch(/^↻resets in \d+ h \d{2} m$/);
   await expect.poll(() => page.locator(".ins-summary-cell").count(), { message: "the token summary" }).toBe(5);
   await expect.poll(() => page.locator(".ins-col").count(), { message: "14 days" }).toBe(14);
   await expect.poll(() => page.locator(".ins-estimate").innerText()).toMatch(/^≈ estimate · prices as of \d{4}-\d{2}-\d{2}/);

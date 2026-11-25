@@ -5,12 +5,15 @@
 import type { ItemRecord, RepoSummary, Setup } from "@tokama/core";
 import { useEffect, useRef, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
-import { type Badge, badgesOf, bucketOf, inRange, inView, needsYouCount } from "../model.js";
+import { badgesOf, bucketOf, inRange, inView, needsYouCount } from "../model.js";
 import { RemoveRepoDialog } from "../repos/RemoveRepoDialog.js";
 import { RepoDialog } from "../repos/RepoDialog.js";
 import { ConnectionFailure } from "../shell/ConnectionStatus.js";
-import { RepoIcon } from "../shell/icons.js";
+import { RepoIcon } from "../ui/icons.js";
 import { useRepoItems } from "./useRepoItems.js";
+import { Button } from "../ui/Button.js";
+import { StatusCounts } from "../ui/Badge.js";
+import { EmptyState } from "../ui/EmptyState.js";
 
 const TEXT = {
   heading: "Repos",
@@ -118,18 +121,18 @@ export function ReposPage({ bridge, connection, setup, now: fixedNow }: ReposPag
       <div className="rp-list-pane">
         <h2 className="settings-heading">{TEXT.heading}</h2>
         <p className="rp-list-hint">{TEXT.hint}</p>
-        <button ref={addButton} type="button" className="rp-add" onClick={() => void pickFolder()}>
+        <Button variant="plain" ref={addButton} className="rp-add" onClick={() => void pickFolder()}>
           {TEXT.addHeader}
-        </button>
+        </Button>
         <ul className="rp-list" aria-label={TEXT.list}>
           {repos.map((repo) => (
             <li key={repo.id}>
-              <button type="button" className="rp-row" aria-pressed={repo.id === selected?.id} onClick={() => setSelectedId(repo.id)}>
+              <Button variant="plain" className="rp-row" aria-pressed={repo.id === selected?.id} onClick={() => setSelectedId(repo.id)}>
                 <span className="rp-row-top">
                   <span className="rp-row-id mono ellipsis" title={repo.id}>
                     {repo.id}
                   </span>
-                  <Badges badges={badgesOf(itemsOf(repo), now)} />
+                  <StatusCounts counts={badgesOf(itemsOf(repo), now)} />
                 </span>
                 {repo.path !== undefined && (
                   <span className="rp-row-path mono ellipsis" title={repo.path}>
@@ -142,23 +145,24 @@ export function ReposPage({ bridge, connection, setup, now: fixedNow }: ReposPag
                   </span>
                   <span className="rp-row-checks">{` · ${checksLabel(repo.checks.length)}`}</span>
                 </span>
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
       </div>
       <div className="rp-pane">
         {selected === undefined ? (
-          <div className="rp-empty">
-            <span className="rp-icon" data-size="large">
-              <RepoIcon size={22} />
-            </span>
-            <h2>{TEXT.emptyTitle}</h2>
-            <p>{TEXT.emptyText}</p>
-            <button type="button" className="rp-btn primary" onClick={() => void pickFolder()}>
-              {TEXT.addEmpty}
-            </button>
-          </div>
+          <EmptyState
+            className="rp-empty"
+            icon={<RepoIcon size={22} />}
+            title={TEXT.emptyTitle}
+            text={TEXT.emptyText}
+            action={
+              <Button variant="primary" size="lg" onClick={() => void pickFolder()}>
+                {TEXT.addEmpty}
+              </Button>
+            }
+          />
         ) : (
           <Detail repo={selected} line={itemsLine(itemsOf(selected), now)} onEdit={() => setEditing(true)} onRemove={() => setRemoving(true)} />
         )}
@@ -182,24 +186,6 @@ export function ReposPage({ bridge, connection, setup, now: fixedNow }: ReposPag
   );
 }
 
-/** Symbol and count per badge, with the word for assistive technology; colour is never the only signal. */
-function Badges({ badges }: { readonly badges: readonly Badge[] }) {
-  if (badges.length === 0) return null;
-  return (
-    <span className="rp-badges mono">
-      {badges.map((badge) => (
-        <span key={badge.kind} className="rp-badge" data-kind={badge.kind} title={`${badge.count} ${badge.word}`}>
-          <span aria-hidden="true">
-            {badge.symbol} {badge.count}
-          </span>
-          <span className="visually-hidden">
-            {badge.count} {badge.word}
-          </span>
-        </span>
-      ))}
-    </span>
-  );
-}
 
 interface DetailProps {
   readonly repo: RepoSummary;
@@ -263,12 +249,12 @@ function Detail({ repo, line, onEdit, onRemove }: DetailProps) {
       </div>
       {repo.sample !== true && (
         <div className="rp-actions">
-          <button type="button" className="rp-btn" onClick={onEdit}>
+          <Button variant="secondary" size="lg" onClick={onEdit}>
             {TEXT.edit}
-          </button>
-          <button type="button" className="rp-btn danger" onClick={onRemove}>
+          </Button>
+          <Button variant="danger" size="lg" onClick={onRemove}>
             {TEXT.remove}
-          </button>
+          </Button>
         </div>
       )}
     </article>

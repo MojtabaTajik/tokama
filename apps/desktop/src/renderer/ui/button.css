@@ -1,0 +1,147 @@
+/*
+ * The one button block (ui/Button.tsx). Loaded before the screens' sheets: a screen's class on a
+ * button places it (margin, alignment, width) and plain buttons draw themselves there.
+ */
+/* No weight of its own, so .mono and a screen's font or colour still apply. */
+:where(.btn) {
+  font: inherit;
+  color: inherit;
+}
+
+.btn {
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.btn:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+
+.btn:disabled {
+  cursor: default;
+}
+
+/* Outlined actions. */
+.btn-primary,
+.btn-secondary,
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  min-height: var(--control);
+  padding: 0 var(--space-12);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--text-base);
+  white-space: nowrap;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.btn-primary {
+  border-color: var(--primary-border);
+  background: var(--primary-fill);
+  color: var(--primary-text);
+}
+
+.btn-danger {
+  border-color: var(--fail);
+  color: var(--fail);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--raised);
+}
+
+/* Off: no fill and a muted label, so it reads as not available without relying on opacity. */
+.btn-primary:disabled,
+.btn-secondary:disabled,
+.btn-danger:disabled {
+  border-color: var(--hairline);
+  background: transparent;
+  color: var(--muted);
+}
+
+.btn-sm {
+  min-height: var(--control-sm);
+  padding: 0 var(--space-10);
+  font-size: var(--text-md);
+}
+
+.btn-lg {
+  min-height: var(--control-lg);
+  padding: 0 var(--space-16);
+  border-radius: var(--radius-md);
+  font-size: var(--text-body);
+  font-weight: 500;
+}
+
+/* Text buttons and plain ones: no box. A plain button keeps the browser's padding and centring
+   unless its screen sets its own. */
+.btn-link,
+.btn-quiet,
+.btn-plain {
+  border: 0;
+  background: transparent;
+}
+
+.btn-link,
+.btn-quiet {
+  padding: 0;
+  text-align: inherit;
+}
+
+.btn-link {
+  color: var(--link);
+}
+
+.btn-link:hover:not(:disabled),
+.btn-link[data-inline] {
+  text-decoration: underline;
+}
+
+.btn-quiet {
+  color: var(--text-2);
+}
+
+.btn-quiet:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.btn-link:disabled,
+.btn-quiet:disabled {
+  color: var(--muted);
+}
+
+/* Icon only: a square that lights up on hover. */
+.btn-icon,
+.btn-icon-sm {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--control);
+  min-height: var(--control);
+  padding: 0;
+  border-radius: var(--radius);
+  color: var(--muted);
+}
+
+.btn-icon-sm {
+  min-width: var(--control-xs);
+  min-height: var(--control-xs);
+  border-radius: var(--radius-sm);
+}
+
+.btn-icon:hover:not(:disabled),
+.btn-icon-sm:hover:not(:disabled) {
+  background: var(--raised);
+  color: var(--text);
+}

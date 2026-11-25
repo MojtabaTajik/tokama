@@ -8,9 +8,14 @@ import { stepAgent } from "../drawer/describe.js";
 import { currentStep } from "../model.js";
 import { ConnectionFailure } from "../shell/ConnectionStatus.js";
 import { MachineChart } from "./MachineChart.js";
-import { chartModel, formatBytes, formatClock, formatSeconds, formatSize, ofAllCores, onePercent, wholePercent } from "./machine-model.js";
+import { clock, clockSeconds } from "../format/time.js";
+import { chartModel, formatBytes, formatSize, ofAllCores, onePercent, wholePercent } from "./machine-model.js";
 import { useMachine } from "./useMachine.js";
 import { workflowName } from "./usage-model.js";
+import { Button } from "../ui/Button.js";
+import { AgentChip, AgentDotMark } from "../ui/agent.js";
+import { Placeholder } from "../ui/EmptyState.js";
+import { markOf } from "../ui/status.js";
 
 const CLI_SHORT = { "claude-code": "CC", "codex-cli": "CX", ollama: "OL" } as const;
 
@@ -70,7 +75,7 @@ export function MachineTab({ bridge, connection, onRetryConnection, setup, items
       {connection.status === "failed" ? (
         <ConnectionFailure state={connection} onRetry={onRetryConnection} />
       ) : report === undefined ? (
-        <p className="placeholder">{error === undefined ? TEXT.loading : `${TEXT.failed}: ${error}`}</p>
+        <Placeholder>{error === undefined ? TEXT.loading : `${TEXT.failed}: ${error}`}</Placeholder>
       ) : (
         <>
           {error !== undefined && <p className="muted mc-hint">{TEXT.refreshFailed(error)}</p>}
@@ -105,7 +110,7 @@ function NowMeters({ report }: { readonly report: MachineReport }) {
           {TEXT.nowTitle}
         </h2>
         <span className="muted">
-          {TEXT.specs(report.cores, formatSize(report.memoryTotalBytes))} · {TEXT.asOf} <span className="mono">{formatSeconds(report.asOf)}</span>
+          {TEXT.specs(report.cores, formatSize(report.memoryTotalBytes))} · {TEXT.asOf} <span className="mono">{clockSeconds(report.asOf)}</span>
         </span>
       </header>
       <div className="mc-meters">
@@ -158,7 +163,7 @@ function ChartSection({ report }: { readonly report: MachineReport }) {
         </h2>
         <span className="muted">{TEXT.sampled(Math.round(report.everyMs / 1000))}</span>
       </header>
-      {(leading || gaps) && <p className="muted mc-hint">{gaps || first === undefined ? TEXT.noSamples : TEXT.noSamplesFrom(formatClock(first.at))}</p>}
+      {(leading || gaps) && <p className="muted mc-hint">{gaps || first === undefined ? TEXT.noSamples : TEXT.noSamplesFrom(clock(first.at))}</p>}
       <MachineChart report={report} />
     </section>
   );
@@ -224,9 +229,9 @@ function ProcessTable({ report, setup, items, onSelectItem, onNewWork }: { reado
                 <td colSpan={5} className="mc-empty">
                   <p>{TEXT.noItems}</p>
                   <p className="muted">{TEXT.noItemsHint}</p>
-                  <button type="button" className="link-button mc-new" onClick={onNewWork}>
+                  <Button variant="link" className="mc-new" onClick={onNewWork}>
                     {TEXT.newWork}
-                  </button>
+                  </Button>
                 </td>
               </tr>
             ) : (
@@ -259,14 +264,14 @@ function ItemRows({ group, item, setup, cpu, onSelectItem }: { readonly group: G
         <td colSpan={3}>
           <span className="mc-item-title">
             <span className="mc-live" aria-hidden="true">
-              ●
+              {markOf("running").symbol}
             </span>
             {item === undefined ? (
               <span>{title}</span>
             ) : (
-              <button type="button" className="link-button" onClick={() => onSelectItem(item.id)}>
+              <Button variant="link" onClick={() => onSelectItem(item.id)}>
                 {title}
-              </button>
+              </Button>
             )}
             {subtitle !== undefined && subtitle !== "" && <span className="muted">· {subtitle}</span>}
           </span>
@@ -284,14 +289,12 @@ function ItemRows({ group, item, setup, cpu, onSelectItem }: { readonly group: G
           </td>
           <td className="muted">
             {row.role === "agent" && agent !== undefined ? (
-              <span className="ins-agent">
-                <span className="agent-dot" data-agent={agent.dot} aria-hidden="true" />
-                {agent.name}
+              <AgentChip agent={agent} className="ins-agent">
                 {cli !== undefined && <span className="muted mono">{CLI_SHORT[cli]}</span>}
-              </span>
+              </AgentChip>
             ) : (
               <span className="ins-agent">
-                <span className="agent-dot" data-agent="neutral" aria-hidden="true" />
+                <AgentDotMark dot="neutral" />
                 {TEXT.tokama}
               </span>
             )}

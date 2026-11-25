@@ -168,7 +168,7 @@ describe("DiagnosticsPage", () => {
   it("shows Nothing waiting with only the switch when no entry waits", async () => {
     const page = render({ items: [] });
     await page.show();
-    expect($(".dg-empty-title")?.textContent).toBe("Nothing waiting");
+    expect($(".dg-empty .empty-state-title")?.textContent).toBe("Nothing waiting");
     expect(container.textContent).toContain("New errors, warnings and the daily usage summary show up here.");
     expect($(".dg-filters")).toBeNull();
     expect(button("Send all (0)")).toBeUndefined();

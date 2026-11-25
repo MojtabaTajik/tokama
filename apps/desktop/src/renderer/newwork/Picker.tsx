@@ -3,6 +3,8 @@
 // stays open and toggles), Escape closes and returns focus to the button. Option labels come
 // from the engine and render as React text only.
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import { Button } from "../ui/Button.js";
+import { markOf } from "../ui/status.js";
 
 export interface PickerOption {
   readonly id: string;
@@ -100,8 +102,8 @@ export function Picker({ label, summary, searchLabel, groups, selected, multi, o
         if (open && event.relatedTarget instanceof Node && !root.current?.contains(event.relatedTarget)) close(false);
       }}
     >
-      <button
-        type="button"
+      <Button
+        variant="plain"
         ref={trigger}
         className="np-trigger"
         aria-haspopup="dialog"
@@ -117,7 +119,7 @@ export function Picker({ label, summary, searchLabel, groups, selected, multi, o
         <span className="np-trigger-label">{label}</span>
         <span className="ellipsis">{summary}</span>
         <span aria-hidden="true">▾</span>
-      </button>
+      </Button>
       {open && (
         <div className="np-popup">
           <input
@@ -158,7 +160,7 @@ export function Picker({ label, summary, searchLabel, groups, selected, multi, o
                     onClick={() => pick(option.id)}
                   >
                     <span className="np-check" aria-hidden="true">
-                      {selected.has(option.id) ? "✓" : ""}
+                      {selected.has(option.id) ? markOf("passed").symbol : ""}
                     </span>
                     <span className="ellipsis">{option.label}</span>
                     {option.tag !== undefined && <span className="np-tag">{option.tag}</span>}

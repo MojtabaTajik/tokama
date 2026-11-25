@@ -7,7 +7,7 @@ import { act } from "react";
 import { vi } from "vitest";
 import type { AboutInfo, BridgeEvent, ConnectionState, DiagnosticsLoad, DiagnosticsSaveResult, DiagnosticsSendResult, OpenResult, TokamaBridge } from "../../shared/bridge.js";
 import { DEFAULT_DESKTOP_STATE, type DesktopState } from "../../shared/desktop-state.js";
-import { localDay } from "../format/day.js";
+import { localDay } from "../format/time.js";
 import { bucketOf } from "../model.js";
 import { items, setup } from "./sample.js";
 

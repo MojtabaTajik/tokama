@@ -2,6 +2,8 @@
 // failure details (reason, log path, log tail) in the board area when the engine is not
 // available. All of it is React text.
 import type { ConnectionState } from "../../shared/bridge.js";
+import { Button } from "../ui/Button.js";
+import { markOf } from "../ui/status.js";
 
 const TEXT = {
   health: {
@@ -39,10 +41,10 @@ export function startingWords(state: Extract<ConnectionState, { status: "startin
 
 // A symbol with every status, so colour is never the only signal.
 const SYMBOL: Record<ConnectionState["status"], string> = {
-  starting: "◌",
-  connected: "●",
-  reconnecting: "◐",
-  failed: "✕",
+  starting: markOf("queued").symbol,
+  connected: markOf("running").symbol,
+  reconnecting: markOf("checking").symbol,
+  failed: markOf("failed").symbol,
 };
 
 /** Symbol and word; healthy is a quiet dot whose word only screen readers get. */
@@ -84,9 +86,9 @@ export function ConnectionFailure({ state, onRetry, onRestart, onWait }: { reado
       </p>
       {state.logTail.length > 0 && <pre className="log mono">{state.logTail.join("\n")}</pre>}
       <p className="detail hint">{TEXT.hint}</p>
-      <button type="button" className="retry" onClick={onRetry}>
+      <Button variant="primary" className="retry" onClick={onRetry}>
         {TEXT.retry}
-      </button>
+      </Button>
     </section>
   );
 }
@@ -121,9 +123,9 @@ function OlderEngine({
         <span className="label">{TEXT.log} </span>
         <span className="mono">{state.logPath}</span>
       </p>
-      <button type="button" className="retry" onClick={onRestart}>
+      <Button variant="primary" className="retry" onClick={onRestart}>
         {TEXT.restart}
-      </button>
+      </Button>
       {busy !== undefined && (
         <p className="detail hint">
           {older.waiting ? (
@@ -131,16 +133,16 @@ function OlderEngine({
           ) : (
             <>
               {TEXT.busyBefore(busy)}
-              <button type="button" className="inline-action" onClick={onRestart}>
+              <Button variant="link" inline onClick={onRestart}>
                 {TEXT.restartNow}
-              </button>
+              </Button>
               {TEXT.busyMiddle}
               {onWait === undefined ? (
                 TEXT.wait.toLowerCase()
               ) : (
-                <button type="button" className="inline-action" onClick={onWait}>
+                <Button variant="link" inline onClick={onWait}>
                   {TEXT.wait}
-                </button>
+                </Button>
               )}
               {TEXT.busyAfter}
             </>

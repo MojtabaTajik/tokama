@@ -7,9 +7,14 @@ import { useId, useMemo, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { budgetText, FINISH, placeOf, startSentence, statusOf, stepSentence, titleOf, usesOf } from "./describe.js";
-import { dotOf, flowOf } from "./flow.js";
+import { flowOf } from "./flow.js";
 import { FlowDiagram } from "./FlowDiagram.js";
 import { keyId, useReload, useTemplateDetail, useTemplateList } from "./useTemplates.js";
+import { Button } from "../ui/Button.js";
+import { markOf } from "../ui/status.js";
+import { agentDot, AgentDotMark } from "../ui/agent.js";
+
+const FAIL = markOf("failed").symbol;
 
 const TEXT = {
   title: "Templates",
@@ -77,7 +82,7 @@ export function TemplatesPage({ bridge, connection, agents, connections }: Templ
         <p className="tp-intro">{TEXT.intro}</p>
         <input type="search" className="tp-filter" placeholder={`${TEXT.filter}…`} aria-label={TEXT.filter} value={filter} onChange={(event) => setFilter(event.target.value)} />
         {list.state === "loading" && <p className="tp-quiet">{TEXT.loading}</p>}
-        {list.state === "failed" && <p className="tp-quiet" role="alert">{`✕ ${list.message}`}</p>}
+        {list.state === "failed" && <p className="tp-quiet" role="alert">{`${FAIL} ${list.message}`}</p>}
         {list.state === "ready" && entries.length === 0 && <p className="tp-quiet">{TEXT.none}</p>}
         {list.state === "ready" && entries.length > 0 && shown.length === 0 && <p className="tp-quiet">{TEXT.noMatch}</p>}
         <ul className="tp-rows" aria-label={TEXT.list}>
@@ -89,9 +94,9 @@ export function TemplatesPage({ bridge, connection, agents, connections }: Templ
         </ul>
         <div className="tp-list-foot">
           {list.state === "ready" && <span>{countText(entries.length, repos, builtins)}</span>}
-          <button type="button" className="tp-link" onClick={checkAgain}>
+          <Button variant="link" className="tp-link" onClick={checkAgain}>
             {TEXT.checkAgain}
-          </button>
+          </Button>
         </div>
       </section>
       <main className="tp-detail" aria-label={selected === undefined ? TEXT.title : titleOf(selected)}>
@@ -100,7 +105,7 @@ export function TemplatesPage({ bridge, connection, agents, connections }: Templ
         ) : detail.state === "loading" ? (
           <p className="tp-quiet">{TEXT.loading}</p>
         ) : detail.state === "failed" ? (
-          <p className="tp-quiet" role="alert">{`✕ ${detail.message}`}</p>
+          <p className="tp-quiet" role="alert">{`${FAIL} ${detail.message}`}</p>
         ) : (
           <Detail key={keyId(selected)} bridge={bridge} detail={detail.value} agents={agents} connections={connections} />
         )}
@@ -122,12 +127,12 @@ function Status({ entry }: { readonly entry: Pick<TemplateEntry, "problemCount">
 
 function EntryRow({ entry, selected, onPick }: { readonly entry: TemplateEntry; readonly selected: boolean; readonly onPick: () => void }) {
   return (
-    <button type="button" className="tp-row" aria-pressed={selected} onClick={onPick}>
+    <Button variant="plain" className="tp-row" aria-pressed={selected} onClick={onPick}>
       <TemplateIcon icon={entry.icon} color={entry.color} size={14} />
       <span className="tp-row-name ellipsis">{titleOf(entry)}</span>
       <Status entry={entry} />
       <span className="tp-row-place mono">{placeOf(entry)}</span>
-    </button>
+    </Button>
   );
 }
 
@@ -153,7 +158,7 @@ function Detail({ bridge, detail, agents, connections }: DetailProps) {
   const open = async () => {
     setOpenNote(undefined);
     const result = await bridge.openTemplateFile({ origin: entry.origin, file: entry.file }).catch((error: unknown) => ({ ok: false as const, message: String(error) }));
-    if (!result.ok) setOpenNote(`✕ ${result.message}`);
+    if (!result.ok) setOpenNote(`${FAIL} ${result.message}`);
   };
   const flow = useMemo(() => (template === null ? undefined : flowOf(template, agents)), [template, agents]);
   const uses = template === null ? undefined : usesOf(template, connections);
@@ -185,16 +190,16 @@ function Detail({ bridge, detail, agents, connections }: DetailProps) {
       </p>
       <div className="tp-actions">
         {entry.openable ? (
-          <button type="button" className="tp-link" onClick={() => void open()}>
+          <Button variant="link" className="tp-link" onClick={() => void open()}>
             {TEXT.open}
-          </button>
+          </Button>
         ) : (
           entry.origin !== "builtin" && <span className="tp-quiet">{TEXT.noFile}</span>
         )}
         {text !== null && (
-          <button type="button" className="tp-link" aria-expanded={fileOpen} aria-controls={fileOpen ? fileId : undefined} onClick={() => setFileOpen(!fileOpen)}>
+          <Button variant="link" className="tp-link" aria-expanded={fileOpen} aria-controls={fileOpen ? fileId : undefined} onClick={() => setFileOpen(!fileOpen)}>
             {fileOpen ? TEXT.hideFile : TEXT.showFile}
-          </button>
+          </Button>
         )}
         {textTooLarge && <span className="tp-quiet">{TEXT.tooLarge}</span>}
         {openNote !== undefined && (
@@ -206,15 +211,15 @@ function Detail({ bridge, detail, agents, connections }: DetailProps) {
 
       {problems.length > 0 && (
         <section className="tp-section" aria-label={statusOf(entry).word}>
-          <h2 className="tp-problems-title">{`✕ ${statusOf(entry).word}`}</h2>
+          <h2 className="tp-problems-title">{`${FAIL} ${statusOf(entry).word}`}</h2>
           <p className="tp-quiet">{TEXT.cannotUse}</p>
           <ul className="tp-problems">
             {problems.map((problem, index) => (
               <li key={`${problem.line}-${index}`}>
                 {text !== null ? (
-                  <button type="button" className="tp-link mono" onClick={() => showLine(problem.line)}>
+                  <Button variant="link" className="tp-link mono" onClick={() => showLine(problem.line)}>
                     {TEXT.line(problem.line)}
-                  </button>
+                  </Button>
                 ) : (
                   <span className="mono">{TEXT.line(problem.line)}</span>
                 )}
@@ -284,12 +289,12 @@ function Detail({ bridge, detail, agents, connections }: DetailProps) {
             <h2>{TEXT.steps}</h2>
             <ol className="tp-steps">
               {template.steps.map((step, index) => {
-                const dot = dotOf(step.agentId, agents);
+                const dot = agentDot(step.agentId, agents);
                 return (
                   <li key={step.id}>
                     <span className="tp-step-n mono">{index + 1}</span>
                     <span>
-                      <span className="agent-dot" data-agent={dot === "neutral" ? undefined : dot} />
+                      <AgentDotMark dot={dot} />
                       <strong>{step.name}</strong>: {stepSentence(step, template, agents, connections)}
                     </span>
                   </li>
@@ -302,7 +307,7 @@ function Detail({ bridge, detail, agents, connections }: DetailProps) {
             <ul className="tp-finish">
               {template.finish.map((finish) => (
                 <li key={finish}>
-                  <span aria-hidden="true">✓</span>
+                  <span aria-hidden="true">{markOf("passed").symbol}</span>
                   <span>
                     <strong>{FINISH[finish].name}</strong> · {FINISH[finish].text}
                   </span>
@@ -327,7 +332,7 @@ function FileText({ id, text, problemLines, mark }: { readonly id: string; reado
         return (
           <div key={n} id={`${id}-${n}`} className="tp-file-line" data-problem={bad || undefined} data-mark={mark === n || undefined}>
             <span className="tp-file-n">{n}</span>
-            <span className="tp-file-flag">{bad ? "✕" : ""}</span>
+            <span className="tp-file-flag">{bad ? markOf("failed").symbol : ""}</span>
             <span className="tp-file-text">{line}</span>
           </div>
         );

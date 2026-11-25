@@ -5,8 +5,12 @@
 import type { CliHealth, Setup, UsageReport } from "@tokama/core";
 import { stepAgent } from "../drawer/describe.js";
 import { Meter } from "../insights/Meter.js";
-import { ALERT_TEXT, alertTone, ageText, CLI_MONOGRAMS, cliAlert, formatClock, formatDuration, formatTokens, liveWindows, shareText, totalOf, windowLabel, windowShort } from "../insights/usage-model.js";
+import { formatDuration } from "../format/duration.js";
+import { stamp } from "../format/time.js";
+import { ALERT_TEXT, alertTone, ageText, CLI_MONOGRAMS, cliAlert, formatTokens, liveWindows, shareText, totalOf, windowLabel, windowShort } from "../insights/usage-model.js";
 import { AI_CLIS, type CliIssue } from "../model.js";
+import { Button } from "../ui/Button.js";
+import { StatusMark } from "../ui/status.js";
 
 const TEXT = {
   loggedIn: "logged in",
@@ -48,7 +52,7 @@ export interface InsightsTipProps {
 export function InsightsTip({ usage, issues, health, setup, now, onSelectItem, onCliSettings }: InsightsTipProps) {
   const claude = usage?.clis.find((plan) => plan.cliId === CLAUDE.id);
   const windows = liveWindows(claude, now);
-  const age = claude?.asOf === undefined ? undefined : (ageText(claude.asOf, now) ?? `${TEXT.asOf} ${formatClock(claude.asOf, now)}`);
+  const age = claude?.asOf === undefined ? undefined : (ageText(claude.asOf, now) ?? `${TEXT.asOf} ${stamp(claude.asOf, now)}`);
   const others = AI_CLIS.slice(1).flatMap((cli) => {
     const plan = usage?.clis.find((entry) => entry.cliId === cli.id);
     const issue = issues.find((entry) => entry.cliId === cli.id);
@@ -76,7 +80,7 @@ export function InsightsTip({ usage, issues, health, setup, now, onSelectItem, o
         ) : windows.length > 0 ? (
           windows.map((w, index) => (
             <Meter key={`${index}-${w.window}`} name={windowLabel(w)} usedPercent={w.usedPercent}>
-              {[shareText(w), w.resetsAt === undefined ? undefined : `${TEXT.resets} ${formatClock(w.resetsAt, now)}`].filter(Boolean).join(" · ") || undefined}
+              {[shareText(w), w.resetsAt === undefined ? undefined : `${TEXT.resets} ${stamp(w.resetsAt, now)}`].filter(Boolean).join(" · ") || undefined}
             </Meter>
           ))
         ) : (
@@ -95,7 +99,7 @@ export function InsightsTip({ usage, issues, health, setup, now, onSelectItem, o
                 }
                 usedPercent={w.usedPercent}
               >
-                {[issue === undefined ? undefined : ALERT_TEXT[issue.kind], w.resetsAt === undefined ? undefined : `${TEXT.resets} ${formatClock(w.resetsAt, now)}`].filter(Boolean).join(" · ") || undefined}
+                {[issue === undefined ? undefined : ALERT_TEXT[issue.kind], w.resetsAt === undefined ? undefined : `${TEXT.resets} ${stamp(w.resetsAt, now)}`].filter(Boolean).join(" · ") || undefined}
               </Meter>
             ))}
             {live.length === 0 && alert !== undefined && (
@@ -123,11 +127,11 @@ export function InsightsTip({ usage, issues, health, setup, now, onSelectItem, o
           <div className="it-items">
             {today.items.slice(0, TODAY_ITEMS).map((item) => (
               <div key={item.itemId} className="it-item">
-                <button type="button" className="it-title" title={item.title} onClick={() => onSelectItem?.(item.itemId)}>
+                <Button variant="plain" className="it-title" title={item.title} onClick={() => onSelectItem?.(item.itemId)}>
                   {item.title}
-                </button>
+                </Button>
                 <span className="mono it-tokens">{formatTokens(item.tokens)}</span>
-                <span className="mono it-time">{formatDuration(item.durationMs)}</span>
+                <span className="mono it-time">{formatDuration(item.durationMs, "coarse")}</span>
                 <span className="it-agents">{item.agents.map((agent) => stepAgent({ agentId: agent.agentId, data: "none" }, setup?.agents ?? []).name).join(" · ")}</span>
               </div>
             ))}
@@ -149,15 +153,15 @@ export function InsightsTip({ usage, issues, health, setup, now, onSelectItem, o
             ].join(" · ")}
           </span>
           <span className="it-total-name">{TEXT.timeToday}</span>
-          <span className="mono it-total">{formatDuration(today.durationMs)}</span>
+          <span className="mono it-total">{formatDuration(today.durationMs, "coarse")}</span>
         </div>
       )}
 
       <div className="it-foot">
         <span>{TEXT.footer}</span>
-        <button type="button" className="it-link" onClick={onCliSettings}>
+        <Button variant="plain" className="it-link" onClick={onCliSettings}>
           {TEXT.settings}
-        </button>
+        </Button>
       </div>
     </>
   );
@@ -168,9 +172,7 @@ function ClaudeStatus({ health, issue }: { readonly health: CliHealth | undefine
   if (issue !== undefined) {
     return (
       <span className="it-status-line">
-        <span className="it-symbol" data-tone="fail">
-          ✕
-        </span>{" "}
+        <StatusMark status="failed" className="it-symbol" />{" "}
         {[issue.kind === "logged_out" ? TEXT.loggedOut : TEXT.notFound, version].filter(Boolean).join(" · ")}
       </span>
     );
@@ -178,9 +180,7 @@ function ClaudeStatus({ health, issue }: { readonly health: CliHealth | undefine
   if (health === undefined || health.timedOut === true) return <span className="it-status-line">{TEXT.statusUnknown}</span>;
   return (
     <span className="it-status-line">
-      <span className="it-symbol" data-tone="pass">
-        ✓
-      </span>{" "}
+      <StatusMark status="passed" className="it-symbol" />{" "}
       {[TEXT.loggedIn, version].filter(Boolean).join(" · ")}
     </span>
   );

@@ -6,8 +6,10 @@
 // The days are one tab stop: arrow keys, Home and End move between them (each a labelled image).
 import type { Setup, UsageReport } from "@tokama/core";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { weekdayDate } from "../format/time.js";
 import { TemplateIcon, tagOf } from "../shell/TemplateIcon.js";
 import { type ChartModel, chartModel, formatCost, formatTokens, type Metric, share, templateFor, tickLabel, workflowName } from "./usage-model.js";
+import { Button } from "../ui/Button.js";
 
 const HEIGHT = 200;
 const GUTTER = 44;
@@ -145,7 +147,7 @@ function DayTip({ report, model, index, metric, setup }: { readonly report: Usag
   const day = report.days[index];
   const items = (day?.workflows ?? []).flatMap((w) => w.items);
   const count = (day?.workflows ?? []).reduce((sum, w) => sum + w.itemCount, 0);
-  const date = new Date(`${column.date}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  const date = weekdayDate(new Date(`${column.date}T12:00:00`).getTime());
   return (
     <div className="ins-tip" data-side={index < model.columns.length / 2 ? "right" : "left"} role="status">
       <p className="ins-tip-date mono">{date}</p>
@@ -219,14 +221,14 @@ export function Legend({ report, setup, metric, filter, onFilter }: UsageChartPr
         const total = report.workflows.find((w) => w.templateId === id);
         const value = metric === "tokens" ? formatTokens(total?.tokens ?? 0) : formatCost(total?.costUsd ?? null);
         return (
-          <button key={id} type="button" className="ins-legend-entry" aria-pressed={filter === id} data-dim={filter !== undefined && filter !== id ? "true" : undefined} onClick={() => onFilter(filter === id ? undefined : id)}>
+          <Button variant="plain" key={id} className="ins-legend-entry" aria-pressed={filter === id} data-dim={filter !== undefined && filter !== id ? "true" : undefined} onClick={() => onFilter(filter === id ? undefined : id)}>
             <svg width="10" height="10" aria-hidden="true">
               <rect className="ins-key" data-tag={tagOf(template?.color) ?? "slate"} width="10" height="10" rx="2" />
             </svg>
             <TemplateIcon icon={template?.icon} color={template?.color} />
             <span>{workflowName(id, setup)}</span>
             <span className="mono muted">{value}</span>
-          </button>
+          </Button>
         );
       })}
     </div>

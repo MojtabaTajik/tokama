@@ -15,6 +15,9 @@ import { TemplateIcon } from "../shell/TemplateIcon.js";
 import type { AgentTarget } from "../settings/describe.js";
 import { FinishSplit } from "./FinishSplit.js";
 import { useFocusFollow } from "./useFocusFollow.js";
+import { Button } from "../ui/Button.js";
+import { markOf } from "../ui/status.js";
+import { AgentChip } from "../ui/agent.js";
 
 const TEXT = {
   nothing: { needs: "Nothing waiting", running: "Nothing running", done: "Nothing finished", failed: "Nothing failed" },
@@ -45,7 +48,7 @@ export interface ItemListProps {
   readonly footers?: Partial<Record<GroupKey, ReactNode>>;
 }
 
-const GROUP_SYMBOL = { needs: "⏸", running: "●", done: "✓", failed: "✕" } as const;
+const GROUP_SYMBOL = { needs: markOf("needs_you").symbol, running: markOf("running").symbol, done: markOf("done").symbol, failed: markOf("failed").symbol } as const;
 
 export function ItemList({ groups, setup, now, selectedItemId, onSelect, repoId, onFinish, onDiscard, onOpenAgent, footers }: ItemListProps) {
   const focus = useFocusFollow();
@@ -104,7 +107,7 @@ function Row({ item, setup, now, selected, onSelect, onFinish, onDiscard, onOpen
   const finished = finishNote(item);
   return (
     <div className="pl-row-wrap">
-      <button type="button" className="pl-row" data-item-id={item.id} data-state={item.state} aria-current={selected ? "true" : undefined} onClick={() => onSelect(item.id)}>
+      <Button variant="plain" className="pl-row" data-item-id={item.id} data-state={item.state} aria-current={selected ? "true" : undefined} onClick={() => onSelect(item.id)}>
         <span className="pl-mark" data-tone={mark.tone}>
           <span aria-hidden="true">{mark.symbol}</span>
           <span className="visually-hidden">{mark.word}: </span>
@@ -121,7 +124,7 @@ function Row({ item, setup, now, selected, onSelect, onFinish, onDiscard, onOpen
               </>
             )}
           </span>
-          {ask !== undefined && <span className="pl-ask ellipsis">⏸ {ask}</span>}
+          {ask !== undefined && <span className="pl-ask ellipsis">{markOf("needs_you").symbol} {ask}</span>}
         </span>
         {finished !== undefined ? (
           // A finished row says how it ended where the steps were.
@@ -149,16 +152,13 @@ function Row({ item, setup, now, selected, onSelect, onFinish, onDiscard, onOpen
         <span className="pl-time mono" title={time.title}>
           {time.text}
         </span>
-      </button>
+      </Button>
       {agent !== undefined && (
         <span className="pl-agent">
           {agentTip !== undefined ? (
             <AgentLabel info={agentTip} onOpen={onOpenAgent} />
           ) : (
-            <>
-              <span className="agent-dot" data-agent={agent.dot} aria-hidden="true" />
-              <span className="ellipsis">{agent.name}</span>
-            </>
+            <AgentChip agent={agent} ellipsis />
           )}
         </span>
       )}

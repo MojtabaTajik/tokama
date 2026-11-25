@@ -1,7 +1,9 @@
 // The question before a repo is removed, shared by the sidebar's repo menu and the Repos page in
 // Settings. Removing only takes the repo out of repos.yaml; its items and worktrees are kept.
 import { useId, useState } from "react";
-import { DialogFrame, Modal, Problem } from "./Modal.js";
+import { DialogFrame, Modal } from "../ui/Modal.js";
+import { Problem } from "./Problem.js";
+import { Button } from "../ui/Button.js";
 
 const TEXT = {
   question: (name: string) => `Remove ${name}?`,
@@ -43,12 +45,12 @@ export function RemoveRepoDialog({ name, waiting = 0, onRemove, onClose }: Remov
         onClose={onClose}
         footer={
           <>
-            <button type="button" className="choice" autoFocus onClick={onClose}>
+            <Button variant="secondary" autoFocus onClick={onClose}>
               {TEXT.keep}
-            </button>
-            <button type="button" className="choice danger" disabled={busy} onClick={() => void remove()}>
+            </Button>
+            <Button variant="danger" disabled={busy} onClick={() => void remove()}>
               {busy ? TEXT.removing : TEXT.confirm}
-            </button>
+            </Button>
           </>
         }
       >

@@ -4,6 +4,9 @@
 import type { ReactNode } from "react";
 import { LEVEL_SPOKEN, LEVEL_TONE, LEVEL_WORD, levelOf } from "./usage-model.js";
 
+// The colour key: a square in each level's colour, beside its words. Not a status.
+const SWATCH = "■"; // status-guard: not a status
+
 export interface MeterProps {
   /** What the meter shows, for screen readers too, e.g. "Fable weekly window". */
   readonly name: string;
@@ -46,27 +49,27 @@ export function MeterKey() {
     <span className="ins-key muted" aria-label="Meter colours: under 60% ok, 60 to 79% high, 80% or more near limit, 100% at limit">
       <span>
         <span className="ins-key-mark" data-tone="pass" aria-hidden="true">
-          ■
+          {SWATCH}
         </span>{" "}
         under 60%
       </span>
       <span>
         <span className="ins-key-mark" data-tone="warn" aria-hidden="true">
-          ■
+          {SWATCH}
         </span>{" "}
         60–79% · high
       </span>
       <span>
         <span className="ins-key-mark" data-tone="fail" aria-hidden="true">
-          ■
+          {SWATCH}
         </span>{" "}
-        80%+ · ! near limit
+        80%+ · {LEVEL_WORD.near}
       </span>
       <span>
         <span className="ins-key-mark" data-tone="fail" aria-hidden="true">
-          ■
+          {SWATCH}
         </span>{" "}
-        100% · ✕ at limit
+        100% · {LEVEL_WORD.limit}
       </span>
     </span>
   );

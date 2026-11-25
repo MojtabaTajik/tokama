@@ -64,13 +64,13 @@ describe("Insights: accounts and limits", () => {
     expect(text(".ins-refreshes")).toBe("refreshes every 5 min · as of 14:58");
     const claude = card("Claude Code");
     expect(claude?.querySelector(".ins-card-title")?.textContent).toBe("Claude CodeMAX");
-    expect(claude?.querySelector(".ins-badge")?.hasAttribute("data-known")).toBe(true);
+    expect(claude?.querySelector(".ins-badge")?.getAttribute("data-tone")).toBe("accent");
     expect(claude?.querySelector(".ins-card-sub")?.textContent).toBe("2.1.331");
     expect(meters(claude)).toEqual([
       ["Session · 5 hours", "36"],
       ["Weekly", "58"],
     ]);
-    expect(lines(claude)).toEqual(["↻resets in 2h 10m · at 17:10", "↻resets in 2d 18h · Thu 09:00"]);
+    expect(lines(claude)).toEqual(["↻resets in 2 h 10 m · at 17:10", "↻resets in 2 d 18 h · Thu 09:00"]);
     // The symbol is hidden from screen readers, which hear the words instead.
     expect(claude?.querySelector('.ins-countdown [aria-hidden="true"]')?.textContent).toBe("↻");
     expect(claude?.querySelector(".ins-countdown .visually-hidden")?.textContent).toBe("resets in");
@@ -81,12 +81,12 @@ describe("Insights: accounts and limits", () => {
     const codex = card("Codex CLI");
     expect(codex?.querySelector(".ins-source")?.textContent).toBe("Source: asked of the CLI itself.");
     expect(codex?.querySelector(".ins-badge")?.textContent).toBe("PLAN ?");
-    expect(codex?.querySelector(".ins-badge")?.hasAttribute("data-known")).toBe(false);
+    expect(codex?.querySelector(".ins-badge")?.hasAttribute("data-tone")).toBe(false);
     expect(codex?.querySelector(".ins-card-sub")?.textContent).toBe("0.169.0 · plan not reported");
     expect(codex?.querySelector('.ins-tone[data-tone="fail"]')?.textContent).toBe("! near limit");
     expect(codex?.querySelector('.meter-fill[data-tone="fail"]')).not.toBeNull();
     expect(codex?.querySelector('[role="meter"]')?.getAttribute("aria-valuetext")).toBe("84%, near limit");
-    expect(lines(codex)).toEqual(["↻resets in 4d 15h · Sat 06:00 · data 34 min old"]);
+    expect(lines(codex)).toEqual(["↻resets in 4 d 15 h · Sat 06:00 · data 34 m old"]);
     const ollama = card("Ollama");
     expect(ollama?.querySelector(".ins-badge")?.textContent).toBe("LOCAL");
     expect(ollama?.querySelector(".ins-card-sub")?.textContent).toBe("local");
@@ -109,7 +109,7 @@ describe("Insights: accounts and limits", () => {
       ["Weekly · all models", "41"],
       ["Weekly · Fable", "0"],
     ]);
-    expect(lines(claude)[2]).toBe("↻resets in 2d 18h · Thu 09:00 · 50% share of the weekly limit");
+    expect(lines(claude)[2]).toBe("↻resets in 2 d 18 h · Thu 09:00 · 50% share of the weekly limit");
   });
 
   it("colours a high limit amber with the word high, and one at its limit red with ✕ at limit, by the shown number", () => {
@@ -317,7 +317,7 @@ describe("Insights: tokens and cost by day", () => {
     expect(text(".ins-headline .muted")).toBe("≈ $11.70 estimated · Plan and build only · as of 15:00");
     expect($$(".ins-col").at(-1)!.querySelector('.ins-seg[data-tag="rose"]')?.getAttribute("data-dim")).toBe("true");
     expect($('.ins-legend-entry[aria-pressed="true"]')?.textContent).toContain("Plan and build");
-    await click($(".ins-filter-clear"));
+    await click($(".ins-filter .btn"));
     expect($(".ins-filter")).toBeNull();
     await click($$(".ins-legend-entry")[0]!);
     expect(tableRows()).toEqual(["Orders API returns 500 after deploy"]);
@@ -342,8 +342,8 @@ describe("Insights: top items", () => {
     render();
     const cells = $$(".ins-table tbody tr").map((row) => [...row.querySelectorAll("td")].map((td) => td.textContent));
     expect(cells).toEqual([
-      ["Fix rounding in invoice totals", "Plan and build", "ArchitectCCReviewerCX", "163k", "29 min", "≈ $3.10"],
-      ["Orders API returns 500 after deploy", "Emergency investigator", "Local builderOL", "118k", "41 min", "local · $0"],
+      ["Fix rounding in invoice totals", "Plan and build", "ArchitectCCReviewerCX", "163k", "29 m", "≈ $3.10"],
+      ["Orders API returns 500 after deploy", "Emergency investigator", "Local builderOL", "118k", "41 m", "local · $0"],
     ]);
   });
 
@@ -353,10 +353,10 @@ describe("Insights: top items", () => {
     render({ onSelectItem }, report);
     expect($(".ins-table b")).toBeNull();
     expect(tableRows()[0]).toBe("<b>bold</b> title");
-    await click($(".ins-table .link-button"));
+    await click($(".ins-table .btn"));
     expect(onSelectItem).toHaveBeenCalledWith(usageReport.items[0]!.itemId);
     // An item the board no longer has is plain text.
-    expect($$(".ins-table .link-button")).toHaveLength(1);
+    expect($$(".ins-table .btn")).toHaveLength(1);
   });
 
   it("says when it is loading, when the load failed, and when the range has no calls", () => {

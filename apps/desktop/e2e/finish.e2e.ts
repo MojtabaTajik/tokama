@@ -41,7 +41,7 @@ flow("opens a pull request for a done item from the row's menu, then removes its
   const finish = drawer(page).locator(".finish");
   await finish.waitFor();
   expect((await finish.locator(".finish-head").innerText()).replace(/\s+/g, " ")).toBe("FINISH tokama/00000011 · 1 commit ahead of main");
-  expect(await finish.locator(".finish-row .choice").allTextContents()).toEqual(["Merge into main", "Open PR", "Discard…"]);
+  expect(await finish.locator(".finish-row .btn").allTextContents()).toEqual(["Merge into main", "Open PR", "Discard…"]);
   expect(await finish.locator(".finish-row").nth(1).innerText()).toContain("Pushes tokama/00000011 to github.com/northwind/orders-api and opens a pull request with gh.");
   await screenshot("finish-1-offered");
 

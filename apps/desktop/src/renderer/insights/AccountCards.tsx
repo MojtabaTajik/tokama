@@ -5,7 +5,11 @@
 import type { CliPlan, Setup, UsageReport } from "@tokama/core";
 import { AI_CLIS, type CliIssue } from "../model.js";
 import { Meter, MeterKey } from "./Meter.js";
-import { ageText, ALERT_TEXT, cardLabel, CLI_MONOGRAMS, countdown, formatClock, liveWindows, resetWhen, shareText, SOURCE_TEXT } from "./usage-model.js";
+import { formatDuration } from "../format/duration.js";
+import { stamp } from "../format/time.js";
+import { ageText, ALERT_TEXT, cardLabel, CLI_MONOGRAMS, liveWindows, resetWhen, shareText, SOURCE_TEXT } from "./usage-model.js";
+import { Button } from "../ui/Button.js";
+import { Pill } from "../ui/Pill.js";
 
 const TEXT = {
   title: "Accounts and limits",
@@ -40,11 +44,11 @@ export function AccountCards({ report, setup, issues, now, onRefresh }: AccountC
           {TEXT.title}
         </h2>
         <span className="muted ins-refreshes">
-          {TEXT.refreshes} <span className="mono ins-asof">{formatClock(asOf, now)}</span>
+          {TEXT.refreshes} <span className="mono ins-asof">{stamp(asOf, now)}</span>
         </span>
-        <button type="button" className="ins-refresh" onClick={onRefresh}>
+        <Button variant="secondary" size="sm" className="ins-refresh" onClick={onRefresh}>
           <span aria-hidden="true">↻</span> {TEXT.refresh}
-        </button>
+        </Button>
       </div>
       <div className="ins-cards">
         {AI_CLIS.map((cli) => {
@@ -82,9 +86,9 @@ function AccountCard({ name, plan, setup, issue, now }: AccountCardProps) {
         <span className="ins-card-name">
           <span className="ins-card-title">
             <strong>{name}</strong>
-            <span className="mono ins-badge" data-known={plan.plan !== undefined || undefined}>
+            <Pill className="mono ins-badge" tone={plan.plan !== undefined ? "accent" : undefined}>
               {badge}
-            </span>
+            </Pill>
           </span>
           <span className="muted ins-card-sub">
             {sub.map((part, index) => (
@@ -106,7 +110,7 @@ function AccountCard({ name, plan, setup, issue, now }: AccountCardProps) {
               <>
                 <span className="mono ins-countdown">
                   <span aria-hidden="true">↻</span>
-                  <span className="visually-hidden">resets in</span> {countdown(w.resetsAt - now)}
+                  <span className="visually-hidden">resets in</span> {formatDuration(w.resetsAt - now, "minutes")}
                 </span>
                 {` · ${resetWhen(w.resetsAt, now)}`}
               </>

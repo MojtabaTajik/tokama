@@ -8,19 +8,21 @@
 // rendered as React text only. While the item runs, the header shows the live activity line (who
 // works, the latest action, the time) in place of the state line, and every item shows its step track.
 import type { AgentSummary, CommandErrorCode, Decision, ItemRecord, Setup } from "@tokama/core";
-import { type KeyboardEvent, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
 import { AgentLabel } from "../agent/AgentLabel.js";
 import { agentInfo } from "../agent/agent-info.js";
 import type { AgentTarget } from "../settings/describe.js";
 import { itemElement } from "../list/useFocusFollow.js";
-import { CollapseIcon, ExpandIcon, RepoIcon } from "../shell/icons.js";
+import { CollapseIcon, RepoIcon } from "../ui/icons.js";
+import { ExpandButton } from "../ui/ExpandButton.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { changesRepo } from "./attempt-view.js";
 import { ChecksTab } from "./ChecksTab.js";
 import { attemptLine, decisionKind, hasEnded, nextRunLine, runLine, itemMark, KIND, outcomeLine, PRIVACY, stepAgent, stepMark, stepPosition, templateOf, whereLine } from "./describe.js";
 import { DecisionChoices, inTextField } from "./DecisionChoices.js";
-import { DiffTab, type DiffState, useDecisionDiff } from "./DiffView.js";
+import { DiffTab, type DiffState } from "../ui/DiffView.js";
+import { useDecisionDiff } from "./useDecisionDiff.js";
 import { Finish } from "./Finish.js";
 import { LogTab } from "./LogTab.js";
 import { OutputTab, shownAttempt } from "./OutputTab.js";
@@ -32,6 +34,12 @@ import { useActivity } from "./useActivity.js";
 import { ActivityLine, StepTrack } from "./Progress.js";
 import { attemptTime, stepTimes } from "./progress-view.js";
 import { useNow } from "../useNow.js";
+import { Button, CloseButton } from "../ui/Button.js";
+import { ErrorRetry } from "../ui/ErrorRetry.js";
+import { markOf, StatusMark } from "../ui/status.js";
+import { AgentChip } from "../ui/agent.js";
+import { Tabs } from "../ui/Tabs.js";
+import { Placeholder } from "../ui/EmptyState.js";
 
 const TEXT = {
   drawer: "Item",
@@ -39,7 +47,6 @@ const TEXT = {
   loading: "Loading the item",
   gone: "This item no longer exists.",
   loadFailed: "Could not load the item",
-  retry: "Retry",
   needsYou: "Needs you",
   noQuestion: "This item waits for you, but the engine sent no question yet.",
   willBeSent: "Will be sent",
@@ -299,9 +306,9 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
     // Keyed apart, so the button that switched the view goes with its header and focus moves to the view.
     <header key="full" className="ex-header">
       <div className="ex-heading">
-        <button type="button" className="ex-back" onClick={expanded.onCollapse}>
+        <Button variant="link" className="ex-back" onClick={expanded.onCollapse}>
           ← {expanded.back}
-        </button>
+        </Button>
         {item ? (
           <>
             <h1 id={titleId}>{item.title}</h1>
@@ -325,10 +332,10 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
           <Missing error={error} onRetry={refresh} />
         )}
       </div>
-      <button type="button" className="ex-collapse" aria-label={TEXT.collapse} title={TEXT.collapseTip} onClick={expanded.onCollapse}>
+      <Button variant="secondary" className="ex-collapse" aria-label={TEXT.collapse} title={TEXT.collapseTip} onClick={expanded.onCollapse}>
         <CollapseIcon />
         <kbd>Esc</kbd>
-      </button>
+      </Button>
     </header>
   ) : (
     <header key="drawer" className="drawer-header">
@@ -348,13 +355,9 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
         </div>
       )}
       {item && onExpand !== undefined && (
-        <button type="button" className="drawer-close drawer-expand" aria-label={TEXT.expand} title={TEXT.expand} onClick={onExpand}>
-          <ExpandIcon />
-        </button>
+        <ExpandButton className="drawer-expand" label={TEXT.expand} onClick={onExpand} />
       )}
-      <button type="button" className="drawer-close" aria-label={TEXT.close} title={TEXT.close} onClick={onClose}>
-        <span aria-hidden="true">✕</span>
-      </button>
+      <CloseButton className="drawer-close" label={TEXT.close} onClick={onClose} />
     </header>
   );
 
@@ -372,7 +375,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
       {notice && (
         <p className="drawer-notice" data-tone={notice.tone} role="status">
           <span className="symbol" aria-hidden="true">
-            {notice.tone === "warn" ? "!" : "✕"}
+            {markOf(notice.tone === "warn" ? "warning" : "failed").symbol}
           </span>
           {notice.text}
         </p>
@@ -400,7 +403,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
 
       {item && (
         <>
-          <Tabs tabs={tabs} shown={shown} onPick={setTab} />
+          <Tabs className="drawer-tabs" tabs={tabs} selected={shown} onSelect={setTab} label={TEXT.views} idOf={tabId} panelIdOf={panelId} />
           <div className="drawer-panel" role="tabpanel" id={panelId(shown)} aria-labelledby={tabId(shown)} data-tab={shown}>
             {shown === "Steps" ? (
               <Steps bridge={bridge} item={item} setup={setup} onOpenAgent={onOpenAgent} unfold={stoppedDecision?.stepIndex} />
@@ -426,9 +429,9 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
           ) : (
             !hasEnded(item) && (
               <div className="drawer-actions" role="group" aria-label={TEXT.actions}>
-                <button type="button" className="choice danger" ref={stopLink} disabled={busy} onClick={() => setConfirmingStop(true)}>
+                <Button variant="danger" ref={stopLink} disabled={busy} onClick={() => setConfirmingStop(true)}>
                   {TEXT.stop}
-                </button>
+                </Button>
               </div>
             )
           )}
@@ -439,7 +442,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
 }
 
 /** A discarded item's work is gone: it reads as discarded rather than done. */
-const DISCARDED = { symbol: "⊘", word: "discarded", tone: "muted" } as const;
+const DISCARDED = markOf("discarded");
 
 function StateLine({ item }: { readonly item: ItemRecord }) {
   const mark = isDiscarded(item) ? DISCARDED : itemMark(item.state);
@@ -469,22 +472,9 @@ function LiveActivity({ bridge, item, agents, fallback = null }: { readonly brid
 }
 
 function Missing({ error, onRetry }: { readonly error: { code: string; message: string } | undefined; readonly onRetry: () => void }) {
-  if (!error) return <p className="placeholder">{TEXT.loading}</p>;
-  if (error.code === "not_found") return <p className="placeholder">{TEXT.gone}</p>;
-  return (
-    <div role="alert">
-      <p className="drawer-error">
-        <span className="symbol" aria-hidden="true">
-          ✕
-        </span>
-        {TEXT.loadFailed}
-      </p>
-      <p className="detail">{error.message}</p>
-      <button type="button" className="retry" onClick={onRetry}>
-        {TEXT.retry}
-      </button>
-    </div>
-  );
+  if (!error) return <Placeholder>{TEXT.loading}</Placeholder>;
+  if (error.code === "not_found") return <Placeholder>{TEXT.gone}</Placeholder>;
+  return <ErrorRetry title={TEXT.loadFailed} detail={error.message} onRetry={onRetry} />;
 }
 
 interface NeedsYouProps {
@@ -514,9 +504,7 @@ function NeedsYou({ item, setup, decision, busy, output, full, changedFiles, onS
         <>
           {kind !== undefined && <p className="needs-you-kind">{kind}</p>}
           <p className="needs-you-question">
-            <span className="mark" aria-hidden="true">
-              ⏸
-            </span>
+            <StatusMark status="needs_you" />
             {decision.question}
           </p>
           {decision.why !== undefined && <p className="needs-you-why">{decision.why}</p>}
@@ -538,9 +526,9 @@ function NeedsYou({ item, setup, decision, busy, output, full, changedFiles, onS
                 <span>{TEXT.wrote(step.name, agent)}</span>
                 {output.kind === "loaded" && <span className="muted mono">{TEXT.attempt(output.output.attempt)}</span>}
                 {changedFiles && (
-                  <button type="button" className="link" onClick={onShowDiff}>
+                  <Button variant="link" onClick={onShowDiff}>
                     {TEXT.seeDiff}
-                  </button>
+                  </Button>
                 )}
               </p>
               <StepPreview state={output} label={TEXT.wrote(step.name, agent)} isPlan={step.name.toLowerCase() === "plan"} onShowFull={onShowOutput} />
@@ -550,9 +538,7 @@ function NeedsYou({ item, setup, decision, busy, output, full, changedFiles, onS
         </>
       ) : (
         <p className="needs-you-question">
-          <span className="mark" aria-hidden="true">
-            ⏸
-          </span>
+          <StatusMark status="needs_you" />
           {TEXT.noQuestion}
         </p>
       )}
@@ -570,9 +556,7 @@ function After({ item, setup }: { readonly item: ItemRecord; readonly setup: Set
   if (item.state === "done" && commit !== undefined && item.finish?.merged === undefined) {
     return (
       <section className="after" data-tone="pass" aria-label={TEXT.committed(commit.commit.slice(0, 7))}>
-        <span className="mark" aria-hidden="true">
-          ✓
-        </span>
+        <StatusMark status="passed" />
         <div className="after-body">
           <p className="after-head">{TEXT.committed(commit.commit.slice(0, 7))}</p>
           <p className="after-text">{TEXT.committedLine(item.title, commit.branch)}</p>
@@ -585,9 +569,7 @@ function After({ item, setup }: { readonly item: ItemRecord; readonly setup: Set
   const line = TEXT.makingChanges(stepAgent(step, setup?.agents ?? []).name, runLine(step));
   return (
     <section className="after" data-tone="live" aria-label={line}>
-      <span className="mark" aria-hidden="true">
-        ●
-      </span>
+      <StatusMark status="running" />
       <div className="after-body">
         <p className="after-head">{line}</p>
         <p className="after-text">{TEXT.yourNote(step.changesNote)}</p>
@@ -599,36 +581,6 @@ function After({ item, setup }: { readonly item: ItemRecord; readonly setup: Set
 const tabId = (tab: Tab) => `drawer-tab-${tab.toLowerCase()}`;
 const panelId = (tab: Tab) => `drawer-panel-${tab.toLowerCase()}`;
 
-function Tabs({ tabs, shown, onPick }: { readonly tabs: readonly Tab[]; readonly shown: Tab; readonly onPick: (tab: Tab) => void }) {
-  // Arrow keys move between tabs; only the shown tab is in the Tab order.
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
-    if (step === 0) return;
-    event.preventDefault();
-    const next = tabs[(tabs.indexOf(shown) + step + tabs.length) % tabs.length] ?? shown;
-    onPick(next);
-    document.getElementById(tabId(next))?.focus();
-  };
-  return (
-    <div className="drawer-tabs" role="tablist" aria-label={TEXT.views} onKeyDown={onKeyDown}>
-      {tabs.map((tab) => (
-        <button
-          key={tab}
-          type="button"
-          role="tab"
-          id={tabId(tab)}
-          aria-selected={tab === shown}
-          aria-controls={tab === shown ? panelId(tab) : undefined}
-          tabIndex={tab === shown ? 0 : -1}
-          onClick={() => onPick(tab)}
-        >
-          {tab}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 interface StepsProps {
   readonly bridge: TokamaBridge;
   readonly item: ItemRecord;
@@ -639,7 +591,7 @@ interface StepsProps {
 }
 
 function Steps({ bridge, item, setup, onOpenAgent, unfold }: StepsProps) {
-  if (item.steps.length === 0) return <p className="placeholder">{TEXT.noSteps}</p>;
+  if (item.steps.length === 0) return <Placeholder>{TEXT.noSteps}</Placeholder>;
   const agents = setup?.agents ?? [];
   const connections = setup?.connections ?? [];
   return (
@@ -661,10 +613,7 @@ function Steps({ bridge, item, setup, onOpenAgent, unfold }: StepsProps) {
               </p>
               <div className="step-where">
                 {tip === undefined ? (
-                  <>
-                    <span className="dot" data-dot={agent.dot} aria-hidden="true" />
-                    <span>{agent.name}</span>
-                  </>
+                  <AgentChip agent={agent} />
                 ) : (
                   <AgentLabel info={tip} onOpen={onOpenAgent} />
                 )}{" "}
@@ -742,12 +691,12 @@ function ConfirmStop({ busy, onStop, onCancel }: { readonly busy: boolean; reado
     <div className="drawer-confirm" role="group" aria-label={TEXT.stopConfirm}>
       <p>{TEXT.stopQuestion}</p>
       <div className="choices">
-        <button type="button" className="choice danger" disabled={busy} onClick={onStop}>
+        <Button variant="danger" disabled={busy} onClick={onStop}>
           {TEXT.stopConfirm}
-        </button>
-        <button type="button" className="choice" ref={cancel} onClick={onCancel}>
+        </Button>
+        <Button variant="secondary" ref={cancel} onClick={onCancel}>
           {TEXT.stopCancel}
-        </button>
+        </Button>
       </div>
     </div>
   );

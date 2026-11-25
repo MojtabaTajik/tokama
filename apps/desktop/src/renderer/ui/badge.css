@@ -1,0 +1,78 @@
+/* Counts and labels (ui/Badge.tsx, ui/Pill.tsx). */
+
+/* A count on an icon button, at its top right corner. */
+.badge {
+  position: absolute;
+  top: 5px;
+  right: 4px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 var(--space-4);
+  box-sizing: border-box;
+  border-radius: var(--radius-md);
+  color: var(--ground);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+}
+
+.badge[data-tone="warn"] {
+  background: var(--warn);
+}
+
+.badge[data-tone="fail"] {
+  background: var(--fail);
+}
+
+.badge[data-tone="neutral"] {
+  border: 1px solid var(--hairline);
+  background: var(--panel);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-weight: 400;
+  line-height: 13px;
+}
+
+/* Symbol-and-count badges at the end of a row. */
+.status-counts {
+  display: inline-flex;
+  font-family: var(--font-mono);
+  flex: none;
+  gap: var(--space-8);
+  margin-left: auto;
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.status-count[data-kind="needs"] {
+  color: var(--warn);
+}
+
+.status-count[data-kind="failed"] {
+  color: var(--fail);
+}
+
+.status-count[data-kind="running"] {
+  color: var(--muted);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 1px var(--space-8);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--input);
+  color: var(--text-2);
+}
+
+.pill[data-tone="accent"] {
+  border-color: var(--primary-border);
+  color: var(--link);
+}
+
+.pill[data-round] {
+  border-radius: var(--radius-lg);
+}

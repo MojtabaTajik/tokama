@@ -1,23 +1,20 @@
 // The words the AI CLIs page uses: a CLI's state as a symbol and a word, and an argument list as one
 // line a person could type.
 import type { AiCli, AiCliState } from "@tokama/core";
+import { type Mark, markOf } from "../ui/status.js";
 
-export interface StateWords {
-  /** A different shape per kind, so the colour is never the only signal. */
-  readonly symbol: string;
-  readonly word: string;
-  readonly tone: "pass" | "warn" | "fail" | "muted";
-}
+/** A different shape per kind, so the colour is never the only signal. */
+export type StateWords = Mark;
 
 const STATES: Readonly<Record<AiCliState, StateWords>> = {
-  ready: { symbol: "●", word: "Logged in", tone: "pass" },
-  not_logged_in: { symbol: "○", word: "Not logged in", tone: "warn" },
-  not_installed: { symbol: "✕", word: "Not found", tone: "fail" },
-  no_answer: { symbol: "…", word: "Did not answer", tone: "warn" },
-  not_checked: { symbol: "–", word: "Not checked", tone: "muted" },
+  ready: markOf("ready", "Logged in"),
+  not_logged_in: markOf("logged_out", "Not logged in"),
+  not_installed: markOf("failed", "Not found"),
+  no_answer: markOf("no_answer", "Did not answer"),
+  not_checked: markOf("unknown", "Not checked"),
 };
 
-export const stateWords = (cli: AiCli): StateWords => (cli.supported ? STATES[cli.state] : { symbol: "–", word: "Not supported yet", tone: "muted" });
+export const stateWords = (cli: AiCli): StateWords => (cli.supported ? STATES[cli.state] : markOf("unknown", "Not supported yet"));
 
 const PLAIN = /^[\w@%+=:,./~*{}-]+$/;
 

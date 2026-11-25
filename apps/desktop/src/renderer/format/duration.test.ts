@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDuration } from "./duration.js";
+import { ago, formatDuration } from "./duration.js";
 
 describe("formatDuration", () => {
   it.each([
@@ -19,5 +19,26 @@ describe("formatDuration", () => {
     expect(formatDuration(45_000, "coarse")).toBe("45 s");
     expect(formatDuration(732_000, "coarse")).toBe("12 m");
     expect(formatDuration(3_900_000, "coarse")).toBe("1 h 05 m");
+  });
+});
+
+describe("long and short durations", () => {
+  it("counts days and hours from one day on", () => {
+    expect(formatDuration(86_400_000)).toBe("1 d 00 h");
+    expect(formatDuration(2 * 86_400_000 + 3 * 3_600_000 + 59_000, "coarse")).toBe("2 d 03 h");
+  });
+
+  it("keeps a tenth of a second under ten seconds when fine", () => {
+    expect(formatDuration(4_240, "fine")).toBe("4.2 s");
+    expect(formatDuration(0, "fine")).toBe("0.0 s");
+    expect(formatDuration(14_400, "fine")).toBe("14 s");
+    expect(formatDuration(112_000, "fine")).toBe("1 m 52 s");
+  });
+
+  it("says how long ago, to the minute, as a clock that ticks slower than a second shows it", () => {
+    expect(formatDuration(45_000, "minutes")).toBe("0 m");
+    expect(formatDuration(732_000, "minutes")).toBe("12 m");
+    expect(ago(732_000)).toBe("12 m ago");
+    expect(ago(30_000)).toBe("0 m ago");
   });
 });

@@ -1,0 +1,353 @@
+/* A change as files and lines (ui/DiffView.tsx), in the drawer, the full view and a Needs you row. */
+
+.dv-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-4) var(--space-10);
+  margin: 0;
+  font-size: var(--text-md);
+  color: var(--text-2);
+}
+
+.dv-strong {
+  color: var(--text);
+}
+
+.dv-muted,
+.dv-flag {
+  color: var(--muted);
+}
+
+.dv-flag {
+  flex: none;
+  white-space: nowrap;
+}
+
+.dv-branch {
+  font-size: var(--text-sm);
+}
+
+.dv-added {
+  color: var(--pass);
+}
+
+.dv-removed {
+  color: var(--fail);
+}
+
+.dv-files {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--hairline);
+}
+
+.dv-files > li {
+  border-bottom: 1px solid var(--hairline);
+}
+
+.dv-file {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-8);
+  width: 100%;
+  min-height: 30px;
+  padding: var(--space-2) var(--space-6);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  text-align: left;
+}
+
+.dv-file[aria-pressed="true"] {
+  background: var(--raised);
+}
+
+.dv-status {
+  font-size: var(--text-xs);
+  color: var(--text-2);
+  text-align: center;
+}
+
+/* The end of a long path stays in view: the ellipsis cuts its start. */
+.dv-path {
+  overflow: hidden;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
+.dv-counts {
+  display: inline-flex;
+  gap: var(--space-8);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.dv-more {
+  padding: var(--space-6);
+  font-size: var(--text-md);
+  color: var(--muted);
+}
+
+.dv-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--input);
+}
+
+.dv-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-10);
+  margin: 0;
+  padding: var(--space-6) var(--space-10);
+  border-bottom: 1px solid var(--hairline);
+  font-size: var(--text-xs);
+}
+
+.dv-panel-path {
+  font-size: var(--text-sm);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* Long lines scroll inside the diff, never the drawer. */
+.dv-lines {
+  max-height: 420px;
+  overflow: auto;
+  padding: var(--space-4) 0;
+  font-size: var(--text-sm);
+  line-height: 1.65;
+}
+
+.dv-row {
+  display: grid;
+  grid-template-columns: 30px 30px 16px max-content;
+  min-width: 100%;
+}
+
+.dv-num {
+  padding-right: var(--space-6);
+  color: var(--muted);
+  text-align: right;
+}
+
+.dv-sign {
+  color: var(--muted);
+  text-align: center;
+}
+
+.dv-text {
+  padding-right: var(--space-12);
+  color: var(--text-2);
+  white-space: pre;
+}
+
+.dv-row[data-kind="hunk"] {
+  background: var(--panel);
+}
+
+.dv-row[data-kind="hunk"] .dv-text {
+  color: var(--link);
+}
+
+.dv-row[data-kind="added"] .dv-sign,
+.dv-row[data-kind="added"] .dv-text {
+  color: var(--pass);
+}
+
+.dv-row[data-kind="removed"] .dv-sign,
+.dv-row[data-kind="removed"] .dv-text {
+  color: var(--fail);
+}
+
+.dv-row[data-kind="note"] .dv-text {
+  color: var(--muted);
+}
+
+.dv-note {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-14) var(--space-12);
+  font-size: var(--text-base);
+}
+
+.dv-note-head {
+  color: var(--text);
+}
+
+.dv-note-text {
+  margin: 0;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.dv-rest {
+  padding: var(--space-8) var(--space-12);
+  border-top: 1px solid var(--hairline);
+  font-size: var(--text-md);
+}
+
+.dv-changed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.dv-changed-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-4) var(--space-10);
+  margin: 0;
+  font-size: var(--text-md);
+}
+
+.dv-label {
+  font-size: var(--text-xs);
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.dv-changed-list {
+  margin: 0;
+  padding: var(--space-8) var(--space-10);
+  list-style: none;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--input);
+  font-size: var(--text-sm);
+  line-height: 1.65;
+  color: var(--text-2);
+}
+
+.dv-changed-list > li {
+  display: flex;
+  gap: var(--space-10);
+}
+
+.dv-changed-list .dv-path {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dv-muted-line {
+  color: var(--muted);
+}
+
+.dv-panel-head .expand-button {
+  margin-left: auto;
+}
+
+/* The Diff tab in the full view: no height limit (the page scrolls), and the file list beside the file when there is room */
+
+.dv-by {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  margin-left: auto;
+}
+
+.dv-switch {
+  margin-left: auto;
+  font-size: var(--text-md);
+}
+
+.dv-switch .segment {
+  min-height: 26px;
+  padding: 0 var(--space-10);
+}
+
+.dv-switch ~ .expand-button {
+  margin-left: 0;
+}
+
+.dv[data-layout="wide"] > .dv-summary {
+  grid-column: 1 / -1;
+}
+
+.dv[data-layout="wide"] > .dv-panel {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.dv:not([data-layout="drawer"]) .dv-lines {
+  max-height: none;
+}
+
+.dv:not([data-layout="drawer"]) .dv-row {
+  grid-template-columns: 34px 34px 16px max-content;
+}
+
+.dv-split-head,
+.dv-srow {
+  display: grid;
+  grid-template-columns: 38px 16px minmax(0, 1fr) 38px 16px minmax(0, 1fr);
+}
+
+.dv-split-head {
+  border-bottom: 1px solid var(--hairline);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.dv-split-head > span {
+  grid-column: span 3;
+  padding: var(--space-2) var(--space-10);
+}
+
+.dv-split-head > span + span,
+.dv-after {
+  border-left: 1px solid var(--hairline);
+}
+
+.dv-split .dv-text {
+  padding-right: var(--space-10);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.dv-srow[data-kind] > .dv-text {
+  grid-column: 1 / -1;
+  padding: 0 var(--space-10);
+}
+
+.dv-srow[data-kind="hunk"] {
+  background: var(--panel);
+}
+
+.dv-srow[data-kind="hunk"] > .dv-text {
+  color: var(--link);
+}
+
+.dv-srow[data-kind="note"] > .dv-text {
+  color: var(--muted);
+}
+
+.dv-split [data-kind="added"]:is(.dv-sign, .dv-text) {
+  color: var(--pass);
+}
+
+.dv-split [data-kind="removed"]:is(.dv-sign, .dv-text) {
+  color: var(--fail);
+}
+
+.dv-split [data-kind="none"] {
+  background: var(--ground);
+}
+

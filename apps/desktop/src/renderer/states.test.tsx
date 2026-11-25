@@ -44,8 +44,8 @@ function fakeBridgeWith(patch: Partial<typeof setup>, options: Parameters<typeof
 describe("first launch: no repos yet", () => {
   it("explains where the repos file is and shows an example, in place of the list", async () => {
     await mount(noRepos());
-    expect(text(".board .state-title")).toBe("Add your first repos");
-    expect(text(".board .state-text")).toContain(REPOS_FILE);
+    expect(text(".board .empty-state-title")).toBe("Add your first repos");
+    expect(text(".board .empty-state-text")).toContain(REPOS_FILE);
     expect(REPOS_FILE).toBe("~/.tokama/repos.yaml");
     expect(text(".board .state-code")).toBe(REPOS_EXAMPLE);
     expect($(".filter-bar")).toBeNull();
@@ -134,9 +134,9 @@ describe("an older engine still running", () => {
     const fake = await mount(fakeBridge(older(3)));
     expect(text(".board .failure .hint")).toBe("It is running 3 tasks. Restart now (they pause and ask Retry or Stop) or Wait until they finish.");
     expect($$(".board .failure button").map((el) => el.textContent)).toEqual(["Restart engine", "Restart now", "Wait"]);
-    await click($$(".board .failure .inline-action")[1]!);
+    await click($$(".board .failure .btn-link")[1]!);
     expect(fake.bridge.waitForEngine).toHaveBeenCalledOnce();
-    await click($$(".board .failure .inline-action")[0]!);
+    await click($$(".board .failure .btn-link")[0]!);
     expect(fake.bridge.restartEngine).toHaveBeenCalledOnce();
   });
 
@@ -182,8 +182,8 @@ describe("no live items", () => {
 describe("a view with no work at all", () => {
   it("shows No work yet and points at the New work input", async () => {
     await mount(fakeBridge(CONNECTED, { boardItems: [] }));
-    expect(text(".board .state-title")).toBe("No work yet");
-    expect(text(".board .state-text")).toBe("Describe a task or paste an alert below. It starts in the template you pick.");
+    expect(text(".board .empty-state-title")).toBe("No work yet");
+    expect(text(".board .empty-state-text")).toBe("Describe a task or paste an alert below. It starts in the template you pick.");
     expect($(".filter-bar")).toBeNull();
     expect($(".np-text")).not.toBeNull();
   });
@@ -191,10 +191,10 @@ describe("a view with no work at all", () => {
   it("shows it in a workflow's board layout too, and in a repo view when only other repos have work", async () => {
     await mount(fakeBridge(CONNECTED, { boardItems: [ITEMS.queued] }));
     await click(sidebarRow("checkout-web"));
-    expect(text(".board .state-title")).toBe("No work yet");
+    expect(text(".board .empty-state-title")).toBe("No work yet");
     await click(sidebarRow("DB slow query check"));
     await click($$(".layout .segment").find((el) => el.textContent === "Board")!);
-    expect(text(".board .state-title")).toBe("No work yet");
+    expect(text(".board .empty-state-title")).toBe("No work yet");
     expect($(".columns")).toBeNull();
   });
 

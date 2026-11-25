@@ -44,7 +44,7 @@ flow("keeps the Insights header apart from the Usage and Machine tabs at narrow 
           const rect = document.querySelector(selector)!.getBoundingClientRect();
           return { top: rect.top, bottom: rect.bottom };
         };
-        return { header: box(".insights-page .main-header"), summary: box(".insights-page .summary"), tabs: box(".ins-tabs") };
+        return { header: box(".insights-page .main-header"), summary: box(".insights-page .summary"), tabs: box(".insights-page .tabs") };
       });
       const where = `${tab} tab at ${width} x ${height}`;
       expect(boxes.header.bottom, `the header ends above the tabs: ${where}`).toBeLessThanOrEqual(boxes.tabs.top + 0.5);

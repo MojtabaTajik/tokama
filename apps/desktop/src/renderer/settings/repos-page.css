@@ -9,7 +9,7 @@
 .rp-state {
   flex: 1 1 auto;
   min-width: 0;
-  padding: 28px 32px;
+  padding: var(--space-28) var(--space-32);
   overflow: auto;
 }
 
@@ -19,29 +19,26 @@
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-4);
   min-height: 0;
-  padding: 14px 12px;
+  padding: var(--space-14) var(--space-12);
   border-right: 1px solid var(--hairline);
   overflow: auto;
 }
 
 .rp-list-hint {
   margin: 0;
-  padding: 2px 8px 8px;
-  font-size: 12px;
+  padding: var(--space-2) var(--space-8) var(--space-8);
+  font-size: var(--text-md);
   color: var(--muted);
 }
 
 .rp-add {
   min-height: 32px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
+  padding: 0 var(--space-8);
+  border-radius: var(--radius);
   color: var(--text-2);
   text-align: left;
-  cursor: pointer;
 }
 
 .rp-add:hover {
@@ -52,7 +49,7 @@
 .rp-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -65,13 +62,10 @@
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  padding: 8px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
+  padding: var(--space-8);
+  border-radius: var(--radius);
   color: var(--text-2);
   text-align: left;
-  cursor: pointer;
 }
 
 .rp-row:hover,
@@ -86,50 +80,29 @@
 .rp-row-top {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-8);
   min-width: 0;
 }
 
 .rp-row-id {
-  font-size: 12.5px;
-}
-
-.rp-badges {
-  display: inline-flex;
-  flex: none;
-  gap: 8px;
-  margin-left: auto;
-  font-size: 11px;
-  white-space: nowrap;
-}
-
-.rp-badge[data-kind="needs"] {
-  color: var(--warn);
-}
-
-.rp-badge[data-kind="failed"] {
-  color: var(--fail);
-}
-
-.rp-badge[data-kind="running"] {
-  color: var(--muted);
+  font-size: var(--text-base);
 }
 
 .rp-row-path {
   display: block;
-  font-size: 11.5px;
+  font-size: var(--text-sm);
   color: var(--muted);
 }
 
 .rp-row-meta {
   display: flex;
   min-width: 0;
-  font-size: 11.5px;
+  font-size: var(--text-sm);
   color: var(--muted);
 }
 
 .rp-row-meta .mono {
-  font-size: 11.5px;
+  font-size: var(--text-sm);
 }
 
 .rp-row-checks {
@@ -141,7 +114,7 @@
   flex: 1 1 560px;
   min-width: 0;
   box-sizing: border-box;
-  padding: 28px 32px 40px;
+  padding: var(--space-28) var(--space-32) var(--space-40);
   overflow: auto;
 }
 
@@ -153,8 +126,8 @@
 .rp-head {
   display: flex;
   align-items: flex-start;
-  gap: 14px;
-  padding-bottom: 18px;
+  gap: var(--space-14);
+  padding-bottom: var(--space-18);
 }
 
 .rp-icon {
@@ -164,7 +137,7 @@
   justify-content: center;
   width: 40px;
   height: 40px;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--raised);
   color: var(--text-2);
 }
@@ -173,7 +146,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2);
 }
 
 .rp-head-text h2 {
@@ -185,22 +158,22 @@
 
 .rp-head-text p {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--text-body);
   color: var(--text-2);
 }
 
 .rp-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 14px 0;
+  gap: var(--space-4);
+  padding: var(--space-14) 0;
   border-top: 1px solid var(--hairline);
 }
 
 .rp-field h3 {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--space-8);
   margin: 0;
   font-size: inherit;
   font-weight: 500;
@@ -208,26 +181,26 @@
 }
 
 .rp-count {
-  font-size: 12px;
+  font-size: var(--text-md);
   font-weight: 400;
   color: var(--muted);
 }
 
 .rp-hint {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--text-base);
   color: var(--muted);
 }
 
 .rp-value {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--text-body);
   color: var(--text-2);
 }
 
 .rp-note {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--text-base);
   color: var(--text-2);
 }
 
@@ -235,21 +208,21 @@
   display: flex;
   flex-direction: column;
   max-width: 520px;
-  margin: 4px 0 0;
-  padding: 6px 0;
+  margin: var(--space-4) 0 0;
+  padding: var(--space-6) 0;
   list-style: none;
   border: 1px solid var(--hairline);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--input);
 }
 
 .rp-checks li {
   display: flex;
-  gap: 10px;
+  gap: var(--space-10);
   min-width: 0;
-  padding: 3px 12px;
-  font-size: 12.5px;
-  line-height: 1.6;
+  padding: 3px var(--space-12); /* px: off-scale */
+  font-size: var(--text-base);
+  line-height: var(--leading-text);
   color: var(--text);
 }
 
@@ -263,67 +236,20 @@
 .rp-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  padding-top: 18px;
+  gap: var(--space-10);
+  padding-top: var(--space-18);
   border-top: 1px solid var(--hairline);
-}
-
-.rp-btn {
-  min-height: 40px;
-  padding: 0 16px;
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-2);
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.rp-btn:hover {
-  background: var(--raised);
-  color: var(--text);
-}
-
-.rp-btn.danger {
-  border-color: var(--fail);
-  color: var(--fail);
-}
-
-.rp-btn.primary {
-  border-color: var(--primary-border);
-  background: var(--primary-fill);
-  color: var(--primary-text);
 }
 
 .rp-empty {
   max-width: 420px;
   height: 100%;
   margin: 0 auto;
-  display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
   text-align: center;
 }
 
-.rp-icon[data-size="large"] {
-  width: 44px;
-  height: 44px;
-}
-
-.rp-empty h2 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.rp-empty p {
-  margin: 0;
-  color: var(--text-2);
-}
-
-.rp-empty .rp-btn {
-  margin-top: 6px;
+.rp-empty .btn {
+  margin-top: var(--space-6);
 }

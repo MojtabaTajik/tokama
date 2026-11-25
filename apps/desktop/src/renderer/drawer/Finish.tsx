@@ -6,6 +6,8 @@
 import type { FinishAction, ItemRecord, Setup } from "@tokama/core";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { finishView, type FinishRow, type Rich } from "./finish-view.js";
+import { Button } from "../ui/Button.js";
+import { StatusMark } from "../ui/status.js";
 
 const TEXT = {
   finish: "Finish",
@@ -92,9 +94,8 @@ export function Finish({ item, setup, busy, onFinish, onCheckAgain, onAcceptChan
         <Text parts={TEXT.discardWhat(branch, (item.outcome?.commits?.length ?? 0) > 0)} />
       </p>
       <div className="choices">
-        <button
-          type="button"
-          className="choice danger"
+        <Button
+          variant="danger"
           disabled={busy}
           onClick={() => {
             setConfirming(false);
@@ -102,10 +103,10 @@ export function Finish({ item, setup, busy, onFinish, onCheckAgain, onAcceptChan
           }}
         >
           {TEXT.discardConfirm}
-        </button>
-        <button type="button" className="choice" ref={keep} onClick={() => setConfirming(false)}>
+        </Button>
+        <Button variant="secondary" ref={keep} onClick={() => setConfirming(false)}>
           {TEXT.discardCancel}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -127,16 +128,14 @@ export function Finish({ item, setup, busy, onFinish, onCheckAgain, onAcceptChan
           </p>
           {view.failure !== undefined && (
             <p className="finish-notice-body" role="status">
-              <span className="mark" data-tone="fail" aria-hidden="true">
-                ✕
-              </span>{" "}
+              <StatusMark status="failed" />{" "}
               {view.failure}
             </p>
           )}
           {view.removable && !confirming && (
-            <button type="button" className="link" disabled={busy} onClick={() => setConfirming(true)}>
+            <Button variant="link" disabled={busy} onClick={() => setConfirming(true)}>
               {TEXT.removeWorktree}
-            </button>
+            </Button>
           )}
           {confirm}
         </div>
@@ -153,9 +152,7 @@ export function Finish({ item, setup, busy, onFinish, onCheckAgain, onAcceptChan
       </p>
       {view.running !== undefined && (
         <p className="finish-running" role="status">
-          <span className="mark" data-tone="live" aria-hidden="true">
-            ●
-          </span>{" "}
+          <StatusMark status="running" />{" "}
           {view.running}
         </p>
       )}
@@ -180,7 +177,7 @@ interface RowProps {
 
 function Row({ row, busy, onFinish, onDiscard, onCheckAgain, onAcceptChanges, children }: RowProps) {
   const { button } = row;
-  const tone = button.tone === "primary" ? "choice primary" : button.tone === "danger" ? "choice danger" : "choice";
+  const variant = button.tone === "primary" ? "primary" : button.tone === "danger" ? "danger" : "secondary";
   return (
     <div className="finish-row" data-action={row.action}>
       <div className="finish-row-main">
@@ -193,9 +190,9 @@ function Row({ row, busy, onFinish, onDiscard, onCheckAgain, onAcceptChanges, ch
             <p className="finish-off">
               <Text parts={row.off.status} />
               {row.off.recheck && onCheckAgain !== undefined && (
-                <button type="button" className="link" onClick={onCheckAgain}>
+                <Button variant="link" onClick={onCheckAgain}>
                   {TEXT.checkAgain}
-                </button>
+                </Button>
               )}
             </p>
           )}
@@ -231,9 +228,8 @@ function Row({ row, busy, onFinish, onDiscard, onCheckAgain, onAcceptChanges, ch
             </div>
           )}
         </div>
-        <button
-          type="button"
-          className={tone}
+        <Button
+          variant={variant}
           disabled={busy || button.disabled === true}
           onClick={() => {
             if (button.action === "accept_git_changes") onAcceptChanges?.();
@@ -242,7 +238,7 @@ function Row({ row, busy, onFinish, onDiscard, onCheckAgain, onAcceptChanges, ch
           }}
         >
           {button.label}
-        </button>
+        </Button>
       </div>
       {children}
     </div>

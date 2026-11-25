@@ -149,6 +149,15 @@ const rendererPatterns = [
     message: "The renderer gets engine data through window.tokama; it may import core types only.",
   },
 ];
+// The renderer's shared primitives live in renderer/ui; screens use them instead of drawing their
+// own buttons, modals or tooltips.
+const UI_PRIMITIVES = [
+  { selector: "JSXOpeningElement[name.name='button']", message: "Use Button (or CloseButton) from renderer/ui instead of a raw <button>." },
+  { selector: "JSXOpeningElement[name.name='dialog']", message: "Use Modal from renderer/ui instead of a raw <dialog>." },
+  { selector: "JSXAttribute[name.name='aria-modal']", message: "Use Modal from renderer/ui instead of a hand-made modal." },
+  { selector: "JSXAttribute[name.name='role'][value.value='tooltip']", message: "Use Tooltip from renderer/ui instead of a hand-made tooltip." },
+  { selector: "JSXAttribute[name.name='role'] > JSXExpressionContainer > Literal[value='tooltip']", message: "Use Tooltip from renderer/ui instead of a hand-made tooltip." },
+];
 const preloadPatterns = [
   ...desktopPatterns,
   sandboxedNode,
@@ -255,6 +264,11 @@ export default defineConfig(
     // Tests run in Node under Vitest, not in the sandbox.
     ignores: ["**/*.test.{ts,tsx}"],
     rules: { "@typescript-eslint/no-restricted-imports": ["error", { patterns: rendererPatterns }] },
+  },
+  {
+    files: [desktopFiles("renderer/")],
+    ignores: [`${DESKTOP}/renderer/ui/**`, "**/*.test.{ts,tsx}"],
+    rules: { "no-restricted-syntax": ["error", ...UI_PRIMITIVES] },
   },
   {
     files: [desktopFiles("preload/")],

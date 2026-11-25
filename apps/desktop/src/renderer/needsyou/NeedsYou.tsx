@@ -9,12 +9,18 @@ import { type MouseEvent, type ReactNode, useLayoutEffect, useRef, useState } fr
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { DecisionChoices } from "../drawer/DecisionChoices.js";
 import { nextRunLine } from "../drawer/describe.js";
-import { ChangedFiles, useDecisionDiff } from "../drawer/DiffView.js";
+import { useDecisionDiff } from "../drawer/useDecisionDiff.js";
+import { ChangedFiles } from "../ui/DiffView.js";
 import { type Notice, problem, REFRESH_ON } from "../drawer/ItemDrawer.js";
 import { previewOf, useStepOutput } from "../drawer/StepOutput.js";
 import { ConnectionFailure } from "../shell/ConnectionStatus.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { type NeedsYouRow, needsYouRows } from "./rows.js";
+import { Button } from "../ui/Button.js";
+import { ErrorRetry } from "../ui/ErrorRetry.js";
+import { markOf } from "../ui/status.js";
+import { AgentChip } from "../ui/agent.js";
+import { EmptyState, Placeholder } from "../ui/EmptyState.js";
 
 const TEXT = {
   title: "Needs you",
@@ -26,13 +32,12 @@ const TEXT = {
   reconnecting: "Reconnecting to the engine",
   loadFailed: "Could not load the setup and items",
   staleFailed: "Could not refresh the list. It may be out of date",
-  retry: "Retry",
   noQuestion: "This item waits for you, but the engine sent no question yet.",
   willBeSent: "Will be sent",
   notSentYet: "Nothing has been sent yet",
   waiting: (count: number) => `${count} waiting`,
-  oldest: (since: string) => `oldest item started ${since} ago`,
-  started: (since: string) => `started ${since} ago`,
+  oldest: (since: string) => `oldest item started ${since}`,
+  started: (since: string) => `started ${since}`,
   review: "Review the diff",
   readPlan: "Read the plan",
   readOutput: "Read the output",
@@ -93,14 +98,11 @@ export function NeedsYou(props: NeedsYouProps) {
           <>
             {loadError !== undefined && <LoadFailure message={loadError} text={stale ? TEXT.staleFailed : TEXT.loadFailed} onRetry={onRetry} />}
             {!loaded ? (
-              loadError === undefined && <p className="placeholder">{connection.status === "starting" ? TEXT.starting : connection.status === "reconnecting" ? TEXT.reconnecting : TEXT.loading}</p>
+              loadError === undefined && <Placeholder>{connection.status === "starting" ? TEXT.starting : connection.status === "reconnecting" ? TEXT.reconnecting : TEXT.loading}</Placeholder>
             ) : rows.length === 0 ? (
               // An empty list from an earlier load is no all-clear.
               !stale && (
-                <section className="state" aria-label={TEXT.empty}>
-                  <h2 className="state-title">{TEXT.empty}</h2>
-                  <p className="state-text">{TEXT.emptyHint}</p>
-                </section>
+                <EmptyState className="state" title={TEXT.empty} text={TEXT.emptyHint} />
               )
             ) : (
               <ol className="nr-list" aria-label={TEXT.list}>
@@ -118,20 +120,7 @@ export function NeedsYou(props: NeedsYouProps) {
 }
 
 function LoadFailure({ message, text, onRetry }: { readonly message: string; readonly text: string; readonly onRetry: () => void }) {
-  return (
-    <div className="failure" role="alert">
-      <p className="failure-title">
-        <span className="symbol" aria-hidden="true">
-          ✕
-        </span>
-        {text}
-      </p>
-      <p className="detail">{message}</p>
-      <button type="button" className="retry" onClick={onRetry}>
-        {TEXT.retry}
-      </button>
-    </div>
-  );
+  return <ErrorRetry title={text} detail={message} onRetry={onRetry} />;
 }
 
 interface RowProps {
@@ -185,7 +174,7 @@ function Row({ row, index, bridge, selected, onSelect, onReviewDiff, onRefresh }
     <li className="nr-row" data-row={index} aria-current={selected ? "true" : undefined} onClick={onRowClick}>
       <p className="nr-top">
         <span className="nr-kind">
-          <span aria-hidden="true">⏸</span> {row.kind}
+          <span aria-hidden="true">{markOf("needs_you").symbol}</span> {row.kind}
         </span>
         <span className="nr-workflow">
           <TemplateIcon icon={row.workflow.icon} color={row.workflow.color} />
@@ -195,17 +184,15 @@ function Row({ row, index, bridge, selected, onSelect, onReviewDiff, onRefresh }
           {TEXT.started(row.since)}
         </span>
       </p>
-      <button type="button" className="nr-title" data-item-id={item.id} aria-current={selected ? "true" : undefined} onClick={() => onSelect(item.id)}>
+      <Button variant="plain" className="nr-title" data-item-id={item.id} aria-current={selected ? "true" : undefined} onClick={() => onSelect(item.id)}>
         {item.title}
-      </button>
+      </Button>
       <p className="nr-where">
         {row.stepLine !== undefined && <span className="mono">{row.stepLine}</span>}
         {row.agent !== undefined && (
-          <span className="nr-agent">
-            <span className="agent-dot" data-agent={row.agent.dot} aria-hidden="true" />
-            {row.agent.name}
+          <AgentChip agent={row.agent} className="nr-agent">
             {row.cli !== undefined && <span className="mono nr-cli">{row.cli}</span>}
-          </span>
+          </AgentChip>
         )}
       </p>
       <p className="nr-question">{decision?.question ?? TEXT.noQuestion}</p>
@@ -224,16 +211,16 @@ function Row({ row, index, bridge, selected, onSelect, onReviewDiff, onRefresh }
       {preview !== "" && (
         <div className="nr-output">
           <p className="nr-preview">{preview}</p>
-          <button type="button" className="nr-read" aria-label={`${read}: ${item.title}`} onClick={() => onSelect(item.id)}>
+          <Button variant="link" className="nr-read" aria-label={`${read}: ${item.title}`} onClick={() => onSelect(item.id)}>
             {read}
-          </button>
+          </Button>
         </div>
       )}
       {diff !== undefined && <ChangedFiles state={diff} context={item.title} />}
       {notice !== undefined && (
         <p className="drawer-notice" data-tone={notice.tone} role="status">
           <span className="symbol" aria-hidden="true">
-            {notice.tone === "warn" ? "!" : "✕"}
+            {markOf(notice.tone === "warn" ? "warning" : "failed").symbol}
           </span>
           {notice.text}
         </p>
@@ -248,9 +235,9 @@ function Row({ row, index, bridge, selected, onSelect, onReviewDiff, onRefresh }
           run={nextRunLine(item.steps[decision.stepIndex])}
           extra={
             decision.hasDiff === true ? (
-              <button type="button" className="link nr-review" aria-label={`${TEXT.review}: ${item.title}`} onClick={() => onReviewDiff(item.id)}>
+              <Button variant="link" className="nr-review" aria-label={`${TEXT.review}: ${item.title}`} onClick={() => onReviewDiff(item.id)}>
                 {TEXT.review}
-              </button>
+              </Button>
             ) : undefined
           }
           onChoose={(choice, note) => void choose(choice, note)}

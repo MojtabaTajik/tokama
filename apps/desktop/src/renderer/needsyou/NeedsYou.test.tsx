@@ -32,7 +32,7 @@ const render = (bridge: TokamaBridge) => act(async () => root.render(<App bridge
 const railButton = (label: RegExp) => $$(".rail button").find((button) => label.test(button.getAttribute("aria-label") ?? ""))!;
 const openPage = () => click(railButton(/^Needs you/));
 const rowTitles = () => $$(".nr-title").map((el) => el.textContent);
-const choiceButtons = (row: Element) => [...row.querySelectorAll("button.choice")] as HTMLButtonElement[];
+const choiceButtons = (row: Element) => [...row.querySelectorAll(".choices .btn:not(.btn-link)")] as HTMLButtonElement[];
 
 const DECISION = ITEMS.needsYou.decision!;
 /** The sample item, with the step's data rule that makes the question a cloud-step approval. */
@@ -73,7 +73,7 @@ describe("the Needs you page", () => {
     await render(fakeBridge(CONNECTED, { boardItems: withOlder }).bridge);
     await openPage();
     expect(rowTitles()).toEqual(["Plan is ready <b>for review</b>", "Orders API returns 500 after deploy"]);
-    expect(text(".summary")).toBe("2 waiting · oldest item started 1 h 10 ago");
+    expect(text(".summary")).toBe("2 waiting · oldest item started 1 h 10 m ago");
     expect($(".nr-row b")).toBeNull();
   });
 
@@ -84,12 +84,12 @@ describe("the Needs you page", () => {
     expect(plan?.querySelector(".nr-kind")?.textContent).toBe("⏸ Decision");
     expect(plan?.querySelector(".nr-workflow")?.textContent).toBe("Plan and build");
     expect(plan?.querySelector(".nr-where")?.textContent).toBe("step 1 of 2 · PlanArchitectClaude Code");
-    expect(plan?.querySelector(".nr-time")?.textContent).toBe("started 1 h 10 ago");
+    expect(plan?.querySelector(".nr-time")?.textContent).toBe("started 1 h 10 m ago");
     expect(plan?.querySelector(".nr-question")?.textContent).toBe("Approve the plan?");
     expect(choiceButtons(plan!).map((button) => button.textContent)).toEqual(["Yes", "No"]);
-    expect(choiceButtons(plan!)[0]?.className).toBe("choice primary");
+    expect(choiceButtons(plan!)[0]?.className).toBe("btn btn-primary");
     expect(cloudRow?.querySelector(".nr-kind")?.textContent).toBe("⏸ Cloud-step approval");
-    expect(cloudRow?.querySelector(".nr-time")?.textContent).toBe("started 41 min ago");
+    expect(cloudRow?.querySelector(".nr-time")?.textContent).toBe("started 41 m ago");
     expect(cloudRow?.querySelector(".nr-question")?.textContent).toBe(DECISION.question);
     expect(choiceButtons(cloudRow!).map((button) => button.getAttribute("aria-label"))).toEqual(["Approve and send: Orders API returns 500 after deploy"]);
   });
@@ -104,7 +104,7 @@ describe("the Needs you page", () => {
     expect(fake.command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: ITEMS.needsYou.id, decisionId: DECISION.id, choice: "approve" });
     await fake.pushItem({ ...ITEMS.needsYou, state: "running", decision: undefined } as ItemRecord);
     expect($(".nr-row")).toBeNull();
-    expect(text(".state-title")).toBe("Nothing is waiting for you");
+    expect(text(".empty-state-title")).toBe("Nothing is waiting for you");
     expect(text(".summary")).toBe("0 waiting");
     expect($(".badge")).toBeNull();
     // Focus lands on the page, not on the document.
@@ -282,7 +282,7 @@ describe("the Needs you page", () => {
   it("shows an empty state, not a list, when nothing waits", async () => {
     await render(fakeBridge(CONNECTED, { boardItems: withoutWaiting }).bridge);
     await openPage();
-    expect(text(".state-title")).toBe("Nothing is waiting for you");
+    expect(text(".empty-state-title")).toBe("Nothing is waiting for you");
     expect($(".nr-list")).toBeNull();
   });
 
@@ -291,17 +291,17 @@ describe("the Needs you page", () => {
     const fake = fakeBridge(CONNECTED, { boardItems: withoutWaiting, reply: (q) => (failing && q.type === "setup" ? { ok: false, error: { code: "timeout", message: "no answer" } } : undefined) });
     await render(fake.bridge);
     await openPage();
-    expect($(".state-title")).not.toBeNull();
+    expect($(".empty-state-title")).not.toBeNull();
     failing = true;
     await fake.setConnection({ status: "reconnecting" });
     await fake.setConnection({ status: "connected", engineId: "e-1" });
     await wait(40);
-    expect($(".state-title")).toBeNull();
+    expect($(".empty-state-title")).toBeNull();
     expect(text(".failure-title")).toBe("✕Could not refresh the list. It may be out of date");
     failing = false;
     await click($$("button").find((button) => button.textContent === "Retry"));
     expect($(".failure")).toBeNull();
-    expect($(".state-title")).not.toBeNull();
+    expect($(".empty-state-title")).not.toBeNull();
   });
 
   it("shows why the engine is not available instead of a list", async () => {
@@ -309,7 +309,7 @@ describe("the Needs you page", () => {
     await render(fake.bridge);
     await openPage();
     expect($(".nr-list")).toBeNull();
-    expect($(".state-title")).toBeNull();
+    expect($(".empty-state-title")).toBeNull();
     expect($(".board .failure, .board .retry")).not.toBeNull();
     expect($(".summary")).toBeNull();
   });

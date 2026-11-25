@@ -5,6 +5,7 @@
 // only; Stop stays in the drawer's actions.
 import type { Decision } from "@tokama/core";
 import { type ReactNode, useEffect, useId, useState } from "react";
+import { Button } from "../ui/Button.js";
 
 /** The engine's choice id for Request changes, the one choice that takes a note. */
 export const REQUEST_CHANGES_ID = "request_changes";
@@ -83,12 +84,12 @@ export function DecisionChoices({ decision, busy, onChoose, context, agent, run,
           {TEXT.hint(agent, run)}
         </span>
         <div className="choices">
-          <button type="submit" className="choice primary" disabled={busy} aria-label={named(TEXT.send(agent))}>
+          <Button variant="primary" type="submit" disabled={busy} aria-label={named(TEXT.send(agent))}>
             {TEXT.send(agent)}
-          </button>
-          <button type="button" className="choice" onClick={() => setNoting(false)}>
+          </Button>
+          <Button variant="secondary" onClick={() => setNoting(false)}>
             {TEXT.cancel}
-          </button>
+          </Button>
         </div>
       </form>
     );
@@ -96,16 +97,15 @@ export function DecisionChoices({ decision, busy, onChoose, context, agent, run,
   return (
     <div className="choices">
       {choices.map((choice, position) => (
-        <button
+        <Button
           key={choice.id}
-          type="button"
-          className={position === 0 ? "choice primary" : choice.id === danger ? "choice danger" : "choice"}
+          variant={position === 0 ? "primary" : choice.id === danger ? "danger" : "secondary"}
           disabled={busy}
           aria-label={named(choice.label)}
           onClick={() => (choice.id === REQUEST_CHANGES_ID ? setNoting(true) : onChoose(choice.id))}
         >
           {choice.label}
-        </button>
+        </Button>
       ))}
       {extra}
     </div>

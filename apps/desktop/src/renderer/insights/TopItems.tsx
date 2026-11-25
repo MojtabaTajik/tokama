@@ -4,7 +4,10 @@
 import type { Setup, UsageReport } from "@tokama/core";
 import { stepAgent } from "../drawer/describe.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
-import { formatCost, formatDuration, formatTokens, templateFor, totalOf, workflowName } from "./usage-model.js";
+import { formatDuration } from "../format/duration.js";
+import { formatCost, formatTokens, templateFor, totalOf, workflowName } from "./usage-model.js";
+import { Button } from "../ui/Button.js";
+import { AgentChip } from "../ui/agent.js";
 
 const CLI_SHORT = { "claude-code": "CC", "codex-cli": "CX", ollama: "OL" } as const;
 
@@ -67,9 +70,9 @@ export function TopItems({ report, setup, filter, note, openable, onOpen }: TopI
                 <tr key={item.itemId}>
                   <td className="ins-item">
                     {openable.has(item.itemId) ? (
-                      <button type="button" className="link-button" onClick={() => onOpen(item.itemId)}>
+                      <Button variant="quiet" onClick={() => onOpen(item.itemId)}>
                         {item.title}
-                      </button>
+                      </Button>
                     ) : (
                       item.title
                     )}
@@ -85,17 +88,15 @@ export function TopItems({ report, setup, filter, note, openable, onOpen }: TopI
                       {item.agents.map((agent) => {
                         const known = stepAgent({ agentId: agent.agentId, data: "none" }, setup?.agents ?? []);
                         return (
-                          <span key={agent.agentId} className="ins-agent">
-                            <span className="agent-dot" data-agent={known.dot} aria-hidden="true" />
-                            {known.name}
+                          <AgentChip key={agent.agentId} agent={known} className="ins-agent">
                             <span className="muted mono">{CLI_SHORT[agent.cliId]}</span>
-                          </span>
+                          </AgentChip>
                         );
                       })}
                     </span>
                   </td>
                   <td className="num mono">{formatTokens(totalOf(item.tokens))}</td>
-                  <td className="num mono">{formatDuration(item.durationMs)}</td>
+                  <td className="num mono">{formatDuration(item.durationMs, "coarse")}</td>
                   <td className="num mono" data-muted={item.local || undefined}>
                     {item.local ? TEXT.local : formatCost(item.costUsd)}
                   </td>

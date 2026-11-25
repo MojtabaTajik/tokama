@@ -4,10 +4,14 @@
 // does nothing when clicked. It sits next to the row's own button, never inside it. Engine text (names,
 // models, commands, the role) is rendered as React text only.
 import type { CSSProperties, ReactNode } from "react";
-import { useEffect, useId, useLayoutEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import { type AgentTarget, monogram } from "../settings/describe.js";
-import { useTip } from "../shell/useTip.js";
+import { useTip } from "../ui/useTip.js";
 import { type AgentAccess, type AgentInfo, extraPower } from "./agent-info.js";
+import { Button } from "../ui/Button.js";
+import { AgentDotMark } from "../ui/agent.js";
+import { Pill } from "../ui/Pill.js";
+import { Tooltip } from "../ui/Tooltip.js";
 
 const TEXT = {
   builtin: "built-in",
@@ -57,32 +61,25 @@ export function AgentLabel({ info, onOpen }: AgentLabelProps) {
   }, [open, dismiss]);
 
   return (
-    <span ref={wrapper} className="al" onMouseEnter={() => tip.hold("hover", true)} onMouseLeave={() => tip.hold("hover", false)} onFocus={() => tip.hold("focus", true)} onBlur={() => tip.hold("focus", false)}>
-      <button ref={button} type="button" className="al-button" data-open={open || undefined} aria-describedby={open ? tipId : undefined} style={{ anchorName: anchor } as CSSProperties}>
+    <span ref={wrapper} className="al" {...tip.triggers}>
+      <Button variant="plain" ref={button} className="al-button" data-open={open || undefined} aria-describedby={open ? tipId : undefined} style={{ anchorName: anchor } as CSSProperties}>
         <span className="al-who">
-          <span className="agent-dot" data-agent={info.dot} aria-hidden="true" />
+          <AgentDotMark dot={info.dot} />
           <span className="ellipsis">{info.name}</span>
         </span>{" "}
         {info.model !== undefined && <span className="al-model">· {info.model}</span>}
-      </button>
+      </Button>
       {open && <Tip id={tipId} anchor={anchor} info={info} onOpen={onOpen} />}
     </span>
   );
 }
 
 function Tip({ id, anchor, info, onOpen }: { readonly id: string; readonly anchor: string; readonly info: AgentInfo; readonly onOpen: AgentLabelProps["onOpen"] }) {
-  const ref = useRef<HTMLDivElement>(null);
-  // A popover sits in the top layer: no list or drawer around the label clips it. Where the browser has no popovers it is a plain element.
-  useLayoutEffect(() => {
-    const element = ref.current;
-    if (element?.isConnected !== true || typeof element.showPopover !== "function") return;
-    element.showPopover();
-  }, []);
   const { access } = info;
   return (
-    <div ref={ref} id={id} role="tooltip" popover="manual" className="al-tip" style={{ positionAnchor: anchor } as CSSProperties}>
+    <Tooltip id={id} anchor={anchor} className="al-tip">
       <div className="al-head">
-        <span className="agent-dot" data-agent={info.dot} aria-hidden="true" />
+        <AgentDotMark dot={info.dot} />
         <b className="al-name">{info.name}</b>
         {access !== undefined && <Owner access={access} />}
       </div>
@@ -98,22 +95,22 @@ function Tip({ id, anchor, info, onOpen }: { readonly id: string; readonly ancho
       {access?.role !== undefined && <p className="al-role">{`“${access.role}”`}</p>}
       {onOpen !== undefined && (
         <div className="al-foot">
-          <button type="button" className="al-open" onClick={() => onOpen({ id: info.id, owner: access?.owner, repoId: access?.repoId })}>
+          <Button variant="plain" className="al-open" onClick={() => onOpen({ id: info.id, owner: access?.owner, repoId: access?.repoId })}>
             {TEXT.open}
-          </button>
+          </Button>
         </div>
       )}
-    </div>
+    </Tooltip>
   );
 }
 
 function Owner({ access }: { readonly access: AgentAccess }) {
   return (
-    <span className="al-owner">
+    <Pill round className="al-owner">
       {access.owner === "builtin" ? <ShieldGlyph /> : access.owner === "personal" ? <PersonGlyph /> : <RepoGlyph />}
       {TEXT[access.owner]}
       {access.repoId !== undefined && <span className="mono"> {access.repoId}</span>}
-    </span>
+    </Pill>
   );
 }
 

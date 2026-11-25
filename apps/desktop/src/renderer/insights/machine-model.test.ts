@@ -2,7 +2,8 @@ import { parseQueryResult, type MachineReport } from "@tokama/core";
 import { describe, expect, it } from "vitest";
 import { machinePoints, machineReport } from "../testing/machine.js";
 import { NOW } from "../testing/sample.js";
-import { chartModel, formatBytes, formatClock, formatSeconds, formatSize, linePaths, nearestPoint, ofAllCores, tableRows, WINDOW_MS } from "./machine-model.js";
+import { clock, clockSeconds } from "../format/time.js";
+import { chartModel, formatBytes, formatSize, linePaths, nearestPoint, ofAllCores, tableRows, WINDOW_MS } from "./machine-model.js";
 
 const MINUTE = 60_000;
 const withPoints = (points: MachineReport["points"]): MachineReport => ({ ...machineReport, points });
@@ -23,8 +24,8 @@ describe("text", () => {
 
   it("shows the clock in 24 hours, local time", () => {
     const at = new Date(2025, 9, 20, 9, 5, 7).getTime();
-    expect(formatClock(at)).toBe("09:05");
-    expect(formatSeconds(at)).toBe("09:05:07");
+    expect(clock(at)).toBe("09:05");
+    expect(clockSeconds(at)).toBe("09:05:07");
   });
 
   it("turns a share of one core into a share of all cores", () => {
@@ -39,8 +40,8 @@ describe("chartModel", () => {
     expect(model.end - model.start).toBe(WINDOW_MS);
     expect(model.runs).toHaveLength(1);
     expect(model.unsampled).toEqual([]);
-    expect(model.ticks.at(0)).toMatchObject({ align: "start", label: formatClock(NOW - WINDOW_MS) });
-    expect(model.ticks.at(-1)).toMatchObject({ align: "end", label: `${formatClock(NOW)} now` });
+    expect(model.ticks.at(0)).toMatchObject({ align: "start", label: clock(NOW - WINDOW_MS) });
+    expect(model.ticks.at(-1)).toMatchObject({ align: "end", label: `${clock(NOW)} now` });
     for (const tick of model.ticks.slice(1, -1)) expect(new Date(tick.at).getMinutes() % 10).toBe(0);
   });
 

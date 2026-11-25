@@ -5,7 +5,7 @@ import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState }
 import type { TokamaBridge } from "../shared/bridge.js";
 import { DEFAULT_DESKTOP_STATE, type DesktopState, DRAWER_WIDTH, RAIL_WIDTH, SECTIONS, SIDEBAR_WIDTH } from "../shared/desktop-state.js";
 import { About } from "./about/About.js";
-import { SIDE_BY_SIDE_MIN_WIDTH } from "./drawer/DiffView.js";
+import { SIDE_BY_SIDE_MIN_WIDTH } from "./ui/DiffView.js";
 import { ItemDrawer } from "./drawer/ItemDrawer.js";
 import { Insights } from "./insights/Insights.js";
 import { fitPanels, sidebarMax } from "./layout/fit.js";

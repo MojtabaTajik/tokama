@@ -8,6 +8,10 @@ import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { type AgentTarget, agentRows, filterRows, isTarget, limitsNotes, limitsTitle, monogram, ownerLabel, rowLine, rowName, runsOnName, summaryLine } from "./describe.js";
 import { useAgents } from "./useAgents.js";
+import { Button } from "../ui/Button.js";
+import { ErrorRetry } from "../ui/ErrorRetry.js";
+import { markOf, StatusMark } from "../ui/status.js";
+import { Placeholder } from "../ui/EmptyState.js";
 
 const TEXT = {
   heading: "Agents",
@@ -16,11 +20,10 @@ const TEXT = {
   list: "Agents",
   noMatch: "No agent matches",
   empty: "No agents",
-  broken: "✕ broken",
+  broken: `${markOf("failed").symbol} broken`,
   loading: "Loading",
   starting: "Waiting for the engine",
   loadFailed: "Could not load the agents",
-  retry: "Retry",
   problemsHeading: "Files that did not load",
   stored: "Stored in",
   runsOn: "Runs on",
@@ -67,42 +70,29 @@ export function AgentsPage({ bridge, connection, setup, initialAgent }: AgentsPa
             <ul className="agents-list" aria-label={TEXT.list}>
               {shown.map((row) => (
                 <li key={row.key}>
-                  <button type="button" className="agent-row" aria-pressed={row.key === selected?.key} data-broken={row.broken || undefined} onClick={() => setSelectedKey(row.key)}>
+                  <Button variant="plain" className="agent-row" aria-pressed={row.key === selected?.key} data-broken={row.broken || undefined} onClick={() => setSelectedKey(row.key)}>
                     <span className="agent-row-name ellipsis">{row.broken ? <span className="agent-row-flag">{TEXT.broken}</span> : null}{rowName(row)}</span>
                     <span className="agent-row-line mono ellipsis">{rowLine(row)}</span>
-                  </button>
+                  </Button>
                 </li>
               ))}
             </ul>
-            {shown.length === 0 && <p className="placeholder">{rows.length === 0 ? TEXT.empty : TEXT.noMatch}</p>}
+            {shown.length === 0 && <Placeholder>{rows.length === 0 ? TEXT.empty : TEXT.noMatch}</Placeholder>}
             <Problems data={data} />
           </>
         )}
         <p className="agents-note">{TEXT.edit}</p>
       </div>
-      <div className="agent-detail">{selected === undefined ? <p className="placeholder">{data === undefined ? "" : TEXT.select}</p> : selected.broken ? <BrokenDetail entry={selected.entry} /> : <Detail agent={selected.agent} />}</div>
+      <div className="agent-detail">{selected === undefined ? <Placeholder>{data === undefined ? "" : TEXT.select}</Placeholder> : selected.broken ? <BrokenDetail entry={selected.entry} /> : <Detail agent={selected.agent} />}</div>
     </section>
   );
 }
 
 function Body({ state, connected, onRetry }: { readonly state: ReturnType<typeof useAgents>["state"]; readonly connected: boolean; readonly onRetry: () => void }) {
-  if (!connected) return <p className="placeholder">{TEXT.starting}</p>;
-  if (state.status === "loading") return <p className="placeholder">{TEXT.loading}</p>;
+  if (!connected) return <Placeholder>{TEXT.starting}</Placeholder>;
+  if (state.status === "loading") return <Placeholder>{TEXT.loading}</Placeholder>;
   if (state.status === "loaded") return null;
-  return (
-    <div className="failure" role="alert">
-      <p className="failure-title">
-        <span className="symbol" aria-hidden="true">
-          ✕
-        </span>
-        {TEXT.loadFailed}
-      </p>
-      <p className="detail">{state.message}</p>
-      <button type="button" className="retry" onClick={onRetry}>
-        {TEXT.retry}
-      </button>
-    </div>
-  );
+  return <ErrorRetry title={TEXT.loadFailed} detail={state.message} onRetry={onRetry} />;
 }
 
 /** Problems that belong to no listed agent: a bad file name, a refused link. */
@@ -111,9 +101,7 @@ function Problems({ data }: { readonly data: AgentsListResult }) {
   return (
     <div className="agents-problems" role="group" aria-label={TEXT.problemsHeading}>
       <p className="agents-problems-title">
-        <span className="symbol" aria-hidden="true">
-          ✕
-        </span>
+        <StatusMark status="failed" className="symbol" />
         {TEXT.problemsHeading}
       </p>
       <ul>
@@ -189,9 +177,7 @@ function BrokenDetail({ entry }: { readonly entry: BrokenAgentDetail }) {
         <div className="agent-head-text">
           <h2 className="ellipsis">{entry.id}</h2>
           <p className="agent-broken-title">
-            <span className="symbol" aria-hidden="true">
-              ✕
-            </span>
+            <StatusMark status="failed" className="symbol" />
             {TEXT.brokenTitle}
           </p>
         </div>

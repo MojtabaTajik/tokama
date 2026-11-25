@@ -1,10 +1,13 @@
 // What a step's agent wrote last in an attempt (the `step_output` query): in the drawer's
 // approval card, collapsed under each attempt on the Steps tab, and as a short preview on the
-// Needs you row. The text is shown with StepText, as React text only.
+// Needs you row. The text is shown with Markdown, as React text only.
 import type { StepOutputResult } from "@tokama/core";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
-import { StepText } from "./StepText.js";
+import { Markdown } from "../ui/Markdown.js";
+import { Button } from "../ui/Button.js";
+import { StatusMark } from "../ui/status.js";
+import { Placeholder } from "../ui/EmptyState.js";
 
 const TEXT = {
   loading: "Loading the step's output",
@@ -68,15 +71,13 @@ function Cut() {
 export function StepOutput({ state, label }: { readonly state: OutputState; readonly label: string }) {
   switch (state.kind) {
     case "loading":
-      return <p className="placeholder">{TEXT.loading}</p>;
+      return <Placeholder>{TEXT.loading}</Placeholder>;
     case "missing":
       return <p className="step-output-none">{TEXT.missing}</p>;
     case "failed":
       return (
-        <p className="drawer-error" role="alert">
-          <span className="symbol" aria-hidden="true">
-            ✕
-          </span>
+        <p className="inline-error" role="alert">
+          <StatusMark status="failed" className="symbol" />
           {TEXT.failed(state.message)}
         </p>
       );
@@ -85,7 +86,7 @@ export function StepOutput({ state, label }: { readonly state: OutputState; read
       return (
         <>
           <div className="step-output-text" tabIndex={0} role="region" aria-label={label}>
-            <StepText text={state.output.text} />
+            <Markdown text={state.output.text} />
           </div>
           {state.output.truncated && <Cut />}
         </>
@@ -116,12 +117,12 @@ export function StepPreview({ state, label, isPlan, onShowFull }: { readonly sta
   return (
     <>
       <div ref={box} className="step-output-preview" data-cut={cut ? "true" : undefined} role="region" aria-label={label}>
-        <StepText text={state.output.text} />
+        <Markdown text={state.output.text} />
       </div>
       {cut && (
-        <button type="button" className="link step-output-more" onClick={onShowFull}>
+        <Button variant="link" className="step-output-more" onClick={onShowFull}>
           {isPlan ? TEXT.showFullPlan : TEXT.showFullOutput}
-        </button>
+        </Button>
       )}
       {state.output.truncated && <Cut />}
     </>

@@ -3,6 +3,7 @@
 // entry's typed fields only; the entry's text is shown as it is elsewhere.
 import type { DiagnosticEntry } from "@tokama/core";
 import type { DiagnosticsSendFailure } from "../../shared/bridge.js";
+import { clock, dayLabel, localDay, monthName } from "../format/time.js";
 
 /** The type filters. A crash counts as an error: the filter has no type of its own for it. */
 export type ShownType = "error" | "warning" | "usage";
@@ -52,9 +53,12 @@ const CRASH_WORD = {
   memory_eviction: "was closed to free memory",
 } as const;
 const CRASH_SUBJECT = { engine: "Engine", desktop: "Tokama", renderer: "Window" } as const;
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DAY_MS = 24 * 60 * 60 * 1000;
+const startOfDay = (time: number) => {
+  const date = new Date(time);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+};
 
 /** One line about the entry, from its typed fields. */
 export function summary(entry: DiagnosticEntry): string {
@@ -65,28 +69,17 @@ export function summary(entry: DiagnosticEntry): string {
       return WARNING_WORD[entry.code];
     case "usage": {
       const [, month, day] = entry.day.split("-").map(Number);
-      return `Daily usage summary for ${day} ${MONTHS[(month ?? 1) - 1]}`;
+      return `Daily usage summary for ${day} ${monthName(month ?? 1)}`;
     }
     case "crash":
       return `${CRASH_SUBJECT[entry.source]} ${CRASH_WORD[entry.kind]}`;
   }
 }
 
-const pad = (n: number) => String(n).padStart(2, "0");
-const startOfDay = (time: number) => {
-  const date = new Date(time);
-  date.setHours(0, 0, 0, 0);
-  return date.getTime();
-};
-
 /** "Today 14:52", "Yesterday 18:40", or "Mon 23 Nov" before that; local time. */
 export function timeLabel(at: number, now: number): string {
-  const date = new Date(at);
-  const clock = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  const today = startOfDay(now);
-  if (at >= today) return `Today ${clock}`;
-  if (at >= startOfDay(today - DAY_MS / 2)) return `Yesterday ${clock}`;
-  return `${DAYS[date.getDay()]} ${date.getDate()} ${MONTHS[date.getMonth()]}`;
+  const day = dayLabel(localDay(at), now);
+  return day === "Today" || day === "Yesterday" ? `${day} ${clock(at)}` : day;
 }
 
 /** The text's size: "0.6 KB", "1.1 KB". */

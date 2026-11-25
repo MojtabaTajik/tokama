@@ -2,7 +2,10 @@
 // times, alerts per AI CLI, number formats, and the chart's columns. Pure functions that take the
 // clock as an argument, so they are tested without React or a real time.
 import type { CliPlan, LogScan, Setup, TemplateSummary, TokenUsage, UsageReport } from "@tokama/core";
+import { formatDuration } from "../format/duration.js";
+import { clock, sameDay, stamp, weekday } from "../format/time.js";
 import type { CliIssue } from "../model.js";
+import { markOf, type Tone as StatusTone } from "../ui/status.js";
 
 /** A window at or above this share of its limit is high, then near it. */
 export const HIGH = 60;
@@ -34,7 +37,10 @@ export function windowLabel(w: Pick<PlanWindow, "window" | "scope">): string {
 export const windowShort = (w: Pick<PlanWindow, "window" | "scope">): string => windowLabel(w).replace(/ window$/, "");
 /** "50% share of the weekly limit" for a scoped limit with a known share. */
 export const shareText = (w: Pick<PlanWindow, "sharePercent">): string | undefined => (w.sharePercent === undefined ? undefined : `${Math.round(w.sharePercent)}% share of the weekly limit`);
-export type Tone = "warn" | "fail";
+/** The tone of a limit alert. */
+type Tone = Extract<StatusTone, "warn" | "fail">;
+const WARN = markOf("warning").symbol;
+const FAIL = markOf("failed").symbol;
 
 /**
  * How full a window is: under 60% ok, 60 to 79% high, 80% or more near its limit, 100% at it.
@@ -45,7 +51,7 @@ export const levelOf = (usedPercent: number): Level => (usedPercent >= 100 ? "li
 /** The meter fill's colour token per level. */
 export const LEVEL_TONE: Readonly<Record<Level, "pass" | Tone>> = { ok: "pass", high: "warn", near: "fail", limit: "fail" };
 /** The word beside the percentage; ok needs none. */
-export const LEVEL_WORD: Readonly<Record<Level, string | undefined>> = { ok: undefined, high: "high", near: "! near limit", limit: "✕ at limit" };
+export const LEVEL_WORD: Readonly<Record<Level, string | undefined>> = { ok: undefined, high: "high", near: `${WARN} near limit`, limit: `${FAIL} at limit` };
 /** The level for a screen reader, after the percentage. */
 export const LEVEL_SPOKEN: Readonly<Record<Level, string>> = { ok: "ok", high: "high", near: "near limit", limit: "at limit" };
 
@@ -66,42 +72,22 @@ export function cliAlert(plan: CliPlan | undefined, issue: CliIssue | undefined,
 }
 
 export const ALERT_TEXT: Readonly<Record<CliAlert, string>> = {
-  logged_out: "✕ logged out",
-  not_installed: "✕ not found",
-  limit: "✕ at limit",
-  near_limit: "! near limit",
+  logged_out: `${FAIL} logged out`,
+  not_installed: `${FAIL} not found`,
+  limit: `${FAIL} at limit`,
+  near_limit: `${WARN} near limit`,
 };
 export const alertTone = (alert: CliAlert): Tone => (alert === "near_limit" ? "warn" : "fail");
 
 /** The badge on the Insights icon: ✕ when any CLI is logged out, missing or at its limit, else ! when one is near it. */
-export function railBadge(alerts: readonly (CliAlert | undefined)[]): { readonly symbol: "✕" | "!"; readonly tone: Tone } | undefined {
-  if (alerts.some((alert) => alert !== undefined && alertTone(alert) === "fail")) return { symbol: "✕", tone: "fail" };
-  if (alerts.includes("near_limit")) return { symbol: "!", tone: "warn" };
+export function railBadge(alerts: readonly (CliAlert | undefined)[]): { readonly symbol: string; readonly tone: Tone } | undefined {
+  if (alerts.some((alert) => alert !== undefined && alertTone(alert) === "fail")) return { symbol: markOf("failed").symbol, tone: "fail" };
+  if (alerts.includes("near_limit")) return { symbol: markOf("warning").symbol, tone: "warn" };
   return undefined;
 }
 
-const pad = (n: number) => String(n).padStart(2, "0");
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-
-/** "17:10" today, else "Thu 23 Oct 09:00". */
-export function formatClock(at: number, now: number): string {
-  const d = new Date(at);
-  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  return sameDay(d, new Date(now)) ? time : `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]} ${time}`;
-}
-
-/** "29 min", "2 h 38 min", "3 days". */
-export function formatDuration(ms: number): string {
-  const minutes = Math.max(0, Math.round(ms / MINUTE));
-  if (minutes < 60) return `${minutes} min`;
-  if (ms >= 2 * DAY) return `${Math.floor(ms / DAY)} days`;
-  return `${Math.floor(minutes / 60)} h ${pad(minutes % 60)} min`;
-}
-
-/** "data 34 min old" once the data is older than a few minutes. */
-export const ageText = (asOf: number, now: number): string | undefined => (now - asOf > SHOW_AGE_AFTER_MS ? `data ${formatDuration(now - asOf)} old` : undefined);
+/** "data 34 m old" once the data is older than a few minutes. */
+export const ageText = (asOf: number, now: number): string | undefined => (now - asOf > SHOW_AGE_AFTER_MS ? `data ${formatDuration(now - asOf, "coarse")} old` : undefined);
 
 /** Every token of a call or item, cached ones included. */
 export const totalOf = (tokens: TokenUsage): number => tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite;
@@ -145,20 +131,11 @@ export function cardLabel(w: Pick<PlanWindow, "window" | "scope">): string {
   return CARD_LABELS[w.window] ?? windowLabel(w);
 }
 
-/** Time to a reset, short: "38m", "2h 41m", "1d 18h". */
-export function countdown(ms: number): string {
-  const minutes = Math.max(0, Math.round(ms / MINUTE));
-  if (minutes < 60) return `${minutes}m`;
-  if (minutes < 24 * 60) return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
-  return `${Math.floor(minutes / (24 * 60))}d ${Math.floor((minutes % (24 * 60)) / 60)}h`;
-}
-
 /** When a reset happens: "at 17:10" today, "Thu 09:00" this week, else the full date. */
 export function resetWhen(resetsAt: number, now: number): string {
-  const d = new Date(resetsAt);
-  if (sameDay(d, new Date(now))) return `at ${formatClock(resetsAt, now)}`;
-  if (resetsAt - now < 6 * DAY) return `${WEEKDAYS[d.getDay()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  return formatClock(resetsAt, now);
+  if (sameDay(resetsAt, now)) return `at ${clock(resetsAt)}`;
+  if (resetsAt - now < 6 * DAY) return `${weekday(resetsAt)} ${clock(resetsAt)}`;
+  return stamp(resetsAt, now);
 }
 
 export const SOURCE_TEXT: Readonly<Record<NonNullable<CliPlan["source"]>, string>> = {
@@ -238,7 +215,7 @@ export function chartModel(report: UsageReport, metric: Metric, setup: Setup | u
       const value = group === undefined ? 0 : metric === "tokens" ? group.tokens : (group.costUsd ?? 0);
       return value > 0 ? [{ templateId, value }] : [];
     });
-    return { date: day.date, weekday: WEEKDAYS[d.getDay()]!, day: String(d.getDate()), segments, total: segments.reduce((sum, s) => sum + s.value, 0) };
+    return { date: day.date, weekday: weekday(d.getTime()), day: String(d.getDate()), segments, total: segments.reduce((sum, s) => sum + s.value, 0) };
   });
   const max = niceMax(Math.max(0, ...columns.map((c) => c.total)));
   return { series, columns, max, ticks: [0, 0.25, 0.5, 0.75, 1].map((f) => f * max) };

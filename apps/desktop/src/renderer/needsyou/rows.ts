@@ -2,6 +2,7 @@
 // its row says about the decision. Pure functions that take the clock as an argument.
 import type { Decision, ItemRecord, Setup, StepRecord } from "@tokama/core";
 import { decisionKind, stepAgent, type StepAgent, templateOf } from "../drawer/describe.js";
+import { ago } from "../format/duration.js";
 import { cliName, timeOf } from "../model.js";
 
 export interface NeedsYouRow {
@@ -16,7 +17,7 @@ export interface NeedsYouRow {
   /** The AI CLI of the step's agent, when the setup lists the agent. */
   readonly cli: string | undefined;
   readonly workflow: { readonly name: string; readonly icon: string | undefined; readonly color: string | undefined };
-  /** How long ago the item started. The engine records no time for the question, so this is the best known lower bound of the wait. */
+  /** How long ago the item started ("41 m ago"). The engine records no time for the question, so this is the best known lower bound of the wait. */
   readonly since: string;
   readonly sinceTitle: string;
 }
@@ -58,7 +59,7 @@ export function needsYouRows(items: readonly ItemRecord[], setup: Setup | undefi
         agent,
         cli: cliId === undefined ? undefined : cliName(cliId),
         workflow: { name: template?.name ?? item.templateId, icon: template?.icon, color: template?.color },
-        since: time.text,
+        since: ago(now - item.createdAt),
         sinceTitle: time.title,
       };
     });

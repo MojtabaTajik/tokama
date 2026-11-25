@@ -2,6 +2,7 @@
 // Tokama. A logged-out AI CLI shows the command to run in a terminal. Tokama only shows the
 // command; it never signs in for the user. Everything is fixed app text or a CLI name.
 import { type CliIssue, cliName, type HealthProblem, LOGIN_COMMANDS } from "../model.js";
+import { StatusMark } from "../ui/status.js";
 
 const TEXT = {
   title: "Attention",
@@ -34,9 +35,7 @@ export function AttentionPopup({ id, issues, problems = [] }: AttentionPopupProp
           {issues.map((issue) => (
             <li key={`${issue.cliId}:${issue.kind}`} className="attention-item" data-cli={issue.cliId}>
               <span className="attention-kind">
-                <span className="symbol" aria-hidden="true">
-                  ✕
-                </span>
+                <StatusMark status="failed" className="symbol" />
                 {TEXT.failure}
               </span>
               {issue.kind === "not_installed" ? (
@@ -60,9 +59,7 @@ export function AttentionPopup({ id, issues, problems = [] }: AttentionPopupProp
           {problems.map((problem) => (
             <li key={`${problem.title}:${problem.detail}`} className="attention-item">
               <span className="attention-kind">
-                <span className="symbol" aria-hidden="true">
-                  ✕
-                </span>
+                <StatusMark status="failed" className="symbol" />
                 {TEXT.failure}
               </span>
               <span className="attention-what">{problem.title}</span>

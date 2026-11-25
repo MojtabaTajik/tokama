@@ -1,17 +1,21 @@
-// A small modal for the repo dialogs: the native <dialog> shown with showModal(), so focus stays
-// inside it and the page behind is inert. Escape closes it through `onClose`, and is marked
+// The app's modal: the native <dialog> shown with showModal(), so focus stays inside it and the
+// page behind is inert. Escape closes it through `onClose`, and is marked
 // handled so the drawer's own Escape does not also close the drawer. Focus goes back to what had
 // it before, when that is still on the page.
 import { type ReactNode, useLayoutEffect, useRef } from "react";
+import { CloseButton } from "./Button.js";
 
 export interface ModalProps {
-  /** The id of the element that names the dialog (its heading). */
-  readonly labelledBy: string;
+  /** The id of the element that names the dialog (its heading); or `label`, its name in words. */
+  readonly labelledBy?: string | undefined;
+  readonly label?: string | undefined;
   readonly onClose: () => void;
+  /** The screen's class for the dialog's width and layout. */
+  readonly className?: string | undefined;
   readonly children: ReactNode;
 }
 
-export function Modal({ labelledBy, onClose, children }: ModalProps) {
+export function Modal({ labelledBy, label, onClose, className, children }: ModalProps) {
   const dialog = useRef<HTMLDialogElement>(null);
   useLayoutEffect(() => {
     const element = dialog.current;
@@ -25,8 +29,9 @@ export function Modal({ labelledBy, onClose, children }: ModalProps) {
   return (
     <dialog
       ref={dialog}
-      className="modal"
+      className={["modal", className].filter(Boolean).join(" ")}
       aria-labelledby={labelledBy}
+      aria-label={label}
       onKeyDown={(event) => {
         if (event.key !== "Escape") return;
         event.preventDefault();
@@ -44,16 +49,6 @@ export function Modal({ labelledBy, onClose, children }: ModalProps) {
   );
 }
 
-/** A refusal or failure: a symbol and words, never colour alone. */
-export function Problem({ text, alert = false }: { readonly text: string; readonly alert?: boolean }) {
-  return (
-    <p className="repo-problem" role={alert ? "alert" : undefined}>
-      <span aria-hidden="true">✕ </span>
-      {text}
-    </p>
-  );
-}
-
 export interface DialogFrameProps {
   /** The id the heading gets, for the dialog's aria-labelledby. */
   readonly titleId: string;
@@ -66,7 +61,7 @@ export interface DialogFrameProps {
   readonly footer: ReactNode;
 }
 
-/** The repo dialogs' layout: a header with the close button, a body and a footer. Close is ✕. */
+/** A dialog's layout: a header with the close button, a body and a footer. Close is ✕. */
 export function DialogFrame({ titleId, title, subtitle, onClose, children, footer }: DialogFrameProps) {
   return (
     <div className="dlg">
@@ -77,9 +72,7 @@ export function DialogFrame({ titleId, title, subtitle, onClose, children, foote
           </h2>
           {subtitle !== undefined && <span className="dlg-sub mono">{subtitle}</span>}
         </div>
-        <button type="button" className="dlg-close" aria-label="Close" onClick={onClose}>
-          ✕
-        </button>
+        <CloseButton className="dlg-close" onClick={onClose} />
       </div>
       <div className="dlg-body">{children}</div>
       <div className="dlg-foot">{footer}</div>
