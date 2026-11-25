@@ -120,7 +120,7 @@ describe("ItemDrawer sections", () => {
     const steps = $$(".step").map((li) => ({
       mark: li.querySelector(".mark")?.textContent,
       name: li.querySelector(".step-name")?.textContent,
-      dot: li.querySelector(".dot, .agent-dot")?.getAttribute("data-dot") ?? li.querySelector(".agent-dot")?.getAttribute("data-agent"),
+      dot: li.querySelector(".agent-dot")?.getAttribute("data-agent"),
       where: li.querySelector(".step-where")?.textContent,
       detail: li.querySelector(".step-detail")?.textContent,
     }));

@@ -13,6 +13,7 @@ import { chartModel, formatBytes, formatSize, ofAllCores, onePercent, wholePerce
 import { useMachine } from "./useMachine.js";
 import { workflowName } from "./usage-model.js";
 import { Button } from "../ui/Button.js";
+import { AgentChip, AgentDotMark } from "../ui/agent.js";
 
 const CLI_SHORT = { "claude-code": "CC", "codex-cli": "CX", ollama: "OL" } as const;
 
@@ -286,14 +287,12 @@ function ItemRows({ group, item, setup, cpu, onSelectItem }: { readonly group: G
           </td>
           <td className="muted">
             {row.role === "agent" && agent !== undefined ? (
-              <span className="ins-agent">
-                <span className="agent-dot" data-agent={agent.dot} aria-hidden="true" />
-                {agent.name}
+              <AgentChip agent={agent} className="ins-agent">
                 {cli !== undefined && <span className="muted mono">{CLI_SHORT[cli]}</span>}
-              </span>
+              </AgentChip>
             ) : (
               <span className="ins-agent">
-                <span className="agent-dot" data-agent="neutral" aria-hidden="true" />
+                <AgentDotMark dot="neutral" />
                 {TEXT.tokama}
               </span>
             )}

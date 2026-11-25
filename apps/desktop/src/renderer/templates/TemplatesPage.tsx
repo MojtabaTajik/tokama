@@ -7,11 +7,12 @@ import { useId, useMemo, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { budgetText, FINISH, placeOf, startSentence, statusOf, stepSentence, titleOf, usesOf } from "./describe.js";
-import { dotOf, flowOf } from "./flow.js";
+import { flowOf } from "./flow.js";
 import { FlowDiagram } from "./FlowDiagram.js";
 import { keyId, useReload, useTemplateDetail, useTemplateList } from "./useTemplates.js";
 import { Button } from "../ui/Button.js";
 import { markOf } from "../ui/status.js";
+import { agentDot, AgentDotMark } from "../ui/agent.js";
 
 const TEXT = {
   title: "Templates",
@@ -286,12 +287,12 @@ function Detail({ bridge, detail, agents, connections }: DetailProps) {
             <h2>{TEXT.steps}</h2>
             <ol className="tp-steps">
               {template.steps.map((step, index) => {
-                const dot = dotOf(step.agentId, agents);
+                const dot = agentDot(step.agentId, agents);
                 return (
                   <li key={step.id}>
                     <span className="tp-step-n mono">{index + 1}</span>
                     <span>
-                      <span className="agent-dot" data-agent={dot === "neutral" ? undefined : dot} />
+                      <AgentDotMark dot={dot} />
                       <strong>{step.name}</strong>: {stepSentence(step, template, agents, connections)}
                     </span>
                   </li>

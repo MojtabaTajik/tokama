@@ -7,6 +7,7 @@ import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { formatDuration } from "../format/duration.js";
 import { formatCost, formatTokens, templateFor, totalOf, workflowName } from "./usage-model.js";
 import { Button } from "../ui/Button.js";
+import { AgentChip } from "../ui/agent.js";
 
 const CLI_SHORT = { "claude-code": "CC", "codex-cli": "CX", ollama: "OL" } as const;
 
@@ -87,11 +88,9 @@ export function TopItems({ report, setup, filter, note, openable, onOpen }: TopI
                       {item.agents.map((agent) => {
                         const known = stepAgent({ agentId: agent.agentId, data: "none" }, setup?.agents ?? []);
                         return (
-                          <span key={agent.agentId} className="ins-agent">
-                            <span className="agent-dot" data-agent={known.dot} aria-hidden="true" />
-                            {known.name}
+                          <AgentChip key={agent.agentId} agent={known} className="ins-agent">
                             <span className="muted mono">{CLI_SHORT[agent.cliId]}</span>
-                          </span>
+                          </AgentChip>
                         );
                       })}
                     </span>

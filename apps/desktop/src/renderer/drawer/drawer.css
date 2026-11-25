@@ -524,26 +524,6 @@
   color: var(--warn);
 }
 
-.dot {
-  flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--agent-neutral);
-}
-
-.dot[data-dot="1"] {
-  background: var(--agent-1);
-}
-
-.dot[data-dot="2"] {
-  background: var(--agent-2);
-}
-
-.dot[data-dot="3"] {
-  background: var(--agent-3);
-}
-
 /* Actions: secondary buttons at the foot of the drawer */
 
 .drawer-actions {

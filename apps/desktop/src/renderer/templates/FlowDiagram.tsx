@@ -2,6 +2,7 @@
 // under them. The picture is one image to screen readers, named by the flow in words. It scrolls
 // sideways when the template has more steps than the page is wide.
 import type { Flow } from "./flow.js";
+import { AgentDotMark } from "../ui/agent.js";
 
 export function FlowDiagram({ flow }: { readonly flow: Flow }) {
   const { width, height, top, nodes, arrows, loops, description } = flow;
@@ -29,7 +30,7 @@ export function FlowDiagram({ flow }: { readonly flow: Flow }) {
         ))}
         {nodes.map((node) => (
           <div key={node.key} className="tp-node" data-kind={node.kind} style={{ left: node.x, top, width: node.width }} aria-hidden="true">
-            {node.dot !== undefined && <span className="agent-dot" data-agent={node.dot === "neutral" ? undefined : node.dot} />}
+            {node.dot !== undefined && <AgentDotMark dot={node.dot} />}
             <span className="tp-node-name">{node.label}</span>
           </div>
         ))}

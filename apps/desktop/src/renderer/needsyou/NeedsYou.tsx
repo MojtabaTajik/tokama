@@ -18,6 +18,7 @@ import { type NeedsYouRow, needsYouRows } from "./rows.js";
 import { Button } from "../ui/Button.js";
 import { ErrorRetry } from "../ui/ErrorRetry.js";
 import { markOf } from "../ui/status.js";
+import { AgentChip } from "../ui/agent.js";
 
 const TEXT = {
   title: "Needs you",
@@ -190,11 +191,9 @@ function Row({ row, index, bridge, selected, onSelect, onReviewDiff, onRefresh }
       <p className="nr-where">
         {row.stepLine !== undefined && <span className="mono">{row.stepLine}</span>}
         {row.agent !== undefined && (
-          <span className="nr-agent">
-            <span className="agent-dot" data-agent={row.agent.dot} aria-hidden="true" />
-            {row.agent.name}
+          <AgentChip agent={row.agent} className="nr-agent">
             {row.cli !== undefined && <span className="mono nr-cli">{row.cli}</span>}
-          </span>
+          </AgentChip>
         )}
       </p>
       <p className="nr-question">{decision?.question ?? TEXT.noQuestion}</p>

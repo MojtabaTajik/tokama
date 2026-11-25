@@ -35,6 +35,7 @@ import { useNow } from "../useNow.js";
 import { Button, CloseButton } from "../ui/Button.js";
 import { ErrorRetry } from "../ui/ErrorRetry.js";
 import { markOf } from "../ui/status.js";
+import { AgentChip } from "../ui/agent.js";
 
 const TEXT = {
   drawer: "Item",
@@ -648,10 +649,7 @@ function Steps({ bridge, item, setup, onOpenAgent, unfold }: StepsProps) {
               </p>
               <div className="step-where">
                 {tip === undefined ? (
-                  <>
-                    <span className="dot" data-dot={agent.dot} aria-hidden="true" />
-                    <span>{agent.name}</span>
-                  </>
+                  <AgentChip agent={agent} />
                 ) : (
                   <AgentLabel info={tip} onOpen={onOpenAgent} />
                 )}{" "}

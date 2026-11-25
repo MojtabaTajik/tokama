@@ -9,6 +9,7 @@ import { type AgentTarget, monogram } from "../settings/describe.js";
 import { useTip } from "../shell/useTip.js";
 import { type AgentAccess, type AgentInfo, extraPower } from "./agent-info.js";
 import { Button } from "../ui/Button.js";
+import { AgentDotMark } from "../ui/agent.js";
 
 const TEXT = {
   builtin: "built-in",
@@ -61,7 +62,7 @@ export function AgentLabel({ info, onOpen }: AgentLabelProps) {
     <span ref={wrapper} className="al" onMouseEnter={() => tip.hold("hover", true)} onMouseLeave={() => tip.hold("hover", false)} onFocus={() => tip.hold("focus", true)} onBlur={() => tip.hold("focus", false)}>
       <Button variant="plain" ref={button} className="al-button" data-open={open || undefined} aria-describedby={open ? tipId : undefined} style={{ anchorName: anchor } as CSSProperties}>
         <span className="al-who">
-          <span className="agent-dot" data-agent={info.dot} aria-hidden="true" />
+          <AgentDotMark dot={info.dot} />
           <span className="ellipsis">{info.name}</span>
         </span>{" "}
         {info.model !== undefined && <span className="al-model">· {info.model}</span>}
@@ -83,7 +84,7 @@ function Tip({ id, anchor, info, onOpen }: { readonly id: string; readonly ancho
   return (
     <div ref={ref} id={id} role="tooltip" popover="manual" className="al-tip" style={{ positionAnchor: anchor } as CSSProperties}>
       <div className="al-head">
-        <span className="agent-dot" data-agent={info.dot} aria-hidden="true" />
+        <AgentDotMark dot={info.dot} />
         <b className="al-name">{info.name}</b>
         {access !== undefined && <Owner access={access} />}
       </div>

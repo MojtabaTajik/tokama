@@ -17,6 +17,7 @@ import { FinishSplit } from "./FinishSplit.js";
 import { useFocusFollow } from "./useFocusFollow.js";
 import { Button } from "../ui/Button.js";
 import { markOf } from "../ui/status.js";
+import { AgentChip } from "../ui/agent.js";
 
 const TEXT = {
   nothing: { needs: "Nothing waiting", running: "Nothing running", done: "Nothing finished", failed: "Nothing failed" },
@@ -157,10 +158,7 @@ function Row({ item, setup, now, selected, onSelect, onFinish, onDiscard, onOpen
           {agentTip !== undefined ? (
             <AgentLabel info={agentTip} onOpen={onOpenAgent} />
           ) : (
-            <>
-              <span className="agent-dot" data-agent={agent.dot} aria-hidden="true" />
-              <span className="ellipsis">{agent.name}</span>
-            </>
+            <AgentChip agent={agent} ellipsis />
           )}
         </span>
       )}

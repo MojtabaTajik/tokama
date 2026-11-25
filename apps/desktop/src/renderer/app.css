@@ -1142,26 +1142,6 @@
   }
 }
 
-.agent-dot {
-  flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--agent-neutral);
-}
-
-.agent-dot[data-agent="1"] {
-  background: var(--agent-1);
-}
-
-.agent-dot[data-agent="2"] {
-  background: var(--agent-2);
-}
-
-.agent-dot[data-agent="3"] {
-  background: var(--agent-3);
-}
-
 /* Workflow kanban */
 
 .columns {

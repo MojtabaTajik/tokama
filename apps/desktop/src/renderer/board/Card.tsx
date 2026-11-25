@@ -9,6 +9,7 @@ import { LiveDot } from "../drawer/Progress.js";
 import { cardStatus, rowAgent } from "../model.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { Button } from "../ui/Button.js";
+import { AgentChip } from "../ui/agent.js";
 
 export interface CardProps {
   readonly item: ItemRecord;
@@ -46,10 +47,7 @@ export function Card({ item, agents, template, selected, onSelect, now }: CardPr
       <span className="card-title">{item.title}</span>
       {item.cardLine !== undefined && <span className="card-line mono">{item.cardLine}</span>}
       {agent && (
-        <span className="card-agent">
-          <span className="agent-dot" data-agent={agent.dot} aria-hidden="true" />
-          {agent.name}
-        </span>
+        <AgentChip agent={agent} className="card-agent" />
       )}
     </Button>
   );

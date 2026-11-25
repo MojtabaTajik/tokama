@@ -2,6 +2,7 @@
 // Every state comes as a symbol and a word, so colour is never the only signal.
 import type { AgentSummary, AttemptSummary, ConnectionSummary, Decision, DecisionKind, ItemKind, ItemRecord, ItemState, Privacy, StepRecord, StepState, Setup } from "@tokama/core";
 import { type Mark, markOf } from "../ui/status.js";
+import { type AgentDot, agentDot } from "../ui/agent.js";
 
 
 // Item and step states share their names with the status table.
@@ -88,8 +89,7 @@ export function stepPosition(item: Pick<ItemRecord, "state" | "steps">): string 
 /** Who runs a step: its agent, with an identity dot by join order (1 to 3, then neutral). */
 export interface StepAgent {
   readonly name: string;
-  /** 1, 2 or 3 for the first three agents; "neutral" for later ones and for Tokama itself. */
-  readonly dot: 1 | 2 | 3 | "neutral";
+  readonly dot: AgentDot;
   readonly runsOn: "local" | "cloud";
 }
 
@@ -98,11 +98,10 @@ const TOKAMA: StepAgent = { name: "Tokama", dot: "neutral", runsOn: "local" };
 
 export function stepAgent(step: Pick<StepRecord, "agentId" | "data">, agents: readonly AgentSummary[]): StepAgent {
   if (step.agentId === undefined) return TOKAMA;
-  const index = agents.findIndex((agent) => agent.id === step.agentId);
-  const agent = agents[index];
+  const agent = agents.find((candidate) => candidate.id === step.agentId);
   // An agent the setup no longer lists: its id is all there is, and only the data rule tells where it runs.
   if (!agent) return { name: step.agentId, dot: "neutral", runsOn: step.data === "none" ? "local" : "cloud" };
-  return { name: agent.name, dot: index < 3 ? ((index + 1) as 1 | 2 | 3) : "neutral", runsOn: agent.runsOn };
+  return { name: agent.name, dot: agentDot(agent.id, agents), runsOn: agent.runsOn };
 }
 
 /**
