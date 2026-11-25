@@ -6,6 +6,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useId, useRef } from "react";
 import type { AgentTarget } from "../settings/describe.js";
+import { cliName } from "../model.js";
 import { useTip } from "../ui/useTip.js";
 import { type AgentAccess, type AgentInfo, extraPower } from "./agent-info.js";
 import { Button } from "../ui/Button.js";
@@ -87,7 +88,7 @@ function Tip({ id, anchor, info, onOpen }: { readonly id: string; readonly ancho
       {info.cliId !== undefined && (
         <div className="al-run">
           <span className="al-cli">
-            <BackendMark cliId={info.cliId} named size={16} />
+            <BackendMark cliId={info.cliId} size={16} /> {cliName(info.cliId)}
           </span>
           {info.model !== undefined && <span className="mono">{info.model}</span>}
         </div>
