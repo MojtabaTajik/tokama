@@ -173,6 +173,20 @@ describe("the monitor", () => {
     await monitor.close();
   });
 
+  it("keeps at most 1000 points, however long the history window", async () => {
+    const clock = manualClock(1_000_000);
+    const source: MachineSource = { memory: async () => ok({ totalBytes: GIB, usedBytes: 1 }), processes: async () => ok([proc(42, 1, 42, 0)]) };
+    const host: Host = { cpuTimes: () => ({ idleMs: 0, totalMs: 1 }), loadAverage: () => [0, 0, 0], cores: () => 1 };
+    const monitor = createMonitor({ source, host, clock, enginePid: 42, groups: () => [], everyMs: 10, historyMs: 3_600_000, idleMs: 10_000_000, warmupMs: 1 });
+    const first = monitor.report();
+    await tick(clock, 1);
+    await first;
+    for (let i = 0; i < 1100; i++) await tick(clock, 10);
+    const report = await monitor.report();
+    expect(report.ok && report.value.points).toHaveLength(1000);
+    await monitor.close();
+  });
+
   it("answers an error after close", async () => {
     const { monitor } = setup();
     await monitor.close();

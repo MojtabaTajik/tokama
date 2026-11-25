@@ -29,6 +29,9 @@ export const nodeHost: Host = {
   cores: () => Math.max(1, cpus().length),
 };
 
+/** The most points a report may hold. */
+const MAX_POINTS = 1000;
+
 export interface MonitorOptions {
   readonly source: MachineSource;
   /** The process groups of the running items. Read at every sample. */
@@ -100,7 +103,7 @@ export function createMonitor(options: MonitorOptions): Monitor {
     items = m.items;
     memoryTotalBytes = cur.value.memory.totalBytes;
     load = host.loadAverage();
-    points = [...points.filter((p) => p.at >= cur.value.at - historyMs), m.point];
+    points = [...points.filter((p) => p.at >= cur.value.at - historyMs), m.point].slice(-MAX_POINTS);
     return cur;
   };
 

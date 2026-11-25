@@ -36,6 +36,15 @@ describe("macOS parsers, on output recorded from a Mac", () => {
   });
 });
 
+describe("numbers too large to be exact", () => {
+  it("are dropped instead of being passed on as rounded values", () => {
+    expect(parsePs("99999999999999999999 1 1 100 0:01.00\n  5 1 1 100 0:01.00\n")).toHaveLength(1);
+    expect(parseMeminfo("MemTotal: 99999999999999999999 kB\nMemAvailable: 1 kB\n")).toBeUndefined();
+    expect(parseProcStat("5 (x) S 1 1 1 0 -1 0 0 0 0 0 99999999999999999999 1 0")).toBeUndefined();
+    expect(parseStatusRss("VmRSS: 99999999999999999999 kB\n")).toBe(0);
+  });
+});
+
 describe("Linux parsers", () => {
   it("reads meminfo; used is total minus available", () => {
     expect(parseMeminfo(fixture("linux-meminfo.txt"))).toEqual({ totalBytes: 16314432 * 1024, usedBytes: (16314432 - 10458112) * 1024 });
@@ -104,6 +113,11 @@ describe("the macOS source, with a fake process runner", () => {
     expect(await source.memory()).toMatchObject({ ok: true, value: { totalBytes: 48 * GIB } });
     expect(await source.processes()).toMatchObject({ ok: true });
     expect(seen.map((r) => r.command)).toEqual([{ argv: ["/usr/bin/vm_stat"] }, { argv: ["/bin/ps", "-A", "-o", "pid=", "-o", "ppid=", "-o", "pgid=", "-o", "rss=", "-o", "time="] }]);
+  });
+
+  it("refuses output with more rows than a process table can have", async () => {
+    const rows = Array.from({ length: 20_001 }, (_, i) => `${i + 2} 1 1 100 0:01.00`).join("\n");
+    expect(await createMacosSource(runnerFor({ "/bin/ps": rows }).runner).processes()).toEqual({ ok: false, error: "/bin/ps printed more than 20000 lines" });
   });
 
   it("answers an error value when the command fails or prints something unknown", async () => {

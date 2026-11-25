@@ -9,7 +9,8 @@ const MS_PER_TICK = 10;
 export function parseMeminfo(text: string): MemoryReading | undefined {
   const kib = (name: string) => {
     const match = new RegExp(`^${name}:\\s+(\\d+) kB$`, "m").exec(text);
-    return match === null ? undefined : Number(match[1]) * 1024;
+    const bytes = match === null ? undefined : Number(match[1]) * 1024;
+    return bytes !== undefined && Number.isSafeInteger(bytes) ? bytes : undefined;
   };
   const total = kib("MemTotal");
   const available = kib("MemAvailable");
@@ -32,14 +33,15 @@ export function parseProcStat(text: string): Omit<ProcessReading, "rssBytes"> | 
   const pgid = Number(fields[2]);
   const utime = Number(fields[11]);
   const stime = Number(fields[12]);
-  if (![pid, ppid, pgid, utime, stime].every(Number.isInteger)) return undefined;
+  if (![pid, ppid, pgid, utime, stime].every(Number.isSafeInteger)) return undefined;
   return { pid, ppid, pgid, cpuMs: (utime + stime) * MS_PER_TICK };
 }
 
 /** The `VmRSS` line of `/proc/<pid>/status`; a kernel thread has none. */
 export function parseStatusRss(text: string): number {
   const match = /^VmRSS:\s+(\d+) kB$/m.exec(text);
-  return match === null ? 0 : Number(match[1]) * 1024;
+  const bytes = match === null ? 0 : Number(match[1]) * 1024;
+  return Number.isSafeInteger(bytes) ? bytes : 0;
 }
 
 /** Reads `/proc`; it starts no command. */

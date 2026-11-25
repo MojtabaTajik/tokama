@@ -21,7 +21,8 @@ export function parsePs(output: string): ProcessReading[] {
     if (match === null) continue;
     const cpuMs = parseCpuTime(match[5] ?? "");
     if (cpuMs === undefined) continue;
-    rows.push({ pid: Number(match[1]), ppid: Number(match[2]), pgid: Number(match[3]), cpuMs, rssBytes: Number(match[4]) * 1024 });
+    const row = { pid: Number(match[1]), ppid: Number(match[2]), pgid: Number(match[3]), cpuMs, rssBytes: Number(match[4]) * 1024 };
+    if (Object.values(row).every(Number.isSafeInteger)) rows.push(row);
   }
   return rows;
 }
@@ -46,20 +47,25 @@ export function parseVmStat(output: string, totalBytes: number): MemoryReading |
   return { totalBytes, usedBytes: Math.min(used, totalBytes) };
 }
 
+/** More rows than this are refused: no real process table is this long. */
+const MAX_LINES = 20_000;
+
 /** The process runner starts the two commands; it passes only allowlisted environment variables. */
 export function createMacosSource(runner: ProcessRunner, total: () => number = totalmem): MachineSource {
   const capture = async (argv: [string, ...string[]], signal: AbortSignal | undefined): Promise<Result<string, string>> => {
     const lines: string[] = [];
+    let tooLong = false;
     const result = await runner.run({
       command: { argv },
       cwd: "/",
       env: { LC_ALL: "C" },
       timeoutMs: 10_000,
-      stdout: { onLine: (line) => lines.push(line) },
+      stdout: { onLine: (line) => (lines.length < MAX_LINES ? lines.push(line) : (tooLong = true)) },
       ...(signal !== undefined && { signal }),
     });
     if (result.kind === "not-started") return err(`${argv[0]} did not start: ${result.message}`);
     if (result.exitCode !== 0) return err(`${argv[0]} failed${result.timedOut ? " (timed out)" : ` with code ${String(result.exitCode)}`}`);
+    if (tooLong) return err(`${argv[0]} printed more than ${MAX_LINES} lines`);
     return ok(lines.join("\n"));
   };
   return {
