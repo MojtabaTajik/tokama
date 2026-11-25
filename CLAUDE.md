@@ -29,6 +29,7 @@ Tokama is a desktop engineering companion: it runs AI agents (Claude Code, Codex
 - Everything built must be possible to try. A feature users notice ships with its screen in the same PR (or the PR merged right after it). Pure internals (security primitives, wrappers) need no screen but must be reachable from one within the same milestone. Every milestone ends with something to click through: sample data in the app plus at least one real path.
 - Design every screen on the design canvas before building it, following `.agent/spec/design.md`; charts follow the `dataviz` skill.
 - Colours and fonts come only from the app's theme tokens; colour is never the only signal (pair it with a symbol or a word).
+- Use the shared components in apps/desktop/src/renderer/ui and the format module; add a new primitive there instead of styling one ad hoc.
 - The logo is swappable: one SVG mark plus the wordmark in a single brand assets location per app, referenced from there, never copied into screens.
 - Backends are text labels or neutral monograms, never another company's logo.
 - Agent output, repo content and logs render as text only, never as HTML.
