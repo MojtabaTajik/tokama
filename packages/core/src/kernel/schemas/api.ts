@@ -6,12 +6,12 @@
 import { z } from "zod";
 import { DecisionIdSchema, ItemIdSchema, RepoIdSchema, TemplateRefSchema } from "./ids.js";
 import { ItemRecordSchema } from "./item.js";
-import { AgentCallUsageSchema } from "./usage.js";
+import { UsageRangeSchema, UsageReportSchema } from "./usage.js";
 import { AgentsListSchema } from "./agents.js";
 import { RepoSummarySchema, SetupSchema } from "./setup.js";
 import { MAX_TEMPLATE_ENTRIES, TemplateDetailSchema, TemplateEntrySchema, TemplateFileKeySchema } from "./template-files.js";
 
-export const API_VERSION = 3;
+export const API_VERSION = 4;
 
 const apiVersion = z.literal(API_VERSION);
 const requestId = z.string().min(1).max(128);
@@ -78,11 +78,14 @@ export const QuerySchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("templates") }),
   /** One template file in full: the template, its problems with line numbers, and its text. */
   TemplateFileKeySchema.extend({ type: z.literal("template_detail") }),
+  /** Plan windows per AI CLI, and tokens and estimated cost by day, workflow and item over the last `range` days. */
+  z.strictObject({ type: z.literal("usage"), range: UsageRangeSchema }),
 ]);
 
 export const EventSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("item_updated"), item: ItemRecordSchema }),
-  z.strictObject({ type: z.literal("usage_recorded"), usage: AgentCallUsageSchema }),
+  /** An agent call was recorded or a plan window was read again: run the usage query again. */
+  z.strictObject({ type: z.literal("usage_changed") }),
   /** Repos, connections, agents or templates changed: run the setup query again. */
   z.strictObject({ type: z.literal("setup_changed") }),
 ]);
@@ -110,6 +113,7 @@ export const QueryResultSchemas = {
   agents_list: AgentsListSchema,
   templates: z.strictObject({ templates: z.array(TemplateEntrySchema).max(MAX_TEMPLATE_ENTRIES) }),
   template_detail: TemplateDetailSchema,
+  usage: UsageReportSchema,
 } as const satisfies Record<z.output<typeof QuerySchema>["type"], z.ZodType>;
 
 /** The data of a successful reply, per command type. */
@@ -209,6 +213,18 @@ export const ConnectionErrorMessageSchema = z.object({
 /** What the engine answers to a hello. */
 export const HandshakeReplySchema = z.discriminatedUnion("kind", [WelcomeMessageSchema, ConnectionErrorMessageSchema]);
 
+/**
+ * An event message of this API version whose event type this side does not know: a newer engine
+ * added it. Clients skip it rather than treat it as a broken connection.
+ */
+export function isUnknownEvent(input: unknown): boolean {
+  if (typeof input !== "object" || input === null) return false;
+  const message = input as { apiVersion?: unknown; kind?: unknown; event?: unknown };
+  if (message.apiVersion !== API_VERSION || message.kind !== "event" || typeof message.event !== "object" || message.event === null) return false;
+  const type = (message.event as { type?: unknown }).type;
+  return typeof type === "string" && !EventSchema.options.some((option) => option.shape.type.value === type);
+}
+
 /** What a client sends; the engine parses with this. */
 export const ClientMessageSchema = z.discriminatedUnion("kind", [CommandMessageSchema, QueryMessageSchema]);
 /** What the engine sends; a client parses with this. */
@@ -253,6 +269,7 @@ export type SuggestRepoResult = QueryResult<"suggest_repo">;
 export type AgentsListResult = QueryResult<"agents_list">;
 export type TemplatesResult = QueryResult<"templates">;
 export type TemplateDetailResult = QueryResult<"template_detail">;
+export type UsageResult = QueryResult<"usage">;
 export type CommandType = keyof typeof CommandResultSchemas;
 export type CommandResult<T extends CommandType> = z.output<(typeof CommandResultSchemas)[T]>;
 export type StartItemResult = CommandResult<"start_item">;

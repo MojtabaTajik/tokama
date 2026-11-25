@@ -4,7 +4,8 @@
 // engine's one event path. No item is persisted. Repo commands are the engine's own: they edit
 // repos.yaml in Tokama's home in this mode too, and setup lists those repos after the sample ones.
 //
-// Removal: delete this folder; in engine.ts the `sample` lines, the SampleEngine and systemClock
+// Removal: delete this folder; in engine.ts the `sample` lines (the usage service's sample branch
+// with them), the SampleEngine, sample usage and systemClock
 // imports and EngineOptions.clock (if nothing else uses them by then); in main.ts the `--sample`
 // flag; and in main.int.test.ts the test "serves the sample data set with --sample".
 import { randomUUID } from "node:crypto";

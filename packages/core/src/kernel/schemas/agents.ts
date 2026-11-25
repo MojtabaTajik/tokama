@@ -2,8 +2,7 @@
 // what is wrong with the files that do not load. Plain data: no paths, so a record stays valid on
 // another machine; `source` is relative to Tokama's home or the repo.
 import { z } from "zod";
-import { AgentIdSchema, RepoIdSchema } from "./ids.js";
-import { AiCliIdSchema } from "./setup.js";
+import { AgentIdSchema, AiCliIdSchema, RepoIdSchema } from "./ids.js";
 import { IconNameSchema } from "./template.js";
 
 const label = z.string().min(1).max(100);

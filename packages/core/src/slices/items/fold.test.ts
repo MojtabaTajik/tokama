@@ -19,6 +19,19 @@ function foldError(bodies: readonly ItemEventBody[]): string {
   return folded.error.message;
 }
 
+const call = (n: number, attempt = 1) => ({
+  callId: `call_0190a000-0000-7000-8000-00000000000${n}` as never,
+  stepId: BUILD,
+  attempt,
+  agentId: "builder" as never,
+  cliId: "claude-code" as const,
+  model: "claude-opus-5-5",
+  outcome: "completed" as const,
+  startedAt: T0,
+  endedAt: T0 + 1_000,
+  tokens: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 },
+});
+
 const startBuild: ItemEventBody[] = [created(), { type: "step_started", stepId: BUILD }, { type: "attempt_started", stepId: BUILD, attempt: 1 }];
 
 describe("foldItem", () => {
@@ -221,6 +234,27 @@ describe("foldItem", () => {
       { type: "item_ended", outcome: "stopped" },
     ]);
     expect(openDecisions(item)).toEqual([]);
+  });
+
+  it("usage_recorded: adds the call to the item without changing its state or board time, even after the item ended", () => {
+    const running = fold([...startBuild, { type: "usage_recorded", usage: call(1) }]);
+    expect(running.calls).toEqual([call(1)]);
+    expect(running.state).toBe("running");
+    expect(running.updatedAt).toBe(fold(startBuild).updatedAt);
+
+    const ended = fold([
+      ...startBuild,
+      { type: "attempt_ended", stepId: BUILD, attempt: 1, result: "stopped" },
+      { type: "item_ended", outcome: "stopped" },
+      { type: "usage_recorded", usage: call(2) },
+    ]);
+    expect(ended).toMatchObject({ state: "stopped", calls: [call(2)] });
+  });
+
+  it("usage_recorded: refuses an unknown step, an attempt that never started and a call recorded twice", () => {
+    expect(foldError([...startBuild, { type: "usage_recorded", usage: { ...call(1), stepId: "deploy" as never } }])).toMatch(/no step deploy/);
+    expect(foldError([...startBuild, { type: "usage_recorded", usage: call(1, 2) }])).toMatch(/never started/);
+    expect(foldError([...startBuild, { type: "usage_recorded", usage: call(1) }, { type: "usage_recorded", usage: call(1) }])).toMatch(/already recorded/);
   });
 
   it("tombstone: marks the item deleted and nothing may follow", () => {

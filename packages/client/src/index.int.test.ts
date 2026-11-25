@@ -84,6 +84,35 @@ describe("@tokama/client", () => {
     expect(await connected.value.command({ type: "stop_item", itemId })).toMatchObject({ ok: false, error: { code: "invalid_reply" } });
   });
 
+  it("skips an event type a newer engine added, and keeps the connection", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "engine.token"), "t0k");
+    const event = (seq: number, body: object) => `${JSON.stringify({ apiVersion: API_VERSION, kind: "event", seq, event: body })}\n`;
+    const server = createServer((socket) => {
+      socket.on("data", (chunk) => {
+        if (!chunk.toString().includes('"hello"')) return;
+        socket.write(`${JSON.stringify({ kind: "welcome", apiVersion: API_VERSION, engineId: "e1" })}\n`);
+        // After the client starts listening.
+        setTimeout(() => {
+          socket.write(event(0, { type: "weather_changed", sky: "clear" }));
+          socket.write(event(1, { type: "usage_changed" }));
+        }, 200);
+      });
+      socket.on("error", () => {});
+    });
+    await new Promise<void>((resolve) => server.listen(join(dir, "engine.sock"), resolve));
+    cleanups.push(() => new Promise((resolve) => server.close(resolve)));
+    const connected = await connect({ dir, reconnect: false });
+    if (!connected.ok) throw new Error(connected.error.message);
+    cleanups.push(() => connected.value.close());
+    const seen: string[] = [];
+    for await (const received of connected.value.events()) {
+      seen.push(received.kind === "event" ? received.event.type : received.kind);
+      if (seen.length === 1) break;
+    }
+    expect(seen).toEqual(["usage_changed"]);
+  });
+
   it("reports not_running without a start command", async () => {
     expect(await connect({ dir: tempDir() })).toMatchObject({ ok: false, error: { code: "not_running" } });
   });

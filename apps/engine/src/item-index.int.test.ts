@@ -74,6 +74,31 @@ function create(store: ItemStore, title: string): StoredItem {
   return created.value;
 }
 
+/** Starts the build step and records one finished call of it. */
+function spend(store: ItemStore, item: StoredItem, n: number, endedAt = T0 + n * 60_000): void {
+  const started = store.get(item.id)?.steps[0]?.attempts.length === 0;
+  const appended = store.append(item.id, [
+    ...(started ? [{ type: "step_started" as const, stepId: BUILD }, { type: "attempt_started" as const, stepId: BUILD, attempt: 1 }] : []),
+    {
+      type: "usage_recorded",
+      usage: {
+        callId: `call_0190a000-0000-7000-8000-${String(n).padStart(12, "0")}` as never,
+        stepId: BUILD,
+        attempt: 1,
+        agentId: "builder" as never,
+        cliId: "claude-code",
+        model: "claude-opus-5-5",
+        outcome: "completed",
+        startedAt: endedAt - 30_000,
+        endedAt,
+        tokens: { input: n, output: 1, cacheRead: 0, cacheWrite: 0 },
+        plan: { status: "allowed", windows: [{ window: "five_hour", usedPercent: 40 }], at: endedAt },
+      },
+    },
+  ]);
+  if (!appended.ok) throw new Error(appended.error.message);
+}
+
 function openIndex(file = join(home, "tokama.db")): ItemIndex {
   const index = ItemIndex.open(file);
   cleanups.push(() => index.close());
@@ -121,6 +146,42 @@ describe("ItemIndex", () => {
     expect(rebuilt.list()).toEqual(rows);
   });
 
+  it("holds one row per recorded call, follows new calls, and is rebuilt from the logs to the same rows", () => {
+    const store = openStore();
+    const live = openIndex();
+    const added: number[] = [];
+    store.subscribe((item) => added.push(live.put(item)));
+    const item = create(store, "Fix it");
+    spend(store, item, 1);
+    spend(store, item, 2);
+    expect(added).toEqual([0, 1, 1]);
+    const rows = live.usageRows(0);
+    expect(rows.map((row) => [row.itemId, row.title, row.templateId, row.call.tokens.input])).toEqual([
+      [item.id, "Fix it", REF, 1],
+      [item.id, "Fix it", REF, 2],
+    ]);
+    expect(live.usageRows(T0 + 2 * 60_000)).toHaveLength(1);
+
+    const rebuilt = openIndex(join(home, "rebuilt.db"));
+    rebuilt.rebuild(openStore().list());
+    expect(rebuilt.usageRows(0)).toEqual(rows);
+    rebuilt.rebuild(openStore().list());
+    expect(rebuilt.usageRows(0)).toEqual(rows);
+
+    // A deleted item takes its calls with it.
+    store.append(item.id, [{ type: "attempt_ended", stepId: BUILD, attempt: 1, result: "passed" }, { type: "step_ended", stepId: BUILD, result: "passed" }, { type: "item_ended", outcome: "done" }, { type: "tombstone" }]);
+    expect(live.usageRows(0)).toEqual([]);
+  });
+
+  it("keeps plan samples across a rebuild, one per CLI", () => {
+    const index = openIndex();
+    index.savePlanSample("claude-code", { windows: [{ window: "five_hour", usedPercent: 36 }], asOf: T0 });
+    index.savePlanSample("claude-code", { windows: [{ window: "five_hour", usedPercent: 37 }], asOf: T0 + 1 });
+    index.rebuild([]);
+    expect(index.planSample("claude-code")).toEqual({ windows: [{ window: "five_hour", usedPercent: 37 }], asOf: T0 + 1 });
+    expect(index.planSample("codex-cli")).toBeUndefined();
+  });
+
   it("creates the database file 0600 with a schema version, and recreates a database of another version", () => {
     const file = join(home, "tokama.db");
     const index = ItemIndex.open(file);
@@ -129,8 +190,8 @@ describe("ItemIndex", () => {
     expect(statSync(file).mode & 0o777).toBe(0o600);
 
     const raw = new DatabaseSync(file);
-    expect(raw.prepare("PRAGMA user_version").get()).toEqual({ user_version: 1 });
-    expect(raw.prepare("SELECT schema_version FROM items").all()).toEqual([{ schema_version: 1 }]);
+    expect(raw.prepare("PRAGMA user_version").get()).toEqual({ user_version: 2 });
+    expect(raw.prepare("SELECT schema_version FROM items").all()).toEqual([{ schema_version: 2 }]);
     raw.exec("PRAGMA user_version = 99");
     raw.close();
 

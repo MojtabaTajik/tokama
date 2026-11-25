@@ -6,7 +6,6 @@ import {
   COMMAND_ERROR_CODES,
   parseCommandResult,
   itemStage,
-  parseAgentCallUsage,
   parseAgentId,
   parseCallId,
   parseClientMessage,
@@ -22,7 +21,11 @@ import {
   parseServerMessage,
   parseTemplateId,
   parseWith,
+  AgentCallUsageSchema,
+  UsageReportSchema,
 } from "./index.js";
+
+const parseAgentCallUsage = (input: unknown) => parseWith(AgentCallUsageSchema, input);
 
 const ITEM_ID = "item_0b9f3c1e-6a2d-4f7b-9c1a-2e3d4f5a6b7c";
 const CALL_ID = "call_1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f";
@@ -54,11 +57,11 @@ const item = () => ({
 });
 
 const usage = () => ({
-  schemaVersion: 1,
   callId: CALL_ID,
-  itemId: ITEM_ID,
-  stepIndex: 0,
+  stepId: "plan",
+  attempt: 1,
   agentId: "architect",
+  cliId: "claude-code",
   model: "opus",
   outcome: "completed",
   startedAt: 1_760_000_000_000,
@@ -112,12 +115,19 @@ describe("item record", () => {
 });
 
 describe("agent call usage record", () => {
-  it("accepts a valid record", () => {
+  it("accepts a valid record, with or without the optional facts", () => {
     expect(parseAgentCallUsage(usage())).toEqual({ ok: true, value: usage() });
+    const full = {
+      ...usage(),
+      models: { "claude-opus-5-5": { input: 1200, output: 340, cacheRead: 9000, cacheWrite: 0 } },
+      reportedCostUsd: 0.31,
+      plan: { status: "allowed", windows: [{ window: "five_hour", usedPercent: 36, resetsAt: 1_760_010_000_000 }], at: 1_760_000_041_000 },
+    };
+    expect(parseAgentCallUsage(full)).toEqual({ ok: true, value: full });
   });
 
-  it("requires schemaVersion", () => {
-    expect(paths(parseAgentCallUsage(without(usage(), "schemaVersion")))).toContain("schemaVersion");
+  it("requires the step, the attempt and the CLI", () => {
+    for (const key of ["stepId", "attempt", "cliId"]) expect(paths(parseAgentCallUsage(without(usage(), key)))).toContain(key);
   });
 
   it.each([
@@ -126,8 +136,54 @@ describe("agent call usage record", () => {
     ["an unknown outcome", { outcome: "guarded" }, "outcome"],
     ["an end before the start", { endedAt: 1_759_999_999_999 }, "endedAt"],
     ["a malformed call id", { callId: ITEM_ID }, "callId"],
+    ["a negative reported cost", { reportedCostUsd: -1 }, "reportedCostUsd"],
+    ["an unknown CLI", { cliId: "gemini" }, "cliId"],
   ])("refuses %s", (_label, patch, path) => {
     expect(paths(parseAgentCallUsage({ ...usage(), ...patch }))).toContain(path);
+  });
+});
+
+describe("usage report", () => {
+  const report = () => ({
+    range: 14,
+    asOf: 1_760_000_000_000,
+    pricesAsOf: "2026-11-03",
+    clis: [
+      { cliId: "claude-code", windows: [{ window: "five_hour", usedPercent: 36, resetsAt: 1_760_010_000_000 }], source: "request", asOf: 1_759_999_000_000, plan: "max", extraUsage: "off" },
+      { cliId: "codex-cli", windows: [], note: "Codex comes later." },
+    ],
+    days: [{ date: "2025-10-09", workflows: [{ templateId: "plan-and-build", tokens: 1200, costUsd: null, items: [{ itemId: ITEM_ID, title: "Add order export" }], itemCount: 1 }] }],
+    workflows: [{ templateId: "plan-and-build", tokens: 1200, costUsd: 0.5, calls: 2 }],
+    items: [
+      {
+        itemId: ITEM_ID,
+        title: "Add order export",
+        templateId: "plan-and-build",
+        agents: [{ agentId: "architect", cliId: "claude-code" }],
+        tokens: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 },
+        durationMs: 60_000,
+        costUsd: 0.5,
+        local: false,
+      },
+    ],
+    totals: { tokens: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 }, costUsd: 0.5, calls: 2, unpricedCalls: 0 },
+  });
+
+  it("accepts a report with unknown plan windows and unpriced costs", () => {
+    expect(parseWith(UsageReportSchema, report())).toEqual({ ok: true, value: report() });
+  });
+
+  it.each([
+    ["a range the query does not offer", { range: 7 }, "range"],
+    ["a price date that is not a date", { pricesAsOf: "November" }, "pricesAsOf"],
+    ["an unknown plan source", { clis: [{ cliId: "claude-code", windows: [], source: "guess" }] }, "clis.0.source"],
+  ])("refuses %s", (_label, patch, path) => {
+    expect(paths(parseWith(UsageReportSchema, { ...report(), ...patch }))).toContain(path);
+  });
+
+  it("refuses a usage query for another range", () => {
+    expect(parseQuery({ type: "usage", range: 7 }).ok).toBe(false);
+    expect(parseQuery({ type: "usage", range: 90 }).ok).toBe(true);
   });
 });
 
@@ -207,7 +263,8 @@ describe("engine API messages", () => {
     { apiVersion: API_VERSION, kind: "reply", requestId: "r4", result: { ok: true, data: { items: [] } } },
     { apiVersion: API_VERSION, kind: "reply", requestId: "r5", result: { ok: false, error: { code: "not_found", message: "no item" } } },
     { apiVersion: API_VERSION, kind: "event", seq: 0, event: { type: "item_updated", item: item() } },
-    { apiVersion: API_VERSION, kind: "event", seq: 1, event: { type: "usage_recorded", usage: usage() } },
+    { apiVersion: API_VERSION, kind: "event", seq: 1, event: { type: "usage_changed" } },
+    { apiVersion: API_VERSION, kind: "query", requestId: "r8", query: { type: "usage", range: 30 } },
   ];
 
   it.each(valid.map((message) => [`${message.kind} ${JSON.stringify(message).slice(0, 60)}`, message]))(

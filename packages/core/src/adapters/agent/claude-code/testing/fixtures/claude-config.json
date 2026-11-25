@@ -1,0 +1,84 @@
+{
+  "numStartups": 42,
+  "theme": "dark",
+  "oauthAccount": {
+    "accountUuid": "00000000-0000-4000-8000-000000000001",
+    "emailAddress": "someone@example.com",
+    "organizationUuid": "00000000-0000-4000-8000-000000000002"
+  },
+  "projects": {
+    "/Users/someone/orders-api": {
+      "allowedTools": []
+    }
+  },
+  "cachedUsageUtilization": {
+    "fetchedAtMs": 1760970000000,
+    "accountUuid": "00000000-0000-4000-8000-000000000001",
+    "utilization": {
+      "five_hour": {
+        "utilization": 41,
+        "resets_at": "2025-10-20T17:10:00.299610+00:00",
+        "limit_dollars": null,
+        "used_dollars": null,
+        "remaining_dollars": null,
+        "locked_reason": null
+      },
+      "seven_day": {
+        "utilization": 63,
+        "resets_at": "2025-10-23T09:00:00.299633+00:00",
+        "limit_dollars": null,
+        "used_dollars": null,
+        "remaining_dollars": null,
+        "locked_reason": null
+      },
+      "seven_day_oauth_apps": null,
+      "seven_day_opus": null,
+      "seven_day_sonnet": {
+        "utilization": 12,
+        "resets_at": "2025-10-23T09:00:00+00:00",
+        "limit_dollars": null,
+        "used_dollars": null,
+        "remaining_dollars": null,
+        "locked_reason": null
+      },
+      "tangelo": null,
+      "iguana_necktie": null,
+      "pace": null,
+      "extra_usage": {
+        "is_enabled": false,
+        "monthly_limit": null,
+        "used_credits": null,
+        "utilization": null,
+        "currency": null,
+        "decimal_places": null,
+        "disabled_reason": null,
+        "user_disabled": true,
+        "spend_limit_reached": false,
+        "credits_can_pay": "no",
+        "credits_ever_enabled": false,
+        "daily": null,
+        "weekly": null
+      },
+      "limits": [
+        {
+          "kind": "session",
+          "group": "session",
+          "percent": 41,
+          "severity": "normal",
+          "resets_at": "2025-10-20T17:10:00.299610+00:00",
+          "scope": null,
+          "is_active": true
+        }
+      ],
+      "spend": {
+        "used": {
+          "amount_minor": 0,
+          "currency": "USD",
+          "exponent": 2
+        },
+        "limit": null,
+        "percent": 0
+      }
+    }
+  }
+}

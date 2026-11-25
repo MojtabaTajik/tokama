@@ -74,6 +74,8 @@ const ResultLine = z.looseObject({
   session_id: z.string().min(1).optional().catch(undefined),
   usage: MessageUsage.optional().catch(undefined),
   modelUsage: z.record(z.string().min(1), ModelUsage).optional().catch(undefined),
+  /** The CLI's list-price estimate for the whole session, subagents included. */
+  total_cost_usd: z.number().nonnegative().optional().catch(undefined),
   api_error_status: z.number().nullable().optional().catch(undefined),
 });
 
@@ -108,6 +110,8 @@ export interface StreamState {
   readonly result?: CallResult;
   readonly usage: TokenUsage;
   readonly modelUsage?: Record<string, TokenUsage>;
+  /** The CLI's own cost estimate in US dollars, from the result. */
+  readonly costUsd?: number;
   /** The `error` of the last made-up assistant message, and that message's text. */
   readonly assistantError?: { readonly code: string; readonly text: string };
   /** A rate-limit event said the plan's limit is reached. */
@@ -129,6 +133,7 @@ export function createStreamParser(cwd: string, home: string = homedir()): Strea
   let sessionId: string | undefined;
   let result: CallResult | undefined;
   let resultUsage: { usage: TokenUsage; modelUsage?: Record<string, TokenUsage> } | undefined;
+  let costUsd: number | undefined;
   let assistantError: StreamState["assistantError"];
   let limitRejected = false;
   // One API message arrives as one line per content block, each with the same id and usage.
@@ -229,6 +234,8 @@ export function createStreamParser(cwd: string, home: string = homedir()): Strea
         sessionId = line.session_id ?? sessionId;
         const said = typeof line.result === "string" ? line.result : "";
         result = { isError: line.is_error, text: said, ...(line.subtype !== undefined && { subtype: line.subtype }), ...(typeof line.api_error_status === "number" && { apiErrorStatus: line.api_error_status }) };
+        // A result with zeroed totals (a crash) keeps the cost an earlier result reported.
+        if (line.total_cost_usd !== undefined && (line.total_cost_usd > 0 || costUsd === undefined)) costUsd = line.total_cost_usd;
         const models = Object.entries(line.modelUsage ?? {});
         if (models.length > 0) {
           const modelUsage = Object.fromEntries(models.map(([name, usage]) => [name, fromModelUsage(usage)]));
@@ -257,6 +264,7 @@ export function createStreamParser(cwd: string, home: string = homedir()): Strea
         // Without a result (a stop, a crash), the per-message usage is the best partial count.
         usage: resultUsage?.usage ?? sum([...messageUsage.values()]),
         ...(resultUsage?.modelUsage !== undefined && { modelUsage: resultUsage.modelUsage }),
+        ...(costUsd !== undefined && { costUsd }),
         ...(assistantError !== undefined && { assistantError }),
         limitRejected,
       };

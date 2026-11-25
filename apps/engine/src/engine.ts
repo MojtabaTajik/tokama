@@ -49,6 +49,7 @@ import {
   type SuggestRepoResult,
   type SuggestTemplateResult,
   systemClock,
+  type UsageResult,
   type SetupResult,
   type TemplateDetailResult,
   type TemplatesResult,
@@ -68,6 +69,8 @@ import { RealEngine } from "./real/real.js";
 import { SampleEngine } from "./sample/sample.js";
 import { agentsFor, loadConfig, startProblem, stepProblems } from "./real/config.js";
 import { sampleTemplateLoads } from "./sample/templates.js";
+import { sampleClaudePlan, sampleOtherPlans, sampleUsageRows } from "./sample/usage.js";
+import { claudePlanSources, type PlanSources, UsageService } from "./usage.js";
 import { MemoryItemStore } from "./store.js";
 import { templateDetail, templateEntries, type TemplateFiles } from "./templates.js";
 
@@ -94,6 +97,11 @@ export interface EngineOptions {
   readonly checks?: HealthChecks;
   /** Real mode: time between SIGTERM and SIGKILL for a leftover agent tree at start. */
   readonly recoveryGraceMs?: number;
+  /**
+   * Where plan windows come from. Default: Claude Code's usage request and its cached copy. Leave
+   * out `request` to never start the CLI for them (it calls its vendor).
+   */
+  readonly planSources?: PlanSources;
   /** Default: the system clock. */
   readonly clock?: Clock;
   /** A connection that sends no hello within this time is closed. Default 5 s. */
@@ -148,6 +156,8 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   // The item store has one writer: the engine that holds the home folder's own lock. Engines with
   // different engine dirs can share a home, so the engine dir's lock does not cover it.
   let storage: Storage | undefined;
+  // Set once events can go out; the index calls it when it records new agent calls.
+  let usageRecorded = () => {};
   const homeLock = options.home !== undefined && !options.sample ? { lockPath: join(options.home, "engine.lock"), socketPath, dir: options.home } : undefined;
   const homeLockContent = `${process.pid} ${engineId} ${socketPath}\n`;
   if (homeLock !== undefined) {
@@ -160,7 +170,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       }
       const locked = await acquireLock(homeLock, homeLockContent, log);
       if (!locked.ok) return locked;
-      const result = await openStorage(home, options.clock ?? systemClock, log);
+      const result = await openStorage(home, options.clock ?? systemClock, log, () => usageRecorded());
       if (!result.ok) releaseLock(homeLock.lockPath, homeLockContent);
       return result;
     })();
@@ -216,6 +226,29 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
           log(realFailure);
           return undefined;
         });
+  const clock = options.clock ?? systemClock;
+  const usageChanged = () => broadcast({ type: "usage_changed" });
+  // Stops a usage request in flight when the engine shuts down.
+  const usageAbort = new AbortController();
+  const index = storage?.index;
+  const usage = new UsageService(
+    sample
+      ? {
+          rows: () => sampleUsageRows(sample.setup, store.list(), clock.now()),
+          sources: { request: async () => ({ ok: true, value: sampleClaudePlan(clock.now()) }) },
+          otherClis: sampleOtherPlans,
+          clock,
+          onChange: usageChanged,
+        }
+      : {
+          rows: (since) => index?.usageRows(since) ?? [],
+          ...(index !== undefined && { samples: { get: (cliId) => index.planSample(cliId), save: (cliId, reading) => index.savePlanSample(cliId, reading) } }),
+          sources: options.planSources ?? claudePlanSources(usageAbort.signal),
+          clock,
+          onChange: usageChanged,
+          log,
+        },
+  );
   const helloTimeoutMs = options.helloTimeoutMs ?? 5_000;
   const shutdownTimeoutMs = options.shutdownTimeoutMs ?? 5_000;
   const connections = new Set<Socket>();
@@ -377,6 +410,8 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
         if (detail === undefined) return { ok: false, error: { code: "not_found", message: `no template file ${query.file} in ${query.origin}` } };
         return { ok: true, data: detail satisfies TemplateDetailResult };
       }
+      case "usage":
+        return { ok: true, data: (await usage.report(query.range)) satisfies UsageResult };
     }
   };
 
@@ -463,6 +498,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     for (const socket of ready) write(socket, line.value);
   }
   const unsubscribe = store.subscribe((item) => broadcast({ type: "item_updated", item }));
+  usageRecorded = usageChanged;
 
   const stopTicking = sample?.startTicking();
 
@@ -474,7 +510,9 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     shuttingDown = true;
     stopTicking?.();
     unsubscribe();
-    await withDeadline(Promise.allSettled([...inFlight]), shutdownTimeoutMs);
+    usageRecorded = () => {};
+    usageAbort.abort();
+    await withDeadline(Promise.allSettled([...inFlight, usage.settled()]), shutdownTimeoutMs);
     const allClosed = new Promise<void>((resolve) => {
       onAllClosed = resolve;
       if (connections.size === 0) resolve();
@@ -520,11 +558,13 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
 
 interface Storage {
   readonly items: ItemStore;
+  /** The board and usage index, rebuilt from the item logs. */
+  readonly index: ItemIndex;
   close(): void;
 }
 
 /** Loads the item logs and rebuilds the board index from them. The index follows every change after that. */
-async function openStorage(home: string, clock: Clock, log: (message: string) => void): Promise<Result<Storage, StartError>> {
+async function openStorage(home: string, clock: Clock, log: (message: string) => void, onUsage: () => void): Promise<Result<Storage, StartError>> {
   let index: ItemIndex | undefined;
   try {
     const hostId = loadHostId(home, clock);
@@ -536,13 +576,14 @@ async function openStorage(home: string, clock: Clock, log: (message: string) =>
     const unsubscribe = items.subscribe((item) => {
       // The event is on disk already; a failed index write must not fail the append.
       try {
-        opened.put(item);
+        if (opened.put(item) > 0) onUsage();
       } catch (error) {
         log(`cannot update the board index for ${item.id}: ${String(error)}`);
       }
     });
     return ok({
       items,
+      index: opened,
       close: () => {
         unsubscribe();
         opened.close();

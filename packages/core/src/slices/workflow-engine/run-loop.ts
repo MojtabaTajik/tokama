@@ -23,6 +23,7 @@ import type { ProcessRunner } from "../../kernel/process/index.js";
 import type { ProcessTable } from "../../kernel/process/leftover.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import {
+  CallIdSchema,
   DecisionIdSchema,
   newId,
   parseTemplateRecord,
@@ -44,7 +45,7 @@ import {
   type TemplateStepDef,
 } from "../../kernel/schemas/index.js";
 import type { Agent, Repo } from "../config/index.js";
-import { claudeCodeGuardDefaults, runGuardedCall, type LoopGuardSettings } from "../execution/index.js";
+import { callUsage, claudeCodeGuardDefaults, runGuardedCall, type LoopGuardSettings } from "../execution/index.js";
 import { protectedSet, type ProtectedSet } from "../integrity/index.js";
 import { openAttempt, openDecisions, recoverItems, RUN_FAILURE_CHOICES, type ItemStore, type RecoveredItem } from "../items/index.js";
 import { buildPrompt, type StepResults } from "../prompting/index.js";
@@ -89,6 +90,8 @@ export interface RunLoopDeps {
   readonly localOnly?: boolean;
   /** Time between SIGTERM and SIGKILL for a leftover tree at start. */
   readonly recoveryGraceMs?: number;
+  /** Problems that do not stop an item, such as usage that could not be recorded. */
+  readonly log?: (message: string) => void;
 }
 
 export interface StartItemInput {
@@ -116,7 +119,8 @@ export interface RunLoop {
   settled(itemId: ItemId): Promise<void>;
   /**
    * For engine shutdown: stops every running agent and check and waits for the loops, recording
-   * nothing more, so the next start's recovery asks Retry step / Stop. Commands are refused after.
+   * nothing more than a stopped call's usage, so the next start's recovery asks Retry step / Stop.
+   * Commands are refused after.
    */
   close(): Promise<void>;
 }
@@ -657,6 +661,15 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
         },
       },
     );
+    // Recorded first and whatever happened, a stop included: the tokens were spent. Usage is
+    // accounting, so a refused write is logged, not a run failure.
+    const recorded = store.append(item.id, [
+      {
+        type: "usage_recorded",
+        usage: callUsage({ callId: CallIdSchema.parse(newId("call", call.startedAt)), stepId, attempt, agentId: agent.id, cliId: agent.cliId, model: agent.model, call }),
+      },
+    ]);
+    if (!recorded.ok) deps.log?.(`item ${item.id}: the usage of step ${stepId} attempt ${attempt} was not recorded: ${recorded.error.message}`);
     const dir = attemptDir(stepId, attempt);
     writeItemFile(item.id, `${dir}/agent.txt`, lastText);
     writeItemFile(item.id, `${dir}/transcript.txt`, transcript.join("\n\n"));

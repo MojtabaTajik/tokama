@@ -93,6 +93,7 @@ describe("Claude Code runtime", SLOW, () => {
       outcome: "completed",
       usage: { input: 5440, output: 213, cacheRead: 10831, cacheWrite: 0 },
       modelUsage: { "qwen3-coder:30b": { input: 5440, output: 213, cacheRead: 10831, cacheWrite: 0 } },
+      costUsd: expect.closeTo(0.0281862, 6),
       sessionId: "d4bc8b9c-641c-40df-bc38-952463fb9366",
       durationMs: expect.any(Number),
     });

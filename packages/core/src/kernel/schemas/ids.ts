@@ -8,6 +8,8 @@ const name = z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/, "must be lowercase le
 const generated = (prefix: string) =>
   z.string().regex(new RegExp(`^${prefix}_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`), `must be ${prefix}_<uuid>`);
 
+/** The AI CLIs and model hosts Tokama drives. Clients map the id to a label. */
+export const AiCliIdSchema = z.enum(["claude-code", "codex-cli", "ollama"]);
 export const TemplateIdSchema = name.brand<"TemplateId">();
 export const AgentIdSchema = name.brand<"AgentId">();
 export const RepoIdSchema = name.brand<"RepoId">();
