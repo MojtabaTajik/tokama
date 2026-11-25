@@ -1,7 +1,10 @@
 // kernel/process: spawn agents and checks, stream their output to disk as it arrives, kill the
-// whole process tree on stop or timeout, pass only allowlisted environment variables, and kill
-// an agent tree left over from before a restart.
+// whole process tree on stop or timeout, pass only allowlisted environment variables, kill
+// an agent tree left over from before a restart, start a detached background service, and read
+// the pid files that name a process.
 export { ENV_ALLOWLIST, buildEnv } from "./env.js";
+export { spawnDetached, type ChildProcess, type DetachedService } from "./detached.js";
+export { pidAlive, readPidFile, type PidFile } from "./pid-file.js";
 export { findOnPath } from "./which.js";
 export { posixTree } from "./posix.js";
 export {

@@ -13,13 +13,13 @@
 // last is still running and booting (up to a grace period). A started engine's output goes to
 // `engine.log` in the engine dir; if it exits before a connection (other than with code 3, "an
 // engine already runs"), the client gives up at once and names the exit code and the log.
-import { type ChildProcess, type StdioOptions, spawn } from "node:child_process";
-import { closeSync, fchmodSync, mkdirSync, openSync, readdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { connect as connectSocket, type Socket } from "node:net";
-import { devNull, homedir } from "node:os";
+import { homedir } from "node:os";
 import {
   API_VERSION,
   checkEngineDir,
+  type ChildProcess,
   type ClientMessageInput,
   type CommandInput,
   type CommandResult,
@@ -38,6 +38,7 @@ import {
   parseHandshakeReply,
   parseQueryResult,
   parseServerMessage,
+  spawnDetached,
   parseShutdownReply,
   type QueryInput,
   type QueryResult,
@@ -324,37 +325,17 @@ class Client implements EngineClient {
 
   private startEngine(start: EngineCommand): Result<void, ConnectError> {
     const { dir, logPath } = this.endpoint;
-    let logFd: number;
-    let nullFd: number;
     try {
       mkdirSync(dir, { recursive: true, mode: 0o700 });
-      const check = checkEngineDir(dir);
-      if (!check.ok) return err({ code: "unsafe_dir", message: check.error.message });
-      logFd = openSync(logPath, "a", 0o600);
-      try {
-        nullFd = openSync(devNull, "r");
-      } catch (error) {
-        closeSync(logFd);
-        throw error;
-      }
     } catch (error) {
       return err({ code: "start_failed", message: `cannot prepare ${logPath}: ${String(error)}` });
     }
-    let child: ChildProcess;
-    try {
-      fchmodSync(logFd, 0o600);
-      // Detached and unreferenced: the engine keeps running when this client exits. Its stdout and
-      // stderr go to the log through the fd, which works for a detached child.
-      // Every other descriptor this process has open is pointed at the null device: the engine would
-      // otherwise keep them. Electron on Linux leaves pipes and files open in its children, and a
-      // parent that waits for its pipes to close (Playwright, on `app.close()`) then waits for the
-      // detached engine to exit.
-      const stdio: StdioOptions = ["ignore", logFd, logFd, ...Array.from({ length: openFdCount() - 3 }, () => nullFd)];
-      child = spawn(start.command, [...start.args], { detached: true, stdio, env: start.env ?? process.env });
-    } finally {
-      closeSync(logFd);
-      closeSync(nullFd);
-    }
+    const check = checkEngineDir(dir);
+    if (!check.ok) return err({ code: "unsafe_dir", message: check.error.message });
+    // Detached and unreferenced: the engine keeps running when this client exits.
+    const started = spawnDetached({ command: start.command, args: start.args, env: start.env ?? process.env, logPath });
+    if (!started.ok) return err({ code: "start_failed", message: started.error.message });
+    const child = started.value;
     this.child = child;
     child.once("error", (error) => (this.startError = `cannot start the engine: ${error.message}`));
     child.once("exit", (code, signal) => {
@@ -363,7 +344,6 @@ class Client implements EngineClient {
       const how = code === null ? `by signal ${signal}` : `with code ${code}`;
       this.startError = `the engine exited ${how} before it accepted a connection; see ${logPath}`;
     });
-    child.unref();
     return ok(undefined);
   }
 
@@ -573,11 +553,3 @@ function parseJson(line: string): unknown {
   }
 }
 
-/** One more than the highest descriptor this process has open, at least 3. POSIX; 3 where `/dev/fd` is missing. */
-function openFdCount(): number {
-  try {
-    return Math.max(3, ...readdirSync("/dev/fd").map((name) => Number.parseInt(name, 10) + 1));
-  } catch {
-    return 3;
-  }
-}
