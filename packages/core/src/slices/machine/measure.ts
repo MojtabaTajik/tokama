@@ -32,7 +32,7 @@ export interface Measure {
 const round1 = (value: number) => Math.round(value * 10) / 10;
 
 /**
- * The group's processes: its members by group id, and everything below its root by parent, since
+ * The group's processes: its members by group id, and everything below them by parent, since
  * agents start shell commands in groups of their own.
  */
 function members(processes: readonly ProcessReading[], pgid: number): Set<number> {
@@ -44,7 +44,6 @@ function members(processes: readonly ProcessReading[], pgid: number): Set<number
   }
   const found = new Set<number>();
   const queue = processes.filter((p) => p.pgid === pgid).map((p) => p.pid);
-  if (processes.some((p) => p.pid === pgid)) queue.push(pgid);
   for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
     if (found.has(next)) continue;
     found.add(next);

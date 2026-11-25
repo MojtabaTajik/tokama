@@ -131,6 +131,48 @@ describe("the monitor", () => {
     await monitor.close();
   });
 
+  it("recovers when the first sample fails after a good baseline", async () => {
+    const clock = manualClock(1_000_000);
+    let memoryCalls = 0;
+    const source: MachineSource = {
+      // The baseline (call 1) works, the first sample (call 2) fails, the next ones work.
+      memory: async () => (++memoryCalls === 2 ? err("busy") : ok({ totalBytes: 16 * GIB, usedBytes: GIB })),
+      processes: async () => ok([proc(42, 1, 42, 0)]),
+    };
+    const host: Host = { cpuTimes: () => ({ idleMs: 0, totalMs: 1 }), loadAverage: () => [0, 0, 0], cores: () => 2 };
+    const monitor = createMonitor({ source, host, clock, enginePid: 42, groups: () => [], everyMs: 5000, warmupMs: 100 });
+    const first = monitor.report();
+    await tick(clock, 100);
+    expect(await first).toEqual({ ok: false, error: "busy" });
+    await tick(clock, 5000);
+    const second = await monitor.report();
+    expect(second.ok && second.value.points).toHaveLength(1);
+    await monitor.close();
+  });
+
+  it("closes during the warm-up without waiting for it", async () => {
+    const { monitor, clock } = setup();
+    const pending = monitor.report();
+    await tick(clock, 0);
+    await monitor.close();
+    expect((await pending).ok).toBe(false);
+  });
+
+  it("waits for a new reading when the old ones are from before the loop stopped", async () => {
+    const { clock, monitor } = setup();
+    const first = monitor.report();
+    await tick(clock, 100);
+    await first;
+    for (let i = 0; i < 6; i++) await tick(clock, 5000);
+    const before = clock.now();
+    const again = monitor.report();
+    await tick(clock, 100);
+    await tick(clock, 100);
+    const report = await again;
+    expect(report.ok && report.value.asOf).toBeGreaterThan(before);
+    await monitor.close();
+  });
+
   it("answers an error after close", async () => {
     const { monitor } = setup();
     await monitor.close();

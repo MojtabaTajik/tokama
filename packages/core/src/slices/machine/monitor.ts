@@ -87,6 +87,7 @@ export function createMonitor(options: MonitorOptions): Monitor {
   let wake: (() => void) | undefined;
   const sleep = (ms: number) =>
     new Promise<void>((resolve) => {
+      if (closed) return resolve();
       wake = resolve;
       timer = clock.setTimeout(resolve, ms);
     });
@@ -110,6 +111,7 @@ export function createMonitor(options: MonitorOptions): Monitor {
       if (!started) first(err(message));
       else log(`machine reading failed: ${message}`);
     };
+    if (closed) return first(err("the engine is stopping"));
     const baseline = await read();
     if (baseline.ok) {
       prev = baseline.value;
@@ -149,9 +151,10 @@ export function createMonitor(options: MonitorOptions): Monitor {
       if (closed) return err("the engine is stopping");
       lastAsked = clock.now();
       points = points.filter((p) => p.at >= lastAsked - historyMs);
-      // With history, answer at once; the loop is started again if it had stopped.
+      // The loop is started again if it had stopped.
       const started = ensureRunning();
-      if (points.length === 0) {
+      // Readings from before the loop stopped are old: wait for a new one.
+      if (points.length === 0 || (points.at(-1)?.at ?? 0) < lastAsked - 2 * everyMs) {
         const result = await started;
         if (!result.ok) return result;
       }
