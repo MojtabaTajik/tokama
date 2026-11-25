@@ -4,7 +4,7 @@ import { type ManualClock, manualClock } from "../../kernel/clock/index.js";
 import type { AgentRuntime } from "../../kernel/ports/index.js";
 import type { AgentCallEvent } from "../../kernel/schemas/index.js";
 import { runGuardedCall } from "./guarded-call.js";
-import type { FileState } from "./loop-guard.js";
+import { claudeCodeGuardDefaults, type FileState } from "./loop-guard.js";
 
 const USAGE = { input: 10, output: 2, cacheRead: 0, cacheWrite: 0 };
 const REQUEST = { model: "fake-model", prompt: "fix the bug", cwd: "/tmp/fake" };
@@ -61,6 +61,9 @@ function workTree(clock: ManualClock, checksPass = true) {
     options: { snapshot: () => Promise.resolve(new Map(files)), checksPass: () => Promise.resolve(checksPass) },
   };
 }
+
+const MIN = 60_000;
+const text = (words: string): AgentCallEvent => ({ type: "text", text: words });
 
 const repeat = (times: number, steps: (i: number) => Step[]): Step[] => Array.from({ length: times }, (_, i) => steps(i)).flat();
 const live = () => new AbortController().signal;
@@ -127,7 +130,7 @@ describe("guarded agent call", () => {
       },
     };
     const agent = scriptedAgent(clock, [TURN, editFile("a.ts", "fix"), tree.write("a.ts"), ...repeat(20, (i) => [{ wait: 2_000 }, TURN, readFile("a.ts", i)])]);
-    const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, files, settings: { turnCap: 12, repeatLimit: 0, idleMs: 10_000, timeoutMs: 60_000 } });
+    const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, files, settings: { turnCap: 12, repeatLimit: 0, idleMs: 10_000, silentMs: 0, timeoutMs: 60_000 } });
     expect(guard).toMatchObject({ stop: "turn_cap", turns: 12 });
     expect(guard.idleWatch?.checksRun).toBe(1);
     expect(signals.map((signal) => signal.aborted)).toEqual([true]);
@@ -148,7 +151,7 @@ describe("guarded agent call", () => {
   it("uses the settings it is given", async () => {
     const clock = manualClock();
     const agent = scriptedAgent(clock, [TURN, runTests(), { hang: true }]);
-    const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings: { turnCap: 0, repeatLimit: 0, idleMs: 0, timeoutMs: 5_000 } });
+    const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings: { turnCap: 0, repeatLimit: 0, idleMs: 0, silentMs: 0, timeoutMs: 5_000 } });
     expect(guard).toMatchObject({ stop: "timeout", wastedMs: 5_000 });
   });
 
@@ -169,7 +172,7 @@ describe("guarded agent call", () => {
         yield { type: "end", outcome: "completed", usage: USAGE };
       },
     };
-    const { end, guard } = await runGuardedCall(deaf, REQUEST, live(), { clock, settings: { turnCap: 2, repeatLimit: 0, idleMs: 0, timeoutMs: 60_000 } });
+    const { end, guard } = await runGuardedCall(deaf, REQUEST, live(), { clock, settings: { turnCap: 2, repeatLimit: 0, idleMs: 0, silentMs: 0, timeoutMs: 60_000 } });
     expect(end.outcome).toBe("completed");
     expect(guard.stop).toBeNull();
   });
@@ -182,7 +185,7 @@ describe("guarded agent call", () => {
         yield { type: "end", outcome: "failed", usage: USAGE, error: "killed" };
       },
     };
-    const { end, guard } = await runGuardedCall(deaf, REQUEST, live(), { clock, settings: { turnCap: 2, repeatLimit: 0, idleMs: 0, timeoutMs: 60_000 } });
+    const { end, guard } = await runGuardedCall(deaf, REQUEST, live(), { clock, settings: { turnCap: 2, repeatLimit: 0, idleMs: 0, silentMs: 0, timeoutMs: 60_000 } });
     expect(end.outcome).toBe("failed");
     expect(guard.stop).toBe("turn_cap");
   });
@@ -193,7 +196,7 @@ describe("guarded agent call", () => {
     // A step without checks: checksPass answers false.
     const files = { snapshot: tree.options.snapshot, checksPass: () => Promise.resolve(false) };
     const agent = scriptedAgent(clock, [TURN, editFile("a.ts", "fix"), tree.write("a.ts"), ...repeat(50, (i) => [TURN, readFile("a.ts", i), { wait: 10_000 }])]);
-    const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, files, settings: { turnCap: 0, repeatLimit: 0, idleMs: 10_000, timeoutMs: 400_000 } });
+    const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, files, settings: { turnCap: 0, repeatLimit: 0, idleMs: 10_000, silentMs: 0, timeoutMs: 400_000 } });
     expect(guard.stop).toBe("timeout");
   });
 
@@ -242,5 +245,75 @@ describe("guarded agent call", () => {
     expect(guard).toMatchObject({ stop: null, turns: 25, wastedMs: 0, loop: false });
     expect(guard.idleWatch?.checksRun).toBe(0);
     expect(guard.idleWatch?.skippedNoActivity).toBeGreaterThan(0);
+  });
+  describe("silence stop", () => {
+    const settings = claudeCodeGuardDefaults;
+
+    it("stops an agent that sends nothing for silentMs while no tool runs", async () => {
+      const clock = manualClock();
+      const agent = scriptedAgent(clock, [TURN, { wait: 2 * MIN }, text("let me think"), { hang: true }]);
+      const { end, guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings });
+      expect(clock.now()).toBe(12 * MIN);
+      expect(end.outcome).toBe("aborted");
+      expect(guard).toMatchObject({ stop: "silent", turns: 1, wastedMs: 12 * MIN, loop: false });
+    });
+
+    it("stops a CLI that never sends an event", async () => {
+      const clock = manualClock(5_000);
+      const agent = scriptedAgent(clock, [{ hang: true }]);
+      const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings });
+      expect(clock.now()).toBe(5_000 + 10 * MIN);
+      expect(guard.stop).toBe("silent");
+    });
+
+    it("does not stop while a tool runs, even for longer than silentMs", async () => {
+      const clock = manualClock();
+      const agent = scriptedAgent(clock, [TURN, runTests(), { wait: 25 * MIN }, { type: "tool_result", id: `t${callIds}` }, { wait: 9 * MIN }, TURN, text("done")]);
+      const { end, guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings });
+      expect(end.outcome).toBe("completed");
+      expect(guard.stop).toBeNull();
+    });
+
+    it("counts from the tool's result once the tool ends", async () => {
+      const clock = manualClock();
+      const agent = scriptedAgent(clock, [TURN, runTests(), { wait: 25 * MIN }, { type: "tool_result", id: `t${callIds}` }, { hang: true }]);
+      const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings });
+      expect(clock.now()).toBe(35 * MIN);
+      expect(guard.stop).toBe("silent");
+    });
+
+    it("starts the count again on any event of the agent", async () => {
+      const clock = manualClock();
+      const events: Step[][] = [[TURN], [text("still here")], [{ type: "tool_result", id: "none" }]];
+      const agent = scriptedAgent(clock, [...repeat(8, (i) => [...events[i % events.length]!, { wait: 9 * MIN }]), TURN]);
+      const { end, guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings });
+      expect(clock.now()).toBe(72 * MIN);
+      expect(end.outcome).toBe("completed");
+      expect(guard.stop).toBeNull();
+    });
+
+    it("does not count a plan-usage report as the agent's event", async () => {
+      const clock = manualClock();
+      const agent = scriptedAgent(clock, [TURN, { wait: 6 * MIN }, { type: "rate_limit", status: "allowed", windows: [] }, { hang: true }]);
+      const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings });
+      expect(clock.now()).toBe(10 * MIN);
+      expect(guard.stop).toBe("silent");
+    });
+
+    it("is off at silentMs 0", async () => {
+      const clock = manualClock();
+      const agent = scriptedAgent(clock, [TURN, { hang: true }]);
+      const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings: { ...settings, silentMs: 0, timeoutMs: 30 * MIN } });
+      expect(clock.now()).toBe(30 * MIN);
+      expect(guard.stop).toBe("timeout");
+    });
+
+    it("leaves a tool that never ends to the call's cap", async () => {
+      const clock = manualClock();
+      const agent = scriptedAgent(clock, [TURN, runTests(), { hang: true }]);
+      const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings });
+      expect(clock.now()).toBe(90 * MIN);
+      expect(guard.stop).toBe("timeout");
+    });
   });
 });

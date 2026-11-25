@@ -34,11 +34,11 @@ export type ActivityKind = z.output<typeof ActivityKindSchema>;
 export type ItemActivity = z.output<typeof ItemActivitySchema>;
 
 /**
- * How long the agent has been quiet at `now`: no event for `QUIET_AFTER_MS` or more while no tool
- * runs. Undefined when it is not quiet: a long test run sends nothing and is still work.
+ * How long the agent has been quiet at `now`: no event for `afterMs` or more while no tool runs.
+ * Undefined when it is not quiet: a long test run sends nothing and is still work.
  */
-export function quietForMs(activity: Pick<ItemActivity, "lastEventAt" | "toolRunning">, now: number): number | undefined {
+export function quietForMs(activity: Pick<ItemActivity, "lastEventAt" | "toolRunning">, now: number, afterMs = QUIET_AFTER_MS): number | undefined {
   if (activity.toolRunning !== null) return undefined;
   const quiet = now - activity.lastEventAt;
-  return quiet >= QUIET_AFTER_MS ? quiet : undefined;
+  return quiet >= afterMs ? quiet : undefined;
 }

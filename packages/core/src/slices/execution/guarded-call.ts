@@ -4,7 +4,7 @@
 // with its own `end` event, and the report says which guard stopped it and how much time was wasted.
 import type { Clock, TimerHandle } from "../../kernel/clock/index.js";
 import type { AgentCallRequest, AgentRuntime } from "../../kernel/ports/index.js";
-import type { AgentCallEvent, PlanSnapshot } from "../../kernel/schemas/index.js";
+import { type AgentCallEvent, type PlanSnapshot, quietForMs } from "../../kernel/schemas/index.js";
 import { type ActivityState, createActivityTracker } from "./activity.js";
 import {
   createFileWatch,
@@ -82,6 +82,19 @@ export async function runGuardedCall(runtime: AgentRuntime, request: AgentCallRe
   if (signal.aborted) controller.abort();
 
   const timeout = clock.setTimeout(() => requestStop("timeout"), settings.timeoutMs);
+  // One timer, due when the silence would reach `silentMs`: an event since moves it later, and a
+  // tool still running checks again `silentMs` on, by when its result has moved the last event.
+  let silenceTimer: TimerHandle | undefined;
+  const scheduleSilenceCheck = (delayMs: number) => {
+    silenceTimer = clock.setTimeout(() => {
+      if (controller.signal.aborted) return;
+      const state = activity.state();
+      const now = clock.now();
+      if (quietForMs(state, now, settings.silentMs) !== undefined) return requestStop("silent");
+      scheduleSilenceCheck(state.toolRunning === null ? state.lastEventAt + settings.silentMs - now : settings.silentMs);
+    }, delayMs);
+  };
+  if (settings.silentMs > 0) scheduleSilenceCheck(settings.silentMs);
   let pollTimer: TimerHandle | undefined;
   let polling: Promise<void> = Promise.resolve();
   const schedulePoll = (watch: FileWatch) => {
@@ -114,6 +127,7 @@ export async function runGuardedCall(runtime: AgentRuntime, request: AgentCallRe
     }
   } finally {
     clock.clearTimeout(timeout);
+    if (silenceTimer !== undefined) clock.clearTimeout(silenceTimer);
     if (pollTimer !== undefined) clock.clearTimeout(pollTimer);
     signal.removeEventListener("abort", forwardAbort);
     // Ends a check run still in flight.

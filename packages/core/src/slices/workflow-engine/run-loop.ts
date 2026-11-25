@@ -30,7 +30,6 @@ import {
   newId,
   REQUEST_CHANGES_ID,
   parseTemplateRecord,
-  type AgentCallErrorKind,
   type AttemptChecksResult,
   type AttemptFile,
   type AttemptLogResult,
@@ -53,6 +52,7 @@ import {
   type StoredStep,
   type TemplateRecord,
   type TemplateStepDef,
+  type RunFailure,
 } from "../../kernel/schemas/index.js";
 import type { Agent, Repo } from "../config/index.js";
 import { type ActivityState, callUsage, claudeCodeGuardDefaults, labelText, redactPaths, runGuardedCall, type LoopGuardSettings } from "../execution/index.js";
@@ -62,6 +62,7 @@ import { buildPrompt, type StepResults } from "../prompting/index.js";
 import { checksPass, runCommand, type CheckResult } from "../verification/index.js";
 import { commitItem, createWorktree, findItemWorktree, originPushUrl, stageItem, treeDiff, worktreePath, worktreeSnapshot, type ItemWorktree } from "../worktrees/index.js";
 import { attemptChecks, attemptLog, toolLine } from "./attempt-files.js";
+import { minutes } from "./explain.js";
 import { createFinisher, GIT_SETTINGS_FILE } from "./finish.js";
 import { attemptLimit, budgetAllowedMs, budgetUsedMs, CONTINUE_ID, ONE_MORE_ID, ONE_MORE_ROUND_ID, roundTripLimit, sameFailureTwice } from "./counters.js";
 import {
@@ -324,7 +325,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     stepId: StepId,
     attempt: number,
     result: "passed" | "failed" | "run_failed" | "stopped",
-    extra: { failure?: AgentCallErrorKind | "engine_restart"; detail?: string; tree?: string } = {},
+    extra: { failure?: RunFailure; detail?: string; tree?: string } = {},
   ): ItemEventBody => ({
     type: "attempt_ended",
     stepId,
@@ -336,7 +337,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
   });
 
   /** The attempt's run failed: it does not count, and the engineer chooses Retry step / Stop. */
-  const runFailed = (item: StoredItem, stepId: StepId, attempt: number, failure: AgentCallErrorKind, text: string): Next => {
+  const runFailed = (item: StoredItem, stepId: StepId, attempt: number, failure: Exclude<RunFailure, "engine_restart">, text: string): Next => {
     append(item.id, [attemptEnded(stepId, attempt, "run_failed", { failure, detail: text }), decision("run_failure", stepId, [RETRY, STOP], text)]);
     return WAIT;
   };
@@ -790,7 +791,8 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     // Run failures: the run failed, not the work. Other guard stops end the call, and the step's
     // done_when decides.
     const { end } = call;
-    if (call.guard.stop === "timeout" || end.errorKind === "timeout") return runFailed(item, stepId, attempt, "timeout", `The agent call timed out. ${end.error ?? ""}`);
+    if (call.guard.stop === "silent") return runFailed(item, stepId, attempt, "silent", `${agent.name} was silent for ${minutes(guard.silentMs)}.`);
+    if (call.guard.stop === "timeout" || end.errorKind === "timeout") return runFailed(item, stepId, attempt, "timeout", `The agent call ran for ${minutes(guard.timeoutMs)} (the limit).`);
     const guardStopped = call.guard.stop !== null;
     if (end.outcome === "failed" && !guardStopped) return runFailed(item, stepId, attempt, end.errorKind ?? "crash", end.error ?? "The agent call failed.");
     if (end.outcome === "aborted" && !guardStopped) return runFailed(item, stepId, attempt, "crash", "The agent call ended without finishing.");

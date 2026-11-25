@@ -80,7 +80,10 @@ describe("explainStop", () => {
   it("a run failure of the step's attempt says how the call failed", () => {
     const timedOut = step("plan", [attempt(1, T, { endedAt: T + 20 * MIN, result: "run_failed", failure: "timeout", detail: "The agent call timed out." })]);
     const decision = asked("run_failure", "plan", T + 20 * MIN, ["retry_step", "stop"]);
-    expect(explainStop(itemOf([timedOut], [decision]), decision, template)).toEqual({ limit: false, then: { kind: "none" }, why: "The agent call timed out after 20 min." });
+    expect(explainStop(itemOf([timedOut], [decision]), decision, template)).toEqual({ limit: false, then: { kind: "none" }, why: "The agent call ran for 20 m (the limit)." });
+    const silent = step("plan", [attempt(1, T, { endedAt: T + 12 * MIN, result: "run_failed", failure: "silent", detail: "Planner was silent for 10 m." })]);
+    const quiet = asked("run_failure", "plan", T + 12 * MIN, ["retry_step", "stop"]);
+    expect(explainStop(itemOf([silent], [quiet]), quiet, template)?.why).toBe("Planner was silent for 10 m.");
     const crashed = step("review", [attempt(1, T, { endedAt: T + 5, result: "run_failed", failure: "crash", detail: "The reviewer's reply did not end with VERDICT: approve or VERDICT: changes." })]);
     const noVerdict = asked("run_failure", "review", T + 5, ["retry_step", "stop"]);
     expect(explainStop(itemOf([crashed], [noVerdict]), noVerdict, template)?.why).toBe("The reviewer's reply did not end with VERDICT: approve or VERDICT: changes.");

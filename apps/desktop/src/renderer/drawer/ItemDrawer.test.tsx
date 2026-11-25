@@ -1416,14 +1416,14 @@ describe("the card of a step that stopped", () => {
   });
 
   it("an empty output says so, and the link opens the Log", async () => {
-    const failed = { ...stoppedReview, decision: { ...stoppedReview.decision!, kind: "run_failure", stopped: { limit: false, then: { kind: "none" }, why: "The agent call timed out after 20 min." } } } as ItemRecord;
+    const failed = { ...stoppedReview, decision: { ...stoppedReview.decision!, kind: "run_failure", stopped: { limit: false, then: { kind: "none" }, why: "The agent call ran for 20 m (the limit)." } } } as ItemRecord;
     const { bridge } = withOutput({ ok: true, data: { attempt: 1, text: "", truncated: false, summary: { kind: "empty" } } }, failed);
     await renderDrawer(bridge, failed.id);
     expect(text(".stopped-title")).toBe("⏸Review failed");
     expect(facts()).toEqual([
       ["Reviewer said", "Nothing. The call ended before Reviewer wrote any output."],
       ["Then", "–Nothing ran after it."],
-      ["Why it stopped", "The agent call timed out after 20 min."],
+      ["Why it stopped", "The agent call ran for 20 m (the limit)."],
     ]);
     await click(button("See the log →"));
     expect(tab("Log")?.getAttribute("aria-selected")).toBe("true");
