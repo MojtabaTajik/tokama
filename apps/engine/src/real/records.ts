@@ -7,7 +7,9 @@ import {
   type Decision,
   attemptLimit,
   countedAttempts,
+  type DecisionChoice,
   type DecisionKind,
+  explainStop,
   REQUEST_CHANGES_ID,
   hostedRepo,
   type ItemKind,
@@ -18,6 +20,7 @@ import {
   parseTemplateRecord,
   type Stage,
   type StepRecord,
+  type StoredDecision,
   type StoredItem,
   type TemplateRecord,
   type TemplateStepDef,
@@ -206,6 +209,7 @@ function toDecision(item: StoredItem, template: TemplateRecord | undefined): Dec
   const why = cut(open.detail, 500);
   // Approving a change of the last step commits it.
   const commits = open.kind === "plan_approval" && open.tree !== undefined && template !== undefined && template.steps.at(-1)?.id === open.stepId && template.finish.includes("commit");
+  const stopped = explainStop(item, open, template);
   return {
     id: open.id,
     kind: open.kind,
@@ -213,8 +217,19 @@ function toDecision(item: StoredItem, template: TemplateRecord | undefined): Dec
     question: commits ? "Approve this change and commit it?" : QUESTIONS[open.kind],
     ...(why !== undefined && { why }),
     ...(open.kind === "plan_approval" && open.tree !== undefined && { hasDiff: true }),
-    choices: open.choices.slice(0, 5),
+    ...(stopped !== undefined && { stopped }),
+    choices: choicesOf(open, template).slice(0, 5),
   };
+}
+
+/** Choices that run a stopped step again name it ("Run Review again"), in logs written before they did too. */
+const RUN_AGAIN = new Set(["retry_step", "one_more_attempt"]);
+
+function choicesOf(open: StoredDecision, template: TemplateRecord | undefined): DecisionChoice[] {
+  const name = template?.steps.find((step) => step.id === open.stepId)?.name;
+  if (name === undefined || (open.kind !== "after_failure" && open.kind !== "run_failure")) return open.choices;
+  const label = `Run ${name} again`;
+  return open.choices.map((choice) => (RUN_AGAIN.has(choice.id) && label.length <= 64 ? { ...choice, label } : choice));
 }
 
 function cardLineOf(item: StoredItem, steps: readonly StepRecord[], asked: DecisionKind | undefined): string | undefined {

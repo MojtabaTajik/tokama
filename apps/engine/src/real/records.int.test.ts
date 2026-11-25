@@ -121,6 +121,30 @@ describe("toItemRecord", () => {
     expect(parseItemRecord(record).ok).toBe(true);
   });
 
+  it("explains a step that stopped at its limit, and names the step on the button that runs it again", () => {
+    const item = append(created(), [
+      { type: "step_started", stepId: FIX },
+      { type: "attempt_started", stepId: FIX, attempt: 1 },
+      { type: "check_result", stepId: FIX, attempt: 1, command: "pnpm test", exitCode: 0, passed: true },
+      { type: "attempt_ended", stepId: FIX, attempt: 1, result: "passed" },
+      { type: "step_ended", stepId: FIX, result: "passed" },
+      { type: "step_started", stepId: REVIEW },
+      { type: "attempt_started", stepId: REVIEW, attempt: 1 },
+      { type: "attempt_ended", stepId: REVIEW, attempt: 1, result: "failed", detail: "The reviewer asked for changes." },
+      // A log from before the card: the button still said Retry once more.
+      { type: "decision_opened", decisionId: DECISION, kind: "after_failure", stepId: REVIEW, choices: [{ id: "one_more_attempt", label: "Retry once more" }, { id: "no_action_needed", label: "End: no action needed" }, { id: "stop", label: "Stop" }], detail: "Step Review reached its limit of 3 attempts." },
+    ]);
+    const record = toItemRecord(item)!;
+    expect(record.decision).toMatchObject({
+      kind: "after_failure",
+      stepIndex: 1,
+      why: "Step Review reached its limit of 3 attempts.",
+      stopped: { limit: true, then: { kind: "none" }, why: "Review may run 3 times per round." },
+      choices: [{ id: "one_more_attempt", label: "Run Review again" }, { label: "End: no action needed" }, { label: "Stop" }],
+    });
+    expect(parseItemRecord(record).ok).toBe(true);
+  });
+
   it("counts runs as the engine does, and carries the Request changes note only while the step runs again", () => {
     const TREE = "a".repeat(40);
     const asked = (id: string, choices: { id: string; label: string }[]) => ({ type: "decision_opened" as const, decisionId: id as never, kind: "plan_approval" as const, stepId: FIX, choices, tree: TREE });

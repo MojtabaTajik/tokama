@@ -122,3 +122,55 @@ export const finishable = {
   id: "item_1a2b3c4d-0011-4a1b-8c1d-000000000011",
   finish: { worktreeRemoved: false, pushTarget: "github.com/northwind/orders-api" },
 } as unknown as ItemRecord;
+
+/** A task whose Review stopped at its limit after Build fixed what it asked for. */
+export const stoppedReview = {
+  ...task,
+  id: "item_1a2b3c4d-0013-4a1b-8c1d-000000000013",
+  title: "Keep the start card still while it fades",
+  state: "needs_you",
+  decision: {
+    id: "decision_5e1c9a7b-3f2d-4c8e-9a6b-1d2e3f4a5b6f",
+    kind: "after_failure",
+    stepIndex: 3,
+    question: "The step failed. Retry it, or end the item?",
+    why: "Step Review reached its limit of 1 attempts.",
+    stopped: {
+      limit: true,
+      then: { kind: "later", stepIndex: 1, attempt: 2, result: "passed", checks: { passed: 2, total: 2 } },
+      why: "Review may run once per round, so it has not checked the fix.",
+    },
+    choices: [
+      { id: "one_more_attempt", label: "Run Review again" },
+      { id: "no_action_needed", label: "End: no action needed" },
+      { id: "stop", label: "Stop" },
+    ],
+  },
+  steps: [
+    { name: "Plan", stage: "working", state: "passed", agentId: "architect", data: "repo-and-diff", detail: "plan approved", attempts: [{ attempt: 1, result: "passed", checks: [] }] },
+    {
+      name: "Build",
+      stage: "working",
+      state: "passed",
+      agentId: "local-builder",
+      data: "none",
+      detail: "passed on attempt 2",
+      attempts: [
+        { attempt: 1, result: "passed", checks: [] },
+        { attempt: 2, result: "passed", checks: [] },
+      ],
+    },
+    { name: "Run checks", stage: "verifying", state: "passed", data: "none", detail: "passed" },
+    {
+      name: "Review",
+      stage: "review",
+      state: "needs_you",
+      agentId: "reviewer",
+      data: "repo-and-diff",
+      detail: "waits for you",
+      runs: 1,
+      maxAttempts: 1,
+      attempts: [{ attempt: 1, result: "failed", detail: "The reviewer asked for changes.", checks: [] }],
+    },
+  ],
+} as unknown as ItemRecord;

@@ -3,3 +3,5 @@ export { createRunLoop, titleFrom, type CommandError, type RunLoop, type RunLoop
 export { attemptLimit } from "./counters.js";
 export { createFinisher, type Finisher, type FinishDeps, type FinishError } from "./finish.js";
 export { parseVerdict, VERDICT_RULE, type Verdict } from "./verdict.js";
+export { explainStop, lastEnded, type Stopped } from "./explain.js";
+export { summarizeOutput } from "./summary.js";

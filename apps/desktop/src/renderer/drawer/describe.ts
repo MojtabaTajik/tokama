@@ -77,6 +77,9 @@ const ATTEMPT_RESULT: Record<NonNullable<AttemptSummary["result"]>, Mark> = {
 };
 const RUNNING_ATTEMPT: Mark = { symbol: "●", word: "running", tone: "live" };
 
+/** How an attempt ended, as a symbol and a word. */
+export const attemptMark = (result: NonNullable<AttemptSummary["result"]>): Mark => ATTEMPT_RESULT[result];
+
 /** An attempt as one line: "attempt 2 · failed · sh check.sh exit 1", with its mark. */
 export function attemptLine(attempt: AttemptSummary): { readonly mark: Mark; readonly text: string } {
   const mark = attempt.result === undefined ? RUNNING_ATTEMPT : ATTEMPT_RESULT[attempt.result];

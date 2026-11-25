@@ -5,7 +5,7 @@ import { type CommandInput, type EngineEvent, type ItemRecord, itemStage, manual
 import { afterEach, describe, expect, it } from "vitest";
 import { startEngine } from "../engine.js";
 import { tempEngineDir, waitFor } from "../testing/helpers.js";
-import { DECISION_ID, DIFF_DECISION_ID, ITEM_IDS } from "./data.js";
+import { DECISION_ID, DIFF_DECISION_ID, ITEM_IDS, LIMIT_DECISION_ID } from "./data.js";
 import { SAMPLE_TICK_MS } from "./sample.js";
 
 const NOW = 1_780_000_000_000;
@@ -121,7 +121,7 @@ describe("fake engine mode", () => {
     expect(new Set(items.map(itemStage))).toEqual(new Set(["queued", "working", "verifying", "review", "done"]));
     expect(new Set(items.map((entry) => entry.kind))).toEqual(new Set(["task", "investigation"]));
     expect(new Set(items.map((entry) => entry.privacy))).toEqual(new Set(["local_only", "local_and_cloud"]));
-    expect(items.filter((entry) => entry.state === "needs_you").map((entry) => entry.id)).toEqual([ITEM_IDS.needsYou, ITEM_IDS.quickChange, ITEM_IDS.planApproval]);
+    expect(items.filter((entry) => entry.state === "needs_you").map((entry) => entry.id)).toEqual([ITEM_IDS.needsYou, ITEM_IDS.quickChange, ITEM_IDS.planApproval, ITEM_IDS.reviewLimit]);
     expect(items.filter((entry) => entry.state === "failed").map((entry) => entry.id)).toEqual([ITEM_IDS.failed]);
     // Every card has its line, and every step that has started has a detail line.
     expect(items.every((entry) => entry.cardLine !== undefined)).toBe(true);
@@ -246,6 +246,17 @@ describe("fake engine mode", () => {
     expect(plan).toMatchObject({ ok: true, data: { attempt: 1, text: expect.stringContaining("## Plan: reserve stock"), truncated: false } });
     expect(await client.query({ type: "step_output", itemId: ITEM_IDS.planApproval, stepIndex: 0, attempt: 2 })).toMatchObject({ ok: false, error: { code: "not_found" } });
     expect(await client.query({ type: "step_output", itemId: ITEM_IDS.planApproval, stepIndex: 1 })).toMatchObject({ ok: false, error: { code: "not_found" } });
+  });
+
+  it("serves the Review limit item's card: why it stopped, and what the reviewer said read from its output", async () => {
+    const { client } = await sampleEngine();
+    const waiting = await item(client, ITEM_IDS.reviewLimit);
+    expect(waiting.decision).toMatchObject({ kind: "after_failure", stepIndex: 3, stopped: { limit: true, then: { kind: "later", stepIndex: 1, result: "passed" } } });
+    const said = await client.query({ type: "step_output", itemId: ITEM_IDS.reviewLimit, stepIndex: 3 });
+    expect(said).toMatchObject({ ok: true, data: { attempt: 1, summary: { kind: "verdict", verdict: "changes", mustFix: [{ ref: "src/start-card.css:31" }], more: 0 } } });
+    // Run Review again runs the step that stopped.
+    expect(await client.command({ type: "resolve_decision", itemId: ITEM_IDS.reviewLimit, decisionId: LIMIT_DECISION_ID, choice: "one_more_attempt" })).toMatchObject({ ok: true });
+    expect((await item(client, ITEM_IDS.reviewLimit)).steps[3]).toMatchObject({ state: "running" });
   });
 
   it("serves the failed item's checks and transcripts as cleaned, cut text, and no file to open", async () => {

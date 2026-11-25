@@ -211,8 +211,11 @@ describe("real mode", () => {
     expect(first.waiting.steps[0]).toMatchObject({ maxAttempts: 3, attempts: [{ attempt: 1, result: "passed" }] });
     expect(first.diff.files).toMatchObject([{ path: "greeting.txt", status: "modified", added: 1, removed: 1, hunks: [{ lines: ["-helo world", "+hello wrld"] }] }]);
     expect(first.diff.worktree).toMatchObject({ repoId: "orders-api", branch: expect.stringMatching(/^tokama\//) });
-    // The step's output is the agent's final message, served by step index.
-    expect(await client.query({ type: "step_output", itemId: id, stepIndex: 0 })).toEqual({ ok: true, data: { attempt: 1, text: "Done.", truncated: false } });
+    // The step's output is the agent's final message, served by step index, with what it says.
+    expect(await client.query({ type: "step_output", itemId: id, stepIndex: 0 })).toEqual({
+      ok: true,
+      data: { attempt: 1, text: "Done.", truncated: false, summary: { kind: "lines", format: "none", lines: ["Done."] } },
+    });
     expect(await client.query({ type: "step_output", itemId: id, stepIndex: 1 })).toMatchObject({ ok: false, error: { code: "not_found" } });
 
     expect(await client.command({ type: "resolve_decision", itemId: id, decisionId: first.waiting.decision!.id, choice: "request_changes", note: "Spell world right." })).toEqual({ ok: true, data: null });

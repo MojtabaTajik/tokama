@@ -35,6 +35,7 @@ import {
   type TemplateRef,
   type TimerHandle,
   type Setup,
+  summarizeOutput,
 } from "@tokama/core";
 import type { MemoryItemStore } from "../store.js";
 import { checksReply, logReply, sampleChecks, sampleLogs } from "./attempts.js";
@@ -50,6 +51,8 @@ export interface CommandError {
 
 /** The choice of a decision that lets the item go on; any other offered choice stops it. */
 const APPROVE = "approve";
+/** Retry once more: the step that stopped at its limit runs again. */
+const ONE_MORE = "one_more_attempt";
 /** Words that make New work text look like an investigation rather than a task. */
 const INVESTIGATION_WORDS = ["alert", "500", "5xx", "error", "errors", "latency", "spike", "slow", "down", "incident", "timeout"];
 
@@ -218,6 +221,11 @@ export class SampleEngine {
       this.live.add(item.id);
       return ok(null);
     }
+    if (command.choice === ONE_MORE) {
+      this.store.put(this.run(withoutDecision(item), item.decision.stepIndex, "runs again · "));
+      this.live.add(item.id);
+      return ok(null);
+    }
     if (command.choice !== APPROVE) {
       this.store.put(stop(item));
       return ok(null);
@@ -246,7 +254,8 @@ export class SampleEngine {
     const asked = attempt === undefined ? attempts.at(-1) : attempts.find((a) => a.attempt === attempt);
     const text = asked === undefined ? undefined : sampleOutputs[itemId]?.[stepIndex]?.[asked.attempt - 1];
     if (asked === undefined || text === undefined) return err({ code: "not_found", message: asked === undefined ? "The step has not run yet." : `Attempt ${asked.attempt} has no saved output.` });
-    return ok({ attempt: asked.attempt, text, truncated: false });
+    // In the sample, the Review steps are the ones with a verdict format.
+    return ok({ attempt: asked.attempt, text, truncated: false, summary: summarizeOutput(text, item.steps[stepIndex]?.name === "Review") });
   }
 
   /** The canned checks of a sample step's attempt; an attempt without them lists none. */

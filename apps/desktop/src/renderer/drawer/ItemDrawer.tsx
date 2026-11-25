@@ -22,8 +22,9 @@ import { DecisionChoices, inTextField } from "./DecisionChoices.js";
 import { DiffTab, type DiffState, useDecisionDiff } from "./DiffView.js";
 import { Finish } from "./Finish.js";
 import { LogTab } from "./LogTab.js";
-import { OutputTab } from "./OutputTab.js";
+import { OutputTab, shownAttempt } from "./OutputTab.js";
 import { StepOutput, StepPreview, type OutputState, useStepOutput } from "./StepOutput.js";
+import { StoppedCard } from "./StoppedCard.js";
 import { finishState, isDiscarded } from "./finish-view.js";
 import { useItem } from "./useItem.js";
 
@@ -270,6 +271,13 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
     setTab(to);
     document.getElementById(tabId(to))?.focus();
   };
+  // A stopped step's "See the notes": the Output tab, scrolled to that step's section.
+  const [notesOf, setNotesOf] = useState<{ readonly stepIndex: number; readonly seq: number } | undefined>(undefined);
+  const showStopped = (to: "Output" | "Log", stepIndex: number) => {
+    if (to === "Output") setNotesOf((last) => ({ stepIndex, seq: (last?.seq ?? 0) + 1 }));
+    showTab(to)();
+  };
+  const stoppedDecision = item?.state === "needs_you" && item.decision?.stopped !== undefined ? { ...item.decision, stopped: item.decision.stopped } : undefined;
   const changedFiles = diff?.kind === "loaded" && diff.diff.files.length + diff.diff.moreFiles > 0;
 
   const template = item && templateOf(item, setup);
@@ -362,7 +370,10 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
         </p>
       )}
 
-      {item?.state === "needs_you" && (
+      {stoppedDecision !== undefined && item !== undefined && (
+        <StoppedCard bridge={bridge} item={item} setup={setup} decision={stoppedDecision} busy={busy} full={full} onChoose={resolve} onShow={showStopped} />
+      )}
+      {item?.state === "needs_you" && stoppedDecision === undefined && (
         <NeedsYou item={item} setup={setup} decision={item.decision} busy={busy} output={full ? undefined : output} full={full} changedFiles={changedFiles} onShowOutput={showTab("Output")} onShowDiff={showTab("Diff")} onChoose={resolve} />
       )}
       {item !== undefined && item.state !== "needs_you" && <After item={item} setup={setup} />}
@@ -384,9 +395,9 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
           <Tabs tabs={tabs} shown={shown} onPick={setTab} />
           <div className="drawer-panel" role="tabpanel" id={panelId(shown)} aria-labelledby={tabId(shown)} data-tab={shown}>
             {shown === "Steps" ? (
-              <Steps bridge={bridge} item={item} setup={setup} onOpenAgent={onOpenAgent} />
+              <Steps bridge={bridge} item={item} setup={setup} onOpenAgent={onOpenAgent} unfold={stoppedDecision?.stepIndex} />
             ) : shown === "Output" ? (
-              <OutputTab bridge={bridge} item={item} setup={setup} full={full} onOpenAgent={onOpenAgent} />
+              <OutputTab bridge={bridge} item={item} setup={setup} full={full} onOpenAgent={onOpenAgent} focus={notesOf} />
             ) : shown === "Checks" ? (
               <ChecksTab bridge={bridge} item={item} setup={setup} full={full} />
             ) : shown === "Log" ? (
@@ -604,9 +615,11 @@ interface StepsProps {
   readonly item: ItemRecord;
   readonly setup: Setup | undefined;
   readonly onOpenAgent: ItemDrawerProps["onOpenAgent"];
+  /** The step that stopped: its latest output starts unfolded. */
+  readonly unfold?: number | undefined;
 }
 
-function Steps({ bridge, item, setup, onOpenAgent }: StepsProps) {
+function Steps({ bridge, item, setup, onOpenAgent, unfold }: StepsProps) {
   if (item.steps.length === 0) return <p className="placeholder">{TEXT.noSteps}</p>;
   const agents = setup?.agents ?? [];
   const connections = setup?.connections ?? [];
@@ -616,6 +629,7 @@ function Steps({ bridge, item, setup, onOpenAgent }: StepsProps) {
         const mark = stepMark(step.state);
         const agent = stepAgent(step, agents);
         const tip = agentInfo(item, index, setup);
+        const unfolded = index === unfold ? shownAttempt(step) : undefined;
         return (
           <li key={index} className="step" data-state={step.state}>
             <span className="mark" data-tone={mark.tone} aria-hidden="true">
@@ -652,7 +666,14 @@ function Steps({ bridge, item, setup, onOpenAgent }: StepsProps) {
                         </span>
                         {/* Only an ended attempt of an agent's step has an output. */}
                         {step.agentId !== undefined && attempt.result !== undefined && (
-                          <AttemptOutput bridge={bridge} itemId={item.id} stepIndex={index} attempt={attempt.attempt} label={`${step.name}, ${TEXT.attempt(attempt.attempt)}: ${TEXT.output}`} />
+                          <AttemptOutput
+                            bridge={bridge}
+                            itemId={item.id}
+                            stepIndex={index}
+                            attempt={attempt.attempt}
+                            label={`${step.name}, ${TEXT.attempt(attempt.attempt)}: ${TEXT.output}`}
+                            unfolded={attempt.attempt === unfolded}
+                          />
                         )}
                       </li>
                     );
@@ -668,11 +689,26 @@ function Steps({ bridge, item, setup, onOpenAgent }: StepsProps) {
 }
 
 /** An attempt's output, collapsed; it is asked for the first time the engineer opens it. */
-function AttemptOutput({ bridge, itemId, stepIndex, attempt, label }: { readonly bridge: TokamaBridge; readonly itemId: string; readonly stepIndex: number; readonly attempt: number; readonly label: string }) {
-  const [opened, setOpened] = useState(false);
+function AttemptOutput({
+  bridge,
+  itemId,
+  stepIndex,
+  attempt,
+  label,
+  unfolded,
+}: {
+  readonly bridge: TokamaBridge;
+  readonly itemId: string;
+  readonly stepIndex: number;
+  readonly attempt: number;
+  readonly label: string;
+  /** Starts open: the output of the step that stopped. */
+  readonly unfolded: boolean;
+}) {
+  const [opened, setOpened] = useState(unfolded);
   const output = useStepOutput(bridge, itemId, stepIndex, attempt, opened ? `${stepIndex} ${attempt}` : undefined);
   return (
-    <details className="attempt-output" onToggle={(event) => event.currentTarget.open && setOpened(true)}>
+    <details className="attempt-output" open={unfolded || undefined} onToggle={(event) => event.currentTarget.open && setOpened(true)}>
       <summary aria-label={label}>{TEXT.output}</summary>
       {output !== undefined && <StepOutput state={output} label={label} />}
     </details>

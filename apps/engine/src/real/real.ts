@@ -33,6 +33,8 @@ import {
   type Setup,
   type StepOutputResult,
   type StoredItem,
+  parseTemplateRecord,
+  summarizeOutput,
 } from "@tokama/core";
 import type { MemoryItemStore } from "../store.js";
 import { agentsFor, type Config, findTemplate, loadConfig, resolveAgent, startProblem, stepProblems, toSetup } from "./config.js";
@@ -163,9 +165,15 @@ export class RealEngine {
     return this.loop.decisionDiff(itemId, decisionId);
   }
 
-  /** The final message of the agent of a step's attempt. */
+  /** The final message of the agent of a step's attempt, with what it says as far as Tokama can read it. */
   async stepOutput(itemId: ItemId, stepIndex: number, attempt?: number): Promise<Result<StepOutputResult, CommandError>> {
-    return this.loop.stepOutput(itemId, stepIndex, attempt);
+    const output = await this.loop.stepOutput(itemId, stepIndex, attempt);
+    if (!output.ok) return output;
+    const item = this.options.items.get(itemId);
+    const template = item === undefined ? undefined : parseTemplateRecord(item.template.record);
+    const stepId = item?.steps[stepIndex]?.id;
+    const def = template?.ok === true ? template.value.steps.find((step) => step.id === stepId) : undefined;
+    return ok({ ...output.value, summary: summarizeOutput(output.value.text, def?.doneWhen === "reviewer approves") });
   }
 
   /** Each check of a step's attempt with the end of its saved output. */
