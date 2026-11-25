@@ -6,3 +6,5 @@ Regular files only, no symlink at the last path component, non-blocking open (a 
 Failures are `Result` values with a `reason`; nothing throws. Owns reading only; it never writes.
 Symlinked parent directories are followed by the open: call `isInside` first when a read must stay inside a worktree or run folder.
 `isInside` and the open stop symlinks, not hard links: a hard link inside the root to a file outside it is a regular file inside it.
+`listFolders(root, rel, { max })` lists real folders only: a link to a folder is left out, so a walk never leaves the tree or reads a folder twice.
+`readLinesFrom(path, { maxFileBytes, maxLineBytes, resume? }, onLine)` reads a growing log line by line from where the last read ended (same file and no shorter, else from the start), skips a line over the cap without keeping it, and leaves a line still being written for the next read.

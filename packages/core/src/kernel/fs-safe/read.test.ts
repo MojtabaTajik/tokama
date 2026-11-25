@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -7,7 +7,9 @@ import type { Result } from "../result/index.js";
 import {
   isInside,
   listFiles,
+  listFolders,
   readJsonFile,
+  readLinesFrom,
   readTextFile,
   readTextFileInside,
   type ReadFailure,
@@ -232,5 +234,74 @@ describe("listFiles", () => {
     mkdirSync(join(dir, "many"));
     for (let i = 0; i < 3; i++) write(`many/${i}`, "");
     expect(reason(await listFiles(dir, "many", { max: 2 }))).toBe("too_many_entries");
+  });
+});
+
+describe("listFolders", () => {
+  it("lists real folders only, sorted: no files, no links to folders", async () => {
+    mkdirSync(join(dir, "sub", "b"), { recursive: true });
+    mkdirSync(join(dir, "sub", "a"));
+    write("sub/file.txt", "");
+    symlinkSync(join(dir, "sub", "a"), join(dir, "sub", "c"));
+    symlinkSync(outside, join(dir, "sub", "d"));
+    expect(await listFolders(dir, "sub", { max: 10 })).toEqual({ ok: true, value: ["a", "b"] });
+  });
+
+  it("refuses a folder that links outside the root, a missing folder and too many entries", async () => {
+    symlinkSync(outside, join(dir, "linked"));
+    expect(reason(await listFolders(dir, "linked", { max: 10 }))).toBe("symlink");
+    expect(reason(await listFolders(dir, "gone", { max: 10 }))).toBe("not_found");
+    for (let i = 0; i < 3; i++) mkdirSync(join(dir, `many-${i}`));
+    expect(reason(await listFolders(dir, "", { max: 2 }))).toBe("too_many_entries");
+  });
+});
+
+describe("readLinesFrom", () => {
+  const LIMITS = { maxFileBytes: 1024 * 1024, maxLineBytes: 100 };
+  async function lines(path: string, options: Parameters<typeof readLinesFrom>[1] = LIMITS) {
+    const seen: string[] = [];
+    const result = await readLinesFrom(path, options, (line) => seen.push(line));
+    return { seen, result };
+  }
+
+  it("gives each complete line and leaves a line still being written for later", async () => {
+    const path = write("log.jsonl", "one\r\ntwo\nthr");
+    const first = await lines(path);
+    expect(first.seen).toEqual(["one", "two"]);
+    expect(first.result).toEqual({ ok: true, value: expect.objectContaining({ start: 0, end: 9, size: 12, skipped: 0 }) });
+    if (!first.result.ok) return;
+    appendFileSync(path, "ee\nfour\n");
+    const second = await lines(path, { ...LIMITS, resume: { ino: first.result.value.ino, offset: first.result.value.end } });
+    expect(second.seen).toEqual(["three", "four"]);
+    expect(second.result.ok && second.result.value).toMatchObject({ start: 9, end: 20, size: 20 });
+  });
+
+  it("skips a line over the cap and an invalid UTF-8 line, and goes on after them", async () => {
+    // The long line spans several chunks, so it is dropped without being kept.
+    const path = write("log.jsonl", Buffer.concat([Buffer.from(`a\n${"x".repeat(200 * 1024)}\n`), Buffer.from([0xff, 0xfe, 10]), Buffer.from("b\n")]));
+    const { seen, result } = await lines(path);
+    expect(seen).toEqual(["a", "b"]);
+    expect(result.ok && result.value.skipped).toBe(2);
+  });
+
+  it("starts again from the beginning when the file was replaced or truncated", async () => {
+    const path = write("log.jsonl", "old line one\nold line two\n");
+    const first = await lines(path);
+    if (!first.result.ok) throw new Error("read failed");
+    const { ino, end } = first.result.value;
+    writeFileSync(path, "new\n");
+    expect((await lines(path, { ...LIMITS, resume: { ino, offset: end } })).seen).toEqual(["new"]);
+    write("other.jsonl", "fresh\n");
+    renameSync(join(dir, "other.jsonl"), path);
+    expect((await lines(path, { ...LIMITS, resume: { ino, offset: 0 } })).seen).toEqual(["fresh"]);
+  });
+
+  it("refuses a symlink, a folder and a file over the size cap", async () => {
+    symlinkSync(write("real.jsonl", "x\n"), join(dir, "link.jsonl"));
+    expect(reason((await lines(join(dir, "link.jsonl"))).result)).toBe("symlink");
+    mkdirSync(join(dir, "folder.jsonl"));
+    expect(reason((await lines(join(dir, "folder.jsonl"))).result)).toBe("not_regular_file");
+    expect(reason((await lines(write("big.jsonl", "x".repeat(50)), { maxFileBytes: 10, maxLineBytes: 100 })).result)).toBe("too_large");
+    expect(reason((await lines(join(dir, "missing.jsonl"))).result)).toBe("not_found");
   });
 });

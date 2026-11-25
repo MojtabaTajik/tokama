@@ -4,10 +4,14 @@
 export {
   isInside,
   listFiles,
+  listFolders,
   readJsonFile,
+  readLinesFrom,
   readTextFile,
   readTextFileInside,
   type ReadFailure,
   type ReadFailureReason,
+  type ReadLinesOptions,
+  type ReadLinesResult,
   type ReadTextOptions,
 } from "./read.js";

@@ -173,3 +173,131 @@ async function notInside(path: string, what: "file" | "folder"): Promise<Result<
   }
   return failure(path, "outside_root", `${what} is outside the allowed folder`);
 }
+
+/**
+ * The names of the real folders in the folder `root/rel`, sorted. A symlink to a folder is not a
+ * folder here: it is left out, so a walk never leaves the tree or reads a folder twice. The
+ * folder's real path must be `root` or inside it; that is checked before listing.
+ */
+export async function listFolders(root: string, rel: string, options: { readonly max: number }): Promise<Result<string[], ReadFailure>> {
+  const dir = join(root, rel);
+  if (!(await isInside(root, dir))) return notInside(dir, "folder");
+  let names: string[];
+  try {
+    const entries = await readdir(dir, { withFileTypes: true });
+    names = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? "UNKNOWN";
+    if (code === "ENOENT") return failure(dir, "not_found", "folder does not exist");
+    if (code === "ENOTDIR") return failure(dir, "not_regular_file", "not a folder");
+    return failure(dir, "io_error", `cannot list: ${code}`, code);
+  }
+  if (names.length > options.max) return failure(dir, "too_many_entries", `more than ${options.max} entries`);
+  return ok(names.sort());
+}
+
+export interface ReadLinesOptions {
+  /** Files larger than this are refused without reading them. */
+  readonly maxFileBytes: number;
+  /** A longer line is skipped without being kept in memory. */
+  readonly maxLineBytes: number;
+  /**
+   * Where an earlier read ended. It is used only while the file is the same file (same inode) and
+   * no shorter than that; otherwise the read starts at the beginning.
+   */
+  readonly resume?: { readonly ino: number; readonly offset: number };
+}
+
+export interface ReadLinesResult {
+  readonly ino: number;
+  readonly size: number;
+  /** Where the read started. */
+  readonly start: number;
+  /** Just past the last complete line read: resume from here. A line still being written is left for later. */
+  readonly end: number;
+  /** Lines skipped for being too long or not valid UTF-8. */
+  readonly skipped: number;
+}
+
+/**
+ * Reads a growing line-based file (a log) from where an earlier read ended, one complete line at
+ * a time: `onLine` gets each line without its line break. The same open rules as `readTextFile`:
+ * no symlink at the last path component, no FIFO or device, a size cap. Memory stays within one
+ * line plus one chunk. Never throws, except what `onLine` throws.
+ */
+export async function readLinesFrom(path: string, options: ReadLinesOptions, onLine: (line: string) => void): Promise<Result<ReadLinesResult, ReadFailure>> {
+  const { maxFileBytes, maxLineBytes, resume } = options;
+  let handle: promises.FileHandle;
+  try {
+    handle = await open(path, FLAGS);
+  } catch (error) {
+    return openFailure(path, error);
+  }
+  try {
+    let info;
+    try {
+      info = await handle.stat();
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? "UNKNOWN";
+      return failure(path, "io_error", `cannot read: ${code}`, code);
+    }
+    if (!info.isFile()) return failure(path, "not_regular_file", "not a regular file");
+    if (info.size > maxFileBytes) return failure(path, "too_large", `larger than ${maxFileBytes} bytes`);
+    const start = resume !== undefined && resume.ino === info.ino && resume.offset <= info.size ? resume.offset : 0;
+    // Read only what was there at fstat: a line written after it is read next time.
+    const stop = info.size;
+    const decoder = new TextDecoder("utf-8", { fatal: true });
+    let pending: Buffer[] = [];
+    let pendingBytes = 0;
+    let tooLong = false;
+    let skipped = 0;
+    let position = start;
+    let end = start;
+    const chunk = Buffer.alloc(CHUNK_BYTES);
+    while (position < stop) {
+      let bytesRead: number;
+      try {
+        ({ bytesRead } = await handle.read(chunk, 0, Math.min(CHUNK_BYTES, stop - position), position));
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code ?? "UNKNOWN";
+        return failure(path, "io_error", `cannot read: ${code}`, code);
+      }
+      if (bytesRead === 0) break;
+      let from = 0;
+      for (let nl = chunk.indexOf(10, from); nl !== -1 && nl < bytesRead; nl = chunk.indexOf(10, from)) {
+        const piece = chunk.subarray(from, nl);
+        if (!tooLong && pendingBytes + piece.length <= maxLineBytes) {
+          const bytes = pending.length === 0 ? piece : Buffer.concat([...pending, piece]);
+          let line: string | undefined;
+          try {
+            line = decoder.decode(bytes);
+          } catch {
+            skipped++;
+          }
+          if (line !== undefined) onLine(line.endsWith("\r") ? line.slice(0, -1) : line);
+        } else {
+          skipped++;
+        }
+        pending = [];
+        pendingBytes = 0;
+        tooLong = false;
+        from = nl + 1;
+        end = position + from;
+      }
+      const rest = chunk.subarray(from, bytesRead);
+      if (!tooLong && pendingBytes + rest.length <= maxLineBytes) {
+        // Copied: the chunk buffer is reused for the next read.
+        pending.push(Buffer.from(rest));
+        pendingBytes += rest.length;
+      } else {
+        pending = [];
+        pendingBytes = 0;
+        tooLong = true;
+      }
+      position += bytesRead;
+    }
+    return ok({ ino: info.ino, size: info.size, start, end, skipped });
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
+}
