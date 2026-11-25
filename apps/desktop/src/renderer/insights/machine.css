@@ -1,0 +1,317 @@
+/* The Machine tab. Colours come from theme.css tokens only. */
+
+.mc-meters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  margin-left: -20px;
+}
+
+.mc-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 20px;
+  border-left: 1px solid var(--hairline);
+}
+
+.mc-big {
+  margin-left: auto;
+  font-size: 20px;
+  color: var(--text);
+}
+
+.mc-fill {
+  fill: var(--tag-teal);
+}
+
+.mc-note,
+.mc-hint {
+  margin: 0;
+  font-size: 12px;
+}
+
+.mc-hint {
+  margin-bottom: 10px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.mc-loads {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  font-size: 12px;
+}
+
+.mc-load {
+  color: var(--text-2);
+}
+
+/* The two charts share one time axis and one tooltip. */
+.mc-chart {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mc-chart:focus-visible {
+  outline: 1px solid var(--link);
+  outline-offset: 4px;
+}
+
+.mc-row {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.mc-label {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+}
+
+.mc-label .mono {
+  font-size: 11px;
+}
+
+.mc-name {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.mc-plot {
+  position: relative;
+  height: 96px;
+  border-top: 1px solid var(--panel);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.mc-svg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+
+.mc-hatch {
+  stroke: var(--panel);
+  stroke-width: 1;
+}
+
+.mc-top,
+.mc-tick {
+  fill: var(--muted);
+  font-family: var(--font-mono);
+}
+
+.mc-top {
+  font-size: 10.5px;
+}
+
+.mc-tick {
+  font-size: 11px;
+}
+
+.mc-area {
+  fill: var(--tag-teal);
+  fill-opacity: 0.08;
+  stroke: none;
+}
+
+.mc-line {
+  fill: none;
+  stroke: var(--tag-teal);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.mc-cross {
+  stroke: var(--muted);
+  stroke-width: 1;
+}
+
+.mc-hover-dot {
+  fill: var(--tag-teal);
+  stroke: var(--ground);
+  stroke-width: 2;
+}
+
+.mc-now-dot {
+  fill: var(--tag-teal);
+}
+
+.mc-axis {
+  display: block;
+  overflow: visible;
+}
+
+.mc-tip {
+  position: absolute;
+  top: 6px;
+  z-index: 5;
+  width: 230px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--raised);
+  font-size: 12px;
+  color: var(--text-2);
+  pointer-events: none;
+}
+
+.mc-tip[data-side="right"] {
+  right: 14px;
+}
+
+.mc-tip[data-side="left"] {
+  left: 178px;
+}
+
+.mc-tip p {
+  margin: 0;
+}
+
+.mc-tip-time {
+  color: var(--text);
+}
+
+.mc-tip-line {
+  display: flex;
+  color: var(--muted);
+}
+
+.mc-tip-line b {
+  margin-left: auto;
+  font-weight: 500;
+  color: var(--text);
+}
+
+/* The process table: items with their agent and check rows beneath. */
+.ins-table-wrap {
+  overflow-x: auto;
+}
+
+.mc-table {
+  min-width: 640px;
+}
+
+.mc-table caption {
+  padding-bottom: 8px;
+  text-align: left;
+  font-size: 12px;
+}
+
+.mc-caption {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.mc-table td {
+  padding: 7px 10px 7px 0;
+  border-bottom: 0;
+}
+
+.mc-table tr {
+  border-top: 0;
+}
+
+.mc-table tbody tr:first-child,
+.mc-item {
+  border-top: 1px solid var(--hairline);
+}
+
+.mc-item td {
+  padding-top: 10px;
+  padding-bottom: 4px;
+}
+
+.mc-item td.num {
+  color: var(--text-2);
+}
+
+.mc-item-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mc-live {
+  font-size: 10px;
+  color: var(--live);
+}
+
+.mc-item .link-button {
+  color: var(--link);
+}
+
+.mc-item .link-button:hover {
+  color: var(--text);
+}
+
+.mc-child {
+  padding-left: 22px;
+}
+
+.mc-branch {
+  margin-right: 6px;
+  color: var(--agent-neutral);
+}
+
+.mc-kind {
+  color: var(--text);
+}
+
+.mc-total {
+  border-top: 1px solid var(--hairline);
+}
+
+.mc-total td {
+  padding-top: 9px;
+  font-size: 12.5px;
+}
+
+.mc-total td.num:not(.muted) {
+  color: var(--text);
+}
+
+.mc-empty {
+  padding: 22px 0;
+  text-align: center;
+}
+
+.mc-empty p {
+  margin: 0;
+}
+
+.mc-empty .muted {
+  font-size: 12.5px;
+}
+
+.mc-new {
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--link);
+}
+
+.mc-later {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 16px;
+  border: 1px dashed var(--hairline);
+  border-radius: 8px;
+}
+
+.mc-later .muted {
+  font-size: 12.5px;
+}

@@ -48,6 +48,13 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, cliI
   // Counts each "Review the diff": the drawer shows the item's Diff tab, also when it shows the item already.
   const [diffAsked, setDiffAsked] = useState<number | undefined>(undefined);
   const composer = useRef<NewWorkHandle>(null);
+  // New work asked for on a page that has no composer: the board opens, then the composer.
+  const [openComposerOnBoard, setOpenComposerOnBoard] = useState(false);
+  useEffect(() => {
+    if (!openComposerOnBoard || page !== "board") return;
+    composer.current?.open();
+    setOpenComposerOnBoard(false);
+  }, [openComposerOnBoard, page]);
   // The folder the picker returned, while the Add repo dialog is open.
   const [addingRepo, setAddingRepo] = useState<string | undefined>(undefined);
   const [editingRepo, setEditingRepo] = useState<string | undefined>(undefined);
@@ -177,6 +184,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, cliI
         <About bridge={bridge} connection={connection.status} onClose={() => setPage("board")} />
       ) : page === "insights" ? (
         <Insights
+          bridge={bridge}
           connection={connection}
           onRetryConnection={() => void bridge.retryConnection()}
           usage={usage}
@@ -187,6 +195,10 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, cliI
           issues={issues}
           now={now}
           onSelectItem={setSelectedItemId}
+          onNewWork={() => {
+            setPage("board");
+            setOpenComposerOnBoard(true);
+          }}
         />
       ) : page === "needs-you" ? (
         <NeedsYou

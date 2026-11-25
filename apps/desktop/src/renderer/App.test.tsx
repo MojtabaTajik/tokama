@@ -9,6 +9,7 @@ import { brand } from "./brand/index.js";
 import { TIP_OPEN_MS } from "./shell/Rail.js";
 import { CONNECTED, fakeBridge } from "./testing/bridge.js";
 import { ITEMS, items, NOW, setup } from "./testing/sample.js";
+import { machineReport } from "./testing/machine.js";
 import { usageReport } from "./testing/usage.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -116,6 +117,17 @@ describe("App shell", () => {
     expect($$(".ins-plan").map((plan) => plan.getAttribute("aria-label"))).toEqual(["Claude Code", "Codex CLI", "Ollama"]);
     await click($('.rail button[aria-label="Board"]')!);
     expect(text(".main-header h1")).toBe("All work");
+  });
+
+  it("opens the board and its New work composer from the Machine tab's empty state", async () => {
+    const reply = (q: { type: string }) => (q.type === "machine" ? { ok: true as const, data: { ...machineReport, items: [] } } : q.type === "usage" ? { ok: true as const, data: usageReport } : undefined);
+    await render(fakeBridge(CONNECTED, { reply }).bridge);
+    await click($('.rail button[aria-label="Insights"]')!);
+    await click($$('[role="tab"]').find((tab) => tab.textContent === "Machine")!);
+    expect(text(".mc-empty")).toContain("No items running.");
+    await click($(".mc-new")!);
+    expect(text(".main-header h1")).toBe("All work");
+    expect($('form[aria-label="New work"]')?.getAttribute("data-expanded")).toBe("true");
   });
 
   it("closes the Insights tooltip on Escape and brings it back when the pointer or focus returns", async () => {
