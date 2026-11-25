@@ -5,11 +5,11 @@
 // models, commands, the role) is rendered as React text only.
 import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useId, useRef } from "react";
-import { type AgentTarget, monogram } from "../settings/describe.js";
+import type { AgentTarget } from "../settings/describe.js";
 import { useTip } from "../ui/useTip.js";
 import { type AgentAccess, type AgentInfo, extraPower } from "./agent-info.js";
 import { Button } from "../ui/Button.js";
-import { AgentDotMark } from "../ui/agent.js";
+import { AgentDotMark, BackendMark } from "../ui/agent.js";
 import { Pill } from "../ui/Pill.js";
 import { Tooltip } from "../ui/Tooltip.js";
 
@@ -65,6 +65,7 @@ export function AgentLabel({ info, onOpen }: AgentLabelProps) {
       <Button variant="plain" ref={button} className="al-button" data-open={open || undefined} aria-describedby={open ? tipId : undefined} style={{ anchorName: anchor } as CSSProperties}>
         <span className="al-who">
           <AgentDotMark dot={info.dot} />
+          {info.cliId !== undefined && <BackendMark cliId={info.cliId} named />}
           <span className="ellipsis">{info.name}</span>
         </span>{" "}
         {info.model !== undefined && <span className="al-model">· {info.model}</span>}
@@ -85,8 +86,8 @@ function Tip({ id, anchor, info, onOpen }: { readonly id: string; readonly ancho
       </div>
       {info.cliId !== undefined && (
         <div className="al-run">
-          <span className="al-cli" aria-hidden="true">
-            {monogram(info.cliId)}
+          <span className="al-cli">
+            <BackendMark cliId={info.cliId} named size={16} />
           </span>
           {info.model !== undefined && <span className="mono">{info.model}</span>}
         </div>

@@ -6,8 +6,9 @@ import type { AgentDetail, AgentsListResult, BrokenAgentDetail, Setup } from "@t
 import { type ReactNode, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
-import { type AgentTarget, agentRows, filterRows, isTarget, limitsNotes, limitsTitle, monogram, ownerLabel, rowLine, rowName, runsOnName, summaryLine } from "./describe.js";
+import { type AgentTarget, agentRows, filterRows, isTarget, limitsNotes, limitsTitle, ownerLabel, rowLine, rowName, runsOnName, summaryLine } from "./describe.js";
 import { useAgents } from "./useAgents.js";
+import { BackendMark } from "../ui/agent.js";
 import { Button } from "../ui/Button.js";
 import { ErrorRetry } from "../ui/ErrorRetry.js";
 import { markOf, StatusMark } from "../ui/status.js";
@@ -72,7 +73,9 @@ export function AgentsPage({ bridge, connection, setup, initialAgent }: AgentsPa
                 <li key={row.key}>
                   <Button variant="plain" className="agent-row" aria-pressed={row.key === selected?.key} data-broken={row.broken || undefined} onClick={() => setSelectedKey(row.key)}>
                     <span className="agent-row-name ellipsis">{row.broken ? <span className="agent-row-flag">{TEXT.broken}</span> : null}{rowName(row)}</span>
-                    <span className="agent-row-line mono ellipsis">{rowLine(row)}</span>
+                    <span className="agent-row-line mono ellipsis">
+                      {!row.broken && <BackendMark cliId={row.agent.cliId} named />} {rowLine(row)}
+                    </span>
                   </Button>
                 </li>
               ))}
@@ -131,7 +134,9 @@ function Detail({ agent }: { readonly agent: AgentDetail }) {
         </span>
         <div className="agent-head-text">
           <h2 className="ellipsis">{agent.name}</h2>
-          <p className="mono">{summaryLine(agent)}</p>
+          <p className="mono">
+            <BackendMark cliId={agent.cliId} named /> {summaryLine(agent)}
+          </p>
         </div>
       </header>
       <p className="agent-stored">
@@ -140,7 +145,7 @@ function Detail({ agent }: { readonly agent: AgentDetail }) {
       <Field label={TEXT.runsOn}>
         <p className="agent-value">
           <span className="monogram mono" aria-hidden="true">
-            {monogram(agent.cliId)}
+            <BackendMark cliId={agent.cliId} size={16} />
           </span>
           {runsOnName(agent)}
         </p>

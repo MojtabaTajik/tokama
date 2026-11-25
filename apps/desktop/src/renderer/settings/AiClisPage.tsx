@@ -6,8 +6,8 @@ import type { AiCli, Setup } from "@tokama/core";
 import { type ReactNode, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { argLine, stateWords } from "./aiClisText.js";
-import { monogram } from "./describe.js";
 import { useAiClis } from "./useAiClis.js";
+import { BackendMark } from "../ui/agent.js";
 import { Button } from "../ui/Button.js";
 import { ErrorRetry } from "../ui/ErrorRetry.js";
 import { Placeholder } from "../ui/EmptyState.js";
@@ -75,7 +75,7 @@ export function AiClisPage({ bridge, connection, setup }: AiClisPageProps) {
                 <li key={cli.cliId}>
                   <Button variant="plain" className="ai-cli-row" aria-pressed={cli.cliId === selected?.cliId} onClick={() => setSelectedId(cli.cliId)}>
                     <span className="monogram mono" aria-hidden="true">
-                      {monogram(cli.cliId)}
+                      <BackendMark cliId={cli.cliId} size={16} />
                     </span>
                     <span className="ai-cli-row-name ellipsis">{cli.name}</span>
                     <span className="ai-cli-row-state" data-tone={words.tone} title={words.word} role="img" aria-label={words.word}>
@@ -119,7 +119,7 @@ function Detail({ cli, checking, onCheck }: { readonly cli: AiCli; readonly chec
     <article aria-label={cli.name}>
       <header className="ai-cli-head">
         <span className="ai-cli-head-icon mono" aria-hidden="true">
-          {monogram(cli.cliId)}
+          <BackendMark cliId={cli.cliId} size={20} />
         </span>
         <div className="ai-cli-head-text">
           <h2 className="ellipsis">{cli.name}</h2>

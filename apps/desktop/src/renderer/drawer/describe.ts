@@ -1,6 +1,6 @@
 // What the item drawer says about an item and its steps. Pure functions, tested without React.
 // Every state comes as a symbol and a word, so colour is never the only signal.
-import type { AgentSummary, AttemptSummary, ConnectionSummary, Decision, DecisionKind, ItemKind, ItemRecord, ItemState, Privacy, StepRecord, StepState, Setup } from "@tokama/core";
+import type { AgentSummary, AiCliId, AttemptSummary, ConnectionSummary, Decision, DecisionKind, ItemKind, ItemRecord, ItemState, Privacy, StepRecord, StepState, Setup } from "@tokama/core";
 import { type Mark, markOf } from "../ui/status.js";
 import { type AgentDot, agentDot } from "../ui/agent.js";
 
@@ -91,6 +91,8 @@ export interface StepAgent {
   readonly name: string;
   readonly dot: AgentDot;
   readonly runsOn: "local" | "cloud";
+  /** The tool that runs the agent; absent for Tokama and for an agent the setup no longer lists. */
+  readonly cliId?: AiCliId;
 }
 
 /** Steps without an agent are run by Tokama itself, such as checks. */
@@ -101,7 +103,7 @@ export function stepAgent(step: Pick<StepRecord, "agentId" | "data">, agents: re
   const agent = agents.find((candidate) => candidate.id === step.agentId);
   // An agent the setup no longer lists: its id is all there is, and only the data rule tells where it runs.
   if (!agent) return { name: step.agentId, dot: "neutral", runsOn: step.data === "none" ? "local" : "cloud" };
-  return { name: agent.name, dot: agentDot(agent.id, agents), runsOn: agent.runsOn };
+  return { name: agent.name, dot: agentDot(agent.id, agents), runsOn: agent.runsOn, cliId: agent.cliId };
 }
 
 /**

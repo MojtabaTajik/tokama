@@ -7,9 +7,10 @@ import { stepAgent } from "../drawer/describe.js";
 import { Meter } from "../insights/Meter.js";
 import { formatDuration } from "../format/duration.js";
 import { stamp } from "../format/time.js";
-import { ALERT_TEXT, alertTone, ageText, CLI_MONOGRAMS, cliAlert, formatTokens, liveWindows, shareText, totalOf, windowLabel, windowShort } from "../insights/usage-model.js";
+import { ALERT_TEXT, alertTone, ageText, cliAlert, formatTokens, liveWindows, shareText, totalOf, windowLabel, windowShort } from "../insights/usage-model.js";
 import { AI_CLIS, type CliIssue } from "../model.js";
 import { Button } from "../ui/Button.js";
+import { BackendMark } from "../ui/agent.js";
 import { StatusMark } from "../ui/status.js";
 
 const TEXT = {
@@ -64,7 +65,7 @@ export function InsightsTip({ usage, issues, health, setup, now, onSelectItem, o
     <>
       <div className="it-block it-status">
         <div className="it-head">
-          <span className="mono it-mono">{CLI_MONOGRAMS[CLAUDE.id]}</span>
+          <BackendMark cliId={CLAUDE.id} />
           <strong>{CLAUDE.name}</strong>
         </div>
         <ClaudeStatus health={health?.find((cli) => cli.cliId === CLAUDE.id)} issue={issues.find((issue) => issue.cliId === CLAUDE.id)} />
@@ -94,7 +95,7 @@ export function InsightsTip({ usage, issues, health, setup, now, onSelectItem, o
                 name={`${cli.name} ${windowLabel(w)}`}
                 label={
                   <>
-                    <span className="mono it-mono">{CLI_MONOGRAMS[cli.id]}</span> {`${cli.name} · ${lowerFirst(windowShort(w))}`}
+                    <BackendMark cliId={cli.id} /> {`${cli.name} · ${lowerFirst(windowShort(w))}`}
                   </>
                 }
                 usedPercent={w.usedPercent}
@@ -105,7 +106,7 @@ export function InsightsTip({ usage, issues, health, setup, now, onSelectItem, o
             {live.length === 0 && alert !== undefined && (
               <div className="ins-window-head">
                 <span className="ins-window-name">
-                  <span className="mono it-mono">{CLI_MONOGRAMS[cli.id]}</span> {cli.name}
+                  <BackendMark cliId={cli.id} /> {cli.name}
                 </span>
                 <span className="ins-tone" data-tone={alertTone(alert)}>
                   {ALERT_TEXT[alert]}

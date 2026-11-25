@@ -25,3 +25,13 @@
   gap: var(--space-6);
   min-width: 0;
 }
+
+/* A tool's icon (ui/agent.tsx) sets its own size; this only keeps it from shrinking and sits it on the text. */
+.backend-mark {
+  flex: none;
+  vertical-align: text-bottom;
+}
+
+.backend-mono {
+  flex: none;
+}

@@ -17,9 +17,6 @@ const SHOW_AGE_AFTER_MS = 10 * MINUTE;
 
 type PlanWindow = CliPlan["windows"][number];
 
-/** Each AI CLI's neutral monogram: a text label, never another company's logo. */
-export const CLI_MONOGRAMS: Readonly<Record<CliPlan["cliId"], string>> = { "claude-code": "CC", "codex-cli": "CX", ollama: "OL" };
-
 const WINDOW_LABELS: Readonly<Record<string, string>> = {
   five_hour: "5-hour window",
   seven_day: "Weekly window",

@@ -17,7 +17,6 @@ import { AgentChip, AgentDotMark } from "../ui/agent.js";
 import { Placeholder } from "../ui/EmptyState.js";
 import { markOf } from "../ui/status.js";
 
-const CLI_SHORT = { "claude-code": "CC", "codex-cli": "CX", ollama: "OL" } as const;
 
 const TEXT = {
   panel: "Machine",
@@ -257,7 +256,6 @@ function ItemRows({ group, item, setup, cpu, onSelectItem }: { readonly group: G
   const step = stepIndex === undefined ? undefined : item?.steps[stepIndex];
   const subtitle = item === undefined ? undefined : [workflowName(item.templateId, setup), step?.name].filter(Boolean).join(" · ");
   const agent = step === undefined ? undefined : stepAgent(step, setup?.agents ?? []);
-  const cli = step?.agentId === undefined ? undefined : setup?.agents.find((a) => a.id === step.agentId)?.cliId;
   return (
     <>
       <tr className="mc-item">
@@ -289,9 +287,7 @@ function ItemRows({ group, item, setup, cpu, onSelectItem }: { readonly group: G
           </td>
           <td className="muted">
             {row.role === "agent" && agent !== undefined ? (
-              <AgentChip agent={agent} className="ins-agent">
-                {cli !== undefined && <span className="muted mono">{CLI_SHORT[cli]}</span>}
-              </AgentChip>
+              <AgentChip agent={agent} className="ins-agent" />
             ) : (
               <span className="ins-agent">
                 <AgentDotMark dot="neutral" />

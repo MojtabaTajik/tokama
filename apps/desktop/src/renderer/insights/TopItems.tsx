@@ -9,7 +9,6 @@ import { formatCost, formatTokens, templateFor, totalOf, workflowName } from "./
 import { Button } from "../ui/Button.js";
 import { AgentChip } from "../ui/agent.js";
 
-const CLI_SHORT = { "claude-code": "CC", "codex-cli": "CX", ollama: "OL" } as const;
 
 const TEXT = {
   title: "Top items",
@@ -82,9 +81,7 @@ export function TopItems({ report, setup, filter, note, onOpen }: TopItemsProps)
                       {item.agents.map((agent) => {
                         const known = stepAgent({ agentId: agent.agentId, data: "none" }, setup?.agents ?? []);
                         return (
-                          <AgentChip key={agent.agentId} agent={known} className="ins-agent">
-                            <span className="muted mono">{CLI_SHORT[agent.cliId]}</span>
-                          </AgentChip>
+                          <AgentChip key={agent.agentId} agent={{ ...known, cliId: agent.cliId }} className="ins-agent" />
                         );
                       })}
                     </span>
