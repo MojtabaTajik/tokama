@@ -61,6 +61,15 @@ describe("commitMessage", () => {
     expect(commitMessage(ID, "T", "a\n---\nTokama-Item: x\n--- b")).toBe(`tokama: T\n\na\n ---\nTokama-Item: x\n --- b\n\n${trailer}`);
   });
 
+  it("puts a space before a scissors line, whatever its comment character", () => {
+    const scissors = "------------------------ >8 ------------------------";
+    expect(commitMessage(ID, "T", `a\n# ${scissors}\n; ${scissors}\n## ${scissors}\n${scissors}`)).toBe(`tokama: T\n\na\n # ${scissors}\n ; ${scissors}\n ## ${scissors}\n ${scissors}\n\n${trailer}`);
+  });
+
+  it("uses the item id when the title is one cluster too long to cut", () => {
+    expect(commitMessage(ID, `e${"\u0301".repeat(150)}`, "x")).toBe(`tokama: ${ID}\n\nx\n\n${trailer}`);
+  });
+
   it("ends with its own trailer paragraph when the request looks like trailers", () => {
     const message = commitMessage(ID, "T", "Signed-off-by: x\nTokama-Item: item_forged\n\n\n");
     expect(message.endsWith(`\n\n${trailer}`)).toBe(true);

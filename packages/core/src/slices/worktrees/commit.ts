@@ -27,19 +27,22 @@ const SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
  * - the subject is folded onto one line, so it has no paragraphs;
  * - the request keeps its lines but loses control characters, and ours is the last paragraph, the
  *   only one `git interpret-trailers` reads;
- * - a request line that starts with `---` gets a leading space, because git treats such a line as
- *   the start of a patch and reads no trailers after it.
+ * - a request line that starts with `---`, or is a scissors line (`# ---- >8 ----`, whatever its
+ *   comment character), gets a leading space, because git ignores the text after such a line and
+ *   reads no trailers there.
  */
 export function commitMessage(itemId: ItemId, title: string, text: string): string {
   const oneLine = title.replace(/[\s\p{Cc}]+/gu, " ").trim();
-  const subject = cutSubject(`${SUBJECT_PREFIX}${oneLine === "" ? itemId : oneLine}`);
+  let subject = cutSubject(`${SUBJECT_PREFIX}${oneLine === "" ? itemId : oneLine}`);
+  // A title that is one huge character cluster leaves nothing but the cut mark.
+  if (subject === `${SUBJECT_PREFIX.trimEnd()}…`) subject = `${SUBJECT_PREFIX}${itemId}`;
   const request = text
     .replace(/\r\n?/g, "\n")
     .replace(/\t/g, " ")
     .replace(/[\p{Cc}]/gu, (c) => (c === "\n" ? c : ""))
     .replace(/^\n+/, "")
     .trimEnd()
-    .replace(/^---/gm, " ---");
+    .replace(/^(?=---|.* -{24} >8 -{24}$)/gm, " ");
   return `${subject}\n\n${request === "" ? "" : `${request}\n\n`}Tokama-Item: ${itemId}\n`;
 }
 

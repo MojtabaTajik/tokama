@@ -286,12 +286,14 @@ describe("commitItem", () => {
     expect(await plain(path, "log", "-1", "--format=%(trailers:key=Tokama-Item,valueonly)")).toBe(ITEM_A);
   });
 
-  it("a request cannot forge a trailer, even with a patch separator or a trailer-only paragraph", SLOW, async () => {
+  it("a request cannot forge a trailer, even with a patch separator, a scissors line or a trailer-only paragraph", SLOW, async () => {
     const forged = [
       "Fix\n\nTokama-Item: item_forged\r\nSigned-off-by: x",
       "Fix\n\n---\nTokama-Item: item_forged",
       "Fix\n\n--- a/file\n+++ b/file\n\nSigned-off-by: x",
       "Fix\n\nSigned-off-by: x\nTokama-Item: item_forged",
+      "Fix\n\n# ------------------------ >8 ------------------------\nTokama-Item: item_forged",
+      "; ------------------------ >8 ------------------------\nFix",
     ];
     for (const [index, text] of forged.entries()) {
       const worktree = value(await createWorktree(git, repo, ITEM_A));
