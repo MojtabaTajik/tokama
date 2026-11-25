@@ -27,6 +27,7 @@ import {
   type ErrorWhere,
   InstallIdSchema,
   type MachineFacts,
+  MAX_DIAGNOSTICS_BYTES,
   MAX_LISTED_DIAGNOSTICS,
   newId,
   type SessionId,
@@ -43,7 +44,7 @@ export const SETTINGS_FILE = "settings.json";
 /** Present while an engine runs; found at start, it means the last one did not stop cleanly. */
 export const RUNNING_FILE = "engine.running";
 
-const MAX_BYTES = 5 * 1024 * 1024;
+const MAX_BYTES = MAX_DIAGNOSTICS_BYTES;
 /** What an error's name may be: `Error`, `NonError`, or a class name such as `TypeError` or `DOMException`. */
 const ERROR_CLASS = /^(?:NonError|[A-Z][A-Za-z0-9]{0,50}(?:Error|Exception))$/;
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -68,7 +69,7 @@ export interface DiagnosticsStoreOptions {
   /** Called when the settings or the waiting crash change. */
   readonly onChange?: () => void;
   readonly log?: (message: string) => void;
-  /** Size cap of the entries file. Default 5 MB. */
+  /** Size cap of the entries file. Default MAX_DIAGNOSTICS_BYTES (2 MB). */
   readonly maxBytes?: number;
   /** Entries older than this are dropped. Default 30 days. */
   readonly maxAgeMs?: number;

@@ -157,6 +157,7 @@ export {
   DiagnosticEntrySchema,
   DiagnosticReportSchema,
   MachineFactsSchema,
+  MAX_DIAGNOSTICS_BYTES,
   MAX_LISTED_DIAGNOSTICS,
   MAX_REPORTED_STACK_CHARS,
   MAX_STACK_CHARS,

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { manualClock, type ManualClock } from "../../kernel/clock/index.js";
-import { DiagnosticEntrySchema, type DiagnosticId, type MachineFacts } from "../../kernel/schemas/index.js";
+import { DiagnosticEntrySchema, type DiagnosticId, type MachineFacts, MAX_DIAGNOSTICS_BYTES } from "../../kernel/schemas/index.js";
 import { DiagnosticsStore, ENTRIES_FILE, RUNNING_FILE, SETTINGS_FILE, type DiagnosticsStoreOptions } from "./index.js";
 import { FORBIDDEN, SENTINEL, SENTINEL_CONTEXT, sentinelStack } from "./testing.js";
 
@@ -203,6 +203,24 @@ describe("DiagnosticsStore", () => {
     expect(kept.length).toBeGreaterThan(0);
     expect(kept.at(0)?.at).toBe(clock.now());
     expect(lines()).toHaveLength(kept.length);
+  });
+
+  it("keeps the file within 2 MB by default, oldest dropped first", async () => {
+    expect(MAX_DIAGNOSTICS_BYTES).toBe(2 * 1024 * 1024);
+    const store = await open();
+    // Long stacks, so the cap is passed well before the last entry.
+    const stack = `Error: big\n${Array.from({ length: 29 }, (_, i) => `    at frame${i}${"x".repeat(90)} (node:internal/x:${i}:1)`).join("\n")}`;
+    for (let i = 0; i < 3000; i++) {
+      clock.advance(1);
+      store.report({ type: "error", source: "renderer", where: "uncaught", stack });
+    }
+    const size = readFileSync(join(dir, ENTRIES_FILE)).length;
+    expect(size).toBeLessThanOrEqual(MAX_DIAGNOSTICS_BYTES);
+    expect(size).toBeGreaterThan(MAX_DIAGNOSTICS_BYTES * 0.5);
+    const kept = lines() as { at: number }[];
+    expect(kept.length).toBeLessThan(3000);
+    expect(kept.at(-1)?.at).toBe(clock.now());
+    expect(kept[0]?.at).toBeGreaterThan(START + 1);
   });
 
   it("drops lines that do not parse, and starts anew from a file it cannot read", async () => {
