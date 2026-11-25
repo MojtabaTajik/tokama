@@ -18,7 +18,9 @@ import {
   windowLabel,
   windowLine,
   windowShort,
-  windowTone,
+  levelOf,
+  LEVEL_TONE,
+  LEVEL_WORD,
   workflowName,
 } from "./usage-model.js";
 
@@ -40,8 +42,19 @@ describe("plan window words", () => {
     expect([shareText({ sharePercent: 49.6 }), shareText({})]).toEqual(["50% share of the weekly limit", undefined]);
   });
 
-  it("marks a window near its limit from 80% and at its limit from 100%", () => {
-    expect([windowTone(79.9), windowTone(80), windowTone(99), windowTone(100), windowTone(130)]).toEqual([undefined, "warn", "warn", "fail", "fail"]);
+  it("levels a window: ok under 60%, high to 79%, near its limit from 80%, at it from 100%, each above ok with a word", () => {
+    const levels = [0, 59.9, 60, 79.9, 80, 99, 100, 130].map(levelOf);
+    expect(levels).toEqual(["ok", "ok", "high", "high", "near", "near", "limit", "limit"]);
+    expect(levels.map((level) => [LEVEL_TONE[level], LEVEL_WORD[level]])).toEqual([
+      ["pass", undefined],
+      ["pass", undefined],
+      ["warn", "high"],
+      ["warn", "high"],
+      ["fail", "! near limit"],
+      ["fail", "! near limit"],
+      ["fail", "✕ at limit"],
+      ["fail", "✕ at limit"],
+    ]);
   });
 
   it("puts a login problem before the windows, and badges the rail with ✕ before !", () => {

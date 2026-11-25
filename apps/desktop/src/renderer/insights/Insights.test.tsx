@@ -61,9 +61,13 @@ describe("Insights: plan usage", () => {
     expect(claude?.querySelector(".ins-source")?.textContent).toBe("Source: asked of the CLI itself. Tokama never reads its login.");
     expect(ollama?.textContent).toContain("Plan windowsnone");
     expect(ollama?.textContent).toContain("Local models have no plan limit.");
-    // Near the limit: a word and a symbol beside the amber fill, and the data's age.
-    expect(codex?.querySelector('.ins-tone[data-tone="warn"]')?.textContent).toBe("! near limit");
-    expect(codex?.querySelector('.meter-fill[data-tone="warn"]')).not.toBeNull();
+    // Under 60%: a green fill and no word. Near the limit: a word and a symbol beside the red fill, and the data's age.
+    expect([...(claude?.querySelectorAll(".meter-fill") ?? [])].map((fill) => fill.getAttribute("data-tone"))).toEqual(["pass", "pass"]);
+    expect(claude?.querySelector(".ins-tone")).toBeNull();
+    expect(codex?.querySelector('.ins-tone[data-tone="fail"]')?.textContent).toBe("! near limit");
+    expect(codex?.querySelector('.meter-fill[data-tone="fail"]')).not.toBeNull();
+    expect(codex?.querySelector('[role="meter"]')?.getAttribute("aria-valuetext")).toBe("84%, near limit");
+    expect($(".ins-key")?.textContent).toBe("■ under 60%■ 60–79% · high■ 80%+ · ! near limit■ 100% · ✕ at limit");
     expect(codex?.querySelector(".ins-reset")?.textContent).toBe("resets Sat 25 Oct 06:00 · data 34 min old");
   });
 
@@ -76,6 +80,14 @@ describe("Insights: plan usage", () => {
       ["Fable weekly window", "0"],
     ]);
     expect([...(claude?.querySelectorAll(".ins-reset") ?? [])].map((line) => line.textContent)[2]).toBe("50% share of the weekly limit · resets Thu 23 Oct 09:00");
+  });
+
+  it("colours a high window amber with the word high, and one at its limit red with ✕ at limit", () => {
+    const report = { ...usageReport, clis: [{ cliId: "claude-code", windows: [{ window: "five_hour", usedPercent: 68 }, { window: "seven_day", usedPercent: 100 }] }] } as UsageReport;
+    render({}, report);
+    const claude = $(".ins-plan");
+    expect([...(claude?.querySelectorAll(".ins-window .ins-window-head") ?? [])].map((head) => head.textContent)).toEqual(["5-hour windowhigh68%", "Weekly window✕ at limit100%"]);
+    expect([...(claude?.querySelectorAll(".meter-fill") ?? [])].map((fill) => fill.getAttribute("data-tone"))).toEqual(["warn", "fail"]);
   });
 
   it("says a logged-out CLI is logged out, and unknown windows are unknown", () => {

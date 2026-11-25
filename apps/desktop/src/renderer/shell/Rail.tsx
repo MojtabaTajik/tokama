@@ -3,7 +3,7 @@
 // clicking opens the Insights page. A CLI that is logged out or at its limit puts a ✕ on the icon,
 // one near its limit a !. Attention opens a popup with the issues and how to fix them. The user
 // button opens About. Needs you opens its page, Settings opens Settings.
-import type { UsageReport } from "@tokama/core";
+import type { Setup, UsageReport } from "@tokama/core";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { brand } from "../brand/index.js";
 import { cliAlert, railBadge } from "../insights/usage-model.js";
@@ -53,6 +53,12 @@ export interface RailProps {
   readonly onNeedsYou: () => void;
   readonly onAbout: () => void;
   readonly onSettings: () => void;
+  /** The setup: the tooltip names agents and shows Claude Code's login and version from it. */
+  readonly setup?: Setup | undefined;
+  /** An item in the tooltip's Today list was chosen. */
+  readonly onSelectItem?: (itemId: string) => void;
+  /** The tooltip's Settings link: the AI CLIs settings. */
+  readonly onCliSettings?: () => void;
 }
 
 /** How long the pointer rests on Insights before the tooltip opens, and how long it may be away before it closes. */
@@ -105,7 +111,7 @@ function useInsightsTip(onShown: ((shown: boolean) => void) | undefined) {
 /** "Needs you · 2", or just "Needs you" when there are none. */
 const withCount = (label: string, count: number) => (count > 0 ? `${label} · ${count}` : label);
 
-export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, problems = [], onAttention, usage, now = Date.now(), insightsOpen = false, onInsights, onInsightsTip, aboutOpen, needsYouOpen, onBoard, onNeedsYou, onAbout, onSettings }: RailProps) {
+export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, problems = [], onAttention, usage, now = Date.now(), insightsOpen = false, onInsights, onInsightsTip, aboutOpen, needsYouOpen, onBoard, onNeedsYou, onAbout, onSettings, setup, onSelectItem, onCliSettings }: RailProps) {
   const tipId = useId();
   const popupId = useId();
   const attention = issues.length + problems.length;
@@ -183,7 +189,21 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
           {badge !== undefined && <Badge count={1} tone={badge.tone} symbol={badge.symbol} />}
         </button>
         <div role="tooltip" id={tipId} className="insights-tip">
-          <InsightsTip usage={usage} issues={issues} now={now} />
+          <InsightsTip
+            usage={usage}
+            issues={issues}
+            health={setup?.health.clis}
+            setup={setup}
+            now={now}
+            onSelectItem={(itemId) => {
+              tip.dismiss();
+              onSelectItem?.(itemId);
+            }}
+            onCliSettings={() => {
+              tip.dismiss();
+              onCliSettings?.();
+            }}
+          />
         </div>
       </div>
       <button type="button" className="rail-button" aria-label={TEXT.settings} title={TEXT.settings} onClick={onSettings}>

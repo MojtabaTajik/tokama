@@ -49,7 +49,9 @@ describe("App shell", () => {
 
   it("has every rail destination and the user (who opens About), and no usage rings", async () => {
     await render(fakeBridge(CONNECTED).bridge);
-    const labels = $$(".rail button").map((button) => button.getAttribute("aria-label"));
+    const labels = $$(".rail button")
+      .filter((button) => button.closest(".insights-tip") === null)
+      .map((button) => button.getAttribute("aria-label"));
     expect(labels).toEqual(["Sidebar", "Board", "Needs you · 1", "Insights", "Settings", "Attention", "About Tokama"]);
     expect($(".usage-ring")).toBeNull();
     expect($('.rail-user[aria-label="About Tokama"]')).not.toBeNull();
@@ -60,11 +62,9 @@ describe("App shell", () => {
     const insights = $('.rail button[aria-label="Insights"]')!;
     const tip = $('.rail [role="tooltip"]')!;
     expect(insights.getAttribute("aria-describedby")).toBe(tip.id);
-    expect([...tip.querySelectorAll("li")].map((li) => [...li.children].map((child) => child.textContent))).toEqual([
-      ["Claude Code", "5-hour 36% · resets 17:10", "Weekly 58% · resets Thu 23 Oct 09:00", "as of 14:58"],
-      ["Codex CLI! near limit", "Weekly 84% · resets Sat 25 Oct 06:00", "data 34 min old"],
-      ["Ollama", "no plan limit"],
-    ]);
+    expect([...tip.querySelectorAll('[role="meter"]')].map((meter) => meter.getAttribute("aria-label"))).toEqual(["5-hour window", "Weekly window", "Codex CLI Weekly window"]);
+    expect(tip.querySelector(".it-other .ins-tone")?.textContent).toBe("! near limit");
+    expect(tip.querySelector(".it-section-head .it-aside")?.textContent).toBe("as of 14:58");
     // The ! is a symbol on the icon, beside the words in the tooltip.
     expect($$(".rail .badge").map((badge) => [badge.getAttribute("data-tone"), badge.textContent])).toEqual([
       ["warn", "1"],
@@ -84,7 +84,7 @@ describe("App shell", () => {
 
   it("says usage is not loaded yet in the Insights tooltip until the engine answers", async () => {
     await render(fakeBridge(CONNECTED).bridge);
-    expect($$('.rail [role="tooltip"] li').map((li) => li.textContent)).toEqual(["Claude Codeusage not loaded yet", "Codex CLIusage not loaded yet", "Ollamausage not loaded yet"]);
+    expect($$('.rail [role="tooltip"] .it-note').map((note) => note.textContent)).toEqual(["usage not loaded yet", "usage not loaded yet"]);
   });
 
   it("opens the Insights page from the rail and goes back with Board", async () => {

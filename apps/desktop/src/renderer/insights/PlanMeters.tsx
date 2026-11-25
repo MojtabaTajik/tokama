@@ -1,11 +1,10 @@
 // Plan usage per AI CLI: one column each, with the CLI's monogram, plan and version, the data's
 // time, a meter per window or limit (share used, a scoped limit's share of the weekly limit, reset time, age), extra usage, and where the numbers came from.
-// A meter's fill carries severity with a symbol and a word beside it, never colour alone.
+// A meter's fill takes its level's colour, with a symbol or a word beside it, never colour alone.
 import type { CliPlan, UsageReport } from "@tokama/core";
 import { type CliIssue, AI_CLIS } from "../model.js";
-import { ALERT_TEXT, alertTone, ageText, cliAlert, formatClock, liveWindows, resetText, shareText, SOURCE_TEXT, windowLabel, windowTone } from "./usage-model.js";
-
-const MONOGRAMS: Readonly<Record<CliPlan["cliId"], string>> = { "claude-code": "CC", "codex-cli": "CX", ollama: "OL" };
+import { Meter, MeterKey } from "./Meter.js";
+import { ALERT_TEXT, alertTone, ageText, CLI_MONOGRAMS, cliAlert, formatClock, liveWindows, resetText, shareText, SOURCE_TEXT, windowLabel } from "./usage-model.js";
 
 const TEXT = {
   title: "Plan usage",
@@ -22,9 +21,12 @@ const TEXT = {
 export function PlanMeters({ report, issues, now }: { readonly report: UsageReport; readonly issues: readonly CliIssue[]; readonly now: number }) {
   return (
     <section className="ins-section" aria-labelledby="ins-plan-title">
-      <h2 id="ins-plan-title" className="ins-h2">
-        {TEXT.title}
-      </h2>
+      <div className="ins-section-head">
+        <h2 id="ins-plan-title" className="ins-h2">
+          {TEXT.title}
+        </h2>
+        <MeterKey />
+      </div>
       <div className="ins-plans">
         {AI_CLIS.map((cli) => {
           const plan = report.clis.find((entry) => entry.cliId === cli.id) ?? { cliId: cli.id, windows: [] };
@@ -44,7 +46,7 @@ function PlanColumn({ name, plan, issue, now }: { readonly name: string; readonl
     <article className="ins-plan" aria-label={name}>
       <header className="ins-plan-head">
         <span className="monogram" aria-hidden="true">
-          {MONOGRAMS[plan.cliId]}
+          {CLI_MONOGRAMS[plan.cliId]}
         </span>
         <span className="ins-plan-name">
           <strong>{name}</strong>
@@ -62,29 +64,11 @@ function PlanColumn({ name, plan, issue, now }: { readonly name: string; readonl
         </p>
       )}
       {windows.length > 0 ? (
-        windows.map((w, index) => {
-          const tone = windowTone(w.usedPercent);
-          const shown = Math.round(w.usedPercent);
-          const label = windowLabel(w);
-          return (
-            <div key={`${index}-${w.window}`} className="ins-window">
-              <div className="ins-window-head">
-                <span>{label}</span>
-                {tone !== undefined && (
-                  <span className="ins-tone" data-tone={tone}>
-                    {tone === "fail" ? ALERT_TEXT.limit : ALERT_TEXT.near_limit}
-                  </span>
-                )}
-                <span className="mono ins-pct">{shown}%</span>
-              </div>
-              <svg className="meter" width="100%" height="6" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, shown)} aria-valuetext={`${shown}% used`}>
-                <rect className="meter-track" width="100%" height="6" rx="3" />
-                {w.usedPercent > 0 && <rect className="meter-fill" data-tone={tone} width={`${Math.min(100, Math.max(1, w.usedPercent))}%`} height="6" rx="3" />}
-              </svg>
-              <p className="muted ins-reset">{[shareText(w), resetText(w.resetsAt, now), age].filter(Boolean).join(" · ")}</p>
-            </div>
-          );
-        })
+        windows.map((w, index) => (
+          <Meter key={`${index}-${w.window}`} name={windowLabel(w)} usedPercent={w.usedPercent}>
+            {[shareText(w), resetText(w.resetsAt, now), age].filter(Boolean).join(" · ")}
+          </Meter>
+        ))
       ) : (
         <div className="ins-window">
           <div className="ins-window-head">

@@ -1,59 +1,188 @@
-// The body of the Insights tooltip in the rail: each AI CLI with its plan windows (share, reset
-// time), the data's age, and a login problem or a window near its limit as a symbol and a word.
-// Unknown windows say so; nothing is estimated here.
-import type { UsageReport } from "@tokama/core";
-import { type CliIssue, AI_CLIS } from "../model.js";
-import { ALERT_TEXT, alertTone, ageText, cliAlert, formatClock, liveWindows, windowLine } from "../insights/usage-model.js";
+// The body of the Insights tooltip in the rail. Claude Code first: whether it is logged in and its
+// version, then the Plan block with a meter per limit (Claude Code's, then each other AI CLI's
+// windows or login problem), then today's items with their tokens and agent time, today's totals,
+// and a link to the AI CLIs settings. Unknown values say so; nothing is estimated here.
+import type { CliHealth, Setup, UsageReport } from "@tokama/core";
+import { stepAgent } from "../drawer/describe.js";
+import { Meter } from "../insights/Meter.js";
+import { ALERT_TEXT, alertTone, ageText, CLI_MONOGRAMS, cliAlert, formatClock, formatDuration, formatTokens, liveWindows, shareText, totalOf, windowLabel, windowShort } from "../insights/usage-model.js";
+import { AI_CLIS, type CliIssue } from "../model.js";
 
 const TEXT = {
-  title: "Insights",
+  loggedIn: "logged in",
+  loggedOut: "logged out",
+  notFound: "not found",
+  statusUnknown: "login not checked yet",
+  version: "version",
+  plan: "Plan",
+  asOf: "as of",
   loading: "usage not loaded yet",
-  unknown: "windows unknown",
-  noPlan: "no plan limit",
-  open: "Click to open Insights",
+  unknown: "plan windows unknown",
+  resets: "resets",
+  today: "Today",
+  perItem: "tokens · agent time per item",
+  noCalls: "No agent calls today.",
+  more: (n: number) => `and ${n} more ${n === 1 ? "item" : "items"}`,
+  tokensToday: "Tokens today",
+  timeToday: "Agent time today",
+  footer: "From each call’s result event. Recorded, not limited.",
+  settings: "Settings",
 } as const;
+
+const CLAUDE = AI_CLIS[0]!;
+/** Today's items the tooltip lists; the rest are counted. */
+const TODAY_ITEMS = 3;
 
 export interface InsightsTipProps {
   readonly usage: UsageReport | undefined;
   readonly issues: readonly CliIssue[];
+  /** The engine's checks of each AI CLI; absent until the setup loads. */
+  readonly health?: readonly CliHealth[] | undefined;
+  readonly setup?: Setup | undefined;
   readonly now: number;
+  readonly onSelectItem?: (itemId: string) => void;
+  readonly onCliSettings?: () => void;
 }
 
-export function InsightsTip({ usage, issues, now }: InsightsTipProps) {
+export function InsightsTip({ usage, issues, health, setup, now, onSelectItem, onCliSettings }: InsightsTipProps) {
+  const claude = usage?.clis.find((plan) => plan.cliId === CLAUDE.id);
+  const windows = liveWindows(claude, now);
+  const age = claude?.asOf === undefined ? undefined : (ageText(claude.asOf, now) ?? `${TEXT.asOf} ${formatClock(claude.asOf, now)}`);
+  const others = AI_CLIS.slice(1).flatMap((cli) => {
+    const plan = usage?.clis.find((entry) => entry.cliId === cli.id);
+    const issue = issues.find((entry) => entry.cliId === cli.id);
+    const live = liveWindows(plan, now);
+    return live.length > 0 || issue !== undefined ? [{ cli, live, issue, alert: cliAlert(plan, issue, now) }] : [];
+  });
+  const today = usage?.today;
   return (
     <>
-      <p className="insights-title">{TEXT.title}</p>
-      <ul>
-        {AI_CLIS.map((cli) => {
-          const plan = usage?.clis.find((entry) => entry.cliId === cli.id);
-          const alert = cliAlert(plan, issues.find((issue) => issue.cliId === cli.id), now);
-          const age = plan?.asOf === undefined ? undefined : (ageText(plan.asOf, now) ?? `as of ${formatClock(plan.asOf, now)}`);
-          const windows = liveWindows(plan, now);
-          return (
-            <li key={cli.id} className="it-cli">
-              <span className="it-head">
-                <span>{cli.name}</span>
-                {alert !== undefined && (
-                  <span className="it-alert" data-tone={alertTone(alert)}>
-                    {ALERT_TEXT[alert]}
-                  </span>
-                )}
-              </span>
-              {windows.length > 0 ? (
-                windows.map((w, index) => (
-                  <span key={`${index}-${w.window}`} className="insights-state">
-                    {windowLine(w, now)}
-                  </span>
-                ))
-              ) : (
-                <span className="insights-state">{usage === undefined ? TEXT.loading : cli.id === "ollama" ? TEXT.noPlan : TEXT.unknown}</span>
-              )}
-              {age !== undefined && <span className="insights-state">{age}</span>}
-            </li>
-          );
-        })}
-      </ul>
-      <p className="insights-state">{TEXT.open}</p>
+      <div className="it-block it-status">
+        <div className="it-head">
+          <span className="mono it-mono">{CLI_MONOGRAMS[CLAUDE.id]}</span>
+          <strong>{CLAUDE.name}</strong>
+        </div>
+        <ClaudeStatus health={health?.find((cli) => cli.cliId === CLAUDE.id)} issue={issues.find((issue) => issue.cliId === CLAUDE.id)} />
+      </div>
+
+      <section className="it-block" aria-label={TEXT.plan}>
+        <div className="it-section-head">
+          <span className="it-label">{TEXT.plan}</span>
+          {age !== undefined && <span className="it-aside">{age}</span>}
+        </div>
+        {usage === undefined ? (
+          <p className="it-note">{TEXT.loading}</p>
+        ) : windows.length > 0 ? (
+          windows.map((w, index) => (
+            <Meter key={`${index}-${w.window}`} name={windowLabel(w)} usedPercent={w.usedPercent}>
+              {[shareText(w), w.resetsAt === undefined ? undefined : `${TEXT.resets} ${formatClock(w.resetsAt, now)}`].filter(Boolean).join(" · ") || undefined}
+            </Meter>
+          ))
+        ) : (
+          <p className="it-note">{claude?.note ?? TEXT.unknown}</p>
+        )}
+        {others.map(({ cli, live, issue, alert }) => (
+          <div key={cli.id} className="it-other">
+            {live.map((w, index) => (
+              <Meter
+                key={`${index}-${w.window}`}
+                name={`${cli.name} ${windowLabel(w)}`}
+                label={
+                  <>
+                    <span className="mono it-mono">{CLI_MONOGRAMS[cli.id]}</span> {`${cli.name} · ${lowerFirst(windowShort(w))}`}
+                  </>
+                }
+                usedPercent={w.usedPercent}
+              >
+                {[issue === undefined ? undefined : ALERT_TEXT[issue.kind], w.resetsAt === undefined ? undefined : `${TEXT.resets} ${formatClock(w.resetsAt, now)}`].filter(Boolean).join(" · ") || undefined}
+              </Meter>
+            ))}
+            {live.length === 0 && alert !== undefined && (
+              <div className="ins-window-head">
+                <span className="ins-window-name">
+                  <span className="mono it-mono">{CLI_MONOGRAMS[cli.id]}</span> {cli.name}
+                </span>
+                <span className="ins-tone" data-tone={alertTone(alert)}>
+                  {ALERT_TEXT[alert]}
+                </span>
+              </div>
+            )}
+          </div>
+        ))}
+      </section>
+
+      <section className="it-block" aria-label={TEXT.today}>
+        <div className="it-section-head">
+          <span className="it-label">{TEXT.today}</span>
+          <span className="it-aside">{TEXT.perItem}</span>
+        </div>
+        {today === undefined || today.items.length === 0 ? (
+          <p className="it-note">{usage === undefined ? TEXT.loading : TEXT.noCalls}</p>
+        ) : (
+          <div className="it-items">
+            {today.items.slice(0, TODAY_ITEMS).map((item) => (
+              <div key={item.itemId} className="it-item">
+                <button type="button" className="it-title" title={item.title} onClick={() => onSelectItem?.(item.itemId)}>
+                  {item.title}
+                </button>
+                <span className="mono it-tokens">{formatTokens(item.tokens)}</span>
+                <span className="mono it-time">{formatDuration(item.durationMs)}</span>
+                <span className="it-agents">{item.agents.map((agent) => stepAgent({ agentId: agent.agentId, data: "none" }, setup?.agents ?? []).name).join(" · ")}</span>
+              </div>
+            ))}
+            {today.itemCount > TODAY_ITEMS && <span className="it-note">{TEXT.more(today.itemCount - TODAY_ITEMS)}</span>}
+          </div>
+        )}
+      </section>
+
+      {today !== undefined && (
+        <div className="it-block it-totals">
+          <span className="it-total-name">{TEXT.tokensToday}</span>
+          <span className="mono it-total">{formatTokens(totalOf(today.tokens))}</span>
+          <span className="it-total-parts">
+            {[
+              `input ${formatTokens(today.tokens.input)}`,
+              `output ${formatTokens(today.tokens.output)}`,
+              `cache read ${formatTokens(today.tokens.cacheRead)}`,
+              ...(today.tokens.cacheWrite > 0 ? [`cache write ${formatTokens(today.tokens.cacheWrite)}`] : []),
+            ].join(" · ")}
+          </span>
+          <span className="it-total-name">{TEXT.timeToday}</span>
+          <span className="mono it-total">{formatDuration(today.durationMs)}</span>
+        </div>
+      )}
+
+      <div className="it-foot">
+        <span>{TEXT.footer}</span>
+        <button type="button" className="it-link" onClick={onCliSettings}>
+          {TEXT.settings}
+        </button>
+      </div>
     </>
   );
 }
+
+function ClaudeStatus({ health, issue }: { readonly health: CliHealth | undefined; readonly issue: CliIssue | undefined }) {
+  const version = health?.version === undefined ? undefined : `${TEXT.version} ${health.version}`;
+  if (issue !== undefined) {
+    return (
+      <span className="it-status-line">
+        <span className="it-symbol" data-tone="fail">
+          ✕
+        </span>{" "}
+        {[issue.kind === "logged_out" ? TEXT.loggedOut : TEXT.notFound, version].filter(Boolean).join(" · ")}
+      </span>
+    );
+  }
+  if (health === undefined || health.timedOut === true) return <span className="it-status-line">{TEXT.statusUnknown}</span>;
+  return (
+    <span className="it-status-line">
+      <span className="it-symbol" data-tone="pass">
+        ✓
+      </span>{" "}
+      {[TEXT.loggedIn, version].filter(Boolean).join(" · ")}
+    </span>
+  );
+}
+
+const lowerFirst = (text: string): string => `${text.charAt(0).toLowerCase()}${text.slice(1)}`;

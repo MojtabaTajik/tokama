@@ -73,6 +73,15 @@ export const usageReport = {
       local: true,
     },
   ],
+  today: {
+    items: [
+      { itemId: ITEMS.verifying.id, title: ITEMS.verifying.title, agents: [{ agentId: "architect", cliId: "claude-code" }, { agentId: "reviewer", cliId: "codex-cli" }], tokens: 141_000, durationMs: 26 * MINUTE },
+      { itemId: ITEMS.needsYou.id, title: ITEMS.needsYou.title, agents: [{ agentId: "local-builder", cliId: "claude-code" }], tokens: 63_000, durationMs: 18 * MINUTE },
+    ],
+    itemCount: 2,
+    tokens: tokens(171_000, 23_000, 48_000, 0),
+    durationMs: 44 * MINUTE,
+  },
   totals: { tokens: tokens(300_000, 96_000, 500_000, 0), costUsd: 12.1, calls: 14, unpricedCalls: 2 },
 } as unknown as UsageReport;
 

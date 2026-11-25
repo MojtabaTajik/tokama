@@ -11,7 +11,10 @@ flow("shows plan usage in the Insights tooltip, opens Insights, shows a day on h
   await insights.hover();
   const tip = page.locator(".insights-tip");
   await tip.waitFor({ state: "visible" });
-  await expect.poll(() => tip.innerText(), { message: "the tooltip lists the windows" }).toMatch(/Claude Code[\s\S]*Session 36%[\s\S]*Fable weekly 12% \(50% share\)[\s\S]*Codex CLI[\s\S]*! near limit[\s\S]*Weekly 84%/);
+  await expect
+    .poll(() => tip.locator('[role="meter"]').evaluateAll((meters) => meters.map((meter) => `${meter.getAttribute("aria-label")} ${meter.getAttribute("aria-valuetext")}`)), { message: "the tooltip's meters" })
+    .toEqual(["Session window 36%, ok", "Weekly window 58%, ok", "Fable weekly window 12%, ok", "Codex CLI Weekly window 84%, near limit"]);
+  await expect.poll(() => tip.innerText(), { message: "the share, today's items and totals" }).toMatch(/50% share of the weekly limit[\s\S]*TODAY[\s\S]*Tokens today[\s\S]*Agent time today/i);
   // The pointer rests on the icon: the tooltip stays shown, with no flicker, while the data refreshes.
   const shown: boolean[] = [];
   for (let i = 0; i < 20; i++) {

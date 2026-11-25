@@ -4,7 +4,8 @@
 import type { CliPlan, Setup, TemplateSummary, TokenUsage, UsageReport } from "@tokama/core";
 import type { CliIssue } from "../model.js";
 
-/** A window at or above this share of its limit is near it. */
+/** A window at or above this share of its limit is high, then near it. */
+export const HIGH = 60;
 export const NEAR_LIMIT = 80;
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
@@ -12,6 +13,9 @@ const DAY = 24 * 60 * MINUTE;
 const SHOW_AGE_AFTER_MS = 10 * MINUTE;
 
 type PlanWindow = CliPlan["windows"][number];
+
+/** Each AI CLI's neutral monogram: a text label, never another company's logo. */
+export const CLI_MONOGRAMS: Readonly<Record<CliPlan["cliId"], string>> = { "claude-code": "CC", "codex-cli": "CX", ollama: "OL" };
 
 const WINDOW_LABELS: Readonly<Record<string, string>> = {
   five_hour: "5-hour window",
@@ -38,8 +42,19 @@ export function windowLine(w: PlanWindow, now: number): string {
 }
 
 export type Tone = "warn" | "fail";
-/** At or over the limit: fail; near it: warn. */
-export const windowTone = (usedPercent: number): Tone | undefined => (usedPercent >= 100 ? "fail" : usedPercent >= NEAR_LIMIT ? "warn" : undefined);
+
+/**
+ * How full a window is: under 60% ok, 60 to 79% high, 80% or more near its limit, 100% at it.
+ * Each level above ok has a word or symbol shown beside its colour.
+ */
+export type Level = "ok" | "high" | "near" | "limit";
+export const levelOf = (usedPercent: number): Level => (usedPercent >= 100 ? "limit" : usedPercent >= NEAR_LIMIT ? "near" : usedPercent >= HIGH ? "high" : "ok");
+/** The meter fill's colour token per level. */
+export const LEVEL_TONE: Readonly<Record<Level, "pass" | Tone>> = { ok: "pass", high: "warn", near: "fail", limit: "fail" };
+/** The word beside the percentage; ok needs none. */
+export const LEVEL_WORD: Readonly<Record<Level, string | undefined>> = { ok: undefined, high: "high", near: "! near limit", limit: "✕ at limit" };
+/** The level for a screen reader, after the percentage. */
+export const LEVEL_SPOKEN: Readonly<Record<Level, string>> = { ok: "ok", high: "high", near: "near limit", limit: "at limit" };
 
 export type CliAlert = "logged_out" | "not_installed" | "limit" | "near_limit";
 
@@ -52,14 +67,14 @@ export const liveWindows = (plan: CliPlan | undefined, now: number): CliPlan["wi
 /** What the rail badge and the tooltip say about a CLI: a login problem first, then its windows. */
 export function cliAlert(plan: CliPlan | undefined, issue: CliIssue | undefined, now: number): CliAlert | undefined {
   if (issue !== undefined) return issue.kind;
-  const tones = liveWindows(plan, now).map((w) => windowTone(w.usedPercent));
-  return tones.includes("fail") ? "limit" : tones.includes("warn") ? "near_limit" : undefined;
+  const levels = liveWindows(plan, now).map((w) => levelOf(w.usedPercent));
+  return levels.includes("limit") ? "limit" : levels.includes("near") ? "near_limit" : undefined;
 }
 
 export const ALERT_TEXT: Readonly<Record<CliAlert, string>> = {
   logged_out: "✕ logged out",
   not_installed: "✕ not found",
-  limit: "✕ limit reached",
+  limit: "✕ at limit",
   near_limit: "! near limit",
 };
 export const alertTone = (alert: CliAlert): Tone => (alert === "near_limit" ? "warn" : "fail");

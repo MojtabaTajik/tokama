@@ -137,15 +137,32 @@
   color: var(--text);
 }
 
+.ins-key {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 12px;
+}
+
+.ins-key-mark[data-tone="pass"] {
+  color: var(--pass);
+}
+
+.ins-key-mark[data-tone="warn"] {
+  color: var(--warn);
+}
+
+.ins-key-mark[data-tone="fail"] {
+  color: var(--fail);
+}
+
 .ins-tone[data-tone="warn"],
-.ins-alert[data-tone="warn"],
-.it-alert[data-tone="warn"] {
+.ins-alert[data-tone="warn"] {
   color: var(--warn);
 }
 
 .ins-tone[data-tone="fail"],
-.ins-alert[data-tone="fail"],
-.it-alert[data-tone="fail"] {
+.ins-alert[data-tone="fail"] {
   color: var(--fail);
 }
 
@@ -176,6 +193,10 @@
 
 .meter-fill {
   fill: var(--muted);
+}
+
+.meter-fill[data-tone="pass"] {
+  fill: var(--pass);
 }
 
 .meter-fill[data-tone="warn"] {
@@ -501,16 +522,184 @@
   font-size: 12px;
 }
 
-/* Rail tooltip: one block per CLI. */
+/* Rail tooltip: Claude Code's status, the Plan block, Today, today's totals and the footer. */
 
-.insights-tip .it-cli {
+.it-block {
+  display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
+}
+
+.it-status {
+  gap: 2px;
+  padding-top: 0;
+  border-top: 0;
 }
 
 .it-head {
   display: flex;
-  justify-content: space-between;
-  gap: 10px;
+  align-items: baseline;
+  gap: 8px;
   color: var(--text);
+}
+
+.it-mono {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.it-status-line,
+.it-total-name {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.it-symbol[data-tone="pass"] {
+  color: var(--pass);
+}
+
+.it-symbol[data-tone="fail"] {
+  color: var(--fail);
+}
+
+.it-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.it-label {
+  font-size: 11px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.it-aside {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.it-note {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.insights-tip .ins-window {
+  gap: 4px;
+}
+
+.insights-tip .ins-window-head {
+  font-size: 12.5px;
+}
+
+.insights-tip .ins-pct {
+  font-size: 13px;
+}
+
+.insights-tip .ins-reset {
+  font-size: 11.5px;
+}
+
+.it-other {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--hairline);
+}
+
+.it-items {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 52px 56px;
+  gap: 1px 10px;
+  align-items: baseline;
+}
+
+.it-item {
+  display: contents;
+}
+
+.it-title {
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text-2);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.it-title:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.it-tokens,
+.it-time {
+  font-size: 12px;
+  text-align: right;
+}
+
+.it-tokens {
+  color: var(--text);
+}
+
+.it-time {
+  color: var(--muted);
+}
+
+.it-agents {
+  grid-column: 1 / 4;
+  margin-bottom: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.it-items .it-note {
+  grid-column: 1 / 4;
+}
+
+.it-totals {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+}
+
+.it-total {
+  color: var(--text);
+  text-align: right;
+}
+
+.it-total-parts {
+  grid-column: 1 / 3;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.it-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.it-link {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--link);
+  white-space: nowrap;
+  cursor: pointer;
 }
