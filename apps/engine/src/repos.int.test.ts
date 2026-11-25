@@ -152,7 +152,7 @@ describe("repo commands", () => {
     expect(await client.command({ type: "add_repo", path, id: "orders-api" })).toMatchObject({ ok: false, error: { code: "already_exists" } });
     expect(await client.command({ type: "add_repo", path })).toEqual({ ok: true, data: { repo: { id: "orders-api-2", baseBranch: "main", checks: expect.any(Array) } } });
     const after = await client.query({ type: "setup" });
-    expect(after.ok && after.data.repos.find((repo) => repo.id === "orders-api-2")).toEqual({ id: "orders-api-2", baseBranch: "main", checks: expect.any(Array) });
+    expect(after.ok && after.data.repos.find((repo) => repo.id === "orders-api-2")).toEqual({ id: "orders-api-2", baseBranch: "main", checks: expect.any(Array), path: expect.stringMatching(/orders-api$/) });
     // A sample repo is not in repos.yaml: removing it is refused and the file is left alone.
     const before = readFileSync(join(home, "repos.yaml"), "utf8");
     expect(await client.command({ type: "remove_repo", repoId: "orders-api" })).toMatchObject({ ok: false, error: { code: "not_found" } });

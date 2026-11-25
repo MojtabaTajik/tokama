@@ -153,7 +153,7 @@ describe("real mode", () => {
     const { client } = await engine(scripted([{ writes: {} }]));
     const reply = await client.query({ type: "setup" });
     if (!reply.ok) throw new Error(reply.error.message);
-    expect(reply.data.repos).toEqual([{ id: "orders-api", baseBranch: "main", checks: ["sh check.sh"] }]);
+    expect(reply.data.repos).toEqual([{ id: "orders-api", baseBranch: "main", checks: ["sh check.sh"], path: repoPath }]);
     expect(reply.data.agents).toContainEqual({ id: "builder", name: "Builder", cliId: "claude-code", model: "sonnet", runsOn: "cloud" });
     expect(reply.data.templates.map((t) => t.id)).toEqual(["orders-api/careful-fix", "builtin/quick-fix", "builtin/quick-change", "builtin/plan-and-build", "builtin/review-only"]);
     expect(reply.data.templates[1]).toMatchObject({
@@ -233,7 +233,7 @@ describe("real mode", () => {
     const commit = done.outcome!.commits![0]!;
     expect(await client.command({ type: "finish_item", itemId: id, action: "merge" })).toEqual({ ok: true, data: null });
     const merged = await waitItem(client, id, (i) => i.finish?.merged !== undefined, "merged");
-    expect(merged.finish).toEqual({ merged: { baseBranch: "main", commit: commit.commit }, worktreeRemoved: true, pushTarget: "github.com/acme/orders-api" });
+    expect(merged.finish).toEqual({ merged: { baseBranch: "main", commit: commit.commit }, worktreeRemoved: true, pushTarget: "github.com/acme/orders-api", at: expect.any(Number) });
     expect(merged.cardLine).toBe(`merged into main · ${commit.commit.slice(0, 7)}`);
     expect(git("rev-parse", "main")).toBe(commit.commit);
     expect(git("branch", "--list", commit.branch!)).toBe("");
@@ -247,7 +247,7 @@ describe("real mode", () => {
     git("switch", "-q", "-c", "feature");
     await client.command({ type: "finish_item", itemId: id, action: "merge" });
     const refused = await waitItem(client, id, (i) => i.finish?.failed !== undefined, "refused");
-    expect(refused.finish?.failed).toEqual({ action: "merge", detail: "Your checkout is on feature, not main. Switch it to main, then merge again. Tokama does not switch branches for you." });
+    expect(refused.finish?.failed).toEqual({ action: "merge", reason: "other_branch", detail: "Your checkout is on feature, not main. Switch it to main, then merge again. Tokama does not switch branches for you." });
     expect(await client.command({ type: "finish_item", itemId: id, action: "pull_request" })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
     await client.command({ type: "finish_item", itemId: id, action: "discard" });
     const discarded = await waitItem(client, id, (i) => i.finish?.worktreeRemoved === true, "discarded");
