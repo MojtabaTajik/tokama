@@ -3,6 +3,7 @@
 // A crash during an append can leave a last line without its line break. Readers ignore that
 // fragment (it was never a committed event), and the next append cuts it off first, so the new
 // event does not join onto it. Every complete line must parse; anything else is corruption.
+// eslint-disable-next-line no-restricted-imports -- the event log appends and fsyncs in place, never replaces; tests swap these file operations to check their order.
 import * as nodeFs from "node:fs";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import { parseItemEvent, type ItemEvent } from "../../kernel/schemas/index.js";

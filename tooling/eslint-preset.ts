@@ -100,6 +100,45 @@ const NETWORK_GLOBALS = ["fetch", "WebSocket", "EventSource"].map((name) => ({
   message: "Network calls are allowed only in kernel/egress and adapters/*.",
 }));
 
+// Writes, renames, signals and child processes outside the kernel. The kernel's atomic write, pid
+// check, process runner and detached spawn each exist once; source code elsewhere uses them.
+// Exclusive creates (lock files) and the event log are allowed one by one, each with an inline
+// eslint-disable comment that says why.
+const KERNEL_ONLY = "Writes, renames, signals and child processes go through the kernel (fs-safe, process).";
+const FS_WRITE_NAMES = [
+  "default",
+  "promises",
+  "write",
+  "writeSync",
+  "writev",
+  "writevSync",
+  "writeFile",
+  "writeFileSync",
+  "appendFile",
+  "appendFileSync",
+  "rename",
+  "renameSync",
+  "createWriteStream",
+];
+const FS_PROMISES_WRITE_NAMES = ["default", "writeFile", "appendFile", "rename"];
+// A separate rule from @typescript-eslint/no-restricted-imports, so these bans hold next to every
+// zone's own import patterns without restating them there. Namespace imports of node:fs are
+// refused too, since they reach every name.
+const kernelOnlyImports = {
+  paths: [
+    ...["fs", "node:fs"].map((name) => ({ name, importNames: FS_WRITE_NAMES, message: KERNEL_ONLY })),
+    ...["fs/promises", "node:fs/promises"].map((name) => ({ name, importNames: FS_PROMISES_WRITE_NAMES, message: KERNEL_ONLY })),
+    ...["child_process", "node:child_process"].map((name) => ({ name, message: KERNEL_ONLY })),
+  ],
+};
+const SOURCE_FILES = ["packages/*/src/**/*.{ts,tsx,mts,cts}", "apps/*/src/**/*.{ts,tsx,mts,cts}"];
+const KERNEL_ONLY_EXEMPT = [
+  `${CORE}/kernel/**`,
+  // Tests and their helpers set up files and processes directly.
+  "**/*.test.{ts,tsx,mts,cts}",
+  "**/testing/**",
+];
+
 // Element types of packages/core/src. Patterns are full paths from the repo root.
 const coreElements = [
   { type: "slice", pattern: `${CORE}/slices/*`, capture: ["slice"], partialMatch: false },
@@ -252,6 +291,16 @@ export default defineConfig(
   {
     files: NETWORK_ZONES,
     rules: { "no-restricted-globals": "off" },
+  },
+
+  // Every package's source: writes, renames, signals and child processes only through the kernel.
+  {
+    files: SOURCE_FILES,
+    ignores: KERNEL_ONLY_EXEMPT,
+    rules: {
+      "no-restricted-imports": ["error", kernelOnlyImports],
+      "no-restricted-properties": ["error", { object: "process", property: "kill", message: KERNEL_ONLY }],
+    },
   },
 
   // apps/desktop: flat config replaces rule options, so each zone lists all its patterns.

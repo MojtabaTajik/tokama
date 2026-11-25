@@ -4,6 +4,7 @@
 //
 // Two apps may find the same older engine. The first one takes `replace.lock` in the engine dir
 // and stops it; the other sends nothing and waits until the old engine lets go of its lock.
+// eslint-disable-next-line no-restricted-imports -- replace.lock is created exclusively (O_EXCL), which is the lock itself; an atomic replace cannot take a lock.
 import { closeSync, constants, openSync, readFileSync, unlinkSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { pidAlive, readEngineLock, readPidFile, stopOwnEngine, type EngineProcesses, type OwnEngine, type StopOutcome } from "@tokama/core";

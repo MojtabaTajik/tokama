@@ -14,6 +14,7 @@
 // drain ends, so an engine starting meanwhile sees a live engine instead of a stale lock.
 // Threat model: local desktop, no network listener.
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+// eslint-disable-next-line no-restricted-imports -- the engine lock is created exclusively (O_EXCL), which is the lock itself; renameSync moves a damaged board index aside.
 import { chmodSync, closeSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
 import { connect, createServer, type Server, type Socket } from "node:net";
 import { homedir } from "node:os";
