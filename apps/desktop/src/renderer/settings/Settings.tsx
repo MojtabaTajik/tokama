@@ -2,12 +2,14 @@
 // then the settings pages by group. Pages that are not built yet are listed but marked
 // aria-disabled. List-type pages fill the two panes to the right of the nav.
 import type { Setup } from "@tokama/core";
+import { useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
+import { TemplatesPage } from "../templates/TemplatesPage.js";
 import { AgentsPage } from "./AgentsPage.js";
 
 const TEXT = { nav: "Settings", back: "← Back", title: "Settings", later: "comes later" } as const;
 
-export type SettingsPage = "agents";
+export type SettingsPage = "templates" | "agents";
 
 const GROUPS: readonly { readonly name: string; readonly pages: readonly { readonly id: SettingsPage | undefined; readonly label: string }[] }[] = [
   { name: "Personal", pages: [{ id: undefined, label: "Notifications" }, { id: undefined, label: "Usage" }] },
@@ -16,7 +18,7 @@ const GROUPS: readonly { readonly name: string; readonly pages: readonly { reado
     pages: [
       { id: undefined, label: "Repos" },
       { id: undefined, label: "Connections" },
-      { id: undefined, label: "Templates" },
+      { id: "templates", label: "Templates" },
       { id: "agents", label: "Agents" },
       { id: undefined, label: "Privacy" },
     ],
@@ -29,10 +31,12 @@ export interface SettingsProps {
   readonly connection: ConnectionState;
   readonly setup: Setup | undefined;
   readonly onBack: () => void;
+  /** The page Settings opens on. Default: Agents. */
+  readonly initialPage?: SettingsPage;
 }
 
-export function Settings({ bridge, connection, setup, onBack }: SettingsProps) {
-  const page: SettingsPage = "agents";
+export function Settings({ bridge, connection, setup, onBack, initialPage = "agents" }: SettingsProps) {
+  const [page, setPage] = useState<SettingsPage>(initialPage);
   return (
     <div className="settings">
       <nav className="settings-nav" aria-label={TEXT.nav}>
@@ -45,21 +49,25 @@ export function Settings({ bridge, connection, setup, onBack }: SettingsProps) {
             <span className="settings-group-name" aria-hidden="true">
               {group.name}
             </span>
-            {group.pages.map((entry) =>
-              entry.id === undefined ? (
-                <button key={entry.label} type="button" className="settings-entry" aria-disabled="true" title={`${entry.label} ${TEXT.later}`}>
-                  {entry.label}
+            {group.pages.map(({ id, label }) =>
+              id === undefined ? (
+                <button key={label} type="button" className="settings-entry" aria-disabled="true" title={`${label} ${TEXT.later}`}>
+                  {label}
                 </button>
               ) : (
-                <button key={entry.label} type="button" className="settings-entry" aria-current={entry.id === page ? "page" : undefined}>
-                  {entry.label}
+                <button key={label} type="button" className="settings-entry" aria-current={id === page ? "page" : undefined} onClick={() => setPage(id)}>
+                  {label}
                 </button>
               ),
             )}
           </div>
         ))}
       </nav>
-      <AgentsPage bridge={bridge} connection={connection} setup={setup} />
+      {page === "templates" ? (
+        <TemplatesPage bridge={bridge} connection={connection} agents={setup?.agents ?? []} connections={setup?.connections ?? []} />
+      ) : (
+        <AgentsPage bridge={bridge} connection={connection} setup={setup} />
+      )}
     </div>
   );
 }

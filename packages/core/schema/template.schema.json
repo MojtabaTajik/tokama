@@ -1,0 +1,322 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "format": {
+      "type": "number",
+      "const": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "icon": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+    },
+    "color": {
+      "type": "string",
+      "enum": [
+        "slate",
+        "sky",
+        "teal",
+        "moss",
+        "sand",
+        "clay",
+        "rose",
+        "plum"
+      ]
+    },
+    "uses": {
+      "type": "object",
+      "properties": {
+        "repos": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "read",
+                "edit"
+              ]
+            },
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "enum": [
+                  "read",
+                  "edit"
+                ]
+              }
+            }
+          ]
+        },
+        "connections": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "commands": {
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "start": {
+      "type": "object",
+      "properties": {
+        "needs": {
+          "maxItems": 3,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "text",
+              "repo",
+              "repos"
+            ]
+          }
+        },
+        "ask_before_cloud": {
+          "type": "boolean"
+        },
+        "notify": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "setup": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "budget": {
+      "type": "object",
+      "properties": {
+        "time": {
+          "type": "string",
+          "pattern": "^(?:(\\d{1,2})h)?(?:(\\d{1,4})m)?$"
+        }
+      },
+      "required": [
+        "time"
+      ],
+      "additionalProperties": false
+    },
+    "steps": {
+      "minItems": 1,
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "agent": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+          },
+          "instructions": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 65536
+          },
+          "done_when": {
+            "type": "string",
+            "enum": [
+              "agent finishes",
+              "checks pass",
+              "reviewer approves",
+              "you approve"
+            ]
+          },
+          "checks": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "from-repo"
+              },
+              {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                }
+              }
+            ]
+          },
+          "if_failed": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "retry",
+                  "ask",
+                  "stop"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "back": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+                  }
+                },
+                "required": [
+                  "back"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "if_changes_requested": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "ask"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "back": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+                  }
+                },
+                "required": [
+                  "back"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "max_attempts": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "data": {
+            "type": "string",
+            "enum": [
+              "none",
+              "summary-after-approval",
+              "repo-and-diff"
+            ]
+          },
+          "sees": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+            }
+          },
+          "uses": {
+            "type": "object",
+            "properties": {
+              "connections": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                }
+              },
+              "commands": {
+                "maxItems": 50,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          "icon": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+          },
+          "color": {
+            "type": "string",
+            "enum": [
+              "slate",
+              "sky",
+              "teal",
+              "moss",
+              "sand",
+              "clay",
+              "rose",
+              "plum"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "agent",
+          "instructions"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "finish": {
+      "minItems": 1,
+      "maxItems": 5,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "commit",
+          "pull-request",
+          "findings",
+          "document",
+          "update-tickets"
+        ]
+      }
+    }
+  },
+  "required": [
+    "format",
+    "name",
+    "steps",
+    "finish"
+  ],
+  "additionalProperties": false,
+  "title": "Tokama template",
+  "description": "A Tokama template: `.tokama/templates/<id>.yaml` in a repo."
+}

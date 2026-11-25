@@ -9,6 +9,7 @@ import { ItemRecordSchema } from "./item.js";
 import { AgentCallUsageSchema } from "./usage.js";
 import { AgentsListSchema } from "./agents.js";
 import { RepoSummarySchema, SetupSchema } from "./setup.js";
+import { MAX_TEMPLATE_ENTRIES, TemplateDetailSchema, TemplateEntrySchema, TemplateFileKeySchema } from "./template-files.js";
 
 export const API_VERSION = 3;
 
@@ -73,6 +74,10 @@ export const QuerySchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("suggest_repo"), path: folderPath }),
   /** Every agent: personal, each repo's shared ones and the built-ins, with the files that do not load. */
   z.strictObject({ type: z.literal("agents_list") }),
+  /** Every template file the engine finds, loaded or not, read again from disk. */
+  z.strictObject({ type: z.literal("templates") }),
+  /** One template file in full: the template, its problems with line numbers, and its text. */
+  TemplateFileKeySchema.extend({ type: z.literal("template_detail") }),
 ]);
 
 export const EventSchema = z.discriminatedUnion("type", [
@@ -103,6 +108,8 @@ export const QueryResultSchemas = {
   suggest_template: z.strictObject({ templateId: TemplateRefSchema.nullable() }),
   suggest_repo: RepoSuggestionSchema,
   agents_list: AgentsListSchema,
+  templates: z.strictObject({ templates: z.array(TemplateEntrySchema).max(MAX_TEMPLATE_ENTRIES) }),
+  template_detail: TemplateDetailSchema,
 } as const satisfies Record<z.output<typeof QuerySchema>["type"], z.ZodType>;
 
 /** The data of a successful reply, per command type. */
@@ -244,6 +251,8 @@ export type SetupResult = QueryResult<"setup">;
 export type SuggestTemplateResult = QueryResult<"suggest_template">;
 export type SuggestRepoResult = QueryResult<"suggest_repo">;
 export type AgentsListResult = QueryResult<"agents_list">;
+export type TemplatesResult = QueryResult<"templates">;
+export type TemplateDetailResult = QueryResult<"template_detail">;
 export type CommandType = keyof typeof CommandResultSchemas;
 export type CommandResult<T extends CommandType> = z.output<(typeof CommandResultSchemas)[T]>;
 export type StartItemResult = CommandResult<"start_item">;

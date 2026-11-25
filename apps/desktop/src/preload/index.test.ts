@@ -20,7 +20,7 @@ const exposed = [...electron.exposeInMainWorld.mock.calls];
 describe("preload bridge", () => {
   it("exposes window.tokama with only the bridge methods", () => {
     expect(exposed).toEqual([["tokama", bridge]]);
-    expect(Object.keys(bridge).sort()).toEqual(["command", "getConnection", "onConnection", "onEvent", "pickFolder", "query", "retryConnection"]);
+    expect(Object.keys(bridge).sort()).toEqual(["command", "getConnection", "onConnection", "onEvent", "openTemplateFile", "pickFolder", "query", "retryConnection"]);
   });
 
   it("query and command invoke their channels with the request only", async () => {
@@ -42,6 +42,13 @@ describe("preload bridge", () => {
     expect(listener.mock.calls).toEqual([[message]]);
     stop();
     expect(electron.removeListener).toHaveBeenCalledWith(CHANNELS.event, handler);
+  });
+
+  it("openTemplateFile sends the origin and file only", async () => {
+    electron.invoke.mockResolvedValue({ ok: true });
+    const name = { origin: "orders-api", file: ".tokama/templates/plan.yaml", path: "/bin/sh" } as { origin: string; file: string };
+    await expect(bridge.openTemplateFile(name)).resolves.toEqual({ ok: true });
+    expect(electron.invoke).toHaveBeenCalledWith(CHANNELS.openTemplateFile, { origin: "orders-api", file: ".tokama/templates/plan.yaml" });
   });
 
   it("pickFolder invokes its channel with no arguments", async () => {

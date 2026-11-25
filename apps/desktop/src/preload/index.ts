@@ -2,7 +2,7 @@
 // `electron`. It exposes `window.tokama` (TokamaBridge) and nothing else: no ipcRenderer, no
 // channel names, no Node.
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
-import { type BridgeEvent, CHANNELS, type ConnectionState, type TokamaBridge } from "../shared/bridge.js";
+import { type BridgeEvent, CHANNELS, type ConnectionState, type OpenResult, type TokamaBridge } from "../shared/bridge.js";
 
 /** Subscribes to a pushed channel. Wrapped, so the renderer never receives the IPC event object (it carries `sender`). */
 function subscribe<T>(channel: string, listener: (message: T) => void): () => void {
@@ -22,6 +22,8 @@ export const bridge: TokamaBridge = {
   command: (command) => ipcRenderer.invoke(CHANNELS.command, command) as never,
   onEvent: (listener) => subscribe<BridgeEvent>(CHANNELS.event, listener),
   pickFolder: () => ipcRenderer.invoke(CHANNELS.pickFolder) as Promise<string | null>,
+  // Only the two names cross, whatever else the renderer passes.
+  openTemplateFile: ({ origin, file }) => ipcRenderer.invoke(CHANNELS.openTemplateFile, { origin, file }) as Promise<OpenResult>,
 };
 
 contextBridge.exposeInMainWorld("tokama", bridge);

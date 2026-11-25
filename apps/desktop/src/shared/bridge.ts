@@ -43,7 +43,17 @@ export const CHANNELS = {
   command: "tokama:engine:command",
   event: "tokama:engine:event",
   pickFolder: "tokama:dialog:pick-folder",
+  openTemplateFile: "tokama:template:open",
 } as const;
+
+/** Where the engine found a template file: a repo id and the repo-relative path. */
+export interface TemplateFileName {
+  readonly origin: string;
+  readonly file: string;
+}
+
+/** Whether a file opened; the message says why not, in plain words. */
+export type OpenResult = { readonly ok: true } | { readonly ok: false; readonly message: string };
 
 /** What the preload script exposes to the renderer as `window.tokama`. */
 export interface TokamaBridge {
@@ -60,4 +70,9 @@ export interface TokamaBridge {
   onEvent(listener: (event: BridgeEvent) => void): () => void;
   /** The native folder picker; null when cancelled. The engine checks the folder before using it. */
   pickFolder(): Promise<string | null>;
+  /**
+   * Opens a template file in the system's editor for its type. The main process asks the engine
+   * where the file is and opens only template files in a `.tokama` folder or the Tokama home.
+   */
+  openTemplateFile(name: TemplateFileName): Promise<OpenResult>;
 }

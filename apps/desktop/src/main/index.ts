@@ -11,6 +11,7 @@ import { type ConnectionWatch, watchConnection } from "./connection.js";
 import { engineCommand, engineDirFor, findExecutable, otherVersionMessage, readLogTail } from "./engine.js";
 import { pickFolder } from "./folder.js";
 import { appIcons } from "./icon.js";
+import { openTemplateFile } from "./template-file.js";
 import { devServerUrl, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, sampleEngineEnabled, secureWebPreferences } from "./policy.js";
 
 const rendererDir = join(import.meta.dirname, "..", "renderer");
@@ -111,6 +112,9 @@ void app.whenReady().then(() => {
     const window = BrowserWindow.getFocusedWindow();
     return window === null ? dialog.showOpenDialog(options) : dialog.showOpenDialog(window, options);
   }));
+  // shell.openPath is looked up on each call too, so the UI flow tests can stand in for the editor.
+  const tokamaHome = join(homedir(), ".tokama");
+  handle(CHANNELS.openTemplateFile, (name) => openTemplateFile(name, { api, tokamaHome, openPath: (path) => shell.openPath(path) }));
   app.on("before-quit", () => void watch.close());
   createWindow();
   app.on("activate", () => {
