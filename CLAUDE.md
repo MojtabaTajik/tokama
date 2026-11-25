@@ -7,7 +7,7 @@ Tokama is a desktop engineering companion: it runs AI agents (Claude Code, Codex
 - Specs (maintainer-local, not in the repo): `.agent/spec/product.md`, `.agent/spec/architecture.md` and `.agent/spec/design.md`. Read them before planning or building anything; update them when a decision changes. Product, design and planning detail belongs there, not in this file.
 - Agent working files go in `.agent/` (git-ignored): plans, review notes, exports, scratch. Never put agent scratch elsewhere in the repo.
 - Maintainer-specific notes (status, links, local paths, preferences) live in `CLAUDE.local.md` (git-ignored), loaded next to this file. Keep this file to stable project rules.
-- Repo: `MojtabaTajik/tokama`, Apache-2.0, default branch `main`. The open engine must work fully on its own. Domains (registered): tokama.dev (primary), tokama.ai (redirects to tokama.dev). Point user-facing URLs (updates, install scripts, docs) at tokama.dev, not GitHub, so a later move to an organization breaks nothing.
+- Repo: `tokama-dev/tokama`, Apache-2.0, default branch `main`. The open engine must work fully on its own. Domains (registered): tokama.dev (primary), tokama.ai (redirects to tokama.dev). Point user-facing URLs (updates, install scripts, docs) at tokama.dev, not GitHub, so a later move to an organization breaks nothing.
 - Never commit employer or customer names, personal paths, secrets or business plans: the repo is meant to be public. Use neutral sample names (e.g. "Northwind prod", `orders-api`) in docs, specs and designs.
 - `main` is protected by a ruleset: no direct pushes, no force pushes, no deletion, linear history. Every change, docs included, goes through a pull request and is squash-merged, by a maintainer or by an agent under the maintainer's standing merge rules (green CI on Linux and macOS, clean review). Agents never merge outside those rules.
 - Reference only: `ai-pipeline`, the earlier private Python harness, kept outside this repo. Reuse its hard-won parts and port the tests for them (list in architecture spec, section 12). Do not port it in full, keep its file formats, or call or ship any of its code.
@@ -35,7 +35,7 @@ Tokama is a desktop engineering companion: it runs AI agents (Claude Code, Codex
 
 ## Issue tracking
 
-GitHub issues in `MojtabaTajik/tokama` track actual implementation work only: code to write, bugs, improvements to built code, tooling/CI chores, and open decisions that block code. Every issue and PR gets labels.
+GitHub issues in `tokama-dev/tokama` track actual implementation work only: code to write, bugs, improvements to built code, tooling/CI chores, and open decisions that block code. Every issue and PR gets labels.
 
 - No issues for design iterations, canvas edits, doc housekeeping or unscheduled ideas. Designs live on the design canvas, ideas stay out of the tracker until scheduled; open an issue only when the work is scheduled to be built.
 - Before starting implementation work, find or open its issue. Reference it in the branch and PR (`Closes #N`). Bugs found along the way become issues, not TODO comments.
