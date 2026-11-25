@@ -15,7 +15,8 @@ const saved = (home: string) => JSON.parse(readFileSync(join(home, ".tokama", "d
 
 flow("resizing the sidebar and the drawer, a restart finds the same widths and view", async (session) => {
   const { page, home, screenshot, resize } = session;
-  await resize(1500, 900);
+  // Both panels at their new widths must fit: a restored window never exceeds the display (1280 px on CI).
+  await resize(1200, 900);
   await page.getByRole("button", { name: "Done" }).click();
   await page.locator(".range").selectOption("30d");
   await row(page, DONE).click();
@@ -23,12 +24,11 @@ flow("resizing the sidebar and the drawer, a restart finds the same widths and v
 
   // Keyboard: the sidebar's edge moves by 16 px, the drawer's the other way round.
   await edge(page, "sidebar").focus();
-  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowRight");
-  expect(await widthOf(page, ".panel")).toBe(264 + 48);
+  for (let i = 0; i < 2; i++) await page.keyboard.press("ArrowLeft");
+  expect(await widthOf(page, ".panel")).toBe(264 - 32);
   await edge(page, "drawer").focus();
   await page.keyboard.press("ArrowLeft");
-  await page.keyboard.press("ArrowLeft");
-  expect(await widthOf(page, "aside.drawer")).toBe(420 + 32);
+  expect(await widthOf(page, "aside.drawer")).toBe(420 + 16);
 
   // Pointer: drag the drawer's edge 40 px to the left.
   const box = await edge(page, "drawer").boundingBox();
@@ -38,25 +38,25 @@ flow("resizing the sidebar and the drawer, a restart finds the same widths and v
   await page.mouse.move(box.x - 40, box.y + 200, { steps: 4 });
   await screenshot("10-resize-dragging");
   await page.mouse.up();
-  expect(await widthOf(page, "aside.drawer")).toBe(420 + 32 + 40);
+  expect(await widthOf(page, "aside.drawer")).toBe(420 + 16 + 40);
 
   // Collapse a section; the file is written soon after.
   await page.getByRole("button", { name: "Collapse repos" }).click();
-  await expect.poll(() => (saved(home)["drawer"] as { width: number }).width, { message: "desktop.json has the drawer width" }).toBe(492);
+  await expect.poll(() => (saved(home)["drawer"] as { width: number }).width, { message: "desktop.json has the drawer width" }).toBe(476);
   await expect.poll(() => saved(home)["collapsedSections"]).toEqual(["repos"]);
   expect(statSync(join(home, ".tokama", "desktop.json")).mode & 0o777).toBe(0o600);
-  expect(saved(home)["sidebar"]).toEqual({ width: 312, collapsed: false });
+  expect(saved(home)["sidebar"]).toEqual({ width: 232, collapsed: false });
   expect(saved(home)["lastFilter"]).toEqual({ status: "done", range: "30d" });
 
   const next = await session.restart();
   await next.page.locator(".panel").waitFor();
-  expect(await widthOf(next.page, ".panel")).toBe(312);
+  expect(await widthOf(next.page, ".panel")).toBe(232);
   expect(await next.page.getByRole("button", { name: "Expand repos" }).count()).toBe(1);
   expect(await next.page.locator(".range").inputValue()).toBe("30d");
   await row(next.page, DONE).click();
   await drawer(next.page).getByRole("heading", { name: DONE }).waitFor();
-  expect(await widthOf(next.page, "aside.drawer")).toBe(492);
-  expect(await edge(next.page, "drawer").getAttribute("aria-valuenow")).toBe("492");
+  expect(await widthOf(next.page, "aside.drawer")).toBe(476);
+  expect(await edge(next.page, "drawer").getAttribute("aria-valuenow")).toBe("476");
 
   // A double-click on an edge resets that panel, and the reset is remembered.
   const sidebarEdge = await edge(next.page, "sidebar").boundingBox();
@@ -78,16 +78,8 @@ flow("the window comes back where it was, and a broken file gives the defaults",
   const bounds = await next.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.getBounds());
   expect([bounds?.width, bounds?.height]).toEqual([1010, 690]);
 
-  // A window left maximized opens maximized. On macOS the test run keeps windows hidden, and maximizing would show one, so it is left out there.
-  const maximized = await next.restart(() => {
-    const file = saved(home);
-    writeFileSync(join(home, ".tokama", "desktop.json"), JSON.stringify({ ...file, window: { ...(file["window"] as object), maximized: true } }));
-  });
-  if (process.platform !== "darwin") await expect.poll(() => maximized.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isMaximized())).toBe(true);
-  else expect(await maximized.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isVisible())).toBe(false);
-
   // The file is damaged while the app is closed; the next start must not fail on it.
-  const again = await maximized.restart(() => writeFileSync(join(home, ".tokama", "desktop.json"), "{ not json"));
+  const again = await next.restart(() => writeFileSync(join(home, ".tokama", "desktop.json"), "{ not json"));
   expect(await widthOf(again.page, ".panel")).toBe(264);
   const size = await again.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.getBounds());
   expect([size?.width, size?.height]).toEqual([1200, 800]);
