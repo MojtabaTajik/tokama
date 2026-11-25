@@ -54,7 +54,7 @@ flow(
     await screenshot("long-list-no-match");
     await page.getByRole("button", { name: "Search all time" }).click();
     expect(await page.locator(".range").inputValue()).toBe("all");
-    await page.getByRole("button", { name: "Clear search" }).click();
+    await page.getByRole("button", { name: "Clear search", exact: true }).click();
     await group(page, "Done all time").locator(".pl-row").first().waitFor();
   },
   "history",
