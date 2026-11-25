@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AttemptRecord, StoredDecision, StoredItem, StoredStep } from "../../kernel/schemas/index.js";
-import { attemptLimit, budgetAllowedMs, budgetUsedMs, sameFailureTwice } from "./counters.js";
+import { countedAttempts } from "../items/index.js";
+import { attemptLimit, budgetAllowedMs, budgetUsedMs, roundTripLimit, sameFailureTwice } from "./counters.js";
 
 const T = 1_000_000;
 const MIN = 60_000;
@@ -34,6 +35,30 @@ describe("attemptLimit", () => {
     // Run failures do not count toward being at the limit.
     const runFailed = step([attempt(1, T, { endedAt: T + 10, result: "run_failed", failure: "crash" })]);
     expect(attemptLimit(itemOf([runFailed], [asked("after_failure", T + 10, { choice: "retry_step", at: T + 15 })]), runFailed, 1)).toBe(1);
+  });
+
+  it("counts the current round only: a grant from an earlier round does not carry over", () => {
+    // Round 1: attempt 1 failed at a limit of 1, Retry once more, attempt 2 passed. Round 2 starts at attempt 3.
+    const build = {
+      ...step([attempt(1, T, { endedAt: T + 10, result: "failed" }), attempt(2, T + 20, { endedAt: T + 30, result: "passed" }), attempt(3, T + 40, { endedAt: T + 50, result: "failed" })]),
+      roundStart: 2,
+    };
+    const item = itemOf([build], [asked("after_failure", T + 10, { choice: "one_more_attempt", at: T + 15 })]);
+    expect(attemptLimit(item, build, 1)).toBe(1);
+    expect(countedAttempts(build)).toBe(1);
+    // A grant asked at the limit in this round counts.
+    const granted = itemOf([build], [asked("after_failure", T + 50, { choice: "one_more_attempt", at: T + 55 })]);
+    expect(attemptLimit(granted, build, 1)).toBe(2);
+  });
+});
+
+describe("roundTripLimit", () => {
+  it("allows 3 round trips, plus one for each Run one more round", () => {
+    const review = { ...step([]), sentBack: 3 };
+    expect(roundTripLimit(itemOf([review]), review)).toBe(3);
+    expect(roundTripLimit(itemOf([review], [asked("after_failure", T, { choice: "one_more_round", at: T + 5 })]), review)).toBe(4);
+    // Other answers grant nothing.
+    expect(roundTripLimit(itemOf([review], [asked("after_failure", T, { choice: "one_more_attempt", at: T + 5 })]), review)).toBe(3);
   });
 });
 

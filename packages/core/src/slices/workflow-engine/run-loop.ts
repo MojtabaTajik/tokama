@@ -56,13 +56,13 @@ import {
 import type { Agent, Repo } from "../config/index.js";
 import { callUsage, claudeCodeGuardDefaults, runGuardedCall, type LoopGuardSettings } from "../execution/index.js";
 import { protectedSet, sharedGitSettings, type ProtectedSet } from "../integrity/index.js";
-import { openAttempt, openDecisions, recoverItems, RUN_FAILURE_CHOICES, type ItemStore, type RecoveredItem } from "../items/index.js";
+import { countedAttempts, openAttempt, openDecisions, recoverItems, RUN_FAILURE_CHOICES, type ItemStore, type RecoveredItem } from "../items/index.js";
 import { buildPrompt, type StepResults } from "../prompting/index.js";
 import { checksPass, runCommand, type CheckResult } from "../verification/index.js";
 import { commitItem, createWorktree, findItemWorktree, originPushUrl, stageItem, treeDiff, worktreePath, worktreeSnapshot, type ItemWorktree } from "../worktrees/index.js";
 import { attemptChecks, attemptLog, toolLine } from "./attempt-files.js";
 import { createFinisher, GIT_SETTINGS_FILE } from "./finish.js";
-import { attemptLimit, budgetAllowedMs, budgetUsedMs, CONTINUE_ID, countedAttempts, ONE_MORE_ID, sameFailureTwice } from "./counters.js";
+import { attemptLimit, budgetAllowedMs, budgetUsedMs, CONTINUE_ID, ONE_MORE_ID, ONE_MORE_ROUND_ID, roundTripLimit, sameFailureTwice } from "./counters.js";
 import {
   APPROVE_ID,
   describeChanges,
@@ -162,6 +162,7 @@ const choice = (id: string, label: string): DecisionChoice => ({ id, label });
 const STOP = choice("stop", "Stop");
 const RETRY = choice(RUN_FAILURE_CHOICES[0].id, RUN_FAILURE_CHOICES[0].label);
 const ONE_MORE = choice(ONE_MORE_ID, "Retry once more");
+const ONE_MORE_ROUND = choice(ONE_MORE_ROUND_ID, "Run one more round");
 const NO_ACTION = choice("no_action_needed", "End: no action needed");
 const APPROVE = choice(APPROVE_ID, "Approve");
 const APPROVE_AND_COMMIT = choice(APPROVE_ID, "Approve and commit");
@@ -171,6 +172,9 @@ const CONTINUE = choice(CONTINUE_ID, "Continue");
 const USE_RECORDED = choice("use_recorded_tree", "Review the checked tree");
 const COMMIT_CHECKED = choice("commit_checked_tree", "Commit the checked tree");
 const COMMIT_ANYWAY = choice("commit_anyway", "Commit anyway");
+
+/** What a work failure of the step leads to: `if_changes_requested` for a reviewer, else `if_failed`. */
+const failureRule = (step: TemplateStepDef) => (step.doneWhen === "reviewer approves" ? (step.ifChangesRequested ?? { action: "ask" as const }) : step.ifFailed);
 
 const DEFAULT_COMMAND_TIMEOUT_MS = 20 * 60_000;
 const DETAIL_MAX = 500;
@@ -186,6 +190,8 @@ type Next =
   /** Go on with the open attempt of a checks step after the engineer approved its protected changes. */
   | { readonly kind: "after_agent"; readonly stepId: StepId; readonly attempt: number }
   | { readonly kind: "pass"; readonly stepId: StepId }
+  /** The step sends the work back to the step its rule names: a new round there. */
+  | { readonly kind: "back"; readonly stepId: StepId }
   | { readonly kind: "finish" }
   | { readonly kind: "end"; readonly outcome: ItemOutcome; readonly detail: string }
   | { readonly kind: "wait" };
@@ -869,26 +875,43 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
   const workFailed = (ctx: Context, stepId: StepId, attempt: number, feedback: string, summary: string): Next => {
     const step = stepDef(ctx.template, stepId);
     writeItemFile(ctx.item.id, `${attemptDir(stepId, attempt)}/feedback.txt`, feedback.slice(-FEEDBACK_MAX_BYTES));
-    const rule = step.doneWhen === "reviewer approves" ? (step.ifChangesRequested ?? { action: "ask" as const }) : step.ifFailed;
+    const rule = failureRule(step);
     const item = append(ctx.item.id, [attemptEnded(stepId, attempt, "failed", { detail: summary })]);
     if (rule.action === "stop") return { kind: "end", outcome: "failed", detail: `Step ${step.name} failed.` };
     const stored = storedStep(item, stepId);
     const same = sameFailureTwice(stored);
-    // Below the limit only: at the limit, the limit question comes next anyway.
-    if (same !== undefined && countedAttempts(stored) < attemptLimit(item, stored, step.maxAttempts)) {
+    // Back to itself is a retry: it stays in the round, so max_attempts limits it.
+    const sendsBack = rule.action === "back" && rule.stepId !== stepId;
+    // Below the limit, or before a send-back: otherwise the limit question comes next anyway.
+    if (same !== undefined && (sendsBack || countedAttempts(stored) < attemptLimit(item, stored, step.maxAttempts))) {
       append(item.id, [decision("after_failure", stepId, [RETRY, NO_ACTION, STOP], `Step ${step.name} stopped early: ${same}`)]);
       return WAIT;
     }
     switch (rule.action) {
       case "retry":
         return { kind: "attempt", stepId };
-      case "back":
-        append(item.id, [{ type: "step_ended", stepId, result: "failed" }, { type: "step_started", stepId: rule.stepId }]);
-        return { kind: "attempt", stepId: rule.stepId };
+      case "back": {
+        if (!sendsBack) return { kind: "attempt", stepId };
+        const trips = stored.sentBack ?? 0;
+        if (trips >= roundTripLimit(item, stored)) {
+          const text = `${step.name} sent the work back to ${stepDef(ctx.template, rule.stepId).name} ${trips} ${trips === 1 ? "time" : "times"}. Run one more round, or end the item.`;
+          append(item.id, [decision("after_failure", stepId, [ONE_MORE_ROUND, NO_ACTION, STOP], text)]);
+          return WAIT;
+        }
+        return { kind: "back", stepId };
+      }
       case "ask":
         append(item.id, [decision("after_failure", stepId, [RETRY, NO_ACTION, STOP], `Step ${step.name} failed. Retry it, or end the item.`)]);
         return WAIT;
     }
+  };
+
+  /** Ends the step as failed and enters the step its rule goes back to, which starts a new round there. */
+  const sendBack = (ctx: Context, stepId: StepId): Next => {
+    const rule = failureRule(stepDef(ctx.template, stepId));
+    if (rule.action !== "back") throw new Error(`step ${stepId} has no back rule`);
+    append(ctx.item.id, [{ type: "step_ended", stepId, result: "failed" }, { type: "step_started", stepId: rule.stepId }]);
+    return { kind: "attempt", stepId: rule.stepId };
   };
 
   /** Ends the step as passed and enters the next one, in the template's order. */
@@ -1010,6 +1033,8 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
         return afterAgent(ctx, next.stepId, next.attempt, signal);
       case "pass":
         return passStep(item, next.stepId, []);
+      case "back":
+        return sendBack(ctx, next.stepId);
       case "finish":
         return finish(ctx);
       case "wait":
@@ -1069,8 +1094,10 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
         const open = openAttempt(item);
         return open !== undefined && open.step.id === asked.stepId ? { kind: "after_agent", stepId: open.step.id, attempt: open.attempt.attempt } : carryOn();
       }
-      case "run_failure":
       case "after_failure":
+        // Run one more round: the step that asked sends the work back once more.
+        return chosen === ONE_MORE_ROUND.id && asked.stepId !== undefined && asked.stepId === item.currentStepId ? { kind: "back", stepId: asked.stepId } : carryOn();
+      case "run_failure":
       case "budget":
       case "cloud_summary":
       case "outside_change":

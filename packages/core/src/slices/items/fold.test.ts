@@ -156,7 +156,7 @@ describe("foldItem", () => {
     expect(foldError([created(), { type: "item_ended", outcome: "stopped", commits: [{ repoId: "orders-api" as never, commit }] }])).toMatch(/only when the item is done/);
   });
 
-  it("step_ended: sets the step's result and leaves no current step; back to a step continues its attempt count", () => {
+  it("step_ended: sets the step's result and leaves no current step; back to a step continues its attempt numbers", () => {
     const item = fold([
       ...startBuild,
       { type: "attempt_ended", stepId: BUILD, attempt: 1, result: "passed" },
@@ -177,6 +177,39 @@ describe("foldItem", () => {
     const between = fold([...startBuild, { type: "attempt_ended", stepId: BUILD, attempt: 1, result: "passed" }, { type: "step_ended", stepId: BUILD, result: "passed" }]);
     expect(between.currentStepId).toBeUndefined();
     expect(between.state).toBe("running");
+  });
+
+  it("rounds: plan, build, review asks for changes, build, review: each step entered again starts a new round", () => {
+    const PLAN = "plan" as typeof BUILD;
+    const planned: ItemEventBody[] = [
+      { ...created(), steps: [{ id: PLAN }, { id: BUILD }, { id: REVIEW }] } as ItemEventBody,
+      { type: "step_started", stepId: PLAN },
+      { type: "attempt_started", stepId: PLAN, attempt: 1 },
+      { type: "attempt_ended", stepId: PLAN, attempt: 1, result: "passed" },
+      { type: "step_ended", stepId: PLAN, result: "passed" },
+    ];
+    const pass = (stepId: typeof BUILD, attempt: number): ItemEventBody[] => [
+      { type: "step_started", stepId },
+      { type: "attempt_started", stepId, attempt },
+      { type: "attempt_ended", stepId, attempt, result: "passed" },
+      { type: "step_ended", stepId, result: "passed" },
+    ];
+    const changes: ItemEventBody[] = [
+      { type: "step_started", stepId: REVIEW },
+      { type: "attempt_started", stepId: REVIEW, attempt: 1 },
+      { type: "attempt_ended", stepId: REVIEW, attempt: 1, result: "failed", detail: "The reviewer asked for changes." },
+      { type: "step_ended", stepId: REVIEW, result: "failed" },
+    ];
+    const item = fold([...planned, ...pass(BUILD, 1), ...changes, ...pass(BUILD, 2), { type: "step_started", stepId: REVIEW }]);
+    const [plan, build, review] = item.steps;
+    // The review after the fix has its full budget again; its first round is kept.
+    expect(review).toMatchObject({ state: "running", roundStart: 1, sentBack: 1 });
+    expect(countedAttempts(review!)).toBe(0);
+    expect(build).toMatchObject({ state: "passed", roundStart: 1 });
+    expect(build).not.toHaveProperty("sentBack");
+    expect(countedAttempts(build!)).toBe(1);
+    // A step entered once has no round fields.
+    expect(plan).toEqual({ id: PLAN, state: "passed", attempts: [expect.anything()] });
   });
 
   it("decision_opened and decision_resolved: needs you while open, with kind and askedAt", () => {

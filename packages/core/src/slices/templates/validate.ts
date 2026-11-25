@@ -317,7 +317,7 @@ async function buildStep(step: StepFile, i: number, scope: StepScope): Promise<T
   const cloud = isCloud(scope, step);
 
   // A back target must be a step of this template, and this step or an earlier one: a loop
-  // only ever goes back, so each pass re-runs steps whose max_attempts bound it.
+  // only ever goes back, and the engine caps how often a step sends the work back.
   const checkBack = (field: string, target: string) => {
     const index = indexOf.get(target);
     const goes = `${name}: "${field}" goes back to ${quote(target)}`;

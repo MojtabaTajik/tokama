@@ -18,7 +18,7 @@ import {
   type TemplateRecord,
 } from "../../kernel/schemas/index.js";
 import type { Agent, Repo } from "../config/index.js";
-import { EVENTS_FILE, ItemStore, openDecisions, readLog } from "../items/index.js";
+import { EVENTS_FILE, foldItem, ItemStore, openDecisions, readLog } from "../items/index.js";
 import { createWorktree } from "../worktrees/index.js";
 import { createRunLoop, parseVerdict, type RunLoop, type RunLoopDeps } from "./index.js";
 import { after, type Behavior, crashes, edits, editsThenCrashes, editsThenHangs, FAKE_PID, fakeRuntime, hangs, loops, says } from "./testing/fake-runtime.js";
@@ -432,7 +432,7 @@ describe("run loop: done_when", () => {
     expect(openDecision(id)).toMatchObject({ kind: "plan_approval", stepId: "change" });
   });
 
-  it("reviewer approves: changes go back to build with the reviewer's words; build's count continues; approve finishes", SLOW, async () => {
+  it("reviewer approves: changes go back to build with the reviewer's words; build's attempt numbers continue; approve finishes", SLOW, async () => {
     const builder = fakeRuntime([edits(FIXED), edits({ "app.txt": "fixed\nwith a test\n" })]);
     const reviewer = fakeRuntime([says("Add a test.\nVERDICT: changes"), says("Looks good.\n\nVERDICT: approve")]);
     const loop = engine(builder, { runtime: (a) => (a.id === "reviewer" ? reviewer : builder) });
@@ -468,6 +468,59 @@ describe("run loop: done_when", () => {
     expect(builder.calls[1]?.request.prompt).toContain('name="feedback from review"');
     expect(builder.calls[1]?.request.prompt).toContain("Add a test.");
     expect(builder.calls[1]?.request.prompt).not.toContain("last check output");
+  });
+
+  it("review asks for changes, the build fixes them, and the review runs again (max_attempts 1) and passes; the log replays to the same counters", SLOW, async () => {
+    const builder = fakeRuntime([says("Plan: fix app.txt."), edits(WRONG), edits(FIXED)]);
+    const reviewer = fakeRuntime([says("A layout shift remains.\nVERDICT: changes"), says("Fixed.\nVERDICT: approve")]);
+    const loop = engine(builder, { runtime: (a) => (a.id === "reviewer" ? reviewer : builder) });
+    const tpl = template([
+      { id: "plan", doneWhen: "you approve" },
+      { ...BUILD_CHECKED, checks: { commands: ["grep -q fixed app.txt"] }, maxAttempts: 1, ifFailed: { action: "ask" } },
+      { id: "review", agentId: "reviewer", doneWhen: "reviewer approves", ifChangesRequested: { action: "back", stepId: "build" }, maxAttempts: 1 },
+    ]);
+    const id = await start(loop, tpl);
+    await answer(loop, id, "approve");
+    // build#1 fails its check: the default if_failed asks; Retry step.
+    await answer(loop, id, "retry_step");
+    expect(story(id).filter((line) => /^(step_|attempt |attempt_ended|decision|item_ended)/.test(line))).toEqual([
+      "step_started plan",
+      "attempt plan#1",
+      "attempt_ended plan#1 passed",
+      "decision plan_approval plan",
+      "step_ended plan passed",
+      "step_started build",
+      "attempt build#1",
+      "attempt_ended build#1 failed",
+      "decision after_failure build",
+      "attempt build#2",
+      "attempt_ended build#2 passed",
+      "step_ended build passed",
+      "step_started review",
+      "attempt review#1",
+      "attempt_ended review#1 failed",
+      "step_ended review failed",
+      "step_started build",
+      "attempt build#3",
+      "attempt_ended build#3 passed",
+      "step_ended build passed",
+      "step_started review",
+      "attempt review#2",
+      "attempt_ended review#2 passed",
+      "step_ended review passed",
+      "item_ended done",
+    ]);
+    expect(reviewer.calls[1]?.request.prompt).toContain("+fixed");
+    // The same counters from the log alone, and after a restart.
+    const replayed = foldItem(log(id));
+    if (!replayed.ok) throw new Error(replayed.error.message);
+    expect(replayed.value).toEqual(item(id));
+    expect(ItemStore.open({ home: tokamaHome, hostId: HOST, clock }).store.get(id)).toEqual(item(id));
+    expect(item(id).steps.map((s) => [s.id, s.attempts.length, s.roundStart, s.sentBack])).toEqual([
+      ["plan", 1, undefined, undefined],
+      ["build", 3, 2, undefined],
+      ["review", 2, 1, 1],
+    ]);
   });
 
   it("reviewer approves: a reply without a strict verdict line is a run failure, not counted", SLOW, async () => {
@@ -525,22 +578,88 @@ describe("run loop: counters", () => {
     expect(item(id).state).toBe("done");
   });
 
-  it("back continues the target step's count, and its limit asks", SLOW, async () => {
-    // Each build makes the check fail another way, so it is never the same failure twice.
-    const verify = { "verify.sh": "exit $(cat code.txt)\n" };
-    const builder = fakeRuntime([edits({ ...verify, "code.txt": "4" }), edits({ ...verify, "code.txt": "5" })]);
+  it("back starts a new round with fresh attempts; after 3 round trips it asks; Run one more round goes back once more", SLOW, async () => {
+    // Each build makes the check fail another way, so it is never the same failure twice; the fifth passes.
+    const verify = (code: number) => edits({ "verify.sh": "exit $(cat code.txt)\n", "code.txt": `${code}` });
+    const builder = fakeRuntime([verify(4), verify(5), verify(6), verify(7), verify(0)]);
     const checker = fakeRuntime([says("Ready for the checks.")]);
     const loop = engine(builder, { runtime: (a) => (a.id === "reviewer" ? checker : builder) });
     const tpl = template([
-      { id: "build", maxAttempts: 2 },
-      { id: "verify", agentId: "reviewer", doneWhen: "checks pass", checks: { commands: ["sh verify.sh"] }, ifFailed: { action: "back", stepId: "build" }, maxAttempts: 5 },
+      { id: "build", maxAttempts: 1 },
+      { id: "verify", agentId: "reviewer", doneWhen: "checks pass", checks: { commands: ["sh verify.sh"] }, ifFailed: { action: "back", stepId: "build" }, maxAttempts: 1 },
     ]);
     const id = await start(loop, tpl);
-    // build#1, verify#1 fails, back: build#2, verify#2 fails, back: build is at its limit of 2.
+    // Four rounds of build#n, verify#n: three round trips, then the question instead of a fourth.
+    expect(item(id).steps.map((s) => s.attempts.length)).toEqual([4, 4]);
+    expect(item(id).steps[1]).toMatchObject({ sentBack: 3, roundStart: 3 });
+    const asked = openDecision(id);
+    expect(asked).toMatchObject({ kind: "after_failure", stepId: "verify", detail: "verify sent the work back to build 3 times. Run one more round, or end the item." });
+    expect(asked?.choices.map((c) => c.id)).toEqual(["one_more_round", "no_action_needed", "stop"]);
+    await answer(loop, id, "one_more_round");
+    expect(story(id).filter((line) => /^(step_|attempt |attempt_ended|resolved)/.test(line)).slice(-10)).toEqual([
+      "resolved one_more_round",
+      "step_ended verify failed",
+      "step_started build",
+      "attempt build#5",
+      "attempt_ended build#5 passed",
+      "step_ended build passed",
+      "step_started verify",
+      "attempt verify#5",
+      "attempt_ended verify#5 passed",
+      "step_ended verify passed",
+    ]);
+    expect(item(id).state).toBe("done");
+  });
+
+  it("the same failure twice asks before a send-back, also with max_attempts 1", SLOW, async () => {
+    const builder = fakeRuntime([edits({ "verify.sh": "exit 4\n" })]);
+    const checker = fakeRuntime([says("Ready.")]);
+    const loop = engine(builder, { runtime: (a) => (a.id === "reviewer" ? checker : builder) });
+    const tpl = template([
+      { id: "build" },
+      { id: "verify", agentId: "reviewer", doneWhen: "checks pass", checks: { commands: ["sh verify.sh"] }, ifFailed: { action: "back", stepId: "build" } },
+    ]);
+    const id = await start(loop, tpl);
     expect(item(id).steps.map((s) => s.attempts.length)).toEqual([2, 2]);
-    expect(openDecision(id)).toMatchObject({ kind: "after_failure", stepId: "build", detail: expect.stringContaining("limit of 2") });
-    await answer(loop, id, "stop");
-    expect(item(id).state).toBe("stopped");
+    expect(openDecision(id)).toMatchObject({ kind: "after_failure", stepId: "verify", detail: expect.stringContaining("twice in a row") });
+  });
+
+  it("back to the same step is a retry: no new round, so max_attempts limits it", SLOW, async () => {
+    const verify = (code: number) => edits({ "verify.sh": "exit $(cat code.txt)\n", "code.txt": `${code}` });
+    const loop = engine(fakeRuntime([verify(4), verify(5), verify(6)]));
+    const id = await start(loop, template([{ id: "fix", doneWhen: "checks pass", checks: { commands: ["sh verify.sh"] }, ifFailed: { action: "back", stepId: "fix" }, maxAttempts: 2 }]));
+    expect(item(id).steps[0]?.attempts).toHaveLength(2);
+    expect(item(id).steps[0]).not.toHaveProperty("roundStart");
+    expect(openDecision(id)).toMatchObject({ kind: "after_failure", detail: "Step fix reached its limit of 2 attempts." });
+  });
+
+  it("at the round-trip cap, End: no action needed ends the item", SLOW, async () => {
+    const builder = fakeRuntime([edits(FIXED)]);
+    const reviewer = fakeRuntime([says("Not yet.\nVERDICT: changes")]);
+    const loop = engine(builder, { runtime: (a) => (a.id === "reviewer" ? reviewer : builder) });
+    const tpl = template([
+      { id: "build", name: "Build" },
+      { id: "review", name: "Review", agentId: "reviewer", doneWhen: "reviewer approves", ifChangesRequested: { action: "back", stepId: "build" } },
+    ]);
+    const id = await start(loop, tpl);
+    expect(openDecision(id)).toMatchObject({ stepId: "review", detail: expect.stringContaining("Review sent the work back to Build 3 times.") });
+    expect(reviewer.calls).toHaveLength(4);
+    await answer(loop, id, "no_action_needed");
+    expect(item(id).outcome?.kind).toBe("no_action_needed");
+  });
+
+  it("retries within one round still respect max_attempts", SLOW, async () => {
+    // Round 1: build#1 fails, the retry build#2 passes, review asks for changes. Round 2: build#3 and build#4 fail.
+    const builder = fakeRuntime([edits(WRONG), edits(FIXED), edits(WRONG), edits(WRONG)]);
+    const reviewer = fakeRuntime([says("Add a test.\nVERDICT: changes")]);
+    const loop = engine(builder, { runtime: (a) => (a.id === "reviewer" ? reviewer : builder) });
+    const tpl = template([
+      { ...BUILD_CHECKED, checks: { commands: ["grep -q fixed app.txt"] }, maxAttempts: 2 },
+      { id: "review", agentId: "reviewer", doneWhen: "reviewer approves", ifChangesRequested: { action: "back", stepId: "build" } },
+    ]);
+    const id = await start(loop, tpl);
+    expect(item(id).steps[0]?.attempts.map((a) => a.result)).toEqual(["failed", "passed", "failed", "failed"]);
+    expect(openDecision(id)).toMatchObject({ kind: "after_failure", stepId: "build", detail: "Step build reached its limit of 2 attempts." });
   });
 
   it("a run failure asks Retry step / Stop and does not count", SLOW, async () => {

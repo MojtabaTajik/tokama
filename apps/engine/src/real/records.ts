@@ -67,7 +67,9 @@ export function toItemRecord(item: StoredItem): ItemRecord | undefined {
     const def = defs.get(step.id);
     const checking = def?.doneWhen === "checks pass" && running?.step.id === step.id && running.attempt.processes.some((p) => p.role === "check");
     const attempts = step.attempts.slice(-MAX_ATTEMPTS_SHOWN).map(toAttempt);
-    const detail = stepDetail(step.state, step.attempts, def?.maxAttempts);
+    // Runs and the limit count the current round: a step sent back to starts again from run 1.
+    const round = def && { runs: countedAttempts(step), maxAttempts: attemptLimit(item, step, def.maxAttempts) };
+    const detail = stepDetail(step.state, step.attempts, round);
     const note = step.state === "running" ? changesNoteOf(item, step.id) : undefined;
     return {
       name: def?.name ?? step.id,
@@ -79,7 +81,7 @@ export function toItemRecord(item: StoredItem): ItemRecord | undefined {
       ...(def && def.connections.length > 0 && { uses: def.connections.map(({ connectionId, access }) => ({ connectionId, access })) }),
       ...(detail !== undefined && { detail }),
       ...(attempts.length > 0 && { attempts }),
-      ...(def && { runs: countedAttempts(step), maxAttempts: attemptLimit(item, step, def.maxAttempts) }),
+      ...round,
       ...(note !== undefined && { changesNote: note }),
     };
   });
@@ -170,14 +172,14 @@ function toAttempt(attempt: AttemptRecord): AttemptSummary {
   };
 }
 
-function stepDetail(state: StepRecord["state"], attempts: readonly AttemptRecord[], maxAttempts: number | undefined): string | undefined {
+function stepDetail(state: StepRecord["state"], attempts: readonly AttemptRecord[], round: { runs: number; maxAttempts: number } | undefined): string | undefined {
   const last = attempts.at(-1);
-  const of = maxAttempts === undefined ? "" : ` of ${maxAttempts}`;
   switch (state) {
     case "pending":
       return undefined;
     case "running":
-      return last === undefined ? "starting" : `attempt ${last.attempt}${of}`;
+      if (last === undefined || round?.runs === 0) return "starting";
+      return round === undefined ? `attempt ${last.attempt}` : `attempt ${round.runs} of ${round.maxAttempts}`;
     case "needs_you":
       return "waits for you";
     case "passed":

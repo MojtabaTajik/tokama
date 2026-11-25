@@ -86,6 +86,25 @@ describe("toItemRecord", () => {
     expect(toItemRecord(item)).toMatchObject({ cardLine: "Fix · attempt 1 of 3", steps: [{ stage: "verifying" }, {}] });
   });
 
+  it("counts the runs of the current round: a step the work came back to starts again from run 1", () => {
+    let item = append(created(), [
+      { type: "step_started", stepId: FIX },
+      { type: "attempt_started", stepId: FIX, attempt: 1 },
+      { type: "attempt_ended", stepId: FIX, attempt: 1, result: "failed" },
+      { type: "attempt_started", stepId: FIX, attempt: 2 },
+      { type: "attempt_ended", stepId: FIX, attempt: 2, result: "passed" },
+      { type: "step_ended", stepId: FIX, result: "passed" },
+      { type: "step_started", stepId: REVIEW },
+      { type: "attempt_started", stepId: REVIEW, attempt: 1 },
+      { type: "attempt_ended", stepId: REVIEW, attempt: 1, result: "failed" },
+      { type: "step_ended", stepId: REVIEW, result: "failed" },
+      { type: "step_started", stepId: FIX },
+    ]);
+    expect(toItemRecord(item)!.steps[0]).toMatchObject({ state: "running", detail: "starting", runs: 0, maxAttempts: 3 });
+    item = append(item, [{ type: "attempt_started", stepId: FIX, attempt: 3 }]);
+    expect(toItemRecord(item)!.steps[0]).toMatchObject({ detail: "attempt 1 of 3", runs: 1, maxAttempts: 3 });
+  });
+
   it("serves an open decision with its kind, step and choices, and a detail cut to fit", () => {
     const long = `The agent call timed out. ${"x".repeat(600)}`;
     const item = append(created(), [
