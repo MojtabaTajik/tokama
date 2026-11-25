@@ -35,6 +35,7 @@ import {
   type CoveredPath,
   type DecisionChoice,
   type DecisionKind,
+  type FinishAction,
   type ItemEventBody,
   type ItemDiff,
   type ItemId,
@@ -53,7 +54,8 @@ import { protectedSet, type ProtectedSet } from "../integrity/index.js";
 import { openAttempt, openDecisions, recoverItems, RUN_FAILURE_CHOICES, type ItemStore, type RecoveredItem } from "../items/index.js";
 import { buildPrompt, type StepResults } from "../prompting/index.js";
 import { checksPass, runCommand, type CheckResult } from "../verification/index.js";
-import { commitItem, createWorktree, findItemWorktree, stageItem, treeDiff, worktreePath, worktreeSnapshot, type ItemWorktree } from "../worktrees/index.js";
+import { commitItem, createWorktree, findItemWorktree, originPushUrl, stageItem, treeDiff, worktreePath, worktreeSnapshot, type ItemWorktree } from "../worktrees/index.js";
+import { createFinisher } from "./finish.js";
 import { attemptLimit, budgetAllowedMs, budgetUsedMs, CONTINUE_ID, countedAttempts, ONE_MORE_ID, sameFailureTwice } from "./counters.js";
 import {
   APPROVE_ID,
@@ -95,6 +97,10 @@ export interface RunLoopDeps {
   readonly recoveryGraceMs?: number;
   /** Problems that do not stop an item, such as usage that could not be recorded. */
   readonly log?: (message: string) => void;
+  /** argv that starts gh for Open PR. Default: `["gh"]`. */
+  readonly ghCommand?: readonly [string, ...string[]];
+  /** The SSH agent socket, for a push to an SSH remote only; agents and checks never get it. */
+  readonly sshAuthSock?: string;
 }
 
 export interface StartItemInput {
@@ -121,7 +127,12 @@ export interface RunLoop {
   decisionDiff(itemId: ItemId, decisionId: string): Promise<Result<ItemDiff, CommandError>>;
   /** Kills the running agent or check, keeps the worktree, and ends the item as stopped. */
   stopItem(itemId: ItemId): Promise<Result<null, CommandError>>;
-  /** Settles when the item's loop waits for the engineer or has ended. */
+  /**
+   * A finish action on a done item (merge, open a pull request, discard), on the engineer's
+   * command. Replies once the start is recorded; the result comes as item events.
+   */
+  finishItem(itemId: ItemId, action: FinishAction): Promise<Result<null, CommandError>>;
+  /** Settles when the item's loop waits for the engineer or has ended, and its finish action has ended. */
   settled(itemId: ItemId): Promise<void>;
   /**
    * For engine shutdown: stops every running agent and check and waits for the loops, recording
@@ -199,6 +210,15 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
   const guard = deps.guard ?? claudeCodeGuardDefaults;
   const commandTimeoutMs = deps.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
   const live = new Map<ItemId, Live>();
+  const finisher = createFinisher({
+    store,
+    git,
+    runner: deps.runner,
+    repo: deps.repo,
+    ...(deps.ghCommand !== undefined && { ghCommand: deps.ghCommand }),
+    ...(deps.sshAuthSock !== undefined && { sshAuthSock: deps.sshAuthSock }),
+    ...(deps.localOnly !== undefined && { localOnly: deps.localOnly }),
+  });
   const protectedSets = new Map<ItemId, ProtectedSet>();
 
   // Events may sync later: their words never hold this machine's paths. Error messages from git,
@@ -493,7 +513,13 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       }
       if (!created.ok) return askRunFailure(item, `Cannot create the worktree: ${created.error.message}`);
       const { branch, folder, baseCommit } = created.value;
-      current = { ...ctx, item: append(item.id, [{ type: "worktree_added", repoId: repo.id, branch, dir: folder, baseCommit }]) };
+      // Where origin pushes now, before any agent runs: Open PR pushes only there.
+      const pushUrl = await originPushUrl(git, repo.path);
+      const recordedUrl = pushUrl.ok ? pushUrl.value : undefined;
+      current = {
+        ...ctx,
+        item: append(item.id, [{ type: "worktree_added", repoId: repo.id, branch, dir: folder, baseCommit, ...(recordedUrl !== undefined && { pushUrl: recordedUrl }) }]),
+      };
     }
     let worktree = worktreeOf(current);
     if (worktree === undefined) return { kind: "end", outcome: "failed", detail: "The item's worktree has no recorded base commit." };
@@ -1028,6 +1054,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       signal: recoveryAbort.signal,
       ...(deps.recoveryGraceMs !== undefined && { graceMs: deps.recoveryGraceMs }),
     });
+    if (!closing) finisher.recover();
     for (const item of store.list()) {
       if (closing) break;
       if (item.deleted || item.outcome !== undefined || item.hostId !== store.hostId || openDecisions(item).length > 0) continue;
@@ -1102,6 +1129,12 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       return ok({ ...diff.value, worktree: { repoId: repo.id, dir: item.worktrees[0]!.dir, branch: worktree.branch, baseCommit: worktree.baseCommit } });
     },
 
+    async finishItem(itemId, action) {
+      await ready;
+      if (closing) return closed();
+      return finisher.start(itemId, action);
+    },
+
     async stopItem(itemId) {
       await ready;
       if (closing) return closed();
@@ -1119,6 +1152,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       closing = true;
       recoveryAbort.abort();
       await ready.catch(() => undefined);
+      await finisher.close();
       const chains = [...live.values()].map((entry) => {
         entry.controller.abort();
         return entry.chain;
@@ -1134,6 +1168,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
         const now = live.get(itemId)?.chain;
         chain = now === chain ? undefined : now;
       }
+      await finisher.settled(itemId);
     },
   };
 }

@@ -43,6 +43,23 @@ export const ConnectionUsesSchema = z.array(z.strictObject({ connectionId: Conne
 
 const GIT_ID = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/, "must be a git object id");
 
+/** What the engineer can do with a done item's branch: merge it locally, open a pull request, or throw it away. */
+export const FinishActionSchema = z.enum(["merge", "pull_request", "discard"]);
+
+/** A remote URL as Tokama records it: no spaces or control characters, no password in it. */
+export const PushUrlSchema = z
+  .string()
+  .min(1)
+  .max(500)
+  .regex(/^(?!-)[^\s\p{Cc}]+$/u, "must be a URL with no spaces or control characters")
+  .refine((url) => !/^[a-z][a-z0-9+.-]*:\/\/[^/@]*:[^/@]*@/i.test(url), "must not hold a password");
+
+/** A pull request's web page, as the code host gave it. */
+export const PullRequestUrlSchema = z
+  .string()
+  .max(500)
+  .regex(/^https:\/\/[A-Za-z0-9.-]+(?::\d+)?\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/\d+$/, "must be a pull request URL");
+
 /** One attempt of a step: one agent session plus its checks. */
 export const AttemptSummarySchema = z.strictObject({
   attempt: z.int().min(1),
@@ -121,9 +138,27 @@ export const ItemRecordSchema = z.strictObject({
       commits: z.array(z.strictObject({ repoId: RepoIdSchema, commit: GIT_ID, branch: z.string().min(1).max(200).optional() })).max(20).optional(),
     })
     .optional(),
+  /** A done item's worktree and what was done with it. Present once a done item has a worktree. */
+  finish: z
+    .strictObject({
+      /** The action running now. */
+      running: FinishActionSchema.optional(),
+      merged: z.strictObject({ baseBranch: z.string().min(1).max(200), commit: GIT_ID }).optional(),
+      pullRequest: z.strictObject({ url: PullRequestUrlSchema }).optional(),
+      /** The worktree and branch are gone: discarded, or removed after a merge. */
+      worktreeRemoved: z.boolean(),
+      /** The last action that did not succeed, and why, until the next one starts. */
+      failed: z.strictObject({ action: FinishActionSchema, detail: z.string().min(1).max(500) }).optional(),
+      /** A note on the last result, e.g. why the worktree was kept after a merge. */
+      detail: z.string().min(1).max(500).optional(),
+      /** Where Open PR pushes, e.g. `github.com/acme/orders-api`; absent when it can't push anywhere. */
+      pushTarget: z.string().min(1).max(300).optional(),
+    })
+    .optional(),
 });
 
 export type DecisionKind = z.output<typeof DecisionKindSchema>;
+export type FinishAction = z.output<typeof FinishActionSchema>;
 export type ItemOutcome = z.output<typeof ItemOutcomeSchema>;
 export type AttemptResult = z.output<typeof AttemptResultSchema>;
 export type RunFailure = z.output<typeof RunFailureSchema>;
@@ -152,4 +187,16 @@ export function itemStage(item: Pick<ItemRecord, "state" | "steps">): Stage {
   if (item.state === "queued") return "queued";
   if (item.state === "done" || item.state === "stopped" || item.state === "failed") return "done";
   return item.steps[currentStepIndex(item)]?.stage ?? "done";
+}
+
+/**
+ * The finish actions a done item offers now, the one rule every client and the engine use. Merge
+ * and Open PR need the item's commit; nothing is offered while an action runs or once the
+ * worktree is gone; after a pull request only Discard is left.
+ */
+export function finishActions(item: Pick<ItemRecord, "outcome" | "finish">): FinishAction[] {
+  const { finish, outcome } = item;
+  if (outcome?.kind !== "done" || finish === undefined || finish.running !== undefined || finish.worktreeRemoved) return [];
+  const committed = (outcome.commits?.length ?? 0) > 0 && finish.merged === undefined && finish.pullRequest === undefined;
+  return [...(committed ? (["merge", "pull_request"] as const) : []), "discard"];
 }

@@ -222,6 +222,37 @@ describe("real mode", () => {
     expect(git("show", `${done.outcome?.commits?.[0]?.commit}:greeting.txt`)).toBe("hello world");
   });
 
+  it("finishes a done item on command: Merge fast-forwards main and removes the worktree; the record and card say so", SLOW, async () => {
+    const { client } = await engine(scripted([{ writes: { "greeting.txt": "hello world\n" } }]));
+    const id = await start(client);
+    const done = await waitItem(client, id, (i) => i.state === "done", "done");
+    expect(done.finish).toEqual({ worktreeRemoved: false });
+    const commit = done.outcome!.commits![0]!;
+    expect(await client.command({ type: "finish_item", itemId: id, action: "merge" })).toEqual({ ok: true, data: null });
+    const merged = await waitItem(client, id, (i) => i.finish?.merged !== undefined, "merged");
+    expect(merged.finish).toEqual({ merged: { baseBranch: "main", commit: commit.commit }, worktreeRemoved: true });
+    expect(merged.cardLine).toBe(`merged into main · ${commit.commit.slice(0, 7)}`);
+    expect(git("rev-parse", "main")).toBe(commit.commit);
+    expect(git("branch", "--list", commit.branch!)).toBe("");
+    expect(await client.command({ type: "finish_item", itemId: id, action: "discard" })).toMatchObject({ ok: false, error: { code: "invalid_state" } });
+  });
+
+  it("finishes a done item on command: a refused Merge is recorded with why, and Discard removes the worktree", SLOW, async () => {
+    const { client } = await engine(scripted([{ writes: { "greeting.txt": "hello world\n" } }]));
+    const id = await start(client);
+    await waitItem(client, id, (i) => i.state === "done", "done");
+    git("switch", "-q", "-c", "feature");
+    await client.command({ type: "finish_item", itemId: id, action: "merge" });
+    const refused = await waitItem(client, id, (i) => i.finish?.failed !== undefined, "refused");
+    expect(refused.finish?.failed).toEqual({ action: "merge", detail: "Your checkout is on feature, not main. Switch it to main, then merge again. Tokama does not switch branches for you." });
+    expect(await client.command({ type: "finish_item", itemId: id, action: "pull_request" })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
+    await client.command({ type: "finish_item", itemId: id, action: "discard" });
+    const discarded = await waitItem(client, id, (i) => i.finish?.worktreeRemoved === true, "discarded");
+    expect(discarded.cardLine).toBe("discarded");
+    expect(discarded.finish?.failed).toBeUndefined();
+    expect(git("worktree", "list")).not.toContain(".tokama/wt");
+  });
+
   it("asks after a failed attempt; Retry once more runs the step again and commits", SLOW, async () => {
     const { client } = await engine(scripted([{ writes: { "greeting.txt": "still wrong\n" } }, { writes: { "greeting.txt": "hello world\n" } }]));
     const id = await start(client, { templateId: "orders-api/careful-fix" });

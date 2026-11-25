@@ -1,0 +1,37 @@
+import { describe, expect, it } from "vitest";
+import { hostedRepo, recordableRemote, withoutUserInfo } from "./remote.js";
+
+describe("recordableRemote", () => {
+  it("keeps network URLs, without a password or an HTTPS user", () => {
+    expect(recordableRemote("https://github.com/acme/orders-api.git")).toBe("https://github.com/acme/orders-api.git");
+    expect(recordableRemote("https://x-access-token:ghp_secret@github.com/acme/orders-api")).toBe("https://github.com/acme/orders-api");
+    expect(recordableRemote("https://ghp_secret@github.com/acme/orders-api")).toBe("https://github.com/acme/orders-api");
+    expect(recordableRemote("ssh://git:pw@github.com:22/acme/orders-api.git")).toBe("ssh://git@github.com:22/acme/orders-api.git");
+    expect(recordableRemote("git@github.com:acme/orders-api.git")).toBe("git@github.com:acme/orders-api.git");
+  });
+
+  it("refuses local paths, file URLs, transport helpers and odd text", () => {
+    for (const url of ["/srv/git/orders-api.git", "./orders-api", "../x", "file:///srv/x.git", "ext::sh -c touch% /tmp/x", "fd::3", "-uhelp", "", "https://a b", "C:/repo"]) {
+      expect(recordableRemote(url), url).toBeUndefined();
+    }
+  });
+});
+
+describe("hostedRepo", () => {
+  it("reads host, owner and repo, and whether pushes go over SSH", () => {
+    expect(hostedRepo("https://github.com/acme/orders-api.git")).toEqual({ host: "github.com", owner: "acme", name: "orders-api", ssh: false });
+    expect(hostedRepo("git@GitHub.com:acme/orders-api.git")).toEqual({ host: "github.com", owner: "acme", name: "orders-api", ssh: true });
+    expect(hostedRepo("ssh://git@ghe.example.com:2222/acme/orders-api")).toEqual({ host: "ghe.example.com", owner: "acme", name: "orders-api", ssh: true });
+  });
+
+  it("refuses paths that are not owner/repo", () => {
+    expect(hostedRepo("https://gitlab.com/group/sub/repo.git")).toBeUndefined();
+    expect(hostedRepo("https://github.com/acme")).toBeUndefined();
+    expect(hostedRepo("https://github.com/acme/../x")).toBeUndefined();
+    expect(hostedRepo("https://github.com/../x")).toBeUndefined();
+  });
+});
+
+it("withoutUserInfo removes credentials from every URL in a message", () => {
+  expect(withoutUserInfo("fatal: unable to access 'https://user:tok@github.com/a/b/': 403")).toBe("fatal: unable to access 'https://github.com/a/b/': 403");
+});

@@ -124,6 +124,8 @@ export interface EngineOptions {
    * usage scope reads. Absent: the logs are never read.
    */
   readonly claudeLogs?: string;
+  /** Real mode: argv that starts gh for Open PR and its check. Default: `["gh"]`. */
+  readonly ghCommand?: readonly [string, ...string[]];
   /** Default: the system clock. */
   readonly clock?: Clock;
   /** A connection that sends no hello within this time is closed. Default 5 s. */
@@ -239,9 +241,10 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
           clock: options.clock ?? systemClock,
           processes: options.processTable ?? posixProcessTable,
           runner,
-          checks: options.checks ?? machineChecks(runner),
+          checks: options.checks ?? machineChecks(runner, options.ghCommand),
           ...(options.runtime !== undefined && { runtime: options.runtime }),
           ...(options.recoveryGraceMs !== undefined && { recoveryGraceMs: options.recoveryGraceMs }),
+          ...(options.ghCommand !== undefined && { ghCommand: options.ghCommand }),
           log,
         }).catch((error: unknown) => {
           realFailure = `Tokama could not start running items: ${String(error)}`.slice(0, 1000);

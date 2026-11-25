@@ -9,6 +9,7 @@ import {
   countedAttempts,
   type DecisionKind,
   REQUEST_CHANGES_ID,
+  hostedRepo,
   type ItemKind,
   type ItemRecord,
   openAttempt,
@@ -94,7 +95,8 @@ export function toItemRecord(item: StoredItem): ItemRecord | undefined {
       }),
     }),
   };
-  const cardLine = cut(cardLineOf(item, steps, decision?.kind), 120);
+  const finish = toFinish(item);
+  const cardLine = cut(finishLine(finish) ?? cardLineOf(item, steps, decision?.kind), 120);
 
   const record = {
     schemaVersion: 1,
@@ -112,11 +114,40 @@ export function toItemRecord(item: StoredItem): ItemRecord | undefined {
     ...(decision !== undefined && item.state === "needs_you" && { decision }),
     steps,
     ...(outcome && { outcome }),
+    ...(finish !== undefined && { finish }),
   } satisfies ItemRecord;
   // The record is checked here, so a bad one is logged once instead of failing every board reply.
   const checked = parseItemRecord(record);
   if (!checked.ok) throw new Error(`item ${item.id} does not map to a valid record: ${checked.error.issues.map((i) => `${i.path} ${i.message}`).join("; ")}`);
   return checked.value;
+}
+
+/** A done item's worktree and what was done with it; undefined for other items. */
+function toFinish(item: StoredItem): ItemRecord["finish"] {
+  const worktree = item.worktrees[0];
+  if (item.outcome?.kind !== "done" || worktree === undefined) return undefined;
+  const stored = item.finish;
+  const hosted = worktree.pushUrl === undefined ? undefined : hostedRepo(worktree.pushUrl);
+  const failed = stored?.failed && cut(stored.failed.detail, 500);
+  const detail = cut(stored?.detail, 500);
+  return {
+    ...(stored?.running !== undefined && { running: stored.running }),
+    ...(stored?.merged !== undefined && { merged: { baseBranch: stored.merged.baseBranch, commit: stored.merged.commit } }),
+    ...(stored?.pullRequest !== undefined && { pullRequest: { url: stored.pullRequest.url } }),
+    worktreeRemoved: stored?.worktreeRemoved ?? false,
+    ...(stored?.failed !== undefined && failed !== undefined && { failed: { action: stored.failed.action, detail: failed } }),
+    ...(detail !== undefined && { detail }),
+    ...(hosted !== undefined && { pushTarget: `${hosted.host}/${hosted.owner}/${hosted.name}` }),
+  };
+}
+
+/** The card's line once a finish action ran. */
+function finishLine(finish: ItemRecord["finish"]): string | undefined {
+  if (finish === undefined) return undefined;
+  if (finish.merged !== undefined) return `merged into ${finish.merged.baseBranch} · ${finish.merged.commit.slice(0, 7)}`;
+  if (finish.pullRequest !== undefined) return `PR opened · ${finish.pullRequest.url.replace(/^https:\/\//, "")}`;
+  if (finish.worktreeRemoved) return "discarded";
+  return undefined;
 }
 
 function toAttempt(attempt: AttemptRecord): AttemptSummary {

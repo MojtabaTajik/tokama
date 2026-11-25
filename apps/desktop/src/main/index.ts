@@ -70,7 +70,9 @@ function startWatch(): ConnectionWatch {
     node: findExecutable("node", process.env["PATH"]),
     entry: resolve(app.getAppPath(), "..", "engine", "dist", "main.js"),
     dir,
-    env: buildEnv(process.env),
+    // The SSH agent socket reaches the engine for Open PR's push to an SSH remote; the engine's
+    // process runner drops it again for every agent, check and other git call.
+    env: buildEnv(process.env, process.env["SSH_AUTH_SOCK"] === undefined ? {} : { SSH_AUTH_SOCK: process.env["SSH_AUTH_SOCK"] }),
     sample,
   });
   return watchConnection({

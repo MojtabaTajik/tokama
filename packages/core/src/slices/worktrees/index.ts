@@ -15,3 +15,6 @@ export {
   type WorktreeErrorReason,
   type WorktreeRepo,
 } from "./worktree.js";
+export { mergeItem, mergeMessage, originPushUrl, pushItem, type MergeResult } from "./finish.js";
+export { ghStatus, openPullRequest, type GhOptions, type GhStatus, type PullRequestInput } from "./pull-request.js";
+export { hostedRepo, pushTarget, recordableRemote, withoutUserInfo, type HostedRepo } from "./remote.js";

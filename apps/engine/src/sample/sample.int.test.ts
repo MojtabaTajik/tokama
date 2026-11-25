@@ -265,7 +265,22 @@ describe("fake engine mode", () => {
     expect(stopped.steps.map((step) => step.state)).toEqual(["passed", "passed", "passed", "stopped"]);
   });
 
-  it("stop_item stops a running item once, and refuses unknown or ended items", async () => {
+  it("finish_item opens a made-up pull request at once, then only Discard is left; other items refuse", async () => {
+    const { client, next } = await sampleEngine();
+    expect(await client.command({ type: "finish_item", itemId: ITEM_IDS.finished, action: "pull_request" })).toEqual({ ok: true, data: null });
+    const update = await next();
+    expect(update.item).toMatchObject({
+      id: ITEM_IDS.finished,
+      finish: { pullRequest: { url: "https://github.com/northwind/orders-api/pull/128" }, worktreeRemoved: false },
+      cardLine: "PR opened · github.com/northwind/orders-api/pull/128",
+    });
+    expect(await client.command({ type: "finish_item", itemId: ITEM_IDS.finished, action: "merge" })).toMatchObject({ ok: false, error: { code: "invalid_state" } });
+    expect(await client.command({ type: "finish_item", itemId: ITEM_IDS.finished, action: "discard" })).toEqual({ ok: true, data: null });
+    expect((await next()).item).toMatchObject({ finish: { worktreeRemoved: true }, cardLine: "discarded" });
+    expect(await client.command({ type: "finish_item", itemId: ITEM_IDS.done, action: "discard" })).toMatchObject({ ok: false, error: { code: "invalid_state" } });
+  });
+
+    it("stop_item stops a running item once, and refuses unknown or ended items", async () => {
     const { client, next } = await sampleEngine();
 
     expect(await client.command({ type: "stop_item", itemId: ITEM_IDS.working })).toEqual({ ok: true, data: null });

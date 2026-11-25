@@ -59,8 +59,10 @@ export function applyEvent(item: StoredItem | undefined, event: ItemEvent): Resu
   if (event.itemId !== item.id) return fail(`event for ${event.itemId} in the log of ${item.id}`);
   if (event.seq !== item.lastSeq + 1) return fail(`expected seq ${item.lastSeq + 1}, got ${event.seq}`);
   if (item.deleted) return fail("nothing may follow a tombstone");
-  // A call that a stop ended reports its usage after the item ended.
-  if (item.outcome !== undefined && event.type !== "tombstone" && event.type !== "usage_recorded") return fail(`the item has ended; ${event.type} is not allowed`);
+  // A call that a stop ended reports its usage after the item ended; finish actions follow a done item.
+  const finishEvent = FINISH_EVENTS.has(event.type);
+  if (item.outcome !== undefined && event.type !== "tombstone" && event.type !== "usage_recorded" && !finishEvent) return fail(`the item has ended; ${event.type} is not allowed`);
+  if (finishEvent && item.outcome?.kind !== "done") return fail(`${event.type} is allowed only once the item is done`);
 
   const next = structuredClone(item);
   next.lastSeq = event.seq;
@@ -80,6 +82,7 @@ export function applyEvent(item: StoredItem | undefined, event: ItemEvent): Resu
         branch: event.branch,
         dir: event.dir,
         ...(event.baseCommit !== undefined && { baseCommit: event.baseCommit }),
+        ...(event.pushUrl !== undefined && { pushUrl: event.pushUrl }),
       });
       break;
 
@@ -212,7 +215,45 @@ export function applyEvent(item: StoredItem | undefined, event: ItemEvent): Resu
       return ok(next);
     }
 
+    case "finish_started": {
+      if (next.worktrees.length === 0) return fail("the item has no worktree");
+      const finish = next.finish ?? { worktreeRemoved: false };
+      if (finish.running !== undefined) return fail(`${finish.running} is still running`);
+      if (finish.worktreeRemoved) return fail("the worktree is gone");
+      if (event.action !== "discard") {
+        if ((next.outcome?.commits?.length ?? 0) === 0) return fail("the item has no commit");
+        if (finish.merged !== undefined || finish.pullRequest !== undefined) return fail("the branch is merged or has a pull request");
+      }
+      delete finish.failed;
+      delete finish.detail;
+      next.finish = { ...finish, running: event.action };
+      break;
+    }
+
+    case "merged":
+    case "pr_opened":
+    case "discarded":
+    case "finish_failed": {
+      const action = event.type === "finish_failed" ? event.action : RESULT_OF[event.type];
+      const finish = next.finish;
+      if (finish?.running !== action) return fail(`${event.type} without a running ${action}`);
+      delete finish.running;
+      if (event.type === "merged") {
+        finish.merged = { baseBranch: event.baseBranch, commit: event.commit, at: event.at };
+        finish.worktreeRemoved = event.worktreeRemoved;
+        if (event.detail !== undefined) finish.detail = event.detail;
+      } else if (event.type === "pr_opened") {
+        finish.pullRequest = { url: event.url, at: event.at };
+      } else if (event.type === "discarded") {
+        finish.worktreeRemoved = true;
+      } else {
+        finish.failed = { action, detail: event.detail, at: event.at };
+      }
+      break;
+    }
+
     case "tombstone":
+      if (next.finish?.running !== undefined) return fail(`${next.finish.running} is still running`);
       if (openAttempt(next) !== undefined) return fail("an attempt is still running");
       next.deleted = true;
       break;
@@ -221,6 +262,9 @@ export function applyEvent(item: StoredItem | undefined, event: ItemEvent): Resu
   next.state = itemState(next);
   return ok(next);
 }
+
+const FINISH_EVENTS: ReadonlySet<string> = new Set(["finish_started", "merged", "pr_opened", "discarded", "finish_failed"]);
+const RESULT_OF = { merged: "merge", pr_opened: "pull_request", discarded: "discard" } as const;
 
 /** The attempt of the current step that has started and not ended, if any. */
 export function openAttempt(item: StoredItem): { step: StoredStep; attempt: AttemptRecord } | undefined {

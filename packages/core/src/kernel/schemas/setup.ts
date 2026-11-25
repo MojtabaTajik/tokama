@@ -100,6 +100,8 @@ export const CliHealthSchema = z.strictObject({
 export const HealthSchema = z.strictObject({
   git: z.strictObject({ ok: z.boolean(), version: label.optional(), message: z.string().min(1).max(1000).optional() }),
   clis: z.array(CliHealthSchema).max(10),
+  /** The GitHub CLI, which opens pull requests; absent when the engine did not check it. */
+  gh: z.strictObject({ installed: z.boolean(), loggedIn: z.boolean(), message: z.string().min(1).max(1000).optional() }).optional(),
   /** Config files that did not load (repos.yaml, agents, templates), each with its problem. */
   config: z.array(z.strictObject({ file: z.string().min(1).max(300), message: z.string().min(1).max(1000) })).max(100),
 });

@@ -175,10 +175,38 @@ export interface Git {
   writeTree(repo: string): Promise<GitResult<string>>;
   /** `commit -q --no-verify -m <message>` of the index; returns the new commit id. */
   commit(repo: string, message: string): Promise<GitResult<string>>;
-  /** `commit-tree <tree> -p <parent> -m <message>`: a commit of exactly `tree`; returns its id. No ref moves. */
-  commitTree(repo: string, tree: string, parent: string, message: string): Promise<GitResult<string>>;
+  /**
+   * `commit-tree <tree> -p <parent>... -m <message>`: a commit of exactly `tree` (two parents for a
+   * merge commit); returns its id. No ref moves.
+   */
+  commitTree(repo: string, tree: string, parent: string | readonly string[], message: string): Promise<GitResult<string>>;
   /** `update-ref <ref> <newId> <oldId>`: moves `ref` (under refs/) only if it still points at `oldId`. */
   updateRef(repo: string, ref: string, newId: string, oldId: string): Promise<GitResult<void>>;
+  /** `symbolic-ref -q HEAD`: the full ref the checkout is on, e.g. refs/heads/main; undefined when HEAD is detached. */
+  currentRef(repo: string): Promise<GitResult<string | undefined>>;
+  /** `merge-base --is-ancestor <ancestor> <descendant>`. */
+  isAncestor(repo: string, ancestor: string, descendant: string): Promise<GitResult<boolean>>;
+  /**
+   * `merge-tree --write-tree` of two commits, in the object store only: no checkout, index or
+   * working tree is touched. A clean merge gives its tree; a conflicted one the conflicted paths.
+   */
+  mergeTree(repo: string, ours: string, theirs: string): Promise<GitResult<MergeTreeResult>>;
+  /**
+   * `merge --ff-only --no-edit <commit>` in the checkout at `repo`: moves its branch and working
+   * tree forward. git refuses, and changes nothing, when local changes or untracked files would be
+   * overwritten.
+   */
+  mergeFastForward(repo: string, commit: string): Promise<GitResult<void>>;
+  /**
+   * The URL a push to `remote` is configured with, as written (`remote.<name>.pushurl`, else
+   * `remote.<name>.url`), before any `insteadOf` rewrite; undefined when the remote has none.
+   */
+  remotePushUrl(repo: string, remote: string): Promise<GitResult<string | undefined>>;
+  /**
+   * `push --no-verify --porcelain <remote> <commit>:refs/heads/<branch>`: no force. `sshAuthSock`
+   * passes the SSH agent socket to this push only (an SSH remote); no other git call gets it.
+   */
+  push(repo: string, remote: string, commit: string, branch: string, options?: { readonly sshAuthSock?: string }): Promise<GitResult<void>>;
   /** `rev-parse --verify <rev>`: the object id `rev` names. */
   revParse(repo: string, rev: string): Promise<GitResult<string>>;
   /**
@@ -215,6 +243,8 @@ export interface Git {
   checkGitVersion(): Promise<GitResult<string>>;
 }
 
+export type MergeTreeResult = { readonly clean: true; readonly tree: string } | { readonly clean: false; readonly conflicts: readonly string[] };
+
 export interface GitDirs {
   readonly gitDir: string;
   readonly commonDir: string;
@@ -236,12 +266,18 @@ export function createGit(options: GitOptions): Git {
   const safe = (config: readonly string[]) => config.flatMap((setting) => ["-c", setting]);
 
   /** Runs git with the safe config plus `extraConfig`; stdout comes back whole, through a temp file. */
-  async function raw(repo: string, args: readonly string[], extraConfig: readonly string[] = []): Promise<GitResult<string>> {
-    return map(capped(repo, args, extraConfig, Infinity), (out) => out.text);
+  async function raw(repo: string, args: readonly string[], extraConfig: readonly string[] = [], extraEnv: Readonly<Record<string, string>> = {}): Promise<GitResult<string>> {
+    return map(capped(repo, args, extraConfig, Infinity, extraEnv), (out) => out.text);
   }
 
   /** As `raw`, but only the first `maxBytes` of stdout are read. */
-  async function capped(repo: string, args: readonly string[], extraConfig: readonly string[], maxBytes: number): Promise<GitResult<{ text: string; cut: boolean }>> {
+  async function capped(
+    repo: string,
+    args: readonly string[],
+    extraConfig: readonly string[],
+    maxBytes: number,
+    extraEnv: Readonly<Record<string, string>> = {},
+  ): Promise<GitResult<{ text: string; cut: boolean }>> {
     const dir = await mkdtemp(join(tmpdir(), "tokama-git-"));
     try {
       const stdoutFile = join(dir, "stdout");
@@ -250,7 +286,7 @@ export function createGit(options: GitOptions): Git {
       const result = await options.runner.run({
         command: { argv: [gitPath, "--no-pager", ...safe(GIT_SAFE_CONFIG), ...safe(extraConfig), ...args] },
         cwd: repo,
-        env: GIT_ENV,
+        env: { ...GIT_ENV, ...extraEnv },
         timeoutMs,
         stdout: { file: stdoutFile },
         stderr: {
@@ -321,14 +357,14 @@ export function createGit(options: GitOptions): Git {
     });
   }
 
-  async function git(repo: string, args: readonly string[]): Promise<GitResult<string>> {
-    return map(gitCapped(repo, args, Infinity), (out) => out.text);
+  async function git(repo: string, args: readonly string[], extraEnv: Readonly<Record<string, string>> = {}): Promise<GitResult<string>> {
+    return map(gitCapped(repo, args, Infinity, extraEnv), (out) => out.text);
   }
 
-  async function gitCapped(repo: string, args: readonly string[], maxBytes: number): Promise<GitResult<{ text: string; cut: boolean }>> {
+  async function gitCapped(repo: string, args: readonly string[], maxBytes: number, extraEnv: Readonly<Record<string, string>> = {}): Promise<GitResult<{ text: string; cut: boolean }>> {
     const overrides = await filterOverrides(repo, args);
     if (!overrides.ok) return overrides;
-    const result = await capped(repo, args, overrides.value.config, maxBytes);
+    const result = await capped(repo, args, overrides.value.config, maxBytes, extraEnv);
     const { required } = overrides.value;
     const refusedRequired =
       !result.ok &&
@@ -417,8 +453,65 @@ export function createGit(options: GitOptions): Git {
       return map(git(repo, ["rev-parse", "--verify", "HEAD"]), trimmed);
     },
     async commitTree(repo, tree, parent, message) {
-      const args = ["commit-tree", tree, "-p", parent, "-m", message];
-      return refuseOption(args, tree, parent) ?? map(git(repo, args), trimmed);
+      const parents = typeof parent === "string" ? [parent] : [...parent];
+      const args = ["commit-tree", tree, ...parents.flatMap((p) => ["-p", p]), "-m", message];
+      return refuseOption(args, tree, ...parents) ?? map(git(repo, args), trimmed);
+    },
+    async currentRef(repo) {
+      const args = ["symbolic-ref", "-q", "HEAD"];
+      const out = await git(repo, args);
+      // Exit 1: HEAD is detached.
+      if (!out.ok && out.error.reason === "failed" && out.error.exitCode === 1) return ok(undefined);
+      return out.ok ? ok(out.value.trim()) : out;
+    },
+    async isAncestor(repo, ancestor, descendant) {
+      const args = ["merge-base", "--is-ancestor", ancestor, descendant];
+      const refused = refuseOption(args, ancestor, descendant);
+      if (refused !== undefined) return refused;
+      const out = await git(repo, args);
+      if (!out.ok && out.error.reason === "failed" && out.error.exitCode === 1) return ok(false);
+      return out.ok ? ok(true) : out;
+    },
+    async mergeTree(repo, ours, theirs) {
+      const args = ["merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", ours, theirs];
+      const refused = refuseOption(args, ours, theirs);
+      if (refused !== undefined) return refused;
+      // git exits 1 both on a conflict and on some errors (an unknown rev): both commits are
+      // checked first, and a conflict is told by its output, a tree id and the paths.
+      for (const rev of [ours, theirs]) {
+        const known = await git(repo, ["rev-parse", "--verify", "--end-of-options", `${rev}^{commit}`]);
+        if (!known.ok) return known;
+      }
+      const out = await git(repo, args);
+      if (out.ok) return ok({ clean: true, tree: out.value.split("\0")[0]!.trim() });
+      const [tree = "", ...paths] = out.error.message.split("\0");
+      if (out.error.reason === "failed" && out.error.exitCode === 1 && /^[0-9a-f]{40,64}$/.test(tree)) {
+        return ok({ clean: false, conflicts: [...new Set(paths.filter((path) => path !== ""))] });
+      }
+      return out;
+    },
+    async mergeFastForward(repo, commit) {
+      const args = ["merge", "--ff-only", "--no-edit", "--no-verify", "-q", commit];
+      return refuseOption(args, commit) ?? map(git(repo, args), none);
+    },
+    async remotePushUrl(repo, remote) {
+      const refused = refuseOption(["config", "--get", `remote.${remote}.url`], remote);
+      if (refused !== undefined) return refused;
+      for (const key of ["pushurl", "url"]) {
+        const out = await git(repo, ["config", "--get", `remote.${remote}.${key}`]);
+        if (out.ok) return ok(out.value.trim());
+        // Exit 1: the key is not set.
+        if (!(out.error.reason === "failed" && out.error.exitCode === 1)) return out;
+      }
+      return ok(undefined);
+    },
+    async push(repo, remote, commit, branch, pushOptions = {}) {
+      const args = ["push", "--no-verify", "--porcelain", remote, `${commit}:refs/heads/${branch}`];
+      const refused = refuseOption(args, remote, commit, branch);
+      if (refused !== undefined) return refused;
+      if (!/^[0-9a-f]{40,64}$/.test(commit)) return err({ reason: "invalid-argument", args, exitCode: null, message: `refused commit: ${JSON.stringify(commit)}` });
+      const sock = pushOptions.sshAuthSock;
+      return map(git(repo, args, sock === undefined || sock === "" ? {} : { SSH_AUTH_SOCK: sock }), none);
     },
     async updateRef(repo, ref, newId, oldId) {
       const args = ["update-ref", ref, newId, oldId];

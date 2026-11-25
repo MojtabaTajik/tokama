@@ -557,6 +557,79 @@ describe("API on a real repo", () => {
     expect(await git.commitTree(repo, "--help", base, "m")).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
   });
 
+  it("currentRef, isAncestor and mergeTree read refs and merge in the object store only", SLOW, async () => {
+    const base = value(await git.revParse(repo, "HEAD"));
+    expect(value(await git.currentRef(repo))).toBe("refs/heads/main");
+    await plain(repo, "switch", "-q", "-c", "side");
+    write(join(repo, "side.txt"), "side\n");
+    await plain(repo, "add", "side.txt");
+    await plain(repo, "commit", "-q", "-m", "side");
+    const side = value(await git.revParse(repo, "HEAD"));
+    await plain(repo, "switch", "-q", "main");
+    write(join(repo, "main.txt"), "main\n");
+    await plain(repo, "add", "main.txt");
+    await plain(repo, "commit", "-q", "-m", "main");
+    const main = value(await git.revParse(repo, "HEAD"));
+    expect(value(await git.isAncestor(repo, base, side))).toBe(true);
+    expect(value(await git.isAncestor(repo, side, main))).toBe(false);
+
+    const clean = value(await git.mergeTree(repo, main, side));
+    if (!clean.clean) throw new Error("expected a clean merge");
+    const merge = value(await git.commitTree(repo, clean.tree, [main, side], "merge"));
+    expect(await plain(repo, "rev-list", "--parents", "-n", "1", merge)).toBe(`${merge} ${main} ${side}\n`);
+    expect(value(await git.revParse(repo, "HEAD"))).toBe(main);
+    expect(await plain(repo, "status", "--porcelain")).toBe("");
+
+    await plain(repo, "switch", "-q", "-c", "other", base);
+    write(join(repo, "main.txt"), "other\n");
+    await plain(repo, "add", "main.txt");
+    await plain(repo, "commit", "-q", "-m", "other");
+    const other = value(await git.revParse(repo, "HEAD"));
+    expect(value(await git.mergeTree(repo, main, other))).toEqual({ clean: false, conflicts: ["main.txt"] });
+    expect(await git.mergeTree(repo, main, "nosuchrev")).toMatchObject({ ok: false, error: { reason: "failed" } });
+    expect(await git.mergeTree(repo, main, "--help")).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
+
+    await plain(repo, "switch", "-q", "--detach", main);
+    expect(value(await git.currentRef(repo))).toBeUndefined();
+  });
+
+  it("mergeFastForward moves the checkout forward, runs no hook, and refuses what is not a fast-forward", SLOW, async () => {
+    const base = value(await git.revParse(repo, "HEAD"));
+    await plain(repo, "switch", "-q", "-c", "ahead");
+    write(join(repo, "ahead.txt"), "ahead\n");
+    await plain(repo, "add", "ahead.txt");
+    await plain(repo, "commit", "-q", "-m", "ahead");
+    const ahead = value(await git.revParse(repo, "HEAD"));
+    await plain(repo, "switch", "-q", "main");
+    write(join(repo, ".git", "hooks", "post-merge"), `#!/bin/sh\ntouch '${join(markers, "post-merge")}'\n`, 0o755);
+    value(await git.mergeFastForward(repo, ahead));
+    expect(ran("post-merge")).toBe(false);
+    expect(value(await git.revParse(repo, "main"))).toBe(ahead);
+    expect(readFileSync(join(repo, "ahead.txt"), "utf8")).toBe("ahead\n");
+    await plain(repo, "switch", "-q", "-c", "behind", base);
+    write(join(repo, "behind.txt"), "x\n");
+    await plain(repo, "add", "behind.txt");
+    await plain(repo, "commit", "-q", "-m", "behind");
+    expect(await git.mergeFastForward(repo, ahead)).toMatchObject({ ok: false, error: { reason: "failed" } });
+  });
+
+  it("remotePushUrl reads the configured URL before insteadOf; push sends a commit to a branch, with no hook", SLOW, async () => {
+    expect(value(await git.remotePushUrl(repo, "origin"))).toBeUndefined();
+    const bare = join(root, "remote.git");
+    await plain(root, "init", "-q", "--bare", bare);
+    await plain(repo, "remote", "add", "origin", "https://github.com/acme/orders-api.git");
+    await plain(repo, "config", `url.${bare}.insteadOf`, "https://github.com/acme/orders-api.git");
+    expect(value(await git.remotePushUrl(repo, "origin"))).toBe("https://github.com/acme/orders-api.git");
+    await plain(repo, "config", "remote.origin.pushurl", "https://github.com/acme/orders-api.git");
+    expect(value(await git.remotePushUrl(repo, "origin"))).toBe("https://github.com/acme/orders-api.git");
+    write(join(repo, ".git", "hooks", "pre-push"), `#!/bin/sh\ntouch '${join(markers, "pre-push")}'\n`, 0o755);
+    const head = value(await git.revParse(repo, "HEAD"));
+    value(await git.push(repo, "origin", head, "tokama/0000000a"));
+    expect(ran("pre-push")).toBe(false);
+    expect(await plain(bare, "rev-parse", "refs/heads/tokama/0000000a")).toBe(`${head}\n`);
+    expect(await git.push(repo, "origin", "main", "x")).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
+  });
+
   it("worktreePrune drops an entry whose folder is gone", SLOW, async () => {
     const path = join(root, "wt");
     value(await git.worktreeAdd(repo, path, "feature", "main"));
@@ -665,6 +738,20 @@ describe("how git is called", () => {
         "tag.gpgsign=false",
       ]),
     );
+  });
+
+  it("gives SSH_AUTH_SOCK to a push only, when asked", async () => {
+    const { runner, requests } = recordingRunner();
+    const stub = createGit({ runner });
+    await stub.push("/repo", "origin", "a".repeat(40), "tokama/0000000a", { sshAuthSock: "/tmp/agent.sock" });
+    const push = requests.find((request) => argvOf(request).includes("push"));
+    expect(push?.env).toMatchObject({ SSH_AUTH_SOCK: "/tmp/agent.sock" });
+    expect(argvOf(push).slice(-5)).toEqual(["push", "--no-verify", "--porcelain", "origin", `${"a".repeat(40)}:refs/heads/tokama/0000000a`]);
+    // The filter lookup before it, and any push not asked to, never get the socket.
+    expect(requests.filter((request) => request !== push).every((request) => !("SSH_AUTH_SOCK" in (request.env ?? {})))).toBe(true);
+    requests.length = 0;
+    await stub.push("/repo", "origin", "a".repeat(40), "tokama/0000000a");
+    expect(requests.every((request) => !("SSH_AUTH_SOCK" in (request.env ?? {})))).toBe(true);
   });
 
   it("checkGitVersion refuses git older than 2.44", async () => {
