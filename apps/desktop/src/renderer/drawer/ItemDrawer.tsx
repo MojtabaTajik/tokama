@@ -30,7 +30,6 @@ const TEXT = {
   willBeSent: "Will be sent",
   notSentYet: "Nothing has been sent yet",
   views: "Views",
-  later: (tab: string) => `${tab} comes later: the engine does not send this data yet.`,
   noSteps: "This item has no steps.",
   attempts: "Attempts",
   actions: "Actions",
@@ -54,9 +53,8 @@ const TEXT = {
 } as const;
 
 type Tab = "Steps" | "Diff";
-/** The tabs the drawer shows. Evidence, Findings, Log and Checks are left out until the engine sends their data. */
-const tabsOf = (item: Pick<ItemRecord, "kind">): readonly Tab[] =>
-  item.kind === "task" ? ["Steps", "Diff"] : ["Steps"];
+/** The tabs the drawer shows: Diff only while a decision carries a diff. Other tabs wait until the engine sends their data. */
+const tabsOf = (diff: unknown): readonly Tab[] => (diff === undefined ? ["Steps"] : ["Steps", "Diff"]);
 
 export type Notice = { readonly tone: "warn" | "fail"; readonly text: string };
 
@@ -218,7 +216,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
   };
 
   const template = item && templateOf(item, setup);
-  const tabs = item ? tabsOf(item) : [];
+  const tabs = item ? tabsOf(diff) : [];
   const shown = tabs.includes(tab) ? tab : "Steps";
 
   return (
@@ -273,11 +271,9 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
           <div className="drawer-panel" role="tabpanel" id={panelId(shown)} aria-labelledby={tabId(shown)}>
             {shown === "Steps" ? (
               <Steps bridge={bridge} item={item} setup={setup} onOpenAgent={onOpenAgent} />
-            ) : shown === "Diff" && diff !== undefined ? (
+            ) : diff !== undefined ? (
               <DiffTab key={item.decision?.id} state={diff} baseBranch={setup?.repos.find((repo) => repo.id === item.repoIds[0])?.baseBranch} />
-            ) : (
-              <p className="placeholder">{TEXT.later(shown)}</p>
-            )}
+            ) : null}
           </div>
           {confirmingStop ? (
             <ConfirmStop busy={busy} onStop={stop} onCancel={cancelStop} />

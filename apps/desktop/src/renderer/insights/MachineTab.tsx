@@ -50,8 +50,6 @@ const TEXT = {
   noItems: "No items running.",
   noItemsHint: "Agents and checks show here, under their item, while they run.",
   newWork: "+ New work",
-  laterTitle: "Local models come later",
-  laterText: "GPU, power, temperature and local runs show here once Tokama runs local models.",
 } as const;
 
 export interface MachineTabProps {
@@ -79,10 +77,6 @@ export function MachineTab({ bridge, connection, onRetryConnection, setup, items
           <NowMeters report={report} />
           <ChartSection report={report} />
           <ProcessTable report={report} setup={setup} items={items} onSelectItem={onSelectItem} onNewWork={onNewWork} />
-          <aside className="mc-later">
-            <strong>{TEXT.laterTitle}</strong>
-            <span className="muted">{TEXT.laterText}</span>
-          </aside>
         </>
       )}
     </section>

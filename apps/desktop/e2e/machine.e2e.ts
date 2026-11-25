@@ -20,7 +20,6 @@ flow("shows the Machine tab on sample readings: meters, the chart with its toolt
   // The sample items that run are listed under their item, with an agent row each.
   await expect.poll(() => page.locator(".mc-table tbody .mc-item").count(), { message: "running items" }).toBeGreaterThan(0);
   await expect.poll(() => page.locator(".mc-table tbody").innerText()).toMatch(/Engine[\s\S]*Agent[\s\S]*Check[\s\S]*Tokama in total · \d+ items? running/);
-  await expect.poll(() => page.locator(".mc-later").innerText()).toContain("Local models come later");
 
   await page.locator(".mc-plot").first().hover({ position: { x: 300, y: 40 } });
   await page.locator(".mc-tip").waitFor({ state: "visible" });

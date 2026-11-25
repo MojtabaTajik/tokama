@@ -625,25 +625,6 @@
   overflow-wrap: anywhere;
 }
 
-.dv-open {
-  margin-left: auto;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  font: inherit;
-  font-size: 12px;
-  white-space: nowrap;
-  cursor: default;
-}
-
-.dv-note .dv-open {
-  min-height: 30px;
-  padding: 0 12px;
-  border: 1px solid var(--hairline);
-  border-radius: 6px;
-}
-
 /* Long lines scroll inside the diff, never the drawer. */
 .dv-lines {
   max-height: 420px;

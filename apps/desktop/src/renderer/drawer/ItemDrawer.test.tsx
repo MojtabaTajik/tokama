@@ -139,16 +139,16 @@ describe("ItemDrawer sections", () => {
     ]);
   });
 
-  it("has only the Steps tab for an investigation: Evidence, Findings, Log and Checks are hidden", async () => {
+  it("has only the Steps tab for an investigation: Evidence, Findings, Log, Checks and Diff are hidden", async () => {
     await renderDrawer(fakeBridge([needsYou]).bridge, needsYou.id);
     expect($$('[role="tab"]').map((tab) => [tab.textContent, tab.getAttribute("aria-selected")])).toEqual([["Steps", "true"]]);
     expect($(".step")).not.toBeNull();
     expect(text('[role="tabpanel"]')).not.toContain("comes later");
   });
 
-  it("adds Diff for a task", async () => {
+  it("shows a task with the Steps tab only while no decision carries a diff", async () => {
     await renderDrawer(fakeBridge([task]).bridge, task.id);
-    expect($$('[role="tab"]').map((tab) => tab.textContent)).toEqual(["Steps", "Diff"]);
+    expect($$('[role="tab"]').map((tab) => tab.textContent)).toEqual(["Steps"]);
     expect(text(".drawer-kind")).toBe("▣ Task · Plan and build · local + cloud");
     expect($(".needs-you")).toBeNull();
     expect($$(".step-where").map((el) => el.textContent)).toEqual([
@@ -264,11 +264,8 @@ describe("ItemDrawer change to approve", () => {
     ]);
     expect(text(".dv-more")).toBe("2 more files not listed");
     expect($$(".dv-file").map((el) => el.getAttribute("aria-pressed"))).toEqual(["true", "false", "false", "false"]);
-    expect(text(".dv-panel-head")).toBe("src/a.tsmodified · +1 −1Open in your editor ↗Opening a file from Tokama comes later. Open the worktree folder in your editor.");
-    // The open button is not there yet, and says so to every reader, not only on hover.
-    const open = $(".dv-open")!;
-    expect(open.getAttribute("aria-disabled")).toBe("true");
-    expect(document.getElementById(open.getAttribute("aria-describedby")!)?.textContent).toBe("Opening a file from Tokama comes later. Open the worktree folder in your editor.");
+    expect(text(".dv-panel-head")).toBe("src/a.tsmodified · +1 −1");
+    expect($(".dv-open")).toBeNull();
     expect(rows()).toEqual(["|||@@ -4,2 +4,2 @@ function total() {", "4|4||keep", "5||−|<img src=x onerror=\"alert(1)\">", "|5|+|<b>bold</b>", "|||\\ No newline at end of file"]);
     expect($$(".dv-row [aria-label]").map((el) => el.getAttribute("aria-label"))).toEqual(["unchanged", "removed", "added"]);
     expect($$(".drawer img, .drawer b")).toEqual([]);
@@ -278,11 +275,10 @@ describe("ItemDrawer change to approve", () => {
     const { bridge } = withDiff({ ok: true, data: diff });
     await renderDrawer(bridge, waiting.id);
     await pick("logo.png");
-    expect(text(".dv-note")).toBe("Binary file, not shown here.Open it in your editor or an image viewer to compare.In repo orders-api: .tokama/wt/abc/logo.pngOpen in your editor ↗Opening a file from Tokama comes later. Open the worktree folder in your editor.");
+    expect(text(".dv-note")).toBe("Binary file, not shown here.Open it in your editor or an image viewer to compare.In repo orders-api: .tokama/wt/abc/logo.png");
     await pick("package-lock.json");
     expect(text(".dv-note-head")).toBe("Too large to show here.");
     expect($$(".dv-note-text")[0]?.textContent).toBe("1,533 changed lines; the drawer shows files up to 1,000 changed lines. Open it in your editor to review.");
-    expect($(".dv-open")?.getAttribute("aria-disabled")).toBe("true");
   });
 
   it("shows a path with a line break quoted, so its lines never sit under a made-up file name", async () => {

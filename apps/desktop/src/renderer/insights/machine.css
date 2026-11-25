@@ -303,15 +303,3 @@
   color: var(--link);
 }
 
-.mc-later {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 14px 16px;
-  border: 1px dashed var(--hairline);
-  border-radius: 8px;
-}
-
-.mc-later .muted {
-  font-size: 12.5px;
-}
