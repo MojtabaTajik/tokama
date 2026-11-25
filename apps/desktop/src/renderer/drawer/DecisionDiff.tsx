@@ -24,9 +24,18 @@ const STATUS: Readonly<Record<DiffFile["status"], string>> = {
   type_changed: "type changed",
 };
 
+/**
+ * A path as text on one line: a path with a line break or another control character is shown
+ * quoted and escaped, so it can never look like another file's header.
+ */
+export function shownPath(path: string): string {
+  // eslint-disable-next-line no-control-regex
+  return /[\u0000-\u001f\u007f]/.test(path) ? JSON.stringify(path) : path;
+}
+
 /** One file on one line: "modified src/a.ts +2 −1", "renamed old.ts → new.ts +1 −0", "modified logo.png binary". */
 export function fileLine(file: DiffFile): string {
-  const name = file.oldPath === undefined ? file.path : `${file.oldPath} → ${file.path}`;
+  const name = file.oldPath === undefined ? shownPath(file.path) : `${shownPath(file.oldPath)} → ${shownPath(file.path)}`;
   const counts = file.binary ? TEXT.binary : `+${file.added ?? 0} −${file.removed ?? 0}`;
   return `${STATUS[file.status]} ${name} ${counts}${file.cut ? " (cut)" : ""}`;
 }
@@ -35,7 +44,7 @@ export function fileLine(file: DiffFile): string {
 export function diffText(diff: Pick<ItemDiff, "files">): string {
   return diff.files
     .filter((file) => file.hunks.length > 0)
-    .map((file) => [`── ${file.path}`, ...file.hunks.flatMap((hunk) => [hunk.header, ...hunk.lines])].join("\n"))
+    .map((file) => [`── ${shownPath(file.path)}`, ...file.hunks.flatMap((hunk) => [hunk.header, ...hunk.lines])].join("\n"))
     .join("\n\n");
 }
 

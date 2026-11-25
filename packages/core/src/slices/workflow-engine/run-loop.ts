@@ -745,10 +745,11 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     if (judged !== undefined) return judged;
     const base = await git.revParse(worktree.path, `${worktree.baseCommit}^{tree}`);
     if (!base.ok) return fail(`Cannot read the base commit: ${base.error.message}`);
-    // A step that changed nothing records no tree, so the changes of a later step are committed as before.
-    const changed = staged.value !== base.value;
+    // A step that changed nothing records no tree, so the changes of a later step are committed as
+    // before; unless a tree was recorded earlier: then the approved one (even the base) replaces it.
+    const record = staged.value !== base.value || lastTree(item) !== undefined;
     append(item.id, [
-      attemptEnded(step.id, attempt, "passed", changed ? { tree: staged.value } : {}),
+      attemptEnded(step.id, attempt, "passed", record ? { tree: staged.value } : {}),
       decision("plan_approval", step.id, [APPROVE, REQUEST_CHANGES, NO_ACTION, STOP], `Step ${step.name} is done and waits for your approval. Request changes runs it again with your note.`, { tree: staged.value }),
     ]);
     return WAIT;

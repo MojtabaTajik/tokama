@@ -63,6 +63,7 @@ steps:
       Read the task and the code around it, then write a short plan: the files to change,
       the tests to add and the risks. Do not change any file.
     done_when: you approve
+    max_attempts: 3
     data: repo-and-diff
   - id: build
     name: Build

@@ -353,6 +353,17 @@ describe("run loop: done_when", () => {
     expect(await plain(repo.path, "show", `${item(id).outcome?.commits?.[0]?.commit}:app.txt`)).toBe("fixed");
   });
 
+  it("you approve: a change reverted after Request changes is not committed; the item ends with nothing to commit", SLOW, async () => {
+    const loop = engine(fakeRuntime([edits(FIXED), edits({ "app.txt": "broken\n" })]));
+    const id = await start(loop, template([{ id: "change", doneWhen: "you approve", maxAttempts: 3 }]));
+    await answer(loop, id, "request_changes");
+    const asked = openDecision(id)!;
+    expect(await loop.decisionDiff(id, asked.id)).toMatchObject({ ok: true, value: { files: [] } });
+    await answer(loop, id, "approve");
+    expect(item(id)).toMatchObject({ state: "done", outcome: { kind: "done", detail: "The item made no changes, so there is nothing to commit." } });
+    expect(item(id).outcome?.commits).toBeUndefined();
+  });
+
   it("you approve: a file changed after the approval is not committed unless you say so", SLOW, async () => {
     const loop = engine(fakeRuntime([edits(FIXED)]));
     const id = await start(loop, template([{ id: "change", doneWhen: "you approve" }]));

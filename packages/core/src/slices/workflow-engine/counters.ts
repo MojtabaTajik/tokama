@@ -9,7 +9,10 @@ export const CONTINUE_ID = "continue";
 
 const counted = (attempt: AttemptRecord) => attempt.result !== "run_failed";
 
-/** An answer that runs the step again: Retry step or Retry once more after a failure, Run again after a plan. */
+/**
+ * An answer that runs the step again: Retry step or Retry once more after a failure, or Run again
+ * after a plan in logs from before Request changes replaced it (Request changes counts as usual).
+ */
 const runsAgain = (d: StoredDecision) =>
   d.resolved !== undefined &&
   ((d.kind === "after_failure" && (d.resolved.choice === RETRY_ID || d.resolved.choice === ONE_MORE_ID)) ||

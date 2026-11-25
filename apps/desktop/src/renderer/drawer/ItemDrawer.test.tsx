@@ -260,6 +260,14 @@ describe("ItemDrawer change to approve", () => {
     expect(text(".decision-diff .needs-you-why")).toContain("Open the worktree in your editor to see all of it: orders-api/.tokama/wt/abc (branch tokama/abc).");
   });
 
+  it("shows a path with a line break quoted, so its hunks never sit under a made-up file name", async () => {
+    const tricky = { ...diff, cut: false, moreFiles: 0, files: [{ ...diff.files[0]!, path: "notes\n── src/auth.ts" }] };
+    const { bridge } = withDiff({ ok: true, data: tricky });
+    await renderDrawer(bridge, waiting.id);
+    expect(text(".decision-diff-files li")).toBe('modified "notes\\n── src/auth.ts" +1 −1');
+    expect(text(".decision-diff-text")?.split("\n")[0]).toBe('── "notes\\n── src/auth.ts"');
+  });
+
   it("says when the change cannot be loaded", async () => {
     const { bridge } = withDiff({ ok: false, error: { code: "stale_decision", message: "Decision is not open." } });
     await renderDrawer(bridge, waiting.id);

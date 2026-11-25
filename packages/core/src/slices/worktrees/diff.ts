@@ -107,7 +107,8 @@ export function buildDiff(entries: readonly DiffEntry[], patch: { readonly text:
     const kept: DiffHunk[] = [];
     for (const hunk of hunks) {
       const header = cutLine(hunk.header);
-      let size = jsonBytes(header);
+      // The hunk's own JSON (`{"header":…,"lines":[]},`) counts too.
+      let size = jsonBytes({ header, lines: [] }) + 1;
       if (hunkBytes + size > DIFF_LIMITS.hunkBytes) {
         file.cut = true;
         break;
