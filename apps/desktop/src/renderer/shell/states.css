@@ -59,6 +59,20 @@
   color: var(--muted);
 }
 
+.failure .older-log {
+  margin-top: 8px;
+}
+
+.inline-action {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--link);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .new-work:disabled {
   color: var(--muted);
   cursor: not-allowed;

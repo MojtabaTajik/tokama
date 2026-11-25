@@ -10,7 +10,7 @@ import { ItemList } from "../list/ItemList.js";
 import { ALL_WORK, groupItems, inView, summaryOf, visibleItems } from "../model.js";
 import type { AgentTarget } from "../settings/describe.js";
 import type { Layout, ViewState } from "../useViewState.js";
-import { ConnectionFailure } from "./ConnectionStatus.js";
+import { ConnectionFailure, startingWords } from "./ConnectionStatus.js";
 import { FirstLaunch, NoWork } from "./EmptyStates.js";
 import { RepoIcon } from "./icons.js";
 import { StatusFilter } from "./StatusFilter.js";
@@ -35,6 +35,10 @@ export interface MainAreaProps {
   readonly onRetry: () => void;
   /** Starts the engine connection again after it failed. */
   readonly onRetryConnection: () => void;
+  /** With an older engine still running: replace it now. */
+  readonly onRestartEngine?: () => void;
+  /** With an older busy engine: replace it once nothing runs. */
+  readonly onWaitForEngine?: () => void;
   /** Undefined until the first load. */
   readonly setup: Setup | undefined;
   readonly items: readonly ItemRecord[];
@@ -104,7 +108,16 @@ function LayoutSwitch({ layout, onChange }: { readonly layout: Layout; readonly 
 
 function Body(props: MainAreaProps & { readonly template: Setup["templates"][number] | undefined }) {
   const { connection, loadError, onRetry, onRetryConnection, setup, items, now, views, selectedItemId, onSelectItem, template } = props;
-  if (connection.status === "failed") return <ConnectionFailure state={connection} onRetry={onRetryConnection} />;
+  if (connection.status === "failed") {
+    return (
+      <ConnectionFailure
+        state={connection}
+        onRetry={onRetryConnection}
+        {...(props.onRestartEngine !== undefined && { onRestart: props.onRestartEngine })}
+        {...(props.onWaitForEngine !== undefined && { onWait: props.onWaitForEngine })}
+      />
+    );
+  }
   const scoped = items.filter((item) => inView(item, views.view));
   return (
     <>
@@ -153,6 +166,6 @@ function Body(props: MainAreaProps & { readonly template: Setup["templates"][num
 }
 
 function waiting(connection: ConnectionState): string {
-  if (connection.status === "starting") return TEXT.starting;
+  if (connection.status === "starting") return startingWords(connection, TEXT.starting);
   return connection.status === "reconnecting" ? TEXT.reconnecting : TEXT.loading;
 }

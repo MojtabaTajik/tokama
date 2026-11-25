@@ -9,13 +9,33 @@ const TEXT = {
     connected: "engine connected",
     reconnecting: "reconnecting",
     failed: "not available",
+    updating: "updating engine",
   },
   failed: "The engine is not available",
   engineId: "Engine",
   log: "Log",
   retry: "Retry",
-  hint: "Tokama does not stop other engine processes from here. Fix the cause above, then retry.",
+  hint: "Tokama stops only its own older engine, after checking it is one. It never touches other processes.",
+  lock: "lock",
+  pid: "pid",
+  restart: "Restart engine",
+  restartNow: "Restart now",
+  wait: "Wait",
+  busyBefore: (count: number) => `It is running ${tasks(count)}. `,
+  busyMiddle: " (they pause and ask Retry or Stop) or ",
+  busyAfter: " until they finish.",
+  waiting: (count: number) => `Waiting for ${tasks(count)} to finish; then Tokama restarts the engine.`,
+  updating: "Updating engine…",
 } as const;
+
+function tasks(count: number): string {
+  return count === 1 ? "1 task" : `${count} tasks`;
+}
+
+/** The words for a "starting" state: updating the engine, or starting it. */
+export function startingWords(state: Extract<ConnectionState, { status: "starting" }>, starting: string): string {
+  return state.updating === true ? TEXT.updating : starting;
+}
 
 // A symbol with every status, so colour is never the only signal.
 const SYMBOL: Record<ConnectionState["status"], string> = {
@@ -33,12 +53,22 @@ export function EngineHealth({ state }: { readonly state: ConnectionState }) {
       <span className="symbol" aria-hidden="true">
         {SYMBOL[state.status]}
       </span>
-      <span className={state.status === "connected" ? "visually-hidden" : "health-word"}>{TEXT.health[state.status]}</span>
+      <span className={state.status === "connected" ? "visually-hidden" : "health-word"}>{state.status === "starting" && state.updating === true ? TEXT.health.updating : TEXT.health[state.status]}</span>
     </span>
   );
 }
 
-export function ConnectionFailure({ state, onRetry }: { readonly state: Extract<ConnectionState, { status: "failed" }>; readonly onRetry: () => void }) {
+export interface FailureActions {
+  readonly onRetry: () => void;
+  /** With an older engine: stop it and start this version's. */
+  readonly onRestart?: () => void;
+  /** With an older busy engine: restart it once nothing runs. */
+  readonly onWait?: () => void;
+}
+
+export function ConnectionFailure({ state, onRetry, onRestart, onWait }: { readonly state: Extract<ConnectionState, { status: "failed" }> } & FailureActions) {
+  const older = state.older;
+  if (older !== undefined && onRestart !== undefined) return <OlderEngine state={state} older={older} onRestart={onRestart} {...(onWait !== undefined && { onWait })} />;
   return (
     <section className="failure" aria-label={TEXT.failed}>
       <p className="failure-title">
@@ -57,6 +87,66 @@ export function ConnectionFailure({ state, onRetry }: { readonly state: Extract<
       <button type="button" className="retry" onClick={onRetry}>
         {TEXT.retry}
       </button>
+    </section>
+  );
+}
+
+/** An older engine of this app still runs: restart it, or (when busy) wait until it is idle. */
+function OlderEngine({
+  state,
+  older,
+  onRestart,
+  onWait,
+}: {
+  readonly state: Extract<ConnectionState, { status: "failed" }>;
+  readonly older: NonNullable<Extract<ConnectionState, { status: "failed" }>["older"]>;
+  readonly onRestart: () => void;
+  readonly onWait?: () => void;
+}) {
+  const busy = older.runningItems !== undefined && older.runningItems > 0 ? older.runningItems : undefined;
+  return (
+    <section className="failure" aria-label={TEXT.failed}>
+      <p className="failure-title">
+        <span className="symbol" aria-hidden="true">
+          {SYMBOL.failed}
+        </span>
+        {TEXT.failed}
+      </p>
+      <p className="detail">{state.reason}</p>
+      <pre className="log mono">
+        {`${TEXT.lock}  ${older.lockPath}`}
+        {older.pid === undefined ? "" : `\n${TEXT.pid}   ${older.pid}`}
+      </pre>
+      <p className="detail older-log">
+        <span className="label">{TEXT.log} </span>
+        <span className="mono">{state.logPath}</span>
+      </p>
+      <button type="button" className="retry" onClick={onRestart}>
+        {TEXT.restart}
+      </button>
+      {busy !== undefined && (
+        <p className="detail hint">
+          {older.waiting ? (
+            TEXT.waiting(busy)
+          ) : (
+            <>
+              {TEXT.busyBefore(busy)}
+              <button type="button" className="inline-action" onClick={onRestart}>
+                {TEXT.restartNow}
+              </button>
+              {TEXT.busyMiddle}
+              {onWait === undefined ? (
+                TEXT.wait.toLowerCase()
+              ) : (
+                <button type="button" className="inline-action" onClick={onWait}>
+                  {TEXT.wait}
+                </button>
+              )}
+              {TEXT.busyAfter}
+            </>
+          )}
+        </p>
+      )}
     </section>
   );
 }

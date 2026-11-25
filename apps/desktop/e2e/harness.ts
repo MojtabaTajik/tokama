@@ -88,8 +88,10 @@ const within = <T>(promise: Promise<T>, ms: number): Promise<T | undefined> =>
  * - `sample` (default): the sample engine, with its repos and items.
  * - `real`: the real engine on an empty home folder, so no repos and no items, as on a first launch.
  * - `unavailable`: no `node` on the app's PATH, so the engine cannot start and the connection fails.
+ * - `older`: the sample engine, but `seed` starts an older engine first: the flow begins once the
+ *   app has connected or stopped to ask.
  */
-export type EngineMode = "sample" | "real" | "unavailable";
+export type EngineMode = "sample" | "real" | "unavailable" | "older";
 
 /**
  * Runs `fn` against a fresh app; on failure, prints the app and engine output and saves a screenshot.
@@ -101,7 +103,7 @@ export function flow(name: string, fn: (session: Session) => Promise<void>, mode
     const output: string[] = [];
     // The app's engine dir is this plus "sample": the sample engine never shares a dir with a real one.
     const baseDir = join(tmp, "e");
-    const engineDir = mode === "sample" ? join(baseDir, "sample") : baseDir;
+    const engineDir = mode === "sample" || mode === "older" ? join(baseDir, "sample") : baseDir;
     let app: ElectronApplication | undefined;
     let page: Page | undefined;
     let closeHung = false;
@@ -130,6 +132,7 @@ export function flow(name: string, fn: (session: Session) => Promise<void>, mode
       };
       const session = sessionOf(app, page, engineDir, tmp, restart);
       if (mode === "unavailable") await failed(session);
+      else if (mode === "older") await settled(session);
       else await connected(session);
       trace(name, mode === "unavailable" ? "failed, as expected" : "connected");
       await fn(session);
@@ -239,6 +242,17 @@ async function connected(session: Session): Promise<ConnectionState & { status: 
     const state = await session.connection();
     if (state.status === "connected") return state;
     if (state.status === "failed") throw new Error(`the renderer reports "failed": ${state.reason}\n${state.logTail.join("\n")}`);
+    if (Date.now() > deadline) throw new Error(`the renderer still reports "${state.status}" after ${START_TIMEOUT_MS} ms`);
+    await new Promise((done) => setTimeout(done, 100));
+  }
+}
+
+/** Waits until the renderer reports "connected" or "failed". */
+async function settled(session: Session): Promise<void> {
+  const deadline = Date.now() + START_TIMEOUT_MS;
+  for (;;) {
+    const state = await session.connection();
+    if (state.status === "connected" || state.status === "failed") return;
     if (Date.now() > deadline) throw new Error(`the renderer still reports "${state.status}" after ${START_TIMEOUT_MS} ms`);
     await new Promise((done) => setTimeout(done, 100));
   }

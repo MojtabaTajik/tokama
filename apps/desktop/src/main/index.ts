@@ -2,8 +2,8 @@
 // @tokama/client. The engine runs detached and keeps running when the app quits.
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { connect } from "@tokama/client";
-import { API_VERSION, buildEnv, defaultEngineDir, engineEndpoint, err } from "@tokama/core";
+import { connect, requestShutdown } from "@tokama/client";
+import { API_VERSION, buildEnv, defaultEngineDir, engineEndpoint, err, posixEngineProcesses, readEngineLock } from "@tokama/core";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, screen, session, shell } from "electron";
 import { type BridgeEvent, CHANNELS } from "../shared/bridge.js";
 import { buildInfoText } from "../shared/build-info.js";
@@ -15,7 +15,8 @@ import { type ConnectionWatch, watchConnection } from "./connection.js";
 import { type DesktopStore, desktopStore } from "./desktop-store.js";
 import { DIAGNOSTICS_URL, diagnosticsService, saveToFile } from "./diagnostics-send.js";
 import { createReporter, mainErrorReport, pidAlive, rateLimit, rendererErrorReport, rendererGoneKind, rendererUsageReport, type Reporter, runMarker } from "./diagnostics.js";
-import { engineCommand, engineDirFor, findExecutable, otherVersionMessage, readLogTail } from "./engine.js";
+import { engineCommand, engineCommandEnd, engineDirFor, findExecutable, readLogTail } from "./engine.js";
+import { replaceOlderEngine } from "./replace.js";
 import { pickRepoFolder } from "./folder.js";
 import { createNotifier } from "./notifier.js";
 import { appIcons } from "./icon.js";
@@ -82,10 +83,24 @@ function startWatch(onConnected: () => void, onItemEvent: (event: BridgeEvent["e
     env: buildEnv(process.env, process.env["SSH_AUTH_SOCK"] === undefined ? {} : { SSH_AUTH_SOCK: process.env["SSH_AUTH_SOCK"] }),
     sample,
   });
+  const lockPath = endpoint.ok ? endpoint.value.lockPath : join(dir, "engine.lock");
   return watchConnection({
     connect: () => {
       if (!start.ok) return Promise.resolve(err({ code: "start_failed" as const, message: start.error }));
       return connect({ dir, start: start.value });
+    },
+    apiVersion: API_VERSION,
+    // Only this app's own engine for this dir is stopped; the home lock is the real engine's.
+    replaceOlder: () =>
+      replaceOlderEngine({
+        dir,
+        engine: { lockPath, commandEnd: engineCommandEnd(dir, sample), otherLocks: [join(homedir(), ".tokama", "engine.lock")] },
+        processes: posixEngineProcesses,
+        requestShutdown: (engineDir) => requestShutdown(engineDir),
+      }),
+    olderLock: () => {
+      const pid = readEngineLock(lockPath)?.pid;
+      return { lockPath, ...(pid !== undefined && { pid }) };
     },
     logPath: endpoint.ok ? endpoint.value.logPath : join(dir, "engine.log"),
     readLogTail: (path) => readLogTail(path),
@@ -97,7 +112,6 @@ function startWatch(onConnected: () => void, onItemEvent: (event: BridgeEvent["e
       send(CHANNELS.event, event);
       onItemEvent(event.event);
     },
-    otherVersion: otherVersionMessage(endpoint.ok ? endpoint.value.lockPath : join(dir, "engine.lock")),
   });
 }
 
@@ -211,6 +225,8 @@ void app.whenReady().then(() => {
   engineClient = () => watch.client();
   handle(CHANNELS.getConnection, () => watch.state());
   handle(CHANNELS.retryConnection, () => watch.retry());
+  handle(CHANNELS.restartEngine, () => watch.restartEngine());
+  handle(CHANNELS.waitForEngine, () => watch.waitForEngine());
   const api = engineApi(() => watch.client());
   handle(CHANNELS.query, (query) => api.query(query));
   handle(CHANNELS.command, (command) => api.command(command));
