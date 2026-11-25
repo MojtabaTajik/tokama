@@ -93,6 +93,15 @@ export function sampleEngineEnabled(value: string | undefined, isPackaged: boole
   return !isPackaged && value === "1";
 }
 
+/**
+ * Whether the app runs in the background for UI tests (`TOKAMA_E2E=1`, set by the test harness):
+ * only outside a packaged app. It then shows no Dock icon, never takes focus and keeps rendering
+ * while hidden, so a test run does not disturb the person at the keyboard.
+ */
+export function backgroundModeEnabled(value: string | undefined, isPackaged: boolean): boolean {
+  return !isPackaged && value === "1";
+}
+
 /** The one address the app opens in the system browser: the product site. Nothing else ever leaves the window. */
 const WEBSITE = "https://tokama.dev/";
 

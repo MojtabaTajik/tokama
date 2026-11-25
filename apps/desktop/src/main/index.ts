@@ -12,7 +12,7 @@ import { engineCommand, engineDirFor, findExecutable, otherVersionMessage, readL
 import { pickFolder } from "./folder.js";
 import { appIcons } from "./icon.js";
 import { openTemplateFile } from "./template-file.js";
-import { devServerUrl, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, sampleEngineEnabled, secureWebPreferences } from "./policy.js";
+import { backgroundModeEnabled, devServerUrl, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, sampleEngineEnabled, secureWebPreferences } from "./policy.js";
 
 const rendererDir = join(import.meta.dirname, "..", "renderer");
 const preloadPath = join(import.meta.dirname, "..", "preload", "index.cjs");
@@ -21,6 +21,8 @@ const isAppPage = (url: string) => isAppUrl(url, rendererDir, devServer);
 // Dev only: `pnpm dev:sample` sets TOKAMA_SAMPLE=1 to start the engine's fake mode with sample data;
 // `pnpm dev` runs the real engine on ~/.tokama.
 const sample = sampleEngineEnabled(process.env["TOKAMA_SAMPLE"], app.isPackaged);
+// UI tests only: the harness sets TOKAMA_E2E=1 so the app never takes focus from the developer.
+const background = backgroundModeEnabled(process.env["TOKAMA_E2E"], app.isPackaged);
 
 /** Registers a bridge channel; it answers app pages only. */
 function handle(channel: string, fn: (...args: unknown[]) => unknown): void {
@@ -91,14 +93,15 @@ function createWindow(): void {
     backgroundColor: "#0B0F17",
     show: false,
     ...(icons.window === undefined ? {} : { icon: icons.window }),
-    webPreferences: secureWebPreferences(preloadPath),
+    webPreferences: { ...secureWebPreferences(preloadPath), ...(background ? { backgroundThrottling: false } : {}) },
   });
-  window.once("ready-to-show", () => window.show());
+  if (!background) window.once("ready-to-show", () => window.show());
   if (devServer !== undefined) void window.loadURL(devServer.href);
   else void window.loadFile(join(rendererDir, "index.html"));
 }
 
 void app.whenReady().then(() => {
+  if (background) app.dock?.hide();
   if (icons.dock !== undefined) app.dock?.setIcon(icons.dock);
   hardenSession();
   const watch = startWatch();
