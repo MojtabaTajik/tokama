@@ -8,6 +8,7 @@ import { DecisionIdSchema, ItemIdSchema, RepoIdSchema, TemplateRefSchema } from 
 import { ItemRecordSchema } from "./item.js";
 import { UsageRangeSchema, UsageReportSchema } from "./usage.js";
 import { AgentsListSchema } from "./agents.js";
+import { MachineReportSchema } from "./machine.js";
 import { RepoSummarySchema, SetupSchema } from "./setup.js";
 import { MAX_TEMPLATE_ENTRIES, TemplateDetailSchema, TemplateEntrySchema, TemplateFileKeySchema } from "./template-files.js";
 
@@ -80,6 +81,11 @@ export const QuerySchema = z.discriminatedUnion("type", [
   TemplateFileKeySchema.extend({ type: z.literal("template_detail") }),
   /** Plan windows per AI CLI, and tokens and estimated cost by day, workflow and item over the last `range` days. */
   z.strictObject({ type: z.literal("usage"), range: UsageRangeSchema }),
+  /**
+   * CPU and memory of this machine and of Tokama's processes. Asking is what makes the engine
+   * read them: it samples while a client keeps asking and stops soon after.
+   */
+  z.strictObject({ type: z.literal("machine") }),
 ]);
 
 export const EventSchema = z.discriminatedUnion("type", [
@@ -114,6 +120,7 @@ export const QueryResultSchemas = {
   templates: z.strictObject({ templates: z.array(TemplateEntrySchema).max(MAX_TEMPLATE_ENTRIES) }),
   template_detail: TemplateDetailSchema,
   usage: UsageReportSchema,
+  machine: MachineReportSchema,
 } as const satisfies Record<z.output<typeof QuerySchema>["type"], z.ZodType>;
 
 /** The data of a successful reply, per command type. */
@@ -270,6 +277,7 @@ export type AgentsListResult = QueryResult<"agents_list">;
 export type TemplatesResult = QueryResult<"templates">;
 export type TemplateDetailResult = QueryResult<"template_detail">;
 export type UsageResult = QueryResult<"usage">;
+export type MachineResult = QueryResult<"machine">;
 export type CommandType = keyof typeof CommandResultSchemas;
 export type CommandResult<T extends CommandType> = z.output<(typeof CommandResultSchemas)[T]>;
 export type StartItemResult = CommandResult<"start_item">;

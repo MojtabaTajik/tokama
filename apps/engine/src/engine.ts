@@ -27,6 +27,8 @@ import {
   type ClientMessage,
   type Command,
   createGit,
+  createMachineSource,
+  createMonitor,
   createProcessRunner,
   encodeLine,
   type EngineEvent,
@@ -49,6 +51,8 @@ import {
   type SuggestRepoResult,
   type SuggestTemplateResult,
   systemClock,
+  type MachineResult,
+  type MachineSource,
   type UsageResult,
   type SetupResult,
   type TemplateDetailResult,
@@ -65,10 +69,12 @@ import {
 import { listAgents } from "./agents-list.js";
 import { ItemIndex } from "./item-index.js";
 import { type HealthChecks, machineChecks } from "./real/health.js";
+import { runningGroups } from "./machine.js";
 import { RealEngine } from "./real/real.js";
 import { SampleEngine } from "./sample/sample.js";
 import { agentsFor, loadConfig, startProblem, stepProblems } from "./real/config.js";
 import { sampleTemplateLoads } from "./sample/templates.js";
+import { sampleMachineReport } from "./sample/machine.js";
 import { sampleClaudePlan, sampleOtherPlans, sampleUsageRows } from "./sample/usage.js";
 import { claudePlanSources, type PlanSources, UsageService } from "./usage.js";
 import { MemoryItemStore } from "./store.js";
@@ -102,6 +108,8 @@ export interface EngineOptions {
    * out `request` to never start the CLI for them (it calls its vendor).
    */
   readonly planSources?: PlanSources;
+  /** Where the machine query reads memory and processes. Default: this OS's source, none on an OS without one. */
+  readonly machineSource?: MachineSource;
   /** Default: the system clock. */
   readonly clock?: Clock;
   /** A connection that sends no hello within this time is closed. Default 5 s. */
@@ -249,6 +257,13 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
           log,
         },
   );
+  // Reads the machine only while a client asks. Sample mode serves sample readings instead.
+  const machineSource = options.machineSource ?? createMachineSource(runner);
+  const items = storage?.items;
+  const machine =
+    sample !== undefined || machineSource === undefined
+      ? undefined
+      : createMonitor({ source: machineSource, groups: () => (items === undefined ? [] : runningGroups(items)), clock, log });
   const helloTimeoutMs = options.helloTimeoutMs ?? 5_000;
   const shutdownTimeoutMs = options.shutdownTimeoutMs ?? 5_000;
   const connections = new Set<Socket>();
@@ -412,6 +427,12 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       }
       case "usage":
         return { ok: true, data: (await usage.report(query.range)) satisfies UsageResult };
+      case "machine": {
+        if (sample !== undefined) return { ok: true, data: sampleMachineReport(store.list(), clock.now()) satisfies MachineResult };
+        if (machine === undefined) return { ok: false, error: { code: "not_implemented", message: "this engine cannot read the machine on this operating system" } };
+        const report = await machine.report();
+        return report.ok ? { ok: true, data: report.value satisfies MachineResult } : { ok: false, error: { code: "unavailable", message: report.error.slice(0, 1000) } };
+      }
     }
   };
 
@@ -512,7 +533,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     unsubscribe();
     usageRecorded = () => {};
     usageAbort.abort();
-    await withDeadline(Promise.allSettled([...inFlight, usage.settled()]), shutdownTimeoutMs);
+    await withDeadline(Promise.allSettled([...inFlight, usage.settled(), machine?.close()]), shutdownTimeoutMs);
     const allClosed = new Promise<void>((resolve) => {
       onAllClosed = resolve;
       if (connections.size === 0) resolve();

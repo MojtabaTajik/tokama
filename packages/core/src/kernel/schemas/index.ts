@@ -46,6 +46,7 @@ export * from "./ids.js";
 export * from "./item.js";
 export * from "./item-log.js";
 export * from "./usage.js";
+export * from "./machine.js";
 export * from "./setup.js";
 export * from "./template.js";
 export * from "./template-files.js";
