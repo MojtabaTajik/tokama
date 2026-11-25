@@ -1,12 +1,17 @@
 // The JSON schema of the template file format, for editor autocomplete and inline errors. It
 // covers the shape of the file; the rules that need the agents and the other steps (unknown
 // agents, back targets, cloud data rules) are checked only by the engine.
+// Draft 7, the draft that editors' YAML and JSON support handles best.
 import { z } from "zod";
 import { TemplateFileSchema } from "./format.js";
 
 export function templateJsonSchema(): Record<string, unknown> {
   return {
-    ...z.toJSONSchema(TemplateFileSchema, { io: "input", target: "draft-2020-12" }),
+    ...z.toJSONSchema(TemplateFileSchema, { io: "input", target: "draft-7" }),
     title: "Tokama template",
+    description: "A Tokama template: `.tokama/templates/<id>.yaml` in a repo.",
   };
 }
+
+/** The schema as the checked-in file holds it: two-space JSON with a final newline. */
+export const templateJsonSchemaText = (): string => `${JSON.stringify(templateJsonSchema(), null, 2)}\n`;
