@@ -195,6 +195,8 @@ flow("a list row's time sits on its title line and the agent labels share one ri
       // Stacked, the agent sits right under the time; in columns it sits left of it.
       if (narrow) expect(Math.abs(g.agent.right - g.time.right), `agent right vs time right (${g.name})`).toBeLessThanOrEqual(1);
     }
+    const clipped = await page.locator(".pl-time").evaluateAll((els) => els.filter((el) => el.scrollWidth > el.clientWidth).map((el) => el.textContent));
+    expect(clipped, `clipped times (${narrow ? "narrow" : "wide"})`).toEqual([]);
     const rights = all.map((g) => g.agent?.right ?? 0);
     expect(Math.max(...rights) - Math.min(...rights), "agent right edges").toBeLessThanOrEqual(1);
   }
