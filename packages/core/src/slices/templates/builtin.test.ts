@@ -32,7 +32,9 @@ describe.each([true, false])("built-in templates, every agent in the cloud: %s",
       ["build", "builder", "checks pass"],
       ["review", "reviewer", "reviewer approves"],
     ]);
-    const [, build, review] = template.steps;
+    const [plan, build, review] = template.steps;
+    // A step you approve can run again on Request changes: it defaults to 3 attempts.
+    expect(plan?.maxAttempts).toBe(3);
     expect(build).toMatchObject({ checks: { from: "repo" }, ifFailed: { action: "retry" }, sees: ["plan"] });
     expect(review).toMatchObject({ ifChangesRequested: { action: "back", stepId: "build" } });
   });

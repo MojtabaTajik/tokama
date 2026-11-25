@@ -1,7 +1,9 @@
 // The change a decision asks you to approve, the same in the drawer and on the Needs you page: the
 // changed files with their added and removed line counts, then the hunks. The diff is repo
 // content: it is rendered as React text only, in a <pre>, and never as HTML. A diff too big for
-// one reply says so and names the worktree, where all of it can be read in an editor.
+// one reply, or with a binary file, says so and names the worktree, where all of it can be read in
+// an editor. Characters that reorder or hide text (bidi controls, line separators) are shown as
+// visible escapes, so a line cannot read differently from what it does.
 import type { Decision, DiffFile, ItemDiff } from "@tokama/core";
 import { useEffect, useState } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
@@ -11,9 +13,9 @@ const TEXT = {
   loading: "Loading the change",
   failed: (message: string) => `Could not load the change: ${message}`,
   none: "The step changed no files.",
-  binary: "binary",
+  binary: "binary, not shown",
   more: (count: number) => `${count} more file${count === 1 ? "" : "s"} not listed`,
-  cut: (where: string, branch: string) => `The diff is too big to show in full. Open the worktree in your editor to see all of it: ${where} (branch ${branch}).`,
+  cut: (where: string, branch: string) => `Part of the change is not shown here (too big, or binary). Open the worktree in your editor to check all of it: ${where} (branch ${branch}).`,
 } as const;
 
 const STATUS: Readonly<Record<DiffFile["status"], string>> = {
@@ -24,13 +26,21 @@ const STATUS: Readonly<Record<DiffFile["status"], string>> = {
   type_changed: "type changed",
 };
 
+// Bidi embeddings and overrides, isolates, the LRM and RLM marks, and the line and paragraph separators.
+const REORDERING = /[\u202a-\u202e\u2066-\u2069\u200e\u200f\u2028\u2029]/g;
+
+/** Text with every character that can reorder or hide what follows shown as `<U+202E>`. */
+export function visible(text: string): string {
+  return text.replace(REORDERING, (char) => `<U+${char.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}>`);
+}
+
 /**
  * A path as text on one line: a path with a line break or another control character is shown
  * quoted and escaped, so it can never look like another file's header.
  */
 export function shownPath(path: string): string {
   // eslint-disable-next-line no-control-regex
-  return /[\u0000-\u001f\u007f]/.test(path) ? JSON.stringify(path) : path;
+  return visible(/[\u0000-\u001f\u007f]/.test(path) ? JSON.stringify(path) : path);
 }
 
 /** One file on one line: "modified src/a.ts +2 −1", "renamed old.ts → new.ts +1 −0", "modified logo.png binary". */
@@ -44,7 +54,7 @@ export function fileLine(file: DiffFile): string {
 export function diffText(diff: Pick<ItemDiff, "files">): string {
   return diff.files
     .filter((file) => file.hunks.length > 0)
-    .map((file) => [`── ${shownPath(file.path)}`, ...file.hunks.flatMap((hunk) => [hunk.header, ...hunk.lines])].join("\n"))
+    .map((file) => [`── ${shownPath(file.path)}`, ...file.hunks.flatMap((hunk) => [hunk.header, ...hunk.lines]).map(visible)].join("\n"))
     .join("\n\n");
 }
 

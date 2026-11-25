@@ -40,7 +40,7 @@ export const DiffFileSchema = z.strictObject({
   removed: z.int().nonnegative().nullable(),
   binary: z.boolean(),
   hunks: z.array(DiffHunkSchema).max(DIFF_LIMITS.hunkBytes),
-  /** Some or all of the file's hunks are left out to keep the reply small. */
+  /** Some or all of the file's content is not shown: hunks left out to keep the reply small, or a binary file. */
   cut: z.boolean(),
 });
 

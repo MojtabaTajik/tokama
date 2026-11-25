@@ -91,7 +91,8 @@ export function buildDiff(entries: readonly DiffEntry[], patch: { readonly text:
       removed: binary ? null : entry.removed,
       binary,
       hunks: [],
-      cut: false,
+      // git calls a text file with a NUL byte binary: its content is never shown, so it is cut.
+      cut: binary,
     };
     const cost = jsonBytes(file);
     if (files.length >= DIFF_LIMITS.files || fileBytes + cost > DIFF_LIMITS.fileBytes) {

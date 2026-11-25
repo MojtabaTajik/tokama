@@ -849,32 +849,37 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     if (gate !== undefined) return gate;
     const fail = (text: string) => askRunFailure(item, text);
 
-    // The tree to commit: the last one the checks passed on or a reviewer approved; without
-    // either, the worktree as it is now.
+    // The tree to commit: the one you approved, when no attempt ran after you were asked (even the
+    // base tree, when the step changed nothing); else the last one the checks passed on or a
+    // reviewer approved; without either, the worktree as it is now.
+    const approval = item.decisions.findLast((d) => d.kind === "plan_approval" && d.tree !== undefined && d.resolved?.choice === APPROVE.id);
+    const approvedLast = approval !== undefined && !item.steps.some((s) => s.attempts.some((a) => a.endedAt !== undefined && a.endedAt > approval.askedAt));
     const recorded = lastTree(item);
     let tree: string;
-    if (recorded === undefined) {
+    // Files changed after that tree are not committed unless the engineer says so.
+    let compare: "approved" | "checked" | undefined;
+    if (approvedLast) {
+      tree = approval.tree!;
+      compare = "approved";
+    } else if (recorded === undefined) {
       const staged = await stageItem(git, worktree.path);
       if (!staged.ok) return fail(`Cannot stage the changes: ${staged.error.message}`);
       tree = staged.value;
     } else {
       tree = recorded.tree!;
-      // A step that ran after it may have changed files nothing checked: those are not committed
-      // unless the engineer says so. The same for files changed after the engineer approved a tree.
-      const later = item.steps.some((s) => s.attempts.some((a) => a !== recorded && a.endedAt !== undefined && a.endedAt > recorded.endedAt!));
-      const owner = item.steps.find((s) => s.attempts.includes(recorded));
-      const approved = !later && owner !== undefined && stepDef(ctx.template, owner.id).doneWhen === "you approve";
-      if (later || approved) {
-        const staged = await stageItem(git, worktree.path);
-        if (!staged.ok) return fail(`Cannot stage the changes: ${staged.error.message}`);
-        if (staged.value !== tree && !treeAnswered(item, staged.value, COMMIT_CHECKED.id)) {
-          const changed = await changedPaths(worktree, tree, staged.value);
-          const [text, commitChoice] = approved
+      if (item.steps.some((s) => s.attempts.some((a) => a !== recorded && a.endedAt !== undefined && a.endedAt > recorded.endedAt!))) compare = "checked";
+    }
+    if (compare !== undefined) {
+      const staged = await stageItem(git, worktree.path);
+      if (!staged.ok) return fail(`Cannot stage the changes: ${staged.error.message}`);
+      if (staged.value !== tree && !treeAnswered(item, staged.value, COMMIT_CHECKED.id)) {
+        const changed = await changedPaths(worktree, tree, staged.value);
+        const [text, commitChoice] =
+          compare === "approved"
             ? [`The worktree changed after you approved it; only the approved change is committed. Changed:\n${changed}`, choice(COMMIT_CHECKED.id, "Commit the approved tree")]
             : [`A step after the checks changed files; only checked work is committed. Changed:\n${changed}`, COMMIT_CHECKED];
-          append(item.id, [decision("tamper", undefined, [commitChoice, STOP], text, { tree: staged.value })]);
-          return WAIT;
-        }
+        append(item.id, [decision("tamper", undefined, [commitChoice, STOP], text, { tree: staged.value })]);
+        return WAIT;
       }
     }
     const judged = await judgeTree(ctx, worktree, tree, undefined, fail);

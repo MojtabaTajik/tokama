@@ -251,13 +251,13 @@ describe("ItemDrawer change to approve", () => {
     expect($$(".decision-diff-files li").map((el) => el.textContent)).toEqual([
       "modified src/a.ts +1 −1",
       "renamed src/old.ts → src/new.ts +0 −0",
-      "added logo.png binary",
+      "added logo.png binary, not shown",
       "2 more files not listed",
     ]);
     expect(text(".decision-diff-text")).toBe('── src/a.ts\n@@ -1 +1 @@\n-<img src=x onerror="alert(1)">\n+<b>bold</b>');
     expect($(".decision-diff-text")?.children.length).toBe(0);
     expect($$(".drawer img, .drawer b")).toEqual([]);
-    expect(text(".decision-diff .needs-you-why")).toContain("Open the worktree in your editor to see all of it: orders-api/.tokama/wt/abc (branch tokama/abc).");
+    expect(text(".decision-diff .needs-you-why")).toContain("Part of the change is not shown here (too big, or binary). Open the worktree in your editor to check all of it: orders-api/.tokama/wt/abc (branch tokama/abc).");
   });
 
   it("shows a path with a line break quoted, so its hunks never sit under a made-up file name", async () => {
@@ -266,6 +266,16 @@ describe("ItemDrawer change to approve", () => {
     await renderDrawer(bridge, waiting.id);
     expect(text(".decision-diff-files li")).toBe('modified "notes\\n── src/auth.ts" +1 −1');
     expect(text(".decision-diff-text")?.split("\n")[0]).toBe('── "notes\\n── src/auth.ts"');
+  });
+
+  it("shows characters that reorder text as visible escapes, in paths and lines", async () => {
+    const line = "+x = 1; /* \u202e } \u2066 if (admin) \u2069 */";
+    const tricky = { ...diff, cut: false, moreFiles: 0, files: [{ ...diff.files[0]!, path: "a\u202esj.txt", hunks: [{ header: "@@ -1 +1 @@", lines: [line, "+a\u2028b\u200f"] }] }] };
+    const { bridge } = withDiff({ ok: true, data: tricky });
+    await renderDrawer(bridge, waiting.id);
+    expect(text(".decision-diff-files li")).toBe("modified a<U+202E>sj.txt +1 −1");
+    expect(text(".decision-diff-text")).toBe("── a<U+202E>sj.txt\n@@ -1 +1 @@\n+x = 1; /* <U+202E> } <U+2066> if (admin) <U+2069> */\n+a<U+2028>b<U+200F>");
+    expect(text(".decision-diff")).not.toMatch(/[\u202a-\u202e\u2066-\u2069\u200e\u200f\u2028\u2029]/);
   });
 
   it("says when the change cannot be loaded", async () => {

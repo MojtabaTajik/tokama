@@ -364,6 +364,22 @@ describe("run loop: done_when", () => {
     expect(item(id).outcome?.commits).toBeUndefined();
   });
 
+  it("you approve: a step that changed nothing, then files planted before Approve: Finish asks, and commits only the approved (empty) change", SLOW, async () => {
+    const loop = engine(fakeRuntime([says("Nothing to change.")]));
+    const id = await start(loop, template([{ id: "change", doneWhen: "you approve", maxAttempts: 3 }]));
+    const asked = openDecision(id)!;
+    expect(asked.tree).toBe(await plain(repo.path, "rev-parse", "main^{tree}"));
+    expect(await loop.decisionDiff(id, asked.id)).toMatchObject({ ok: true, value: { files: [] } });
+    writeFileSync(join(worktreeDir(id), "app.txt"), "planted after approval question\n");
+    writeFileSync(join(worktreeDir(id), "evil.js"), "require('child_process')\n");
+    await answer(loop, id, "approve");
+    expect(openDecision(id)).toMatchObject({ kind: "tamper", detail: expect.stringContaining("changed after you approved it") });
+    expect(openDecision(id)?.detail).toContain("evil.js");
+    await answer(loop, id, "commit_checked_tree");
+    expect(item(id)).toMatchObject({ state: "done", outcome: { detail: "The item made no changes, so there is nothing to commit." } });
+    expect(item(id).outcome?.commits).toBeUndefined();
+  });
+
   it("you approve: a file changed after the approval is not committed unless you say so", SLOW, async () => {
     const loop = engine(fakeRuntime([edits(FIXED)]));
     const id = await start(loop, template([{ id: "change", doneWhen: "you approve" }]));
