@@ -22,6 +22,7 @@ import type { Git } from "../../kernel/git/index.js";
 import { sha256Hex } from "../../kernel/hash/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import { baseCategory, CI_DIRS, patternCategory, type ProtectedCategory, TOKAMA_DIR } from "./protected.js";
+import { errnoCode } from "../../kernel/errno/index.js";
 
 export type ProtectedArea =
   /** Relative to the shared (common) git dir. */
@@ -109,7 +110,7 @@ async function hashPath(path: string): Promise<string | undefined> {
       await handle.close();
     }
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
+    const code = errnoCode(error);
     if (code === "ENOENT" || code === "ENOTDIR") return undefined;
     return `error:${code ?? "unknown"}`;
   }

@@ -6,6 +6,7 @@ import { lstat, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { rulePrefixes } from "../../kernel/command-policy/index.js";
+import { errnoCode } from "../../kernel/errno/index.js";
 import type { ToolLimits } from "../../kernel/ports/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import { type AgentId, AgentIdSchema, type AiCliId, AiCliIdSchema, type RepoId } from "../../kernel/schemas/index.js";
@@ -218,7 +219,7 @@ async function loadFolder(folder: string, shown: string, owner: AgentOwner, prob
   try {
     names = (await readdir(folder)).filter((name) => name.endsWith(".md") && !isSkipped(name)).sort();
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
+    const code = errnoCode(error);
     if (code !== "ENOENT") problems.push({ file: shown, message: code === "ENOTDIR" ? "isn't a folder" : `can't be listed (${code ?? "unknown error"})` });
     return [];
   }

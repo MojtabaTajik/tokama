@@ -1,6 +1,7 @@
 // Pid files: the small lock and marker files that name a process by its pid (`<pid>[ <field>...]`),
 // and the check whether that process is still alive.
 import { closeSync, constants, fstatSync, openSync, readSync } from "node:fs";
+import { hasCode } from "../errno/index.js";
 
 /** A pid file's content and write time. */
 export interface PidFile {
@@ -52,6 +53,6 @@ export function pidAlive(pid: number): boolean {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
+    return hasCode(error, "EPERM");
   }
 }

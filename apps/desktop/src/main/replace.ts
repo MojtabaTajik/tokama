@@ -8,7 +8,7 @@ import { closeSync, constants, openSync, readFileSync, unlinkSync } from "node:f
 // eslint-disable-next-line no-restricted-imports -- replace.lock is created exclusively (O_EXCL), which is the lock itself; an atomic replace cannot take a lock.
 import { writeSync } from "node:fs";
 import { join } from "node:path";
-import { pidAlive, readEngineLock, readPidFile, stopOwnEngine, type EngineProcesses, type OwnEngine, type StopOutcome } from "@tokama/core";
+import { hasCode, pidAlive, readEngineLock, readPidFile, stopOwnEngine, type EngineProcesses, type OwnEngine, type StopOutcome } from "@tokama/core";
 
 export type ReplaceResult =
   /** The old engine is gone; connect again. `forced`: it took SIGKILL, so it could not end cleanly. */
@@ -102,7 +102,7 @@ function takeLock(path: string, content: string, staleMs: number): boolean {
       return true;
     } catch (error) {
       // A lock that cannot be made at all does not stop this app's own replace.
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") return true;
+      if (!hasCode(error, "EEXIST")) return true;
     }
     if (!isStale(path, staleMs)) return false;
     try {

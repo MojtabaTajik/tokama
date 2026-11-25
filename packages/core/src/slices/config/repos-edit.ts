@@ -20,6 +20,7 @@ import { DEFAULT_GITIGNORE, type FirstCommitPreview, GITIGNORE_FILE, previewFirs
 import { MAX_CONFIG_BYTES } from "./read.js";
 import { BRANCH, checkProblem, DEFAULT_WORKTREE_FOLDER, type LoadReposOptions, type Repo, readReposFile, REPOS_FILE, type ReposFile, ReposFileSchema } from "./repos.js";
 import { clean, CONFIG_FORMAT, formatProblem, parseYaml, quote, type ConfigProblem } from "./yaml-file.js";
+import { errnoCode } from "../../kernel/errno/index.js";
 
 /** Why a repo change was refused. `invalid_config`: repos.yaml itself has problems to fix first. */
 export interface RepoEditError {
@@ -208,7 +209,7 @@ export async function initRepo(options: RepoEditOptions, input: { readonly path:
     try {
       await writeFile(join(path, GITIGNORE_FILE), `${DEFAULT_GITIGNORE.join("\n")}\n`, { flag: "wx" });
     } catch (error) {
-      return invalid(`Tokama couldn't write ${GITIGNORE_FILE} (${(error as NodeJS.ErrnoException).code ?? String(error)}).`);
+      return invalid(`Tokama couldn't write ${GITIGNORE_FILE} (${errnoCode(error) ?? String(error)}).`);
     }
   }
   return ok({ gitInit: isNew, ignoreRules: preview.addsGitignore ? DEFAULT_GITIGNORE.length : null });
@@ -317,7 +318,7 @@ async function write(path: string, doc: Document): Promise<Result<void, RepoEdit
   try {
     await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   } catch (error) {
-    return refused("write_failed", `${REPOS_FILE} can't be written (${(error as NodeJS.ErrnoException).code ?? String(error)}).`);
+    return refused("write_failed", `${REPOS_FILE} can't be written (${errnoCode(error) ?? String(error)}).`);
   }
   const written = replaceTextSync(path, text, 0o600);
   return written.ok ? ok(undefined) : refused("write_failed", `${REPOS_FILE} can't be written (${written.error.code ?? written.error.reason}).`);
@@ -344,7 +345,7 @@ async function inspectFolder(git: Pick<Git, "worktreeList" | "revParse" | "topLe
     if (!(await stat(real)).isDirectory()) return invalid(`${quotePath(path)} isn't a folder.`);
     await access(real, constants.R_OK | constants.X_OK);
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
+    const code = errnoCode(error);
     if (code === "ENOENT" || code === "ENOTDIR") return invalid(`The folder ${quotePath(path)} doesn't exist.`);
     return invalid(`The folder ${quotePath(path)} can't be read (${code ?? "unknown error"}).`);
   }

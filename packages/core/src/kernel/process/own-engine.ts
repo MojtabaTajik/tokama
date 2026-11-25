@@ -8,6 +8,7 @@
 // before did not stop it: a shutdown request on the engine's socket, SIGTERM, and SIGKILL.
 import { execFile } from "node:child_process";
 import { systemClock, type Clock } from "../clock/index.js";
+import { hasCode } from "../errno/index.js";
 import { LSTART, parseLstart } from "./leftover.js";
 import { readPidFile } from "./pid-file.js";
 
@@ -179,7 +180,7 @@ export const posixEngineProcesses: EngineProcesses = {
     try {
       process.kill(pid, signal);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      if (!hasCode(error, "ESRCH")) throw error;
     }
   },
 };

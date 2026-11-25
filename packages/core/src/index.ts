@@ -12,6 +12,7 @@ export { pidAlive, readPidFile, type PidFile } from "./kernel/process/pid-file.j
 export { replaceTextSync, type WriteFailure, type WriteFailureReason } from "./kernel/fs-safe/write.js";
 export { manualClock, systemClock, type Clock, type ManualClock, type TimerHandle } from "./kernel/clock/index.js";
 // Small helpers the apps share with core.
+export { hasCode } from "./kernel/errno/index.js";
 export { CUT_MARK, cutText, displayPath, type CutOptions } from "./kernel/text/index.js";
 export {
   checkEngineDir,

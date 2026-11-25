@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { closeSync, constants, fchmodSync, fstatSync, fsyncSync, openSync, renameSync, unlinkSync, writeSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { err, ok, type Result } from "../result/index.js";
+import { errnoCode } from "../errno/index.js";
 
 export type WriteFailureReason = "symlink" | "not_regular_file" | "io_error";
 
@@ -24,7 +25,7 @@ function failure(path: string, error: unknown): Result<never, WriteFailure> {
   // The file name only: messages may reach logs and diagnostics, which hold no machine paths.
   const name = basename(path);
   if (error instanceof NotRegular) return err({ reason: "not_regular_file", path, message: `${name} is not a regular file` });
-  const code = (error as NodeJS.ErrnoException).code ?? "UNKNOWN";
+  const code = errnoCode(error) ?? "UNKNOWN";
   if (code === "ELOOP" || code === "EMLINK") return err({ reason: "symlink", path, message: `${name} is a symlink` });
   return err({ reason: "io_error", path, message: `cannot write ${name}: ${code}`, code });
 }

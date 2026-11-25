@@ -4,6 +4,7 @@
 import { mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { systemClock, type Clock } from "../../kernel/clock/index.js";
+import { hasCode } from "../../kernel/errno/index.js";
 import { replaceTextSync } from "../../kernel/fs-safe/index.js";
 import { sha256Hex } from "../../kernel/hash/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
@@ -262,7 +263,7 @@ export function loadHostId(home: string, clock: Clock = systemClock): Result<Hos
         : undefined;
     return hostId?.success ? ok(hostId.data) : err(`${file} does not hold a host id`);
   } catch (error) {
-    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) return err(`cannot read ${file}: ${String(error)}`);
+    if (!hasCode(error, "ENOENT")) return err(`cannot read ${file}: ${String(error)}`);
   }
   const hostId = HostIdSchema.parse(newId("host", clock.now()));
   try {

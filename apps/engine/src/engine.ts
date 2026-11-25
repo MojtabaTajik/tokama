@@ -32,6 +32,7 @@ import {
   type ItemRecord,
   checkEngineDir,
   displayPath,
+  hasCode,
   type Clock,
   type CommandErrorCode,
   type ConnectionErrorCode,
@@ -1105,10 +1106,6 @@ function unlinkIfPresent(path: string): void {
   } catch (error) {
     if (!hasCode(error, "ENOENT")) throw error;
   }
-}
-
-function hasCode(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 function withDeadline(work: Promise<unknown>, ms: number): Promise<void> {
