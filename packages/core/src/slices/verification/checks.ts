@@ -81,11 +81,12 @@ export async function runCommand(runner: ProcessRunner, command: string, options
   const output = tail(options.outputCap ?? DEFAULT_OUTPUT_CAP);
   const sink = { onLine: (line: string) => output.push(line),...(options.outputFile === undefined ? {} : { file: options.outputFile }) };
   const result = await runner.run({
-    command: { shell: command },
+    // The runner reads stdout and stderr from two pipes, and the order between two pipes is lost.
+    // The shell points stderr at stdout's pipe, so the kernel keeps the order the command wrote in.
+    command: { shell: `exec 2>&1\n${command}` },
     cwd: options.cwd,
     timeoutMs: options.timeoutMs,
     stdout: sink,
-    stderr: sink,
     ...(options.env === undefined ? {} : { env: options.env }),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   });
