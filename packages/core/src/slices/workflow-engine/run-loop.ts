@@ -880,8 +880,10 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     if (rule.action === "stop") return { kind: "end", outcome: "failed", detail: `Step ${step.name} failed.` };
     const stored = storedStep(item, stepId);
     const same = sameFailureTwice(stored);
-    // Below the limit only: at the limit, the limit question comes next anyway.
-    if (same !== undefined && countedAttempts(stored) < attemptLimit(item, stored, step.maxAttempts)) {
+    // Back to itself is a retry: it stays in the round, so max_attempts limits it.
+    const sendsBack = rule.action === "back" && rule.stepId !== stepId;
+    // Below the limit, or before a send-back: otherwise the limit question comes next anyway.
+    if (same !== undefined && (sendsBack || countedAttempts(stored) < attemptLimit(item, stored, step.maxAttempts))) {
       append(item.id, [decision("after_failure", stepId, [RETRY, NO_ACTION, STOP], `Step ${step.name} stopped early: ${same}`)]);
       return WAIT;
     }
@@ -889,6 +891,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       case "retry":
         return { kind: "attempt", stepId };
       case "back": {
+        if (!sendsBack) return { kind: "attempt", stepId };
         const trips = stored.sentBack ?? 0;
         if (trips >= roundTripLimit(item, stored)) {
           const text = `${step.name} sent the work back to ${stepDef(ctx.template, rule.stepId).name} ${trips} ${trips === 1 ? "time" : "times"}. Run one more round, or end the item.`;

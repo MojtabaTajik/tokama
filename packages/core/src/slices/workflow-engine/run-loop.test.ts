@@ -611,6 +611,28 @@ describe("run loop: counters", () => {
     expect(item(id).state).toBe("done");
   });
 
+  it("the same failure twice asks before a send-back, also with max_attempts 1", SLOW, async () => {
+    const builder = fakeRuntime([edits({ "verify.sh": "exit 4\n" })]);
+    const checker = fakeRuntime([says("Ready.")]);
+    const loop = engine(builder, { runtime: (a) => (a.id === "reviewer" ? checker : builder) });
+    const tpl = template([
+      { id: "build" },
+      { id: "verify", agentId: "reviewer", doneWhen: "checks pass", checks: { commands: ["sh verify.sh"] }, ifFailed: { action: "back", stepId: "build" } },
+    ]);
+    const id = await start(loop, tpl);
+    expect(item(id).steps.map((s) => s.attempts.length)).toEqual([2, 2]);
+    expect(openDecision(id)).toMatchObject({ kind: "after_failure", stepId: "verify", detail: expect.stringContaining("twice in a row") });
+  });
+
+  it("back to the same step is a retry: no new round, so max_attempts limits it", SLOW, async () => {
+    const verify = (code: number) => edits({ "verify.sh": "exit $(cat code.txt)\n", "code.txt": `${code}` });
+    const loop = engine(fakeRuntime([verify(4), verify(5), verify(6)]));
+    const id = await start(loop, template([{ id: "fix", doneWhen: "checks pass", checks: { commands: ["sh verify.sh"] }, ifFailed: { action: "back", stepId: "fix" }, maxAttempts: 2 }]));
+    expect(item(id).steps[0]?.attempts).toHaveLength(2);
+    expect(item(id).steps[0]).not.toHaveProperty("roundStart");
+    expect(openDecision(id)).toMatchObject({ kind: "after_failure", detail: "Step fix reached its limit of 2 attempts." });
+  });
+
   it("at the round-trip cap, End: no action needed ends the item", SLOW, async () => {
     const builder = fakeRuntime([edits(FIXED)]);
     const reviewer = fakeRuntime([says("Not yet.\nVERDICT: changes")]);
