@@ -12,11 +12,11 @@
 // before checks run on it and before it is committed; protected changes the engineer has not
 // approved ask. One tree flows through: the checks pass on it, the reviewer sees its diff, Finish
 // commits it. For `checks pass`: remove ignored files, run setup again, stage, judge, then check.
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Clock } from "../../kernel/clock/index.js";
-import { readTextFile, readTextHead } from "../../kernel/fs-safe/index.js";
+import { appendTextSync, readTextFile, readTextHead, replaceTextSync } from "../../kernel/fs-safe/index.js";
 import type { Git } from "../../kernel/git/index.js";
 import type { AgentRuntime, ToolLimits } from "../../kernel/ports/index.js";
 import type { ProcessRunner } from "../../kernel/process/index.js";
@@ -31,6 +31,9 @@ import {
   REQUEST_CHANGES_ID,
   parseTemplateRecord,
   type AgentCallErrorKind,
+  type AttemptChecksResult,
+  type AttemptFile,
+  type AttemptLogResult,
   type AttemptRecord,
   type CommandErrorCode,
   type CoveredPath,
@@ -57,6 +60,7 @@ import { openAttempt, openDecisions, recoverItems, RUN_FAILURE_CHOICES, type Ite
 import { buildPrompt, type StepResults } from "../prompting/index.js";
 import { checksPass, runCommand, type CheckResult } from "../verification/index.js";
 import { commitItem, createWorktree, findItemWorktree, originPushUrl, stageItem, treeDiff, worktreePath, worktreeSnapshot, type ItemWorktree } from "../worktrees/index.js";
+import { attemptChecks, attemptLog, toolLine } from "./attempt-files.js";
 import { createFinisher, GIT_SETTINGS_FILE } from "./finish.js";
 import { attemptLimit, budgetAllowedMs, budgetUsedMs, CONTINUE_ID, countedAttempts, ONE_MORE_ID, sameFailureTwice } from "./counters.js";
 import {
@@ -129,6 +133,12 @@ export interface RunLoop {
   decisionDiff(itemId: ItemId, decisionId: string): Promise<Result<ItemDiff, CommandError>>;
   /** The final message of the agent of a step's attempt (by index, as the item record lists steps); default the latest attempt. */
   stepOutput(itemId: ItemId, stepIndex: number, attempt?: number): Promise<Result<StepOutputResult, CommandError>>;
+  /** Each check of a step's attempt with the end of its saved output; while it runs, the planned ones too. */
+  attemptChecks(itemId: ItemId, stepIndex: number, attempt: number): Promise<Result<AttemptChecksResult, CommandError>>;
+  /** The end of a step attempt's transcript and the agent's final message. */
+  attemptLog(itemId: ItemId, stepIndex: number, attempt: number): Promise<Result<AttemptLogResult, CommandError>>;
+  /** The full path of a saved file of a step's attempt, when it exists: for the desktop's Open the file only. */
+  attemptFile(itemId: ItemId, stepIndex: number, attempt: number, file: AttemptFile): Promise<Result<{ path: string }, CommandError>>;
   /** Kills the running agent or check, keeps the worktree, and ends the item as stopped. */
   stopItem(itemId: ItemId): Promise<Result<null, CommandError>>;
   /**
@@ -689,7 +699,25 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     const commands = step.doneWhen === "checks pass" ? checkCommands(ctx, step) : [];
     const limits: ToolLimits = reviewer ? { ...agent.limits, edit: false } : agent.limits;
     let lastText = "";
-    const transcript: string[] = [];
+    // The transcript is written as the agent works, so a running attempt can be read: its
+    // messages as written, and one line per tool call.
+    const dir = attemptDir(stepId, attempt);
+    const transcriptPath = itemPath(item.id, `${dir}/transcript.txt`);
+    mkdirSync(dirname(transcriptPath), { recursive: true, mode: 0o700 });
+    const created = replaceTextSync(transcriptPath, "");
+    let transcriptOk = created.ok;
+    if (!created.ok) deps.log?.(`item ${item.id}: the transcript of step ${stepId} attempt ${attempt} was not saved: ${created.error.message}`);
+    let lastEntry: "text" | "tool" | undefined;
+    const record = (entry: string, kind: "text" | "tool") => {
+      if (!transcriptOk) return;
+      const separator = lastEntry === undefined ? "" : kind === "tool" && lastEntry === "tool" ? "\n" : "\n\n";
+      const appended = appendTextSync(transcriptPath, separator + entry);
+      if (!appended.ok) {
+        transcriptOk = false;
+        deps.log?.(`item ${item.id}: the transcript of step ${stepId} attempt ${attempt} stopped: ${appended.error.message}`);
+      }
+      lastEntry = kind;
+    };
     const call = await runGuardedCall(
       runtime,
       { model: agent.model, prompt: prompt.value.user, role: prompt.value.system, cwd: worktree.path, limits, timeoutMs: guard.timeoutMs },
@@ -708,8 +736,9 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
           }
           if (event.type === "text") {
             lastText = event.text;
-            transcript.push(event.text);
+            record(event.text, "text");
           }
+          if (event.type === "tool_call") record(toolLine(event, worktree.path), "tool");
         },
       },
     );
@@ -722,9 +751,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       },
     ]);
     if (!recorded.ok) deps.log?.(`item ${item.id}: the usage of step ${stepId} attempt ${attempt} was not recorded: ${recorded.error.message}`);
-    const dir = attemptDir(stepId, attempt);
     writeItemFile(item.id, `${dir}/agent.txt`, lastText);
-    writeItemFile(item.id, `${dir}/transcript.txt`, transcript.join("\n\n"));
     // What was sent (for a cloud agent, the exact prompt), how the call ended, and its guard report.
     writeItemFile(item.id, `${dir}/call.json`, `${JSON.stringify({ prompt: prompt.value.record, end: call.end, guard: call.guard }, null, 2)}\n`);
     if (signal.aborted) return WAIT;
@@ -827,7 +854,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       if (signal.aborted) return WAIT;
       if (result.outcome === "refused" || result.outcome === "not-started") return fail(`The check could not run. ${commandFailure(result)}`);
       const passed = result.outcome === "passed";
-      append(item.id, [{ type: "check_result", stepId, attempt, command, exitCode: result.exitCode, passed, outputFile }]);
+      append(item.id, [{ type: "check_result", stepId, attempt, command, exitCode: result.exitCode, passed, outputFile, durationMs: Math.max(0, Math.round(result.durationMs)) }]);
       if (!passed) failures.push(result);
     }
     // A check that wrote to the files that steer Tokama stops the item, pass or fail.
@@ -1078,6 +1105,35 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
   const failure = (code: CommandErrorCode, message: string): Result<never, CommandError> => err({ code, message });
   const closed = (): Result<never, CommandError> => failure("invalid_state", "The engine is shutting down.");
 
+  /** A step's attempt by the step's index, for the queries; the ids come from the stored item, never from the query. */
+  const attemptOf = async (itemId: ItemId, stepIndex: number, attempt: number): Promise<Result<{ item: StoredItem; step: StoredStep; record: AttemptRecord }, CommandError>> => {
+    await ready;
+    if (closing) return closed();
+    const item = store.get(itemId);
+    if (item === undefined || item.deleted) return failure("not_found", `No item ${itemId}.`);
+    const step = item.steps[stepIndex];
+    if (step === undefined) return failure("not_found", `Item ${itemId} has no step ${stepIndex + 1}.`);
+    const record = step.attempts.find((a) => a.attempt === attempt);
+    if (record === undefined) return failure("not_found", `The step has no attempt ${attempt}.`);
+    return ok({ item, step, record });
+  };
+
+  const filesOf = (itemId: ItemId, stepId: StepId, attempt: number) => ({
+    path: (name: string) => itemPath(itemId, `${attemptDir(stepId, attempt)}/${name}`),
+    itemPath: (rel: string) => itemPath(itemId, rel),
+  });
+
+  /** The checks a step runs after its agent, as the template snapshot and the repo's config give them now. */
+  const plannedChecks = (item: StoredItem, stepId: StepId): readonly string[] | undefined => {
+    const template = parseTemplateRecord(item.template.record);
+    if (!template.ok) return undefined;
+    const step = template.value.steps.find((s) => s.id === stepId);
+    if (step === undefined || step.doneWhen !== "checks pass" || step.checks === undefined) return undefined;
+    const repoId = item.repoIds[0];
+    const repo = repoId === undefined ? undefined : deps.repo(repoId);
+    return "from" in step.checks ? (repo?.checks ?? []) : step.checks.commands;
+  };
+
   const liveItem = (itemId: ItemId): Result<StoredItem, CommandError> => {
     const item = store.get(itemId);
     if (item === undefined || item.deleted) return failure("not_found", `No item ${itemId}.`);
@@ -1153,6 +1209,31 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       if (read.error.reason === "not_found") return failure("not_found", `Attempt ${asked.attempt} has no saved output.`);
       if (read.error.reason === "invalid_utf8") return failure("invalid_state", `The output of attempt ${asked.attempt} is not text.`);
       return failure("invalid_state", `Cannot read the output of attempt ${asked.attempt}: ${read.error.message}.`);
+    },
+
+    async attemptChecks(itemId, stepIndex, attempt) {
+      const found = await attemptOf(itemId, stepIndex, attempt);
+      if (!found.ok) return found;
+      const { item, step, record } = found.value;
+      return ok(await attemptChecks(record, filesOf(item.id, step.id, record.attempt), plannedChecks(item, step.id)));
+    },
+
+    async attemptLog(itemId, stepIndex, attempt) {
+      const found = await attemptOf(itemId, stepIndex, attempt);
+      if (!found.ok) return found;
+      const { item, step, record } = found.value;
+      return ok(await attemptLog(record, filesOf(item.id, step.id, record.attempt)));
+    },
+
+    async attemptFile(itemId, stepIndex, attempt, file) {
+      const found = await attemptOf(itemId, stepIndex, attempt);
+      if (!found.ok) return found;
+      const { item, step, record } = found.value;
+      const files = filesOf(item.id, step.id, record.attempt);
+      const outputFile = file === "transcript" ? undefined : record.checks[file - 1]?.outputFile;
+      const path = file === "transcript" ? files.path("transcript.txt") : outputFile !== undefined ? files.itemPath(outputFile) : files.path(`check-${file}.log`);
+      if (!existsSync(path)) return failure("not_found", file === "transcript" ? `Attempt ${record.attempt} has no saved transcript.` : `Check ${file} of attempt ${record.attempt} has no saved output.`);
+      return ok({ path });
     },
 
     async finishItem(itemId, action) {

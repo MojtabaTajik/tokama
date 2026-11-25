@@ -13,13 +13,20 @@ export interface EngineApi {
   command(input: unknown): Promise<CommandReply<CommandType>>;
 }
 
+/** Queries whose replies carry a full path: only the main process sends them, never its window. */
+const MAIN_ONLY_QUERIES: ReadonlySet<string> = new Set<QueryType>(["attempt_file"]);
+
 /** `client` returns the connected client, or undefined when there is none. */
 export function engineApi(client: () => EngineClient | undefined): EngineApi {
+  const own = mainQuery(client);
   return {
     query: async (input) => {
       const query = parseQuery(input);
       if (!query.ok) return invalid("query", query.error);
-      return (await client()?.query(query.value)) ?? notConnected();
+      if (MAIN_ONLY_QUERIES.has(query.value.type)) {
+        return { ok: false, error: { code: BRIDGE_ERROR_CODES.invalidRequest, message: `the app asks "${query.value.type}" itself` } };
+      }
+      return own(query.value);
     },
     command: async (input) => {
       const command = parseCommand(input);
@@ -31,6 +38,15 @@ export function engineApi(client: () => EngineClient | undefined): EngineApi {
       }
       return (await client()?.command(command.value)) ?? notConnected();
     },
+  };
+}
+
+/** Any query, the main-only ones too, validated the same way: for the main process's own use. */
+export function mainQuery(client: () => EngineClient | undefined): (input: unknown) => Promise<QueryReply<QueryType>> {
+  return async (input) => {
+    const query = parseQuery(input);
+    if (!query.ok) return invalid("query", query.error);
+    return (await client()?.query(query.value)) ?? notConnected();
   };
 }
 

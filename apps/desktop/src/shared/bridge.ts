@@ -45,6 +45,7 @@ export const CHANNELS = {
   event: "tokama:engine:event",
   pickFolder: "tokama:dialog:pick-folder",
   openTemplateFile: "tokama:template:open",
+  openAttemptFile: "tokama:attempt:open",
   getAboutInfo: "tokama:about:info",
   copyBuildInfo: "tokama:about:copy",
   showDataFolder: "tokama:about:show-folder",
@@ -74,6 +75,14 @@ export interface TemplateFileName {
   readonly file: string;
 }
 
+/** A saved file of a step's attempt: its transcript, or the output of check number `file` (from 1). */
+export interface AttemptFileName {
+  readonly itemId: string;
+  readonly stepIndex: number;
+  readonly attempt: number;
+  readonly file: "transcript" | number;
+}
+
 /** Whether a file opened; the message says why not, in plain words. */
 export type OpenResult = { readonly ok: true } | { readonly ok: false; readonly message: string };
 
@@ -97,6 +106,11 @@ export interface TokamaBridge {
    * where the file is and opens only template files in a `.tokama` folder or the Tokama home.
    */
   openTemplateFile(name: TemplateFileName): Promise<OpenResult>;
+  /**
+   * Opens a saved check log or agent transcript in the system's app for its type. The main process
+   * asks the engine where the file is and opens only `.log` and `.txt` files in that item's folder.
+   */
+  openAttemptFile(name: AttemptFileName): Promise<OpenResult>;
   /** What About shows about this build. */
   getAboutInfo(): Promise<AboutInfo>;
   /** Puts the build info as text on the clipboard. The main process writes it; the renderer sends no text. */

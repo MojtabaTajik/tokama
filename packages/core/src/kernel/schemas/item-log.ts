@@ -132,6 +132,8 @@ const CheckResultSchema = z.strictObject({
   exitCode: z.int().nullable(),
   passed: z.boolean(),
   outputFile: ItemFileSchema.optional(),
+  /** How long it ran; absent in records written before durations were. */
+  durationMs: z.int().min(0).optional(),
 });
 const AttemptEndedSchema = z.strictObject({
   type: z.literal("attempt_ended"),
@@ -291,6 +293,7 @@ const CheckRecordSchema = z.strictObject({
   exitCode: z.int().nullable(),
   passed: z.boolean(),
   outputFile: ItemFileSchema.optional(),
+  durationMs: z.int().min(0).optional(),
   at: EpochMsSchema,
 });
 

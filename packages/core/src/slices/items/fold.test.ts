@@ -98,9 +98,11 @@ describe("foldItem", () => {
     const item = fold([
       ...startBuild,
       { type: "check_result", stepId: BUILD, attempt: 1, command: "pnpm test", exitCode: 1, passed: false, outputFile: "checks/build-1.log" },
+      { type: "check_result", stepId: BUILD, attempt: 1, command: "pnpm lint", exitCode: 0, passed: true, durationMs: 14_000 },
     ]);
     expect(item.steps[0]?.attempts[0]?.checks).toEqual([
       { command: "pnpm test", exitCode: 1, passed: false, outputFile: "checks/build-1.log", at: T0 + 3000 },
+      { command: "pnpm lint", exitCode: 0, passed: true, durationMs: 14_000, at: T0 + 4000 },
     ]);
   });
 

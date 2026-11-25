@@ -369,7 +369,14 @@ export function sampleItems(now: number) {
       state: "failed",
       createdAt: ago(now, 130),
       cardLine: "checks failed 3 times",
-      steps: steps(templates.quickFix, ["passed", "failed"], { 1: "pnpm test: 4 failing after 3 attempts" }),
+      steps: steps(templates.quickFix, ["passed", "failed"], { 1: "pnpm test: 4 failing after 3 attempts" }).map((step, index) => ({
+        ...step,
+        attempts: [1, 2, 3].map((attempt) =>
+          index === 0
+            ? { attempt, result: "passed", checks: [] }
+            : { attempt, result: "failed", detail: "`pnpm test` exited 1.", checks: [{ command: "pnpm test", passed: false, exitCode: 1 }, { command: "pnpm lint", passed: true, exitCode: 0 }] },
+        ),
+      })),
     },
     {
       ...base,
@@ -444,6 +451,13 @@ export function sampleItems(now: number) {
 
 /** What each attempt's agent wrote last, by item and step index, oldest attempt first. */
 export const sampleOutputs: Readonly<Record<string, Readonly<Record<number, readonly string[]>>>> = {
+  [ITEM_IDS.failed]: {
+    0: [
+      "Upgraded pg and moved the pool to the new connect API.",
+      "Kept held clients out of the idle timeout.",
+      "Every caller releases its client. I could not find why the idle timeout still closes a held client.",
+    ],
+  },
   [ITEM_IDS.planApproval]: {
     0: [
       [

@@ -1,6 +1,6 @@
 import type { EngineClient } from "@tokama/client";
 import { describe, expect, it, vi } from "vitest";
-import { engineApi } from "./api.js";
+import { engineApi, mainQuery } from "./api.js";
 
 const ITEM_ID = "item_0b9f3c1e-6a2d-4f7b-9c1a-2e3d4f5a6b7c";
 
@@ -42,6 +42,16 @@ describe("engineApi.query", () => {
     const reply = await engineApi(() => client).query(input);
     expect(reply).toMatchObject({ ok: false, error: { code: "invalid_request", message: expect.stringContaining("not a valid query") } });
     expect(query).not.toHaveBeenCalled();
+  });
+
+  it("refuses a query whose reply carries a path: only the main process asks it", async () => {
+    const { client, query } = fakeClient();
+    const ask = { type: "attempt_file", itemId: ITEM_ID, stepIndex: 0, attempt: 1, file: "transcript" };
+    expect(await engineApi(() => client).query(ask)).toMatchObject({ ok: false, error: { code: "invalid_request", message: expect.stringContaining("attempt_file") } });
+    expect(query).not.toHaveBeenCalled();
+    await mainQuery(() => client)(ask);
+    expect(query).toHaveBeenCalledWith(ask);
+    expect(await mainQuery(() => client)({ type: "attempt_file", itemId: "../etc", stepIndex: 0, attempt: 1, file: 1 })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
   });
 
   it("answers not_connected when there is no client", async () => {

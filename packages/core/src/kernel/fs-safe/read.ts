@@ -68,12 +68,99 @@ export async function readTextFile(path: string, options: ReadTextOptions): Prom
  * The first `maxBytes` of a file's UTF-8 text, by the open rules of `readTextFile`; `truncated`
  * when the file holds more. A character split by the cap is left out. Never throws.
  */
-export async function readTextHead(path: string, options: { readonly maxBytes: number }): Promise<Result<{ text: string; truncated: boolean }, ReadFailure>> {
+export async function readTextHead(
+  path: string,
+  options: { readonly maxBytes: number; /** Invalid UTF-8 reads as U+FFFD instead of failing. */ readonly replaceInvalid?: boolean },
+): Promise<Result<{ text: string; truncated: boolean }, ReadFailure>> {
   const read = await readUpTo(path, options.maxBytes, false);
   if (!read.ok) return read;
   const { bytes, more } = read.value;
-  const text = decode(path, more ? bytes.subarray(0, completeUtf8Length(bytes)) : bytes);
+  const head = more ? bytes.subarray(0, completeUtf8Length(bytes)) : bytes;
+  if (options.replaceInvalid === true) return ok({ text: new TextDecoder("utf-8").decode(head), truncated: more });
+  const text = decode(path, head);
   return text.ok ? ok({ text: text.value, truncated: more }) : text;
+}
+
+export interface TextTail {
+  readonly text: string;
+  /** The file holds more than `text`. */
+  readonly truncated: boolean;
+  /** The file's size when it was read. */
+  readonly totalBytes: number;
+  /** Its lines, as `readTextFile` counts them; null when it is larger than `countLinesUpTo`. */
+  readonly totalLines: number | null;
+}
+
+/**
+ * The last whole lines of a file's text, at most `maxBytes` and `maxLines`, by the open rules of
+ * `readTextFile`. Reads only the end of a large file; counting its lines reads it all, so that
+ * stops at `countLinesUpTo` bytes. A first line cut by the byte cap is left out; invalid UTF-8
+ * reads as U+FFFD. Never throws.
+ */
+export async function readTextTail(
+  path: string,
+  options: { readonly maxBytes: number; readonly maxLines: number; readonly countLinesUpTo: number },
+): Promise<Result<TextTail, ReadFailure>> {
+  let handle: promises.FileHandle;
+  try {
+    handle = await open(path, FLAGS);
+  } catch (error) {
+    return openFailure(path, error);
+  }
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile()) return failure(path, "not_regular_file", "not a regular file");
+    const size = stat.size;
+    const start = Math.max(0, size - options.maxBytes);
+    let bytes = await readRange(handle, start, size);
+    let cut = start > 0;
+    if (cut) {
+      const firstBreak = bytes.indexOf(0x0a);
+      bytes = firstBreak === -1 ? Buffer.alloc(0) : bytes.subarray(firstBreak + 1);
+    }
+    let lines = new TextDecoder("utf-8").decode(bytes).split("\n");
+    if (lines.at(-1) === "") lines.pop();
+    if (lines.length > options.maxLines) {
+      lines = lines.slice(-options.maxLines);
+      cut = true;
+    }
+    const text = lines.join("\n");
+    let totalLines: number | null = null;
+    if (size <= options.countLinesUpTo) totalLines = start === 0 && !cut ? lines.length : await countFileLines(handle, size);
+    return ok({ text, truncated: cut, totalBytes: size, totalLines });
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? "UNKNOWN";
+    return failure(path, "io_error", `cannot read: ${code}`, code);
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
+}
+
+/** The bytes from `start` up to `end`, or fewer when the file shrank meanwhile. */
+async function readRange(handle: promises.FileHandle, start: number, end: number): Promise<Buffer> {
+  const buffer = Buffer.alloc(end - start);
+  let total = 0;
+  while (total < buffer.length) {
+    const { bytesRead } = await handle.read(buffer, total, buffer.length - total, start + total);
+    if (bytesRead === 0) break;
+    total += bytesRead;
+  }
+  return buffer.subarray(0, total);
+}
+
+/** Line breaks in the first `size` bytes, plus one for a last line without a break. */
+async function countFileLines(handle: promises.FileHandle, size: number): Promise<number> {
+  const chunk = Buffer.alloc(CHUNK_BYTES);
+  let breaks = 0;
+  let last = 0x0a;
+  for (let at = 0; at < size; ) {
+    const { bytesRead } = await handle.read(chunk, 0, Math.min(CHUNK_BYTES, size - at), at);
+    if (bytesRead === 0) break;
+    for (let i = chunk.indexOf(0x0a); i !== -1 && i < bytesRead; i = chunk.indexOf(0x0a, i + 1)) breaks++;
+    last = chunk[bytesRead - 1]!;
+    at += bytesRead;
+  }
+  return last === 0x0a ? breaks : breaks + 1;
 }
 
 /** Up to `maxBytes` of a regular file, and whether it holds more; `refuseLarger` refuses a larger file by its size before reading. */

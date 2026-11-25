@@ -30,11 +30,14 @@ import {
   type Result,
   type StepOutputResult,
   type StepRecord,
+  type AttemptChecksResult,
+  type AttemptLogResult,
   type TemplateRef,
   type TimerHandle,
   type Setup,
 } from "@tokama/core";
 import type { MemoryItemStore } from "../store.js";
+import { checksReply, logReply, sampleChecks, sampleLogs } from "./attempts.js";
 import { DIFF_DECISION_ID, ITEM_IDS, sampleDiff, sampleItems, sampleOutputs, sampleSetup } from "./data.js";
 
 /** How often the fake engine moves a working item on by one step. */
@@ -244,6 +247,29 @@ export class SampleEngine {
     const text = asked === undefined ? undefined : sampleOutputs[itemId]?.[stepIndex]?.[asked.attempt - 1];
     if (asked === undefined || text === undefined) return err({ code: "not_found", message: asked === undefined ? "The step has not run yet." : `Attempt ${asked.attempt} has no saved output.` });
     return ok({ attempt: asked.attempt, text, truncated: false });
+  }
+
+  /** The canned checks of a sample step's attempt; an attempt without them lists none. */
+  attemptChecks(itemId: ItemId, stepIndex: number, attempt: number): Result<AttemptChecksResult, CommandError> {
+    const found = this.attempt(itemId, stepIndex, attempt);
+    if (!found.ok) return found;
+    return ok(checksReply(attempt, sampleChecks[itemId]?.[stepIndex]?.[attempt - 1] ?? []));
+  }
+
+  /** The canned transcript of a sample step's attempt; an attempt without one has none saved. */
+  attemptLog(itemId: ItemId, stepIndex: number, attempt: number): Result<AttemptLogResult, CommandError> {
+    const found = this.attempt(itemId, stepIndex, attempt);
+    if (!found.ok) return found;
+    const log = sampleLogs[itemId]?.[stepIndex]?.[attempt - 1];
+    return ok(log === undefined ? { attempt, transcript: null, final: null } : logReply(attempt, log));
+  }
+
+  private attempt(itemId: ItemId, stepIndex: number, attempt: number): Result<null, CommandError> {
+    const item = this.store.get(itemId);
+    if (!item) return err({ code: "not_found", message: `no item ${itemId}` });
+    if (item.steps[stepIndex] === undefined) return err({ code: "not_found", message: `Item ${itemId} has no step ${stepIndex + 1}.` });
+    if (!(item.steps[stepIndex]?.attempts ?? []).some((a) => a.attempt === attempt)) return err({ code: "not_found", message: `The step has no attempt ${attempt}.` });
+    return ok(null);
   }
 
   private stopItem(itemId: ItemId): Result<null, CommandError> {

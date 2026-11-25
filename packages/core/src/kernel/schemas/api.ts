@@ -17,6 +17,7 @@ import { FinishActionSchema, ItemRecordSchema } from "./item.js";
 import { UsageRangeSchema, UsageReportSchema, UsageScopeSchema } from "./usage.js";
 import { AgentsListSchema } from "./agents.js";
 import { AiCliListSchema } from "./ai-clis.js";
+import { AttemptChecksSchema, AttemptFileSchema, AttemptLogSchema } from "./attempt-files.js";
 import { ItemDiffSchema } from "./diff.js";
 import { MAX_NOTE_CHARS } from "./item-log.js";
 import { MachineReportSchema } from "./machine.js";
@@ -114,6 +115,9 @@ export const CommandSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("report_diagnostic"), report: DiagnosticReportSchema, appVersion: VersionLabelSchema.optional() }),
 ]);
 
+/** One attempt of one step: the step by index, as the item record lists steps. */
+const attemptKey = { itemId: ItemIdSchema, stepIndex: z.int().nonnegative().max(1000), attempt: z.int().min(1).max(10_000) };
+
 export const QuerySchema = z.discriminatedUnion("type", [
   /** What is set up on this machine: repos, connections, agents and templates. */
   z.strictObject({ type: z.literal("setup") }),
@@ -123,6 +127,15 @@ export const QuerySchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("decision_diff"), itemId: ItemIdSchema, decisionId: DecisionIdSchema }),
   /** The final message the agent of a step's attempt wrote; `attempt` defaults to the step's latest. */
   z.strictObject({ type: z.literal("step_output"), itemId: ItemIdSchema, stepIndex: z.int().nonnegative().max(1000), attempt: z.int().min(1).max(10_000).optional() }),
+  /** Each check command of a step's attempt, with the end of its saved output. */
+  z.strictObject({ type: z.literal("attempt_checks"), ...attemptKey }),
+  /** The agent's transcript of a step's attempt, its end, and the agent's final message. */
+  z.strictObject({ type: z.literal("attempt_log"), ...attemptKey }),
+  /**
+   * The full path of a saved file of a step's attempt, for the desktop's Open the file. Only the
+   * desktop's main process asks; it never passes the path on to its window.
+   */
+  z.strictObject({ type: z.literal("attempt_file"), ...attemptKey, file: AttemptFileSchema }),
   /** The template the engine suggests for New work text, by ref; `templateId` is null when none fits. */
   z.strictObject({ type: z.literal("suggest_template"), text: z.string().max(4000) }),
   /** What the engine proposes for a folder before add_repo: id, base branch and checks. */
@@ -226,6 +239,9 @@ export const QueryResultSchemas = {
   item: z.strictObject({ item: ItemRecordSchema }),
   decision_diff: ItemDiffSchema,
   step_output: StepOutputSchema,
+  attempt_checks: AttemptChecksSchema,
+  attempt_log: AttemptLogSchema,
+  attempt_file: z.strictObject({ path: z.string().min(1).max(4096) }),
   suggest_template: z.strictObject({ templateId: TemplateRefSchema.nullable() }),
   suggest_repo: RepoSuggestionSchema,
   agents_list: AgentsListSchema,
@@ -395,6 +411,9 @@ export type BoardResult = QueryResult<"board">;
 export type ItemResult = QueryResult<"item">;
 export type DecisionDiffResult = QueryResult<"decision_diff">;
 export type StepOutputResult = QueryResult<"step_output">;
+export type AttemptChecksResult = QueryResult<"attempt_checks">;
+export type AttemptLogResult = QueryResult<"attempt_log">;
+export type AttemptFileResult = QueryResult<"attempt_file">;
 export type SetupResult = QueryResult<"setup">;
 export type SuggestTemplateResult = QueryResult<"suggest_template">;
 export type SuggestRepoResult = QueryResult<"suggest_repo">;

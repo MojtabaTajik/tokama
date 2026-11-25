@@ -4,7 +4,8 @@
 // whole main area (the full view): a page header with ← back and ⤡, the decision as a bar pinned
 // at the top while the page scrolls, and wide tabs. Both are one element, so switching keeps
 // everything open in it: the tab, the chosen file, a note being written. Engine text (titles,
-// questions, the cloud summary, step details, agent output) is rendered as React text only.
+// questions, the cloud summary, step details, agent output, check output and transcripts) is
+// rendered as React text only.
 import type { CommandErrorCode, Decision, ItemRecord, Setup } from "@tokama/core";
 import { type KeyboardEvent, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
@@ -14,10 +15,13 @@ import type { AgentTarget } from "../settings/describe.js";
 import { itemElement } from "../list/useFocusFollow.js";
 import { CollapseIcon, ExpandIcon, RepoIcon } from "../shell/icons.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
+import { changesRepo } from "./attempt-view.js";
+import { ChecksTab } from "./ChecksTab.js";
 import { attemptLine, decisionKind, hasEnded, nextRunLine, runLine, itemMark, KIND, outcomeLine, PRIVACY, stepAgent, stepMark, stepPosition, templateOf, whereLine } from "./describe.js";
 import { DecisionChoices, inTextField } from "./DecisionChoices.js";
 import { DiffTab, useDecisionDiff } from "./DiffView.js";
 import { Finish } from "./Finish.js";
+import { LogTab } from "./LogTab.js";
 import { OutputTab } from "./OutputTab.js";
 import { StepOutput, type OutputState, useStepOutput } from "./StepOutput.js";
 import { finishState, isDiscarded } from "./finish-view.js";
@@ -63,12 +67,18 @@ const TEXT = {
   template: (name: string) => `template ${name}`,
 } as const;
 
-export type Tab = "Steps" | "Output" | "Diff";
+export type Tab = "Steps" | "Output" | "Diff" | "Checks" | "Log";
 /**
- * The tabs, the same in the drawer and the full view: Diff only while a decision carries a diff.
- * Other tabs wait until the engine sends their data.
+ * The tabs, the same in the drawer and the full view: Diff only while a decision carries a diff,
+ * Checks only on an item that changes a repo.
  */
-const tabsOf = (diff: unknown): readonly Tab[] => (diff === undefined ? ["Steps", "Output"] : ["Steps", "Output", "Diff"]);
+export const tabsOf = (item: Pick<ItemRecord, "kind" | "repoIds">, diff: unknown): readonly Tab[] => [
+  "Steps",
+  "Output",
+  ...(diff === undefined ? [] : (["Diff"] as const)),
+  ...(changesRepo(item) ? (["Checks"] as const) : []),
+  "Log",
+];
 
 export type Notice = { readonly tone: "warn" | "fail"; readonly text: string };
 
@@ -260,7 +270,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
   };
 
   const template = item && templateOf(item, setup);
-  const tabs = item ? tabsOf(diff) : [];
+  const tabs = item ? tabsOf(item, diff) : [];
   const shown = tabs.includes(tab) ? tab : "Steps";
   // ⤢ on a block inside the drawer: the full view on that block's tab.
   const expandTo = onExpand === undefined || full ? undefined : (to: Tab) => () => {
@@ -374,6 +384,10 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
               <Steps bridge={bridge} item={item} setup={setup} onOpenAgent={onOpenAgent} />
             ) : shown === "Output" ? (
               <OutputTab bridge={bridge} item={item} setup={setup} full={full} onExpand={expandTo?.("Output")} onOpenAgent={onOpenAgent} />
+            ) : shown === "Checks" ? (
+              <ChecksTab bridge={bridge} item={item} setup={setup} full={full} />
+            ) : shown === "Log" ? (
+              <LogTab bridge={bridge} item={item} setup={setup} full={full} onOpenAgent={onOpenAgent} />
             ) : diff !== undefined ? (
               <DiffTab
                 key={item.decision?.id}
