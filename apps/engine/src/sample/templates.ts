@@ -7,7 +7,7 @@ import { sampleSetup } from "./data.js";
 
 const TEMPLATES_DIR = ".tokama/templates";
 
-const PLAN_AND_BUILD = `# yaml-language-server: $schema=../template.schema.json
+const PLAN_AND_BUILD = `# yaml-language-server: $schema=https://tokama.dev/schema/template.json
 format: 1
 name: Plan and build
 icon: hammer

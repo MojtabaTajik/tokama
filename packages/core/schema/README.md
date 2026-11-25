@@ -15,25 +15,26 @@ A test fails while the file does not match the format.
 
 ## Use it in a repo
 
-Copy `template.schema.json` into the repo as `.tokama/template.schema.json`. Tokama reads only
-`.yaml` files in `.tokama/templates/`, so the copy is not taken for a template.
+Editors fetch the schema from its address,
+`https://tokama.dev/schema/template.json`. Autocomplete and inline errors start to work once
+tokama.dev serves the file.
 
 With the [YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml)
-(or any editor that uses yaml-language-server), point one file at the schema with a first line:
+(or any editor that uses yaml-language-server), point one template at the schema with a first line:
 
 ```yaml
-# yaml-language-server: $schema=../template.schema.json
+# yaml-language-server: $schema=https://tokama.dev/schema/template.json
 format: 1
 name: Quick fix
 ```
 
-The path is relative to the template file. To cover every template in the repo at once, add this
-to the repo's `.vscode/settings.json` instead:
+To cover every template in the repo at once, add this to the repo's `.vscode/settings.json`
+instead:
 
 ```json
 {
   "yaml.schemas": {
-    "./.tokama/template.schema.json": ".tokama/templates/*.yaml"
+    "https://tokama.dev/schema/template.json": ".tokama/templates/*.yaml"
   }
 }
 ```
