@@ -134,11 +134,25 @@ describe("DiagnosticsPage", () => {
     expect(button("Send all (4)")?.disabled).toBe(false);
   });
 
-  it("says plainly when there are too many reports right now", async () => {
-    const page = render({ send: async () => ({ ok: false, reason: "rate_limited", count: 1 }), items: [ITEMS[0]!] });
+  it.each([
+    [{ reason: "rate_limited" }, "tokama.dev has too many reports right now; try again in a minute."],
+    [{ reason: "busy_today" }, "The server is busy today; try tomorrow."],
+    [{ reason: "rejected", detail: "entries[0].code: not a known code" }, "tokama.dev didn’t accept them: entries[0].code: not a known code."],
+    [{ reason: "network" }, "tokama.dev couldn’t be reached. Check the connection."],
+  ] as const)("says in plain words why the receiver refused: %j", async (failure, words) => {
+    const page = render({ send: async () => ({ ok: false, count: 1, ...failure }), items: [ITEMS[0]!] });
     await page.show();
     await click(button("Send all (1)"));
-    expect($(".dg-status")?.textContent).toBe("✕Couldn’t send 1 entry. tokama.dev has too many reports right now, try later. It is kept here.");
+    expect($(".dg-status")?.textContent).toBe(`✕Couldn’t send 1 entry. ${words} It is kept here.`);
+    expect($$(".dg-entry")).toHaveLength(1);
+  });
+
+  it("says when sent entries could not be removed from this machine", async () => {
+    const page = render({ send: async () => ({ ok: true, sent: 4, kept: 4 }) });
+    await page.show();
+    await click(button("Send all (4)"));
+    expect($(".dg-status")?.textContent).toBe("✓Sent 4 entries. 4 entries couldn’t be removed from this Mac and may be sent again.");
+    expect($$(".dg-entry")).toHaveLength(4);
   });
 
   it("clears every entry with one click, and saves every entry to a file", async () => {

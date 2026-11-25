@@ -210,10 +210,10 @@ void app.whenReady().then(() => {
   handle(CHANNELS.query, (query) => api.query(query));
   handle(CHANNELS.command, (command) => api.command(command));
   // The Diagnostics page. Send all posts to the app's own URL; a development build may point it at
-  // a local test server. The save dialog is looked up on each call, so the UI flow tests can stand in for it.
+  // a local test server, and on the sample engine it sends nowhere without one. The save dialog is looked up on each call, so the UI flow tests can stand in for it.
   const diagnostics = diagnosticsService({
     client: () => watch.client(),
-    url: diagnosticsUrl(process.env["TOKAMA_DIAGNOSTICS_URL"], app.isPackaged, DIAGNOSTICS_URL),
+    url: diagnosticsUrl(process.env["TOKAMA_DIAGNOSTICS_URL"], app.isPackaged, sample ? undefined : DIAGNOSTICS_URL),
     saveFile: (text) => saveToFile(text, (options) => {
       const window = BrowserWindow.getFocusedWindow();
       return window === null ? dialog.showSaveDialog(options) : dialog.showSaveDialog(window, options);

@@ -14,4 +14,5 @@ only headers are `Content-Type` and `Content-Encoding`, with no cookie, no auth 
 - reads at most 4 KB of the reply, and counts only a 2xx reply carrying `{ "id": "..." }` as success.
 
 Every failure comes back as a value (`too_large`, `not_allowed`, `timeout`, `network`, `status`,
-`bad_reply`); the server's own text is never passed on.
+`bad_reply`). Of the server's own text only a 4xx reply's `{ "error": "..." }` is passed on, as one
+line of plain text cut to 200 characters.

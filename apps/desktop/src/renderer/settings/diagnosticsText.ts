@@ -113,20 +113,25 @@ const entries = (count: number) => (count === 1 ? "1 entry" : `${count} entries`
 
 export const sendLabel = (count: number) => `Send all (${count})`;
 export const sendingLine = (count: number) => `Sending all ${entries(count)}…`;
-export const sentLine = (count: number) => `Sent ${entries(count)}. ${count === 1 ? "It was" : "They were"} removed from this Mac.`;
+export const sentLine = (count: number, kept = 0) =>
+  kept === 0 ? `Sent ${entries(count)}. ${count === 1 ? "It was" : "They were"} removed from this Mac.` : `Sent ${entries(count)}. ${entries(kept)} couldn’t be removed from this Mac and may be sent again.`;
 
 const FAILURE_REASON: Record<DiagnosticsSendFailure, string> = {
   timeout: "tokama.dev didn’t answer within 30 seconds.",
   network: "tokama.dev couldn’t be reached. Check the connection.",
-  rate_limited: "tokama.dev has too many reports right now, try later.",
+  rate_limited: "tokama.dev has too many reports right now; try again in a minute.",
+  busy_today: "The server is busy today; try tomorrow.",
   too_large: "They are larger than tokama.dev takes.",
-  rejected: "tokama.dev didn’t accept their format.",
+  rejected: "tokama.dev didn’t accept them.",
   unsupported: "tokama.dev didn’t accept how they were packed.",
   server: "tokama.dev couldn’t store them.",
   bad_reply: "tokama.dev’s answer didn’t confirm they were stored.",
   not_connected: "The engine isn’t running.",
+  no_receiver: "This development build sends to no server.",
   busy: "A send is running already.",
   nothing: "Nothing was waiting.",
 };
 
-export const failedLine = (count: number, reason: DiagnosticsSendFailure) => `Couldn’t send ${entries(count)}. ${FAILURE_REASON[reason]} ${count === 1 ? "It is" : "They are"} kept here.`;
+/** `detail`: the receiver's own short reason for a refusal, shown after the plain words. */
+export const failedLine = (count: number, reason: DiagnosticsSendFailure, detail?: string) =>
+  `Couldn’t send ${entries(count)}. ${reason === "rejected" && detail !== undefined ? `tokama.dev didn’t accept them: ${detail.replace(/\.$/, "")}.` : FAILURE_REASON[reason]} ${count === 1 ? "It is" : "They are"} kept here.`;

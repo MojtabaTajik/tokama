@@ -24,7 +24,7 @@ const server = createServer((request, response) => {
   request.on("end", () => {
     received.push({ headers: request.headers, body: gunzipSync(Buffer.concat(chunks)).toString("utf8") });
     response.writeHead(status, { "content-type": "application/json" });
-    response.end(status < 300 ? '{"id":"rep_e2e"}' : "{}");
+    response.end(status < 300 ? '{"id":"rep_e2e"}' : '{"error":"daily budget used up"}');
   });
 });
 
@@ -94,7 +94,9 @@ flow("sends every entry in one gzipped request and removes them after the receiv
   expect(request?.headers["content-encoding"]).toBe("gzip");
   expect(request?.headers["cookie"]).toBeUndefined();
   expect(request?.headers["authorization"]).toBeUndefined();
-  const entries = JSON.parse(request?.body ?? "") as { type: string }[];
+  const body = JSON.parse(request?.body ?? "") as { entries: { type: string }[] };
+  expect(Object.keys(body)).toEqual(["entries"]);
+  const { entries } = body;
   expect(entries).toHaveLength(SAMPLE_COUNT);
   expect(new Set(entries.map((entry) => entry.type))).toEqual(new Set(["error", "warning", "usage", "crash"]));
   await page.locator(".settings-back").click();
@@ -106,7 +108,7 @@ flow("keeps everything when the receiver fails, and says why", async ({ page, sc
   await openDiagnostics(page);
   const before = await rows(page);
   await page.getByRole("button", { name: `Send all (${SAMPLE_COUNT})` }).click();
-  await page.getByText(`Couldn’t send ${SAMPLE_COUNT} entries. tokama.dev couldn’t store them. They are kept here.`).waitFor();
+  await page.getByText(`Couldn’t send ${SAMPLE_COUNT} entries. The server is busy today; try tomorrow. They are kept here.`).waitFor();
   expect(await rows(page)).toEqual(before);
   expect(await page.getByRole("button", { name: `Send all (${SAMPLE_COUNT})` }).isEnabled()).toBe(true);
   expect(received).toHaveLength(1);
@@ -127,7 +129,7 @@ flow("saves exactly what Send all would send to a file", async ({ app, page, tmp
   await page.getByRole("button", { name: "Save as file…" }).click();
   await expect.poll(() => { try { return readFileSync(file, "utf8").length; } catch { return 0; } }).toBeGreaterThan(0);
   const saved = readFileSync(file, "utf8");
-  expect(saved).toBe(`[\n${texts.join(",\n")}\n]\n`);
+  expect(saved).toBe(`{"entries": [\n${texts.join(",\n")}\n]}\n`);
   expect(received).toEqual([]);
 });
 

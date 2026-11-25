@@ -20,7 +20,7 @@ describe("diagnostics body", () => {
   it("is valid JSON that parses back to the entries, and holds each entry's text as it is", () => {
     const texts = entries.map(entryText);
     const body = diagnosticsBody(texts);
-    expect(JSON.parse(body)).toEqual(entries);
+    expect(JSON.parse(body)).toEqual({ entries });
     for (const text of texts) expect(body).toContain(text);
     expect(texts[0]).toContain('\n  "code": "index_rebuilt"');
   });
@@ -34,6 +34,7 @@ describe("diagnostics body", () => {
 describe("DiagnosticsBodySchema", () => {
   it("takes a body of entries and refuses an empty one", () => {
     expect(DiagnosticsBodySchema.safeParse(JSON.parse(diagnosticsBody(entries.map(entryText)))).success).toBe(true);
-    expect(DiagnosticsBodySchema.safeParse([]).success).toBe(false);
+    expect(DiagnosticsBodySchema.safeParse({ entries: [] }).success).toBe(false);
+    expect(DiagnosticsBodySchema.safeParse({ entries: JSON.parse(diagnosticsBody(entries.map(entryText))).entries, sentAt: 1 }).success).toBe(false);
   });
 });

@@ -36,8 +36,11 @@ export type PostFailure =
   | { readonly kind: "timeout" }
   /** No answer: offline, a name that does not resolve, a refused connection or a TLS failure. */
   | { readonly kind: "network"; readonly code?: string }
-  /** The server answered with a status other than 2xx (a redirect included). */
-  | { readonly kind: "status"; readonly status: number }
+  /**
+   * The server answered with a status other than 2xx (a redirect included). `reason`: the short
+   * reason a 4xx reply gives as `{ "error": "..." }`, one line of plain text, cut to 200 characters.
+   */
+  | { readonly kind: "status"; readonly status: number; readonly reason?: string }
   /** A 2xx answer without a report id. */
   | { readonly kind: "bad_reply" };
 
@@ -64,8 +67,9 @@ export async function postGzipJson(options: PostJsonOptions): Promise<Result<{ r
       signal: controller.signal,
     });
     if (response.status < 200 || response.status > 299) {
-      await response.body?.cancel().catch(() => {});
-      return err({ kind: "status", status: response.status });
+      const reason = response.status >= 400 && response.status < 500 ? errorReason(await readCapped(response, MAX_REPLY_BYTES)) : undefined;
+      if (reason === undefined) await response.body?.cancel().catch(() => {});
+      return err(reason === undefined ? { kind: "status", status: response.status } : { kind: "status", status: response.status, reason });
     }
     const id = reportId(await readCapped(response, MAX_REPLY_BYTES));
     return id === undefined ? err({ kind: "bad_reply" }) : ok({ id });
@@ -109,6 +113,20 @@ function reportId(text: string | undefined): string | undefined {
     if (typeof parsed !== "object" || parsed === null || !("id" in parsed)) return undefined;
     const { id } = parsed;
     return typeof id === "string" && REPORT_ID.test(id) ? id : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The `error` of a `{ "error": "..." }` reply as one line of printable text, at most 200 characters. */
+function errorReason(text: string | undefined): string | undefined {
+  if (text === undefined) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (typeof parsed !== "object" || parsed === null || !("error" in parsed) || typeof parsed.error !== "string") return undefined;
+    // eslint-disable-next-line no-control-regex
+    const line = parsed.error.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]+/g, " ").trim().slice(0, 200);
+    return line === "" ? undefined : line;
   } catch {
     return undefined;
   }

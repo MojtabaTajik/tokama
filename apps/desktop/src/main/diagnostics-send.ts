@@ -11,6 +11,12 @@ import type { DiagnosticsLoad, DiagnosticsSaveResult, DiagnosticsSendFailure, Di
 
 /** Where Send all posts. Only a development build may replace it, with a loopback test server. */
 export const DIAGNOSTICS_URL = new URL("https://api.tokama.dev/diagnostics");
+/**
+ * The largest body Send all posts: the receiver's own limit. The store keeps the body of every
+ * entry within MAX_DIAGNOSTICS_BYTES; the margin covers stacks that are cleaned again at load with
+ * placeholders longer than the names they replace (a repo added later).
+ */
+export const UPLOAD_LIMIT_BYTES = MAX_DIAGNOSTICS_BYTES + 16 * 1024;
 /** Send all gives up after this, reply included. */
 export const SEND_TIMEOUT_MS = 30_000;
 /** The most ids diagnostics_delete takes in one command. */
@@ -24,7 +30,8 @@ const MAX_IDS = 20_000;
 export interface DiagnosticsServiceOptions {
   /** The connected client, or undefined when there is none. */
   readonly client: () => EngineClient | undefined;
-  readonly url: URL;
+  /** Undefined: this build sends nowhere (the sample engine without a local test server). */
+  readonly url: URL | undefined;
   /** Shows the save dialog and writes the text; "cancelled" when the user closed the dialog. */
   readonly saveFile: (text: string) => Promise<"saved" | "cancelled" | "failed">;
   readonly clock?: Clock;
@@ -42,6 +49,8 @@ export function diagnosticsService(options: DiagnosticsServiceOptions): Diagnost
   /** The texts of the last load, by id, in the order shown. */
   let shown = new Map<DiagnosticId, string>();
   let sending = false;
+  /** Loads can overlap; only the one started last sets `shown`. */
+  let loads = 0;
 
   /** The shown texts of the given ids, in the order shown; undefined for input that is not a list of ids. */
   const pick = (input: unknown): { ids: DiagnosticId[]; texts: string[] } | undefined => {
@@ -55,36 +64,53 @@ export function diagnosticsService(options: DiagnosticsServiceOptions): Diagnost
     load: async () => {
       const client = options.client();
       if (client === undefined) return { ok: false, reason: "not_connected" };
+      const load = ++loads;
       const entries = await listAll(client);
       if (entries === undefined) return { ok: false, reason: "unavailable" };
       const items = entries.map((entry) => ({ entry, text: entryText(entry) }));
-      shown = new Map(items.map((item) => [item.entry.id, item.text]));
+      if (load === loads) shown = new Map(items.map((item) => [item.entry.id, item.text]));
       return { ok: true, items };
     },
     send: async (input) => {
-      const picked = pick(input);
-      const count = picked?.ids.length ?? 0;
-      if (sending) return { ok: false, reason: "busy", count };
-      if (picked === undefined || count === 0) return { ok: false, reason: "nothing", count: 0 };
+      const asked = pick(input);
+      if (sending) return { ok: false, reason: "busy", count: asked?.ids.length ?? 0 };
+      if (asked === undefined || asked.ids.length === 0) return { ok: false, reason: "nothing", count: 0 };
       const client = options.client();
-      if (client === undefined) return { ok: false, reason: "not_connected", count };
+      if (client === undefined) return { ok: false, reason: "not_connected", count: asked.ids.length };
+      if (options.url === undefined) return { ok: false, reason: "no_receiver", count: asked.ids.length };
+      const url = options.url;
       sending = true;
       try {
+        // Only what is still waiting: an entry cleared since the page loaded is not sent.
+        const waiting = await listAll(client);
+        if (waiting === undefined) return { ok: false, reason: "not_connected", count: asked.ids.length };
+        const still = new Set(waiting.map((entry) => entry.id));
+        const ids = asked.ids.filter((id) => still.has(id));
+        const count = ids.length;
+        if (count === 0) return { ok: false, reason: "nothing", count: 0 };
         const posted = await (options.post ?? postGzipJson)({
-          url: options.url,
-          text: diagnosticsBody(picked.texts),
-          maxBytes: MAX_DIAGNOSTICS_BYTES,
+          url,
+          text: diagnosticsBody(ids.map((id) => shown.get(id) as string)),
+          maxBytes: UPLOAD_LIMIT_BYTES,
           timeoutMs: SEND_TIMEOUT_MS,
           ...(options.clock !== undefined && { clock: options.clock }),
         });
-        if (!posted.ok) return { ok: false, reason: failureReason(posted.error), count };
-        // Stored: remove exactly what was sent. Entries recorded since stay. A delete that fails
-        // leaves them listed; a later Send all sends them again and the receiver ignores the copies.
-        for (let start = 0; start < picked.ids.length; start += DELETE_CHUNK) {
-          await client.command({ type: "diagnostics_delete", ids: picked.ids.slice(start, start + DELETE_CHUNK) });
+        if (!posted.ok) {
+          const reason = failureReason(posted.error);
+          const detail = reason === "rejected" && posted.error.kind === "status" ? posted.error.reason : undefined;
+          return detail === undefined ? { ok: false, reason, count } : { ok: false, reason, count, detail };
         }
-        for (const id of picked.ids) shown.delete(id);
-        return { ok: true, sent: count };
+        // Stored (the receiver answers 201): remove exactly what was sent; entries recorded since
+        // stay. A delete that fails leaves its entries listed and says so; a later Send all sends
+        // them again, and the receiver ignores the copies.
+        let kept = 0;
+        for (let start = 0; start < count; start += DELETE_CHUNK) {
+          const chunk = ids.slice(start, start + DELETE_CHUNK);
+          const deleted = await client.command({ type: "diagnostics_delete", ids: chunk }).catch(() => undefined);
+          if (deleted?.ok === true) for (const id of chunk) shown.delete(id);
+          else kept += chunk.length;
+        }
+        return kept === 0 ? { ok: true, sent: count } : { ok: true, sent: count, kept };
       } finally {
         sending = false;
       }
@@ -132,7 +158,7 @@ function failureReason(failure: PostFailure): DiagnosticsSendFailure {
     case "bad_reply":
       return "bad_reply";
     case "status":
-      return failure.status === 400 ? "rejected" : failure.status === 413 ? "too_large" : failure.status === 415 ? "unsupported" : failure.status === 429 ? "rate_limited" : "server";
+      return failure.status === 400 ? "rejected" : failure.status === 413 ? "too_large" : failure.status === 415 ? "unsupported" : failure.status === 429 ? "rate_limited" : failure.status === 503 ? "busy_today" : "server";
   }
 }
 

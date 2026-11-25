@@ -3,7 +3,7 @@
 // filters change only what shows; Send all and Save as file take every waiting entry. Entry text
 // is rendered as React text only, never as HTML.
 import { useState } from "react";
-import type { ConnectionState, DiagnosticsItem, DiagnosticsSendFailure, TokamaBridge } from "../../shared/bridge.js";
+import type { ConnectionState, DiagnosticsItem, DiagnosticsSendFailure, DiagnosticsSendResult, TokamaBridge } from "../../shared/bridge.js";
 import { ConnectionFailure } from "../shell/ConnectionStatus.js";
 import { DATE_FILTERS, type DateFilter, failedLine, inDateRange, sendingLine, sendLabel, sentLine, shownType, sizeLabel, summary, TYPE_FILTERS, TYPE_WORD, type TypeFilter, timeLabel, type ShownType } from "./diagnosticsText.js";
 import { useDiagnostics } from "./useDiagnostics.js";
@@ -45,8 +45,8 @@ const TYPE_PATH: Record<ShownType, string> = {
 type Bar =
   | { readonly status: "idle" }
   | { readonly status: "sending"; readonly count: number }
-  | { readonly status: "sent"; readonly count: number }
-  | { readonly status: "failed"; readonly count: number; readonly reason: DiagnosticsSendFailure }
+  | { readonly status: "sent"; readonly count: number; readonly kept: number }
+  | { readonly status: "failed"; readonly count: number; readonly reason: DiagnosticsSendFailure; readonly detail?: string }
   | { readonly status: "notice"; readonly text: string };
 
 export interface DiagnosticsPageProps {
@@ -97,7 +97,7 @@ export function DiagnosticsPage({ bridge, connection, now: fixedNow }: Diagnosti
                 </span>
                 {TEXT.loadFailed}
               </p>
-              <button type="button" className="retry" onClick={reload}>
+              <button type="button" className="retry" onClick={() => void reload()}>
                 {TEXT.retry}
               </button>
             </div>
@@ -117,17 +117,18 @@ export function DiagnosticsPage({ bridge, connection, now: fixedNow }: Diagnosti
   const sendAll = async () => {
     setBusy(true);
     setBar({ status: "sending", count: ids.length });
-    const result = await bridge.sendDiagnostics(ids).catch(() => ({ ok: false as const, reason: "network" as const, count: ids.length }));
-    setBar(result.ok ? { status: "sent", count: result.sent } : { status: "failed", count: result.count, reason: result.reason });
+    const result: DiagnosticsSendResult = await bridge.sendDiagnostics(ids).catch(() => ({ ok: false, reason: "network", count: ids.length }));
+    setBar(result.ok ? { status: "sent", count: result.sent, kept: result.kept ?? 0 } : { status: "failed", count: result.count, reason: result.reason, ...(result.detail !== undefined && { detail: result.detail }) });
+    await reload();
     setBusy(false);
-    reload();
   };
   const clearAll = async () => {
     setBusy(true);
     const reply = await bridge.command({ type: "diagnostics_delete", all: true }).catch(() => ({ ok: false as const }));
     setBar(reply.ok ? { status: "idle" } : { status: "notice", text: TEXT.clearFailed });
+    // The buttons wait for the list after the clear, so Send all never names cleared entries.
+    await reload();
     setBusy(false);
-    reload();
   };
   const saveAll = async () => {
     setBusy(true);
@@ -139,8 +140,8 @@ export function DiagnosticsPage({ bridge, connection, now: fixedNow }: Diagnosti
     if (collect === undefined) return;
     setCollectPending(true);
     await bridge.command({ type: "diagnostics_settings", collect: !collect }).catch(() => undefined);
+    await reload();
     setCollectPending(false);
-    reload();
   };
 
   const collectSwitch = <CollectSwitch on={collect} pending={collectPending} onFlip={() => void flipCollect()} />;
@@ -269,7 +270,7 @@ function TypeIcon({ type }: { readonly type: ShownType }) {
 function BarStatus({ bar }: { readonly bar: Bar }) {
   if (bar.status === "idle") return null;
   const [symbol, tone, text] =
-    bar.status === "sending" ? ["◐", "live", sendingLine(bar.count)] : bar.status === "sent" ? ["✓", "pass", sentLine(bar.count)] : bar.status === "failed" ? ["✕", "fail", failedLine(bar.count, bar.reason)] : ["✕", "fail", bar.text];
+    bar.status === "sending" ? ["◐", "live", sendingLine(bar.count)] : bar.status === "sent" ? ["✓", "pass", sentLine(bar.count, bar.kept)] : bar.status === "failed" ? ["✕", "fail", failedLine(bar.count, bar.reason, bar.detail)] : ["✕", "fail", bar.text];
   return (
     <p className="dg-status" role="status">
       <span className="dg-status-symbol" data-tone={tone} aria-hidden="true">

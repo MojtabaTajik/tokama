@@ -74,7 +74,17 @@ describe("postGzipJson", () => {
       await new Promise<void>((done) => server?.close(() => done()));
       server = undefined;
     }
+    const reasons = await serve(() => ({ status: 400, body: JSON.stringify({ error: `entries[0].code: must be one of the codes\n\u202e${"x".repeat(300)}` }) }));
+    const refused = await post(reasons.url);
+    expect(refused).toMatchObject({ ok: false, error: { kind: "status", status: 400 } });
+    const reason = refused.ok ? "" : refused.error.kind === "status" ? (refused.error.reason ?? "") : "";
+    expect(reason.startsWith("entries[0].code: must be one of the codes x")).toBe(true);
+    expect(reason).toHaveLength(200);
+    server?.closeAllConnections();
+    await new Promise<void>((done) => server?.close(() => done()));
+    server = undefined;
     const { url, received } = await serve(() => ({ status: 307, headers: { location: "https://elsewhere.example/diagnostics" } }));
+
     expect(await post(url)).toEqual({ ok: false, error: { kind: "status", status: 307 } });
     expect(received).toHaveLength(1);
   });

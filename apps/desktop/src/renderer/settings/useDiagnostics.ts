@@ -1,6 +1,6 @@
 // The waiting diagnostics entries and the collect switch, loaded when the page opens and again on
 // a diagnostics_changed or setup_changed event. Also the waiting count for the rail badge.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConnectionState, DiagnosticsItem, TokamaBridge } from "../../shared/bridge.js";
 
 export type DiagnosticsState =
@@ -8,25 +8,27 @@ export type DiagnosticsState =
   | { readonly status: "failed" }
   | { readonly status: "loaded"; readonly items: readonly DiagnosticsItem[]; readonly collect: boolean | undefined };
 
-export function useDiagnostics(bridge: TokamaBridge, connection: ConnectionState): { readonly state: DiagnosticsState; readonly reload: () => void } {
+/** `reload` resolves once the list it asked for is shown (or failed). */
+export function useDiagnostics(bridge: TokamaBridge, connection: ConnectionState): { readonly state: DiagnosticsState; readonly reload: () => Promise<void> } {
   const [state, setState] = useState<DiagnosticsState>({ status: "loading" });
-  const [reloads, setReloads] = useState(0);
-  const reload = useCallback(() => setReloads((count) => count + 1), []);
+  // Loads can overlap; only the one started last is shown.
+  const latest = useRef(0);
   const connected = connection.status === "connected";
-  useEffect(() => bridge.onEvent(({ event }) => (event.type === "diagnostics_changed" || event.type === "setup_changed") && reload()), [bridge, reload]);
+  const reload = useCallback(async () => {
+    const load = ++latest.current;
+    const next: DiagnosticsState = await Promise.all([bridge.loadDiagnostics(), bridge.query({ type: "diagnostics_settings" })])
+      .then(([loaded, settings]): DiagnosticsState => (loaded.ok ? { status: "loaded", items: loaded.items, collect: settings.ok ? settings.data.collect : undefined } : { status: "failed" }))
+      .catch((): DiagnosticsState => ({ status: "failed" }));
+    if (load === latest.current) setState(next);
+  }, [bridge]);
+  useEffect(() => bridge.onEvent(({ event }) => (event.type === "diagnostics_changed" || event.type === "setup_changed") && connected && void reload()), [bridge, connected, reload]);
   useEffect(() => {
-    if (!connected) return;
-    let current = true;
-    void Promise.all([bridge.loadDiagnostics(), bridge.query({ type: "diagnostics_settings" })])
-      .then(([loaded, settings]) => {
-        if (!current) return;
-        setState(loaded.ok ? { status: "loaded", items: loaded.items, collect: settings.ok ? settings.data.collect : undefined } : { status: "failed" });
-      })
-      .catch(() => current && setState({ status: "failed" }));
+    if (connected) void reload();
+    // Unmounting or losing the engine drops a load still on its way.
     return () => {
-      current = false;
+      latest.current++;
     };
-  }, [bridge, connected, reloads]);
+  }, [connected, reload]);
   return { state, reload };
 }
 

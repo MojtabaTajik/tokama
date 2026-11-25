@@ -102,13 +102,19 @@ export type DiagnosticsLoad = { readonly ok: true; readonly items: readonly Diag
 /**
  * Why Send all sent nothing. `busy`: a send runs already. `nothing`: none of the entries is waiting.
  * The others say how the receiver answered, or that it did not: `rejected` (400), `too_large` (413,
- * or larger than an upload may be), `unsupported` (415), `rate_limited` (429), `server` (any other
- * status), `bad_reply` (a 2xx without a report id), `timeout` and `network` (no answer).
+ * or larger than an upload may be), `unsupported` (415), `rate_limited` (429), `busy_today` (503:
+ * its daily budget is used up), `server` (any other status), `bad_reply` (a success without a
+ * report id), `timeout` and `network` (no answer). `no_receiver`: a development build on the sample
+ * engine sends nowhere unless a local test server is named.
  */
-export type DiagnosticsSendFailure = "not_connected" | "busy" | "nothing" | "rejected" | "too_large" | "unsupported" | "rate_limited" | "server" | "bad_reply" | "timeout" | "network";
+export type DiagnosticsSendFailure = "not_connected" | "no_receiver" | "busy" | "nothing" | "rejected" | "too_large" | "unsupported" | "rate_limited" | "busy_today" | "server" | "bad_reply" | "timeout" | "network";
 
-/** `sent` entries went out and were removed; on failure nothing was removed. */
-export type DiagnosticsSendResult = { readonly ok: true; readonly sent: number } | { readonly ok: false; readonly reason: DiagnosticsSendFailure; readonly count: number };
+/**
+ * `sent` entries went out and were removed, except `kept` of them whose delete failed (they stay
+ * listed). On failure nothing was removed. `detail`: with
+ * `rejected`, the receiver's short reason, one line of plain text.
+ */
+export type DiagnosticsSendResult = { readonly ok: true; readonly sent: number; readonly kept?: number } | { readonly ok: false; readonly reason: DiagnosticsSendFailure; readonly count: number; readonly detail?: string };
 
 export type DiagnosticsSaveResult = { readonly ok: true } | { readonly ok: false; readonly reason: "cancelled" | "nothing" | "failed" };
 
