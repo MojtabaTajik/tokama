@@ -36,12 +36,9 @@
 .rp-add {
   min-height: 32px;
   padding: 0 var(--space-8);
-  border: 0;
   border-radius: var(--radius);
-  background: transparent;
   color: var(--text-2);
   text-align: left;
-  cursor: pointer;
 }
 
 .rp-add:hover {
@@ -66,12 +63,9 @@
   min-width: 0;
   box-sizing: border-box;
   padding: var(--space-8);
-  border: 0;
   border-radius: var(--radius);
-  background: transparent;
   color: var(--text-2);
   text-align: left;
-  cursor: pointer;
 }
 
 .rp-row:hover,
@@ -268,33 +262,6 @@
   border-top: 1px solid var(--hairline);
 }
 
-.rp-btn {
-  min-height: 40px;
-  padding: 0 var(--space-16);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--text-2);
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.rp-btn:hover {
-  background: var(--raised);
-  color: var(--text);
-}
-
-.rp-btn.danger {
-  border-color: var(--fail);
-  color: var(--fail);
-}
-
-.rp-btn.primary {
-  border-color: var(--primary-border);
-  background: var(--primary-fill);
-  color: var(--primary-text);
-}
-
 .rp-empty {
   max-width: 420px;
   height: 100%;
@@ -324,6 +291,6 @@
   color: var(--text-2);
 }
 
-.rp-empty .rp-btn {
+.rp-empty .btn {
   margin-top: var(--space-6);
 }

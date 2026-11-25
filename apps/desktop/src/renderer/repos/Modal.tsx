@@ -3,6 +3,7 @@
 // handled so the drawer's own Escape does not also close the drawer. Focus goes back to what had
 // it before, when that is still on the page.
 import { type ReactNode, useLayoutEffect, useRef } from "react";
+import { CloseButton } from "../ui/Button.js";
 
 export interface ModalProps {
   /** The id of the element that names the dialog (its heading). */
@@ -77,9 +78,7 @@ export function DialogFrame({ titleId, title, subtitle, onClose, children, foote
           </h2>
           {subtitle !== undefined && <span className="dlg-sub mono">{subtitle}</span>}
         </div>
-        <button type="button" className="dlg-close" aria-label="Close" onClick={onClose}>
-          ✕
-        </button>
+        <CloseButton className="dlg-close" onClick={onClose} />
       </div>
       <div className="dlg-body">{children}</div>
       <div className="dlg-foot">{footer}</div>

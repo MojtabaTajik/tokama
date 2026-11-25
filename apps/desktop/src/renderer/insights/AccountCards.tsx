@@ -8,6 +8,7 @@ import { Meter, MeterKey } from "./Meter.js";
 import { formatDuration } from "../format/duration.js";
 import { stamp } from "../format/time.js";
 import { ageText, ALERT_TEXT, cardLabel, CLI_MONOGRAMS, liveWindows, resetWhen, shareText, SOURCE_TEXT } from "./usage-model.js";
+import { Button } from "../ui/Button.js";
 
 const TEXT = {
   title: "Accounts and limits",
@@ -44,9 +45,9 @@ export function AccountCards({ report, setup, issues, now, onRefresh }: AccountC
         <span className="muted ins-refreshes">
           {TEXT.refreshes} <span className="mono ins-asof">{stamp(asOf, now)}</span>
         </span>
-        <button type="button" className="ins-refresh" onClick={onRefresh}>
+        <Button variant="secondary" size="sm" className="ins-refresh" onClick={onRefresh}>
           <span aria-hidden="true">↻</span> {TEXT.refresh}
-        </button>
+        </Button>
       </div>
       <div className="ins-cards">
         {AI_CLIS.map((cli) => {

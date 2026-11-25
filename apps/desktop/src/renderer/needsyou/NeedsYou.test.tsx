@@ -32,7 +32,7 @@ const render = (bridge: TokamaBridge) => act(async () => root.render(<App bridge
 const railButton = (label: RegExp) => $$(".rail button").find((button) => label.test(button.getAttribute("aria-label") ?? ""))!;
 const openPage = () => click(railButton(/^Needs you/));
 const rowTitles = () => $$(".nr-title").map((el) => el.textContent);
-const choiceButtons = (row: Element) => [...row.querySelectorAll("button.choice")] as HTMLButtonElement[];
+const choiceButtons = (row: Element) => [...row.querySelectorAll(".choices .btn:not(.btn-link)")] as HTMLButtonElement[];
 
 const DECISION = ITEMS.needsYou.decision!;
 /** The sample item, with the step's data rule that makes the question a cloud-step approval. */
@@ -87,7 +87,7 @@ describe("the Needs you page", () => {
     expect(plan?.querySelector(".nr-time")?.textContent).toBe("started 1 h 10 m ago");
     expect(plan?.querySelector(".nr-question")?.textContent).toBe("Approve the plan?");
     expect(choiceButtons(plan!).map((button) => button.textContent)).toEqual(["Yes", "No"]);
-    expect(choiceButtons(plan!)[0]?.className).toBe("choice primary");
+    expect(choiceButtons(plan!)[0]?.className).toBe("btn btn-primary");
     expect(cloudRow?.querySelector(".nr-kind")?.textContent).toBe("⏸ Cloud-step approval");
     expect(cloudRow?.querySelector(".nr-time")?.textContent).toBe("started 41 m ago");
     expect(cloudRow?.querySelector(".nr-question")?.textContent).toBe(DECISION.question);

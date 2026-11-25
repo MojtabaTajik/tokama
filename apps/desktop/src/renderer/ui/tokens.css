@@ -35,6 +35,12 @@
   --radius-lg: 10px;
   --radius-pill: 999px;
 
+  /* Control heights: a small icon button, a small, a default and a large control. */
+  --control-xs: 24px;
+  --control-sm: 28px;
+  --control: 32px;
+  --control-lg: 40px;
+
   /* A popup or menu over the page, and the drawer when it floats over the main area. */
   --shadow-popup: 0 10px 30px var(--float-shadow);
   --shadow-float: -12px 0 24px var(--float-shadow);

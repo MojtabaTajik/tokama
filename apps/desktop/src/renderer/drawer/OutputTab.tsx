@@ -10,6 +10,7 @@ import { agentInfo } from "../agent/agent-info.js";
 import type { AgentTarget } from "../settings/describe.js";
 import { StepOutput, useStepOutput } from "./StepOutput.js";
 import { blocksOf } from "./StepText.js";
+import { Button } from "../ui/Button.js";
 
 const TEXT = {
   none: "No step has written an output yet.",
@@ -95,9 +96,9 @@ function StepSection({ bridge, item, setup, index, attempt, full, onOpenAgent, f
             <div className="ot-group">
               <span className="ot-label">{TEXT.outline}</span>
               {headings.map((heading, at) => (
-                <button key={at} type="button" className="ot-link" onClick={() => section.current?.querySelectorAll(".st-heading")[at]?.scrollIntoView({ block: "start" })}>
+                <Button variant="link" key={at} className="ot-link" onClick={() => section.current?.querySelectorAll(".st-heading")[at]?.scrollIntoView({ block: "start" })}>
                   {heading}
-                </button>
+                </Button>
               ))}
             </div>
           )}
@@ -114,8 +115,8 @@ function StepSection({ bridge, item, setup, index, attempt, full, onOpenAgent, f
 function Copy({ text }: { readonly text: string }) {
   const [done, setDone] = useState<"copied" | "failed" | undefined>(undefined);
   return (
-    <button
-      type="button"
+    <Button
+      variant="secondary" size="sm"
       className="ot-copy"
       onClick={() =>
         // No clipboard at all (an old or locked-down runtime) reads as a failed copy.
@@ -128,6 +129,6 @@ function Copy({ text }: { readonly text: string }) {
       }
     >
       {done === "copied" ? TEXT.copied : done === "failed" ? TEXT.copyFailed : TEXT.copy}
-    </button>
+    </Button>
   );
 }

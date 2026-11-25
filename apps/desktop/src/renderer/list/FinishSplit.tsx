@@ -4,6 +4,7 @@
 import type { FinishAction, ItemRecord, Setup } from "@tokama/core";
 import { type FocusEvent, type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { baseBranchOf, finishActions, prUnavailable } from "../drawer/finish-view.js";
+import { Button } from "../ui/Button.js";
 
 const TEXT = {
   more: (title: string) => `More ways to finish ${title}`,
@@ -79,11 +80,11 @@ export function FinishSplit({ item, setup, onFinish, onDiscard }: FinishSplitPro
 
   return (
     <div className="finish-split" data-open={open || undefined} onBlur={onBlur}>
-      <button type="button" className="finish-split-main" disabled={sending} onClick={() => pick("merge")}>
+      <Button variant="plain" className="finish-split-main" disabled={sending} onClick={() => pick("merge")}>
         Merge into {base}
-      </button>
-      <button
-        type="button"
+      </Button>
+      <Button
+        variant="plain"
         className="finish-split-more"
         ref={toggle}
         aria-label={TEXT.more(item.title)}
@@ -94,21 +95,21 @@ export function FinishSplit({ item, setup, onFinish, onDiscard }: FinishSplitPro
         onClick={() => setOpen((was) => !was)}
       >
         <span aria-hidden="true">▾</span>
-      </button>
+      </Button>
       {open && (
         <div className="finish-menu" role="menu" id={menuId} ref={menu} onKeyDown={onMenuKey}>
-          <button type="button" role="menuitem" tabIndex={-1} onClick={() => pick("merge")}>
+          <Button variant="plain" role="menuitem" tabIndex={-1} onClick={() => pick("merge")}>
             <span className="finish-menu-title">Merge into {base}</span>
             <span className="finish-menu-note">{TEXT.merge}</span>
-          </button>
+          </Button>
           {/* Off, but still reachable by the arrow keys, so its reason is read out. */}
-          <button type="button" role="menuitem" tabIndex={-1} aria-disabled={off !== undefined || undefined} onClick={() => off === undefined && pick("pull_request")}>
+          <Button variant="plain" role="menuitem" tabIndex={-1} aria-disabled={off !== undefined || undefined} onClick={() => off === undefined && pick("pull_request")}>
             <span className="finish-menu-title">{TEXT.openPr}</span>
             <span className="finish-menu-note">{off ?? TEXT.pr}</span>
-          </button>
-          <button type="button" role="menuitem" tabIndex={-1} className="danger" onClick={() => pick("discard")}>
+          </Button>
+          <Button variant="plain" role="menuitem" tabIndex={-1} className="danger" onClick={() => pick("discard")}>
             <span className="finish-menu-title">{TEXT.discard}</span>
-          </button>
+          </Button>
         </div>
       )}
     </div>

@@ -9,6 +9,7 @@ import { MachineTab } from "./MachineTab.js";
 import type { Metric } from "./usage-model.js";
 import { UsageTab } from "./UsageTab.js";
 import type { UsageView } from "./useUsage.js";
+import { Button } from "../ui/Button.js";
 
 const TEXT = {
   title: "Insights",
@@ -49,12 +50,12 @@ export function Insights({ bridge, connection, onRetryConnection, usage, range, 
         <span className="summary">{TEXT.summary}</span>
       </header>
       <div className="ins-tabs" role="tablist" aria-label={TEXT.tabs}>
-        <button type="button" role="tab" className="ins-tab" aria-selected={tab === "usage"} onClick={() => setTab("usage")}>
+        <Button variant="plain" role="tab" className="ins-tab" aria-selected={tab === "usage"} onClick={() => setTab("usage")}>
           {TEXT.usage}
-        </button>
-        <button type="button" role="tab" className="ins-tab" aria-selected={tab === "machine"} onClick={() => setTab("machine")}>
+        </Button>
+        <Button variant="plain" role="tab" className="ins-tab" aria-selected={tab === "machine"} onClick={() => setTab("machine")}>
           {TEXT.machine}
-        </button>
+        </Button>
       </div>
       {tab === "machine" ? (
         <MachineTab bridge={bridge} connection={connection} onRetryConnection={onRetryConnection} setup={setup} items={items} onSelectItem={onSelectItem} onNewWork={onNewWork} />

@@ -63,16 +63,6 @@
   margin-top: var(--space-8);
 }
 
-.inline-action {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--link);
-  font: inherit;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
 .new-work:disabled {
   color: var(--muted);
   cursor: not-allowed;
@@ -176,12 +166,6 @@
 
 .attention-none {
   color: var(--muted);
-}
-
-button.rail-user {
-  border: 0;
-  padding: 0;
-  cursor: pointer;
 }
 
 .rail-user:hover,

@@ -8,6 +8,7 @@ import type { CommandInput, InitRepoResult, RepoSummary, SuggestRepoResult } fro
 import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
 import { DialogFrame, Modal, Problem } from "./Modal.js";
+import { Button } from "../ui/Button.js";
 
 const TEXT = {
   title: "Add repo",
@@ -195,9 +196,9 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
   };
   const branchName = baseBranch.trim() || suggestion?.branch || "main";
   const cancel = (
-    <button type="button" className="choice" onClick={close}>
+    <Button variant="secondary" onClick={close}>
       {TEXT.cancel}
-    </button>
+    </Button>
   );
 
   // The working view replaces the form while git is set up, and stays for a failure.
@@ -239,7 +240,7 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
           title={TEXT.settingUp}
           subtitle={suggestion?.displayPath}
           onClose={close}
-          footer={failure === undefined ? <button type="button" className="choice" disabled>{TEXT.working}</button> : cancel}
+          footer={failure === undefined ? <Button variant="secondary" disabled>{TEXT.working}</Button> : cancel}
         >
           <ol className="rd-steps" aria-live="polite">
             {keys.map((key) => {
@@ -265,9 +266,9 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
                 {failure.message}
                 {failure.phase === "commit" && ` ${left === "" ? "Nothing in the folder changed." : TEXT.folderNow(left)}`}
               </p>
-              <button type="button" className="rd-link" onClick={() => void setUp()}>
+              <Button variant="link" className="rd-link" onClick={() => void setUp()}>
                 {TEXT.tryAgain}
-              </button>
+              </Button>
             </div>
           )}
         </DialogFrame>
@@ -313,9 +314,9 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
       <p>{TEXT.noChecksWhy}</p>
       {fallback !== null && !editing && (
         <p className="rd-fallback">
-          <button type="button" className="choice" onClick={() => setChecks(fallback)}>
+          <Button variant="secondary" onClick={() => setChecks(fallback)}>
             Use <span className="mono">{fallback}</span>
-          </button>
+          </Button>
           {suggestion?.fallbackFromPackage === true && <span className="rd-dim">{TEXT.fromPackageMain(fallback.replace(/^node --check /, ""))}</span>}
         </p>
       )}
@@ -329,9 +330,9 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
     footer = (
       <>
         {cancel}
-        <button type="submit" className="choice primary" disabled>
+        <Button variant="primary" type="submit" disabled>
           {TEXT.add}
-        </button>
+        </Button>
       </>
     );
   } else if (loaded?.ok === false) {
@@ -339,9 +340,9 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
     footer = (
       <>
         {cancel}
-        <button type="submit" className="choice primary" disabled>
+        <Button variant="primary" type="submit" disabled>
           {TEXT.add}
-        </button>
+        </Button>
       </>
     );
   } else if (refused !== null && suggestion !== undefined) {
@@ -355,13 +356,13 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
     footer = (
       <>
         {onPickAnother !== undefined && (
-          <button type="button" className="choice" onClick={onPickAnother}>
+          <Button variant="secondary" onClick={onPickAnother}>
             {TEXT.pickAnother}
-          </button>
+          </Button>
         )}
-        <button type="button" className="choice primary" aria-disabled="true" disabled>
+        <Button variant="primary" aria-disabled="true" disabled>
           {suggestion.gitRepo ? TEXT.firstCommit : TEXT.setUpGit}
-        </button>
+        </Button>
       </>
     );
   } else if (settingUp && suggestion !== undefined && firstCommit !== null) {
@@ -437,9 +438,9 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
     footer = (
       <>
         {cancel}
-        <button type="button" className="choice primary" disabled={busy} onClick={() => void setUp()}>
+        <Button variant="primary" disabled={busy} onClick={() => void setUp()}>
           {suggestion.gitRepo ? TEXT.firstCommit : TEXT.setUpGit}
-        </button>
+        </Button>
       </>
     );
   } else if (!editing && suggestion !== undefined && suggestion.problem !== null) {
@@ -448,9 +449,9 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
     footer = (
       <>
         {cancel}
-        <button type="submit" className="choice primary" disabled>
+        <Button variant="primary" type="submit" disabled>
           {TEXT.add}
-        </button>
+        </Button>
       </>
     );
   } else {
@@ -466,9 +467,9 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
     footer = (
       <>
         {cancel}
-        <button type="submit" className="choice primary" disabled={busy || !canAdd}>
+        <Button variant="primary" type="submit" disabled={busy || !canAdd}>
           {editing ? (busy ? TEXT.saving : TEXT.save) : busy ? TEXT.adding : TEXT.add}
-        </button>
+        </Button>
       </>
     );
   }

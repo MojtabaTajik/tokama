@@ -8,6 +8,7 @@ import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
 import { agentLines, commandsOf, KIND_GROUPS, missing, needsRepo, noChecks, reposFor, stepsLine, usesOf } from "./needs.js";
 import { Picker } from "./Picker.js";
 import { useSuggestion } from "./useSuggestion.js";
+import { Button } from "../ui/Button.js";
 
 const TEXT = {
   form: "New work",
@@ -161,9 +162,9 @@ export function NewWork({ bridge, setup, ref, repoId, onStarted }: NewWorkProps)
             onChange={(event) => setText(event.target.value)}
           />
           {expanded && (
-            <button type="button" className="np-collapse" aria-label={TEXT.collapse} onClick={collapse}>
+            <Button variant="plain" className="np-collapse" aria-label={TEXT.collapse} onClick={collapse}>
               ⌄
-            </button>
+            </Button>
           )}
         </div>
         {expanded && (
@@ -235,18 +236,18 @@ export function NewWork({ bridge, setup, ref, repoId, onStarted }: NewWorkProps)
               // Why the template can't run is the Start reason below; this offers the way out.
               <p className="np-suggest">
                 {TEXT.instead(blocked.instead.name)}{" "}
-                <button type="button" className="link" onClick={() => setPicked(blocked.instead!.id)}>
+                <Button variant="link" onClick={() => setPicked(blocked.instead!.id)}>
                   {TEXT.use(blocked.instead.name)}
-                </button>
+                </Button>
               </p>
             )}
             <div className="np-row np-foot">
               <span id={reasonId} className="np-reason">
                 {reason}
               </span>
-              <button type="submit" className="np-start" disabled={reason !== undefined || busy} aria-describedby={reason !== undefined ? reasonId : undefined}>
+              <Button variant="primary" type="submit" className="np-start" disabled={reason !== undefined || busy} aria-describedby={reason !== undefined ? reasonId : undefined}>
                 {busy ? TEXT.starting : TEXT.start} <span className="mono np-keys">{isMac() ? "⌘↵" : "Ctrl+↵"}</span>
-              </button>
+              </Button>
             </div>
             {error !== undefined && (
               <p className="np-error" role="alert">

@@ -11,6 +11,7 @@ import { RepoDialog } from "../repos/RepoDialog.js";
 import { ConnectionFailure } from "../shell/ConnectionStatus.js";
 import { RepoIcon } from "../ui/icons.js";
 import { useRepoItems } from "./useRepoItems.js";
+import { Button } from "../ui/Button.js";
 
 const TEXT = {
   heading: "Repos",
@@ -118,13 +119,13 @@ export function ReposPage({ bridge, connection, setup, now: fixedNow }: ReposPag
       <div className="rp-list-pane">
         <h2 className="settings-heading">{TEXT.heading}</h2>
         <p className="rp-list-hint">{TEXT.hint}</p>
-        <button ref={addButton} type="button" className="rp-add" onClick={() => void pickFolder()}>
+        <Button variant="plain" ref={addButton} className="rp-add" onClick={() => void pickFolder()}>
           {TEXT.addHeader}
-        </button>
+        </Button>
         <ul className="rp-list" aria-label={TEXT.list}>
           {repos.map((repo) => (
             <li key={repo.id}>
-              <button type="button" className="rp-row" aria-pressed={repo.id === selected?.id} onClick={() => setSelectedId(repo.id)}>
+              <Button variant="plain" className="rp-row" aria-pressed={repo.id === selected?.id} onClick={() => setSelectedId(repo.id)}>
                 <span className="rp-row-top">
                   <span className="rp-row-id mono ellipsis" title={repo.id}>
                     {repo.id}
@@ -142,7 +143,7 @@ export function ReposPage({ bridge, connection, setup, now: fixedNow }: ReposPag
                   </span>
                   <span className="rp-row-checks">{` · ${checksLabel(repo.checks.length)}`}</span>
                 </span>
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
@@ -155,9 +156,9 @@ export function ReposPage({ bridge, connection, setup, now: fixedNow }: ReposPag
             </span>
             <h2>{TEXT.emptyTitle}</h2>
             <p>{TEXT.emptyText}</p>
-            <button type="button" className="rp-btn primary" onClick={() => void pickFolder()}>
+            <Button variant="primary" size="lg" onClick={() => void pickFolder()}>
               {TEXT.addEmpty}
-            </button>
+            </Button>
           </div>
         ) : (
           <Detail repo={selected} line={itemsLine(itemsOf(selected), now)} onEdit={() => setEditing(true)} onRemove={() => setRemoving(true)} />
@@ -263,12 +264,12 @@ function Detail({ repo, line, onEdit, onRemove }: DetailProps) {
       </div>
       {repo.sample !== true && (
         <div className="rp-actions">
-          <button type="button" className="rp-btn" onClick={onEdit}>
+          <Button variant="secondary" size="lg" onClick={onEdit}>
             {TEXT.edit}
-          </button>
-          <button type="button" className="rp-btn danger" onClick={onRemove}>
+          </Button>
+          <Button variant="danger" size="lg" onClick={onRemove}>
             {TEXT.remove}
-          </button>
+          </Button>
         </div>
       )}
     </article>

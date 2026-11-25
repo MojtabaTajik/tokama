@@ -3,16 +3,6 @@
   height: 100%;
 }
 
-button {
-  font: inherit;
-  color: inherit;
-}
-
-button:focus-visible {
-  outline: var(--focus-ring);
-  outline-offset: var(--focus-offset);
-}
-
 .shell {
   display: flex;
   height: 100%;
@@ -76,11 +66,8 @@ button:focus-visible {
   flex: none;
   width: 40px;
   height: 40px;
-  border: 0;
   border-radius: var(--radius-md);
-  background: transparent;
   color: var(--muted);
-  cursor: pointer;
 }
 
 .rail-button:hover {
@@ -175,7 +162,6 @@ button:focus-visible {
   background: var(--panel);
   color: var(--text-2);
   text-align: left;
-  cursor: pointer;
 }
 
 .panel-heading {
@@ -282,11 +268,7 @@ button:focus-visible {
 
 .crumb {
   min-height: 28px;
-  padding: 0;
-  border: 0;
-  background: transparent;
   color: var(--muted);
-  cursor: pointer;
 }
 
 .crumb:hover {
@@ -315,33 +297,6 @@ button:focus-visible {
 .placeholder {
   margin: 0;
   color: var(--muted);
-}
-
-.failure {
-  max-width: 640px;
-  margin-bottom: var(--space-16);
-}
-
-.failure-title {
-  margin: 0 0 var(--space-8);
-  font-size: var(--text-lg);
-  color: var(--text);
-}
-
-.failure-title .symbol {
-  display: inline-block;
-  width: 1.4em;
-  color: var(--fail);
-}
-
-.retry {
-  min-height: 30px;
-  padding: 0 var(--space-12);
-  border: 1px solid var(--primary-border);
-  border-radius: var(--radius);
-  background: var(--primary-fill);
-  color: var(--primary-text);
-  cursor: pointer;
 }
 
 .detail {
@@ -446,14 +401,9 @@ button:focus-visible {
   align-items: center;
   gap: var(--space-6);
   min-height: 22px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
   font-size: inherit;
   letter-spacing: inherit;
   text-transform: inherit;
-  cursor: pointer;
 }
 
 .section-toggle:hover {
@@ -484,12 +434,9 @@ button:focus-visible {
   min-width: 0;
   min-height: 28px;
   padding: 0 var(--space-6) 0 var(--space-10);
-  border: 0;
   border-radius: var(--radius);
-  background: transparent;
   color: var(--text-2);
   text-align: left;
-  cursor: pointer;
 }
 
 .sb-row[data-selected] .sb-main {
@@ -532,14 +479,11 @@ button:focus-visible {
   flex: none;
   width: 26px;
   height: 26px;
-  border: 0;
   border-radius: var(--radius);
-  background: transparent;
   color: var(--muted);
   font-size: var(--text-xl);
   line-height: 1;
   opacity: 0;
-  cursor: pointer;
 }
 
 .sb-row:hover .sb-plus,
@@ -573,11 +517,8 @@ button:focus-visible {
   gap: 7px; /* px: off-scale */
   min-height: 28px;
   padding: 0 11px; /* px: off-scale */
-  border: 0;
   border-left: 1px solid var(--hairline);
-  background: transparent;
   color: var(--muted);
-  cursor: pointer;
 }
 
 .segment:first-child {
@@ -674,15 +615,11 @@ button:focus-visible {
 .search-clear {
   position: absolute;
   right: 3px;
-  min-width: 24px;
-  min-height: 24px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
+  /* px: off-scale */;
+  min-width: var(--control-xs);
+  min-height: var(--control-xs);
   color: var(--text-2);
-  font: inherit;
   font-size: var(--text-md);
-  cursor: pointer;
 }
 
 /* Pipeline list */
@@ -787,28 +724,6 @@ button:focus-visible {
   color: var(--fail);
 }
 
-.pl-button {
-  min-height: 30px;
-  padding: 0 var(--space-12);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text-2);
-  font: inherit;
-  font-size: var(--text-base);
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.pl-button:hover:not(:disabled) {
-  background: var(--raised);
-}
-
-.pl-button:disabled {
-  color: var(--muted);
-  cursor: default;
-}
-
 .pl-no-match {
   display: flex;
   flex-direction: column;
@@ -871,12 +786,8 @@ button:focus-visible {
   align-items: center;
   gap: inherit;
   margin: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
   color: var(--text-2);
   text-align: left;
-  cursor: pointer;
 }
 
 .pl-row::before {
@@ -992,9 +903,7 @@ button:focus-visible {
   border: 1px solid var(--primary-border);
   background: var(--primary-fill);
   color: var(--primary-text);
-  font: inherit;
   font-size: var(--text-base);
-  cursor: pointer;
 }
 
 .finish-split-main {
@@ -1028,13 +937,9 @@ button:focus-visible {
   align-items: flex-start;
   gap: 1px;
   padding: var(--space-6) var(--space-10);
-  border: 0;
   border-radius: var(--radius);
-  background: transparent;
   color: var(--text);
-  font: inherit;
   text-align: left;
-  cursor: pointer;
 }
 
 .finish-menu [role="menuitem"]:hover:not([aria-disabled="true"]),
@@ -1305,7 +1210,6 @@ button:focus-visible {
   background: var(--panel);
   color: var(--text-2);
   text-align: left;
-  cursor: pointer;
 }
 
 .card:hover {

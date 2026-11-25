@@ -109,9 +109,9 @@ describe("ItemDrawer sections", () => {
     expect(text(".needs-you-why")).toBe("Propose a fix runs on a cloud agent; its data rule sends a summary after your approval.");
     expect(text(".cloud-summary-label")).toBe("Will be sentNothing has been sent yet");
     expect(text(".cloud-summary-text")).toBe(needsYou.decision?.summaryText);
-    expect($$(".needs-you .choice").map((el) => [el.textContent, el.className])).toEqual([
-      ["Approve and send", "choice primary"],
-      ["Stop", "choice"],
+    expect($$(".needs-you .choices .btn").map((el) => [el.textContent, el.className])).toEqual([
+      ["Approve and send", "btn btn-primary"],
+      ["Stop", "btn btn-secondary"],
     ]);
   });
 
@@ -166,7 +166,7 @@ describe("ItemDrawer sections", () => {
       "Tokama · local",
       "Reviewer · gpt-5-codex · cloud · sees the repo and the diff",
     ]);
-    expect($$(".drawer-actions button").map((el) => [el.textContent, el.className, el.getAttribute("aria-disabled")])).toEqual([["Stop", "choice danger", null]]);
+    expect($$(".drawer-actions button").map((el) => [el.textContent, el.className, el.getAttribute("aria-disabled")])).toEqual([["Stop", "btn btn-danger", null]]);
   });
 
   it("shows only the actions that work: Stop while the item runs, no actions once it has ended", async () => {
@@ -258,7 +258,7 @@ describe("ItemDrawer change to approve", () => {
     expect(query).toHaveBeenCalledWith({ type: "decision_diff", itemId: waiting.id, decisionId: DIFF_DECISION });
     expect(text(".needs-you-kind")).toBe("Change approval");
     expect(text(".needs-you-question")).toBe("⏸Approve this change and commit it?");
-    expect($$(".needs-you .choice").map((el) => el.textContent)).toEqual(["Approve and commit", "Request changes"]);
+    expect($$(".needs-you .choices .btn").map((el) => el.textContent)).toEqual(["Approve and commit", "Request changes"]);
     expect(text(".dv-summary")).toBe("6 files+1,221 −314·tokama/abcfrom main 85a75e3");
   });
 
@@ -319,7 +319,7 @@ describe("ItemDrawer change to approve", () => {
     await renderDrawer(bridge, waiting.id);
     await click(button("Request changes"));
     expect(command).not.toHaveBeenCalled();
-    expect($$(".needs-you .choice").map((el) => el.textContent)).toEqual(["Send to Local builder", "Cancel"]);
+    expect($$(".needs-you .choices .btn").map((el) => el.textContent)).toEqual(["Send to Local builder", "Cancel"]);
     expect(text(".decision-note-hint")).toBe("Goes into Local builder's next run with the current diff. Run 2 of 3.");
     await click(button("Cancel"));
     await click(button("Request changes"));
@@ -423,8 +423,8 @@ describe("ItemDrawer step output", () => {
     expect(box.textContent).toContain("<script>alert(1)</script>");
     expect($$(".drawer script")).toEqual([]);
     // Summary first, then the plan, then the buttons.
-    const order = $$(".needs-you-why, .needs-you .step-output, .needs-you .choice");
-    expect(order.map((el) => el.className.split(" ")[0])).toEqual(["needs-you-why", "step-output", "choice", "choice", "choice"]);
+    const order = $$(".needs-you-why, .needs-you .step-output, .needs-you .choices .btn");
+    expect(order.map((el) => el.className.split(" ")[0])).toEqual(["needs-you-why", "step-output", "btn", "btn", "btn"]);
     expect($(".step-output-cut")).toBeNull();
   });
 
@@ -582,7 +582,7 @@ describe("ItemDrawer decisions", () => {
     await click(button("Approve and send"));
     expect(command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: needsYou.id, decisionId: DECISION_ID, choice: "approve" });
     // While it is in flight, no second answer can be sent.
-    expect($$(".needs-you .choice").every((el) => (el as HTMLButtonElement).disabled)).toBe(true);
+    expect($$(".needs-you .choices .btn").every((el) => (el as HTMLButtonElement).disabled)).toBe(true);
     await act(async () => pending.resolve({ ok: true, data: null }));
     await push(approved);
     expect($(".needs-you")).toBeNull();
@@ -604,7 +604,7 @@ describe("ItemDrawer decisions", () => {
     expect(query.mock.calls.filter(([q]) => q.type === "item").length).toBe(before + 1);
     expect(text('[role="status"]')).toBe("!The question changed before your answer reached the engine. The drawer shows the item as it is now.");
     expect(text(".needs-you-question")).toBe("⏸Send the new summary?");
-    expect($$(".needs-you .choice").every((el) => !(el as HTMLButtonElement).disabled)).toBe(true);
+    expect($$(".needs-you .choices .btn").every((el) => !(el as HTMLButtonElement).disabled)).toBe(true);
   });
 
   it.each([
@@ -828,16 +828,16 @@ describe("item drawer with real-mode records", () => {
     const fake = fakeBridge([asked]);
     await renderDrawer(fake.bridge, asked.id);
     expect(text(".needs-you-kind")).toBe("Run failed");
-    expect($$(".needs-you .choice").map((el) => el.textContent)).toEqual(["Retry step", "Stop"]);
-    await act(async () => ($$(".needs-you .choice")[0] as HTMLButtonElement).click());
+    expect($$(".needs-you .choices .btn").map((el) => el.textContent)).toEqual(["Retry step", "Stop"]);
+    await act(async () => ($$(".needs-you .choices .btn")[0] as HTMLButtonElement).click());
     expect(fake.command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: asked.id, decisionId: DECISION_ID, choice: "retry_step" });
   });
 });
 
 describe("item drawer: Finish", () => {
-  const button = (label: string) => $$(".finish .choice, .finish-ended .link").find((el) => el.textContent === label) as HTMLButtonElement;
+  const button = (label: string) => $$(".finish .btn, .finish-ended .btn-link").find((el) => el.textContent === label) as HTMLButtonElement;
   const key = (name: string) => act(async () => void document.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true })));
-  const rows = () => $$(".finish-row").map((el) => [el.querySelector(".finish-title")?.textContent, el.querySelector(".choice")?.textContent, (el.querySelector(".choice") as HTMLButtonElement).disabled]);
+  const rows = () => $$(".finish-row").map((el) => [el.querySelector(".finish-title")?.textContent, el.querySelector(".btn")?.textContent, (el.querySelector(".btn") as HTMLButtonElement).disabled]);
 
   it("shows no Finish section for items that are not done or have no worktree", async () => {
     await renderDrawer(fakeBridge([committed]).bridge, committed.id);
@@ -888,10 +888,10 @@ describe("item drawer: Finish", () => {
     expect($(".finish-confirm")).toBeNull();
     expect(onClose).not.toHaveBeenCalled();
     await act(async () => button("Discard…").click());
-    await act(async () => ($$(".finish-confirm .choice").find((el) => el.textContent === "Keep") as HTMLButtonElement).click());
+    await act(async () => ($$(".finish-confirm .btn").find((el) => el.textContent === "Keep") as HTMLButtonElement).click());
     expect(fake.command).not.toHaveBeenCalled();
     await act(async () => button("Discard…").click());
-    await act(async () => ($$(".finish-confirm .choice").find((el) => el.textContent === "Discard") as HTMLButtonElement).click());
+    await act(async () => ($$(".finish-confirm .btn").find((el) => el.textContent === "Discard") as HTMLButtonElement).click());
     expect(fake.command).toHaveBeenCalledWith({ type: "finish_item", itemId: finishable.id, action: "discard" });
   });
 
@@ -907,7 +907,7 @@ describe("item drawer: Finish", () => {
     await act(async () => root.render(<ItemDrawer bridge={fake.bridge} itemId={finishable.id} setup={loggedOut} onClose={vi.fn()} onCheckAgain={onCheckAgain} />));
     expect(button("Open PR").disabled).toBe(true);
     expect(text(".finish-off")).toBe("✕ logged out · run gh auth login in a terminalCheck again");
-    await act(async () => ($(".finish-off .link") as HTMLButtonElement).click());
+    await act(async () => ($(".finish-off .btn-link") as HTMLButtonElement).click());
     expect(onCheckAgain).toHaveBeenCalledTimes(1);
     fake.replyWith(async () => ({ ok: false, error: { code: "invalid_state", message: "Merge is still running." } }));
     await act(async () => button("Merge into main").click());
@@ -923,7 +923,7 @@ describe("item drawer: Finish", () => {
     expect($(".finish-ended a")).toBeNull();
     expect(text(".drawer-state")).toContain("· PR open");
     await act(async () => button("Remove worktree").click());
-    await act(async () => ($$(".finish-confirm .choice").find((el) => el.textContent === "Discard") as HTMLButtonElement).click());
+    await act(async () => ($$(".finish-confirm .btn").find((el) => el.textContent === "Discard") as HTMLButtonElement).click());
     expect(fake.command).toHaveBeenCalledWith({ type: "finish_item", itemId: pr.id, action: "discard" });
   });
 
@@ -1005,7 +1005,7 @@ describe("Finish: review fixes", () => {
   it("the Discard question goes when an action starts, and does not come back once nothing is left to discard", async () => {
     const fake = fakeBridge([finishable]);
     await renderDrawer(fake.bridge, finishable.id);
-    await act(async () => ($$(".finish .choice").find((el) => el.textContent === "Discard…") as HTMLButtonElement).click());
+    await act(async () => ($$(".finish .btn").find((el) => el.textContent === "Discard…") as HTMLButtonElement).click());
     expect($(".finish-confirm")).not.toBeNull();
     await fake.push({ ...finishable, finish: { ...finishable.finish!, running: "merge" } });
     expect($(".finish-confirm")).toBeNull();
@@ -1017,7 +1017,7 @@ describe("Finish: review fixes", () => {
     await showDone([finishable]);
     await openMenu();
     await pickDiscard();
-    await act(async () => ($$(".finish-confirm .choice").find((el) => el.textContent === "Keep") as HTMLButtonElement).click());
+    await act(async () => ($$(".finish-confirm .btn").find((el) => el.textContent === "Keep") as HTMLButtonElement).click());
     expect($(".finish-confirm")).toBeNull();
     await openMenu();
     await pickDiscard();
@@ -1090,7 +1090,7 @@ describe("Finish: git config or hooks changed", () => {
     expect(text(".finish-notice-title")).toBe("! The repo's git config or hooks changed.");
     expect($$(".finish-changes li").map((el) => el.textContent)).toEqual(["setting core.sshcommandwas sshnow <b>touch pwned</b>; ssh", "hook pre-push addednow #!/bin/sh exit 0"]);
     expect($(".finish-changes b")).toBeNull();
-    const accept = $$(".finish-row .choice").find((el) => el.textContent === "I made this change") as HTMLButtonElement;
+    const accept = $$(".finish-row .btn").find((el) => el.textContent === "I made this change") as HTMLButtonElement;
     expect(accept.closest(".finish-row")?.getAttribute("data-action")).toBe("merge");
     await act(async () => accept.click());
     expect(fake.command).toHaveBeenCalledWith({ type: "accept_git_changes", itemId: refused.id });
@@ -1251,7 +1251,7 @@ describe("ItemDrawer full view", () => {
     const bar = $(".ex-decision")!;
     expect(bar.getAttribute("aria-label")).toBe("Needs you");
     expect(bar.querySelector(".step-output")).toBeNull();
-    expect([...bar.querySelectorAll(".choice")].map((el) => el.textContent)).toEqual(["Approve", "Request changes"]);
+    expect([...bar.querySelectorAll(".choices .btn")].map((el) => el.textContent)).toEqual(["Approve", "Request changes"]);
     await click(button("Approve"));
     expect(command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: plan.id, decisionId: plan.decision!.id, choice: "approve" });
   });
@@ -1391,10 +1391,10 @@ describe("the card of a step that stopped", () => {
     ]);
     expect($(".stopped b")).toBeNull();
     expect($$(".stopped-items code").map((el) => el.textContent)).toEqual(["src/start-card.css:31", "src/a.ts:2"]);
-    expect($$(".stopped .choice").map((el) => [el.textContent, el.className])).toEqual([
-      ["Run Review again", "choice primary"],
-      ["End: no action needed", "choice"],
-      ["Stop", "choice danger"],
+    expect($$(".stopped .choices .btn").map((el) => [el.textContent, el.className])).toEqual([
+      ["Run Review again", "btn btn-primary"],
+      ["End: no action needed", "btn btn-secondary"],
+      ["Stop", "btn btn-danger"],
     ]);
     expect($(".needs-you-kind")).toBeNull();
   });

@@ -56,20 +56,7 @@
 }
 
 .drawer-close {
-  flex: none;
   margin-left: auto;
-  min-width: 32px;
-  min-height: 32px;
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.drawer-close:hover {
-  background: var(--raised);
-  color: var(--text);
 }
 
 :is(.drawer, .expanded) .mark {
@@ -222,7 +209,6 @@
   min-width: 0;
 }
 
-
 .stopped-lines {
   padding: var(--space-6) var(--space-10);
   border: 1px solid var(--hairline);
@@ -247,7 +233,6 @@
   align-items: flex-start;
   gap: var(--space-10);
 }
-
 
 .cloud-summary {
   display: flex;
@@ -302,16 +287,10 @@
   color: var(--text-2);
 }
 
-.step-output-label .link,
-.stopped .link,
+.step-output-label .btn-link,
+.stopped .btn-link,
 .nr-read {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--link);
-  font: inherit;
   font-size: var(--text-md);
-  cursor: pointer;
 }
 
 .step-output-text {
@@ -346,13 +325,8 @@
 
 .step-output-more {
   align-self: flex-start;
-  padding: 0;
-  border: 0;
-  background: none;
   color: var(--link);
-  font: inherit;
   font-size: var(--text-md);
-  cursor: pointer;
 }
 
 .step-output-none,
@@ -431,7 +405,7 @@
   width: fit-content;
   color: var(--link);
   font-size: var(--text-md);
-  cursor: pointer;
+  cursor: pointer; /* pointer: not a button */
 }
 
 .attempt-output summary:focus-visible {
@@ -451,32 +425,6 @@
   gap: var(--space-8);
 }
 
-.choice {
-  min-height: 32px;
-  padding: 0 var(--space-12);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text-2);
-  cursor: pointer;
-}
-
-.choice.primary {
-  border-color: var(--primary-border);
-  background: var(--primary-fill);
-  color: var(--primary-text);
-}
-
-.choice.danger {
-  border-color: var(--fail);
-  color: var(--fail);
-}
-
-.choice:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
 /* Tabs */
 
 .drawer-tabs {
@@ -487,11 +435,7 @@
 
 .drawer-tabs [role="tab"] {
   min-height: 32px;
-  padding: 0;
-  border: 0;
-  background: transparent;
   color: var(--muted);
-  cursor: pointer;
 }
 
 .drawer-tabs [role="tab"][aria-selected="true"] {
@@ -609,10 +553,6 @@
   margin-top: auto;
 }
 
-.drawer-actions .choice:hover:not(:disabled) {
-  background: var(--raised);
-}
-
 .drawer-confirm {
   display: flex;
   flex-direction: column;
@@ -688,13 +628,9 @@
   width: 100%;
   min-height: 30px;
   padding: var(--space-2) var(--space-6);
-  border: 0;
   border-radius: var(--radius-sm);
-  background: transparent;
   color: var(--text-2);
-  font: inherit;
   text-align: left;
-  cursor: pointer;
 }
 
 .dv-file[aria-pressed="true"] {
@@ -910,13 +846,8 @@
 
 .nr-review {
   margin-left: auto;
-  padding: 0;
-  border: 0;
-  background: transparent;
   color: var(--link);
-  font: inherit;
   font-size: var(--text-base);
-  cursor: pointer;
 }
 
 /* After a decision: the commit an approval made, or the step running again with your note */
@@ -1010,7 +941,7 @@
   min-width: 0;
 }
 
-.finish-row-main > .choice {
+.finish-row-main > .btn {
   flex: none;
   align-self: center;
 }
@@ -1035,20 +966,9 @@
   color: var(--muted);
 }
 
-.finish-off .link,
-.finish-ended .link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--link);
-  font: inherit;
+.finish-off .btn-link,
+.finish-ended .btn-link {
   font-size: var(--text-base);
-  cursor: pointer;
-}
-
-.finish-ended .link:disabled {
-  color: var(--muted);
-  cursor: default;
 }
 
 .finish-notice {
@@ -1137,29 +1057,6 @@
   }
 }
 
-/* ⤢ on the drawer's header and diff block */
-
-.expand-button {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  min-width: 28px;
-  min-height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.expand-button:hover,
-.drawer-expand:hover {
-  background: var(--raised);
-  color: var(--text);
-}
-
 .drawer-expand {
   display: inline-flex;
   align-items: center;
@@ -1212,14 +1109,6 @@
 
 .ot-copy {
   margin-left: auto;
-  min-height: 28px;
-  padding: 0 var(--space-10);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text-2);
-  font-size: var(--text-md);
-  cursor: pointer;
 }
 
 .ot[data-full] {
@@ -1305,13 +1194,8 @@
 }
 
 .ot-link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--link);
   font-size: var(--text-base);
   text-align: left;
-  cursor: pointer;
 }
 
 /* The Diff tab in the full view: no height limit (the page scrolls), and the file list beside the file when there is room */
@@ -1450,13 +1334,8 @@
 
 .ex-back {
   align-self: flex-start;
-  min-height: 24px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--link);
   font-size: var(--text-base);
-  cursor: pointer;
+  min-height: var(--control-xs);
 }
 
 .ex-heading h1 {
@@ -1485,25 +1364,6 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-6);
-}
-
-.ex-collapse {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-8);
-  min-height: 36px;
-  padding: 0 var(--space-10);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--text-2);
-  font-size: var(--text-base);
-  cursor: pointer;
-}
-
-.ex-collapse:hover {
-  background: var(--raised);
-  color: var(--text);
 }
 
 .ex-collapse kbd {
@@ -1711,7 +1571,7 @@
 }
 
 summary.ck-row {
-  cursor: pointer;
+  cursor: pointer; /* pointer: not a button */
 }
 
 summary.ck-row::-webkit-details-marker {
@@ -1856,11 +1716,8 @@ summary.ck-row:focus-visible {
   padding: 0 var(--space-8);
   border: 1px solid var(--hairline);
   border-radius: 5px; /* px: off-scale */
-  background: transparent;
   color: var(--text-2);
-  font: inherit;
   font-size: var(--text-md);
-  cursor: pointer;
 }
 
 .lg-cap .open-file {

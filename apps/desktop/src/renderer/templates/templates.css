@@ -52,12 +52,9 @@
   gap: 1px var(--space-10);
   align-items: center;
   padding: var(--space-8);
-  border: 0;
   border-radius: var(--radius);
-  background: transparent;
   color: var(--text-2);
   text-align: left;
-  cursor: pointer;
 }
 
 .tp-row:hover {
@@ -108,16 +105,7 @@
 }
 
 .tp-link {
-  min-height: 28px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--link);
-  cursor: pointer;
-}
-
-.tp-link:hover {
-  text-decoration: underline;
+  min-height: var(--control-sm);
 }
 
 .tp-detail {

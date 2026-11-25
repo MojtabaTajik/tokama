@@ -63,13 +63,9 @@
   gap: var(--space-6);
   min-height: 32px;
   padding: 0 var(--space-12);
-  border: 0;
   border-left: 1px solid var(--hairline);
-  background: transparent;
   color: var(--text-2);
-  font: inherit;
   font-size: var(--text-base);
-  cursor: pointer;
 }
 
 .dg-type:first-child {
@@ -153,13 +149,9 @@
 .dg-entry {
   width: 100%;
   min-height: 40px;
-  border: 0;
   border-bottom: 1px solid var(--hairline);
-  background: transparent;
   color: var(--text-2);
-  font: inherit;
   text-align: left;
-  cursor: pointer;
 }
 
 .dg-entry:hover {
@@ -334,43 +326,6 @@ div.dg-bar-end {
   color: var(--fail);
 }
 
-.dg-button {
-  display: inline-flex;
-  align-items: center;
-  min-height: 40px;
-  padding: 0 var(--space-16);
-  box-sizing: border-box;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--text-2);
-  font: inherit;
-  font-size: var(--text-body);
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.dg-button:hover:not(:disabled) {
-  background: var(--raised);
-  color: var(--text);
-}
-
-.dg-button:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.dg-primary {
-  border-color: var(--primary-border);
-  background: var(--primary-fill);
-  color: var(--primary-text);
-}
-
-.dg-danger {
-  border-color: var(--fail);
-  color: var(--fail);
-}
-
 .dg-collect {
   display: inline-flex;
   align-items: center;
@@ -384,13 +339,8 @@ div.dg-bar-end {
   align-items: center;
   gap: var(--space-10);
   min-height: 32px;
-  padding: 0;
-  border: 0;
-  background: transparent;
   color: var(--muted);
-  font: inherit;
   font-size: var(--text-base);
-  cursor: pointer;
 }
 
 .dg-switch[aria-checked="true"] {
@@ -489,7 +439,7 @@ div.dg-bar-end {
   border-top: 1px solid var(--hairline);
 }
 
-.crash-prompt-actions .dg-button {
+.crash-prompt-actions .btn {
   white-space: nowrap;
 }
 
@@ -499,7 +449,7 @@ div.dg-bar-end {
     flex-direction: column-reverse;
   }
 
-  .crash-prompt-actions .dg-button {
+  .crash-prompt-actions .btn {
     justify-content: center;
   }
 }

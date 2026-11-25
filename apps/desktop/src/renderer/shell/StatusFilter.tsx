@@ -4,6 +4,7 @@
 import type { ItemRecord } from "@tokama/core";
 import { type Filter, filterCounts, hasRange, type Range, RANGES, STATUS_FILTERS, type StatusFilter as Status } from "../model.js";
 import { SearchIcon } from "../ui/icons.js";
+import { Button, CloseButton } from "../ui/Button.js";
 
 const TEXT = {
   group: "Status filter",
@@ -42,14 +43,14 @@ export function StatusFilter({ items, filter, now, onChange, search }: StatusFil
         {STATUS_FILTERS.map(({ id, label }) => {
           const count = id === "all" ? undefined : counts[id];
           return (
-            <button key={id} type="button" className="segment" aria-pressed={filter.status === id} data-kind={id} onClick={() => onChange({ status: id as Status })}>
+            <Button variant="plain" key={id} className="segment" aria-pressed={filter.status === id} data-kind={id} onClick={() => onChange({ status: id as Status })}>
               <span>{label}</span>
               {count !== undefined && (
                 <span className="segment-count mono" data-active={count > 0 || undefined}>
                   {count}
                 </span>
               )}
-            </button>
+            </Button>
           );
         })}
       </div>
@@ -95,9 +96,7 @@ function Search({ text, onText, onClear, results }: SearchProps) {
           }}
         />
         {text !== "" && (
-          <button type="button" className="search-clear" aria-label={TEXT.clear} title={TEXT.clear} onClick={onClear}>
-            ✕
-          </button>
+          <CloseButton size="icon-sm" className="search-clear" label={TEXT.clear} onClick={onClear} />
         )}
       </span>
     </div>

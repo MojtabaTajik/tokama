@@ -9,6 +9,7 @@ import { formatDuration } from "../format/duration.js";
 import { stamp } from "../format/time.js";
 import { ALERT_TEXT, alertTone, ageText, CLI_MONOGRAMS, cliAlert, formatTokens, liveWindows, shareText, totalOf, windowLabel, windowShort } from "../insights/usage-model.js";
 import { AI_CLIS, type CliIssue } from "../model.js";
+import { Button } from "../ui/Button.js";
 
 const TEXT = {
   loggedIn: "logged in",
@@ -125,9 +126,9 @@ export function InsightsTip({ usage, issues, health, setup, now, onSelectItem, o
           <div className="it-items">
             {today.items.slice(0, TODAY_ITEMS).map((item) => (
               <div key={item.itemId} className="it-item">
-                <button type="button" className="it-title" title={item.title} onClick={() => onSelectItem?.(item.itemId)}>
+                <Button variant="plain" className="it-title" title={item.title} onClick={() => onSelectItem?.(item.itemId)}>
                   {item.title}
-                </button>
+                </Button>
                 <span className="mono it-tokens">{formatTokens(item.tokens)}</span>
                 <span className="mono it-time">{formatDuration(item.durationMs, "coarse")}</span>
                 <span className="it-agents">{item.agents.map((agent) => stepAgent({ agentId: agent.agentId, data: "none" }, setup?.agents ?? []).name).join(" · ")}</span>
@@ -157,9 +158,9 @@ export function InsightsTip({ usage, issues, health, setup, now, onSelectItem, o
 
       <div className="it-foot">
         <span>{TEXT.footer}</span>
-        <button type="button" className="it-link" onClick={onCliSettings}>
+        <Button variant="plain" className="it-link" onClick={onCliSettings}>
           {TEXT.settings}
-        </button>
+        </Button>
       </div>
     </>
   );

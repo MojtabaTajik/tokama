@@ -1,0 +1,17 @@
+/* What a screen shows instead of its content: a failed load (ui/ErrorRetry.tsx). */
+.failure {
+  max-width: 640px;
+  margin-bottom: var(--space-16);
+}
+
+.failure-title {
+  margin: 0 0 var(--space-8);
+  font-size: var(--text-lg);
+  color: var(--text);
+}
+
+.failure-title .symbol {
+  display: inline-block;
+  width: 1.4em;
+  color: var(--fail);
+}

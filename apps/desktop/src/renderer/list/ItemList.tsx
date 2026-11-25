@@ -15,6 +15,7 @@ import { TemplateIcon } from "../shell/TemplateIcon.js";
 import type { AgentTarget } from "../settings/describe.js";
 import { FinishSplit } from "./FinishSplit.js";
 import { useFocusFollow } from "./useFocusFollow.js";
+import { Button } from "../ui/Button.js";
 
 const TEXT = {
   nothing: { needs: "Nothing waiting", running: "Nothing running", done: "Nothing finished", failed: "Nothing failed" },
@@ -104,7 +105,7 @@ function Row({ item, setup, now, selected, onSelect, onFinish, onDiscard, onOpen
   const finished = finishNote(item);
   return (
     <div className="pl-row-wrap">
-      <button type="button" className="pl-row" data-item-id={item.id} data-state={item.state} aria-current={selected ? "true" : undefined} onClick={() => onSelect(item.id)}>
+      <Button variant="plain" className="pl-row" data-item-id={item.id} data-state={item.state} aria-current={selected ? "true" : undefined} onClick={() => onSelect(item.id)}>
         <span className="pl-mark" data-tone={mark.tone}>
           <span aria-hidden="true">{mark.symbol}</span>
           <span className="visually-hidden">{mark.word}: </span>
@@ -149,7 +150,7 @@ function Row({ item, setup, now, selected, onSelect, onFinish, onDiscard, onOpen
         <span className="pl-time mono" title={time.title}>
           {time.text}
         </span>
-      </button>
+      </Button>
       {agent !== undefined && (
         <span className="pl-agent">
           {agentTip !== undefined ? (

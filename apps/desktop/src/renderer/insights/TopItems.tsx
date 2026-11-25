@@ -6,6 +6,7 @@ import { stepAgent } from "../drawer/describe.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { formatDuration } from "../format/duration.js";
 import { formatCost, formatTokens, templateFor, totalOf, workflowName } from "./usage-model.js";
+import { Button } from "../ui/Button.js";
 
 const CLI_SHORT = { "claude-code": "CC", "codex-cli": "CX", ollama: "OL" } as const;
 
@@ -68,9 +69,9 @@ export function TopItems({ report, setup, filter, note, openable, onOpen }: TopI
                 <tr key={item.itemId}>
                   <td className="ins-item">
                     {openable.has(item.itemId) ? (
-                      <button type="button" className="link-button" onClick={() => onOpen(item.itemId)}>
+                      <Button variant="quiet" onClick={() => onOpen(item.itemId)}>
                         {item.title}
-                      </button>
+                      </Button>
                     ) : (
                       item.title
                     )}

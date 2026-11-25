@@ -14,6 +14,7 @@ import { AiClisPage } from "./AiClisPage.js";
 import { DiagnosticsPage } from "./DiagnosticsPage.js";
 import { NotificationsPage } from "./NotificationsPage.js";
 import { ReposPage } from "./ReposPage.js";
+import { Button } from "../ui/Button.js";
 
 type NavIcon = ComponentType;
 
@@ -67,9 +68,9 @@ export function Settings({ bridge, connection, setup, onBack, initialPage = "age
   return (
     <div className="settings">
       <nav className="settings-nav" aria-label={TEXT.nav}>
-        <button type="button" className="settings-back" onClick={onBack}>
+        <Button variant="quiet" className="settings-back" onClick={onBack}>
           {TEXT.back}
-        </button>
+        </Button>
         <p className="settings-title">{TEXT.title}</p>
         {shownGroups().map((group) => (
           <div key={group.name} className="settings-group" role="group" aria-label={group.name}>
@@ -77,10 +78,10 @@ export function Settings({ bridge, connection, setup, onBack, initialPage = "age
               {group.name}
             </span>
             {group.pages.map(({ id, label, Icon }) => (
-              <button key={id} type="button" className="settings-entry" aria-current={id === page ? "page" : undefined} onClick={() => setPage(id)}>
+              <Button variant="plain" key={id} className="settings-entry" aria-current={id === page ? "page" : undefined} onClick={() => setPage(id)}>
                 <Icon />
                 {label}
-              </button>
+              </Button>
             ))}
           </div>
         ))}

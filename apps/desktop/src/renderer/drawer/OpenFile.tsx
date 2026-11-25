@@ -2,6 +2,7 @@
 // in the system's app for it. The renderer names the file only by item, step, attempt and check.
 import { useState } from "react";
 import type { AttemptFileName, TokamaBridge } from "../../shared/bridge.js";
+import { Button } from "../ui/Button.js";
 
 const TEXT = {
   open: "Open the file",
@@ -19,9 +20,9 @@ export function OpenFile({ bridge, name }: { readonly bridge: TokamaBridge; read
   };
   return (
     <>
-      <button type="button" className="open-file" onClick={open}>
+      <Button variant="plain" className="open-file" onClick={open}>
         {TEXT.open}
-      </button>
+      </Button>
       {problem !== undefined && (
         <span className="open-file-problem" role="status">
           <span className="symbol" aria-hidden="true">

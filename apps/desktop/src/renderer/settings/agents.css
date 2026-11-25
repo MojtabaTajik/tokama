@@ -51,12 +51,9 @@
   width: 100%;
   min-width: 0;
   padding: 7px var(--space-8); /* px: off-scale */
-  border: 0;
   border-radius: var(--radius);
-  background: transparent;
   color: var(--text-2);
   text-align: left;
-  cursor: pointer;
 }
 
 .agent-row:hover,

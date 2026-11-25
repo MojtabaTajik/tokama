@@ -317,7 +317,7 @@ describe("Insights: tokens and cost by day", () => {
     expect(text(".ins-headline .muted")).toBe("≈ $11.70 estimated · Plan and build only · as of 15:00");
     expect($$(".ins-col").at(-1)!.querySelector('.ins-seg[data-tag="rose"]')?.getAttribute("data-dim")).toBe("true");
     expect($('.ins-legend-entry[aria-pressed="true"]')?.textContent).toContain("Plan and build");
-    await click($(".ins-filter-clear"));
+    await click($(".ins-filter .btn"));
     expect($(".ins-filter")).toBeNull();
     await click($$(".ins-legend-entry")[0]!);
     expect(tableRows()).toEqual(["Orders API returns 500 after deploy"]);
@@ -353,10 +353,10 @@ describe("Insights: top items", () => {
     render({ onSelectItem }, report);
     expect($(".ins-table b")).toBeNull();
     expect(tableRows()[0]).toBe("<b>bold</b> title");
-    await click($(".ins-table .link-button"));
+    await click($(".ins-table .btn"));
     expect(onSelectItem).toHaveBeenCalledWith(usageReport.items[0]!.itemId);
     // An item the board no longer has is plain text.
-    expect($$(".ins-table .link-button")).toHaveLength(1);
+    expect($$(".ins-table .btn")).toHaveLength(1);
   });
 
   it("says when it is loading, when the load failed, and when the range has no calls", () => {

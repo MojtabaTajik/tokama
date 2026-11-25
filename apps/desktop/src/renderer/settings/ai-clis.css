@@ -45,13 +45,9 @@
   width: 100%;
   min-height: 36px;
   padding: 0 var(--space-8);
-  border: 0;
   border-radius: var(--radius);
-  background: transparent;
   color: var(--text-2);
-  font: inherit;
   text-align: left;
-  cursor: pointer;
 }
 
 .ai-cli-row:hover,
@@ -160,12 +156,7 @@
 }
 
 .ai-cli-check {
-  padding: 0;
-  border: 0;
-  background: transparent;
   color: var(--link);
-  font: inherit;
-  cursor: pointer;
 }
 
 .ai-cli-check:disabled {

@@ -1,6 +1,7 @@
 // The note that stays on the board after Tokama set git up in a folder and added it as a repo:
 // what it did, and a way to start the first task there. Dismissed with ✕.
 import type { SetUpNote } from "./RepoDialog.js";
+import { Button, CloseButton } from "../ui/Button.js";
 
 const TEXT = {
   added: (id: string) => `Added ${id}`,
@@ -27,12 +28,10 @@ export function RepoNote({ note, onStart, onDismiss }: RepoNoteProps) {
         {TEXT.setUp} <span className="mono">{note.commit}</span>
         {note.files > 0 && TEXT.files(note.files)}
       </span>
-      <button type="button" className="rd-link" onClick={onStart}>
+      <Button variant="link" className="rd-link" onClick={onStart}>
         {TEXT.start}
-      </button>
-      <button type="button" className="dlg-close" aria-label={TEXT.dismiss} onClick={onDismiss}>
-        ✕
-      </button>
+      </Button>
+      <CloseButton className="dlg-close" label={TEXT.dismiss} onClick={onDismiss} />
     </div>
   );
 }

@@ -13,6 +13,7 @@ import { AttentionPopup } from "./Attention.js";
 import { InsightsTip } from "./InsightsTip.js";
 import { useTip } from "./useTip.js";
 import { AttentionIcon, BoardIcon, InboxIcon, InsightsIcon, PanelIcon, SettingsIcon, UserIcon } from "../ui/icons.js";
+import { Button } from "../ui/Button.js";
 
 const TEXT = {
   rail: "App",
@@ -115,8 +116,8 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
   return (
     <nav className="rail" aria-label={TEXT.rail}>
       <img className="rail-mark" src={brand.markUrl} alt={brand.name} width={22} height={22} />
-      <button
-        type="button"
+      <Button
+        variant="plain"
         className="rail-button"
         aria-label={TEXT.panel}
         title={TEXT.panel}
@@ -125,12 +126,12 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
         onClick={onTogglePanel}
       >
         <PanelIcon />
-      </button>
-      <button type="button" className="rail-button" aria-label={TEXT.board} title={TEXT.board} aria-current={aboutOpen || needsYouOpen || insightsOpen ? undefined : "page"} onClick={onBoard}>
+      </Button>
+      <Button variant="plain" className="rail-button" aria-label={TEXT.board} title={TEXT.board} aria-current={aboutOpen || needsYouOpen || insightsOpen ? undefined : "page"} onClick={onBoard}>
         <BoardIcon />
-      </button>
-      <button
-        type="button"
+      </Button>
+      <Button
+        variant="plain"
         className="rail-button"
         data-tone={needsYou !== undefined && needsYou > 0 ? "warn" : undefined}
         aria-label={needsYouLabel}
@@ -140,10 +141,10 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
       >
         <InboxIcon />
         <Badge count={needsYou ?? 0} tone="warn" />
-      </button>
+      </Button>
       <div className="insights" data-open={tip.open || undefined} onMouseEnter={() => tip.hold("hover", true)} onMouseLeave={() => tip.hold("hover", false)} onFocus={() => tip.hold("focus", true)} onBlur={() => tip.hold("focus", false)}>
-        <button
-          type="button"
+        <Button
+          variant="plain"
           className="rail-button"
           data-tone={badge?.tone}
           ref={insightsButton}
@@ -158,7 +159,7 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
         >
           <InsightsIcon />
           {badge !== undefined && <Badge count={1} tone={badge.tone} symbol={badge.symbol} />}
-        </button>
+        </Button>
         <div role="group" aria-label={TEXT.usage} id={tipId} className="insights-tip">
           <div className="it-scroll">
             <InsightsTip
@@ -179,13 +180,13 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
           </div>
         </div>
       </div>
-      <button type="button" className="rail-button" aria-label={settingsLabel} title={settingsLabel} onClick={onSettings}>
+      <Button variant="plain" className="rail-button" aria-label={settingsLabel} title={settingsLabel} onClick={onSettings}>
         <SettingsIcon />
         <Badge count={diagnosticsWaiting} tone="neutral" />
-      </button>
+      </Button>
       <div className="attention" ref={attentionRef}>
-        <button
-          type="button"
+        <Button
+          variant="plain"
           className="rail-button"
           data-tone={attention > 0 ? "fail" : undefined}
           aria-label={withCount(TEXT.attention, attention)}
@@ -200,13 +201,13 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
         >
           <AttentionIcon />
           <Badge count={attention} tone="fail" />
-        </button>
+        </Button>
         {popupOpen && <AttentionPopup id={popupId} issues={issues} problems={problems} />}
       </div>
       <div className="rail-spacer" />
-      <button type="button" className="rail-user" aria-label={TEXT.about} title={TEXT.about} aria-current={aboutOpen ? "page" : undefined} onClick={onAbout}>
+      <Button variant="plain" className="rail-user" aria-label={TEXT.about} title={TEXT.about} aria-current={aboutOpen ? "page" : undefined} onClick={onAbout}>
         <UserIcon />
-      </button>
+      </Button>
     </nav>
   );
 }

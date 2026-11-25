@@ -5,6 +5,7 @@ import type { StepOutputResult } from "@tokama/core";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
 import { StepText } from "./StepText.js";
+import { Button } from "../ui/Button.js";
 
 const TEXT = {
   loading: "Loading the step's output",
@@ -119,9 +120,9 @@ export function StepPreview({ state, label, isPlan, onShowFull }: { readonly sta
         <StepText text={state.output.text} />
       </div>
       {cut && (
-        <button type="button" className="link step-output-more" onClick={onShowFull}>
+        <Button variant="link" className="step-output-more" onClick={onShowFull}>
           {isPlan ? TEXT.showFullPlan : TEXT.showFullOutput}
-        </button>
+        </Button>
       )}
       {state.output.truncated && <Cut />}
     </>

@@ -10,6 +10,7 @@ import { budgetText, FINISH, placeOf, startSentence, statusOf, stepSentence, tit
 import { dotOf, flowOf } from "./flow.js";
 import { FlowDiagram } from "./FlowDiagram.js";
 import { keyId, useReload, useTemplateDetail, useTemplateList } from "./useTemplates.js";
+import { Button } from "../ui/Button.js";
 
 const TEXT = {
   title: "Templates",
@@ -89,9 +90,9 @@ export function TemplatesPage({ bridge, connection, agents, connections }: Templ
         </ul>
         <div className="tp-list-foot">
           {list.state === "ready" && <span>{countText(entries.length, repos, builtins)}</span>}
-          <button type="button" className="tp-link" onClick={checkAgain}>
+          <Button variant="link" className="tp-link" onClick={checkAgain}>
             {TEXT.checkAgain}
-          </button>
+          </Button>
         </div>
       </section>
       <main className="tp-detail" aria-label={selected === undefined ? TEXT.title : titleOf(selected)}>
@@ -122,12 +123,12 @@ function Status({ entry }: { readonly entry: Pick<TemplateEntry, "problemCount">
 
 function EntryRow({ entry, selected, onPick }: { readonly entry: TemplateEntry; readonly selected: boolean; readonly onPick: () => void }) {
   return (
-    <button type="button" className="tp-row" aria-pressed={selected} onClick={onPick}>
+    <Button variant="plain" className="tp-row" aria-pressed={selected} onClick={onPick}>
       <TemplateIcon icon={entry.icon} color={entry.color} size={14} />
       <span className="tp-row-name ellipsis">{titleOf(entry)}</span>
       <Status entry={entry} />
       <span className="tp-row-place mono">{placeOf(entry)}</span>
-    </button>
+    </Button>
   );
 }
 
@@ -185,16 +186,16 @@ function Detail({ bridge, detail, agents, connections }: DetailProps) {
       </p>
       <div className="tp-actions">
         {entry.openable ? (
-          <button type="button" className="tp-link" onClick={() => void open()}>
+          <Button variant="link" className="tp-link" onClick={() => void open()}>
             {TEXT.open}
-          </button>
+          </Button>
         ) : (
           entry.origin !== "builtin" && <span className="tp-quiet">{TEXT.noFile}</span>
         )}
         {text !== null && (
-          <button type="button" className="tp-link" aria-expanded={fileOpen} aria-controls={fileOpen ? fileId : undefined} onClick={() => setFileOpen(!fileOpen)}>
+          <Button variant="link" className="tp-link" aria-expanded={fileOpen} aria-controls={fileOpen ? fileId : undefined} onClick={() => setFileOpen(!fileOpen)}>
             {fileOpen ? TEXT.hideFile : TEXT.showFile}
-          </button>
+          </Button>
         )}
         {textTooLarge && <span className="tp-quiet">{TEXT.tooLarge}</span>}
         {openNote !== undefined && (
@@ -212,9 +213,9 @@ function Detail({ bridge, detail, agents, connections }: DetailProps) {
             {problems.map((problem, index) => (
               <li key={`${problem.line}-${index}`}>
                 {text !== null ? (
-                  <button type="button" className="tp-link mono" onClick={() => showLine(problem.line)}>
+                  <Button variant="link" className="tp-link mono" onClick={() => showLine(problem.line)}>
                     {TEXT.line(problem.line)}
-                  </button>
+                  </Button>
                 ) : (
                   <span className="mono">{TEXT.line(problem.line)}</span>
                 )}

@@ -7,6 +7,8 @@ import type { ConnectionState, DiagnosticsItem, DiagnosticsSendFailure, Diagnost
 import { ConnectionFailure } from "../shell/ConnectionStatus.js";
 import { DATE_FILTERS, type DateFilter, failedLine, inDateRange, sendingLine, sendLabel, sentLine, shownType, sizeLabel, summary, TYPE_FILTERS, TYPE_WORD, type TypeFilter, timeLabel, type ShownType } from "./diagnosticsText.js";
 import { useDiagnostics } from "./useDiagnostics.js";
+import { Button } from "../ui/Button.js";
+import { ErrorRetry } from "../ui/ErrorRetry.js";
 
 const TEXT = {
   heading: "Diagnostics",
@@ -30,7 +32,6 @@ const TEXT = {
   loading: "Loading",
   starting: "Waiting for the engine",
   loadFailed: "Could not load the diagnostics",
-  retry: "Retry",
   saveFailed: "Couldn’t save the file.",
   clearFailed: "Couldn’t clear the entries.",
 } as const;
@@ -90,17 +91,7 @@ export function DiagnosticsPage({ bridge, connection, now: fixedNow }: Diagnosti
           ) : state.status === "loading" ? (
             <p className="placeholder">{TEXT.loading}</p>
           ) : (
-            <div className="failure" role="alert">
-              <p className="failure-title">
-                <span className="symbol" aria-hidden="true">
-                  ✕
-                </span>
-                {TEXT.loadFailed}
-              </p>
-              <button type="button" className="retry" onClick={() => void reload()}>
-                {TEXT.retry}
-              </button>
-            </div>
+            <ErrorRetry title={TEXT.loadFailed} onRetry={() => void reload()} />
           )}
         </div>
       </section>
@@ -163,11 +154,11 @@ export function DiagnosticsPage({ bridge, connection, now: fixedNow }: Diagnosti
           <div className="dg-filters">
             <div className="dg-types" role="radiogroup" aria-label={TEXT.type}>
               {TYPE_FILTERS.map(({ id, label }) => (
-                <button key={id} type="button" role="radio" aria-checked={typeFilter === id} className="dg-type" onClick={() => setTypeFilter(id)}>
+                <Button variant="plain" key={id} role="radio" aria-checked={typeFilter === id} className="dg-type" onClick={() => setTypeFilter(id)}>
                   {id !== "all" && <TypeIcon type={id} />}
                   {label}
                   <span className="dg-count mono">{count(id)}</span>
-                </button>
+                </Button>
               ))}
             </div>
             <label className="dg-date">
@@ -208,15 +199,15 @@ export function DiagnosticsPage({ bridge, connection, now: fixedNow }: Diagnosti
       ) : (
         <div className="dg-bar">
           <BarStatus bar={bar} />
-          <button type="button" className="dg-button dg-primary" disabled={busy || empty} onClick={() => void sendAll()}>
+          <Button variant="primary" size="lg" disabled={busy || empty} onClick={() => void sendAll()}>
             {sendLabel(items.length)}
-          </button>
-          <button type="button" className="dg-button dg-danger" disabled={busy || empty} onClick={() => void clearAll()}>
+          </Button>
+          <Button variant="danger" size="lg" disabled={busy || empty} onClick={() => void clearAll()}>
             {TEXT.clear}
-          </button>
-          <button type="button" className="dg-button" disabled={busy || empty} onClick={() => void saveAll()}>
+          </Button>
+          <Button variant="secondary" size="lg" disabled={busy || empty} onClick={() => void saveAll()}>
             {TEXT.save}
-          </button>
+          </Button>
           <span className="dg-bar-end">{collectSwitch}</span>
         </div>
       )}
@@ -227,11 +218,11 @@ export function DiagnosticsPage({ bridge, connection, now: fixedNow }: Diagnosti
 function EntryRow({ item, now, selected, onSelect }: { readonly item: DiagnosticsItem; readonly now: number; readonly selected: boolean; readonly onSelect: () => void }) {
   const type = shownType(item.entry);
   return (
-    <button type="button" className="dg-row dg-entry" aria-pressed={selected} onClick={onSelect}>
+    <Button variant="plain" className="dg-row dg-entry" aria-pressed={selected} onClick={onSelect}>
       <span className="dg-time mono">{timeLabel(item.entry.at, now)}</span>
       <TypeLabel type={type} />
       <span className="dg-summary ellipsis">{summary(item.entry)}</span>
-    </button>
+    </Button>
   );
 }
 
@@ -285,12 +276,12 @@ function CollectSwitch({ on, pending, onFlip }: { readonly on: boolean | undefin
   return (
     <span className="dg-collect">
       <span id="dg-collect-label">{TEXT.collect}</span>
-      <button type="button" className="dg-switch" role="switch" aria-checked={on === true} aria-labelledby="dg-collect-label" disabled={on === undefined || pending} onClick={onFlip}>
+      <Button variant="plain" className="dg-switch" role="switch" aria-checked={on === true} aria-labelledby="dg-collect-label" disabled={on === undefined || pending} onClick={onFlip}>
         <span className="dg-switch-word">{on === true ? TEXT.on : TEXT.off}</span>
         <span className="dg-switch-track" data-on={on === true || undefined}>
           <span className="dg-switch-knob" />
         </span>
-      </button>
+      </Button>
     </span>
   );
 }

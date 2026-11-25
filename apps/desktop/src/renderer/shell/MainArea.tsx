@@ -13,6 +13,8 @@ import { ConnectionFailure, startingWords } from "./ConnectionStatus.js";
 import { FirstLaunch, NoWork } from "./EmptyStates.js";
 import { RepoIcon } from "../ui/icons.js";
 import { TemplateIcon } from "./TemplateIcon.js";
+import { Button } from "../ui/Button.js";
+import { ErrorRetry } from "../ui/ErrorRetry.js";
 
 const TEXT = {
   allWork: "All work",
@@ -24,7 +26,6 @@ const TEXT = {
   reconnecting: "Reconnecting to the engine",
   loading: "Loading",
   loadFailed: "Could not load the setup and items",
-  retry: "Retry",
 } as const;
 
 export interface MainAreaProps {
@@ -69,9 +70,9 @@ export function MainArea(props: MainAreaProps) {
           <nav aria-label={TEXT.breadcrumb}>
             <ol className="breadcrumb">
               <li>
-                <button type="button" className="crumb" onClick={() => views.setView(ALL_WORK)}>
+                <Button variant="plain" className="crumb" onClick={() => views.setView(ALL_WORK)}>
                   {TEXT.allWork}
-                </button>
+                </Button>
               </li>
               <li aria-hidden="true" className="crumb-sep">
                 ›
@@ -98,9 +99,9 @@ function LayoutSwitch({ layout, onChange }: { readonly layout: Layout; readonly 
   return (
     <div className="segments layout" role="group" aria-label={TEXT.layout}>
       {(["list", "board"] as const).map((choice) => (
-        <button key={choice} type="button" className="segment" aria-pressed={layout === choice} onClick={() => onChange(choice)}>
+        <Button variant="plain" key={choice} className="segment" aria-pressed={layout === choice} onClick={() => onChange(choice)}>
           {choice === "list" ? TEXT.list : TEXT.board}
-        </button>
+        </Button>
       ))}
     </div>
   );
@@ -121,20 +122,7 @@ function Body(props: MainAreaProps & { readonly template: Setup["templates"][num
   const scoped = items.filter((item) => inView(item, views.view));
   return (
     <>
-      {loadError !== undefined && (
-        <div className="failure" role="alert">
-          <p className="failure-title">
-            <span className="symbol" aria-hidden="true">
-              ✕
-            </span>
-            {TEXT.loadFailed}
-          </p>
-          <p className="detail">{loadError}</p>
-          <button type="button" className="retry" onClick={onRetry}>
-            {TEXT.retry}
-          </button>
-        </div>
-      )}
+      {loadError !== undefined && <ErrorRetry title={TEXT.loadFailed} detail={loadError} onRetry={onRetry} />}
       {setup === undefined ? (
         loadError === undefined && <p className="placeholder">{waiting(connection)}</p>
       ) : setup.repos.length === 0 ? (

@@ -15,6 +15,8 @@ import { previewOf, useStepOutput } from "../drawer/StepOutput.js";
 import { ConnectionFailure } from "../shell/ConnectionStatus.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { type NeedsYouRow, needsYouRows } from "./rows.js";
+import { Button } from "../ui/Button.js";
+import { ErrorRetry } from "../ui/ErrorRetry.js";
 
 const TEXT = {
   title: "Needs you",
@@ -26,7 +28,6 @@ const TEXT = {
   reconnecting: "Reconnecting to the engine",
   loadFailed: "Could not load the setup and items",
   staleFailed: "Could not refresh the list. It may be out of date",
-  retry: "Retry",
   noQuestion: "This item waits for you, but the engine sent no question yet.",
   willBeSent: "Will be sent",
   notSentYet: "Nothing has been sent yet",
@@ -118,20 +119,7 @@ export function NeedsYou(props: NeedsYouProps) {
 }
 
 function LoadFailure({ message, text, onRetry }: { readonly message: string; readonly text: string; readonly onRetry: () => void }) {
-  return (
-    <div className="failure" role="alert">
-      <p className="failure-title">
-        <span className="symbol" aria-hidden="true">
-          ✕
-        </span>
-        {text}
-      </p>
-      <p className="detail">{message}</p>
-      <button type="button" className="retry" onClick={onRetry}>
-        {TEXT.retry}
-      </button>
-    </div>
-  );
+  return <ErrorRetry title={text} detail={message} onRetry={onRetry} />;
 }
 
 interface RowProps {
@@ -195,9 +183,9 @@ function Row({ row, index, bridge, selected, onSelect, onReviewDiff, onRefresh }
           {TEXT.started(row.since)}
         </span>
       </p>
-      <button type="button" className="nr-title" data-item-id={item.id} aria-current={selected ? "true" : undefined} onClick={() => onSelect(item.id)}>
+      <Button variant="plain" className="nr-title" data-item-id={item.id} aria-current={selected ? "true" : undefined} onClick={() => onSelect(item.id)}>
         {item.title}
-      </button>
+      </Button>
       <p className="nr-where">
         {row.stepLine !== undefined && <span className="mono">{row.stepLine}</span>}
         {row.agent !== undefined && (
@@ -224,9 +212,9 @@ function Row({ row, index, bridge, selected, onSelect, onReviewDiff, onRefresh }
       {preview !== "" && (
         <div className="nr-output">
           <p className="nr-preview">{preview}</p>
-          <button type="button" className="nr-read" aria-label={`${read}: ${item.title}`} onClick={() => onSelect(item.id)}>
+          <Button variant="link" className="nr-read" aria-label={`${read}: ${item.title}`} onClick={() => onSelect(item.id)}>
             {read}
-          </button>
+          </Button>
         </div>
       )}
       {diff !== undefined && <ChangedFiles state={diff} context={item.title} />}
@@ -248,9 +236,9 @@ function Row({ row, index, bridge, selected, onSelect, onReviewDiff, onRefresh }
           run={nextRunLine(item.steps[decision.stepIndex])}
           extra={
             decision.hasDiff === true ? (
-              <button type="button" className="link nr-review" aria-label={`${TEXT.review}: ${item.title}`} onClick={() => onReviewDiff(item.id)}>
+              <Button variant="link" className="nr-review" aria-label={`${TEXT.review}: ${item.title}`} onClick={() => onReviewDiff(item.id)}>
                 {TEXT.review}
-              </button>
+              </Button>
             ) : undefined
           }
           onChoose={(choice, note) => void choose(choice, note)}

@@ -14,6 +14,7 @@ import { Legend, UsageChart } from "./UsageChart.js";
 import { UsageTables } from "./UsageTables.js";
 import { stamp } from "../format/time.js";
 import { formatCost, formatTokens, type Metric, scanText, templateFor, tokamaTotals, workflowName } from "./usage-model.js";
+import { Button, CloseButton } from "../ui/Button.js";
 
 const RANGES: readonly UsageRange[] = [14, 30, 90];
 const SCOPES: readonly (readonly [UsageScope, string])[] = [
@@ -79,9 +80,9 @@ export function UsageTab({ report, error, range, onRange, scope, onScope, onRefr
       <div className="ins-scope-row">
         <div className="segments" role="group" aria-label={TEXT.scope}>
           {SCOPES.map(([id, name]) => (
-            <button key={id} type="button" className="segment" aria-pressed={scope === id} onClick={() => onScope(id)}>
+            <Button variant="plain" key={id} className="segment" aria-pressed={scope === id} onClick={() => onScope(id)}>
               {name}
-            </button>
+            </Button>
           ))}
         </div>
         <span className="ins-scope-note">{TEXT.scopeNote[scope]}</span>
@@ -92,9 +93,9 @@ export function UsageTab({ report, error, range, onRange, scope, onScope, onRefr
         )}
         <div className="segments ins-range" role="group" aria-label={TEXT.range}>
           {RANGES.map((days) => (
-            <button key={days} type="button" className="segment" aria-pressed={range === days} onClick={() => onRange(days)}>
+            <Button variant="plain" key={days} className="segment" aria-pressed={range === days} onClick={() => onRange(days)}>
               {TEXT.days(days)}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -111,16 +112,14 @@ export function UsageTab({ report, error, range, onRange, scope, onScope, onRefr
               <span className="muted">{TEXT.workflow}</span>
               <TemplateIcon icon={templateFor(filter, setup)?.icon} color={templateFor(filter, setup)?.color} />
               <span>{workflowName(filter, setup)}</span>
-              <button type="button" className="ins-filter-clear" aria-label={TEXT.clearFilter} onClick={() => setFilter(undefined)}>
-                ✕
-              </button>
+              <CloseButton size="inline" label={TEXT.clearFilter} onClick={() => setFilter(undefined)} />
             </span>
           )}
           <div className="segments ins-metric" role="group" aria-label={TEXT.metric}>
             {(["tokens", "cost"] as const).map((m) => (
-              <button key={m} type="button" className="segment" aria-pressed={metric === m} onClick={() => setMetric(m)}>
+              <Button variant="plain" key={m} className="segment" aria-pressed={metric === m} onClick={() => setMetric(m)}>
                 {m === "tokens" ? TEXT.tokens : TEXT.cost}
-              </button>
+              </Button>
             ))}
           </div>
         </header>

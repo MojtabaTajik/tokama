@@ -22,15 +22,6 @@
   align-self: flex-start;
   min-height: 30px;
   padding: 0 var(--space-8);
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text-2);
-  cursor: pointer;
-}
-
-.settings-back:hover {
-  color: var(--text);
 }
 
 .settings-title {
@@ -61,12 +52,9 @@
   gap: var(--space-10);
   min-height: 30px;
   padding: 0 var(--space-8);
-  border: 0;
   border-radius: var(--radius);
-  background: transparent;
   color: var(--text-2);
   text-align: left;
-  cursor: pointer;
 }
 
 .settings-entry[aria-current="page"] {

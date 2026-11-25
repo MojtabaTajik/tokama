@@ -5,12 +5,9 @@
   width: calc(100% - 2px);
   min-height: 28px;
   padding: 0 var(--space-10);
-  border: 0;
   border-radius: var(--radius);
-  background: transparent;
   color: var(--muted);
   text-align: left;
-  cursor: pointer;
 }
 
 .sb-add:hover {
@@ -26,13 +23,10 @@
 .sb-more {
   width: 26px;
   height: 26px;
-  border: 0;
   border-radius: var(--radius);
-  background: transparent;
   color: var(--muted);
   line-height: 1;
   opacity: 0;
-  cursor: pointer;
 }
 
 .sb-row:hover .sb-more,
@@ -58,12 +52,9 @@
   width: 100%;
   min-height: 28px;
   padding: 0 var(--space-8);
-  border: 0;
   border-radius: var(--radius);
-  background: transparent;
   color: var(--text-2);
   text-align: left;
-  cursor: pointer;
 }
 
 .repo-menu-item:hover,
@@ -96,7 +87,6 @@
   display: flex;
   flex-direction: column;
 }
-
 
 .repo-field {
   display: flex;
@@ -148,7 +138,6 @@
   color: var(--text);
 }
 
-
 /* The dialogs' frame: header with close, body, footer. */
 .dlg {
   display: flex;
@@ -178,18 +167,6 @@
 
 .dlg-close {
   margin-left: auto;
-  min-width: 32px;
-  min-height: 32px;
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.dlg-close:hover,
-.dlg-close:focus-visible {
-  color: var(--text);
 }
 
 .dlg-body {
@@ -222,15 +199,6 @@
 
 .rd-link {
   align-self: flex-start;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--link);
-  cursor: pointer;
-}
-
-.rd-link:hover {
-  text-decoration: underline;
 }
 
 .rd-tag {

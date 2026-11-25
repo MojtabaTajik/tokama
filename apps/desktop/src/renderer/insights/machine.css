@@ -250,14 +250,6 @@
   color: var(--live);
 }
 
-.mc-item .link-button {
-  color: var(--link);
-}
-
-.mc-item .link-button:hover {
-  color: var(--text);
-}
-
 .mc-child {
   padding-left: var(--space-22);
 }

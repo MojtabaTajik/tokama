@@ -32,6 +32,8 @@ import { useActivity } from "./useActivity.js";
 import { ActivityLine, StepTrack } from "./Progress.js";
 import { attemptTime, stepTimes } from "./progress-view.js";
 import { useNow } from "../useNow.js";
+import { Button, CloseButton } from "../ui/Button.js";
+import { ErrorRetry } from "../ui/ErrorRetry.js";
 
 const TEXT = {
   drawer: "Item",
@@ -39,7 +41,6 @@ const TEXT = {
   loading: "Loading the item",
   gone: "This item no longer exists.",
   loadFailed: "Could not load the item",
-  retry: "Retry",
   needsYou: "Needs you",
   noQuestion: "This item waits for you, but the engine sent no question yet.",
   willBeSent: "Will be sent",
@@ -299,9 +300,9 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
     // Keyed apart, so the button that switched the view goes with its header and focus moves to the view.
     <header key="full" className="ex-header">
       <div className="ex-heading">
-        <button type="button" className="ex-back" onClick={expanded.onCollapse}>
+        <Button variant="link" className="ex-back" onClick={expanded.onCollapse}>
           ← {expanded.back}
-        </button>
+        </Button>
         {item ? (
           <>
             <h1 id={titleId}>{item.title}</h1>
@@ -325,10 +326,10 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
           <Missing error={error} onRetry={refresh} />
         )}
       </div>
-      <button type="button" className="ex-collapse" aria-label={TEXT.collapse} title={TEXT.collapseTip} onClick={expanded.onCollapse}>
+      <Button variant="secondary" className="ex-collapse" aria-label={TEXT.collapse} title={TEXT.collapseTip} onClick={expanded.onCollapse}>
         <CollapseIcon />
         <kbd>Esc</kbd>
-      </button>
+      </Button>
     </header>
   ) : (
     <header key="drawer" className="drawer-header">
@@ -348,13 +349,11 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
         </div>
       )}
       {item && onExpand !== undefined && (
-        <button type="button" className="drawer-close drawer-expand" aria-label={TEXT.expand} title={TEXT.expand} onClick={onExpand}>
+        <Button variant="quiet" size="icon" className="drawer-expand" aria-label={TEXT.expand} title={TEXT.expand} onClick={onExpand}>
           <ExpandIcon />
-        </button>
+        </Button>
       )}
-      <button type="button" className="drawer-close" aria-label={TEXT.close} title={TEXT.close} onClick={onClose}>
-        <span aria-hidden="true">✕</span>
-      </button>
+      <CloseButton className="drawer-close" label={TEXT.close} onClick={onClose} />
     </header>
   );
 
@@ -426,9 +425,9 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
           ) : (
             !hasEnded(item) && (
               <div className="drawer-actions" role="group" aria-label={TEXT.actions}>
-                <button type="button" className="choice danger" ref={stopLink} disabled={busy} onClick={() => setConfirmingStop(true)}>
+                <Button variant="danger" ref={stopLink} disabled={busy} onClick={() => setConfirmingStop(true)}>
                   {TEXT.stop}
-                </button>
+                </Button>
               </div>
             )
           )}
@@ -471,20 +470,7 @@ function LiveActivity({ bridge, item, agents, fallback = null }: { readonly brid
 function Missing({ error, onRetry }: { readonly error: { code: string; message: string } | undefined; readonly onRetry: () => void }) {
   if (!error) return <p className="placeholder">{TEXT.loading}</p>;
   if (error.code === "not_found") return <p className="placeholder">{TEXT.gone}</p>;
-  return (
-    <div role="alert">
-      <p className="drawer-error">
-        <span className="symbol" aria-hidden="true">
-          ✕
-        </span>
-        {TEXT.loadFailed}
-      </p>
-      <p className="detail">{error.message}</p>
-      <button type="button" className="retry" onClick={onRetry}>
-        {TEXT.retry}
-      </button>
-    </div>
-  );
+  return <ErrorRetry title={TEXT.loadFailed} detail={error.message} onRetry={onRetry} />;
 }
 
 interface NeedsYouProps {
@@ -538,9 +524,9 @@ function NeedsYou({ item, setup, decision, busy, output, full, changedFiles, onS
                 <span>{TEXT.wrote(step.name, agent)}</span>
                 {output.kind === "loaded" && <span className="muted mono">{TEXT.attempt(output.output.attempt)}</span>}
                 {changedFiles && (
-                  <button type="button" className="link" onClick={onShowDiff}>
+                  <Button variant="link" onClick={onShowDiff}>
                     {TEXT.seeDiff}
-                  </button>
+                  </Button>
                 )}
               </p>
               <StepPreview state={output} label={TEXT.wrote(step.name, agent)} isPlan={step.name.toLowerCase() === "plan"} onShowFull={onShowOutput} />
@@ -612,9 +598,9 @@ function Tabs({ tabs, shown, onPick }: { readonly tabs: readonly Tab[]; readonly
   return (
     <div className="drawer-tabs" role="tablist" aria-label={TEXT.views} onKeyDown={onKeyDown}>
       {tabs.map((tab) => (
-        <button
+        <Button
+          variant="plain"
           key={tab}
-          type="button"
           role="tab"
           id={tabId(tab)}
           aria-selected={tab === shown}
@@ -623,7 +609,7 @@ function Tabs({ tabs, shown, onPick }: { readonly tabs: readonly Tab[]; readonly
           onClick={() => onPick(tab)}
         >
           {tab}
-        </button>
+        </Button>
       ))}
     </div>
   );
@@ -742,12 +728,12 @@ function ConfirmStop({ busy, onStop, onCancel }: { readonly busy: boolean; reado
     <div className="drawer-confirm" role="group" aria-label={TEXT.stopConfirm}>
       <p>{TEXT.stopQuestion}</p>
       <div className="choices">
-        <button type="button" className="choice danger" disabled={busy} onClick={onStop}>
+        <Button variant="danger" disabled={busy} onClick={onStop}>
           {TEXT.stopConfirm}
-        </button>
-        <button type="button" className="choice" ref={cancel} onClick={onCancel}>
+        </Button>
+        <Button variant="secondary" ref={cancel} onClick={onCancel}>
           {TEXT.stopCancel}
-        </button>
+        </Button>
       </div>
     </div>
   );

@@ -1,23 +1,12 @@
 /* The About view. Colours come from theme.css tokens only. */
 .about-back,
 .about-action {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--link);
-  font: inherit;
   font-size: var(--text-base);
-  cursor: pointer;
   white-space: nowrap;
 }
 
 .about-back {
   margin-left: auto;
-}
-
-.about-action:disabled {
-  color: var(--muted);
-  cursor: default;
 }
 
 .about-body {
@@ -209,12 +198,8 @@
   width: 100%;
   min-height: 40px;
   padding: var(--space-4) var(--space-2);
-  border: 0;
-  background: transparent;
   color: var(--text-2);
-  font: inherit;
   text-align: left;
-  cursor: pointer;
 }
 
 .about-chev {

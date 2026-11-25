@@ -85,13 +85,8 @@
   align-items: center;
   gap: var(--space-10);
   min-height: 32px;
-  padding: 0;
-  border: 0;
-  background: transparent;
   color: var(--muted);
-  font: inherit;
   font-size: var(--text-base);
-  cursor: pointer;
 }
 
 .notes-switch[data-on="true"] {

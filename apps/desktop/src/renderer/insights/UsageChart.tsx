@@ -9,6 +9,7 @@ import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { weekdayDate } from "../format/time.js";
 import { TemplateIcon, tagOf } from "../shell/TemplateIcon.js";
 import { type ChartModel, chartModel, formatCost, formatTokens, type Metric, share, templateFor, tickLabel, workflowName } from "./usage-model.js";
+import { Button } from "../ui/Button.js";
 
 const HEIGHT = 200;
 const GUTTER = 44;
@@ -220,14 +221,14 @@ export function Legend({ report, setup, metric, filter, onFilter }: UsageChartPr
         const total = report.workflows.find((w) => w.templateId === id);
         const value = metric === "tokens" ? formatTokens(total?.tokens ?? 0) : formatCost(total?.costUsd ?? null);
         return (
-          <button key={id} type="button" className="ins-legend-entry" aria-pressed={filter === id} data-dim={filter !== undefined && filter !== id ? "true" : undefined} onClick={() => onFilter(filter === id ? undefined : id)}>
+          <Button variant="plain" key={id} className="ins-legend-entry" aria-pressed={filter === id} data-dim={filter !== undefined && filter !== id ? "true" : undefined} onClick={() => onFilter(filter === id ? undefined : id)}>
             <svg width="10" height="10" aria-hidden="true">
               <rect className="ins-key" data-tag={tagOf(template?.color) ?? "slate"} width="10" height="10" rx="2" />
             </svg>
             <TemplateIcon icon={template?.icon} color={template?.color} />
             <span>{workflowName(id, setup)}</span>
             <span className="mono muted">{value}</span>
-          </button>
+          </Button>
         );
       })}
     </div>

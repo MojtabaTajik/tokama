@@ -4,6 +4,7 @@
 // the menu or the confirmation and returns focus to the "⋯" button.
 import { useEffect, useRef, useState } from "react";
 import { RemoveRepoDialog } from "./RemoveRepoDialog.js";
+import { Button } from "../ui/Button.js";
 
 const TEXT = {
   actions: (name: string) => `Actions for ${name}`,
@@ -49,9 +50,9 @@ export function RepoMenu({ name, waiting = 0, onEdit, onRemove }: RepoMenuProps)
         closeMenu();
       }}
     >
-      <button
+      <Button
+        variant="plain"
         ref={button}
-        type="button"
         className="sb-more"
         aria-label={TEXT.actions(name)}
         title={TEXT.actions(name)}
@@ -65,7 +66,7 @@ export function RepoMenu({ name, waiting = 0, onEdit, onRemove }: RepoMenuProps)
         }}
       >
         ⋯
-      </button>
+      </Button>
       {open && (
         <div
           className="repo-menu-popup"
@@ -80,9 +81,9 @@ export function RepoMenu({ name, waiting = 0, onEdit, onRemove }: RepoMenuProps)
             items[(at + step + items.length) % items.length]?.focus();
           }}
         >
-          <button
+          <Button
+            variant="plain"
             ref={firstItem}
-            type="button"
             role="menuitem"
             className="repo-menu-item"
             onClick={() => {
@@ -92,10 +93,10 @@ export function RepoMenu({ name, waiting = 0, onEdit, onRemove }: RepoMenuProps)
           >
             {TEXT.edit}
             <span className="repo-menu-sub">{TEXT.editSub}</span>
-          </button>
+          </Button>
           <div className="repo-menu-rule" role="separator" />
-          <button
-            type="button"
+          <Button
+            variant="plain"
             role="menuitem"
             className="repo-menu-item danger"
             onClick={() => {
@@ -104,7 +105,7 @@ export function RepoMenu({ name, waiting = 0, onEdit, onRemove }: RepoMenuProps)
             }}
           >
             {TEXT.remove}
-          </button>
+          </Button>
         </div>
       )}
       {confirming && <RemoveRepoDialog name={name} waiting={waiting} onRemove={onRemove} onClose={() => setConfirming(false)} />}

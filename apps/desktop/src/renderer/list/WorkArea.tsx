@@ -30,6 +30,7 @@ import { StatusFilter } from "../shell/StatusFilter.js";
 import type { Layout } from "../useViewState.js";
 import { ItemList } from "./ItemList.js";
 import { type GroupPage, type ListRequest, PAGE_SIZE, useWorkList } from "./useWorkList.js";
+import { Button } from "../ui/Button.js";
 
 /** Wait after the last key before the search goes to the engine. */
 export const SEARCH_DELAY_MS = 200;
@@ -120,9 +121,9 @@ export function WorkArea(props: WorkAreaProps) {
           <span className="pl-more-failed" role="alert">
             {TEXT.firstFailed}
           </span>
-          <button type="button" className="pl-button" onClick={() => list.retry(group)}>
+          <Button variant="secondary" onClick={() => list.retry(group)}>
             {TEXT.tryAgain}
-          </button>
+          </Button>
         </div>
       );
     }
@@ -130,9 +131,9 @@ export function WorkArea(props: WorkAreaProps) {
       if (page.loading === "older") {
         return (
           <div className="pl-more">
-            <button type="button" className="pl-button" disabled>
+            <Button variant="secondary" disabled>
               {TEXT.loadingOlder}
-            </button>
+            </Button>
           </div>
         );
       }
@@ -143,15 +144,15 @@ export function WorkArea(props: WorkAreaProps) {
               <span className="pl-more-failed" role="alert">
                 {TEXT.olderFailed}
               </span>
-              <button type="button" className="pl-button" onClick={() => list.loadOlder(group)}>
+              <Button variant="secondary" onClick={() => list.loadOlder(group)}>
                 {TEXT.tryAgain}
-              </button>
+              </Button>
             </>
           ) : (
             <>
-              <button type="button" className="pl-button" onClick={() => list.loadOlder(group)}>
+              <Button variant="secondary" onClick={() => list.loadOlder(group)}>
                 {TEXT.loadOlder}
-              </button>
+              </Button>
               <span className="pl-more-note">{TEXT.showing(page.items.length, page.total)}</span>
             </>
           )}
@@ -164,9 +165,9 @@ export function WorkArea(props: WorkAreaProps) {
       <div className="pl-more">
         <span className="pl-more-note">{range === "all" ? TEXT.everything : TEXT.everythingIn(rangeWords(range))}</span>
         {range !== "all" && (
-          <button type="button" className="pl-button" onClick={() => onFilter({ range: "all" })}>
+          <Button variant="secondary" onClick={() => onFilter({ range: "all" })}>
             {TEXT.showAllTime}
-          </button>
+          </Button>
         )}
       </div>
     );
@@ -187,13 +188,13 @@ export function WorkArea(props: WorkAreaProps) {
           </span>
           <span className="pl-more-note">{TEXT.searched(where)}</span>
           <span className="pl-no-match-actions">
-            <button type="button" className="pl-button" onClick={clear}>
+            <Button variant="secondary" onClick={clear}>
               {TEXT.clearSearch}
-            </button>
+            </Button>
             {hasRange(filter.status) && filter.range !== "all" && (
-              <button type="button" className="pl-button" onClick={() => onFilter({ range: "all" })}>
+              <Button variant="secondary" onClick={() => onFilter({ range: "all" })}>
                 {TEXT.searchAllTime}
-              </button>
+              </Button>
             )}
           </span>
         </div>

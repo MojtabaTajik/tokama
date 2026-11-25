@@ -14,11 +14,7 @@
 
 .ins-tab {
   padding: 9px 0; /* px: off-scale */
-  border: 0;
-  background: transparent;
   color: var(--muted);
-  font: inherit;
-  cursor: pointer;
 }
 
 .ins-tab[aria-selected="true"] {
@@ -117,20 +113,6 @@
 
 .ins-refresh {
   margin-left: auto;
-  min-height: 28px;
-  padding: 0 var(--space-10);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text-2);
-  font: inherit;
-  font-size: var(--text-base);
-  cursor: pointer;
-}
-
-.ins-refresh:hover {
-  color: var(--text);
-  background: var(--panel);
 }
 
 .ins-cards {
@@ -382,7 +364,6 @@
   background: var(--tag-slate);
 }
 
-
 .monogram {
   flex: none;
   display: inline-flex;
@@ -492,18 +473,6 @@
   border-radius: var(--radius-pill);
 }
 
-.ins-filter-clear {
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  font: inherit;
-  cursor: pointer;
-}
-
-.ins-filter-clear:hover {
-  color: var(--text);
-}
-
 .ins-headline {
   display: flex;
   flex-wrap: wrap;
@@ -532,10 +501,7 @@
   padding: 3px 9px; /* px: off-scale */
   border: 1px solid transparent;
   border-radius: var(--radius);
-  background: transparent;
   color: var(--text-2);
-  font: inherit;
-  cursor: pointer;
 }
 
 .ins-legend-entry:hover,
@@ -604,7 +570,7 @@
 }
 
 .ins-seg {
-  cursor: pointer;
+  cursor: pointer; /* pointer: not a button */
 }
 
 .ins-seg[data-dim] {
@@ -755,21 +721,6 @@
   color: var(--text);
 }
 
-.link-button {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.link-button:hover {
-  color: var(--link);
-  text-decoration: underline;
-}
-
 .ins-wf,
 .ins-agent {
   display: inline-flex;
@@ -893,16 +844,11 @@
 
 .it-title {
   overflow: hidden;
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
   font-size: var(--text-base);
   color: var(--text-2);
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
-  cursor: pointer;
 }
 
 .it-title:hover {
@@ -962,11 +908,6 @@
 
 .it-link {
   margin-left: auto;
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
   color: var(--link);
   white-space: nowrap;
-  cursor: pointer;
 }

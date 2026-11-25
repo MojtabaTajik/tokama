@@ -3,6 +3,7 @@
 // Every button marks the crash seen, so it asks once per crash, and at most once per run.
 import { useEffect, useRef, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
+import { Button } from "../ui/Button.js";
 
 const TEXT = {
   title: "Tokama stopped unexpectedly. Send a report?",
@@ -73,15 +74,15 @@ export function CrashPrompt({ onReview, onNotNow, onDontAsk }: { readonly onRevi
           <p className="crash-prompt-text">{TEXT.text}</p>
         </div>
         <div className="crash-prompt-actions">
-          <button type="button" className="dg-button" onClick={onDontAsk}>
+          <Button variant="secondary" size="lg" onClick={onDontAsk}>
             {TEXT.dontAsk}
-          </button>
-          <button type="button" className="dg-button" onClick={onNotNow}>
+          </Button>
+          <Button variant="secondary" size="lg" onClick={onNotNow}>
             {TEXT.notNow}
-          </button>
-          <button type="button" className="dg-button dg-primary" ref={review} onClick={onReview}>
+          </Button>
+          <Button variant="primary" size="lg" ref={review} onClick={onReview}>
             {TEXT.review}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

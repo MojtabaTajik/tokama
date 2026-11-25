@@ -134,9 +134,9 @@ describe("an older engine still running", () => {
     const fake = await mount(fakeBridge(older(3)));
     expect(text(".board .failure .hint")).toBe("It is running 3 tasks. Restart now (they pause and ask Retry or Stop) or Wait until they finish.");
     expect($$(".board .failure button").map((el) => el.textContent)).toEqual(["Restart engine", "Restart now", "Wait"]);
-    await click($$(".board .failure .inline-action")[1]!);
+    await click($$(".board .failure .btn-link")[1]!);
     expect(fake.bridge.waitForEngine).toHaveBeenCalledOnce();
-    await click($$(".board .failure .inline-action")[0]!);
+    await click($$(".board .failure .btn-link")[0]!);
     expect(fake.bridge.restartEngine).toHaveBeenCalledOnce();
   });
 

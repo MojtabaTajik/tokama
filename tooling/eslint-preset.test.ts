@@ -271,6 +271,15 @@ describe("eslint preset: desktop", () => {
     expect(await errorRules(`${desktop}/renderer/virtual.tsx`, 'export * from "../shared/bridge.js";\nexport * from "./brand/index.js";')).toEqual([]);
   });
 
+  it.each([
+    ["<button type=\"button\">Go</button>", "a raw button"],
+  ])("refuses %s in a screen (%s), but not in renderer/ui or a test", async (jsx) => {
+    const code = `export const x = ${jsx};`;
+    expect(await errorRules(`${desktop}/renderer/drawer/virtual.tsx`, code)).toEqual([SYNTAX]);
+    expect(await errorRules(`${desktop}/renderer/ui/virtual.tsx`, code)).toEqual([]);
+    expect(await errorRules(`${desktop}/renderer/drawer/virtual.test.tsx`, code)).toEqual([]);
+  });
+
   it("lets desktop tests use Node, but not core internals", async () => {
     expect(await errorRules(`${desktop}/renderer/virtual.test.tsx`, 'import "node:fs";\nimport "../main/policy.js";')).toEqual([]);
     expect(await errorRules(`${desktop}/preload/virtual.test.ts`, 'import "node:fs";')).toEqual([]);

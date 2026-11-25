@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
 import { DEFAULT_DESKTOP_STATE, type NotificationSettings } from "../../shared/desktop-state.js";
 import { brand } from "../brand/index.js";
+import { Button } from "../ui/Button.js";
 
 const TEXT = {
   heading: "Notifications",
@@ -81,12 +82,12 @@ export function NotificationsPage({ bridge }: NotificationsPageProps) {
                   </span>
                   <span className="notes-help">{row.help}</span>
                 </div>
-                <button type="button" className="notes-switch" role="switch" aria-checked={values[row.key]} aria-labelledby={`notes-${row.key}`} data-on={values[row.key]} onClick={() => flip(row.key)}>
+                <Button variant="plain" className="notes-switch" role="switch" aria-checked={values[row.key]} aria-labelledby={`notes-${row.key}`} data-on={values[row.key]} onClick={() => flip(row.key)}>
                   <span className="notes-word">{values[row.key] ? TEXT.on : TEXT.off}</span>
                   <span className="notes-track">
                     <span className="notes-knob" />
                   </span>
-                </button>
+                </Button>
               </div>
             ))}
             <div className="notes-info">

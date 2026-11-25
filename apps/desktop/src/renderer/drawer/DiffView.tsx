@@ -10,6 +10,7 @@ import type { Decision, DiffFile, ItemDiff } from "@tokama/core";
 import { type ReactNode, useEffect, useState } from "react";
 import { ExpandIcon } from "../ui/icons.js";
 import type { TokamaBridge } from "../../shared/bridge.js";
+import { Button } from "../ui/Button.js";
 
 /** The engine shows the hunks of files with up to this many changed lines. */
 export const FILE_LINES = 1000;
@@ -258,7 +259,7 @@ export function DiffTab({ state, baseBranch, layout = "drawer", onExpand, by }: 
           const status = STATUS[candidate.status];
           return (
             <li key={`${candidate.oldPath ?? ""}\n${candidate.path}`}>
-              <button type="button" className="dv-file" aria-pressed={candidate === file} onClick={() => setPicked(index)}>
+              <Button variant="plain" className="dv-file" aria-pressed={candidate === file} onClick={() => setPicked(index)}>
                 <span className="dv-status mono" title={status.word}>
                   <span aria-hidden="true">{status.letter}</span>
                   <span className="visually-hidden">{status.word}</span>
@@ -267,7 +268,7 @@ export function DiffTab({ state, baseBranch, layout = "drawer", onExpand, by }: 
                   <bdi>{candidate.oldPath === undefined ? shownPath(candidate.path) : `${shownPath(candidate.oldPath)} → ${shownPath(candidate.path)}`}</bdi>
                 </span>
                 <Counts file={candidate} />
-              </button>
+              </Button>
             </li>
           );
         })}
@@ -302,19 +303,19 @@ function FilePanel({ file, worktree, baseBranch, layout, split, onSplit, onExpan
         <span className="mono dv-muted">{summary}</span>
         {hidden === undefined && layout === "wide" && (
           <span className="segments dv-switch" role="group" aria-label={TEXT.diffView}>
-            <button type="button" className="segment" aria-pressed={split} onClick={() => onSplit(true)}>
+            <Button variant="plain" className="segment" aria-pressed={split} onClick={() => onSplit(true)}>
               {TEXT.sideBySide}
-            </button>
-            <button type="button" className="segment" aria-pressed={!split} onClick={() => onSplit(false)}>
+            </Button>
+            <Button variant="plain" className="segment" aria-pressed={!split} onClick={() => onSplit(false)}>
               {TEXT.unified}
-            </button>
+            </Button>
           </span>
         )}
         {hidden === undefined && layout === "narrow" && <span className="dv-switch dv-muted">{TEXT.tooNarrow}</span>}
         {onExpand !== undefined && (
-          <button type="button" className="expand-button" aria-label={TEXT.expand} title={TEXT.expandTip} onClick={onExpand}>
+          <Button variant="quiet" size="icon-sm" className="expand-button" aria-label={TEXT.expand} title={TEXT.expandTip} onClick={onExpand}>
             <ExpandIcon />
-          </button>
+          </Button>
         )}
       </p>
       {hidden === undefined && sideBySide ? (

@@ -214,12 +214,8 @@
 }
 
 .al-open {
-  padding: 0;
-  border: 0;
-  background: transparent;
   font-size: var(--text-base);
   color: var(--link);
-  cursor: pointer;
 }
 
 .al-open:hover {

@@ -6,6 +6,7 @@ import type { AboutInfo, ConnectionState, TokamaBridge } from "../../shared/brid
 import { buildRows } from "../../shared/build-info.js";
 import { brand } from "../brand/index.js";
 import { notices as noticesFor } from "./notices.js";
+import { Button } from "../ui/Button.js";
 
 /** The product site. The window opens this one address in the system browser; no other link is followed. */
 export const WEBSITE_URL = "https://tokama.dev";
@@ -54,9 +55,9 @@ export function About({ bridge, connection, onClose }: AboutProps) {
     <main className="main about" aria-label="About">
       <header className="main-header">
         <h1>About</h1>
-        <button type="button" className="about-back" onClick={onClose}>
+        <Button variant="link" className="about-back" onClick={onClose}>
           Back to work
-        </button>
+        </Button>
       </header>
       <div className="about-body">
         <div className="about-column">
@@ -94,9 +95,9 @@ export function About({ bridge, connection, onClose }: AboutProps) {
           <section aria-labelledby="about-build" className="about-section">
             <div className="about-section-head">
               <h2 id="about-build" className="about-heading">Build</h2>
-              <button type="button" className="about-action about-copy" disabled={info === undefined} onClick={() => void copyInfo()}>
+              <Button variant="link" className="about-action about-copy" disabled={info === undefined} onClick={() => void copyInfo()}>
                 {copy === "copied" ? "Copied" : copy === "failed" ? "Could not copy" : "Copy build info"}
-              </button>
+              </Button>
             </div>
             {info === undefined ? (
               <p className="about-soft">{failed ? "The build info could not be read." : "Reading the build info…"}</p>
@@ -107,9 +108,9 @@ export function About({ bridge, connection, onClose }: AboutProps) {
                     <dt>{label}</dt>
                     <dd>{value}</dd>
                     {label === "Data folder" ? (
-                      <button type="button" className="about-action" onClick={() => void showFolder()}>
+                      <Button variant="link" className="about-action" onClick={() => void showFolder()}>
                         {info.platform.startsWith("macOS") ? "Show in Finder" : "Show in file manager"}
-                      </button>
+                      </Button>
                     ) : (
                       <span />
                     )}
@@ -130,7 +131,7 @@ export function About({ bridge, connection, onClose }: AboutProps) {
                 const expanded = open.has(notice.id);
                 return (
                   <li key={notice.id} className="about-notice">
-                    <button type="button" className="about-notice-head" aria-expanded={expanded} onClick={() => toggle(notice.id)}>
+                    <Button variant="plain" className="about-notice-head" aria-expanded={expanded} onClick={() => toggle(notice.id)}>
                       <span aria-hidden="true" className="about-chev">{expanded ? "▾" : "▸"}</span>
                       <span className="about-notice-name">
                         <span className="about-notice-title">{notice.name}</span>
@@ -138,7 +139,7 @@ export function About({ bridge, connection, onClose }: AboutProps) {
                         <span className="about-notice-role">{notice.role}</span>
                       </span>
                       <span className="about-notice-licence">{notice.licence}</span>
-                    </button>
+                    </Button>
                     {expanded ? (
                       <div className="about-notice-body">
                         <p>{notice.text}</p>

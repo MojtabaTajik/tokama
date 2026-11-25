@@ -12,6 +12,7 @@ import { clock, clockSeconds } from "../format/time.js";
 import { chartModel, formatBytes, formatSize, ofAllCores, onePercent, wholePercent } from "./machine-model.js";
 import { useMachine } from "./useMachine.js";
 import { workflowName } from "./usage-model.js";
+import { Button } from "../ui/Button.js";
 
 const CLI_SHORT = { "claude-code": "CC", "codex-cli": "CX", ollama: "OL" } as const;
 
@@ -225,9 +226,9 @@ function ProcessTable({ report, setup, items, onSelectItem, onNewWork }: { reado
                 <td colSpan={5} className="mc-empty">
                   <p>{TEXT.noItems}</p>
                   <p className="muted">{TEXT.noItemsHint}</p>
-                  <button type="button" className="link-button mc-new" onClick={onNewWork}>
+                  <Button variant="link" className="mc-new" onClick={onNewWork}>
                     {TEXT.newWork}
-                  </button>
+                  </Button>
                 </td>
               </tr>
             ) : (
@@ -265,9 +266,9 @@ function ItemRows({ group, item, setup, cpu, onSelectItem }: { readonly group: G
             {item === undefined ? (
               <span>{title}</span>
             ) : (
-              <button type="button" className="link-button" onClick={() => onSelectItem(item.id)}>
+              <Button variant="link" onClick={() => onSelectItem(item.id)}>
                 {title}
-              </button>
+              </Button>
             )}
             {subtitle !== undefined && subtitle !== "" && <span className="muted">· {subtitle}</span>}
           </span>

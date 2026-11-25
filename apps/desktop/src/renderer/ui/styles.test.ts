@@ -59,6 +59,12 @@ describe.each(SCREENS)("%s", (path) => {
     );
     expect(literal.map(({ line, property, value }) => `${line}: ${property}: ${value}`)).toEqual([]);
   });
+
+  it("draws no buttons of its own: the pointer cursor belongs to ui/button.css", () => {
+    // A clickable element that is not a button (a summary, an option) says so on the line.
+    const pointer = declarations(css).filter(({ property, value, rest }) => property === "cursor" && value.trim() === "pointer" && !rest.includes("pointer: not a button"));
+    expect(pointer.map(({ line }) => line)).toEqual([]);
+  });
 });
 
 describe("the shared sheets", () => {
