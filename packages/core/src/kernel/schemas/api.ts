@@ -8,6 +8,7 @@ import { DecisionIdSchema, ItemIdSchema, RepoIdSchema, TemplateRefSchema } from 
 import { ItemRecordSchema } from "./item.js";
 import { UsageRangeSchema, UsageReportSchema, UsageScopeSchema } from "./usage.js";
 import { AgentsListSchema } from "./agents.js";
+import { AiCliListSchema } from "./ai-clis.js";
 import { MachineReportSchema } from "./machine.js";
 import { RepoSummarySchema, SetupSchema } from "./setup.js";
 import { MAX_TEMPLATE_ENTRIES, TemplateDetailSchema, TemplateEntrySchema, TemplateFileKeySchema } from "./template-files.js";
@@ -75,6 +76,8 @@ export const QuerySchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("suggest_repo"), path: folderPath }),
   /** Every agent: personal, each repo's shared ones and the built-ins, with the files that do not load. */
   z.strictObject({ type: z.literal("agents_list") }),
+  /** Each AI CLI: whether it is found and logged in, and what Tokama runs, read-only. */
+  z.strictObject({ type: z.literal("ai_clis") }),
   /** Every template file the engine finds, loaded or not, read again from disk. */
   z.strictObject({ type: z.literal("templates") }),
   /** One template file in full: the template, its problems with line numbers, and its text. */
@@ -120,6 +123,7 @@ export const QueryResultSchemas = {
   suggest_template: z.strictObject({ templateId: TemplateRefSchema.nullable() }),
   suggest_repo: RepoSuggestionSchema,
   agents_list: AgentsListSchema,
+  ai_clis: AiCliListSchema,
   templates: z.strictObject({ templates: z.array(TemplateEntrySchema).max(MAX_TEMPLATE_ENTRIES) }),
   template_detail: TemplateDetailSchema,
   usage: UsageReportSchema,
@@ -277,6 +281,7 @@ export type SetupResult = QueryResult<"setup">;
 export type SuggestTemplateResult = QueryResult<"suggest_template">;
 export type SuggestRepoResult = QueryResult<"suggest_repo">;
 export type AgentsListResult = QueryResult<"agents_list">;
+export type AiClisResult = QueryResult<"ai_clis">;
 export type TemplatesResult = QueryResult<"templates">;
 export type TemplateDetailResult = QueryResult<"template_detail">;
 export type UsageResult = QueryResult<"usage">;

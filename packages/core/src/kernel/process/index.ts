@@ -2,6 +2,7 @@
 // whole process tree on stop or timeout, pass only allowlisted environment variables, and kill
 // an agent tree left over from before a restart.
 export { ENV_ALLOWLIST, buildEnv } from "./env.js";
+export { findOnPath } from "./which.js";
 export { posixTree } from "./posix.js";
 export {
   killLeftoverTree,

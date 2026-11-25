@@ -18,6 +18,7 @@ import {
   addRepo,
   type AddRepoResult,
   type AgentsListResult,
+  type AiClisResult,
   API_VERSION,
   type BoardResult,
   checkEngineDir,
@@ -67,6 +68,7 @@ import {
   type ProcessRunner,
 } from "@tokama/core";
 import { listAgents } from "./agents-list.js";
+import { aiClis } from "./ai-clis.js";
 import { ItemIndex } from "./item-index.js";
 import { type HealthChecks, machineChecks } from "./real/health.js";
 import { runningGroups } from "./machine.js";
@@ -447,6 +449,11 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       case "agents_list":
         if (options.home === undefined) return { ok: false, error: { code: "not_implemented", message: "this engine has no Tokama home folder for agents" } };
         return { ok: true, data: (await listAgents(options.home)) satisfies AgentsListResult };
+      case "ai_clis": {
+        // The same checks and agents as the setup, so the page and the rest of the app agree.
+        const current = real === undefined ? await setup() : await real.setup();
+        return { ok: true, data: aiClis({ clis: current.health.clis, agents: current.agents, env: process.env }) satisfies AiClisResult };
+      }
       case "templates":
         return { ok: true, data: { templates: templateEntries(await templateFiles()) } satisfies TemplatesResult };
       case "template_detail": {

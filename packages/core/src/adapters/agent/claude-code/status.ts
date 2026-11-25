@@ -12,7 +12,9 @@ export interface ClaudeCodeStatusOptions {
   readonly timeoutMs?: number;
 }
 
-const LOGIN_HINT = "Run `claude auth login` in a terminal, then check again.";
+/** What a person types to sign in. */
+export const LOGIN_COMMAND = "claude auth login";
+const LOGIN_HINT = `Run \`${LOGIN_COMMAND}\` in a terminal, then check again.`;
 
 export async function claudeCodeStatus(options: ClaudeCodeStatusOptions = {}): Promise<CliHealth> {
   const command = options.command ?? ["claude"];
