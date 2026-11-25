@@ -8,6 +8,7 @@
 
 .tab {
   min-height: var(--control);
+  padding: 0;
   color: var(--muted);
 }
 
