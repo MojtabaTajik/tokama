@@ -13,7 +13,7 @@ import { readTextFile } from "../../kernel/fs-safe/index.js";
 import type { Git } from "../../kernel/git/index.js";
 import type { ProcessRunner } from "../../kernel/process/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
-import { parseTemplateRecord, type CommandErrorCode, type FinishAction, type ItemEventBody, type ItemId, type RepoId, type StoredItem } from "../../kernel/schemas/index.js";
+import { parseTemplateRecord, type CommandErrorCode, type FinishAction, type FinishRefusal, type ItemEventBody, type ItemId, type RepoId, type StoredItem } from "../../kernel/schemas/index.js";
 import type { Repo } from "../config/index.js";
 import { sharedGitHashes } from "../integrity/index.js";
 import type { ItemStore } from "../items/index.js";
@@ -140,7 +140,7 @@ export function createFinisher(deps: FinishDeps): Finisher {
     const recorded = item.worktrees[0]!;
     const worktree: ItemWorktree = { branch: recorded.branch, folder: recorded.dir, baseCommit: recorded.baseCommit ?? "" };
     const commit = item.outcome?.commits?.find((c) => c.repoId === repo.id)?.commit ?? item.outcome?.commits?.[0]?.commit;
-    const failed = (detail: string): ItemEventBody => ({ type: "finish_failed", action, detail: scrub(detail, repo) });
+    const failed = (detail: string, reason?: FinishRefusal): ItemEventBody => ({ type: "finish_failed", action, detail: scrub(detail, repo), ...(reason !== undefined && { reason }) });
     if (action !== "discard") {
       const changed = await steeringChanged(item, repo, worktree);
       if (changed !== undefined) return failed(changed);
@@ -148,7 +148,7 @@ export function createFinisher(deps: FinishDeps): Finisher {
     switch (action) {
       case "merge": {
         const merged = await mergeItem(git, repo, worktree, { id: item.id, title: item.title, commit: commit! });
-        if (!merged.ok) return failed(merged.error);
+        if (!merged.ok) return failed(merged.error.message, merged.error.reason);
         const { detail } = merged.value;
         return {
           type: "merged",

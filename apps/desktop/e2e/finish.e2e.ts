@@ -1,5 +1,5 @@
-// Finishing a done item from the drawer: Open PR and Discard on the sample engine, and Merge and
-// Discard on the real engine with a temp repo. The real flow seeds the Tokama home before the app
+// Finishing a done item from the drawer and from its Done row: Open PR and Discard on the sample
+// engine, and Merge and Discard on the real engine with a temp repo. The real flow seeds the Tokama home before the app
 // starts: a repo, and two done items whose commits sit on their own worktree branches, as the run
 // loop leaves them. No remote is touched.
 import { execFileSync } from "node:child_process";
@@ -23,28 +23,44 @@ import { drawer, flow, row, segment } from "./harness.js";
 
 const SAMPLE_DONE = "Fix the null check in cart totals";
 
-flow("opens a pull request for a done item, then discards it after a confirmation", async ({ page, screenshot }) => {
+flow("opens a pull request for a done item from the row's menu, then removes its worktree after a confirmation", async ({ page, screenshot }) => {
   await segment(page, "Done").click();
   await page.locator(".range").selectOption("30d");
+  const line = row(page, SAMPLE_DONE).locator("xpath=..");
+  await line.hover();
+  const split = line.locator(".finish-split");
+  expect(await split.locator(".finish-split-main").innerText()).toBe("Merge into main");
+  await split.getByRole("button", { name: `More ways to finish ${SAMPLE_DONE}` }).click();
+  const menu = split.getByRole("menu");
+  expect(await menu.getByRole("menuitem").allInnerTexts()).toEqual(["Merge into main\nlocal merge, then clean up", "Open PR\npush and open with gh", "Discard…"]);
+  await screenshot("finish-2-row-menu");
+  await page.keyboard.press("Escape");
+  await menu.waitFor({ state: "detached" });
+
   await row(page, SAMPLE_DONE).click();
   const finish = drawer(page).locator(".finish");
   await finish.waitFor();
-  expect(await finish.locator(".choice").allTextContents()).toEqual(["Merge into main", "Open PR", "Discard"]);
-  expect(await finish.innerText()).toContain("Open PR pushes to github.com/northwind/orders-api");
+  expect((await finish.locator(".finish-head").innerText()).replace(/\s+/g, " ")).toBe("FINISH tokama/00000010 · 1 commit ahead of main");
+  expect(await finish.locator(".finish-row .choice").allTextContents()).toEqual(["Merge into main", "Open PR", "Discard…"]);
+  expect(await finish.locator(".finish-row").nth(1).innerText()).toContain("Pushes tokama/00000010 to github.com/northwind/orders-api and opens a pull request with gh.");
   await screenshot("finish-1-offered");
 
-  await finish.getByRole("button", { name: "Open PR" }).click();
-  await expect.poll(() => finish.innerText(), { message: "the pull request line" }).toContain("Pull request opened: https://github.com/northwind/orders-api/pull/128");
-  expect(await finish.locator(".choice").allTextContents()).toEqual(["Discard"]);
+  await finish.getByRole("button", { name: "Discard…" }).click();
+  await finish.getByRole("group", { name: "Discard this work?" }).waitFor();
+  await screenshot("finish-3-discard-question");
+  await finish.getByRole("button", { name: "Keep" }).click();
 
-  await finish.getByRole("button", { name: "Discard" }).click();
-  const confirm = finish.getByRole("group", { name: "Discard" });
-  await confirm.getByRole("button", { name: "Keep" }).waitFor();
-  await confirm.getByRole("button", { name: "Discard" }).click();
-  await expect.poll(() => finish.innerText(), { message: "the discarded line" }).toContain("Discarded: the worktree and branch are removed.");
-  // The list keeps the pull request as the item's result; the drawer also says the worktree is gone.
-  await expect.poll(() => row(page, SAMPLE_DONE).innerText(), { message: "the list row" }).toContain("pull request opened");
-  await screenshot("finish-2-discarded");
+  await finish.getByRole("button", { name: "Open PR" }).click();
+  const ended = drawer(page).locator(".finish-ended");
+  await expect.poll(() => ended.innerText().catch(() => ""), { message: "the pull request end" }).toContain("PR #128 open");
+  expect(await ended.innerText()).toContain("https://github.com/northwind/orders-api/pull/128");
+  expect(await drawer(page).locator(".drawer-state").innerText()).toContain("PR open");
+  await expect.poll(() => row(page, SAMPLE_DONE).innerText(), { message: "the list row" }).toContain("PR #128 open");
+  await screenshot("finish-4-pr-open");
+
+  await ended.getByRole("button", { name: "Remove worktree" }).click();
+  await ended.getByRole("group", { name: "Discard this work?" }).getByRole("button", { name: "Discard" }).click();
+  await expect.poll(() => ended.innerText(), { message: "the worktree removed" }).toContain("Worktree and branch removed");
 });
 
 /** Plain git in the fixture repo, without the developer's config. */
@@ -134,28 +150,46 @@ async function seedRepo(home: string, tmp: string): Promise<string> {
 let repoPath = "";
 
 flow(
-  "merges one done item into main and discards another, in a real repo",
-  async ({ page }) => {
+  "merges one done item into main from its row and discards another, in a real repo",
+  async ({ page, screenshot }) => {
     await segment(page, "Done").click();
     await page.locator(".range").selectOption("30d");
 
+    // A checkout on another branch: Merge is refused in place, and nothing moves.
+    git(repoPath, "switch", "-q", "-c", "feature/login");
     await row(page, MERGE_TITLE).click();
-    let finish = drawer(page).locator(".finish");
-    await finish.getByRole("button", { name: "Merge into main" }).click();
-    await expect.poll(() => finish.innerText(), { message: "the merged line", timeout: 20_000 }).toMatch(/Merged into main · [0-9a-f]{7}/);
+    const offer = drawer(page).locator(".finish");
+    await offer.getByRole("button", { name: "Merge into main" }).click();
+    await expect.poll(() => offer.locator(".finish-notice").innerText().catch(() => ""), { message: "the refusal", timeout: 20_000 }).toContain("Your checkout is on another branch.");
+    expect(await offer.locator(".finish-notice").innerText()).toContain("Your checkout is on feature/login, not main.");
+    expect(await offer.locator(".finish-row").first().getByRole("button").innerText()).toBe("Try again");
+    await screenshot("finish-7-refused-other-branch");
+    git(repoPath, "switch", "-q", "main");
+    await drawer(page).getByRole("button", { name: "Close" }).click();
+
+    // Merge from the Done row's split button.
+    const line = row(page, MERGE_TITLE).locator("xpath=..");
+    await line.hover();
+    await line.locator(".finish-split-main").click();
+    await expect.poll(() => row(page, MERGE_TITLE).innerText(), { message: "the merged row", timeout: 20_000 }).toMatch(/Merged into main · [0-9a-f]{7}/);
     expect(git(repoPath, "show", "main:greeting.txt")).toBe("hello world");
     expect(git(repoPath, "status", "--porcelain")).toBe("");
     // Only the other item's worktree and branch are left.
-    expect(git(repoPath, "worktree", "list").split("\n").filter((line) => line.includes(".tokama/wt"))).toHaveLength(1);
+    expect(git(repoPath, "worktree", "list").split("\n").filter((entry) => entry.includes(".tokama/wt"))).toHaveLength(1);
     expect(git(repoPath, "branch", "--list", "tokama/*").split("\n").filter(Boolean)).toHaveLength(1);
+    await row(page, MERGE_TITLE).click();
+    await expect.poll(() => drawer(page).locator(".finish-ended").innerText(), { message: "the merged end" }).toMatch(/Merged into main · [0-9a-f]{7}\s+Worktree and branch removed · \d\d:\d\d/);
+    await screenshot("finish-5-merged");
 
     await row(page, DISCARD_TITLE).click();
     await drawer(page).getByRole("heading", { name: DISCARD_TITLE }).waitFor();
-    finish = drawer(page).locator(".finish");
+    const finish = drawer(page).locator(".finish");
     // The merge moved main on; this branch still starts from the old main and is thrown away.
-    await finish.getByRole("button", { name: "Discard" }).click();
-    await finish.getByRole("group", { name: "Discard" }).getByRole("button", { name: "Discard" }).click();
-    await expect.poll(() => finish.innerText(), { message: "the discarded line", timeout: 20_000 }).toContain("Discarded: the worktree and branch are removed.");
+    await finish.getByRole("button", { name: "Discard…" }).click();
+    await finish.getByRole("group", { name: "Discard this work?" }).getByRole("button", { name: "Discard" }).click();
+    await expect.poll(() => drawer(page).locator(".finish-ended").innerText().catch(() => ""), { message: "the discarded end", timeout: 20_000 }).toContain("Discarded");
+    expect(await drawer(page).locator(".drawer-state").innerText()).toContain("discarded");
+    await screenshot("finish-6-discarded");
     expect(git(repoPath, "branch", "--list", "tokama/*")).toBe("");
     expect(existsSync(join(repoPath, ".tokama", "wt"))).toBe(true);
     expect(git(repoPath, "show", "main:notes.txt")).toBe("one");

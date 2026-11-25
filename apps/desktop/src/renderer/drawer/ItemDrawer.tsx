@@ -11,6 +11,7 @@ import { attemptLine, decisionKind, hasEnded, nextRunLine, runLine, itemMark, KI
 import { DecisionChoices } from "./DecisionChoices.js";
 import { DiffTab, useDecisionDiff } from "./DiffView.js";
 import { Finish } from "./Finish.js";
+import { finishState, isDiscarded } from "./finish-view.js";
 import { useItem } from "./useItem.js";
 
 const TEXT = {
@@ -79,9 +80,13 @@ export interface ItemDrawerProps {
   readonly onClose: () => void;
   /** Changes each time the engineer asks for the item's diff (Review the diff): the drawer shows its Diff tab. */
   readonly diffAsked?: number | undefined;
+  /** Reads the setup again (Finish's Check again). */
+  readonly onCheckAgain?: () => void;
+  /** Open the item's Discard question at once (Discard… from the list). */
+  readonly askDiscard?: boolean;
 }
 
-export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked }: ItemDrawerProps) {
+export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckAgain, askDiscard = false }: ItemDrawerProps) {
   const { item, error, refresh } = useItem(bridge, itemId);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<Notice | undefined>(undefined);
@@ -225,7 +230,16 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked }: ItemDr
       {item?.state === "needs_you" && <NeedsYou item={item} setup={setup} decision={item.decision} busy={busy} onChoose={resolve} />}
       {item !== undefined && item.state !== "needs_you" && <After item={item} setup={setup} />}
 
-      {item?.state === "done" && <Finish item={item} setup={setup} busy={busy} onFinish={(action) => void send({ type: "finish_item", itemId: item.id, action })} />}
+      {item?.state === "done" && (
+        <Finish
+          item={item}
+          setup={setup}
+          busy={busy}
+          askDiscard={askDiscard}
+          {...(onCheckAgain !== undefined && { onCheckAgain })}
+          onFinish={(action) => void send({ type: "finish_item", itemId: item.id, action })}
+        />
+      )}
 
       {item && (
         <>
@@ -264,10 +278,13 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked }: ItemDr
   );
 }
 
+/** A discarded item's work is gone: it reads as discarded rather than done. */
+const DISCARDED = { symbol: "⊘", word: "discarded", tone: "muted" } as const;
+
 function StateLine({ item }: { readonly item: ItemRecord }) {
-  const mark = itemMark(item.state);
+  const mark = isDiscarded(item) ? DISCARDED : itemMark(item.state);
   const position = stepPosition(item);
-  const outcome = outcomeLine(item);
+  const outcome = isDiscarded(item) ? undefined : (finishState(item) ?? outcomeLine(item));
   return (
     <p className="drawer-state">
       <span className="mark" data-tone={mark.tone} aria-hidden="true">

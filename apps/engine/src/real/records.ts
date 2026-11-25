@@ -135,7 +135,8 @@ function toFinish(item: StoredItem): ItemRecord["finish"] {
     ...(stored?.merged !== undefined && { merged: { baseBranch: stored.merged.baseBranch, commit: stored.merged.commit } }),
     ...(stored?.pullRequest !== undefined && { pullRequest: { url: stored.pullRequest.url } }),
     worktreeRemoved: stored?.worktreeRemoved ?? false,
-    ...(stored?.failed !== undefined && failed !== undefined && { failed: { action: stored.failed.action, detail: failed } }),
+    ...(stored?.failed !== undefined && failed !== undefined && { failed: { action: stored.failed.action, detail: failed, ...(stored.failed.reason !== undefined && { reason: stored.failed.reason }) } }),
+    ...(stored?.at !== undefined && { at: stored.at }),
     ...(detail !== undefined && { detail }),
     ...(hosted !== undefined && { pushTarget: `${hosted.host}/${hosted.owner}/${hosted.name}` }),
   };

@@ -136,7 +136,7 @@ const templates = {
 
 export const sampleSetup = {
   repos: [
-    { id: "orders-api", baseBranch: "main", checks: ["pnpm test", "pnpm lint"] },
+    { id: "orders-api", baseBranch: "main", checks: ["pnpm test", "pnpm lint"], path: "~/code/orders-api" },
     { id: "checkout-web", baseBranch: "main", checks: ["npm test"] },
     { id: "inventory-service", baseBranch: "develop", checks: [] },
   ],

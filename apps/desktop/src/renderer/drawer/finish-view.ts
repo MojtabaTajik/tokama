@@ -1,25 +1,54 @@
-// What the drawer's Finish section and the list say about a done item's worktree: the finish
-// actions on offer, why one is not available, and what was done. Pure functions, tested without
-// React. Every line has a symbol and a word, so colour is never the only signal.
-import type { FinishAction, ItemRecord, Setup } from "@tokama/core";
+// What the drawer's Finish section and the list say about a done item's worktree: the three ways
+// to finish (Merge, Open PR, Discard), why one is refused or not available, and how the item
+// ended. Pure functions, tested without React. Every state has a symbol and a word, so colour is
+// never the only signal.
+import type { FinishAction, FinishRefusal, ItemRecord, Setup } from "@tokama/core";
 import type { Mark } from "./describe.js";
 
+/** Text with code parts (paths, branches, commands), shown in the mono font. */
+export type Rich = readonly (string | { readonly code: string })[];
+
 export interface FinishButton {
-  readonly action: FinishAction;
   readonly label: string;
-  /** Why the button can't be used now; undefined when it can. */
-  readonly unavailable?: string;
+  /** What the button sends; Discard first asks in place. */
+  readonly action: FinishAction;
+  readonly tone: "primary" | "plain" | "danger";
+  readonly disabled?: boolean;
 }
 
-export interface FinishView {
-  /** What was done, and the last failure. */
-  readonly lines: readonly { readonly mark: Mark; readonly text: string }[];
-  /** The running action, e.g. "Merging into main". */
-  readonly running?: string;
-  readonly buttons: readonly FinishButton[];
-  /** Where Open PR pushes, e.g. "pushes to github.com/acme/orders-api". */
-  readonly pushNote?: string;
+export interface FinishRow {
+  readonly action: FinishAction;
+  readonly title: string;
+  readonly text: Rich;
+  readonly button: FinishButton;
+  /** A refusal or failure of this action, said in place. */
+  readonly notice?: { readonly headline: string; readonly body: string };
+  /** Why the action is off now, and how to fix it; `recheck` when checking again can help. */
+  readonly off?: { readonly status: Rich; readonly recheck: boolean };
 }
+
+export type FinishView =
+  | {
+      readonly kind: "offer";
+      readonly branch: string;
+      /** "1 commit ahead of main", or undefined without a commit. */
+      readonly ahead?: string;
+      readonly rows: readonly FinishRow[];
+      /** The running action, e.g. "Merging into main". */
+      readonly running?: string;
+    }
+  | {
+      readonly kind: "ended";
+      readonly mark: Mark;
+      readonly title: string;
+      /** The pull request page, as text. */
+      readonly url?: string;
+      readonly detail: Rich;
+      /** The worktree is still there (after a PR, or kept after a merge): Remove worktree asks first. */
+      readonly removable: boolean;
+      /** The last failure, e.g. a Remove worktree that did not finish. */
+      readonly failure?: string;
+    };
 
 const ACTION_WORD: Record<FinishAction, string> = { merge: "Merge", pull_request: "Open PR", discard: "Discard" };
 
@@ -34,48 +63,145 @@ export function finishActions(item: Pick<ItemRecord, "outcome" | "finish">): Fin
   return [...(committed ? (["merge", "pull_request"] as const) : []), "discard"];
 }
 
-/** The repo's base branch from the setup; "the base branch" when the setup does not list the repo. */
+/** The repo's base branch from the setup; "the base branch" when the setup does not list it. */
 export const baseBranchOf = (item: Pick<ItemRecord, "repoIds">, setup: Setup | undefined): string =>
   setup?.repos.find((repo) => repo.id === item.repoIds[0])?.baseBranch ?? "the base branch";
 
-/** Why Open PR can't be used: a local-only item, no push target, or gh missing or logged out. */
-function prUnavailable(item: Pick<ItemRecord, "finish" | "privacy">, setup: Setup | undefined): string | undefined {
-  if (item.privacy === "local_only") return "This item is local only: its template lets nothing leave this machine.";
-  if (item.finish?.pushTarget === undefined) return "The repo had no origin remote on a code host when the item started.";
+const branchOf = (item: Pick<ItemRecord, "outcome">): string => item.outcome?.commits?.[0]?.branch ?? "the item branch";
+
+/** "PR #12" from its URL. */
+export const prName = (url: string): string => `PR #${/\/pull\/(\d+)$/.exec(url)?.[1] ?? "?"}`;
+
+const clock = (at: number | undefined): string | undefined =>
+  at === undefined ? undefined : new Date(at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+const withTime = (text: string, at: number | undefined): string => [text, clock(at)].filter((part) => part !== undefined).join(" · ");
+
+/** Why Open PR is off: a local-only item, nowhere to push, or gh missing or logged out. */
+function prOff(item: Pick<ItemRecord, "finish" | "privacy">, setup: Setup | undefined): { readonly why: string; readonly status: Rich; readonly recheck: boolean } | undefined {
+  if (item.privacy === "local_only") return { why: "This item is local only: its template lets nothing leave this machine.", status: ["✕ local only"], recheck: false };
+  if (item.finish?.pushTarget === undefined) {
+    return { why: "The repo had no GitHub remote named origin when the item started.", status: ["✕ no origin · add one with ", { code: "git remote add origin …" }, " for the next item"], recheck: false };
+  }
   const gh = setup?.health.gh;
-  if (gh !== undefined && !(gh.installed && gh.loggedIn)) return gh.message ?? "The GitHub CLI (gh) is not ready.";
+  if (gh !== undefined && !gh.installed) return { why: "Needs the GitHub CLI (gh). It was not found on your PATH.", status: ["✕ gh not found · install it from cli.github.com"], recheck: true };
+  if (gh !== undefined && !gh.loggedIn) return { why: "gh is installed but not logged in.", status: ["✕ logged out · run ", { code: "gh auth login" }, " in a terminal"], recheck: true };
   return undefined;
 }
+
+const REFUSAL_HEADLINE: Record<FinishRefusal, (base: string) => string> = {
+  dirty_checkout: () => "Your checkout has uncommitted changes.",
+  other_branch: () => "Your checkout is on another branch.",
+  conflict: (base) => `${base} has moved and the merge has conflicts.`,
+  files_in_the_way: () => "Your checkout has files where the merge writes.",
+};
 
 export function finishView(item: Pick<ItemRecord, "outcome" | "finish" | "repoIds" | "privacy">, setup: Setup | undefined): FinishView | undefined {
   const finish = item.finish;
   if (item.outcome?.kind !== "done" || finish === undefined) return undefined;
   const base = baseBranchOf(item, setup);
-  const lines: { mark: Mark; text: string }[] = [];
-  if (finish.merged !== undefined) lines.push({ mark: { symbol: "✓", word: "merged", tone: "pass" }, text: `Merged into ${finish.merged.baseBranch} · ${finish.merged.commit.slice(0, 7)}` });
-  if (finish.pullRequest !== undefined) lines.push({ mark: { symbol: "↗", word: "pull request", tone: "pass" }, text: `Pull request opened: ${finish.pullRequest.url}` });
-  if (finish.worktreeRemoved) lines.push({ mark: { symbol: "■", word: "removed", tone: "muted" }, text: finish.merged === undefined ? "Discarded: the worktree and branch are removed." : "The worktree and branch are removed." });
-  if (finish.detail !== undefined) lines.push({ mark: { symbol: "!", word: "note", tone: "warn" }, text: finish.detail });
-  if (finish.failed !== undefined) lines.push({ mark: { symbol: "✕", word: "failed", tone: "fail" }, text: `${ACTION_WORD[finish.failed.action]} did not finish: ${finish.failed.detail}` });
-  const running = finish.running === undefined ? undefined : { merge: `Merging into ${base}`, pull_request: "Pushing the branch and opening a pull request", discard: "Removing the worktree and branch" }[finish.running];
-  const buttons = finishActions(item).map((action): FinishButton => {
-    if (action === "merge") return { action, label: `Merge into ${base}` };
-    if (action === "discard") return { action, label: "Discard" };
-    const unavailable = prUnavailable(item, setup);
-    return { action, label: "Open PR", ...(unavailable !== undefined && { unavailable }) };
+  const branch = branchOf(item);
+  const failure = finish.failed;
+
+  if (finish.merged !== undefined || finish.pullRequest !== undefined || finish.worktreeRemoved) {
+    const removable = !finish.worktreeRemoved && finish.running === undefined;
+    const failed = failure === undefined ? {} : { failure: `${ACTION_WORD[failure.action]} did not finish: ${failure.detail}` };
+    if (finish.merged !== undefined) {
+      return {
+        kind: "ended",
+        mark: { symbol: "✓", word: "merged", tone: "pass" },
+        title: `Merged into ${finish.merged.baseBranch} · ${finish.merged.commit.slice(0, 7)}`,
+        detail: [finish.worktreeRemoved ? withTime("Worktree and branch removed", finish.at) : (finish.detail ?? "The worktree is kept.")],
+        removable,
+        ...failed,
+      };
+    }
+    if (finish.pullRequest !== undefined) {
+      return {
+        kind: "ended",
+        mark: { symbol: "↗", word: "pull request", tone: "pass" },
+        title: `${prName(finish.pullRequest.url)} open`,
+        url: finish.pullRequest.url,
+        detail: finish.worktreeRemoved ? [withTime("Worktree and branch removed", finish.at)] : ["Pushed ", { code: branch }, " · the worktree stays until the PR is merged or closed"],
+        removable,
+        ...failed,
+      };
+    }
+    return { kind: "ended", mark: { symbol: "⊘", word: "discarded", tone: "muted" }, title: "Discarded", detail: [`${withTime("Worktree and branch deleted", finish.at)} · the log is kept`], removable: false };
+  }
+
+  const committed = (item.outcome.commits?.length ?? 0) > 0;
+  const running = finish.running;
+  const busy = running !== undefined;
+  const repo = setup?.repos.find((entry) => entry.id === item.repoIds[0]);
+  const notice = (action: FinishAction) => {
+    if (failure?.action !== action) return undefined;
+    const headline = failure.reason !== undefined ? REFUSAL_HEADLINE[failure.reason](base) : `${ACTION_WORD[action]} did not finish.`;
+    return { notice: { headline, body: failure.detail } };
+  };
+  const off = prOff(item, setup);
+  const rows: FinishRow[] = [];
+  if (committed) {
+    const conflict = failure?.action === "merge" && failure.reason === "conflict";
+    rows.push({
+      action: "merge",
+      title: `Merge into ${base}`,
+      text: ["Merges into your checkout", ...(repo?.path === undefined ? [] : [" at ", { code: repo.path }]), ", then removes the worktree and the branch."],
+      button: conflict
+        ? { label: "Open PR instead", action: "pull_request", tone: "plain", disabled: busy || off !== undefined }
+        : failure?.action === "merge"
+          ? { label: "Try again", action: "merge", tone: "plain", disabled: busy }
+          : { label: `Merge into ${base}`, action: "merge", tone: "primary", disabled: busy },
+      ...notice("merge"),
+    });
+    rows.push({
+      action: "pull_request",
+      title: "Open PR",
+      text: off !== undefined ? [off.why] : ["Pushes ", { code: branch }, " to ", { code: finish.pushTarget ?? "origin" }, " and opens a pull request with gh. The worktree stays until the PR is merged."],
+      button: { label: failure?.action === "pull_request" && off === undefined ? "Try again" : "Open PR", action: "pull_request", tone: "plain", disabled: busy || off !== undefined },
+      ...(off !== undefined && { off: { status: off.status, recheck: off.recheck } }),
+      ...notice("pull_request"),
+    });
+  }
+  rows.push({
+    action: "discard",
+    title: "Discard",
+    text: [committed ? "Deletes the worktree and the branch. The commit is lost." : "Deletes the worktree and the branch."],
+    button: { label: "Discard…", action: "discard", tone: "danger", disabled: busy },
+    ...notice("discard"),
   });
-  const pushNote = finish.pushTarget !== undefined && buttons.some((b) => b.action === "pull_request" && b.unavailable === undefined) ? `Open PR pushes to ${finish.pushTarget}` : undefined;
-  return { lines, ...(running !== undefined && { running }), buttons, ...(pushNote !== undefined && { pushNote }) };
+  const runningText = running === undefined ? undefined : { merge: `Merging into ${base}`, pull_request: "Pushing the branch and opening a pull request", discard: "Removing the worktree and the branch" }[running];
+  return {
+    kind: "offer",
+    branch,
+    ...(committed && { ahead: `1 commit ahead of ${base}` }),
+    rows,
+    ...(runningText !== undefined && { running: runningText }),
+  };
 }
 
-/** A short line for the list row once a finish action ran or runs; undefined otherwise. */
-export function finishNote(item: Pick<ItemRecord, "finish">): string | undefined {
+/** The drawer's state line after a finish: "merged", "PR open"; undefined before. */
+export function finishState(item: Pick<ItemRecord, "finish">): string | undefined {
   const finish = item.finish;
-  if (finish === undefined) return undefined;
-  if (finish.running !== undefined) return `${ACTION_WORD[finish.running]} running`;
-  if (finish.merged !== undefined) return `✓ merged into ${finish.merged.baseBranch}`;
-  if (finish.pullRequest !== undefined) return "↗ pull request opened";
-  if (finish.worktreeRemoved) return "■ discarded";
-  if (finish.failed !== undefined) return `✕ ${ACTION_WORD[finish.failed.action]} did not finish`;
+  if (finish?.merged !== undefined) return "merged";
+  if (finish?.pullRequest !== undefined) return "PR open";
   return undefined;
 }
+
+/** A discarded item: its work is gone, so it reads as discarded rather than done. */
+export const isDiscarded = (item: Pick<ItemRecord, "finish">): boolean =>
+  item.finish !== undefined && item.finish.worktreeRemoved && item.finish.merged === undefined && item.finish.pullRequest === undefined;
+
+/** How a finished row ends in the list, with its mark; undefined before any finish action ran. */
+export function finishNote(item: Pick<ItemRecord, "finish">): { readonly mark: Mark; readonly text: string } | undefined {
+  const finish = item.finish;
+  if (finish === undefined) return undefined;
+  if (finish.running !== undefined) return { mark: { symbol: "●", word: "running", tone: "live" }, text: `${ACTION_WORD[finish.running]} running` };
+  if (finish.merged !== undefined) return { mark: { symbol: "✓", word: "merged", tone: "pass" }, text: `Merged into ${finish.merged.baseBranch} · ${finish.merged.commit.slice(0, 7)}` };
+  if (finish.pullRequest !== undefined) return { mark: { symbol: "↗", word: "pull request", tone: "pass" }, text: `${prName(finish.pullRequest.url)} open` };
+  if (finish.worktreeRemoved) return { mark: { symbol: "⊘", word: "discarded", tone: "muted" }, text: "Discarded" };
+  if (finish.failed !== undefined) return { mark: { symbol: "!", word: "refused", tone: "warn" }, text: `${ACTION_WORD[finish.failed.action]} did not finish` };
+  return undefined;
+}
+
+/** Why Open PR is off for this item, for the list's menu; undefined when it can run. */
+export const prUnavailable = (item: Pick<ItemRecord, "finish" | "privacy">, setup: Setup | undefined): string | undefined => prOff(item, setup)?.why;

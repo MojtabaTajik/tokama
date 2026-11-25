@@ -80,7 +80,7 @@ import { type HealthChecks, machineChecks } from "./real/health.js";
 import { runningGroups } from "./machine.js";
 import { RealEngine } from "./real/real.js";
 import { SampleEngine } from "./sample/sample.js";
-import { agentsFor, loadConfig, startProblem, stepProblems } from "./real/config.js";
+import { agentsFor, displayPath, loadConfig, startProblem, stepProblems } from "./real/config.js";
 import { sampleTemplateLoads } from "./sample/templates.js";
 import { sampleMachineReport } from "./sample/machine.js";
 import { sampleClaudePlan, sampleLogEntries, sampleOtherPlans, sampleUsageRows } from "./sample/usage.js";
@@ -414,7 +414,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       return base;
     }
     const added = loaded.value.filter((repo) => !base.repos.some((known) => known.id === repo.id));
-    return { ...base, repos: [...base.repos, ...added.map((repo) => ({ id: repo.id, baseBranch: repo.baseBranch, checks: [...repo.checks] }))] };
+    return { ...base, repos: [...base.repos, ...added.map((repo) => ({ id: repo.id, baseBranch: repo.baseBranch, checks: [...repo.checks], path: displayPath(repo.path) }))] };
   };
 
   /** Every template file, read again on each query so the page shows the files as they are now. */

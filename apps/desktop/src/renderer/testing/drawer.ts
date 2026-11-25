@@ -6,7 +6,7 @@ import type { ItemRecord, Setup } from "@tokama/core";
 export const DECISION_ID = "decision_5e1c9a7b-3f2d-4c8e-9a6b-1d2e3f4a5b6c";
 
 export const setup = {
-  repos: [{ id: "orders-api", baseBranch: "main", checks: ["pnpm test"] }],
+  repos: [{ id: "orders-api", baseBranch: "main", checks: ["pnpm test"], path: "~/code/orders-api" }],
   connections: [
     { id: "app-insights-prod", name: "App Insights · prod", type: "App Insights" },
     { id: "postgres-prod", name: "Postgres · prod", type: "Postgres" },

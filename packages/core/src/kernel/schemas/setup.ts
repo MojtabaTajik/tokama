@@ -17,6 +17,8 @@ export const RepoSummarySchema = z.strictObject({
   sample: z.literal(true).optional(),
   /** The repo's own check commands; a step with checks from the repo runs these. */
   checks: z.array(command).max(20),
+  /** The repo's folder on the engine's machine, for display, with the home folder as `~`. */
+  path: z.string().min(1).max(4096).optional(),
 });
 
 export const ConnectionSummarySchema = z.strictObject({

@@ -17,6 +17,7 @@ import {
   AttemptResultSchema,
   DecisionKindSchema,
   FinishActionSchema,
+  FinishRefusalSchema,
   ItemOutcomeSchema,
   ItemStateSchema,
   PullRequestUrlSchema,
@@ -200,7 +201,12 @@ const PrOpenedSchema = z.strictObject({ type: z.literal("pr_opened"), repoId: Re
 /** The worktree and the branch are gone. */
 const DiscardedSchema = z.strictObject({ type: z.literal("discarded"), repoId: RepoIdSchema });
 /** The action did not run to its end, or was refused; the detail says why in plain words. */
-const FinishFailedSchema = z.strictObject({ type: z.literal("finish_failed"), action: FinishActionSchema, detail: z.string().min(1).max(500) });
+const FinishFailedSchema = z.strictObject({
+  type: z.literal("finish_failed"),
+  action: FinishActionSchema,
+  detail: z.string().min(1).max(500),
+  reason: FinishRefusalSchema.optional(),
+});
 /** Deletes the item. The log keeps its history; nothing may follow a tombstone. */
 const TombstoneSchema = z.strictObject({ type: z.literal("tombstone"), reason: z.string().min(1).max(200).optional() });
 
@@ -317,7 +323,9 @@ export const StoredFinishSchema = z.strictObject({
   /** The worktree and branch are gone: discarded, or removed after a merge. */
   worktreeRemoved: z.boolean(),
   /** The last action that did not succeed, until the next one starts. */
-  failed: z.strictObject({ action: FinishActionSchema, detail: z.string(), at: EpochMsSchema }).optional(),
+  failed: z.strictObject({ action: FinishActionSchema, detail: z.string(), reason: FinishRefusalSchema.optional(), at: EpochMsSchema }).optional(),
+  /** When the last action ended. */
+  at: EpochMsSchema.optional(),
   /** A note on the last result, e.g. why a merged item's worktree was kept. */
   detail: z.string().optional(),
 });

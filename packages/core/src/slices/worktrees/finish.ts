@@ -12,9 +12,18 @@ import { lstat } from "node:fs/promises";
 import { join } from "node:path";
 import type { Git } from "../../kernel/git/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
-import type { ItemId } from "../../kernel/schemas/index.js";
+import type { FinishRefusal, ItemId } from "../../kernel/schemas/index.js";
 import { overSsh, recordableRemote } from "./remote.js";
 import { removeWorktree, type ItemWorktree, type WorktreeRepo } from "./worktree.js";
+
+/** Why a merge did not happen; `reason` when it is a case the engineer fixes in the checkout. */
+export interface MergeError {
+  readonly message: string;
+  readonly reason?: FinishRefusal;
+}
+
+const refuse = (reason: FinishRefusal, message: string): Result<never, MergeError> => err({ reason, message });
+const fail = (message: string): Result<never, MergeError> => err({ message });
 
 export interface MergeResult {
   /** The base branch's commit after the merge. */
@@ -44,70 +53,68 @@ export async function mergeItem(
   repo: WorktreeRepo,
   worktree: ItemWorktree,
   item: { readonly id: ItemId; readonly title: string; readonly commit: string },
-): Promise<Result<MergeResult, string>> {
+): Promise<Result<MergeResult, MergeError>> {
   const base = repo.baseBranch;
   const baseRef = `refs/heads/${base}`;
   const baseTip = await git.revParse(repo.path, `${baseRef}^{commit}`);
-  if (!baseTip.ok) return err(`The base branch ${base} is not in the repo: ${baseTip.error.message}`);
+  if (!baseTip.ok) return fail(`The base branch ${base} is not in the repo: ${baseTip.error.message}`);
   const merged = await git.isAncestor(repo.path, item.commit, baseTip.value);
-  if (!merged.ok) return err(`Cannot read the item's commit ${short(item.commit)}: ${merged.error.message}`);
+  if (!merged.ok) return fail(`Cannot read the item's commit ${short(item.commit)}: ${merged.error.message}`);
   if (merged.value) return cleanUp(git, repo, worktree, item.commit, baseTip.value);
 
   const tip = await git.revParse(repo.path, `refs/heads/${worktree.branch}`);
-  if (!tip.ok) return err(`The branch ${worktree.branch} is gone and its commit is not in ${base}.`);
+  if (!tip.ok) return fail(`The branch ${worktree.branch} is gone and its commit is not in ${base}.`);
   if (tip.value !== item.commit) {
-    return err(`The branch ${worktree.branch} moved since Tokama committed (it is at ${short(tip.value)}, not ${short(item.commit)}). Merge it yourself, or discard it.`);
+    return fail(`The branch ${worktree.branch} moved since Tokama committed (it is at ${short(tip.value)}, not ${short(item.commit)}). Merge it yourself, or discard it.`);
   }
   const head = await git.currentRef(repo.path);
-  if (!head.ok) return err(`Cannot read which branch your checkout is on: ${head.error.message}`);
+  if (!head.ok) return fail(`Cannot read which branch your checkout is on: ${head.error.message}`);
   if (head.value !== baseRef) {
     const on = head.value === undefined ? "a detached HEAD" : shortRef(head.value);
-    return err(`Your checkout is on ${on}, not ${base}. Switch it to ${base}, then merge again. Tokama does not switch branches for you.`);
+    return refuse("other_branch", `Your checkout is on ${on}, not ${base}. Switch it to ${base}, then merge again. Tokama does not switch branches for you.`);
   }
   const status = await git.status(repo.path);
-  if (!status.ok) return err(`Cannot read your checkout's changes: ${status.error.message}`);
+  if (!status.ok) return fail(`Cannot read your checkout's changes: ${status.error.message}`);
   const changed = status.value.filter((entry) => entry.index !== "?" && entry.index !== "!").map((entry) => entry.path);
   if (changed.length > 0) {
-    return err(`Your checkout has uncommitted changes (${list(changed)}). Commit them or set them aside yourself, then merge again. Tokama never stashes or overwrites them.`);
+    return refuse("dirty_checkout", `Your checkout has uncommitted changes (${list(changed)}). Commit them or set them aside yourself, then merge again. Tokama never stashes or overwrites them.`);
   }
 
   const fastForward = await git.isAncestor(repo.path, baseTip.value, item.commit);
-  if (!fastForward.ok) return err(`Cannot compare ${base} with the item's commit: ${fastForward.error.message}`);
+  if (!fastForward.ok) return fail(`Cannot compare ${base} with the item's commit: ${fastForward.error.message}`);
   let target = item.commit;
   if (!fastForward.value) {
     const tree = await git.mergeTree(repo.path, baseTip.value, item.commit);
-    if (!tree.ok) return err(`Cannot merge in the object store: ${tree.error.message}`);
+    if (!tree.ok) return fail(`Cannot merge in the object store: ${tree.error.message}`);
     if (!tree.value.clean) {
-      return err(`The branch conflicts with ${base} in ${list(tree.value.conflicts)}. Tokama merges only without conflicts: merge it yourself, or open a pull request.`);
+      return refuse("conflict", `The branch conflicts with ${base} in ${list(tree.value.conflicts)}. Tokama merges only without conflicts: merge it yourself, or open a pull request.`);
     }
     const commit = await git.commitTree(repo.path, tree.value.tree, [baseTip.value, item.commit], mergeMessage(item.id, worktree.branch, item.title));
-    if (!commit.ok) return err(`Cannot make the merge commit: ${commit.error.message}`);
+    if (!commit.ok) return fail(`Cannot make the merge commit: ${commit.error.message}`);
     target = commit.value;
   }
   // git's fast-forward replaces ignored files without a word (a local `.env`): refuse when any
   // path the merge writes is there already and the base commit does not track it.
   const untracked = await untrackedInTheWay(git, repo.path, baseTip.value, target);
-  if (!untracked.ok) return untracked;
+  if (!untracked.ok) return fail(untracked.error);
   if (untracked.value.length > 0) {
-    return err(`Your checkout has untracked or ignored files where the merge writes (${list(untracked.value)}). Move them away, then merge again; Tokama never overwrites them.`);
+    return refuse("files_in_the_way", `Your checkout has untracked or ignored files where the merge writes (${list(untracked.value)}). Move them away, then merge again; Tokama never overwrites them.`);
   }
   // The checkout may have switched branch while the merge was made: read it again right before.
   const still = await git.currentRef(repo.path);
-  if (!still.ok || still.value !== baseRef) return err(`Your checkout left ${base} while Tokama prepared the merge. Nothing was merged; try again.`);
+  if (!still.ok || still.value !== baseRef) return fail(`Your checkout left ${base} while Tokama prepared the merge. Nothing was merged; try again.`);
   // git moves the checkout only forward and refuses, without a change, when a local file would be
   // overwritten; a base branch that moved since it was read makes the fast-forward fail too.
   const moved = await git.mergeFastForward(repo.path, target);
   if (!moved.ok) {
     const overwritten = /would be overwritten/.test(moved.error.message);
-    return err(
-      overwritten
-        ? `Your checkout has files the merge would overwrite: ${moved.error.message}. Move them away, then merge again.`
-        : `git did not move ${base} forward; your checkout is unchanged: ${moved.error.message}`,
-    );
+    return overwritten
+      ? refuse("files_in_the_way", `Your checkout has files the merge would overwrite: ${moved.error.message}. Move them away, then merge again.`)
+      : fail(`git did not move ${base} forward; your checkout is unchanged: ${moved.error.message}`);
   }
   const after = await git.revParse(repo.path, `${baseRef}^{commit}`);
   if (!after.ok || after.value !== target) {
-    return err(`git moved your checkout, but ${base} is not at the merge (${short(target)}): the checkout changed branch meanwhile. Check your branches; Tokama recorded no merge.`);
+    return fail(`git moved your checkout, but ${base} is not at the merge (${short(target)}): the checkout changed branch meanwhile. Check your branches; Tokama recorded no merge.`);
   }
   return cleanUp(git, repo, worktree, item.commit, target);
 }
@@ -142,7 +149,7 @@ async function untrackedInTheWay(git: Git, repoPath: string, from: string, to: s
  * Removes the worktree, then the branch while it is still at the merged commit. `worktreeRemoved`
  * is true only when both are gone, so Discard stays on offer for whatever is left.
  */
-async function cleanUp(git: Git, repo: WorktreeRepo, worktree: ItemWorktree, commit: string, merged: string): Promise<Result<MergeResult, string>> {
+async function cleanUp(git: Git, repo: WorktreeRepo, worktree: ItemWorktree, commit: string, merged: string): Promise<Result<MergeResult, MergeError>> {
   const removed = await removeWorktree(git, repo.path, worktree);
   if (!removed.ok) {
     return ok({ commit: merged, worktreeRemoved: false, detail: "The worktree was kept: it has files that are not in the commit. Discard it once you no longer need them." });

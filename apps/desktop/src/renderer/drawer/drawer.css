@@ -711,31 +711,155 @@
 
 /* Finish: a done item's worktree and the actions on it */
 
+/* Finish: a done item's worktree, the three ways to finish it, and how it ended */
+
 .finish {
   display: flex;
   flex-direction: column;
+}
+
+.finish-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.finish-label {
+  font-size: 11px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.finish-running {
+  padding: 8px 0;
+  color: var(--text);
+}
+
+.finish-row {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
-  padding: 10px 12px;
-  border-left: 2px solid var(--hairline);
+  padding: 12px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.finish-row-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.finish-row-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.finish-row-main > .choice {
+  flex: none;
+  align-self: center;
+}
+
+.finish-title,
+.finish-ended-title,
+.finish-confirm-title {
+  color: var(--text);
+}
+
+.finish-text,
+.finish-off {
+  font-size: 12.5px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.finish-off {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--muted);
+}
+
+.finish-off .link,
+.finish-ended .link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.finish-ended .link:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.finish-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border-left: 2px solid var(--warn);
   background: var(--panel);
 }
 
-.finish-heading {
-  font-size: 11.5px;
-  color: var(--muted);
-}
-
-.finish-line {
+.finish-notice-title {
   color: var(--text);
-  overflow-wrap: anywhere;
 }
 
-.finish-line .mark {
-  margin-right: 6px;
-}
-
-.finish-why {
+.finish-notice-body {
   font-size: 12.5px;
-  color: var(--muted);
+  color: var(--text-2);
   overflow-wrap: anywhere;
+}
+
+.finish-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--fail);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.finish-ended {
+  display: flex;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.finish-ended-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  align-items: flex-start;
+}
+
+.finish-url {
+  font-size: 12px;
+  color: var(--link);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+@media (max-width: 520px) {
+  .finish-row-main {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }

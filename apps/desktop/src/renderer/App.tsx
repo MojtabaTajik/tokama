@@ -1,6 +1,6 @@
 // The app shell: icon rail, sidebar, main area, and the item drawer when an item is open.
-import type { UsageRange } from "@tokama/core";
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import type { FinishAction, UsageRange } from "@tokama/core";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TokamaBridge } from "../shared/bridge.js";
 import { DEFAULT_DESKTOP_STATE, type DesktopState, DRAWER_WIDTH, SECTIONS, SIDEBAR_WIDTH } from "../shared/desktop-state.js";
 import { About } from "./about/About.js";
@@ -56,6 +56,30 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(undefined);
   // Counts each "Review the diff": the drawer shows the item's Diff tab, also when it shows the item already.
   const [diffAsked, setDiffAsked] = useState<number | undefined>(undefined);
+  // Discard… on a Done row: the drawer opens on that item with its Discard question.
+  const [discardAsked, setDiscardAsked] = useState<string | undefined>(undefined);
+  const selectItem = useCallback((itemId: string | undefined) => {
+    setDiscardAsked(undefined);
+    setSelectedItemId(itemId);
+  }, []);
+  // A finish action from a Done row; the result comes back as item updates. A refused command
+  // opens the item, whose drawer says how it stands.
+  const finishFromRow = useCallback(
+    (itemId: string, action: FinishAction) => {
+      void bridge.command({ type: "finish_item", itemId, action }).then(
+        (reply) => !reply.ok && selectItem(itemId),
+        () => selectItem(itemId),
+      );
+    },
+    [bridge, selectItem],
+  );
+  const discardFromRow = useCallback(
+    (itemId: string) => {
+      setSelectedItemId(itemId);
+      setDiscardAsked(itemId);
+    },
+    [],
+  );
   const composer = useRef<NewWorkHandle>(null);
   // New work asked for on a page that has no composer: the board opens, then the composer.
   const [openComposerOnBoard, setOpenComposerOnBoard] = useState(false);
@@ -261,7 +285,9 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
           now={now}
           views={views}
           selectedItemId={selectedItemId}
-          onSelectItem={setSelectedItemId}
+          onSelectItem={selectItem}
+          onFinish={finishFromRow}
+          onDiscard={discardFromRow}
           composer={composerNode}
         />
       )}
@@ -279,7 +305,17 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
       )}
       {setUpNote !== undefined && <RepoNote note={setUpNote} onStart={() => startIn({ kind: "repo", id: setUpNote.id })} onDismiss={() => setSetUpNote(undefined)} />}
       {editedRepo !== undefined && <RepoDialog bridge={bridge} repo={editedRepo} onClose={() => setEditingRepo(undefined)} />}
-      {drawerOpen && <ItemDrawer bridge={bridge} itemId={selectedItemId} setup={setup} diffAsked={diffAsked} onClose={() => setSelectedItemId(undefined)} />}
+      {drawerOpen && (
+        <ItemDrawer
+          bridge={bridge}
+          itemId={selectedItemId}
+          setup={setup}
+          diffAsked={diffAsked}
+          onClose={() => selectItem(undefined)}
+          onCheckAgain={refreshSetup}
+          askDiscard={discardAsked === selectedItemId}
+        />
+      )}
       {panelOpen && (
         <ResizeEdge
           label="Resize sidebar"

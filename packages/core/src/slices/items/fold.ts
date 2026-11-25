@@ -238,6 +238,7 @@ export function applyEvent(item: StoredItem | undefined, event: ItemEvent): Resu
       const finish = next.finish;
       if (finish?.running !== action) return fail(`${event.type} without a running ${action}`);
       delete finish.running;
+      finish.at = event.at;
       if (event.type === "merged") {
         finish.merged = { baseBranch: event.baseBranch, commit: event.commit, at: event.at };
         finish.worktreeRemoved = event.worktreeRemoved;
@@ -247,7 +248,7 @@ export function applyEvent(item: StoredItem | undefined, event: ItemEvent): Resu
       } else if (event.type === "discarded") {
         finish.worktreeRemoved = true;
       } else {
-        finish.failed = { action, detail: event.detail, at: event.at };
+        finish.failed = { action, detail: event.detail, ...(event.reason !== undefined && { reason: event.reason }), at: event.at };
       }
       break;
     }

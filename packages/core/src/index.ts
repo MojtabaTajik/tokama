@@ -178,6 +178,7 @@ export {
   type EngineEvent,
   type EngineMessage,
   type FinishAction,
+  type FinishRefusal,
   type EventMessage,
   type HandshakeReply,
   type HelloMessage,
