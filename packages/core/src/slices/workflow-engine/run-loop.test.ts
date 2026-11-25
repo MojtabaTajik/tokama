@@ -303,7 +303,6 @@ describe("run loop: done_when", () => {
     const asked = openDecision(id)!;
     expect(asked).toMatchObject({ kind: "plan_approval", stepId: "change", tree: expect.stringMatching(/^[0-9a-f]{40,64}$/) });
     expect(asked.choices.map((c) => c.id)).toEqual(["approve", "request_changes", "no_action_needed", "stop"]);
-    expect(item(id).steps[0]?.attempts[0]?.tree).toBe(asked.tree);
 
     const diff = await loop.decisionDiff(id, asked.id);
     if (!diff.ok) throw new Error(diff.error.message);
@@ -378,6 +377,16 @@ describe("run loop: done_when", () => {
     await answer(loop, id, "commit_checked_tree");
     expect(item(id)).toMatchObject({ state: "done", outcome: { detail: "The item made no changes, so there is nothing to commit." } });
     expect(item(id).outcome?.commits).toBeUndefined();
+  });
+
+  it("you approve: a step that wrote a file, then a step with no checks: Finish commits both steps' work", SLOW, async () => {
+    const loop = engine(fakeRuntime([edits({ "PLAN.md": "plan\n" }), edits(FIXED)]));
+    const id = await start(loop, template([{ id: "plan", doneWhen: "you approve" }, { id: "build" }]));
+    await answer(loop, id, "approve");
+    const commit = item(id).outcome?.commits?.[0]?.commit;
+    expect(item(id).state).toBe("done");
+    expect(await plain(repo.path, "show", `${commit}:PLAN.md`)).toBe("plan");
+    expect(await plain(repo.path, "show", `${commit}:app.txt`)).toBe("fixed");
   });
 
   it("you approve: a file changed after the approval is not committed unless you say so", SLOW, async () => {

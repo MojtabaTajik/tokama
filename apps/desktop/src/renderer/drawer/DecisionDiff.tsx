@@ -26,8 +26,8 @@ const STATUS: Readonly<Record<DiffFile["status"], string>> = {
   type_changed: "type changed",
 };
 
-// Bidi embeddings and overrides, isolates, the LRM and RLM marks, and the line and paragraph separators.
-const REORDERING = /[\u202a-\u202e\u2066-\u2069\u200e\u200f\u2028\u2029]/g;
+// Every bidi control (embeddings, overrides, isolates, marks), and the line and paragraph separators.
+const REORDERING = /\p{Bidi_Control}|[\u2028\u2029]/gu;
 
 /** Text with every character that can reorder or hide what follows shown as `<U+202E>`. */
 export function visible(text: string): string {

@@ -270,12 +270,12 @@ describe("ItemDrawer change to approve", () => {
 
   it("shows characters that reorder text as visible escapes, in paths and lines", async () => {
     const line = "+x = 1; /* \u202e } \u2066 if (admin) \u2069 */";
-    const tricky = { ...diff, cut: false, moreFiles: 0, files: [{ ...diff.files[0]!, path: "a\u202esj.txt", hunks: [{ header: "@@ -1 +1 @@", lines: [line, "+a\u2028b\u200f"] }] }] };
+    const tricky = { ...diff, cut: false, moreFiles: 0, files: [{ ...diff.files[0]!, path: "a\u202esj.txt", hunks: [{ header: "@@ -1 +1 @@", lines: [line, "+a\u2028b\u200f\u061c"] }] }] };
     const { bridge } = withDiff({ ok: true, data: tricky });
     await renderDrawer(bridge, waiting.id);
     expect(text(".decision-diff-files li")).toBe("modified a<U+202E>sj.txt +1 −1");
-    expect(text(".decision-diff-text")).toBe("── a<U+202E>sj.txt\n@@ -1 +1 @@\n+x = 1; /* <U+202E> } <U+2066> if (admin) <U+2069> */\n+a<U+2028>b<U+200F>");
-    expect(text(".decision-diff")).not.toMatch(/[\u202a-\u202e\u2066-\u2069\u200e\u200f\u2028\u2029]/);
+    expect(text(".decision-diff-text")).toBe("── a<U+202E>sj.txt\n@@ -1 +1 @@\n+x = 1; /* <U+202E> } <U+2066> if (admin) <U+2069> */\n+a<U+2028>b<U+200F><U+061C>");
+    expect(text(".decision-diff")).not.toMatch(/\p{Bidi_Control}|[\u2028\u2029]/u);
   });
 
   it("says when the change cannot be loaded", async () => {

@@ -124,10 +124,7 @@ const AttemptEndedSchema = z.strictObject({
   /** Present when result is `run_failed`. */
   failure: RunFailureSchema.optional(),
   detail: z.string().min(1).max(500).optional(),
-  /**
-   * On a passed attempt: the tree the item commits. For `checks pass` the tree the checks ran on;
-   * for `you approve` the tree the engineer was asked about, when it differs from the base commit.
-   */
+  /** On a passed `checks pass` attempt: the tree the checks ran on, the one the item commits. */
   tree: GIT_ID.optional(),
 });
 const StepEndedSchema = z.strictObject({ type: z.literal("step_ended"), stepId: StepIdSchema, result: StepResultSchema });
