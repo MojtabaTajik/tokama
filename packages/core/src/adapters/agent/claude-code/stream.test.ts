@@ -21,7 +21,8 @@ const line = (value: unknown) => JSON.stringify(value);
 describe("Claude Code stream parser", () => {
   it("turns a recorded run into turns, text, tool calls and rate-limit events", () => {
     const { events } = parse(fixture("success"));
-    expect(events.map((event) => event.type)).toEqual(["rate_limit", "turn", "text", "tool_call", "turn", "text", "tool_call", "turn", "text"]);
+    expect(events.map((event) => event.type)).toEqual(["rate_limit", "turn", "text", "tool_call", "tool_result", "turn", "text", "tool_call", "tool_result", "turn", "text"]);
+    expect(events).toContainEqual({ type: "tool_result", id: "call_cv9c3hv0" });
     expect(events).toContainEqual({ type: "tool_call", id: "call_cv9c3hv0", name: "Write", kind: "edit", input: { file_path: "hello.py", change: expect.stringMatching(/^[0-9a-f]{16}$/) } });
     expect(events).toContainEqual({ type: "tool_call", id: "call_va0yxsz1", name: "Bash", kind: "command", input: { command: "python3 hello.py" } });
   });
@@ -177,6 +178,19 @@ describe("Claude Code stream parser", () => {
     const text = (id: string) => line({ type: "assistant", message: { id, content: [{ type: "text", text: "x" }] } });
     const { events } = parse([text("m1"), toolUse("t1", "Bash", { command: "ls" }, "m1"), toolUse("t1", "Bash", { command: "ls" }, "m1"), text("m2")]);
     expect(events.map((event) => event.type)).toEqual(["turn", "text", "tool_call", "turn", "text"]);
+  });
+
+  it("ends a tool call once per result, and leaves a subagent's results and a prompt out", () => {
+    const result = (id: string, parent: string | null = null) => line({ type: "user", parent_tool_use_id: parent, message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, content: "ok" }] } });
+    const { events } = parse([
+      toolUse("t1", "Bash", { command: "pnpm test" }, "m1"),
+      result("t1"),
+      result("t1"),
+      result("s1", "t9"),
+      line({ type: "user", message: { role: "user", content: "the prompt" } }),
+      line({ type: "user", message: { content: [{ type: "tool_result" }, { type: "text", text: "x" }] } }),
+    ]);
+    expect(events.filter((event) => event.type === "tool_result")).toEqual([{ type: "tool_result", id: "t1" }]);
   });
 
   it("skips lines that are not JSON, not objects, or not in the expected shape", () => {

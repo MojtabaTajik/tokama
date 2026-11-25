@@ -1,9 +1,11 @@
 // Runs one agent call under the loop guards: reads its event stream, polls the working tree, and
-// aborts the call when a guard fires. A stop is not an error of the call: the stream still ends
+// aborts the call when a guard fires. It also tracks the call's activity (activity.ts): the latest
+// action, the last event time and the tool still running, for the live display and the guards. A stop is not an error of the call: the stream still ends
 // with its own `end` event, and the report says which guard stopped it and how much time was wasted.
 import type { Clock, TimerHandle } from "../../kernel/clock/index.js";
 import type { AgentCallRequest, AgentRuntime } from "../../kernel/ports/index.js";
 import type { AgentCallEvent, PlanSnapshot } from "../../kernel/schemas/index.js";
+import { type ActivityState, createActivityTracker } from "./activity.js";
 import {
   createFileWatch,
   createStreamWatch,
@@ -27,6 +29,8 @@ export interface GuardedCallOptions {
   readonly files?: Pick<FileWatchOptions, "snapshot" | "checksPass">;
   /** Sees every event of the call as it arrives. */
   readonly onEvent?: (event: AgentCallEvent) => void;
+  /** Sees the call's activity at its start and after each of the agent's events. */
+  readonly onActivity?: (activity: ActivityState) => void;
 }
 
 export interface GuardedCallResult {
@@ -64,6 +68,8 @@ export async function runGuardedCall(runtime: AgentRuntime, request: AgentCallRe
   };
 
   const stream = createStreamWatch(settings);
+  const activity = createActivityTracker(startedAt);
+  options.onActivity?.(activity.state());
   const files: FileWatch | undefined = options.files
     ? await createFileWatch(
         { ...options.files, idleMs: settings.idleMs, turnsAfter: stream.turnsAfter, turns: stream.turns, onChange: stream.resetRepeats },
@@ -97,6 +103,7 @@ export async function runGuardedCall(runtime: AgentRuntime, request: AgentCallRe
   try {
     for await (const event of runtime.launch(request, controller.signal)) {
       options.onEvent?.(event);
+      if (activity.observe(event, clock.now())) options.onActivity?.(activity.state());
       if (event.type === "rate_limit") plan = { status: event.status, windows: event.windows, at: clock.now() };
       if (event.type === "end") {
         end = event;

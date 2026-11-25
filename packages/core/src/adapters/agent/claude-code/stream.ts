@@ -53,6 +53,16 @@ const AssistantLine = z.looseObject({
   session_id: z.string().min(1).optional().catch(undefined),
 });
 
+const UserLine = z.looseObject({
+  type: z.literal("user"),
+  /** Set on a subagent's message: the id of the parent's tool call that started the subagent. */
+  parent_tool_use_id: z.string().nullable().optional().catch(undefined),
+  message: z.looseObject({
+    // A prompt is a plain string; tool results come as a list of blocks.
+    content: z.array(z.looseObject({ type: z.string(), tool_use_id: z.string().min(1).optional().catch(undefined) })).catch([]),
+  }),
+});
+
 const Window = z.looseObject({ utilization: z.number().nonnegative(), resetsAt: z.number().nonnegative().optional().catch(undefined) });
 
 const RateLimitLine = z.looseObject({
@@ -79,7 +89,7 @@ const ResultLine = z.looseObject({
   api_error_status: z.number().nullable().optional().catch(undefined),
 });
 
-const Line = z.discriminatedUnion("type", [SystemLine, AssistantLine, RateLimitLine, ResultLine]);
+const Line = z.discriminatedUnion("type", [SystemLine, AssistantLine, UserLine, RateLimitLine, ResultLine]);
 
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 // Fields that describe a call rather than identify it; they would hide a repeated call.
@@ -186,6 +196,7 @@ export function createStreamParser(cwd: string, home: string = homedir()): Strea
 
   let anonymousTools = 0;
   const seenTools = new Set<string>();
+  const endedTools = new Set<string>();
   const blockEvents = (block: z.output<typeof ContentBlock>): AgentCallEvent[] => {
     if (block.type === "text") return block.text ? [{ type: "text", text: block.text }] : [];
     if (block.type !== "tool_use" || !block.name) return [];
@@ -227,6 +238,15 @@ export function createStreamParser(cwd: string, home: string = homedir()): Strea
         if (message.id !== undefined) seenMessages.add(message.id);
         const events = message.content.flatMap(blockEvents);
         return newTurn ? [{ type: "turn" }, ...events] : events;
+      }
+      case "user": {
+        // A subagent's tool results are not the parent's, as its tool calls are not.
+        if (typeof line.parent_tool_use_id === "string") return [];
+        return line.message.content.flatMap((block): AgentCallEvent[] => {
+          if (block.type !== "tool_result" || block.tool_use_id === undefined || endedTools.has(block.tool_use_id)) return [];
+          endedTools.add(block.tool_use_id);
+          return [{ type: "tool_result", id: block.tool_use_id }];
+        });
       }
       case "rate_limit_event":
         return [rateLimitEvent(line.rate_limit_info, (rejected) => (limitRejected ||= rejected))];

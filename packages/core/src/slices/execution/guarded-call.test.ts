@@ -66,6 +66,18 @@ const repeat = (times: number, steps: (i: number) => Step[]): Step[] => Array.fr
 const live = () => new AbortController().signal;
 
 describe("guarded agent call", () => {
+  it("reports the call's activity at its start and after each event of the agent", async () => {
+    const clock = manualClock();
+    const seen: unknown[] = [];
+    const agent = scriptedAgent(clock, [TURN, { wait: 1_000 }, runTests(), { wait: 30_000 }, { type: "tool_result", id: `t${callIds}` }, { type: "rate_limit", status: "allowed", windows: [] }]);
+    await runGuardedCall(agent, REQUEST, live(), { clock, onActivity: (activity) => seen.push(activity) });
+    expect(seen[0]).toEqual({ lastAction: { kind: "think", label: "thinking" }, lastEventAt: 0, toolRunning: null });
+    expect(seen).toContainEqual({ lastAction: { kind: "run", label: "running npm test" }, lastEventAt: 1_000, toolRunning: { label: "running npm test", startedAt: 1_000 } });
+    expect(seen).toContainEqual({ lastAction: { kind: "run", label: "running npm test" }, lastEventAt: 31_000, toolRunning: null });
+    // Start, turn, tool call, tool result, end: the plan-usage report is not the agent's.
+    expect(seen).toHaveLength(5);
+  });
+
   it("stops an agent that keeps reading at the turn cap", async () => {
     const clock = manualClock();
     const agent = scriptedAgent(clock, repeat(40, (i) => [TURN, readFile(`src/f${i}.ts`), { wait: 5_000 }]));

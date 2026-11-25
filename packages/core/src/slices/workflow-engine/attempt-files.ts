@@ -18,6 +18,7 @@ import {
   MAX_TRANSCRIPT_TAIL_LINES,
   terminalText,
 } from "../../kernel/schemas/index.js";
+import { toolSubject } from "../execution/index.js";
 
 /**
  * Counting lines reads the whole file, and a running attempt is read again every few seconds:
@@ -83,17 +84,13 @@ export async function attemptLog(attempt: AttemptRecord, files: AttemptFiles): P
   };
 }
 
-/** The input fields that name what a tool works on, most telling first. */
-const SUBJECT_FIELDS = ["command", "file_path", "path", "notebook_path", "pattern", "url", "query"];
-
 /**
  * One transcript line for a tool call: `→ Read src/orders/list.ts`. A known field names what it
  * works on, else the first text field; the worktree's own path is left out, so paths read
  * relative to it.
  */
 export function toolLine(event: Extract<AgentCallEvent, { type: "tool_call" }>, worktree: string): string {
-  const known = SUBJECT_FIELDS.map((field) => event.input[field]).find((value): value is string => typeof value === "string");
-  const subject = known ?? Object.values(event.input).find((value): value is string => typeof value === "string");
+  const subject = toolSubject(event.input);
   const relative = subject?.split(`${worktree}/`).join("").split(worktree).join(".");
   const line = terminalText(`→ ${event.name}${relative === undefined || relative === "" ? "" : ` ${relative}`}`).replace(/\s+/g, " ").trim();
   return line.length > MAX_TOOL_LINE_CHARS ? `${line.slice(0, MAX_TOOL_LINE_CHARS - 1)}…` : line;
