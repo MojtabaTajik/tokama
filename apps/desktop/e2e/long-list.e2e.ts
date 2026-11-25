@@ -21,15 +21,16 @@ flow(
     expect(await done.locator(".pl-row").count()).toBe(50);
     const showing = (await done.locator(".pl-more").textContent()) ?? "";
     expect(showing).toMatch(/^Load olderShowing 50 of \d+$/);
+    const total = Number(/of (\d+)$/.exec(showing)![1]);
     await screenshot("long-list-day-headers");
 
-    // Load older adds the next 50 below, and the list stays where it was scrolled to.
+    // Load older adds the next 50 (or the rest) below, and the list stays where it was scrolled to.
     const scroller = page.locator(".board");
     await done.getByRole("button", { name: "Load older" }).scrollIntoViewIfNeeded();
     const top = await scroller.evaluate((el) => el.scrollTop);
     expect(top).toBeGreaterThan(0);
     await done.getByRole("button", { name: "Load older" }).click();
-    await expect.poll(() => done.locator(".pl-row").count()).toBe(100);
+    await expect.poll(() => done.locator(".pl-row").count()).toBe(Math.min(100, total));
     expect(await scroller.evaluate((el) => el.scrollTop)).toBe(top);
     await screenshot("long-list-load-older");
 

@@ -634,12 +634,15 @@ button:focus-visible {
 
 /* Search, at the right end of the status switch */
 
+/* 250 px when there is room; in a narrow list it gives way before the row wraps. */
 .search {
   display: flex;
+  flex: 1 1 140px;
+  justify-content: flex-end;
   align-items: center;
   gap: 10px;
   margin-left: auto;
-  min-width: 0;
+  min-width: 140px;
 }
 
 .search-count {
@@ -655,6 +658,7 @@ button:focus-visible {
 .search-field {
   position: relative;
   display: flex;
+  flex: 0 1 250px;
   align-items: center;
   min-width: 0;
 }
@@ -667,7 +671,7 @@ button:focus-visible {
 }
 
 .search-input {
-  width: min(250px, 100%);
+  width: 100%;
   box-sizing: border-box;
   min-height: 30px;
   padding: 0 30px;

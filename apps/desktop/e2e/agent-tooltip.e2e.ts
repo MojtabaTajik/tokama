@@ -250,6 +250,10 @@ flow(
     expect(cut.nameWidth).toBeGreaterThanOrEqual(SIX_CHARS);
     const label = wrap.locator(".al-button");
     expect(await label.evaluate((el) => getComputedStyle(el).textDecorationLine)).toBe("underline");
+    // The label may sit below the fold: scroll it into view with the pointer out of the list, so
+    // no other row's label passes under the pointer and opens its own tooltip.
+    await page.mouse.move(0, 0);
+    await label.scrollIntoViewIfNeeded();
     await label.hover();
     const tip = page.locator('[role="tooltip"]');
     await tip.waitFor({ state: "visible" });
