@@ -90,6 +90,17 @@ describe("createTracker", () => {
     expect(tracker.observe(asking("d1"))).toBeUndefined();
   });
 
+  it("a reset forgets everything and stays quiet until the next seed", () => {
+    const tracker = createTracker();
+    tracker.seed([item()]);
+    tracker.reset();
+    expect(tracker.observe(asking("d1"))).toBeUndefined();
+    expect(tracker.observe(asking("d2"))).toBeUndefined();
+    tracker.seed([]);
+    tracker.observe(item());
+    expect(tracker.observe(asking("d3"))).toBe("needsYou");
+  });
+
   it("a second seed forgets the first: a reconnect repeats nothing", () => {
     const tracker = createTracker();
     tracker.seed([item()]);
@@ -260,6 +271,18 @@ describe("createNotifier", () => {
     release([item()]);
     await syncing;
     notifier.onEvent(event(asking("d1")));
+    await settle();
+    expect(shown).toEqual([]);
+  });
+
+  it("a board that fails on a reconnect leaves the next update quiet", async () => {
+    let board: ItemRecord[] | undefined = [item()];
+    const shown: Note[] = [];
+    const notifier = createNotifier({ settings: () => ({ needsYou: true, finished: true, failed: true, sound: false }), windowFocused: () => false, board: async () => board, setup: async () => setup, show: (note) => shown.push(note), open: () => undefined, now: () => NOW, platform: "darwin" });
+    await notifier.resync();
+    board = undefined;
+    await notifier.resync();
+    notifier.onEvent(event(asking()));
     await settle();
     expect(shown).toEqual([]);
   });

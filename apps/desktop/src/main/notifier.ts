@@ -36,6 +36,11 @@ export function createTracker() {
       for (const item of items) seen.set(item.id, seenOf(item));
       seeded = true;
     },
+    /** Forgets everything, as before the first seed: nothing is reported until the next seed. */
+    reset(): void {
+      seen.clear();
+      seeded = false;
+    },
     /** Records the update. With `loud` false (a replay after a seed) it never reports a transition. */
     observe(item: ItemRecord, loud = true): NoteKind | undefined {
       const before = seen.get(item.id);
@@ -156,7 +161,9 @@ export function createNotifier(deps: NotifierDeps): Notifier {
       waiting = [];
       const items = await deps.board().catch(() => undefined);
       if (mine !== round) return;
-      if (items !== undefined) tracker.seed(items);
+      // Without the board there is nothing to compare with: stay quiet rather than report what happened while away.
+      if (items === undefined) tracker.reset();
+      else tracker.seed(items);
       const replay = waiting;
       waiting = [];
       syncing = false;

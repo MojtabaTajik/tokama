@@ -182,7 +182,8 @@ void app.whenReady().then(() => {
   // A click on a notification: the window comes to the front (made again if it was closed, as on
   // macOS) and opens the item. The renderer is told once its page has loaded.
   const openItem = (itemId: string) => {
-    const window = BrowserWindow.getAllWindows()[0] ?? createWindow(store, reporter);
+    const existing = BrowserWindow.getAllWindows()[0];
+    const window = existing ?? createWindow(store, reporter);
     if (!background) {
       if (window.isMinimized()) window.restore();
       window.show();
@@ -190,7 +191,8 @@ void app.whenReady().then(() => {
       window.focus();
     }
     const tell = () => window.webContents.send(CHANNELS.openItem, itemId);
-    if (window.webContents.isLoading()) window.webContents.once("did-finish-load", tell);
+    // A window made just now is told once its page has loaded, whatever its loading state says yet.
+    if (existing === undefined || window.webContents.isLoading()) window.webContents.once("did-finish-load", tell);
     else tell();
   };
   handle(CHANNELS.saveNotifications, (patch) => store.update((state) => applyNotificationsPatch(state, patch)));

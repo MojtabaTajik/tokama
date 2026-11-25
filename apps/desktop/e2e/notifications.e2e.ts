@@ -70,3 +70,26 @@ flow("an item that needs you shows a notification, and clicking it opens the ite
   });
   await drawer(page).getByRole("heading", { name: text }).waitFor();
 });
+
+// macOS keeps the app running with no window; other systems quit when the last window closes.
+flow("clicking a notification brings the window back when it was closed", async ({ page, app }) => {
+  if (process.platform !== "darwin") return;
+  const text = "Notify me after the window closed";
+  await page.evaluate(async (text) => {
+    const bridge = (globalThis as unknown as { tokama: TokamaBridge }).tokama;
+    const setup = await bridge.query({ type: "setup" });
+    const template = setup.ok ? setup.data.templates.find((candidate) => candidate.name === "Plan and build") : undefined;
+    if (template === undefined) throw new Error("the sample has no Plan and build template");
+    const reply = await bridge.command({ type: "start_item", templateId: template.id, repoIds: ["orders-api"], text, options: { askBeforeCloud: true } });
+    if (!reply.ok) throw new Error(reply.error.message);
+  }, text);
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.close());
+  await expect.poll(async () => (await recorded(app)).filter((note) => note.title === `Needs you: ${text}`).length, { timeout: 60_000, message: "a notification while no window is open" }).toBe(1);
+  const reopened = app.waitForEvent("window");
+  await app.evaluate(() => {
+    const list = (globalThis as Hooked).__tokamaNotifications ?? [];
+    list.find((candidate) => candidate.title.includes("Notify me after the window closed"))?.click();
+  });
+  const next = await reopened;
+  await drawer(next).getByRole("heading", { name: text }).waitFor();
+});
