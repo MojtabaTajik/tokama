@@ -67,6 +67,9 @@ export const StepRecordSchema = z.strictObject({
   attempts: z.array(AttemptSummarySchema).max(50).optional(),
 });
 
+/** The choice that answers a step you approve with "change this"; only it may carry a note. */
+export const REQUEST_CHANGES_ID = "request_changes";
+
 /** A question put to the engineer. Present only while the item's state is `needs_you`. */
 export const DecisionSchema = z.strictObject({
   id: DecisionIdSchema,
@@ -77,6 +80,8 @@ export const DecisionSchema = z.strictObject({
   why: z.string().min(1).max(500).optional(),
   /** For a cloud-step approval: the exact text that would leave the machine. */
   summaryText: z.string().min(1).max(20_000).optional(),
+  /** For a step you approve: the engine serves the change to approve through `decision_diff`. */
+  hasDiff: z.boolean().optional(),
   choices: z
     .array(z.strictObject({ id: z.string().min(1).max(64), label: z.string().min(1).max(64) }))
     .min(1)

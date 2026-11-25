@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { mkdtemp, open, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { err, ok, type Result } from "../result/index.js";
@@ -30,6 +30,12 @@ export const DIFF_SAFE: readonly string[] = ["--no-ext-diff", "--no-textconv", "
  * The oldest git the wrapper supports: GIT_NO_LAZY_FETCH needs 2.44 (`worktree list -z` needs
  * 2.36). Older git ignores the variable, so a partial clone could fetch through repo config.
  */
+/**
+ * Rename detection on, whatever the repo config says, in git's own file order (no orderFile) and
+ * over the whole tree (no diff.relative), so every diff form lists the same files in the same order.
+ */
+const RENAMES: readonly string[] = ["--find-renames", "-O/dev/null", "--no-relative"];
+
 export const MIN_GIT_VERSION = { major: 2, minor: 44 } as const;
 
 /**
@@ -106,6 +112,18 @@ export interface TreeChange {
   readonly newBlob: string | null;
 }
 
+/** One path that differs between two trees, renames found, with its line counts. */
+export interface DiffEntry {
+  /** A added, D deleted, M modified, R renamed, T type changed. */
+  readonly status: string;
+  readonly path: string;
+  /** For a rename: the path in `from`. */
+  readonly oldPath?: string;
+  /** null for a binary file. */
+  readonly added: number | null;
+  readonly removed: number | null;
+}
+
 export interface WorktreeEntry {
   readonly path: string;
   /** Absent in a bare repo or before the first commit. */
@@ -127,6 +145,17 @@ export interface Git {
   diffTreeRaw(repo: string, from: string, to: string): Promise<GitResult<TreeChange[]>>;
   /** Unified diff from one tree (or commit) to another; no rename detection. */
   diffTrees(repo: string, from: string, to: string): Promise<GitResult<string>>;
+  /**
+   * `diff --raw -z -M` and `diff --numstat -z -M` from one tree (or commit) to another: every path
+   * that differs, renames found, in git's order, with line counts.
+   */
+  diffFiles(repo: string, from: string, to: string): Promise<GitResult<DiffEntry[]>>;
+  /**
+   * Unified diff from one tree to another with renames found, in the order of `diffFiles`, with
+   * "a/" and "b/" prefixes and quoted paths whatever the repo config says. Only the first
+   * `maxBytes` are read; `cut` says there was more.
+   */
+  diffPatch(repo: string, from: string, to: string, maxBytes: number): Promise<GitResult<{ readonly text: string; readonly cut: boolean }>>;
   /** Unified diff of the worktree against the index, or of the index against HEAD with `cached`. */
   diff(repo: string, options?: { readonly cached?: boolean }): Promise<GitResult<string>>;
   /**
@@ -201,7 +230,12 @@ export function createGit(options: GitOptions): Git {
   const safe = (config: readonly string[]) => config.flatMap((setting) => ["-c", setting]);
 
   /** Runs git with the safe config plus `extraConfig`; stdout comes back whole, through a temp file. */
-  async function raw(repo: string, args: readonly string[], extraConfig: readonly string[] = []) {
+  async function raw(repo: string, args: readonly string[], extraConfig: readonly string[] = []): Promise<GitResult<string>> {
+    return map(capped(repo, args, extraConfig, Infinity), (out) => out.text);
+  }
+
+  /** As `raw`, but only the first `maxBytes` of stdout are read. */
+  async function capped(repo: string, args: readonly string[], extraConfig: readonly string[], maxBytes: number): Promise<GitResult<{ text: string; cut: boolean }>> {
     const dir = await mkdtemp(join(tmpdir(), "tokama-git-"));
     try {
       const stdoutFile = join(dir, "stdout");
@@ -221,12 +255,12 @@ export function createGit(options: GitOptions): Git {
           },
         },
       });
-      const failure = (reason: GitErrorReason, exitCode: number | null, message: string): GitResult<string> =>
+      const failure = (reason: GitErrorReason, exitCode: number | null, message: string): GitResult<never> =>
         err({ reason, args, exitCode, message });
       if (result.kind === "not-started") return failure("spawn-error", null, result.message);
-      const stdout = await readFile(stdoutFile, "utf8");
+      const stdout = Number.isFinite(maxBytes) ? await readPrefix(stdoutFile, maxBytes) : { text: await readFile(stdoutFile, "utf8"), cut: false };
       // Some failures are reported on stdout only (commit: "nothing to commit").
-      const message = (stderr.length > 0 ? stderr.join("\n") : stdout).slice(0, STDERR_CAP);
+      const message = (stderr.length > 0 ? stderr.join("\n") : stdout.text).slice(0, STDERR_CAP);
       if (result.timedOut) return failure("timed-out", result.exitCode, message);
       if (result.exitCode !== 0) return failure("failed", result.exitCode, message);
       return ok(stdout);
@@ -282,9 +316,13 @@ export function createGit(options: GitOptions): Git {
   }
 
   async function git(repo: string, args: readonly string[]): Promise<GitResult<string>> {
+    return map(gitCapped(repo, args, Infinity), (out) => out.text);
+  }
+
+  async function gitCapped(repo: string, args: readonly string[], maxBytes: number): Promise<GitResult<{ text: string; cut: boolean }>> {
     const overrides = await filterOverrides(repo, args);
     if (!overrides.ok) return overrides;
-    const result = await raw(repo, args, overrides.value.config);
+    const result = await capped(repo, args, overrides.value.config, maxBytes);
     const { required } = overrides.value;
     const refusedRequired =
       !result.ok &&
@@ -308,7 +346,7 @@ export function createGit(options: GitOptions): Git {
       ? undefined
       : err({ reason: "invalid-argument", args, exitCode: null, message: `refused argument: ${JSON.stringify(bad)}` });
   };
-  const map = async <T>(result: Promise<GitResult<string>>, parse: (out: string) => T): Promise<GitResult<T>> => {
+  const map = async <A, T>(result: Promise<GitResult<A>>, parse: (out: A) => T): Promise<GitResult<T>> => {
     const settled = await result;
     return settled.ok ? ok(parse(settled.value)) : settled;
   };
@@ -323,6 +361,26 @@ export function createGit(options: GitOptions): Git {
     async diffTreeRaw(repo, from, to) {
       const args = ["diff-tree", "-r", "-z", "--raw", "--no-abbrev", "--no-renames", from, to, "--"];
       return refuseOption(args, from, to) ?? map(git(repo, args), parseDiffTreeRaw);
+    },
+    async diffFiles(repo, from, to) {
+      const rawArgs = ["diff", "--raw", "-z", "--no-abbrev", ...RENAMES, ...DIFF_SAFE, from, to, "--"];
+      const refused = refuseOption(rawArgs, from, to);
+      if (refused !== undefined) return refused;
+      const listed = await git(repo, rawArgs);
+      if (!listed.ok) return listed;
+      const counted = await git(repo, ["diff", "--numstat", "-z", ...RENAMES, ...DIFF_SAFE, from, to, "--"]);
+      if (!counted.ok) return counted;
+      const counts = new Map(parseNumstatRenames(counted.value).map((entry) => [entry.path, entry]));
+      return ok(
+        parseDiffRaw(listed.value).map((entry) => {
+          const count = counts.get(entry.path);
+          return { ...entry, added: count?.added ?? null, removed: count?.removed ?? null };
+        }),
+      );
+    },
+    async diffPatch(repo, from, to, maxBytes) {
+      const args = ["-c", "core.quotePath=true", "diff", "--patch", "--default-prefix", ...RENAMES, ...DIFF_SAFE, from, to, "--"];
+      return refuseOption(args, from, to) ?? gitCapped(repo, args, maxBytes);
     },
     async diffTrees(repo, from, to) {
       const args = ["diff", "--no-renames", ...DIFF_SAFE, from, to, "--"];
@@ -431,6 +489,19 @@ export function createGit(options: GitOptions): Git {
   };
 }
 
+/** The first `maxBytes` of a file as UTF-8, and whether the file has more. */
+async function readPrefix(path: string, maxBytes: number): Promise<{ text: string; cut: boolean }> {
+  const handle = await open(path, "r");
+  try {
+    const size = (await handle.stat()).size;
+    const buffer = Buffer.alloc(Math.min(size, maxBytes));
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    return { text: buffer.subarray(0, bytesRead).toString("utf8"), cut: size > maxBytes };
+  } finally {
+    await handle.close();
+  }
+}
+
 /** Reads major and minor from `git --version` ("git version 2.54.0 (Apple Git-157)"). */
 export function parseGitVersion(out: string): { major: number; minor: number } | undefined {
   const match = /^git version (\d+)\.(\d+)/.exec(out.trim());
@@ -467,6 +538,53 @@ export function parseNumstat(out: string): NumstatEntry[] {
       const [added = "", removed = "", ...path] = field.split("\t");
       return { path: path.join("\t"), added: count(added), removed: count(removed) };
     });
+}
+
+/**
+ * Parses `diff --raw -z` with renames: `:<mode> <mode> <blob> <blob> <status>` then the path, or
+ * for a rename or copy (status R or C with a score) the old path and then the new one.
+ */
+export function parseDiffRaw(out: string): { status: string; path: string; oldPath?: string }[] {
+  const fields = out.split("\0");
+  const entries: { status: string; path: string; oldPath?: string }[] = [];
+  for (let i = 0; i + 1 < fields.length; ) {
+    const meta = fields[i]!;
+    if (!meta.startsWith(":")) {
+      i++;
+      continue;
+    }
+    const status = (meta.split(" ")[4] ?? "").slice(0, 1);
+    if (status === "R" || status === "C") {
+      entries.push({ status, oldPath: fields[i + 1]!, path: fields[i + 2] ?? "" });
+      i += 3;
+    } else {
+      entries.push({ status, path: fields[i + 1]! });
+      i += 2;
+    }
+  }
+  return entries;
+}
+
+/**
+ * Parses `diff --numstat -z` with renames: "added\tremoved\tpath\0", or for a rename
+ * "added\tremoved\t\0old\0new\0"; "-" counts mean binary. Keyed by the new path.
+ */
+export function parseNumstatRenames(out: string): NumstatEntry[] {
+  const count = (value: string) => (value === "-" ? null : Number(value));
+  const fields = out.split("\0");
+  const entries: NumstatEntry[] = [];
+  for (let i = 0; i < fields.length; i++) {
+    const field = fields[i]!;
+    if (field === "") continue;
+    const [added = "", removed = "", ...rest] = field.split("\t");
+    let path = rest.join("\t");
+    if (path === "") {
+      path = fields[i + 2] ?? "";
+      i += 2;
+    }
+    entries.push({ path, added: count(added), removed: count(removed) });
+  }
+  return entries;
 }
 
 const NO_BLOB = /^0+$/;

@@ -179,7 +179,7 @@ export function applyEvent(item: StoredItem | undefined, event: ItemEvent): Resu
       if (decision === undefined) return fail(`no decision ${event.decisionId}`);
       if (decision.resolved !== undefined) return fail(`decision ${event.decisionId} is already resolved`);
       if (!decision.choices.some((c) => c.id === event.choice)) return fail(`"${event.choice}" is not a choice of ${event.decisionId}`);
-      decision.resolved = { choice: event.choice, at: event.at };
+      decision.resolved = { choice: event.choice, ...(event.note !== undefined && { note: event.note }), at: event.at };
       const asked = next.steps.find((s) => s.id === decision.stepId);
       const stillOpen = next.decisions.some((d) => d.stepId === decision.stepId && d.resolved === undefined);
       if (asked !== undefined && asked.state === "needs_you" && !stillOpen) asked.state = "running";

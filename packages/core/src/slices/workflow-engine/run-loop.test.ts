@@ -287,14 +287,89 @@ describe("run loop: done_when", () => {
     expect(story(id).slice(-5)).toEqual(["attempt_ended plan#1 passed", "decision plan_approval plan", "resolved approve", "step_ended plan passed", "item_ended done"]);
   });
 
-  it("you approve: Run again starts another attempt; End: no action needed ends the item early without failing", SLOW, async () => {
+  it("you approve: Request changes starts another attempt; End: no action needed ends the item early without failing", SLOW, async () => {
     const loop = engine(fakeRuntime([edits(FIXED)]));
     const id = await start(loop, template([{ id: "plan", doneWhen: "you approve", maxAttempts: 2 }]));
-    await answer(loop, id, "retry_step");
+    await answer(loop, id, "request_changes");
     expect(item(id).steps[0]?.attempts).toHaveLength(2);
     await answer(loop, id, "no_action_needed");
     expect(item(id)).toMatchObject({ state: "done", outcome: { kind: "no_action_needed" } });
     expect(item(id).outcome?.commits).toBeUndefined();
+  });
+
+  it("you approve: the question carries the staged tree; Approve commits exactly that tree", SLOW, async () => {
+    const loop = engine(fakeRuntime([edits({ ...FIXED, "notes.txt": "new\n" })]));
+    const id = await start(loop, template([{ id: "change", doneWhen: "you approve", maxAttempts: 3 }]));
+    const asked = openDecision(id)!;
+    expect(asked).toMatchObject({ kind: "plan_approval", stepId: "change", tree: expect.stringMatching(/^[0-9a-f]{40,64}$/) });
+    expect(asked.choices.map((c) => c.id)).toEqual(["approve", "request_changes", "no_action_needed", "stop"]);
+    expect(item(id).steps[0]?.attempts[0]?.tree).toBe(asked.tree);
+
+    const diff = await loop.decisionDiff(id, asked.id);
+    if (!diff.ok) throw new Error(diff.error.message);
+    expect(diff.value.worktree).toEqual({ repoId: "orders-api", dir: item(id).worktrees[0]!.dir, branch: item(id).worktrees[0]!.branch });
+    expect(diff.value.files.map((f) => [f.path, f.status, f.added, f.removed])).toEqual([
+      ["app.txt", "modified", 1, 1],
+      ["notes.txt", "added", 1, 0],
+    ]);
+    expect(diff.value.files[0]?.hunks[0]?.lines).toEqual(["-broken", "+fixed"]);
+
+    await answer(loop, id, "approve");
+    const commit = item(id).outcome?.commits?.[0]?.commit;
+    expect(item(id).state).toBe("done");
+    expect(await plain(repo.path, "rev-parse", `${commit}^{tree}`)).toBe(asked.tree);
+    // The question is answered: its diff is no longer served.
+    expect(await loop.decisionDiff(id, asked.id)).toMatchObject({ ok: false, error: { code: "stale_decision" } });
+  });
+
+  it("you approve: Request changes runs the step again with your note; the attempt limit applies as usual", SLOW, async () => {
+    const runtime = fakeRuntime([edits(WRONG), edits(FIXED)]);
+    const loop = engine(runtime);
+    const id = await start(loop, template([{ id: "change", doneWhen: "you approve", maxAttempts: 2 }]));
+    const first = openDecision(id)!;
+    expect(await loop.resolveDecision(id, first.id, "approve", "a note")).toMatchObject({ ok: false, error: { code: "invalid_request" } });
+    const resolved = await loop.resolveDecision(id, first.id, "request_changes", "  Say fixed, not still broken.  ");
+    if (!resolved.ok) throw new Error(resolved.error.message);
+    await loop.settled(id);
+    expect(item(id).decisions[0]?.resolved).toMatchObject({ choice: "request_changes", note: "Say fixed, not still broken." });
+    expect(runtime.calls[1]?.request.prompt).toContain("You asked for changes:\nSay fixed, not still broken.");
+    expect(runtime.calls[0]?.request.prompt).not.toContain("You asked for changes");
+
+    // The second answer is at the limit of 2: the limit question comes, not a third attempt.
+    await answer(loop, id, "request_changes", "plan_approval");
+    expect(openDecision(id)).toMatchObject({ kind: "after_failure", detail: expect.stringContaining("limit of 2") });
+    expect(item(id).steps[0]?.attempts).toHaveLength(2);
+  });
+
+  it("you approve: a step that changed nothing records no tree, so a later step's changes are committed", SLOW, async () => {
+    const loop = engine(fakeRuntime([says("A plan."), edits(FIXED)]));
+    const id = await start(loop, template([{ id: "plan", doneWhen: "you approve" }, { id: "build" }]));
+    const asked = openDecision(id)!;
+    const diff = await loop.decisionDiff(id, asked.id);
+    expect(diff).toMatchObject({ ok: true, value: { files: [], moreFiles: 0, cut: false } });
+    expect(item(id).steps[0]?.attempts[0]?.tree).toBeUndefined();
+    await answer(loop, id, "approve");
+    expect(item(id).state).toBe("done");
+    expect(await plain(repo.path, "show", `${item(id).outcome?.commits?.[0]?.commit}:app.txt`)).toBe("fixed");
+  });
+
+  it("you approve: a file changed after the approval is not committed unless you say so", SLOW, async () => {
+    const loop = engine(fakeRuntime([edits(FIXED)]));
+    const id = await start(loop, template([{ id: "change", doneWhen: "you approve" }]));
+    const approvedTree = openDecision(id)!.tree;
+    writeFileSync(join(worktreeDir(id), "app.txt"), "edited by hand\n");
+    await answer(loop, id, "approve");
+    expect(openDecision(id)).toMatchObject({ kind: "tamper", detail: expect.stringContaining("changed after you approved it"), choices: [{ id: "commit_checked_tree", label: "Commit the approved tree" }, { id: "stop" }] });
+    await answer(loop, id, "commit_checked_tree");
+    expect(await plain(repo.path, "rev-parse", `${item(id).outcome?.commits?.[0]?.commit}^{tree}`)).toBe(approvedTree);
+  });
+
+  it("you approve: a package file change asks about it before the approval", SLOW, async () => {
+    const loop = engine(fakeRuntime([edits({ ...FIXED, "package.json": "{}\n" })]));
+    const id = await start(loop, template([{ id: "change", doneWhen: "you approve" }]));
+    expect(openDecision(id)).toMatchObject({ kind: "tamper", stepId: "change" });
+    await answer(loop, id, "approve", "tamper");
+    expect(openDecision(id)).toMatchObject({ kind: "plan_approval", stepId: "change" });
   });
 
   it("reviewer approves: changes go back to build with the reviewer's words; build's count continues; approve finishes", SLOW, async () => {

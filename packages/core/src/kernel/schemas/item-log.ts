@@ -18,6 +18,9 @@ import { AttemptResultSchema, DecisionKindSchema, ItemOutcomeSchema, ItemStateSc
 export const ITEM_EVENT_SCHEMA_VERSION = 1;
 export const STORED_ITEM_SCHEMA_VERSION = 1;
 
+/** The longest note an answer to a decision may carry. */
+export const MAX_NOTE_CHARS = 2000;
+
 export const StepResultSchema = z.enum(["passed", "failed", "stopped"]);
 
 // One or more plain segments joined by "/": no leading "/", no "..", no "~", no backslash or
@@ -121,7 +124,10 @@ const AttemptEndedSchema = z.strictObject({
   /** Present when result is `run_failed`. */
   failure: RunFailureSchema.optional(),
   detail: z.string().min(1).max(500).optional(),
-  /** On a passed `checks pass` attempt: the tree the checks ran on, the one the item commits. */
+  /**
+   * On a passed attempt: the tree the item commits. For `checks pass` the tree the checks ran on;
+   * for `you approve` the tree the engineer was asked about, when it differs from the base commit.
+   */
   tree: GIT_ID.optional(),
 });
 const StepEndedSchema = z.strictObject({ type: z.literal("step_ended"), stepId: StepIdSchema, result: StepResultSchema });
@@ -135,13 +141,18 @@ const DecisionOpenedSchema = z.strictObject({
   detail: z.string().min(1).max(500).optional(),
   /** For a `tamper` question about paths: the exact content an approval covers. */
   covers: z.array(CoveredPathSchema).min(1).max(200).optional(),
-  /** For a question about a whole tree (it changed after the checks, or was not reviewed): that tree. */
+  /**
+   * For a question about a whole tree (it changed after the checks, or was not reviewed), or a
+   * step you approve: that tree.
+   */
   tree: GIT_ID.optional(),
 });
 const DecisionResolvedSchema = z.strictObject({
   type: z.literal("decision_resolved"),
   decisionId: DecisionIdSchema,
   choice: z.string().min(1).max(64),
+  /** The engineer's words with the answer: what to change, for Request changes. */
+  note: z.string().min(1).max(MAX_NOTE_CHARS).optional(),
 });
 /** A commit Tokama made on an item branch. */
 const ItemCommitSchema = z.strictObject({ repoId: RepoIdSchema, commit: GIT_ID });
@@ -251,7 +262,7 @@ export const StoredDecisionSchema = z.strictObject({
   detail: z.string().optional(),
   covers: z.array(CoveredPathSchema).optional(),
   tree: GIT_ID.optional(),
-  resolved: z.strictObject({ choice: z.string(), at: EpochMsSchema }).optional(),
+  resolved: z.strictObject({ choice: z.string(), note: z.string().optional(), at: EpochMsSchema }).optional(),
 });
 
 /** An item as its event log describes it. Derived, never edited: fold the log to get it. */
