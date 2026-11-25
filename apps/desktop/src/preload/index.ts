@@ -30,6 +30,9 @@ export const bridge: TokamaBridge = {
   showDataFolder: () => ipcRenderer.invoke(CHANNELS.showDataFolder) as Promise<OpenResult>,
   getDesktopState: () => ipcRenderer.invoke(CHANNELS.getDesktopState) as Promise<DesktopState>,
   saveLayout: (patch) => ipcRenderer.invoke(CHANNELS.saveLayout, patch) as Promise<void>,
+  // Only the two strings cross, whatever else the renderer passes.
+  reportError: ({ message, stack }) => ipcRenderer.invoke(CHANNELS.reportError, { message: String(message), stack: String(stack) }) as Promise<void>,
+  countUsage: (action) => ipcRenderer.invoke(CHANNELS.countUsage, String(action)) as Promise<void>,
 };
 
 contextBridge.exposeInMainWorld("tokama", bridge);
