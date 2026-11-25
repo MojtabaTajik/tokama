@@ -40,6 +40,7 @@ import {
   type CommandErrorCode,
   type ConnectionErrorCode,
   type DecisionDiffResult,
+  type ItemDiffResult,
   type StepOutputResult,
   type AttemptChecksResult,
   type AttemptFileResult,
@@ -574,6 +575,9 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       } else if (message.query.type === "decision_diff") {
         const diff = await real.decisionDiff(message.query.itemId, message.query.decisionId);
         return diff.ok ? { ok: true, data: diff.value satisfies DecisionDiffResult } : { ok: false, error: diff.error };
+      } else if (message.query.type === "item_diff") {
+        const diff = await real.itemDiff(message.query.itemId);
+        return diff.ok ? { ok: true, data: diff.value satisfies ItemDiffResult } : { ok: false, error: diff.error };
       } else if (message.query.type === "step_output") {
         const output = await real.stepOutput(message.query.itemId, message.query.stepIndex, message.query.attempt);
         return output.ok ? { ok: true, data: output.value satisfies StepOutputResult } : { ok: false, error: output.error };
@@ -651,6 +655,11 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
         const diff = sample?.decisionDiff(query.itemId, query.decisionId);
         if (diff === undefined) return { ok: false, error: { code: "not_implemented", message: "this engine serves no items" } };
         return diff.ok ? { ok: true, data: diff.value satisfies DecisionDiffResult } : { ok: false, error: diff.error };
+      }
+      case "item_diff": {
+        const diff = sample?.itemDiff(query.itemId);
+        if (diff === undefined) return { ok: false, error: { code: "not_implemented", message: "this engine serves no items" } };
+        return diff.ok ? { ok: true, data: diff.value satisfies ItemDiffResult } : { ok: false, error: diff.error };
       }
       case "step_output": {
         const output = sample?.stepOutput(query.itemId, query.stepIndex, query.attempt);

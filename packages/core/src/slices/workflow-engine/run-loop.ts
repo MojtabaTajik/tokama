@@ -42,6 +42,7 @@ import {
   type FinishAction,
   type ItemActivity,
   type ItemEventBody,
+  type ItemChange,
   type ItemDiff,
   type ItemId,
   type ItemOutcome,
@@ -147,6 +148,11 @@ export interface RunLoop {
   resolveDecision(itemId: ItemId, decisionId: string, choice: string, note?: string): Promise<Result<null, CommandError>>;
   /** The change an open decision about a step you approve shows: the base commit to the tree it would commit. */
   decisionDiff(itemId: ItemId, decisionId: string): Promise<Result<ItemDiff, CommandError>>;
+  /**
+   * What an ended item changed: the commit it was merged as against the base branch before it, or
+   * its worktree as it is now (uncommitted changes included) against its base commit.
+   */
+  itemDiff(itemId: ItemId): Promise<Result<ItemChange, CommandError>>;
   /** The final message of the agent of a step's attempt (by index, as the item record lists steps); default the latest attempt. */
   stepOutput(itemId: ItemId, stepIndex: number, attempt?: number): Promise<Result<StepOutput, CommandError>>;
   /** Each check of a step's attempt with the end of its saved output; while it runs, the planned ones too. */
@@ -1256,6 +1262,52 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       const diff = await treeDiff(git, worktree.path, worktree.baseCommit, asked.tree);
       if (!diff.ok) return failure("invalid_state", detail(`Cannot read the change: ${diff.error.message}`));
       return ok({ ...diff.value, worktree: { repoId: repo.id, dir: item.worktrees[0]!.dir, branch: worktree.branch, baseCommit: worktree.baseCommit } });
+    },
+
+    async itemDiff(itemId) {
+      await ready;
+      if (closing) return closed();
+      const item = store.get(itemId);
+      if (item === undefined || item.deleted) return failure("not_found", `No item ${itemId}.`);
+      if (item.outcome === undefined) return failure("invalid_state", `Item ${itemId} has not ended: its change shows with its decisions.`);
+      const repoId = item.repoIds[0];
+      if (repoId === undefined) return ok({ kind: "none" });
+      const repo = deps.repo(repoId);
+      if (repo === undefined) return failure("not_found", `Repo ${repoId} is not set up on this machine.`);
+      rootsOf(item.id).set(repo.path, `<repo ${repo.id}>`);
+      const cannot = (text: string, message: string) => failure("invalid_state", detail(`${text}: ${message}`));
+
+      const merged = item.finish?.merged;
+      if (merged !== undefined) {
+        // Read in the repo itself: the worktree is usually gone after a merge. Only a repo that
+        // reads, with the commit missing, says the commit is gone.
+        const top = await git.topLevel(repo.path);
+        if (!top.ok) return cannot(`Cannot read repo ${repo.id}`, top.error.message);
+        const found = await git.revParse(repo.path, `${merged.commit}^{commit}`);
+        if (!found.ok) return ok({ kind: "gone", repoId: repo.id, commit: merged.commit });
+        // The first parent is the base branch before the merge, for a fast-forward and a merge commit alike.
+        const parent = await git.revParse(repo.path, `${merged.commit}^1`);
+        if (!parent.ok) return cannot("Cannot find the commit before the merge", parent.error.message);
+        const diff = await treeDiff(git, repo.path, parent.value, merged.commit);
+        if (!diff.ok) return cannot("Cannot read the change", diff.error.message);
+        return ok({ kind: "merged", ...diff.value, repoId: repo.id, baseBranch: merged.baseBranch, commit: merged.commit, parent: parent.value });
+      }
+      if (item.finish?.worktreeRemoved === true) return ok({ kind: "none" });
+      const worktree = worktreeOf({ item, repo });
+      if (worktree === undefined || !existsSync(worktree.path)) return ok({ kind: "none" });
+      // As in the loop, git runs in the worktree only while the files that steer it are as they
+      // were at Start. The check reads; it records nothing and keeps nothing in memory.
+      const set = await protectedSet(git, { repoPath: repo.path, worktreePath: worktree.path, worktreeFolder: repo.worktreeFolder, baseCommit: worktree.baseCommit, branch: worktree.branch });
+      const hashes = set.ok ? await set.value.hash() : undefined;
+      if (worktree.protectedDigest === undefined || hashes === undefined || !hashes.ok || digestOf(steeringEntries(hashes.value, worktree.branch)) !== worktree.protectedDigest) {
+        return failure("invalid_state", "The git config, hooks or attributes of the item's worktree changed since it started, so Tokama does not read it.");
+      }
+      // A temp index: the worktree's own index is left as it is.
+      const tree = await git.snapshotTree(worktree.path);
+      if (!tree.ok) return cannot("Cannot read the worktree", tree.error.message);
+      const diff = await treeDiff(git, worktree.path, worktree.baseCommit, tree.value);
+      if (!diff.ok) return cannot("Cannot read the change", diff.error.message);
+      return ok({ kind: "worktree", ...diff.value, worktree: { repoId: repo.id, dir: item.worktrees[0]!.dir, branch: worktree.branch, baseCommit: worktree.baseCommit } });
     },
 
     async stepOutput(itemId, stepIndex, attempt) {

@@ -706,6 +706,74 @@ export const sampleDiff = {
   worktree: { repoId: "inventory-service", dir: ".tokama/wt/1a2b3c4d", branch: "tokama/1a2b3c4d", baseCommit: "85a75e3c0ffee0000000000000000000000000ab" },
 };
 
+/** What the done "Fix the null check" item changed on its branch; after Merge, the commit it was merged as. */
+export const finishedDiff = {
+  files: [
+    {
+      path: "src/cart/totals.ts",
+      status: "modified",
+      added: 3,
+      removed: 1,
+      binary: false,
+      cut: false,
+      hunks: [
+        {
+          header: "@@ -12,6 +12,8 @@ export function lineTotal(line: CartLine): number {",
+          lines: [
+            " export function lineTotal(line: CartLine): number {",
+            "-  return line.price.amount * line.quantity;",
+            "+  // A line without a price counts as zero instead of crashing the cart.",
+            "+  if (line.price === null) return 0;",
+            "+  return line.price.amount * line.quantity;",
+            " }",
+          ],
+        },
+      ],
+    },
+    {
+      path: "src/cart/totals.test.ts",
+      status: "added",
+      added: 5,
+      removed: 0,
+      binary: false,
+      cut: false,
+      hunks: [
+        {
+          header: "@@ -0,0 +1,5 @@",
+          lines: [
+            '+import { lineTotal } from "./totals.js";',
+            "+",
+            '+it("counts a line without a price as zero", () => {',
+            "+  expect(lineTotal({ price: null, quantity: 2 })).toBe(0);",
+            "+});",
+          ],
+        },
+      ],
+    },
+  ],
+  moreFiles: 0,
+  cut: false,
+  worktree: { repoId: "orders-api", dir: ".tokama/wt/00000011", branch: "tokama/00000011", baseCommit: "a41c9e2b7d6c5f4e3d2c1b0a9f8e7d6c5b4a3921" },
+};
+
+/** What the failed driver upgrade left in its worktree. */
+export const failedDiff = {
+  files: [
+    {
+      path: "package.json",
+      status: "modified",
+      added: 1,
+      removed: 1,
+      binary: false,
+      cut: false,
+      hunks: [{ header: "@@ -14,7 +14,7 @@", lines: ['   "dependencies": {', '-    "pg": "^8.11.0",', '+    "pg": "^9.0.0",', '     "zod": "^4.1.0"'] }],
+    },
+  ],
+  moreFiles: 0,
+  cut: false,
+  worktree: { repoId: "orders-api", dir: ".tokama/wt/00000009", branch: "tokama/00000009", baseCommit: "3c1e8d0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d40" },
+};
+
 const HISTORY_WORK = ["Tidy the logs", "Add a health check", "Rename the status enum", "Pin the Node version", "Speed up the build", "Fix a flaky test", "Drop an unused flag", "Retry the webhook"];
 const HISTORY_REPOS = ["orders-api", "checkout-web", "inventory-service"];
 const HISTORY_TEMPLATES = [templates.quickFix, templates.quickChange, templates.planAndBuild];

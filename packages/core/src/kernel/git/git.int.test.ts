@@ -215,6 +215,7 @@ describe("repo config, hooks and attributes never run code", () => {
       async () => {
         write(join(repo, "a.txt"), "three\n");
         value(await git.status(repo));
+        value(await git.snapshotTree(repo));
         value(await git.addAll(repo));
         value(await git.diff(repo));
         value(await git.commit(repo, "hardened"));
@@ -447,6 +448,22 @@ describe("API on a real repo", () => {
     expect(commit).toBe((await plain(repo, "rev-parse", "HEAD")).trim());
     expect(value(await git.revParse(repo, "HEAD^{tree}"))).toBe(tree);
     expect(await plain(repo, "log", "-1", "--format=%s")).toBe("--message that looks like an option\n");
+  });
+
+  it("snapshotTree stages changed and untracked files in a temp index; the repo's index stays as it was", SLOW, async () => {
+    write(join(repo, ".gitignore"), "ignored.txt\n");
+    write(join(repo, "a.txt"), "two\n");
+    write(join(repo, "new.txt"), "new\n");
+    write(join(repo, "ignored.txt"), "secret\n");
+    const before = await plain(repo, "status", "--porcelain");
+    const tree = value(await git.snapshotTree(repo));
+    expect(await plain(repo, "status", "--porcelain")).toBe(before);
+    expect(await plain(repo, "diff", "--cached", "--name-only")).toBe("");
+    expect(await plain(repo, "ls-tree", "--name-only", tree)).toBe(".gitignore\na.txt\nnew.txt\n");
+    expect(await plain(repo, "show", `${tree}:a.txt`)).toBe("two\n");
+    // The same tree add -A and write-tree give.
+    value(await git.addAll(repo));
+    expect(value(await git.writeTree(repo))).toBe(tree);
   });
 
   it("worktree add, list and remove", SLOW, async () => {

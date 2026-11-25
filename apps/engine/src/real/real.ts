@@ -17,6 +17,7 @@ import {
   type Command,
   type CommandError,
   type DecisionId,
+  type ItemChange,
   type ItemDiff,
   type ItemId,
   type CommandResult,
@@ -167,6 +168,11 @@ export class RealEngine {
   /** The change an open decision about a step you approve shows. */
   async decisionDiff(itemId: ItemId, decisionId: DecisionId): Promise<Result<ItemDiff, CommandError>> {
     return this.loop.decisionDiff(itemId, decisionId);
+  }
+
+  /** What an ended item changed: the commit it was merged as, or its worktree against its base commit. */
+  async itemDiff(itemId: ItemId): Promise<Result<ItemChange, CommandError>> {
+    return this.loop.itemDiff(itemId);
   }
 
   /** The final message of the agent of a step's attempt, with what it says as far as Tokama can read it. */

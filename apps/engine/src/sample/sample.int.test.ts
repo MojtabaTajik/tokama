@@ -315,6 +315,21 @@ describe("fake engine mode", () => {
     expect(await client.query({ type: "decision_diff", itemId: ITEM_IDS.quickChange, decisionId: DIFF_DECISION_ID })).toMatchObject({ ok: false, error: { code: "stale_decision" } });
   });
 
+  it("serves what ended items changed: the done item's branch, then the commit Merge made; the failed item's worktree; nothing for others", async () => {
+    const { client } = await sampleEngine();
+    expect(await client.query({ type: "item_diff", itemId: ITEM_IDS.finished })).toMatchObject({
+      ok: true,
+      data: { kind: "worktree", worktree: { branch: "tokama/00000011" }, files: [{ path: "src/cart/totals.ts" }, { path: "src/cart/totals.test.ts" }] },
+    });
+    expect(await client.query({ type: "item_diff", itemId: ITEM_IDS.failed })).toMatchObject({ ok: true, data: { kind: "worktree", files: [{ path: "package.json" }] } });
+    expect(await client.query({ type: "item_diff", itemId: ITEM_IDS.done })).toEqual({ ok: true, data: { kind: "none" } });
+    expect(await client.query({ type: "item_diff", itemId: ITEM_IDS.quickChange })).toMatchObject({ ok: false, error: { code: "invalid_state" } });
+
+    expect(await client.command({ type: "finish_item", itemId: ITEM_IDS.finished, action: "merge" })).toEqual({ ok: true, data: null });
+    const merged = (await item(client, ITEM_IDS.finished)).finish?.merged;
+    expect(await client.query({ type: "item_diff", itemId: ITEM_IDS.finished })).toMatchObject({ ok: true, data: { kind: "merged", baseBranch: "main", commit: merged?.commit, files: [{ path: "src/cart/totals.ts" }, { path: "src/cart/totals.test.ts" }] } });
+  });
+
   it("resolve_decision with stop stops the item", async () => {
     const { client, next } = await sampleEngine();
     await client.command({ type: "resolve_decision", itemId: ITEM_IDS.needsYou, decisionId: DECISION_ID, choice: "stop" });

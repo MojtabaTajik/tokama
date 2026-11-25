@@ -1,4 +1,4 @@
-import { mkdtemp, open, readFile, realpath, rm } from "node:fs/promises";
+import { copyFile, mkdtemp, open, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { err, ok, type Result } from "../result/index.js";
@@ -175,6 +175,11 @@ export interface Git {
   cleanIgnored(repo: string): Promise<GitResult<void>>;
   /** `write-tree`: the tree id of the index. */
   writeTree(repo: string): Promise<GitResult<string>>;
+  /**
+   * The tree `add -A` then `write-tree` would give, uncommitted and untracked files included,
+   * built in a copy of the index in a temp folder: the repo's own index is never written.
+   */
+  snapshotTree(repo: string): Promise<GitResult<string>>;
   /** `commit -q --no-verify -m <message>` of the index; returns the new commit id. */
   commit(repo: string, message: string): Promise<GitResult<string>>;
   /**
@@ -464,6 +469,23 @@ export function createGit(options: GitOptions): Git {
       return map(git(repo, args), none);
     },
     writeTree: (repo) => map(git(repo, ["write-tree"]), trimmed),
+    async snapshotTree(repo) {
+      const index = await git(repo, ["rev-parse", "--path-format=absolute", "--git-path", "index"]);
+      if (!index.ok) return index;
+      const dir = await mkdtemp(join(tmpdir(), "tokama-index-"));
+      try {
+        const env = { GIT_INDEX_FILE: join(dir, "index") };
+        // Without the copy git would hash every file again; a repo with no index yet starts empty.
+        await copyFile(index.value.trim(), env.GIT_INDEX_FILE).catch((cause: NodeJS.ErrnoException) => {
+          if (cause.code !== "ENOENT") throw cause;
+        });
+        const added = await git(repo, ["add", "-A"], env);
+        if (!added.ok) return added;
+        return await map(git(repo, ["write-tree"], env), trimmed);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
     async commit(repo, message) {
       const committed = await git(repo, ["commit", "-q", "--no-verify", "-m", message]);
       if (!committed.ok) return committed;
