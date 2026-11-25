@@ -12,6 +12,9 @@ flow("expands an item from the drawer header, and Esc brings back the list with 
   await segment(page, "Needs you").click();
   await row(page, PLAN_APPROVAL).click();
   await drawer(page).getByRole("heading", { name: PLAN_APPROVAL }).waitFor();
+  // The open drawer narrows the list, which can move a row's agent label under the pointer left on the
+  // row; its tooltip would then cover the drawer's tabs. The pointer moves into the drawer first.
+  await drawer(page).getByRole("heading", { name: PLAN_APPROVAL }).hover();
   await drawer(page).getByRole("tab", { name: "Output" }).click();
   await screenshot("30-expanded-entry-drawer");
 

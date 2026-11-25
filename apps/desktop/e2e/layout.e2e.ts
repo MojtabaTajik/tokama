@@ -88,8 +88,10 @@ flow("the window comes back where it was, and a broken file gives the defaults",
   const again = await next.restart(() => writeFileSync(join(home, ".tokama", "desktop.json"), "{ not json"));
   expect(await widthOf(again.page, ".panel")).toBe(264);
   const size = await again.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.getBounds());
-  // The default size, cut to the work area like any other.
-  expect([size?.width, size?.height]).toEqual([Math.min(1200, area.width), Math.min(800, area.height)]);
+  // The default size, cut to the work area like any other. macOS makes a window exactly as tall as the
+  // work area one pixel taller (675 for 674 on the runner), so the height may be off by one.
+  expect(size?.width).toBe(Math.min(1200, area.width));
+  expect(Math.abs((size?.height ?? 0) - Math.min(800, area.height))).toBeLessThanOrEqual(1);
 });
 
 flow("a narrow window makes the drawer give way and then float over the main area", async ({ page, resize, screenshot }) => {
