@@ -17,12 +17,14 @@ import {
   type CommandResult,
   currentStepIndex,
   type DecisionId,
+  type DecisionDiffResult,
   err,
   type ItemId,
   type ItemRecord,
   ok,
   parseItemRecord,
   parseQueryResult,
+  REQUEST_CHANGES_ID,
   type Result,
   type StepRecord,
   type TemplateRef,
@@ -30,7 +32,7 @@ import {
   type Setup,
 } from "@tokama/core";
 import type { MemoryItemStore } from "../store.js";
-import { ITEM_IDS, sampleItems, sampleSetup } from "./data.js";
+import { DIFF_DECISION_ID, ITEM_IDS, sampleDiff, sampleItems, sampleSetup } from "./data.js";
 
 /** How often the fake engine moves a working item on by one step. */
 export const SAMPLE_TICK_MS = 20_000;
@@ -169,6 +171,12 @@ export class SampleEngine {
     if (!item.decision.choices.some((choice) => choice.id === command.choice)) {
       return err({ code: "invalid_choice", message: `"${command.choice}" is not a choice of decision ${command.decisionId}` });
     }
+    if (command.choice === REQUEST_CHANGES_ID) {
+      // The step runs again with the note; the tick moves the item on from here.
+      this.store.put(this.run(withoutDecision(item), item.decision.stepIndex, "runs again with your note · "));
+      this.live.add(item.id);
+      return ok(null);
+    }
     if (command.choice !== APPROVE) {
       this.store.put(stop(item));
       return ok(null);
@@ -177,6 +185,16 @@ export class SampleEngine {
     this.store.put(this.run(withoutDecision(item), item.decision.stepIndex, "approved · "));
     this.live.add(item.id);
     return ok(null);
+  }
+
+  /** The canned change of the Quick change item, while its question is open. */
+  decisionDiff(itemId: ItemId, decisionId: DecisionId): Result<DecisionDiffResult, CommandError> {
+    const item = this.store.get(itemId);
+    if (!item) return err({ code: "not_found", message: `no item ${itemId}` });
+    if (item.decision?.id !== decisionId || decisionId !== DIFF_DECISION_ID) return err({ code: "stale_decision", message: `decision ${decisionId} is not open, or has no change to show` });
+    const diff = parseQueryResult("decision_diff", sampleDiff);
+    if (!diff.ok) throw new Error(`invalid sample diff: ${JSON.stringify(diff.error.issues)}`);
+    return ok(diff.value);
   }
 
   private stopItem(itemId: ItemId): Result<null, CommandError> {

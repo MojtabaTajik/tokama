@@ -9,6 +9,7 @@ import { itemElement } from "../list/useFocusFollow.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { attemptLine, DECISION_KIND, hasEnded, itemMark, KIND, outcomeLine, PRIVACY, stepAgent, stepMark, stepPosition, templateOf, whereLine } from "./describe.js";
 import { DecisionChoices } from "./DecisionChoices.js";
+import { DecisionDiff } from "./DecisionDiff.js";
 import { useItem } from "./useItem.js";
 
 const TEXT = {
@@ -153,8 +154,8 @@ export function ItemDrawer({ bridge, itemId, setup, onClose }: ItemDrawerProps) 
     if (REFRESH_ON.has(reply.error.code)) refresh();
   };
 
-  const resolve = (decision: Decision, choice: string) => {
-    if (item) void send({ type: "resolve_decision", itemId: item.id, decisionId: decision.id, choice });
+  const resolve = (decision: Decision, choice: string, note?: string) => {
+    if (item) void send({ type: "resolve_decision", itemId: item.id, decisionId: decision.id, choice, ...(note !== undefined && { note }) });
   };
   const stop = () => {
     setConfirmingStop(false);
@@ -196,7 +197,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose }: ItemDrawerProps) 
         </p>
       )}
 
-      {item?.state === "needs_you" && <NeedsYou decision={item.decision} busy={busy} onChoose={resolve} />}
+      {item?.state === "needs_you" && <NeedsYou bridge={bridge} itemId={item.id} decision={item.decision} busy={busy} onChoose={resolve} />}
 
       {item && (
         <>
@@ -265,12 +266,14 @@ function Missing({ error, onRetry }: { readonly error: { code: string; message: 
 }
 
 interface NeedsYouProps {
+  readonly bridge: TokamaBridge;
+  readonly itemId: string;
   readonly decision: Decision | undefined;
   readonly busy: boolean;
-  readonly onChoose: (decision: Decision, choice: string) => void;
+  readonly onChoose: (decision: Decision, choice: string, note?: string) => void;
 }
 
-function NeedsYou({ decision, busy, onChoose }: NeedsYouProps) {
+function NeedsYou({ bridge, itemId, decision, busy, onChoose }: NeedsYouProps) {
   return (
     <section className="needs-you" aria-label={TEXT.needsYou}>
       {decision ? (
@@ -295,7 +298,8 @@ function NeedsYou({ decision, busy, onChoose }: NeedsYouProps) {
               </pre>
             </div>
           )}
-          <DecisionChoices decision={decision} busy={busy} onChoose={(choice) => onChoose(decision, choice)} />
+          {decision.hasDiff === true && <DecisionDiff bridge={bridge} itemId={itemId} decision={decision} />}
+          <DecisionChoices key={decision.id} decision={decision} busy={busy} onChoose={(choice, note) => onChoose(decision, choice, note)} />
         </>
       ) : (
         <p className="needs-you-question">

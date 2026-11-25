@@ -12,6 +12,9 @@ import {
   type Clock,
   type Command,
   type CommandError,
+  type DecisionId,
+  type ItemDiff,
+  type ItemId,
   type CommandResult,
   createGit,
   createRunLoop,
@@ -130,10 +133,15 @@ export class RealEngine {
       case "start_item":
         return this.startItem(command);
       case "resolve_decision":
-        return this.loop.resolveDecision(command.itemId, command.decisionId, command.choice);
+        return this.loop.resolveDecision(command.itemId, command.decisionId, command.choice, command.note);
       case "stop_item":
         return this.loop.stopItem(command.itemId);
     }
+  }
+
+  /** The change an open decision about a step you approve shows. */
+  async decisionDiff(itemId: ItemId, decisionId: DecisionId): Promise<Result<ItemDiff, CommandError>> {
+    return this.loop.decisionDiff(itemId, decisionId);
   }
 
   private async startItem(command: Extract<Command, { type: "start_item" }>): Promise<Result<{ itemId: StoredItem["id"] }, CommandError>> {

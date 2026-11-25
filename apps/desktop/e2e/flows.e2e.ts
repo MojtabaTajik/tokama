@@ -8,6 +8,7 @@ const NEEDS_YOU = "Orders API returns 500 after deploy";
 const VERIFYING = "Fix rounding in invoice totals";
 const DONE = "Slow query on order_items";
 const FAILED = "Upgrade the Postgres driver in orders-api";
+const QUICK_CHANGE = "Log the warehouse id on sync failures";
 
 flow("connects to the sample engine and selects list rows with Enter and Space", async ({ page, connection, engine }) => {
   expect((await connection()).status).toBe("connected");
@@ -37,7 +38,7 @@ flow("opens an item and approves its decision", async ({ page }) => {
   await note.getByRole("button", { name: "Approve and send" }).click();
 
   await note.waitFor({ state: "detached" });
-  await expect.poll(() => segment(page, "Needs you").innerText(), { message: "the Needs you count" }).toMatch(/0$/);
+  await expect.poll(() => segment(page, "Needs you").innerText(), { message: "the Needs you count" }).toMatch(/1$/);
   await row(page, NEEDS_YOU).waitFor({ state: "detached" });
   // The item runs on: it is in Running under Active.
   await segment(page, "Active").click();
@@ -51,7 +52,7 @@ flow("answers a decision on the Needs you page and the row leaves the list", asy
   const waiting = page.locator(".nr-row", { hasText: NEEDS_YOU });
   await waiting.waitFor();
   expect(await waiting.locator(".nr-kind").innerText()).toContain("Cloud-step approval");
-  await expect.poll(() => page.locator(".summary").innerText(), { message: "the page header" }).toMatch(/^1 waiting/);
+  await expect.poll(() => page.locator(".summary").innerText(), { message: "the page header" }).toMatch(/^2 waiting/);
   await screenshot("6-needs-you");
 
   // The title opens the drawer next to the page.
@@ -61,8 +62,8 @@ flow("answers a decision on the Needs you page and the row leaves the list", asy
   // The choice on the row sends the answer; the item runs on and the row goes.
   await waiting.getByRole("button", { name: /^Approve and send/ }).click();
   await waiting.waitFor({ state: "detached" });
-  await page.getByRole("heading", { name: "Nothing is waiting for you" }).waitFor();
-  await expect.poll(() => rail.getByRole("button", { name: /^Needs you/ }).getAttribute("aria-label"), { message: "the rail's Needs you count" }).toBe("Needs you");
+  await expect.poll(() => page.locator(".summary").innerText(), { message: "the page header" }).toMatch(/^1 waiting/);
+  await expect.poll(() => rail.getByRole("button", { name: /^Needs you/ }).getAttribute("aria-label"), { message: "the rail's Needs you count" }).toBe("Needs you · 1");
 });
 
 flow("keeps list rows readable and apart with the drawer open", async ({ page, resize }) => {
@@ -123,7 +124,7 @@ flow("stops an item after its confirmation", async ({ page }) => {
 flow("switches status filters, workflow and repo views, and List and Board", async ({ page }) => {
   // Status filters on All work.
   await segment(page, "Needs you").click();
-  await expect.poll(() => titles(page)).toEqual([NEEDS_YOU]);
+  await expect.poll(() => titles(page)).toEqual([QUICK_CHANGE, NEEDS_YOU]);
   await segment(page, "Done").click();
   await page.locator(".range").selectOption("30d");
   await expect.poll(() => titles(page)).toContain(DONE);
@@ -200,6 +201,39 @@ flow("reconnects after the engine restarts and loads its state again", async ({ 
   expect(seen, "the connection states the renderer saw").toContain("reconnecting");
   expect(seen.at(-1)).toBe("connected");
   // State reloaded from the new engine: the decision is waiting again.
-  await expect.poll(() => titles(page), { message: "the Needs you list after the restart" }).toEqual([NEEDS_YOU]);
+  await expect.poll(() => titles(page), { message: "the Needs you list after the restart" }).toEqual([QUICK_CHANGE, NEEDS_YOU]);
   expect(await drawer(page).locator(".needs-you").count(), "the open drawer follows").toBe(1);
+});
+
+flow("Quick change: New work offers it for a repo with no checks; the drawer shows the diff; Request changes sends a note", async ({ page, screenshot }) => {
+  // Quick fix runs the repo's checks, and inventory-service lists none.
+  await page.locator("main h1").click();
+  await page.keyboard.press("ControlOrMeta+n");
+  await page.locator("textarea.np-text:focus").waitFor();
+  await page.locator("textarea.np-text").fill("Add the warehouse id to the sync log");
+  await page.locator(".np-trigger", { hasText: "Template" }).click();
+  await page.getByRole("option", { name: /^Quick fix/ }).click();
+  await page.locator(".np-trigger", { hasText: "Repos" }).click();
+  await page.getByRole("option", { name: /inventory-service/ }).click();
+  await page.keyboard.press("Escape");
+  await expect.poll(() => page.locator(".np-reason").innerText(), { message: "why Quick fix can't run" }).toContain("inventory-service lists none");
+  expect(await page.locator(".np-start").isDisabled()).toBe(true);
+  await screenshot("9-new-work-no-checks");
+  await page.locator(".np-suggest").getByRole("button", { name: "Use Quick change" }).click();
+  await page.locator(".np-start:not([disabled])").waitFor();
+  await page.keyboard.press("Escape");
+
+  // The sample Quick change item waits with its diff.
+  await segment(page, "Needs you").click();
+  await row(page, QUICK_CHANGE).click();
+  const note = drawer(page).locator(".needs-you");
+  await expect.poll(() => note.locator(".decision-diff-files").innerText(), { message: "the changed files" }).toContain("modified src/sync/worker.ts +2 −1");
+  expect(await note.locator(".decision-diff-text").innerText()).toContain("+    log.error(\"inventory sync failed\", { error, warehouseId: warehouse.id });");
+  await screenshot("10-quick-change-diff");
+
+  await note.getByRole("button", { name: "Request changes" }).click();
+  await note.locator(".decision-note-text").fill("Leave the metrics line out.");
+  await note.getByRole("button", { name: "Send and run again" }).click();
+  await note.waitFor({ state: "detached" });
+  await expect.poll(() => drawer(page).locator(".step-detail").first().innerText(), { message: "the step runs again" }).toContain("runs again with your note");
 });

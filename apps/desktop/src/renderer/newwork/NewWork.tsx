@@ -5,7 +5,7 @@
 import type { ItemRecord, Setup } from "@tokama/core";
 import { type FormEvent, type KeyboardEvent, type Ref, useId, useImperativeHandle, useRef, useState } from "react";
 import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
-import { agentLines, commandsOf, KIND_GROUPS, missing, needsRepo, reposFor, stepsLine, usesOf } from "./needs.js";
+import { agentLines, commandsOf, KIND_GROUPS, missing, needsRepo, noChecks, reposFor, stepsLine, usesOf } from "./needs.js";
 import { Picker } from "./Picker.js";
 import { useSuggestion } from "./useSuggestion.js";
 
@@ -31,6 +31,8 @@ const TEXT = {
   starting: "Starting…",
   notConnected: "Not connected to the engine. Try again when it is back.",
   failed: (message: string) => `Could not start the work: ${message}`,
+  instead: (name: string) => `${name} lets you review the diff yourself instead.`,
+  use: (name: string) => `Use ${name}`,
 } as const;
 
 /** macOS uses Cmd for shortcuts, other systems Ctrl. */
@@ -72,7 +74,8 @@ export function NewWork({ bridge, setup, ref, onStarted }: NewWorkProps) {
   // In the setup's order; a repo that left the setup, or that the template cannot run on, drops out.
   const repos = reposFor(shown, setup.repos);
   const chosenRepos = repos.filter((repo) => repoIds.includes(repo.id)).map((repo) => repo.id);
-  const reason = missing({ template, text, repoIds: chosenRepos });
+  const blocked = noChecks(shown, setup.repos, chosenRepos, setup.templates);
+  const reason = missing({ template, text, repoIds: chosenRepos }) ?? blocked?.reason;
 
   useImperativeHandle(ref, () => ({
     open(prefill) {
@@ -224,6 +227,15 @@ export function NewWork({ bridge, setup, ref, onStarted }: NewWorkProps) {
                 {warning}
               </p>
             ))}
+            {blocked?.instead !== undefined && (
+              // Why the template can't run is the Start reason below; this offers the way out.
+              <p className="np-suggest">
+                {TEXT.instead(blocked.instead.name)}{" "}
+                <button type="button" className="link" onClick={() => setPicked(blocked.instead!.id)}>
+                  {TEXT.use(blocked.instead.name)}
+                </button>
+              </p>
+            )}
             <div className="np-row np-foot">
               <span id={reasonId} className="np-reason">
                 {reason}

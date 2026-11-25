@@ -7,6 +7,7 @@ import type { ItemRecord, Setup } from "@tokama/core";
 import { type MouseEvent, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { DecisionChoices } from "../drawer/DecisionChoices.js";
+import { DecisionDiff } from "../drawer/DecisionDiff.js";
 import { type Notice, problem, REFRESH_ON } from "../drawer/ItemDrawer.js";
 import { ConnectionFailure } from "../shell/ConnectionStatus.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
@@ -147,12 +148,12 @@ function Row({ row, index, bridge, selected, onSelect, onRefresh }: RowProps) {
     };
   }, []);
 
-  const choose = async (choice: string) => {
+  const choose = async (choice: string, note?: string) => {
     if (decision === undefined) return;
     setBusy(true);
     setNotice(undefined);
     const reply = await bridge
-      .command({ type: "resolve_decision", itemId: item.id, decisionId: decision.id, choice })
+      .command({ type: "resolve_decision", itemId: item.id, decisionId: decision.id, choice, ...(note !== undefined && { note }) })
       .catch((cause: unknown) => ({ ok: false as const, error: { code: "bridge_error", message: String(cause) } }));
     if (!mounted.current) return;
     setBusy(false);
@@ -162,7 +163,7 @@ function Row({ row, index, bridge, selected, onSelect, onRefresh }: RowProps) {
   };
   // A click on the row's free space selects it as the title does; buttons and the summary keep their own clicks.
   const onRowClick = (event: MouseEvent<HTMLElement>) => {
-    if ((event.target as Element).closest("button, pre") === null) onSelect(item.id);
+    if ((event.target as Element).closest("button, pre, textarea, form") === null) onSelect(item.id);
   };
 
   return (
@@ -206,6 +207,7 @@ function Row({ row, index, bridge, selected, onSelect, onRefresh }: RowProps) {
           </pre>
         </div>
       )}
+      {decision?.hasDiff === true && <DecisionDiff bridge={bridge} itemId={item.id} decision={decision} context={item.title} />}
       {notice !== undefined && (
         <p className="drawer-notice" data-tone={notice.tone} role="status">
           <span className="symbol" aria-hidden="true">
@@ -215,7 +217,7 @@ function Row({ row, index, bridge, selected, onSelect, onRefresh }: RowProps) {
         </p>
       )}
       {decision !== undefined && (
-        <DecisionChoices decision={decision} busy={busy} context={item.title} onChoose={(choice) => void choose(choice)} />
+        <DecisionChoices key={decision.id} decision={decision} busy={busy} context={item.title} onChoose={(choice, note) => void choose(choice, note)} />
       )}
     </li>
   );

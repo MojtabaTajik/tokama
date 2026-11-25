@@ -87,3 +87,28 @@ export function stepsLine(template: TemplateSummary, agents: readonly AgentSumma
 export function usesOf(template: TemplateSummary, connections: readonly ConnectionSummary[]): string[] {
   return template.connections.map((use) => `${connections.find((connection) => connection.id === use.connectionId)?.name ?? use.connectionId} (${use.access})`);
 }
+
+/** The built-in template for repos without checks: the engineer approves the diff instead. */
+export const QUICK_CHANGE_ID = "builtin/quick-change";
+
+export interface NoChecks {
+  /** Why the template cannot run on the chosen repo. */
+  readonly reason: string;
+  /** The template to use instead, when the setup has it. */
+  readonly instead?: TemplateSummary;
+}
+
+/**
+ * A template with a step that runs the repo's checks cannot run on a chosen repo that lists none:
+ * the reason, and Quick change to use instead. Undefined when the template can run.
+ */
+export function noChecks(template: TemplateSummary | undefined, repos: readonly RepoSummary[], repoIds: readonly string[], templates: readonly TemplateSummary[]): NoChecks | undefined {
+  if (template === undefined || !template.steps.some((step) => step.checks !== undefined && "from" in step.checks)) return undefined;
+  const bare = repos.find((repo) => repoIds.includes(repo.id) && repo.checks.length === 0);
+  if (bare === undefined) return undefined;
+  const instead = templates.find((candidate) => candidate.id === QUICK_CHANGE_ID && candidate.id !== template.id);
+  return {
+    reason: `${template.name} runs the repo's checks, and ${bare.id} lists none, so it can't run there.`,
+    ...(instead !== undefined && { instead }),
+  };
+}

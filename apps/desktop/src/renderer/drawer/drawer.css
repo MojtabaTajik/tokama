@@ -359,3 +359,38 @@
   padding-top: 10px;
   border-top: 1px solid var(--hairline);
 }
+
+/* The change a decision asks you to approve, and the note of Request changes */
+
+.decision-diff-files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.decision-diff-text {
+  max-height: 360px;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.decision-note {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.decision-note-text {
+  padding: 6px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  background: var(--input);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}

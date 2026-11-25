@@ -156,6 +156,7 @@ function toDecision(item: StoredItem): Decision | undefined {
     stepIndex: at ?? (pending >= 0 ? pending : item.steps.length - 1),
     question: QUESTIONS[open.kind],
     ...(why !== undefined && { why }),
+    ...(open.kind === "plan_approval" && open.tree !== undefined && { hasDiff: true }),
     choices: open.choices.slice(0, 5),
   };
 }

@@ -209,6 +209,80 @@ describe("ItemDrawer engine text", () => {
   });
 });
 
+describe("ItemDrawer change to approve", () => {
+  const DIFF_DECISION = "decision_00000000-0000-4000-8000-0000000000d1";
+  const waiting = {
+    ...task,
+    state: "needs_you",
+    decision: {
+      id: DIFF_DECISION,
+      kind: "plan_approval",
+      stepIndex: 0,
+      question: "Approve this step's result?",
+      hasDiff: true,
+      choices: [
+        { id: "approve", label: "Approve" },
+        { id: "request_changes", label: "Request changes" },
+        { id: "stop", label: "Stop" },
+      ],
+    },
+  } as unknown as ItemRecord;
+  const diff = {
+    files: [
+      { path: "src/a.ts", status: "modified", added: 1, removed: 1, binary: false, cut: false, hunks: [{ header: "@@ -1 +1 @@", lines: ['-<img src=x onerror="alert(1)">', "+<b>bold</b>"] }] },
+      { path: "src/new.ts", oldPath: "src/old.ts", status: "renamed", added: 0, removed: 0, binary: false, cut: false, hunks: [] },
+      { path: "logo.png", status: "added", added: null, removed: null, binary: true, cut: false, hunks: [] },
+    ],
+    moreFiles: 2,
+    cut: true,
+    worktree: { repoId: "orders-api", dir: ".tokama/wt/abc", branch: "tokama/abc" },
+  };
+  const withDiff = (reply: Reply) => {
+    const fake = fakeBridge([waiting]);
+    const base = fake.query.getMockImplementation()!;
+    fake.query.mockImplementation(async (q: { type: string; itemId?: string }) => (q.type === "decision_diff" ? reply : base(q)));
+    return fake;
+  };
+
+  it("shows the changed files with their counts and the hunks as text, and says what is left out", async () => {
+    const { bridge, query } = withDiff({ ok: true, data: diff });
+    await renderDrawer(bridge, waiting.id);
+    expect(query).toHaveBeenCalledWith({ type: "decision_diff", itemId: waiting.id, decisionId: DIFF_DECISION });
+    expect($$(".decision-diff-files li").map((el) => el.textContent)).toEqual([
+      "modified src/a.ts +1 −1",
+      "renamed src/old.ts → src/new.ts +0 −0",
+      "added logo.png binary",
+      "2 more files not listed",
+    ]);
+    expect(text(".decision-diff-text")).toBe('── src/a.ts\n@@ -1 +1 @@\n-<img src=x onerror="alert(1)">\n+<b>bold</b>');
+    expect($(".decision-diff-text")?.children.length).toBe(0);
+    expect($$(".drawer img, .drawer b")).toEqual([]);
+    expect(text(".decision-diff .needs-you-why")).toContain("Open the worktree in your editor to see all of it: orders-api/.tokama/wt/abc (branch tokama/abc).");
+  });
+
+  it("says when the change cannot be loaded", async () => {
+    const { bridge } = withDiff({ ok: false, error: { code: "stale_decision", message: "Decision is not open." } });
+    await renderDrawer(bridge, waiting.id);
+    expect(text(".decision-diff .drawer-error")).toBe("✕Could not load the change: Decision is not open.");
+  });
+
+  it("Request changes asks for a note and sends it with the answer; Cancel goes back to the buttons", async () => {
+    const { bridge, command } = withDiff({ ok: true, data: diff });
+    await renderDrawer(bridge, waiting.id);
+    await click(button("Request changes"));
+    expect(command).not.toHaveBeenCalled();
+    await click(button("Cancel"));
+    await click(button("Request changes"));
+    const note = $(".decision-note-text") as HTMLTextAreaElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(note, "  Keep the old name.  ");
+      note.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click(button("Send and run again"));
+    expect(command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: waiting.id, decisionId: DIFF_DECISION, choice: "request_changes", note: "Keep the old name." });
+  });
+});
+
 describe("ItemDrawer decisions", () => {
   it("sends resolve_decision for the chosen button and shows the item the engine sends back", async () => {
     const { bridge, command, push, replyWith } = fakeBridge([needsYou]);
