@@ -22,6 +22,9 @@ flow("shows the model and the step line on a row, and opens the agent tooltip on
   // The step line names the step and its attempt, however narrow the list is.
   await expect.poll(() => flat(wrap.locator(".pl-pipe").innerText())).toMatch(/Build\s*· attempt 1/);
   // The row's click cover must not hide the time and the steps from the pointer: their titles show on hover.
+  // A small window (the macOS runner's is 1024 x 674) puts the row below the fold, and a point outside the
+  // viewport hits nothing, so the row is scrolled into view first.
+  await wrap.scrollIntoViewIfNeeded();
   for (const part of [".pl-time", ".pl-step"]) {
     const hit = await wrap.locator(part).first().evaluate((el) => {
       const box = el.getBoundingClientRect();
