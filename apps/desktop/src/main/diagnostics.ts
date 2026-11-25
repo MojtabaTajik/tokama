@@ -6,6 +6,7 @@
 // else, at a bounded rate. It never names the source, the kind or any other field.
 import { closeSync, constants, fstatSync, openSync, readSync, renameSync, unlinkSync, writeSync } from "node:fs";
 import { type CrashKind, type DiagnosticReportInput, type ErrorWhere, MAX_REPORTED_STACK_CHARS } from "@tokama/core";
+import { RENDERER_USAGE_ACTIONS, type RendererUsageAction } from "../shared/bridge.js";
 
 /** What the renderer may report through its narrow channel: the error's message and stack. */
 export function rendererErrorReport(input: unknown): DiagnosticReportInput | undefined {
@@ -18,6 +19,12 @@ export function rendererErrorReport(input: unknown): DiagnosticReportInput | und
   const combined = stackText !== "" ? stackText : messageText !== "" ? `Error: ${messageText}` : "";
   if (combined === "") return undefined;
   return { type: "error", source: "renderer", where: "uncaught", stack: combined.slice(0, MAX_REPORTED_STACK_CHARS) };
+}
+
+/** A usage action the renderer may count: one of the fixed names of the actions only the window sees. */
+export function rendererUsageReport(input: unknown): DiagnosticReportInput | undefined {
+  const known = (RENDERER_USAGE_ACTIONS as readonly unknown[]).find((action) => action === input);
+  return known === undefined ? undefined : { type: "usage", action: known as RendererUsageAction };
 }
 
 /** A main-process error as a report. */

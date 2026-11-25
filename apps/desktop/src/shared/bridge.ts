@@ -1,7 +1,7 @@
 // The contract between the main process, the preload bridge and the renderer. Types and
 // constants only: the renderer and the sandboxed preload import nothing else from outside.
 import type { ClientEvent, CommandReply, QueryReply } from "@tokama/client";
-import type { CommandInput, DiagnosticEntry, QueryInput } from "@tokama/core";
+import type { CommandInput, DiagnosticEntry, QueryInput, UsageAction } from "@tokama/core";
 import type { DesktopState, LayoutPatch, NotificationSettings } from "./desktop-state.js";
 
 /** The desktop app's view of its engine connection. */
@@ -52,6 +52,7 @@ export const CHANNELS = {
   getDesktopState: "tokama:desktop:get",
   saveLayout: "tokama:desktop:save-layout",
   reportError: "tokama:diagnostics:report-error",
+  countUsage: "tokama:diagnostics:count-usage",
   saveNotifications: "tokama:notifications:save",
   viewedItem: "tokama:notifications:viewed",
   openItem: "tokama:notifications:open-item",
@@ -60,6 +61,10 @@ export const CHANNELS = {
   saveDiagnostics: "tokama:diagnostics:save",
   stopCrashPrompt: "tokama:diagnostics:stop-crash-prompt",
 } as const;
+
+/** The usage actions only the window sees. The main process counts no other name from the window. */
+export const RENDERER_USAGE_ACTIONS = ["expand_view"] as const satisfies readonly UsageAction[];
+export type RendererUsageAction = (typeof RENDERER_USAGE_ACTIONS)[number];
 
 /** What About shows about this build. The main process fills it; every field is plain text or a number. */
 export interface AboutInfo {
@@ -158,6 +163,12 @@ export interface TokamaBridge {
    * the stack cross; the engine cleans them before it records anything.
    */
   reportError(error: { readonly message: string; readonly stack: string }): Promise<void>;
+  /**
+   * Counts one use of an action that only the window sees, such as expanding a view, for the
+   * engine's daily usage counts. Only the fixed names of `RENDERER_USAGE_ACTIONS` count; the main
+   * process ignores anything else.
+   */
+  countUsage(action: RendererUsageAction): Promise<void>;
   /** Remembers the notification switches in `patch`. The main process validates them and ignores any other field. */
   saveNotifications(patch: Partial<NotificationSettings>): Promise<void>;
   /**
