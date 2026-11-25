@@ -63,11 +63,15 @@ const LONG_BASE64 = /(?<![A-Za-z0-9+/=_-])[A-Za-z0-9+/_-]{32,}={0,2}(?![A-Za-z0-
 
 /** Cleans any text by the rules above. Pure; never throws. */
 export function redactText(input: string, context: RedactionContext): string {
-  let text = input.slice(0, INPUT_CAP);
+  // NUL marks own files below; one in the input is dropped so it cannot forge a mark.
+  let text = input.slice(0, INPUT_CAP).replaceAll("\u0000", "");
 
+  // Own built files are set aside under a mark (NUL, one private-use character, NUL), so the later passes cannot cut into them
+  // (a pnpm folder such as `zod@4.6.7` would otherwise look like an email or a path).
+  const own: string[] = [];
   for (const root of byLength(context.codeRoots)) {
     const pattern = new RegExp(`(?:file://)?${escape(trimSlash(root))}/(${PATH_CHARS}*)`, "g");
-    text = text.replace(pattern, (_match, rel: string) => (OWN_FILE.test(rel) ? `<app>/${rel}` : "<path>"));
+    text = text.replace(pattern, (_match, rel: string) => (OWN_FILE.test(rel) && own.length < 6000 ? ownMark(own.push(`<app>/${rel}`) - 1) : "<path>"));
   }
   // Other file URLs are paths: they get the path rules and keep their `:line:col`.
   text = text.replace(/\bfile:\/\//g, "");
@@ -89,7 +93,9 @@ export function redactText(input: string, context: RedactionContext): string {
   text = text.replace(LONG_HEX, "<token>");
   text = text.replace(LONG_BASE64, (run) => (/\d/.test(run) && /[A-Za-z]/.test(run) ? "<token>" : run));
   // A path right after a placeholder (`<path>/x`) became a second placeholder; keep one.
-  return text.replace(/(<path>|<url>|<email>|<token>)(?:<path>)+/g, "$1");
+  text = text.replace(/(<path>|<url>|<email>|<token>)(?:<path>)+/g, "$1");
+  own.forEach((path, index) => (text = text.replaceAll(ownMark(index), path)));
+  return text;
 }
 
 /** A stack, cleaned and cut to MAX_STACK_LINES lines and MAX_STACK_CHARS characters. */
@@ -145,6 +151,11 @@ function safeString(value: unknown): string {
   } catch {
     return "(unprintable value)";
   }
+}
+
+/** The mark an own file waits under: NUL, one private-use character, NUL. No pattern matches it. */
+function ownMark(index: number): string {
+  return `\u0000${String.fromCharCode(0xe000 + index)}\u0000`;
 }
 
 function trimSlash(path: string): string {

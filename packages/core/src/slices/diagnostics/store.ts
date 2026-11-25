@@ -116,6 +116,8 @@ export class DiagnosticsStore {
   private clis: DiagnosticCli[] = [];
   /** Usage counts not written yet, per UTC day. */
   private readonly pending = new Map<string, Map<UsageAction, number>>();
+  /** After close() nothing is written: the home lock may be another engine's by then. */
+  private closed = false;
 
   private constructor(options: DiagnosticsStoreOptions, settings: StoredSettings, kept: Kept[], crashed: boolean) {
     this.options = options;
@@ -147,9 +149,13 @@ export class DiagnosticsStore {
 
     const read = await readJsonFile(join(dir, SETTINGS_FILE), { maxBytes: 4096 });
     const parsed = read.ok ? StoredSettingsSchema.safeParse(read.value) : undefined;
+    const firstUse = !read.ok && read.error.reason === "not_found";
+    // A settings file that is there but does not load (another version wrote it, or it is
+    // damaged) fails closed: nothing is collected, and the file is left as it is for the user.
+    if (!firstUse && !parsed?.success) log("the diagnostics settings do not load; collecting is off until they are set again");
     const settings: StoredSettings = parsed?.success
       ? parsed.data
-      : { schemaVersion: 1, collect: true, installId: InstallIdSchema.parse(newId("install", clock.now())), crashSeenAt: null };
+      : { schemaVersion: 1, collect: firstUse, installId: InstallIdSchema.parse(newId("install", clock.now())), crashSeenAt: null };
 
     const kept: Kept[] = [];
     let dropped = false;
@@ -169,8 +175,9 @@ export class DiagnosticsStore {
     const marker = join(dir, RUNNING_FILE);
     const crashed = exists(marker);
     const store = new DiagnosticsStore(options, settings, kept, crashed);
-    if (!parsed?.success) store.saveSettings();
-    if (dropped || !store.prune()) store.rewrite();
+    if (firstUse) store.saveSettings();
+    const pruned = store.prune();
+    if (dropped || !pruned) store.rewrite();
     const written = replaceTextSync(marker, `${process.pid}\n`);
     if (!written.ok) log(`cannot write the diagnostics marker: ${written.error.message}`);
     if (crashed) store.crash("engine", "unclean_exit");
@@ -258,8 +265,11 @@ export class DiagnosticsStore {
 
   /** Deletes by ids, or every entry; returns how many went. */
   delete(target: DeleteTarget): number {
+    if (this.closed) return 0;
     const before = this.kept.length;
     if ("all" in target) {
+      // Counts not yet written go too: they belong to what the user deleted.
+      this.pending.clear();
       this.kept = [];
     } else {
       const ids = new Set<string>(target.ids);
@@ -281,12 +291,14 @@ export class DiagnosticsStore {
   }
 
   updateSettings(change: SettingsChange): DiagnosticsSettings {
+    if (this.closed) return this.settings();
     const next: StoredSettings = { ...this.settingsValue };
     if (change.collect !== undefined) next.collect = change.collect;
     if (change.resetInstallId === true) next.installId = InstallIdSchema.parse(newId("install", this.clock.now()));
     if (change.crashSeen === true) next.crashSeenAt = this.clock.now();
-    // Off means nothing more is written, counts not yet written included.
-    if (!next.collect) this.pending.clear();
+    // Off means nothing more is written, counts not yet written included; a new install id
+    // starts fresh too, so no count from before it is written under it.
+    if (!next.collect || change.resetInstallId === true) this.pending.clear();
     this.settingsValue = next;
     this.saveSettings();
     this.options.onChange?.();
@@ -295,7 +307,9 @@ export class DiagnosticsStore {
 
   /** On a clean stop: writes the pending counts and removes the crash marker. */
   close(): void {
+    if (this.closed) return;
     this.flushUsage();
+    this.closed = true;
     try {
       unlinkSync(join(this.options.dir, RUNNING_FILE));
     } catch {
@@ -333,7 +347,7 @@ export class DiagnosticsStore {
   }
 
   private record(body: Body): void {
-    if (!this.settingsValue.collect) return;
+    if (!this.settingsValue.collect || this.closed) return;
     try {
       const now = this.clock.now();
       const candidate = {

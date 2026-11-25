@@ -12,7 +12,7 @@ import { aboutInfo } from "./about.js";
 import { engineApi } from "./api.js";
 import { type ConnectionWatch, watchConnection } from "./connection.js";
 import { type DesktopStore, desktopStore } from "./desktop-store.js";
-import { createReporter, mainErrorReport, pidAlive, rateLimit, rendererErrorReport, rendererGoneKind, rendererUsageReport, runMarker } from "./diagnostics.js";
+import { createReporter, mainErrorReport, pidAlive, rateLimit, rendererErrorReport, rendererGoneKind, type Reporter, runMarker } from "./diagnostics.js";
 import { engineCommand, engineDirFor, findExecutable, otherVersionMessage, readLogTail } from "./engine.js";
 import { pickRepoFolder } from "./folder.js";
 import { appIcons } from "./icon.js";
@@ -96,7 +96,7 @@ const icons = appIcons(process.platform, app.getAppPath(), app.isPackaged);
 
 const WINDOW = { width: 1200, height: 800, minWidth: 720, minHeight: 480 } as const;
 
-function createWindow(store: DesktopStore): void {
+function createWindow(store: DesktopStore, reporter: Reporter): void {
   const saved = store.get().window;
   // The remembered place, moved onto a display that is there now.
   const placement = fitBounds(saved.bounds, screen.getAllDisplays().map((display) => display.workArea), screen.getPrimaryDisplay().workArea, WINDOW);
@@ -111,6 +111,7 @@ function createWindow(store: DesktopStore): void {
     webPreferences: { ...secureWebPreferences(preloadPath), ...(background ? { backgroundThrottling: false } : {}) },
   });
   trackWindow(window, store);
+  window.on("unresponsive", () => reporter.report({ type: "warning", source: "renderer", code: "renderer_unresponsive" }));
   // A background test run never shows the window; maximizing or full-screening would show it, so they wait for a real show.
   if (!background) {
     window.once("ready-to-show", () => {
@@ -153,10 +154,6 @@ void app.whenReady().then(() => {
     const report = rendererErrorReport(input);
     if (report !== undefined && rendererReports()) reporter.report(report);
   });
-  handle(CHANNELS.countUsage, (input) => {
-    const report = rendererUsageReport(input);
-    if (report !== undefined) reporter.report(report);
-  });
   const watch = startWatch(() => void reporter.flush());
   engineClient = () => watch.client();
   handle(CHANNELS.getConnection, () => watch.state());
@@ -196,9 +193,9 @@ void app.whenReady().then(() => {
     marker.clear();
     void watch.close();
   });
-  createWindow(store);
+  createWindow(store, reporter);
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow(store);
+    if (BrowserWindow.getAllWindows().length === 0) createWindow(store, reporter);
   });
 });
 

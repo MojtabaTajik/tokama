@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MAX_REPORTED_STACK_CHARS } from "@tokama/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createReporter, mainErrorReport, rateLimit, rendererErrorReport, rendererGoneKind, rendererUsageReport, runMarker } from "./diagnostics.js";
+import { createReporter, mainErrorReport, rateLimit, rendererErrorReport, rendererGoneKind, runMarker } from "./diagnostics.js";
 
 describe("rendererErrorReport", () => {
   it("takes the stack, or the message when there is no stack, and nothing else", () => {
@@ -23,14 +23,6 @@ describe("rendererErrorReport", () => {
   it("cuts a huge stack to what the engine accepts", () => {
     const report = rendererErrorReport({ message: "m", stack: "x".repeat(MAX_REPORTED_STACK_CHARS * 3) });
     expect(report?.type === "error" && report.stack.length).toBe(MAX_REPORTED_STACK_CHARS);
-  });
-});
-
-describe("rendererUsageReport", () => {
-  it("counts only the actions the window may count", () => {
-    expect(rendererUsageReport("expand_view")).toEqual({ type: "usage", action: "expand_view" });
-    expect(rendererUsageReport("approve")).toBeUndefined();
-    expect(rendererUsageReport({ action: "expand_view" })).toBeUndefined();
   });
 });
 

@@ -138,6 +138,8 @@ export interface EngineOptions {
   readonly userHome?: string;
   /** Machine facts for diagnostics entries. Default: read from this machine. */
   readonly machineFacts?: MachineFacts;
+  /** Called once diagnostics are open, early in the start, so errors during the rest of it are recorded. */
+  readonly onDiagnostics?: (diagnostics: EngineDiagnostics) => void;
   /** A connection that sends no hello within this time is closed. Default 5 s. */
   readonly helloTimeoutMs?: number;
   /** How long shutdown waits for in-flight requests and open connections. Default 5 s. */
@@ -152,8 +154,6 @@ export interface EngineHandle {
   readonly store: MemoryItemStore;
   /** The item logs, when the engine stores items. */
   readonly items?: ItemStore;
-  /** Diagnostics, when the engine stores items; for errors nothing else catches. */
-  readonly diagnostics?: EngineDiagnostics;
   /** Resolves once the engine has shut down and removed its files. */
   readonly closed: Promise<void>;
   /** Shuts the engine down, as aborting the signal does. */
@@ -226,6 +226,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
         log(`diagnostics are off for this run: ${String(error)}`);
         return undefined;
       });
+      if (diagnostics !== undefined) options.onDiagnostics?.(diagnostics);
       const result = await openStorage(home, options.clock ?? systemClock, log, () => usageRecorded(), diagnostics);
       if (!result.ok) {
         diagnostics?.close();
@@ -729,7 +730,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   }
 
   log(`listening on ${socketPath} (engine ${engineId}${sample ? ", sample data" : ""})`);
-  return ok({ engineId, endpoint: endpoint.value, store, ...(storage && { items: storage.items }), ...(diagnostics && { diagnostics }), closed, close: shutdown });
+  return ok({ engineId, endpoint: endpoint.value, store, ...(storage && { items: storage.items }), closed, close: shutdown });
 }
 
 interface Storage {

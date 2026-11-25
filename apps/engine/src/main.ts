@@ -10,7 +10,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { defaultEngineDir } from "@tokama/core";
-import { type EngineHandle, startEngine } from "./engine.js";
+import type { EngineDiagnostics } from "./diagnostics.js";
+import { startEngine } from "./engine.js";
 
 const log = (message: string) => process.stderr.write(`tokama-engine: ${message}\n`);
 
@@ -24,11 +25,11 @@ function engineVersion(): string {
   }
 }
 
-let engine: EngineHandle | undefined;
+let diagnostics: EngineDiagnostics | undefined;
 // An error nothing caught ends the process as before; the monitor only records it first. The
 // write is synchronous, and the crash marker stays, so the next start records a crash too.
 process.on("uncaughtExceptionMonitor", (error, origin) => {
-  engine?.diagnostics?.store.error("engine", origin === "unhandledRejection" ? "unhandled_rejection" : "uncaught", error);
+  diagnostics?.store.error("engine", origin === "unhandledRejection" ? "unhandled_rejection" : "uncaught", error);
 });
 
 async function main(): Promise<number> {
@@ -50,13 +51,12 @@ async function main(): Promise<number> {
 
   // Claude Code's session logs, read only for the "all on this Mac" usage view; never in sample mode.
   const claudeLogs = sample ? undefined : join(homedir(), ".claude", "projects");
-  const started = await startEngine({ dir, home, signal: root.signal, log, sample, engineVersion: engineVersion(), ...(claudeLogs !== undefined && { claudeLogs }) });
+  const started = await startEngine({ dir, home, signal: root.signal, log, sample, engineVersion: engineVersion(), onDiagnostics: (opened) => (diagnostics = opened), ...(claudeLogs !== undefined && { claudeLogs }) });
   if (!started.ok) {
     log(started.error.message);
     if (started.error.code === "stopped") return 0;
     return started.error.code === "already_running" ? 3 : 1;
   }
-  engine = started.value;
   await started.value.closed;
   return 0;
 }

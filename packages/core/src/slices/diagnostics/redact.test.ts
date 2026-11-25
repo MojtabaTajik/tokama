@@ -66,6 +66,12 @@ describe("redactText", () => {
     expect(redactText("at a (/opt/tokama/repos/orders-api/x.ts:1:1)", context)).toBe("at a (<path>:1:1)");
   });
 
+  it("keeps an own dependency's pnpm path whole, and a NUL in the input cannot forge it", () => {
+    const context = { ...none, codeRoots: ["/opt/tokama"], repoNames: ["0", "zod"] };
+    expect(redactText("at x (/opt/tokama/node_modules/.pnpm/zod@4.6.7/node_modules/zod/index.js:1:2)", context)).toBe("at x (<app>/node_modules/.pnpm/zod@4.6.7/node_modules/zod/index.js:1:2)");
+    expect(redactText("\u0000\ue000\u0000 /srv/northwind", context)).toBe("\ue000 <path>");
+  });
+
   it("leaves ordinary words, numbers and placeholders alone", () => {
     const text = "TypeError: Cannot read properties of undefined (reading 'length') at 3 of 10";
     expect(redactText(text, none)).toBe(text);

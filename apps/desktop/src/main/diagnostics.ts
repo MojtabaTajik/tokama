@@ -5,7 +5,7 @@
 // The renderer is untrusted input: it may send a message and a stack, two strings, and nothing
 // else, at a bounded rate. It never names the source, the kind or any other field.
 import { closeSync, constants, fstatSync, openSync, readSync, renameSync, unlinkSync, writeSync } from "node:fs";
-import { type CrashKind, type DiagnosticReportInput, type ErrorWhere, MAX_REPORTED_STACK_CHARS, type UsageAction } from "@tokama/core";
+import { type CrashKind, type DiagnosticReportInput, type ErrorWhere, MAX_REPORTED_STACK_CHARS } from "@tokama/core";
 
 /** What the renderer may report through its narrow channel: the error's message and stack. */
 export function rendererErrorReport(input: unknown): DiagnosticReportInput | undefined {
@@ -18,13 +18,6 @@ export function rendererErrorReport(input: unknown): DiagnosticReportInput | und
   const combined = stackText !== "" ? stackText : messageText !== "" ? `Error: ${messageText}` : "";
   if (combined === "") return undefined;
   return { type: "error", source: "renderer", where: "uncaught", stack: combined.slice(0, MAX_REPORTED_STACK_CHARS) };
-}
-
-const USAGE_ACTIONS: readonly UsageAction[] = ["expand_view"];
-
-/** A usage action the renderer may count: one of the actions only the window sees. */
-export function rendererUsageReport(input: unknown): DiagnosticReportInput | undefined {
-  return typeof input === "string" && (USAGE_ACTIONS as readonly string[]).includes(input) ? { type: "usage", action: input as UsageAction } : undefined;
 }
 
 /** A main-process error as a report. */

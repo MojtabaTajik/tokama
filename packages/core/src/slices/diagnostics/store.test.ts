@@ -214,6 +214,42 @@ describe("DiagnosticsStore", () => {
     expect(lines()).toHaveLength(1);
   });
 
+  it("fails closed on a settings file it cannot load, and leaves it as it is", async () => {
+    const store = await open();
+    store.updateSettings({ collect: false });
+    store.close();
+    const newer = JSON.stringify({ schemaVersion: 2, collect: false, installId: store.settings().installId, crashSeenAt: null, extra: true });
+    writeFileSync(join(dir, SETTINGS_FILE), newer);
+    const again = await open();
+    expect(again.settings().collect).toBe(false);
+    again.warning("engine", "index_rebuilt");
+    expect(again.list().entries).toEqual([]);
+    expect(readFileSync(join(dir, SETTINGS_FILE), "utf8")).toBe(newer);
+  });
+
+  it("starts anew from an entries file it cannot read, and prunes even then", async () => {
+    const store = await open({ maxBytes: 1000 });
+    store.close();
+    writeFileSync(join(dir, ENTRIES_FILE), "x".repeat(5000));
+    const again = await open({ maxBytes: 1000 });
+    expect(again.list().entries).toEqual([]);
+    expect(readFileSync(join(dir, ENTRIES_FILE), "utf8")).toBe("");
+  });
+
+  it("writes no counts from before a delete or an install id reset, and nothing after close", async () => {
+    const store = await open();
+    store.count("approve");
+    store.delete({ all: true });
+    store.count("stop_item");
+    store.updateSettings({ resetInstallId: true });
+    store.flushUsage();
+    expect(store.list().entries).toEqual([]);
+    store.close();
+    store.warning("engine", "index_rebuilt");
+    store.error("engine", "uncaught", new Error("late"));
+    expect(readdirSync(dir)).not.toContain(ENTRIES_FILE);
+  });
+
   it("never writes through a planted symlink", async () => {
     const target = join(root, "elsewhere");
     writeFileSync(target, "keep\n");

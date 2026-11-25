@@ -51,7 +51,6 @@ export const CHANNELS = {
   getDesktopState: "tokama:desktop:get",
   saveLayout: "tokama:desktop:save-layout",
   reportError: "tokama:diagnostics:report-error",
-  countUsage: "tokama:diagnostics:count-usage",
 } as const;
 
 /** What About shows about this build. The main process fills it; every field is plain text or a number. */
@@ -110,6 +109,4 @@ export interface TokamaBridge {
    * the stack cross; the engine cleans them before it records anything.
    */
   reportError(error: { readonly message: string; readonly stack: string }): Promise<void>;
-  /** Counts one use of an action only the window sees, such as expanding a view. */
-  countUsage(action: "expand_view"): Promise<void>;
 }

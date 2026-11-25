@@ -51,7 +51,6 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
     getDesktopState: vi.fn(async () => options.desktopState ?? DEFAULT_DESKTOP_STATE),
     saveLayout: vi.fn(async () => undefined),
     reportError: vi.fn(async () => undefined),
-    countUsage: vi.fn(async () => undefined),
     onEvent: vi.fn((listener: (event: BridgeEvent) => void) => {
       eventListeners.add(listener);
       return () => {
