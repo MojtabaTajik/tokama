@@ -16,8 +16,9 @@ export const MAX_STACK_LINES = 30;
 /** The longest raw stack a client may report; the engine cleans it and cuts it to `MAX_STACK_CHARS`. */
 export const MAX_REPORTED_STACK_CHARS = 16_000;
 /**
- * The most the stored entries may take, in bytes of JSONL. It equals what a receiver takes in one
- * upload, so sending every stored entry at once always fits.
+ * The most the stored entries may take, counted in bytes of the body that sends them all (the
+ * indented JSON the user reads). It equals what a receiver takes in one upload, unpacked, so
+ * sending every stored entry at once always fits.
  */
 export const MAX_DIAGNOSTICS_BYTES = 2 * 1024 * 1024;
 /** The most entries one diagnostics_list reply carries. */

@@ -37,6 +37,7 @@ import {
   type WarningCode,
 } from "../../kernel/schemas/index.js";
 import { z } from "zod";
+import { BODY_OVERHEAD_BYTES, entryBodyBytes } from "./body.js";
 import { cleanStack, describeThrown, fingerprint, nameOfStack, type RedactionContext, redactText } from "./redact.js";
 
 export const ENTRIES_FILE = "entries.jsonl";
@@ -69,7 +70,7 @@ export interface DiagnosticsStoreOptions {
   /** Called when the settings or the waiting crash change. */
   readonly onChange?: () => void;
   readonly log?: (message: string) => void;
-  /** Size cap of the entries file. Default MAX_DIAGNOSTICS_BYTES (2 MB). */
+  /** Size cap of the entries, counted in bytes of the body that sends them all. Default MAX_DIAGNOSTICS_BYTES (2 MB). */
   readonly maxBytes?: number;
   /** Entries older than this are dropped. Default 30 days. */
   readonly maxAgeMs?: number;
@@ -98,6 +99,7 @@ type Body =
 
 interface Kept {
   readonly entry: DiagnosticEntry;
+  /** What the entry adds to the body that sends every entry; the size cap counts this. */
   readonly bytes: number;
 }
 
@@ -166,7 +168,7 @@ export class DiagnosticsStore {
         if (line === "") continue;
         const entry = parseLine(line);
         if (entry === undefined) dropped = true;
-        else kept.push({ entry, bytes: Buffer.byteLength(line) + 1 });
+        else kept.push({ entry, bytes: entryBodyBytes(entry) });
       }
     } else if (text.error.reason !== "not_found") {
       log(`diagnostics entries are not loaded (${text.error.reason}); starting a new file`);
@@ -324,7 +326,7 @@ export class DiagnosticsStore {
     const before = this.kept.length;
     this.kept = this.kept.filter((item) => item.entry.at >= now - this.maxAgeMs);
     let bytes = this.kept.reduce((sum, item) => sum + item.bytes, 0);
-    if (bytes > this.maxBytes) {
+    if (bytes + BODY_OVERHEAD_BYTES > this.maxBytes) {
       // Oldest first, down to 80% so a full file is not rewritten on every write.
       this.kept.sort((a, b) => a.entry.at - b.entry.at);
       let drop = 0;
@@ -374,9 +376,10 @@ export class DiagnosticsStore {
         this.log(`cannot write a diagnostic: ${written.error.message}`);
         return;
       }
-      this.kept.push({ entry: parsed.data, bytes: Buffer.byteLength(line) });
-      this.bytes += Buffer.byteLength(line);
-      if (this.bytes > this.maxBytes || (this.kept[0] !== undefined && this.kept[0].entry.at < now - this.maxAgeMs)) {
+      const bytes = entryBodyBytes(parsed.data);
+      this.kept.push({ entry: parsed.data, bytes });
+      this.bytes += bytes;
+      if (this.bytes + BODY_OVERHEAD_BYTES > this.maxBytes || (this.kept[0] !== undefined && this.kept[0].entry.at < now - this.maxAgeMs)) {
         if (!this.prune()) this.rewrite();
       }
       if (body.type === "crash") this.options.onChange?.();
