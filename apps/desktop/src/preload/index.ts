@@ -2,7 +2,7 @@
 // `electron`. It exposes `window.tokama` (TokamaBridge) and nothing else: no ipcRenderer, no
 // channel names, no Node.
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
-import { type AboutInfo, type BridgeEvent, CHANNELS, type ConnectionState, type OpenResult, type TokamaBridge } from "../shared/bridge.js";
+import { type AboutInfo, type BridgeEvent, CHANNELS, type ConnectionState, type DiagnosticsLoad, type DiagnosticsSaveResult, type DiagnosticsSendResult, type OpenResult, type TokamaBridge } from "../shared/bridge.js";
 import type { DesktopState } from "../shared/desktop-state.js";
 
 /** Subscribes to a pushed channel. Wrapped, so the renderer never receives the IPC event object (it carries `sender`). */
@@ -57,6 +57,11 @@ export const bridge: TokamaBridge = {
       if (openListener === listener) openListener = undefined;
     };
   },
+  loadDiagnostics: () => ipcRenderer.invoke(CHANNELS.loadDiagnostics) as Promise<DiagnosticsLoad>,
+  // Only a list of strings crosses, whatever else the renderer passes; main checks each id.
+  sendDiagnostics: (ids) => ipcRenderer.invoke(CHANNELS.sendDiagnostics, Array.from(ids, String)) as Promise<DiagnosticsSendResult>,
+  saveDiagnostics: (ids) => ipcRenderer.invoke(CHANNELS.saveDiagnostics, Array.from(ids, String)) as Promise<DiagnosticsSaveResult>,
+  stopCrashPrompt: () => ipcRenderer.invoke(CHANNELS.stopCrashPrompt) as Promise<void>,
 };
 
 contextBridge.exposeInMainWorld("tokama", bridge);

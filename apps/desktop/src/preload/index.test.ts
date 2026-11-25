@@ -21,7 +21,7 @@ const [, pushOpenItem] = electron.on.mock.calls.find(([channel]) => channel === 
 describe("preload bridge", () => {
   it("exposes window.tokama with only the bridge methods", () => {
     expect(exposed).toEqual([["tokama", bridge]]);
-    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "getAboutInfo", "getConnection", "getDesktopState", "onConnection", "onEvent", "onOpenItem", "openAttemptFile", "openTemplateFile", "pickFolder", "query", "reportError", "retryConnection", "saveLayout", "saveNotifications", "setViewedItem", "showDataFolder"].sort());
+    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "getAboutInfo", "getConnection", "getDesktopState", "onConnection", "onEvent", "onOpenItem", "openAttemptFile", "openTemplateFile", "pickFolder", "query", "reportError", "retryConnection", "saveLayout", "saveNotifications", "setViewedItem", "showDataFolder", "loadDiagnostics", "sendDiagnostics", "saveDiagnostics", "stopCrashPrompt"].sort());
   });
 
   it("query and command invoke their channels with the request only", async () => {
@@ -64,6 +64,19 @@ describe("preload bridge", () => {
     const error = { message: "x is undefined", stack: "TypeError: x is undefined", source: "engine", where: "startup" } as { message: string; stack: string };
     await bridge.reportError(error);
     expect(electron.invoke).toHaveBeenCalledWith(CHANNELS.reportError, { message: "x is undefined", stack: "TypeError: x is undefined" });
+  });
+
+  it("the diagnostics calls pass a list of strings only: never a URL, text or other fields", async () => {
+    electron.invoke.mockResolvedValue({ ok: true, sent: 1 });
+    const ids = Object.assign(["diag_a", 5], { url: "https://evil.example" }) as unknown as string[];
+    await bridge.sendDiagnostics(ids);
+    expect(electron.invoke).toHaveBeenLastCalledWith(CHANNELS.sendDiagnostics, ["diag_a", "5"]);
+    await bridge.saveDiagnostics(ids);
+    expect(electron.invoke).toHaveBeenLastCalledWith(CHANNELS.saveDiagnostics, ["diag_a", "5"]);
+    await bridge.loadDiagnostics();
+    expect(electron.invoke).toHaveBeenLastCalledWith(CHANNELS.loadDiagnostics);
+    await bridge.stopCrashPrompt();
+    expect(electron.invoke).toHaveBeenLastCalledWith(CHANNELS.stopCrashPrompt);
   });
 
   it("pickFolder invokes its channel with no arguments", async () => {

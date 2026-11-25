@@ -22,8 +22,15 @@ describe("parseDesktopState", () => {
       lastFilter: { status: "done", range: "7d" },
       lastRepoFolder: "/code/orders-api",
       notifications: { needsYou: false, finished: true, failed: false, sound: true },
+      askAfterCrash: false,
     };
     expect(parseDesktopState(full)).toEqual(full);
+  });
+
+  it("asks after a crash unless the file says false", () => {
+    expect([undefined, true, "no", 0].map((askAfterCrash) => parseDesktopState({ askAfterCrash }).askAfterCrash)).toEqual([true, true, true, true]);
+    expect(parseDesktopState({ askAfterCrash: false }).askAfterCrash).toBe(false);
+    expect(applyLayoutPatch(DEFAULT_DESKTOP_STATE, { askAfterCrash: false }).askAfterCrash).toBe(true);
   });
 
   it("rejects bad bounds, widths, sections, views and filters one by one", () => {

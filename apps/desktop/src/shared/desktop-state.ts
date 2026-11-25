@@ -55,9 +55,11 @@ export interface DesktopState {
   /** The repo folder chosen last in the Add repo picker. */
   readonly lastRepoFolder?: string;
   readonly notifications: NotificationSettings;
+  /** After a crash, the next start asks to send a report; false after "Don't ask again". */
+  readonly askAfterCrash: boolean;
 }
 
-/** What the renderer may change; the window and the repo folder belong to the main process. */
+/** What the renderer may change; the window, the repo folder and the crash prompt belong to the main process. */
 export type LayoutPatch = Partial<Pick<DesktopState, "sidebar" | "drawer" | "collapsedSections" | "lastView" | "lastFilter">>;
 
 export const DEFAULT_DESKTOP_STATE: DesktopState = {
@@ -68,6 +70,7 @@ export const DEFAULT_DESKTOP_STATE: DesktopState = {
   lastView: { kind: "all" },
   lastFilter: { status: "active", range: "today" },
   notifications: { needsYou: true, finished: true, failed: true, sound: false },
+  askAfterCrash: true,
 };
 
 type Limits = { readonly min: number; readonly max: number };
@@ -133,6 +136,7 @@ export function parseDesktopState(input: unknown): DesktopState {
     lastFilter: lastFilter(root["lastFilter"]),
     notifications: notifications(root["notifications"]),
     ...(typeof folder === "string" && folder !== "" && folder.length <= MAX_TEXT ? { lastRepoFolder: folder } : {}),
+    askAfterCrash: root["askAfterCrash"] !== false,
   };
 }
 

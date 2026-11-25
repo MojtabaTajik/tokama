@@ -157,6 +157,8 @@ export {
   DIAGNOSTICS_SCHEMA_VERSION,
   DiagnosticEntrySchema,
   DiagnosticsBodySchema,
+  DiagnosticIdSchema,
+  type DiagnosticId,
   DiagnosticReportSchema,
   MachineFactsSchema,
   MAX_DIAGNOSTICS_BYTES,
