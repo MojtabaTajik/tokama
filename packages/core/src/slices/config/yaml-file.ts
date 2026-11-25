@@ -112,7 +112,7 @@ function describe(issue: z.core.$ZodIssue, schema: z.ZodType): Described[] {
     case "too_small":
       return [{ path, message: `${label} must not be empty` }];
     case "too_big":
-      return [{ path, message: `${label} must be at most ${String(issue.maximum)} characters` }];
+      return [{ path, message: `${label} must be at most ${String(issue.maximum)} ${issue.origin === "array" ? "items" : "characters"}` }];
     default:
       return [{ path, message: `${label} ${issue.message}` }];
   }

@@ -187,7 +187,9 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   const store = options.store ?? new MemoryItemStore();
   const sample = options.sample ? new SampleEngine(store, options.clock ?? systemClock) : undefined;
   const runner = options.runner ?? createProcessRunner();
-  // Real mode: the engine stores items. Its run loop starts restart recovery at once.
+  // Real mode: the engine stores items. Its run loop starts restart recovery at once. If it cannot
+  // start, the engine still answers, and its setup says why nothing can run.
+  let realFailure: string | undefined;
   const realEngine: Promise<RealEngine | undefined> =
     storage === undefined || options.home === undefined
       ? Promise.resolve(undefined)
@@ -203,7 +205,8 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
           ...(options.recoveryGraceMs !== undefined && { recoveryGraceMs: options.recoveryGraceMs }),
           log,
         }).catch((error: unknown) => {
-          log(`real mode failed to start: ${String(error)}`);
+          realFailure = `Tokama could not start running items: ${String(error)}`.slice(0, 1000);
+          log(realFailure);
           return undefined;
         });
   const helloTimeoutMs = options.helloTimeoutMs ?? 5_000;
@@ -281,7 +284,13 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
 
   /** The sample setup in sample mode, with the repos of repos.yaml after its own. */
   const setup = async (): Promise<SetupResult> => {
-    const base: SetupResult = sample ? { ...sample.setup, repos: sample.setup.repos.map((repo) => ({ ...repo, sample: true as const })) } : { repos: [], connections: [], agents: [], templates: [], health: { git: { ok: true }, clis: [], config: [] } };
+    const base: SetupResult = sample ? { ...sample.setup, repos: sample.setup.repos.map((repo) => ({ ...repo, sample: true as const })) } : {
+          repos: [],
+          connections: [],
+          agents: [],
+          templates: [],
+          health: { git: { ok: true }, clis: [], config: realFailure === undefined ? [] : [{ file: "engine", message: realFailure }] },
+        };
     if (options.home === undefined) return base;
     const loaded = await loadRepos({ tokamaHome: options.home });
     if (!loaded.ok) {

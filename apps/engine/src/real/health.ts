@@ -14,7 +14,7 @@ export function machineChecks(runner: ProcessRunner): HealthChecks {
   const factories: Record<string, unknown> = { ...adapters };
   const claudeCodeStatus = factories["claudeCodeStatus"] as ((options: { runner: ProcessRunner; timeoutMs: number }) => Promise<CliHealth>) | undefined;
   return async () => {
-    const [version, claude] = await Promise.all([git.checkGitVersion(), claudeCodeStatus?.({ runner, timeoutMs: 5_000 })]);
+    const [version, claude] = await Promise.all([git.checkGitVersion(), claudeCodeStatus?.({ runner, timeoutMs: 8_000 })]);
     return {
       git: version.ok ? { ok: true, version: version.value.slice(0, 100) } : { ok: false, message: version.error.message.slice(0, 1000) },
       clis: claude === undefined ? [] : [claude],
@@ -23,7 +23,7 @@ export function machineChecks(runner: ProcessRunner): HealthChecks {
 }
 
 /** Runs the checks at most once per `maxAgeMs`; callers share a run in progress. */
-export function cachedChecks(checks: HealthChecks, now: () => number, maxAgeMs = 30_000): { get(): Promise<Omit<Health, "config">> } {
+export function cachedChecks(checks: HealthChecks, now: () => number, maxAgeMs = 5_000): { get(): Promise<Omit<Health, "config">> } {
   let last: { at: number; result: Promise<Omit<Health, "config">> } | undefined;
   return {
     get() {

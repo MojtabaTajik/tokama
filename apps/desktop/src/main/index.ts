@@ -8,7 +8,7 @@ import { app, BrowserWindow, dialog, ipcMain, session, shell } from "electron";
 import { CHANNELS } from "../shared/bridge.js";
 import { engineApi } from "./api.js";
 import { type ConnectionWatch, watchConnection } from "./connection.js";
-import { engineCommand, engineDirFor, findExecutable, readLogTail } from "./engine.js";
+import { engineCommand, engineDirFor, findExecutable, otherVersionMessage, readLogTail } from "./engine.js";
 import { pickFolder } from "./folder.js";
 import { appIcons } from "./icon.js";
 import { devServerUrl, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, sampleEngineEnabled, secureWebPreferences } from "./policy.js";
@@ -74,6 +74,7 @@ function startWatch(): ConnectionWatch {
     readLogTail: (path) => readLogTail(path),
     onState: (state) => send(CHANNELS.connectionChanged, state),
     onEvent: (event) => send(CHANNELS.event, event),
+    otherVersion: otherVersionMessage(endpoint.ok ? endpoint.value.lockPath : join(dir, "engine.lock")),
   });
 }
 

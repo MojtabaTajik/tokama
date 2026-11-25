@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ProcessRunner, RunRequest, RunResult } from "../../../kernel/process/index.js";
 import { claudeCodeStatus } from "./status.js";
 
-type Reply = { readonly exitCode: number; readonly out: string } | "missing";
+type Reply = { readonly exitCode: number; readonly out: string } | "missing" | "timeout";
 
 /** A runner that answers each argv (joined by spaces) with a fixed reply. */
 function fakeRunner(replies: Readonly<Record<string, Reply>>): ProcessRunner & { argvs: string[] } {
@@ -14,6 +14,7 @@ function fakeRunner(replies: Readonly<Record<string, Reply>>): ProcessRunner & {
       argvs.push(argv);
       const reply = replies[argv] ?? "missing";
       if (reply === "missing") return { kind: "not-started", reason: "spawn-error", message: "ENOENT", code: "ENOENT" };
+      if (reply === "timeout") return { kind: "finished", pid: 2, exitCode: null, signal: "SIGTERM", timedOut: true, aborted: false, startedAt: 0, endedAt: 0, durationMs: 0 };
       for (const line of reply.out.split("\n")) request.stdout?.onLine?.(line);
       return { kind: "finished", pid: 2, exitCode: reply.exitCode, signal: null, timedOut: false, aborted: false, startedAt: 0, endedAt: 0, durationMs: 0 };
     },
@@ -42,6 +43,13 @@ describe("claudeCodeStatus", () => {
   it("treats output that is not the expected JSON as logged out", async () => {
     const runner = fakeRunner({ "claude --version": { exitCode: 0, out: "2.1.331" }, "claude auth status --json": { exitCode: 0, out: "unknown command" } });
     expect(await claudeCodeStatus({ runner })).toMatchObject({ installed: true, loggedIn: false });
+  });
+
+  it("says a CLI that does not answer in time did not answer, not that it is missing or logged out", async () => {
+    const slowVersion = await claudeCodeStatus({ runner: fakeRunner({ "claude --version": "timeout" }) });
+    expect(slowVersion).toMatchObject({ installed: true, loggedIn: false, message: expect.stringMatching(/didn't answer in time/) });
+    const slowStatus = await claudeCodeStatus({ runner: fakeRunner({ "claude --version": { exitCode: 0, out: "2.1.331" }, "claude auth status --json": "timeout" }) });
+    expect(slowStatus).toMatchObject({ installed: true, loggedIn: false, version: "2.1.331", message: expect.stringMatching(/didn't answer in time/) });
   });
 
   it("reports a CLI that is not on the PATH", async () => {

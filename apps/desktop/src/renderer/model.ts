@@ -293,7 +293,7 @@ export interface HealthProblem {
 /** The AI CLIs the engine found logged out or missing. */
 export function cliIssuesOf(health: Health | undefined): CliIssue[] {
   return (health?.clis ?? []).flatMap((cli): CliIssue[] => {
-    if (cli.cliId === "ollama") return [];
+    if (cli.cliId === "ollama" || cli.timedOut === true) return [];
     if (!cli.installed) return [{ cliId: cli.cliId, kind: "not_installed" as const }];
     return cli.loggedIn ? [] : [{ cliId: cli.cliId, kind: "logged_out" as const }];
   });
@@ -303,7 +303,8 @@ export function cliIssuesOf(health: Health | undefined): CliIssue[] {
 export function healthProblemsOf(health: Health | undefined): HealthProblem[] {
   if (health === undefined) return [];
   const git = health.git.ok ? [] : [{ title: "git cannot be used", detail: health.git.message ?? "git did not answer." }];
-  return [...git, ...health.config.map((problem) => ({ title: `${problem.file} did not load`, detail: problem.message }))];
+  const slow = health.clis.filter((cli) => cli.timedOut === true).map((cli) => ({ title: `${cliName(cli.cliId)} didn't answer`, detail: cli.message ?? "The check did not finish in time." }));
+  return [...git, ...slow, ...health.config.map((problem) => ({ title: `${problem.file} did not load`, detail: problem.message }))];
 }
 
 /** What to run in a terminal to sign in again, as each CLI's own help lists it. Tokama never runs it. */

@@ -34,6 +34,8 @@ export interface RailProps {
   readonly issues: readonly CliIssue[];
   /** Git and config problems; they count on Attention only. */
   readonly problems?: readonly HealthProblem[];
+  /** Attention opened: the issues should be checked again. */
+  readonly onAttention?: () => void;
   /** About is the open view; the Board button then leads back. */
   readonly aboutOpen: boolean;
   /** The Needs you page is the open view. */
@@ -49,7 +51,7 @@ const stateOf = (issue: CliIssue | undefined): string =>
 /** "Needs you · 2", or just "Needs you" when there are none. */
 const withCount = (label: string, count: number) => (count > 0 ? `${label} · ${count}` : label);
 
-export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, problems = [], aboutOpen, needsYouOpen, onBoard, onNeedsYou, onAbout }: RailProps) {
+export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, problems = [], onAttention, aboutOpen, needsYouOpen, onBoard, onNeedsYou, onAbout }: RailProps) {
   const tipId = useId();
   const popupId = useId();
   const attention = issues.length + problems.length;
@@ -135,7 +137,10 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
           aria-haspopup="dialog"
           aria-expanded={popupOpen}
           aria-controls={popupOpen ? popupId : undefined}
-          onClick={() => setPopupOpen(!popupOpen)}
+          onClick={() => {
+            if (!popupOpen) onAttention?.();
+            setPopupOpen(!popupOpen);
+          }}
         >
           <AttentionIcon />
           <Badge count={attention} tone="fail" />

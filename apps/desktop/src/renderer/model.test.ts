@@ -270,6 +270,11 @@ describe("health from the setup", () => {
     ],
     config: [{ file: "repos.yaml", message: "repos.yaml line 3: base_branch is missing" }],
   } as const;
+  const slow = {
+    git: { ok: true },
+    clis: [{ cliId: "claude-code", installed: true, loggedIn: false, timedOut: true, message: "Claude Code didn't answer in time." }],
+    config: [],
+  } as const;
 
   it("turns logged-out and missing CLIs into rail issues; Ollama has no login", () => {
     expect(cliIssuesOf(health as never)).toEqual([
@@ -277,6 +282,11 @@ describe("health from the setup", () => {
       { cliId: "codex-cli", kind: "not_installed" },
     ]);
     expect(cliIssuesOf(undefined)).toEqual([]);
+  });
+
+  it("shows a CLI that did not answer as a problem, not as logged out", () => {
+    expect(cliIssuesOf(slow as never)).toEqual([]);
+    expect(healthProblemsOf(slow as never)).toEqual([{ title: "Claude Code didn't answer", detail: "Claude Code didn't answer in time." }]);
   });
 
   it("lists git and config problems in the engine's words", () => {

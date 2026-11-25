@@ -46,6 +46,7 @@ function watch(connect: () => Promise<Result<EngineClient, ConnectError>>, logTa
     readLogTail,
     onState: (s) => states.push(s),
     onEvent: (e) => events.push(e),
+    otherVersion: "An older Tokama engine is still running.",
   });
   return { watcher, states, events, readLogTail };
 }
@@ -73,6 +74,12 @@ describe("watchConnection", () => {
       logTail: ["Error: boom"],
     });
     expect(readLogTail).toHaveBeenCalledWith("/run/tokama/engine.log");
+  });
+
+  it("says in plain words that an older engine still runs, in place of the version refusal", async () => {
+    const { watcher } = watch(async () => err({ code: "unsupported_version", message: "engine speaks API version 2, client sent 3" }));
+    await settle();
+    expect(watcher.state()).toMatchObject({ status: "failed", reason: "An older Tokama engine is still running." });
   });
 
   it("follows a lost connection through 'reconnecting' back to 'connected'", async () => {

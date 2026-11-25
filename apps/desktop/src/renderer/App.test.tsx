@@ -7,7 +7,7 @@ import type { ConnectionState, TokamaBridge } from "../shared/bridge.js";
 import { App } from "./App.js";
 import { brand } from "./brand/index.js";
 import { CONNECTED, fakeBridge } from "./testing/bridge.js";
-import { ITEMS, items, NOW } from "./testing/sample.js";
+import { ITEMS, items, NOW, setup } from "./testing/sample.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -333,5 +333,30 @@ describe("App failed loads", () => {
     await click($$(".board button").find((button) => button.textContent === "Retry")!);
     expect($(".panel .stale")).toBeNull();
     expect(text('.badge[data-tone="warn"]')).toBe("1");
+  });
+});
+
+describe("health from the engine", () => {
+  const loggedOut = { ...setup, health: { git: { ok: true }, clis: [{ cliId: "claude-code", installed: true, loggedIn: false }], config: [] } };
+  const loggedIn = { ...setup, health: { git: { ok: true }, clis: [{ cliId: "claude-code", installed: true, loggedIn: true }], config: [] } };
+
+  it("shows a logged-out CLI from the setup, and checks again on window focus and when Attention opens", async () => {
+    let current = loggedOut;
+    const fake = fakeBridge(CONNECTED, { reply: (q) => (q.type === "setup" ? { ok: true, data: current } : undefined) });
+    await render(fake.bridge);
+    const attention = () => $$('nav[aria-label="App"] button').find((el) => el.getAttribute("aria-label")?.startsWith("Attention"))!;
+    expect(attention().getAttribute("aria-label")).toBe("Attention · 1");
+    const setupQueries = () => fake.query.mock.calls.filter(([q]) => q.type === "setup").length;
+
+    current = loggedIn;
+    const before = setupQueries();
+    await act(async () => void window.dispatchEvent(new Event("focus")));
+    await wait(0);
+    expect(setupQueries()).toBe(before + 1);
+    expect(attention().getAttribute("aria-label")).toBe("Attention");
+
+    await click(attention());
+    await wait(0);
+    expect(setupQueries()).toBe(before + 2);
   });
 });

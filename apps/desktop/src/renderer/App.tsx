@@ -29,7 +29,7 @@ export interface AppProps {
 }
 
 export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, version = "unknown", cliIssues }: AppProps) {
-  const { connection, data, loadError, stale, retry } = useEngine(bridge, retryDelayMs);
+  const { connection, data, loadError, stale, retry, refreshSetup } = useEngine(bridge, retryDelayMs);
   const [panelOpen, setPanelOpen] = useState(true);
   // What the main area shows: the board, the Needs you page or About.
   const [page, setPage] = useState<"board" | "needs-you" | "about">("board");
@@ -99,6 +99,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
         needsYou={stale ? undefined : needsYouCount(items)}
         issues={issues}
         problems={problems}
+        onAttention={refreshSetup}
         aboutOpen={aboutOpen}
         needsYouOpen={page === "needs-you"}
         onBoard={() => setPage("board")}

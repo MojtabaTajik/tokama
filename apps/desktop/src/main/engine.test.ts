@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { engineCommand, engineDirFor, findExecutable, readLogTail } from "./engine.js";
+import { engineCommand, engineDirFor, findExecutable, otherVersionMessage, readLogTail } from "./engine.js";
 
 let dir: string;
 beforeEach(() => {
@@ -83,5 +83,14 @@ describe("readLogTail", () => {
     writeFileSync(join(dir, "real.log"), "secret\n");
     symlinkSync(join(dir, "real.log"), join(dir, "link.log"));
     expect(readLogTail(join(dir, "link.log"))).toEqual([]);
+  });
+});
+
+describe("otherVersionMessage", () => {
+  it("names the command that stops the engine by the pid in its lock file, quoted for the shell", () => {
+    expect(otherVersionMessage("/home/dev/.tokama/run/engine.lock")).toBe(
+      "An older Tokama engine is still running. Quit it, then press Retry. In a terminal: kill $(cut -d' ' -f1 '/home/dev/.tokama/run/engine.lock')",
+    );
+    expect(otherVersionMessage("/tmp/it's/engine.lock")).toContain(`'/tmp/it'\\''s/engine.lock'`);
   });
 });

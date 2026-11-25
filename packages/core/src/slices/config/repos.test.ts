@@ -115,6 +115,12 @@ repos:
     ]);
   });
 
+  it("refuses more than 20 checks instead of cutting the list", async () => {
+    const checks = Array.from({ length: 21 }, (_, i) => `      - pnpm test:${i}`).join("\n");
+    write(`format: 1\nrepos:\n  - id: a\n    path: /a\n    base_branch: main\n    checks:\n${checks}\n`);
+    expect(messages(await load())).toEqual([expect.stringMatching(/^repos\.yaml line \d+: checks must be at most 20 items$/)]);
+  });
+
   it("refuses checks that are not one simple command", async () => {
     write(`format: 1
 repos:
