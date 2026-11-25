@@ -53,9 +53,10 @@ const TEXT = {
   output: "Output",
 } as const;
 
-type Tab = "Steps" | "Evidence" | "Findings" | "Log" | "Diff" | "Checks";
+type Tab = "Steps" | "Log" | "Diff" | "Checks";
+/** The tabs the drawer shows. Evidence and Findings are left out until the engine sends their data. */
 const tabsOf = (item: Pick<ItemRecord, "kind">): readonly Tab[] =>
-  item.kind === "task" ? ["Steps", "Evidence", "Findings", "Log", "Diff", "Checks"] : ["Steps", "Evidence", "Findings", "Log"];
+  item.kind === "task" ? ["Steps", "Log", "Diff", "Checks"] : ["Steps", "Log"];
 
 export type Notice = { readonly tone: "warn" | "fail"; readonly text: string };
 

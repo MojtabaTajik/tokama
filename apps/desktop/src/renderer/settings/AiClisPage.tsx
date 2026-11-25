@@ -13,7 +13,6 @@ const TEXT = {
   heading: "AI CLIs",
   filter: "Filter CLIs",
   list: "AI CLIs",
-  localHint: "Local models live under Engine · Local models.",
   noMatch: "No CLI matches",
   loading: "Loading",
   starting: "Waiting for the engine",
@@ -65,7 +64,6 @@ export function AiClisPage({ bridge, connection, setup }: AiClisPageProps) {
     <section className="ai-clis" aria-label={TEXT.heading}>
       <div className="ai-clis-list-pane">
         <input type="text" className="ai-clis-filter" aria-label={TEXT.filter} placeholder="Filter CLIs…" value={query} onChange={(event) => setQuery(event.target.value)} />
-        <p className="ai-clis-hint">{TEXT.localHint}</p>
         <Body state={state} connected={connection.status === "connected"} onRetry={reload} />
         {state.status === "loaded" && (
           <ul className="ai-clis-list" aria-label={TEXT.list}>

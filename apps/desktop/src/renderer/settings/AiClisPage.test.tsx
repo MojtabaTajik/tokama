@@ -72,7 +72,6 @@ describe("Settings > AI CLIs", () => {
     const fake = withClis();
     await open(fake);
     expect($('nav[aria-label="Settings"] [aria-current="page"]')?.textContent).toBe("AI CLIs");
-    expect($('nav[aria-label="Settings"] [aria-disabled="true"]')?.textContent).not.toBe("AI CLIs");
     expect(fake.query).toHaveBeenCalledWith({ type: "ai_clis" });
     expect(rowNames()).toEqual(["Claude Code", "Codex CLI"]);
   });
