@@ -80,6 +80,20 @@ describe("runCommand", () => {
   });
 });
 
+describe("runCommand output order", () => {
+  it("keeps the order a command wrote stdout and stderr in, however many switches", SLOW, async () => {
+    const expected: string[] = [];
+    let script = "";
+    for (let i = 0; i < 200; i++) {
+      script += `echo out${i}\necho err${i} >&2\n`;
+      expected.push(`out${i}`, `err${i}`);
+    }
+    writeFileSync(join(dir, "alternate.sh"), script);
+    const result = await runCommand(runner, "sh alternate.sh", options({ rules: ["sh alternate.sh"], outputCap: 100_000 }));
+    expect(result.output.split("\n")).toEqual(expected);
+  });
+});
+
 describe("runChecks", () => {
   it("runs every command and returns each result in order", SLOW, async () => {
     const results = await runChecks(runner, ["true", "exit 2", "echo still runs"], options());
