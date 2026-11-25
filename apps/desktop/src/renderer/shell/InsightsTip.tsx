@@ -3,7 +3,7 @@
 // Unknown windows say so; nothing is estimated here.
 import type { UsageReport } from "@tokama/core";
 import { type CliIssue, AI_CLIS } from "../model.js";
-import { ALERT_TEXT, alertTone, ageText, cliAlert, formatClock, liveWindows, windowShort } from "../insights/usage-model.js";
+import { ALERT_TEXT, alertTone, ageText, cliAlert, formatClock, liveWindows, windowLine } from "../insights/usage-model.js";
 
 const TEXT = {
   title: "Insights",
@@ -40,9 +40,9 @@ export function InsightsTip({ usage, issues, now }: InsightsTipProps) {
                 )}
               </span>
               {windows.length > 0 ? (
-                windows.map((w) => (
-                  <span key={w.window} className="insights-state">
-                    {`${windowShort(w.window)} ${Math.round(w.usedPercent)}%${w.resetsAt === undefined ? "" : ` · resets ${formatClock(w.resetsAt, now)}`}`}
+                windows.map((w, index) => (
+                  <span key={`${index}-${w.window}`} className="insights-state">
+                    {windowLine(w, now)}
                   </span>
                 ))
               ) : (

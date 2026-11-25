@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CONNECTED } from "../testing/bridge.js";
 import { items, NOW, setup } from "../testing/sample.js";
-import { usageReport } from "../testing/usage.js";
+import { limitsReport, usageReport } from "../testing/usage.js";
 import { Insights, type InsightsProps } from "./Insights.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -65,6 +65,17 @@ describe("Insights: plan usage", () => {
     expect(codex?.querySelector('.ins-tone[data-tone="warn"]')?.textContent).toBe("! near limit");
     expect(codex?.querySelector('.meter-fill[data-tone="warn"]')).not.toBeNull();
     expect(codex?.querySelector(".ins-reset")?.textContent).toBe("resets Sat 25 Oct 06:00 · data 34 min old");
+  });
+
+  it("shows every Claude Code limit as a meter, a model's weekly limit with its share of the weekly limit", () => {
+    render({}, limitsReport);
+    const claude = $(".ins-plan");
+    expect([...(claude?.querySelectorAll('[role="meter"]') ?? [])].map((meter) => [meter.getAttribute("aria-label"), meter.getAttribute("aria-valuenow")])).toEqual([
+      ["Session window", "63"],
+      ["Weekly window", "41"],
+      ["Fable weekly window", "0"],
+    ]);
+    expect([...(claude?.querySelectorAll(".ins-reset") ?? [])].map((line) => line.textContent)[2]).toBe("50% share of the weekly limit · resets Thu 23 Oct 09:00");
   });
 
   it("says a logged-out CLI is logged out, and unknown windows are unknown", () => {

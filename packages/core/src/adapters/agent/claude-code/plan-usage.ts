@@ -5,6 +5,9 @@
 //   checked on or later, and a reply of another shape counts as no answer.
 // - `readClaudePlanCache` reads the one key `cachedUsageUtilization` of `~/.claude.json`, the copy
 //   Claude Code keeps of its last usage answer. Read-only; the rest of the file is ignored.
+// Both answers carry a `limits` list (session, weekly, and weekly limits scoped to one model) and
+// the older fixed windows. The list is read when every entry has a known shape, else the fixed
+// windows are. Only usage numbers and labels are kept, never account fields.
 // The run loop's third source, the rate-limit events of Tokama's own calls, comes from the stream parser.
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -39,8 +42,11 @@ export interface ClaudePlanOptions {
   readonly signal?: AbortSignal;
 }
 
-// The windows a plan has. Other keys of the reply are codenamed buckets, spend and extra usage.
+// The fixed windows a plan has. Other keys of the reply are codenamed buckets, spend and extra usage.
 const WINDOWS = ["five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet"] as const;
+const MAX_LIMITS = 20;
+// A model name such as `Fable` or `Opus 4`: letters, digits, spaces, dots and dashes.
+const LABEL = /^[\p{L}\p{N}][\p{L}\p{N} .-]{0,47}$/u;
 const REQUEST_ID = "tokama-usage";
 const MAX_LINES = 200;
 // `~/.claude.json` holds Claude Code's whole config; well below this in practice.
@@ -52,9 +58,27 @@ const Bucket = z.looseObject({
   resets_at: z.string().nullable().optional(),
 });
 
+// One entry of the `limits` list. An unknown kind or group, or a percent that is not a number,
+// refuses the whole list.
+const Limit = z.looseObject({
+  kind: z.enum(["session", "weekly_all", "weekly_scoped"]),
+  group: z.enum(["session", "weekly"]),
+  percent: z.number().nonnegative(),
+  resets_at: z.string().nullable().optional().catch(undefined),
+  severity: z.string().regex(/^[a-z_]{1,32}$/).nullable().optional().catch(undefined),
+  is_active: z.boolean().optional().catch(undefined),
+  // Read only for its label; see `scopeLabel`.
+  scope: z.unknown().optional(),
+});
+
+// How much of the weekly limit a scoped limit may use; `limit_index` points into `limits`.
+const Share = z.looseObject({ limit_index: z.int().nonnegative(), allowance_percent_of_weekly: z.number().nonnegative() });
+
 const Utilization = z.looseObject({
   ...Object.fromEntries(WINDOWS.map((name) => [name, Bucket.nullable().optional().catch(undefined)])),
   extra_usage: z.looseObject({ is_enabled: z.boolean() }).nullable().optional().catch(undefined),
+  limits: z.array(Limit).min(1).max(MAX_LIMITS).nullable().optional().catch(undefined),
+  weekly_scoped_shares: z.array(Share).max(MAX_LIMITS).nullable().optional().catch(undefined),
 });
 
 const Reply = z.looseObject({
@@ -159,19 +183,63 @@ export function parseUsageCache(text: string): Result<ClaudePlan, string> {
 }
 
 function reading(utilization: z.output<typeof Utilization>, asOf: number, plan?: string): ClaudePlan {
-  const windows = WINDOWS.flatMap((name): PlanWindow[] => {
-    const bucket = utilization[name] as z.output<typeof Bucket> | null | undefined;
-    if (bucket === null || bucket === undefined || bucket.utilization === null) return [];
-    const resetsAt = bucket.resets_at ? Date.parse(bucket.resets_at) : Number.NaN;
-    return [{ window: name, usedPercent: Math.min(1000, Math.round(bucket.utilization * 100) / 100), ...(Number.isFinite(resetsAt) && resetsAt >= 0 && { resetsAt }) }];
-  });
   const extra = utilization.extra_usage;
   return {
-    windows,
+    windows: utilization.limits ? limitWindows(utilization.limits, utilization.weekly_scoped_shares ?? []) : fixedWindows(utilization),
     asOf,
     ...(plan !== undefined && { plan }),
     ...(extra !== null && extra !== undefined && { extraUsage: extra.is_enabled ? "on" : "off" }),
   };
+}
+
+function fixedWindows(utilization: z.output<typeof Utilization>): PlanWindow[] {
+  return WINDOWS.flatMap((name): PlanWindow[] => {
+    const bucket = utilization[name] as z.output<typeof Bucket> | null | undefined;
+    if (bucket === null || bucket === undefined || bucket.utilization === null) return [];
+    return [{ window: name, usedPercent: percent(bucket.utilization), ...resetTime(bucket.resets_at) }];
+  });
+}
+
+function limitWindows(limits: readonly z.output<typeof Limit>[], shares: readonly z.output<typeof Share>[]): PlanWindow[] {
+  return limits.map((limit, index): PlanWindow => {
+    const scope = limit.kind === "weekly_scoped" ? scopeLabel(limit.scope) : undefined;
+    // A share counts only for the scoped limit it points at.
+    const share = limit.kind === "weekly_scoped" ? shares.find((s) => s.limit_index === index) : undefined;
+    return {
+      window: limit.kind,
+      usedPercent: percent(limit.percent),
+      ...resetTime(limit.resets_at),
+      ...(scope !== undefined && { scope }),
+      group: limit.group,
+      ...(limit.severity && { severity: limit.severity }),
+      ...(limit.is_active !== undefined && { active: limit.is_active }),
+      ...(share !== undefined && { sharePercent: Math.min(100, Math.round(share.allowance_percent_of_weekly * 100) / 100) }),
+    };
+  });
+}
+
+/**
+ * The name of what a scoped limit covers, e.g. `Fable`. The scope's shape is not documented, so
+ * only a display name or a name is looked for, on its model or on the scope itself; ids and other
+ * fields are never read.
+ */
+function scopeLabel(scope: unknown): string | undefined {
+  const field = (value: unknown, key: string): unknown => (typeof value === "object" && value !== null ? (value as Record<string, unknown>)[key] : undefined);
+  const model = field(scope, "model");
+  for (const candidate of [field(model, "display_name"), field(model, "name"), field(scope, "display_name"), field(scope, "name")]) {
+    if (typeof candidate !== "string") continue;
+    const label = candidate.trim();
+    if (LABEL.test(label)) return label;
+  }
+  return undefined;
+}
+
+/** 0 to 100 as the CLI sends it, cut to two decimals and at most 1000. */
+const percent = (value: number): number => Math.min(1000, Math.round(value * 100) / 100);
+
+function resetTime(resetsAt: string | null | undefined): { resetsAt?: number } {
+  const at = resetsAt ? Date.parse(resetsAt) : Number.NaN;
+  return Number.isFinite(at) && at >= 0 ? { resetsAt: at } : {};
 }
 
 /** Negative when `a` is older than `b`; versions are `major.minor.patch`. */

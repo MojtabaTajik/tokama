@@ -11,7 +11,7 @@ flow("shows plan usage in the Insights tooltip, opens Insights, shows a day on h
   await insights.hover();
   const tip = page.locator(".insights-tip");
   await tip.waitFor({ state: "visible" });
-  await expect.poll(() => tip.innerText(), { message: "the tooltip lists the windows" }).toMatch(/Claude Code[\s\S]*5-hour 36%[\s\S]*Codex CLI[\s\S]*! near limit[\s\S]*Weekly 84%/);
+  await expect.poll(() => tip.innerText(), { message: "the tooltip lists the windows" }).toMatch(/Claude Code[\s\S]*Session 36%[\s\S]*Fable weekly 12% \(50% share\)[\s\S]*Codex CLI[\s\S]*! near limit[\s\S]*Weekly 84%/);
   await screenshot("6-insights-tooltip");
 
   await insights.click();

@@ -192,6 +192,16 @@ describe("choosePlan", () => {
     expect(CliPlanSchema.safeParse(plan).success).toBe(true);
   });
 
+  it("keeps a limit's scope, group, severity, state and share, cut to the report's limits", () => {
+    const scoped = { window: "weekly_scoped", usedPercent: Number.NaN, scope: "F".repeat(80), group: "g".repeat(40), severity: "normal", active: false, sharePercent: 250 };
+    const plan = choosePlan("claude-code", [{ source: "request", reading: { windows: [scoped, { window: "session", usedPercent: 12, sharePercent: -5 }], asOf: NOW } }], NOW);
+    expect(plan.windows).toEqual([
+      { window: "weekly_scoped", usedPercent: 0, scope: "F".repeat(64), group: "g".repeat(32), severity: "normal", active: false, sharePercent: 100 },
+      { window: "session", usedPercent: 12, sharePercent: 0 },
+    ]);
+    expect(CliPlanSchema.safeParse(plan).success).toBe(true);
+  });
+
   it("drops windows past their reset time, and says unknown with the first problem when nothing is left", () => {
     const reset = { source: "run" as const, reading: { windows: [window(99, NOW - 1)], asOf: NOW - 60_000 } };
     expect(choosePlan("claude-code", [{ source: "request", problem: "Claude Code is not installed." }, reset], NOW)).toEqual({

@@ -104,12 +104,14 @@ export function sampleUsageRows(setup: Setup, items: readonly ItemRecord[], now:
   return rows;
 }
 
-/** Claude Code's sample answer to a usage request: inside its limits, read two minutes ago. */
+/** Claude Code's sample answer to a usage request: inside its limits, one of them for one model, read two minutes ago. */
 export function sampleClaudePlan(now: number): PlanReading & { readonly version: string } {
+  const weekReset = now + 2 * 24 * 60 * MINUTE + 18 * 60 * MINUTE;
   return {
     windows: [
-      { window: "five_hour", usedPercent: 36, resetsAt: now + 158 * MINUTE },
-      { window: "seven_day", usedPercent: 58, resetsAt: now + 2 * 24 * 60 * MINUTE + 18 * 60 * MINUTE },
+      { window: "session", usedPercent: 36, resetsAt: now + 158 * MINUTE, group: "session", severity: "normal", active: true },
+      { window: "weekly_all", usedPercent: 58, resetsAt: weekReset, group: "weekly", severity: "normal", active: false },
+      { window: "weekly_scoped", usedPercent: 12, resetsAt: weekReset, scope: "Fable", group: "weekly", severity: "normal", active: false, sharePercent: 50 },
     ],
     asOf: now - 2 * MINUTE,
     plan: "max",

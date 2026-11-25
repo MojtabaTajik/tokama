@@ -75,3 +75,20 @@ export const usageReport = {
   ],
   totals: { tokens: tokens(300_000, 96_000, 500_000, 0), costUsd: 12.1, calls: 14, unpricedCalls: 2 },
 } as unknown as UsageReport;
+
+/** The same report with Claude Code's `limits` list: session, weekly, and a weekly limit for one model. */
+export const limitsReport = {
+  ...usageReport,
+  clis: usageReport.clis.map((cli) =>
+    cli.cliId === "claude-code"
+      ? {
+          ...cli,
+          windows: [
+            { window: "session", usedPercent: 63, resetsAt: local(20, 17, 10), group: "session", severity: "normal", active: true },
+            { window: "weekly_all", usedPercent: 41, resetsAt: local(23, 9), group: "weekly", severity: "normal", active: false },
+            { window: "weekly_scoped", usedPercent: 0, resetsAt: local(23, 9), scope: "Fable", group: "weekly", severity: "normal", active: false, sharePercent: 50 },
+          ],
+        }
+      : cli,
+  ),
+} as unknown as UsageReport;

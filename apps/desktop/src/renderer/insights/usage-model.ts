@@ -11,15 +11,31 @@ const DAY = 24 * 60 * MINUTE;
 /** Data older than this says how old it is. */
 const SHOW_AGE_AFTER_MS = 10 * MINUTE;
 
+type PlanWindow = CliPlan["windows"][number];
+
 const WINDOW_LABELS: Readonly<Record<string, string>> = {
   five_hour: "5-hour window",
   seven_day: "Weekly window",
   seven_day_opus: "Weekly · Opus",
   seven_day_sonnet: "Weekly · Sonnet",
+  session: "Session window",
+  weekly_all: "Weekly window",
 };
-export const windowLabel = (window: string): string => WINDOW_LABELS[window] ?? window.replace(/_/g, " ");
-/** The short form, for the tooltip: "5-hour", "Weekly". */
-export const windowShort = (window: string): string => windowLabel(window).replace(/ window$/, "");
+/** "5-hour window", "Session window", "Fable weekly window"; a scoped limit without a name is "Scoped weekly window". */
+export function windowLabel(w: Pick<PlanWindow, "window" | "scope">): string {
+  if (w.window === "weekly_scoped") return `${w.scope ?? "Scoped"} weekly window`;
+  return WINDOW_LABELS[w.window] ?? w.window.replace(/_/g, " ");
+}
+/** The short form, for the tooltip: "5-hour", "Weekly", "Fable weekly". */
+export const windowShort = (w: Pick<PlanWindow, "window" | "scope">): string => windowLabel(w).replace(/ window$/, "");
+/** "50% share of the weekly limit" for a scoped limit with a known share. */
+export const shareText = (w: Pick<PlanWindow, "sharePercent">): string | undefined => (w.sharePercent === undefined ? undefined : `${Math.round(w.sharePercent)}% share of the weekly limit`);
+/** The tooltip's line for a window: "Fable weekly 0% (50% share) · resets Thu 23 Oct 09:00". */
+export function windowLine(w: PlanWindow, now: number): string {
+  const share = w.sharePercent === undefined ? "" : ` (${Math.round(w.sharePercent)}% share)`;
+  const reset = w.resetsAt === undefined ? "" : ` · resets ${formatClock(w.resetsAt, now)}`;
+  return `${windowShort(w)} ${Math.round(w.usedPercent)}%${share}${reset}`;
+}
 
 export type Tone = "warn" | "fail";
 /** At or over the limit: fail; near it: warn. */

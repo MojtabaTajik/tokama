@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NOW } from "../testing/sample.js";
-import { usageReport } from "../testing/usage.js";
+import { limitsReport, usageReport } from "../testing/usage.js";
 import { Rail } from "./Rail.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -48,5 +48,16 @@ describe("Rail: Insights tooltip", () => {
     render({ usage: report });
     expect(container.querySelector(".insights .badge")).toBeNull();
     expect(container.querySelector(".insights-tip")?.textContent).not.toContain("84%");
+  });
+
+  it("lists every Claude Code limit, a model's weekly limit with its share included", () => {
+    render({ usage: limitsReport });
+    const claude = container.querySelector(".insights-tip .it-cli");
+    expect([...(claude?.querySelectorAll(".insights-state") ?? [])].map((line) => line.textContent)).toEqual([
+      "Session 63% · resets 17:10",
+      "Weekly 41% · resets Thu 23 Oct 09:00",
+      "Fable weekly 0% (50% share) · resets Thu 23 Oct 09:00",
+      "as of 14:58",
+    ]);
   });
 });

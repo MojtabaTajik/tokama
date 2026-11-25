@@ -14,7 +14,10 @@ import {
   resetText,
   share,
   tickLabel,
+  shareText,
   windowLabel,
+  windowLine,
+  windowShort,
   windowTone,
   workflowName,
 } from "./usage-model.js";
@@ -23,8 +26,18 @@ const MINUTE = 60_000;
 const at = (day: number, hour: number, minute = 0) => new Date(2025, 9, day, hour, minute).getTime();
 
 describe("plan window words", () => {
-  it("names the windows Claude Code reports, and any other by its own name", () => {
-    expect([windowLabel("five_hour"), windowLabel("seven_day"), windowLabel("seven_day_opus"), windowLabel("weekly_scoped")]).toEqual(["5-hour window", "Weekly window", "Weekly · Opus", "weekly scoped"]);
+  it("names the windows and limits Claude Code reports, and any other by its own name", () => {
+    const names = ["five_hour", "seven_day", "seven_day_opus", "session", "weekly_all", "weekly_scoped", "monthly_extra"].map((window) => windowLabel({ window }));
+    expect(names).toEqual(["5-hour window", "Weekly window", "Weekly · Opus", "Session window", "Weekly window", "Scoped weekly window", "monthly extra"]);
+    expect([windowLabel({ window: "weekly_scoped", scope: "Fable" }), windowShort({ window: "weekly_scoped", scope: "Fable" }), windowShort({ window: "session" })]).toEqual(["Fable weekly window", "Fable weekly", "Session"]);
+  });
+
+  it("writes a tooltip line per limit, with a scoped limit's share of the weekly limit", () => {
+    const now = at(20, 14, 32);
+    expect(windowLine({ window: "session", usedPercent: 63.4, resetsAt: at(20, 17, 10) }, now)).toBe("Session 63% · resets 17:10");
+    expect(windowLine({ window: "weekly_all", usedPercent: 41 }, now)).toBe("Weekly 41%");
+    expect(windowLine({ window: "weekly_scoped", scope: "Fable", usedPercent: 0, sharePercent: 50, resetsAt: at(23, 9) }, now)).toBe("Fable weekly 0% (50% share) · resets Thu 23 Oct 09:00");
+    expect([shareText({ sharePercent: 49.6 }), shareText({})]).toEqual(["50% share of the weekly limit", undefined]);
   });
 
   it("marks a window near its limit from 80% and at its limit from 100%", () => {
