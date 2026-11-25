@@ -52,6 +52,8 @@ export interface RealEngineOptions {
   /** The SSH agent socket, for a push to an SSH remote only. Default: this process's SSH_AUTH_SOCK. */
   readonly sshAuthSock?: string;
   readonly log: (message: string) => void;
+  /** Called with an error the engine handles and logs, for diagnostics. */
+  readonly onError?: (error: unknown) => void;
 }
 
 /** The commands about items; repo commands are the engine's own. */
@@ -78,6 +80,7 @@ export class RealEngine {
         if (record !== undefined) store.put(record);
       } catch (error) {
         log(String(error instanceof Error ? error.message : error));
+        options.onError?.(error);
       }
     };
     for (const item of items.list()) project(item);

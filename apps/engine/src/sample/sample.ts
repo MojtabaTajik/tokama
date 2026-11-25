@@ -72,8 +72,8 @@ export class SampleEngine {
     }
   }
 
-  /** Item commands; repo commands are the engine's own, on repos.yaml. */
-  command(command: Exclude<Command, { type: "add_repo" | "init_repo" | "first_commit" | "update_repo" | "remove_repo" }>): Result<CommandResult<Command["type"]>, CommandError> {
+  /** Item commands; repo and diagnostics commands are the engine's own. */
+  command(command: Exclude<Command, { type: "add_repo" | "init_repo" | "first_commit" | "update_repo" | "remove_repo" | "diagnostics_delete" | "diagnostics_settings" | "report_diagnostic" }>): Result<CommandResult<Command["type"]>, CommandError> {
     switch (command.type) {
       case "start_item":
         return this.startItem(command);
