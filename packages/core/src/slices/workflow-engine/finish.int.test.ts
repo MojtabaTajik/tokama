@@ -124,7 +124,7 @@ async function doneItem(files: Record<string, string> = { "greeting.txt": "hello
   for (const [file, text] of Object.entries(files)) writeFileSync(join(path, file), text);
   const tree = await stageItem(git, path);
   if (!tree.ok) throw new Error(tree.error.message);
-  const commit = await commitItem(git, path, worktree.value, { id, title: "Fix the greeting typo", tree: tree.value });
+  const commit = await commitItem(git, path, worktree.value, { id, title: "Fix the greeting typo", text: "Fix the greeting typo", tree: tree.value });
   if (!commit.ok) throw new Error(commit.error.message);
   const pushUrl = await originPushUrl(git, repo.path);
   const { branch, folder, baseCommit } = worktree.value;
