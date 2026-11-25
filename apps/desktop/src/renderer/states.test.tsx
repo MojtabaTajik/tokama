@@ -240,7 +240,9 @@ describe("About", () => {
     expect(text(".about-version")).toBe("Version 1.2.3·macOS · arm64");
     expect(text(".about-lead")).toContain("Agent workbench for engineers.");
     expect(text(".about-links")).toContain("Open source under the Apache License 2.0");
-    expect(text(".about-foot")).toBe("Tokama · Apache License 2.0Made in Amsterdam");
+    expect(text(".about-foot")).toBe("Tokama · Apache License 2.0");
+    expect(text(".about-body")).not.toContain("Amsterdam");
+    expect(text(".about-body")).not.toContain("Thank you");
     expect($('.rail-user[aria-label="About Tokama"]')?.getAttribute("aria-current")).toBe("page");
   });
 

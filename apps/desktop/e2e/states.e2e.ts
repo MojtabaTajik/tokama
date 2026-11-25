@@ -76,7 +76,7 @@ flow("About shows the version, the build facts, the notices and the website link
   expect(rows[0]).toMatch(new RegExp(`^${version.replaceAll(".", "\\.")} · \\d{4}-\\d{2}-\\d{2} · \\S+$`));
   expect(rows[1]).toBe(`${version} · running · pid ${engine()?.pid}`);
   expect(rows[3]).toBe("~/.tokama");
-  expect(await page.locator(".about-foot").innerText()).toContain("Made in Amsterdam");
+  expect(await page.locator(".about-foot").innerText()).toBe("Tokama · Apache License 2.0");
   expect(await page.locator(".about-link").getAttribute("href")).toBe("https://tokama.dev");
 
   // The first notice is open, as on the board.

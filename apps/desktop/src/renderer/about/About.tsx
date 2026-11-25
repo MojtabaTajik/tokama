@@ -129,7 +129,6 @@ export function About({ bridge, connection, onClose }: AboutProps) {
                 {allOpen ? "Collapse all" : "Expand all"}
               </button>
             </div>
-            <p className="about-soft about-thanks">Tokama is built with these open-source parts. Thank you to their authors.</p>
             <ul className="about-notices">
               {notices.map((notice) => {
                 const expanded = open.has(notice.id);
@@ -159,7 +158,6 @@ export function About({ bridge, connection, onClose }: AboutProps) {
 
           <section id="licence" aria-label="Licence" className="about-foot">
             <span>Tokama · Apache License 2.0</span>
-            <span>Made in Amsterdam</span>
           </section>
         </div>
       </div>

@@ -15,9 +15,14 @@ describe("build info", () => {
     expect(buildRows(info, "connected")[1]).toEqual(["Engine", "0.1.0 · running · pid 48211"]);
   });
 
-  it("shows the connection's own status otherwise, and no pid without a lock file", () => {
+  it("shows no pid and no version for an engine that is not connected, whatever the lock file says", () => {
+    for (const status of ["failed", "starting", "reconnecting"]) expect(buildRows(info, status)[1]).toEqual(["Engine", status]);
+    expect(buildInfoText(info, "failed")).toContain("Engine: failed\n");
+  });
+
+  it("shows no pid for a connected engine without a lock file", () => {
     const engine = { version: info.engine.version, apiVersion: info.engine.apiVersion };
-    expect(buildRows({ ...info, engine }, "failed")[1]).toEqual(["Engine", "0.1.0 · failed"]);
+    expect(buildRows({ ...info, engine }, "connected")[1]).toEqual(["Engine", "0.1.0 · running"]);
   });
 
   it("copies one Label: value line per row, then the platform", () => {

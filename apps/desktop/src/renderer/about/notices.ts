@@ -23,7 +23,7 @@ export function notices(electronVersion: string): ReadonlyArray<Notice & { reado
       text: "Electron runs the desktop app. It bundles Chromium and Node.js, which carry their own licences, listed below." },
     { id: "chromium", name: "Chromium", version: inElectron, role: "renders the window", licence: "BSD-3-Clause and others", site: "chromium.org", copyright: "Copyright The Chromium Authors",
       text: "Chromium includes many third-party components under their own licences. The full list ships with the app as LICENSES.chromium.html." },
-    { id: "node", name: "Node.js", version: inElectron, role: "runs the engine", licence: "MIT", site: "nodejs.org", copyright: "Copyright Node.js contributors",
+    { id: "node", name: "Node.js", version: "installed on this machine", role: "runs the engine", licence: "MIT", site: "nodejs.org", copyright: "Copyright Node.js contributors",
       text: "Node.js runs the Tokama engine as a background service." },
     { id: "react", name: "React and React DOM", version: reactVersion, role: "the interface", licence: "MIT", site: "react.dev", copyright: "Copyright Meta Platforms, Inc. and affiliates",
       text: "React draws every screen in the app." },

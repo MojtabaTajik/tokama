@@ -153,11 +153,6 @@
   color: var(--muted);
 }
 
-.about-thanks {
-  margin: 0 0 4px;
-  font-size: 12.5px;
-}
-
 .about-rows {
   margin: 0;
   display: flex;

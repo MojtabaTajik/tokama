@@ -17,6 +17,8 @@ describe("notices", () => {
     expect(list.find((notice) => notice.id === "electron")?.version).toBe("45.4.1");
     expect(list.find((notice) => notice.id === "chromium")?.version).toBe("in Electron 45");
     expect(list.find((notice) => notice.id === "react")?.version).toBe(reactVersion);
+    // The engine runs on the node found on PATH, not on Electron's own.
+    expect(list.find((notice) => notice.id === "node")?.version).not.toContain("Electron");
   });
 
   it("gives every notice a licence, a copyright line and a text", () => {
