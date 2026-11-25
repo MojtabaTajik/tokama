@@ -137,6 +137,18 @@ function steps(template: { steps: readonly object[] }, states: readonly StepStat
 }
 
 const MINUTE = 60_000;
+const OLDEST_SAMPLE_MINUTES = 180;
+
+/**
+ * The time `minutes` before `now`, but never before the start of today (local time). The app lists
+ * finished items of today by default, so shortly after midnight the sample ages shrink to fit
+ * into the day, in the same order, rather than slipping into yesterday.
+ */
+export function ago(now: number, minutes: number): number {
+  const startOfDay = new Date(now).setHours(0, 0, 0, 0);
+  const fit = Math.min(1, (now - startOfDay) / (OLDEST_SAMPLE_MINUTES * MINUTE));
+  return now - Math.floor(minutes * MINUTE * fit);
+}
 
 /** The sample items, created minutes before `now`. */
 export function sampleItems(now: number) {
@@ -152,7 +164,7 @@ export function sampleItems(now: number) {
       repoIds: ["orders-api"],
       privacy: "local_and_cloud",
       state: "queued",
-      createdAt: now - 2 * MINUTE,
+      createdAt: ago(now, 2),
       cardLine: "waiting for a free agent",
       steps: steps(templates.planAndBuild, []),
     },
@@ -166,7 +178,7 @@ export function sampleItems(now: number) {
       repoIds: [],
       privacy: "local_and_cloud",
       state: "running",
-      createdAt: now - 14 * MINUTE,
+      createdAt: ago(now, 14),
       cardLine: "p95 1.8s · 3 of 10 queries",
       steps: steps(templates.emergency, ["passed", "running"], { 0: "scope: checkout, last 30 min", 1: "waits for App Insights query results" }),
     },
@@ -180,7 +192,7 @@ export function sampleItems(now: number) {
       repoIds: ["orders-api", "checkout-web"],
       privacy: "local_and_cloud",
       state: "running",
-      createdAt: now - 33 * MINUTE,
+      createdAt: ago(now, 33),
       cardLine: "turn 18 of 40",
       steps: steps(templates.planAndBuild, ["passed", "running"], { 0: "plan approved", 1: "waits for Local builder on Ollama" }),
     },
@@ -194,7 +206,7 @@ export function sampleItems(now: number) {
       repoIds: ["orders-api"],
       privacy: "local_and_cloud",
       state: "needs_you",
-      createdAt: now - 41 * MINUTE,
+      createdAt: ago(now, 41),
       cardLine: "cause found · null customer region",
       decision: {
         id: DECISION_ID,
@@ -222,7 +234,7 @@ export function sampleItems(now: number) {
       repoIds: ["orders-api"],
       privacy: "local_only",
       state: "running",
-      createdAt: now - 23 * MINUTE,
+      createdAt: ago(now, 23),
       cardLine: "pnpm test · 212 of 340",
       steps: steps(templates.quickFix, ["passed", "running"], { 0: "2 files changed", 1: "runs pnpm test" }),
     },
@@ -236,7 +248,7 @@ export function sampleItems(now: number) {
       repoIds: ["orders-api", "checkout-web"],
       privacy: "local_and_cloud",
       state: "running",
-      createdAt: now - 95 * MINUTE,
+      createdAt: ago(now, 95),
       cardLine: "+184 −21 · 6 files",
       steps: steps(templates.planAndBuild, ["passed", "passed", "passed", "running"], { 1: "+184 −21 · 6 files", 2: "pnpm test · 340 passed", 3: "waits for the Reviewer verdict" }),
     },
@@ -250,7 +262,7 @@ export function sampleItems(now: number) {
       repoIds: [],
       privacy: "local_only",
       state: "done",
-      createdAt: now - 180 * MINUTE,
+      createdAt: ago(now, 180),
       cardLine: "missing index on order_items(order_id)",
       steps: steps(templates.slowQuery, ["passed", "passed", "passed"]),
     },
@@ -264,7 +276,7 @@ export function sampleItems(now: number) {
       repoIds: ["orders-api"],
       privacy: "local_only",
       state: "failed",
-      createdAt: now - 130 * MINUTE,
+      createdAt: ago(now, 130),
       cardLine: "checks failed 3 times",
       steps: steps(templates.quickFix, ["passed", "failed"], { 1: "pnpm test: 4 failing after 3 attempts" }),
     },
@@ -278,7 +290,7 @@ export function sampleItems(now: number) {
       repoIds: ["inventory-service"],
       privacy: "local_only",
       state: "running",
-      createdAt: now - 6 * MINUTE,
+      createdAt: ago(now, 6),
       cardLine: "attempt 2 of 3",
       steps: steps(templates.quickFix, ["running"], { 0: "waits for Local builder on Ollama" }),
     },
