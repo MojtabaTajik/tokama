@@ -21,7 +21,7 @@ import type { Agent, Repo } from "../config/index.js";
 import { EVENTS_FILE, ItemStore, openDecisions, readLog } from "../items/index.js";
 import { createWorktree } from "../worktrees/index.js";
 import { createRunLoop, parseVerdict, type RunLoop, type RunLoopDeps } from "./index.js";
-import { after, crashes, edits, editsThenCrashes, editsThenHangs, FAKE_PID, fakeRuntime, hangs, loops, says } from "./testing/fake-runtime.js";
+import { after, type Behavior, crashes, edits, editsThenCrashes, editsThenHangs, FAKE_PID, fakeRuntime, hangs, loops, says } from "./testing/fake-runtime.js";
 
 const SLOW = { timeout: 60_000 };
 const HOST = HostIdSchema.parse("host_0190a000-0000-7000-8000-000000000001");
@@ -208,6 +208,7 @@ describe("run loop: done_when", () => {
       "step_started build",
       "attempt build#1",
       "process_started",
+      "usage_recorded",
       "process_started",
       "check sh check.sh passed",
       "attempt_ended build#1 passed",
@@ -241,6 +242,40 @@ describe("run loop: done_when", () => {
     const id = await start(loop, template([{ id: "build" }]));
     expect(item(id).state).toBe("done");
     expect(await plain(repo.path, "show", `${item(id).outcome?.commits?.[0]?.commit}:app.txt`)).toBe("fixed");
+  });
+
+  it("records what each call used in the item's log: tokens per model, the CLI's cost, wall time and the last plan windows", SLOW, async () => {
+    const spends: Behavior = async function* () {
+      yield { type: "rate_limit", status: "allowed", windows: [{ window: "five_hour", usedPercent: 12 }] };
+      yield { type: "rate_limit", status: "allowed_warning", windows: [{ window: "five_hour", usedPercent: 81, resetsAt: BOOT + 3_600_000 }] };
+      yield { type: "text", text: "Done." };
+      const tokens = { input: 10, output: 5, cacheRead: 100, cacheWrite: 2 };
+      yield { type: "end", outcome: "completed", usage: tokens, modelUsage: { "qwen3-coder": tokens }, costUsd: 0.12 };
+    };
+    const loop = engine(fakeRuntime([spends]));
+    const id = await start(loop, template([{ id: "build" }]));
+    const [call, ...rest] = item(id).calls ?? [];
+    expect(rest).toEqual([]);
+    expect(call).toMatchObject({
+      callId: expect.stringMatching(/^call_/),
+      stepId: "build",
+      attempt: 1,
+      agentId: "builder",
+      cliId: "ollama",
+      model: "qwen3-coder",
+      outcome: "completed",
+      tokens: { input: 10, output: 5, cacheRead: 100, cacheWrite: 2 },
+      models: { "qwen3-coder": { input: 10, output: 5, cacheRead: 100, cacheWrite: 2 } },
+      reportedCostUsd: 0.12,
+      plan: { status: "allowed_warning", windows: [{ window: "five_hour", usedPercent: 81, resetsAt: BOOT + 3_600_000 }] },
+    });
+    expect(call!.endedAt).toBeGreaterThanOrEqual(call!.startedAt);
+    // The event is in the log itself, so the index can be rebuilt from it.
+    const read = readLog(join(tokamaHome, "items", id, EVENTS_FILE));
+    if (!read.ok) throw new Error(read.error.message);
+    const logged = read.value.events.filter((event: ItemEvent) => event.type === "usage_recorded");
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toMatchObject({ hostId: HOST, itemId: id });
   });
 
   it("you approve: waits on plan_approval; Approve passes the step", SLOW, async () => {
@@ -505,6 +540,10 @@ describe("run loop: start, safety and control", () => {
     expect(stopped).toMatchObject({ state: "stopped", outcome: { kind: "stopped" } });
     expect(stopped.steps[0]?.attempts[0]).toMatchObject({ result: "stopped" });
     expect(existsSync(worktreeDir(started.value))).toBe(true);
+    // The stopped call's usage is still recorded, after the item ended, and the log still folds.
+    await loop.settled(started.value);
+    expect(item(started.value).calls).toEqual([expect.objectContaining({ stepId: "build", outcome: "aborted" })]);
+    expect(ItemStore.open({ home: tokamaHome, hostId: HOST, clock }).store.get(started.value)?.calls).toHaveLength(1);
     expect(await loop.stopItem(started.value)).toMatchObject({ ok: false, error: { code: "invalid_state" } });
   });
 

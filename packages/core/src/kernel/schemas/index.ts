@@ -39,7 +39,6 @@ import { type ItemRecord, ItemRecordSchema } from "./item.js";
 import { type TemplateRecord, TemplateRecordSchema } from "./template.js";
 import { type ItemEvent, ItemEventSchema } from "./item-log.js";
 import { type ParseError, parseWith } from "./parse.js";
-import { type AgentCallUsage, AgentCallUsageSchema } from "./usage.js";
 
 export * from "./agents.js";
 export * from "./api.js";
@@ -75,8 +74,6 @@ export const parseTemplateRecord = (input: unknown): Result<TemplateRecord, Pars
   parseWith(TemplateRecordSchema, input);
 /** Parses one line of an item's event log, already decoded from JSON. */
 export const parseItemEvent = (input: unknown): Result<ItemEvent, ParseError> => parseWith(ItemEventSchema, input);
-export const parseAgentCallUsage = (input: unknown): Result<AgentCallUsage, ParseError> =>
-  parseWith(AgentCallUsageSchema, input);
 
 export const parseTemplateId = (input: unknown): Result<TemplateId, ParseError> => parseWith(TemplateIdSchema, input);
 export const parseAgentId = (input: unknown): Result<AgentId, ParseError> => parseWith(AgentIdSchema, input);

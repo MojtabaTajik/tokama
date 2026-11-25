@@ -3,6 +3,7 @@
 // wrote it and the UTC time (epoch ms). Records hold no absolute paths and no user names: repos
 // are referenced by id, files by a path relative to the item's or the repo's folder.
 import { z } from "zod";
+import { AgentCallUsageSchema } from "./usage.js";
 import {
   DecisionIdSchema,
   EpochMsSchema,
@@ -151,6 +152,11 @@ const ItemEndedSchema = z.strictObject({
   /** The commits the item made, as Tokama recorded them. */
   commits: z.array(ItemCommitSchema).max(20).optional(),
 });
+/**
+ * What one agent call of an attempt used. Written when the call ends, also after a stop: it may
+ * follow the attempt's end and the item's end.
+ */
+const UsageRecordedSchema = z.strictObject({ type: z.literal("usage_recorded"), usage: AgentCallUsageSchema });
 /** Deletes the item. The log keeps its history; nothing may follow a tombstone. */
 const TombstoneSchema = z.strictObject({ type: z.literal("tombstone"), reason: z.string().min(1).max(200).optional() });
 
@@ -168,6 +174,7 @@ export const ItemEventBodySchema = z.discriminatedUnion("type", [
   DecisionOpenedSchema,
   DecisionResolvedSchema,
   ItemEndedSchema,
+  UsageRecordedSchema,
   TombstoneSchema,
 ]);
 
@@ -194,6 +201,7 @@ export const ItemEventSchema = z.discriminatedUnion("type", [
   DecisionOpenedSchema.extend(envelope),
   DecisionResolvedSchema.extend(envelope),
   ItemEndedSchema.extend(envelope),
+  UsageRecordedSchema.extend(envelope),
   TombstoneSchema.extend(envelope),
 ]);
 
@@ -265,6 +273,8 @@ export const StoredItemSchema = z.strictObject({
   decisions: z.array(StoredDecisionSchema),
   outcome: z.strictObject({ kind: ItemOutcomeSchema, detail: z.string().optional(), commits: z.array(ItemCommitSchema).optional(), at: EpochMsSchema }).optional(),
   deleted: z.boolean(),
+  /** What each agent call used, in log order; absent before the first call ends. */
+  calls: z.array(AgentCallUsageSchema).optional(),
   createdAt: EpochMsSchema,
   updatedAt: EpochMsSchema,
   /** The seq of the last event folded in. */

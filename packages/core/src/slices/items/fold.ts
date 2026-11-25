@@ -59,11 +59,13 @@ export function applyEvent(item: StoredItem | undefined, event: ItemEvent): Resu
   if (event.itemId !== item.id) return fail(`event for ${event.itemId} in the log of ${item.id}`);
   if (event.seq !== item.lastSeq + 1) return fail(`expected seq ${item.lastSeq + 1}, got ${event.seq}`);
   if (item.deleted) return fail("nothing may follow a tombstone");
-  if (item.outcome !== undefined && event.type !== "tombstone") return fail(`the item has ended; ${event.type} is not allowed`);
+  // A call that a stop ended reports its usage after the item ended.
+  if (item.outcome !== undefined && event.type !== "tombstone" && event.type !== "usage_recorded") return fail(`the item has ended; ${event.type} is not allowed`);
 
   const next = structuredClone(item);
   next.lastSeq = event.seq;
-  next.updatedAt = Math.max(item.updatedAt, event.at);
+  // Usage is accounting, not a change of the item's state: the board order stays.
+  if (event.type !== "usage_recorded") next.updatedAt = Math.max(item.updatedAt, event.at);
   const step = "stepId" in event && event.stepId !== undefined ? next.steps.find((s) => s.id === event.stepId) : undefined;
   if ("stepId" in event && event.stepId !== undefined && step === undefined) return fail(`no step ${event.stepId}`);
 
@@ -197,6 +199,17 @@ export function applyEvent(item: StoredItem | undefined, event: ItemEvent): Resu
         at: event.at,
       };
       break;
+    }
+
+    case "usage_recorded": {
+      const { usage } = event;
+      const target = next.steps.find((s) => s.id === usage.stepId);
+      if (target === undefined) return fail(`no step ${usage.stepId}`);
+      if (target.attempts.find((a) => a.attempt === usage.attempt) === undefined) return fail(`attempt ${usage.attempt} of ${usage.stepId} never started`);
+      if (next.calls?.some((call) => call.callId === usage.callId)) return fail(`call ${usage.callId} is already recorded`);
+      next.calls = [...(next.calls ?? []), usage];
+      // The state is the item's own; usage does not change it.
+      return ok(next);
     }
 
     case "tombstone":

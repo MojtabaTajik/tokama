@@ -161,6 +161,7 @@ function ending(state: StreamState) {
   return {
     usage: state.usage,
     ...(state.modelUsage !== undefined && { modelUsage: state.modelUsage }),
+    ...(state.costUsd !== undefined && { costUsd: state.costUsd }),
     ...(state.sessionId !== undefined && { sessionId: state.sessionId }),
   };
 }

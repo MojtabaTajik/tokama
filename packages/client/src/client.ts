@@ -33,6 +33,7 @@ import {
   ok,
   parseClientMessage,
   parseCommandResult,
+  isUnknownEvent,
   parseHandshakeReply,
   parseQueryResult,
   parseServerMessage,
@@ -359,6 +360,8 @@ class Client implements EngineClient {
     if (!message.ok) {
       // A connection error ends the connection; the close that follows triggers the reconnect.
       if (parseHandshakeReply(json).ok) return;
+      // An event type a newer engine added is skipped; anything else unreadable ends the connection.
+      if (isUnknownEvent(json)) return;
       this.socket?.destroy();
       return;
     }

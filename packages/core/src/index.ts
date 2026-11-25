@@ -63,6 +63,8 @@ export {
   type StartItemInput,
   type Verdict,
 } from "./slices/workflow-engine/index.js";
+// Usage reports: roll-ups, estimated costs and the plan window choice, for the engine service.
+export { callCost, choosePlan, localDate, priceOf, PRICES_AS_OF, rangeStart, summarizeUsage, totalTokens, type PlanCandidate, type PlanReading, type UsageRow } from "./slices/usage/index.js";
 // Process control and git, for the engine service to hand to the slices that need them.
 export { createProcessRunner, type ProcessRunner } from "./kernel/process/index.js";
 export { createGit, type Git } from "./kernel/git/index.js";
@@ -87,7 +89,6 @@ export {
   CONNECTION_ERROR_CODES,
   currentStepIndex,
   itemStage,
-  parseAgentCallUsage,
   parseAgentId,
   parseCallId,
   parseClientMessage,
@@ -104,12 +105,20 @@ export {
   parseQuery,
   parseQueryResult,
   parseServerMessage,
+  isUnknownEvent,
   parseTemplateId,
   parseTemplateRecord,
   type AddRepoResult,
   type AgentCallOutcome,
   type BoardResult,
   type AgentCallUsage,
+  type CliPlan,
+  type PlanSnapshot,
+  type PlanWindow,
+  type UsageItem,
+  type UsageRange,
+  type UsageReport,
+  type UsageResult,
   type AiCliId,
   type AgentSummary,
   type AgentId,

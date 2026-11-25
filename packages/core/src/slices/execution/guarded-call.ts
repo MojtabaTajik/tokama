@@ -3,7 +3,7 @@
 // with its own `end` event, and the report says which guard stopped it and how much time was wasted.
 import type { Clock, TimerHandle } from "../../kernel/clock/index.js";
 import type { AgentCallRequest, AgentRuntime } from "../../kernel/ports/index.js";
-import type { AgentCallEvent } from "../../kernel/schemas/index.js";
+import type { AgentCallEvent, PlanSnapshot } from "../../kernel/schemas/index.js";
 import {
   createFileWatch,
   createStreamWatch,
@@ -32,6 +32,10 @@ export interface GuardedCallOptions {
 export interface GuardedCallResult {
   readonly end: EndEvent;
   readonly guard: GuardReport;
+  readonly startedAt: number;
+  readonly endedAt: number;
+  /** The plan windows of the call's last rate-limit event. */
+  readonly plan?: PlanSnapshot;
 }
 
 const NO_END: EndEvent = {
@@ -89,9 +93,11 @@ export async function runGuardedCall(runtime: AgentRuntime, request: AgentCallRe
   if (files) schedulePoll(files);
 
   let end: EndEvent = NO_END;
+  let plan: PlanSnapshot | undefined;
   try {
     for await (const event of runtime.launch(request, controller.signal)) {
       options.onEvent?.(event);
+      if (event.type === "rate_limit") plan = { status: event.status, windows: event.windows, at: clock.now() };
       if (event.type === "end") {
         end = event;
         break;
@@ -109,5 +115,5 @@ export async function runGuardedCall(runtime: AgentRuntime, request: AgentCallRe
   await polling;
   const endedAt = clock.now();
   await files?.finish(endedAt);
-  return { end, guard: guardReport(stream, files, startedAt, endedAt, end.outcome === "completed" ? null : stop) };
+  return { end, guard: guardReport(stream, files, startedAt, endedAt, end.outcome === "completed" ? null : stop), startedAt, endedAt, ...(plan !== undefined && { plan }) };
 }

@@ -49,6 +49,21 @@ describe("Claude Code stream parser", () => {
     expect(state.usage).toEqual({ input: 14, output: 196, cacheRead: 7385, cacheWrite: 7479 });
   });
 
+  it("keeps the CLI's own cost estimate from a recorded result", () => {
+    expect(parse(fixture("success")).state.costUsd).toBeCloseTo(0.0281862, 6);
+    expect(parse(fixture("logged-out")).state.costUsd).toBe(0);
+  });
+
+  it("keeps an earlier cost when a later result reports zeroed totals, and has none without a result", () => {
+    const { state } = parse([
+      line({ type: "result", is_error: false, total_cost_usd: 0.42, modelUsage: {} }),
+      line({ type: "result", is_error: true, total_cost_usd: 0, modelUsage: {} }),
+    ]);
+    expect(state.costUsd).toBe(0.42);
+    expect(parse([line({ type: "assistant", message: { id: "m1", content: [] } })]).state.costUsd).toBeUndefined();
+    expect(parse([line({ type: "result", is_error: false, total_cost_usd: "free" })]).state.costUsd).toBeUndefined();
+  });
+
   it("falls back to the result's usage when modelUsage is empty", () => {
     const { state } = parse([line({ type: "result", is_error: false, modelUsage: {}, usage: { input_tokens: 5, output_tokens: 7 } })]);
     expect(state.usage).toEqual({ input: 5, output: 7, cacheRead: 0, cacheWrite: 0 });

@@ -2,7 +2,7 @@
 // work input and the per-template board view need. Templates here are summaries; the full
 // template file format comes with the templates slice.
 import { z } from "zod";
-import { AgentIdSchema, ConnectionIdSchema, RepoIdSchema, TemplateRefSchema } from "./ids.js";
+import { AgentIdSchema, AiCliIdSchema, ConnectionIdSchema, RepoIdSchema, TemplateRefSchema } from "./ids.js";
 import { ConnectionUsesSchema, DataRuleSchema, ItemKindSchema, StageSchema } from "./item.js";
 import { IconNameSchema, StartNeedSchema, TagColorSchema } from "./template.js";
 
@@ -25,9 +25,6 @@ export const ConnectionSummarySchema = z.strictObject({
   /** The connector, e.g. "App Insights", "Postgres", "MCP server". */
   type: label,
 });
-
-/** The AI CLIs and model hosts Tokama drives. Clients map the id to a label. */
-export const AiCliIdSchema = z.enum(["claude-code", "codex-cli", "ollama"]);
 
 /** Listed in join order; clients give identity dots by that order. */
 export const AgentSummarySchema = z.strictObject({

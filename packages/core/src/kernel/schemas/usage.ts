@@ -1,7 +1,8 @@
-// Agent call shapes: the events an agent runtime emits and the usage record stored per call.
-// Usage carries what v1 can measure now: tokens by type and wall time.
+// Agent call shapes: the events an agent runtime emits, the usage record stored per call, and the
+// usage report the engine serves: plan windows per AI CLI, and tokens and estimated cost per day,
+// workflow and item.
 import { z } from "zod";
-import { AgentIdSchema, CallIdSchema, EpochMsSchema, ItemIdSchema } from "./ids.js";
+import { AgentIdSchema, AiCliIdSchema, CallIdSchema, EpochMsSchema, ItemIdSchema, StepIdSchema } from "./ids.js";
 
 const count = z.int().nonnegative();
 
@@ -70,6 +71,8 @@ export const AgentCallEventSchema = z.discriminatedUnion("type", [
     usage: TokenUsageSchema,
     /** Tokens per model, when the CLI reports them. */
     modelUsage: z.record(z.string().min(1), TokenUsageSchema).optional(),
+    /** The CLI's own estimate of the call's cost in US dollars, at list price, when it reports one. */
+    costUsd: z.number().nonnegative().optional(),
     /** Why the call failed, in words. */
     error: z.string().min(1).optional(),
     errorKind: AgentCallErrorKindSchema.optional(),
@@ -80,22 +83,147 @@ export const AgentCallEventSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
-export const AGENT_CALL_USAGE_SCHEMA_VERSION = 1;
+/** The plan windows the CLI reported last during a call, and when. */
+export const PlanSnapshotSchema = z.strictObject({
+  /** The CLI's status word, e.g. `allowed`, `allowed_warning`, `rejected`. */
+  status: z.string().min(1).max(64),
+  windows: z.array(RateLimitWindowSchema).max(20),
+  at: EpochMsSchema,
+});
 
+const modelName = z.string().min(1).max(200);
+
+/**
+ * What one agent call used, as its own output reported it. Stored in the item's log as a
+ * `usage_recorded` event, whose envelope adds the item, host, position and UTC time. Costs are
+ * not stored, except the CLI's own figure: estimates come from the price table when read.
+ */
 export const AgentCallUsageSchema = z
   .strictObject({
-    schemaVersion: z.literal(AGENT_CALL_USAGE_SCHEMA_VERSION),
     callId: CallIdSchema,
-    itemId: ItemIdSchema,
-    stepIndex: z.int().nonnegative(),
+    stepId: StepIdSchema,
+    attempt: z.int().min(1),
     agentId: AgentIdSchema,
-    model: z.string().min(1),
+    /** The AI CLI or model host the agent runs on; `ollama` for a local model. */
+    cliId: AiCliIdSchema,
+    /** The model the call asked for. */
+    model: modelName,
     outcome: AgentCallOutcomeSchema,
     startedAt: EpochMsSchema,
     endedAt: EpochMsSchema,
+    /** All tokens of the call, subagents included when the CLI counts them. */
     tokens: TokenUsageSchema,
+    /** Tokens per model the CLI reported; a call can use more than one. */
+    models: z.record(modelName, TokenUsageSchema).optional(),
+    /** The CLI's own list-price estimate, in US dollars. */
+    reportedCostUsd: z.number().nonnegative().optional(),
+    plan: PlanSnapshotSchema.optional(),
   })
   .refine((usage) => usage.endedAt >= usage.startedAt, { message: "endedAt is before startedAt", path: ["endedAt"] });
+
+/** The days the usage report covers, ending today. */
+export const UsageRangeSchema = z.union([z.literal(14), z.literal(30), z.literal(90)]);
+
+/** Where a plan window reading came from, best first. */
+export const PlanSourceSchema = z.enum([
+  /** The CLI answered a usage request on demand (Claude Code's `get_usage`). */
+  "request",
+  /** The last rate-limit event of an agent call Tokama ran. */
+  "run",
+  /** The CLI's own cached copy of its last usage answer. */
+  "cache",
+]);
+
+export const PlanWindowSchema = z.strictObject({
+  /** The CLI's name for the window, e.g. `five_hour`, `seven_day`, `seven_day_opus`. */
+  window: z.string().min(1).max(64),
+  /** 0 to 100, or above when over the limit. */
+  usedPercent: z.number().min(0).max(1000),
+  resetsAt: EpochMsSchema.optional(),
+});
+
+/** One AI CLI's plan usage as the engine last read it. Absent values are unknown, never guessed. */
+export const CliPlanSchema = z.strictObject({
+  cliId: AiCliIdSchema,
+  /** Empty when nothing is known. */
+  windows: z.array(PlanWindowSchema).max(20),
+  /** Absent when no source answered. */
+  source: PlanSourceSchema.optional(),
+  /** When the source read the windows: the data's age. */
+  asOf: EpochMsSchema.optional(),
+  /** The plan's name as the CLI reports it, e.g. `max`. */
+  plan: z.string().min(1).max(64).optional(),
+  /** The CLI's version, when known. */
+  version: z.string().min(1).max(100).optional(),
+  /** Extra usage beyond the plan: on, off, or absent when unknown. */
+  extraUsage: z.enum(["on", "off"]).optional(),
+  /** Why the windows are unknown or old, in plain words. */
+  note: z.string().min(1).max(500).optional(),
+});
+
+const tokens = z.int().nonnegative();
+/** US dollars; null when no call of the group could be priced. */
+const cost = z.number().nonnegative().nullable();
+/**
+ * The workflow key exactly as item records carry it, so clients match it with the setup's templates
+ * the same way they match items.
+ */
+const templateId = z.string().min(1).max(200);
+
+export const UsageItemSchema = z.strictObject({
+  itemId: ItemIdSchema,
+  title: z.string().min(1).max(200),
+  templateId,
+  /** Each agent once, in the order it first ran. */
+  agents: z.array(z.strictObject({ agentId: AgentIdSchema, cliId: AiCliIdSchema })).max(20),
+  tokens: TokenUsageSchema,
+  /** Wall time of the item's agent calls. */
+  durationMs: z.int().nonnegative(),
+  costUsd: cost,
+  /** Every call ran on a local model: it cost nothing. */
+  local: z.boolean(),
+});
+
+export const UsageReportSchema = z.strictObject({
+  range: UsageRangeSchema,
+  /** When the engine made the report. */
+  asOf: EpochMsSchema,
+  /** The date of the price table the estimates use, `YYYY-MM-DD`. */
+  pricesAsOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  clis: z.array(CliPlanSchema).max(10),
+  /** Every day of the range, oldest first, in the engine's local time. */
+  days: z
+    .array(
+      z.strictObject({
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        /** Only workflows with calls that day. */
+        workflows: z
+          .array(
+            z.strictObject({
+              templateId,
+              tokens,
+              costUsd: cost,
+              /** The items with calls that day, most tokens first, at most five. */
+              items: z.array(z.strictObject({ itemId: ItemIdSchema, title: z.string().min(1).max(200) })).max(5),
+              itemCount: z.int().nonnegative(),
+            }),
+          )
+          .max(100),
+      }),
+    )
+    .max(90),
+  /** Totals per workflow over the range, most tokens first. */
+  workflows: z.array(z.strictObject({ templateId, tokens, costUsd: cost, calls: z.int().nonnegative() })).max(100),
+  /** The items with the most tokens over the range, at most 50. */
+  items: z.array(UsageItemSchema).max(50),
+  totals: z.strictObject({
+    tokens: TokenUsageSchema,
+    costUsd: cost,
+    calls: z.int().nonnegative(),
+    /** Calls neither the CLI nor the price table could price; their cost is left out. */
+    unpricedCalls: z.int().nonnegative(),
+  }),
+});
 
 export type TokenUsage = z.output<typeof TokenUsageSchema>;
 export type AgentCallOutcome = z.output<typeof AgentCallOutcomeSchema>;
@@ -103,3 +231,10 @@ export type AgentCallErrorKind = z.output<typeof AgentCallErrorKindSchema>;
 export type RateLimitWindow = z.output<typeof RateLimitWindowSchema>;
 export type AgentCallEvent = z.output<typeof AgentCallEventSchema>;
 export type AgentCallUsage = z.output<typeof AgentCallUsageSchema>;
+export type PlanSnapshot = z.output<typeof PlanSnapshotSchema>;
+export type UsageRange = z.output<typeof UsageRangeSchema>;
+export type PlanSource = z.output<typeof PlanSourceSchema>;
+export type PlanWindow = z.output<typeof PlanWindowSchema>;
+export type CliPlan = z.output<typeof CliPlanSchema>;
+export type UsageItem = z.output<typeof UsageItemSchema>;
+export type UsageReport = z.output<typeof UsageReportSchema>;
