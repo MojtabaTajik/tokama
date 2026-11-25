@@ -16,8 +16,9 @@ export const MAX_STACK_LINES = 30;
 /** The longest raw stack a client may report; the engine cleans it and cuts it to `MAX_STACK_CHARS`. */
 export const MAX_REPORTED_STACK_CHARS = 16_000;
 /**
- * The most the stored entries may take, in bytes of JSONL. It equals what a receiver takes in one
- * upload, so sending every stored entry at once always fits.
+ * The most the stored entries may take, counted in bytes of the body that sends them all (the
+ * indented JSON the user reads). It equals what a receiver takes in one upload, unpacked, so
+ * sending every stored entry at once always fits.
  */
 export const MAX_DIAGNOSTICS_BYTES = 2 * 1024 * 1024;
 /** The most entries one diagnostics_list reply carries. */
@@ -154,6 +155,12 @@ const UsageEntrySchema = z.strictObject({
 const CrashEntrySchema = z.strictObject({ ...envelope, type: z.literal("crash"), source: DiagnosticSourceSchema, kind: CrashKindSchema });
 
 export const DiagnosticEntrySchema = z.discriminatedUnion("type", [ErrorEntrySchema, WarningEntrySchema, UsageEntrySchema, CrashEntrySchema]);
+
+/**
+ * What Send all posts (gzipped) and Save as file writes: every waiting entry, as stored, and nothing
+ * else. Its text is at most MAX_DIAGNOSTICS_BYTES before gzip.
+ */
+export const DiagnosticsBodySchema = z.strictObject({ entries: z.array(DiagnosticEntrySchema).min(1) });
 
 /** What a client reports to the engine; the engine adds the envelope and cleans the stack. */
 export const DiagnosticReportSchema = z.discriminatedUnion("type", [

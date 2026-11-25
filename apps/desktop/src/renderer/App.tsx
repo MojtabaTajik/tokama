@@ -18,7 +18,9 @@ import { RepoDialog, type SetUpNote } from "./repos/RepoDialog.js";
 import { RepoNote } from "./repos/RepoNote.js";
 import type { AgentTarget } from "./settings/describe.js";
 import { Settings, type SettingsPage } from "./settings/Settings.js";
+import { useDiagnosticsWaiting } from "./settings/useDiagnostics.js";
 import { NeedsYou } from "./needsyou/NeedsYou.js";
+import { CrashPrompt, useCrashPrompt } from "./shell/CrashPrompt.js";
 import { MainArea } from "./shell/MainArea.js";
 import { Rail } from "./shell/Rail.js";
 import { Sidebar } from "./shell/Sidebar.js";
@@ -65,6 +67,20 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   // The report loads every minute only while someone looks at it: the page, or the rail tooltip.
   const [tipShown, setTipShown] = useState(false);
   const usage = useUsage(bridge, connection, usageRange, usageScope, page === "insights" || tipShown);
+  const diagnosticsWaiting = useDiagnosticsWaiting(bridge, connection);
+  const crash = useCrashPrompt(bridge, connection, initial.askAfterCrash);
+  const crashPrompt = crash.open && (
+    <CrashPrompt
+      onReview={() => {
+        crash.review();
+        setSettingsPage("diagnostics");
+        setSettingsAgent(undefined);
+        setPage("settings");
+      }}
+      onNotNow={crash.notNow}
+      onDontAsk={crash.dontAsk}
+    />
+  );
   const aboutOpen = page === "about";
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(undefined);
   // Counts each "Review the diff": the drawer shows the item's Diff tab, also when it shows the item already.
@@ -215,7 +231,8 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   if (page === "settings") {
     return (
       <div className="shell">
-        <Settings bridge={bridge} connection={connection} setup={setup} onBack={() => setPage("board")} {...(settingsPage !== undefined && { initialPage: settingsPage })} {...(settingsAgent !== undefined && { initialAgent: settingsAgent })} />
+        <Settings key={settingsPage} bridge={bridge} connection={connection} setup={setup} onBack={() => setPage("board")} {...(settingsPage !== undefined && { initialPage: settingsPage })} {...(settingsAgent !== undefined && { initialAgent: settingsAgent })} />
+        {crashPrompt}
       </div>
     );
   }
@@ -268,6 +285,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
           setSettingsPage("ai-clis");
           setPage("settings");
         }}
+        diagnosticsWaiting={diagnosticsWaiting}
       />
       {panelOpen && (
         <Sidebar
@@ -363,6 +381,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
           }}
         />
       )}
+      {crashPrompt}
       {setUpNote !== undefined && <RepoNote note={setUpNote} onStart={() => startIn({ kind: "repo", id: setUpNote.id })} onDismiss={() => setSetUpNote(undefined)} />}
       {editedRepo !== undefined && <RepoDialog bridge={bridge} repo={editedRepo} onClose={() => setEditingRepo(undefined)} />}
       {itemShown && (

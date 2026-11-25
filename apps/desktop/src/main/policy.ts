@@ -37,6 +37,21 @@ export function devServerUrl(value: string | undefined, isPackaged: boolean): UR
 }
 
 /**
+ * Where Send all posts diagnostics: `fixed` (the app's constant), or in a development build a
+ * loopback test server named by TOKAMA_DIAGNOSTICS_URL. A packaged app never reads the variable.
+ * `fixed` is undefined on the sample engine, so sample entries never reach the real receiver.
+ */
+export function diagnosticsUrl(value: string | undefined, isPackaged: boolean, fixed: URL | undefined): URL | undefined {
+  if (isPackaged || value === undefined) return fixed;
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:") && LOOPBACK.has(url.hostname) ? url : fixed;
+  } catch {
+    return fixed;
+  }
+}
+
+/**
  * Whether `url` is one of the app's own pages or files: files of the built renderer, or with a
  * dev server only that server (http, and ws for hot reload). Everything else, remote content
  * above all, is refused; so is a `file:` URL with a host, which is not a local path.

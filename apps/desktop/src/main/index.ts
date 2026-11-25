@@ -13,6 +13,7 @@ import { engineApi, mainQuery } from "./api.js";
 import { openAttemptFile } from "./attempt-file.js";
 import { type ConnectionWatch, watchConnection } from "./connection.js";
 import { type DesktopStore, desktopStore } from "./desktop-store.js";
+import { DIAGNOSTICS_URL, diagnosticsService, saveToFile } from "./diagnostics-send.js";
 import { createReporter, mainErrorReport, pidAlive, rateLimit, rendererErrorReport, rendererGoneKind, type Reporter, runMarker } from "./diagnostics.js";
 import { engineCommand, engineDirFor, findExecutable, otherVersionMessage, readLogTail } from "./engine.js";
 import { pickRepoFolder } from "./folder.js";
@@ -21,7 +22,7 @@ import { appIcons } from "./icon.js";
 import { recordingShow, systemShow } from "./system-notification.js";
 import { openTemplateFile } from "./template-file.js";
 import { fitBounds, trackWindow } from "./window-state.js";
-import { backgroundModeEnabled, devServerUrl, e2eEnabled, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, sampleEngineEnabled, secureWebPreferences } from "./policy.js";
+import { backgroundModeEnabled, devServerUrl, diagnosticsUrl, e2eEnabled, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, sampleEngineEnabled, secureWebPreferences } from "./policy.js";
 
 const rendererDir = join(import.meta.dirname, "..", "renderer");
 const preloadPath = join(import.meta.dirname, "..", "preload", "index.cjs");
@@ -208,6 +209,20 @@ void app.whenReady().then(() => {
   const api = engineApi(() => watch.client());
   handle(CHANNELS.query, (query) => api.query(query));
   handle(CHANNELS.command, (command) => api.command(command));
+  // The Diagnostics page. Send all posts to the app's own URL; a development build may point it at
+  // a local test server, and on the sample engine it sends nowhere without one. The save dialog is looked up on each call, so the UI flow tests can stand in for it.
+  const diagnostics = diagnosticsService({
+    client: () => watch.client(),
+    url: diagnosticsUrl(process.env["TOKAMA_DIAGNOSTICS_URL"], app.isPackaged, sample ? undefined : DIAGNOSTICS_URL),
+    saveFile: (text) => saveToFile(text, (options) => {
+      const window = BrowserWindow.getFocusedWindow();
+      return window === null ? dialog.showSaveDialog(options) : dialog.showSaveDialog(window, options);
+    }, new Date()),
+  });
+  handle(CHANNELS.loadDiagnostics, () => diagnostics.load());
+  handle(CHANNELS.sendDiagnostics, (ids) => diagnostics.send(ids));
+  handle(CHANNELS.saveDiagnostics, (ids) => diagnostics.save(ids));
+  handle(CHANNELS.stopCrashPrompt, () => store.update((state) => ({ ...state, askAfterCrash: false })));
   // Looked up on each call, so the UI flow tests can stand in for the native picker.
   handle(CHANNELS.pickFolder, () => pickRepoFolder((options) => {
     const window = BrowserWindow.getFocusedWindow();

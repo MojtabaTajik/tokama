@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { manualClock, type ManualClock } from "../../kernel/clock/index.js";
 import { DiagnosticEntrySchema, type DiagnosticId, type MachineFacts, MAX_DIAGNOSTICS_BYTES } from "../../kernel/schemas/index.js";
-import { DiagnosticsStore, ENTRIES_FILE, RUNNING_FILE, SETTINGS_FILE, type DiagnosticsStoreOptions } from "./index.js";
+import { diagnosticsBody, DiagnosticsStore, ENTRIES_FILE, entryText, RUNNING_FILE, SETTINGS_FILE, type DiagnosticsStoreOptions } from "./index.js";
 import { FORBIDDEN, SENTINEL, SENTINEL_CONTEXT, sentinelStack } from "./testing.js";
 
 const MACHINE: MachineFacts = { os: "linux", osVersion: "24.04", distro: "ubuntu", arch: "x64", cpu: { family: "AMD Ryzen 7", cores: 16 }, ramGb: "16-32", gpu: null };
@@ -31,6 +31,11 @@ function allFiles(): string {
 
 function lines(): unknown[] {
   return readFileSync(join(dir, ENTRIES_FILE), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+}
+
+/** The body that would send every stored entry, from the file. */
+function bodyBytes(): number {
+  return Buffer.byteLength(diagnosticsBody(lines().map((line) => entryText(DiagnosticEntrySchema.parse(line)))));
 }
 
 function expectNoSentinel(text: string): void {
@@ -158,6 +163,23 @@ describe("DiagnosticsStore", () => {
     expect(again.list().entries).toEqual([]);
   });
 
+  it("tells when entries are recorded or deleted, and not for a delete that removes nothing", async () => {
+    let calls = 0;
+    const store = await open({ onEntries: () => calls++ });
+    store.warning("engine", "index_rebuilt");
+    store.count("approve");
+    expect(calls).toBe(1);
+    store.flushUsage();
+    expect(calls).toBe(2);
+    store.delete({ ids: ["diag_00000000-0000-7000-8000-000000000000" as DiagnosticId] });
+    expect(calls).toBe(2);
+    store.delete({ all: true });
+    expect(calls).toBe(3);
+    store.updateSettings({ collect: false });
+    store.warning("engine", "index_rebuilt");
+    expect(calls).toBe(3);
+  });
+
   it("detects a crash by the marker a clean stop removes", async () => {
     let changes = 0;
     const first = await open();
@@ -217,10 +239,39 @@ describe("DiagnosticsStore", () => {
     const size = readFileSync(join(dir, ENTRIES_FILE)).length;
     expect(size).toBeLessThanOrEqual(MAX_DIAGNOSTICS_BYTES);
     expect(size).toBeGreaterThan(MAX_DIAGNOSTICS_BYTES * 0.5);
+    expect(bodyBytes()).toBeLessThanOrEqual(MAX_DIAGNOSTICS_BYTES);
     const kept = lines() as { at: number }[];
     expect(kept.length).toBeLessThan(3000);
     expect(kept.at(-1)?.at).toBe(clock.now());
     expect(kept[0]?.at).toBeGreaterThan(START + 1);
+  });
+
+  it("counts the cap in bytes of the sent body, so a store full of small entries still goes out in one request", async () => {
+    const store = await open();
+    // Warnings have the most indentation for their size: the body is about 1.3 times the file.
+    for (let i = 0; i < 6000; i++) {
+      clock.advance(1);
+      store.warning("engine", "index_rebuilt");
+    }
+    expect(bodyBytes()).toBeLessThanOrEqual(MAX_DIAGNOSTICS_BYTES);
+    expect(bodyBytes()).toBeGreaterThan(MAX_DIAGNOSTICS_BYTES * 0.75);
+  });
+
+  it("measures an existing file again on open and drops the oldest until the body fits", async () => {
+    const store = await open({ maxBytes: 1_000_000 });
+    for (let i = 0; i < 400; i++) {
+      clock.advance(1);
+      store.warning("engine", "index_rebuilt");
+    }
+    store.close();
+    const fileBytes = readFileSync(join(dir, ENTRIES_FILE)).length;
+    expect(bodyBytes()).toBeGreaterThan(fileBytes);
+    // A cap between the file's size and the body's: only the body measure prunes.
+    const cap = Math.floor((fileBytes + bodyBytes()) / 2);
+    const again = await open({ maxBytes: cap });
+    again.close();
+    expect(bodyBytes()).toBeLessThanOrEqual(cap);
+    expect((lines().at(-1) as { at: number }).at).toBe(clock.now());
   });
 
   it("drops lines that do not parse, and starts anew from a file it cannot read", async () => {

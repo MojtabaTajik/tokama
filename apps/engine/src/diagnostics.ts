@@ -38,6 +38,8 @@ export interface DiagnosticsOptions {
   readonly machine?: MachineFacts;
   readonly clock: Clock;
   readonly onChange: () => void;
+  /** Called when entries are recorded or deleted. */
+  readonly onEntries?: () => void;
   readonly log: (message: string) => void;
 }
 
@@ -70,6 +72,7 @@ export class EngineDiagnostics {
       redaction: context,
       clock: options.clock,
       onChange: options.onChange,
+      ...(options.onEntries !== undefined && { onEntries: options.onEntries }),
       log: options.log,
     });
     const diagnostics = new EngineDiagnostics(store, options.home, known);

@@ -1,7 +1,7 @@
 // The contract between the main process, the preload bridge and the renderer. Types and
 // constants only: the renderer and the sandboxed preload import nothing else from outside.
 import type { ClientEvent, CommandReply, QueryReply } from "@tokama/client";
-import type { CommandInput, QueryInput } from "@tokama/core";
+import type { CommandInput, DiagnosticEntry, QueryInput } from "@tokama/core";
 import type { DesktopState, LayoutPatch, NotificationSettings } from "./desktop-state.js";
 
 /** The desktop app's view of its engine connection. */
@@ -55,6 +55,10 @@ export const CHANNELS = {
   saveNotifications: "tokama:notifications:save",
   viewedItem: "tokama:notifications:viewed",
   openItem: "tokama:notifications:open-item",
+  loadDiagnostics: "tokama:diagnostics:load",
+  sendDiagnostics: "tokama:diagnostics:send",
+  saveDiagnostics: "tokama:diagnostics:save",
+  stopCrashPrompt: "tokama:diagnostics:stop-crash-prompt",
 } as const;
 
 /** What About shows about this build. The main process fills it; every field is plain text or a number. */
@@ -85,6 +89,34 @@ export interface AttemptFileName {
 
 /** Whether a file opened; the message says why not, in plain words. */
 export type OpenResult = { readonly ok: true } | { readonly ok: false; readonly message: string };
+
+/** A waiting diagnostics entry and its text: exactly what Send all and Save as file put out for it. */
+export interface DiagnosticsItem {
+  readonly entry: DiagnosticEntry;
+  readonly text: string;
+}
+
+/** Every waiting diagnostics entry, newest first. */
+export type DiagnosticsLoad = { readonly ok: true; readonly items: readonly DiagnosticsItem[] } | { readonly ok: false; readonly reason: "not_connected" | "unavailable" };
+
+/**
+ * Why Send all sent nothing. `busy`: a send runs already. `nothing`: none of the entries is waiting.
+ * The others say how the receiver answered, or that it did not: `rejected` (400), `too_large` (413,
+ * or larger than an upload may be), `unsupported` (415), `rate_limited` (429), `busy_today` (503:
+ * its daily budget is used up), `server` (any other status), `bad_reply` (a success without a
+ * report id), `timeout` and `network` (no answer). `no_receiver`: a development build on the sample
+ * engine sends nowhere unless a local test server is named.
+ */
+export type DiagnosticsSendFailure = "not_connected" | "no_receiver" | "busy" | "nothing" | "rejected" | "too_large" | "unsupported" | "rate_limited" | "busy_today" | "server" | "bad_reply" | "timeout" | "network";
+
+/**
+ * `sent` entries went out and were removed, except `kept` of them whose delete failed (they stay
+ * listed). On failure nothing was removed. `detail`: with
+ * `rejected`, the receiver's short reason, one line of plain text.
+ */
+export type DiagnosticsSendResult = { readonly ok: true; readonly sent: number; readonly kept?: number } | { readonly ok: false; readonly reason: DiagnosticsSendFailure; readonly count: number; readonly detail?: string };
+
+export type DiagnosticsSaveResult = { readonly ok: true } | { readonly ok: false; readonly reason: "cancelled" | "nothing" | "failed" };
 
 /** What the preload script exposes to the renderer as `window.tokama`. */
 export interface TokamaBridge {
@@ -138,4 +170,16 @@ export interface TokamaBridge {
    * one that came before the listener was set is delivered at once. Returns a function that stops it.
    */
   onOpenItem(listener: (itemId: string) => void): () => void;
+  /** Every waiting diagnostics entry with its text. The main process keeps the texts it gave out. */
+  loadDiagnostics(): Promise<DiagnosticsLoad>;
+  /**
+   * Sends the entries with these ids from the last load, as the texts that load gave out, in one
+   * request to the diagnostics receiver, and removes them after it stored them. The URL is the main
+   * process's own.
+   */
+  sendDiagnostics(ids: readonly string[]): Promise<DiagnosticsSendResult>;
+  /** Writes the same text Send all would send for these ids to a file the user picks. */
+  saveDiagnostics(ids: readonly string[]): Promise<DiagnosticsSaveResult>;
+  /** Don't ask again: no crash prompt from now on. */
+  stopCrashPrompt(): Promise<void>;
 }

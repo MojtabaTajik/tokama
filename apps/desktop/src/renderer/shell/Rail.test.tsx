@@ -210,3 +210,20 @@ describe("Rail: Insights tooltip", () => {
   });
 
 });
+
+describe("Rail: diagnostics badge", () => {
+  const settings = () => [...container.querySelectorAll("button")].find((button) => button.getAttribute("aria-label")?.startsWith("Settings"))!;
+
+  it("counts waiting diagnostics on Settings, with the count in its label, and is gone when none wait", () => {
+    render({ diagnosticsWaiting: 6 });
+    expect(settings().getAttribute("aria-label")).toBe("Settings · 6 diagnostics waiting");
+    expect(settings().getAttribute("title")).toBe("Settings · 6 diagnostics waiting");
+    expect(settings().querySelector(".badge")?.textContent).toBe("6");
+    expect(settings().querySelector(".badge")?.getAttribute("data-tone")).toBe("neutral");
+    render({ diagnosticsWaiting: 120 });
+    expect(settings().getAttribute("aria-label")).toBe("Settings · 99+ diagnostics waiting");
+    render({ diagnosticsWaiting: 0 });
+    expect(settings().getAttribute("aria-label")).toBe("Settings");
+    expect(settings().querySelector(".badge")).toBeNull();
+  });
+});

@@ -179,6 +179,8 @@ export const EventSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("usage_changed") }),
   /** Repos, connections, agents or templates changed: run the setup query again. */
   z.strictObject({ type: z.literal("setup_changed") }),
+  /** Diagnostics entries were recorded or deleted: run the diagnostics queries again. */
+  z.strictObject({ type: z.literal("diagnostics_changed") }),
 ]);
 
 export const RepoSuggestionSchema = z.strictObject({

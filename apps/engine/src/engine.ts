@@ -89,6 +89,7 @@ import { RealEngine } from "./real/real.js";
 import { SampleEngine } from "./sample/sample.js";
 import { agentsFor, displayPath, loadConfig, startProblem, stepProblems } from "./real/config.js";
 import { sampleTemplateLoads } from "./sample/templates.js";
+import { openSampleDiagnostics } from "./sample/diagnostics.js";
 import { sampleMachineReport } from "./sample/machine.js";
 import { sampleClaudePlan, sampleLogEntries, sampleOtherPlans, sampleUsageRows } from "./sample/usage.js";
 import { ClaudeLogs } from "./claude-logs.js";
@@ -203,6 +204,8 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   let usageRecorded = () => {};
   // Set once events can go out; diagnostics call it when a crash is recorded or the settings change.
   let diagnosticsChanged = () => {};
+  // Set once events can go out; diagnostics call it when entries are recorded or deleted.
+  let entriesChanged = () => {};
   const homeLock = options.home !== undefined && !options.sample ? { lockPath: join(options.home, "engine.lock"), socketPath, dir: options.home } : undefined;
   const homeLockContent = `${process.pid} ${engineId} ${socketPath}\n`;
   if (homeLock !== undefined) {
@@ -224,6 +227,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
         ...(options.machineFacts !== undefined && { machine: options.machineFacts }),
         clock: options.clock ?? systemClock,
         onChange: () => diagnosticsChanged(),
+        onEntries: () => entriesChanged(),
         log,
       }).catch((error: unknown) => {
         log(`diagnostics are off for this run: ${String(error)}`);
@@ -243,6 +247,23 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       return opened;
     }
     storage = opened.value;
+  }
+  if (options.sample) {
+    // Under the engine dir's lock, which this engine holds; the Tokama home is never touched.
+    diagnostics = await openSampleDiagnostics({
+      dir: endpoint.value.dir,
+      userHome: options.userHome ?? homedir(),
+      codeRoots: [CODE_ROOT],
+      engineVersion: options.engineVersion ?? "0.0.0",
+      ...(options.machineFacts !== undefined && { machine: options.machineFacts }),
+      clock: options.clock ?? systemClock,
+      onChange: () => diagnosticsChanged(),
+      onEntries: () => entriesChanged(),
+      log,
+    }).catch((error: unknown) => {
+      log(`sample diagnostics are off for this run: ${String(error)}`);
+      return undefined;
+    });
   }
   const releaseStorage = () => {
     storage?.close();
@@ -689,6 +710,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   const unsubscribe = store.subscribe((item) => broadcast({ type: "item_updated", item }));
   usageRecorded = usageChanged;
   diagnosticsChanged = () => broadcast({ type: "setup_changed" });
+  entriesChanged = () => broadcast({ type: "diagnostics_changed" });
 
   const stopTicking = sample?.startTicking();
 
@@ -702,6 +724,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     unsubscribe();
     usageRecorded = () => {};
     diagnosticsChanged = () => {};
+    entriesChanged = () => {};
     usageAbort.abort();
     await withDeadline(Promise.allSettled([...inFlight, usage.settled(), machine?.close(), claudeLogs?.settled()]), shutdownTimeoutMs);
     const allClosed = new Promise<void>((resolve) => {
