@@ -8,6 +8,7 @@ import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
 import { itemElement } from "../list/useFocusFollow.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { attemptLine, DECISION_KIND, hasEnded, itemMark, KIND, outcomeLine, PRIVACY, stepAgent, stepMark, stepPosition, templateOf, whereLine } from "./describe.js";
+import { DecisionChoices } from "./DecisionChoices.js";
 import { useItem } from "./useItem.js";
 
 const TEXT = {
@@ -294,19 +295,7 @@ function NeedsYou({ decision, busy, onChoose }: NeedsYouProps) {
               </pre>
             </div>
           )}
-          <div className="choices">
-            {decision.choices.map((choice, index) => (
-              <button
-                key={choice.id}
-                type="button"
-                className={index === 0 ? "choice primary" : "choice"}
-                disabled={busy}
-                onClick={() => onChoose(decision, choice.id)}
-              >
-                {choice.label}
-              </button>
-            ))}
-          </div>
+          <DecisionChoices decision={decision} busy={busy} onChoose={(choice) => onChoose(decision, choice)} />
         </>
       ) : (
         <p className="needs-you-question">

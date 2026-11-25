@@ -39,13 +39,13 @@ export const PRIVACY: Record<Privacy, string> = { local_only: "local only", loca
 
 /** Why the engine asks, as a short label above the question. */
 export const DECISION_KIND: Record<DecisionKind, string> = {
-  plan_approval: "approval",
-  cloud_summary: "cloud step approval",
-  outside_change: "change outside the worktree",
-  after_failure: "step failed",
-  run_failure: "run failed",
-  budget: "time budget used",
-  tamper: "protected files changed",
+  plan_approval: "Approval",
+  cloud_summary: "Cloud-step approval",
+  outside_change: "Change outside the worktree",
+  after_failure: "Step failed",
+  run_failure: "Run failed",
+  budget: "Time budget used",
+  tamper: "Protected files changed",
 };
 
 const ATTEMPT_RESULT: Record<NonNullable<AttemptSummary["result"]>, Mark> = {

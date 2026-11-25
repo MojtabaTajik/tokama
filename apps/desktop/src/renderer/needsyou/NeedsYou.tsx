@@ -6,6 +6,7 @@
 import type { ItemRecord, Setup } from "@tokama/core";
 import { type MouseEvent, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
+import { DecisionChoices } from "../drawer/DecisionChoices.js";
 import { type Notice, problem, REFRESH_ON } from "../drawer/ItemDrawer.js";
 import { ConnectionFailure } from "../shell/ConnectionStatus.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
@@ -214,20 +215,7 @@ function Row({ row, index, bridge, selected, onSelect, onRefresh }: RowProps) {
         </p>
       )}
       {decision !== undefined && (
-        <div className="choices">
-          {decision.choices.map((choice, position) => (
-            <button
-              key={choice.id}
-              type="button"
-              className={position === 0 ? "choice primary" : "choice"}
-              disabled={busy}
-              aria-label={`${choice.label}: ${item.title}`}
-              onClick={() => void choose(choice.id)}
-            >
-              {choice.label}
-            </button>
-          ))}
-        </div>
+        <DecisionChoices decision={decision} busy={busy} context={item.title} onChoose={(choice) => void choose(choice)} />
       )}
     </li>
   );

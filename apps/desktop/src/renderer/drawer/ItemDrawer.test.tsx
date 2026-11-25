@@ -461,7 +461,7 @@ describe("item drawer with real-mode records", () => {
     } as unknown as ItemRecord;
     const fake = fakeBridge([asked]);
     await renderDrawer(fake.bridge, asked.id);
-    expect(text(".needs-you-kind")).toBe("run failed");
+    expect(text(".needs-you-kind")).toBe("Run failed");
     expect($$(".needs-you .choice").map((el) => el.textContent)).toEqual(["Retry step", "Stop"]);
     await act(async () => ($$(".needs-you .choice")[0] as HTMLButtonElement).click());
     expect(fake.command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: asked.id, decisionId: DECISION_ID, choice: "retry_step" });

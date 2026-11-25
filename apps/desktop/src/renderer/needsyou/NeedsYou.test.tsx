@@ -42,7 +42,7 @@ const older: ItemRecord = {
   ...ITEMS.needsYou,
   id: "item_1a2b3c4d-0099-4a1b-8c1d-000000000099",
   title: "Plan is ready <b>for review</b>",
-  templateId: "plan-and-build",
+  templateId: "builtin/plan-and-build",
   kind: "task",
   createdAt: NOW - 70 * MINUTE,
   decision: { id: "decision_aaaaaaaa-0000-4000-8000-000000000001", stepIndex: 0, question: "Approve the plan?", choices: [{ id: "yes", label: "Yes" }, { id: "no", label: "No" }] },
@@ -223,7 +223,7 @@ describe("the Needs you page", () => {
   });
 
   it("keeps New work working from the page, and returns to the board when it starts an item", async () => {
-    const started = { ...ITEMS.queued, id: "item_1a2b3c4d-0098-4a1b-8c1d-000000000098", title: "Fix the retry loop", templateId: "quick-fix", repoIds: ["orders-api"] } as ItemRecord;
+    const started = { ...ITEMS.queued, id: "item_1a2b3c4d-0098-4a1b-8c1d-000000000098", title: "Fix the retry loop", templateId: "builtin/quick-fix", repoIds: ["orders-api"] } as ItemRecord;
     const fake = fakeBridge(CONNECTED, {
       boardItems: items,
       reply: (q) => ((q as { itemId?: string }).itemId === started.id ? { ok: true, data: { item: started } } : undefined),
@@ -244,7 +244,7 @@ describe("the Needs you page", () => {
       field.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await click($(".np-start"));
-    expect(fake.command).toHaveBeenCalledWith(expect.objectContaining({ type: "start_item", templateId: "quick-fix", text: "Fix the retry loop" }));
+    expect(fake.command).toHaveBeenCalledWith(expect.objectContaining({ type: "start_item", templateId: "builtin/quick-fix", text: "Fix the retry loop" }));
     await wait(0);
     expect(text("main h1")).toBe("All work");
     expect($(".drawer h2")?.textContent).toBe("Fix the retry loop");
