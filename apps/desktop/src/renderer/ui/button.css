@@ -79,13 +79,18 @@
   font-weight: 500;
 }
 
-/* Text buttons and plain ones: no box. */
+/* Text buttons and plain ones: no box. A plain button keeps the browser's padding and centring
+   unless its screen sets its own. */
 .btn-link,
 .btn-quiet,
 .btn-plain {
-  padding: 0;
   border: 0;
   background: transparent;
+}
+
+.btn-link,
+.btn-quiet {
+  padding: 0;
   text-align: inherit;
 }
 

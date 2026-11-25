@@ -156,6 +156,7 @@ const UI_PRIMITIVES = [
   { selector: "JSXOpeningElement[name.name='dialog']", message: "Use Modal from renderer/ui instead of a raw <dialog>." },
   { selector: "JSXAttribute[name.name='aria-modal']", message: "Use Modal from renderer/ui instead of a hand-made modal." },
   { selector: "JSXAttribute[name.name='role'][value.value='tooltip']", message: "Use Tooltip from renderer/ui instead of a hand-made tooltip." },
+  { selector: "JSXAttribute[name.name='role'] > JSXExpressionContainer > Literal[value='tooltip']", message: "Use Tooltip from renderer/ui instead of a hand-made tooltip." },
 ];
 const preloadPatterns = [
   ...desktopPatterns,

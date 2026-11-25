@@ -236,7 +236,7 @@ export function NewWork({ bridge, setup, ref, repoId, onStarted }: NewWorkProps)
               // Why the template can't run is the Start reason below; this offers the way out.
               <p className="np-suggest">
                 {TEXT.instead(blocked.instead.name)}{" "}
-                <Button variant="link" onClick={() => setPicked(blocked.instead!.id)}>
+                <Button variant="link" inline onClick={() => setPicked(blocked.instead!.id)}>
                   {TEXT.use(blocked.instead.name)}
                 </Button>
               </p>

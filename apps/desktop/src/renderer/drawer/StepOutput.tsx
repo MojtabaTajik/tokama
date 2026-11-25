@@ -76,7 +76,7 @@ export function StepOutput({ state, label }: { readonly state: OutputState; read
       return <p className="step-output-none">{TEXT.missing}</p>;
     case "failed":
       return (
-        <p className="drawer-error" role="alert">
+        <p className="inline-error" role="alert">
           <StatusMark status="failed" className="symbol" />
           {TEXT.failed(state.message)}
         </p>

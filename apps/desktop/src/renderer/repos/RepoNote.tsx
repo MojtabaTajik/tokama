@@ -2,6 +2,7 @@
 // what it did, and a way to start the first task there. Dismissed with ✕.
 import type { SetUpNote } from "./RepoDialog.js";
 import { Button, CloseButton } from "../ui/Button.js";
+import { markOf } from "../ui/status.js";
 
 const TEXT = {
   added: (id: string) => `Added ${id}`,
@@ -21,7 +22,7 @@ export function RepoNote({ note, onStart, onDismiss }: RepoNoteProps) {
   return (
     <div className="repo-setup-note" role="status">
       <span className="rd-pass" aria-hidden="true">
-        ✓
+        {markOf("passed").symbol}
       </span>
       <b>{TEXT.added(note.id)}</b>
       <span className="rd-dim">

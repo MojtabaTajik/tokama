@@ -68,11 +68,14 @@ describe.each(SCREENS)("%s", (path) => {
 });
 
 describe("the shared sheets", () => {
-  it("load right after the theme, and ui/motion.css after every screen's sheet so its reduced-motion fallbacks win", () => {
+  it("load after the theme and before every screen's sheet, so a screen's class can place a component; ui/motion.css comes last so its reduced-motion fallbacks win", () => {
     const html = read("index.html");
-    const sheets = [...html.matchAll(/href="\.\/([^"]+\.css)"/g)].map((match) => match[1]);
-    expect(sheets.slice(0, 2)).toEqual(["theme.css", "ui/tokens.css"]);
+    const sheets = [...html.matchAll(/href="\.\/([^"]+\.css)"/g)].map((match) => match[1]!);
+    expect(sheets.slice(0, 3)).toEqual(["theme.css", "ui/tokens.css", "ui/base.css"]);
     expect(sheets.at(-1)).toBe("ui/motion.css");
+    const firstScreen = sheets.findIndex((sheet) => sheet !== "theme.css" && !sheet.startsWith("ui/"));
+    const lastShared = sheets.findLastIndex((sheet) => sheet.startsWith("ui/") && sheet !== "ui/motion.css");
+    expect(lastShared).toBeLessThan(firstScreen);
     // Every sheet is linked, so none is written and never loaded.
     expect([...sheets].sort()).toEqual(SHEETS);
   });

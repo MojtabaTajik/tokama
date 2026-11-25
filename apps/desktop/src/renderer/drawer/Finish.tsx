@@ -152,9 +152,7 @@ export function Finish({ item, setup, busy, onFinish, onCheckAgain, onAcceptChan
       </p>
       {view.running !== undefined && (
         <p className="finish-running" role="status">
-          <span className="mark" data-tone="live" aria-hidden="true">
-            ●
-          </span>{" "}
+          <StatusMark status="running" />{" "}
           {view.running}
         </p>
       )}

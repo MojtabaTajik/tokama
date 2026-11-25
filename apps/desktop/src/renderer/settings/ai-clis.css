@@ -156,6 +156,7 @@
 }
 
 .ai-cli-check {
+  padding: 0;
   color: var(--link);
 }
 

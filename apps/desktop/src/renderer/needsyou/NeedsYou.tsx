@@ -174,7 +174,7 @@ function Row({ row, index, bridge, selected, onSelect, onReviewDiff, onRefresh }
     <li className="nr-row" data-row={index} aria-current={selected ? "true" : undefined} onClick={onRowClick}>
       <p className="nr-top">
         <span className="nr-kind">
-          <span aria-hidden="true">⏸</span> {row.kind}
+          <span aria-hidden="true">{markOf("needs_you").symbol}</span> {row.kind}
         </span>
         <span className="nr-workflow">
           <TemplateIcon icon={row.workflow.icon} color={row.workflow.color} />

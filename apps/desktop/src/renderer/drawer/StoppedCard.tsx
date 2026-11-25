@@ -10,6 +10,7 @@ import { shownAttempt } from "./OutputTab.js";
 import { useStepOutput } from "./StepOutput.js";
 import { saidLabel, saidOf, stoppedLink, stoppedTitle, thenLine } from "./stopped-view.js";
 import { Button } from "../ui/Button.js";
+import { StatusMark } from "../ui/status.js";
 
 const TEXT = {
   needsYou: "Needs you",
@@ -43,9 +44,7 @@ export function StoppedCard({ bridge, item, setup, decision, busy, full, onChoos
     <section className={full ? "needs-you stopped ex-decision" : "needs-you stopped"} aria-label={TEXT.needsYou}>
       <div className="stopped-main">
         <p className="needs-you-question stopped-title">
-          <span className="mark" aria-hidden="true">
-            ⏸
-          </span>
+          <StatusMark status="needs_you" />
           {stoppedTitle(name, stopped)}
         </p>
         <dl className="stopped-facts">

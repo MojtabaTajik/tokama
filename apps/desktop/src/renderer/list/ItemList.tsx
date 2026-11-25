@@ -124,7 +124,7 @@ function Row({ item, setup, now, selected, onSelect, onFinish, onDiscard, onOpen
               </>
             )}
           </span>
-          {ask !== undefined && <span className="pl-ask ellipsis">⏸ {ask}</span>}
+          {ask !== undefined && <span className="pl-ask ellipsis">{markOf("needs_you").symbol} {ask}</span>}
         </span>
         {finished !== undefined ? (
           // A finished row says how it ended where the steps were.

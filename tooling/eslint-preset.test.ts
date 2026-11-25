@@ -276,6 +276,7 @@ describe("eslint preset: desktop", () => {
     ["<dialog open>Hi</dialog>", "a raw dialog"],
     ["<div role=\"dialog\" aria-modal=\"true\">Hi</div>", "a hand-made modal"],
     ["<div role=\"tooltip\">Hi</div>", "a hand-made tooltip"],
+    ["<div role={\"tooltip\"}>Hi</div>", "a hand-made tooltip in braces"],
   ])("refuses %s in a screen (%s), but not in renderer/ui or a test", async (jsx) => {
     const code = `export const x = ${jsx};`;
     expect(await errorRules(`${desktop}/renderer/drawer/virtual.tsx`, code)).toEqual([SYNTAX]);

@@ -311,7 +311,7 @@ describe("ItemDrawer change to approve", () => {
   it("says when the change cannot be loaded", async () => {
     const { bridge } = withDiff({ ok: false, error: { code: "stale_decision", message: "Decision is not open." } });
     await renderDrawer(bridge, waiting.id);
-    expect(text(".drawer-panel .drawer-error")).toBe("✕Could not load the change: Decision is not open.");
+    expect(text(".drawer-panel .inline-error")).toBe("✕Could not load the change: Decision is not open.");
   });
 
   it("Request changes opens a note for the agent's next run in place of the buttons; Cancel brings them back", async () => {

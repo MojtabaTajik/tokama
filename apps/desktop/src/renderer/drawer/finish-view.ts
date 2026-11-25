@@ -73,17 +73,18 @@ const branchOf = (item: Pick<ItemRecord, "outcome">): string => item.outcome?.co
 /** "PR #12" from its URL. */
 export const prName = (url: string): string => `PR #${/\/pull\/(\d+)$/.exec(url)?.[1] ?? "?"}`;
 
+const FAIL = markOf("failed").symbol;
 const withTime = (text: string, at: number | undefined): string => (at === undefined ? text : `${text} · ${clock(at)}`);
 
 /** Why Open PR is off: a local-only item, nowhere to push, or gh missing or logged out. */
 function prOff(item: Pick<ItemRecord, "finish" | "privacy">, setup: Setup | undefined): { readonly why: string; readonly status: Rich; readonly recheck: boolean } | undefined {
-  if (item.privacy === "local_only") return { why: "This item is local only: its template lets nothing leave this machine.", status: ["✕ local only"], recheck: false };
+  if (item.privacy === "local_only") return { why: "This item is local only: its template lets nothing leave this machine.", status: [`${FAIL} local only`], recheck: false };
   if (item.finish?.pushTarget === undefined) {
-    return { why: "The repo had no GitHub remote named origin when the item started.", status: ["✕ no origin · add one with ", { code: "git remote add origin …" }, " for the next item"], recheck: false };
+    return { why: "The repo had no GitHub remote named origin when the item started.", status: [`${FAIL} no origin · add one with `, { code: "git remote add origin …" }, " for the next item"], recheck: false };
   }
   const gh = setup?.health.gh;
-  if (gh !== undefined && !gh.installed) return { why: "Needs the GitHub CLI (gh). It was not found on your PATH.", status: ["✕ gh not found · install it from cli.github.com"], recheck: true };
-  if (gh !== undefined && !gh.loggedIn) return { why: "gh is installed but not logged in.", status: ["✕ logged out · run ", { code: "gh auth login" }, " in a terminal"], recheck: true };
+  if (gh !== undefined && !gh.installed) return { why: "Needs the GitHub CLI (gh). It was not found on your PATH.", status: [`${FAIL} gh not found · install it from cli.github.com`], recheck: true };
+  if (gh !== undefined && !gh.loggedIn) return { why: "gh is installed but not logged in.", status: [`${FAIL} logged out · run `, { code: "gh auth login" }, " in a terminal"], recheck: true };
   return undefined;
 }
 
@@ -120,7 +121,7 @@ export function finishView(item: Pick<ItemRecord, "outcome" | "finish" | "repoId
     if (finish.pullRequest !== undefined) {
       return {
         kind: "ended",
-        mark: { symbol: "↗", word: "pull request", tone: "pass" },
+        mark: markOf("pull_request"),
         title: `${prName(finish.pullRequest.url)} open`,
         url: finish.pullRequest.url,
         detail: finish.worktreeRemoved ? [withTime("Worktree and branch removed", finish.at)] : ["Pushed ", { code: branch }, " · the worktree stays until the PR is merged or closed"],
@@ -128,7 +129,7 @@ export function finishView(item: Pick<ItemRecord, "outcome" | "finish" | "repoId
         ...failed,
       };
     }
-    return { kind: "ended", mark: { symbol: "⊘", word: "discarded", tone: "muted" }, title: "Discarded", detail: [`${withTime("Worktree and branch deleted", finish.at)} · the log is kept`], removable: false };
+    return { kind: "ended", mark: markOf("discarded"), title: "Discarded", detail: [`${withTime("Worktree and branch deleted", finish.at)} · the log is kept`], removable: false };
   }
 
   const committed = (item.outcome.commits?.length ?? 0) > 0;
@@ -205,8 +206,8 @@ export function finishNote(item: Pick<ItemRecord, "finish">): { readonly mark: M
   if (finish === undefined) return undefined;
   if (finish.running !== undefined) return { mark: markOf("running"), text: `${ACTION_WORD[finish.running]} running` };
   if (finish.merged !== undefined) return { mark: markOf("done", "merged"), text: `Merged into ${finish.merged.baseBranch} · ${finish.merged.commit.slice(0, 7)}` };
-  if (finish.pullRequest !== undefined) return { mark: { symbol: "↗", word: "pull request", tone: "pass" }, text: `${prName(finish.pullRequest.url)} open` };
-  if (finish.worktreeRemoved) return { mark: { symbol: "⊘", word: "discarded", tone: "muted" }, text: "Discarded" };
+  if (finish.pullRequest !== undefined) return { mark: markOf("pull_request"), text: `${prName(finish.pullRequest.url)} open` };
+  if (finish.worktreeRemoved) return { mark: markOf("discarded"), text: "Discarded" };
   if (finish.failed !== undefined) return { mark: markOf("warning", "refused"), text: `${ACTION_WORD[finish.failed.action]} did not finish` };
   return undefined;
 }

@@ -308,6 +308,7 @@ div.dg-bar-end {
 }
 
 .dg-switch {
+  padding: 0;
   display: inline-flex;
   align-items: center;
   gap: var(--space-10);

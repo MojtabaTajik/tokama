@@ -24,6 +24,8 @@ const MARKS = {
   run_failed: { symbol: "!", word: "run failed", tone: "warn" },
   warning: { symbol: "!", word: "warning", tone: "warn" },
   stopped: { symbol: "■", word: "stopped", tone: "muted" },
+  discarded: { symbol: "⊘", word: "discarded", tone: "muted" },
+  pull_request: { symbol: "↗", word: "pull request", tone: "pass" },
   ready: { symbol: "●", word: "ready", tone: "pass" },
   logged_out: { symbol: "○", word: "logged out", tone: "warn" },
   no_answer: { symbol: "…", word: "no answer", tone: "warn" },

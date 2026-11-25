@@ -54,7 +54,10 @@ describe("StatusMark", () => {
 // making. Screens look symbols up with markOf or render StatusMark.
 describe("status symbols", () => {
   const renderer = join(import.meta.dirname, "..");
-  const SYMBOL_LITERAL = /(?:^|[:=?(,[]|return)\s*["'`](?:⏸|●|✓|✕|◐|○|◌|■)["'`]/m;
+  const SYMBOL = "(?:⏸|●|✓|✕|◐|○|◌|■|⊘|↗)";
+  // A string that is a symbol or starts with one ("✕", "✕ at limit"), or a symbol as JSX text,
+  // alone on its line or between tags. A line may opt out with "status-guard: not a status".
+  const SYMBOL_LITERAL = new RegExp(`["'\`]${SYMBOL}(?:["'\`]| )|^\\s*${SYMBOL}\\s*$|>\\s*${SYMBOL}[\\s{<]`);
   const sources = readdirSync(renderer, { recursive: true, encoding: "utf8" }).filter(
     (path) => /\.tsx?$/.test(path) && !/\.test\.tsx?$/.test(path) && !path.startsWith("ui/") && !path.startsWith("ui\\") && !path.startsWith("testing"),
   );
@@ -65,7 +68,7 @@ describe("status symbols", () => {
 
   it.each(sources)("%s writes no status symbol of its own", (path) => {
     const code = readFileSync(join(renderer, path), "utf8");
-    const lines = code.split("\n").filter((line) => SYMBOL_LITERAL.test(line));
+    const lines = code.split("\n").filter((line) => SYMBOL_LITERAL.test(line) && !/^\s*(?:\/\/|\*|\/\*\*)/.test(line) && !line.includes("status-guard: not a status"));
     expect(lines).toEqual([]);
   });
 });

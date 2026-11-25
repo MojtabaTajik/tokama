@@ -95,17 +95,6 @@
   flex: none;
 }
 
-.drawer-error {
-  margin-bottom: var(--space-4);
-  color: var(--text);
-}
-
-.drawer-error .symbol {
-  display: inline-block;
-  width: 1.4em;
-  color: var(--fail);
-}
-
 /* Needs you: an amber rule, no coloured box. */
 
 .needs-you {

@@ -37,6 +37,7 @@
 /* Symbol-and-count badges at the end of a row. */
 .status-counts {
   display: inline-flex;
+  font-family: var(--font-mono);
   flex: none;
   gap: var(--space-8);
   margin-left: auto;

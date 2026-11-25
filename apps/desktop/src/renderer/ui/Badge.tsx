@@ -28,7 +28,7 @@ export interface StatusCount {
 export function StatusCounts({ counts, className }: { readonly counts: readonly StatusCount[]; readonly className?: string | undefined }) {
   if (counts.length === 0) return null;
   return (
-    <span className={["status-counts mono", className].filter(Boolean).join(" ")}>
+    <span className={["status-counts", className].filter(Boolean).join(" ")}>
       {counts.map((count) => (
         <span key={count.kind} className="status-count" data-kind={count.kind} title={`${count.count} ${count.word}`}>
           <span aria-hidden="true">

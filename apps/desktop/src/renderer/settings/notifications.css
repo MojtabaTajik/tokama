@@ -80,6 +80,7 @@
 }
 
 .notes-switch {
+  padding: 0;
   flex: none;
   display: inline-flex;
   align-items: center;

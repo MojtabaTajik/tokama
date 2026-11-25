@@ -75,7 +75,7 @@ export function About({ bridge, connection, onClose }: AboutProps) {
             <p className="about-lead">Agent workbench for engineers. Tokama runs AI coding agents on your repos, one step at a time, following templates you write. You approve what matters.</p>
             <p className="about-links">
               <a href={WEBSITE_URL} target="_blank" rel="noreferrer noopener" className="about-link">
-                tokama.dev<span aria-hidden="true">↗</span>
+                tokama.dev<span aria-hidden="true">↗</span>{/* status-guard: not a status, an outside link */}
               </a>
               <span className="about-soft">
                 Open source under the <a href="#licence" className="about-licence-link">Apache License 2.0</a>

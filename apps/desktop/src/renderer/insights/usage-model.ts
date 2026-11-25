@@ -39,6 +39,8 @@ export const windowShort = (w: Pick<PlanWindow, "window" | "scope">): string => 
 export const shareText = (w: Pick<PlanWindow, "sharePercent">): string | undefined => (w.sharePercent === undefined ? undefined : `${Math.round(w.sharePercent)}% share of the weekly limit`);
 /** The tone of a limit alert. */
 type Tone = Extract<StatusTone, "warn" | "fail">;
+const WARN = markOf("warning").symbol;
+const FAIL = markOf("failed").symbol;
 
 /**
  * How full a window is: under 60% ok, 60 to 79% high, 80% or more near its limit, 100% at it.
@@ -49,7 +51,7 @@ export const levelOf = (usedPercent: number): Level => (usedPercent >= 100 ? "li
 /** The meter fill's colour token per level. */
 export const LEVEL_TONE: Readonly<Record<Level, "pass" | Tone>> = { ok: "pass", high: "warn", near: "fail", limit: "fail" };
 /** The word beside the percentage; ok needs none. */
-export const LEVEL_WORD: Readonly<Record<Level, string | undefined>> = { ok: undefined, high: "high", near: "! near limit", limit: "✕ at limit" };
+export const LEVEL_WORD: Readonly<Record<Level, string | undefined>> = { ok: undefined, high: "high", near: `${WARN} near limit`, limit: `${FAIL} at limit` };
 /** The level for a screen reader, after the percentage. */
 export const LEVEL_SPOKEN: Readonly<Record<Level, string>> = { ok: "ok", high: "high", near: "near limit", limit: "at limit" };
 
@@ -70,10 +72,10 @@ export function cliAlert(plan: CliPlan | undefined, issue: CliIssue | undefined,
 }
 
 export const ALERT_TEXT: Readonly<Record<CliAlert, string>> = {
-  logged_out: "✕ logged out",
-  not_installed: "✕ not found",
-  limit: "✕ at limit",
-  near_limit: "! near limit",
+  logged_out: `${FAIL} logged out`,
+  not_installed: `${FAIL} not found`,
+  limit: `${FAIL} at limit`,
+  near_limit: `${WARN} near limit`,
 };
 export const alertTone = (alert: CliAlert): Tone => (alert === "near_limit" ? "warn" : "fail");
 

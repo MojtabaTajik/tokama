@@ -158,7 +158,7 @@ export type DiffState = { readonly kind: "loading" } | { readonly kind: "failed"
 function Status({ state }: { readonly state: Exclude<DiffState, { kind: "loaded" }> }) {
   if (state.kind === "loading") return <Placeholder>{TEXT.loading}</Placeholder>;
   return (
-    <p className="drawer-error" role="alert">
+    <p className="inline-error" role="alert">
       <StatusMark status="failed" className="symbol" />
       {TEXT.failed(state.message)}
     </p>

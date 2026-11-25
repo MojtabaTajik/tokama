@@ -31,20 +31,21 @@ import type { Layout } from "../useViewState.js";
 import { ItemList } from "./ItemList.js";
 import { type GroupPage, type ListRequest, PAGE_SIZE, useWorkList } from "./useWorkList.js";
 import { Button } from "../ui/Button.js";
+import { markOf } from "../ui/status.js";
 
 /** Wait after the last key before the search goes to the engine. */
 export const SEARCH_DELAY_MS = 200;
 
 const TEXT = {
   loadOlder: "Load older",
-  loadingOlder: "◌ Loading older…",
+  loadingOlder: `${markOf("queued").symbol} Loading older…`,
   showing: (shown: number, total: number) => (
     <>
       Showing <span className="mono">{shown}</span> of <span className="mono">{total}</span>
     </>
   ),
-  olderFailed: "✕ Could not load older work. The engine did not answer.",
-  firstFailed: "✕ Could not load this work. The engine did not answer.",
+  olderFailed: `${markOf("failed").symbol} Could not load older work. The engine did not answer.`,
+  firstFailed: `${markOf("failed").symbol} Could not load this work. The engine did not answer.`,
   tryAgain: "Try again",
   everything: "That is everything.",
   everythingIn: (words: string) => `That is everything in the ${words}.`,

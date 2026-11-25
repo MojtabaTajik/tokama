@@ -74,7 +74,7 @@ function AttemptLog({ bridge, item, setup, entry, onOpenAgent }: AttemptLogProps
       {reply.kind === "loading" ? (
         <Placeholder>{TEXT.loading}</Placeholder>
       ) : reply.kind !== "loaded" ? (
-        <p className="drawer-error" role="alert">
+        <p className="inline-error" role="alert">
           <StatusMark status="failed" className="symbol" />
           {TEXT.failed(reply.message)}
         </p>

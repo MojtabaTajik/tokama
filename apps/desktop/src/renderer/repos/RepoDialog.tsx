@@ -305,7 +305,7 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
     <Field
       label={TEXT.checks}
       hint={lines.length === 0 && !editing ? "" : editing ? TEXT.checksHint : checksHint}
-      tag={editing ? undefined : hadChecks ? <span className="rd-suggested"><span aria-hidden="true">✓ </span>{TEXT.suggested}</span> : <span className="rd-dim">{TEXT.noneFound}</span>}
+      tag={editing ? undefined : hadChecks ? <span className="rd-suggested"><span aria-hidden="true">{markOf("passed").symbol} </span>{TEXT.suggested}</span> : <span className="rd-dim">{TEXT.noneFound}</span>}
     >
       {(props) => <textarea {...props} className="mono" rows={3} value={checks} placeholder={"npm test\nnode --check src/main.js"} onChange={(event) => setChecks(event.target.value)} spellCheck={false} />}
     </Field>

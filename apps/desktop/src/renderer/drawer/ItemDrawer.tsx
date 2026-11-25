@@ -36,7 +36,7 @@ import { attemptTime, stepTimes } from "./progress-view.js";
 import { useNow } from "../useNow.js";
 import { Button, CloseButton } from "../ui/Button.js";
 import { ErrorRetry } from "../ui/ErrorRetry.js";
-import { markOf } from "../ui/status.js";
+import { markOf, StatusMark } from "../ui/status.js";
 import { AgentChip } from "../ui/agent.js";
 import { Tabs } from "../ui/Tabs.js";
 import { Placeholder } from "../ui/EmptyState.js";
@@ -442,7 +442,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
 }
 
 /** A discarded item's work is gone: it reads as discarded rather than done. */
-const DISCARDED = { symbol: "⊘", word: "discarded", tone: "muted" } as const;
+const DISCARDED = markOf("discarded");
 
 function StateLine({ item }: { readonly item: ItemRecord }) {
   const mark = isDiscarded(item) ? DISCARDED : itemMark(item.state);
@@ -504,9 +504,7 @@ function NeedsYou({ item, setup, decision, busy, output, full, changedFiles, onS
         <>
           {kind !== undefined && <p className="needs-you-kind">{kind}</p>}
           <p className="needs-you-question">
-            <span className="mark" aria-hidden="true">
-              ⏸
-            </span>
+            <StatusMark status="needs_you" />
             {decision.question}
           </p>
           {decision.why !== undefined && <p className="needs-you-why">{decision.why}</p>}
@@ -540,9 +538,7 @@ function NeedsYou({ item, setup, decision, busy, output, full, changedFiles, onS
         </>
       ) : (
         <p className="needs-you-question">
-          <span className="mark" aria-hidden="true">
-            ⏸
-          </span>
+          <StatusMark status="needs_you" />
           {TEXT.noQuestion}
         </p>
       )}
@@ -560,9 +556,7 @@ function After({ item, setup }: { readonly item: ItemRecord; readonly setup: Set
   if (item.state === "done" && commit !== undefined && item.finish?.merged === undefined) {
     return (
       <section className="after" data-tone="pass" aria-label={TEXT.committed(commit.commit.slice(0, 7))}>
-        <span className="mark" aria-hidden="true">
-          ✓
-        </span>
+        <StatusMark status="passed" />
         <div className="after-body">
           <p className="after-head">{TEXT.committed(commit.commit.slice(0, 7))}</p>
           <p className="after-text">{TEXT.committedLine(item.title, commit.branch)}</p>
@@ -575,9 +569,7 @@ function After({ item, setup }: { readonly item: ItemRecord; readonly setup: Set
   const line = TEXT.makingChanges(stepAgent(step, setup?.agents ?? []).name, runLine(step));
   return (
     <section className="after" data-tone="live" aria-label={line}>
-      <span className="mark" aria-hidden="true">
-        ●
-      </span>
+      <StatusMark status="running" />
       <div className="after-body">
         <p className="after-head">{line}</p>
         <p className="after-text">{TEXT.yourNote(step.changesNote)}</p>

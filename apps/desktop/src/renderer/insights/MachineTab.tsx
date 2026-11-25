@@ -15,6 +15,7 @@ import { workflowName } from "./usage-model.js";
 import { Button } from "../ui/Button.js";
 import { AgentChip, AgentDotMark } from "../ui/agent.js";
 import { Placeholder } from "../ui/EmptyState.js";
+import { markOf } from "../ui/status.js";
 
 const CLI_SHORT = { "claude-code": "CC", "codex-cli": "CX", ollama: "OL" } as const;
 
@@ -263,7 +264,7 @@ function ItemRows({ group, item, setup, cpu, onSelectItem }: { readonly group: G
         <td colSpan={3}>
           <span className="mc-item-title">
             <span className="mc-live" aria-hidden="true">
-              ●
+              {markOf("running").symbol}
             </span>
             {item === undefined ? (
               <span>{title}</span>

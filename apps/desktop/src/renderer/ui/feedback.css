@@ -16,6 +16,18 @@
   color: var(--fail);
 }
 
+/* A one-line failure inside a panel, without Retry: ✕ and what went wrong. */
+.inline-error {
+  margin-bottom: var(--space-4);
+  color: var(--text);
+}
+
+.inline-error .symbol {
+  display: inline-block;
+  width: 1.4em;
+  color: var(--fail);
+}
+
 /* Nothing here yet (ui/EmptyState.tsx). */
 .empty-state {
   display: flex;

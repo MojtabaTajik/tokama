@@ -180,9 +180,7 @@ function ClaudeStatus({ health, issue }: { readonly health: CliHealth | undefine
   if (health === undefined || health.timedOut === true) return <span className="it-status-line">{TEXT.statusUnknown}</span>;
   return (
     <span className="it-status-line">
-      <span className="it-symbol" data-tone="pass">
-        ✓
-      </span>{" "}
+      <StatusMark status="passed" className="it-symbol" />{" "}
       {[TEXT.loggedIn, version].filter(Boolean).join(" · ")}
     </span>
   );

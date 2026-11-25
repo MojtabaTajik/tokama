@@ -194,6 +194,7 @@
 }
 
 .al-open {
+  padding: 0;
   font-size: var(--text-base);
   color: var(--link);
 }

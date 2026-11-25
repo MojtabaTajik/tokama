@@ -4,7 +4,7 @@
   margin: 8vh auto 0;
 }
 
-.state-text code {
+.state .empty-state-text code {
   color: var(--text);
 }
 

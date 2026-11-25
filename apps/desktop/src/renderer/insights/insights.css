@@ -813,6 +813,7 @@
 }
 
 .it-title {
+  padding: 0;
   overflow: hidden;
   font-size: var(--text-base);
   color: var(--text-2);
@@ -877,6 +878,7 @@
 }
 
 .it-link {
+  padding: 0;
   margin-left: auto;
   color: var(--link);
   white-space: nowrap;

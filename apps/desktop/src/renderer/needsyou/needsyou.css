@@ -59,6 +59,7 @@
 }
 
 .nr-title {
+  padding: 0;
   align-self: flex-start;
   max-width: 100%;
   color: var(--text);

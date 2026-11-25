@@ -2,6 +2,7 @@
 // the tokens went: processed, cached and uncached input, output, and what the cache saved.
 import type { UsageReport } from "@tokama/core";
 import { formatCost, formatTokens } from "./usage-model.js";
+import { markOf } from "../ui/status.js";
 
 const TEXT = {
   atRates: (days: number) => `at API rates · last ${days} days`,
@@ -34,7 +35,7 @@ export function CostSummary({ report }: { readonly report: UsageReport }) {
         {planCovers(report) && (
           <span className="ins-covered">
             <span className="ins-check" aria-hidden="true">
-              ✓
+              {markOf("passed").symbol}
             </span>
             {TEXT.covered}
           </span>

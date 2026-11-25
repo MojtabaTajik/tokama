@@ -10,7 +10,7 @@ import { type AgentTarget, agentRows, filterRows, isTarget, limitsNotes, limitsT
 import { useAgents } from "./useAgents.js";
 import { Button } from "../ui/Button.js";
 import { ErrorRetry } from "../ui/ErrorRetry.js";
-import { StatusMark } from "../ui/status.js";
+import { markOf, StatusMark } from "../ui/status.js";
 import { Placeholder } from "../ui/EmptyState.js";
 
 const TEXT = {
@@ -20,7 +20,7 @@ const TEXT = {
   list: "Agents",
   noMatch: "No agent matches",
   empty: "No agents",
-  broken: "✕ broken",
+  broken: `${markOf("failed").symbol} broken`,
   loading: "Loading",
   starting: "Waiting for the engine",
   loadFailed: "Could not load the agents",

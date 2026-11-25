@@ -14,6 +14,8 @@ import { Button } from "../ui/Button.js";
 import { markOf } from "../ui/status.js";
 import { agentDot, AgentDotMark } from "../ui/agent.js";
 
+const FAIL = markOf("failed").symbol;
+
 const TEXT = {
   title: "Templates",
   intro: "Templates are YAML files in your repos’ .tokama/templates/ folders. Edit them in your editor; Tokama reads them again when you come back.",
@@ -80,7 +82,7 @@ export function TemplatesPage({ bridge, connection, agents, connections }: Templ
         <p className="tp-intro">{TEXT.intro}</p>
         <input type="search" className="tp-filter" placeholder={`${TEXT.filter}…`} aria-label={TEXT.filter} value={filter} onChange={(event) => setFilter(event.target.value)} />
         {list.state === "loading" && <p className="tp-quiet">{TEXT.loading}</p>}
-        {list.state === "failed" && <p className="tp-quiet" role="alert">{`✕ ${list.message}`}</p>}
+        {list.state === "failed" && <p className="tp-quiet" role="alert">{`${FAIL} ${list.message}`}</p>}
         {list.state === "ready" && entries.length === 0 && <p className="tp-quiet">{TEXT.none}</p>}
         {list.state === "ready" && entries.length > 0 && shown.length === 0 && <p className="tp-quiet">{TEXT.noMatch}</p>}
         <ul className="tp-rows" aria-label={TEXT.list}>
@@ -103,7 +105,7 @@ export function TemplatesPage({ bridge, connection, agents, connections }: Templ
         ) : detail.state === "loading" ? (
           <p className="tp-quiet">{TEXT.loading}</p>
         ) : detail.state === "failed" ? (
-          <p className="tp-quiet" role="alert">{`✕ ${detail.message}`}</p>
+          <p className="tp-quiet" role="alert">{`${FAIL} ${detail.message}`}</p>
         ) : (
           <Detail key={keyId(selected)} bridge={bridge} detail={detail.value} agents={agents} connections={connections} />
         )}
@@ -156,7 +158,7 @@ function Detail({ bridge, detail, agents, connections }: DetailProps) {
   const open = async () => {
     setOpenNote(undefined);
     const result = await bridge.openTemplateFile({ origin: entry.origin, file: entry.file }).catch((error: unknown) => ({ ok: false as const, message: String(error) }));
-    if (!result.ok) setOpenNote(`✕ ${result.message}`);
+    if (!result.ok) setOpenNote(`${FAIL} ${result.message}`);
   };
   const flow = useMemo(() => (template === null ? undefined : flowOf(template, agents)), [template, agents]);
   const uses = template === null ? undefined : usesOf(template, connections);
@@ -209,7 +211,7 @@ function Detail({ bridge, detail, agents, connections }: DetailProps) {
 
       {problems.length > 0 && (
         <section className="tp-section" aria-label={statusOf(entry).word}>
-          <h2 className="tp-problems-title">{`✕ ${statusOf(entry).word}`}</h2>
+          <h2 className="tp-problems-title">{`${FAIL} ${statusOf(entry).word}`}</h2>
           <p className="tp-quiet">{TEXT.cannotUse}</p>
           <ul className="tp-problems">
             {problems.map((problem, index) => (
@@ -305,7 +307,7 @@ function Detail({ bridge, detail, agents, connections }: DetailProps) {
             <ul className="tp-finish">
               {template.finish.map((finish) => (
                 <li key={finish}>
-                  <span aria-hidden="true">✓</span>
+                  <span aria-hidden="true">{markOf("passed").symbol}</span>
                   <span>
                     <strong>{FINISH[finish].name}</strong> · {FINISH[finish].text}
                   </span>
