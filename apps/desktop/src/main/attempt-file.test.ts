@@ -68,10 +68,10 @@ describe("openableAttemptPath", () => {
 });
 
 describe("openAttemptFile", () => {
-  const engine = (data: unknown, ok = true) => vi.fn(async (_input: unknown) => (ok ? { ok: true as const, data } : { ok: false as const, error: { code: "not_found", message: "Attempt 1 has no saved transcript." } })) as never;
+  const engine = (data: unknown, ok = true) => vi.fn(async () => (ok ? { ok: true as const, data } : { ok: false as const, error: { code: "not_found", message: "Attempt 1 has no saved transcript." } })) as never;
 
   it("asks the engine for the path of the named file and opens the checked file", async () => {
-    const query = vi.fn(async (_input: unknown) => ({ ok: true as const, data: { path: log } }));
+    const query = vi.fn(async () => ({ ok: true as const, data: { path: log } }));
     const openPath = vi.fn(async () => "");
     expect(await openAttemptFile({ itemId: ITEM, stepIndex: 0, attempt: 1, file: 1, path: "/bin/sh" }, { query: query as never, tokamaHome: home, openPath })).toEqual({ ok: true });
     expect(query).toHaveBeenCalledWith({ type: "attempt_file", itemId: ITEM, stepIndex: 0, attempt: 1, file: 1 });
