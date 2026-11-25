@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest";
 // Read as a file: Vitest turns CSS imports into empty modules.
 const theme = readFileSync(join(import.meta.dirname, "theme.css"), "utf8");
 const app = readFileSync(join(import.meta.dirname, "app.css"), "utf8");
+// Motion tokens (durations and easings) live with the keyframes, not with the colours.
+const motion = readFileSync(join(import.meta.dirname, "ui", "motion.css"), "utf8");
 
 // The app UI colours, each a token in theme.css.
 const TOKENS: Record<string, string> = {
@@ -73,7 +75,7 @@ function contrast(a: string, b: string): number {
   return (hi! + 0.05) / (lo! + 0.05);
 }
 
-const SCREENS = { "app.css": app, "drawer/drawer.css": readFileSync(join(import.meta.dirname, "drawer", "drawer.css"), "utf8"), "drawer/progress.css": readFileSync(join(import.meta.dirname, "drawer", "progress.css"), "utf8"), "newwork/newwork.css": readFileSync(join(import.meta.dirname, "newwork", "newwork.css"), "utf8"), "shell/states.css": readFileSync(join(import.meta.dirname, "shell", "states.css"), "utf8"), "layout/layout.css": readFileSync(join(import.meta.dirname, "layout", "layout.css"), "utf8"), "about/about.css": readFileSync(join(import.meta.dirname, "about", "about.css"), "utf8"), "repos/repos.css": readFileSync(join(import.meta.dirname, "repos", "repos.css"), "utf8"), "settings/settings.css": readFileSync(join(import.meta.dirname, "settings", "settings.css"), "utf8"), "templates/templates.css": readFileSync(join(import.meta.dirname, "templates", "templates.css"), "utf8"), "settings/diagnostics.css": readFileSync(join(import.meta.dirname, "settings", "diagnostics.css"), "utf8") };
+const SCREENS = { "app.css": app, "drawer/drawer.css": readFileSync(join(import.meta.dirname, "drawer", "drawer.css"), "utf8"), "drawer/progress.css": readFileSync(join(import.meta.dirname, "drawer", "progress.css"), "utf8"), "ui/motion.css": motion, "newwork/newwork.css": readFileSync(join(import.meta.dirname, "newwork", "newwork.css"), "utf8"), "shell/states.css": readFileSync(join(import.meta.dirname, "shell", "states.css"), "utf8"), "layout/layout.css": readFileSync(join(import.meta.dirname, "layout", "layout.css"), "utf8"), "about/about.css": readFileSync(join(import.meta.dirname, "about", "about.css"), "utf8"), "repos/repos.css": readFileSync(join(import.meta.dirname, "repos", "repos.css"), "utf8"), "settings/settings.css": readFileSync(join(import.meta.dirname, "settings", "settings.css"), "utf8"), "templates/templates.css": readFileSync(join(import.meta.dirname, "templates", "templates.css"), "utf8"), "settings/diagnostics.css": readFileSync(join(import.meta.dirname, "settings", "diagnostics.css"), "utf8") };
 
 describe.each(Object.entries(SCREENS))("%s", (_name, css) => {
   it("takes every colour from the theme tokens: no colour literals", () => {
@@ -82,7 +84,19 @@ describe.each(Object.entries(SCREENS))("%s", (_name, css) => {
 
   it("uses only tokens that theme.css defines", () => {
     const used = new Set([...css.matchAll(/var\((--[a-z0-9-]+)\)/g)].map((match) => match[1]));
-    const missing = [...used].filter((name) => !theme.includes(`${name}:`));
+    const missing = [...used].filter((name) => !theme.includes(`${name}:`) && !motion.includes(`${name}:`));
     expect(missing).toEqual([]);
+  });
+});
+
+describe("motion", () => {
+  const screens = Object.entries(SCREENS).filter(([name]) => name !== "ui/motion.css");
+  it.each(screens)("%s defines no keyframes and no reduced-motion block of its own", (_name, css) => {
+    expect(css).not.toMatch(/@keyframes|prefers-reduced-motion/);
+  });
+  it("is loaded after every screen's stylesheet, so its reduced-motion fallbacks win", () => {
+    const html = readFileSync(join(import.meta.dirname, "index.html"), "utf8");
+    const sheets = [...html.matchAll(/href="\.\/([^"]+\.css)"/g)].map((match) => match[1]);
+    expect(sheets.at(-1)).toBe("ui/motion.css");
   });
 });

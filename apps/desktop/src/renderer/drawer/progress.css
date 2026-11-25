@@ -1,38 +1,9 @@
 /*
  * Live progress: the step track and activity line in the drawer and full view headers, and the
- * working card. Only opacity and position move: the current step's mark and the card's dot
- * breathe on one 2 s cycle, the line into the current step carries a slow light, and a light
- * crosses a working card's top edge. With reduced motion nothing moves: the mark and dot stay
- * solid, and the lines become a still dashed blue line.
+ * working card. The current step's mark and the card's dot breathe, the line into the current
+ * step carries a slow light, and a light crosses a working card's top edge. The animations and
+ * their still versions for reduced motion are in ui/motion.css.
  */
-@keyframes tk-breathe {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.4;
-  }
-}
-
-@keyframes tk-shimmer {
-  from {
-    background-position: 100% 0;
-  }
-  to {
-    background-position: 0 0;
-  }
-}
-
-@keyframes tk-sweep {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(400%);
-  }
-}
-
 .track {
   display: flex;
   align-items: center;
@@ -101,12 +72,12 @@
 .track-line[data-live="true"] {
   background: linear-gradient(90deg, var(--hairline) 0 35%, var(--live) 50%, var(--hairline) 65% 100%);
   background-size: 300% 100%;
-  animation: tk-shimmer 2.4s linear infinite;
+  animation: tk-shimmer var(--motion-shimmer) var(--motion-shimmer-ease) infinite;
 }
 
 .track-mark[data-live="true"],
 .live-dot {
-  animation: tk-breathe 2s ease-in-out infinite;
+  animation: tk-breathe var(--motion-breathe) var(--motion-breathe-ease) infinite;
 }
 
 /* One line that never wraps: who and the time stay whole, the action gives way in its middle. */
@@ -203,24 +174,5 @@
   width: 25%;
   height: 100%;
   background: linear-gradient(90deg, transparent, var(--live), transparent);
-  animation: tk-sweep 2.8s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .track-mark[data-live="true"],
-  .live-dot {
-    animation: none;
-  }
-
-  .track-line[data-live="true"] {
-    animation: none;
-    background: repeating-linear-gradient(90deg, var(--live) 0 4px, transparent 4px 7px);
-  }
-
-  .card-edge::before {
-    width: 100%;
-    opacity: 0.7;
-    background: repeating-linear-gradient(90deg, var(--live) 0 6px, transparent 6px 11px);
-    animation: none;
-  }
+  animation: tk-sweep var(--motion-sweep) var(--motion-sweep-ease) infinite;
 }

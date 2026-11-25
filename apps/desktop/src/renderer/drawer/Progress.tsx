@@ -6,7 +6,7 @@ import type { AgentSummary, ItemActivity, ItemRecord } from "@tokama/core";
 import { type CSSProperties, Fragment, useState } from "react";
 import { activityView, trackOf } from "./progress-view.js";
 
-/** One breathing cycle, in ms; the CSS animation uses the same. */
+/** One breathing cycle, in ms: `--motion-breathe` in ui/motion.css. */
 const BREATH_MS = 2_000;
 
 /**
