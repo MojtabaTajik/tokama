@@ -1,11 +1,20 @@
 // The counts the run loop decides by, worked out from the item record alone: a step's attempt
-// limit with the extra attempts the engineer granted, the same failure twice in a row, and the
-// time budget. Pure functions, so a restart gets the same answers from the same log.
+// limit with the extra attempts the engineer granted, the same failure twice in a row, the round
+// trips of a step that sends the work back, and the time budget. Pure functions, so a restart gets
+// the same answers from the same log.
+//
+// A round starts each time a step is entered again after a step sent the work back (the fold
+// records where). `max_attempts` limits each round on its own, so the review after a fix always
+// runs; the round trips per step that sends the work back are capped instead.
 import type { AttemptRecord, StoredDecision, StoredItem, StoredStep } from "../../kernel/schemas/index.js";
+import { roundAttempts } from "../items/index.js";
 
 export const RETRY_ID = "retry_step";
 export const ONE_MORE_ID = "one_more_attempt";
+export const ONE_MORE_ROUND_ID = "one_more_round";
 export const CONTINUE_ID = "continue";
+/** Round trips a step may send the work back before the engineer decides. */
+export const ROUND_TRIPS = 3;
 
 const counted = (attempt: AttemptRecord) => attempt.result !== "run_failed";
 
@@ -19,25 +28,31 @@ const runsAgain = (d: StoredDecision) =>
     (d.kind === "plan_approval" && d.resolved.choice === RETRY_ID));
 
 /**
- * The step's attempt limit: `max_attempts`, plus one for each answer that ran the step again while
- * it was at its limit. Events written together share a time, so an attempt that ended when the
- * question was asked counts as before it.
+ * The step's attempt limit in its current round: `max_attempts`, plus one for each answer that ran
+ * the step again while it was at its limit. Events written together share a time, so an attempt
+ * that ended when the question was asked counts as before it. An answer from an earlier round has
+ * no attempt of this round before it, so it grants nothing here.
  */
 export function attemptLimit(item: StoredItem, step: StoredStep, maxAttempts: number): number {
   let limit = maxAttempts;
+  const round = roundAttempts(step);
   const answers = item.decisions.filter((d) => d.stepId === step.id && runsAgain(d)).sort((a, b) => a.askedAt - b.askedAt);
   for (const answer of answers) {
-    const before = step.attempts.filter((a) => counted(a) && a.endedAt !== undefined && a.endedAt <= answer.askedAt).length;
+    const before = round.filter((a) => counted(a) && a.endedAt !== undefined && a.endedAt <= answer.askedAt).length;
     if (before >= limit) limit++;
   }
   return limit;
 }
 
-export const countedAttempts = (step: StoredStep): number => step.attempts.filter(counted).length;
+/** The round trips the step may make: `ROUND_TRIPS`, plus one for each Run one more round. */
+export function roundTripLimit(item: StoredItem, step: StoredStep): number {
+  return ROUND_TRIPS + item.decisions.filter((d) => d.stepId === step.id && d.resolved?.choice === ONE_MORE_ROUND_ID).length;
+}
 
 /**
  * The words for the same failure twice in a row: the last two counted attempts failed on the same
- * first failing check command with the same exit status. Undefined otherwise.
+ * first failing check command with the same exit status. Across rounds too: a fix that changed
+ * nothing the checks see is not worth another round. Undefined otherwise.
  */
 export function sameFailureTwice(step: StoredStep): string | undefined {
   const [before, last] = step.attempts.filter(counted).slice(-2);

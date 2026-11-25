@@ -94,13 +94,17 @@ export function applyEvent(item: StoredItem | undefined, event: ItemEvent): Resu
       break;
     }
 
-    case "step_started":
+    case "step_started": {
+      const target = must(step);
       if (openAttempt(next) !== undefined) return fail("an attempt is still running");
       if (next.currentStepId !== undefined && next.currentStepId !== event.stepId) return fail(`the item is still in step ${next.currentStepId}`);
       if (next.decisions.some((d) => d.stepId === event.stepId && d.resolved === undefined)) return fail(`step ${event.stepId} waits on a decision`);
       next.currentStepId = event.stepId;
-      must(step).state = "running";
+      target.state = "running";
+      // Entered again after a step sent the work back: a new round.
+      if (target.attempts.length > 0) target.roundStart = target.attempts.length;
       break;
+    }
 
     case "attempt_started": {
       const target = must(step);
@@ -159,6 +163,8 @@ export function applyEvent(item: StoredItem | undefined, event: ItemEvent): Resu
       if (next.currentStepId !== target.id) return fail(`step ${target.id} is not the current step`);
       if (openAttempt(next) !== undefined) return fail("an attempt is still running");
       target.state = event.result;
+      // A step ends failed only when it sends the work back.
+      if (event.result === "failed") target.sentBack = (target.sentBack ?? 0) + 1;
       delete next.currentStepId;
       break;
     }
@@ -300,9 +306,14 @@ export function openDecisions(item: StoredItem): StoredDecision[] {
   return item.decisions.filter((d) => d.resolved === undefined);
 }
 
-/** Attempts that count toward `max_attempts`: run failures do not. */
+/** The step's attempts in its current round: `max_attempts` limits each round on its own. */
+export function roundAttempts(step: StoredStep): AttemptRecord[] {
+  return step.attempts.slice(step.roundStart ?? 0);
+}
+
+/** Attempts of the current round that count toward `max_attempts`: run failures do not. */
 export function countedAttempts(step: StoredStep): number {
-  return step.attempts.filter((a) => a.result !== "run_failed").length;
+  return roundAttempts(step).filter((a) => a.result !== "run_failed").length;
 }
 
 function itemState(item: StoredItem): ItemState {

@@ -46,7 +46,7 @@ export const TemplateStepDefSchema = z.strictObject({
   ifFailed: IfFailedSchema,
   /** Only on a `reviewer approves` step. */
   ifChangesRequested: IfChangesRequestedSchema.optional(),
-  /** How often the step may run in one item; at the limit the item asks the engineer. */
+  /** How often the step may run in one round (until a step sends the work back to it); at the limit the item asks the engineer. */
   maxAttempts: z.int().min(1).max(10),
   data: DataRuleSchema,
   /** The earlier steps whose results this step gets. */

@@ -314,6 +314,13 @@ export const StoredStepSchema = z.strictObject({
   id: StepIdSchema,
   state: StepStateSchema,
   attempts: z.array(AttemptRecordSchema),
+  /**
+   * How many of `attempts` came before the step's current round. A round starts each time the
+   * step is entered again after a step sent the work back; absent in the first round.
+   */
+  roundStart: z.int().positive().optional(),
+  /** How often the step sent the work back to an earlier step (or to itself); absent before the first time. */
+  sentBack: z.int().positive().optional(),
 });
 
 export const StoredDecisionSchema = z.strictObject({
