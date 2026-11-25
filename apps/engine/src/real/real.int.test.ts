@@ -44,6 +44,7 @@ function scripted(script: readonly Behavior[]): AgentRuntime & { requests: Agent
         return;
       }
       for (const [path, content] of Object.entries(behavior.writes)) {
+        yield { type: "tool_call", id: `write-${path}`, name: "Write", kind: "edit", input: { file_path: join(request.cwd, path) } };
         mkdirSync(dirname(join(request.cwd, path)), { recursive: true });
         writeFileSync(join(request.cwd, path), content);
       }
@@ -224,6 +225,61 @@ describe("real mode", () => {
     expect(await client.command({ type: "resolve_decision", itemId: id, decisionId: second.decision!.id, choice: "approve" })).toEqual({ ok: true, data: null });
     const done = await waitItem(client, id, (i) => i.state === "done", "done");
     expect(git("show", `${done.outcome?.commits?.[0]?.commit}:greeting.txt`)).toBe("hello world");
+  });
+
+  it("serves each attempt's checks and transcript as cut, cleaned text with totals and no paths; Open the file gets the path", SLOW, async () => {
+    // A second check that prints 2,000 lines and ends with a coloured line.
+    writeFileSync(join(repoPath, "noisy.sh"), "i=0\nwhile [ $i -lt 2000 ]; do echo \"line $i\"; i=$((i+1)); done\nprintf '\\033[31mred <script>x</script>\\033[0m\\n'\n");
+    git("add", "-A");
+    git("commit", "-q", "-m", "noisy check");
+    writeFileSync(join(home, "repos.yaml"), `format: 1\nrepos:\n  - id: orders-api\n    path: ${repoPath}\n    base_branch: main\n    checks: ["sh check.sh", "sh noisy.sh"]\n`);
+    const { client } = await engine(scripted([{ writes: { "greeting.txt": "hello world\n" } }]));
+    const id = await start(client);
+    await waitItem(client, id, (i) => i.state === "done", "done");
+
+    const checks = await client.query({ type: "attempt_checks", itemId: id, stepIndex: 0, attempt: 1 });
+    if (!checks.ok) throw new Error(checks.error.message);
+    expect(checks.data.checks).toEqual([
+      { command: "sh check.sh", state: "passed", exitCode: 0, durationMs: expect.any(Number), summary: "", output: { text: "", truncated: false, totalBytes: 0, totalLines: 0 } },
+      { command: "sh noisy.sh", state: "passed", exitCode: 0, durationMs: expect.any(Number), summary: "red <script>x</script>", output: { text: expect.any(String), truncated: true, totalBytes: expect.any(Number), totalLines: 2001 } },
+    ]);
+    const tail = checks.data.checks[1]!.output!.text.split("\n");
+    expect(tail).toHaveLength(40);
+    expect(tail.slice(-2)).toEqual(["line 1999", "red <script>x</script>"]);
+    // The duration is recorded in the item's log.
+    const events = readFileSync(join(home, "items", id, "events.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line) as { type: string; durationMs?: unknown });
+    expect(events.filter((e) => e.type === "check_result").map((e) => typeof e.durationMs)).toEqual(["number", "number"]);
+
+    const log = await client.query({ type: "attempt_log", itemId: id, stepIndex: 0, attempt: 1 });
+    expect(log).toEqual({ ok: true, data: { attempt: 1, transcript: { text: "→ Write greeting.txt\n\nDone.", truncated: false, totalBytes: expect.any(Number), totalLines: 3 }, final: { text: "Done.", truncated: false } } });
+    // No reply names a folder on this machine.
+    expect(JSON.stringify([checks, log])).not.toContain(root);
+
+    // Only Open the file gets a path: the saved file in the item's folder.
+    expect(await client.query({ type: "attempt_file", itemId: id, stepIndex: 0, attempt: 1, file: "transcript" })).toEqual({ ok: true, data: { path: join(home, "items", id, "attempts", "fix-1", "transcript.txt") } });
+    expect(await client.query({ type: "attempt_file", itemId: id, stepIndex: 0, attempt: 1, file: 2 })).toEqual({ ok: true, data: { path: join(home, "items", id, "attempts", "fix-1", "check-2.log") } });
+    expect(await client.query({ type: "attempt_file", itemId: id, stepIndex: 0, attempt: 1, file: 3 })).toMatchObject({ ok: false, error: { code: "not_found" } });
+    expect(await client.query({ type: "attempt_checks", itemId: id, stepIndex: 0, attempt: 2 })).toMatchObject({ ok: false, error: { code: "not_found" } });
+
+    // A file that is gone reads as not saved.
+    rmSync(join(home, "items", id, "attempts", "fix-1", "transcript.txt"));
+    rmSync(join(home, "items", id, "attempts", "fix-1", "check-1.log"));
+    expect(await client.query({ type: "attempt_log", itemId: id, stepIndex: 0, attempt: 1 })).toMatchObject({ ok: true, data: { transcript: null, final: { text: "Done." } } });
+    expect(await client.query({ type: "attempt_checks", itemId: id, stepIndex: 0, attempt: 1 })).toMatchObject({ ok: true, data: { checks: [{ output: null, summary: "" }, { state: "passed" }] } });
+  });
+
+  it("serves a running attempt: its checks wait, and its transcript has no final message yet", SLOW, async () => {
+    const runtime = scripted(["hang"]);
+    const { client } = await engine(runtime);
+    const id = await start(client);
+    await runtime.hanging;
+    await waitItem(client, id, (i) => i.steps[0]?.attempts?.length === 1, "the attempt");
+    expect(await client.query({ type: "attempt_checks", itemId: id, stepIndex: 0, attempt: 1 })).toEqual({
+      ok: true,
+      data: { attempt: 1, checks: [{ command: "sh check.sh", state: "waiting", exitCode: null, durationMs: null, summary: "", output: null }] },
+    });
+    expect(await client.query({ type: "attempt_log", itemId: id, stepIndex: 0, attempt: 1 })).toEqual({ ok: true, data: { attempt: 1, transcript: { text: "", truncated: false, totalBytes: 0, totalLines: 0 }, final: null } });
+    await client.command({ type: "stop_item", itemId: id });
   });
 
   it("finishes a done item on command: Merge fast-forwards main and removes the worktree; the record and card say so", SLOW, async () => {

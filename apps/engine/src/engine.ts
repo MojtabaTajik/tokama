@@ -29,6 +29,9 @@ import {
   type ConnectionErrorCode,
   type DecisionDiffResult,
   type StepOutputResult,
+  type AttemptChecksResult,
+  type AttemptFileResult,
+  type AttemptLogResult,
   type ClientMessage,
   type Command,
   createGit,
@@ -505,6 +508,18 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       } else if (message.query.type === "step_output") {
         const output = await real.stepOutput(message.query.itemId, message.query.stepIndex, message.query.attempt);
         return output.ok ? { ok: true, data: output.value satisfies StepOutputResult } : { ok: false, error: output.error };
+      } else if (message.query.type === "attempt_checks") {
+        const { itemId, stepIndex, attempt } = message.query;
+        const checks = await real.attemptChecks(itemId, stepIndex, attempt);
+        return checks.ok ? { ok: true, data: checks.value satisfies AttemptChecksResult } : { ok: false, error: checks.error };
+      } else if (message.query.type === "attempt_log") {
+        const { itemId, stepIndex, attempt } = message.query;
+        const log = await real.attemptLog(itemId, stepIndex, attempt);
+        return log.ok ? { ok: true, data: log.value satisfies AttemptLogResult } : { ok: false, error: log.error };
+      } else if (message.query.type === "attempt_file") {
+        const { itemId, stepIndex, attempt, file } = message.query;
+        const found = await real.attemptFile(itemId, stepIndex, attempt, file);
+        return found.ok ? { ok: true, data: found.value satisfies AttemptFileResult } : { ok: false, error: found.error };
       }
     }
     if (message.kind === "command") {
@@ -538,6 +553,18 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
         if (output === undefined) return { ok: false, error: { code: "not_implemented", message: "this engine serves no items" } };
         return output.ok ? { ok: true, data: output.value satisfies StepOutputResult } : { ok: false, error: output.error };
       }
+      case "attempt_checks": {
+        const checks = sample?.attemptChecks(query.itemId, query.stepIndex, query.attempt);
+        if (checks === undefined) return { ok: false, error: { code: "not_implemented", message: "this engine serves no items" } };
+        return checks.ok ? { ok: true, data: checks.value satisfies AttemptChecksResult } : { ok: false, error: checks.error };
+      }
+      case "attempt_log": {
+        const log = sample?.attemptLog(query.itemId, query.stepIndex, query.attempt);
+        if (log === undefined) return { ok: false, error: { code: "not_implemented", message: "this engine serves no items" } };
+        return log.ok ? { ok: true, data: log.value satisfies AttemptLogResult } : { ok: false, error: log.error };
+      }
+      case "attempt_file":
+        return { ok: false, error: { code: "not_found", message: sample === undefined ? "this engine serves no items" : "The sample items have no saved files to open." } };
       case "suggest_template":
         return { ok: true, data: { templateId: sample?.suggestTemplate(query.text) ?? null } satisfies SuggestTemplateResult };
       case "suggest_repo": {

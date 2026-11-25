@@ -9,6 +9,10 @@ import {
   adapters,
   type Agent,
   type AgentRuntime,
+  type AttemptChecksResult,
+  type AttemptFile,
+  type AttemptFileResult,
+  type AttemptLogResult,
   type Clock,
   type Command,
   type CommandError,
@@ -162,6 +166,21 @@ export class RealEngine {
   /** The final message of the agent of a step's attempt. */
   async stepOutput(itemId: ItemId, stepIndex: number, attempt?: number): Promise<Result<StepOutputResult, CommandError>> {
     return this.loop.stepOutput(itemId, stepIndex, attempt);
+  }
+
+  /** Each check of a step's attempt with the end of its saved output. */
+  async attemptChecks(itemId: ItemId, stepIndex: number, attempt: number): Promise<Result<AttemptChecksResult, CommandError>> {
+    return this.loop.attemptChecks(itemId, stepIndex, attempt);
+  }
+
+  /** The end of a step attempt's transcript and the agent's final message. */
+  async attemptLog(itemId: ItemId, stepIndex: number, attempt: number): Promise<Result<AttemptLogResult, CommandError>> {
+    return this.loop.attemptLog(itemId, stepIndex, attempt);
+  }
+
+  /** The full path of a saved file of a step's attempt, for the desktop's Open the file. */
+  async attemptFile(itemId: ItemId, stepIndex: number, attempt: number, file: AttemptFile): Promise<Result<AttemptFileResult, CommandError>> {
+    return this.loop.attemptFile(itemId, stepIndex, attempt, file);
   }
 
   private async startItem(command: Extract<Command, { type: "start_item" }>): Promise<Result<{ itemId: StoredItem["id"] }, CommandError>> {

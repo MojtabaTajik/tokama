@@ -248,6 +248,34 @@ describe("fake engine mode", () => {
     expect(await client.query({ type: "step_output", itemId: ITEM_IDS.planApproval, stepIndex: 1 })).toMatchObject({ ok: false, error: { code: "not_found" } });
   });
 
+  it("serves the failed item's checks and transcripts as cleaned, cut text, and no file to open", async () => {
+    const { client } = await sampleEngine();
+    const checks = await client.query({ type: "attempt_checks", itemId: ITEM_IDS.failed, stepIndex: 1, attempt: 1 });
+    if (!checks.ok) throw new Error(checks.error.message);
+    expect(checks.data.checks.map((check) => [check.command, check.state, check.exitCode, check.durationMs, check.output?.truncated])).toEqual([
+      ["pnpm test", "failed", 1, null, true],
+      ["pnpm lint", "passed", 0, null, false],
+    ]);
+    const output = checks.data.checks[0]!.output!;
+    expect(output.text.split("\n")).toHaveLength(40);
+    expect(output.totalLines).toBeGreaterThan(40);
+    // Colour codes are gone; markup stays as text.
+    expect(output.text).not.toContain("\u001b");
+    expect(output.text).toContain('"<script>alert(1)</script>"');
+    expect(checks.data.checks[0]!.summary).toBe("6 failing · 406 passed");
+    expect(await client.query({ type: "attempt_checks", itemId: ITEM_IDS.failed, stepIndex: 1, attempt: 2 })).toMatchObject({ ok: true, data: { checks: [{ durationMs: 118_000 }, { durationMs: 14_000 }] } });
+    expect(await client.query({ type: "attempt_checks", itemId: ITEM_IDS.failed, stepIndex: 1, attempt: 4 })).toMatchObject({ ok: false, error: { code: "not_found" } });
+
+    const log = await client.query({ type: "attempt_log", itemId: ITEM_IDS.failed, stepIndex: 0, attempt: 1 });
+    if (!log.ok) throw new Error(log.error.message);
+    expect(log.data.transcript?.text).toContain("→ Read package.json");
+    expect(log.data.transcript?.text).toContain("as written: <script>alert(1)</script>");
+    expect(log.data.final).toEqual({ text: "Upgraded pg and moved the pool to the new connect API.", truncated: false });
+    const long = await client.query({ type: "attempt_log", itemId: ITEM_IDS.failed, stepIndex: 0, attempt: 3 });
+    expect(long).toMatchObject({ ok: true, data: { transcript: { truncated: true, totalLines: 444 } } });
+    expect(await client.query({ type: "attempt_file", itemId: ITEM_IDS.failed, stepIndex: 0, attempt: 3, file: "transcript" })).toMatchObject({ ok: false, error: { code: "not_found" } });
+  });
+
   it("serves the Quick change item's diff while its question is open; Request changes runs the step again", async () => {
     const { client, next } = await sampleEngine();
     const waiting = await item(client, ITEM_IDS.quickChange);
