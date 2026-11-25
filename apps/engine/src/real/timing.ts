@@ -1,6 +1,6 @@
 // How long an item's work took, from the attempt and decision times its log records: each ended
-// attempt, each ended step and the ended item, without the time spent waiting for the engineer,
-// and that waiting time per step apart. A pure function of the stored item, so the figures are the
+// attempt, each ended step and the ended item, without the time spent waiting for the engineer or
+// while the engine was down, and that waiting time per step apart. A pure function of the stored item, so the figures are the
 // same after an engine restart.
 import type { AttemptRecord, StoredItem, StoredStep } from "@tokama/core";
 
@@ -30,9 +30,15 @@ const waitSpans = (item: StoredItem, stepId?: string): Span[] =>
     .filter((decision) => stepId === undefined || decision.stepId === stepId)
     .map((decision): Span => [decision.askedAt, decision.resolved?.at ?? item.outcome?.at ?? Infinity]);
 
-/** An ended attempt's working time: start to end, without the time it waited for you. */
+/**
+ * An attempt that an engine restart ended: its end is when the engine came back, maybe the next
+ * day, so its span is not working time.
+ */
+const cutByRestart = (attempt: AttemptRecord): boolean => attempt.failure === "engine_restart";
+
+/** An ended attempt's working time: start to end, without the time it waited for you. None for one a restart ended. */
 export function attemptMs(item: StoredItem, attempt: AttemptRecord): number | undefined {
-  if (attempt.endedAt === undefined) return undefined;
+  if (attempt.endedAt === undefined || cutByRestart(attempt)) return undefined;
   return Math.max(0, attempt.endedAt - attempt.startedAt - overlapMs(waitSpans(item), attempt.startedAt, attempt.endedAt));
 }
 
@@ -49,11 +55,15 @@ export function stepTimes(item: StoredItem, step: StoredStep): { durationMs?: nu
   };
 }
 
-/** An ended item's agent and check time: its first attempt's start to its end, without the time it waited for you. */
+/**
+ * An ended item's agent and check time: its first attempt's start to its end, without the time it
+ * waited for you or spent in attempts a restart ended.
+ */
 export function itemMs(item: StoredItem): number | undefined {
   const end = item.outcome?.at;
-  const starts = item.steps.flatMap((step) => step.attempts.map((attempt) => attempt.startedAt));
-  if (end === undefined || starts.length === 0) return undefined;
-  const from = Math.min(...starts);
-  return Math.max(0, end - from - overlapMs(waitSpans(item), from, end));
+  const attempts = item.steps.flatMap((step) => step.attempts);
+  if (end === undefined || attempts.length === 0) return undefined;
+  const from = Math.min(...attempts.map((attempt) => attempt.startedAt));
+  const restarts = attempts.filter(cutByRestart).map((attempt): Span => [attempt.startedAt, attempt.endedAt ?? end]);
+  return Math.max(0, end - from - overlapMs([...waitSpans(item), ...restarts], from, end));
 }

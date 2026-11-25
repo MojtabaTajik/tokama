@@ -43,7 +43,9 @@ export function toolSubject(input: ToolCall["input"]): string | undefined {
  * worktree as `.` and the home folder as `~`, so what is left points outside the worktree.
  */
 export function redactPaths(command: string): string {
-  return command.replace(/(^|[\s"'=(])[~/][^\s"'`;|&)]*/g, "$1<outside path>");
+  // After a space, quote, `=`, `(`, `<`, `>`, `,` or `:`, or straight after a short flag (`-C/x`);
+  // not the `//` of a URL.
+  return command.replace(/(^|[\s"'=(<>,:]|(?:^|\s)-[A-Za-z])(?:~|\/(?!\/))[^\s"'`;|&)<>,]*/g, "$1<outside path>");
 }
 
 /** One line, no control characters, at most `MAX_ACTIVITY_LABEL_CHARS`: the end stays, since it names the file. */
@@ -86,7 +88,10 @@ export function createActivityTracker(startedAt: number): ActivityTracker {
         case "started":
           break;
         case "turn":
+          // The agent takes a new turn only once its tools answered: none still runs. This also
+          // ends a call whose result never matched its id.
           lastAction = THINKING;
+          running.clear();
           break;
         case "text":
           lastAction = WRITING;

@@ -110,6 +110,19 @@ describe("toItemRecord", () => {
     check(toItemRecord(reopened.get(ended.id)!));
   });
 
+  it("does not count the time the engine was down as working time", () => {
+    let item = append(created(), [{ type: "step_started", stepId: FIX }, { type: "attempt_started", stepId: FIX, attempt: 1 }]);
+    // The engine stops during the attempt and comes back 15 hours later; recovery ends the attempt then.
+    clock.advance(15 * 3_600_000);
+    item = append(item, [{ type: "attempt_ended", stepId: FIX, attempt: 1, result: "run_failed", failure: "engine_restart" }, { type: "attempt_started", stepId: FIX, attempt: 2 }]);
+    clock.advance(252_000);
+    item = append(item, [{ type: "attempt_ended", stepId: FIX, attempt: 2, result: "passed" }, { type: "step_ended", stepId: FIX, result: "passed" }, { type: "item_ended", outcome: "stopped" }]);
+    const record = toItemRecord(item)!;
+    expect(record.steps[0]!.attempts!.map((attempt) => attempt.durationMs)).toEqual([undefined, 252_000]);
+    expect(record.steps[0]!.durationMs).toBe(252_000);
+    expect(record.durationMs).toBe(252_000);
+  });
+
   it("maps a new item from its template snapshot: ref, kind, privacy and every step pending", () => {
     const record = toItemRecord(created())!;
     expect(record).toMatchObject({ templateId: "orders-api/careful-fix", kind: "task", privacy: "local_and_cloud", state: "queued", title: "Fix the greeting", cardLine: "starting" });

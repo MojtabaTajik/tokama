@@ -51,6 +51,18 @@ describe("activity feed", () => {
     expect(sent).toHaveLength(1);
   });
 
+  it("keeps to one push a second across a clear, so fast checks send no more", () => {
+    const { clock, sent, feed: activity } = feed();
+    activity.update(ITEM, at(10_000, "agent"));
+    activity.update(ITEM, undefined);
+    activity.update(ITEM, { ...at(10_050, "check 1"), by: "tokama" });
+    activity.update(ITEM, undefined);
+    activity.update(ITEM, { ...at(10_100, "check 2"), by: "tokama" });
+    expect(sent.map((s) => s.lastAction.label)).toEqual(["agent"]);
+    clock.advance(1_000);
+    expect(sent.map((s) => s.lastAction.label)).toEqual(["agent", "check 2"]);
+  });
+
   it("throttles each item on its own", () => {
     const { sent, feed: activity } = feed();
     const other = "item_01JDZ0000000000000000000BB" as ItemId;
@@ -64,6 +76,7 @@ describe("activity feed", () => {
     activity.update(ITEM, at(10_000, "a"));
     activity.update(ITEM, at(10_100, "b"));
     activity.close();
+    activity.update(ITEM, at(10_200, "c"));
     clock.advance(5_000);
     expect(sent).toHaveLength(1);
     expect(activity.get(ITEM)).toBeNull();

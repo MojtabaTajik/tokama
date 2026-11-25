@@ -1472,6 +1472,30 @@ describe("ItemDrawer live progress", () => {
     expect(text(".activity-tail")).toBe("pnpm test");
   });
 
+  it("keeps an activity event that arrives while its query is in flight, and asks again after the connection comes back", async () => {
+    const reading = (file: string) => activity({ lastAction: { kind: "read", label: `reading src/${file}` } });
+    const activities = new Map([[live.id, reading("old.ts")]]);
+    const { bridge, query, listeners, reconnect } = fakeBridge([live], activities);
+    const answer = query.getMockImplementation()!;
+    const pending = deferred();
+    let hold = true;
+    query.mockImplementation(async (q) => {
+      if (q.type !== "activity" || !hold) return answer(q);
+      hold = false;
+      return pending.promise;
+    });
+    await renderDrawer(bridge, live.id);
+    await act(async () => {
+      for (const listener of listeners) listener({ kind: "event", seq: 1, event: { type: "item_activity", activity: reading("new.ts") } });
+    });
+    await act(async () => pending.resolve({ ok: true, data: { activity: reading("old.ts") } }));
+    expect(text(".activity-tail")).toBe("new.ts");
+    // Missed while away: the engine's activity moved on.
+    activities.set(live.id, reading("after.ts"));
+    await reconnect();
+    expect(text(".activity-tail")).toBe("after.ts");
+  });
+
   it("adds quiet in grey words after 2 minutes without an event, and drops it with the next event", async () => {
     const { bridge, listeners } = fakeBridge([live], new Map([[live.id, activity({ lastEventAt: NOW - 180_000 })]]));
     await renderDrawer(bridge, live.id);

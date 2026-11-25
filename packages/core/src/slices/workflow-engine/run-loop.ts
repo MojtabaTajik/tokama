@@ -272,7 +272,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
   };
   /** Tokama runs a setup or check command: it runs from now, so the item is not quiet. */
   const commandActivity = (command: string): ActivityState => {
-    const label = labelText(`running ${redactPaths(command)}`);
+    const label = labelText(`running ${redactPaths(scrub(command))}`);
     const now = clock.now();
     return { lastAction: { kind: "run", label }, lastEventAt: now, toolRunning: { label, startedAt: now } };
   };
@@ -767,8 +767,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
         },
         onActivity: (state) => reportActivity(item, stepId, attempt, "agent", state),
       },
-    );
-    reportActivity(item, stepId, attempt, "agent", undefined);
+    ).finally(() => reportActivity(item, stepId, attempt, "agent", undefined));
     // Recorded first and whatever happened, a stop included: the tokens were spent. Usage is
     // accounting, so a refused write is logged, not a run failure.
     const recorded = store.append(item.id, [
@@ -864,8 +863,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     mkdirSync(itemPath(item.id, dir), { recursive: true, mode: 0o700 });
     if (ctx.template.setup !== undefined) {
       reportActivity(item, stepId, attempt, "tokama", commandActivity(ctx.template.setup));
-      const setup = await runOne(runner, ctx.template.setup, worktree.path, signal, itemPath(item.id, `${dir}/setup.log`));
-      reportActivity(item, stepId, attempt, "tokama", undefined);
+      const setup = await runOne(runner, ctx.template.setup, worktree.path, signal, itemPath(item.id, `${dir}/setup.log`)).finally(() => reportActivity(item, stepId, attempt, "tokama", undefined));
       if (signal.aborted) return WAIT;
       const gate = await intact(ctx, worktree);
       if (gate !== undefined) return gate;
@@ -880,8 +878,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     for (const [index, command] of checkCommands(ctx, stepDef(ctx.template, stepId)).entries()) {
       const outputFile = `${dir}/check-${index + 1}.log`;
       reportActivity(item, stepId, attempt, "tokama", commandActivity(command));
-      const result = await runOne(runner, command, worktree.path, signal, itemPath(item.id, outputFile));
-      reportActivity(item, stepId, attempt, "tokama", undefined);
+      const result = await runOne(runner, command, worktree.path, signal, itemPath(item.id, outputFile)).finally(() => reportActivity(item, stepId, attempt, "tokama", undefined));
       if (signal.aborted) return WAIT;
       if (result.outcome === "refused" || result.outcome === "not-started") return fail(`The check could not run. ${commandFailure(result)}`);
       const passed = result.outcome === "passed";

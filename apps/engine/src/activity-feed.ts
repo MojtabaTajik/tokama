@@ -1,7 +1,7 @@
 // The live activity of running items, for clients: the latest per item, and pushed at most once
 // a second per item. The first change goes out at once; changes within the second after it go
-// out as one, with the latest state, when the second is over. Once nothing runs the item is
-// forgotten, so the next start goes out at once. In memory only.
+// out as one, with the latest state, when the second is over. The second counts across a clear
+// (an agent call ends, a check starts), so fast checks never send more. In memory only.
 import type { Clock, ItemActivity, ItemId, TimerHandle } from "@tokama/core";
 
 export const ACTIVITY_INTERVAL_MS = 1_000;
@@ -10,6 +10,7 @@ export class ActivityFeed {
   private readonly latest = new Map<ItemId, ItemActivity>();
   private readonly sentAt = new Map<ItemId, number>();
   private readonly timers = new Map<ItemId, TimerHandle>();
+  private closed = false;
 
   constructor(
     private readonly clock: Clock,
@@ -21,10 +22,10 @@ export class ActivityFeed {
   update(itemId: ItemId, activity: ItemActivity | undefined): void {
     if (activity === undefined) {
       this.latest.delete(itemId);
-      this.sentAt.delete(itemId);
       this.cancel(itemId);
       return;
     }
+    if (this.closed) return;
     this.latest.set(itemId, activity);
     if (this.timers.has(itemId)) return;
     const wait = (this.sentAt.get(itemId) ?? -Infinity) + this.intervalMs - this.clock.now();
@@ -43,10 +44,12 @@ export class ActivityFeed {
     return this.latest.get(itemId) ?? null;
   }
 
-  /** Stops every pending push. */
+  /** Stops every pending push, and takes no more. */
   close(): void {
+    this.closed = true;
     for (const itemId of [...this.timers.keys()]) this.cancel(itemId);
     this.latest.clear();
+    this.sentAt.clear();
   }
 
   private send(itemId: ItemId): void {

@@ -27,6 +27,7 @@ describe("activity words", () => {
     expect(redactPaths("cp ./a.ts '/Users/someone/b.ts' --out=/tmp/x")).toBe("cp ./a.ts '<outside path>' --out=<outside path>");
     expect(redactPaths("curl https://example.com/a && pnpm test src/a.ts")).toBe("curl https://example.com/a && pnpm test src/a.ts");
     expect(actionOf({ name: "Bash", kind: "command", input: { command: "cat ~/secrets.txt" } }).label).toBe("running cat <outside path>");
+    expect(redactPaths("cat</x/y >/x/z a,/x/w cp a.ts:/x/v tar -C/x/u")).toBe("cat<<outside path> ><outside path> a,<outside path> cp a.ts:<outside path> tar -C<outside path>");
   });
 
   it("keeps a label on one line, without control characters, and keeps its end when it is too long", () => {
@@ -69,6 +70,13 @@ describe("activity tracker", () => {
     tracker.observe({ type: "tool_result", id: "t2" }, 3_000);
     expect(tracker.state().toolRunning).toEqual({ label: "running pnpm test", startedAt: 1_000 });
     tracker.observe({ type: "end", outcome: "aborted", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }, 4_000);
+    expect(tracker.state().toolRunning).toBeNull();
+  });
+
+  it("ends every running tool when the agent takes a new turn", () => {
+    const tracker = createActivityTracker(0);
+    tracker.observe(tool("t1", "Bash", "command", { command: "pnpm test" }), 1_000);
+    tracker.observe({ type: "turn" }, 2_000);
     expect(tracker.state().toolRunning).toBeNull();
   });
 
