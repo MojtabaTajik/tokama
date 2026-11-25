@@ -4,8 +4,9 @@
 // branch, then give the entry that `id` and `shown: true`. List-type pages fill the two panes to
 // the right of the nav.
 import type { Setup } from "@tokama/core";
-import { useState } from "react";
+import { useState, type ComponentType } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
+import { AgentIcon, BellIcon, BookIcon, PulseIcon, TemplateListIcon, TerminalIcon } from "../shell/icons.js";
 import { TemplatesPage } from "../templates/TemplatesPage.js";
 import { AgentsPage } from "./AgentsPage.js";
 import type { AgentTarget } from "./describe.js";
@@ -14,36 +15,38 @@ import { DiagnosticsPage } from "./DiagnosticsPage.js";
 import { NotificationsPage } from "./NotificationsPage.js";
 import { ReposPage } from "./ReposPage.js";
 
+type NavIcon = ComponentType;
+
 const TEXT = { nav: "Settings", back: "← Back", title: "Settings" } as const;
 
 export type SettingsPage = "notifications" | "repos" | "templates" | "agents" | "ai-clis" | "diagnostics";
 
 type Entry = { readonly group: string; readonly label: string } & (
-  | { readonly shown: true; readonly id: SettingsPage }
+  | { readonly shown: true; readonly id: SettingsPage; readonly icon: NavIcon }
   /** A page that is not built yet: it has no page id. */
   | { readonly shown: false; readonly id?: undefined }
 );
 
 const ENTRIES: readonly Entry[] = [
-  { group: "Personal", label: "Notifications", id: "notifications", shown: true },
-  { group: "Personal", label: "Diagnostics", id: "diagnostics", shown: true },
-  { group: "Setup", label: "Repos", id: "repos", shown: true },
+  { group: "Personal", label: "Notifications", id: "notifications", icon: BellIcon, shown: true },
+  { group: "Personal", label: "Diagnostics", id: "diagnostics", icon: PulseIcon, shown: true },
+  { group: "Setup", label: "Repos", id: "repos", icon: BookIcon, shown: true },
   { group: "Setup", label: "Connections", shown: false },
-  { group: "Setup", label: "Templates", id: "templates", shown: true },
-  { group: "Setup", label: "Agents", id: "agents", shown: true },
+  { group: "Setup", label: "Templates", id: "templates", icon: TemplateListIcon, shown: true },
+  { group: "Setup", label: "Agents", id: "agents", icon: AgentIcon, shown: true },
   { group: "Setup", label: "Privacy", shown: false },
-  { group: "Engine", label: "AI CLIs", id: "ai-clis", shown: true },
+  { group: "Engine", label: "AI CLIs", id: "ai-clis", icon: TerminalIcon, shown: true },
   { group: "Engine", label: "Local models", shown: false },
   { group: "Engine", label: "Git & worktrees", shown: false },
   { group: "Engine", label: "Run limits", shown: false },
 ];
 
 /** The groups with their listed pages; a group with no listed page is left out. */
-const shownGroups = (): readonly { readonly name: string; readonly pages: readonly { readonly id: SettingsPage; readonly label: string }[] }[] => {
-  const groups = new Map<string, { id: SettingsPage; label: string }[]>();
-  for (const { group, label, id, shown } of ENTRIES) {
-    if (!shown) continue;
-    groups.set(group, [...(groups.get(group) ?? []), { id, label }]);
+const shownGroups = (): readonly { readonly name: string; readonly pages: readonly { readonly id: SettingsPage; readonly label: string; readonly Icon: NavIcon }[] }[] => {
+  const groups = new Map<string, { id: SettingsPage; label: string; Icon: NavIcon }[]>();
+  for (const entry of ENTRIES) {
+    if (!entry.shown) continue;
+    groups.set(entry.group, [...(groups.get(entry.group) ?? []), { id: entry.id, label: entry.label, Icon: entry.icon }]);
   }
   return [...groups].map(([name, pages]) => ({ name, pages }));
 };
@@ -73,8 +76,9 @@ export function Settings({ bridge, connection, setup, onBack, initialPage = "age
             <span className="settings-group-name" aria-hidden="true">
               {group.name}
             </span>
-            {group.pages.map(({ id, label }) => (
+            {group.pages.map(({ id, label, Icon }) => (
               <button key={id} type="button" className="settings-entry" aria-current={id === page ? "page" : undefined} onClick={() => setPage(id)}>
+                <Icon />
                 {label}
               </button>
             ))}

@@ -89,6 +89,20 @@ describe("Settings > Agents", () => {
     expect(nav.querySelector('[aria-disabled="true"]')).toBeNull();
   });
 
+  it("shows a decorative icon before the label of every nav entry, and the label is the name", async () => {
+    await open(withAgents());
+    const entries = $$("nav[aria-label='Settings'] .settings-entry");
+    expect(entries.map((el) => el.textContent)).toEqual(["Notifications", "Diagnostics", "Repos", "Templates", "Agents", "AI CLIs"]);
+    for (const entry of entries) {
+      const icon = entry.firstElementChild!;
+      expect(icon.tagName.toLowerCase()).toBe("svg");
+      expect(icon.getAttribute("aria-hidden")).toBe("true");
+      expect(entry.querySelectorAll("svg")).toHaveLength(1);
+    }
+    // Each entry has its own drawing.
+    expect(new Set(entries.map((el) => el.querySelector("svg")!.innerHTML)).size).toBe(entries.length);
+  });
+
   it("shows the first agent's role, runs on, model, limits and source, and another one when picked", async () => {
     await open(withAgents());
     const detail = () => $(".agent-detail")!.textContent ?? "";
