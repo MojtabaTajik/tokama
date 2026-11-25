@@ -830,12 +830,12 @@ button:focus-visible {
   cursor: pointer;
 }
 
-.finish-menu [role="menuitem"]:hover:not(:disabled),
+.finish-menu [role="menuitem"]:hover:not([aria-disabled="true"]),
 .finish-menu [role="menuitem"]:focus-visible {
   background: var(--panel);
 }
 
-.finish-menu [role="menuitem"]:disabled {
+.finish-menu [role="menuitem"][aria-disabled="true"] {
   color: var(--muted);
   cursor: default;
 }

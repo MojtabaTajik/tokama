@@ -82,11 +82,14 @@ export interface ItemDrawerProps {
   readonly diffAsked?: number | undefined;
   /** Reads the setup again (Finish's Check again). */
   readonly onCheckAgain?: () => void;
-  /** Open the item's Discard question at once (Discard… from the list). */
-  readonly askDiscard?: boolean;
+  /**
+   * What the list asked for this item: its Discard question, or a refusal to show. Each new `seq`
+   * asks again.
+   */
+  readonly request?: { readonly seq: number; readonly discard?: true; readonly notice?: string } | undefined;
 }
 
-export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckAgain, askDiscard = false }: ItemDrawerProps) {
+export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckAgain, request }: ItemDrawerProps) {
   const { item, error, refresh } = useItem(bridge, itemId);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<Notice | undefined>(undefined);
@@ -112,6 +115,10 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
     setBusy(false);
     setTab("Steps");
   }, [itemId]);
+  // A refusal of a command the list sent for this item, in the engine's words.
+  useEffect(() => {
+    if (request?.notice !== undefined) setNotice({ tone: "warn", text: request.notice });
+  }, [request?.seq, request?.notice]);
   // On close, focus goes back to the opener, if it is still on the screen; if the item moved to
   // another group or column meanwhile, to the item's current row or card.
   useEffect(
@@ -235,7 +242,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
           item={item}
           setup={setup}
           busy={busy}
-          askDiscard={askDiscard}
+          askDiscard={request?.discard === true ? request.seq : undefined}
           {...(onCheckAgain !== undefined && { onCheckAgain })}
           onFinish={(action) => void send({ type: "finish_item", itemId: item.id, action })}
         />

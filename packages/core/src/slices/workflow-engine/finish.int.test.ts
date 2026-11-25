@@ -405,7 +405,7 @@ describe("Open PR", () => {
     expect(await plain(bare, "for-each-ref", "refs/heads/")).toBe("");
   });
 
-  it("refuses a second push URL next to the pinned one, and pushes to the pinned URL itself", SLOW, async () => {
+  it("refuses a second push URL next to the pinned one, and records no pin when a start sees two", SLOW, async () => {
     const item = await doneItem();
     // git pushes to every pushurl: the pinned URL alone, read as the last value, would pass.
     await plain(repo.path, "config", "--add", "remote.origin.pushurl", "https://evil.example.com/x.git");

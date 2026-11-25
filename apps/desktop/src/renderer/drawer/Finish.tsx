@@ -28,8 +28,8 @@ export interface FinishProps {
   readonly onFinish: (action: FinishAction) => void;
   /** Reads the setup again, e.g. after gh was installed or logged in. */
   readonly onCheckAgain?: () => void;
-  /** Open the Discard question at once (Discard… from the list). */
-  readonly askDiscard?: boolean;
+  /** Opens the Discard question (Discard… from the list); each new value asks again. */
+  readonly askDiscard?: number | undefined;
 }
 
 function Text({ parts }: { readonly parts: Rich }) {
@@ -48,14 +48,19 @@ function Text({ parts }: { readonly parts: Rich }) {
   );
 }
 
-export function Finish({ item, setup, busy, onFinish, onCheckAgain, askDiscard = false }: FinishProps) {
-  const [confirming, setConfirming] = useState(askDiscard);
+export function Finish({ item, setup, busy, onFinish, onCheckAgain, askDiscard }: FinishProps) {
+  const [confirming, setConfirming] = useState(askDiscard !== undefined);
   const keep = useRef<HTMLButtonElement>(null);
   const view = finishView(item, setup);
+  const running = view?.kind === "offer" ? view.running : undefined;
 
   useEffect(() => {
-    if (askDiscard) setConfirming(true);
+    if (askDiscard !== undefined) setConfirming(true);
   }, [askDiscard]);
+  // An action that starts closes the question: what it would discard is changing.
+  useEffect(() => {
+    if (running !== undefined) setConfirming(false);
+  }, [running]);
   useEffect(() => {
     if (confirming) keep.current?.focus();
   }, [confirming]);
@@ -73,7 +78,8 @@ export function Finish({ item, setup, busy, onFinish, onCheckAgain, askDiscard =
 
   if (view === undefined) return null;
   const branch = view.kind === "offer" ? view.branch : (item.outcome?.commits?.[0]?.branch ?? "the item branch");
-  const confirm = confirming && (
+  // Only while there is something to discard and nothing runs.
+  const confirm = confirming && running === undefined && (view.kind === "offer" || view.removable) && (
     <div className="finish-confirm" role="group" aria-label={TEXT.discardQuestion}>
       <p className="finish-confirm-title">{TEXT.discardQuestion}</p>
       <p className="finish-text">

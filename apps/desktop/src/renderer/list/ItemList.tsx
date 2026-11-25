@@ -25,7 +25,7 @@ export interface ItemListProps {
   /** The repo the list is filtered to, named in the empty message. */
   readonly repoId?: string | undefined;
   /** Finish actions from a Done row's split button; without it the row has none. */
-  readonly onFinish?: (itemId: string, action: FinishAction) => void;
+  readonly onFinish?: (itemId: string, action: FinishAction) => void | Promise<void>;
   /** Discard… from a Done row: opens the item with its Discard question. */
   readonly onDiscard?: (itemId: string) => void;
 }
@@ -61,7 +61,7 @@ interface RowProps {
   readonly now: number;
   readonly selected: boolean;
   readonly onSelect: (itemId: string) => void;
-  readonly onFinish: ((itemId: string, action: FinishAction) => void) | undefined;
+  readonly onFinish: ((itemId: string, action: FinishAction) => void | Promise<void>) | undefined;
   readonly onDiscard: ((itemId: string) => void) | undefined;
 }
 

@@ -42,7 +42,7 @@ export interface MainAreaProps {
   readonly selectedItemId: string | undefined;
   readonly onSelectItem: (itemId: string) => void;
   /** Finish actions from a Done row's split button. */
-  readonly onFinish?: (itemId: string, action: FinishAction) => void;
+  readonly onFinish?: (itemId: string, action: FinishAction) => void | Promise<void>;
   /** Discard… from a Done row: opens the item with its Discard question. */
   readonly onDiscard?: (itemId: string) => void;
   /** Pinned below the board: the New work input. */

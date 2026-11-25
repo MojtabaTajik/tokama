@@ -694,7 +694,7 @@ describe("item drawer: Finish", () => {
   });
 
   it("opens the Discard question at once when asked from the list", async () => {
-    await act(async () => root.render(<ItemDrawer bridge={fakeBridge([finishable]).bridge} itemId={finishable.id} setup={setup} onClose={vi.fn()} askDiscard />));
+    await act(async () => root.render(<ItemDrawer bridge={fakeBridge([finishable]).bridge} itemId={finishable.id} setup={setup} onClose={vi.fn()} request={{ seq: 1, discard: true }} />));
     expect(text(".finish-confirm-title")).toBe("Discard this work?");
   });
 
@@ -784,5 +784,83 @@ describe("a Done row's split button", () => {
     expect(wrap.querySelector(".pl-finish")?.textContent).toBe("↗pull request: PR #12 open");
     expect(wrap.querySelector(".pl-pipe")).toBeNull();
     expect(wrap.querySelector(".finish-split")).toBeNull();
+  });
+});
+
+describe("Finish: review fixes", () => {
+  const showDone = async (items: ItemRecord[]) => {
+    const fake = fakeBridge(items);
+    await act(async () => root.render(<App bridge={fake.bridge} retryDelayMs={10} now={finishable.createdAt + 60_000} />));
+    await act(async () => ($$(".filter-bar .segment").find((el) => el.textContent?.startsWith("Done")) as HTMLButtonElement).click());
+    return fake;
+  };
+  const wrap = () => $$(".pl-row-wrap").find((el) => el.querySelector(".pl-row")?.getAttribute("data-item-id") === finishable.id)!;
+  const menuItems = () => [...wrap().querySelectorAll<HTMLButtonElement>("[role=menuitem]")];
+  const openMenu = () => act(async () => (wrap().querySelector(".finish-split-more") as HTMLButtonElement).click());
+  const pickDiscard = () => act(async () => menuItems().find((el) => el.textContent === "Discard…")!.click());
+  const key = (name: string) => act(async () => void document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true })));
+
+  it("the Discard question goes when an action starts, and does not come back once nothing is left to discard", async () => {
+    const fake = fakeBridge([finishable]);
+    await renderDrawer(fake.bridge, finishable.id);
+    await act(async () => ($$(".finish .choice").find((el) => el.textContent === "Discard…") as HTMLButtonElement).click());
+    expect($(".finish-confirm")).not.toBeNull();
+    await fake.push({ ...finishable, finish: { ...finishable.finish!, running: "merge" } });
+    expect($(".finish-confirm")).toBeNull();
+    await fake.push({ ...finishable, finish: { worktreeRemoved: true, merged: { baseBranch: "main", commit: "a".repeat(40) } } });
+    expect($(".finish-confirm")).toBeNull();
+  });
+
+  it("Discard… from the row asks again after Keep", async () => {
+    await showDone([finishable]);
+    await openMenu();
+    await pickDiscard();
+    await act(async () => ($$(".finish-confirm .choice").find((el) => el.textContent === "Keep") as HTMLButtonElement).click());
+    expect($(".finish-confirm")).toBeNull();
+    await openMenu();
+    await pickDiscard();
+    expect(text(".finish-confirm-title")).toBe("Discard this work?");
+  });
+
+  it("a command the row sent and the engine refused opens the item with the engine's words", async () => {
+    const fake = await showDone([finishable]);
+    fake.replyWith(async () => ({ ok: false, error: { code: "invalid_request", message: "Local-only mode is on: nothing leaves this machine, so Tokama does not push." } }));
+    await openMenu();
+    await act(async () => menuItems().find((el) => el.textContent?.startsWith("Open PR"))!.click());
+    expect(text(".drawer-notice")).toContain("Local-only mode is on");
+    expect($("aside.drawer h2")?.textContent).toBe(finishable.title);
+  });
+
+  it("the menu: the arrow toggles it closed, arrows and Home/End move, an off Open PR is reachable but does nothing, a pick returns focus to the row", async () => {
+    const loggedOut = { ...setup, health: { ...setup.health, gh: { installed: true, loggedIn: false } } } as Setup;
+    const fake = fakeBridge([finishable]);
+    const original = fake.query.getMockImplementation()!;
+    fake.query.mockImplementation(async (q) => (q.type === "setup" ? { ok: true, data: loggedOut } : original(q)));
+    await act(async () => root.render(<App bridge={fake.bridge} retryDelayMs={10} now={finishable.createdAt + 60_000} />));
+    await act(async () => ($$(".filter-bar .segment").find((el) => el.textContent?.startsWith("Done")) as HTMLButtonElement).click());
+    await openMenu();
+    expect(menuItems().every((el) => el.tabIndex === -1)).toBe(true);
+    const pr = menuItems()[1]!;
+    expect(pr.getAttribute("aria-disabled")).toBe("true");
+    expect(pr.textContent).toBe("Open PRgh is installed but not logged in.");
+    await key("ArrowDown");
+    expect(document.activeElement).toBe(pr);
+    await key("End");
+    expect(document.activeElement?.textContent).toBe("Discard…");
+    await key("Home");
+    expect(document.activeElement?.textContent).toBe("Merge into mainlocal merge, then clean up");
+    await act(async () => pr.click());
+    expect(fake.command).not.toHaveBeenCalled();
+    // A mousedown on the arrow's own symbol, then its click: the menu closes, and stays closed.
+    const more = wrap().querySelector(".finish-split-more") as HTMLButtonElement;
+    await act(async () => {
+      more.querySelector("span")!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      more.click();
+    });
+    expect(wrap().querySelector("[role=menu]")).toBeNull();
+    await openMenu();
+    await act(async () => menuItems()[0]!.click());
+    expect(fake.command).toHaveBeenCalledWith({ type: "finish_item", itemId: finishable.id, action: "merge" });
+    expect(document.activeElement).toBe(wrap().querySelector(".pl-row"));
   });
 });

@@ -56,30 +56,28 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(undefined);
   // Counts each "Review the diff": the drawer shows the item's Diff tab, also when it shows the item already.
   const [diffAsked, setDiffAsked] = useState<number | undefined>(undefined);
-  // Discard… on a Done row: the drawer opens on that item with its Discard question.
-  const [discardAsked, setDiscardAsked] = useState<string | undefined>(undefined);
+  // What a Done row asked of the drawer: Discard… opens the item with its question, and a refused
+  // finish command opens it with the refusal. `seq` makes each request new.
+  const [rowRequest, setRowRequest] = useState<{ itemId: string; seq: number; discard?: true; notice?: string } | undefined>(undefined);
+  const requests = useRef(0);
   const selectItem = useCallback((itemId: string | undefined) => {
-    setDiscardAsked(undefined);
+    setRowRequest(undefined);
     setSelectedItemId(itemId);
   }, []);
-  // A finish action from a Done row; the result comes back as item updates. A refused command
-  // opens the item, whose drawer says how it stands.
+  // A finish action from a Done row; the result comes back as item updates.
   const finishFromRow = useCallback(
-    (itemId: string, action: FinishAction) => {
-      void bridge.command({ type: "finish_item", itemId, action }).then(
-        (reply) => !reply.ok && selectItem(itemId),
-        () => selectItem(itemId),
-      );
-    },
-    [bridge, selectItem],
-  );
-  const discardFromRow = useCallback(
-    (itemId: string) => {
+    async (itemId: string, action: FinishAction) => {
+      const reply = await bridge.command({ type: "finish_item", itemId, action }).catch((cause: unknown) => ({ ok: false as const, error: { code: "bridge_error", message: String(cause) } }));
+      if (reply.ok) return;
       setSelectedItemId(itemId);
-      setDiscardAsked(itemId);
+      setRowRequest({ itemId, seq: ++requests.current, notice: reply.error.message });
     },
-    [],
+    [bridge],
   );
+  const discardFromRow = useCallback((itemId: string) => {
+    setSelectedItemId(itemId);
+    setRowRequest({ itemId, seq: ++requests.current, discard: true });
+  }, []);
   const composer = useRef<NewWorkHandle>(null);
   // New work asked for on a page that has no composer: the board opens, then the composer.
   const [openComposerOnBoard, setOpenComposerOnBoard] = useState(false);
@@ -313,7 +311,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
           diffAsked={diffAsked}
           onClose={() => selectItem(undefined)}
           onCheckAgain={refreshSetup}
-          askDiscard={discardAsked === selectedItemId}
+          request={rowRequest?.itemId === selectedItemId ? rowRequest : undefined}
         />
       )}
       {panelOpen && (
