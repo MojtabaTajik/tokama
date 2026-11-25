@@ -246,3 +246,13 @@ describe("Claude Code failure classification", () => {
     expect(classifyFailure(state({}), "Error: something broke")).toBe("crash");
   });
 });
+
+describe("Claude Code stream parser: stored hash format", () => {
+  // Known vector: the first 16 hex characters of SHA-256 over the path's UTF-8 bytes. Stored inputs
+  // are compared across versions, so the format must not change.
+  it("writes an outside path as outside:<16 hex characters of its SHA-256>", () => {
+    const parser = createStreamParser("/tmp/repo", "/home/nobody");
+    const events = parser.line(line({ type: "assistant", message: { id: "m1", content: [{ type: "tool_use", id: "t1", name: "Read", input: { file_path: "/Users/someone/.ssh/config" } }] } }));
+    expect(events).toContainEqual(expect.objectContaining({ type: "tool_call", input: { file_path: "outside:52ac51c7fcad9fbe" } }));
+  });
+});

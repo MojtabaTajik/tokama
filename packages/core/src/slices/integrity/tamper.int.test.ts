@@ -388,6 +388,13 @@ describe("protectedSet", () => {
     if (!after.ok) expect(after.error.message).toMatch(/too large or too deep/);
   });
 
+  // Known vector: a regular file is `sha256:` and the SHA-256 hex of its bytes. Recorded baselines
+  // carry it, so the format must not change.
+  it("hashes a regular file as sha256:<SHA-256 hex of its bytes>", SLOW, async () => {
+    write(join(repo, ".git", "hooks", "pre-commit"), "export const total = 1;\n");
+    expect(value(await set.hash()).get("git:hooks/pre-commit")?.hash).toBe("sha256:0739219ff1302eacd47db855b5c2e4a0db33ec756c3945074284df2d0b89361f");
+  });
+
   it("names files by area and relative path, never an absolute path", SLOW, async () => {
     const hashes = value(await set.hash());
     expect(hashes.size).toBeGreaterThan(5);

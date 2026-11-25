@@ -162,6 +162,12 @@ describe("fingerprint", () => {
     expect(fingerprint("TypeError", a)).toMatch(/^[0-9a-f]{16}$/);
     expect(fingerprint("Error", "Error: failed after 3 tries")).toBe(fingerprint("Error", "Error: failed after 4 tries"));
   });
+
+  // Known vector: the first 16 hex characters of SHA-256 over the name and the basis lines. Stored
+  // entries are grouped by it, so the format must not change.
+  it("is the first 16 hex characters of the SHA-256 of the name and the basis", () => {
+    expect(fingerprint("Error", "Error: failed after 3 tries")).toBe("d5447af590597333");
+  });
 });
 
 describe("describeThrown", () => {

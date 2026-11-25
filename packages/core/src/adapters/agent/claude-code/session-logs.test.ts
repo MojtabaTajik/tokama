@@ -192,3 +192,11 @@ describe("repoOfProject", () => {
     expect(repoOfProject("-Users-someone", repos)).toBeUndefined();
   });
 });
+
+describe("projectKey", () => {
+  // Known vector: the first 32 hex characters of SHA-256 over `project:<folder>`. Stored usage rows
+  // carry this key, so the format must not change.
+  it("is the first 32 hex characters of the SHA-256 of project:<folder>", () => {
+    expect(projectKey("-Users-someone-orders-api")).toBe("f6a33fff512831c2f382b2b3ab080335");
+  });
+});
