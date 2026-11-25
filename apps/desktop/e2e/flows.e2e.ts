@@ -158,6 +158,9 @@ flow("stops an item after its confirmation", async ({ page }) => {
   const panel = drawer(page);
   await panel.getByRole("heading", { name: VERIFYING }).waitFor();
 
+  // No card offers Stop for a running item, so the action row shows exactly one.
+  expect(await panel.getByRole("button", { name: "Stop", exact: true }).count()).toBe(1);
+
   // Cancelling keeps the item running.
   await panel.getByRole("button", { name: "Stop", exact: true }).click();
   const confirm = panel.getByRole("group", { name: "Stop item" });

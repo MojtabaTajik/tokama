@@ -2,7 +2,7 @@
 // is the primary one, and every button is disabled while an answer is on its way. Request changes
 // opens a note in place of the buttons: what the step's next run should change. The note is
 // optional; Escape closes it, except while you type in it. A change approval shows its two answers
-// only; Stop stays in the drawer's actions.
+// only; its Stop stays in the drawer's actions, while any card that has Stop hides that one.
 import type { Decision } from "@tokama/core";
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { Button } from "../ui/Button.js";
@@ -16,6 +16,14 @@ export const inTextField = (target: EventTarget | null): boolean => target insta
 
 /** The engine's choice id for Approve. */
 const APPROVE_ID = "approve";
+/** The engine's choice id for Stop. */
+const STOP_ID = "stop";
+
+/** The choices a decision's card shows: a change approval shows its two answers only. */
+const shownChoices = (decision: Decision) => (decision.hasDiff === true ? decision.choices.filter((choice) => choice.id === APPROVE_ID || choice.id === REQUEST_CHANGES_ID) : decision.choices);
+
+/** The card of this decision has a Stop button, so the drawer's own Stop would be a second one. */
+export const cardOffersStop = (decision: Decision): boolean => shownChoices(decision).some((choice) => choice.id === STOP_ID);
 
 const TEXT = {
   note: "What should change?",
@@ -46,7 +54,7 @@ export function DecisionChoices({ decision, busy, onChoose, context, agent, run,
   const noteId = useId();
   const hintId = useId();
   const named = (label: string) => (context === undefined ? undefined : `${label}: ${context}`);
-  const choices = decision.hasDiff === true ? decision.choices.filter((choice) => choice.id === APPROVE_ID || choice.id === REQUEST_CHANGES_ID) : decision.choices;
+  const choices = shownChoices(decision);
 
   // Escape closes the note before anything else handles it (the drawer, the full view).
   useEffect(() => {
