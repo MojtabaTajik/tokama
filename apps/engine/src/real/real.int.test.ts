@@ -111,7 +111,8 @@ afterEach(async () => {
 });
 
 async function engine(runtime: AgentRuntime, dir = tempEngineDir(cleanups)) {
-  const started = await startEngine({ dir, home, processTable: table, runtime: () => runtime, checks: healthy, recoveryGraceMs: 0 });
+  // No plan source: a usage query must not start the CLI on the test machine.
+  const started = await startEngine({ dir, home, processTable: table, runtime: () => runtime, checks: healthy, recoveryGraceMs: 0, planSources: {} });
   if (!started.ok) throw new Error(started.error.message);
   const connected = await connect({ dir, startTimeoutMs: 2_000 });
   if (!connected.ok) throw new Error(connected.error.message);
@@ -179,6 +180,13 @@ describe("real mode", () => {
     expect(runtime.requests[0]?.role).toContain("Builder");
     const board = await client.query({ type: "board" });
     expect(board.ok && board.data.items.map((i) => i.id)).toEqual([id]);
+    // The call's usage is in the usage report, by the template's ref. "sonnet" is an alias the price
+    // table never guesses, so the call is unpriced rather than estimated.
+    const usage = await client.query({ type: "usage", range: 14 });
+    if (!usage.ok) throw new Error(usage.error.message);
+    expect(usage.data.totals).toMatchObject({ calls: 1, costUsd: null, unpricedCalls: 1 });
+    expect(usage.data.items).toEqual([expect.objectContaining({ itemId: id, title: "Fix the greeting typo", templateId: "builtin/quick-fix", agents: [{ agentId: "builder", cliId: "claude-code" }] })]);
+    expect(usage.data.days.at(-1)?.workflows).toEqual([expect.objectContaining({ templateId: "builtin/quick-fix", itemCount: 1 })]);
   });
 
   it("asks after a failed attempt; Retry once more runs the step again and commits", SLOW, async () => {

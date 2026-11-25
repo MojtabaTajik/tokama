@@ -86,6 +86,7 @@ export class RealEngine {
       agent: (_repo, id, template) => resolveAgent(agentsFor(this.config, template), id),
       runtime,
       ...(options.recoveryGraceMs !== undefined && { recoveryGraceMs: options.recoveryGraceMs }),
+      log,
     });
     this.ready = this.loop.ready;
   }

@@ -1,0 +1,114 @@
+import { manualClock, type ItemId, type PlanReading, type UsageRow } from "@tokama/core";
+import { describe, expect, it } from "vitest";
+import { type PlanSource, UsageService, type UsageDeps } from "./usage.js";
+
+const NOW = new Date(2025, 9, 20, 15, 0).getTime();
+const MINUTE = 60_000;
+const ITEM = "item_0190a000-0000-7000-8000-00000000000a" as ItemId;
+
+const reading = (usedPercent: number, asOf: number): PlanReading => ({ windows: [{ window: "five_hour", usedPercent, resetsAt: NOW + 60 * MINUTE }], asOf });
+
+function runRow(usedPercent: number, at: number): UsageRow {
+  return {
+    itemId: ITEM,
+    title: "Add order export",
+    templateId: "plan-and-build",
+    call: {
+      callId: "call_0190a000-0000-7000-8000-000000000001" as never,
+      stepId: "build" as never,
+      attempt: 1,
+      agentId: "architect" as never,
+      cliId: "claude-code",
+      model: "claude-opus-5-5",
+      outcome: "completed",
+      startedAt: at - MINUTE,
+      endedAt: at,
+      tokens: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 },
+      plan: { status: "allowed", windows: [{ window: "five_hour", usedPercent }], at },
+    },
+  };
+}
+
+function service({ noSamples = false, ...overrides }: Partial<UsageDeps> & { readonly noSamples?: boolean } = {}) {
+  const clock = manualClock(NOW);
+  const changes: number[] = [];
+  const saved: PlanReading[] = [];
+  const usage = new UsageService({
+    rows: () => [],
+    ...(!noSamples && { samples: { get: () => saved.at(-1), save: (_cli, value) => void saved.push(value) } }),
+    sources: {},
+    clock,
+    onChange: () => changes.push(clock.now()),
+    ...overrides,
+  });
+  return { usage, clock, changes, saved };
+}
+
+describe("UsageService", () => {
+  it("answers at once, asks the CLI in the background, and tells clients to ask again when the answer comes", async () => {
+    let asked = 0;
+    let answer = () => {};
+    const answered = new Promise<void>((resolve) => (answer = resolve));
+    const request: PlanSource = async () => {
+      asked++;
+      await answered;
+      return { ok: true, value: { ...reading(36, NOW), version: "2.1.332" } };
+    };
+    const { usage, changes, saved } = service({ sources: { request } });
+    const first = await usage.report(14);
+    expect(first.clis[0]).toEqual({ cliId: "claude-code", windows: [], note: expect.any(String) });
+    expect(changes).toEqual([]);
+    answer();
+    await usage.settled();
+    expect(asked).toBe(1);
+    expect(changes).toHaveLength(1);
+    expect(saved).toHaveLength(1);
+    expect((await usage.report(14)).clis[0]).toMatchObject({ source: "request", version: "2.1.332", windows: [{ usedPercent: 36 }] });
+  });
+
+  it("asks the CLI at most once per interval, however often clients query", async () => {
+    let asked = 0;
+    const request: PlanSource = async () => (asked++, { ok: true, value: reading(36, NOW) });
+    const { usage, clock } = service({ sources: { request }, requestEveryMs: 5 * MINUTE });
+    await Promise.all([usage.report(14), usage.report(14), usage.report(30)]);
+    await usage.settled();
+    await usage.report(14);
+    await usage.settled();
+    expect(asked).toBe(1);
+    clock.advance(5 * MINUTE);
+    await usage.report(14);
+    await usage.settled();
+    expect(asked).toBe(2);
+  });
+
+  it("falls back to the last run's windows, then the cache, and says why when nothing answers", async () => {
+    const failed: PlanSource = async () => ({ ok: false, error: "Claude Code is not installed, or `claude` is not on the PATH." });
+    const cache: PlanSource = async () => ({ ok: true, value: reading(20, NOW - 10 * MINUTE) });
+    const withRun = service({ sources: { request: failed, cache }, noSamples: true, rows: () => [runRow(44, NOW - 5 * MINUTE)] });
+    await withRun.usage.report(14);
+    await withRun.usage.settled();
+    expect((await withRun.usage.report(14)).clis[0]).toMatchObject({ source: "run", windows: [{ window: "five_hour", usedPercent: 44 }], asOf: NOW - 5 * MINUTE });
+
+    const cacheOnly = service({ sources: { request: failed, cache }, noSamples: true });
+    await cacheOnly.usage.report(14);
+    await cacheOnly.usage.settled();
+    expect((await cacheOnly.usage.report(14)).clis[0]).toMatchObject({ source: "cache", windows: [{ usedPercent: 20 }] });
+
+    const nothing = service({ sources: { request: failed }, noSamples: true });
+    await nothing.usage.report(14);
+    await nothing.usage.settled();
+    expect((await nothing.usage.report(14)).clis[0]).toEqual({ cliId: "claude-code", windows: [], note: expect.stringMatching(/not installed/) });
+  });
+
+  it("without a request source never starts the CLI, and reports the other CLIs as unknown", async () => {
+    const { usage, changes } = service();
+    const report = await usage.report(14);
+    await usage.settled();
+    expect(changes).toEqual([]);
+    expect(report.clis.map((cli) => [cli.cliId, cli.windows.length, cli.note !== undefined])).toEqual([
+      ["claude-code", 0, true],
+      ["codex-cli", 0, true],
+      ["ollama", 0, true],
+    ]);
+  });
+});
