@@ -206,10 +206,9 @@ flow("reconnects after the engine restarts and loads its state again", async ({ 
 });
 
 flow("Quick change: New work offers it for a repo with no checks; the drawer shows the diff; Request changes sends a note", async ({ page, screenshot }) => {
-  // Quick fix runs the repo's checks, and inventory-service lists none.
-  await page.locator("main h1").click();
-  await page.keyboard.press("ControlOrMeta+n");
-  await page.locator("textarea.np-text:focus").waitFor();
+  // Quick fix runs the repo's checks, and inventory-service lists none. A click opens New work:
+  // the shortcut has its own flow, and a fresh window may not have keyboard focus yet.
+  await page.locator("textarea.np-text").click();
   await page.locator("textarea.np-text").fill("Add the warehouse id to the sync log");
   await page.locator(".np-trigger", { hasText: "Template" }).click();
   await page.getByRole("option", { name: /^Quick fix/ }).click();
