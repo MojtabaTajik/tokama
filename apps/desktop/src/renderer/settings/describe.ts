@@ -31,8 +31,16 @@ export function limitsNotes(agent: AgentDetail): string[] {
   ];
 }
 
-export const ownerLabel = (owner: AgentOwner): string =>
-  owner.kind === "builtin" ? "Built-in" : owner.kind === "personal" ? "Personal" : `Shared in ${owner.repoId}`;
+export const ownerLabel = (owner: AgentOwner, replacesBuiltin = false): string => {
+  const label = owner.kind === "builtin" ? "Built-in" : owner.kind === "personal" ? "Personal" : `Shared in ${owner.repoId}`;
+  return replacesBuiltin ? `${label}, replaces the built-in` : label;
+};
+
+/** The second line of a list row: the summary, or the file of a broken agent; a note when the agent hides a built-in. */
+export function rowLine(row: AgentRow): string {
+  const line = row.broken ? row.entry.source : summaryLine(row.agent);
+  return (row.broken ? row.entry.replacesBuiltin : row.agent.replacesBuiltin) ? `${line} · replaces built-in` : line;
+}
 
 /** A row in the list: a loaded agent or a file that does not load. The key keeps the same id in two places apart. */
 export type AgentRow = { readonly key: string; readonly broken: false; readonly agent: AgentDetail } | { readonly key: string; readonly broken: true; readonly entry: BrokenAgentDetail };

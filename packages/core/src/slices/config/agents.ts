@@ -131,6 +131,9 @@ Say whether the change is ready or needs changes, and give a file and line for e
 `,
 };
 
+/** The ids of the built-in agents: a file with one of these ids replaces the built-in. */
+export const BUILTIN_AGENT_IDS: readonly string[] = Object.keys(BUILTIN_AGENT_FILES);
+
 export interface LoadAgentsOptions {
   /** Tokama's home folder (`~/.tokama`); personal agents are in its `agents/` folder. */
   readonly tokamaHome: string;
@@ -150,7 +153,7 @@ export interface LoadedAgents {
   readonly agents: readonly Agent[];
   /** Ids claimed by an invalid file, sorted by id. A lower-precedence agent never takes their place. */
   readonly broken: readonly BrokenAgent[];
-  /** Every problem found, in folder order: broken agents', shadowed files' and folders'. */
+  /** Every problem found, in folder order: those of broken agents, of broken files that another file shadows, and of folders. A valid shadowed file adds none. */
   readonly problems: readonly ConfigProblem[];
 }
 

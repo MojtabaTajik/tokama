@@ -37,6 +37,8 @@ export const AgentDetailSchema = z.strictObject({
   role: z.string().max(MAX_ROLE_CHARS),
   roleCut: z.boolean(),
   owner: AgentOwnerSchema,
+  /** A personal or shared file with the id of a built-in agent: the built-in is not used. */
+  replacesBuiltin: z.boolean(),
   /** The agent's file: `builtin/<id>.md`, `agents/<id>.md` in Tokama's home, or `<repo>/.tokama/agents/<id>.md`. */
   source: z.string().min(1).max(300),
 });
@@ -46,7 +48,8 @@ export const BrokenAgentDetailSchema = z.strictObject({
   id: AgentIdSchema,
   owner: AgentOwnerSchema,
   source: z.string().min(1).max(300),
-  /** In plain words, with line numbers. */
+  replacesBuiltin: z.boolean(),
+  /** In plain words, with line numbers. The last entry says how many more there were, when some are left out. */
   problems: z.array(z.string().min(1).max(1000)).min(1).max(50),
 });
 

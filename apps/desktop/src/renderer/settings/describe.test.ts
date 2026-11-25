@@ -1,6 +1,6 @@
 import type { AgentDetail, BrokenAgentDetail } from "@tokama/core";
 import { describe, expect, it } from "vitest";
-import { agentRows, filterRows, limitsNotes, limitsTitle, monogram, ownerLabel, rowName, runsOnName, summaryLine } from "./describe.js";
+import { agentRows, rowLine, filterRows, limitsNotes, limitsTitle, monogram, ownerLabel, rowName, runsOnName, summaryLine } from "./describe.js";
 
 const agent = (over: Record<string, unknown> = {}): AgentDetail =>
   ({
@@ -12,13 +12,14 @@ const agent = (over: Record<string, unknown> = {}): AgentDetail =>
     limits: { edit: true, commands: [], web: false },
     role: "Build.",
     roleCut: false,
+    replacesBuiltin: false,
     owner: { kind: "builtin" },
     source: "builtin/builder.md",
     ...over,
   }) as unknown as AgentDetail;
 
 const brokenEntry = (over: Record<string, unknown> = {}): BrokenAgentDetail =>
-  ({ id: "scribe", owner: { kind: "personal" }, source: "agents/scribe.md", problems: ["agents/scribe.md line 4: runs_on 'x' isn't known."], ...over }) as unknown as BrokenAgentDetail;
+  ({ id: "scribe", owner: { kind: "personal" }, source: "agents/scribe.md", replacesBuiltin: false, problems: ["agents/scribe.md line 4: runs_on 'x' isn't known."], ...over }) as unknown as BrokenAgentDetail;
 
 describe("agent words", () => {
   it("names each CLI by a text monogram", () => {
@@ -43,6 +44,14 @@ describe("agent words", () => {
       "May run: pnpm test:*, git diff",
       "May search and fetch from the web.",
     ]);
+  });
+
+  it("says when an agent replaces a built-in, in the list row and the owner", () => {
+    expect(ownerLabel({ kind: "personal" }, true)).toBe("Personal, replaces the built-in");
+    expect(ownerLabel({ kind: "builtin" })).toBe("Built-in");
+    const [loaded, broken] = agentRows([agent({ replacesBuiltin: true })], [brokenEntry({ replacesBuiltin: true })]);
+    expect([rowLine(loaded!), rowLine(broken!)]).toEqual(["CC · sonnet · cloud · replaces built-in", "agents/scribe.md · replaces built-in"]);
+    expect(rowLine(agentRows([agent()], [])[0]!)).toBe("CC · sonnet · cloud");
   });
 
   it("names the owner", () => {

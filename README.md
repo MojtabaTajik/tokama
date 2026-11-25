@@ -25,7 +25,7 @@ pnpm build
 pnpm dev
 ```
 
-`pnpm dev` starts the desktop app with its own engine process. It runs on sample data so you can look around without a repo or a login; the sample items are not saved.
+`pnpm dev` starts the desktop app with its own engine process, in real mode: work you start runs real agents on your repos, so Claude Code must be installed and logged in. To look around first, run `pnpm dev:sample`. It uses sample repos and items that are not saved, and starts no agent.
 
 ## Add a repo
 

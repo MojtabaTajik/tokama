@@ -6,7 +6,7 @@ import type { AgentDetail, AgentsListResult, BrokenAgentDetail, Setup } from "@t
 import { type ReactNode, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
-import { agentRows, filterRows, limitsNotes, limitsTitle, monogram, ownerLabel, rowName, runsOnName, summaryLine } from "./describe.js";
+import { agentRows, filterRows, limitsNotes, limitsTitle, monogram, ownerLabel, rowLine, rowName, runsOnName, summaryLine } from "./describe.js";
 import { useAgents } from "./useAgents.js";
 
 const TEXT = {
@@ -67,7 +67,7 @@ export function AgentsPage({ bridge, connection, setup }: AgentsPageProps) {
                 <li key={row.key}>
                   <button type="button" className="agent-row" aria-pressed={row.key === selected?.key} data-broken={row.broken || undefined} onClick={() => setSelectedKey(row.key)}>
                     <span className="agent-row-name ellipsis">{row.broken ? <span className="agent-row-flag">{TEXT.broken}</span> : null}{rowName(row)}</span>
-                    <span className="agent-row-line mono ellipsis">{row.broken ? row.entry.source : summaryLine(row.agent)}</span>
+                    <span className="agent-row-line mono ellipsis">{rowLine(row)}</span>
                   </button>
                 </li>
               ))}
@@ -174,7 +174,7 @@ function Detail({ agent }: { readonly agent: AgentDetail }) {
         {agent.roleCut && <p className="agents-note">{TEXT.roleCut}</p>}
       </Field>
       <Field label={TEXT.owner}>
-        <p className="agent-value">{ownerLabel(agent.owner)}</p>
+        <p className="agent-value">{ownerLabel(agent.owner, agent.replacesBuiltin)}</p>
       </Field>
     </article>
   );
@@ -195,7 +195,7 @@ function BrokenDetail({ entry }: { readonly entry: BrokenAgentDetail }) {
         </div>
       </header>
       <p className="agent-stored">
-        {TEXT.stored} <span className="mono">{entry.source}</span> · {ownerLabel(entry.owner)}
+        {TEXT.stored} <span className="mono">{entry.source}</span> · {ownerLabel(entry.owner, entry.replacesBuiltin)}
       </p>
       <p className="agents-note">{TEXT.brokenHint}</p>
       <ul className="agent-problems">
