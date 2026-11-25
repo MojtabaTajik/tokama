@@ -44,6 +44,27 @@ flow("opens an item and approves its decision", async ({ page }) => {
   await group(page, "Running").locator(".pl-title", { hasText: NEEDS_YOU }).waitFor({ state: "visible" });
 });
 
+flow("answers a decision on the Needs you page and the row leaves the list", async ({ page, screenshot }) => {
+  const rail = page.getByRole("navigation", { name: "App" });
+  await rail.getByRole("button", { name: /^Needs you/ }).click();
+  await page.getByRole("heading", { name: "Needs you", level: 1 }).waitFor();
+  const waiting = page.locator(".nr-row", { hasText: NEEDS_YOU });
+  await waiting.waitFor();
+  expect(await waiting.locator(".nr-kind").innerText()).toContain("Cloud-step approval");
+  await expect.poll(() => page.locator(".summary").innerText(), { message: "the page header" }).toMatch(/^1 waiting/);
+  await screenshot("6-needs-you");
+
+  // The title opens the drawer next to the page.
+  await waiting.locator(".nr-title").click();
+  await drawer(page).getByRole("heading", { name: NEEDS_YOU }).waitFor();
+
+  // The choice on the row sends the answer; the item runs on and the row goes.
+  await waiting.getByRole("button", { name: /^Approve and send/ }).click();
+  await waiting.waitFor({ state: "detached" });
+  await page.getByRole("heading", { name: "Nothing is waiting for you" }).waitFor();
+  await expect.poll(() => rail.getByRole("button", { name: /^Needs you/ }).getAttribute("aria-label"), { message: "the rail's Needs you count" }).toBe("Needs you");
+});
+
 flow("keeps list rows readable and apart with the drawer open", async ({ page, resize }) => {
   await row(page, VERIFYING).click();
   await drawer(page).getByRole("heading", { name: VERIFYING }).waitFor();

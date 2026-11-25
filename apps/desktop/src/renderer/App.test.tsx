@@ -116,7 +116,6 @@ describe("App shell", () => {
     await render(fakeBridge(CONNECTED).bridge);
     const disabled = $$('[aria-disabled="true"]').map((el) => el.getAttribute("aria-label") ?? el.textContent);
     expect(disabled).toEqual([
-      "Needs you · 1",
       "Insights",
       "Settings",
     ]);

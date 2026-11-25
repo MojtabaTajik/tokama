@@ -6,6 +6,7 @@ import { ItemDrawer } from "./drawer/ItemDrawer.js";
 import { ALL_WORK, type CliIssue, inView, needsYouCount, type View } from "./model.js";
 import { isMac, NewWork, type NewWorkHandle } from "./newwork/NewWork.js";
 import { AddRepoDialog } from "./repos/AddRepoDialog.js";
+import { NeedsYou } from "./needsyou/NeedsYou.js";
 import { MainArea } from "./shell/MainArea.js";
 import { Rail } from "./shell/Rail.js";
 import { Sidebar } from "./shell/Sidebar.js";
@@ -31,7 +32,9 @@ export interface AppProps {
 export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, version = "unknown", cliIssues = NO_ISSUES }: AppProps) {
   const { connection, data, loadError, stale, retry } = useEngine(bridge, retryDelayMs);
   const [panelOpen, setPanelOpen] = useState(true);
-  const [aboutOpen, setAboutOpen] = useState(false);
+  // What the main area shows: the board, the Needs you page or About.
+  const [page, setPage] = useState<"board" | "needs-you" | "about">("board");
+  const aboutOpen = page === "about";
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(undefined);
   const composer = useRef<NewWorkHandle>(null);
   // The folder the picker returned, while the Add repo dialog is open.
@@ -70,6 +73,21 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
   };
   const startIn = (target: View) => composer.current?.open(target.kind === "workflow" ? { templateId: target.id } : target.kind === "repo" ? { repoId: target.id } : undefined);
 
+  // Pinned below the board and the Needs you page, so New work keeps working from either.
+  const composerNode = setup !== undefined && setup.repos.length > 0 && connection.status !== "failed" && (
+    <NewWork
+      ref={composer}
+      bridge={bridge}
+      setup={setup}
+      onStarted={(itemId, started) => {
+        // Show the new item where the user is, or in All work when this view would hide it.
+        setPage("board");
+        views.reveal(inView(started, views.view) ? views.view : ALL_WORK);
+        setSelectedItemId(itemId);
+      }}
+    />
+  );
+
   return (
     <div className="shell">
       <Rail
@@ -79,8 +97,10 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
         needsYou={stale ? undefined : needsYouCount(items)}
         issues={cliIssues}
         aboutOpen={aboutOpen}
-        onBoard={() => setAboutOpen(false)}
-        onAbout={() => setAboutOpen(!aboutOpen)}
+        needsYouOpen={page === "needs-you"}
+        onBoard={() => setPage("board")}
+        onNeedsYou={() => setPage("needs-you")}
+        onAbout={() => setPage(aboutOpen ? "board" : "about")}
       />
       {panelOpen && (
         <Sidebar
@@ -92,7 +112,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
           now={now}
           view={views.view}
           onSelectView={(view) => {
-            setAboutOpen(false);
+            setPage("board");
             views.setView(view);
           }}
           collapsed={views.collapsed}
@@ -104,7 +124,22 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
         />
       )}
       {aboutOpen ? (
-        <About version={version} onClose={() => setAboutOpen(false)} />
+        <About version={version} onClose={() => setPage("board")} />
+      ) : page === "needs-you" ? (
+        <NeedsYou
+          bridge={bridge}
+          connection={connection}
+          loadError={loadError}
+          stale={stale}
+          onRetry={retry}
+          onRetryConnection={() => void bridge.retryConnection()}
+          setup={setup}
+          items={items}
+          now={now}
+          selectedItemId={selectedItemId}
+          onSelectItem={setSelectedItemId}
+          composer={composerNode}
+        />
       ) : (
         <MainArea
           connection={connection}
@@ -117,22 +152,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
           views={views}
           selectedItemId={selectedItemId}
           onSelectItem={setSelectedItemId}
-          composer={
-            setup !== undefined &&
-            setup.repos.length > 0 &&
-            connection.status !== "failed" && (
-              <NewWork
-                ref={composer}
-                bridge={bridge}
-                setup={setup}
-                onStarted={(itemId, started) => {
-                  // Show the new item where the user is, or in All work when this view would hide it.
-                  views.reveal(inView(started, views.view) ? views.view : ALL_WORK);
-                  setSelectedItemId(itemId);
-                }}
-              />
-            )
-          }
+          composer={composerNode}
         />
       )}
       {addingRepo !== undefined && <AddRepoDialog bridge={bridge} path={addingRepo} onClose={() => setAddingRepo(undefined)} />}

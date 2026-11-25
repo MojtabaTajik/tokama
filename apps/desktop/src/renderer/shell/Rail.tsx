@@ -1,7 +1,7 @@
 // The icon rail: panel toggle, Board, Needs you, Insights, Settings, Attention, then the user.
 // Insights is the one usage entry: hovering or focusing it lists each AI CLI, and a logged-out one
 // puts a ✕ on the icon. Attention opens a popup with the issues and how to fix them. The user
-// button opens About. The other buttons are marked aria-disabled until their screens exist.
+// button opens About. Needs you opens its page. The other buttons are marked aria-disabled until their screens exist.
 import { useEffect, useId, useRef, useState } from "react";
 import { brand } from "../brand/index.js";
 import { AI_CLIS, type CliIssue } from "../model.js";
@@ -33,14 +33,17 @@ export interface RailProps {
   readonly issues: readonly CliIssue[];
   /** About is the open view; the Board button then leads back. */
   readonly aboutOpen: boolean;
+  /** The Needs you page is the open view. */
+  readonly needsYouOpen: boolean;
   readonly onBoard: () => void;
+  readonly onNeedsYou: () => void;
   readonly onAbout: () => void;
 }
 
 /** "Needs you · 2", or just "Needs you" when there are none. */
 const withCount = (label: string, count: number) => (count > 0 ? `${label} · ${count}` : label);
 
-export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, aboutOpen, onBoard, onAbout }: RailProps) {
+export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, aboutOpen, needsYouOpen, onBoard, onNeedsYou, onAbout }: RailProps) {
   const tipId = useId();
   const popupId = useId();
   const attention = issues.length;
@@ -81,7 +84,7 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, abou
       >
         <PanelIcon />
       </button>
-      <button type="button" className="rail-button" aria-label={TEXT.board} title={TEXT.board} aria-current={aboutOpen ? undefined : "page"} onClick={onBoard}>
+      <button type="button" className="rail-button" aria-label={TEXT.board} title={TEXT.board} aria-current={aboutOpen || needsYouOpen ? undefined : "page"} onClick={onBoard}>
         <BoardIcon />
       </button>
       <button
@@ -90,7 +93,8 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, abou
         data-tone={needsYou !== undefined && needsYou > 0 ? "warn" : undefined}
         aria-label={needsYouLabel}
         title={needsYouLabel}
-        aria-disabled="true"
+        aria-current={needsYouOpen ? "page" : undefined}
+        onClick={onNeedsYou}
       >
         <InboxIcon />
         <Badge count={needsYou ?? 0} tone="warn" />
