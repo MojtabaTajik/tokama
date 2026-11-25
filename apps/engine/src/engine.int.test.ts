@@ -1,10 +1,10 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ClientEvent, connect, type EngineClient, requestShutdown } from "@tokama/client";
 import { API_VERSION, MAX_MESSAGE_BYTES } from "@tokama/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { type EngineHandle, startEngine } from "./engine.js";
 import { rawConnect, sampleItem, tempEngineDir, waitFor } from "./testing/helpers.js";
 
@@ -337,6 +337,34 @@ describe("engine service", () => {
     const handle = await engine(dir);
     expect(statSync(handle.endpoint.socketPath).isSocket()).toBe(true);
     expect((await client(dir)).engineId).toBe(handle.engineId);
+  });
+
+  it("keeps the lock of an engine that has been starting for longer than 10 s", async () => {
+    const dir = tempEngineDir(cleanups);
+    mkdirSync(dir, { mode: 0o700 });
+    // This process wrote the lock and has not listened yet; a minute passes.
+    writeFileSync(join(dir, "engine.lock"), `${process.pid} e-starting\n`, { mode: 0o600 });
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now + 60_000);
+    cleanups.push(() => vi.restoreAllMocks());
+
+    expect(await startEngine({ dir })).toMatchObject({ ok: false, error: { code: "already_running", message: expect.stringContaining(`pid ${process.pid}, still starting`) } });
+    expect(readFileSync(join(dir, "engine.lock"), "utf8")).toBe(`${process.pid} e-starting\n`);
+  });
+
+  it("takes over a lock whose pid now belongs to a process that started after the lock was written", async () => {
+    const dir = tempEngineDir(cleanups);
+    mkdirSync(dir, { mode: 0o700 });
+    const other = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60_000)"], { stdio: "ignore" });
+    cleanups.push(() => other.kill("SIGKILL"));
+    if (other.pid === undefined) throw new Error("no pid");
+    writeFileSync(join(dir, "engine.lock"), `${other.pid} e-crashed\n`, { mode: 0o600 });
+    const longAgo = new Date(Date.now() - 3_600_000);
+    utimesSync(join(dir, "engine.lock"), longAgo, longAgo);
+
+    const handle = await engine(dir);
+    expect(readFileSync(handle.endpoint.lockPath, "utf8")).toBe(`${process.pid} ${handle.engineId}\n`);
+    expect(other.exitCode).toBeNull();
   });
 
   it("still waits for a fresh lock that names no pid yet: another engine is still writing it", async () => {

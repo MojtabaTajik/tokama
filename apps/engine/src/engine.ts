@@ -64,6 +64,7 @@ import {
   parseOpeningMessage,
   type ParseError,
   pidAlive,
+  posixEngineProcesses,
   readPidFile,
   replaceTextSync,
   removeRepo,
@@ -189,9 +190,11 @@ export interface StartError {
 
 type ReplyResult = { ok: true; data: unknown } | { ok: false; error: { code: string; message: string } };
 
-// A lock whose pid is alive but whose socket does not answer belongs to an engine still starting,
-// unless it is older than this (the pid was then reused after a crash).
+// A lock that names no pid yet is still being written, unless it is older than this (its writer
+// then died between creating and writing it).
 const STARTING_GRACE_MS = 10_000;
+// `ps` gives start times to the second, and on Linux they can be off by about a second more.
+const START_TIME_SLACK_MS = 2_000;
 const PROBE_TIMEOUT_MS = 1_000;
 // A client that stops reading is disconnected once this much output is queued for it.
 const MAX_QUEUED_BYTES = 8 * MAX_MESSAGE_BYTES;
@@ -984,7 +987,10 @@ async function acquireLock(endpoint: LockSpec, content: string, log: (message: s
       if (!hasCode(error, "EEXIST")) return err({ code: "start_failed", message: `cannot create ${endpoint.lockPath}: ${String(error)}` });
     }
     const live = await lockIsLive(endpoint);
-    if (live.live) return err({ code: "already_running", message: `an engine is already running on ${live.socketPath}` });
+    if (live.live) {
+      const starting = live.startingPid === undefined ? "" : ` (pid ${live.startingPid}, still starting: it does not answer yet)`;
+      return err({ code: "already_running", message: `an engine is already running on ${live.socketPath}${starting}` });
+    }
     log(`removing a stale lock in ${endpoint.dir}`);
     unlinkIfPresent(endpoint.lockPath);
   }
@@ -994,16 +1000,24 @@ async function acquireLock(endpoint: LockSpec, content: string, log: (message: s
 /**
  * A lock whose third field names a socket (the home lock) is probed on that socket; the engine
  * dir's lock is probed on the dir's socket.
+ *
+ * A lock whose engine does not answer yet is live while the process that wrote it still runs,
+ * however long it has been starting (a large item log, a board index rebuild, a slow disk). The
+ * writer is the process with the lock's pid that started before the lock was written; a process
+ * that started later took the pid over after the engine died. When the start time cannot be read,
+ * the lock counts as live: a refused start is safe, two engines on one home are not.
  */
-async function lockIsLive(endpoint: LockSpec): Promise<{ live: boolean; socketPath: string }> {
+async function lockIsLive(endpoint: LockSpec): Promise<{ live: boolean; socketPath: string; startingPid?: number }> {
   const lock = readPidFile(endpoint.lockPath);
   if (lock === undefined) return { live: await socketAnswers(endpoint.socketPath), socketPath: endpoint.socketPath };
-  const ageMs = Date.now() - lock.writtenAt;
   const socketPath = lock.fields.slice(2).join(" ") || endpoint.socketPath;
   if (await socketAnswers(socketPath)) return { live: true, socketPath };
-  if (lock.pid !== undefined && !pidAlive(lock.pid)) return { live: false, socketPath };
-  // No pid yet: the lock is still being written.
-  return { live: ageMs < STARTING_GRACE_MS, socketPath };
+  if (lock.pid === undefined) return { live: Date.now() - lock.writtenAt < STARTING_GRACE_MS, socketPath };
+  if (!pidAlive(lock.pid)) return { live: false, socketPath };
+  const info = await posixEngineProcesses.describe(lock.pid).catch(() => "unknown" as const);
+  // Nothing read: the process has exited since, or ps printed something unexpected.
+  const live = info === undefined ? pidAlive(lock.pid) : info === "unknown" || info.startedAt <= lock.writtenAt + START_TIME_SLACK_MS;
+  return live ? { live, socketPath, startingPid: lock.pid } : { live, socketPath };
 }
 
 /** True when something accepts connections on the socket (or it does not answer in time). */

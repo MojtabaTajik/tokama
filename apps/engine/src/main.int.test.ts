@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type ClientEvent, connect, type EngineClient } from "@tokama/client";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { startEngine } from "./engine.js";
 import { tempEngineDir, waitFor } from "./testing/helpers.js";
 
 const MAIN = fileURLToPath(new URL("../dist/main.js", import.meta.url));
@@ -135,6 +136,32 @@ describe("engine process", () => {
     expect(second.status).toBe(3);
     expect(second.stderr).toContain("already running");
     expect(readFileSync(`${dir}/engine.token`, "utf8")).toBe(token);
+  });
+
+  it("does not take the locks of an engine that has been starting for longer than 10 s", { timeout: 60_000 }, async () => {
+    const dir = tempEngineDir(cleanups);
+    const home = homeOf(dir);
+    const otherDir = join(dirname(dir), "other");
+    // The second engines run a minute ahead of this one, as if they started a minute later.
+    const later = ["--import", "data:text/javascript,const now = Date.now; Date.now = () => now() + 60000;"];
+    const second: { status: number | null; stderr: string }[] = [];
+    // This engine holds both locks and has not opened its storage or listened yet. The second
+    // engines start and end while it waits here.
+    const onDiagnostics = () => {
+      for (const engineDir of [dir, otherDir]) {
+        const run = spawnSync(process.execPath, [...later, MAIN, "--dir", engineDir, "--home", home], { encoding: "utf8", timeout: 20_000, killSignal: "SIGKILL" });
+        second.push({ status: run.status, stderr: run.stderr });
+      }
+    };
+    const first = await startEngine({ dir, home, onDiagnostics });
+    if (!first.ok) throw new Error(first.error.message);
+    cleanups.push(() => first.value.close());
+
+    expect(second.map((run) => run.status)).toEqual([3, 3]);
+    expect(second.every((run) => run.stderr.includes("already running"))).toBe(true);
+    expect(readFileSync(join(dir, "engine.lock"), "utf8")).toBe(`${process.pid} ${first.value.engineId}\n`);
+    expect(readFileSync(join(home, "engine.lock"), "utf8")).toContain(first.value.engineId);
+    expect(existsSync(join(otherDir, "engine.lock"))).toBe(false);
   });
 
   it("serves the sample data set with --sample", { timeout: 30_000 }, async () => {
