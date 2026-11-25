@@ -7,7 +7,7 @@ import { type KeyboardEvent, useEffect, useId, useLayoutEffect, useRef, useState
 import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
 import { itemElement } from "../list/useFocusFollow.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
-import { attemptLine, decisionKind, hasEnded, nextRunLine, itemMark, KIND, outcomeLine, PRIVACY, stepAgent, stepMark, stepPosition, templateOf, whereLine } from "./describe.js";
+import { attemptLine, decisionKind, hasEnded, nextRunLine, runLine, itemMark, KIND, outcomeLine, PRIVACY, stepAgent, stepMark, stepPosition, templateOf, whereLine } from "./describe.js";
 import { DecisionChoices } from "./DecisionChoices.js";
 import { DiffTab, useDecisionDiff } from "./DiffView.js";
 import { useItem } from "./useItem.js";
@@ -41,7 +41,7 @@ const TEXT = {
   failed: (message: string) => `Could not send it: ${message}`,
   committed: (commit: string) => `Committed · ${commit}`,
   committedLine: (title: string, branch: string | undefined) => `${title}${branch === undefined ? "" : ` · on ${branch}`} · Done`,
-  makingChanges: (agent: string, run: string | undefined) => `${agent} is making your changes${run === undefined ? "" : ` · ${run.toLowerCase()}`}`,
+  makingChanges: (agent: string, run: string | undefined) => `${agent} is making your changes${run === undefined ? "" : ` · ${run}`}`,
   yourNote: (note: string) => `Your note: "${note}"`,
 } as const;
 
@@ -76,9 +76,11 @@ export interface ItemDrawerProps {
   /** Names the item's template, agents and connections; undefined until the first load. */
   readonly setup: Setup | undefined;
   readonly onClose: () => void;
+  /** Changes each time the engineer asks for the item's diff (Review the diff): the drawer shows its Diff tab. */
+  readonly diffAsked?: number | undefined;
 }
 
-export function ItemDrawer({ bridge, itemId, setup, onClose }: ItemDrawerProps) {
+export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked }: ItemDrawerProps) {
   const { item, error, refresh } = useItem(bridge, itemId);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<Notice | undefined>(undefined);
@@ -103,7 +105,6 @@ export function ItemDrawer({ bridge, itemId, setup, onClose }: ItemDrawerProps) 
     setConfirmingStop(false);
     setBusy(false);
     setTab("Steps");
-    openedOn.current = undefined;
   }, [itemId]);
   // On close, focus goes back to the opener, if it is still on the screen; if the item moved to
   // another group or column meanwhile, to the item's current row or card.
@@ -167,13 +168,20 @@ export function ItemDrawer({ bridge, itemId, setup, onClose }: ItemDrawerProps) 
     if (item) void send({ type: "stop_item", itemId: item.id });
   };
 
-  // A change approval opens on its Diff tab, once per item shown.
+  // Each new change approval opens on the Diff tab; once it is answered, the tab goes back to Steps.
+  const changeAsked = item?.state === "needs_you" && item.decision?.hasDiff === true ? item.decision.id : undefined;
   const openedOn = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (item === undefined || openedOn.current === item.id) return;
-    openedOn.current = item.id;
-    if (item.state === "needs_you" && item.decision?.hasDiff === true) setTab("Diff");
-  }, [item]);
+    if (changeAsked !== undefined && openedOn.current !== changeAsked) setTab("Diff");
+    else if (changeAsked === undefined && openedOn.current !== undefined) setTab((current) => (current === "Diff" ? "Steps" : current));
+    openedOn.current = changeAsked;
+  }, [changeAsked]);
+  // Only a new ask counts: a drawer that opens later does not jump to Diff for an old one.
+  const lastAsked = useRef(diffAsked);
+  useEffect(() => {
+    if (diffAsked !== lastAsked.current) setTab("Diff");
+    lastAsked.current = diffAsked;
+  }, [diffAsked]);
   const diff = useDecisionDiff(bridge, itemId, item?.state === "needs_you" ? item.decision : undefined);
 
   const template = item && templateOf(item, setup);
@@ -357,7 +365,7 @@ function After({ item, setup }: { readonly item: ItemRecord; readonly setup: Set
   }
   const step = item.steps.find((candidate) => candidate.state === "running" && candidate.changesNote !== undefined);
   if (step?.changesNote === undefined) return null;
-  const line = TEXT.makingChanges(stepAgent(step, setup?.agents ?? []).name, nextRunLine({ ...step, attempts: step.attempts?.slice(0, -1) ?? [] }));
+  const line = TEXT.makingChanges(stepAgent(step, setup?.agents ?? []).name, runLine(step));
   return (
     <section className="after" data-tone="live" aria-label={line}>
       <p className="after-head">

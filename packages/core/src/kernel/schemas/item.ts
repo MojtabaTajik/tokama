@@ -65,8 +65,10 @@ export const StepRecordSchema = z.strictObject({
   detail: z.string().min(1).max(200).optional(),
   /** The step's attempts so far, oldest first. */
   attempts: z.array(AttemptSummarySchema).max(50).optional(),
-  /** How often the step may run in the item. */
-  maxAttempts: z.int().min(1).max(50).optional(),
+  /** The runs that count toward the limit: every attempt but those whose run failed. */
+  runs: z.int().nonnegative().optional(),
+  /** How often the step may run in the item now: max_attempts plus the runs the engineer granted. */
+  maxAttempts: z.int().min(1).max(100).optional(),
   /** While the step runs again after Request changes: the note it was sent with. */
   changesNote: z.string().min(1).max(2000).optional(),
 });

@@ -54,10 +54,19 @@ export function decisionKind(decision: Pick<Decision, "kind" | "hasDiff">): stri
   return decision.kind === undefined ? undefined : DECISION_KIND[decision.kind];
 }
 
-/** "Run 2 of 3": the run Request changes would start, or undefined when the step's limit is not known. */
-export function nextRunLine(step: Pick<StepRecord, "attempts" | "maxAttempts"> | undefined): string | undefined {
-  if (step?.maxAttempts === undefined) return undefined;
-  return `Run ${(step.attempts?.length ?? 0) + 1} of ${step.maxAttempts}`;
+/**
+ * "Run 2 of 3": the run Request changes would start, as the engine counts it; at the limit, that
+ * the engine asks first. Undefined when the engine sent no counts.
+ */
+export function nextRunLine(step: Pick<StepRecord, "runs" | "maxAttempts"> | undefined): string | undefined {
+  if (step?.maxAttempts === undefined || step.runs === undefined) return undefined;
+  const next = step.runs + 1;
+  return next > step.maxAttempts ? `The step has used its ${step.maxAttempts} runs, so Tokama asks you before it runs again` : `Run ${next} of ${step.maxAttempts}`;
+}
+
+/** "run 2 of 3": the run in progress, as the engine counts it. */
+export function runLine(step: Pick<StepRecord, "runs" | "maxAttempts">): string | undefined {
+  return step.maxAttempts === undefined || step.runs === undefined ? undefined : `run ${step.runs} of ${step.maxAttempts}`;
 }
 
 const ATTEMPT_RESULT: Record<NonNullable<AttemptSummary["result"]>, Mark> = {

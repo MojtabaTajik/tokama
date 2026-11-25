@@ -5,6 +5,8 @@ import {
   type AttemptRecord,
   type AttemptSummary,
   type Decision,
+  attemptLimit,
+  countedAttempts,
   type DecisionKind,
   REQUEST_CHANGES_ID,
   type ItemKind,
@@ -76,7 +78,7 @@ export function toItemRecord(item: StoredItem): ItemRecord | undefined {
       ...(def && def.connections.length > 0 && { uses: def.connections.map(({ connectionId, access }) => ({ connectionId, access })) }),
       ...(detail !== undefined && { detail }),
       ...(attempts.length > 0 && { attempts }),
-      ...(def && { maxAttempts: def.maxAttempts }),
+      ...(def && { runs: countedAttempts(step), maxAttempts: attemptLimit(item, step, def.maxAttempts) }),
       ...(note !== undefined && { changesNote: note }),
     };
   });

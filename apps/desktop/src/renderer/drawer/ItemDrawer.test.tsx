@@ -229,7 +229,7 @@ describe("ItemDrawer change to approve", () => {
         { id: "stop", label: "Stop" },
       ],
     },
-    steps: [{ name: "Change", stage: "review", state: "needs_you", agentId: "local-builder", data: "none", maxAttempts: 3, attempts: [{ attempt: 1, result: "passed", checks: [] }] }],
+    steps: [{ name: "Change", stage: "review", state: "needs_you", agentId: "local-builder", data: "none", runs: 1, maxAttempts: 3, attempts: [{ attempt: 1, result: "passed", checks: [] }] }],
   } as unknown as ItemRecord;
   const file = (path: string, extra: Record<string, unknown> = {}) => ({ path, status: "modified", added: 1, removed: 1, binary: false, cut: false, hunks: [], ...extra });
   const diff = {
@@ -275,7 +275,11 @@ describe("ItemDrawer change to approve", () => {
     ]);
     expect(text(".dv-more")).toBe("2 more files not listed");
     expect($$(".dv-file").map((el) => el.getAttribute("aria-pressed"))).toEqual(["true", "false", "false", "false"]);
-    expect(text(".dv-panel-head")).toBe("src/a.tsmodified · +1 −1Open in your editor ↗");
+    expect(text(".dv-panel-head")).toBe("src/a.tsmodified · +1 −1Open in your editor ↗Opening a file from Tokama comes later. Open the worktree folder in your editor.");
+    // The open button is not there yet, and says so to every reader, not only on hover.
+    const open = $(".dv-open")!;
+    expect(open.getAttribute("aria-disabled")).toBe("true");
+    expect(document.getElementById(open.getAttribute("aria-describedby")!)?.textContent).toBe("Opening a file from Tokama comes later. Open the worktree folder in your editor.");
     expect(rows()).toEqual(["|||@@ -4,2 +4,2 @@ function total() {", "4|4||keep", "5||−|<img src=x onerror=\"alert(1)\">", "|5|+|<b>bold</b>", "|||\\ No newline at end of file"]);
     expect($$(".dv-row [aria-label]").map((el) => el.getAttribute("aria-label"))).toEqual(["unchanged", "removed", "added"]);
     expect($$(".drawer img, .drawer b")).toEqual([]);
@@ -285,7 +289,7 @@ describe("ItemDrawer change to approve", () => {
     const { bridge } = withDiff({ ok: true, data: diff });
     await renderDrawer(bridge, waiting.id);
     await pick("logo.png");
-    expect(text(".dv-note")).toBe("Binary file, not shown here.Open it in your editor or an image viewer to compare.In repo orders-api: .tokama/wt/abc/logo.pngOpen in your editor ↗");
+    expect(text(".dv-note")).toBe("Binary file, not shown here.Open it in your editor or an image viewer to compare.In repo orders-api: .tokama/wt/abc/logo.pngOpen in your editor ↗Opening a file from Tokama comes later. Open the worktree folder in your editor.");
     await pick("package-lock.json");
     expect(text(".dv-note-head")).toBe("Too large to show here.");
     expect($$(".dv-note-text")[0]?.textContent).toBe("1,533 changed lines; the drawer shows files up to 1,000 changed lines. Open it in your editor to review.");
@@ -334,8 +338,33 @@ describe("ItemDrawer change to approve", () => {
     expect(command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: waiting.id, decisionId: DIFF_DECISION, choice: "request_changes", note: "Keep the old name." });
   });
 
+  it("at the step's limit, the note says Tokama asks before it runs again", async () => {
+    const atLimit = { ...waiting, steps: [{ ...waiting.steps[0]!, runs: 3 }] } as unknown as ItemRecord;
+    const { bridge } = withDiff({ ok: true, data: diff }, [atLimit]);
+    await renderDrawer(bridge, atLimit.id);
+    await click(button("Request changes"));
+    expect(text(".decision-note-hint")).toBe("Goes into Local builder's next run with the current diff. The step has used its 3 runs, so Tokama asks you before it runs again.");
+  });
+
+  it("opens on Diff for each new change approval, goes back to Steps once it is answered, and on Review the diff", async () => {
+    const running = { ...waiting, state: "running", decision: undefined } as unknown as ItemRecord;
+    const { bridge, push } = withDiff({ ok: true, data: diff }, [running]);
+    await renderDrawer(bridge, running.id);
+    expect(tab("Steps")?.getAttribute("aria-selected")).toBe("true");
+    // The question arrives while the drawer shows the item.
+    await push(waiting);
+    expect(tab("Diff")?.getAttribute("aria-selected")).toBe("true");
+    await click(tab("Steps"));
+    // Review the diff asks again for an item the drawer already shows.
+    await act(async () => root.render(<ItemDrawer bridge={bridge} itemId={waiting.id} setup={setup} onClose={vi.fn()} diffAsked={1} />));
+    expect(tab("Diff")?.getAttribute("aria-selected")).toBe("true");
+    // Answered: the Diff tab has nothing to show, so the drawer goes back to Steps.
+    await push(running);
+    expect(tab("Steps")?.getAttribute("aria-selected")).toBe("true");
+  });
+
   it("after the decision: the step running again with your note, then the commit", async () => {
-    const again = { ...waiting, state: "running", decision: undefined, steps: [{ ...waiting.steps[0]!, state: "running", changesNote: "Keep the old name.", attempts: [{ attempt: 1, result: "passed", checks: [] }, { attempt: 2, checks: [] }] }] } as unknown as ItemRecord;
+    const again = { ...waiting, state: "running", decision: undefined, steps: [{ ...waiting.steps[0]!, state: "running", changesNote: "Keep the old name.", runs: 2, attempts: [{ attempt: 1, result: "passed", checks: [] }, { attempt: 2, checks: [] }] }] } as unknown as ItemRecord;
     const { bridge, push } = withDiff({ ok: true, data: diff }, [again]);
     await renderDrawer(bridge, again.id);
     expect(text(".after")).toBe("●Local builder is making your changes · run 2 of 3Your note: \"Keep the old name.\"");

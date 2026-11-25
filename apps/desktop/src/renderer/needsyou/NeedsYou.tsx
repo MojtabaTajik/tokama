@@ -49,6 +49,8 @@ export interface NeedsYouProps {
   readonly now: number;
   readonly selectedItemId: string | undefined;
   readonly onSelectItem: (itemId: string) => void;
+  /** Opens the item's drawer on its Diff tab. */
+  readonly onReviewDiff: (itemId: string) => void;
   /** Pinned below the list: the New work input, so it keeps working from this page. */
   readonly composer?: ReactNode;
 }
@@ -99,7 +101,7 @@ export function NeedsYou(props: NeedsYouProps) {
             ) : (
               <ol className="nr-list" aria-label={TEXT.list}>
                 {rows.map((row, index) => (
-                  <Row key={row.item.id} row={row} index={index} bridge={props.bridge} selected={row.item.id === props.selectedItemId} onSelect={props.onSelectItem} onRefresh={onRetry} />
+                  <Row key={row.item.id} row={row} index={index} bridge={props.bridge} selected={row.item.id === props.selectedItemId} onSelect={props.onSelectItem} onReviewDiff={props.onReviewDiff} onRefresh={onRetry} />
                 ))}
               </ol>
             )}
@@ -134,10 +136,11 @@ interface RowProps {
   readonly bridge: TokamaBridge;
   readonly selected: boolean;
   readonly onSelect: (itemId: string) => void;
+  readonly onReviewDiff: (itemId: string) => void;
   readonly onRefresh: () => void;
 }
 
-function Row({ row, index, bridge, selected, onSelect, onRefresh }: RowProps) {
+function Row({ row, index, bridge, selected, onSelect, onReviewDiff, onRefresh }: RowProps) {
   const { item, decision } = row;
   const [busy, setBusy] = useState(false);
   const diff = useDecisionDiff(bridge, item.id, decision);
@@ -229,8 +232,7 @@ function Row({ row, index, bridge, selected, onSelect, onRefresh }: RowProps) {
           run={nextRunLine(item.steps[decision.stepIndex])}
           extra={
             decision.hasDiff === true ? (
-              // Opens the drawer, which opens a change approval on its Diff tab.
-              <button type="button" className="link nr-review" aria-label={`${TEXT.review}: ${item.title}`} onClick={() => onSelect(item.id)}>
+              <button type="button" className="link nr-review" aria-label={`${TEXT.review}: ${item.title}`} onClick={() => onReviewDiff(item.id)}>
                 {TEXT.review}
               </button>
             ) : undefined

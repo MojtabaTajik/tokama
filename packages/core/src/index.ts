@@ -53,6 +53,7 @@ export type { AgentCallRequest, AgentRuntime, ToolLimits } from "./kernel/ports/
 export * as adapters from "./composition.js";
 // The run loop and its commands, for the engine service.
 export {
+  attemptLimit,
   createRunLoop,
   parseVerdict,
   titleFrom,

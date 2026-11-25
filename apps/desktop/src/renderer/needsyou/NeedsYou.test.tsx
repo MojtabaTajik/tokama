@@ -187,7 +187,7 @@ describe("the Needs you page", () => {
           { id: "stop", label: "Stop" },
         ],
       },
-      steps: [{ name: "Change", stage: "review", state: "needs_you", agentId: "local-builder", data: "none", maxAttempts: 3, attempts: [{ attempt: 1, result: "passed", checks: [] }] }],
+      steps: [{ name: "Change", stage: "review", state: "needs_you", agentId: "local-builder", data: "none", runs: 1, maxAttempts: 3, attempts: [{ attempt: 1, result: "passed", checks: [] }] }],
     } as unknown as ItemRecord;
     const file = (path: string, extra: Record<string, unknown> = {}) => ({ path, status: "modified", added: 10, removed: 2, binary: false, cut: false, hunks: [{ header: "@@ -1 +1 @@", lines: ["-a", "+b"] }], ...extra });
     const diff = {
@@ -214,6 +214,10 @@ describe("the Needs you page", () => {
     await click($$("button").find((el) => el.textContent === "Cancel"));
     await click($(".nr-review"));
     await wait(20);
+    expect($('.drawer [role="tab"][aria-selected="true"]')?.textContent).toBe("Diff");
+    // With the drawer already on the item, on another tab, Review the diff shows the Diff tab again.
+    await click($$('.drawer [role="tab"]').find((el) => el.textContent === "Steps"));
+    await click($(".nr-review"));
     expect($('.drawer [role="tab"][aria-selected="true"]')?.textContent).toBe("Diff");
     await click(choiceButtons(row)[0]);
     expect(fake.command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: change.id, decisionId: change.decision!.id, choice: "approve" });

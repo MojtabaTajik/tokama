@@ -44,6 +44,8 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
   const usage = useUsage(bridge, connection, usageRange, page === "insights" || tipShown);
   const aboutOpen = page === "about";
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(undefined);
+  // Counts each "Review the diff": the drawer shows the item's Diff tab, also when it shows the item already.
+  const [diffAsked, setDiffAsked] = useState<number | undefined>(undefined);
   const composer = useRef<NewWorkHandle>(null);
   // The folder the picker returned, while the Add repo dialog is open.
   const [addingRepo, setAddingRepo] = useState<string | undefined>(undefined);
@@ -181,6 +183,10 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
           now={now}
           selectedItemId={selectedItemId}
           onSelectItem={setSelectedItemId}
+          onReviewDiff={(itemId) => {
+            setSelectedItemId(itemId);
+            setDiffAsked((count) => (count ?? 0) + 1);
+          }}
           composer={composerNode}
         />
       ) : (
@@ -199,7 +205,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
         />
       )}
       {addingRepo !== undefined && <AddRepoDialog bridge={bridge} path={addingRepo} onClose={() => setAddingRepo(undefined)} />}
-      {!aboutOpen && selectedItemId !== undefined && <ItemDrawer bridge={bridge} itemId={selectedItemId} setup={setup} onClose={() => setSelectedItemId(undefined)} />}
+      {!aboutOpen && selectedItemId !== undefined && <ItemDrawer bridge={bridge} itemId={selectedItemId} setup={setup} diffAsked={diffAsked} onClose={() => setSelectedItemId(undefined)} />}
     </div>
   );
 }

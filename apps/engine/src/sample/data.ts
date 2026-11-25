@@ -334,7 +334,7 @@ export function sampleItems(now: number) {
           { id: "stop", label: "Stop" },
         ],
       },
-      steps: steps(templates.quickChange, ["needs_you"], { 0: "waits for you" }).map((step) => ({ ...step, maxAttempts: 3, attempts: [{ attempt: 1, result: "passed", checks: [] }] })),
+      steps: steps(templates.quickChange, ["needs_you"], { 0: "waits for you" }).map((step) => ({ ...step, runs: 1, maxAttempts: 3, attempts: [{ attempt: 1, result: "passed", checks: [] }] })),
     },
     {
       ...base,

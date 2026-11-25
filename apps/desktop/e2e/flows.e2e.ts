@@ -244,8 +244,10 @@ flow("Quick change: New work offers it for a repo with no checks; the drawer sho
   const note = drawer(page).locator(".needs-you");
   await note.getByRole("button", { name: "Request changes" }).click();
   await note.locator(".decision-note-text").fill("Leave the metrics line out.");
+  expect(await note.locator(".decision-note-hint").innerText()).toBe("Goes into Local builder's next run with the current diff. Run 2 of 3.");
   await screenshot("14-quick-change-note");
   await note.getByRole("button", { name: "Send to Local builder" }).click();
   await note.waitFor({ state: "detached" });
   await expect.poll(() => drawer(page).locator(".after").innerText(), { message: "the step runs again with the note" }).toContain('Your note: "Leave the metrics line out."');
+  expect(await drawer(page).locator(".after-head").innerText()).toContain("Local builder is making your changes · run 2 of 3");
 });
