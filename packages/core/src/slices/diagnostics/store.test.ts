@@ -58,6 +58,21 @@ describe("DiagnosticsStore", () => {
     expect(lstatSync(dir).mode & 0o777).toBe(0o700);
   });
 
+  it("never keeps a name the redactor would change", async () => {
+    const store = await open();
+    const error = new Error("boom");
+    error.name = "northwind";
+    store.error("engine", "request", error);
+    store.report({ type: "error", source: "renderer", where: "uncaught", stack: "orders_api: forged" });
+    store.report({ type: "error", source: "renderer", where: "uncaught", stack: "OrdersApiError: forged" });
+    store.report({ type: "error", source: "renderer", where: "uncaught", stack: "RangeError: fine" });
+    const context = { ...SENTINEL_CONTEXT, repoNames: ["OrdersApiError"] };
+    const names = (await open({ redaction: () => context })).list({ types: ["error"] }).entries.map((entry) => entry.type === "error" && entry.name);
+    expect(store.list({ types: ["error"] }).entries.map((entry) => entry.type === "error" && entry.name)).toEqual(["RangeError", "OrdersApiError", "Error", "Error"]);
+    // Checked again on list: a repo added later with that name hides it too.
+    expect(names).toEqual(["RangeError", "Error", "Error", "Error"]);
+  });
+
   it("cleans again on list, with repos added after the entry was written", async () => {
     let context = { ...SENTINEL_CONTEXT, repoNames: [] as string[] };
     const store = await open({ redaction: () => context });

@@ -72,6 +72,36 @@ describe("redactText", () => {
     expect(redactText("<path> <url> <token>", { ...none, repoNames: ["path", "url"] })).toBe("<path> <url> <token>");
   });
 
+  it("does not take a sibling folder for a known one", () => {
+    const context = { ...none, paths: ["/Users/jdoe", "/Users/jdoe/src/api"] };
+    expect(redactText("ENOENT, open '/Users/jdoe/src/api-gateway/customers/acme-contract.ts'", context)).toBe("ENOENT, open '<path>'");
+    expect(redactText("at x (/Users/jdoe/src/api.old/acme.ts:1:2)", context)).toBe("at x (<path>:1:2)");
+  });
+
+  it("removes paths and emails in any script", () => {
+    for (const text of ["cannot read src/客户合同.ts", "Kundé/Rechnung-Müller.ts", "客户合同/报价单.ts", "mail jürgen.müller@kanzlei-müller.de"]) {
+      const cleaned = redactText(text, none);
+      for (const fragment of ["客户", "报价", "Rechnung", "Kundé", "jürgen", "kanzlei"]) expect(cleaned, cleaned).not.toContain(fragment);
+    }
+  });
+
+  it("removes secrets in quotes and JSON", () => {
+    expect(redactText(`{"password":"hunter2","api_key":"abcd1234"}`, none)).toBe(`{"password":"<token>","api_key":"<token>"}`);
+    expect(redactText("token: 'abc123secret'", none)).toBe("token: '<token>'");
+  });
+
+  it("removes paths after a placeholder, and never keeps a path that climbs out of a code root", () => {
+    expect(redactText("<path>/acme/secret.ts and cmd >/Volumes/Acme/out.txt", none)).toBe("<path> and cmd ><path>");
+    expect(redactText("at a (/opt/tokama/dist/../../../work/acme-corp/orders.js:1:1)", { ...none, codeRoots: ["/opt/tokama"] })).toBe("at a (<path>:1:1)");
+  });
+
+  it("stays fast on long runs that look like emails or URLs", () => {
+    const started = performance.now();
+    redactText("a.".repeat(16_000), none);
+    redactText("a+".repeat(16_000), none);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
   it("is idempotent, so entries can be cleaned again when read", () => {
     const once = cleanStack(sentinelStack(), SENTINEL_CONTEXT);
     expect(cleanStack(once, SENTINEL_CONTEXT)).toBe(once);
@@ -124,5 +154,6 @@ describe("describeThrown", () => {
   it("reads the name of a reported stack", () => {
     expect(nameOfStack("RangeError: too big\n    at x")).toBe("RangeError");
     expect(nameOfStack("something odd happened")).toBe("Error");
+    expect(nameOfStack("TypeError [ERR_X]: y\norders_api: boom")).toBe("Error");
   });
 });

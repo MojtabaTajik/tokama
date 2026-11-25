@@ -32,11 +32,13 @@ const INPUT_CAP = 32_000;
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
 // What a path may hold in a stack line: it ends at whitespace, quotes, brackets or the `:line:col`.
 const PATH_CHARS = "[^\\s'\"<>()\\[\\]{},;:*|]";
-// Built files of Tokama's own, below a code root.
-const OWN_FILE = /^(?:(?:apps|packages)\/[a-z0-9-]+\/)?(?:dist|out)\/[A-Za-z0-9._/-]+\.[cm]?js$|^node_modules\/[A-Za-z0-9@._/-]+\.[cm]?js$/;
+// Built files of Tokama's own, below a code root; never a path that climbs out with `..`.
+const OWN_FILE = /^(?!(?:.*\/)?\.\.(?:\/|$))(?:(?:apps|packages)\/[a-z0-9-]+\/)?(?:dist|out)\/[A-Za-z0-9._/-]+\.[cm]?js$|^node_modules\/[A-Za-z0-9@._/-]+\.[cm]?js$/;
 
-const URL_PATTERN = /\b[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^\s'"<>()]+/g;
-const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
+// The lookbehinds start a match only at the start of a run, which keeps these linear on long input.
+const URL_PATTERN = /(?<![a-zA-Z0-9+.-])[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^\s'"<>()]+/g;
+// Letters and digits of any script: a name such as `jürgen.müller@kanzlei-müller.de` is caught too.
+const EMAIL = /(?<![\p{L}\p{N}._%+-])[\p{L}\p{N}._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.\p{L}{2,}/gu;
 const TOKEN_SHAPES = [
   /\bsk-[A-Za-z0-9_-]{16,}/g,
   /\bgh[pousr]_[A-Za-z0-9]{20,}/g,
@@ -47,12 +49,15 @@ const TOKEN_SHAPES = [
   /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g,
 ];
 const BEARER = /\b(Bearer|Basic|token)\s+[A-Za-z0-9._~+/=-]{8,}/gi;
-const SECRET_ASSIGNMENT = /\b(password|passwd|secret|token|api[_-]?key|access[_-]?key|auth)(\s*[=:]\s*)[^\s'",;]+/gi;
+// Also quoted, as in JSON: `"password":"..."`, `token: '...'`.
+const SECRET_ASSIGNMENT = /\b(password|passwd|secret|token|api[_-]?key|access[_-]?key|auth)(["']?\s*[=:]\s*["']?)[^\s'",;}]+/gi;
 const WINDOWS_PATH = /\b[A-Za-z]:\\[^\s'"<>()|*?]*/g;
 const UNC_PATH = /\\\\[^\s'"<>()|*?]+/g;
-const ABSOLUTE_PATH = new RegExp(`(?<![\\w.>~/\\\\-])~?/${PATH_CHARS}+`, "g");
-// Relative paths: two or more parts with `/` or `\`. Not right after `node:`, so `node:internal/...` stays.
-const RELATIVE_PATH = /(?<![\w.+=/\\><-])(?<!node:)[\w.+=-]+(?:[/\\][\w.+=-]+)+[/\\]?/g;
+// Not inside a word of any script, and not after `<app>`, whose built-file path is kept.
+const ABSOLUTE_PATH = new RegExp(`(?<![\\p{L}\\p{N}_.~/\\\\-])(?<!<app>)~?/${PATH_CHARS}+`, "gu");
+// Relative paths: two or more parts with `/` or `\`, in any script. Not right after `node:`, so
+// `node:internal/...` stays, and not inside `<app>/...`.
+const RELATIVE_PATH = /(?<![\p{L}\p{N}_.+=/\\<-])(?<!node:)[\p{L}\p{N}_.+=-]+(?:[/\\][\p{L}\p{N}_.+=-]+)+[/\\]?/gu;
 const LONG_HEX = /(?<![A-Za-z0-9])[0-9a-fA-F]{32,}(?![A-Za-z0-9])/g;
 const LONG_BASE64 = /(?<![A-Za-z0-9+/=_-])[A-Za-z0-9+/_-]{32,}={0,2}(?![A-Za-z0-9+/=_-])/g;
 
@@ -68,7 +73,8 @@ export function redactText(input: string, context: RedactionContext): string {
   text = text.replace(/\bfile:\/\//g, "");
   text = text.replace(URL_PATTERN, "<url>");
   for (const path of byLength(context.paths)) {
-    text = text.replace(new RegExp(`${escape(trimSlash(path))}(?:[/\\\\]${PATH_CHARS}*)?`, "g"), "<path>");
+    // It must end at a separator or a delimiter, so `/src/api` does not match the start of `/src/api-gateway`.
+    text = text.replace(new RegExp(`${escape(trimSlash(path))}(?:[/\\\\]${PATH_CHARS}*)?(?![^\\s'"<>()\\[\\]{},;:*|/\\\\])`, "g"), "<path>");
   }
   text = text.replace(EMAIL, "<email>");
   for (const shape of TOKEN_SHAPES) text = text.replace(shape, "<token>");
@@ -82,7 +88,8 @@ export function redactText(input: string, context: RedactionContext): string {
   if (context.userName !== undefined && context.userName !== "") text = text.replace(wordPattern(context.userName), "<user>");
   text = text.replace(LONG_HEX, "<token>");
   text = text.replace(LONG_BASE64, (run) => (/\d/.test(run) && /[A-Za-z]/.test(run) ? "<token>" : run));
-  return text;
+  // A path right after a placeholder (`<path>/x`) became a second placeholder; keep one.
+  return text.replace(/(<path>|<url>|<email>|<token>)(?:<path>)+/g, "$1");
 }
 
 /** A stack, cleaned and cut to MAX_STACK_LINES lines and MAX_STACK_CHARS characters. */
@@ -128,7 +135,7 @@ export function describeThrown(thrown: unknown): { name: string; stack: string }
 
 /** The error name at the start of a reported stack (`TypeError: ...`); `Error` when there is none. */
 export function nameOfStack(stack: string): string {
-  const first = /^([A-Za-z][A-Za-z0-9_]{0,63})(?::|$)/m.exec(stack.trimStart())?.[1];
+  const first = /^([A-Za-z][A-Za-z0-9_]{0,63})(?::|$)/.exec(stack.trimStart().split("\n")[0] ?? "")?.[1];
   return first !== undefined && ERROR_NAME.test(first) ? first : "Error";
 }
 

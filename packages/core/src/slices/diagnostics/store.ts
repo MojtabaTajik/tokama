@@ -36,7 +36,7 @@ import {
   type WarningCode,
 } from "../../kernel/schemas/index.js";
 import { z } from "zod";
-import { cleanStack, describeThrown, fingerprint, nameOfStack, type RedactionContext } from "./redact.js";
+import { cleanStack, describeThrown, fingerprint, nameOfStack, type RedactionContext, redactText } from "./redact.js";
 
 export const ENTRIES_FILE = "entries.jsonl";
 export const SETTINGS_FILE = "settings.json";
@@ -44,6 +44,8 @@ export const SETTINGS_FILE = "settings.json";
 export const RUNNING_FILE = "engine.running";
 
 const MAX_BYTES = 5 * 1024 * 1024;
+/** What an error's name may be: `Error`, `NonError`, or a class name such as `TypeError` or `DOMException`. */
+const ERROR_CLASS = /^(?:NonError|[A-Z][A-Za-z0-9]{0,50}(?:Error|Exception))$/;
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 const StoredSettingsSchema = z.strictObject({
@@ -220,7 +222,7 @@ export class DiagnosticsStore {
   /** Writes the pending usage counts, one entry per day. */
   flushUsage(): void {
     for (const [day, counts] of this.pending) {
-      this.record({ type: "usage", day, counts: [...counts].map(([action, count]) => ({ action, count })) });
+      this.record({ type: "usage", day, counts: [...counts].map(([action, count]) => ({ action, count: Math.min(count, 1_000_000) })) });
     }
     this.pending.clear();
   }
@@ -250,7 +252,7 @@ export class DiagnosticsStore {
       .filter(({ entry }) => (filter.types === undefined || filter.types.includes(entry.type)) && (filter.since === undefined || entry.at >= filter.since) && (filter.until === undefined || entry.at <= filter.until))
       .sort((a, b) => b.entry.at - a.entry.at || b.index - a.index)
       .map(({ entry }) => entry);
-    const entries = matching.slice(0, limit).map((entry) => (entry.type === "error" ? { ...entry, stack: cleanStack(entry.stack, context) } : entry));
+    const entries = matching.slice(0, limit).map((entry) => (entry.type === "error" ? { ...entry, name: safeName(entry.name, context), stack: cleanStack(entry.stack, context) } : entry));
     return { entries, truncated: matching.length > limit };
   }
 
@@ -318,8 +320,11 @@ export class DiagnosticsStore {
     return this.kept.length === before;
   }
 
-  private recordError(source: DiagnosticSource, where: ErrorWhere, name: string, rawStack: string): void {
-    const stack = cleanStack(rawStack, this.options.redaction());
+  private recordError(source: DiagnosticSource, where: ErrorWhere, rawName: string, rawStack: string): void {
+    const context = this.options.redaction();
+    const stack = cleanStack(rawStack, context);
+    // A thrower picks the name. Only an error class name the redactor leaves alone is kept.
+    const name = safeName(rawName, context);
     this.record({ type: "error", source, where, name, fingerprint: fingerprint(name, stack), stack });
   }
 
@@ -375,6 +380,11 @@ export class DiagnosticsStore {
     const written = replaceTextSync(join(this.options.dir, SETTINGS_FILE), `${JSON.stringify(this.settingsValue)}\n`);
     if (!written.ok) this.log(`cannot save the diagnostics settings: ${written.error.message}`);
   }
+}
+
+/** The name if it is an error class name the redactor leaves alone; otherwise `Error`. */
+function safeName(name: string, context: RedactionContext): string {
+  return ERROR_CLASS.test(name) && redactText(name, context) === name ? name : "Error";
 }
 
 function parseLine(line: string): DiagnosticEntry | undefined {
