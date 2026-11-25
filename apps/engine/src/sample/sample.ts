@@ -31,18 +31,44 @@ import {
   type StepOutputResult,
   type StepRecord,
   type AttemptChecksResult,
+  type ItemActivity,
   type AttemptLogResult,
   type TemplateRef,
   type TimerHandle,
   type Setup,
   summarizeOutput,
 } from "@tokama/core";
+import type { ActivityFeed } from "../activity-feed.js";
 import type { MemoryItemStore } from "../store.js";
 import { checksReply, logReply, sampleChecks, sampleLogs } from "./attempts.js";
 import { DIFF_DECISION_ID, ITEM_IDS, sampleDiff, sampleItems, sampleOutputs, sampleSetup } from "./data.js";
 
 /** How often the fake engine moves a working item on by one step. */
 export const SAMPLE_TICK_MS = 20_000;
+/** How often the agent of a moving sample item takes its next action. */
+export const SAMPLE_ACTION_MS = 2_000;
+
+/** What a moving sample item's agent does, one action after the other; a command runs until the next action. */
+const SCRIPT: readonly ItemActivity["lastAction"][] = [
+  { kind: "think", label: "thinking" },
+  { kind: "read", label: "reading src/orders/list.ts" },
+  { kind: "edit", label: "editing src/orders/list.ts" },
+  { kind: "run", label: "running pnpm test src/orders/list.test.ts" },
+  { kind: "think", label: "writing" },
+];
+const MINUTE = 60_000;
+
+/** The still sample items' activity, set once: a quiet agent, a long command that is not quiet, and one that just acted. */
+const STILL: Readonly<Record<string, (now: number) => Pick<ItemActivity, "lastAction" | "lastEventAt" | "toolRunning">>> = {
+  [ITEM_IDS.building]: (now) => ({ lastAction: { kind: "edit", label: "editing src/orders/list.ts" }, lastEventAt: now - 3 * MINUTE, toolRunning: null }),
+  [ITEM_IDS.verifying]: (now) => ({ lastAction: { kind: "run", label: "running pnpm test" }, lastEventAt: now - 100_000, toolRunning: { label: "running pnpm test", startedAt: now - 100_000 } }),
+  [ITEM_IDS.review]: (now) => ({ lastAction: { kind: "read", label: "reading src/orders/export.ts" }, lastEventAt: now - 8_000, toolRunning: null }),
+  [ITEM_IDS.flaky]: (now) => ({
+    lastAction: { kind: "run", label: "running pnpm vitest run src/sync/inventory-sync.test.ts" },
+    lastEventAt: now - 40_000,
+    toolRunning: { label: "running pnpm vitest run src/sync/inventory-sync.test.ts", startedAt: now - 40_000 },
+  }),
+};
 
 export interface CommandError {
   readonly code: CommandErrorCode;
@@ -63,10 +89,14 @@ export class SampleEngine {
   /** Started items that wait for approval before a step that sends data to a cloud agent. */
   private readonly askBeforeCloud = new Set<string>();
 
+  /** The next action of each moving item's agent, by item. */
+  private readonly actions = new Map<string, number>();
+
   /** Puts the sample items into the store; the store must not have subscribers yet, or they hear about them. */
   constructor(
     private readonly store: MemoryItemStore,
     private readonly clock: Clock,
+    private readonly activity?: ActivityFeed,
   ) {
     const setup = parseQueryResult("setup", sampleSetup);
     if (!setup.ok) throw new Error(`invalid sample setup: ${JSON.stringify(setup.error.issues)}`);
@@ -75,7 +105,33 @@ export class SampleEngine {
       const item = parseItemRecord(raw);
       if (!item.ok) throw new Error(`invalid sample item ${raw.id}: ${JSON.stringify(item.error.issues)}`);
       store.put(item.value);
+      const still = STILL[item.value.id];
+      if (still !== undefined) this.report(item.value, still(clock.now()));
     }
+    // An item that stops running has no activity any more.
+    store.subscribe((item) => {
+      if (item.state !== "running") activity?.update(item.id, undefined);
+    });
+    for (const id of this.live) this.act(id);
+  }
+
+  /** The moving items' agents take their next action. */
+  act(id: string): void {
+    const item = this.store.get(id as ItemId);
+    if (item === undefined || item.state !== "running") return;
+    const index = this.actions.get(id) ?? 0;
+    this.actions.set(id, index + 1);
+    const action = SCRIPT[index % SCRIPT.length]!;
+    const now = this.clock.now();
+    this.report(item, { lastAction: action, lastEventAt: now, toolRunning: action.kind === "run" ? { label: action.label, startedAt: now } : null });
+  }
+
+  private report(item: ItemRecord, state: Pick<ItemActivity, "lastAction" | "lastEventAt" | "toolRunning">): void {
+    const stepIndex = currentStepIndex(item);
+    const step = item.steps[stepIndex];
+    if (this.activity === undefined || step?.state !== "running") return;
+    const attempt = step.attempts?.at(-1)?.attempt ?? 1;
+    this.activity.update(item.id, { itemId: item.id, stepIndex, attempt, by: step.agentId === undefined ? "tokama" : "agent", ...state });
   }
 
   /** Item commands; repo and diagnostics commands are the engine's own. */
@@ -160,19 +216,29 @@ export class SampleEngine {
     }
   }
 
-  /** Ticks every SAMPLE_TICK_MS until the returned function is called. */
+  /** Ticks every SAMPLE_TICK_MS, and moves the agents on every SAMPLE_ACTION_MS, until the returned function is called. */
   startTicking(): () => void {
     let timer: TimerHandle | undefined;
+    let actions: TimerHandle | undefined;
     const schedule = () => {
       timer = this.clock.setTimeout(() => {
         this.tick();
         schedule();
       }, SAMPLE_TICK_MS);
     };
+    const scheduleActions = () => {
+      actions = this.clock.setTimeout(() => {
+        for (const id of this.live) this.act(id);
+        scheduleActions();
+      }, SAMPLE_ACTION_MS);
+    };
     schedule();
+    scheduleActions();
     return () => {
       if (timer !== undefined) this.clock.clearTimeout(timer);
+      if (actions !== undefined) this.clock.clearTimeout(actions);
       timer = undefined;
+      actions = undefined;
     };
   }
 
@@ -292,9 +358,18 @@ export class SampleEngine {
   /** The current step passes; the next one starts, or the item is done. */
   private advance(item: ItemRecord): ItemRecord {
     const index = currentStepIndex(item);
-    const steps = item.steps.map((step, i) => (i === index ? { ...step, state: "passed" as const, detail: `passed in ${SAMPLE_TICK_MS / 1000} s` } : step));
+    const now = this.clock.now();
+    const steps = item.steps.map((step, i) => (i === index ? passed(step, now) : step));
     if (index === -1 || index === item.steps.length - 1) {
-      return { ...withoutDecision(item), state: "done", cardLine: `done · ${item.steps.length} steps`, steps };
+      const starts = steps.flatMap((step) => (step.attempts ?? []).flatMap((attempt) => attempt.startedAt ?? []));
+      const waited = steps.reduce((sum, step) => sum + (step.waitedMs ?? 0), 0);
+      return {
+        ...withoutDecision(item),
+        state: "done",
+        cardLine: `done · ${item.steps.length} steps`,
+        steps,
+        ...(starts.length > 0 && { durationMs: Math.max(0, now - Math.min(...starts) - waited) }),
+      };
     }
     return this.enter({ ...item, steps }, index + 1);
   }
@@ -332,6 +407,9 @@ export class SampleEngine {
     const step = item.steps[index];
     if (!step) return item;
     const agent = this.agent(step);
+    // A new attempt starts now; one already running (an approval answered mid-attempt) goes on.
+    const attempts = step.attempts ?? [];
+    const open = attempts.at(-1)?.result === undefined && attempts.length > 0;
     return {
       ...item,
       state: "running",
@@ -340,6 +418,7 @@ export class SampleEngine {
         ...step,
         state: "running",
         detail: `${prefix}${agent ? `runs on ${agent.name} (${agent.model})` : "Tokama runs the checks"}`,
+        attempts: open ? attempts : [...attempts, { attempt: attempts.length + 1, startedAt: this.clock.now(), checks: [] }],
       }),
     };
   }
@@ -349,6 +428,9 @@ export class SampleEngine {
     const steps = item.steps.map((step): StepRecord => {
       const pending = { ...step, state: "pending" as const };
       delete pending.detail;
+      delete pending.attempts;
+      delete pending.durationMs;
+      delete pending.waitedMs;
       return pending;
     });
     return this.enter({ ...withoutDecision(item), steps }, 0);
@@ -358,6 +440,15 @@ export class SampleEngine {
     if (!step.agentId) return undefined;
     return this.setup.agents.find((agent) => agent.id === step.agentId);
   }
+}
+
+/** The step passed now: its running attempt ends, and the step's working time is its attempts'. */
+function passed(step: StepRecord, now: number): StepRecord {
+  const attempts = (step.attempts ?? []).map((attempt) =>
+    attempt.result !== undefined || attempt.startedAt === undefined ? attempt : { ...attempt, result: "passed" as const, endedAt: now, durationMs: Math.max(0, now - attempt.startedAt) },
+  );
+  const worked = attempts.reduce((sum, attempt) => sum + (attempt.durationMs ?? 0), 0);
+  return { ...step, state: "passed", detail: `passed in ${SAMPLE_TICK_MS / 1000} s`, ...(attempts.length > 0 && { attempts, durationMs: worked }) };
 }
 
 function ended(item: ItemRecord): boolean {

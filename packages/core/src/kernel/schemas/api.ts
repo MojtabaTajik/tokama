@@ -15,6 +15,7 @@ import {
 } from "./diagnostics.js";
 import { FinishActionSchema, ItemRecordSchema, OutputSummarySchema } from "./item.js";
 import { UsageRangeSchema, UsageReportSchema, UsageScopeSchema } from "./usage.js";
+import { ItemActivitySchema } from "./activity.js";
 import { AgentsListSchema } from "./agents.js";
 import { AiCliListSchema } from "./ai-clis.js";
 import { AttemptChecksSchema, AttemptFileSchema, AttemptLogSchema } from "./attempt-files.js";
@@ -24,7 +25,7 @@ import { MachineReportSchema } from "./machine.js";
 import { RepoSummarySchema, SetupSchema } from "./setup.js";
 import { MAX_TEMPLATE_ENTRIES, TemplateDetailSchema, TemplateEntrySchema, TemplateFileKeySchema } from "./template-files.js";
 
-export const API_VERSION = 5;
+export const API_VERSION = 6;
 
 const apiVersion = z.literal(API_VERSION);
 const requestId = z.string().min(1).max(128);
@@ -123,6 +124,8 @@ export const QuerySchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("setup") }),
   z.strictObject({ type: z.literal("board") }),
   z.strictObject({ type: z.literal("item"), itemId: ItemIdSchema }),
+  /** What a running item does now, as the last `item_activity` event said; null when nothing runs. Not throttled. */
+  z.strictObject({ type: z.literal("activity"), itemId: ItemIdSchema }),
   /** The change an open decision is about (one with `hasDiff`): base commit to the tree it would commit. */
   z.strictObject({ type: z.literal("decision_diff"), itemId: ItemIdSchema, decisionId: DecisionIdSchema }),
   /** The final message the agent of a step's attempt wrote; `attempt` defaults to the step's latest. */
@@ -175,6 +178,11 @@ export const QuerySchema = z.discriminatedUnion("type", [
 
 export const EventSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("item_updated"), item: ItemRecordSchema }),
+  /**
+   * What a running item does now: its agent's latest action, last event and running tool, or
+   * Tokama running a check. At most one per item per second; in memory only, never stored.
+   */
+  z.strictObject({ type: z.literal("item_activity"), activity: ItemActivitySchema }),
   /** An agent call was recorded or a plan window was read again: run the usage query again. */
   z.strictObject({ type: z.literal("usage_changed") }),
   /** Repos, connections, agents or templates changed: run the setup query again. */
@@ -241,6 +249,7 @@ export const QueryResultSchemas = {
   setup: SetupSchema,
   board: z.strictObject({ items: z.array(ItemRecordSchema) }),
   item: z.strictObject({ item: ItemRecordSchema }),
+  activity: z.strictObject({ activity: ItemActivitySchema.nullable() }),
   decision_diff: ItemDiffSchema,
   step_output: StepOutputSchema,
   attempt_checks: AttemptChecksSchema,
@@ -443,6 +452,7 @@ export type QueryType = keyof typeof QueryResultSchemas;
 export type QueryResult<T extends QueryType> = z.output<(typeof QueryResultSchemas)[T]>;
 export type BoardResult = QueryResult<"board">;
 export type ItemResult = QueryResult<"item">;
+export type ActivityResult = QueryResult<"activity">;
 export type DecisionDiffResult = QueryResult<"decision_diff">;
 export type StepOutputResult = QueryResult<"step_output">;
 export type AttemptChecksResult = QueryResult<"attempt_checks">;

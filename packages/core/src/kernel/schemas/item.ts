@@ -79,6 +79,12 @@ export const PullRequestUrlSchema = z
 /** One attempt of a step: one agent session plus its checks. */
 export const AttemptSummarySchema = z.strictObject({
   attempt: z.int().min(1),
+  /** When the attempt started (UTC epoch ms); the live timer counts from it. */
+  startedAt: EpochMsSchema.optional(),
+  /** When it ended; absent while it runs. */
+  endedAt: EpochMsSchema.optional(),
+  /** How long it worked, once it ended: start to end without the time it waited for you. */
+  durationMs: z.int().nonnegative().optional(),
   /** Absent while the attempt runs. */
   result: AttemptResultSchema.optional(),
   failure: RunFailureSchema.optional(),
@@ -104,6 +110,10 @@ export const StepRecordSchema = z.strictObject({
   maxAttempts: z.int().min(1).max(100).optional(),
   /** While the step runs again after Request changes: the note it was sent with. */
   changesNote: z.string().min(1).max(2000).optional(),
+  /** Once the step ended: the time its attempts worked, without the time they waited for you. */
+  durationMs: z.int().nonnegative().optional(),
+  /** The time the step's questions waited for you, apart from its working time; absent when it never waited. */
+  waitedMs: z.int().positive().optional(),
 });
 
 /** The choice that answers a step you approve with "change this"; only it may carry a note. */
@@ -199,6 +209,11 @@ export const ItemRecordSchema = z.strictObject({
   cardLine: z.string().min(1).max(120).optional(),
   decision: DecisionSchema.optional(),
   steps: z.array(StepRecordSchema),
+  /**
+   * Once the item ended: agent and check time from its first attempt's start to its end, without
+   * the time it waited for you. Absent when no attempt ran.
+   */
+  durationMs: z.int().nonnegative().optional(),
   /** How the item ended, with the commits it made. Absent while it runs. */
   outcome: z
     .strictObject({

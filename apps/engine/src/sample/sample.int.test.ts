@@ -363,7 +363,8 @@ describe("fake engine mode", () => {
     // The looping investigation goes from its second step to its third, then to its last...
     clock.advance(1);
     const first = await next();
-    expect(first).toMatchObject({ seq: 0, item: { id: ITEM_IDS.working, state: "running" } });
+    // Activity events of the moving agents come in between, so only the item's own update counts.
+    expect(first).toMatchObject({ item: { id: ITEM_IDS.working, state: "running" } });
     expect(first.item.steps.map((step) => step.state)).toEqual(["passed", "passed", "running", "pending"]);
     expect(first.item.cardLine).toBe("Find the cause · Local investigator");
     expect(first.item.steps.map((step) => step.detail)).toEqual([
@@ -384,7 +385,7 @@ describe("fake engine mode", () => {
     const started = await client.command({ type: "start_item", templateId: "builtin/quick-fix", repoIds: ["inventory-service"], text: "Fix it" });
     if (!started.ok) throw new Error(started.error.message);
     const { itemId } = started.data;
-    expect(await next()).toMatchObject({ seq: 3, item: { id: itemId, state: "queued" } });
+    expect(await next()).toMatchObject({ item: { id: itemId, state: "queued" } });
     for (const state of ["running", "running", "done"]) {
       clock.advance(SAMPLE_TICK_MS);
       await waitFor(() => updates.some((update) => update.item.id === itemId && update.item.state === state), 5_000, state);
@@ -398,6 +399,36 @@ describe("fake engine mode", () => {
       expect(new Set((await board(client)).map(itemStage))).toEqual(new Set(["queued", "working", "verifying", "review", "done"]));
     }
     expect(await item(client, ITEM_IDS.needsYou)).toEqual(needsYou);
+  });
+
+  it("serves each running item's activity: a moving agent, a quiet one, and a long command that is not quiet", async () => {
+    const { client, clock } = await sampleEngine();
+    const activities: unknown[] = [];
+    void (async () => {
+      for await (const event of client.events()) if (event.kind === "event" && event.event.type === "item_activity") activities.push(event.event.activity);
+    })();
+    const activity = async (itemId: string) => {
+      const reply = await client.query({ type: "activity", itemId });
+      if (!reply.ok) throw new Error(reply.error.message);
+      return reply.data.activity;
+    };
+    expect(await activity(ITEM_IDS.building)).toMatchObject({ stepIndex: 1, attempt: 1, by: "agent", lastAction: { kind: "edit", label: "editing src/orders/list.ts" }, lastEventAt: NOW - 3 * 60_000, toolRunning: null });
+    expect(await activity(ITEM_IDS.verifying)).toMatchObject({ by: "tokama", toolRunning: { label: "running pnpm test", startedAt: NOW - 100_000 } });
+    expect(await activity(ITEM_IDS.done)).toBeNull();
+    expect(await client.query({ type: "activity", itemId: "item_00000000-0000-4000-8000-000000000000" })).toMatchObject({ ok: false, error: { code: "not_found" } });
+
+    // The looping item's agent acts every 2 s, and each action goes out as an event.
+    expect(await activity(ITEM_IDS.working)).toMatchObject({ lastAction: { label: "thinking" }, lastEventAt: NOW });
+    clock.advance(2_000);
+    await waitFor(() => activities.length > 0, 5_000, "an activity event");
+    expect(activities[0]).toMatchObject({ itemId: ITEM_IDS.working, stepIndex: 1, lastAction: { kind: "read", label: "reading src/orders/list.ts" }, lastEventAt: NOW + 2_000 });
+    clock.advance(4_000);
+    await waitFor(() => activities.length > 2, 5_000, "the command");
+    expect(activities[2]).toMatchObject({ lastAction: { kind: "run" }, toolRunning: { label: "running pnpm test src/orders/list.test.ts", startedAt: NOW + 6_000 } });
+
+    // A stopped item has no activity any more.
+    await client.command({ type: "stop_item", itemId: ITEM_IDS.building });
+    expect(await activity(ITEM_IDS.building)).toBeNull();
   });
 
   it("a started item waits for approval before a cloud step, unless askBeforeCloud is off", async () => {
