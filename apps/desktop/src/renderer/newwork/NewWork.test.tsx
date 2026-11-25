@@ -338,6 +338,26 @@ describe("New work input", () => {
     expect(commands()).toEqual(["pnpm install", "pnpm test"]);
   });
 
+  it("shows a step whose agent comes from the repo, with what it may do, before Start", async () => {
+    const shared = {
+      ...setup,
+      templates: setup.templates.map((t) =>
+        t.id === "builtin/quick-fix"
+          ? { ...t, id: "orders-api/quick-fix", steps: t.steps.map((step, i) => (i === 0 ? { ...step, agentAccess: { name: "Repo builder", owner: "repo", edit: true, commands: ["curl"], web: true } } : step)) }
+          : t,
+      ),
+    } as Setup;
+    await mount({ suggest: null, setup: shared });
+    await focusInput();
+    await click(trigger("Template"));
+    await click($$('[role="option"]').find((el) => el.textContent?.includes("Quick fix"))!);
+    expect($$(".np-agent").map((el) => el.textContent)).toEqual(["Fix · Repo builder (from repo orders-api) · edits files · runs curl · uses the web"]);
+    expect($(".np-steps")?.textContent).toContain("Fix · Repo builder");
+    // A repo's template lists only its own repo.
+    await click(trigger("Repos"));
+    expect(options()).toEqual(["orders-api"]);
+  });
+
   it("shows the template's warnings, and asks for one repo when the template needs one", async () => {
     const warned = { ...setup, templates: setup.templates.map((t) => (t.id === "builtin/quick-fix" ? { ...t, warnings: ["Step Fix cannot run: builder runs on ollama."] } : t)) } as Setup;
     await mount({ suggest: null, setup: warned });

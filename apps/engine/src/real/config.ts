@@ -85,8 +85,13 @@ function locations(agents: LoadedAgents): Map<string, AgentLocation> {
   return map;
 }
 
-/** The agents a repo's steps resolve against: the repo's own set, or the home set for an unknown repo. */
-export const agentsFor = (config: Config, repoId: RepoId): LoadedAgents => config.repoAgents.get(repoId) ?? config.homeAgents;
+/**
+ * The agents a template's steps resolve against. A repo's template gets that repo's shared agents
+ * too; a built-in one gets personal and built-in agents only, so a file in the repo it runs on can
+ * never stand in for the agent the engineer was shown.
+ */
+export const agentsFor = (config: Config, template: Pick<TemplateRecord, "source">): LoadedAgents =>
+  template.source.kind === "repo" ? (config.repoAgents.get(template.source.repoId) ?? config.homeAgents) : config.homeAgents;
 
 /** The agent a step names, or why it cannot run. */
 export function resolveAgent(agents: LoadedAgents, id: AgentId): Agent | { readonly problem: string } | undefined {
@@ -121,6 +126,12 @@ export function startProblem(template: TemplateRecord): string | undefined {
   return undefined;
 }
 
+function accessOf(agent: ReturnType<typeof resolveAgent>): { agentAccess?: TemplateSummary["steps"][number]["agentAccess"] } {
+  if (agent === undefined || "problem" in agent) return {};
+  const { limits } = agent;
+  return { agentAccess: { name: agent.name, owner: agent.owner.kind, edit: limits.edit, commands: limits.commands.filter((c) => c.length <= 200).slice(0, 50), web: limits.web } };
+}
+
 export function templateSummary(template: TemplateRecord, agents: LoadedAgents): TemplateSummary {
   const start = startProblem(template);
   return {
@@ -134,6 +145,7 @@ export function templateSummary(template: TemplateRecord, agents: LoadedAgents):
       name: step.name,
       stage: stageOf(step),
       agentId: step.agentId,
+      ...accessOf(resolveAgent(agents, step.agentId)),
       data: step.data,
       ...(step.connections.length > 0 && { uses: step.connections.map(({ connectionId, access }) => ({ connectionId, access })) }),
       ...(step.checks !== undefined && { checks: "from" in step.checks ? { from: "repo" as const } : { commands: [...step.checks.commands] } }),
@@ -158,8 +170,7 @@ export function toSetup(config: Config, health: Health): Setup {
   const templates = config.templates.flatMap((load) => {
     if (!load.ok) return [];
     const { template } = load;
-    const agentsOf = template.source.kind === "repo" ? agentsFor(config, template.source.repoId) : config.homeAgents;
-    return [templateSummary(template, agentsOf)];
+    return [templateSummary(template, agentsFor(config, template))];
   });
   return {
     repos: config.repos.map((repo) => ({ id: repo.id, baseBranch: repo.baseBranch, checks: repo.checks.filter((check) => check.length <= 500).slice(0, 20) })),

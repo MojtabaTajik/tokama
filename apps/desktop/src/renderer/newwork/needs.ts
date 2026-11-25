@@ -1,13 +1,12 @@
 // What New work needs before it can start, and the small texts it derives from a template.
-// The template's `start.needs` says what Start asks for: the text, exactly one repo, or one or
-// more repos. Pure functions of the setup and the form, so the rules are testable without the screen.
+// The template's `start.needs` says whether Start asks for a repo; for now an item runs in exactly
+// one, and always starts from a description. Pure functions of the setup and the form, so the rules are testable without the screen.
 import type { AgentSummary, ConnectionSummary, ItemKind, RepoSummary, TemplateSummary } from "@tokama/core";
 import { stepAgent } from "../drawer/describe.js";
 
 export const NEEDS = {
   template: "Choose a template",
   text: "Describe the work or paste an alert",
-  repos: "Choose at least one repo",
   repo: "Choose one repo",
 } as const;
 
@@ -20,10 +19,9 @@ export interface Form {
 /** Why Start is not possible yet, in the order the form is filled; undefined when it is. */
 export function missing(form: Form): string | undefined {
   if (form.template === undefined) return NEEDS.template;
-  const { needs } = form.template.start;
-  if (needs.includes("text") && form.text.trim() === "") return NEEDS.text;
-  if (needs.includes("repo") && form.repoIds.length !== 1) return NEEDS.repo;
-  if (needs.includes("repos") && form.repoIds.length === 0) return NEEDS.repos;
+  // Every item starts from a description, and runs in one repo for now: the engine refuses others.
+  if (form.text.trim() === "") return NEEDS.text;
+  if (needsRepo(form.template) && form.repoIds.length !== 1) return NEEDS.repo;
   return undefined;
 }
 
@@ -35,6 +33,21 @@ export const needsRepo = (template: Pick<TemplateSummary, "start"> | undefined):
 export function reposFor(template: Pick<TemplateSummary, "id"> | undefined, repos: readonly RepoSummary[]): readonly RepoSummary[] {
   const owner = template?.id.split("/")[0];
   return owner === undefined || owner === "builtin" ? repos : repos.filter((repo) => repo.id === owner);
+}
+
+/**
+ * Who runs each step and what that agent may do, for the steps whose agent is not the plain
+ * built-in kind: one shared by a repo, or one that may run commands or use the web. What is shown
+ * is what the engine would run.
+ */
+export function agentLines(template: TemplateSummary, repoOwner = template.id.split("/")[0]): string[] {
+  return template.steps.flatMap((step) => {
+    const access = step.agentAccess;
+    if (access === undefined || (access.owner !== "repo" && access.commands.length === 0 && !access.web)) return [];
+    const owner = access.owner === "repo" ? `from repo ${repoOwner}` : access.owner === "personal" ? "yours" : "built in";
+    const can = [access.edit ? "edits files" : "reads only", ...(access.commands.length > 0 ? [`runs ${access.commands.join(", ")}`] : []), ...(access.web ? ["uses the web"] : [])];
+    return [`${step.name} · ${access.name} (${owner}) · ${can.join(" · ")}`];
+  });
 }
 
 /**
@@ -64,7 +77,8 @@ export function stepsLine(template: TemplateSummary, agents: readonly AgentSumma
   return template.steps
     .map((step) => {
       const agent = stepAgent(step, agents);
-      return `${step.name} · ${agent.name}${agent.runsOn === "cloud" ? " (cloud)" : ""}`;
+      // The agent the engine resolved for this template wins over a same-id agent in the list.
+      return `${step.name} · ${step.agentAccess?.name ?? agent.name}${agent.runsOn === "cloud" ? " (cloud)" : ""}`;
     })
     .join(" → ");
 }

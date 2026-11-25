@@ -252,3 +252,10 @@
 .np-warning .symbol {
   color: var(--warn);
 }
+
+.np-agent {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}

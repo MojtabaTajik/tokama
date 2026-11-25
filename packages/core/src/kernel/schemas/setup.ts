@@ -48,6 +48,21 @@ export const TemplateStepSchema = z.strictObject({
   data: DataRuleSchema,
   /** The connections this step may use: a subset of the template's. */
   uses: ConnectionUsesSchema.optional(),
+  /**
+   * The agent this step would run now, by the file that defines it: whose it is and what it may do.
+   * Absent when the agent cannot run (not set up, broken, or not supported yet).
+   */
+  agentAccess: z
+    .strictObject({
+      name: label,
+      /** Built in, the engineer's own, or shared by the template's repo. */
+      owner: z.enum(["builtin", "personal", "repo"]),
+      edit: z.boolean(),
+      /** Shell commands it may run, as command-policy rules. */
+      commands: z.array(z.string().min(1).max(200)).max(50),
+      web: z.boolean(),
+    })
+    .optional(),
   /** The checks Tokama runs after the step's agent: the picked repo's, or the template's own commands. */
   checks: z.union([z.strictObject({ from: z.literal("repo") }), z.strictObject({ commands: z.array(command).min(1).max(20) })]).optional(),
 });
@@ -77,6 +92,8 @@ export const CliHealthSchema = z.strictObject({
   cliId: AiCliIdSchema,
   installed: z.boolean(),
   loggedIn: z.boolean(),
+  /** The check did not finish in time, so `installed` and `loggedIn` are not known. */
+  timedOut: z.literal(true).optional(),
   version: label.optional(),
   /** What is wrong, in plain words, when the CLI cannot run agents. */
   message: z.string().min(1).max(1000).optional(),

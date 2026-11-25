@@ -83,7 +83,7 @@ export class RealEngine {
       clock: options.clock,
       processes: options.processes,
       repo: (id) => this.config.repos.find((repo) => repo.id === id),
-      agent: (repo, id) => resolveAgent(agentsFor(this.config, repo.id), id),
+      agent: (_repo, id, template) => resolveAgent(agentsFor(this.config, template), id),
       runtime,
       ...(options.recoveryGraceMs !== undefined && { recoveryGraceMs: options.recoveryGraceMs }),
     });
@@ -100,9 +100,17 @@ export class RealEngine {
     await this.reload();
   }
 
+  /** Reloads overlap; a read that started before a newer one finished never replaces it. */
+  private reloads = 0;
+  private latest = 0;
   private async reload(): Promise<Config> {
-    this.config = await loadConfig(this.options.home);
-    return this.config;
+    const mine = ++this.reloads;
+    const config = await loadConfig(this.options.home);
+    if (mine > this.latest) {
+      this.latest = mine;
+      this.config = config;
+    }
+    return config;
   }
 
   async setup(): Promise<Setup> {
@@ -147,7 +155,7 @@ export class RealEngine {
       return fail("invalid_request", `${template.ref} belongs to repo ${template.source.repoId} and runs only there.`);
     }
     if (!config.repos.some((repo) => repo.id === repoId)) return fail("not_found", `No repo ${repoId}.`);
-    const steps = stepProblems(template, agentsFor(config, repoId));
+    const steps = stepProblems(template, agentsFor(config, template));
     if (steps.length > 0) return fail("invalid_request", steps.join(" "));
     const started = await this.loop.startItem({ template, repoId, text: command.text });
     return started.ok ? ok({ itemId: started.value }) : started;

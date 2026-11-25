@@ -47,8 +47,17 @@ export function steeringChanges(before: readonly SteeringEntry[], after: readonl
 }
 
 /** One line per change, e.g. `modified worktree:.gitattributes (git)`. */
+/**
+ * The order changes are listed in: what chooses which code runs (git, Tokama's files, package and
+ * CI config, lockfiles, test config) before test files and snapshots, so a long list that is cut
+ * to fit a decision never hides them.
+ */
+const LISTED_FIRST: readonly ProtectedCategory[] = ["git", "tokama", "package", "ci", "lockfile", "test-config", "test", "snapshot"];
+const byWeight = <T extends { readonly category: ProtectedCategory }>(items: readonly T[]): T[] =>
+  [...items].sort((a, b) => LISTED_FIRST.indexOf(a.category) - LISTED_FIRST.indexOf(b.category));
+
 export const describeChanges = (changes: readonly TamperChange[]): string =>
-  changes.map((change) => `${change.change} ${change.area}:${change.path} (${change.category})`).join("\n");
+  byWeight(changes).map((change) => `${change.change} ${change.area}:${change.path} (${change.category})`).join("\n");
 
 export interface TreeFinding extends CoveredPath {
   readonly category: ProtectedCategory;
@@ -76,4 +85,4 @@ export function unapproved(item: StoredItem, findings: readonly TreeFinding[]): 
   return findings.filter((f) => !approved.has(coverKey(f)));
 }
 
-export const describeFindings = (findings: readonly TreeFinding[]): string => findings.map((f) => `${f.change} ${f.path} (${f.category})`).join("\n");
+export const describeFindings = (findings: readonly TreeFinding[]): string => byWeight(findings).map((f) => `${f.change} ${f.path} (${f.category})`).join("\n");

@@ -74,8 +74,12 @@ export interface RunLoopDeps {
   /** The boot time for process records, and the leftover kills of restart recovery. */
   readonly processes: ProcessTable;
   readonly repo: (id: RepoId) => Repo | undefined;
-  /** The agent a step names, for that repo; `problem` when its id is claimed by a file that cannot be used. */
-  readonly agent: (repo: Repo, id: Agent["id"]) => Agent | { readonly problem: string } | undefined;
+  /**
+   * The agent a step of the template names, for that repo; `problem` when its id is claimed by a
+   * file that cannot be used. The template says where it comes from, so a built-in template never
+   * gets a repo's own agent of the same id.
+   */
+  readonly agent: (repo: Repo, id: Agent["id"], template: TemplateRecord) => Agent | { readonly problem: string } | undefined;
   readonly runtime: (agent: Agent) => AgentRuntime | undefined;
   /** Loop guards of every agent call; its timeout is also the call's. Default: `claudeCodeGuardDefaults`. */
   readonly guard?: LoopGuardSettings;
@@ -589,7 +593,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     const item = append(ctx.item.id, [{ type: "attempt_started", stepId, attempt }]);
     const worktree = worktreeOf(ctx);
     if (worktree === undefined) return runFailed(item, stepId, attempt, "crash", "The item has no worktree with a recorded base commit.");
-    const agent = deps.agent(ctx.repo, step.agentId);
+    const agent = deps.agent(ctx.repo, step.agentId, ctx.template);
     if (agent === undefined) return runFailed(item, stepId, attempt, "crash", `Agent ${step.agentId} is not set up for repo ${ctx.repo.id}.`);
     if ("problem" in agent) return runFailed(item, stepId, attempt, "crash", `Agent ${step.agentId} cannot run: ${agent.problem}`);
     const runtime = deps.runtime(agent);

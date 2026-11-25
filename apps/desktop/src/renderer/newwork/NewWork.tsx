@@ -5,7 +5,7 @@
 import type { ItemRecord, Setup } from "@tokama/core";
 import { type FormEvent, type KeyboardEvent, type Ref, useId, useImperativeHandle, useRef, useState } from "react";
 import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
-import { commandsOf, KIND_GROUPS, missing, needsRepo, reposFor, stepsLine, usesOf } from "./needs.js";
+import { agentLines, commandsOf, KIND_GROUPS, missing, needsRepo, reposFor, stepsLine, usesOf } from "./needs.js";
 import { Picker } from "./Picker.js";
 import { useSuggestion } from "./useSuggestion.js";
 
@@ -130,6 +130,7 @@ export function NewWork({ bridge, setup, ref, onStarted }: NewWorkProps) {
   const toggleRepo = (id: string) => setRepoIds(repoIds.includes(id) ? repoIds.filter((repoId) => repoId !== id) : [...repoIds, id]);
   const uses = shown ? usesOf(shown, setup.connections) : [];
   const commands = shown ? commandsOf(shown, setup.repos, chosenRepos) : [];
+  const agents = shown ? agentLines(shown) : [];
 
   return (
     <div className="np">
@@ -209,6 +210,11 @@ export function NewWork({ bridge, setup, ref, onStarted }: NewWorkProps) {
                 ))}
               </p>
             )}
+            {agents.map((line) => (
+              <p key={line} className="np-agent mono">
+                {line}
+              </p>
+            ))}
             {shown?.warnings.map((warning) => (
               <p key={warning} className="np-warning">
                 <span className="symbol" aria-hidden="true">
