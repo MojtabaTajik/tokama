@@ -11,7 +11,7 @@ import { cliAlert, railBadge } from "../insights/usage-model.js";
 import { AI_CLIS, type CliIssue, type HealthProblem } from "../model.js";
 import { AttentionPopup } from "./Attention.js";
 import { InsightsTip } from "./InsightsTip.js";
-import { useTip } from "./useTip.js";
+import { useTip } from "../ui/useTip.js";
 import { AttentionIcon, BoardIcon, InboxIcon, InsightsIcon, PanelIcon, SettingsIcon, UserIcon } from "../ui/icons.js";
 import { Button } from "../ui/Button.js";
 import { Badge } from "../ui/Badge.js";
@@ -69,7 +69,7 @@ export interface RailProps {
   readonly diagnosticsWaiting?: number;
 }
 
-export { TIP_CLOSE_MS, TIP_OPEN_MS } from "./useTip.js";
+export { TIP_CLOSE_MS, TIP_OPEN_MS } from "../ui/useTip.js";
 
 /** "Needs you · 2", or just "Needs you" when there are none. */
 const withCount = (label: string, count: number) => (count > 0 ? `${label} · ${count}` : label);
@@ -143,7 +143,7 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
         <InboxIcon />
         <Badge count={needsYou ?? 0} tone="warn" />
       </Button>
-      <div className="insights" data-open={tip.open || undefined} onMouseEnter={() => tip.hold("hover", true)} onMouseLeave={() => tip.hold("hover", false)} onFocus={() => tip.hold("focus", true)} onBlur={() => tip.hold("focus", false)}>
+      <div className="insights" data-open={tip.open || undefined} {...tip.triggers}>
         <Button
           variant="plain"
           className="rail-button"
@@ -161,7 +161,7 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
           <InsightsIcon />
           {badge !== undefined && <Badge count={1} tone={badge.tone} symbol={badge.symbol} />}
         </Button>
-        <div role="group" aria-label={TEXT.usage} id={tipId} className="insights-tip">
+        <div role="group" aria-label={TEXT.usage} id={tipId} className="tooltip insights-tip">
           <div className="it-scroll">
             <InsightsTip
             usage={usage}

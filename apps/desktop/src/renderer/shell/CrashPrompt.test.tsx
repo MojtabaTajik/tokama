@@ -21,7 +21,7 @@ afterEach(() => {
   container.remove();
 });
 
-const dialog = () => container.querySelector("[role=dialog][aria-label='Tokama stopped unexpectedly']");
+const dialog = () => container.querySelector("dialog[aria-label='Tokama stopped unexpectedly']");
 const click = (name: string) => act(async () => [...container.querySelectorAll("button")].find((b) => b.textContent === name)?.click());
 
 function start(options: { crashWaiting?: boolean; askAfterCrash?: boolean } = {}) {

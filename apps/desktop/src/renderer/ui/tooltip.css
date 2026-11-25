@@ -1,0 +1,21 @@
+/* A tooltip's surface (ui/Tooltip.tsx, and the rail's Insights tooltip). Screens set its size and place. */
+.tooltip {
+  box-sizing: border-box;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-popup);
+  font-size: var(--text-base);
+  color: var(--text-2);
+}
+
+/* A popover tooltip: below its anchor, flipped when there is no room. */
+.tooltip[popover] {
+  position: fixed;
+  inset: auto;
+  top: calc(anchor(bottom) + 8px);
+  left: calc(anchor(left) - 8px);
+  position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+  margin: 0;
+  overflow: visible;
+}

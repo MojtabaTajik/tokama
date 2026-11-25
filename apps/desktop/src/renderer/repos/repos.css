@@ -63,26 +63,6 @@
   color: var(--text);
 }
 
-.modal {
-  width: min(520px, calc(100vw - 32px));
-  padding: 0;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-lg);
-  background: var(--panel);
-  color: var(--text);
-}
-
-.modal::backdrop {
-  background: var(--ground);
-  opacity: 0.7;
-}
-
-.modal-title {
-  margin: 0;
-  font-size: var(--text-xl);
-  font-weight: 600;
-}
-
 .repo-form {
   display: flex;
   flex-direction: column;
@@ -136,61 +116,6 @@
 
 .repo-note strong {
   color: var(--text);
-}
-
-/* The dialogs' frame: header with close, body, footer. */
-.dlg {
-  display: flex;
-  flex-direction: column;
-}
-
-.dlg-head {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-10);
-  padding: var(--space-14) var(--space-16) var(--space-12);
-  border-bottom: 1px solid var(--hairline);
-}
-
-.dlg-titles {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.dlg-sub {
-  color: var(--text-2);
-  font-size: var(--text-md);
-  overflow-wrap: anywhere;
-}
-
-.dlg-close {
-  margin-left: auto;
-}
-
-.dlg-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-16);
-  padding: var(--space-16);
-  max-height: calc(100vh - 220px);
-  overflow-y: auto;
-}
-
-.dlg-body p {
-  margin: 0;
-  color: var(--text-2);
-}
-
-.dlg-foot {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  align-items: center;
-  gap: var(--space-8);
-  padding: var(--space-12) var(--space-16);
-  border-top: 1px solid var(--hairline);
 }
 
 .rd-dim {

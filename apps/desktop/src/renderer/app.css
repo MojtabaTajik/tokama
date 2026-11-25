@@ -305,12 +305,6 @@
   z-index: 9;
   display: none;
   width: 380px;
-  box-sizing: border-box;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-lg);
-  background: var(--panel);
-  font-size: var(--text-base);
-  color: var(--text-2);
 }
 
 @position-try --insights-tip-up {

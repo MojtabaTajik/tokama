@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { TIP_CLOSE_MS, TIP_OPEN_MS } from "../shell/useTip.js";
+import { TIP_CLOSE_MS, TIP_OPEN_MS } from "../ui/useTip.js";
 import type { AgentInfo } from "./agent-info.js";
 import { AgentLabel, type AgentLabelProps } from "./AgentLabel.js";
 

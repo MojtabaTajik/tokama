@@ -1,7 +1,7 @@
 // The open and close timing every hover tooltip shares: the pointer must rest before it opens and
 // be away for a moment before it closes, so the enter and leave events a pointer sends at an
 // edge never make it flicker. Focus opens it at once.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 /** How long the pointer rests on the trigger before the tooltip opens, and how long it may be away before it closes. */
 export const TIP_OPEN_MS = 120;
@@ -51,5 +51,15 @@ export function useTip(onShown: ((shown: boolean) => void) | undefined, suppress
   useEffect(() => {
     if (suppressed) show(false);
   }, [suppressed, show]);
-  return { open, hold, dismiss };
+  // The handlers for the element that holds the trigger and the tooltip: moving between the two keeps it open.
+  const triggers = useMemo(
+    () => ({
+      onMouseEnter: () => hold("hover", true),
+      onMouseLeave: () => hold("hover", false),
+      onFocus: () => hold("focus", true),
+      onBlur: () => hold("focus", false),
+    }),
+    [hold],
+  );
+  return { open, hold, dismiss, triggers };
 }

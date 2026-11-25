@@ -7,7 +7,8 @@
 import type { CommandInput, InitRepoResult, RepoSummary, SuggestRepoResult } from "@tokama/core";
 import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
-import { DialogFrame, Modal, Problem } from "./Modal.js";
+import { DialogFrame, Modal } from "../ui/Modal.js";
+import { Problem } from "./Problem.js";
 import { Button } from "../ui/Button.js";
 import { markOf, StatusMark } from "../ui/status.js";
 

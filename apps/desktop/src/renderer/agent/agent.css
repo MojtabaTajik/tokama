@@ -71,26 +71,12 @@
 
 /* In the top layer, so no scrolling list or drawer clips it; placed under the label, or above it when there is no room. */
 .al-tip {
-  position: fixed;
-  inset: auto;
-  top: calc(anchor(bottom) + 8px);
-  left: calc(anchor(left) - 8px);
-  position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
-  margin: 0;
-  overflow: visible;
   display: flex;
   flex-direction: column;
   gap: var(--space-10);
-  box-sizing: border-box;
   width: 340px;
   max-width: calc(100vw - 16px);
   padding: var(--space-12) var(--space-14);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-lg);
-  background: var(--panel);
-  box-shadow: var(--shadow-popup);
-  font-size: var(--text-base);
-  color: var(--text-2);
   text-align: left;
   white-space: normal;
 }

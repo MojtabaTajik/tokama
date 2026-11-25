@@ -1,7 +1,8 @@
 // The question before a repo is removed, shared by the sidebar's repo menu and the Repos page in
 // Settings. Removing only takes the repo out of repos.yaml; its items and worktrees are kept.
 import { useId, useState } from "react";
-import { DialogFrame, Modal, Problem } from "./Modal.js";
+import { DialogFrame, Modal } from "../ui/Modal.js";
+import { Problem } from "./Problem.js";
 import { Button } from "../ui/Button.js";
 
 const TEXT = {

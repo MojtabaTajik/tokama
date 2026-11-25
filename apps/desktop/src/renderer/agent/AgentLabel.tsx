@@ -4,13 +4,14 @@
 // does nothing when clicked. It sits next to the row's own button, never inside it. Engine text (names,
 // models, commands, the role) is rendered as React text only.
 import type { CSSProperties, ReactNode } from "react";
-import { useEffect, useId, useLayoutEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import { type AgentTarget, monogram } from "../settings/describe.js";
-import { useTip } from "../shell/useTip.js";
+import { useTip } from "../ui/useTip.js";
 import { type AgentAccess, type AgentInfo, extraPower } from "./agent-info.js";
 import { Button } from "../ui/Button.js";
 import { AgentDotMark } from "../ui/agent.js";
 import { Pill } from "../ui/Pill.js";
+import { Tooltip } from "../ui/Tooltip.js";
 
 const TEXT = {
   builtin: "built-in",
@@ -60,7 +61,7 @@ export function AgentLabel({ info, onOpen }: AgentLabelProps) {
   }, [open, dismiss]);
 
   return (
-    <span ref={wrapper} className="al" onMouseEnter={() => tip.hold("hover", true)} onMouseLeave={() => tip.hold("hover", false)} onFocus={() => tip.hold("focus", true)} onBlur={() => tip.hold("focus", false)}>
+    <span ref={wrapper} className="al" {...tip.triggers}>
       <Button variant="plain" ref={button} className="al-button" data-open={open || undefined} aria-describedby={open ? tipId : undefined} style={{ anchorName: anchor } as CSSProperties}>
         <span className="al-who">
           <AgentDotMark dot={info.dot} />
@@ -74,16 +75,9 @@ export function AgentLabel({ info, onOpen }: AgentLabelProps) {
 }
 
 function Tip({ id, anchor, info, onOpen }: { readonly id: string; readonly anchor: string; readonly info: AgentInfo; readonly onOpen: AgentLabelProps["onOpen"] }) {
-  const ref = useRef<HTMLDivElement>(null);
-  // A popover sits in the top layer: no list or drawer around the label clips it. Where the browser has no popovers it is a plain element.
-  useLayoutEffect(() => {
-    const element = ref.current;
-    if (element?.isConnected !== true || typeof element.showPopover !== "function") return;
-    element.showPopover();
-  }, []);
   const { access } = info;
   return (
-    <div ref={ref} id={id} role="tooltip" popover="manual" className="al-tip" style={{ positionAnchor: anchor } as CSSProperties}>
+    <Tooltip id={id} anchor={anchor} className="al-tip">
       <div className="al-head">
         <AgentDotMark dot={info.dot} />
         <b className="al-name">{info.name}</b>
@@ -106,7 +100,7 @@ function Tip({ id, anchor, info, onOpen }: { readonly id: string; readonly ancho
           </Button>
         </div>
       )}
-    </div>
+    </Tooltip>
   );
 }
 
