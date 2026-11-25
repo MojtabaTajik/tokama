@@ -264,9 +264,9 @@ export interface ItemTime {
 }
 
 /**
- * The row's time. A live item shows how long ago it started ("14 m", "1 h 35 m"); a finished one
+ * The row's time. An item that waits shows how long ago it started ("14 m", "1 h 35 m"); a finished one
  * shows its start as a clock time today or a date earlier, and its agent and check time after it
- * ("17:57 · 12 m"), without the time it waited for you.
+ * ("17:57 · 12 m"), without the time it waited for you. A running item shows how long it has run, to the second.
  */
 export function timeOf(item: Pick<ItemRecord, "state" | "createdAt" | "durationMs">, now: number): ItemTime {
   const start = item.createdAt;
@@ -277,7 +277,8 @@ export function timeOf(item: Pick<ItemRecord, "state" | "createdAt" | "durationM
     const total = itemTotal(item);
     return total === undefined ? { text, title } : { text: `${text} · ${total}`, title: `${title} · ${total} of agent and check time` };
   }
-  return { text: formatDuration(now - start, "minutes"), title };
+  // A running item ticks to the second like the drawer; one that waits moves by the minute.
+  return { text: formatDuration(now - start, item.state === "running" ? "exact" : "minutes"), title };
 }
 
 export interface BoardColumn {

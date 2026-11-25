@@ -3,7 +3,7 @@
 // motion the CSS keeps everything still (a dashed line, a solid mark). Engine text (step names,
 // the activity label) is rendered as React text only.
 import type { AgentSummary, ItemActivity, ItemRecord } from "@tokama/core";
-import { type CSSProperties, Fragment, useState } from "react";
+import { type CSSProperties, Fragment, useMemo } from "react";
 import { activityView, trackOf } from "./progress-view.js";
 
 /** One breathing cycle, in ms: `--motion-breathe` in ui/motion.css. */
@@ -11,10 +11,12 @@ const BREATH_MS = 2_000;
 
 /**
  * Every breathing mark on screen shares one 2 s clock: each starts its animation part-way into the
- * cycle, by the wall clock, so marks that appear at different times breathe together.
+ * cycle, by the wall clock, so marks that appear at different times breathe together. A mark that
+ * starts breathing after it is shown (`active` turns on) takes its delay then, not when it first showed.
  */
-export function useBreath(): CSSProperties {
-  const [delay] = useState(() => -(Date.now() % BREATH_MS));
+export function useBreath(active = true): CSSProperties {
+  // The delay is fixed while the mark breathes: changing it would make a running animation jump.
+  const delay = useMemo(() => -(Date.now() % BREATH_MS), [active]);
   return { animationDelay: `${delay}ms` };
 }
 
