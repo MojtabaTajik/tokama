@@ -226,6 +226,17 @@ describe("stopOwnEngine when things go wrong", () => {
   });
 });
 
+describe("stopOwnEngine with an expected engine", () => {
+  it("sends nothing when the lock names another engine than the one the caller found", async () => {
+    writeLock(engine.lockPath, `${PID} e-new\n`);
+    const { table, signals } = fakeProcesses({ [PID]: { startedAt: STARTED, command: ENGINE_LINE } });
+    const requestShutdown = vi.fn(async () => true);
+    expect(await stopOwnEngine(engine, { processes: table, requestShutdown, expectedEngineId: "e-old", ...fast })).toEqual({ kind: "replaced" });
+    expect(requestShutdown).not.toHaveBeenCalled();
+    expect(signals).toEqual([]);
+  });
+});
+
 describe("parseDescribe", () => {
   it("reads the start time and the whole command line, spaces included", () => {
     expect(parseDescribe("Wed Nov 25 09:00:09 2026     /usr/bin/node /My Code/apps/engine/dist/main.js --dir /tmp/a b\n")).toEqual({

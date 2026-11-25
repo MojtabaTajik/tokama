@@ -22,9 +22,9 @@ export interface WatchOptions {
   /** This app's API version: an engine below it is older, one above it newer. */
   readonly apiVersion: number;
   /** Stops the older engine, after checking that it is this app's own. Without it, nothing is replaced. */
-  readonly replaceOlder?: () => Promise<ReplaceResult>;
+  readonly replaceOlder?: (expectedEngineId: string | undefined) => Promise<ReplaceResult>;
   /** The older engine's lock path and pid, shown with the question. */
-  readonly olderLock?: () => Pick<OlderEngine, "lockPath" | "pid">;
+  readonly olderLock?: () => Pick<OlderEngine, "lockPath" | "pid"> & { readonly engineId?: string };
   /** How often Wait checks again. Default 5 s. */
   readonly waitPollMs?: number;
 }
@@ -85,10 +85,11 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
     if (engine.apiVersion > options.apiVersion) return fail(NEWER);
     if (engine.apiVersion === options.apiVersion) return fail(error.message);
     // Right after a replace, an older engine again is not replaced again without asking.
-    if (!replaced && (mode === "now" || engine.runningItems === 0)) return replace(mine, options.replaceOlder);
+    // The lock as it is right after the refusal: only the engine it names may be stopped.
+    const { engineId, ...lock } = options.olderLock?.() ?? { lockPath: "" };
+    if (!replaced && (mode === "now" || engine.runningItems === 0)) return replace(mine, () => options.replaceOlder?.(engineId) ?? Promise.resolve({ ok: false, reason: error.message }));
     const { runningItems } = engine;
     const waiting = mode === "wait" && runningItems !== undefined && !replaced;
-    const lock = options.olderLock?.() ?? { lockPath: "" };
     fail(OLDER, {
       ...lock,
       waiting,

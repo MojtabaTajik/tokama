@@ -16,6 +16,8 @@ export type ReplaceResult =
 export interface ReplaceOptions {
   /** The engine dir. */
   readonly dir: string;
+  /** The engine id the lock named when the older engine was found; a lock naming another engine is left alone. */
+  readonly expectedEngineId?: string;
   readonly engine: OwnEngine;
   readonly processes: EngineProcesses;
   /** Sends the shutdown request to the engine in `dir`; true when it accepted. */
@@ -37,6 +39,7 @@ export async function replaceOlderEngine(options: ReplaceOptions): Promise<Repla
   if (!takeLock(lockPath, mine, staleMs)) return waitForOther(options, lockPath, staleMs);
   try {
     const outcome = await stopOwnEngine(options.engine, {
+      ...(options.expectedEngineId !== undefined && { expectedEngineId: options.expectedEngineId }),
       processes: options.processes,
       requestShutdown: () => options.requestShutdown(options.dir),
       ...(options.stepMs !== undefined && { stepMs: options.stepMs }),

@@ -57,6 +57,11 @@ export type StopOutcome =
 
 export interface StopOptions {
   readonly processes: EngineProcesses;
+  /**
+   * The engine id the lock named when the caller decided to stop it. When the lock names another
+   * engine by now (another app replaced it meanwhile), nothing is sent.
+   */
+  readonly expectedEngineId?: string;
   /** Sends the shutdown request on the engine's socket; true when the engine accepted it. */
   readonly requestShutdown: () => Promise<boolean>;
   readonly clock?: Clock;
@@ -113,6 +118,7 @@ export async function stopOwnEngine(engine: OwnEngine, options: StopOptions): Pr
   const first = await verifyOwnEngine(engine, processes, selfPid);
   if (first.kind === "refused") return first;
   const { lock, startedAt } = first;
+  if (options.expectedEngineId !== undefined && lock.engineId !== options.expectedEngineId) return { kind: "replaced" };
   const sleep = (ms: number) => new Promise<void>((resolve) => clock.setTimeout(resolve, ms));
   const sameEngine = (other: EngineLock | undefined) => other !== undefined && other.pid === lock.pid && other.engineId === lock.engineId;
 

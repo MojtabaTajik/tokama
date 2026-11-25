@@ -56,7 +56,7 @@ function watch(
     onEvent: (e) => events.push(e),
     apiVersion: APP_API,
     replaceOlder: replace,
-    olderLock: () => ({ lockPath: "/run/tokama/engine.lock", pid: 4821 }),
+    olderLock: () => ({ lockPath: "/run/tokama/engine.lock", pid: 4821, engineId: "e-old" }),
     waitPollMs: 10,
   });
   return { watcher, states, events, readLogTail, replace };
@@ -103,7 +103,7 @@ describe("watchConnection", () => {
       const { watcher, states, replace } = watch(connect);
       await settle();
       await settle();
-      expect(replace).toHaveBeenCalledOnce();
+      expect(replace).toHaveBeenCalledExactlyOnceWith("e-old");
       expect(states).toEqual([{ status: "starting", updating: true }, { status: "connected", engineId: "engine-new" }]);
       expect(watcher.state()).toEqual({ status: "connected", engineId: "engine-new" });
       expect(client.command).not.toHaveBeenCalled();

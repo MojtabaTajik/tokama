@@ -91,16 +91,17 @@ function startWatch(onConnected: () => void, onItemEvent: (event: BridgeEvent["e
     },
     apiVersion: API_VERSION,
     // Only this app's own engine for this dir is stopped; the home lock is the real engine's.
-    replaceOlder: () =>
+    replaceOlder: (expectedEngineId) =>
       replaceOlderEngine({
+        ...(expectedEngineId !== undefined && { expectedEngineId }),
         dir,
         engine: { lockPath, commandEnd: engineCommandEnd(dir, sample), otherLocks: [join(homedir(), ".tokama", "engine.lock")] },
         processes: posixEngineProcesses,
         requestShutdown: (engineDir) => requestShutdown(engineDir),
       }),
     olderLock: () => {
-      const pid = readEngineLock(lockPath)?.pid;
-      return { lockPath, ...(pid !== undefined && { pid }) };
+      const lock = readEngineLock(lockPath);
+      return { lockPath, ...(lock !== undefined && { pid: lock.pid, engineId: lock.engineId }) };
     },
     logPath: endpoint.ok ? endpoint.value.logPath : join(dir, "engine.log"),
     readLogTail: (path) => readLogTail(path),
