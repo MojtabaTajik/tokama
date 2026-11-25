@@ -20,7 +20,7 @@ const exposed = [...electron.exposeInMainWorld.mock.calls];
 describe("preload bridge", () => {
   it("exposes window.tokama with only the bridge methods", () => {
     expect(exposed).toEqual([["tokama", bridge]]);
-    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "getAboutInfo", "getConnection", "onConnection", "onEvent", "openTemplateFile", "pickFolder", "query", "retryConnection", "showDataFolder"]);
+    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "getAboutInfo", "getConnection", "getDesktopState", "onConnection", "onEvent", "openTemplateFile", "pickFolder", "query", "retryConnection", "saveLayout", "showDataFolder"]);
   });
 
   it("query and command invoke their channels with the request only", async () => {
@@ -63,6 +63,13 @@ describe("preload bridge", () => {
     await bridge.copyBuildInfo();
     await bridge.showDataFolder();
     expect(electron.invoke.mock.calls).toEqual([[CHANNELS.getAboutInfo], [CHANNELS.copyBuildInfo], [CHANNELS.showDataFolder]]);
+  });
+
+  it("getDesktopState and saveLayout use their own channels, and saveLayout sends the patch as given", async () => {
+    electron.invoke.mockResolvedValue(undefined);
+    await bridge.getDesktopState();
+    await bridge.saveLayout({ drawer: { width: 500 } });
+    expect(electron.invoke.mock.calls).toEqual([[CHANNELS.getDesktopState], [CHANNELS.saveLayout, { drawer: { width: 500 } }]]);
   });
 
   it("getConnection invokes the connection channel", async () => {

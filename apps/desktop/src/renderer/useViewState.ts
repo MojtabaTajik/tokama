@@ -1,6 +1,6 @@
 // What the shell remembers while it runs, in renderer state only: the current view, each view's
 // status filter and time range, each workflow's List or Board choice, and which sidebar sections
-// are collapsed. Nothing is stored on disk.
+// are collapsed. It starts from what the app remembered of the last run; the shell saves changes.
 import { useState } from "react";
 import { ALL_WORK, DEFAULT_FILTER, type Filter, type View, viewKey } from "./model.js";
 
@@ -21,12 +21,21 @@ export interface ViewState {
   readonly toggleSection: (section: Section) => void;
 }
 
+/** What the last run left: the view, its filter, and the collapsed sections. */
+export interface RememberedViews {
+  readonly view: View;
+  readonly filter: Filter;
+  readonly collapsed: readonly Section[];
+}
+
+const NOTHING_REMEMBERED: RememberedViews = { view: ALL_WORK, filter: DEFAULT_FILTER, collapsed: [] };
+
 /** `exists` says whether a workflow or repo is still in the setup: a view that is gone falls back to All work. */
-export function useViewState(exists: (view: View) => boolean): ViewState {
-  const [chosen, setView] = useState<View>(ALL_WORK);
-  const [filters, setFilters] = useState<ReadonlyMap<string, Filter>>(new Map());
+export function useViewState(exists: (view: View) => boolean, remembered: RememberedViews = NOTHING_REMEMBERED): ViewState {
+  const [chosen, setView] = useState<View>(remembered.view);
+  const [filters, setFilters] = useState<ReadonlyMap<string, Filter>>(() => new Map([[viewKey(remembered.view), remembered.filter]]));
   const [layouts, setLayouts] = useState<ReadonlyMap<string, Layout>>(new Map());
-  const [collapsed, setCollapsed] = useState<ReadonlySet<Section>>(new Set());
+  const [collapsed, setCollapsed] = useState<ReadonlySet<Section>>(() => new Set(remembered.collapsed));
 
   const view = exists(chosen) ? chosen : ALL_WORK;
   const key = viewKey(view);

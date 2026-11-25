@@ -41,6 +41,12 @@ export interface Session {
   resize(width: number, height: number): Promise<void>;
   /** A screenshot into `<outDir>/screenshots`. */
   screenshot(name: string): Promise<void>;
+  /**
+   * Quits the app and starts it again on the same home folder, like a user restarting it; the
+   * engine keeps running through it. Resolves to the new app's session; use that one from then on.
+   * `whileClosed` runs after the app has quit and before it starts again, to change what it left on disk.
+   */
+  restart(whileClosed?: () => void): Promise<Session>;
 }
 
 /** One timed line per phase of a test, in `<outDir>/trace.log`: it shows where a hung test stood, also when CI cancels the run. */
@@ -103,7 +109,19 @@ export function flow(name: string, fn: (session: Session) => Promise<void>, mode
       page = await app.firstWindow({ timeout: START_TIMEOUT_MS });
       page.setDefaultTimeout(ACTION_TIMEOUT_MS);
       await page.waitForLoadState("load");
-      const session = sessionOf(app, page, engineDir, tmp);
+      const restart = async (whileClosed?: () => void): Promise<Session> => {
+        const closed = await within((app?.close() ?? Promise.resolve()).catch(() => undefined).then(() => true), CLOSE_TIMEOUT_MS);
+        if (closed === undefined) app?.process().kill("SIGKILL");
+        whileClosed?.();
+        app = await launch(tmp, baseDir, output, mode);
+        page = await app.firstWindow({ timeout: START_TIMEOUT_MS });
+        page.setDefaultTimeout(ACTION_TIMEOUT_MS);
+        await page.waitForLoadState("load");
+        const next = sessionOf(app, page, engineDir, tmp, restart);
+        await connected(next);
+        return next;
+      };
+      const session = sessionOf(app, page, engineDir, tmp, restart);
       if (mode === "unavailable") await failed(session);
       else await connected(session);
       trace(name, mode === "unavailable" ? "failed, as expected" : "connected");
@@ -180,7 +198,7 @@ async function launch(tmp: string, baseDir: string, output: string[], mode: Engi
 /** HOME of the app and its engine in a test. */
 const homeOf = (tmp: string): string => join(tmp, "h");
 
-function sessionOf(app: ElectronApplication, page: Page, engineDir: string, tmp: string): Session {
+function sessionOf(app: ElectronApplication, page: Page, engineDir: string, tmp: string, restart: (whileClosed?: () => void) => Promise<Session>): Session {
   const engine = () => readEngine(engineDir);
   return {
     app,
@@ -203,6 +221,7 @@ function sessionOf(app: ElectronApplication, page: Page, engineDir: string, tmp:
       mkdirSync(dir, { recursive: true });
       await page.screenshot({ path: join(dir, `${name}.png`), animations: "disabled" });
     },
+    restart,
   };
 }
 
