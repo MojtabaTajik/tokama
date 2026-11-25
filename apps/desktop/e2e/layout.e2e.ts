@@ -15,7 +15,7 @@ const saved = (home: string) => JSON.parse(readFileSync(join(home, ".tokama", "d
 
 flow("resizing the sidebar and the drawer, a restart finds the same widths and view", async (session) => {
   const { page, home, screenshot, resize } = session;
-  // Both panels at their new widths must fit: a restored window never exceeds the display (1280 px on CI).
+  // Both panels at their new widths need a window this wide.
   await resize(1200, 900);
   await page.getByRole("button", { name: "Done" }).click();
   await page.locator(".range").selectOption("30d");
@@ -50,6 +50,9 @@ flow("resizing the sidebar and the drawer, a restart finds the same widths and v
 
   const next = await session.restart();
   await next.page.locator(".panel").waitFor();
+  // A restored window never exceeds the display's work area (1024 px wide on the macOS runner), and there
+  // the drawer gives way to the main area. Back at the old width, the remembered widths must show again.
+  await next.resize(1200, 900);
   expect(await widthOf(next.page, ".panel")).toBe(232);
   expect(await next.page.getByRole("button", { name: "Expand repos" }).count()).toBe(1);
   expect(await next.page.locator(".range").inputValue()).toBe("30d");
@@ -68,21 +71,27 @@ flow("resizing the sidebar and the drawer, a restart finds the same widths and v
 
 flow("the window comes back where it was, and a broken file gives the defaults", async (session) => {
   const { app, home } = session;
-  await app.evaluate(({ BrowserWindow }) => {
+  // A restored window is cut to the display's work area, so the test window must fit in the smallest
+  // one CI has: 1024 x 674 from y 31 on the macOS runner.
+  const area = await app.evaluate(({ screen }) => screen.getPrimaryDisplay().workArea);
+  await app.evaluate(({ BrowserWindow }, at) => {
     const [window] = BrowserWindow.getAllWindows();
-    window?.setBounds({ x: 60, y: 70, width: 1010, height: 690 });
-  });
-  await expect.poll(() => (saved(home)["window"] as { bounds?: { width: number } }).bounds?.width).toBe(1010);
+    window?.setBounds({ x: at.x + 10, y: at.y + 10, width: 1000, height: 600 });
+  }, area);
+  await expect.poll(() => (saved(home)["window"] as { bounds?: { width: number } }).bounds?.width).toBe(1000);
 
   const next = await session.restart();
   const bounds = await next.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.getBounds());
-  expect([bounds?.width, bounds?.height]).toEqual([1010, 690]);
+  expect([bounds?.width, bounds?.height]).toEqual([1000, 600]);
 
   // The file is damaged while the app is closed; the next start must not fail on it.
   const again = await next.restart(() => writeFileSync(join(home, ".tokama", "desktop.json"), "{ not json"));
   expect(await widthOf(again.page, ".panel")).toBe(264);
   const size = await again.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.getBounds());
-  expect([size?.width, size?.height]).toEqual([1200, 800]);
+  // The default size, cut to the work area like any other. macOS makes a window exactly as tall as the
+  // work area one pixel taller (675 for 674 on the runner), so the height may be off by one.
+  expect(size?.width).toBe(Math.min(1200, area.width));
+  expect(Math.abs((size?.height ?? 0) - Math.min(800, area.height))).toBeLessThanOrEqual(1);
 });
 
 flow("a narrow window makes the drawer give way and then float over the main area", async ({ page, resize, screenshot }) => {

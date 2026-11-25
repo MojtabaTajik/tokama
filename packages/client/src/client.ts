@@ -9,7 +9,8 @@
 // because commands are not idempotent.
 //
 // Starts are bounded: after MAX_STARTS starts in a row without a connection (with a growing delay
-// between them) the client gives up with `start_failed`. A started engine's output goes to
+// between them) the client gives up with `start_failed`. No engine is started while the one started
+// last is still running and booting (up to a grace period). A started engine's output goes to
 // `engine.log` in the engine dir; if it exits before a connection (other than with code 3, "an
 // engine already runs"), the client gives up at once and names the exit code and the log.
 import { type ChildProcess, type StdioOptions, spawn } from "node:child_process";
@@ -129,6 +130,8 @@ const ATTEMPT_TIMEOUT_MS = 2_000;
 const MAX_STARTS = 5;
 /** Delay before the second start; it doubles for each further start (200 ms ... 3.2 s). */
 const START_BACKOFF_MS = 200;
+/** How long an engine that is still running may take to serve before it counts as hung and another is started. */
+const STARTING_GRACE_MS = 10_000;
 /** Exit code of an engine that found another engine running: not a failure. */
 const EXIT_ALREADY_RUNNING = 3;
 
@@ -303,6 +306,10 @@ class Client implements EngineClient {
     }
     const start = this.options.start;
     if (session.error.code !== "not_running" || !start) return session;
+    // The engine started last is still running, so it is still booting: on a loaded machine that takes
+    // seconds. Another engine started meanwhile boots as slowly and can take the dir over once the
+    // first one stops. Another engine is started only when this one has not served within STARTING_GRACE_MS.
+    if (this.child !== undefined && this.child.exitCode === null && this.child.signalCode === null && Date.now() - this.lastStart < STARTING_GRACE_MS) return session;
     // The first start is immediate; each further one waits twice as long as the one before.
     const delay = this.starts === 0 ? 0 : START_BACKOFF_MS * 2 ** (this.starts - 1);
     if (Date.now() - this.lastStart < delay) return session;

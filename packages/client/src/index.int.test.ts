@@ -193,6 +193,24 @@ describe("@tokama/client", () => {
     expect(readFileSync(`${dir}/engine.log`, "utf8")).toContain("engine broke");
   });
 
+  // Bug #176: on a loaded machine an engine took longer than the start back-off to boot. The client
+  // started more engines meanwhile; one of them booted after the first had stopped and took its dir.
+  it("starts the engine once while the engine it started is still booting", async () => {
+    const dir = `${tempDir()}/run`;
+    const starts = join(tempDir(), "starts");
+    const refusal = `${JSON.stringify({ kind: "connection_error", apiVersion: 7, code: "unsupported_version", message: "engine speaks 7" })}\n`;
+    const engine = `const fs = require("fs"), net = require("net"), path = require("path");
+      fs.appendFileSync(process.env.STARTS, "start\\n");
+      setTimeout(() => process.exit(0), 5_000);
+      setTimeout(() => {
+        fs.writeFileSync(path.join(process.env.DIR, "engine.token"), "t0k");
+        net.createServer((socket) => socket.once("data", () => socket.end(${JSON.stringify(refusal)}))).listen(path.join(process.env.DIR, "engine.sock"));
+      }, 1_500);`;
+    const start = { command: process.execPath, args: ["-e", engine], env: { ...process.env, STARTS: starts, DIR: dir } };
+    expect(await connect({ dir, start, startTimeoutMs: 10_000 })).toMatchObject({ ok: false, error: { code: "unsupported_version" } });
+    expect(readFileSync(starts, "utf8")).toBe("start\n");
+  });
+
   // Bug #75: Electron on Linux leaves pipes open in its children; an engine that kept them held the
   // pipes of Playwright, which then never saw the app close. A host process stands in for Electron.
   it("starts the engine without the open descriptors of its parent", () => {
