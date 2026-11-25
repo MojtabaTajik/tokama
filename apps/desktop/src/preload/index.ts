@@ -35,6 +35,8 @@ export const bridge: TokamaBridge = {
   pickFolder: () => ipcRenderer.invoke(CHANNELS.pickFolder) as Promise<string | null>,
   // Only the two names cross, whatever else the renderer passes.
   openTemplateFile: ({ origin, file }) => ipcRenderer.invoke(CHANNELS.openTemplateFile, { origin, file }) as Promise<OpenResult>,
+  // Only the four names cross, whatever else the renderer passes.
+  openAttemptFile: ({ itemId, stepIndex, attempt, file }) => ipcRenderer.invoke(CHANNELS.openAttemptFile, { itemId, stepIndex, attempt, file }) as Promise<OpenResult>,
   getAboutInfo: () => ipcRenderer.invoke(CHANNELS.getAboutInfo) as Promise<AboutInfo>,
   copyBuildInfo: () => ipcRenderer.invoke(CHANNELS.copyBuildInfo) as Promise<void>,
   showDataFolder: () => ipcRenderer.invoke(CHANNELS.showDataFolder) as Promise<OpenResult>,

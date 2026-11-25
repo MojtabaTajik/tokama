@@ -141,19 +141,20 @@ describe("ItemDrawer sections", () => {
     ]);
   });
 
-  it("has only the Steps and Output tabs for an investigation: Evidence, Findings, Log, Checks and Diff are hidden", async () => {
+  it("has Steps, Output and Log for an investigation: it changes no repo, so Checks and Diff are hidden, and Evidence and Findings too", async () => {
     await renderDrawer(fakeBridge([needsYou]).bridge, needsYou.id);
     expect($$('[role="tab"]').map((tab) => [tab.textContent, tab.getAttribute("aria-selected")])).toEqual([
       ["Steps", "true"],
       ["Output", "false"],
+      ["Log", "false"],
     ]);
     expect($(".step")).not.toBeNull();
     expect(text('[role="tabpanel"]')).not.toContain("comes later");
   });
 
-  it("shows a task with the Steps tab only while no decision carries a diff", async () => {
+  it("shows a task with Steps, Output, Checks and Log, and no Diff while no decision carries one", async () => {
     await renderDrawer(fakeBridge([task]).bridge, task.id);
-    expect($$('[role="tab"]').map((tab) => tab.textContent)).toEqual(["Steps", "Output"]);
+    expect($$('[role="tab"]').map((tab) => tab.textContent)).toEqual(["Steps", "Output", "Checks", "Log"]);
     expect(text(".drawer-kind")).toBe("▣ Task · Plan and build · local + cloud");
     expect($(".needs-you")).toBeNull();
     expect($$(".step-where").map((el) => el.textContent)).toEqual([
@@ -1051,12 +1052,12 @@ describe("ItemDrawer full view", () => {
   const tab = (name: string) => $$('[role="tab"]').find((el) => el.textContent === name);
   const cells = (row: Element) => [...row.querySelectorAll('[role="cell"]')].map((cell) => cell.textContent).join("|");
 
-  it("has the drawer's tabs: Steps and Output, and Diff while a decision carries a diff", async () => {
+  it("has the drawer's tabs: Steps, Output, Checks and Log, and Diff while a decision carries a diff", async () => {
     const { bridge } = bridgeFor([task, change]);
     await show(bridge, task.id, full());
-    expect($$('[role="tab"]').map((el) => el.textContent)).toEqual(["Steps", "Output"]);
+    expect($$('[role="tab"]').map((el) => el.textContent)).toEqual(["Steps", "Output", "Checks", "Log"]);
     await show(bridge, change.id, full());
-    expect($$('[role="tab"]').map((el) => el.textContent)).toEqual(["Steps", "Output", "Diff"]);
+    expect($$('[role="tab"]').map((el) => el.textContent)).toEqual(["Steps", "Output", "Diff", "Checks", "Log"]);
   });
 
   it("has ⤢ left of ✕ only when the full view can open, and it asks for it", async () => {

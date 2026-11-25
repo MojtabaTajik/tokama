@@ -21,7 +21,7 @@ const [, pushOpenItem] = electron.on.mock.calls.find(([channel]) => channel === 
 describe("preload bridge", () => {
   it("exposes window.tokama with only the bridge methods", () => {
     expect(exposed).toEqual([["tokama", bridge]]);
-    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "getAboutInfo", "getConnection", "getDesktopState", "onConnection", "onEvent", "onOpenItem", "openTemplateFile", "pickFolder", "query", "reportError", "retryConnection", "saveLayout", "saveNotifications", "setViewedItem", "showDataFolder"].sort());
+    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "getAboutInfo", "getConnection", "getDesktopState", "onConnection", "onEvent", "onOpenItem", "openAttemptFile", "openTemplateFile", "pickFolder", "query", "reportError", "retryConnection", "saveLayout", "saveNotifications", "setViewedItem", "showDataFolder"].sort());
   });
 
   it("query and command invoke their channels with the request only", async () => {
@@ -50,6 +50,13 @@ describe("preload bridge", () => {
     const name = { origin: "orders-api", file: ".tokama/templates/plan.yaml", path: "/bin/sh" } as { origin: string; file: string };
     await expect(bridge.openTemplateFile(name)).resolves.toEqual({ ok: true });
     expect(electron.invoke).toHaveBeenCalledWith(CHANNELS.openTemplateFile, { origin: "orders-api", file: ".tokama/templates/plan.yaml" });
+  });
+
+  it("openAttemptFile sends the item, step, attempt and file only", async () => {
+    electron.invoke.mockResolvedValue({ ok: true });
+    const name = { itemId: "item_x", stepIndex: 1, attempt: 2, file: 1, path: "/bin/sh" } as { itemId: string; stepIndex: number; attempt: number; file: number };
+    await expect(bridge.openAttemptFile(name)).resolves.toEqual({ ok: true });
+    expect(electron.invoke).toHaveBeenCalledWith(CHANNELS.openAttemptFile, { itemId: "item_x", stepIndex: 1, attempt: 2, file: 1 });
   });
 
   it("reportError sends the message and stack only, as strings", async () => {

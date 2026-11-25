@@ -9,7 +9,8 @@ import { type BridgeEvent, CHANNELS } from "../shared/bridge.js";
 import { buildInfoText } from "../shared/build-info.js";
 import { applyLayoutPatch, applyNotificationsPatch } from "../shared/desktop-state.js";
 import { aboutInfo } from "./about.js";
-import { engineApi } from "./api.js";
+import { engineApi, mainQuery } from "./api.js";
+import { openAttemptFile } from "./attempt-file.js";
 import { type ConnectionWatch, watchConnection } from "./connection.js";
 import { type DesktopStore, desktopStore } from "./desktop-store.js";
 import { createReporter, mainErrorReport, pidAlive, rateLimit, rendererErrorReport, rendererGoneKind, type Reporter, runMarker } from "./diagnostics.js";
@@ -214,6 +215,8 @@ void app.whenReady().then(() => {
   }, store));
   // shell.openPath is looked up on each call too, so the UI flow tests can stand in for the editor.
   handle(CHANNELS.openTemplateFile, (name) => openTemplateFile(name, { api, tokamaHome, openPath: (path) => shell.openPath(path) }));
+  const ownQuery = mainQuery(() => watch.client());
+  handle(CHANNELS.openAttemptFile, (name) => openAttemptFile(name, { query: ownQuery, tokamaHome, openPath: (path) => shell.openPath(path) }));
   const about = () => {
     const dir = engineDirFor(defaultEngineDir(process.env, homedir()), sample);
     const endpoint = engineEndpoint(dir);

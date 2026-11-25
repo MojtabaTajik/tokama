@@ -19,7 +19,7 @@ export const ABOUT_INFO: AboutInfo = {
 
 export const CONNECTED: ConnectionState = { status: "connected", engineId: "e-1" };
 
-export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | Promise<Reply> | undefined; commandReply?: (command: { type: string }) => Reply; pickFolder?: () => Promise<string | null>; openTemplateFile?: () => Promise<OpenResult>; about?: AboutInfo; copyBuildInfo?: () => Promise<void>; showDataFolder?: () => Promise<OpenResult>; desktopState?: DesktopState } = {}) {
+export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | Promise<Reply> | undefined; commandReply?: (command: { type: string }) => Reply; pickFolder?: () => Promise<string | null>; openTemplateFile?: () => Promise<OpenResult>; openAttemptFile?: () => Promise<OpenResult>; about?: AboutInfo; copyBuildInfo?: () => Promise<void>; showDataFolder?: () => Promise<OpenResult>; desktopState?: DesktopState } = {}) {
   let connectionListener: ((state: ConnectionState) => void) | undefined;
   let openListener: ((itemId: string) => void) | undefined;
   // Every subscriber hears every event: the app and the open drawer both listen.
@@ -46,6 +46,7 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
     command: vi.fn(async (c: { type: string }): Promise<Reply> => options.commandReply?.(c) ?? { ok: false, error: { code: "not_implemented", message: c.type } }),
     pickFolder: vi.fn(options.pickFolder ?? (async () => null)),
     openTemplateFile: vi.fn(options.openTemplateFile ?? (async (): Promise<OpenResult> => ({ ok: true }))),
+    openAttemptFile: vi.fn(options.openAttemptFile ?? (async (): Promise<OpenResult> => ({ ok: true }))),
     getAboutInfo: vi.fn(async () => options.about ?? ABOUT_INFO),
     copyBuildInfo: vi.fn(options.copyBuildInfo ?? (async () => undefined)),
     showDataFolder: vi.fn(options.showDataFolder ?? (async (): Promise<OpenResult> => ({ ok: true }))),
