@@ -37,6 +37,9 @@ describe.skipIf(!enabled)("real mode against the real Claude Code CLI", () => {
       git("init", "-q", "-b", "main");
       git("add", "-A");
       git("commit", "-q", "-m", "seed");
+      // Tokama commits with the repo's identity.
+      git("config", "user.name", "Test");
+      git("config", "user.email", "test@example.com");
       writeFileSync(join(home, "repos.yaml"), `format: 1\nrepos:\n  - id: orders-api\n    path: ${repo}\n    base_branch: main\n    checks: ["sh check.sh"]\n`);
       // The personal Builder wins over the built-in one: the same role, on haiku.
       writeFileSync(join(home, "agents", "builder.md"), "---\nformat: 1\nname: Builder\nruns_on: claude-code\nmodel: haiku\ntools: edit\n---\nYou are Builder. Make the change the task asks for, in this worktree only. Do not commit.\n");

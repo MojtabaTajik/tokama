@@ -98,6 +98,9 @@ finish: [commit]
   git("init", "-q", "-b", "main");
   git("add", "-A");
   git("commit", "-q", "-m", "seed");
+  // Tokama commits with the repo's identity; a CI runner has no global one.
+  git("config", "user.name", "Test");
+  git("config", "user.email", "test@example.com");
   writeFileSync(join(home, "repos.yaml"), `format: 1\nrepos:\n  - id: orders-api\n    path: ${repoPath}\n    base_branch: main\n    checks: ["sh check.sh"]\n`);
   cleanups.push(() => rmSync(root, { recursive: true, force: true }));
 });
@@ -214,6 +217,22 @@ describe("real mode", () => {
     expect(asked.steps[0]?.attempts?.[0]).toMatchObject({ result: "run_failed", failure: "engine_restart" });
     await second.client.command({ type: "resolve_decision", itemId: id, decisionId: asked.decision!.id, choice: "retry_step" });
     expect((await waitItem(second.client, id, (i) => i.state === "done", "done")).outcome?.commits).toHaveLength(1);
+  });
+
+  it("after a restart while the checks run, the item asks Retry step / Stop instead of staying running", SLOW, async () => {
+    writeFileSync(join(repoPath, "slow.sh"), "sleep 30\n");
+    git("add", "slow.sh");
+    git("commit", "-q", "-m", "slow check");
+    writeFileSync(join(home, "repos.yaml"), `format: 1\nrepos:\n  - id: orders-api\n    path: ${repoPath}\n    base_branch: main\n    checks: ["sh slow.sh"]\n`);
+    const first = await engine(scripted([{ writes: { "greeting.txt": "hello world\n" } }]));
+    const id = await start(first.client);
+    await waitItem(first.client, id, (i) => i.steps[0]?.stage === "verifying", "the checks to run");
+    await first.stop();
+
+    const second = await engine(scripted([{ writes: {} }]));
+    const asked = await waitItem(second.client, id, (i) => i.state === "needs_you", "needs_you");
+    expect(asked.decision?.kind).toBe("run_failure");
+    expect(asked.steps[0]?.attempts?.[0]).toMatchObject({ result: "run_failed", failure: "engine_restart" });
   });
 
   it("reads repos.yaml again after remove_repo, so a start in that repo is refused at once", SLOW, async () => {

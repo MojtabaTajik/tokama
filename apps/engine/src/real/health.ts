@@ -5,13 +5,16 @@ import { adapters, type CliHealth, createGit, type Health, type ProcessRunner } 
 
 export type HealthChecks = () => Promise<Omit<Health, "config">>;
 
-/** The checks against this machine. Each adapter is looked up by name: it may have been removed. */
+/**
+ * The checks against this machine. Each adapter is looked up by name: it may have been removed.
+ * The setup reply waits for them, so a hung CLI is cut off well inside a client's request timeout.
+ */
 export function machineChecks(runner: ProcessRunner): HealthChecks {
-  const git = createGit({ runner, timeoutMs: 15_000 });
+  const git = createGit({ runner, timeoutMs: 10_000 });
   const factories: Record<string, unknown> = { ...adapters };
-  const claudeCodeStatus = factories["claudeCodeStatus"] as ((options: { runner: ProcessRunner }) => Promise<CliHealth>) | undefined;
+  const claudeCodeStatus = factories["claudeCodeStatus"] as ((options: { runner: ProcessRunner; timeoutMs: number }) => Promise<CliHealth>) | undefined;
   return async () => {
-    const [version, claude] = await Promise.all([git.checkGitVersion(), claudeCodeStatus?.({ runner })]);
+    const [version, claude] = await Promise.all([git.checkGitVersion(), claudeCodeStatus?.({ runner, timeoutMs: 5_000 })]);
     return {
       git: version.ok ? { ok: true, version: version.value.slice(0, 100) } : { ok: false, message: version.error.message.slice(0, 1000) },
       clis: claude === undefined ? [] : [claude],
