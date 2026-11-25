@@ -26,7 +26,7 @@ const agents = {
 
 const templates = {
   emergency: {
-    id: "emergency-investigator",
+    id: "builtin/emergency-investigator",
     name: "Emergency investigator",
     kind: "investigation",
     icon: "fire",
@@ -36,6 +36,8 @@ const templates = {
       { connectionId: "postgres-prod", access: "read-only" },
       { connectionId: "azure-prod", access: "reader" },
     ],
+    start: { needs: ["text"], askBeforeCloud: false },
+    warnings: [],
     steps: [
       { name: "Triage", stage: "working", agentId: "local-investigator", data: "none" },
       {
@@ -53,12 +55,14 @@ const templates = {
     ],
   },
   slowQuery: {
-    id: "db-slow-query",
+    id: "builtin/db-slow-query",
     name: "DB slow query check",
     kind: "investigation",
     icon: "database",
     color: "clay",
     connections: [{ connectionId: "postgres-prod", access: "read-only" }],
+    start: { needs: ["text"], askBeforeCloud: false },
+    warnings: [],
     steps: [
       {
         name: "Collect slow queries",
@@ -72,47 +76,53 @@ const templates = {
     ],
   },
   planAndBuild: {
-    id: "plan-and-build",
+    id: "builtin/plan-and-build",
     name: "Plan and build",
     kind: "task",
     icon: "hammer",
     color: "sky",
     connections: [],
+    start: { needs: ["text", "repo"], askBeforeCloud: false },
+    warnings: [],
     steps: [
       { name: "Plan", stage: "working", agentId: "architect", data: "repo-and-diff" },
       { name: "Build", stage: "working", agentId: "local-builder", data: "none" },
-      { name: "Run checks", stage: "verifying", data: "none" },
+      { name: "Run checks", stage: "verifying", data: "none", checks: { from: "repo" } },
       { name: "Review", stage: "review", agentId: "reviewer", data: "repo-and-diff" },
     ],
   },
   quickFix: {
-    id: "quick-fix",
+    id: "builtin/quick-fix",
     name: "Quick fix",
     kind: "task",
     icon: "wrench",
     color: "moss",
     connections: [],
+    start: { needs: ["text", "repo"], askBeforeCloud: false },
+    warnings: [],
     steps: [
       { name: "Fix", stage: "working", agentId: "local-builder", data: "none" },
-      { name: "Run checks", stage: "verifying", data: "none" },
+      { name: "Run checks", stage: "verifying", data: "none", checks: { from: "repo" } },
     ],
   },
   reviewOnly: {
-    id: "review-only",
+    id: "builtin/review-only",
     name: "Review only",
     kind: "task",
     icon: "eye",
     color: "slate",
     connections: [],
+    start: { needs: ["text", "repo"], askBeforeCloud: false },
+    warnings: [],
     steps: [{ name: "Review", stage: "review", agentId: "reviewer", data: "repo-and-diff" }],
   },
 };
 
 export const sampleSetup = {
   repos: [
-    { id: "orders-api", baseBranch: "main" },
-    { id: "checkout-web", baseBranch: "main" },
-    { id: "inventory-service", baseBranch: "develop" },
+    { id: "orders-api", baseBranch: "main", checks: ["pnpm test", "pnpm lint"] },
+    { id: "checkout-web", baseBranch: "main", checks: ["npm test"] },
+    { id: "inventory-service", baseBranch: "develop", checks: [] },
   ],
   connections: [
     { id: "app-insights-prod", name: "App Insights · prod", type: "App Insights" },
@@ -123,13 +133,17 @@ export const sampleSetup = {
   ],
   agents: [agents.architect, agents.investigator, agents.reviewer, agents.builder],
   templates: [templates.emergency, templates.slowQuery, templates.planAndBuild, templates.quickFix, templates.reviewOnly],
+  health: { git: { ok: true, version: "git version 2.54.0" }, clis: [{ cliId: "claude-code", installed: true, loggedIn: true, version: "2.1.331" }], config: [] },
 };
 
 type StepState = "pending" | "running" | "needs_you" | "passed" | "failed";
 
 /** The template's steps with these states and detail lines (a passed step without one says "passed"). */
 function steps(template: { steps: readonly object[] }, states: readonly StepState[], details: Record<number, string> = {}) {
-  return template.steps.map((step, index) => {
+  return template.steps.map((templateStep: { checks?: unknown }, index) => {
+    // Item steps carry no checks; the template summary does.
+    const step = { ...templateStep };
+    delete step.checks;
     const state = states[index] ?? "pending";
     const detail = details[index] ?? (state === "passed" ? "passed" : undefined);
     return { ...step, state, ...(detail ? { detail } : {}) };

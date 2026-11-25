@@ -74,7 +74,8 @@ export interface RunLoopDeps {
   /** The boot time for process records, and the leftover kills of restart recovery. */
   readonly processes: ProcessTable;
   readonly repo: (id: RepoId) => Repo | undefined;
-  readonly agent: (repo: Repo, id: Agent["id"]) => Agent | undefined;
+  /** The agent a step names, for that repo; `problem` when its id is claimed by a file that cannot be used. */
+  readonly agent: (repo: Repo, id: Agent["id"]) => Agent | { readonly problem: string } | undefined;
   readonly runtime: (agent: Agent) => AgentRuntime | undefined;
   /** Loop guards of every agent call; its timeout is also the call's. Default: `claudeCodeGuardDefaults`. */
   readonly guard?: LoopGuardSettings;
@@ -109,6 +110,11 @@ export interface RunLoop {
   stopItem(itemId: ItemId): Promise<Result<null, CommandError>>;
   /** Settles when the item's loop waits for the engineer or has ended. */
   settled(itemId: ItemId): Promise<void>;
+  /**
+   * For engine shutdown: stops every running agent and check and waits for the loops, recording
+   * nothing more, so the next start's recovery asks Retry step / Stop. Commands are refused after.
+   */
+  close(): Promise<void>;
 }
 
 const choice = (id: string, label: string): DecisionChoice => ({ id, label });
@@ -585,6 +591,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     if (worktree === undefined) return runFailed(item, stepId, attempt, "crash", "The item has no worktree with a recorded base commit.");
     const agent = deps.agent(ctx.repo, step.agentId);
     if (agent === undefined) return runFailed(item, stepId, attempt, "crash", `Agent ${step.agentId} is not set up for repo ${ctx.repo.id}.`);
+    if ("problem" in agent) return runFailed(item, stepId, attempt, "crash", `Agent ${step.agentId} cannot run: ${agent.problem}`);
     const runtime = deps.runtime(agent);
     if (runtime === undefined) return runFailed(item, stepId, attempt, "crash", `No runtime for ${agent.cliId}, which agent ${agent.id} runs on.`);
     const reviewer = step.doneWhen === "reviewer approves";
@@ -938,13 +945,18 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
 
   // ---- start up: recovery, then pick up items that were starting or finishing ---------------
 
+  // close() aborts recovery: what it has not recorded yet, the next start's recovery records.
+  const recoveryAbort = new AbortController();
+  let closing = false;
   const ready = (async () => {
     const recovered = await recoverItems(store, {
       table: deps.processes,
       clock,
+      signal: recoveryAbort.signal,
       ...(deps.recoveryGraceMs !== undefined && { graceMs: deps.recoveryGraceMs }),
     });
     for (const item of store.list()) {
+      if (closing) break;
       if (item.deleted || item.outcome !== undefined || item.hostId !== store.hostId || openDecisions(item).length > 0) continue;
       if (!item.steps.some((s) => s.state !== "pending")) void drive(item.id, { kind: "begin" });
       else if (item.currentStepId === undefined) void drive(item.id, { kind: "finish" });
@@ -955,6 +967,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
   ready.catch(() => undefined);
 
   const failure = (code: CommandErrorCode, message: string): Result<never, CommandError> => err({ code, message });
+  const closed = (): Result<never, CommandError> => failure("invalid_state", "The engine is shutting down.");
 
   const liveItem = (itemId: ItemId): Result<StoredItem, CommandError> => {
     const item = store.get(itemId);
@@ -968,6 +981,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
 
     async startItem(input) {
       await ready;
+      if (closing) return closed();
       if (input.text.trim() === "") return failure("invalid_request", "The item needs a description.");
       if (deps.repo(input.repoId) === undefined) return failure("not_found", `No repo ${input.repoId}.`);
       const created = store.create({ template: input.template, title: input.title ?? titleFrom(input.text), text: input.text, repoIds: [input.repoId] });
@@ -978,6 +992,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
 
     async resolveDecision(itemId, decisionId, chosen) {
       await ready;
+      if (closing) return closed();
       const item = liveItem(itemId);
       if (!item.ok) return item;
       const asked = item.value.decisions.find((d) => d.id === decisionId);
@@ -992,6 +1007,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
 
     async stopItem(itemId) {
       await ready;
+      if (closing) return closed();
       const item = liveItem(itemId);
       if (!item.ok) return item;
       const entry = liveOf(itemId);
@@ -1000,6 +1016,17 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       endItem(itemId, "stopped", "Stopped by the engineer.");
       forget(itemId);
       return ok(null);
+    },
+
+    async close() {
+      closing = true;
+      recoveryAbort.abort();
+      await ready.catch(() => undefined);
+      const chains = [...live.values()].map((entry) => {
+        entry.controller.abort();
+        return entry.chain;
+      });
+      await Promise.allSettled(chains);
     },
 
     async settled(itemId) {

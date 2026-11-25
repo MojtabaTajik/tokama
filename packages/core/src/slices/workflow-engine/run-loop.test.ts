@@ -508,6 +508,33 @@ describe("run loop: start, safety and control", () => {
     expect(await loop.stopItem(started.value)).toMatchObject({ ok: false, error: { code: "invalid_state" } });
   });
 
+  it("a step whose agent file is broken asks Retry step / Stop with that file's problem", SLOW, async () => {
+    const loop = engine(fakeRuntime([edits(FIXED)]), { agent: () => ({ problem: "agents/builder.md line 3: tools must be read-only or edit" }) });
+    const id = await start(loop, template([BUILD_CHECKED]));
+    expect(openDecision(id)).toMatchObject({ kind: "run_failure", detail: expect.stringContaining("agents/builder.md line 3: tools must be") });
+    expect(item(id).steps[0]?.attempts[0]).toMatchObject({ result: "run_failed", failure: "crash" });
+  });
+
+  it("close stops a running call without recording it, refuses commands, and a new loop asks Retry step / Stop", SLOW, async () => {
+    let running!: () => void;
+    const underWay = new Promise<void>((resolve) => (running = resolve));
+    const first = engine(fakeRuntime([hangs(() => running())]));
+    const started = await first.startItem({ template: template([BUILD_CHECKED]), repoId: repo.id, text: "Fix it" });
+    if (!started.ok) throw new Error(started.error.message);
+    await underWay;
+    await first.close();
+    expect(item(started.value).steps[0]?.attempts[0]?.endedAt).toBeUndefined();
+    expect(item(started.value).outcome).toBeUndefined();
+    expect(await first.stopItem(started.value)).toMatchObject({ ok: false, error: { code: "invalid_state" } });
+
+    store = ItemStore.open({ home: tokamaHome, hostId: HOST, clock }).store;
+    const second = engine(fakeRuntime([edits(FIXED)]));
+    await second.ready;
+    expect(openDecision(started.value)?.kind).toBe("run_failure");
+    await answer(second, started.value, "retry_step");
+    expect(item(started.value).state).toBe("done");
+  });
+
   it("refuses stale decisions and unknown choices", SLOW, async () => {
     const loop = engine(fakeRuntime([edits(FIXED)]));
     const id = await start(loop, template([{ id: "plan", doneWhen: "you approve" }]));

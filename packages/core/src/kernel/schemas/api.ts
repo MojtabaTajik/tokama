@@ -4,12 +4,12 @@
 // `*Input` types are what a sender builds (ids as plain strings); the other types are what a
 // parser returns (ids branded).
 import { z } from "zod";
-import { DecisionIdSchema, ItemIdSchema, RepoIdSchema, TemplateIdSchema } from "./ids.js";
+import { DecisionIdSchema, ItemIdSchema, RepoIdSchema, TemplateRefSchema } from "./ids.js";
 import { ItemRecordSchema } from "./item.js";
 import { AgentCallUsageSchema } from "./usage.js";
 import { RepoSummarySchema, SetupSchema } from "./setup.js";
 
-export const API_VERSION = 2;
+export const API_VERSION = 3;
 
 const apiVersion = z.literal(API_VERSION);
 const requestId = z.string().min(1).max(128);
@@ -24,12 +24,16 @@ export const CommandSchema = z.discriminatedUnion("type", [
   // `text` is the description or the pasted alert; the engine derives the title from it.
   z.strictObject({
     type: z.literal("start_item"),
-    templateId: TemplateIdSchema,
+    /** The template's ref: `<repo>/<id>` or `builtin/<id>`. */
+    templateId: TemplateRefSchema,
     repoIds: z.array(RepoIdSchema).max(20),
     text: z.string().max(4000).regex(/\S/, "must not be blank"),
     options: z
       .strictObject({
-        /** Wait for approval before each step that sends data to a cloud agent. Default true. */
+        /**
+         * Wait for approval before each step that sends data to a cloud agent. The engine decides
+         * the default: the template's own setting, which is off unless the template turns it on.
+         */
         askBeforeCloud: z.boolean().optional(),
         /** Send a desktop notification when the item needs you or ends. */
         notify: z.boolean().optional(),
@@ -62,7 +66,7 @@ export const QuerySchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("setup") }),
   z.strictObject({ type: z.literal("board") }),
   z.strictObject({ type: z.literal("item"), itemId: ItemIdSchema }),
-  /** The template the engine suggests for New work text; `templateId` is null when none fits. */
+  /** The template the engine suggests for New work text, by ref; `templateId` is null when none fits. */
   z.strictObject({ type: z.literal("suggest_template"), text: z.string().max(4000) }),
   /** What the engine proposes for a folder before add_repo: id, base branch and checks. */
   z.strictObject({ type: z.literal("suggest_repo"), path: folderPath }),
@@ -93,7 +97,7 @@ export const QueryResultSchemas = {
   setup: SetupSchema,
   board: z.strictObject({ items: z.array(ItemRecordSchema) }),
   item: z.strictObject({ item: ItemRecordSchema }),
-  suggest_template: z.strictObject({ templateId: TemplateIdSchema.nullable() }),
+  suggest_template: z.strictObject({ templateId: TemplateRefSchema.nullable() }),
   suggest_repo: RepoSuggestionSchema,
 } as const satisfies Record<z.output<typeof QuerySchema>["type"], z.ZodType>;
 

@@ -17,7 +17,7 @@ export function sampleItem(title = "Checkout latency spike"): ItemRecord {
     schemaVersion: 1,
     id: "item_0b9f3c1e-6a2d-4f7b-9c1a-2e3d4f5a6b7c",
     kind: "investigation",
-    templateId: "emergency-investigator",
+    templateId: "builtin/emergency-investigator",
     title,
     text: "Alert: checkout p95 above 1.5 s",
     repoIds: [],

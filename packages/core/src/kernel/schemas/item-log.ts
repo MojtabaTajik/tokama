@@ -3,7 +3,6 @@
 // wrote it and the UTC time (epoch ms). Records hold no absolute paths and no user names: repos
 // are referenced by id, files by a path relative to the item's or the repo's folder.
 import { z } from "zod";
-import { AgentCallErrorKindSchema } from "./usage.js";
 import {
   DecisionIdSchema,
   EpochMsSchema,
@@ -13,33 +12,10 @@ import {
   StepIdSchema,
   TemplateRefSchema,
 } from "./ids.js";
-import { ItemStateSchema, StepStateSchema } from "./item.js";
+import { AttemptResultSchema, DecisionKindSchema, ItemOutcomeSchema, ItemStateSchema, RunFailureSchema, StepStateSchema } from "./item.js";
 
 export const ITEM_EVENT_SCHEMA_VERSION = 1;
 export const STORED_ITEM_SCHEMA_VERSION = 1;
-
-/** Why the engine asks the engineer. */
-export const DecisionKindSchema = z.enum([
-  "plan_approval",
-  "cloud_summary",
-  "outside_change",
-  "after_failure",
-  "run_failure",
-  "budget",
-  "tamper",
-]);
-
-/** How an item ended. `no_action_needed` ends it early without failing. */
-export const ItemOutcomeSchema = z.enum(["done", "no_action_needed", "failed", "stopped"]);
-
-/**
- * How an attempt ended. `run_failed` means the run failed, not the work (quota, rate limit, CLI
- * crash, timeout, engine restart); it does not count as an attempt.
- */
-export const AttemptResultSchema = z.enum(["passed", "failed", "run_failed", "stopped"]);
-
-/** Why a run failed: an agent call error, or the engine stopped while the attempt ran. */
-export const RunFailureSchema = z.enum([...AgentCallErrorKindSchema.options, "engine_restart"]);
 
 export const StepResultSchema = z.enum(["passed", "failed", "stopped"]);
 
@@ -295,10 +271,6 @@ export const StoredItemSchema = z.strictObject({
   lastSeq: z.int().nonnegative(),
 });
 
-export type DecisionKind = z.output<typeof DecisionKindSchema>;
-export type ItemOutcome = z.output<typeof ItemOutcomeSchema>;
-export type AttemptResult = z.output<typeof AttemptResultSchema>;
-export type RunFailure = z.output<typeof RunFailureSchema>;
 export type DecisionChoice = z.output<typeof DecisionChoiceSchema>;
 export type CoveredPath = z.output<typeof CoveredPathSchema>;
 export type TemplateSnapshot = z.output<typeof TemplateSnapshotSchema>;

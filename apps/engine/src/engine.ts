@@ -53,10 +53,14 @@ import {
   loadHostId,
   posixProcessTable,
   type ProcessTable,
-  recoverItems,
   type StoredItem,
+  type Agent,
+  type AgentRuntime,
+  type ProcessRunner,
 } from "@tokama/core";
 import { ItemIndex } from "./item-index.js";
+import { type HealthChecks, machineChecks } from "./real/health.js";
+import { RealEngine } from "./real/real.js";
 import { SampleEngine } from "./sample/sample.js";
 import { MemoryItemStore } from "./store.js";
 
@@ -75,6 +79,14 @@ export interface EngineOptions {
   readonly home?: string;
   /** Read and signal leftover agent processes on start. Default: the POSIX process table. */
   readonly processTable?: ProcessTable;
+  /** Real mode: runs git, setup and check commands and the AI CLIs. Default: a new process runner. */
+  readonly runner?: ProcessRunner;
+  /** Real mode: the runtime for an agent. Default: Claude Code for claude-code agents. */
+  readonly runtime?: (agent: Agent) => AgentRuntime | undefined;
+  /** Real mode: the startup checks. Default: git's version and Claude Code's login, on this machine. */
+  readonly checks?: HealthChecks;
+  /** Real mode: time between SIGTERM and SIGKILL for a leftover agent tree at start. */
+  readonly recoveryGraceMs?: number;
   /** Default: the system clock. */
   readonly clock?: Clock;
   /** A connection that sends no hello within this time is closed. Default 5 s. */
@@ -141,7 +153,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       }
       const locked = await acquireLock(homeLock, homeLockContent, log);
       if (!locked.ok) return locked;
-      const result = await openStorage(home, options.processTable ?? posixProcessTable, options.clock ?? systemClock, log);
+      const result = await openStorage(home, options.clock ?? systemClock, log);
       if (!result.ok) releaseLock(homeLock.lockPath, homeLockContent);
       return result;
     })();
@@ -174,6 +186,26 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
 
   const store = options.store ?? new MemoryItemStore();
   const sample = options.sample ? new SampleEngine(store, options.clock ?? systemClock) : undefined;
+  const runner = options.runner ?? createProcessRunner();
+  // Real mode: the engine stores items. Its run loop starts restart recovery at once.
+  const realEngine: Promise<RealEngine | undefined> =
+    storage === undefined || options.home === undefined
+      ? Promise.resolve(undefined)
+      : RealEngine.create({
+          home: options.home,
+          items: storage.items,
+          store,
+          clock: options.clock ?? systemClock,
+          processes: options.processTable ?? posixProcessTable,
+          runner,
+          checks: options.checks ?? machineChecks(runner),
+          ...(options.runtime !== undefined && { runtime: options.runtime }),
+          ...(options.recoveryGraceMs !== undefined && { recoveryGraceMs: options.recoveryGraceMs }),
+          log,
+        }).catch((error: unknown) => {
+          log(`real mode failed to start: ${String(error)}`);
+          return undefined;
+        });
   const helloTimeoutMs = options.helloTimeoutMs ?? 5_000;
   const shutdownTimeoutMs = options.shutdownTimeoutMs ?? 5_000;
   const connections = new Set<Socket>();
@@ -240,14 +272,16 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     repoChanges = change.catch(() => undefined);
     const result = await change;
     if (!result.ok) return { ok: false, error: result.error };
+    // Real mode reads the repos again, so the run loop sees the change at once.
+    await (await realEngine)?.refresh();
     broadcast({ type: "setup_changed" });
     log(`${command.type === "add_repo" ? "added" : "removed"} repo ${result.value.id}`);
-    return { ok: true, data: command.type === "add_repo" ? ({ repo: { id: result.value.id, baseBranch: result.value.baseBranch } } satisfies AddRepoResult) : null };
+    return { ok: true, data: command.type === "add_repo" ? ({ repo: { id: result.value.id, baseBranch: result.value.baseBranch, checks: [...result.value.checks] } } satisfies AddRepoResult) : null };
   };
 
   /** The sample setup in sample mode, with the repos of repos.yaml after its own. */
   const setup = async (): Promise<SetupResult> => {
-    const base: SetupResult = sample ? { ...sample.setup, repos: sample.setup.repos.map((repo) => ({ ...repo, sample: true as const })) } : { repos: [], connections: [], agents: [], templates: [] };
+    const base: SetupResult = sample ? { ...sample.setup, repos: sample.setup.repos.map((repo) => ({ ...repo, sample: true as const })) } : { repos: [], connections: [], agents: [], templates: [], health: { git: { ok: true }, clis: [], config: [] } };
     if (options.home === undefined) return base;
     const loaded = await loadRepos({ tokamaHome: options.home });
     if (!loaded.ok) {
@@ -255,10 +289,24 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       return base;
     }
     const added = loaded.value.filter((repo) => !base.repos.some((known) => known.id === repo.id));
-    return { ...base, repos: [...base.repos, ...added.map((repo) => ({ id: repo.id, baseBranch: repo.baseBranch }))] };
+    return { ...base, repos: [...base.repos, ...added.map((repo) => ({ id: repo.id, baseBranch: repo.baseBranch, checks: [...repo.checks] }))] };
   };
 
   const dispatch = async (message: ClientMessage): Promise<ReplyResult> => {
+    // Real mode answers once its config is read and its items are projected into the store.
+    const real = await realEngine;
+    if (real !== undefined) {
+      if (message.kind === "command") {
+        const { command } = message;
+        if (command.type !== "add_repo" && command.type !== "remove_repo") {
+          const result = await real.command(command);
+          return result.ok ? { ok: true, data: result.value } : { ok: false, error: result.error };
+        }
+      } else if (message.query.type === "setup") {
+        return { ok: true, data: (await real.setup()) satisfies SetupResult };
+      } else if (message.query.type === "suggest_template") { return { ok: true, data: { templateId: await real.suggestTemplate() } as SuggestTemplateResult };
+      }
+    }
     if (message.kind === "command") {
       const command = message.command;
       if (command.type === "add_repo" || command.type === "remove_repo") return repoCommand(command);
@@ -393,9 +441,8 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     for (const socket of connections) socket.end();
     await withDeadline(allClosed, shutdownTimeoutMs);
     for (const socket of connections) socket.destroy();
-    // Recovery writes to the item logs; it must be done before another engine may open them.
-    recoveryAbort.abort();
-    await recovering;
+    // The run loop writes to the item logs; it must be done before another engine may open them.
+    await (await realEngine)?.close().catch((error: unknown) => log(`closing the run loop failed: ${String(error)}`));
     // Closing the server removes the socket file. Only then may another engine take over.
     await new Promise<void>((resolve) => server.close(() => resolve()));
     releaseStorage();
@@ -409,18 +456,17 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     return closed;
   };
 
-  const recoveryAbort = new AbortController();
-  let recovering: Promise<void> | undefined;
-
   if (options.signal?.aborted) void shutdown();
   else options.signal?.addEventListener("abort", () => void shutdown(), { once: true });
 
   // Recovery can take seconds (a grace period per leftover tree). It runs once the socket answers,
   // so an engine starting meanwhile sees this one as live rather than its lock as stale.
-  if (storage !== undefined && !shuttingDown) {
-    const running = storage;
-    recovering = running.recover(recoveryAbort.signal).catch((error: unknown) => log(`restart recovery failed: ${String(error)}`));
-    await recovering;
+  const real = await realEngine;
+  if (real !== undefined && !shuttingDown) {
+    for (const recovered of await real.ready.catch((error: unknown) => (log(`restart recovery failed: ${String(error)}`), []))) {
+      const kills = recovered.kills.map(({ pid, outcome }) => `${pid} ${outcome.kind}${"reason" in outcome ? ` (${outcome.reason})` : ""}${"message" in outcome ? ` (${outcome.message})` : ""}`);
+      log(`item ${recovered.itemId}: step ${recovered.stepId} was running; asking retry or stop${kills.length > 0 ? `; processes: ${kills.join(", ")}` : ""}${recovered.error ? `; not recorded: ${recovered.error.message}` : ""}`);
+    }
   }
   if (shuttingDown) {
     await closed;
@@ -433,13 +479,11 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
 
 interface Storage {
   readonly items: ItemStore;
-  /** Records a run failure for each step that was running when the engine stopped. */
-  recover(signal: AbortSignal): Promise<void>;
   close(): void;
 }
 
 /** Loads the item logs and rebuilds the board index from them. The index follows every change after that. */
-async function openStorage(home: string, table: ProcessTable, clock: Clock, log: (message: string) => void): Promise<Result<Storage, StartError>> {
+async function openStorage(home: string, clock: Clock, log: (message: string) => void): Promise<Result<Storage, StartError>> {
   let index: ItemIndex | undefined;
   try {
     const hostId = loadHostId(home, clock);
@@ -458,12 +502,6 @@ async function openStorage(home: string, table: ProcessTable, clock: Clock, log:
     });
     return ok({
       items,
-      recover: async (signal) => {
-        for (const recovered of await recoverItems(items, { table, clock, signal })) {
-          const kills = recovered.kills.map(({ pid, outcome }) => `${pid} ${outcome.kind}${"reason" in outcome ? ` (${outcome.reason})` : ""}${"message" in outcome ? ` (${outcome.message})` : ""}`);
-          log(`item ${recovered.itemId}: step ${recovered.stepId} was running; asking retry or stop${kills.length > 0 ? `; processes: ${kills.join(", ")}` : ""}${recovered.error ? `; not recorded: ${recovered.error.message}` : ""}`);
-        }
-      },
       close: () => {
         unsubscribe();
         opened.close();

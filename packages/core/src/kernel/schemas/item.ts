@@ -1,7 +1,8 @@
 // Item and step records. Steps are stored inside their item, so the
 // item's schema version covers them.
 import { z } from "zod";
-import { AgentIdSchema, ConnectionIdSchema, DecisionIdSchema, EpochMsSchema, ItemIdSchema, RepoIdSchema, TemplateIdSchema } from "./ids.js";
+import { AgentIdSchema, ConnectionIdSchema, DecisionIdSchema, EpochMsSchema, ItemIdSchema, RepoIdSchema, TemplateRefSchema } from "./ids.js";
+import { AgentCallErrorKindSchema } from "./usage.js";
 
 /** The board column a step counts as. */
 export const StageSchema = z.enum(["queued", "working", "verifying", "review", "done"]);
@@ -13,8 +14,44 @@ export const DataRuleSchema = z.enum(["none", "summary-after-approval", "repo-an
 /** The card's privacy label: "local only" when no step may send anything out. */
 export const PrivacySchema = z.enum(["local_only", "local_and_cloud"]);
 
+/** Why the engine asks the engineer. */
+export const DecisionKindSchema = z.enum([
+  "plan_approval",
+  "cloud_summary",
+  "outside_change",
+  "after_failure",
+  "run_failure",
+  "budget",
+  "tamper",
+]);
+
+/** How an item ended. `no_action_needed` ends it early without failing. */
+export const ItemOutcomeSchema = z.enum(["done", "no_action_needed", "failed", "stopped"]);
+
+/**
+ * How an attempt ended. `run_failed` means the run failed, not the work (quota, rate limit, CLI
+ * crash, timeout, engine restart); it does not count as an attempt.
+ */
+export const AttemptResultSchema = z.enum(["passed", "failed", "run_failed", "stopped"]);
+
+/** Why a run failed: an agent call error, or the engine stopped while the attempt ran. */
+export const RunFailureSchema = z.enum([...AgentCallErrorKindSchema.options, "engine_restart"]);
+
+
 /** Connections a step may use, each with the access it asks for ("query", "read-only"). */
 export const ConnectionUsesSchema = z.array(z.strictObject({ connectionId: ConnectionIdSchema, access: z.string().min(1).max(100) })).max(20);
+
+const GIT_ID = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/, "must be a git object id");
+
+/** One attempt of a step: one agent session plus its checks. */
+export const AttemptSummarySchema = z.strictObject({
+  attempt: z.int().min(1),
+  /** Absent while the attempt runs. */
+  result: AttemptResultSchema.optional(),
+  failure: RunFailureSchema.optional(),
+  detail: z.string().min(1).max(500).optional(),
+  checks: z.array(z.strictObject({ command: z.string().min(1).max(500), passed: z.boolean(), exitCode: z.int().nullable() })).max(20),
+});
 
 export const StepRecordSchema = z.strictObject({
   name: z.string().min(1),
@@ -26,11 +63,14 @@ export const StepRecordSchema = z.strictObject({
   uses: ConnectionUsesSchema.optional(),
   /** One line about the step in its current state, on every step: what it waits for, how it ended. */
   detail: z.string().min(1).max(200).optional(),
+  /** The step's attempts so far, oldest first. */
+  attempts: z.array(AttemptSummarySchema).max(50).optional(),
 });
 
 /** A question put to the engineer. Present only while the item's state is `needs_you`. */
 export const DecisionSchema = z.strictObject({
   id: DecisionIdSchema,
+  kind: DecisionKindSchema.optional(),
   stepIndex: z.int().nonnegative(),
   question: z.string().min(1).max(500),
   /** Why the engine asks, e.g. the step's data rule sends data to a cloud agent. */
@@ -49,7 +89,8 @@ export const ItemRecordSchema = z.strictObject({
   schemaVersion: z.literal(ITEM_SCHEMA_VERSION),
   id: ItemIdSchema,
   kind: ItemKindSchema,
-  templateId: TemplateIdSchema,
+  /** The template's ref: `<repo>/<id>` or `builtin/<id>`. */
+  templateId: TemplateRefSchema,
   title: z.string().min(1).max(200),
   /** What the engineer asked for: the description or the pasted alert. */
   text: z.string().max(4000),
@@ -61,8 +102,21 @@ export const ItemRecordSchema = z.strictObject({
   cardLine: z.string().min(1).max(120).optional(),
   decision: DecisionSchema.optional(),
   steps: z.array(StepRecordSchema),
+  /** How the item ended, with the commits it made. Absent while it runs. */
+  outcome: z
+    .strictObject({
+      kind: ItemOutcomeSchema,
+      detail: z.string().min(1).max(500).optional(),
+      commits: z.array(z.strictObject({ repoId: RepoIdSchema, commit: GIT_ID, branch: z.string().min(1).max(200).optional() })).max(20).optional(),
+    })
+    .optional(),
 });
 
+export type DecisionKind = z.output<typeof DecisionKindSchema>;
+export type ItemOutcome = z.output<typeof ItemOutcomeSchema>;
+export type AttemptResult = z.output<typeof AttemptResultSchema>;
+export type RunFailure = z.output<typeof RunFailureSchema>;
+export type AttemptSummary = z.output<typeof AttemptSummarySchema>;
 export type Stage = z.output<typeof StageSchema>;
 export type ItemKind = z.output<typeof ItemKindSchema>;
 export type StepState = z.output<typeof StepStateSchema>;
