@@ -152,3 +152,50 @@ flow("the drawer's content has the same gap to its right edge as to its left, at
     for (const gap of await gaps()) expect(Math.abs(gap.right - gap.left), `${name}: ${gap.selector} left ${gap.left}, right ${gap.right}`).toBeLessThanOrEqual(2);
   }
 });
+
+/** The boxes of one list row's parts, in page pixels. */
+const geometry = (wrap: import("playwright-core").Locator) =>
+  wrap.evaluate((el) => {
+    const box = (selector: string) => {
+      const found = el.querySelector(selector)?.getBoundingClientRect();
+      return found === undefined ? undefined : { top: found.top, right: found.right };
+    };
+    // The agent's cell is as wide as its column: the chip is what the eye sees. That is its name and, when it
+    // fits on the first line, its model; a model that wrapped onto a second line is clipped away.
+    const chip = (() => {
+      const parts = [...el.querySelectorAll(".pl-agent .ellipsis, .pl-agent .al-model")].map((part) => part.getBoundingClientRect());
+      const first = parts[0];
+      if (first === undefined) return undefined;
+      const seen = parts.filter((part) => part.top < first.top + 12);
+      return { top: first.top, right: Math.max(...seen.map((part) => part.right)) };
+    })();
+    return { title: box(".pl-title"), time: box(".pl-time"), agent: chip, name: el.querySelector(".pl-agent")?.textContent ?? "" };
+  });
+
+flow("a list row's time sits on its title line and the agent labels share one right edge", async ({ page, resize, screenshot }) => {
+  await resize(1200, 900);
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.locator(".range").selectOption("30d");
+  const wraps = page.locator(".pl-row-wrap", { has: page.locator(".pl-agent") });
+  await wraps.first().waitFor();
+  // Wide: the columns. Narrow: the open drawer squeezes the list into the stacked layout.
+  for (const narrow of [false, true]) {
+    if (narrow) {
+      await row(page, DONE).click();
+      await drawer(page).getByRole("heading", { name: DONE }).waitFor();
+      await page.mouse.move(600, 400);
+    }
+    await screenshot(narrow ? "rows-narrow" : "rows-wide");
+    const all = await Promise.all((await wraps.all()).map(geometry));
+    const names = new Set(all.map((g) => g.name));
+    expect(names.size, `rows with different agents (${narrow ? "narrow" : "wide"})`).toBeGreaterThan(1);
+    for (const g of all) {
+      if (g.title === undefined || g.time === undefined || g.agent === undefined) throw new Error("a row lacks a title, a time or an agent");
+      expect(Math.abs(g.time.top - g.title.top), `time top vs title top (${g.name})`).toBeLessThanOrEqual(2);
+      // Stacked, the agent sits right under the time; in columns it sits left of it.
+      if (narrow) expect(Math.abs(g.agent.right - g.time.right), `agent right vs time right (${g.name})`).toBeLessThanOrEqual(1);
+    }
+    const rights = all.map((g) => g.agent?.right ?? 0);
+    expect(Math.max(...rights) - Math.min(...rights), "agent right edges").toBeLessThanOrEqual(1);
+  }
+});

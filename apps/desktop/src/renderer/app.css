@@ -968,11 +968,28 @@ button:focus-visible {
   min-width: 0;
   font-size: 12px;
   color: var(--text-2);
+  /* Right-aligned, so labels of different lengths end at one edge. */
+  justify-content: flex-end;
 }
 
-/* The agent label holds column 4, in the wrapper; the time stays in the last. */
+/* The label fills its cell when the model does not fit, so its content is pushed to the cell's right
+   edge too; the button's own padding hangs outside the cell, so the text ends where the time does. */
+.pl-agent .al {
+  margin-left: 0;
+  margin-right: -6px;
+}
+
+.pl-agent .al-button {
+  justify-content: flex-end;
+}
+
+/* The agent label holds column 4, in the wrapper; the time stays in the last. The time sits on the
+   title's line, not centred between the title and the meta line. */
 .pl-time {
   grid-column: 5;
+  align-self: start;
+  /* The title's line box, so both texts sit on one baseline. */
+  line-height: 19.5px;
   font-size: 11.5px;
   color: var(--muted);
   text-align: right;
@@ -1039,7 +1056,6 @@ button:focus-visible {
 
   .pl-agent {
     grid-area: agent;
-    justify-content: flex-end;
   }
 
   .pl-time {
