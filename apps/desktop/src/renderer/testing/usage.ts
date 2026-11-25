@@ -1,6 +1,7 @@
 // A usage report shaped like the fake engine's: 14 days ending at NOW over the test setup's
 // workflows, Claude Code well inside its limits, Codex CLI near its weekly limit and Ollama
-// without a plan. Local times, so the tests do not depend on the machine's time zone.
+// without a plan. `allReport` is the same range counted over every Claude Code call on this
+// machine. Local times, so the tests do not depend on the machine's time zone.
 // model.test.ts checks it against the engine schema.
 import type { UsageReport } from "@tokama/core";
 import { ITEMS, NOW } from "./sample.js";
@@ -83,6 +84,37 @@ export const usageReport = {
     durationMs: 44 * MINUTE,
   },
   totals: { tokens: tokens(300_000, 96_000, 500_000, 0), costUsd: 12.1, calls: 14, unpricedCalls: 2 },
+  scope: "tokama",
+  tokenSummary: { processed: 896_000, cachedInput: 500_000, cachedInputPercent: 62.5, uncachedInput: 300_000, output: 96_000, cacheSavingsUsd: 2.25, cacheSavingsFactor: 10 },
+  models: [
+    { model: "claude-opus-5-5", cliId: "claude-code", tokens: 692_000, costUsd: 11.7, sharePercent: 96.7 },
+    { model: "gpt-5-codex", cliId: "codex-cli", tokens: 86_000, costUsd: 0.4, sharePercent: 3.3 },
+    { model: "qwen3-coder:30b", cliId: "ollama", tokens: 118_000, costUsd: null, sharePercent: null },
+  ],
+  repos: [
+    { repoId: "orders-api", tokens: 692_000, costUsd: 11.7 },
+    { repoId: "checkout-web", tokens: 204_000, costUsd: 0.4 },
+  ],
+} as unknown as UsageReport;
+
+/** Every Claude Code call on this machine from its logs, plus Tokama's calls on other CLIs. */
+export const allReport = {
+  ...usageReport,
+  scope: "all",
+  days: usageReport.days.map((d) => ({ ...d, tokens: 160_000_000, costUsd: 120 })),
+  totals: { tokens: tokens(38_600_000, 6_900_000, 2_290_000_000, 4_000_000), costUsd: 1755, calls: 24_400, unpricedCalls: 0 },
+  tokenSummary: { processed: 2_339_500_000, cachedInput: 2_290_000_000, cachedInputPercent: 98.2, uncachedInput: 42_600_000, output: 6_900_000, cacheSavingsUsd: 6180, cacheSavingsFactor: 4.5 },
+  models: [
+    { model: "claude-opus-5-5", cliId: "claude-code", tokens: 1_020_000_000, costUsd: 1120, sharePercent: 63.8 },
+    { model: "claude-sonnet-5-5", cliId: "claude-code", tokens: 1_210_000_000, costUsd: 541, sharePercent: 30.8 },
+    { model: "claude-haiku-5-5", cliId: "claude-code", tokens: 110_000_000, costUsd: 94, sharePercent: 5.4 },
+  ],
+  repos: [
+    { repoId: "orders-api", tokens: 1_210_000_000, costUsd: 905 },
+    { repoId: "checkout-web", tokens: 710_000_000, costUsd: 534 },
+    { repoId: null, tokens: 420_000_000, costUsd: 316 },
+  ],
+  scan: { state: "ready", filesDone: 684, filesTotal: 684, asOf: NOW },
 } as unknown as UsageReport;
 
 /** The same report with Claude Code's `limits` list: session, weekly, and a weekly limit for one model. */

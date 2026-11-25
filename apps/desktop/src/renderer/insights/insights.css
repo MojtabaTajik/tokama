@@ -60,31 +60,330 @@
   margin: 0;
 }
 
-/* Plan usage: one column per AI CLI. */
+/* Whose usage: the switch, what it counts, the log scan's progress, and the range. */
 
-.ins-plans {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 0;
+.ins-scope-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-bottom: 22px;
 }
 
-.ins-plan {
+.ins-scope-note,
+.ins-scan {
+  max-width: 640px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.ins-scan {
+  font-family: var(--font-mono);
+  color: var(--muted);
+}
+
+.ins-range,
+.ins-metric {
+  margin-left: auto;
+}
+
+/* Accounts and limits: one card per AI CLI. */
+
+.ins-accounts {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 0 20px;
+}
+
+.ins-accounts-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+}
+
+.ins-accounts-head .ins-h2 {
+  margin: 0;
+}
+
+.ins-refreshes {
+  font-size: 12px;
+}
+
+.ins-asof {
+  color: var(--text-2);
+}
+
+.ins-refresh {
+  margin-left: auto;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.ins-refresh:hover {
+  color: var(--text);
+  background: var(--panel);
+}
+
+.ins-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.ins-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+}
+
+.ins-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ins-card-head .monogram {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+}
+
+.ins-card-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ins-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+
+.ins-card-title strong {
+  font-weight: 500;
+}
+
+.ins-badge {
+  padding: 1px 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+}
+
+.ins-badge[data-known] {
+  border-color: var(--primary-border);
+  color: var(--link);
+}
+
+.ins-card-sub {
+  font-size: 12px;
+}
+
+.ins-countdown {
+  color: var(--text-2);
+}
+
+.ins-card-note {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.ins-card .ins-pct {
+  font-size: 15px;
+}
+
+/* Estimated cost and the token summary. */
+
+.ins-cost {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ins-cost-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 18px;
+  margin: 0;
+  color: var(--text-2);
+}
+
+.ins-cost-hero {
+  font-size: 26px;
+  font-weight: 400;
+  color: var(--text);
+}
+
+.ins-covered {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ins-check {
+  color: var(--pass);
+}
+
+.ins-cost-explain {
+  max-width: 760px;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.ins-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px 0;
+  margin-left: -18px;
+}
+
+.ins-summary-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 2px 18px;
   border-left: 1px solid var(--hairline);
 }
 
-.ins-plan:first-child {
-  padding-left: 0;
-  border-left: 0;
+.ins-summary-label {
+  font-size: 11px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
-.ins-plan-head {
+.ins-summary-value {
+  font-size: 17px;
+  color: var(--text);
+}
+
+.ins-summary-sub {
+  font-size: 12px;
+}
+
+/* By model and by repo, side by side. */
+
+.ins-tables {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr));
+  gap: 24px 32px;
+}
+
+.ins-breakdown {
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
   gap: 10px;
+  min-width: 0;
+}
+
+.ins-breakdown-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.ins-breakdown-head .ins-h2 {
+  margin: 0;
+}
+
+.ins-grid-table {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.ins-grid-row {
+  display: grid;
+  column-gap: 14px;
+  align-items: baseline;
+  padding: 8px 0;
+  border-top: 1px solid var(--hairline);
+  font-size: 12px;
+}
+
+.ins-grid-table[data-kind="model"] .ins-grid-row {
+  grid-template-columns: minmax(0, 1.6fr) 80px 56px 72px;
+}
+
+.ins-grid-table[data-kind="repo"] .ins-grid-row {
+  grid-template-columns: minmax(0, 1.2fr) minmax(60px, 1fr) 64px 72px;
+  align-items: center;
+}
+
+.ins-grid-row > :not(:first-child) {
+  text-align: right;
+}
+
+.ins-grid-header {
+  padding-top: 0;
+  border-top: 0;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.ins-model {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ins-model-name,
+.ins-repo {
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.ins-repo[data-other] {
+  color: var(--muted);
+}
+
+.ins-dim {
+  color: var(--muted);
+}
+
+.ins-repo-bar {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.ins-repo-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--tag-slate);
+}
+
+.ins-empty {
+  margin: 0;
+  font-size: 12.5px;
 }
 
 .monogram {
@@ -100,23 +399,6 @@
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
-}
-
-.ins-plan-name {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  color: var(--text);
-}
-
-.ins-plan-name strong {
-  font-weight: 600;
-}
-
-.ins-asof {
-  margin-left: auto;
-  white-space: nowrap;
-  font-size: 12px;
 }
 
 .ins-window {
@@ -156,18 +438,13 @@
   color: var(--fail);
 }
 
-.ins-tone[data-tone="warn"],
-.ins-alert[data-tone="warn"] {
+.ins-tone[data-tone="warn"] {
   color: var(--warn);
 }
 
 .ins-tone[data-tone="fail"],
-.ins-alert[data-tone="fail"] {
+.ins-card-sub [data-tone="fail"] {
   color: var(--fail);
-}
-
-.ins-alert {
-  margin: 0;
 }
 
 .ins-reset,
@@ -208,13 +485,6 @@
 }
 
 /* Chart controls, title, headline and legend. */
-
-.ins-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 14px;
-}
 
 .ins-filter {
   display: inline-flex;
