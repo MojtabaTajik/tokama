@@ -12,7 +12,8 @@ const TEXT = {
   failed: (message: string) => `Could not load the output: ${message}`,
   empty: "The agent wrote no final message.",
   truncated: "Showing the first 64 KiB. The rest is in the item's folder on this machine.",
-  showFull: "Show full plan",
+  showFullPlan: "Show full plan",
+  showFullOutput: "Show full output",
 } as const;
 
 export type OutputState =
@@ -94,9 +95,9 @@ export function StepOutput({ state, label }: { readonly state: OutputState; read
 
 /**
  * The first lines of the output, faded where they are cut, for the approval card. When the whole
- * output fits it is shown as it is; when it does not, "Show full plan" goes to the place that has it all.
+ * output fits it is shown as it is; when it does not, "Show full plan" (a Plan step) or "Show full output" goes to the place that has it all.
  */
-export function StepPreview({ state, label, onShowFull }: { readonly state: OutputState; readonly label: string; readonly onShowFull: () => void }) {
+export function StepPreview({ state, label, isPlan, onShowFull }: { readonly state: OutputState; readonly label: string; readonly isPlan: boolean; readonly onShowFull: () => void }) {
   const box = useRef<HTMLDivElement>(null);
   const [cut, setCut] = useState(false);
   const loaded = state.kind === "loaded";
@@ -119,7 +120,7 @@ export function StepPreview({ state, label, onShowFull }: { readonly state: Outp
       </div>
       {cut && (
         <button type="button" className="link step-output-more" onClick={onShowFull}>
-          {TEXT.showFull}
+          {isPlan ? TEXT.showFullPlan : TEXT.showFullOutput}
         </button>
       )}
       {state.output.truncated && <Cut />}

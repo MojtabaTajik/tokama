@@ -507,6 +507,20 @@ describe("ItemDrawer step output", () => {
       }
     });
 
+    it("says Show full output, not plan, on an approval of a step that is not Plan", async () => {
+      const restore = heights(600, 171);
+      try {
+        const build = { ...waiting, steps: [{ ...planStep, name: "Build" }, waiting.steps[1]!] } as unknown as ItemRecord;
+        const { bridge } = withOutput(() => ({ ok: true, data: { attempt: 1, text: LONG, truncated: false } }), [build]);
+        await renderDrawer(bridge, build.id);
+        expect(button("Show full plan")).toBeUndefined();
+        await click(button("Show full output"));
+        expect($$('[role="tab"]').find((el) => el.textContent === "Output")?.getAttribute("aria-selected")).toBe("true");
+      } finally {
+        restore();
+      }
+    });
+
     it("shows a plan that fits whole, with no link", async () => {
       const restore = heights(120, 120);
       try {

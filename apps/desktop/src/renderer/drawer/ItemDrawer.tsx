@@ -513,7 +513,7 @@ function NeedsYou({ item, setup, decision, busy, output, full, changedFiles, onS
                   </button>
                 )}
               </p>
-              <StepPreview state={output} label={TEXT.wrote(step.name, agent)} onShowFull={onShowOutput} />
+              <StepPreview state={output} label={TEXT.wrote(step.name, agent)} isPlan={step.name.toLowerCase() === "plan"} onShowFull={onShowOutput} />
             </div>
           )}
           <DecisionChoices key={decision.id} decision={decision} busy={busy} agent={agent} run={nextRunLine(step)} onChoose={(choice, note) => onChoose(decision, choice, note)} />
