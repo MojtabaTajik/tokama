@@ -8,8 +8,8 @@ on:
     # Pull requests cannot do this (a workflow that does not start leaves the required check
     # pending); they skip inside the run instead, see the plan job.
     paths-ignore:
-      - "**/*.md"
-      - "!apps/desktop/THIRD_PARTY_NOTICES.md"
+      - "*.md"
+      - "**/README.md"
       - "docs/**"
       - ".github/ISSUE_TEMPLATE/**"
   schedule:
@@ -53,11 +53,11 @@ jobs:
           docs_only=false
           skip_nightly=false
           if [ "$EVENT" = pull_request ]; then
-            # Docs-only means every changed path (and every renamed-from path) is documentation.
-            # THIRD_PARTY_NOTICES.md is read by a test, so it counts as code.
+            # Docs-only means every changed path (and every renamed-from path) is documentation:
+            # docs/, issue templates, README files and Markdown files in the repository root.
+            # Other Markdown files are code: tests and the removal test read them.
             files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[] | .filename, (.previous_filename // empty)') || files=
-            if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -Evq '^(docs/|\.github/ISSUE_TEMPLATE/)|\.md$' \
-              && ! printf '%s\n' "$files" | grep -q '^apps/desktop/THIRD_PARTY_NOTICES\.md$'; then
+            if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -Evq '^(docs/|\.github/ISSUE_TEMPLATE/)|(^|/)README\.md$|^[^/]+\.md$'; then
               docs_only=true
             fi
           elif [ "$EVENT" = schedule ]; then
@@ -76,7 +76,7 @@ jobs:
   ci:
     name: ci (${{ matrix.os }})
     needs: plan
-    if: needs.plan.outputs.skip_nightly != 'true'
+    if: ${{ !cancelled() && needs.plan.outputs.skip_nightly != 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -154,7 +154,7 @@ jobs:
   node-min:
     name: node 22.18 (ubuntu-latest)
     needs: plan
-    if: github.event_name != 'schedule' && needs.plan.outputs.docs_only != 'true'
+    if: ${{ !cancelled() && github.event_name != 'schedule' && needs.plan.outputs.docs_only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
