@@ -170,11 +170,12 @@ describe("isWebsiteUrl", () => {
 
 describe("backgroundModeEnabled", () => {
   it.each([
-    ["1", false, true],
-    ["1", true, false],
-    [undefined, false, false],
-    ["true", false, false],
-  ] as const)("TOKAMA_E2E=%s, packaged %s: %s", (value, isPackaged, expected) => {
-    expect(backgroundModeEnabled(value, isPackaged)).toBe(expected);
+    ["1", false, "darwin", true],
+    ["1", true, "darwin", false],
+    ["1", false, "linux", false],
+    [undefined, false, "darwin", false],
+    ["true", false, "darwin", false],
+  ] as const)("TOKAMA_E2E=%s, packaged %s, %s: %s", (value, isPackaged, platform, expected) => {
+    expect(backgroundModeEnabled(value, isPackaged, platform)).toBe(expected);
   });
 });

@@ -22,7 +22,7 @@ const isAppPage = (url: string) => isAppUrl(url, rendererDir, devServer);
 // `pnpm dev` runs the real engine on ~/.tokama.
 const sample = sampleEngineEnabled(process.env["TOKAMA_SAMPLE"], app.isPackaged);
 // UI tests only: the harness sets TOKAMA_E2E=1 so the app never takes focus from the developer.
-const background = backgroundModeEnabled(process.env["TOKAMA_E2E"], app.isPackaged);
+const background = backgroundModeEnabled(process.env["TOKAMA_E2E"], app.isPackaged, process.platform);
 
 /** Registers a bridge channel; it answers app pages only. */
 function handle(channel: string, fn: (...args: unknown[]) => unknown): void {
