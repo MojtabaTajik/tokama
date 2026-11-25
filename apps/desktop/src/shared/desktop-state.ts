@@ -15,7 +15,7 @@ export const MAIN_MIN_WIDTH = 420;
 export const SECTIONS = ["workflows", "repos"] as const;
 export type SectionName = (typeof SECTIONS)[number];
 export const STATUS_FILTERS = ["active", "needs", "done", "failed", "all"] as const;
-export const RANGES = ["today", "7d", "30d"] as const;
+export const RANGES = ["today", "7d", "30d", "all"] as const;
 
 export type LastView = { readonly kind: "all" } | { readonly kind: "workflow" | "repo"; readonly id: string };
 export interface LastFilter {

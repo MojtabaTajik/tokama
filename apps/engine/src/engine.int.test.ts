@@ -76,6 +76,57 @@ describe("engine service", () => {
     expect(board.ok && board.data.items.map((item) => item.title)).toEqual(["Checkout latency spike"]);
   });
 
+  it("answers item_list from the items in its store, and refuses a search or page size over the limits", async () => {
+    const dir = tempEngineDir(cleanups);
+    const handle = await engine(dir);
+    const engineClient = await client(dir);
+    expect(await engineClient.query({ type: "item_list", group: "done", limit: 50 })).toEqual({ ok: true, data: { items: [], nextCursor: null, total: 0, days: [] } });
+
+    // Items put in the store after the engine started are listed, with their state as it is now.
+    handle.store.put(sampleItem("Checkout latency spike"));
+    handle.store.put({ ...sampleItem("Checkout latency spike"), state: "done" });
+    const page = await engineClient.query({ type: "item_list", group: "done", q: "LATENCY", limit: 50 });
+    expect(page.ok && page.data.items.map((item) => [item.title, item.state])).toEqual([["Checkout latency spike", "done"]]);
+    expect(page.ok && page.data.total).toBe(1);
+    expect(page.ok && page.data.days.map((day) => day.count)).toEqual([1]);
+    expect(await engineClient.query({ type: "item_list", group: "running", limit: 50 })).toMatchObject({ ok: true, data: { total: 0 } });
+
+    for (const query of [
+      { type: "item_list", group: "done", limit: 1001 },
+      { type: "item_list", group: "done", limit: 0 },
+      { type: "item_list", group: "done", limit: 50, q: "x".repeat(201) },
+      { type: "item_list", group: "done", limit: 50, before: "1; DROP TABLE list_items" },
+      { type: "item_list", group: "done", limit: 50, since: "yesterday" },
+      { type: "item_list", group: "all", limit: 50 },
+    ]) {
+      expect(await engineClient.query(query as never)).toMatchObject({ ok: false, error: { code: "invalid_request" } });
+    }
+  });
+
+  it("ends an item_list page before the reply gets too large, and goes on from there", async () => {
+    const dir = tempEngineDir(cleanups);
+    const handle = await engine(dir);
+    const engineClient = await client(dir);
+    // 600 items of about 4.5 KB each: 1000 of them would not fit in one message.
+    for (let n = 1; n <= 600; n++) {
+      const id = `item_00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+      handle.store.put({ ...sampleItem(`Item ${n}`), id, state: "done", text: "x".repeat(4000), createdAt: 1_760_000_000_000 + n } as never);
+    }
+    const seen = new Set<string>();
+    let before: string | undefined;
+    let pages = 0;
+    do {
+      const page = await engineClient.query({ type: "item_list", group: "done", limit: 1000, ...(before !== undefined && { before }) });
+      if (!page.ok) throw new Error(page.error.message);
+      expect(page.data.total).toBe(600);
+      for (const item of page.data.items) seen.add(item.id);
+      before = page.data.nextCursor ?? undefined;
+      pages++;
+    } while (before !== undefined && pages < 10);
+    expect(pages).toBeGreaterThan(1);
+    expect(seen.size).toBe(600);
+  });
+
   it("pushes an item_updated event only when the store changes", async () => {
     const dir = tempEngineDir(cleanups);
     const handle = await engine(dir);

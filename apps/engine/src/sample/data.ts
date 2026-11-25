@@ -709,3 +709,40 @@ export const sampleDiff = {
   cut: true,
   worktree: { repoId: "inventory-service", dir: ".tokama/wt/1a2b3c4d", branch: "tokama/1a2b3c4d", baseCommit: "85a75e3c0ffee0000000000000000000000000ab" },
 };
+
+const HISTORY_WORK = ["Tidy the logs", "Add a health check", "Rename the status enum", "Pin the Node version", "Speed up the build", "Fix a flaky test", "Drop an unused flag", "Retry the webhook"];
+const HISTORY_REPOS = ["orders-api", "checkout-web", "inventory-service"];
+const HISTORY_TEMPLATES = [templates.quickFix, templates.quickChange, templates.planAndBuild];
+
+/**
+ * A long history for trying the work list: `count` finished items, a few on each local day from
+ * yesterday back about two months (so some are older than 30 days), every seventh failed and
+ * every eleventh stopped. Each title carries its number, `(#n)`, so a search can find one.
+ */
+export function sampleHistory(now: number, count: number) {
+  const today = new Date(now);
+  return Array.from({ length: count }, (_, index) => {
+    const n = index + 1;
+    const template = HISTORY_TEMPLATES[index % HISTORY_TEMPLATES.length]!;
+    const repo = HISTORY_REPOS[index % HISTORY_REPOS.length]!;
+    const state = n % 7 === 0 ? "failed" : n % 11 === 0 ? "stopped" : "done";
+    // Local calendar days, so the items of one day stay on it across a DST change.
+    const daysBack = 1 + Math.floor((index * 60) / Math.max(count, 1));
+    const createdAt = new Date(today.getFullYear(), today.getMonth(), today.getDate() - daysBack, 9 + (index % 9), (index * 7) % 60).getTime();
+    const last = template.steps.length - 1;
+    const states = template.steps.map((_step, step): StepState => (state === "failed" && step === last ? "failed" : state === "stopped" && step === last ? "pending" : "passed"));
+    return {
+      schemaVersion: 1,
+      id: `item_00000000-0000-4000-9000-${String(n).padStart(12, "0")}`,
+      kind: "task",
+      templateId: template.id,
+      title: `${HISTORY_WORK[index % HISTORY_WORK.length]} in ${repo} (#${n})`,
+      text: "",
+      repoIds: [repo],
+      privacy: "local_and_cloud",
+      state,
+      createdAt,
+      steps: steps(template, states),
+    };
+  });
+}

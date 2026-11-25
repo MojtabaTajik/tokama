@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BridgeEvent, ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { App } from "../App.js";
+import { itemList, type ListQuery } from "../testing/bridge.js";
 import { approved, committed, DECISION_ID, finishable, needsYou, setup, stoppedReview, task } from "../testing/drawer.js";
 import { ItemDrawer } from "./ItemDrawer.js";
 
@@ -13,7 +14,7 @@ import { ItemDrawer } from "./ItemDrawer.js";
 type Reply = { ok: true; data: unknown } | { ok: false; error: { code: string; message: string } };
 
 /**
- * A bridge over a set of items: `setup`, `board` and `item` answer from it, commands answer
+ * A bridge over a set of items: `setup`, `board`, `item_list` and `item` answer from it, commands answer
  * with `commandReply` (null by default), and events are pushed by hand to every listener.
  */
 function fakeBridge(start: ItemRecord[], activities = new Map<string, ItemActivity>()) {
@@ -24,6 +25,7 @@ function fakeBridge(start: ItemRecord[], activities = new Map<string, ItemActivi
   const query = vi.fn(async (q: { type: string; itemId?: string }): Promise<Reply> => {
     if (q.type === "setup") return { ok: true, data: setup };
     if (q.type === "board") return { ok: true, data: { items: [...store.values()] } };
+    if (q.type === "item_list") return { ok: true, data: itemList([...store.values()], q as unknown as ListQuery) };
     const item = q.itemId === undefined ? undefined : store.get(q.itemId);
     if (q.type === "item" && item) return { ok: true, data: { item } };
     if (q.type === "activity" && item) return { ok: true, data: { activity: activities.get(item.id) ?? null } };

@@ -119,10 +119,38 @@ export const CommandSchema = z.discriminatedUnion("type", [
 /** One attempt of one step: the step by index, as the item record lists steps. */
 const attemptKey = { itemId: ItemIdSchema, stepIndex: z.int().nonnegative().max(1000), attempt: z.int().min(1).max(10_000) };
 
+/** The groups of the work list: needs you, running (running and queued), done (done and stopped), failed. */
+export const ListGroupSchema = z.enum(["needs", "running", "done", "failed"]);
+/** A local calendar day, `YYYY-MM-DD`. */
+export const LocalDaySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+/** Where a page of the work list ended: the last row's start time and id. Opaque to clients. */
+export const ListCursorSchema = z.string().max(200).regex(/^\d{1,16}:item_[0-9a-f-]{36}$/);
+/** The most rows one page of the work list may ask for. */
+export const MAX_LIST_PAGE = 1000;
+/** The longest search text the work list takes. */
+export const MAX_LIST_SEARCH = 200;
+
 export const QuerySchema = z.discriminatedUnion("type", [
   /** What is set up on this machine: repos, connections, agents and templates. */
   z.strictObject({ type: z.literal("setup") }),
   z.strictObject({ type: z.literal("board") }),
+  /**
+   * One page of one group of the work list, newest start first, scoped like the sidebar view
+   * (`repo` or `template`). `since` (a local day) limits done and failed items to those started
+   * on or after it; live groups ignore it. `q` matches the title, a repo id, the template's ref or
+   * name, and the id or name of any step's agent, ignoring case. `before` is the `nextCursor` of
+   * the page before.
+   */
+  z.strictObject({
+    type: z.literal("item_list"),
+    group: ListGroupSchema,
+    since: LocalDaySchema.optional(),
+    repo: RepoIdSchema.optional(),
+    template: TemplateRefSchema.optional(),
+    q: z.string().max(MAX_LIST_SEARCH).optional(),
+    before: ListCursorSchema.optional(),
+    limit: z.int().min(1).max(MAX_LIST_PAGE),
+  }),
   z.strictObject({ type: z.literal("item"), itemId: ItemIdSchema }),
   /** What a running item does now, as the last `item_activity` event said; null when nothing runs. Not throttled. */
   z.strictObject({ type: z.literal("activity"), itemId: ItemIdSchema }),
@@ -248,6 +276,15 @@ export const StepOutputSchema = z.strictObject({
 export const QueryResultSchemas = {
   setup: SetupSchema,
   board: z.strictObject({ items: z.array(ItemRecordSchema) }),
+  item_list: z.strictObject({
+    items: z.array(ItemRecordSchema).max(MAX_LIST_PAGE),
+    /** Null on the last page. */
+    nextCursor: ListCursorSchema.nullable(),
+    /** Every item that matches, on all pages. */
+    total: z.int().nonnegative(),
+    /** For each local day of a done or failed item on this page: how many items of that day match, on all pages. */
+    days: z.array(z.strictObject({ day: LocalDaySchema, count: z.int().min(1) })).max(MAX_LIST_PAGE),
+  }),
   item: z.strictObject({ item: ItemRecordSchema }),
   activity: z.strictObject({ activity: ItemActivitySchema.nullable() }),
   decision_diff: ItemDiffSchema,
@@ -451,6 +488,8 @@ export type ShutdownReply = z.output<typeof ShutdownReplySchema>;
 export type QueryType = keyof typeof QueryResultSchemas;
 export type QueryResult<T extends QueryType> = z.output<(typeof QueryResultSchemas)[T]>;
 export type BoardResult = QueryResult<"board">;
+export type ItemListResult = QueryResult<"item_list">;
+export type ListGroup = z.output<typeof ListGroupSchema>;
 export type ItemResult = QueryResult<"item">;
 export type ActivityResult = QueryResult<"activity">;
 export type DecisionDiffResult = QueryResult<"decision_diff">;

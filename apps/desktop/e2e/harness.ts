@@ -90,8 +90,12 @@ const within = <T>(promise: Promise<T>, ms: number): Promise<T | undefined> =>
  * - `unavailable`: no `node` on the app's PATH, so the engine cannot start and the connection fails.
  * - `older`: the sample engine, but `seed` starts an older engine first: the flow begins once the
  *   app has connected or stopped to ask.
+ * - `history`: the sample engine with a long history of finished items (TOKAMA_SAMPLE_HISTORY).
  */
-export type EngineMode = "sample" | "real" | "unavailable" | "older";
+export type EngineMode = "sample" | "real" | "unavailable" | "older" | "history";
+
+/** The finished items the `history` mode adds to the sample. */
+export const HISTORY_ITEMS = 200;
 
 /**
  * Runs `fn` against a fresh app; on failure, prints the app and engine output and saves a screenshot.
@@ -103,7 +107,7 @@ export function flow(name: string, fn: (session: Session) => Promise<void>, mode
     const output: string[] = [];
     // The app's engine dir is this plus "sample": the sample engine never shares a dir with a real one.
     const baseDir = join(tmp, "e");
-    const engineDir = mode === "sample" || mode === "older" ? join(baseDir, "sample") : baseDir;
+    const engineDir = mode === "sample" || mode === "older" || mode === "history" ? join(baseDir, "sample") : baseDir;
     let app: ElectronApplication | undefined;
     let page: Page | undefined;
     let closeHung = false;
@@ -181,6 +185,8 @@ async function launch(tmp: string, baseDir: string, output: string[], mode: Engi
   else env["TOKAMA_SAMPLE"] = "1";
   // An absolute folder with nothing in it: the app finds no node to start the engine with.
   if (mode === "unavailable") env["PATH"] = join(tmp, "no-bin");
+  if (mode === "history") env["TOKAMA_SAMPLE_HISTORY"] = String(HISTORY_ITEMS);
+  else delete env["TOKAMA_SAMPLE_HISTORY"];
   // Load the built renderer, never a dev server.
   delete env["ELECTRON_RENDERER_URL"];
   const app = await _electron.launch({

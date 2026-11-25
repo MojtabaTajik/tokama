@@ -128,3 +128,10 @@ export const TerminalIcon = ({ size = 16 }: { readonly size?: number }) => (
     <path d="M7 9l3 3-3 3M12 15h5" />
   </Icon>
 );
+
+export const SearchIcon = ({ size = 13 }: { readonly size?: number }) => (
+  <Icon size={size}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="M20 20l-4-4" />
+  </Icon>
+);

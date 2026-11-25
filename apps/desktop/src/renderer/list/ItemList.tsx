@@ -5,11 +5,12 @@
 // tooltip and does not select the row. Engine text (titles, questions, names) is rendered as React
 // text only.
 import type { FinishAction, ItemRecord, Setup } from "@tokama/core";
+import type { ReactNode } from "react";
 import { AgentLabel } from "../agent/AgentLabel.js";
 import { agentInfo } from "../agent/agent-info.js";
 import { templateOf } from "../drawer/describe.js";
 import { finishNote } from "../drawer/finish-view.js";
-import { currentStep, type ItemGroup, pipelineOf, rowAgent, rowMark, timeOf } from "../model.js";
+import { currentStep, type GroupKey, type ItemGroup, listEntries, pipelineOf, rowAgent, rowMark, timeOf } from "../model.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
 import type { AgentTarget } from "../settings/describe.js";
 import { FinishSplit } from "./FinishSplit.js";
@@ -40,29 +41,42 @@ export interface ItemListProps {
   readonly onDiscard?: (itemId: string) => void;
   /** An agent tooltip's "Open in Settings →"; without it the tooltips have no link. */
   readonly onOpenAgent?: (agent: AgentTarget) => void;
+  /** What follows a group's last row, such as Load older. */
+  readonly footers?: Partial<Record<GroupKey, ReactNode>>;
 }
 
 const GROUP_SYMBOL = { needs: "⏸", running: "●", done: "✓", failed: "✕" } as const;
 
-export function ItemList({ groups, setup, now, selectedItemId, onSelect, repoId, onFinish, onDiscard, onOpenAgent }: ItemListProps) {
+export function ItemList({ groups, setup, now, selectedItemId, onSelect, repoId, onFinish, onDiscard, onOpenAgent, footers }: ItemListProps) {
   const focus = useFocusFollow();
   return (
     <div className="pipeline-list" onFocus={focus.onFocus} onBlur={focus.onBlur}>
-      {groups.map((group) => (
-        <section key={group.key} className="pl-group" aria-label={group.name}>
-          <h3 className="pl-group-heading">
-            <span className="pl-group-symbol" data-group={group.key} aria-hidden="true">
-              {GROUP_SYMBOL[group.key]}
-            </span>
-            {group.name}
-            <span className="pl-group-count mono">{group.items.length}</span>
-          </h3>
-          {group.items.length === 0 && <p className="pl-empty">{repoId === undefined ? TEXT.nothing[group.key] : TEXT.nothingFor(TEXT.nothing[group.key], repoId)}</p>}
-          {group.items.map((item) => (
-            <Row key={item.id} item={item} setup={setup} now={now} selected={item.id === selectedItemId} onSelect={onSelect} onFinish={onFinish} onDiscard={onDiscard} onOpenAgent={onOpenAgent} />
-          ))}
-        </section>
-      ))}
+      {groups.map((group) => {
+        const count = "count" in group ? group.count : group.items.length;
+        return (
+          <section key={group.key} className="pl-group" aria-label={group.name}>
+            <h3 className="pl-group-heading">
+              <span className="pl-group-symbol" data-group={group.key} aria-hidden="true">
+                {GROUP_SYMBOL[group.key]}
+              </span>
+              {group.name}
+              {count !== undefined && <span className="pl-group-count mono">{count}</span>}
+            </h3>
+            {count === 0 && <p className="pl-empty">{repoId === undefined ? TEXT.nothing[group.key] : TEXT.nothingFor(TEXT.nothing[group.key], repoId)}</p>}
+            {listEntries(group.items, group.days, now).map((entry) =>
+              entry.kind === "day" ? (
+                <h4 key={`day-${entry.day}`} className="pl-day">
+                  {entry.label}
+                  <span className="pl-day-count mono">{entry.count}</span>
+                </h4>
+              ) : (
+                <Row key={entry.item.id} item={entry.item} setup={setup} now={now} selected={entry.item.id === selectedItemId} onSelect={onSelect} onFinish={onFinish} onDiscard={onDiscard} onOpenAgent={onOpenAgent} />
+              ),
+            )}
+            {footers?.[group.key]}
+          </section>
+        );
+      })}
     </div>
   );
 }
