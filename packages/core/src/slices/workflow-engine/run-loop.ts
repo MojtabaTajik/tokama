@@ -976,7 +976,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       if (await isOurCommit(worktree, tip.value, tree)) return done(tip.value);
       return { kind: "end", outcome: "failed", detail: `Stopped: the item branch ${worktree.branch} moved off its base commit.` };
     }
-    const commit = await commitItem(git, worktree.path, worktree, { id: item.id, title: item.title, tree });
+    const commit = await commitItem(git, worktree.path, worktree, { id: item.id, title: item.title, text: item.text, tree });
     if (!commit.ok && commit.error.reason === "nothing-to-commit") {
       append(item.id, [{ type: "item_ended", outcome: "done", detail: "The item made no changes, so there is nothing to commit." }]);
       return WAIT;

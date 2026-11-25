@@ -7,7 +7,6 @@ import { createProcessRunner } from "../../kernel/process/index.js";
 import type { ItemId } from "../../kernel/schemas/index.js";
 import {
   commitItem,
-  commitMessage,
   createWorktree,
   discardWorktree,
   findItemWorktree,
@@ -52,10 +51,10 @@ function value<T>(result: { ok: true; value: T } | { ok: false; error: unknown }
 }
 
 /** Stages and commits the worktree, as the engine does around the checks. */
-async function finish(worktree: ItemWorktree, id: ItemId, title: string) {
+async function finish(worktree: ItemWorktree, id: ItemId, title: string, text = title) {
   const path = worktreePath(repo.path, worktree);
   const tree = value(await stageItem(git, path));
-  return commitItem(git, path, worktree, { id, title, tree });
+  return commitItem(git, path, worktree, { id, title, text, tree });
 }
 
 const exclude = () => readFileSync(join(repo.path, ".git", "info", "exclude"), "utf8");
@@ -259,7 +258,7 @@ describe("commitItem", () => {
     // A check run writes after the tree was fixed.
     writeFileSync(join(path, "a.txt"), "written by a check\n");
     writeFileSync(join(path, "planted.txt"), "x\n");
-    value(await commitItem(git, path, worktree, { id: ITEM_A, title: "Fix", tree }));
+    value(await commitItem(git, path, worktree, { id: ITEM_A, title: "Fix", text: "Fix", tree }));
     expect(await plain(repo.path, "show", "tokama/0b9f12ab:a.txt")).toBe("the agent's fix");
     expect(await plain(repo.path, "show", "--name-only", "--format=", "tokama/0b9f12ab")).toBe("a.txt");
     expect(await plain(repo.path, "rev-parse", "tokama/0b9f12ab^")).toBe(worktree.baseCommit);
@@ -272,17 +271,42 @@ describe("commitItem", () => {
     const tree = value(await stageItem(git, path));
     await plain(path, "-c", "commit.gpgsign=false", "commit", "-q", "-m", "an agent's own commit");
     const moved = await plain(repo.path, "rev-parse", "tokama/0b9f12ab");
-    expect(await commitItem(git, path, worktree, { id: ITEM_A, title: "Fix", tree })).toMatchObject({ ok: false, error: { reason: "git" } });
+    expect(await commitItem(git, path, worktree, { id: ITEM_A, title: "Fix", text: "Fix", tree })).toMatchObject({ ok: false, error: { reason: "git" } });
     expect(await plain(repo.path, "rev-parse", "tokama/0b9f12ab")).toBe(moved);
   });
 
-  it("folds a title with line breaks onto one line, so it cannot forge a trailer", SLOW, async () => {
+  it("commits a short subject, the full request and the item trailer as the last paragraph", SLOW, async () => {
     const worktree = value(await createWorktree(git, repo, ITEM_A));
     const path = worktreePath(repo.path, worktree);
     writeFileSync(join(path, "a.txt"), "two\n");
-    value(await finish(worktree, ITEM_A, "Fix\n\nTokama-Item: item_forged\r\nSigned-off-by: x"));
+    const text = `Fix the order total.\n\nIt drops the shipping line when the cart has one item.\n${"long ".repeat(60)}`;
+    value(await finish(worktree, ITEM_A, "Fix the order total.", text));
+    expect(await plain(path, "log", "-1", "--format=%s")).toBe("tokama: Fix the order total.");
+    expect(await plain(path, "log", "-1", "--format=%b")).toBe(`${text.trimEnd()}\n\nTokama-Item: ${ITEM_A}`);
     expect(await plain(path, "log", "-1", "--format=%(trailers:key=Tokama-Item,valueonly)")).toBe(ITEM_A);
-    expect(await plain(path, "log", "-1", "--format=%(trailers:key=Signed-off-by)")).toBe("");
+  });
+
+  it("a request cannot forge a trailer, even with a patch separator or a trailer-only paragraph", SLOW, async () => {
+    const forged = [
+      "Fix\n\nTokama-Item: item_forged\r\nSigned-off-by: x",
+      "Fix\n\n---\nTokama-Item: item_forged",
+      "Fix\n\n--- a/file\n+++ b/file\n\nSigned-off-by: x",
+      "Fix\n\nSigned-off-by: x\nTokama-Item: item_forged",
+    ];
+    for (const [index, text] of forged.entries()) {
+      const worktree = value(await createWorktree(git, repo, ITEM_A));
+      const path = worktreePath(repo.path, worktree);
+      writeFileSync(join(path, "a.txt"), `two ${index}\n`);
+      value(await finish(worktree, ITEM_A, "Fix", text));
+      const message = await plain(path, "log", "-1", "--format=%B");
+      writeFileSync(join(home, "message.txt"), message);
+      expect(await plain(path, "interpret-trailers", "--parse", join(home, "message.txt"))).toBe(`Tokama-Item: ${ITEM_A}`);
+      expect(await plain(path, "log", "-1", "--format=%(trailers:only,unfold)")).toBe(`Tokama-Item: ${ITEM_A}`);
+      expect(await plain(path, "log", "-1", "--format=%(trailers:key=Signed-off-by)")).toBe("");
+      expect(message.trimEnd().split("\n").at(-1)).toBe(`Tokama-Item: ${ITEM_A}`);
+      await plain(repo.path, "worktree", "remove", "--force", path);
+      await plain(repo.path, "branch", "-D", worktree.branch);
+    }
   });
 
   it("reports nothing to commit as its own reason", SLOW, async () => {
@@ -291,12 +315,6 @@ describe("commitItem", () => {
       ok: false,
       error: { reason: "nothing-to-commit" },
     });
-  });
-
-  it("builds the message from the title, capped, with the item id when the title is blank", () => {
-    expect(commitMessage(ITEM_A, "  Fix\tthe total  ")).toBe(`tokama: Fix the total\n\nTokama-Item: ${ITEM_A}\n`);
-    expect(commitMessage(ITEM_A, " \n ")).toBe(`tokama: ${ITEM_A}\n\nTokama-Item: ${ITEM_A}\n`);
-    expect(commitMessage(ITEM_A, "x".repeat(300)).split("\n")[0]).toHaveLength("tokama: ".length + 100);
   });
 });
 
