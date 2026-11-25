@@ -46,7 +46,11 @@ flow("approves a plan from the expanded view: the plan reads as a document and A
   await row(page, PLAN_APPROVAL).click();
   const plan = drawer(page).getByRole("region", { name: "Plan · what Architect wrote" });
   await expect.poll(() => plan.innerText(), { message: "the plan in the drawer" }).toContain("Release the reservation");
-  await drawer(page).getByRole("button", { name: "Open output in full view" }).click();
+  // One expand button, in the drawer header; the card and the Output tab have none.
+  expect(await drawer(page).getByRole("button", { name: "Open full view" }).count()).toBe(1);
+  expect(await drawer(page).getByRole("button", { name: "Open output in full view" }).count()).toBe(0);
+  await drawer(page).getByRole("tab", { name: "Output" }).click();
+  await drawer(page).getByRole("button", { name: "Open full view" }).click();
 
   const full = page.locator(".expanded");
   const doc = full.locator('.ot-step[aria-label="Plan step · output"]');

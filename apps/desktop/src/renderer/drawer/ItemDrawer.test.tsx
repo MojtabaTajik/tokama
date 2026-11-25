@@ -393,13 +393,13 @@ describe("ItemDrawer step output", () => {
   };
   const outputCalls = (query: ReturnType<typeof vi.fn>) => query.mock.calls.filter(([q]) => (q as { type: string }).type === "step_output").map(([q]) => q as unknown);
 
-  it("shows the plan as text above Approve and Request changes, in a scroll box you can reach with Tab", async () => {
+  it("shows the plan as text above Approve and Request changes, in a preview region", async () => {
     const { bridge, query } = withOutput(() => ({ ok: true, data: { attempt: 1, text: PLAN, truncated: false } }));
     await renderDrawer(bridge, waiting.id);
     expect(outputCalls(query)).toEqual([{ type: "step_output", itemId: waiting.id, stepIndex: 0 }]);
     expect(text(".step-output-label")).toBe("Plan · what Architect wroteattempt 1");
-    const box = $(".needs-you .step-output-text") as HTMLElement;
-    expect(box.getAttribute("tabindex")).toBe("0");
+    const box = $(".needs-you .step-output-preview") as HTMLElement;
+    expect(box.getAttribute("role")).toBe("region");
     expect(box.getAttribute("aria-label")).toBe("Plan · what Architect wrote");
     expect($$(".needs-you .st-heading").map((el) => el.textContent)).toEqual(["Plan"]);
     expect($$(".needs-you li").map((el) => el.textContent)).toEqual(["Add a stock_reservations table", "Call it at checkout"]);
@@ -437,21 +437,87 @@ describe("ItemDrawer step output", () => {
     expect(container.textContent).not.toContain("the old plan");
     expect(text(".needs-you .placeholder")).toBe("Loading the step's output");
     await act(async () => answer({ ok: true, data: { attempt: 2, text: "the new plan", truncated: false } }));
-    expect(text(".needs-you .step-output-text")).toBe("the new plan");
+    expect(text(".needs-you .step-output-preview")).toBe("the new plan");
   });
 
   it("with a change to approve, shows the output and a way to the Diff tab", async () => {
     const changed = { ...waiting, decision: { ...waiting.decision!, hasDiff: true } } as ItemRecord;
     const fake = withOutput(() => ({ ok: true, data: { attempt: 1, text: "Changed 2 files.", truncated: false } }), [changed]);
     const base = fake.query.getMockImplementation()!;
-    fake.query.mockImplementation(async (q: { type: string; itemId?: string }) => (q.type === "decision_diff" ? { ok: false, error: { code: "stale_decision", message: "gone" } } : base(q)));
+    fake.query.mockImplementation(async (q: { type: string; itemId?: string }) => (q.type === "decision_diff" ? { ok: true, data: { files: [{ path: "src/a.ts", status: "modified", added: 1, removed: 0, binary: false, cut: false, hunks: [] }], moreFiles: 0, cut: false, worktree: { repoId: "orders-api", dir: ".tokama/wt/abc", branch: "tokama/abc", baseCommit: "85a75e3c0ffee0000000000000000000000000ab" } } } : base(q)));
     await renderDrawer(fake.bridge, changed.id);
-    expect(text(".needs-you .step-output-text")).toBe("Changed 2 files.");
+    expect(text(".needs-you .step-output-preview")).toBe("Changed 2 files.");
     await click($$('[role="tab"]').find((el) => el.textContent === "Steps"));
     await click(button("See the changed files in the Diff tab"));
     const diffTab = $$('[role="tab"]').find((el) => el.textContent === "Diff");
     expect(diffTab?.getAttribute("aria-selected")).toBe("true");
     expect(document.activeElement).toBe(diffTab);
+  });
+
+  it("with a change to approve that changed 0 files, has no link to the Diff tab and no Diff tab", async () => {
+    const changed = { ...waiting, decision: { ...waiting.decision!, hasDiff: true } } as ItemRecord;
+    const fake = withOutput(() => ({ ok: true, data: { attempt: 1, text: "Planned only.", truncated: false } }), [changed]);
+    const base = fake.query.getMockImplementation()!;
+    fake.query.mockImplementation(async (q: { type: string; itemId?: string }) => (q.type === "decision_diff" ? { ok: true, data: { files: [], moreFiles: 0, cut: false, worktree: { repoId: "orders-api", dir: ".tokama/wt/abc", branch: "tokama/abc", baseCommit: "85a75e3c0ffee0000000000000000000000000ab" } } } : base(q)));
+    await renderDrawer(fake.bridge, changed.id);
+    expect(text(".needs-you .step-output-preview")).toBe("Planned only.");
+    expect(button("See the changed files in the Diff tab")).toBeUndefined();
+    expect($$('[role="tab"]').map((el) => el.textContent)).toEqual(["Steps", "Output", "Checks", "Log"]);
+  });
+
+  describe("the preview", () => {
+    const LONG = Array.from({ length: 30 }, (_, line) => `Line ${String(line + 1)}`).join("\n\n");
+    const heights = (scroll: number, client: number) => {
+      const scrollHeight = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(scroll);
+      const clientHeight = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(client);
+      return () => {
+        scrollHeight.mockRestore();
+        clientHeight.mockRestore();
+      };
+    };
+
+    it("cuts a long plan with Show full plan, which switches to the Output tab that holds all of it", async () => {
+      const restore = heights(600, 171);
+      try {
+        const { bridge } = withOutput(() => ({ ok: true, data: { attempt: 1, text: LONG, truncated: false } }));
+        await renderDrawer(bridge, waiting.id);
+        expect($(".needs-you .step-output-preview")?.getAttribute("data-cut")).toBe("true");
+        expect($$('[role="tab"]').find((el) => el.getAttribute("aria-selected") === "true")?.textContent).toBe("Steps");
+        await click(button("Show full plan"));
+        const output = $$('[role="tab"]').find((el) => el.textContent === "Output");
+        expect(output?.getAttribute("aria-selected")).toBe("true");
+        expect(document.activeElement).toBe(output);
+        expect($(".ot .step-output-text")?.textContent).toContain("Line 30");
+      } finally {
+        restore();
+      }
+    });
+
+    it("shows a plan that fits whole, with no link", async () => {
+      const restore = heights(120, 120);
+      try {
+        const { bridge } = withOutput(() => ({ ok: true, data: { attempt: 1, text: "Only one line.", truncated: false } }));
+        await renderDrawer(bridge, waiting.id);
+        expect(text(".needs-you .step-output-preview")).toBe("Only one line.");
+        expect($(".needs-you .step-output-preview")?.hasAttribute("data-cut")).toBe(false);
+        expect(button("Show full plan")).toBeUndefined();
+      } finally {
+        restore();
+      }
+    });
+
+    it("has no expand button on the card or in the Output tab, only the one in the header", async () => {
+      const { bridge } = withOutput(() => ({ ok: true, data: { attempt: 1, text: PLAN, truncated: false } }));
+      const onExpand = vi.fn();
+      await act(async () => root.render(<ItemDrawer bridge={bridge} itemId={waiting.id} setup={setup} onClose={vi.fn()} onExpand={onExpand} />));
+      expect($$(".needs-you .expand-button")).toEqual([]);
+      await click($$('[role="tab"]').find((el) => el.textContent === "Output"));
+      expect($$(".ot .expand-button")).toEqual([]);
+      expect(button("Copy")).toBeDefined();
+      expect($$('button[aria-label="Open full view"]')).toHaveLength(1);
+      await click(button("Open full view"));
+      expect(onExpand).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("on the Steps tab, each ended attempt of an agent's step has its output collapsed, asked for when opened", async () => {
@@ -568,19 +634,19 @@ describe("ItemDrawer stop", () => {
     await renderDrawer(bridge, task.id);
     await click(button("Stop"));
     expect(command).not.toHaveBeenCalled();
-    expect(text(".drawer-confirm p")).toBe("Stop this item? Its agent is stopped; what is recorded so far is kept.");
-    expect(document.activeElement?.textContent).toBe("Keep running");
+    expect(text(".drawer-confirm p")).toBe("Stop this item? The agent is stopped and the item ends. You can't continue it later. Changed files stay in the worktree.");
+    expect(document.activeElement?.textContent).toBe("Cancel");
     await click(button("Stop item"));
     expect(command).toHaveBeenCalledWith({ type: "stop_item", itemId: task.id });
     expect($(".drawer-confirm")).toBeNull();
     expect(confirm).not.toHaveBeenCalled();
   });
 
-  it("goes back to the Stop link on Keep running or Esc, without closing the drawer", async () => {
+  it("goes back to the Stop link on Cancel or Esc, without closing the drawer", async () => {
     const { bridge, command } = fakeBridge([task]);
     const onClose = await renderDrawer(bridge, task.id);
     await click(button("Stop"));
-    await click(button("Keep running"));
+    await click(button("Cancel"));
     expect($(".drawer-confirm")).toBeNull();
     expect(document.activeElement).toBe(button("Stop"));
     await click(button("Stop"));
@@ -1176,11 +1242,12 @@ describe("ItemDrawer full view", () => {
     expect(onCollapse).toHaveBeenCalledTimes(1);
   });
 
-  it("opens the full view on Output from ⤢ on the plan, and Output shows it as a document with an outline and its agent", async () => {
+  it("opens the full view on the tab the drawer has open, and Output shows it as a document with an outline and its agent", async () => {
     const { bridge } = bridgeFor([plan]);
     const onExpand = vi.fn();
     await show(bridge, plan.id, { onExpand });
-    await click(button("Open output in full view"));
+    await click(tab("Output"));
+    await click(button("Open full view"));
     expect(onExpand).toHaveBeenCalledTimes(1);
     expect(selected()).toBe("Output");
     // In the drawer the Output tab has no outline.

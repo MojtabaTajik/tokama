@@ -52,6 +52,39 @@ describe("StepText", () => {
     expect($$(".st-pre").map((el) => el.textContent)).toEqual(["const a = 1;\n  indented();"]);
   });
 
+  it("renders bold and italics inside list items and on a paragraph that is one bold line", async () => {
+    await render("**1. index.html (CSS and a little markup)**\n\n- **Shared panel style:** one `panel` class\n- plain and *slanted* words\n\n1. **Add** the *route*");
+    expect($$(".st-para strong").map((el) => el.textContent)).toEqual(["1. index.html (CSS and a little markup)"]);
+    expect($$(".st-para").map((el) => el.textContent)).toEqual(["1. index.html (CSS and a little markup)"]);
+    expect($$("ul li").map((el) => el.textContent)).toEqual(["Shared panel style: one panel class", "plain and slanted words"]);
+    expect($$("ul li strong").map((el) => el.textContent)).toEqual(["Shared panel style:"]);
+    expect($$("ul li em").map((el) => el.textContent)).toEqual(["slanted"]);
+    expect($$("ol li strong, ol li em").map((el) => el.tagName + el.textContent)).toEqual(["STRONGAdd", "EMroute"]);
+    expect(container.textContent).not.toContain("*");
+  });
+
+  it("nests italics in bold, and leaves loose or spaced stars as written", async () => {
+    await render("**bold and *both* here** and 2 * 3 * 4 and a*b*c and **open and `**` code and *\n\n** spaced **");
+    expect($$("strong").map((el) => el.innerHTML)).toEqual(["bold and <em>both</em> here"]);
+    const shown = container.textContent ?? "";
+    for (const part of ["2 * 3 * 4", "a*b*c", "**open and ", "** spaced **"]) expect(shown).toContain(part);
+    expect($$(".st-code").map((el) => el.textContent)).toEqual(["**"]);
+  });
+
+  it("shows emphasis marks inside HTML as characters and never builds elements from them", async () => {
+    await render("**<img src=x onerror=alert(1)>** and *<script>alert(2)</script>*");
+    expect($$("img, script")).toEqual([]);
+    expect($$("strong")[0]?.textContent).toBe("<img src=x onerror=alert(1)>");
+    expect($$("em")[0]?.textContent).toBe("<script>alert(2)</script>");
+  });
+
+  it("reads a long line of loose stars in one pass", async () => {
+    const started = performance.now();
+    await render(`${"**a ".repeat(20_000)}${"*b ".repeat(20_000)}`);
+    expect(performance.now() - started).toBeLessThan(2000);
+    expect($$("strong, em")).toEqual([]);
+  });
+
   it("shows characters that reorder text as visible escapes in code", async () => {
     await render("`a‮b`\n```\nc⁦d\n```");
     expect($$("code, pre").map((el) => el.textContent)).toEqual(["a<U+202E>b", "c<U+2066>d"]);

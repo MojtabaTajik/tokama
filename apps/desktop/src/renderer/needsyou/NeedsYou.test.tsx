@@ -258,7 +258,7 @@ describe("the Needs you page", () => {
     await click(read);
     await wait(10);
     expect($(".drawer h2")?.textContent).toBe(plan.title);
-    expect($$(".drawer .step-output-text li").map((el) => el.textContent)).toEqual(["Add a table", "Call it at checkout", "Release it on cancel", "Test it"]);
+    expect($$(".drawer .step-output-preview li").map((el) => el.textContent)).toEqual(["Add a table", "Call it at checkout", "Release it on cancel", "Test it"]);
   });
 
   it("shows an item that waits without a question as text only, with no buttons", async () => {

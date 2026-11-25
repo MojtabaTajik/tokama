@@ -86,15 +86,22 @@ flow("a plan approval shows the plan: a preview on Needs you, the whole plan as 
   expect(await plan.locator("a, script, img").count()).toBe(0);
   await screenshot("18-plan-drawer");
 
-  // On a short window the plan scrolls in its own box, and Approve stays on screen and reachable by Tab.
+  // The card shows a faded preview with Show full plan; Approve stays on screen and reachable by Tab.
   await resize(1200, 700);
-  await plan.focus();
+  expect(await plan.getAttribute("data-cut")).toBe("true");
+  const more = card.getByRole("button", { name: "Show full plan" });
+  await more.focus();
   await page.keyboard.press("Tab");
   expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Approve");
   const approve = card.getByRole("button", { name: "Approve", exact: true });
   const box = await approve.boundingBox();
   expect(box !== null && box.y + box.height <= 700, "Approve is inside the window").toBe(true);
   await screenshot("19-plan-drawer-700");
+
+  await more.click();
+  const output = drawer(page).getByRole("tab", { name: "Output" });
+  expect(await output.getAttribute("aria-selected")).toBe("true");
+  expect(await drawer(page).locator(".ot .step-output-text").innerText()).toContain("Release the reservation in OrderService.cancel");
 
   await approve.click();
   await card.waitFor({ state: "detached" });
@@ -154,7 +161,7 @@ flow("stops an item after its confirmation", async ({ page }) => {
   await panel.getByRole("button", { name: "Stop", exact: true }).click();
   const confirm = panel.getByRole("group", { name: "Stop item" });
   await confirm.getByText("Stop this item?").waitFor();
-  await confirm.getByRole("button", { name: "Keep running" }).click();
+  await confirm.getByRole("button", { name: "Cancel" }).click();
   await confirm.waitFor({ state: "detached" });
   expect(await row(page, VERIFYING).getAttribute("data-state")).toBe("running");
 

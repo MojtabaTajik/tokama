@@ -225,6 +225,33 @@
   outline: 1px solid var(--link);
 }
 
+/* The approval card's preview: about 8 lines, faded where they are cut. */
+.step-output-preview {
+  box-sizing: border-box;
+  max-height: calc(8 * 1.55 * 12.5px + 16px);
+  padding: 8px 10px;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  background: var(--input);
+  color: var(--text-2);
+}
+
+.step-output-preview[data-cut] {
+  mask-image: linear-gradient(to bottom, var(--text) calc(100% - 44px), transparent);
+}
+
+.step-output-more {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
 .step-output-none,
 .step-output-cut {
   margin: 0;
@@ -1002,7 +1029,7 @@
   }
 }
 
-/* ⤢ on the drawer's header, output and diff blocks */
+/* ⤢ on the drawer's header and diff block */
 
 .expand-button {
   display: inline-flex;
@@ -1035,7 +1062,6 @@
   margin-left: 0;
 }
 
-.step-output-label .expand-button,
 .dv-panel-head .expand-button {
   margin-left: auto;
 }

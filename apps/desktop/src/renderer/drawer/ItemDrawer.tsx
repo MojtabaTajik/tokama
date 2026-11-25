@@ -19,11 +19,11 @@ import { changesRepo } from "./attempt-view.js";
 import { ChecksTab } from "./ChecksTab.js";
 import { attemptLine, decisionKind, hasEnded, nextRunLine, runLine, itemMark, KIND, outcomeLine, PRIVACY, stepAgent, stepMark, stepPosition, templateOf, whereLine } from "./describe.js";
 import { DecisionChoices, inTextField } from "./DecisionChoices.js";
-import { DiffTab, useDecisionDiff } from "./DiffView.js";
+import { DiffTab, type DiffState, useDecisionDiff } from "./DiffView.js";
 import { Finish } from "./Finish.js";
 import { LogTab } from "./LogTab.js";
 import { OutputTab } from "./OutputTab.js";
-import { StepOutput, type OutputState, useStepOutput } from "./StepOutput.js";
+import { StepOutput, StepPreview, type OutputState, useStepOutput } from "./StepOutput.js";
 import { finishState, isDiscarded } from "./finish-view.js";
 import { useItem } from "./useItem.js";
 
@@ -43,9 +43,9 @@ const TEXT = {
   attempts: "Attempts",
   actions: "Actions",
   stop: "Stop",
-  stopQuestion: "Stop this item? Its agent is stopped; what is recorded so far is kept.",
+  stopQuestion: "Stop this item? The agent is stopped and the item ends. You can't continue it later. Changed files stay in the worktree.",
   stopConfirm: "Stop item",
-  stopCancel: "Keep running",
+  stopCancel: "Cancel",
   stale: "The question changed before your answer reached the engine. The drawer shows the item as it is now.",
   invalidChoice: (message: string) => `The engine did not accept that choice: ${message}`,
   alreadyEnded: "The item had already ended. The drawer shows the item as it is now.",
@@ -60,22 +60,24 @@ const TEXT = {
   seeDiff: "See the changed files in the Diff tab",
   output: "Output",
   expand: "Open full view",
-  expandOutput: "Open output in full view",
-  expandTip: "Open in full view",
   collapse: "Close full view, back to the list with the drawer open (Esc)",
   collapseTip: "Close full view (Esc)",
   template: (name: string) => `template ${name}`,
 } as const;
 
 export type Tab = "Steps" | "Output" | "Diff" | "Checks" | "Log";
+
+/** A decision carries a diff worth showing while its change is loading or lists a changed file. */
+const carriesDiff = (diff: DiffState | undefined): boolean => diff !== undefined && (diff.kind !== "loaded" || diff.diff.files.length + diff.diff.moreFiles > 0);
+
 /**
- * The tabs, the same in the drawer and the full view: Diff only while a decision carries a diff,
- * Checks only on an item that changes a repo.
+ * The tabs, the same in the drawer and the full view: Diff only while a decision carries a diff
+ * with changed files, Checks only on an item that changes a repo.
  */
-export const tabsOf = (item: Pick<ItemRecord, "kind" | "repoIds">, diff: unknown): readonly Tab[] => [
+export const tabsOf = (item: Pick<ItemRecord, "kind" | "repoIds">, diff: DiffState | undefined): readonly Tab[] => [
   "Steps",
   "Output",
-  ...(diff === undefined ? [] : (["Diff"] as const)),
+  ...(carriesDiff(diff) ? (["Diff"] as const) : []),
   ...(changesRepo(item) ? (["Checks"] as const) : []),
   "Log",
 ];
@@ -264,15 +266,16 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
     outputShownFor.current = outputAsked;
   }, [outputAsked]);
   const output = useStepOutput(bridge, itemId, approval?.stepIndex ?? 0, undefined, approval?.id);
-  const showDiff = () => {
-    setTab("Diff");
-    document.getElementById(tabId("Diff"))?.focus();
+  const showTab = (to: Tab) => () => {
+    setTab(to);
+    document.getElementById(tabId(to))?.focus();
   };
+  const changedFiles = diff?.kind === "loaded" && diff.diff.files.length + diff.diff.moreFiles > 0;
 
   const template = item && templateOf(item, setup);
   const tabs = item ? tabsOf(item, diff) : [];
   const shown = tabs.includes(tab) ? tab : "Steps";
-  // ⤢ on a block inside the drawer: the full view on that block's tab.
+  // ⤢ on the diff inside the drawer: the full view on the Diff tab.
   const expandTo = onExpand === undefined || full ? undefined : (to: Tab) => () => {
     setTab(to);
     onExpand();
@@ -360,7 +363,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
       )}
 
       {item?.state === "needs_you" && (
-        <NeedsYou item={item} setup={setup} decision={item.decision} busy={busy} output={full ? undefined : output} full={full} onExpandOutput={expandTo?.("Output")} onShowDiff={showDiff} onChoose={resolve} />
+        <NeedsYou item={item} setup={setup} decision={item.decision} busy={busy} output={full ? undefined : output} full={full} changedFiles={changedFiles} onShowOutput={showTab("Output")} onShowDiff={showTab("Diff")} onChoose={resolve} />
       )}
       {item !== undefined && item.state !== "needs_you" && <After item={item} setup={setup} />}
 
@@ -383,7 +386,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
             {shown === "Steps" ? (
               <Steps bridge={bridge} item={item} setup={setup} onOpenAgent={onOpenAgent} />
             ) : shown === "Output" ? (
-              <OutputTab bridge={bridge} item={item} setup={setup} full={full} onExpand={expandTo?.("Output")} onOpenAgent={onOpenAgent} />
+              <OutputTab bridge={bridge} item={item} setup={setup} full={full} onOpenAgent={onOpenAgent} />
             ) : shown === "Checks" ? (
               <ChecksTab bridge={bridge} item={item} setup={setup} full={full} />
             ) : shown === "Log" ? (
@@ -463,13 +466,15 @@ interface NeedsYouProps {
   readonly output: OutputState | undefined;
   /** The full view: the decision as a bar pinned at the top, its buttons beside the question. */
   readonly full: boolean;
-  /** ⤢ on the output: the full view on the Output tab. */
-  readonly onExpandOutput: (() => void) | undefined;
+  /** The step changed files: the card links to the Diff tab. */
+  readonly changedFiles: boolean;
+  /** Show full plan: the Output tab. */
+  readonly onShowOutput: () => void;
   readonly onShowDiff: () => void;
   readonly onChoose: (decision: Decision, choice: string, note?: string) => void;
 }
 
-function NeedsYou({ item, setup, decision, busy, output, full, onExpandOutput, onShowDiff, onChoose }: NeedsYouProps) {
+function NeedsYou({ item, setup, decision, busy, output, full, changedFiles, onShowOutput, onShowDiff, onChoose }: NeedsYouProps) {
   const step = decision === undefined ? undefined : item.steps[decision.stepIndex];
   const agent = step?.agentId === undefined ? undefined : stepAgent(step, setup?.agents ?? []).name;
   const kind = decision === undefined ? undefined : decisionKind(decision);
@@ -502,18 +507,13 @@ function NeedsYou({ item, setup, decision, busy, output, full, onExpandOutput, o
               <p className="step-output-label">
                 <span>{TEXT.wrote(step.name, agent)}</span>
                 {output.kind === "loaded" && <span className="muted mono">{TEXT.attempt(output.output.attempt)}</span>}
-                {decision.hasDiff === true && (
+                {changedFiles && (
                   <button type="button" className="link" onClick={onShowDiff}>
                     {TEXT.seeDiff}
                   </button>
                 )}
-                {onExpandOutput !== undefined && (
-                  <button type="button" className="expand-button" aria-label={TEXT.expandOutput} title={TEXT.expandTip} onClick={onExpandOutput}>
-                    <ExpandIcon />
-                  </button>
-                )}
               </p>
-              <StepOutput state={output} label={TEXT.wrote(step.name, agent)} />
+              <StepPreview state={output} label={TEXT.wrote(step.name, agent)} onShowFull={onShowOutput} />
             </div>
           )}
           <DecisionChoices key={decision.id} decision={decision} busy={busy} agent={agent} run={nextRunLine(step)} onChoose={(choice, note) => onChoose(decision, choice, note)} />
