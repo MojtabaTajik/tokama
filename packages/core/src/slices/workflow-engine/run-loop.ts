@@ -60,7 +60,7 @@ import { openAttempt, openDecisions, recoverItems, RUN_FAILURE_CHOICES, type Ite
 import { buildPrompt, type StepResults } from "../prompting/index.js";
 import { checksPass, runCommand, type CheckResult } from "../verification/index.js";
 import { commitItem, createWorktree, findItemWorktree, originPushUrl, stageItem, treeDiff, worktreePath, worktreeSnapshot, type ItemWorktree } from "../worktrees/index.js";
-import { attemptChecks, attemptLog, type PlannedChecks, toolLine } from "./attempt-files.js";
+import { attemptChecks, attemptLog, toolLine } from "./attempt-files.js";
 import { createFinisher, GIT_SETTINGS_FILE } from "./finish.js";
 import { attemptLimit, budgetAllowedMs, budgetUsedMs, CONTINUE_ID, countedAttempts, ONE_MORE_ID, sameFailureTwice } from "./counters.js";
 import {
@@ -704,7 +704,9 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     const dir = attemptDir(stepId, attempt);
     const transcriptPath = itemPath(item.id, `${dir}/transcript.txt`);
     mkdirSync(dirname(transcriptPath), { recursive: true, mode: 0o700 });
-    let transcriptOk = replaceTextSync(transcriptPath, "").ok;
+    const created = replaceTextSync(transcriptPath, "");
+    let transcriptOk = created.ok;
+    if (!created.ok) deps.log?.(`item ${item.id}: the transcript of step ${stepId} attempt ${attempt} was not saved: ${created.error.message}`);
     let lastEntry: "text" | "tool" | undefined;
     const record = (entry: string, kind: "text" | "tool") => {
       if (!transcriptOk) return;
@@ -1122,15 +1124,14 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
   });
 
   /** The checks a step runs after its agent, as the template snapshot and the repo's config give them now. */
-  const plannedChecks = (item: StoredItem, stepId: StepId): PlannedChecks | undefined => {
+  const plannedChecks = (item: StoredItem, stepId: StepId): readonly string[] | undefined => {
     const template = parseTemplateRecord(item.template.record);
     if (!template.ok) return undefined;
     const step = template.value.steps.find((s) => s.id === stepId);
     if (step === undefined || step.doneWhen !== "checks pass" || step.checks === undefined) return undefined;
     const repoId = item.repoIds[0];
     const repo = repoId === undefined ? undefined : deps.repo(repoId);
-    const commands = "from" in step.checks ? (repo?.checks ?? []) : step.checks.commands;
-    return { commands, setupRuns: template.value.setup !== undefined };
+    return "from" in step.checks ? (repo?.checks ?? []) : step.checks.commands;
   };
 
   const liveItem = (itemId: ItemId): Result<StoredItem, CommandError> => {

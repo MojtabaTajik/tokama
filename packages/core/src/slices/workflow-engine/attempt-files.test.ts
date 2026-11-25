@@ -14,11 +14,8 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 const files = () => ({ path: (name: string) => join(dir, "attempts", "build-1", name), itemPath: (rel: string) => join(dir, ...rel.split("/")) });
 const save = (name: string, text: string) => writeFileSync(files().path(name), text);
-const HOST = "host_0b9f3c1e-6a2d-4f7b-9c1a-2e3d4f5a6b7c";
-const process = (role: "agent" | "check", pid: number) => ({ role, pid, startedAt: 1, bootTime: 1, hostId: HOST }) as AttemptRecord["processes"][number];
-
 const attempt = (over: Partial<AttemptRecord> = {}): AttemptRecord => ({ attempt: 1, startedAt: 1, processes: [], checks: [], ...over });
-const PLANNED = { commands: ["pnpm test", "pnpm lint", "pnpm build"], setupRuns: true };
+const PLANNED = ["pnpm test", "pnpm lint", "pnpm build"];
 
 describe("attemptChecks", () => {
   it("lists the recorded checks with the end of their output; a check recorded before durations has none", async () => {
@@ -40,23 +37,14 @@ describe("attemptChecks", () => {
     });
   });
 
-  it("while the agent works, every planned check waits", async () => {
-    const running = attempt({ processes: [process("agent", 10)] });
-    expect((await attemptChecks(running, files(), PLANNED)).checks.map((c) => [c.command, c.state])).toEqual([
+  it("while the attempt runs, the check whose log exists runs with its output so far, and the rest wait", async () => {
+    expect((await attemptChecks(attempt(), files(), PLANNED)).checks.map((c) => [c.command, c.state])).toEqual([
       ["pnpm test", "waiting"],
       ["pnpm lint", "waiting"],
       ["pnpm build", "waiting"],
     ]);
-  });
-
-  it("while setup runs, the checks still wait; then the check whose process started runs, with its output so far", async () => {
-    const inSetup = attempt({ processes: [process("agent", 10), process("check", 11)] });
-    expect((await attemptChecks(inSetup, files(), PLANNED)).checks.map((c) => c.state)).toEqual(["waiting", "waiting", "waiting"]);
     save("check-2.log", "linting 3 of 9\n");
-    const inLint = attempt({
-      processes: [process("agent", 10), process("check", 11), process("check", 12), process("check", 13)],
-      checks: [{ command: "pnpm test", exitCode: 0, passed: true, at: 5 }],
-    });
+    const inLint = attempt({ checks: [{ command: "pnpm test", exitCode: 0, passed: true, at: 5 }] });
     expect((await attemptChecks(inLint, files(), PLANNED)).checks).toEqual([
       expect.objectContaining({ command: "pnpm test", state: "passed" }),
       { command: "pnpm lint", state: "running", exitCode: null, durationMs: null, summary: "linting 3 of 9", output: { text: "linting 3 of 9", truncated: false, totalBytes: 15, totalLines: 1 } },
@@ -64,7 +52,19 @@ describe("attemptChecks", () => {
     ]);
   });
 
-  it("an ended attempt lists only what it recorded", async () => {
+  it("an ended attempt shows the check it ended in: refused or not started with the reason, stopped with what it saved", async () => {
+    const passed = { command: "pnpm test", exitCode: 0, passed: true, at: 5 };
+    const refused = attempt({ endedAt: 9, result: "run_failed", detail: "The check could not run. `pnpm lint` was refused by the command policy.", checks: [passed] });
+    expect((await attemptChecks(refused, files(), PLANNED)).checks).toEqual([
+      expect.objectContaining({ state: "passed" }),
+      { command: "pnpm lint", state: "not_run", exitCode: null, durationMs: null, summary: "The check could not run. `pnpm lint` was refused by the command policy.", output: null },
+    ]);
+    save("check-2.log", "partial\n");
+    const stopped = attempt({ endedAt: 9, result: "stopped", detail: "Stopped by the engineer.", checks: [passed] });
+    expect((await attemptChecks(stopped, files(), PLANNED)).checks[1]).toEqual({ command: "pnpm lint", state: "not_run", exitCode: null, durationMs: null, summary: "Stopped by the engineer.", output: expect.objectContaining({ text: "partial" }) });
+  });
+
+  it("an attempt that ended before its checks lists none", async () => {
     expect(await attemptChecks(attempt({ endedAt: 9, result: "run_failed" }), files(), PLANNED)).toEqual({ attempt: 1, checks: [] });
   });
 });
@@ -78,8 +78,8 @@ describe("attemptLog", () => {
       transcript: { text: "I'll fix it.\n\n→ Edit src/a.ts\n\nDone.", truncated: false, totalBytes: 38, totalLines: 5 },
       final: { text: "Done.", truncated: false },
     });
-    // A running attempt has no final message yet, even if an older file is there.
-    expect((await attemptLog(attempt(), files())).final).toBeNull();
+    // The final message is there once the agent's call ended, while the checks still run.
+    expect((await attemptLog(attempt(), files())).final).toEqual({ text: "Done.", truncated: false });
   });
 
   it("says a transcript that was not saved is missing, without failing", async () => {
@@ -94,6 +94,8 @@ describe("toolLine", () => {
     expect(toolLine(call("Read", { file_path: "/home/me/orders-api/.tokama/wt/x/src/list.ts" }), "/home/me/orders-api/.tokama/wt/x")).toBe("→ Read src/list.ts");
     expect(toolLine(call("Bash", { command: "pnpm test" }), "/wt")).toBe("→ Bash pnpm test");
     expect(toolLine(call("Glob", { limit: 3 }), "/wt")).toBe("→ Glob");
+    // A known field wins over the order the model sent the fields in.
+    expect(toolLine(call("Bash", { description: "Run the tests", command: "pnpm test" }), "/wt")).toBe("→ Bash pnpm test");
   });
 
   it("keeps it to one cleaned line of at most 300 characters", () => {

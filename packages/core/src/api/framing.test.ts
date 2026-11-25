@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MAX_ATTEMPT_CHECKS, MAX_CHECK_TAIL_BYTES, parseQueryResult } from "../kernel/schemas/index.js";
 import { encodeLine, LineDecoder, MAX_MESSAGE_BYTES } from "./framing.js";
 
 const lines = (decoder: LineDecoder, ...chunks: string[]) =>
@@ -50,5 +51,15 @@ describe("encodeLine", () => {
   it("refuses a message over the cap", () => {
     expect(encodeLine("x".repeat(MAX_MESSAGE_BYTES)).ok).toBe(false);
     expect(encodeLine("x".repeat(MAX_MESSAGE_BYTES - 2)).ok).toBe(true);
+  });
+});
+
+describe("reply size", () => {
+  it("the largest attempt_checks reply fits in one engine message", () => {
+    // Every byte invalid UTF-8 (U+FFFD, 3 bytes in JSON), longest command and summary.
+    const check = { command: "\ufffd".repeat(500), state: "failed", exitCode: 1, durationMs: 1, summary: "\ufffd".repeat(200), output: { text: "\ufffd".repeat(MAX_CHECK_TAIL_BYTES), truncated: true, totalBytes: 1, totalLines: 1 } };
+    const data = { attempt: 1, checks: Array.from({ length: MAX_ATTEMPT_CHECKS }, () => check) };
+    expect(parseQueryResult("attempt_checks", data).ok).toBe(true);
+    expect(encodeLine({ apiVersion: 5, kind: "reply", requestId: "r".repeat(128), result: { ok: true, data } }).ok).toBe(true);
   });
 });

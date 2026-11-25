@@ -154,6 +154,14 @@ describe("Checks tab", () => {
     await open(bridge, stopped, "Checks");
     expect(text(".ck-none")).toBe("No checks ran in this attempt.The check could not run. `pnpm test` was refused by the command policy.");
 
+    const refused = { ...stopped, steps: [{ ...stopped.steps[0]!, attempts: [{ attempt: 1, result: "run_failed", detail: "The check could not run. `pnpm lint` was refused by the command policy.", checks: [{ command: "pnpm test", passed: true, exitCode: 0 }] }] }] } as unknown as ItemRecord;
+    const withRow = fakeBridge([refused], {
+      checks: { 1: { attempt: 1, checks: [{ command: "pnpm test", state: "passed", exitCode: 0, durationMs: 1000, summary: "", output: null }, { command: "pnpm lint", state: "not_run", exitCode: null, durationMs: null, summary: "The check could not run. `pnpm lint` was refused by the command policy.", output: null }] } },
+    });
+    await open(withRow.bridge, refused, "Checks");
+    const notRun = $(".ck-check[data-state='not_run']")!;
+    expect([notRun.querySelector(".ck-result")?.textContent, notRun.querySelector(".ck-exit")?.textContent, notRun.querySelector(".ck-sum")?.textContent]).toEqual(["! did not run", "–", "The check could not run. `pnpm lint` was refused by the command policy."]);
+
     const lost = fakeBridge([built], { checks: { ...CHECKS, 1: { attempt: 1, checks: [{ command: "pnpm test", state: "failed", exitCode: 1, durationMs: null, summary: "", output: null }] } } });
     await open(lost.bridge, built, "Checks");
     expect(text(".ck-out-none")).toBe("The output of this check was not saved.");
@@ -223,6 +231,10 @@ describe("Log tab", () => {
     const { bridge } = fakeBridge([built], { logs: { ...LOGS, 1: { attempt: 1, transcript: null, final: null } } });
     await open(bridge, built, "Log");
     expect($$(".lg-attempt")[0]?.querySelector(".lg-none")?.textContent).toBe("The transcript of this attempt was not saved.");
+    // A running attempt whose transcript file is not there yet has no lines yet.
+    const early = fakeBridge([built], { logs: { ...LOGS, 2: { attempt: 2, transcript: null, final: null } } });
+    await open(early.bridge, built, "Log");
+    expect($$(".lg-attempt")[1]?.querySelector(".lg-none")?.textContent).toBe("No lines yet.");
     const fresh = { ...built, steps: [{ ...built.steps[0]!, state: "pending", attempts: undefined }] } as unknown as ItemRecord;
     await open(fakeBridge([fresh]).bridge, fresh, "Log");
     expect(text('[role="tabpanel"]')).toBe("No agent has run yet. Each attempt's transcript appears here.");

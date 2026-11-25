@@ -89,7 +89,8 @@ const LOADING = { kind: "loading" } as const;
 
 /**
  * One attempt's checks or transcript. Asked again when `version` changes (the item record moved
- * on) and every POLL_MS while `live`; the last answer stays on screen while a new one is asked.
+ * on) and, while `live`, POLL_MS after each answer, so a slow engine is never asked twice at once.
+ * The last answer stays on screen while a new one is asked.
  */
 export function useAttemptReply<T extends "attempt_checks" | "attempt_log">(
   bridge: TokamaBridge,
@@ -103,20 +104,21 @@ export function useAttemptReply<T extends "attempt_checks" | "attempt_log">(
   const [answer, setAnswer] = useState<{ readonly for: string; readonly state: ReplyState<QueryResult<T>> } | undefined>(undefined);
   const [tick, setTick] = useState(0);
   useEffect(() => {
-    if (!live) return;
-    const timer = setInterval(() => setTick((n) => n + 1), POLL_MS);
-    return () => clearInterval(timer);
-  }, [live]);
-  useEffect(() => {
     let current = true;
-    const settle = (state: ReplyState<QueryResult<T>>) => current && setAnswer({ for: asked, state });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settle = (state: ReplyState<QueryResult<T>>) => {
+      if (!current) return;
+      setAnswer({ for: asked, state });
+      if (live) timer = setTimeout(() => setTick((n) => n + 1), POLL_MS);
+    };
     void bridge
       .query({ type, itemId, stepIndex, attempt } as { type: "attempt_checks"; itemId: string; stepIndex: number; attempt: number })
       .then((reply) => settle(reply.ok ? { kind: "loaded", data: reply.data as QueryResult<T> } : reply.error.code === "not_found" ? { kind: "missing", message: reply.error.message } : { kind: "failed", message: reply.error.message }))
       .catch((cause: unknown) => settle({ kind: "failed", message: String(cause) }));
     return () => {
       current = false;
+      clearTimeout(timer);
     };
-  }, [bridge, type, itemId, stepIndex, attempt, asked, version, tick]);
+  }, [bridge, type, itemId, stepIndex, attempt, asked, version, tick, live]);
   return answer?.for === asked ? answer.state : LOADING;
 }

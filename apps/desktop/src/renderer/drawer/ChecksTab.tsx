@@ -33,6 +33,7 @@ const STATE: Record<CheckState, { readonly symbol: string; readonly word: string
   failed: { symbol: "✕", word: "failed", tone: "fail" },
   running: { symbol: "●", word: "running", tone: "live" },
   waiting: { symbol: "○", word: "waiting", tone: "muted" },
+  not_run: { symbol: "!", word: "did not run", tone: "warn" },
 };
 
 const RESULT: Record<string, { readonly symbol: string; readonly word: string; readonly tone: string }> = {

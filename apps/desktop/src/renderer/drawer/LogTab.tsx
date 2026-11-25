@@ -87,9 +87,9 @@ function AttemptLog({ bridge, item, setup, entry, onOpenAgent }: AttemptLogProps
             </p>
           )}
           <div className="lg-body" tabIndex={0} role="region" aria-label={TEXT.transcript(title)}>
-            {transcript === null ? (
+            {transcript === null && !running ? (
               <p className="lg-none">{TEXT.notSaved}</p>
-            ) : transcript.text === "" ? (
+            ) : transcript === null || transcript.text === "" ? (
               <p className="lg-none">{TEXT.noLines}</p>
             ) : (
               transcriptLines(transcript.text).map((entry, at) =>

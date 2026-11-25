@@ -8,6 +8,10 @@ describe("terminalText", () => {
     expect(terminalText("\u009b1mbold\u009b0m \u001b(Bplain \u001b=keypad")).toBe("bold plain keypad");
   });
 
+  it("ends an unterminated title at the line's end, so the lines after it stay", () => {
+    expect(terminalText("FAIL a\n\u001b]0 rest\nline2\nERROR real failure\n")).toBe("FAIL a\n\nline2\nERROR real failure\n");
+  });
+
   it("keeps tabs and line feeds, drops other control characters and the marks that reorder text", () => {
     expect(terminalText("a\tb\nc\u0000d\u0007e\u007ff\u0085g‮h⁦i‏j")).toBe("a\tb\ncdefghij");
   });

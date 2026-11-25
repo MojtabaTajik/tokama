@@ -26,16 +26,17 @@ const tail = (maxBytes: number) =>
     totalLines: z.int().min(0).nullable(),
   });
 
-export const CheckStateSchema = z.enum(["passed", "failed", "running", "waiting"]);
+/** `not_run`: the attempt ended before the check did (refused, not started, stopped). */
+export const CheckStateSchema = z.enum(["passed", "failed", "running", "waiting", "not_run"]);
 
 export const AttemptCheckSchema = z.strictObject({
   command: z.string().min(1).max(500),
   state: CheckStateSchema,
-  /** null while it runs or waits, and when a signal ended it. */
+  /** null unless it ended, and when a signal ended it. */
   exitCode: z.int().nullable(),
-  /** null while it runs or waits, and for checks recorded before durations were. */
+  /** null unless it ended, and for checks recorded before durations were. */
   durationMs: z.int().min(0).nullable(),
-  /** The last line of its output, cut to fit; empty when it has none. */
+  /** The last line of its output, cut to fit; for one that did not run, why. Empty when it has none. */
   summary: z.string().max(200),
   /** null when no output was saved: it waits, or the file is gone. */
   output: tail(MAX_CHECK_TAIL_BYTES).nullable(),
@@ -67,7 +68,7 @@ export const AttemptFileSchema = z.union([z.literal("transcript"), z.int().min(1
 // eslint-disable-next-line no-control-regex
 const CSI = /(?:\u001b\[|\u009b)[0-?]*[ -/]*[@-~]/g;
 // eslint-disable-next-line no-control-regex
-const OSC = /(?:\u001b\]|\u009d)[^\u0007\u001b\u009c]*(?:\u0007|\u001b\\|\u009c)?/g;
+const OSC = /(?:\u001b\]|\u009d)[^\u0007\u001b\u009c\n]*(?:\u0007|\u001b\\|\u009c)?/g;
 // eslint-disable-next-line no-control-regex
 const ESC = /\u001b[ -/]*[0-~]?/g;
 // Control characters but tab and line feed, and the marks that reorder text on screen.

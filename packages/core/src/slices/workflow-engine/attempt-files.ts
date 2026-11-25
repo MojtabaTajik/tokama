@@ -19,8 +19,11 @@ import {
   terminalText,
 } from "../../kernel/schemas/index.js";
 
-/** Counting lines reads the whole file: larger files get no line count. */
-const COUNT_LINES_UP_TO = 32 * 1024 * 1024;
+/**
+ * Counting lines reads the whole file, and a running attempt is read again every few seconds:
+ * larger files get no line count.
+ */
+const COUNT_LINES_UP_TO = 4 * 1024 * 1024;
 const MAX_SUMMARY_CHARS = 200;
 const MAX_TOOL_LINE_CHARS = 300;
 
@@ -32,18 +35,13 @@ export interface AttemptFiles {
   readonly itemPath: (rel: string) => string;
 }
 
-/** The planned checks of the attempt's step, for an attempt that runs. */
-export interface PlannedChecks {
-  readonly commands: readonly string[];
-  /** The template's setup runs as a check process before the checks. */
-  readonly setupRuns: boolean;
-}
-
 /**
- * Each check of an attempt: those it recorded, then, while it runs, the planned ones that have
- * not ended: the one whose process started runs, the others wait.
+ * Each check of an attempt: those it recorded, then the planned ones that have not ended. While
+ * the attempt runs, the one whose log file exists runs (the runner opens the file as the process
+ * starts) and the others wait. Once it ended, the next one did not run to its end when its log
+ * exists or the attempt's reason names it: refused, not started, stopped, or the engine stopped.
  */
-export async function attemptChecks(attempt: AttemptRecord, files: AttemptFiles, planned: PlannedChecks | undefined): Promise<AttemptChecksResult> {
+export async function attemptChecks(attempt: AttemptRecord, files: AttemptFiles, planned: readonly string[] | undefined): Promise<AttemptChecksResult> {
   const recorded = attempt.checks.slice(0, MAX_ATTEMPT_CHECKS);
   const checks: AttemptCheck[] = [];
   for (const check of recorded) {
@@ -57,17 +55,18 @@ export async function attemptChecks(attempt: AttemptRecord, files: AttemptFiles,
       output,
     });
   }
-  if (attempt.endedAt === undefined && planned !== undefined) {
-    const started = attempt.processes.filter((p) => p.role === "check").length - (planned.setupRuns ? 1 : 0);
-    for (const [offset, command] of planned.commands.slice(recorded.length, MAX_ATTEMPT_CHECKS).entries()) {
-      const index = recorded.length + offset;
-      if (offset === 0 && started > recorded.length) {
-        const output = await checkTail(files.path(`check-${index + 1}.log`));
-        checks.push({ command, state: "running", exitCode: null, durationMs: null, summary: summaryOf(output), output });
-      } else {
-        checks.push({ command, state: "waiting", exitCode: null, durationMs: null, summary: "", output: null });
-      }
-    }
+  const next = planned?.[recorded.length];
+  if (planned === undefined || next === undefined || recorded.length >= MAX_ATTEMPT_CHECKS) return { attempt: attempt.attempt, checks };
+  const nextLog = files.path(`check-${recorded.length + 1}.log`);
+  if (attempt.endedAt !== undefined) {
+    const output = await checkTail(nextLog);
+    const named = attempt.detail?.includes(`\`${next}\``) === true;
+    if (output !== null || named) checks.push({ command: next, state: "not_run", exitCode: null, durationMs: null, summary: cut(attempt.detail ?? "") || summaryOf(output), output });
+    return { attempt: attempt.attempt, checks };
+  }
+  for (const [offset, command] of planned.slice(recorded.length, MAX_ATTEMPT_CHECKS).entries()) {
+    const output = offset === 0 ? await checkTail(nextLog) : null;
+    checks.push(output === null ? { command, state: "waiting", exitCode: null, durationMs: null, summary: "", output: null } : { command, state: "running", exitCode: null, durationMs: null, summary: summaryOf(output), output });
   }
   return { attempt: attempt.attempt, checks };
 }
@@ -79,17 +78,22 @@ export async function attemptLog(attempt: AttemptRecord, files: AttemptFiles): P
   return {
     attempt: attempt.attempt,
     transcript,
-    // agent.txt is written when the agent's call ends; until then there is no final message.
-    final: final.ok && attempt.endedAt !== undefined ? { text: terminalText(final.value.text), truncated: final.value.truncated } : null,
+    // agent.txt is written when the agent's call ends, in a folder no other attempt uses.
+    final: final.ok ? { text: terminalText(final.value.text), truncated: final.value.truncated } : null,
   };
 }
 
+/** The input fields that name what a tool works on, most telling first. */
+const SUBJECT_FIELDS = ["command", "file_path", "path", "notebook_path", "pattern", "url", "query"];
+
 /**
- * One transcript line for a tool call: `→ Read src/orders/list.ts`. The first text field of its
- * input names what it works on; the worktree's own path is left out, so paths read relative to it.
+ * One transcript line for a tool call: `→ Read src/orders/list.ts`. A known field names what it
+ * works on, else the first text field; the worktree's own path is left out, so paths read
+ * relative to it.
  */
 export function toolLine(event: Extract<AgentCallEvent, { type: "tool_call" }>, worktree: string): string {
-  const subject = Object.values(event.input).find((value): value is string => typeof value === "string");
+  const known = SUBJECT_FIELDS.map((field) => event.input[field]).find((value): value is string => typeof value === "string");
+  const subject = known ?? Object.values(event.input).find((value): value is string => typeof value === "string");
   const relative = subject?.split(`${worktree}/`).join("").split(worktree).join(".");
   const line = terminalText(`→ ${event.name}${relative === undefined || relative === "" ? "" : ` ${relative}`}`).replace(/\s+/g, " ").trim();
   return line.length > MAX_TOOL_LINE_CHARS ? `${line.slice(0, MAX_TOOL_LINE_CHARS - 1)}…` : line;
@@ -103,7 +107,6 @@ async function tailOf(path: string, maxBytes: number, maxLines: number): Promise
 }
 
 /** The last line with words in it, cut to fit. */
-function summaryOf(output: TextTail | null): string {
-  const line = output?.text.split("\n").findLast((candidate) => candidate.trim() !== "")?.trim() ?? "";
-  return line.length > MAX_SUMMARY_CHARS ? `${line.slice(0, MAX_SUMMARY_CHARS - 1)}…` : line;
-}
+const summaryOf = (output: TextTail | null): string => cut(output?.text.split("\n").findLast((candidate) => candidate.trim() !== "")?.trim() ?? "");
+
+const cut = (line: string): string => (line.length > MAX_SUMMARY_CHARS ? `${line.slice(0, MAX_SUMMARY_CHARS - 1)}…` : line);
