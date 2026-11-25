@@ -84,7 +84,12 @@ export function MachineChart({ report }: { readonly report: MachineReport }) {
   const from = formatClock(first?.at ?? model.start);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const plot = useRef<HTMLDivElement | null>(null);
-  const [hovered, setHovered] = useState<number | undefined>(undefined);
+  // The reading under the pointer or the keys, by its time: the report changes every few seconds
+  // and its readings shift, so an index would drift to another reading.
+  const [hoveredAt, setHoveredAt] = useState<number | undefined>(undefined);
+  const found = hoveredAt === undefined ? -1 : report.points.findIndex((p) => p.at === hoveredAt);
+  const hovered = found === -1 ? undefined : found;
+  const setHovered = (index: number | undefined) => setHoveredAt(index === undefined ? undefined : report.points[index]?.at);
 
   useEffect(() => {
     const element = plot.current;
@@ -116,7 +121,7 @@ export function MachineChart({ report }: { readonly report: MachineReport }) {
       aria-label={TEXT.group}
       tabIndex={0}
       onKeyDown={key}
-      onFocus={() => setHovered((current) => current ?? report.points.length - 1)}
+      onFocus={() => hovered === undefined && setHovered(report.points.length - 1)}
       onBlur={() => setHovered(undefined)}
       onMouseLeave={() => setHovered(undefined)}
     >

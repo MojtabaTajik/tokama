@@ -18,7 +18,12 @@ export function useMachine(bridge: TokamaBridge, connection: ConnectionState): M
   const connected = connection.status === "connected";
 
   useEffect(() => {
-    if (!connected) return;
+    if (!connected) {
+      // After a restart the old readings are not this engine's: show nothing until it answers.
+      setReport(undefined);
+      setError(undefined);
+      return;
+    }
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const ask = () => {

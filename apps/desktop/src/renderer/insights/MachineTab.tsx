@@ -5,9 +5,10 @@
 import type { ItemProcessSetUsage, ItemRecord, MachineReport, Setup } from "@tokama/core";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { stepAgent } from "../drawer/describe.js";
+import { currentStep } from "../model.js";
 import { ConnectionFailure } from "../shell/ConnectionStatus.js";
 import { MachineChart } from "./MachineChart.js";
-import { formatBytes, formatClock, formatSeconds, formatSize, ofAllCores, onePercent, wholePercent, WINDOW_MS } from "./machine-model.js";
+import { chartModel, formatBytes, formatClock, formatSeconds, formatSize, ofAllCores, onePercent, wholePercent } from "./machine-model.js";
 import { useMachine } from "./useMachine.js";
 import { workflowName } from "./usage-model.js";
 
@@ -17,6 +18,7 @@ const TEXT = {
   panel: "Machine",
   loading: "Reading this machine",
   failed: "Could not read this machine",
+  refreshFailed: (why: string) => `Could not refresh: ${why}. The numbers below are from the last reading.`,
   nowTitle: "This machine · now",
   specs: (cores: number, memory: string) => `${cores} ${cores === 1 ? "core" : "cores"} · ${memory}`,
   asOf: "as of",
@@ -73,6 +75,7 @@ export function MachineTab({ bridge, connection, onRetryConnection, setup, items
         <p className="placeholder">{error === undefined ? TEXT.loading : `${TEXT.failed}: ${error}`}</p>
       ) : (
         <>
+          {error !== undefined && <p className="muted mc-hint">{TEXT.refreshFailed(error)}</p>}
           <NowMeters report={report} />
           <ChartSection report={report} />
           <ProcessTable report={report} setup={setup} items={items} onSelectItem={onSelectItem} onNewWork={onNewWork} />
@@ -148,12 +151,11 @@ function NowMeters({ report }: { readonly report: MachineReport }) {
 }
 
 function ChartSection({ report }: { readonly report: MachineReport }) {
-  const start = report.asOf - WINDOW_MS;
-  const inWindow = report.points.filter((p) => p.at >= start);
-  const first = inWindow[0];
-  const maxStep = report.everyMs * 3;
-  const leading = first !== undefined && first.at - start > maxStep;
-  const gaps = inWindow.some((p, i) => i > 0 && p.at - (inWindow[i - 1]?.at ?? 0) > maxStep);
+  const { start, unsampled } = chartModel(report);
+  const first = report.points.find((p) => p.at >= start);
+  // A stretch with no reading at the start of the window is the only one when sampling began late.
+  const leading = unsampled[0]?.from === start;
+  const gaps = unsampled.length > (leading ? 1 : 0);
   return (
     <section className="ins-section" aria-labelledby="mc-chart-title">
       <header className="ins-section-head">
@@ -252,8 +254,8 @@ function ProcessTable({ report, setup, items, onSelectItem, onNewWork }: { reado
 
 function ItemRows({ group, item, setup, cpu, onSelectItem }: { readonly group: Group; readonly item: ItemRecord | undefined; readonly setup: Setup | undefined; readonly cpu: (percent: number) => string; readonly onSelectItem: (itemId: string) => void }) {
   const title = group.rows[0]?.title ?? "";
-  // The item's current step is the first one that has not passed.
-  const step = item?.steps.find((candidate) => candidate.state !== "passed");
+  const stepIndex = item === undefined ? undefined : currentStep(item);
+  const step = stepIndex === undefined ? undefined : item?.steps[stepIndex];
   const subtitle = item === undefined ? undefined : [workflowName(item.templateId, setup), step?.name].filter(Boolean).join(" · ");
   const agent = step === undefined ? undefined : stepAgent(step, setup?.agents ?? []);
   const cli = step?.agentId === undefined ? undefined : setup?.agents.find((a) => a.id === step.agentId)?.cliId;
@@ -278,8 +280,8 @@ function ItemRows({ group, item, setup, cpu, onSelectItem }: { readonly group: G
         <td className="num mono">{cpu(sum("cpuPercent", group.rows))}</td>
         <td className="num mono">{formatBytes(sum("memoryBytes", group.rows))}</td>
       </tr>
-      {group.rows.map((row) => (
-        <tr key={row.role}>
+      {group.rows.map((row, index) => (
+        <tr key={`${row.role}-${index}`}>
           <td className="mc-proc mc-child">
             <span className="mc-branch" aria-hidden="true">
               └

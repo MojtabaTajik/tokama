@@ -28,7 +28,7 @@ const $ = (selector: string) => container.querySelector(selector);
 const $$ = (selector: string) => [...container.querySelectorAll(selector)];
 const text = (selector: string) => $(selector)?.textContent;
 
-async function render(reply: (query: { type: string }) => Reply | undefined, connection: ConnectionState = CONNECTED, extra: { onSelectItem?: (id: string) => void; onNewWork?: () => void } = {}) {
+async function render(reply: (query: { type: string }) => Reply | Promise<Reply> | undefined, connection: ConnectionState = CONNECTED, extra: { onSelectItem?: (id: string) => void; onNewWork?: () => void } = {}) {
   const bridge = fakeBridge(connection, { reply: (query) => (query.type === "machine" ? reply(query) : undefined) });
   await act(async () => root.render(<MachineTab bridge={bridge.bridge} connection={connection} onRetryConnection={() => undefined} setup={setup} items={items} onSelectItem={extra.onSelectItem ?? (() => undefined)} onNewWork={extra.onNewWork ?? (() => undefined)} />));
   return bridge;
@@ -58,7 +58,13 @@ describe("Machine tab: now", () => {
     expect(load?.textContent).toContain("12 or less keeps up on 12 cores");
   });
 
-  it("says it is reading until the first answer, and why when it fails", async () => {
+  it("says it is reading until the first answer", async () => {
+    await render(() => new Promise<Reply>(() => undefined));
+    expect(text(".placeholder")).toBe("Reading this machine");
+    expect($$('[role="meter"]')).toHaveLength(0);
+  });
+
+  it("says why when the first answer fails", async () => {
     await render(() => ({ ok: false, error: { code: "unavailable", message: "no access" } }));
     expect(text(".placeholder")).toBe("Could not read this machine: no access");
   });
@@ -101,6 +107,22 @@ describe("Machine tab: the last 30 minutes", () => {
     expect($$(".mc-cross")).toHaveLength(2);
     await act(async () => $(".mc-chart")!.dispatchEvent(new MouseEvent("mouseout", { bubbles: true })));
     await act(async () => $(".mc-chart")!.dispatchEvent(new MouseEvent("mouseleave")));
+    expect($(".mc-tip")).toBeNull();
+  });
+
+  it("keeps the selected reading when a newer report arrives, by its time", async () => {
+    vi.useFakeTimers();
+    let shifted = false;
+    await render(() => ({ ok: true, data: shifted ? { ...machineReport, asOf: NOW + 5_000, points: [...machineReport.points.slice(1), { ...machineReport.points.at(-1)!, at: NOW + 5_000 }] } : machineReport }));
+    const chart = $(".mc-chart")!;
+    await act(async () => chart.dispatchEvent(new FocusEvent("focusin", { bubbles: true })));
+    await act(async () => chart.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true })));
+    const first = text(".mc-tip-time");
+    shifted = true;
+    await act(async () => void (await vi.advanceTimersByTimeAsync(5_000)));
+    // The first reading left the window; the selection leaves with it instead of moving to its neighbour.
+    expect(text(".mc-tip-time")).not.toBe(first);
+    expect($(".mc-tip")).toBeNull();
   });
 
   it("moves through the readings with the arrow keys", async () => {
@@ -184,11 +206,25 @@ describe("Machine tab: asking again", () => {
     expect(asked()).toBe(2);
   });
 
-  it("keeps the last report on screen when a later ask fails", async () => {
+  it("keeps the last report on screen when a later ask fails, and says the numbers are old", async () => {
     vi.useFakeTimers();
     let calls = 0;
     await render(() => (++calls === 1 ? { ok: true, data: machineReport } : { ok: false, error: { code: "unavailable", message: "busy" } }));
     await act(async () => void (await vi.advanceTimersByTimeAsync(5_000)));
     expect($$('[role="meter"]')).toHaveLength(2);
+    expect(text(".mc-hint")).toBe("Could not refresh: busy. The numbers below are from the last reading.");
+  });
+
+  it("drops the old report when the engine goes away, and shows nothing until the next one answers", async () => {
+    const fake = fakeBridge(CONNECTED, { reply: (query) => (query.type === "machine" ? { ok: true, data: machineReport } : undefined) });
+    const show = (connection: ConnectionState) => act(async () => root.render(<MachineTab bridge={fake.bridge} connection={connection} onRetryConnection={() => undefined} setup={setup} items={items} onSelectItem={() => undefined} onNewWork={() => undefined} />));
+    await show(CONNECTED);
+    expect($$('[role="meter"]')).toHaveLength(2);
+    await show({ status: "failed", reason: "gone", logPath: "/tmp/engine.log", logTail: [] });
+    expect($$('[role="meter"]')).toHaveLength(0);
+    // The engine comes back with a slow first answer: the old readings must not show meanwhile.
+    fake.query.mockImplementation(() => new Promise(() => undefined));
+    await show({ status: "connected", engineId: "e-2" });
+    expect(text(".placeholder")).toBe("Reading this machine");
   });
 });

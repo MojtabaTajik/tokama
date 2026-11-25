@@ -45,6 +45,13 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
   const aboutOpen = page === "about";
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(undefined);
   const composer = useRef<NewWorkHandle>(null);
+  // New work asked for on a page that has no composer: the board opens, then the composer.
+  const [openComposerOnBoard, setOpenComposerOnBoard] = useState(false);
+  useEffect(() => {
+    if (!openComposerOnBoard || page !== "board") return;
+    composer.current?.open();
+    setOpenComposerOnBoard(false);
+  }, [openComposerOnBoard, page]);
   // The folder the picker returned, while the Add repo dialog is open.
   const [addingRepo, setAddingRepo] = useState<string | undefined>(undefined);
   const [clock, setClock] = useState(() => Date.now());
@@ -168,7 +175,10 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
           issues={issues}
           now={now}
           onSelectItem={setSelectedItemId}
-          onNewWork={() => composer.current?.open()}
+          onNewWork={() => {
+            setPage("board");
+            setOpenComposerOnBoard(true);
+          }}
         />
       ) : page === "needs-you" ? (
         <NeedsYou
