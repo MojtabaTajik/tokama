@@ -42,6 +42,7 @@ In the sidebar choose **+ Add repo**, then pick the top folder of a git repo. To
 pnpm test                              # fast unit tests
 pnpm test:all                          # also the integration tests
 pnpm --filter @tokama/desktop e2e      # the desktop app, driven in a real window
+pnpm e2e:real                          # local only, needs a real Claude Code login, costs a few cents (see e2e/README.md)
 ```
 
 On Linux the end-to-end tests need a display: run them under `xvfb-run --auto-servernum`. Screenshots go to `apps/desktop/e2e-output`.

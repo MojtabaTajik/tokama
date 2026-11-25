@@ -135,6 +135,27 @@ function engineEnv(): Record<string, string> {
   return env;
 }
 
+/** SIGKILLs every process group the item logs record, so no agent outlives a killed engine. */
+function killAgentGroups(workspace: Workspace): void {
+  try {
+    for (const item of readdirSync(join(workspace.tokamaHome, "items"))) {
+      for (const line of readFileSync(join(workspace.tokamaHome, "items", item, "events.jsonl"), "utf8").split("\n")) {
+        if (!line.includes('"process_started"')) continue;
+        const { pgid } = JSON.parse(line) as { pgid?: number };
+        if (pgid !== undefined) {
+          try {
+            process.kill(-pgid, "SIGKILL");
+          } catch {
+            // Already gone.
+          }
+        }
+      }
+    }
+  } catch {
+    // No items yet.
+  }
+}
+
 /** Starts the built engine in real mode on the workspace and connects to it. */
 export async function startEngine(workspace: Workspace): Promise<RunningEngine> {
   const out = openSync(join(workspace.root, "engine.out"), "a");
@@ -153,6 +174,8 @@ export async function startEngine(workspace: Workspace): Promise<RunningEngine> 
       child.kill(signal);
       await Promise.race([exited, new Promise((done) => setTimeout(done, 15_000))]);
     }
+    // The engine had to be killed, so it may not have stopped its agents: end their process groups.
+    killAgentGroups(workspace);
   };
   try {
     for (const deadline = Date.now() + 20_000; client === undefined; await new Promise((done) => setTimeout(done, 100))) {

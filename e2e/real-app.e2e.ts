@@ -105,12 +105,14 @@ it("adds the repo, runs Quick fix from New work and shows the commit in the draw
     const lock = readFileSync(join(workspace.engineDir, "engine.lock"), "utf8").trim().split(" ");
     expect(Number.parseInt(lock[0] ?? "", 10), "the app uses the running engine").toBe(engine.pid);
 
-    // Start Quick fix from New work. It is the only template, so it is the suggested one.
+    // Start Quick fix from New work: pick it in the Template menu, then the repo in the Repos menu.
     await page.locator("main h1").click();
     await page.keyboard.press("ControlOrMeta+n");
     await page.locator("textarea.np-text:focus").waitFor();
     await page.locator("textarea.np-text").fill(TASK);
-    await expect.poll(() => page.locator(".np-trigger", { hasText: "Template" }).innerText(), { message: "the suggested template" }).toContain("Quick fix");
+    await page.locator(".np-trigger", { hasText: "Template" }).click();
+    await page.getByRole("option", { name: /Quick fix/ }).click();
+    await expect.poll(() => page.locator(".np-trigger", { hasText: "Template" }).innerText(), { message: "the chosen template" }).toContain("Quick fix");
     const repos = page.locator(".np-trigger", { hasText: "Repos" });
     if ((await repos.innerText()).includes("Choose")) {
       await repos.click();
