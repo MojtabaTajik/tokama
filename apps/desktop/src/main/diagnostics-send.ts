@@ -3,6 +3,7 @@
 // exactly those texts, for the ids the renderer names, and nothing else. The renderer can choose
 // which of the shown entries, never the text, the URL or the headers. Electron only as types (the save
 // dialog is passed in), so it is tested with a fake client and a local server.
+// eslint-disable-next-line no-restricted-imports -- Save as file writes where the user chose in the save dialog, as a plain write, like any app.
 import { writeFile } from "node:fs/promises";
 import type { EngineClient } from "@tokama/client";
 import { type Clock, type DiagnosticEntry, type DiagnosticId, DiagnosticIdSchema, diagnosticsBody, entryText, MAX_DIAGNOSTICS_BYTES, type PostFailure, postGzipJson } from "@tokama/core";

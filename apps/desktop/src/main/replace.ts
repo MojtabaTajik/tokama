@@ -4,9 +4,11 @@
 //
 // Two apps may find the same older engine. The first one takes `replace.lock` in the engine dir
 // and stops it; the other sends nothing and waits until the old engine lets go of its lock.
-import { closeSync, constants, fstatSync, openSync, readFileSync, readSync, unlinkSync, writeSync } from "node:fs";
+import { closeSync, constants, openSync, readFileSync, unlinkSync } from "node:fs";
+// eslint-disable-next-line no-restricted-imports -- replace.lock is created exclusively (O_EXCL), which is the lock itself; an atomic replace cannot take a lock.
+import { writeSync } from "node:fs";
 import { join } from "node:path";
-import { readEngineLock, stopOwnEngine, type EngineProcesses, type OwnEngine, type StopOutcome } from "@tokama/core";
+import { pidAlive, readEngineLock, readPidFile, stopOwnEngine, type EngineProcesses, type OwnEngine, type StopOutcome } from "@tokama/core";
 
 export type ReplaceResult =
   /** The old engine is gone; connect again. `forced`: it took SIGKILL, so it could not end cleanly. */
@@ -112,30 +114,14 @@ function takeLock(path: string, content: string, staleMs: number): boolean {
   return false;
 }
 
-/** Stale: gone, unreadable, older than `staleMs`, or its app (the pid in it) is no longer running. */
+/**
+ * Stale: gone, unreadable, older than `staleMs`, or its app (the pid in it) is no longer running.
+ * A lock with no pid yet is being written: stale only once it is old.
+ */
 function isStale(path: string, staleMs: number): boolean {
-  let fd: number | undefined;
-  try {
-    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
-    const stat = fstatSync(fd);
-    if (!stat.isFile() || Date.now() - stat.mtimeMs > staleMs) return true;
-    const buffer = Buffer.alloc(Math.min(stat.size, 64));
-    const pid = Number.parseInt(buffer.subarray(0, readSync(fd, buffer, 0, buffer.length, 0)).toString("utf8"), 10);
-    return Number.isInteger(pid) && pid > 0 && !alive(pid);
-  } catch {
-    return true;
-  } finally {
-    if (fd !== undefined) closeSync(fd);
-  }
-}
-
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
+  const lock = readPidFile(path);
+  if (lock === undefined || Date.now() - lock.writtenAt > staleMs) return true;
+  return lock.pid !== undefined && !pidAlive(lock.pid);
 }
 
 function releaseLock(path: string, content: string): void {

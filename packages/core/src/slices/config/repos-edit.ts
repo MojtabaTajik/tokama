@@ -4,13 +4,14 @@
 // line, comments and order stay. The result must pass the rules loadRepos uses before it is
 // written: a temp file in the same folder, fsync, rename. A linked repos.yaml keeps its link: the
 // file behind it is replaced.
-import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import { homedir } from "node:os";
-import { access, lstat, mkdir, open, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { access, lstat, mkdir, realpath, stat } from "node:fs/promises";
+// eslint-disable-next-line no-restricted-imports -- a new .gitignore is created exclusively (flag wx), so the user's own file is never replaced.
+import { writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { Document, isMap, isScalar, isSeq, parseDocument } from "yaml";
-import { readJsonFile } from "../../kernel/fs-safe/index.js";
+import { readJsonFile, replaceTextSync } from "../../kernel/fs-safe/index.js";
 import type { Git, GitError } from "../../kernel/git/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import { MAX_CHECK_CHARS, type RepoId, RepoIdSchema } from "../../kernel/schemas/index.js";
@@ -315,42 +316,12 @@ async function write(path: string, doc: Document): Promise<Result<void, RepoEdit
   if (!parsed.ok) return invalid(`The change would break ${REPOS_FILE}: ${problemList(parsed.error)}`);
   if (Buffer.byteLength(text) > MAX_CONFIG_BYTES) return invalid(`${REPOS_FILE} would be larger than ${MAX_CONFIG_BYTES / 1024} KB.`);
   try {
-    await writeAtomic(path, text);
-    return ok(undefined);
+    await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   } catch (error) {
     return refused("write_failed", `${REPOS_FILE} can't be written (${(error as NodeJS.ErrnoException).code ?? String(error)}).`);
   }
-}
-
-/** Temp file in the same folder (so the rename is atomic), fsync, rename, then fsync the folder. */
-async function writeAtomic(path: string, text: string): Promise<void> {
-  const dir = dirname(path);
-  await mkdir(dir, { recursive: true, mode: 0o700 });
-  const temp = join(dir, `.${basename(path)}.${randomBytes(6).toString("hex")}.tmp`);
-  const handle = await open(temp, "wx", 0o600);
-  try {
-    try {
-      await handle.writeFile(text, "utf8");
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-    await rename(temp, path);
-  } catch (error) {
-    await unlink(temp).catch(() => undefined);
-    throw error;
-  }
-  // Makes the rename itself durable. Not every platform can open a folder for this.
-  try {
-    const folder = await open(dir, "r");
-    try {
-      await folder.sync();
-    } finally {
-      await folder.close();
-    }
-  } catch {
-    // The file is in place; only its durability across a power cut is less certain.
-  }
+  const written = replaceTextSync(path, text, 0o600);
+  return written.ok ? ok(undefined) : refused("write_failed", `${REPOS_FILE} can't be written (${written.error.code ?? written.error.reason}).`);
 }
 
 interface Folder {

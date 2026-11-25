@@ -3,7 +3,7 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { connect, requestShutdown } from "@tokama/client";
-import { API_VERSION, buildEnv, defaultEngineDir, engineEndpoint, err, posixEngineProcesses, readEngineLock } from "@tokama/core";
+import { API_VERSION, buildEnv, defaultEngineDir, engineEndpoint, err, pidAlive, posixEngineProcesses, readEngineLock } from "@tokama/core";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, screen, session, shell } from "electron";
 import { type BridgeEvent, CHANNELS } from "../shared/bridge.js";
 import { buildInfoText } from "../shared/build-info.js";
@@ -14,7 +14,7 @@ import { openAttemptFile } from "./attempt-file.js";
 import { type ConnectionWatch, watchConnection } from "./connection.js";
 import { type DesktopStore, desktopStore } from "./desktop-store.js";
 import { DIAGNOSTICS_URL, diagnosticsService, saveToFile } from "./diagnostics-send.js";
-import { createReporter, mainErrorReport, pidAlive, rateLimit, rendererErrorReport, rendererGoneKind, rendererUsageReport, type Reporter, runMarker } from "./diagnostics.js";
+import { createReporter, mainErrorReport, rateLimit, rendererErrorReport, rendererGoneKind, rendererUsageReport, type Reporter, runMarker } from "./diagnostics.js";
 import { engineCommand, engineCommandEnd, engineDirFor, findExecutable, readLogTail } from "./engine.js";
 import { replaceOlderEngine } from "./replace.js";
 import { pickRepoFolder } from "./folder.js";

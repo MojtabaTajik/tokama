@@ -4,7 +4,7 @@ Reads untrusted files: `readTextFile(path, { maxBytes, maxLines? })`, `readTextH
 `readTextFileInside(root, path, options)` and `listFiles(root, rel, { max })` check `isInside` before they open anything.
 Regular files only, no symlink at the last path component, non-blocking open (a FIFO cannot hang the engine), size and line caps, strict UTF-8.
 Failures are `Result` values with a `reason`; nothing throws.
-`appendTextSync(path, text, mode?)` appends with one open and `replaceTextSync(path, text, mode?)` writes a temp file, fsyncs it and renames it over the path. Both are synchronous (they also work while the process dies), create files 0600, never write through a symlink at the last path component and never block on a FIFO.
+`appendTextSync(path, text, mode?)` appends with one open and `replaceTextSync(path, text, mode?)` writes a temp file under a random name (created exclusively, with exactly `mode`), fsyncs it, renames it over the path and fsyncs the folder. It is the only atomic replace-write in Tokama; code outside the kernel may not import the `node:fs` write and rename calls (a lint rule). Both are synchronous (they also work while the process dies), create files 0600 unless given a mode, never write through a symlink at the last path component and never block on a FIFO.
 Symlinked parent directories are followed by the open: call `isInside` first when a read must stay inside a worktree or run folder.
 `isInside` and the open stop symlinks, not hard links: a hard link inside the root to a file outside it is a regular file inside it.
 `listFolders(root, rel, { max })` lists real folders only: a link to a folder is left out, so a walk never leaves the tree or reads a folder twice.

@@ -14,7 +14,9 @@
 // drain ends, so an engine starting meanwhile sees a live engine instead of a stale lock.
 // Threat model: local desktop, no network listener.
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { chmodSync, closeSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
+import { chmodSync, closeSync, mkdirSync, openSync, readFileSync, unlinkSync } from "node:fs";
+// eslint-disable-next-line no-restricted-imports -- the engine lock is created exclusively (O_EXCL), which is the lock itself; renameSync moves a damaged board index aside.
+import { renameSync, writeSync } from "node:fs";
 import { connect, createServer, type Server, type Socket } from "node:net";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -61,6 +63,9 @@ import {
   parseClientMessage,
   parseOpeningMessage,
   type ParseError,
+  pidAlive,
+  readPidFile,
+  replaceTextSync,
   removeRepo,
   type RepoEditError,
   type Result,
@@ -991,19 +996,13 @@ async function acquireLock(endpoint: LockSpec, content: string, log: (message: s
  * dir's lock is probed on the dir's socket.
  */
 async function lockIsLive(endpoint: LockSpec): Promise<{ live: boolean; socketPath: string }> {
-  let content: string;
-  let ageMs: number;
-  try {
-    content = readFileSync(endpoint.lockPath, "utf8");
-    ageMs = Date.now() - lstatSync(endpoint.lockPath).mtimeMs;
-  } catch {
-    return { live: await socketAnswers(endpoint.socketPath), socketPath: endpoint.socketPath };
-  }
-  const [pidField, , socketField] = content.trim().split(" ");
-  const socketPath = socketField || endpoint.socketPath;
+  const lock = readPidFile(endpoint.lockPath);
+  if (lock === undefined) return { live: await socketAnswers(endpoint.socketPath), socketPath: endpoint.socketPath };
+  const ageMs = Date.now() - lock.writtenAt;
+  const socketPath = lock.fields.slice(2).join(" ") || endpoint.socketPath;
   if (await socketAnswers(socketPath)) return { live: true, socketPath };
-  const pid = Number.parseInt(pidField ?? "", 10);
-  if (Number.isInteger(pid) && pid > 0 && !pidAlive(pid)) return { live: false, socketPath };
+  if (lock.pid !== undefined && !pidAlive(lock.pid)) return { live: false, socketPath };
+  // No pid yet: the lock is still being written.
   return { live: ageMs < STARTING_GRACE_MS, socketPath };
 }
 
@@ -1020,16 +1019,6 @@ function socketAnswers(socketPath: string): Promise<boolean> {
     socket.once("connect", () => done(true));
     socket.once("error", () => done(false));
   });
-}
-
-function pidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    // EPERM: the process exists but belongs to someone else.
-    return hasCode(error, "EPERM");
-  }
 }
 
 function ownsLock(lockPath: string, content: string): boolean {
@@ -1052,15 +1041,8 @@ function releaseLock(lockPath: string, content: string): void {
 /** Writes a new random token to a 0600 file; atomic, so a client never reads half a token. */
 function writeToken(tokenPath: string): Buffer {
   const token = randomBytes(32).toString("hex");
-  const tempPath = `${tokenPath}.${process.pid}.tmp`;
-  unlinkIfPresent(tempPath);
-  const fd = openSync(tempPath, "wx", 0o600);
-  try {
-    writeSync(fd, token);
-  } finally {
-    closeSync(fd);
-  }
-  renameSync(tempPath, tokenPath);
+  const written = replaceTextSync(tokenPath, token, 0o600);
+  if (!written.ok) throw new Error(`cannot write ${tokenPath}: ${written.error.message}`);
   return Buffer.from(token);
 }
 

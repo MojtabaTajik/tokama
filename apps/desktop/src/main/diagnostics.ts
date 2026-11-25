@@ -4,8 +4,8 @@
 //
 // The renderer is untrusted input: it may send a message and a stack, two strings, and nothing
 // else, at a bounded rate. It never names the source, the kind or any other field.
-import { closeSync, constants, fstatSync, openSync, readSync, renameSync, unlinkSync, writeSync } from "node:fs";
-import { type CrashKind, type DiagnosticReportInput, type ErrorWhere, MAX_REPORTED_STACK_CHARS } from "@tokama/core";
+import { unlinkSync } from "node:fs";
+import { type CrashKind, type DiagnosticReportInput, type ErrorWhere, MAX_REPORTED_STACK_CHARS, readPidFile, replaceTextSync } from "@tokama/core";
 import { RENDERER_USAGE_ACTIONS, type RendererUsageAction } from "../shared/bridge.js";
 
 /** What the renderer may report through its narrow channel: the error's message and stack. */
@@ -114,13 +114,14 @@ export function createReporter(send: (report: DiagnosticReportInput) => Promise<
  * another copy of the app still running, not a crash.
  */
 export function runMarker(path: string, pid: number, alive: (pid: number) => boolean): { readonly crashedBefore: boolean; clear(): void } {
-  const previous = readPid(path);
+  const previous = readPidFile(path)?.pid;
   const crashedBefore = previous !== undefined && previous !== pid && !alive(previous);
-  writeAtomic(path, `${pid}\n`);
+  // Without a marker a crash goes unnoticed; the app works the same.
+  replaceTextSync(path, `${pid}\n`, 0o600);
   return {
     crashedBefore,
     clear: () => {
-      if (readPid(path) !== pid) return;
+      if (readPidFile(path)?.pid !== pid) return;
       try {
         unlinkSync(path);
       } catch {
@@ -128,49 +129,4 @@ export function runMarker(path: string, pid: number, alive: (pid: number) => boo
       }
     },
   };
-}
-
-export function pidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    // EPERM: the process exists but belongs to someone else.
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-}
-
-function readPid(path: string): number | undefined {
-  let fd: number | undefined;
-  try {
-    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-    if (!fstatSync(fd).isFile()) return undefined;
-    const buffer = Buffer.alloc(32);
-    const word = buffer.subarray(0, readSync(fd, buffer, 0, 32, 0)).toString("utf8").trim();
-    return /^[1-9]\d{0,9}$/.test(word) ? Number(word) : undefined;
-  } catch {
-    return undefined;
-  } finally {
-    if (fd !== undefined) closeSync(fd);
-  }
-}
-
-function writeAtomic(path: string, text: string): void {
-  const temp = `${path}.${process.pid}.tmp`;
-  try {
-    try {
-      unlinkSync(temp);
-    } catch {
-      // No stale temp file.
-    }
-    const fd = openSync(temp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-    try {
-      writeSync(fd, text);
-    } finally {
-      closeSync(fd);
-    }
-    renameSync(temp, path);
-  } catch {
-    // Without a marker a crash goes unnoticed; the app works the same.
-  }
 }

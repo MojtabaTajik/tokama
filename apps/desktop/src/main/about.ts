@@ -1,7 +1,7 @@
 // What About shows about this build, and the text "Copy build info" puts on the clipboard. The
 // renderer never sends text to the clipboard: the main process composes it from its own facts.
-import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { readPidFile } from "@tokama/core";
 import type { AboutInfo } from "../shared/bridge.js";
 
 export interface BuildStamp {
@@ -24,14 +24,9 @@ export interface AboutDeps {
 
 const SYSTEMS: Partial<Record<NodeJS.Platform, string>> = { darwin: "macOS", linux: "Linux", win32: "Windows" };
 
-/** The pid in the lock file; undefined when the file is missing or does not start with a pid. */
+/** The pid in the lock file; undefined when the file is missing, is not a plain file or does not start with a pid. */
 export function readEnginePid(lockPath: string): number | undefined {
-  try {
-    const word = readFileSync(lockPath, "utf8").trim().split(/\s+/)[0] ?? "";
-    return /^[1-9]\d*$/.test(word) ? Number(word) : undefined;
-  } catch {
-    return undefined;
-  }
+  return readPidFile(lockPath)?.pid;
 }
 
 /** `path` with the user's home folder written as `~`. */

@@ -1,15 +1,25 @@
-import { mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createProcessRunner } from "../process/index.js";
 import { appendTextSync, replaceTextSync } from "./index.js";
+
+// The temp name is random; a test can pin it to plant something there first.
+const pinned = vi.hoisted(() => ({ bytes: undefined as Buffer | undefined }));
+vi.mock("node:crypto", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:crypto")>();
+  return { ...actual, randomBytes: (size: number) => pinned.bytes ?? actual.randomBytes(size) };
+});
 
 let dir: string;
 beforeEach(() => {
   dir = realpathSync(mkdtempSync(join(tmpdir(), "tokama-fs-write-")));
 });
-afterEach(() => rmSync(dir, { recursive: true, force: true }));
+afterEach(() => {
+  pinned.bytes = undefined;
+  rmSync(dir, { recursive: true, force: true });
+});
 
 describe("appendTextSync", () => {
   it("creates the file 0600 and appends to it", () => {
@@ -59,14 +69,28 @@ describe("replaceTextSync", () => {
     expect(readFileSync(target, "utf8")).toBe("keep");
   });
 
-  it("refuses a planted symlink at the temp path", () => {
+  it("refuses a planted symlink at the temp path and leaves the link alone", () => {
     const target = join(dir, "target");
     writeFileSync(target, "keep");
-    // The stale temp is removed first, so a planted link is unlinked, not followed.
-    symlinkSync(target, join(dir, `file.${process.pid}.tmp`));
-    expect(replaceTextSync(join(dir, "file"), "new").ok).toBe(true);
+    pinned.bytes = Buffer.from("0123456789ab", "hex");
+    const temp = join(dir, "file.0123456789ab.tmp");
+    symlinkSync(target, temp);
+    expect(replaceTextSync(join(dir, "file"), "new")).toMatchObject({ ok: false, error: { reason: "io_error", code: "EEXIST" } });
     expect(readFileSync(target, "utf8")).toBe("keep");
-    expect(readFileSync(join(dir, "file"), "utf8")).toBe("new");
+    expect(lstatSync(temp).isSymbolicLink()).toBe(true);
+    expect(readdirSync(dir).sort()).toEqual(["file.0123456789ab.tmp", "target"]);
+  });
+
+  it.each([0o600, 0o644])("sets mode %o exactly, whatever the umask and the old file's mode", (mode) => {
+    const file = join(dir, "file");
+    writeFileSync(file, "old", { mode: 0o666 });
+    const before = process.umask(0o077);
+    try {
+      expect(replaceTextSync(file, "new", mode).ok).toBe(true);
+    } finally {
+      process.umask(before);
+    }
+    expect(statSync(file).mode & 0o777).toBe(mode);
   });
 
   it("reports a missing folder as an error value", () => {

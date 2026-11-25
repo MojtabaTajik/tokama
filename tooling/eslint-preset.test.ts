@@ -22,6 +22,8 @@ const SYNTAX = "no-restricted-syntax";
 const GLOBALS = "no-restricted-globals";
 const BOUNDARIES = "boundaries/dependencies";
 const REQUIRE_IMPORTS = "@typescript-eslint/no-require-imports";
+const KERNEL_ONLY = "no-restricted-imports";
+const KILL = "no-restricted-properties";
 
 // Every fixture named bad-*: the rules it must trigger (and no others) and its error count,
 // so one statement that stops firing in a multi-statement fixture fails the test.
@@ -49,10 +51,15 @@ const violations: Record<string, [rules: string[], errors: number]> = {
   "adapters/agent/fake/bad-electron.ts": [[IMPORTS], 1],
   "kernel/process/bad-electron-dynamic.ts": [[SYNTAX], 1],
   // Process and network modules and globals.
-  "slices/items/bad-child-process.ts": [[IMPORTS], 1],
+  "slices/items/bad-child-process.ts": [[IMPORTS, KERNEL_ONLY], 2],
   "kernel/schemas/bad-node-child-process.ts": [[IMPORTS], 1],
+  // Writes, renames, signals and child processes outside the kernel.
+  "slices/items/bad-fs-write.ts": [[KERNEL_ONLY], 3],
+  "slices/items/bad-fs-namespace.ts": [[KERNEL_ONLY], 2],
+  "slices/items/bad-process-kill.ts": [[KILL], 2],
+  "adapters/agent/fake/bad-child-process.ts": [[KERNEL_ONLY], 1],
   "slices/items/bad-reexport-net.ts": [[IMPORTS], 1],
-  "slices/items/bad-type-import.ts": [[IMPORTS], 1],
+  "slices/items/bad-type-import.ts": [[IMPORTS, KERNEL_ONLY], 2],
   "slices/items/bad-dynamic-import.ts": [[SYNTAX], 1],
   "slices/items/bad-create-require.ts": [[IMPORTS], 1],
   "slices/items/bad-process-import.ts": [[IMPORTS], 1],
@@ -61,7 +68,7 @@ const violations: Record<string, [rules: string[], errors: number]> = {
   "slices/items/bad-function-constructor.ts": [["no-new-func", "no-eval"], 2],
   // Every TypeScript extension is covered, and JavaScript files are refused.
   "slices/items/bad-module.mts": [[IMPORTS], 1],
-  "slices/items/bad-import-require.cts": [[IMPORTS, REQUIRE_IMPORTS], 2],
+  "slices/items/bad-import-require.cts": [[IMPORTS, KERNEL_ONLY, REQUIRE_IMPORTS], 3],
   "slices/items/bad-component.tsx": [[IMPORTS], 1],
   "slices/items/bad-javascript.mjs": [[SYNTAX], 1],
 };
@@ -116,6 +123,8 @@ const ESCAPE_SPECIFIERS = [
 ];
 const ELECTRON_SPECIFIERS = ["electron", "electron/main", "electron/renderer"];
 const MODULE_ZONES = ["kernel/process", "kernel/egress", "adapters/agent/fake"];
+const CHILD_PROCESS = new Set(["child_process", "node:child_process"]);
+const PROCESS = new Set(["process", "node:process"]);
 const NETWORK_ZONES = ["kernel/egress", "adapters/agent/fake"];
 
 let eslint: ESLint;
@@ -183,8 +192,11 @@ describe("eslint preset: fixtures", () => {
 describe("eslint preset: process and network modules", () => {
   it.each(ESCAPE_SPECIFIERS)("refuses %s outside the module zones in every form", async (specifier) => {
     const path = `${core}/slices/items/virtual.ts`;
-    expect(await errorRules(path, `import "${specifier}";`)).toEqual([IMPORTS]);
-    expect(await errorRules(path, `export * from "${specifier}";`)).toEqual([IMPORTS]);
+    const rules = CHILD_PROCESS.has(specifier) ? [IMPORTS, KERNEL_ONLY] : [IMPORTS];
+    expect(await errorRules(path, `import "${specifier}";`)).toEqual(rules);
+    // `export *` also re-exports process.kill.
+    const reexported = PROCESS.has(specifier) ? [IMPORTS, KERNEL_ONLY] : rules;
+    expect(await errorRules(path, `export * from "${specifier}";`)).toEqual(reexported);
     expect(await errorRules(path, `export const m = await import("${specifier}");`)).toEqual([SYNTAX]);
   });
 
@@ -195,10 +207,9 @@ describe("eslint preset: process and network modules", () => {
   });
 
   it.each(MODULE_ZONES)("allows process and network modules in %s", async (zone) => {
-    const code = [
-      ...ESCAPE_SPECIFIERS.map((specifier) => `import "${specifier}";`),
-      'export const m = await import("node:vm");',
-    ].join("\n");
+    // Outside the kernel, child_process is refused by the kernel-only rule.
+    const specifiers = zone.startsWith("kernel/") ? ESCAPE_SPECIFIERS : ESCAPE_SPECIFIERS.filter((specifier) => !CHILD_PROCESS.has(specifier));
+    const code = [...specifiers.map((specifier) => `import "${specifier}";`), 'export const m = await import("node:vm");'].join("\n");
     expect(await errorRules(`${core}/${zone}/virtual.ts`, code)).toEqual([]);
   });
 
@@ -217,7 +228,7 @@ describe("eslint preset: process and network modules", () => {
   );
 
   it("applies no boundary or module rules outside core", async () => {
-    const code = 'import "electron";\nimport "node:child_process";\nexport const r = fetch("https://example.com");';
+    const code = 'import "electron";\nimport "node:net";\nexport const r = fetch("https://example.com");';
     expect(await errorRules("apps/desktop/src/virtual.ts", code)).toEqual([]);
   });
 });
@@ -241,7 +252,7 @@ describe("eslint preset: desktop", () => {
   });
 
   it("lets main use the client, core's public entry, Electron and Node", async () => {
-    const code = 'export { connect } from "@tokama/client";\nexport { err } from "@tokama/core";\nimport "electron";\nimport "node:child_process";';
+    const code = 'export { connect } from "@tokama/client";\nexport { err } from "@tokama/core";\nimport "electron";\nimport "node:net";';
     expect(await errorRules(`${desktop}/main/virtual.ts`, code)).toEqual([]);
   });
 
@@ -251,12 +262,12 @@ describe("eslint preset: desktop", () => {
       'import "electron/renderer";',
       'import "node:fs";',
       'import "fs/promises";',
-      'import "child_process";',
       'export { connect } from "@tokama/client";',
       'export { err } from "@tokama/core";',
     ]) {
       expect(await errorRules(`${desktop}/${path}`, code), code).toEqual([IMPORTS]);
     }
+    expect(await errorRules(`${desktop}/${path}`, 'import "child_process";')).toEqual([IMPORTS, KERNEL_ONLY]);
     expect(await errorRules(`${desktop}/${path}`, 'export type { ItemRecord } from "@tokama/core";\nimport "react";')).toEqual([]);
   });
 
@@ -324,5 +335,46 @@ describe("eslint preset: boundaries", () => {
   it("keeps boundary rules out of other packages", async () => {
     const config = await eslint.calculateConfigForFile(join(fixtureRoot, "apps/desktop/src/index.ts"));
     expect(config.rules[BOUNDARIES]).toBeUndefined();
+  });
+});
+
+describe("eslint preset: writes, renames, signals and child processes only through the kernel", () => {
+  const sources = ["packages/client/src/virtual.ts", "apps/desktop/src/main/virtual.ts", "apps/engine/src/virtual.ts", `${core}/adapters/agent/fake/virtual.ts`];
+  // Each binding is exported, so the only finding is the ban itself.
+  const banned = [
+    ['import { writeFileSync } from "node:fs";\nexport { writeFileSync };', KERNEL_ONLY],
+    ['import { renameSync } from "fs";\nexport { renameSync };', KERNEL_ONLY],
+    ['import { writeFile } from "node:fs/promises";\nexport { writeFile };', KERNEL_ONLY],
+    ['import { rename } from "fs/promises";\nexport { rename };', KERNEL_ONLY],
+    ['import { copyFileSync, ftruncateSync } from "node:fs";\nexport { copyFileSync, ftruncateSync };', KERNEL_ONLY],
+    ['import { cp } from "node:fs/promises";\nexport { cp };', KERNEL_ONLY],
+    ['import { kill } from "node:process";\nexport { kill };', KERNEL_ONLY],
+    ['import * as fs from "node:fs";\nexport { fs };', KERNEL_ONLY],
+    ['import fs from "node:fs";\nexport { fs };', KERNEL_ONLY],
+    ['import { promises } from "node:fs";\nexport { promises };', KERNEL_ONLY],
+    ['import { spawn } from "node:child_process";\nexport { spawn };', KERNEL_ONLY],
+    ['import type { ChildProcess } from "child_process";\nexport type { ChildProcess };', KERNEL_ONLY],
+    ["export const stop = (pid: number) => process.kill(pid);", KILL],
+  ] as const;
+
+  it.each(sources.flatMap((path) => banned.map(([code, rule]) => [path, code, rule])))("refuses in %s: %s", async (path, code, rule) => {
+    expect(await errorRules(path, code)).toEqual([rule]);
+  });
+
+  it.each(sources)("allows reads, folders and deletes in %s", async (path) => {
+    const code = 'export { closeSync, mkdirSync, openSync, readFileSync, unlinkSync } from "node:fs";\nexport { readFile } from "node:fs/promises";';
+    expect(await errorRules(path, code)).toEqual([]);
+  });
+
+  it.each([
+    `${core}/kernel/fs-safe/virtual.ts`,
+    `${core}/slices/items/virtual.test.ts`,
+    `${core}/slices/items/virtual.int.test.ts`,
+    `${core}/slices/workflow-engine/testing/virtual.ts`,
+    "apps/desktop/src/main/testing/virtual.ts",
+    "apps/desktop/src/main/virtual.test.ts",
+  ])("allows them in %s", async (path) => {
+    const code = 'export { renameSync, writeFileSync } from "node:fs";\nexport const stop = (pid: number) => process.kill(pid);';
+    expect(await errorRules(path, code)).toEqual([]);
   });
 });
