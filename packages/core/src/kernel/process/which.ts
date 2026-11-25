@@ -1,5 +1,5 @@
 import { accessSync, constants, statSync } from "node:fs";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { buildEnv } from "./env.js";
 
 /**
@@ -11,7 +11,7 @@ export function findOnPath(name: string, parent: Readonly<Record<string, string 
   if (name === "" || name.includes("/")) return undefined;
   const path = buildEnv(parent)["PATH"];
   if (path === undefined) return undefined;
-  for (const dir of path.split(":")) {
+  for (const dir of path.split(delimiter)) {
     const file = join(dir, name);
     try {
       if (!statSync(file).isFile()) continue;

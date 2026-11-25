@@ -26,9 +26,9 @@ const claudeOf = (clis: readonly CliHealth[], env: Record<string, string | undef
 };
 
 describe("aiClis", () => {
-  it("lists Claude Code, then Codex and Ollama as not supported yet", () => {
+  it("lists Claude Code, then Codex as not supported yet", () => {
     const result = aiClis({ clis: [READY], agents: [], env: {} });
-    expect(result.clis.map((cli) => [cli.cliId, cli.supported])).toEqual([["claude-code", true], ["codex-cli", false], ["ollama", false]]);
+    expect(result.clis.map((cli) => [cli.cliId, cli.supported])).toEqual([["claude-code", true], ["codex-cli", false]]);
   });
 
   it("shows the real launch arguments, how instructions are passed and the login command", () => {
@@ -71,7 +71,7 @@ describe("aiClis", () => {
 
   it("lists Claude Code as not supported when its adapter is removed", () => {
     const result = aiClisWith(undefined, { clis: [READY], agents: [], env: {} });
-    expect(result.clis.map((cli) => [cli.cliId, cli.supported])).toEqual([["claude-code", false], ["codex-cli", false], ["ollama", false]]);
+    expect(result.clis.map((cli) => [cli.cliId, cli.supported])).toEqual([["claude-code", false], ["codex-cli", false]]);
   });
 
   it("caps the names under a CLI at the schema's limit", () => {

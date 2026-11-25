@@ -14,6 +14,7 @@ import { readTextFile } from "../../../kernel/fs-safe/index.js";
 import { createProcessRunner, type ProcessRunner } from "../../../kernel/process/index.js";
 import { err, ok, type Result } from "../../../kernel/result/index.js";
 import type { PlanWindow } from "../../../kernel/schemas/index.js";
+import { CLAUDE_CODE_COMMAND } from "./command.js";
 
 /** The first Claude Code version `get_usage` was checked on. */
 export const GET_USAGE_FROM = "2.1.331";
@@ -29,7 +30,7 @@ export interface ClaudePlan {
 }
 
 export interface ClaudePlanOptions {
-  /** argv that starts the CLI. Default: `["claude"]`, found on the allowlisted PATH. */
+  /** argv that starts the CLI. Default: `[CLAUDE_CODE_COMMAND]`, found on the allowlisted PATH. */
   readonly command?: readonly [string, ...string[]];
   readonly runner?: ProcessRunner;
   readonly clock?: Clock;
@@ -78,7 +79,7 @@ const Cache = z.looseObject({
 
 /** Asks Claude Code for its plan windows. An error says, in plain words, why they are unknown. */
 export async function requestClaudePlan(options: ClaudePlanOptions = {}): Promise<Result<ClaudePlan, string>> {
-  const command = options.command ?? ["claude"];
+  const command = options.command ?? [CLAUDE_CODE_COMMAND];
   const runner = options.runner ?? createProcessRunner();
   const clock = options.clock ?? systemClock;
   const timeoutMs = options.timeoutMs ?? 20_000;

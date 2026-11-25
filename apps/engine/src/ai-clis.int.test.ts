@@ -25,11 +25,11 @@ describe("ai_clis query", () => {
 
     const reply = await connected.value.query({ type: "ai_clis" });
     if (!reply.ok) throw new Error(reply.error.message);
-    const [claude, codex, ollama] = reply.data.clis;
+    const [claude, codex] = reply.data.clis;
     expect(claude).toMatchObject({ supported: true, cliId: "claude-code", state: "ready", version: "2.1.331", promptVia: "stdin" });
     expect(claude?.supported && claude.permissionArgs).toContain("--permission-mode=dontAsk");
     expect(claude?.supported && claude.usedBy).toEqual(expect.arrayContaining(["Architect"]));
-    expect([codex?.supported, ollama?.supported]).toEqual([false, false]);
+    expect(codex?.supported).toBe(false);
     expect(JSON.stringify(reply.data)).not.toContain("sk-sentinel-never-shown");
     expect(claude?.supported && claude.envNames).not.toContain("TOKAMA_TEST_API_KEY");
   });

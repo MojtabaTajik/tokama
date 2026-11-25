@@ -51,7 +51,6 @@ const CLAUDE = {
 } as const;
 const OTHERS = [
   { supported: false, cliId: "codex-cli", name: "Codex CLI", description: "Coding agent CLI from OpenAI." },
-  { supported: false, cliId: "ollama", name: "Ollama", description: "Runs models on this machine." },
 ] as const;
 const answer = (claude: object = CLAUDE) => ({ clis: [claude, ...OTHERS] }) as unknown as AiClisResult;
 
@@ -75,7 +74,7 @@ describe("Settings > AI CLIs", () => {
     expect($('nav[aria-label="Settings"] [aria-current="page"]')?.textContent).toBe("AI CLIs");
     expect($('nav[aria-label="Settings"] [aria-disabled="true"]')?.textContent).not.toBe("AI CLIs");
     expect(fake.query).toHaveBeenCalledWith({ type: "ai_clis" });
-    expect(rowNames()).toEqual(["Claude Code", "Codex CLI", "Ollama"]);
+    expect(rowNames()).toEqual(["Claude Code", "Codex CLI"]);
   });
 
   it("shows status, version, path, arguments, how instructions are passed, and environment names", async () => {
@@ -103,9 +102,9 @@ describe("Settings > AI CLIs", () => {
     expect(detail()).not.toContain("Restore");
   });
 
-  it("lists Codex and Ollama as not supported yet, with a symbol and a word", async () => {
+  it("lists Codex as not supported yet, with a symbol and a word", async () => {
     await open(withClis());
-    expect($$(".ai-cli-row-state").map((el) => [el.textContent, el.getAttribute("aria-label")])).toEqual([["●", "Logged in"], ["–", "Not supported yet"], ["–", "Not supported yet"]]);
+    expect($$(".ai-cli-row-state").map((el) => [el.textContent, el.getAttribute("aria-label")])).toEqual([["●", "Logged in"], ["–", "Not supported yet"]]);
     await click($$(".ai-cli-row").find((el) => el.textContent?.includes("Codex")));
     expect($(".ai-cli-head-text h2")?.textContent).toBe("Codex CLI");
     expect($(".ai-cli-status")?.textContent).toContain("– Not supported yet");
@@ -141,9 +140,9 @@ describe("Settings > AI CLIs", () => {
   it("filters the list and says when nothing matches", async () => {
     await open(withClis());
     const filter = $('input[aria-label="Filter CLIs"]')!;
-    await type(filter, "olla");
-    expect(rowNames()).toEqual(["Ollama"]);
-    expect($(".ai-cli-head-text h2")?.textContent).toBe("Ollama");
+    await type(filter, "codex");
+    expect(rowNames()).toEqual(["Codex CLI"]);
+    expect($(".ai-cli-head-text h2")?.textContent).toBe("Codex CLI");
     await type(filter, "zzz");
     expect(rowNames()).toEqual([]);
     expect($(".ai-clis-list-pane .placeholder")?.textContent).toBe("No CLI matches");
@@ -157,7 +156,7 @@ describe("Settings > AI CLIs", () => {
     expect($(".failure .detail")?.textContent).toBe("the engine failed");
     await click($(".failure .retry"));
     expect($(".failure")).toBeNull();
-    expect(rowNames()).toHaveLength(3);
+    expect(rowNames()).toHaveLength(2);
   });
 
   it("reads the list again after a setup change", async () => {

@@ -9,9 +9,10 @@ import type { AgentCallErrorKind, AgentCallEvent, TokenUsage } from "../../../ke
 import { buildArgs, userMessage, usesShell } from "./args.js";
 import { hookSettings } from "./permission-hook.js";
 import { classifyFailure, createStreamParser, type StreamParser, type StreamState } from "./stream.js";
+import { CLAUDE_CODE_COMMAND } from "./command.js";
 
 export interface ClaudeCodeOptions {
-  /** argv that starts the CLI. Default: `["claude"]`, found on the allowlisted PATH. */
+  /** argv that starts the CLI. Default: `[CLAUDE_CODE_COMMAND]`, found on the allowlisted PATH. */
   readonly command?: readonly [string, ...string[]];
   /** Variables added to the allowlisted environment, e.g. for local-model routing. */
   readonly env?: Readonly<Record<string, string>>;
@@ -35,7 +36,7 @@ const RESULT_GRACE_MS = 10_000;
  * the execution slice's `claudeCodeGuardDefaults`, whose timeout is only a backstop.
  */
 export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): AgentRuntime {
-  const command = options.command ?? ["claude"];
+  const command = options.command ?? [CLAUDE_CODE_COMMAND];
   const runner = options.runner ?? createProcessRunner();
   const clock = options.clock ?? systemClock;
   const resultGraceMs = options.resultGraceMs ?? RESULT_GRACE_MS;

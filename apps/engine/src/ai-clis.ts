@@ -15,9 +15,8 @@ interface LaunchInfo {
   readonly loginCommand: string;
 }
 
-const NOT_SUPPORTED: readonly { readonly cliId: "codex-cli" | "ollama"; readonly name: string; readonly description: string }[] = [
+const NOT_SUPPORTED: readonly { readonly cliId: "codex-cli"; readonly name: string; readonly description: string }[] = [
   { cliId: "codex-cli", name: "Codex CLI", description: "Coding agent CLI from OpenAI." },
-  { cliId: "ollama", name: "Ollama", description: "Runs models on this machine." },
 ];
 
 /** The schema's limit on names listed under one CLI. */

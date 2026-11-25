@@ -3,9 +3,10 @@
 import { tmpdir } from "node:os";
 import { createProcessRunner, type ProcessRunner } from "../../../kernel/process/index.js";
 import type { CliHealth } from "../../../kernel/schemas/index.js";
+import { CLAUDE_CODE_COMMAND } from "./command.js";
 
 export interface ClaudeCodeStatusOptions {
-  /** argv that starts the CLI. Default: `["claude"]`, found on the allowlisted PATH. */
+  /** argv that starts the CLI. Default: `[CLAUDE_CODE_COMMAND]`, found on the allowlisted PATH. */
   readonly command?: readonly [string, ...string[]];
   readonly runner?: ProcessRunner;
   /** Per command. Default: 8 s. */
@@ -17,7 +18,7 @@ export const LOGIN_COMMAND = "claude auth login";
 const LOGIN_HINT = `Run \`${LOGIN_COMMAND}\` in a terminal, then check again.`;
 
 export async function claudeCodeStatus(options: ClaudeCodeStatusOptions = {}): Promise<CliHealth> {
-  const command = options.command ?? ["claude"];
+  const command = options.command ?? [CLAUDE_CODE_COMMAND];
   const runner = options.runner ?? createProcessRunner();
   const timeoutMs = options.timeoutMs ?? 8_000;
   const run = async (args: readonly string[]): Promise<{ started: boolean; timedOut: boolean; exitCode: number | null; out: string }> => {

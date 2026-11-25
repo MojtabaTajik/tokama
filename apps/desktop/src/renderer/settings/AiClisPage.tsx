@@ -41,8 +41,6 @@ const TEXT = {
   environment: "Environment and models",
   env: "Environment passed to the CLI",
   envHint: "Names only, never values. Everything else is dropped, including other API keys and SSH agent sockets.",
-  usage: "Usage source",
-  usageHint: "Login state from claude auth status. Tokens and time per item from each call's result event.",
   usedBy: "Used by",
   usedByNone: "No agent runs on this CLI.",
   unsupported: "Tokama cannot run this CLI yet.",
@@ -205,9 +203,6 @@ function Settings({ cli }: { readonly cli: Extract<AiCli, { supported: true }> }
             <li key={name}>{name}</li>
           ))}
         </ul>
-      </Row>
-      <Row label={TEXT.usage} hint={TEXT.usageHint}>
-        {null}
       </Row>
       <Row label={TEXT.usedBy}>
         <p className="ai-cli-value">{cli.usedBy.length === 0 ? TEXT.usedByNone : cli.usedBy.join(" · ")}</p>

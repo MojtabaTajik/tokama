@@ -4,6 +4,7 @@
 import { ENV_ALLOWLIST } from "../../../kernel/process/index.js";
 import { READ_ONLY } from "../../../kernel/ports/index.js";
 import { argGroups } from "./args.js";
+import { CLAUDE_CODE_COMMAND } from "./command.js";
 import { LOGIN_COMMAND } from "./status.js";
 
 export interface ClaudeCodeLaunch {
@@ -20,8 +21,6 @@ export interface ClaudeCodeLaunch {
   readonly envNames: readonly string[];
   readonly loginCommand: string;
 }
-
-export const CLAUDE_CODE_COMMAND = "claude";
 
 export function claudeCodeLaunch(): ClaudeCodeLaunch {
   const groups = argGroups({ model: "{model}", prompt: "", cwd: "", role: "{role}", limits: READ_ONLY });

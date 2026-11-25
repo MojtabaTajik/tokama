@@ -5,12 +5,12 @@
 import { expect } from "vitest";
 import { flow } from "./harness.js";
 
-flow("shows Claude Code's launch settings from the engine, and Codex and Ollama as not supported yet", async ({ page, resize, screenshot }) => {
+flow("shows Claude Code's launch settings from the engine, and Codex as not supported yet", async ({ page, resize, screenshot }) => {
   await page.getByRole("button", { name: "Settings" }).click();
   await page.getByRole("button", { name: "AI CLIs" }).click();
   const rows = page.locator(".ai-clis-list .ai-cli-row");
   await rows.first().waitFor();
-  expect(await rows.locator(".ai-cli-row-name").allInnerTexts()).toEqual(["Claude Code", "Codex CLI", "Ollama"]);
+  expect(await rows.locator(".ai-cli-row-name").allInnerTexts()).toEqual(["Claude Code", "Codex CLI"]);
 
   const detail = page.locator(".ai-cli-detail");
   expect(await detail.getByRole("heading", { name: "Claude Code", level: 2 }).count()).toBe(1);
