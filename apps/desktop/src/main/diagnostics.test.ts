@@ -82,6 +82,23 @@ describe("createReporter", () => {
     expect(sent).toEqual([2, 4]);
   });
 
+  it("drops usage counts before errors and crashes when the queue is full", async () => {
+    const sent: unknown[] = [];
+    let connected = false;
+    const reporter = createReporter(async (report) => {
+      if (!connected) return "retry";
+      sent.push(report);
+      return "sent";
+    }, 3);
+    reporter.report({ type: "crash", source: "desktop", kind: "unclean_exit" });
+    for (let n = 0; n < 10; n++) reporter.report({ type: "usage", action: "expand_view" });
+    reporter.report({ type: "warning", source: "renderer", code: "renderer_unresponsive" });
+    await reporter.flush();
+    connected = true;
+    await reporter.flush();
+    expect(sent).toEqual([{ type: "crash", source: "desktop", kind: "unclean_exit" }, { type: "usage", action: "expand_view" }, { type: "warning", source: "renderer", code: "renderer_unresponsive" }]);
+  });
+
   it("treats a failing send as one to retry", async () => {
     let fail = true;
     const sent: unknown[] = [];

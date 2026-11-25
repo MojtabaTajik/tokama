@@ -154,6 +154,7 @@ describe("App shell", () => {
     expect(text(".drawer h2"), "the drawer on the same item").toBe(title);
 
     await expand();
+    expect(fake.bridge.countUsage).toHaveBeenCalledTimes(2);
     await click($$(".sb-main").find((el) => el.textContent?.includes("Plan and build"))!);
     expect($(".expanded")).toBeNull();
     expect(text(".main-header h1")).toBe("Plan and build");

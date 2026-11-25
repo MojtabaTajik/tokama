@@ -75,7 +75,7 @@ export interface Reporter {
   flush(): Promise<void>;
 }
 
-/** Keeps at most `max` reports while there is no engine; the oldest go first. */
+/** Keeps at most `max` reports while there is no engine; the oldest go first, and usage counts before any error or crash. */
 export function createReporter(send: (report: DiagnosticReportInput) => Promise<SendOutcome>, max = 50): Reporter {
   const queue: DiagnosticReportInput[] = [];
   let flushing: Promise<void> | undefined;
@@ -98,7 +98,10 @@ export function createReporter(send: (report: DiagnosticReportInput) => Promise<
   return {
     report: (report) => {
       queue.push(report);
-      if (queue.length > max) queue.splice(0, queue.length - max);
+      while (queue.length > max) {
+        const count = queue.findIndex((queued) => queued.type === "usage");
+        queue.splice(count === -1 ? 0 : count, 1);
+      }
       void flush();
     },
     flush,
