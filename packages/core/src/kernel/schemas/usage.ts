@@ -271,6 +271,31 @@ export const UsageReportSchema = z.strictObject({
   workflows: z.array(z.strictObject({ templateId, tokens, costUsd: cost, calls: z.int().nonnegative() })).max(100),
   /** The Tokama items with the most tokens over the range, at most 50, whatever the scope. */
   items: z.array(UsageItemSchema).max(50),
+  /**
+   * Tokama's agent calls of the current local day, whatever the range and scope: the items with the
+   * most tokens, and the day's totals. Absent from older engines.
+   */
+  today: z
+    .strictObject({
+      /** Most tokens first, at most five. */
+      items: z
+        .array(
+          z.strictObject({
+            itemId: ItemIdSchema,
+            title: z.string().min(1).max(200),
+            /** Each agent once, in the order it first ran today. */
+            agents: z.array(z.strictObject({ agentId: AgentIdSchema, cliId: AiCliIdSchema })).max(20),
+            tokens,
+            /** Wall time of the item's agent calls today. */
+            durationMs: z.int().nonnegative(),
+          }),
+        )
+        .max(5),
+      itemCount: z.int().nonnegative(),
+      tokens: TokenUsageSchema,
+      durationMs: z.int().nonnegative(),
+    })
+    .optional(),
   /** The scope's totals. */
   totals: z.strictObject({
     tokens: TokenUsageSchema,

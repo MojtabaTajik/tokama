@@ -33,6 +33,7 @@ export interface SummaryInput {
 }
 
 const DAY_ITEMS = 5;
+const TODAY_ITEMS = 5;
 const TOP_ITEMS = 50;
 const NO_TOKENS: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
@@ -72,6 +73,11 @@ export function summarizeUsage({ rows, range, now, clis, scope, logs = [], logsF
   const byWorkflow = new Map<string, { tokens: number; costUsd: number | null; calls: number }>();
   type ItemTotal = { itemId: ItemId; title: string; templateId: string; agents: Map<string, AgentCallUsage["cliId"]>; tokens: TokenUsage; durationMs: number; costUsd: number | null; local: boolean };
   const byItem = new Map<ItemId, ItemTotal>();
+  const todayDate = localDate(now);
+  type TodayItem = { itemId: ItemId; title: string; agents: Map<string, AgentCallUsage["cliId"]>; tokens: number; durationMs: number };
+  const todayItems = new Map<ItemId, TodayItem>();
+  let todayTokens = NO_TOKENS;
+  let todayMs = 0;
   let tokens = NO_TOKENS;
   let costUsd: number | null = null;
   let unpricedCalls = 0;
@@ -94,6 +100,16 @@ export function summarizeUsage({ rows, range, now, clis, scope, logs = [], logsF
       day.set(templateId, group);
     }
 
+    if (localDate(call.endedAt) === todayDate) {
+      const item = todayItems.get(itemId) ?? { itemId, title, agents: new Map(), tokens: 0, durationMs: 0 };
+      if (!item.agents.has(call.agentId)) item.agents.set(call.agentId, call.cliId);
+      item.tokens += total;
+      item.durationMs += call.endedAt - call.startedAt;
+      todayItems.set(itemId, item);
+      todayTokens = add(todayTokens, call.tokens);
+      todayMs += call.endedAt - call.startedAt;
+    }
+
     const workflow = byWorkflow.get(templateId) ?? { tokens: 0, costUsd: null, calls: 0 };
     workflow.tokens += total;
     workflow.costUsd = addCost(workflow.costUsd, cost);
@@ -111,6 +127,7 @@ export function summarizeUsage({ rows, range, now, clis, scope, logs = [], logsF
 
   const byTokens = <T extends { tokens: number }>(a: T, b: T) => b.tokens - a.tokens;
   const totals = { tokens, costUsd, calls: inRange.length, unpricedCalls };
+  const agentList = (agents: Map<string, AgentCallUsage["cliId"]>) => [...agents].map(([agentId, cliId]) => ({ agentId: agentId as AgentCallUsage["agentId"], cliId }));
   const report: UsageReport = {
     range,
     asOf: now,
@@ -127,7 +144,16 @@ export function summarizeUsage({ rows, range, now, clis, scope, logs = [], logsF
     items: [...byItem.values()]
       .sort((a, b) => totalTokens(b.tokens) - totalTokens(a.tokens))
       .slice(0, TOP_ITEMS)
-      .map(({ agents, ...item }) => ({ ...item, agents: [...agents].map(([agentId, cliId]) => ({ agentId: agentId as AgentCallUsage["agentId"], cliId })) })),
+      .map(({ agents, ...item }) => ({ ...item, agents: agentList(agents) })),
+    today: {
+      items: [...todayItems.values()]
+        .sort(byTokens)
+        .slice(0, TODAY_ITEMS)
+        .map(({ agents, ...item }) => ({ ...item, agents: agentList(agents) })),
+      itemCount: todayItems.size,
+      tokens: todayTokens,
+      durationMs: todayMs,
+    },
     totals,
   };
   if (scope === undefined) return report;

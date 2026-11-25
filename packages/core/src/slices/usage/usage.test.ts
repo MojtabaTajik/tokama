@@ -57,6 +57,33 @@ describe("prices", () => {
 });
 
 describe("summarizeUsage", () => {
+  it("lists today's items with their tokens, agents and agent time, and today's totals, whatever the range", () => {
+    const today = [
+      row(ITEM_A, "builtin/plan-and-build", call({ endedAt: at(0, 9), startedAt: at(0, 9) - 120_000 })),
+      row(ITEM_B, "builtin/db-check", call({ endedAt: at(0, 10), agentId: "reviewer" as AgentCallUsage["agentId"], cliId: "codex-cli", tokens: MILLION })),
+      row(ITEM_A, "builtin/plan-and-build", call({ endedAt: at(0, 11), agentId: "builder" as AgentCallUsage["agentId"] })),
+      // Just before midnight: yesterday, not today.
+      row(ITEM_A, "builtin/plan-and-build", call({ endedAt: new Date(2025, 9, 19, 23, 59).getTime(), tokens: MILLION })),
+    ];
+    const report = summarizeUsage({ rows: today, range: 14, now: NOW, clis: [] });
+    expect(report.today).toEqual({
+      items: [
+        { itemId: ITEM_B, title: "Slow query", agents: [{ agentId: "reviewer", cliId: "codex-cli" }], tokens: 1_000_000, durationMs: 60_000 },
+        { itemId: ITEM_A, title: "Add order export", agents: [{ agentId: "architect", cliId: "claude-code" }, { agentId: "builder", cliId: "claude-code" }], tokens: 2 * 1150, durationMs: 180_000 },
+      ],
+      itemCount: 2,
+      tokens: { input: 1_000_200, output: 100, cacheRead: 2000, cacheWrite: 0 },
+      durationMs: 240_000,
+    });
+    expect(UsageReportSchema.safeParse(report).success).toBe(true);
+    // Seven items today: the five with the most tokens, and the count of all.
+    const many = Array.from({ length: 7 }, (_, n) => row(`item_0190a000-0000-7000-8000-00000000010${n}` as ItemId, "builtin/quick-fix", call({ endedAt: at(0, 9), tokens: { ...MILLION, input: n + 1 } }), `Item ${n}`));
+    const busy = summarizeUsage({ rows: many, range: 14, now: NOW, clis: [] }).today;
+    expect(busy?.items.map((item) => item.title)).toEqual(["Item 6", "Item 5", "Item 4", "Item 3", "Item 2"]);
+    expect(busy?.itemCount).toBe(7);
+    expect(summarizeUsage({ rows: [], range: 14, now: NOW, clis: [] }).today).toEqual({ items: [], itemCount: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, durationMs: 0 });
+  });
+
   const rows = [
     row(ITEM_A, "plan-and-build", call({ endedAt: at(0, 10), reportedCostUsd: 1 })),
     row(ITEM_A, "plan-and-build", call({ endedAt: at(0, 11), agentId: "reviewer" as never, cliId: "codex-cli", model: "gpt-5-codex" })),
