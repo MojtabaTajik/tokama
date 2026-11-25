@@ -10,10 +10,11 @@ import { TemplatesPage } from "../templates/TemplatesPage.js";
 import { AgentsPage } from "./AgentsPage.js";
 import type { AgentTarget } from "./describe.js";
 import { AiClisPage } from "./AiClisPage.js";
+import { ReposPage } from "./ReposPage.js";
 
 const TEXT = { nav: "Settings", back: "← Back", title: "Settings" } as const;
 
-export type SettingsPage = "templates" | "agents" | "ai-clis";
+export type SettingsPage = "repos" | "templates" | "agents" | "ai-clis";
 
 type Entry = { readonly group: string; readonly label: string } & (
   | { readonly shown: true; readonly id: SettingsPage }
@@ -23,7 +24,7 @@ type Entry = { readonly group: string; readonly label: string } & (
 
 const ENTRIES: readonly Entry[] = [
   { group: "Personal", label: "Notifications", shown: false },
-  { group: "Setup", label: "Repos", shown: false },
+  { group: "Setup", label: "Repos", id: "repos", shown: true },
   { group: "Setup", label: "Connections", shown: false },
   { group: "Setup", label: "Templates", id: "templates", shown: true },
   { group: "Setup", label: "Agents", id: "agents", shown: true },
@@ -77,7 +78,9 @@ export function Settings({ bridge, connection, setup, onBack, initialPage = "age
           </div>
         ))}
       </nav>
-      {page === "templates" ? (
+      {page === "repos" ? (
+        <ReposPage bridge={bridge} connection={connection} setup={setup} />
+      ) : page === "templates" ? (
         <TemplatesPage bridge={bridge} connection={connection} agents={setup?.agents ?? []} connections={setup?.connections ?? []} />
       ) : page === "ai-clis" ? (
         <AiClisPage bridge={bridge} connection={connection} setup={setup} />
