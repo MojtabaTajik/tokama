@@ -1,7 +1,8 @@
 // Settings, its own space: a settings nav takes the place of the rail and the sidebar, with Back,
 // then the settings pages by group. Only pages that work are listed; a page that is not built yet
-// stays in ENTRIES with `shown: false` and comes back when that flag is flipped. List-type pages
-// fill the two panes to the right of the nav.
+// stays in ENTRIES with `shown: false`. To bring it back, add its SettingsPage member and render
+// branch, then give the entry that `id` and `shown: true`. List-type pages fill the two panes to
+// the right of the nav.
 import type { Setup } from "@tokama/core";
 import { useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
@@ -14,32 +15,30 @@ const TEXT = { nav: "Settings", back: "← Back", title: "Settings" } as const;
 
 export type SettingsPage = "templates" | "agents" | "ai-clis";
 
-interface Entry {
-  readonly group: string;
-  readonly label: string;
-  /** The page it opens; undefined while the page is not built. */
-  readonly id: SettingsPage | undefined;
-  readonly shown: boolean;
-}
+type Entry = { readonly group: string; readonly label: string } & (
+  | { readonly shown: true; readonly id: SettingsPage }
+  /** A page that is not built yet: it has no page id. */
+  | { readonly shown: false; readonly id?: undefined }
+);
 
 const ENTRIES: readonly Entry[] = [
-  { group: "Personal", label: "Notifications", id: undefined, shown: false },
-  { group: "Setup", label: "Repos", id: undefined, shown: false },
-  { group: "Setup", label: "Connections", id: undefined, shown: false },
+  { group: "Personal", label: "Notifications", shown: false },
+  { group: "Setup", label: "Repos", shown: false },
+  { group: "Setup", label: "Connections", shown: false },
   { group: "Setup", label: "Templates", id: "templates", shown: true },
   { group: "Setup", label: "Agents", id: "agents", shown: true },
-  { group: "Setup", label: "Privacy", id: undefined, shown: false },
+  { group: "Setup", label: "Privacy", shown: false },
   { group: "Engine", label: "AI CLIs", id: "ai-clis", shown: true },
-  { group: "Engine", label: "Local models", id: undefined, shown: false },
-  { group: "Engine", label: "Git & worktrees", id: undefined, shown: false },
-  { group: "Engine", label: "Run limits", id: undefined, shown: false },
+  { group: "Engine", label: "Local models", shown: false },
+  { group: "Engine", label: "Git & worktrees", shown: false },
+  { group: "Engine", label: "Run limits", shown: false },
 ];
 
 /** The groups with their listed pages; a group with no listed page is left out. */
 const shownGroups = (): readonly { readonly name: string; readonly pages: readonly { readonly id: SettingsPage; readonly label: string }[] }[] => {
   const groups = new Map<string, { id: SettingsPage; label: string }[]>();
   for (const { group, label, id, shown } of ENTRIES) {
-    if (!shown || id === undefined) continue;
+    if (!shown) continue;
     groups.set(group, [...(groups.get(group) ?? []), { id, label }]);
   }
   return [...groups].map(([name, pages]) => ({ name, pages }));
