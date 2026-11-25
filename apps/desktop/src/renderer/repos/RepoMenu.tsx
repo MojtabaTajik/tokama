@@ -2,21 +2,14 @@
 // in-app confirmation. Removing only takes the repo out of repos.yaml; its items and worktrees are kept.
 // Keyboard: Enter, Space or ArrowDown opens the menu with its first item focused; Escape closes
 // the menu or the confirmation and returns focus to the "⋯" button.
-import { useEffect, useId, useRef, useState } from "react";
-import { DialogFrame, Modal, Problem } from "./Modal.js";
+import { useEffect, useRef, useState } from "react";
+import { RemoveRepoDialog } from "./RemoveRepoDialog.js";
 
 const TEXT = {
   actions: (name: string) => `Actions for ${name}`,
   edit: "Edit…",
   editSub: "base branch, checks",
   remove: "Remove…",
-  question: (name: string) => `Remove ${name}?`,
-  explain: "Tokama stops listing this repo. Its items and worktrees are kept, and nothing in the folder changes.",
-  waiting: (count: number) => ` ${count} ${count === 1 ? "item waits" : "items wait"} for you in it.`,
-  confirm: "Remove repo",
-  removing: "Removing…",
-  keep: "Keep",
-  failed: (message: string) => `Could not remove it: ${message}`,
 } as const;
 
 export interface RepoMenuProps {
@@ -31,11 +24,8 @@ export interface RepoMenuProps {
 export function RepoMenu({ name, waiting = 0, onEdit, onRemove }: RepoMenuProps) {
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
   const button = useRef<HTMLButtonElement>(null);
   const firstItem = useRef<HTMLButtonElement>(null);
-  const titleId = useId();
 
   useEffect(() => {
     if (open) firstItem.current?.focus();
@@ -44,14 +34,6 @@ export function RepoMenu({ name, waiting = 0, onEdit, onRemove }: RepoMenuProps)
   const closeMenu = () => {
     setOpen(false);
     button.current?.focus();
-  };
-  const remove = async () => {
-    setBusy(true);
-    setError(undefined);
-    const refused = await onRemove().catch((cause: unknown) => String(cause));
-    setBusy(false);
-    if (refused === undefined) setConfirming(false);
-    else setError(TEXT.failed(refused));
   };
 
   return (
@@ -118,7 +100,6 @@ export function RepoMenu({ name, waiting = 0, onEdit, onRemove }: RepoMenuProps)
             className="repo-menu-item danger"
             onClick={() => {
               closeMenu();
-              setError(undefined);
               setConfirming(true);
             }}
           >
@@ -126,31 +107,7 @@ export function RepoMenu({ name, waiting = 0, onEdit, onRemove }: RepoMenuProps)
           </button>
         </div>
       )}
-      {confirming && (
-        <Modal labelledBy={titleId} onClose={() => setConfirming(false)}>
-          <DialogFrame
-            titleId={titleId}
-            title={TEXT.question(name)}
-            onClose={() => setConfirming(false)}
-            footer={
-              <>
-                <button type="button" className="choice" autoFocus onClick={() => setConfirming(false)}>
-                  {TEXT.keep}
-                </button>
-                <button type="button" className="choice danger" disabled={busy} onClick={() => void remove()}>
-                  {busy ? TEXT.removing : TEXT.confirm}
-                </button>
-              </>
-            }
-          >
-            <p>
-              {TEXT.explain}
-              {waiting > 0 && TEXT.waiting(waiting)}
-            </p>
-            {error !== undefined && <Problem text={error} alert />}
-          </DialogFrame>
-        </Modal>
-      )}
+      {confirming && <RemoveRepoDialog name={name} waiting={waiting} onRemove={onRemove} onClose={() => setConfirming(false)} />}
     </div>
   );
 }
