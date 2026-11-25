@@ -1,5 +1,6 @@
 // Sample machine readings for the fake engine mode: the last 30 minutes drawn from smooth curves,
-// the same shape on every start, and one agent group for each running sample item.
+// the same shape on every start, and one process group for each running sample item: the agent's
+// while the item's current step has an agent, else a check's.
 import type { ItemRecord, MachineReport, MachinePoint } from "@tokama/core";
 
 const GIB = 1024 ** 3;
@@ -40,7 +41,7 @@ export function sampleMachineReport(items: readonly ItemRecord[], now: number): 
     items: running.map((item, index) => ({
       itemId: item.id,
       title: item.title,
-      role: "agent" as const,
+      role: item.steps.find((step) => step.state !== "passed")?.agentId === undefined ? ("check" as const) : ("agent" as const),
       cpuPercent: round1(60 + 25 * ((index * 7) % 3)),
       memoryBytes: 420 * MIB + index * 64 * MIB,
       processes: 4 + index,

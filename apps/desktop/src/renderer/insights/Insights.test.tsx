@@ -3,7 +3,8 @@ import type { UsageRange, UsageReport } from "@tokama/core";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CONNECTED } from "../testing/bridge.js";
+import { CONNECTED, fakeBridge } from "../testing/bridge.js";
+import { machineReport } from "../testing/machine.js";
 import { items, NOW, setup } from "../testing/sample.js";
 import { usageReport } from "../testing/usage.js";
 import { Insights, type InsightsProps } from "./Insights.js";
@@ -29,6 +30,7 @@ const click = (el: Element | null) => act(async () => el?.dispatchEvent(new Mous
 
 function render(overrides: Partial<InsightsProps> = {}, report: UsageReport | undefined = usageReport) {
   const props: InsightsProps = {
+    bridge: fakeBridge(CONNECTED).bridge,
     connection: CONNECTED,
     onRetryConnection: () => undefined,
     usage: { report, error: undefined, refresh: () => undefined },
@@ -39,6 +41,7 @@ function render(overrides: Partial<InsightsProps> = {}, report: UsageReport | un
     issues: [],
     now: NOW,
     onSelectItem: () => undefined,
+    onNewWork: () => undefined,
     ...overrides,
   };
   act(() => root.render(<Insights {...props} />));
@@ -184,10 +187,24 @@ describe("Insights: top items", () => {
     expect(text("#ins-items-title + .muted")).toBe("last 14 days · by tokens");
     expect($(".ins-table")).toBeNull();
     expect(container.textContent).toContain("No agent calls in this range.");
-    // The Machine tab comes later.
-    expect($$('[role="tab"]').map((tab) => [tab.textContent, tab.getAttribute("aria-selected"), tab.getAttribute("aria-disabled")])).toEqual([
-      ["Usage", "true", null],
-      ["Machine", "false", "true"],
-    ]);
+  });
+});
+
+describe("Insights: tabs", () => {
+  const tabs = () => $$('[role="tab"]').map((tab) => [tab.textContent, tab.getAttribute("aria-selected")]);
+
+  it("opens on Usage, switches to Machine and back, and loads the machine only while its tab is open", async () => {
+    const bridge = fakeBridge(CONNECTED, { reply: (query) => (query.type === "machine" ? { ok: true, data: machineReport } : undefined) });
+    render({ bridge: bridge.bridge });
+    expect(tabs()).toEqual([["Usage", "true"], ["Machine", "false"]]);
+    expect(bridge.query).not.toHaveBeenCalled();
+    await click($$('[role="tab"]')[1] ?? null);
+    expect(tabs()).toEqual([["Usage", "false"], ["Machine", "true"]]);
+    expect($('[aria-label="Machine"][role="tabpanel"]')).not.toBeNull();
+    expect($(".ins-plans")).toBeNull();
+    expect(bridge.query).toHaveBeenCalledWith({ type: "machine" });
+    await click($$('[role="tab"]')[0] ?? null);
+    expect($(".ins-plans")).not.toBeNull();
+    expect($(".mc-body")).toBeNull();
   });
 });

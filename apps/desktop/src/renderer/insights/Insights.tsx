@@ -1,14 +1,15 @@
 // The Insights page, Usage tab: plan usage per AI CLI, tokens or estimated cost by day stacked by
 // workflow, and the top items, all over one range. A workflow picked in the chart or legend
 // filters the totals and the table. Costs are always marked as estimates with the price table's
-// date. Engine text (titles, names, notes) renders as React text only. The Machine tab comes
-// with local models.
+// date. Engine text (titles, names, notes) renders as React text only. The Machine tab is
+// MachineTab.
 import type { ItemRecord, Setup, UsageRange } from "@tokama/core";
 import { useState } from "react";
-import type { ConnectionState } from "../../shared/bridge.js";
+import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import type { CliIssue } from "../model.js";
 import { ConnectionFailure } from "../shell/ConnectionStatus.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
+import { MachineTab } from "./MachineTab.js";
 import { PlanMeters } from "./PlanMeters.js";
 import { Legend, UsageChart } from "./UsageChart.js";
 import { TopItems } from "./TopItems.js";
@@ -23,7 +24,6 @@ const TEXT = {
   tabs: "Insights views",
   usage: "Usage",
   machine: "Machine",
-  machineLater: "Comes with local models",
   loading: "Loading usage",
   failed: "Could not load usage",
   range: "Range",
@@ -46,6 +46,7 @@ const TEXT = {
 } as const;
 
 export interface InsightsProps {
+  readonly bridge: TokamaBridge;
   readonly connection: ConnectionState;
   readonly onRetryConnection: () => void;
   readonly usage: UsageView;
@@ -56,9 +57,11 @@ export interface InsightsProps {
   readonly issues: readonly CliIssue[];
   readonly now: number;
   readonly onSelectItem: (itemId: string) => void;
+  readonly onNewWork: () => void;
 }
 
-export function Insights({ connection, onRetryConnection, usage, range, onRange, setup, items, issues, now, onSelectItem }: InsightsProps) {
+export function Insights({ bridge, connection, onRetryConnection, usage, range, onRange, setup, items, issues, now, onSelectItem, onNewWork }: InsightsProps) {
+  const [tab, setTab] = useState<"usage" | "machine">("usage");
   const [metric, setMetric] = useState<Metric>("tokens");
   const [filter, setFilter] = useState<string | undefined>(undefined);
   const { report } = usage;
@@ -69,13 +72,16 @@ export function Insights({ connection, onRetryConnection, usage, range, onRange,
         <span className="summary">{TEXT.summary}</span>
       </header>
       <div className="ins-tabs" role="tablist" aria-label={TEXT.tabs}>
-        <button type="button" role="tab" className="ins-tab" aria-selected="true">
+        <button type="button" role="tab" className="ins-tab" aria-selected={tab === "usage"} onClick={() => setTab("usage")}>
           {TEXT.usage}
         </button>
-        <button type="button" role="tab" className="ins-tab" aria-selected="false" aria-disabled="true" title={TEXT.machineLater}>
+        <button type="button" role="tab" className="ins-tab" aria-selected={tab === "machine"} onClick={() => setTab("machine")}>
           {TEXT.machine}
         </button>
       </div>
+      {tab === "machine" ? (
+        <MachineTab bridge={bridge} connection={connection} onRetryConnection={onRetryConnection} setup={setup} items={items} onSelectItem={onSelectItem} onNewWork={onNewWork} />
+      ) : (
       <section className="ins-body" role="tabpanel" aria-label={TEXT.usage}>
         {connection.status === "failed" ? (
           <ConnectionFailure state={connection} onRetry={onRetryConnection} />
@@ -134,6 +140,7 @@ export function Insights({ connection, onRetryConnection, usage, range, onRange,
           </>
         )}
       </section>
+      )}
     </main>
   );
 }

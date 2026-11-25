@@ -31,3 +31,15 @@ describe("sample machine", () => {
     }
   });
 });
+
+describe("sample machine rows", () => {
+  it("lists an agent group for an item whose step has an agent, and a check group for one that runs checks", () => {
+    const items = sampleItems(NOW).map((item) => {
+      const parsed = parseItemRecord(item);
+      if (!parsed.ok) throw new Error(JSON.stringify(parsed.error.issues));
+      return parsed.value;
+    });
+    const roles = new Set(sampleMachineReport(items, NOW).items.map((row) => row.role));
+    expect(roles).toEqual(new Set(["agent", "check"]));
+  });
+});

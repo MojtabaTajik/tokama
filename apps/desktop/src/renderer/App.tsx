@@ -157,6 +157,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
         <About version={version} onClose={() => setPage("board")} />
       ) : page === "insights" ? (
         <Insights
+          bridge={bridge}
           connection={connection}
           onRetryConnection={() => void bridge.retryConnection()}
           usage={usage}
@@ -167,6 +168,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
           issues={issues}
           now={now}
           onSelectItem={setSelectedItemId}
+          onNewWork={() => composer.current?.open()}
         />
       ) : page === "needs-you" ? (
         <NeedsYou
