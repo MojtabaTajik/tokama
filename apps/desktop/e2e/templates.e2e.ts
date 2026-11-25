@@ -1,6 +1,10 @@
 // The Templates page in Settings, on the sample engine: the list with each file's state, a valid
 // template in plain words with its flow, and a broken one whose problem lines open the file there.
-// Driven by keyboard where a user would, so the page stays reachable without a mouse.
+// Driven by keyboard where a user would, so the page stays reachable without a mouse. Then a real
+// repo's template on the real engine, opened in the editor (the system's opener is replaced).
+import { execFileSync } from "node:child_process";
+import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { expect } from "vitest";
 import { flow } from "./harness.js";
 
@@ -31,3 +35,33 @@ flow("shows templates with their flow, steps and problems in Settings", async ({
   await page.getByRole("button", { name: "← Back" }).click();
   await page.locator("nav.rail").waitFor();
 });
+
+flow(
+  "shows a real repo's template and opens it in the editor",
+  async ({ app, page, tmp, home }) => {
+    const repo = join(tmp, "billing-api");
+    mkdirSync(join(repo, ".tokama", "templates"), { recursive: true });
+    execFileSync("git", ["init", "-q", "-b", "main"], { cwd: repo });
+    const file = join(repo, ".tokama", "templates", "docs-fix.yaml");
+    writeFileSync(file, "format: 1\nname: Docs fix\nsteps:\n  - id: fix\n    name: Fix\n    agent: buildr\n    instructions: Fix the docs.\nfinish: [commit]\n");
+    // The engine reads repos.yaml and the templates again on every query.
+    writeFileSync(join(home, ".tokama", "repos.yaml"), `format: 1\nrepos:\n  - id: billing-api\n    path: ${realpathSync(repo)}\n    base_branch: main\n    checks: []\n`);
+    await app.evaluate(({ shell }) => {
+      const opened: string[] = [];
+      (globalThis as { opened?: string[] }).opened = opened;
+      (shell as { openPath: unknown }).openPath = async (path: string) => (opened.push(path), "");
+    });
+
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    const list = page.getByRole("list", { name: "Template files" });
+    await list.getByRole("button", { name: /docs-fix\.yaml.*✕ \d+ problems?/ }).click();
+    const detail = page.locator("main.tp-detail");
+    await detail.getByRole("heading", { name: /^✕ \d+ problems?$/ }).waitFor();
+    expect(await detail.locator(".tp-problems").textContent()).toContain('"buildr"');
+    await list.getByRole("button", { name: /Quick fix/ }).waitFor();
+
+    await detail.getByRole("button", { name: "Open in editor" }).click();
+    await expect.poll(() => app.evaluate(() => (globalThis as { opened?: string[] }).opened ?? [])).toEqual([realpathSync(file)]);
+  },
+  "real",
+);

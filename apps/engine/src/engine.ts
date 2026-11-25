@@ -66,6 +66,7 @@ import { ItemIndex } from "./item-index.js";
 import { type HealthChecks, machineChecks } from "./real/health.js";
 import { RealEngine } from "./real/real.js";
 import { SampleEngine } from "./sample/sample.js";
+import { agentsFor, loadConfig, startProblem, stepProblems } from "./real/config.js";
 import { sampleTemplateLoads } from "./sample/templates.js";
 import { MemoryItemStore } from "./store.js";
 import { templateDetail, templateEntries, type TemplateFiles } from "./templates.js";
@@ -308,7 +309,19 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   };
 
   /** Every template file, read again on each query so the page shows the files as they are now. */
-  const templateFiles = async (): Promise<TemplateFiles> => ({ loads: sample ? await sampleTemplateLoads() : [], repoPath: () => undefined });
+  // The sample templates in sample mode, then each configured repo's templates and the built-ins.
+  // A loaded template also gets the reasons it cannot start now, as on the setup's summary.
+  const templateFiles = async (): Promise<TemplateFiles> => {
+    const samples = sample ? await sampleTemplateLoads() : [];
+    if (options.home === undefined) return { loads: samples, repoPath: () => undefined };
+    const config = await loadConfig(options.home);
+    const loads = config.templates.map((load) => {
+      if (!load.ok) return load;
+      const start = startProblem(load.template);
+      return { ...load, warnings: [...(start === undefined ? [] : [start]), ...stepProblems(load.template, agentsFor(config, load.template)), ...load.warnings] };
+    });
+    return { loads: [...samples, ...loads], repoPath: (id) => config.repos.find((repo) => repo.id === id)?.path };
+  };
 
   const dispatch = async (message: ClientMessage): Promise<ReplyResult> => {
     // Real mode answers once its config is read and its items are projected into the store.

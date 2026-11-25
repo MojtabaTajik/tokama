@@ -198,7 +198,7 @@ export {
 } from "./kernel/schemas/index.js";
 // Template files for the Templates page: the validator, for the engine service's sample
 // templates, and the records the page shows.
-export { templateWarnings, validateTemplate, type AgentLocation, type TemplateLoad, type ValidateContext } from "./slices/templates/index.js";
+export { validateTemplate, type ValidateContext } from "./slices/templates/index.js";
 export type {
   DoneWhen,
   Finish,
