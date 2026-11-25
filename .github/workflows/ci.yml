@@ -4,59 +4,134 @@ on:
   pull_request:
   push:
     branches: [main]
+    # Nothing waits on a required check after a push, so a docs-only push can skip the run.
+    # Pull requests cannot do this (a workflow that does not start leaves the required check
+    # pending); they skip inside the run instead, see the plan job.
+    paths-ignore:
+      - "*.md"
+      - "**/README.md"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
   schedule:
-    # Nightly macOS run on main; pull requests run Linux only to save Actions minutes on a
-    # private repository. Builders run the full chain on macOS locally before pushing.
+    # Nightly macOS run on main. The plan job skips it when main has no new commits since the
+    # last successful nightly run.
     - cron: "17 2 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# Pull requests cancel their own outdated runs. Every other run gets its own group, so a
+# push, the nightly run and a manual run on main never cancel or replace each other.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # A small Linux job that decides what the other jobs do. It runs before the macOS job so the
+  # nightly "nothing new" check costs Linux minutes, not macOS minutes. It fails open: if a
+  # query fails, the change counts as code and the nightly run goes ahead.
+  plan:
+    name: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      pull-requests: read
+    outputs:
+      docs_only: ${{ steps.plan.outputs.docs_only }}
+      skip_nightly: ${{ steps.plan.outputs.skip_nightly }}
+    steps:
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.sha }}
+        run: |
+          docs_only=false
+          skip_nightly=false
+          if [ "$EVENT" = pull_request ]; then
+            # Docs-only means every changed path (and every renamed-from path) is documentation:
+            # docs/, issue templates, README files and Markdown files in the repository root.
+            # Other Markdown files are code: tests and the removal test read them.
+            files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[] | .filename, (.previous_filename // empty)') || files=
+            if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -Evq '^(docs/|\.github/ISSUE_TEMPLATE/)|(^|/)README\.md$|^[^/]+\.md$'; then
+              docs_only=true
+            fi
+          elif [ "$EVENT" = schedule ]; then
+            last=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?event=schedule&status=success&per_page=1" --jq '.workflow_runs[0].head_sha // empty') || last=
+            if [ -n "$last" ] && [ "$last" = "$SHA" ]; then
+              skip_nightly=true
+            fi
+          fi
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+          echo "skip_nightly=$skip_nightly" >> "$GITHUB_OUTPUT"
+          echo "docs_only=$docs_only skip_nightly=$skip_nightly"
+
+  # The required check is `ci (ubuntu-latest)`. It must report on every pull request, so on a
+  # docs-only change this job still starts and skips its steps; skipping the whole job would
+  # report under an unexpanded matrix name and leave the required check pending.
   ci:
     name: ci (${{ matrix.os }})
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.outputs.skip_nightly != 'true' }}
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "macos-latest"]') }}
+        # Linux on every pull request and push to main. macOS only on the nightly run, on a
+        # manual run, and on pull requests that carry the ci:macos label. The label is read
+        # when the run starts: add it, then push (or run the workflow by hand on the branch).
+        os: ${{ fromJSON(github.event_name == 'schedule' && '["macos-latest"]' || github.event_name == 'workflow_dispatch' && '["ubuntu-latest", "macos-latest"]' || contains(github.event.pull_request.labels.*.name, 'ci:macos') && '["ubuntu-latest", "macos-latest"]' || '["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Docs-only change, nothing to run
+        if: needs.plan.outputs.docs_only == 'true'
+        run: echo "Only documentation changed."
+      - if: needs.plan.outputs.docs_only != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - if: needs.plan.outputs.docs_only != 'true'
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - if: needs.plan.outputs.docs_only != 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm typecheck
-      - run: pnpm lint
-      - run: pnpm test:all
-      - run: pnpm removal-test
+      - if: needs.plan.outputs.docs_only != 'true'
+        run: pnpm install --frozen-lockfile
+      - if: needs.plan.outputs.docs_only != 'true'
+        run: pnpm build
+      - if: needs.plan.outputs.docs_only != 'true'
+        run: pnpm typecheck
+      - if: needs.plan.outputs.docs_only != 'true'
+        run: pnpm lint
+      - if: needs.plan.outputs.docs_only != 'true'
+        run: pnpm test:all
+      - if: needs.plan.outputs.docs_only != 'true'
+        run: pnpm removal-test
       # Desktop UI flow tests: the built app on a sample engine. install-electron downloads the
       # Electron binary into this cache and checks it against electron's checksums.json, on a
       # cache hit too.
-      - name: Read the Electron version
+      - if: needs.plan.outputs.docs_only != 'true'
+        name: Read the Electron version
         id: electron
         run: echo "version=$(node -p "require('./apps/desktop/node_modules/electron/package.json').version")" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - if: needs.plan.outputs.docs_only != 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/electron-cache
           key: electron-${{ runner.os }}-${{ runner.arch }}-${{ steps.electron.outputs.version }}
       # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor, which Chromium's
       # sandbox needs. Lift it on the runner rather than run the app with --no-sandbox.
       - name: Allow the Chromium sandbox
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && needs.plan.outputs.docs_only != 'true'
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - name: Desktop UI flow tests
+      - if: needs.plan.outputs.docs_only != 'true'
+        name: Desktop UI flow tests
         env:
           electron_config_cache: ${{ runner.temp }}/electron-cache
         run: |
@@ -67,7 +142,7 @@ jobs:
           fi
       # Screenshots of the main screens, and of any failed flow, to check a change without running the app.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+        if: always() && needs.plan.outputs.docs_only != 'true'
         with:
           name: desktop-screenshots-${{ matrix.os }}
           path: apps/desktop/e2e-output
@@ -78,6 +153,8 @@ jobs:
   # ExperimentalWarning on stderr). Not a required check.
   node-min:
     name: node 22.18 (ubuntu-latest)
+    needs: plan
+    if: ${{ !cancelled() && github.event_name != 'schedule' && needs.plan.outputs.docs_only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
