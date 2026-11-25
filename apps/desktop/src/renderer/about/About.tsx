@@ -64,7 +64,7 @@ export function About({ bridge, connection, onClose }: AboutProps) {
           <section className="about-id" aria-label={brand.name}>
             <div className="about-logo">
               <img src={brand.markUrl} alt="" width={56} height={56} />
-              <img className="about-wordmark" src={brand.wordmarkUrl} alt={brand.name} height={44} />
+              <img className="about-wordmark" src={brand.wordmarkUrl} alt={brand.name} height={28} />
             </div>
             <p className="about-aka">
               <span>
