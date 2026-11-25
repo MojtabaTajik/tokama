@@ -62,6 +62,7 @@ describe("loadTemplates", () => {
       ["orders-api/quick-fix", "quick-fix", "Orders fix", { kind: "repo", repoId: "orders-api", file: ".tokama/templates/quick-fix.yaml" }],
       ["billing/quick-fix", "quick-fix", "Billing fix", { kind: "repo", repoId: "billing", file: ".tokama/templates/quick-fix.yaml" }],
       ["builtin/quick-fix", "quick-fix", "Quick fix", { kind: "builtin" }],
+      ["builtin/quick-change", "quick-change", "Quick change", { kind: "builtin" }],
       ["builtin/plan-and-build", "plan-and-build", "Plan and build", { kind: "builtin" }],
       ["builtin/review-only", "review-only", "Review only", { kind: "builtin" }],
     ]);
@@ -133,7 +134,7 @@ describe("loadTemplates", () => {
     expect(failures(loads)).toEqual([
       { ok: false, origin: "builtin", file: ".tokama/templates", problems: [{ line: 1, message: expect.stringContaining('cannot be named "builtin"') }] },
     ]);
-    expect(loaded(loads).map((t) => t.name)).toEqual(["Quick fix", "Plan and build", "Review only"]);
+    expect(loaded(loads).map((t) => t.name)).toEqual(["Quick fix", "Quick change", "Plan and build", "Review only"]);
   });
 
   describe("files refused by the safe reads", () => {

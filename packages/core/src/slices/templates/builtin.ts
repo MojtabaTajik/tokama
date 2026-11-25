@@ -24,6 +24,29 @@ steps:
 finish: [commit]
 `;
 
+const QUICK_CHANGE = `# For repos without tests or checks: you review the change yourself. Approve commits the diff
+# you saw; Request changes runs the step again with your note.
+format: 1
+name: Quick change
+icon: bolt
+color: rose
+uses:
+  repos: edit
+start:
+  needs: [text, repo]
+steps:
+  - id: change
+    name: Change
+    agent: builder
+    instructions: |
+      Make the change described below in this repository, keeping the diff small.
+      The engineer reads the diff before it is committed: change only what the task needs.
+    done_when: you approve
+    max_attempts: 3
+    data: repo-and-diff
+finish: [commit]
+`;
+
 const PLAN_AND_BUILD = `format: 1
 name: Plan and build
 icon: list-check
@@ -96,6 +119,7 @@ finish: [findings]
 /** Built-in templates by id; their refs are `builtin/<id>`. */
 export const BUILTIN_TEMPLATES: ReadonlyMap<string, string> = new Map([
   ["quick-fix", QUICK_FIX],
+  ["quick-change", QUICK_CHANGE],
   ["plan-and-build", PLAN_AND_BUILD],
   ["review-only", REVIEW_ONLY],
 ]);

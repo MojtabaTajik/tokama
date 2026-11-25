@@ -198,6 +198,30 @@ describe("New work input", () => {
     expect(start().disabled).toBe(false);
   });
 
+  it("on a repo with no checks, says why Quick fix can't run and offers Quick change", async () => {
+    const checked = (id: string) => (setup.templates.find((t) => t.id === id) ?? setup.templates[0]!);
+    const quickFix = { ...checked("builtin/quick-fix"), steps: [{ name: "Fix", stage: "working", agentId: "local-builder", data: "none", checks: { from: "repo" } }] };
+    const quickChange = { ...quickFix, id: "builtin/quick-change", name: "Quick change", steps: [{ name: "Change", stage: "review", agentId: "local-builder", data: "none" }] };
+    const withBoth = { ...setup, templates: [...setup.templates.filter((t) => t.id !== "builtin/quick-fix"), quickFix, quickChange] } as unknown as Setup;
+    const fake = await mount({ suggest: null, setup: withBoth });
+    await focusInput();
+    await type(input(), "Log the warehouse id");
+    await click(trigger("Template"));
+    await click($$('[role="option"]').find((el) => el.textContent === "Quick fix")!);
+    await click(trigger("Repos"));
+    await click($$('[role="option"]').find((el) => el.textContent?.includes("inventory-service"))!);
+    expect(reason()).toBe("Quick fix runs the repo's checks, and inventory-service lists none, so it can't run there.");
+    expect(start().disabled).toBe(true);
+    expect($(".np-suggest")?.textContent).toBe("Quick change lets you review the diff yourself instead. Use Quick change");
+
+    await click($(".np-suggest button"));
+    expect(trigger("Template").textContent).toContain("Quick change");
+    expect($(".np-suggest")).toBeNull();
+    expect(reason()).toBe("");
+    await click(start());
+    expect(fake.command).toHaveBeenCalledWith({ type: "start_item", templateId: "builtin/quick-change", repoIds: ["inventory-service"], text: "Log the warehouse id" });
+  });
+
   it("needs no repo for an investigation, and says so", async () => {
     await mount({ suggest: null });
     await focusInput();

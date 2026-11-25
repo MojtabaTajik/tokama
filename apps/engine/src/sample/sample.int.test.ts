@@ -5,7 +5,7 @@ import { type CommandInput, type EngineEvent, type ItemRecord, itemStage, manual
 import { afterEach, describe, expect, it } from "vitest";
 import { startEngine } from "../engine.js";
 import { tempEngineDir, waitFor } from "../testing/helpers.js";
-import { DECISION_ID, ITEM_IDS } from "./data.js";
+import { DECISION_ID, DIFF_DECISION_ID, ITEM_IDS } from "./data.js";
 import { SAMPLE_TICK_MS } from "./sample.js";
 
 const NOW = 1_780_000_000_000;
@@ -87,7 +87,7 @@ describe("fake engine mode", () => {
       "Azure · prod",
       "Grafana · prod",
     ]);
-    expect(setup.templates.length).toBe(5);
+    expect(setup.templates.length).toBe(6);
 
     // Every template step names a known agent, or none for checks run by Tokama.
     const agentIds = new Set(setup.agents.map((agent) => agent.id));
@@ -102,6 +102,7 @@ describe("fake engine mode", () => {
       "builtin/db-slow-query/database/clay",
       "builtin/plan-and-build/hammer/sky",
       "builtin/quick-fix/wrench/moss",
+      "builtin/quick-change/bolt/rose",
       "builtin/review-only/eye/slate",
     ]);
     const emergency = setup.templates.find((template) => template.id === "builtin/emergency-investigator");
@@ -120,7 +121,7 @@ describe("fake engine mode", () => {
     expect(new Set(items.map(itemStage))).toEqual(new Set(["queued", "working", "verifying", "review", "done"]));
     expect(new Set(items.map((entry) => entry.kind))).toEqual(new Set(["task", "investigation"]));
     expect(new Set(items.map((entry) => entry.privacy))).toEqual(new Set(["local_only", "local_and_cloud"]));
-    expect(items.filter((entry) => entry.state === "needs_you").map((entry) => entry.id)).toEqual([ITEM_IDS.needsYou]);
+    expect(items.filter((entry) => entry.state === "needs_you").map((entry) => entry.id)).toEqual([ITEM_IDS.needsYou, ITEM_IDS.quickChange]);
     expect(items.filter((entry) => entry.state === "failed").map((entry) => entry.id)).toEqual([ITEM_IDS.failed]);
     // Every card has its line, and every step that has started has a detail line.
     expect(items.every((entry) => entry.cardLine !== undefined)).toBe(true);
@@ -234,6 +235,26 @@ describe("fake engine mode", () => {
     const done = await item(client, ITEM_IDS.needsYou);
     expect(done.steps.map((step) => step.state)).toEqual(["passed", "passed", "passed", "passed"]);
     expect(done.cardLine).toBe("done · 4 steps");
+  });
+
+  it("serves the Quick change item's diff while its question is open; Request changes runs the step again", async () => {
+    const { client, next } = await sampleEngine();
+    const waiting = await item(client, ITEM_IDS.quickChange);
+    expect(waiting.decision).toMatchObject({ id: DIFF_DECISION_ID, kind: "plan_approval", hasDiff: true });
+    const diff = await client.query({ type: "decision_diff", itemId: ITEM_IDS.quickChange, decisionId: DIFF_DECISION_ID });
+    if (!diff.ok) throw new Error(diff.error.message);
+    expect(diff.data.files.map((file) => [file.path, file.added, file.removed])).toEqual([
+      ["src/sync/worker.ts", 2, 1],
+      ["src/sync/worker.test.ts", 6, 0],
+      ["docs/sync-dashboard.png", null, null],
+      ["fixtures/warehouses.json", 1204, 310],
+    ]);
+    expect(await client.query({ type: "decision_diff", itemId: ITEM_IDS.needsYou, decisionId: DECISION_ID })).toMatchObject({ ok: false, error: { code: "stale_decision" } });
+
+    const resolve: CommandInput = { type: "resolve_decision", itemId: ITEM_IDS.quickChange, decisionId: DIFF_DECISION_ID, choice: "request_changes", note: "Also log the sync id." };
+    expect(await client.command(resolve)).toEqual({ ok: true, data: null });
+    expect((await next()).item).toMatchObject({ id: ITEM_IDS.quickChange, state: "running", steps: [{ state: "running", detail: expect.stringContaining("runs again with your note"), changesNote: "Also log the sync id." }] });
+    expect(await client.query({ type: "decision_diff", itemId: ITEM_IDS.quickChange, decisionId: DIFF_DECISION_ID })).toMatchObject({ ok: false, error: { code: "stale_decision" } });
   });
 
   it("resolve_decision with stop stops the item", async () => {

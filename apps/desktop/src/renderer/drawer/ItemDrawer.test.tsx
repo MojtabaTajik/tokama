@@ -209,6 +209,170 @@ describe("ItemDrawer engine text", () => {
   });
 });
 
+describe("ItemDrawer change to approve", () => {
+  const DIFF_DECISION = "decision_00000000-0000-4000-8000-0000000000d1";
+  const waiting = {
+    ...task,
+    templateId: "builtin/quick-change",
+    state: "needs_you",
+    decision: {
+      id: DIFF_DECISION,
+      kind: "plan_approval",
+      stepIndex: 0,
+      question: "Approve this change and commit it?",
+      why: "Local builder changed 4 files in a worktree of orders-api. Nothing is committed until you approve.",
+      hasDiff: true,
+      choices: [
+        { id: "approve", label: "Approve and commit" },
+        { id: "request_changes", label: "Request changes" },
+        { id: "no_action_needed", label: "End: no action needed" },
+        { id: "stop", label: "Stop" },
+      ],
+    },
+    steps: [{ name: "Change", stage: "review", state: "needs_you", agentId: "local-builder", data: "none", runs: 1, maxAttempts: 3, attempts: [{ attempt: 1, result: "passed", checks: [] }] }],
+  } as unknown as ItemRecord;
+  const file = (path: string, extra: Record<string, unknown> = {}) => ({ path, status: "modified", added: 1, removed: 1, binary: false, cut: false, hunks: [], ...extra });
+  const diff = {
+    files: [
+      file("src/a.ts", { hunks: [{ header: "@@ -4,2 +4,2 @@ function total() {", lines: [" keep", '-<img src=x onerror="alert(1)">', "+<b>bold</b>", "\\ No newline at end of file"] }] }),
+      file("src/new.ts", { oldPath: "src/old.ts", status: "renamed", added: 0, removed: 0 }),
+      file("logo.png", { status: "added", added: null, removed: null, binary: true, cut: true }),
+      file("package-lock.json", { added: 1220, removed: 313, cut: true }),
+    ],
+    moreFiles: 2,
+    cut: true,
+    worktree: { repoId: "orders-api", dir: ".tokama/wt/abc", branch: "tokama/abc", baseCommit: "85a75e3c0ffee0000000000000000000000000ab" },
+  };
+  const withDiff = (reply: Reply, items: ItemRecord[] = [waiting]) => {
+    const fake = fakeBridge(items);
+    const base = fake.query.getMockImplementation()!;
+    fake.query.mockImplementation(async (q: { type: string; itemId?: string }) => (q.type === "decision_diff" ? reply : base(q)));
+    return fake;
+  };
+  const tab = (name: string) => $$('[role="tab"]').find((el) => el.textContent === name);
+  const pick = (path: string) => click($$(".dv-file").find((el) => el.querySelector(".dv-path")?.textContent?.startsWith(path)));
+  const rows = () => $$(".dv-row").map((row) => [...row.querySelectorAll('[role="cell"]')].map((cell) => cell.textContent).join("|"));
+
+  it("opens on the Diff tab; the decision shows its question, why, and only Approve and commit and Request changes", async () => {
+    const { bridge, query } = withDiff({ ok: true, data: diff });
+    await renderDrawer(bridge, waiting.id);
+    expect(tab("Diff")?.getAttribute("aria-selected")).toBe("true");
+    expect(query).toHaveBeenCalledWith({ type: "decision_diff", itemId: waiting.id, decisionId: DIFF_DECISION });
+    expect(text(".needs-you-kind")).toBe("Change approval");
+    expect(text(".needs-you-question")).toBe("⏸Approve this change and commit it?");
+    expect($$(".needs-you .choice").map((el) => el.textContent)).toEqual(["Approve and commit", "Request changes"]);
+    expect(text(".dv-summary")).toBe("6 files+1,221 −314·tokama/abcfrom main 85a75e3");
+  });
+
+  it("lists the files with status, counts or why they are not drawn, and shows the first file with line numbers, as text", async () => {
+    const { bridge } = withDiff({ ok: true, data: diff });
+    await renderDrawer(bridge, waiting.id);
+    expect($$(".dv-file").map((el) => el.textContent)).toEqual([
+      "Mmodifiedsrc/a.ts+1−1",
+      "Rrenamedsrc/old.ts → src/new.ts+0−0",
+      "Aaddedlogo.pngbinary",
+      "Mmodifiedpackage-lock.jsontoo large",
+    ]);
+    expect(text(".dv-more")).toBe("2 more files not listed");
+    expect($$(".dv-file").map((el) => el.getAttribute("aria-pressed"))).toEqual(["true", "false", "false", "false"]);
+    expect(text(".dv-panel-head")).toBe("src/a.tsmodified · +1 −1Open in your editor ↗Opening a file from Tokama comes later. Open the worktree folder in your editor.");
+    // The open button is not there yet, and says so to every reader, not only on hover.
+    const open = $(".dv-open")!;
+    expect(open.getAttribute("aria-disabled")).toBe("true");
+    expect(document.getElementById(open.getAttribute("aria-describedby")!)?.textContent).toBe("Opening a file from Tokama comes later. Open the worktree folder in your editor.");
+    expect(rows()).toEqual(["|||@@ -4,2 +4,2 @@ function total() {", "4|4||keep", "5||−|<img src=x onerror=\"alert(1)\">", "|5|+|<b>bold</b>", "|||\\ No newline at end of file"]);
+    expect($$(".dv-row [aria-label]").map((el) => el.getAttribute("aria-label"))).toEqual(["unchanged", "removed", "added"]);
+    expect($$(".drawer img, .drawer b")).toEqual([]);
+  });
+
+  it("says why a binary or too-large file is not drawn, and where to find it", async () => {
+    const { bridge } = withDiff({ ok: true, data: diff });
+    await renderDrawer(bridge, waiting.id);
+    await pick("logo.png");
+    expect(text(".dv-note")).toBe("Binary file, not shown here.Open it in your editor or an image viewer to compare.In repo orders-api: .tokama/wt/abc/logo.pngOpen in your editor ↗Opening a file from Tokama comes later. Open the worktree folder in your editor.");
+    await pick("package-lock.json");
+    expect(text(".dv-note-head")).toBe("Too large to show here.");
+    expect($$(".dv-note-text")[0]?.textContent).toBe("1,533 changed lines; the drawer shows files up to 1,000 changed lines. Open it in your editor to review.");
+    expect($(".dv-open")?.getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("shows a path with a line break quoted, so its lines never sit under a made-up file name", async () => {
+    const tricky = { ...diff, cut: false, moreFiles: 0, files: [{ ...diff.files[0]!, path: "notes\n── src/auth.ts" }] };
+    const { bridge } = withDiff({ ok: true, data: tricky });
+    await renderDrawer(bridge, waiting.id);
+    expect(text(".dv-file .dv-path")).toBe('"notes\\n── src/auth.ts"');
+    expect(text(".dv-panel-path")).toBe('"notes\\n── src/auth.ts"');
+  });
+
+  it("shows characters that reorder text as visible escapes, in paths and lines", async () => {
+    const line = "+x = 1; /* \u202e } \u2066 if (admin) \u2069 */";
+    const tricky = { ...diff, cut: false, moreFiles: 0, files: [{ ...diff.files[0]!, path: "a\u202esj.txt", hunks: [{ header: "@@ -1 +1 @@", lines: [line, "+a\u2028b\u200f\u061c"] }] }] };
+    const { bridge } = withDiff({ ok: true, data: tricky });
+    await renderDrawer(bridge, waiting.id);
+    expect(text(".dv-file .dv-path")).toBe("a<U+202E>sj.txt");
+    expect(rows().slice(1)).toEqual(["|1|+|x = 1; /* <U+202E> } <U+2066> if (admin) <U+2069> */", "|2|+|a<U+2028>b<U+200F><U+061C>"]);
+    expect(text(".drawer")).not.toMatch(/\p{Bidi_Control}|[\u2028\u2029]/u);
+  });
+
+  it("says when the change cannot be loaded", async () => {
+    const { bridge } = withDiff({ ok: false, error: { code: "stale_decision", message: "Decision is not open." } });
+    await renderDrawer(bridge, waiting.id);
+    expect(text(".drawer-panel .drawer-error")).toBe("✕Could not load the change: Decision is not open.");
+  });
+
+  it("Request changes opens a note for the agent's next run in place of the buttons; Cancel brings them back", async () => {
+    const { bridge, command } = withDiff({ ok: true, data: diff });
+    await renderDrawer(bridge, waiting.id);
+    await click(button("Request changes"));
+    expect(command).not.toHaveBeenCalled();
+    expect($$(".needs-you .choice").map((el) => el.textContent)).toEqual(["Send to Local builder", "Cancel"]);
+    expect(text(".decision-note-hint")).toBe("Goes into Local builder's next run with the current diff. Run 2 of 3.");
+    await click(button("Cancel"));
+    await click(button("Request changes"));
+    const note = $(".decision-note-text") as HTMLTextAreaElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(note, "  Keep the old name.  ");
+      note.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click(button("Send to Local builder"));
+    expect(command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: waiting.id, decisionId: DIFF_DECISION, choice: "request_changes", note: "Keep the old name." });
+  });
+
+  it("at the step's limit, the note says Tokama asks before it runs again", async () => {
+    const atLimit = { ...waiting, steps: [{ ...waiting.steps[0]!, runs: 3 }] } as unknown as ItemRecord;
+    const { bridge } = withDiff({ ok: true, data: diff }, [atLimit]);
+    await renderDrawer(bridge, atLimit.id);
+    await click(button("Request changes"));
+    expect(text(".decision-note-hint")).toBe("Goes into Local builder's next run with the current diff. The step has used its 3 runs, so Tokama asks you before it runs again.");
+  });
+
+  it("opens on Diff for each new change approval, goes back to Steps once it is answered, and on Review the diff", async () => {
+    const running = { ...waiting, state: "running", decision: undefined } as unknown as ItemRecord;
+    const { bridge, push } = withDiff({ ok: true, data: diff }, [running]);
+    await renderDrawer(bridge, running.id);
+    expect(tab("Steps")?.getAttribute("aria-selected")).toBe("true");
+    // The question arrives while the drawer shows the item.
+    await push(waiting);
+    expect(tab("Diff")?.getAttribute("aria-selected")).toBe("true");
+    await click(tab("Steps"));
+    // Review the diff asks again for an item the drawer already shows.
+    await act(async () => root.render(<ItemDrawer bridge={bridge} itemId={waiting.id} setup={setup} onClose={vi.fn()} diffAsked={1} />));
+    expect(tab("Diff")?.getAttribute("aria-selected")).toBe("true");
+    // Answered: the Diff tab has nothing to show, so the drawer goes back to Steps.
+    await push(running);
+    expect(tab("Steps")?.getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("after the decision: the step running again with your note, then the commit", async () => {
+    const again = { ...waiting, state: "running", decision: undefined, steps: [{ ...waiting.steps[0]!, state: "running", changesNote: "Keep the old name.", runs: 2, attempts: [{ attempt: 1, result: "passed", checks: [] }, { attempt: 2, checks: [] }] }] } as unknown as ItemRecord;
+    const { bridge, push } = withDiff({ ok: true, data: diff }, [again]);
+    await renderDrawer(bridge, again.id);
+    expect(text(".after")).toBe("●Local builder is making your changes · run 2 of 3Your note: \"Keep the old name.\"");
+    await push({ ...again, state: "done", steps: [{ ...again.steps[0]!, state: "passed" }], outcome: { kind: "done", commits: [{ repoId: "orders-api", commit: "3f9c2e1d4e5f60718293a4b5c6d7e8f901234567", branch: "tokama/abc" }] } } as unknown as ItemRecord);
+    expect(text(".after")).toBe("✓Committed · 3f9c2e1Paginate the orders list · on tokama/abc · Done");
+  });
+});
+
 describe("ItemDrawer decisions", () => {
   it("sends resolve_decision for the chosen button and shows the item the engine sends back", async () => {
     const { bridge, command, push, replyWith } = fakeBridge([needsYou]);

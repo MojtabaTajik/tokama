@@ -9,6 +9,8 @@ import { ItemRecordSchema } from "./item.js";
 import { UsageRangeSchema, UsageReportSchema, UsageScopeSchema } from "./usage.js";
 import { AgentsListSchema } from "./agents.js";
 import { AiCliListSchema } from "./ai-clis.js";
+import { ItemDiffSchema } from "./diff.js";
+import { MAX_NOTE_CHARS } from "./item-log.js";
 import { MachineReportSchema } from "./machine.js";
 import { RepoSummarySchema, SetupSchema } from "./setup.js";
 import { MAX_TEMPLATE_ENTRIES, TemplateDetailSchema, TemplateEntrySchema, TemplateFileKeySchema } from "./template-files.js";
@@ -50,6 +52,8 @@ export const CommandSchema = z.discriminatedUnion("type", [
     itemId: ItemIdSchema,
     decisionId: DecisionIdSchema,
     choice: z.string().min(1).max(64),
+    /** With Request changes on a step you approve: what to change, for the step's next attempt. */
+    note: z.string().max(MAX_NOTE_CHARS).optional(),
   }),
   z.strictObject({ type: z.literal("stop_item"), itemId: ItemIdSchema }),
   // Adds a folder to repos.yaml. Omitted fields take the suggest_repo values. The engine checks
@@ -70,6 +74,8 @@ export const QuerySchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("setup") }),
   z.strictObject({ type: z.literal("board") }),
   z.strictObject({ type: z.literal("item"), itemId: ItemIdSchema }),
+  /** The change an open decision is about (one with `hasDiff`): base commit to the tree it would commit. */
+  z.strictObject({ type: z.literal("decision_diff"), itemId: ItemIdSchema, decisionId: DecisionIdSchema }),
   /** The template the engine suggests for New work text, by ref; `templateId` is null when none fits. */
   z.strictObject({ type: z.literal("suggest_template"), text: z.string().max(4000) }),
   /** What the engine proposes for a folder before add_repo: id, base branch and checks. */
@@ -120,6 +126,7 @@ export const QueryResultSchemas = {
   setup: SetupSchema,
   board: z.strictObject({ items: z.array(ItemRecordSchema) }),
   item: z.strictObject({ item: ItemRecordSchema }),
+  decision_diff: ItemDiffSchema,
   suggest_template: z.strictObject({ templateId: TemplateRefSchema.nullable() }),
   suggest_repo: RepoSuggestionSchema,
   agents_list: AgentsListSchema,
@@ -277,6 +284,7 @@ export type QueryType = keyof typeof QueryResultSchemas;
 export type QueryResult<T extends QueryType> = z.output<(typeof QueryResultSchemas)[T]>;
 export type BoardResult = QueryResult<"board">;
 export type ItemResult = QueryResult<"item">;
+export type DecisionDiffResult = QueryResult<"decision_diff">;
 export type SetupResult = QueryResult<"setup">;
 export type SuggestTemplateResult = QueryResult<"suggest_template">;
 export type SuggestRepoResult = QueryResult<"suggest_repo">;

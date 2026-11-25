@@ -169,6 +169,60 @@ describe("the Needs you page", () => {
     expect($(".drawer h2")?.textContent).toBe(older.title);
   });
 
+  it("a change approval row lists the changed files, answers with Approve and commit or a note, and Review the diff opens the drawer on its Diff tab", async () => {
+    const change = {
+      ...older,
+      id: "item_1a2b3c4d-0098-4a1b-8c1d-000000000098",
+      title: "Show tax on the receipt total",
+      templateId: "builtin/quick-change",
+      decision: {
+        id: "decision_aaaaaaaa-0000-4000-8000-0000000000c1",
+        kind: "plan_approval",
+        stepIndex: 0,
+        question: "Approve this change and commit it?",
+        hasDiff: true,
+        choices: [
+          { id: "approve", label: "Approve and commit" },
+          { id: "request_changes", label: "Request changes" },
+          { id: "stop", label: "Stop" },
+        ],
+      },
+      steps: [{ name: "Change", stage: "review", state: "needs_you", agentId: "local-builder", data: "none", runs: 1, maxAttempts: 3, attempts: [{ attempt: 1, result: "passed", checks: [] }] }],
+    } as unknown as ItemRecord;
+    const file = (path: string, extra: Record<string, unknown> = {}) => ({ path, status: "modified", added: 10, removed: 2, binary: false, cut: false, hunks: [{ header: "@@ -1 +1 @@", lines: ["-a", "+b"] }], ...extra });
+    const diff = {
+      files: [file("src/receipt/format.js"), file("assets/logo.png", { added: null, removed: null, binary: true, cut: true, hunks: [] }), file("package-lock.json", { added: 1220, removed: 313, cut: true, hunks: [] })],
+      moreFiles: 0,
+      cut: true,
+      worktree: { repoId: "orders-api", dir: ".tokama/wt/abc", branch: "tokama/abc", baseCommit: "85a75e3c0ffee0000000000000000000000000ab" },
+    };
+    const fake = fakeBridge(CONNECTED, {
+      boardItems: [...withoutWaiting, change],
+      reply: (q) => (q.type === "decision_diff" ? { ok: true, data: diff } : q.type === "item" && (q as { itemId?: string }).itemId === change.id ? { ok: true, data: { item: change } } : undefined),
+      commandReply: () => ({ ok: true, data: null }),
+    });
+    await render(fake.bridge);
+    await openPage();
+    const row = $(".nr-row")!;
+    expect(text(".nr-kind")).toContain("Change approval");
+    expect(text(".nr-where")).toContain("step 1 of 1 · Change · you approve");
+    expect(text(".dv-changed-head")).toBe("Changed3 files · nothing committed yet");
+    expect($$(".dv-changed-list li").map((el) => el.textContent)).toEqual(["src/receipt/format.js+10−2", "assets/logo.png · package-lock.jsonbinary · too large"]);
+    expect(choiceButtons(row).map((el) => el.textContent)).toEqual(["Approve and commit", "Request changes"]);
+    await click(choiceButtons(row)[1]);
+    expect(text(".decision-note-hint")).toBe("Goes into Local builder's next run with the current diff. Run 2 of 3.");
+    await click($$("button").find((el) => el.textContent === "Cancel"));
+    await click($(".nr-review"));
+    await wait(20);
+    expect($('.drawer [role="tab"][aria-selected="true"]')?.textContent).toBe("Diff");
+    // With the drawer already on the item, on another tab, Review the diff shows the Diff tab again.
+    await click($$('.drawer [role="tab"]').find((el) => el.textContent === "Steps"));
+    await click($(".nr-review"));
+    expect($('.drawer [role="tab"][aria-selected="true"]')?.textContent).toBe("Diff");
+    await click(choiceButtons(row)[0]);
+    expect(fake.command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: change.id, decisionId: change.decision!.id, choice: "approve" });
+  });
+
   it("shows an item that waits without a question as text only, with no buttons", async () => {
     const bare = { ...ITEMS.needsYou, decision: undefined } as ItemRecord;
     await render(fakeBridge(CONNECTED, { boardItems: [bare] }).bridge);

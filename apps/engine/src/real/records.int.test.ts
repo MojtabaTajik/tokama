@@ -71,8 +71,8 @@ describe("toItemRecord", () => {
     const record = toItemRecord(created())!;
     expect(record).toMatchObject({ templateId: "orders-api/careful-fix", kind: "task", privacy: "local_and_cloud", state: "queued", title: "Fix the greeting", cardLine: "starting" });
     expect(record.steps).toEqual([
-      { name: "Fix", stage: "working", state: "pending", agentId: "builder", data: "repo-and-diff" },
-      { name: "Review", stage: "review", state: "pending", agentId: "reviewer", data: "none" },
+      { name: "Fix", stage: "working", state: "pending", agentId: "builder", data: "repo-and-diff", runs: 0, maxAttempts: 3 },
+      { name: "Review", stage: "review", state: "pending", agentId: "reviewer", data: "none", runs: 0, maxAttempts: 3 },
     ]);
   });
 
@@ -100,6 +100,33 @@ describe("toItemRecord", () => {
     expect(record.decision!.why!.length).toBeLessThanOrEqual(500);
     expect(record.steps[0]).toMatchObject({ state: "needs_you", detail: "waits for you", attempts: [{ result: "run_failed", failure: "timeout" }] });
     expect(parseItemRecord(record).ok).toBe(true);
+  });
+
+  it("counts runs as the engine does, and carries the Request changes note only while the step runs again", () => {
+    const TREE = "a".repeat(40);
+    const asked = (id: string, choices: { id: string; label: string }[]) => ({ type: "decision_opened" as const, decisionId: id as never, kind: "plan_approval" as const, stepId: FIX, choices, tree: TREE });
+    const approval = [{ id: "approve", label: "Approve" }, { id: "request_changes", label: "Request changes" }];
+    const FIRST = "decision_00000000-0000-4000-8000-0000000000f1";
+    const SECOND = "decision_00000000-0000-4000-8000-0000000000f2";
+    let item = append(created(), [
+      { type: "step_started", stepId: FIX },
+      { type: "attempt_started", stepId: FIX, attempt: 1 },
+      { type: "attempt_ended", stepId: FIX, attempt: 1, result: "passed" },
+      asked(FIRST, approval),
+      { type: "decision_resolved", decisionId: FIRST as never, choice: "request_changes", note: "Keep the old name." },
+      { type: "attempt_started", stepId: FIX, attempt: 2 },
+    ]);
+    expect(toItemRecord(item)!.steps[0]).toMatchObject({ state: "running", runs: 2, maxAttempts: 3, changesNote: "Keep the old name." });
+    // The running attempt counts; a run failure does not. Once it is answered, the note is no longer the latest answer.
+    item = append(item, [
+      { type: "attempt_ended", stepId: FIX, attempt: 2, result: "run_failed", failure: "timeout" },
+      { type: "decision_opened", decisionId: SECOND as never, kind: "run_failure", stepId: FIX, choices: [{ id: "retry_step", label: "Retry step" }] },
+      { type: "decision_resolved", decisionId: SECOND as never, choice: "retry_step" },
+      { type: "attempt_started", stepId: FIX, attempt: 3 },
+    ]);
+    const step = toItemRecord(item)!.steps[0]!;
+    expect(step).toMatchObject({ state: "running", runs: 2, maxAttempts: 3 });
+    expect(step.changesNote).toBeUndefined();
   });
 
   it("places a decision with no step at the step the item is in", () => {

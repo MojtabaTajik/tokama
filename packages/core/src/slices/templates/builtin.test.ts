@@ -32,9 +32,17 @@ describe.each([true, false])("built-in templates, every agent in the cloud: %s",
       ["build", "builder", "checks pass"],
       ["review", "reviewer", "reviewer approves"],
     ]);
-    const [, build, review] = template.steps;
+    const [plan, build, review] = template.steps;
+    // A step you approve can run again on Request changes: it defaults to 3 attempts.
+    expect(plan?.maxAttempts).toBe(3);
     expect(build).toMatchObject({ checks: { from: "repo" }, ifFailed: { action: "retry" }, sees: ["plan"] });
     expect(review).toMatchObject({ ifChangesRequested: { action: "back", stepId: "build" } });
+  });
+
+  it("Quick change: one builder step you approve, with no checks, up to 3 attempts, then commit", async () => {
+    const { template } = await load("quick-change", cloud);
+    expect(template).toMatchObject({ ref: "builtin/quick-change", name: "Quick change", icon: expect.any(String), color: expect.any(String), start: { needs: ["text", "repo"] }, uses: { repos: { picked: "edit", named: [] } }, finish: ["commit"] });
+    expect(template.steps.map((step) => [step.id, step.agentId, step.doneWhen, step.checks, step.maxAttempts])).toEqual([["change", "builder", "you approve", undefined, 3]]);
   });
 
   it("Review only: one reviewer step that reads the repo and leaves findings", async () => {
