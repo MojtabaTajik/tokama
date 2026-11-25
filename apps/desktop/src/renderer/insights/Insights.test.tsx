@@ -373,10 +373,10 @@ describe("Insights: tabs", () => {
     await click($$('[role="tab"]')[1] ?? null);
     expect(tabs()).toEqual([["Usage", "false"], ["Machine", "true"]]);
     expect($('[aria-label="Machine"][role="tabpanel"]')).not.toBeNull();
-    expect($(".ins-plans")).toBeNull();
+    expect($(".ins-cards")).toBeNull();
     expect(bridge.query).toHaveBeenCalledWith({ type: "machine" });
     await click($$('[role="tab"]')[0] ?? null);
-    expect($(".ins-plans")).not.toBeNull();
+    expect($(".ins-cards")).not.toBeNull();
     expect($(".mc-body")).toBeNull();
   });
 });
