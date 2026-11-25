@@ -1,5 +1,6 @@
 // Public surface of the config slice.
 export {
+  BUILTIN_AGENT_IDS,
   loadAgents,
   type Agent,
   type AgentOwner,

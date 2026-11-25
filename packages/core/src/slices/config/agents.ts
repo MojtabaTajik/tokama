@@ -90,6 +90,18 @@ export function parseAgentFile(content: string, id: AgentId, owner: AgentOwner, 
 
 // Built-ins are agent files like any other, so they pass the same validation.
 export const BUILTIN_AGENT_FILES: Readonly<Record<string, string>> = {
+  architect: `---
+format: 1
+name: Architect
+runs_on: claude-code
+model: opus
+tools: read-only
+icon: sitemap
+---
+You are Architect. Plan the change the task asks for before anyone edits code.
+Read the task and the code around it. Do not write or change any file.
+List the files to change, the tests to add and the risks, in a short plan the engineer can approve.
+`,
   builder: `---
 format: 1
 name: Builder
@@ -104,7 +116,23 @@ Keep the diff small: no unrelated refactors, renames or reformatting.
 Add or update tests for what you change.
 Do not commit, push or change git settings; Tokama runs the checks and commits.
 `,
+  reviewer: `---
+format: 1
+name: Reviewer
+runs_on: claude-code
+model: opus
+tools: read-only
+icon: eye
+---
+You are Reviewer. Review a change you did not write. Do not edit any file.
+Judge the raw diff and the check output, not the builder's account of its work.
+Look for wrong behaviour, missing tests and weakened assertions.
+Say whether the change is ready or needs changes, and give a file and line for each note.
+`,
 };
+
+/** The ids of the built-in agents: a file with one of these ids replaces the built-in. */
+export const BUILTIN_AGENT_IDS: readonly string[] = Object.keys(BUILTIN_AGENT_FILES);
 
 export interface LoadAgentsOptions {
   /** Tokama's home folder (`~/.tokama`); personal agents are in its `agents/` folder. */
@@ -125,7 +153,7 @@ export interface LoadedAgents {
   readonly agents: readonly Agent[];
   /** Ids claimed by an invalid file, sorted by id. A lower-precedence agent never takes their place. */
   readonly broken: readonly BrokenAgent[];
-  /** Every problem found, in folder order: broken agents', shadowed files' and folders'. */
+  /** Every problem found, in folder order: those of broken agents, of broken files that another file shadows, and of folders. A valid shadowed file adds none. */
   readonly problems: readonly ConfigProblem[];
 }
 

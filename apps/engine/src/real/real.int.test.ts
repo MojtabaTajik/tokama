@@ -154,7 +154,7 @@ describe("real mode", () => {
     if (!reply.ok) throw new Error(reply.error.message);
     expect(reply.data.repos).toEqual([{ id: "orders-api", baseBranch: "main", checks: ["sh check.sh"] }]);
     expect(reply.data.agents).toContainEqual({ id: "builder", name: "Builder", cliId: "claude-code", model: "sonnet", runsOn: "cloud" });
-    expect(reply.data.templates.map((t) => t.id)).toEqual(["orders-api/careful-fix", "builtin/quick-fix"]);
+    expect(reply.data.templates.map((t) => t.id)).toEqual(["orders-api/careful-fix", "builtin/quick-fix", "builtin/plan-and-build", "builtin/review-only"]);
     expect(reply.data.templates[1]).toMatchObject({
       kind: "task",
       start: { needs: ["text", "repo"], askBeforeCloud: false },

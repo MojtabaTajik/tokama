@@ -1,0 +1,87 @@
+/* Settings: the settings nav and its panes. Colours come from theme.css tokens only. */
+.settings {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.settings-nav {
+  flex: 0 0 220px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 12px;
+  border-right: 1px solid var(--hairline);
+  background: var(--ground);
+  overflow-y: auto;
+}
+
+.settings-back {
+  align-self: flex-start;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.settings-back:hover {
+  color: var(--text);
+}
+
+.settings-title {
+  margin: 0;
+  padding: 6px 8px 6px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-group-name {
+  padding: 12px 8px 4px;
+  font-size: 11px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.settings-entry {
+  min-height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-entry[aria-current="page"] {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.settings-entry[aria-disabled="true"] {
+  color: var(--muted);
+  cursor: default;
+}
+
+.settings-heading {
+  margin: 0;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--muted);
+}

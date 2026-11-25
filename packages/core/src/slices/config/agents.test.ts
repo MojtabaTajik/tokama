@@ -64,19 +64,16 @@ describe("loadAgents", () => {
     });
   });
 
-  it("has the built-in Builder when no folder exists", async () => {
+  it("has the built-in Architect, Builder and Reviewer when no folder exists", async () => {
     const agents = value(await loadAgents({ tokamaHome: join(root, "missing"), repo: { ...repo(), path: join(root, "gone") } }));
-    expect(agents).toEqual([
-      expect.objectContaining({
-        id: "builder",
-        name: "Builder",
-        cliId: "claude-code",
-        model: "sonnet",
-        limits: { edit: true, commands: [], web: false },
-        owner: { kind: "builtin" },
-      }),
+    expect(agents.map((agent) => [agent.id, agent.name, agent.cliId, agent.model, agent.limits, agent.owner])).toEqual([
+      ["architect", "Architect", "claude-code", "opus", { edit: false, commands: [], web: false }, { kind: "builtin" }],
+      ["builder", "Builder", "claude-code", "sonnet", { edit: true, commands: [], web: false }, { kind: "builtin" }],
+      ["reviewer", "Reviewer", "claude-code", "opus", { edit: false, commands: [], web: false }, { kind: "builtin" }],
     ]);
-    expect(agents[0]!.role).toContain("worktree");
+    expect(agents[1]!.role).toContain("worktree");
+    expect(agents[0]!.role).toContain("Do not write or change any file");
+    expect(agents[2]!.role).toContain("did not write");
   });
 
   it("prefers personal over the repo's shared agents, and both over built-ins", async () => {
@@ -94,7 +91,7 @@ describe("loadAgents", () => {
 
   it("leaves a repo's shared agents out when no repo is given", async () => {
     writeAgent(shared(), "architect", agentFile({}));
-    expect(ids(value(await loadAgents({ tokamaHome: home })))).toEqual(["builder"]);
+    expect(ids(value(await loadAgents({ tokamaHome: home })))).toEqual(["architect", "builder", "reviewer"]);
   });
 
   it("reads only .md files, and skips READMEs and dotfiles", async () => {
@@ -104,7 +101,7 @@ describe("loadAgents", () => {
     writeFileSync(join(personal(), "README.md"), "# My agents\n");
     writeFileSync(join(personal(), "readme.md"), "# My agents\n");
     writeFileSync(join(personal(), ".draft.md"), "unfinished");
-    expect(ids(value(await loadAgents({ tokamaHome: home })))).toEqual(["builder", "reviewer"]);
+    expect(ids(value(await loadAgents({ tokamaHome: home })))).toEqual(["architect", "builder", "reviewer"]);
   });
 
   it("takes driven_by for ollama and refuses it otherwise", async () => {
@@ -186,7 +183,7 @@ describe("loadAgents", () => {
     writeAgent(join(root, "dotfiles", "agents"), "reviewer", agentFile({}));
     symlinkSync(join(root, "dotfiles", "agents"), personal());
     const loaded = await loadAgents({ tokamaHome: home });
-    expect(ids(loaded.agents)).toEqual(["builder", "reviewer"]);
+    expect(ids(loaded.agents)).toEqual(["architect", "builder", "reviewer"]);
     expect(loaded.agents.find((agent) => agent.id === "reviewer")?.owner).toEqual({ kind: "personal" });
     expect(loaded.problems).toEqual([]);
   });
@@ -195,13 +192,13 @@ describe("loadAgents", () => {
     writeAgent(join(root, "dotfiles", "tokama", "agents"), "reviewer", agentFile({}));
     const linkedHome = join(root, "linked-home");
     symlinkSync(join(root, "dotfiles", "tokama"), linkedHome);
-    expect(ids((await loadAgents({ tokamaHome: linkedHome })).agents)).toEqual(["builder", "reviewer"]);
+    expect(ids((await loadAgents({ tokamaHome: linkedHome })).agents)).toEqual(["architect", "builder", "reviewer"]);
   });
 
   it("reports a linked agents folder that leads nowhere, not taken for a missing folder", async () => {
     symlinkSync(join(root, "gone"), personal());
     const loaded = await loadAgents({ tokamaHome: home });
-    expect(ids(loaded.agents)).toEqual(["builder"]);
+    expect(ids(loaded.agents)).toEqual(["architect", "builder", "reviewer"]);
     expect(messages(loaded)).toEqual(["agents: is a link to a file or folder that doesn't exist"]);
   });
 
@@ -211,7 +208,7 @@ describe("loadAgents", () => {
     symlinkSync(target, join(personal(), "reviewer.md"));
     symlinkSync(join(root, "gone.md"), join(personal(), "builder.md"));
     const loaded = await loadAgents({ tokamaHome: home });
-    expect(ids(loaded.agents)).toEqual(["reviewer"]);
+    expect(ids(loaded.agents)).toEqual(["architect", "reviewer"]);
     expect(ids(loaded.broken)).toEqual(["builder"]);
     expect(messages(loaded)).toEqual(["agents/builder.md: is a link to a file or folder that doesn't exist"]);
   });
@@ -236,7 +233,7 @@ describe("loadAgents", () => {
     mkdirSync(join(repoPath, ".tokama"));
     symlinkSync(join(repoPath, "team-agents"), shared());
     const loaded = await loadAgents({ tokamaHome: home, repo: repo() });
-    expect(ids(loaded.agents)).toEqual(["builder"]);
+    expect(ids(loaded.agents)).toEqual(["architect", "builder", "reviewer"]);
     expect(messages(loaded)).toEqual(["orders-api/.tokama/agents: Tokama doesn't follow links in config folders"]);
 
     rmSync(join(repoPath, ".tokama"), { recursive: true });

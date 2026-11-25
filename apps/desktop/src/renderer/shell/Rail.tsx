@@ -1,7 +1,7 @@
 // The icon rail: panel toggle, Board, Needs you, Insights, Settings, Attention, then the user.
 // Insights is the one usage entry: hovering or focusing it lists each AI CLI, and a logged-out one
 // puts a ✕ on the icon. Attention opens a popup with the issues and how to fix them. The user
-// button opens About. Needs you opens its page. The other buttons are marked aria-disabled until their screens exist.
+// button opens About. Needs you opens its page, Settings opens Settings. Insights is marked aria-disabled until its page exists.
 import { useEffect, useId, useRef, useState } from "react";
 import { brand } from "../brand/index.js";
 import { AI_CLIS, type CliIssue, type HealthProblem } from "../model.js";
@@ -43,6 +43,7 @@ export interface RailProps {
   readonly onBoard: () => void;
   readonly onNeedsYou: () => void;
   readonly onAbout: () => void;
+  readonly onSettings: () => void;
 }
 
 const stateOf = (issue: CliIssue | undefined): string =>
@@ -51,7 +52,7 @@ const stateOf = (issue: CliIssue | undefined): string =>
 /** "Needs you · 2", or just "Needs you" when there are none. */
 const withCount = (label: string, count: number) => (count > 0 ? `${label} · ${count}` : label);
 
-export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, problems = [], onAttention, aboutOpen, needsYouOpen, onBoard, onNeedsYou, onAbout }: RailProps) {
+export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, problems = [], onAttention, aboutOpen, needsYouOpen, onBoard, onNeedsYou, onAbout, onSettings }: RailProps) {
   const tipId = useId();
   const popupId = useId();
   const attention = issues.length + problems.length;
@@ -124,7 +125,7 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
           </ul>
         </div>
       </div>
-      <button type="button" className="rail-button" aria-label={TEXT.settings} title={TEXT.settings} aria-disabled="true">
+      <button type="button" className="rail-button" aria-label={TEXT.settings} title={TEXT.settings} onClick={onSettings}>
         <SettingsIcon />
       </button>
       <div className="attention" ref={attentionRef}>
