@@ -52,15 +52,14 @@ function iconSvg(size: number): string {
     // Tile and mark on the 1024 grid; the mark's 64 unit box sits at 256 to 768.
     return `${open} viewBox="0 0 1024 1024"><rect x="100" y="100" width="824" height="824" rx="185" fill="${NIGHT}" stroke="${TILE_EDGE}" stroke-width="6"/><g transform="translate(256 256) scale(8)">${master}</g></svg>`;
   }
-  // A pixel glyph is `glyphSize` units wide; the tile is 0.8125 of the icon, the glyph half of it.
+  // A pixel glyph is drawn at 1:1 (whole pixels only, a fraction would drop cells) and centred; the tile is 0.8125 of the icon.
   const glyphSize = size > 32 ? 32 : 16;
   const glyph = glyphSize === 32 ? glyph32 : glyph16;
   if (size === 16) {
     return `${open} viewBox="0 0 16 16"><rect width="16" height="16" rx="3.5" fill="${NIGHT}"/>${glyph}</svg>`;
   }
   const inset = (size * 3) / 32;
-  const scale = size / 2 / glyphSize;
-  return `${open} viewBox="0 0 ${size} ${size}"><rect x="${inset}" y="${inset}" width="${size - 2 * inset}" height="${size - 2 * inset}" rx="${(size * 3) / 16}" fill="${NIGHT}"/><g transform="translate(${size / 4} ${size / 4}) scale(${scale})">${glyph}</g></svg>`;
+  return `${open} viewBox="0 0 ${size} ${size}"><rect x="${inset}" y="${inset}" width="${size - 2 * inset}" height="${size - 2 * inset}" rx="${(size * 3) / 16}" fill="${NIGHT}"/><g transform="translate(${(size - glyphSize) / 2} ${(size - glyphSize) / 2})">${glyph}</g></svg>`;
 }
 
 const png = new Map<number, Buffer>(SIZES.map((size) => [size, Buffer.from(new Resvg(iconSvg(size), { font: { loadSystemFonts: false } }).render().asPng())]));
