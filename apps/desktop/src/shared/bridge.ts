@@ -1,7 +1,7 @@
 // The contract between the main process, the preload bridge and the renderer. Types and
 // constants only: the renderer and the sandboxed preload import nothing else from outside.
 import type { ClientEvent, CommandReply, QueryReply } from "@tokama/client";
-import type { CommandInput, DiagnosticEntry, QueryInput, UsageAction } from "@tokama/core";
+import type { CommandInput, DiagnosticEntry, PostFailure, QueryInput, UsageAction } from "@tokama/core";
 import type { DesktopState, LayoutPatch, NotificationSettings } from "./desktop-state.js";
 
 /** The desktop app's view of its engine connection. */
@@ -125,9 +125,20 @@ export type DiagnosticsLoad = { readonly ok: true; readonly items: readonly Diag
  * or larger than an upload may be), `unsupported` (415), `rate_limited` (429), `busy_today` (503:
  * its daily budget is used up), `server` (any other status), `bad_reply` (a success without a
  * report id), `timeout` and `network` (no answer). `no_receiver`: a development build on the sample
- * engine sends nowhere unless a local test server is named.
+ * engine sends nowhere unless a local test server is named. The egress post's own kinds pass
+ * through as they are; its `not_allowed` and `status` become the words above.
  */
-export type DiagnosticsSendFailure = "not_connected" | "no_receiver" | "busy" | "nothing" | "rejected" | "too_large" | "unsupported" | "rate_limited" | "busy_today" | "server" | "bad_reply" | "timeout" | "network";
+export type DiagnosticsSendFailure =
+  | Exclude<PostFailure["kind"], "not_allowed" | "status">
+  | "not_connected"
+  | "no_receiver"
+  | "busy"
+  | "nothing"
+  | "rejected"
+  | "unsupported"
+  | "rate_limited"
+  | "busy_today"
+  | "server";
 
 /**
  * `sent` entries went out and were removed, except `kept` of them whose delete failed (they stay
