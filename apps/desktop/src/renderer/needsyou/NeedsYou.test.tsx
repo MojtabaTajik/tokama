@@ -223,6 +223,44 @@ describe("the Needs you page", () => {
     expect(fake.command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: change.id, decisionId: change.decision!.id, choice: "approve" });
   });
 
+  it("a plan approval row previews the first lines of the plan as text, and Read the plan opens the drawer with the whole plan", async () => {
+    const plan = {
+      ...older,
+      id: "item_1a2b3c4d-0097-4a1b-8c1d-000000000097",
+      title: "Reserve stock when an order is placed",
+      decision: {
+        id: "decision_aaaaaaaa-0000-4000-8000-0000000000e1",
+        kind: "plan_approval",
+        stepIndex: 0,
+        question: "Approve this step's result?",
+        choices: [
+          { id: "approve", label: "Approve" },
+          { id: "request_changes", label: "Request changes" },
+        ],
+      },
+      steps: [{ ...older.steps[0]!, attempts: [{ attempt: 1, result: "passed", checks: [] }] }, older.steps[1]!],
+    } as unknown as ItemRecord;
+    const text5 = "## Plan <b>now</b>\n\n- Add a table\n- Call it at checkout\n- Release it on cancel\n- Test it";
+    const fake = fakeBridge(CONNECTED, {
+      boardItems: [...withoutWaiting, plan],
+      reply: (q) =>
+        q.type === "step_output" ? { ok: true, data: { attempt: 1, text: text5, truncated: false } } : q.type === "item" && (q as { itemId?: string }).itemId === plan.id ? { ok: true, data: { item: plan } } : undefined,
+    });
+    await render(fake.bridge);
+    await openPage();
+    await wait(0);
+    expect(text(".nr-preview")).toBe("Plan <b>now</b>\nAdd a table\nCall it at checkout");
+    expect($$(".nr-row b")).toEqual([]);
+    const read = $(".nr-read") as HTMLButtonElement;
+    expect(read.textContent).toBe("Read the plan");
+    expect(read.getAttribute("aria-label")).toBe("Read the plan: Reserve stock when an order is placed");
+    expect($(".drawer")).toBeNull();
+    await click(read);
+    await wait(10);
+    expect($(".drawer h2")?.textContent).toBe(plan.title);
+    expect($$(".drawer .step-output-text li").map((el) => el.textContent)).toEqual(["Add a table", "Call it at checkout", "Release it on cancel", "Test it"]);
+  });
+
   it("shows an item that waits without a question as text only, with no buttons", async () => {
     const bare = { ...ITEMS.needsYou, decision: undefined } as ItemRecord;
     await render(fakeBridge(CONNECTED, { boardItems: [bare] }).bridge);

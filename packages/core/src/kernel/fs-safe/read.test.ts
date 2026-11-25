@@ -12,6 +12,7 @@ import {
   readLinesFrom,
   readTextFile,
   readTextFileInside,
+  readTextHead,
   type ReadFailure,
   type ReadFailureReason,
 } from "./index.js";
@@ -113,6 +114,39 @@ describe("readTextFile", () => {
     expect(reason(result)).toBe("invalid_utf8");
     // A multi-byte character cut off at the end of the file.
     expect(reason(await readTextFile(write("cut", Buffer.from([0x61, 0xc3])), BIG))).toBe("invalid_utf8");
+  });
+});
+
+describe("readTextHead", () => {
+  it("reads a whole file within the cap", async () => {
+    expect(await readTextHead(write("a.txt", "héllo\n"), BIG)).toEqual({ ok: true, value: { text: "héllo\n", truncated: false } });
+    expect(await readTextHead(write("ten", "x".repeat(10)), { maxBytes: 10 })).toEqual({ ok: true, value: { text: "x".repeat(10), truncated: false } });
+  });
+
+  it("returns the first maxBytes of a larger file, also past one read chunk", async () => {
+    expect(await readTextHead(write("big", "x".repeat(11)), { maxBytes: 10 })).toEqual({ ok: true, value: { text: "x".repeat(10), truncated: true } });
+    const huge = await readTextHead(write("huge", Buffer.alloc(200_000, 0x61)), { maxBytes: 100_000 });
+    expect(huge.ok && huge.value.text.length).toBe(100_000);
+    expect(huge.ok && huge.value.truncated).toBe(true);
+  });
+
+  it("leaves out a character the cap splits", async () => {
+    // "aé€" is 61 | c3 a9 | e2 82 ac: caps inside é and inside € drop the split character.
+    const path = write("split", "aé€");
+    expect(await readTextHead(path, { maxBytes: 2 })).toEqual({ ok: true, value: { text: "a", truncated: true } });
+    expect(await readTextHead(path, { maxBytes: 3 })).toEqual({ ok: true, value: { text: "aé", truncated: true } });
+    expect(await readTextHead(path, { maxBytes: 5 })).toEqual({ ok: true, value: { text: "aé", truncated: true } });
+    expect(await readTextHead(path, { maxBytes: 6 })).toEqual({ ok: true, value: { text: "aé€", truncated: false } });
+  });
+
+  it("keeps the open rules and refuses invalid UTF-8", async () => {
+    symlinkSync(write("target.txt", "secret"), join(dir, "link"));
+    mkdirSync(join(dir, "sub"));
+    expect(reason(await readTextHead(join(dir, "missing"), BIG))).toBe("not_found");
+    expect(reason(await readTextHead(join(dir, "link"), BIG))).toBe("symlink");
+    expect(reason(await readTextHead(join(dir, "sub"), BIG))).toBe("not_regular_file");
+    expect(reason(await readTextHead("/dev/zero", BIG))).toBe("not_regular_file");
+    expect(reason(await readTextHead(write("bad", Buffer.from([0x61, 0xff, 0x62])), BIG))).toBe("invalid_utf8");
   });
 });
 

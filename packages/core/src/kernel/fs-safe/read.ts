@@ -53,46 +53,78 @@ function openFailure(path: string, error: unknown): Result<never, ReadFailure> {
  */
 export async function readTextFile(path: string, options: ReadTextOptions): Promise<Result<string, ReadFailure>> {
   const { maxBytes, maxLines } = options;
+  const read = await readUpTo(path, maxBytes, true);
+  if (!read.ok) return read;
+  if (read.value.more) return failure(path, "too_large", `larger than ${maxBytes} bytes`);
+  const text = decode(path, read.value.bytes);
+  if (!text.ok) return text;
+  if (maxLines !== undefined && countLines(text.value) > maxLines) {
+    return failure(path, "too_many_lines", `more than ${maxLines} lines`);
+  }
+  return text;
+}
+
+/**
+ * The first `maxBytes` of a file's UTF-8 text, by the open rules of `readTextFile`; `truncated`
+ * when the file holds more. A character split by the cap is left out. Never throws.
+ */
+export async function readTextHead(path: string, options: { readonly maxBytes: number }): Promise<Result<{ text: string; truncated: boolean }, ReadFailure>> {
+  const read = await readUpTo(path, options.maxBytes, false);
+  if (!read.ok) return read;
+  const { bytes, more } = read.value;
+  const text = decode(path, more ? bytes.subarray(0, completeUtf8Length(bytes)) : bytes);
+  return text.ok ? ok({ text: text.value, truncated: more }) : text;
+}
+
+/** Up to `maxBytes` of a regular file, and whether it holds more; `refuseLarger` refuses a larger file by its size before reading. */
+async function readUpTo(path: string, maxBytes: number, refuseLarger: boolean): Promise<Result<{ bytes: Buffer; more: boolean }, ReadFailure>> {
   let handle: promises.FileHandle;
   try {
     handle = await open(path, FLAGS);
   } catch (error) {
     return openFailure(path, error);
   }
-  let bytes: Buffer;
   try {
     const stat = await handle.stat();
     if (!stat.isFile()) return failure(path, "not_regular_file", "not a regular file");
-    if (stat.size > maxBytes) return failure(path, "too_large", `larger than ${maxBytes} bytes`);
+    if (refuseLarger && stat.size > maxBytes) return failure(path, "too_large", `larger than ${maxBytes} bytes`);
     // The file can grow after fstat, so read up to one byte past the cap rather than stat.size.
     const chunks: Buffer[] = [];
     let total = 0;
-    for (;;) {
+    while (total <= maxBytes) {
       const chunk = Buffer.alloc(Math.min(CHUNK_BYTES, maxBytes + 1 - total));
       const { bytesRead } = await handle.read(chunk, 0, chunk.length, null);
       if (bytesRead === 0) break;
       chunks.push(chunk.subarray(0, bytesRead));
       total += bytesRead;
-      if (total > maxBytes) return failure(path, "too_large", `larger than ${maxBytes} bytes`);
     }
-    bytes = Buffer.concat(chunks, total);
+    const bytes = Buffer.concat(chunks, total);
+    return ok(total > maxBytes ? { bytes: bytes.subarray(0, maxBytes), more: true } : { bytes, more: false });
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code ?? "UNKNOWN";
     return failure(path, "io_error", `cannot read: ${code}`, code);
   } finally {
     await handle.close().catch(() => undefined);
   }
+}
 
-  let text: string;
+function decode(path: string, bytes: Uint8Array): Result<string, ReadFailure> {
   try {
-    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return ok(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
   } catch {
     return failure(path, "invalid_utf8", "not valid UTF-8");
   }
-  if (maxLines !== undefined && countLines(text) > maxLines) {
-    return failure(path, "too_many_lines", `more than ${maxLines} lines`);
-  }
-  return ok(text);
+}
+
+/** The length of `bytes` without a UTF-8 sequence cut off at its end. */
+function completeUtf8Length(bytes: Uint8Array): number {
+  // Step back over continuation bytes (10xxxxxx) to the last lead byte, at most 3.
+  let start = bytes.length - 1;
+  while (start >= 0 && bytes.length - start <= 3 && (bytes[start]! & 0xc0) === 0x80) start--;
+  if (start < 0) return bytes.length;
+  const lead = bytes[start]!;
+  const needs = lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : lead >= 0xc0 ? 2 : 1;
+  return bytes.length - start < needs ? start : bytes.length;
 }
 
 function countLines(text: string): number {

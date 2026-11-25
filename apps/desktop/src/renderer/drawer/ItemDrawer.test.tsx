@@ -371,6 +371,118 @@ describe("ItemDrawer change to approve", () => {
   });
 });
 
+describe("ItemDrawer step output", () => {
+  const PLAN_DECISION = "decision_00000000-0000-4000-8000-0000000000e1";
+  const PLAN = "## Plan\n\n- Add a `stock_reservations` table\n- Call it at checkout\n\n<script>alert(1)</script>";
+  const planStep = { name: "Plan", stage: "working", state: "needs_you", agentId: "architect", data: "none", runs: 1, maxAttempts: 3, attempts: [{ attempt: 1, result: "passed", checks: [] }] };
+  const waiting = {
+    ...task,
+    state: "needs_you",
+    decision: {
+      id: PLAN_DECISION,
+      kind: "plan_approval",
+      stepIndex: 0,
+      question: "Approve this step's result?",
+      why: "Architect wrote a plan and changed 0 files.",
+      choices: [
+        { id: "approve", label: "Approve" },
+        { id: "request_changes", label: "Request changes" },
+        { id: "stop", label: "Stop" },
+      ],
+    },
+    steps: [planStep, { name: "Build", stage: "working", state: "pending", agentId: "local-builder", data: "none" }],
+  } as unknown as ItemRecord;
+  const withOutput = (output: (q: { attempt?: number }) => Reply | Promise<Reply>, items: ItemRecord[] = [waiting]) => {
+    const fake = fakeBridge(items);
+    const base = fake.query.getMockImplementation()!;
+    fake.query.mockImplementation(async (q: { type: string; itemId?: string; attempt?: number }) => (q.type === "step_output" ? output(q) : base(q)));
+    return fake;
+  };
+  const outputCalls = (query: ReturnType<typeof vi.fn>) => query.mock.calls.filter(([q]) => (q as { type: string }).type === "step_output").map(([q]) => q as unknown);
+
+  it("shows the plan as text above Approve and Request changes, in a scroll box you can reach with Tab", async () => {
+    const { bridge, query } = withOutput(() => ({ ok: true, data: { attempt: 1, text: PLAN, truncated: false } }));
+    await renderDrawer(bridge, waiting.id);
+    expect(outputCalls(query)).toEqual([{ type: "step_output", itemId: waiting.id, stepIndex: 0 }]);
+    expect(text(".step-output-label")).toBe("Plan · what Architect wroteattempt 1");
+    const box = $(".needs-you .step-output-text") as HTMLElement;
+    expect(box.getAttribute("tabindex")).toBe("0");
+    expect(box.getAttribute("aria-label")).toBe("Plan · what Architect wrote");
+    expect($$(".needs-you .st-heading").map((el) => el.textContent)).toEqual(["Plan"]);
+    expect($$(".needs-you li").map((el) => el.textContent)).toEqual(["Add a stock_reservations table", "Call it at checkout"]);
+    expect(box.textContent).toContain("<script>alert(1)</script>");
+    expect($$(".drawer script")).toEqual([]);
+    // Summary first, then the plan, then the buttons.
+    const order = $$(".needs-you-why, .needs-you .step-output, .needs-you .choice");
+    expect(order.map((el) => el.className.split(" ")[0])).toEqual(["needs-you-why", "step-output", "choice", "choice", "choice"]);
+    expect($(".step-output-cut")).toBeNull();
+  });
+
+  it("says when the output was cut, when the attempt saved none, and when the agent wrote nothing", async () => {
+    let reply: Reply = { ok: true, data: { attempt: 2, text: "x".repeat(10), truncated: true } };
+    const { bridge } = withOutput(() => reply);
+    await renderDrawer(bridge, waiting.id);
+    expect(text(".step-output-cut")).toBe("!Showing the first 64 KiB. The rest is in the item's folder on this machine.");
+
+    reply = { ok: false, error: { code: "not_found", message: "Attempt 1 has no saved output." } };
+    await act(async () => root.render(<ItemDrawer bridge={bridge} itemId={waiting.id} setup={setup} onClose={vi.fn()} key="again" />));
+    expect(text(".needs-you .step-output-none")).toBe("This attempt has no saved output.");
+
+    reply = { ok: true, data: { attempt: 1, text: "  \n", truncated: false } };
+    await act(async () => root.render(<ItemDrawer bridge={bridge} itemId={waiting.id} setup={setup} onClose={vi.fn()} key="empty" />));
+    expect(text(".needs-you .step-output-none")).toBe("The agent wrote no final message.");
+  });
+
+  it("never shows an older attempt's text for a newer question", async () => {
+    let answer!: (reply: Reply) => void;
+    const fake = withOutput(() => new Promise<Reply>((resolve) => (answer = resolve)));
+    await renderDrawer(fake.bridge, waiting.id);
+    const first = answer;
+    const again = { ...waiting, decision: { ...waiting.decision!, id: "decision_00000000-0000-4000-8000-0000000000e2" } } as ItemRecord;
+    await fake.push(again);
+    await act(async () => first({ ok: true, data: { attempt: 1, text: "the old plan", truncated: false } }));
+    expect(container.textContent).not.toContain("the old plan");
+    expect(text(".needs-you .placeholder")).toBe("Loading the step's output");
+    await act(async () => answer({ ok: true, data: { attempt: 2, text: "the new plan", truncated: false } }));
+    expect(text(".needs-you .step-output-text")).toBe("the new plan");
+  });
+
+  it("with a change to approve, shows the output and a way to the Diff tab", async () => {
+    const changed = { ...waiting, decision: { ...waiting.decision!, hasDiff: true } } as ItemRecord;
+    const fake = withOutput(() => ({ ok: true, data: { attempt: 1, text: "Changed 2 files.", truncated: false } }), [changed]);
+    const base = fake.query.getMockImplementation()!;
+    fake.query.mockImplementation(async (q: { type: string; itemId?: string }) => (q.type === "decision_diff" ? { ok: false, error: { code: "stale_decision", message: "gone" } } : base(q)));
+    await renderDrawer(fake.bridge, changed.id);
+    expect(text(".needs-you .step-output-text")).toBe("Changed 2 files.");
+    await click($$('[role="tab"]').find((el) => el.textContent === "Steps"));
+    await click(button("See the changed files in the Diff tab"));
+    const diffTab = $$('[role="tab"]').find((el) => el.textContent === "Diff");
+    expect(diffTab?.getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(diffTab);
+  });
+
+  it("on the Steps tab, each ended attempt of an agent's step has its output collapsed, asked for when opened", async () => {
+    const ran = {
+      ...task,
+      steps: [
+        { ...planStep, state: "passed", attempts: [{ attempt: 1, result: "failed", checks: [] }, { attempt: 2, result: "passed", checks: [] }, { attempt: 3, checks: [] }] },
+        { name: "Run checks", stage: "verifying", state: "passed", data: "none", attempts: [{ attempt: 1, result: "passed", checks: [] }] },
+      ],
+    } as unknown as ItemRecord;
+    const { bridge, query } = withOutput((q) => ({ ok: true, data: { attempt: q.attempt, text: `plan ${String(q.attempt)}`, truncated: false } }), [ran]);
+    await renderDrawer(bridge, ran.id);
+    const details = $$(".attempt-output") as HTMLDetailsElement[];
+    expect(details.map((el) => el.querySelector("summary")?.getAttribute("aria-label"))).toEqual(["Plan, attempt 1: Output", "Plan, attempt 2: Output"]);
+    expect(outputCalls(query)).toEqual([]);
+    await act(async () => {
+      details[1]!.open = true;
+      details[1]!.dispatchEvent(new Event("toggle"));
+    });
+    expect(outputCalls(query)).toEqual([{ type: "step_output", itemId: ran.id, stepIndex: 0, attempt: 2 }]);
+    expect(details[1]!.querySelector(".step-output-text")?.textContent).toBe("plan 2");
+  });
+});
+
 describe("ItemDrawer decisions", () => {
   it("sends resolve_decision for the chosen button and shows the item the engine sends back", async () => {
     const { bridge, command, push, replyWith } = fakeBridge([needsYou]);
@@ -611,7 +723,7 @@ describe("item drawer with real-mode records", () => {
   it("lists each step's attempts and shows the commit the item made", async () => {
     const fake = fakeBridge([committed]);
     await renderDrawer(fake.bridge, committed.id);
-    expect($$(".step-attempt").map((el) => el.textContent)).toEqual(["✕attempt 1 · failed · sh check.sh exit 1", "✓attempt 2 · passed · 1 check passed"]);
+    expect($$(".step-attempt > .mono").map((el) => el.textContent)).toEqual(["✕attempt 1 · failed · sh check.sh exit 1", "✓attempt 2 · passed · 1 check passed"]);
     expect(text(".drawer-state")).toContain("commit 3f2a9c1 on tokama/0b9f3c1e");
   });
 

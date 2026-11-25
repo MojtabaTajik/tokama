@@ -1,8 +1,9 @@
 // The Needs you page: every decision waiting for the engineer across all items, oldest first.
 // A row shows the kind of decision, the item, its workflow and step, the agent, how long ago the
 // item started and the decision's own choice buttons; a choice sends the same `resolve_decision`
-// command as the drawer. The title opens the drawer. Engine text (titles, questions, summaries,
-// names) is rendered as React text only.
+// command as the drawer. The title opens the drawer. A step you approve shows the first lines of
+// what its agent wrote. Engine text (titles, questions, summaries, names, agent output) is
+// rendered as React text only.
 import type { ItemRecord, Setup } from "@tokama/core";
 import { type MouseEvent, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
@@ -10,6 +11,7 @@ import { DecisionChoices } from "../drawer/DecisionChoices.js";
 import { nextRunLine } from "../drawer/describe.js";
 import { ChangedFiles, useDecisionDiff } from "../drawer/DiffView.js";
 import { type Notice, problem, REFRESH_ON } from "../drawer/ItemDrawer.js";
+import { previewOf, useStepOutput } from "../drawer/StepOutput.js";
 import { ConnectionFailure } from "../shell/ConnectionStatus.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { type NeedsYouRow, needsYouRows } from "./rows.js";
@@ -32,6 +34,8 @@ const TEXT = {
   oldest: (since: string) => `oldest item started ${since} ago`,
   started: (since: string) => `started ${since} ago`,
   review: "Review the diff",
+  readPlan: "Read the plan",
+  readOutput: "Read the output",
 } as const;
 
 export interface NeedsYouProps {
@@ -144,6 +148,10 @@ function Row({ row, index, bridge, selected, onSelect, onReviewDiff, onRefresh }
   const { item, decision } = row;
   const [busy, setBusy] = useState(false);
   const diff = useDecisionDiff(bridge, item.id, decision);
+  const approval = decision?.kind === "plan_approval" ? decision : undefined;
+  const output = useStepOutput(bridge, item.id, approval?.stepIndex ?? 0, undefined, approval?.id);
+  const preview = output?.kind === "loaded" ? previewOf(output.output.text) : "";
+  const read = approval?.hasDiff === true ? TEXT.readOutput : TEXT.readPlan;
   const [notice, setNotice] = useState<Notice | undefined>(undefined);
   // The row can be gone when the reply arrives (the answer worked and the item moved on).
   const mounted = useRef(true);
@@ -211,6 +219,14 @@ function Row({ row, index, bridge, selected, onSelect, onReviewDiff, onRefresh }
           <pre className="cloud-summary-text mono" tabIndex={0} aria-label={`${TEXT.willBeSent}: ${item.title}`}>
             {decision.summaryText}
           </pre>
+        </div>
+      )}
+      {preview !== "" && (
+        <div className="nr-output">
+          <p className="nr-preview">{preview}</p>
+          <button type="button" className="nr-read" aria-label={`${read}: ${item.title}`} onClick={() => onSelect(item.id)}>
+            {read}
+          </button>
         </div>
       )}
       {diff !== undefined && <ChangedFiles state={diff} context={item.title} />}

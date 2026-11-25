@@ -96,6 +96,8 @@ export const QuerySchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("item"), itemId: ItemIdSchema }),
   /** The change an open decision is about (one with `hasDiff`): base commit to the tree it would commit. */
   z.strictObject({ type: z.literal("decision_diff"), itemId: ItemIdSchema, decisionId: DecisionIdSchema }),
+  /** The final message the agent of a step's attempt wrote; `attempt` defaults to the step's latest. */
+  z.strictObject({ type: z.literal("step_output"), itemId: ItemIdSchema, stepIndex: z.int().nonnegative().max(1000), attempt: z.int().min(1).max(10_000).optional() }),
   /** The template the engine suggests for New work text, by ref; `templateId` is null when none fits. */
   z.strictObject({ type: z.literal("suggest_template"), text: z.string().max(4000) }),
   /** What the engine proposes for a folder before add_repo: id, base branch and checks. */
@@ -168,12 +170,24 @@ export const RepoSuggestionSchema = z.strictObject({
   problem: z.string().max(1000).nullable(),
 });
 
+/** The most of a step's output a reply carries, in bytes of UTF-8. */
+export const MAX_STEP_OUTPUT_BYTES = 64 * 1024;
+
+export const StepOutputSchema = z.strictObject({
+  attempt: z.int().min(1),
+  /** As the agent wrote it, cut at `MAX_STEP_OUTPUT_BYTES`; empty when the agent wrote no final message. */
+  text: z.string().max(MAX_STEP_OUTPUT_BYTES),
+  /** The agent wrote more than the reply carries. */
+  truncated: z.boolean(),
+});
+
 /** The data of a successful reply, per query type. */
 export const QueryResultSchemas = {
   setup: SetupSchema,
   board: z.strictObject({ items: z.array(ItemRecordSchema) }),
   item: z.strictObject({ item: ItemRecordSchema }),
   decision_diff: ItemDiffSchema,
+  step_output: StepOutputSchema,
   suggest_template: z.strictObject({ templateId: TemplateRefSchema.nullable() }),
   suggest_repo: RepoSuggestionSchema,
   agents_list: AgentsListSchema,
@@ -337,6 +351,7 @@ export type QueryResult<T extends QueryType> = z.output<(typeof QueryResultSchem
 export type BoardResult = QueryResult<"board">;
 export type ItemResult = QueryResult<"item">;
 export type DecisionDiffResult = QueryResult<"decision_diff">;
+export type StepOutputResult = QueryResult<"step_output">;
 export type SetupResult = QueryResult<"setup">;
 export type SuggestTemplateResult = QueryResult<"suggest_template">;
 export type SuggestRepoResult = QueryResult<"suggest_repo">;

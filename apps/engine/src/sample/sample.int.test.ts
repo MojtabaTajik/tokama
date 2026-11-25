@@ -121,7 +121,7 @@ describe("fake engine mode", () => {
     expect(new Set(items.map(itemStage))).toEqual(new Set(["queued", "working", "verifying", "review", "done"]));
     expect(new Set(items.map((entry) => entry.kind))).toEqual(new Set(["task", "investigation"]));
     expect(new Set(items.map((entry) => entry.privacy))).toEqual(new Set(["local_only", "local_and_cloud"]));
-    expect(items.filter((entry) => entry.state === "needs_you").map((entry) => entry.id)).toEqual([ITEM_IDS.needsYou, ITEM_IDS.quickChange]);
+    expect(items.filter((entry) => entry.state === "needs_you").map((entry) => entry.id)).toEqual([ITEM_IDS.needsYou, ITEM_IDS.quickChange, ITEM_IDS.planApproval]);
     expect(items.filter((entry) => entry.state === "failed").map((entry) => entry.id)).toEqual([ITEM_IDS.failed]);
     // Every card has its line, and every step that has started has a detail line.
     expect(items.every((entry) => entry.cardLine !== undefined)).toBe(true);
@@ -237,6 +237,17 @@ describe("fake engine mode", () => {
     expect(done.cardLine).toBe("done · 4 steps");
   });
 
+  it("serves the plan the Plan approval item's question is about, and no output for steps that have not run", async () => {
+    const { client } = await sampleEngine();
+    const waiting = await item(client, ITEM_IDS.planApproval);
+    expect(waiting.decision).toMatchObject({ kind: "plan_approval", stepIndex: 0 });
+    expect(waiting.decision?.hasDiff).toBeUndefined();
+    const plan = await client.query({ type: "step_output", itemId: ITEM_IDS.planApproval, stepIndex: 0 });
+    expect(plan).toMatchObject({ ok: true, data: { attempt: 1, text: expect.stringContaining("## Plan: reserve stock"), truncated: false } });
+    expect(await client.query({ type: "step_output", itemId: ITEM_IDS.planApproval, stepIndex: 0, attempt: 2 })).toMatchObject({ ok: false, error: { code: "not_found" } });
+    expect(await client.query({ type: "step_output", itemId: ITEM_IDS.planApproval, stepIndex: 1 })).toMatchObject({ ok: false, error: { code: "not_found" } });
+  });
+
   it("serves the Quick change item's diff while its question is open; Request changes runs the step again", async () => {
     const { client, next } = await sampleEngine();
     const waiting = await item(client, ITEM_IDS.quickChange);
@@ -250,6 +261,7 @@ describe("fake engine mode", () => {
       ["fixtures/warehouses.json", 1204, 310],
     ]);
     expect(await client.query({ type: "decision_diff", itemId: ITEM_IDS.needsYou, decisionId: DECISION_ID })).toMatchObject({ ok: false, error: { code: "stale_decision" } });
+    expect(await client.query({ type: "step_output", itemId: ITEM_IDS.quickChange, stepIndex: 0 })).toMatchObject({ ok: true, data: { attempt: 1, text: expect.stringContaining("warehouse id"), truncated: false } });
 
     const resolve: CommandInput = { type: "resolve_decision", itemId: ITEM_IDS.quickChange, decisionId: DIFF_DECISION_ID, choice: "request_changes", note: "Also log the sync id." };
     expect(await client.command(resolve)).toEqual({ ok: true, data: null });

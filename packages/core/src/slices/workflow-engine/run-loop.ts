@@ -16,7 +16,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Clock } from "../../kernel/clock/index.js";
-import { readTextFile } from "../../kernel/fs-safe/index.js";
+import { readTextFile, readTextHead } from "../../kernel/fs-safe/index.js";
 import type { Git } from "../../kernel/git/index.js";
 import type { AgentRuntime, ToolLimits } from "../../kernel/ports/index.js";
 import type { ProcessRunner } from "../../kernel/process/index.js";
@@ -26,6 +26,7 @@ import {
   CallIdSchema,
   DecisionIdSchema,
   MAX_NOTE_CHARS,
+  MAX_STEP_OUTPUT_BYTES,
   newId,
   REQUEST_CHANGES_ID,
   parseTemplateRecord,
@@ -41,6 +42,7 @@ import {
   type ItemId,
   type ItemOutcome,
   type RepoId,
+  type StepOutputResult,
   type StepId,
   type StoredDecision,
   type StoredItem,
@@ -125,6 +127,8 @@ export interface RunLoop {
   resolveDecision(itemId: ItemId, decisionId: string, choice: string, note?: string): Promise<Result<null, CommandError>>;
   /** The change an open decision about a step you approve shows: the base commit to the tree it would commit. */
   decisionDiff(itemId: ItemId, decisionId: string): Promise<Result<ItemDiff, CommandError>>;
+  /** The final message of the agent of a step's attempt (by index, as the item record lists steps); default the latest attempt. */
+  stepOutput(itemId: ItemId, stepIndex: number, attempt?: number): Promise<Result<StepOutputResult, CommandError>>;
   /** Kills the running agent or check, keeps the worktree, and ends the item as stopped. */
   stopItem(itemId: ItemId): Promise<Result<null, CommandError>>;
   /**
@@ -1132,6 +1136,23 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       const diff = await treeDiff(git, worktree.path, worktree.baseCommit, asked.tree);
       if (!diff.ok) return failure("invalid_state", detail(`Cannot read the change: ${diff.error.message}`));
       return ok({ ...diff.value, worktree: { repoId: repo.id, dir: item.worktrees[0]!.dir, branch: worktree.branch, baseCommit: worktree.baseCommit } });
+    },
+
+    async stepOutput(itemId, stepIndex, attempt) {
+      await ready;
+      if (closing) return closed();
+      const item = store.get(itemId);
+      if (item === undefined || item.deleted) return failure("not_found", `No item ${itemId}.`);
+      const step = item.steps[stepIndex];
+      if (step === undefined) return failure("not_found", `Item ${itemId} has no step ${stepIndex + 1}.`);
+      const asked = attempt === undefined ? step.attempts.at(-1) : step.attempts.find((a) => a.attempt === attempt);
+      if (asked === undefined) return failure("not_found", attempt === undefined ? "The step has not run yet." : `The step has no attempt ${attempt}.`);
+      // The ids come from the stored item, never from the query. Errors leave the path out.
+      const read = await readTextHead(itemPath(item.id, `${attemptDir(step.id, asked.attempt)}/agent.txt`), { maxBytes: MAX_STEP_OUTPUT_BYTES });
+      if (read.ok) return ok({ attempt: asked.attempt, ...read.value });
+      if (read.error.reason === "not_found") return failure("not_found", `Attempt ${asked.attempt} has no saved output.`);
+      if (read.error.reason === "invalid_utf8") return failure("invalid_state", `The output of attempt ${asked.attempt} is not text.`);
+      return failure("invalid_state", `Cannot read the output of attempt ${asked.attempt}: ${read.error.message}.`);
     },
 
     async finishItem(itemId, action) {

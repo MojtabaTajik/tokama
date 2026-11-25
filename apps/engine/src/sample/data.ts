@@ -7,6 +7,9 @@ export const DECISION_ID = "decision_5e1c9a7b-3f2d-4c8e-9a6b-1d2e3f4a5b6c";
 /** The Quick change item's question: approve the diff it shows. */
 export const DIFF_DECISION_ID = "decision_5e1c9a7b-3f2d-4c8e-9a6b-1d2e3f4a5b6d";
 
+/** The Plan approval item's question: approve the plan its Plan step wrote, which changed no files. */
+export const PLAN_DECISION_ID = "decision_5e1c9a7b-3f2d-4c8e-9a6b-1d2e3f4a5b6e";
+
 export const ITEM_IDS = {
   queued: "item_1a2b3c4d-0001-4a1b-8c1d-000000000001",
   working: "item_1a2b3c4d-0002-4a1b-8c1d-000000000002",
@@ -20,6 +23,8 @@ export const ITEM_IDS = {
   quickChange: "item_1a2b3c4d-0010-4a1b-8c1d-000000000010",
   /** A done task with a commit on its branch: Finish offers Merge, Open PR and Discard. */
   finished: "item_1a2b3c4d-0011-4a1b-8c1d-000000000011",
+  /** A Plan and build task whose Plan step waits for your approval of the plan. */
+  planApproval: "item_1a2b3c4d-0012-4a1b-8c1d-000000000012",
 } as const;
 
 const agents = {
@@ -396,6 +401,32 @@ export function sampleItems(now: number) {
     },
     {
       ...base,
+      id: ITEM_IDS.planApproval,
+      kind: "task",
+      templateId: templates.planAndBuild.id,
+      title: "Reserve stock when an order is placed",
+      text: "Reserve stock in inventory-service when an order is placed in orders-api, and release it when the order is cancelled.",
+      repoIds: ["orders-api"],
+      privacy: "local_and_cloud",
+      state: "needs_you",
+      createdAt: ago(now, 12),
+      cardLine: "Approve this step's result?",
+      decision: {
+        id: PLAN_DECISION_ID,
+        kind: "plan_approval",
+        stepIndex: 0,
+        question: "Approve this step's result?",
+        why: "Architect wrote a plan and changed 0 files. Build starts after you approve. Request changes sends your note to Architect for another run.",
+        choices: [
+          { id: "approve", label: "Approve" },
+          { id: "request_changes", label: "Request changes" },
+          { id: "stop", label: "Stop" },
+        ],
+      },
+      steps: steps(templates.planAndBuild, ["needs_you"], { 0: "waits for you" }).map((step, index) => (index === 0 ? { ...step, runs: 1, maxAttempts: 3, attempts: [{ attempt: 1, result: "passed", checks: [] }] } : step)),
+    },
+    {
+      ...base,
       id: ITEM_IDS.flaky,
       kind: "task",
       templateId: templates.quickFix.id,
@@ -410,6 +441,54 @@ export function sampleItems(now: number) {
     },
   ];
 }
+
+/** What each attempt's agent wrote last, by item and step index, oldest attempt first. */
+export const sampleOutputs: Readonly<Record<string, Readonly<Record<number, readonly string[]>>>> = {
+  [ITEM_IDS.planApproval]: {
+    0: [
+      [
+        "## Plan: reserve stock when an order is placed",
+        "",
+        "Orders take stock only when they ship, so two customers can buy the last item. This plan reserves stock at checkout and releases it when an order is cancelled.",
+        "",
+        "### Changes",
+        "",
+        "1. Add a `stock_reservations` table to inventory-service, with `order_id`, `sku`, `quantity` and `expires_at`.",
+        "2. Add `POST /reservations` and `DELETE /reservations/{orderId}` to inventory-service.",
+        "3. Call `POST /reservations` from `OrderService.place` in orders-api, before the payment step. A refusal ends checkout with \"out of stock\".",
+        "4. Release the reservation in `OrderService.cancel`, and in a job that removes reservations older than 30 minutes.",
+        "",
+        "### Tests",
+        "",
+        "- Two orders for the last item: the second gets \"out of stock\".",
+        "- A cancelled order releases its stock.",
+        "- The release job removes expired reservations only.",
+        "",
+        "### Risks",
+        "",
+        "- The reserve call adds a network hop to checkout. Timeout: 2 s, then checkout fails safe.",
+        "- The migration is reversible:",
+        "",
+        "```sql",
+        "DROP TABLE stock_reservations;",
+        "```",
+        "",
+        "Files to change: 6. Nothing is changed until Build runs.",
+      ].join("\n"),
+    ],
+  },
+  [ITEM_IDS.quickChange]: {
+    0: [
+      [
+        "Added the warehouse id to the sync failure log line.",
+        "",
+        "- `SyncJob.run` now logs `warehouseId` with each failure.",
+        "- `SyncJob.test.js` checks the new field.",
+        "- The README's log example shows the new field.",
+      ].join("\n"),
+    ],
+  },
+};
 
 /** The change the Quick change item asks you to approve. */
 export const sampleDiff = {

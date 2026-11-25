@@ -1,6 +1,6 @@
 # fs-safe
 
-Reads untrusted files: `readTextFile(path, { maxBytes, maxLines? })`, `readJsonFile(path, options)`, `isInside(root, path)`.
+Reads untrusted files: `readTextFile(path, { maxBytes, maxLines? })`, `readTextHead(path, { maxBytes })` (the first `maxBytes` and `truncated`, never a split character), `readJsonFile(path, options)`, `isInside(root, path)`.
 `readTextFileInside(root, path, options)` and `listFiles(root, rel, { max })` check `isInside` before they open anything.
 Regular files only, no symlink at the last path component, non-blocking open (a FIFO cannot hang the engine), size and line caps, strict UTF-8.
 Failures are `Result` values with a `reason`; nothing throws. Owns reading only; it never writes.
