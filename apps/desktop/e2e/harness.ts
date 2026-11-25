@@ -336,6 +336,6 @@ export const row = (page: Page, title: string): Locator =>
   page.locator(".pl-row", { has: page.locator(".pl-title").getByText(title, { exact: true }) });
 export const group = (page: Page, name: string): Locator => page.locator(`section.pl-group[aria-label="${name}"]`);
 export const sidebarRow = (page: Page, name: string): Locator => page.locator(".sb-main", { has: page.getByText(name, { exact: true }) });
-export const drawer = (page: Page): Locator => page.locator("aside.drawer");
+export const drawer = (page: Page): Locator => page.locator(".drawer");
 /** The titles of all rows on screen, in order. */
 export const titles = (page: Page): Promise<string[]> => page.locator(".pl-title").allTextContents();

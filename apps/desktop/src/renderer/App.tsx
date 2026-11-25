@@ -1,9 +1,11 @@
-// The app shell: icon rail, sidebar, main area, and the item drawer when an item is open.
+// The app shell: icon rail, sidebar, main area, and the item drawer when an item is open. An open
+// item can fill the main area instead of the drawer (the full view); the sidebar stays.
 import type { FinishAction, UsageRange, UsageScope } from "@tokama/core";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TokamaBridge } from "../shared/bridge.js";
-import { DEFAULT_DESKTOP_STATE, type DesktopState, DRAWER_WIDTH, SECTIONS, SIDEBAR_WIDTH } from "../shared/desktop-state.js";
+import { DEFAULT_DESKTOP_STATE, type DesktopState, DRAWER_WIDTH, RAIL_WIDTH, SECTIONS, SIDEBAR_WIDTH } from "../shared/desktop-state.js";
 import { About } from "./about/About.js";
+import { SIDE_BY_SIDE_MIN_WIDTH } from "./drawer/DiffView.js";
 import { ItemDrawer } from "./drawer/ItemDrawer.js";
 import { Insights } from "./insights/Insights.js";
 import { fitPanels, sidebarMax } from "./layout/fit.js";
@@ -24,6 +26,7 @@ import { RETRY_DELAY_MS, useEngine } from "./useEngine.js";
 import { useViewState } from "./useViewState.js";
 
 const PANEL_ID = "sidebar";
+const TEXT = { allWork: "All work", needsYou: "Needs you" } as const;
 /** How often the times in the list move on. */
 const CLOCK_TICK_MS = 30_000;
 
@@ -70,6 +73,9 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   // finish command opens it with the refusal. `seq` makes each request new.
   const [rowRequest, setRowRequest] = useState<{ itemId: string; seq: number; discard?: true; notice?: string } | undefined>(undefined);
   const requests = useRef(0);
+  // The item shown in the full view, and the work page it was opened on. Like the drawer, it waits
+  // behind Insights, About and Settings and is there again on return.
+  const [expanded, setExpanded] = useState<{ readonly itemId: string; readonly page: "board" | "needs-you" } | undefined>(undefined);
   // A row's request is for one showing of the drawer: leaving the work views drops it, so the drawer does not repeat it on return.
   useEffect(() => {
     if (page !== "board" && page !== "needs-you") setRowRequest(undefined);
@@ -93,13 +99,27 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
     setRowRequest({ itemId, seq: ++requests.current, discard: true });
   }, []);
   const composer = useRef<NewWorkHandle>(null);
-  // New work asked for on a page that has no composer: the board opens, then the composer.
-  const [openComposerOnBoard, setOpenComposerOnBoard] = useState(false);
+  // New work asked for where no composer shows (Insights, the full view): the list comes back in
+  // the same update, and the composer opens once it is there. Each ask is used once, also when
+  // no composer can show (no repos yet).
+  const [composerAsked, setComposerAsked] = useState<{ readonly prefill: Parameters<NewWorkHandle["open"]>[0] } | undefined>(undefined);
   useEffect(() => {
-    if (!openComposerOnBoard || page !== "board") return;
-    composer.current?.open();
-    setOpenComposerOnBoard(false);
-  }, [openComposerOnBoard, page]);
+    if (composerAsked === undefined) return;
+    composer.current?.open(composerAsked.prefill);
+    setComposerAsked(undefined);
+  }, [composerAsked]);
+  const openComposer = (prefill?: Parameters<NewWorkHandle["open"]>[0]) => {
+    if (composer.current !== null) return composer.current.open(prefill);
+    setExpanded(undefined);
+    setPage((current) => (current === "needs-you" ? current : "board"));
+    setComposerAsked({ prefill });
+  };
+  // The work page shows the item in the full view in place of the list and its composer.
+  const itemShown = (page === "board" || page === "needs-you") && selectedItemId !== undefined;
+  const full = itemShown && expanded?.page === page;
+  // Read by the Cmd+N listener, which is set up once: it opens New work where a composer shows, and from the full view.
+  const newWorkKey = useRef({ open: openComposer, full });
+  newWorkKey.current = { open: openComposer, full };
   // The folder the picker returned, while the Add repo dialog is open.
   const [addingRepo, setAddingRepo] = useState<string | undefined>(undefined);
   const [editingRepo, setEditingRepo] = useState<string | undefined>(undefined);
@@ -113,6 +133,8 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   const now = fixedNow ?? clock;
   // Without an engine the drawer has no setup to name things by: it closes.
   if (connection.status === "failed" && selectedItemId !== undefined) setSelectedItemId(undefined);
+  // The full view belongs to one item: closing it or choosing another one ends it.
+  if (expanded !== undefined && expanded.itemId !== selectedItemId) setExpanded(undefined);
 
   const items = useMemo(() => [...(data?.items.values() ?? [])], [data]);
   const setup = data?.setup;
@@ -141,9 +163,10 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   // Cmd (macOS) or Ctrl (elsewhere) and N open New work from anywhere; the sidebar may be closed, so this lives here.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() !== "n" || !(isMac() ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey) || event.altKey || event.shiftKey || composer.current === null) return;
+      if (event.key.toLowerCase() !== "n" || !(isMac() ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey) || event.altKey || event.shiftKey) return;
+      if (composer.current === null && !newWorkKey.current.full) return;
       event.preventDefault();
-      composer.current.open();
+      newWorkKey.current.open();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -156,7 +179,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
     const reply = await bridge.command({ type: "remove_repo", repoId });
     return reply.ok ? undefined : reply.error.message;
   };
-  const startIn = (target: View) => composer.current?.open(target.kind === "workflow" ? { templateId: target.id } : target.kind === "repo" ? { repoId: target.id } : undefined);
+  const startIn = (target: View) => openComposer(target.kind === "workflow" ? { templateId: target.id } : target.kind === "repo" ? { repoId: target.id } : undefined);
 
   // Pinned below the board and the Needs you page, so New work keeps working from either.
   const composerNode = setup !== undefined && setup.repos.length > 0 && connection.status !== "failed" && (
@@ -182,9 +205,12 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
     );
   }
 
-  // The drawer belongs to the work views. Insights and About hide it; the item stays selected, so going back reopens it.
-  const drawerOpen = (page === "board" || page === "needs-you") && selectedItemId !== undefined;
+  // The drawer belongs to the work views. Insights and About hide it; the item stays selected, so
+  // going back reopens it. On the page it was opened on, the full view takes the drawer's place.
+  const drawerOpen = itemShown && !full;
   const fit = fitPanels(windowWidth, { sidebarOpen: panelOpen, drawerOpen, sidebar: chosen.sidebar, drawer: chosen.drawer });
+  const { view } = views;
+  const backTo = page === "needs-you" ? TEXT.needsYou : view.kind === "all" ? TEXT.allWork : view.kind === "workflow" ? (setup?.templates.find((entry) => entry.id === view.id)?.name ?? view.id) : view.id;
   const widths = { "--sidebar-w": `${fit.sidebar}px`, "--drawer-w": `${fit.drawer}px` } as CSSProperties;
   return (
     <div className="shell" style={widths} data-drawer-floating={fit.floating ? "true" : undefined}>
@@ -239,18 +265,19 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
           view={views.view}
           onSelectView={(view) => {
             setPage("board");
+            setExpanded(undefined);
             views.setView(view);
           }}
           collapsed={views.collapsed}
           onToggleSection={views.toggleSection}
-          onNewWork={() => composer.current?.open()}
+          onNewWork={() => openComposer()}
           onStartIn={startIn}
           onAddRepo={() => void pickRepoFolder()}
           onEditRepo={setEditingRepo}
           onRemoveRepo={removeRepo}
         />
       )}
-      {aboutOpen ? (
+      {full ? null : aboutOpen ? (
         <About bridge={bridge} connection={connection.status} onClose={() => setPage("board")} />
       ) : page === "insights" ? (
         <Insights
@@ -270,10 +297,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
             setPage("board");
             setSelectedItemId(itemId);
           }}
-          onNewWork={() => {
-            setPage("board");
-            setOpenComposerOnBoard(true);
-          }}
+          onNewWork={() => openComposer()}
         />
       ) : page === "needs-you" ? (
         <NeedsYou
@@ -326,7 +350,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
       )}
       {setUpNote !== undefined && <RepoNote note={setUpNote} onStart={() => startIn({ kind: "repo", id: setUpNote.id })} onDismiss={() => setSetUpNote(undefined)} />}
       {editedRepo !== undefined && <RepoDialog bridge={bridge} repo={editedRepo} onClose={() => setEditingRepo(undefined)} />}
-      {drawerOpen && (
+      {itemShown && (
         <ItemDrawer
           bridge={bridge}
           itemId={selectedItemId}
@@ -336,6 +360,8 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
           onCheckAgain={refreshSetup}
           onOpenAgent={openAgent}
           request={rowRequest?.itemId === selectedItemId ? rowRequest : undefined}
+          onExpand={() => setExpanded({ itemId: selectedItemId, page: page === "needs-you" ? "needs-you" : "board" })}
+          expanded={full ? { back: backTo, wide: windowWidth - RAIL_WIDTH - fit.sidebar >= SIDE_BY_SIDE_MIN_WIDTH, onCollapse: () => setExpanded(undefined) } : undefined}
         />
       )}
       {panelOpen && (

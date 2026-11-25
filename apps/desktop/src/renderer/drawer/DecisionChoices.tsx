@@ -1,14 +1,18 @@
 // A decision's choice buttons, the same in the drawer and on the Needs you page: the first choice
 // is the primary one, and every button is disabled while an answer is on its way. Request changes
 // opens a note in place of the buttons: what the step's next run should change. The note is
-// optional. A change approval shows its two answers only; Stop stays in the drawer's actions.
+// optional; Escape closes it, except while you type in it. A change approval shows its two answers
+// only; Stop stays in the drawer's actions.
 import type { Decision } from "@tokama/core";
-import { type ReactNode, useId, useState } from "react";
+import { type ReactNode, useEffect, useId, useState } from "react";
 
 /** The engine's choice id for Request changes, the one choice that takes a note. */
 export const REQUEST_CHANGES_ID = "request_changes";
 /** The longest note the engine accepts. */
 export const MAX_NOTE_CHARS = 2000;
+/** Focus is in a field you type in, where Escape belongs to the field. */
+export const inTextField = (target: EventTarget | null): boolean => target instanceof Element && target.closest("input, textarea, select, [contenteditable='true']") !== null;
+
 /** The engine's choice id for Approve. */
 const APPROVE_ID = "approve";
 
@@ -40,6 +44,18 @@ export function DecisionChoices({ decision, busy, onChoose, context, agent, run,
   const hintId = useId();
   const named = (label: string) => (context === undefined ? undefined : `${label}: ${context}`);
   const choices = decision.hasDiff === true ? decision.choices.filter((choice) => choice.id === APPROVE_ID || choice.id === REQUEST_CHANGES_ID) : decision.choices;
+
+  // Escape closes the note before anything else handles it (the drawer, the full view).
+  useEffect(() => {
+    if (!noting) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || inTextField(event.target)) return;
+      event.preventDefault();
+      setNoting(false);
+    };
+    document.addEventListener("keydown", onKey, { capture: true });
+    return () => document.removeEventListener("keydown", onKey, { capture: true });
+  }, [noting]);
 
   if (noting) {
     return (

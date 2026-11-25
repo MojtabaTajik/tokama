@@ -74,3 +74,17 @@ export const AllWorkIcon = ({ size = 12 }: { readonly size?: number }) => (
     <path d="M4 6h16M4 12h16M4 18h16" />
   </Icon>
 );
+
+/** ⤢: open in the full view. */
+export const ExpandIcon = ({ size = 15 }: { readonly size?: number }) => (
+  <Icon size={size}>
+    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+  </Icon>
+);
+
+/** ⤡: close the full view. */
+export const CollapseIcon = ({ size = 16 }: { readonly size?: number }) => (
+  <Icon size={size}>
+    <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" />
+  </Icon>
+);

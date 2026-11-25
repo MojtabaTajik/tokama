@@ -417,9 +417,9 @@ describe("keyboard", () => {
     // smoke test presses the keys in the real app.
     await click(target);
     expect(text(".drawer h2")).toBe("Fix rounding in invoice totals");
-    expect(document.activeElement).toBe($("aside.drawer"));
+    expect(document.activeElement).toBe($(".drawer"));
     await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
-    expect($("aside.drawer")).toBeNull();
+    expect($(".drawer")).toBeNull();
     expect(document.activeElement).toBe(target);
   });
 
@@ -431,7 +431,7 @@ describe("keyboard", () => {
     expect(card.tagName).toBe("BUTTON");
     card.focus();
     await click(card);
-    expect(document.activeElement).toBe($("aside.drawer"));
+    expect(document.activeElement).toBe($(".drawer"));
   });
 });
 
@@ -441,12 +441,12 @@ describe("focus when items move", () => {
     const opener = row("Orders API returns 500 after deploy") as HTMLButtonElement;
     opener.focus();
     await click(opener);
-    expect(document.activeElement).toBe($("aside.drawer"));
+    expect(document.activeElement).toBe($(".drawer"));
     // Approving moves the item from Needs you to Running: its row is rendered anew.
     await fake.pushItem({ ...ITEMS.needsYou, state: "running", steps: ITEMS.needsYou.steps.map((step, index) => (index === 2 ? { ...step, state: "running" } : step)) } as ItemRecord);
     expect(opener.isConnected).toBe(false);
     await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
-    expect($("aside.drawer")).toBeNull();
+    expect($(".drawer")).toBeNull();
     const moved = row("Orders API returns 500 after deploy");
     expect(moved.closest("section")?.getAttribute("aria-label")).toBe("Running");
     expect(document.activeElement).toBe(moved);

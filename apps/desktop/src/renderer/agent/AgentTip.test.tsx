@@ -82,11 +82,11 @@ describe("agent label on a list row", () => {
     await mount();
     const wrap = wrapOf(CHECKOUT);
     await click(wrap.querySelector(".al-button"));
-    expect($("aside.drawer")).toBeNull();
+    expect($(".drawer")).toBeNull();
     expect($('.pl-row[aria-current="true"]')).toBeNull();
     await click(wrap.querySelector(".pl-row"));
     expect($('.pl-row[aria-current="true"]')).not.toBeNull();
-    expect($("aside.drawer")).not.toBeNull();
+    expect($(".drawer")).not.toBeNull();
   });
 
   it("opens the tooltip on keyboard focus: owner, model, what the agent may do, its role and the link", async () => {
@@ -144,8 +144,8 @@ describe("agent label in the drawer", () => {
     expect($('[role="tooltip"]')).not.toBeNull();
     await escape();
     expect($('[role="tooltip"]')).toBeNull();
-    expect($("aside.drawer")).not.toBeNull();
+    expect($(".drawer")).not.toBeNull();
     await escape();
-    expect($("aside.drawer")).toBeNull();
+    expect($(".drawer")).toBeNull();
   });
 });

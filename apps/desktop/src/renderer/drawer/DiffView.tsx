@@ -1,12 +1,14 @@
 // The change a decision asks you to approve. In the drawer's Diff tab: a summary line, the changed
-// files, and the clicked file as a unified diff with line numbers. On a Needs you row: the changed
+// files, and the clicked file as a unified diff with line numbers. In the full view the file list
+// sits left of the file, which shows side by side (before | after) when there is room. On a Needs you row: the changed
 // files with their counts. The diff is repo content: it is rendered as React text only, never as
 // HTML. Added and removed lines carry + and − as well as colour. Characters that reorder or hide
 // text (bidi controls, line separators) are shown as visible escapes, and a path with a control
 // character is shown quoted, so a line cannot read differently from what it does. Binary files,
 // files over the engine's line limit and anything else left out say so and name the worktree.
 import type { Decision, DiffFile, ItemDiff } from "@tokama/core";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
+import { ExpandIcon } from "../shell/icons.js";
 import type { TokamaBridge } from "../../shared/bridge.js";
 
 /** The engine shows the hunks of files with up to this many changed lines. */
@@ -33,6 +35,16 @@ const TEXT = {
   changed: "Changed",
   nothingCommitted: "nothing committed yet",
   moreChanged: (count: number) => `${count} more`,
+  by: "by",
+  expand: "Open diff in full view",
+  expandTip: "Open in full view",
+  sideBySide: "Side by side",
+  unified: "Unified",
+  diffView: "Diff view",
+  tooNarrow: "Unified · too narrow for side by side",
+  before: (branch: string) => `Before · ${branch}`,
+  after: "After · worktree",
+  noLine: "no line",
 } as const;
 
 const STATUS: Readonly<Record<DiffFile["status"], { readonly letter: string; readonly word: string }>> = {
@@ -92,6 +104,45 @@ export function diffRows(file: DiffFile): DiffRow[] {
   }
   return rows;
 }
+
+/** One side of a side-by-side row: a line as it was (left) or is now (right). */
+export interface SideCell {
+  readonly kind: "added" | "removed" | "unchanged";
+  readonly n: string;
+  readonly text: string;
+}
+
+/** A side-by-side row: a hunk header or a note across both sides, or a line pair where either side may be missing. */
+export type SplitRow = { readonly kind: "hunk" | "note"; readonly text: string } | { readonly kind: "pair"; readonly left: SideCell | undefined; readonly right: SideCell | undefined };
+
+/** Unified rows as side-by-side rows: an unchanged line on both sides, each run of removed lines next to the added lines that follow it. */
+export function pairRows(rows: readonly DiffRow[]): SplitRow[] {
+  const out: SplitRow[] = [];
+  let at = 0;
+  while (at < rows.length) {
+    const row = rows[at]!;
+    if (row.kind === "hunk" || row.kind === "note") {
+      out.push({ kind: row.kind, text: row.text });
+      at++;
+    } else if (row.kind === "unchanged") {
+      out.push({ kind: "pair", left: { kind: "unchanged", n: row.a, text: row.text }, right: { kind: "unchanged", n: row.b, text: row.text } });
+      at++;
+    } else {
+      const removed: SideCell[] = [];
+      const added: SideCell[] = [];
+      while (rows[at]?.kind === "removed") removed.push({ kind: "removed", n: rows[at]!.a, text: rows[at++]!.text });
+      while (rows[at]?.kind === "added") added.push({ kind: "added", n: rows[at]!.b, text: rows[at++]!.text });
+      for (let line = 0; line < Math.max(removed.length, added.length); line++) out.push({ kind: "pair", left: removed[line], right: added[line] });
+    }
+  }
+  return out;
+}
+
+/**
+ * The narrowest main area that shows a diff side by side: the file list (272 px and its gap) beside
+ * two sides of about 330 px each, and the page's padding. Narrower, the diff is unified under the list.
+ */
+export const SIDE_BY_SIDE_MIN_WIDTH = 1000;
 
 /** Added and removed lines over all listed text files. */
 export function totals(diff: Pick<ItemDiff, "files">): { readonly added: number; readonly removed: number } {
@@ -157,16 +208,31 @@ function Counts({ file }: { readonly file: DiffFile }) {
   );
 }
 
-/** The drawer's Diff tab for an open decision that shows a change. */
-export function DiffTab({ state, baseBranch }: { readonly state: DiffState; readonly baseBranch: string | undefined }) {
+/** Where the Diff tab is drawn: the drawer, or the full view without or with room for two sides. */
+export type DiffLayout = "drawer" | "narrow" | "wide";
+
+export interface DiffTabProps {
+  readonly state: DiffState;
+  readonly baseBranch: string | undefined;
+  /** Default: the drawer. */
+  readonly layout?: DiffLayout;
+  /** ⤢ in the file's header: opens the diff in the full view. */
+  readonly onExpand?: (() => void) | undefined;
+  /** Who made the change, at the end of the summary line. */
+  readonly by?: ReactNode;
+}
+
+/** The Diff tab for an open decision that shows a change, in the drawer or the full view. */
+export function DiffTab({ state, baseBranch, layout = "drawer", onExpand, by }: DiffTabProps) {
   const [picked, setPicked] = useState(0);
+  const [split, setSplit] = useState(true);
   if (state.kind !== "loaded") return <Status state={state} />;
   const { diff } = state;
   if (diff.files.length === 0 && diff.moreFiles === 0) return <p className="placeholder">{TEXT.none}</p>;
   const sum = totals(diff);
   const file = diff.files[Math.min(picked, diff.files.length - 1)];
   return (
-    <div className="dv">
+    <div className="dv" data-layout={layout}>
       <p className="dv-summary">
         <span>
           <span className="mono dv-strong">{diff.files.length + diff.moreFiles}</span> {diff.files.length + diff.moreFiles === 1 ? "file" : "files"}
@@ -181,6 +247,11 @@ export function DiffTab({ state, baseBranch }: { readonly state: DiffState; read
         <span className="dv-muted">
           {TEXT.from(baseBranch ?? "the base")} <span className="mono">{diff.worktree.baseCommit.slice(0, 7)}</span>
         </span>
+        {by !== undefined && (
+          <span className="dv-by">
+            {TEXT.by} {by}
+          </span>
+        )}
       </p>
       <ul className="dv-files" aria-label={TEXT.changedFiles}>
         {diff.files.map((candidate, index) => {
@@ -202,13 +273,25 @@ export function DiffTab({ state, baseBranch }: { readonly state: DiffState; read
         })}
         {diff.moreFiles > 0 && <li className="dv-more">{TEXT.more(diff.moreFiles)}</li>}
       </ul>
-      {file !== undefined && <FilePanel file={file} worktree={diff.worktree} />}
+      {file !== undefined && <FilePanel file={file} worktree={diff.worktree} baseBranch={baseBranch} layout={layout} split={split} onSplit={setSplit} onExpand={onExpand} />}
     </div>
   );
 }
 
-function FilePanel({ file, worktree }: { readonly file: DiffFile; readonly worktree: ItemDiff["worktree"] }) {
+interface FilePanelProps {
+  readonly file: DiffFile;
+  readonly worktree: ItemDiff["worktree"];
+  readonly baseBranch: string | undefined;
+  readonly layout: DiffLayout;
+  /** Side by side chosen; it shows only where the layout is wide. */
+  readonly split: boolean;
+  readonly onSplit: (split: boolean) => void;
+  readonly onExpand: (() => void) | undefined;
+}
+
+function FilePanel({ file, worktree, baseBranch, layout, split, onSplit, onExpand }: FilePanelProps) {
   const hidden = hiddenOf(file);
+  const sideBySide = layout === "wide" && split;
   const status = STATUS[file.status];
   const rows = hidden === undefined ? diffRows(file) : [];
   const summary = file.binary ? TEXT.binary : `${status.word} · +${count(file.added ?? 0)} −${count(file.removed ?? 0)}`;
@@ -217,8 +300,29 @@ function FilePanel({ file, worktree }: { readonly file: DiffFile; readonly workt
       <p className="dv-panel-head">
         <span className="mono dv-panel-path">{shownPath(file.path)}</span>
         <span className="mono dv-muted">{summary}</span>
+        {hidden === undefined && layout === "wide" && (
+          <span className="segments dv-switch" role="group" aria-label={TEXT.diffView}>
+            <button type="button" className="segment" aria-pressed={split} onClick={() => onSplit(true)}>
+              {TEXT.sideBySide}
+            </button>
+            <button type="button" className="segment" aria-pressed={!split} onClick={() => onSplit(false)}>
+              {TEXT.unified}
+            </button>
+          </span>
+        )}
+        {hidden === undefined && layout === "narrow" && <span className="dv-switch dv-muted">{TEXT.tooNarrow}</span>}
+        {onExpand !== undefined && (
+          <button type="button" className="expand-button" aria-label={TEXT.expand} title={TEXT.expandTip} onClick={onExpand}>
+            <ExpandIcon />
+          </button>
+        )}
       </p>
-      {hidden === undefined ? (
+      {hidden === undefined && sideBySide ? (
+        <>
+          <SideBySide rows={pairRows(rows)} path={shownPath(file.path)} baseBranch={baseBranch} />
+          {file.cut && <p className="dv-note-text dv-rest">{TEXT.restCut}</p>}
+        </>
+      ) : hidden === undefined ? (
         <>
           <div className="dv-lines mono" role="table" aria-label={`Unified diff of ${shownPath(file.path)}`} tabIndex={0}>
             {rows.map((row, index) => (
@@ -248,6 +352,49 @@ function FilePanel({ file, worktree }: { readonly file: DiffFile; readonly workt
         </div>
       )}
     </section>
+  );
+}
+
+/** Old on the left, new on the right; each line has its number and a + or − mark, and a missing line is an empty cell named "no line". */
+function SideBySide({ rows, path, baseBranch }: { readonly rows: readonly SplitRow[]; readonly path: string; readonly baseBranch: string | undefined }) {
+  return (
+    <div className="dv-lines dv-split mono" role="table" aria-label={`Side-by-side diff of ${path}`} tabIndex={0}>
+      <div role="row" className="dv-split-head">
+        <span role="columnheader">{TEXT.before(baseBranch ?? "base")}</span>
+        <span role="columnheader">{TEXT.after}</span>
+      </div>
+      {rows.map((row, index) =>
+        row.kind === "pair" ? (
+          <div key={index} role="row" className="dv-srow">
+            <Side cell={row.left} />
+            <Side cell={row.right} after />
+          </div>
+        ) : (
+          <div key={index} role="row" className="dv-srow" data-kind={row.kind}>
+            <span role="cell" className="dv-text">
+              {row.text}
+            </span>
+          </div>
+        ),
+      )}
+    </div>
+  );
+}
+
+function Side({ cell, after = false }: { readonly cell: SideCell | undefined; readonly after?: boolean }) {
+  const kind = cell?.kind ?? "none";
+  return (
+    <>
+      <span role="cell" className={after ? "dv-num dv-after" : "dv-num"} data-kind={kind}>
+        {cell?.n}
+      </span>
+      <span role="cell" className="dv-sign" data-kind={kind} aria-label={cell === undefined ? TEXT.noLine : cell.kind}>
+        {cell?.kind === "added" ? "+" : cell?.kind === "removed" ? "−" : ""}
+      </span>
+      <span role="cell" className="dv-text" data-kind={kind}>
+        {cell?.text}
+      </span>
+    </>
   );
 }
 

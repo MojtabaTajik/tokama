@@ -127,6 +127,74 @@ describe("App shell", () => {
     }
   });
 
+  it("opens the drawer's item in the full view and back, keeps it across Insights, and ends it from the sidebar", async () => {
+    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
+    await click($(".pl-row")!);
+    const title = text(".drawer h2");
+    const expand = () => click($('.drawer button[aria-label="Open full view"]')!);
+    await expand();
+    expect($(".drawer")).toBeNull();
+    expect($('[aria-label="Resize drawer"]')).toBeNull();
+    expect($('aside[aria-label="Sidebar"]')).not.toBeNull();
+    expect($(".main-header")).toBeNull();
+    expect($$('main, [role="main"]').length).toBe(1);
+    expect(text(".expanded h1")).toBe(title);
+    expect(text(".ex-back")).toBe("← All work");
+
+    await click($('.rail button[aria-label="Insights"]')!);
+    expect($(".expanded")).toBeNull();
+    await click($('.rail button[aria-label="Board"]')!);
+    expect(text(".expanded h1"), "back in the full view after Insights").toBe(title);
+
+    await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+    expect($(".expanded")).toBeNull();
+    expect(text(".main-header h1")).toBe("All work");
+    expect(text(".drawer h2"), "the drawer on the same item").toBe(title);
+
+    await expand();
+    await click($$(".sb-main").find((el) => el.textContent?.includes("Plan and build"))!);
+    expect($(".expanded")).toBeNull();
+    expect(text(".main-header h1")).toBe("Plan and build");
+  });
+
+  it("opens New work from Insights or the sidebar while an item is in the full view: the list comes back with the composer", async () => {
+    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
+    await click($(".pl-row")!);
+    await click($('.drawer button[aria-label="Open full view"]')!);
+    await click($('.rail button[aria-label="Insights"]')!);
+    await click($('.rail button[aria-label="Board"]')!);
+    expect($(".expanded")).not.toBeNull();
+    await click($(".new-work")!);
+    expect($(".expanded")).toBeNull();
+    expect($(".drawer")).not.toBeNull();
+    expect($('form[aria-label="New work"]')?.getAttribute("data-expanded")).toBe("true");
+  });
+
+  it("keeps focus on the rail button that leaves the full view's page", async () => {
+    await render(fakeBridge(CONNECTED).bridge);
+    await click($(".pl-row")!);
+    await click($('.drawer button[aria-label="Open full view"]')!);
+    const needsYou = $('.rail button[aria-label^="Needs you"]') as HTMLElement;
+    needsYou.focus();
+    await click(needsYou);
+    expect($(".drawer")).not.toBeNull();
+    expect(document.activeElement).toBe(needsYou);
+  });
+
+  it("names the Needs you page in the full view's back link", async () => {
+    await render(fakeBridge(CONNECTED).bridge);
+    await click($('.rail button[aria-label^="Needs you"]')!);
+    await click($(".nr-title")!);
+    await click($('.drawer button[aria-label="Open full view"]')!);
+    expect(text(".ex-back")).toBe("← Needs you");
+    // The full view stays with the page it was opened on: the board shows its list and the drawer.
+    await click($('.rail button[aria-label="Board"]')!);
+    expect($(".expanded")).toBeNull();
+    expect($(".drawer")).not.toBeNull();
+    await click($('.rail button[aria-label^="Needs you"]')!);
+    expect(text(".ex-back")).toBe("← Needs you");
+  });
+
   it("leaves focus on the rail button that hid the drawer, also after a round trip", async () => {
     await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
     await click($(".pl-row")!);
