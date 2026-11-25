@@ -304,7 +304,7 @@ export function sampleItems(now: number) {
       title: "Fix the null check in cart totals",
       text: "Cart totals crash when a line has no price. Fix the null check.",
       repoIds: ["orders-api"],
-      privacy: "local_only",
+      privacy: "local_and_cloud",
       state: "done",
       createdAt: ago(now, 150),
       cardLine: "commit 3f2a9c1 · tokama/00000011",

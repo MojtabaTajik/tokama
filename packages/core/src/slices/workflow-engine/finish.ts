@@ -8,12 +8,16 @@
 // simply run again. Actions on one repo run one at a time, since a merge moves the engineer's
 // checkout. Details never hold this machine's paths or a remote's user info.
 import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
+import { readTextFile } from "../../kernel/fs-safe/index.js";
 import type { Git } from "../../kernel/git/index.js";
 import type { ProcessRunner } from "../../kernel/process/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
-import { type CommandErrorCode, type FinishAction, type ItemEventBody, type ItemId, type RepoId, type StoredItem } from "../../kernel/schemas/index.js";
+import { parseTemplateRecord, type CommandErrorCode, type FinishAction, type ItemEventBody, type ItemId, type RepoId, type StoredItem } from "../../kernel/schemas/index.js";
 import type { Repo } from "../config/index.js";
+import { protectedSet } from "../integrity/index.js";
 import type { ItemStore } from "../items/index.js";
+import { describeChanges, steeringChanges, steeringEntries, type SteeringEntry } from "./protect.js";
 import { discardWorktree, ghStatus, hostedRepo, mergeItem, openPullRequest, pushItem, withoutUserInfo, type ItemWorktree } from "../worktrees/index.js";
 
 export interface FinishDeps {
@@ -26,7 +30,7 @@ export interface FinishDeps {
   readonly ghCommand?: readonly [string, ...string[]];
   /** The SSH agent socket, given to a push to an SSH remote and to nothing else. */
   readonly sshAuthSock?: string;
-  /** Nothing leaves the machine: Open PR is refused. */
+  /** Nothing leaves the machine for any item: Open PR is refused. Local-only items refuse it on their own. */
   readonly localOnly?: boolean;
 }
 
@@ -47,6 +51,16 @@ export interface Finisher {
 }
 
 const DETAIL_MAX = 500;
+/** The steering baseline the run loop writes beside the item's log at Start. */
+const BASELINE_FILE = "baseline.json";
+
+/**
+ * The entries of the shared git dir: its config, info files and hooks. They steer a merge and a
+ * push in the engineer's checkout as much as Tokama's own calls; the worktree's own entries are
+ * left out, since the worktree may be gone by now.
+ */
+const shared = (entries: readonly SteeringEntry[]) =>
+  entries.filter((e) => e.area === "git" && e.category === "git" && e.path !== "HEAD" && !e.path.startsWith("worktrees/") && !e.path.startsWith("refs/"));
 const LABEL: Record<FinishAction, string> = { merge: "Merge", pull_request: "Open PR", discard: "Discard" };
 
 export function createFinisher(deps: FinishDeps): Finisher {
@@ -84,6 +98,12 @@ export function createFinisher(deps: FinishDeps): Finisher {
     if (repo === undefined) return fail("not_found", `Repo ${item.repoIds[0] ?? "(none)"} is not set up on this machine. Add it, then try again.`);
     if (action === "pull_request") {
       if (deps.localOnly === true) return fail("invalid_request", "Local-only mode is on: nothing leaves this machine, so Tokama does not push.");
+      // The item's own template, as it started: a template whose steps send nothing out makes a
+      // local-only item, and its work stays here too. An unreadable snapshot counts as local only.
+      const template = parseTemplateRecord(item.template.record);
+      if (!template.ok || template.value.steps.every((step) => step.data === "none")) {
+        return fail("invalid_request", "This item is local only: its template lets nothing leave this machine, so Tokama does not push its work.");
+      }
       const pushUrl = item.worktrees[0].pushUrl;
       if (pushUrl === undefined || hostedRepo(pushUrl) === undefined) {
         return fail("invalid_request", "When the item started, the repo had no origin remote on a code host, so Tokama has nowhere to push it.");
@@ -92,12 +112,38 @@ export function createFinisher(deps: FinishDeps): Finisher {
     return undefined;
   };
 
+  /**
+   * Why git's own config or hooks can't be trusted now: they differ from the item's baseline, or
+   * the baseline can't be read. Undefined when they match.
+   */
+  const steeringChanged = async (item: StoredItem, repo: Repo, worktree: ItemWorktree): Promise<string | undefined> => {
+    const saved = await readTextFile(join(store.itemDir(item.id), BASELINE_FILE), { maxBytes: 4 * 1024 * 1024 });
+    let baseline: SteeringEntry[];
+    try {
+      if (!saved.ok) throw new Error(saved.error.message);
+      baseline = JSON.parse(saved.value) as SteeringEntry[];
+      if (!Array.isArray(baseline)) throw new Error("not a list");
+    } catch {
+      return "Tokama has no readable record of the repo's git config and hooks from when the item started, so it does not merge or push it.";
+    }
+    const set = await protectedSet(git, { repoPath: repo.path, worktreePath: repo.path, worktreeFolder: repo.worktreeFolder, baseCommit: worktree.baseCommit, branch: worktree.branch });
+    const hashes = set.ok ? await set.value.hash() : set;
+    if (!hashes.ok) return `Cannot read the repo's git config and hooks: ${hashes.error.message}`;
+    const changes = steeringChanges(shared(baseline), shared(steeringEntries(hashes.value, worktree.branch)));
+    if (changes.length === 0) return undefined;
+    return `The repo's git config or hooks changed since the item started, so Tokama does not merge or push it. Check them:\n${describeChanges(changes)}`;
+  };
+
   /** The action itself; its result as the one event that ends it. */
   const perform = async (item: StoredItem, action: FinishAction, repo: Repo): Promise<ItemEventBody> => {
     const recorded = item.worktrees[0]!;
     const worktree: ItemWorktree = { branch: recorded.branch, folder: recorded.dir, baseCommit: recorded.baseCommit ?? "" };
     const commit = item.outcome?.commits?.find((c) => c.repoId === repo.id)?.commit ?? item.outcome?.commits?.[0]?.commit;
     const failed = (detail: string): ItemEventBody => ({ type: "finish_failed", action, detail: scrub(detail, repo) });
+    if (action !== "discard") {
+      const changed = await steeringChanged(item, repo, worktree);
+      if (changed !== undefined) return failed(changed);
+    }
     switch (action) {
       case "merge": {
         const merged = await mergeItem(git, repo, worktree, { id: item.id, title: item.title, commit: commit! });

@@ -38,15 +38,16 @@ export function finishActions(item: Pick<ItemRecord, "outcome" | "finish">): Fin
 export const baseBranchOf = (item: Pick<ItemRecord, "repoIds">, setup: Setup | undefined): string =>
   setup?.repos.find((repo) => repo.id === item.repoIds[0])?.baseBranch ?? "the base branch";
 
-/** Why Open PR can't be used: no push target, or gh missing or logged out. */
-function prUnavailable(item: Pick<ItemRecord, "finish">, setup: Setup | undefined): string | undefined {
+/** Why Open PR can't be used: a local-only item, no push target, or gh missing or logged out. */
+function prUnavailable(item: Pick<ItemRecord, "finish" | "privacy">, setup: Setup | undefined): string | undefined {
+  if (item.privacy === "local_only") return "This item is local only: its template lets nothing leave this machine.";
   if (item.finish?.pushTarget === undefined) return "The repo had no origin remote on a code host when the item started.";
   const gh = setup?.health.gh;
   if (gh !== undefined && !(gh.installed && gh.loggedIn)) return gh.message ?? "The GitHub CLI (gh) is not ready.";
   return undefined;
 }
 
-export function finishView(item: Pick<ItemRecord, "outcome" | "finish" | "repoIds">, setup: Setup | undefined): FinishView | undefined {
+export function finishView(item: Pick<ItemRecord, "outcome" | "finish" | "repoIds" | "privacy">, setup: Setup | undefined): FinishView | undefined {
   const finish = item.finish;
   if (item.outcome?.kind !== "done" || finish === undefined) return undefined;
   const base = baseBranchOf(item, setup);
@@ -63,7 +64,7 @@ export function finishView(item: Pick<ItemRecord, "outcome" | "finish" | "repoId
     const unavailable = prUnavailable(item, setup);
     return { action, label: "Open PR", ...(unavailable !== undefined && { unavailable }) };
   });
-  const pushNote = finish.pushTarget !== undefined && buttons.some((b) => b.action === "pull_request") ? `Open PR pushes to ${finish.pushTarget}` : undefined;
+  const pushNote = finish.pushTarget !== undefined && buttons.some((b) => b.action === "pull_request" && b.unavailable === undefined) ? `Open PR pushes to ${finish.pushTarget}` : undefined;
   return { lines, ...(running !== undefined && { running }), buttons, ...(pushNote !== undefined && { pushNote }) };
 }
 

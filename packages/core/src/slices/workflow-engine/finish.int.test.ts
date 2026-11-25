@@ -10,9 +10,11 @@ import { createGit, type Git } from "../../kernel/git/index.js";
 import { createProcessRunner } from "../../kernel/process/index.js";
 import { TemplateRecordSchema, type FinishAction, type HostId, type ItemId, type RepoId, type StoredItem } from "../../kernel/schemas/index.js";
 import type { Repo } from "../config/index.js";
+import { protectedSet } from "../integrity/index.js";
 import { ItemStore } from "../items/index.js";
 import { commitItem, createWorktree, originPushUrl, stageItem, worktreePath } from "../worktrees/index.js";
 import { createFinisher, type FinishDeps } from "./finish.js";
+import { steeringEntries } from "./protect.js";
 
 const SLOW = { timeout: 30_000 };
 const HOST = "host_0190a000-0000-7000-8000-000000000001" as HostId;
@@ -36,7 +38,7 @@ const TEMPLATE = TemplateRecordSchema.parse({
   uses: { repos: { picked: "edit", named: [] }, connections: [], commands: [] },
   start: { needs: ["text", "repo"], askBeforeCloud: false, notify: false },
   steps: [
-    { id: "build", name: "build", agentId: "builder", instructions: { text: "Build." }, doneWhen: "agent finishes", ifFailed: { action: "ask" }, maxAttempts: 1, data: "none", sees: [], connections: [], commands: [] },
+    { id: "build", name: "build", agentId: "builder", instructions: { text: "Build." }, doneWhen: "agent finishes", ifFailed: { action: "ask" }, maxAttempts: 1, data: "repo-and-diff", sees: [], connections: [], commands: [] },
   ],
   finish: ["commit"],
 });
@@ -112,8 +114,8 @@ beforeEach(async () => {
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 /** A done item whose agent wrote `files` in its worktree, committed by Tokama as the run loop does. */
-async function doneItem(files: Record<string, string> = { "greeting.txt": "hello world\n" }): Promise<StoredItem> {
-  const created = store.create({ template: TEMPLATE, title: "Fix the greeting typo", text: "Fix the greeting", repoIds: [repo.id] });
+async function doneItem(files: Record<string, string> = { "greeting.txt": "hello world\n" }, template = TEMPLATE): Promise<StoredItem> {
+  const created = store.create({ template, title: "Fix the greeting typo", text: "Fix the greeting", repoIds: [repo.id] });
   if (!created.ok) throw new Error(created.error.message);
   const id = created.value.id;
   const worktree = await createWorktree(git, repo, id);
@@ -126,6 +128,12 @@ async function doneItem(files: Record<string, string> = { "greeting.txt": "hello
   if (!commit.ok) throw new Error(commit.error.message);
   const pushUrl = await originPushUrl(git, repo.path);
   const { branch, folder, baseCommit } = worktree.value;
+  // The steering baseline, as the run loop writes it at Start.
+  const set = await protectedSet(git, { repoPath: repo.path, worktreePath: path, worktreeFolder: repo.worktreeFolder, baseCommit: worktree.value.baseCommit, branch: worktree.value.branch });
+  if (!set.ok) throw new Error(set.error.message);
+  const hashes = await set.value.hash();
+  if (!hashes.ok) throw new Error(hashes.error.message);
+  writeFileSync(join(store.itemDir(id), "baseline.json"), `${JSON.stringify(steeringEntries(hashes.value, worktree.value.branch))}\n`);
   const ended = store.append(id, [
     { type: "worktree_added", repoId: repo.id, branch, dir: folder, baseCommit, ...(pushUrl.ok && pushUrl.value !== undefined && { pushUrl: pushUrl.value }) },
     { type: "item_ended", outcome: "done", detail: "Committed.", commits: [{ repoId: repo.id, commit: commit.value }] },
@@ -224,10 +232,41 @@ describe("Merge", () => {
     const item = await doneItem({ "greeting.txt": "hello world\n", "new.txt": "from the agent\n" });
     writeFileSync(join(repo.path, "new.txt"), "my own file\n");
     const done = await run(item, "merge");
-    expect(done.finish?.failed?.detail).toMatch(/would overwrite/);
+    expect(done.finish?.failed?.detail).toMatch(/untracked or ignored files where the merge writes \(new\.txt\)/);
     expect(done.finish?.failed?.detail).not.toContain(root);
     expect(readFileSync(join(repo.path, "new.txt"), "utf8")).toBe("my own file\n");
     expect(await plain(repo.path, "rev-parse", "main")).toBe(item.worktrees[0]!.baseCommit);
+  });
+
+  it("refuses when an ignored file in the checkout would be overwritten", SLOW, async () => {
+    const item = await doneItem({ "greeting.txt": "hello world\n", ".env": "FROM_THE_AGENT=1\n" });
+    // Ignored in the engineer's checkout only (an uncommitted .gitignore): git's fast-forward would replace it.
+    writeFileSync(join(repo.path, ".gitignore"), ".gitignore\n.env\n");
+    writeFileSync(join(repo.path, ".env"), "SECRET=mine\n");
+    expect(await plain(repo.path, "status", "--porcelain")).toBe("");
+    const done = await run(item, "merge");
+    expect(done.finish?.failed?.detail).toBe("Your checkout has untracked or ignored files where the merge writes (.env). Move them away, then merge again; Tokama never overwrites them.");
+    expect(readFileSync(join(repo.path, ".env"), "utf8")).toBe("SECRET=mine\n");
+    expect(await plain(repo.path, "rev-parse", "main")).toBe(item.worktrees[0]!.baseCommit);
+  });
+
+  it("refuses a merge or a push when the repo's git config or hooks changed after Start; Discard still runs", SLOW, async () => {
+    const item = await doneItem();
+    writeFileSync(join(repo.path, ".git", "hooks", "post-merge"), "#!/bin/sh\necho hi\n");
+    const merge = await run(item, "merge");
+    expect(merge.finish?.failed?.detail).toMatch(/^The repo's git config or hooks changed since the item started, so Tokama does not merge or push it\. Check them: added git:hooks\/post-merge \(git\)/);
+    rmSync(join(repo.path, ".git", "hooks", "post-merge"));
+    await plain(repo.path, "config", "core.sshCommand", "touch /tmp/pwned; ssh");
+    const push = await run(merge, "pull_request");
+    expect(push.finish?.failed?.detail).toMatch(/modified git:config \(git\)/);
+    expect(await plain(bare, "for-each-ref", "refs/heads/")).toBe("");
+    expect((await run(push, "discard")).finish?.worktreeRemoved).toBe(true);
+  });
+
+  it("refuses when Tokama has no baseline for the item", SLOW, async () => {
+    const item = await doneItem();
+    rmSync(join(store.itemDir(item.id), "baseline.json"));
+    expect((await run(item, "merge")).finish?.failed?.detail).toMatch(/no readable record of the repo's git config and hooks/);
   });
 
   it("keeps a worktree that has files outside the commit, and Discard still removes it", SLOW, async () => {
@@ -339,9 +378,38 @@ describe("Open PR", () => {
     const item = await doneItem();
     await plain(repo.path, "remote", "set-url", "origin", "https://evil.example.com/x/y.git");
     const done = await run(item, "pull_request");
-    expect(done.finish?.failed?.detail).toMatch(/^origin now points at https:\/\/evil\.example\.com\/x\/y\.git, not https:\/\/github\.com\/acme\/orders-api\.git/);
+    expect(done.finish?.failed?.detail).toMatch(/^origin now pushes to https:\/\/evil\.example\.com\/x\/y\.git, not only to https:\/\/github\.com\/acme\/orders-api\.git/);
     expect(ghCalls()).not.toContain("--method\nPOST");
     expect(await plain(bare, "for-each-ref", "refs/heads/")).toBe("");
+  });
+
+  it("refuses a second push URL next to the pinned one, and pushes to the pinned URL itself", SLOW, async () => {
+    const item = await doneItem();
+    // git pushes to every pushurl: the pinned URL alone, read as the last value, would pass.
+    await plain(repo.path, "config", "--add", "remote.origin.pushurl", "https://evil.example.com/x.git");
+    await plain(repo.path, "config", "--add", "remote.origin.pushurl", ORIGIN);
+    const done = await run(item, "pull_request");
+    expect(done.finish?.failed?.detail).toBe(
+      "origin now pushes to https://evil.example.com/x.git and https://github.com/acme/orders-api.git, not only to https://github.com/acme/orders-api.git as when the item started. Tokama pushes only where the item started.",
+    );
+    expect(await plain(bare, "for-each-ref", "refs/heads/")).toBe("");
+    // A start with two push URLs records no pin at all.
+    expect((await doneItem()).worktrees[0]?.pushUrl).toBeUndefined();
+
+    // Pushes go to the pinned URL, not to the remote by name.
+    await plain(repo.path, "config", "--unset-all", "remote.origin.pushurl");
+    const pushes: unknown[] = [];
+    const spy: Git = { ...git, push: (...args) => (pushes.push(args[1]), Promise.resolve({ ok: true, value: undefined })) };
+    await run(await doneItem(), "pull_request", { git: spy });
+    expect(pushes).toEqual([ORIGIN]);
+  });
+
+  it("refuses Open PR for a local-only item: its template sends nothing out", SLOW, async () => {
+    const localTemplate = { ...TEMPLATE, steps: TEMPLATE.steps.map((step) => ({ ...step, data: "none" as const })) };
+    const local = await doneItem(undefined, localTemplate);
+    expect(finisher().start(local.id, "pull_request")).toMatchObject({ ok: false, error: { code: "invalid_request", message: expect.stringMatching(/^This item is local only/) } });
+    expect(store.get(local.id)?.finish).toBeUndefined();
+    expect(finisher().start(local.id, "merge").ok).toBe(true);
   });
 
   it("refuses without a recorded origin, and in local-only mode", SLOW, async () => {

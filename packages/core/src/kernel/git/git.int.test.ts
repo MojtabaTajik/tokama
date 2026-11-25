@@ -593,6 +593,28 @@ describe("API on a real repo", () => {
     expect(value(await git.currentRef(repo))).toBeUndefined();
   });
 
+  it("a merge driver the repo configures never runs: merge-tree reports the file as conflicted", SLOW, async () => {
+    write(join(repo, ".gitattributes"), "a.txt merge=evil\n");
+    write(join(repo, "a.txt"), "1\n2\n3\n");
+    await plain(repo, "add", "-A");
+    await plain(repo, "commit", "-q", "-m", "base");
+    const base = value(await git.revParse(repo, "HEAD"));
+    write(join(repo, "a.txt"), "1\n2\nmain\n");
+    await plain(repo, "commit", "-q", "-am", "main");
+    const main = value(await git.revParse(repo, "HEAD"));
+    await plain(repo, "switch", "-q", "-c", "other", base);
+    write(join(repo, "a.txt"), "other\n2\n3\n");
+    await plain(repo, "commit", "-q", "-am", "other");
+    const other = value(await git.revParse(repo, "HEAD"));
+    await plain(repo, "config", "merge.evil.driver", `${trap("merge-driver")} %O %A %B`);
+    await plain(repo, "config", "merge.ff", "true");
+    await provesBlocked(
+      "merge-driver",
+      () => plainMayFail(repo, "merge-tree", "--write-tree", main, other),
+      async () => expect(value(await git.mergeTree(repo, main, other))).toEqual({ clean: false, conflicts: ["a.txt"] }),
+    );
+  });
+
   it("mergeFastForward moves the checkout forward, runs no hook, and refuses what is not a fast-forward", SLOW, async () => {
     const base = value(await git.revParse(repo, "HEAD"));
     await plain(repo, "switch", "-q", "-c", "ahead");
@@ -614,17 +636,21 @@ describe("API on a real repo", () => {
   });
 
   it("remotePushUrl reads the configured URL before insteadOf; push sends a commit to a branch, with no hook", SLOW, async () => {
-    expect(value(await git.remotePushUrl(repo, "origin"))).toBeUndefined();
+    expect(value(await git.remotePushUrls(repo, "origin"))).toEqual([]);
     const bare = join(root, "remote.git");
     await plain(root, "init", "-q", "--bare", bare);
     await plain(repo, "remote", "add", "origin", "https://github.com/acme/orders-api.git");
     await plain(repo, "config", `url.${bare}.insteadOf`, "https://github.com/acme/orders-api.git");
-    expect(value(await git.remotePushUrl(repo, "origin"))).toBe("https://github.com/acme/orders-api.git");
-    await plain(repo, "config", "remote.origin.pushurl", "https://github.com/acme/orders-api.git");
-    expect(value(await git.remotePushUrl(repo, "origin"))).toBe("https://github.com/acme/orders-api.git");
+    expect(value(await git.remotePushUrls(repo, "origin"))).toEqual(["https://github.com/acme/orders-api.git"]);
+    expect(value(await git.remoteResolvedPushUrl(repo, "origin"))).toBe(bare);
+    // Every pushurl, which replaces the url for pushes.
+    await plain(repo, "config", "--add", "remote.origin.pushurl", "https://a.example/x.git");
+    await plain(repo, "config", "--add", "remote.origin.pushurl", "https://github.com/acme/orders-api.git");
+    expect(value(await git.remotePushUrls(repo, "origin"))).toEqual(["https://a.example/x.git", "https://github.com/acme/orders-api.git"]);
+    await plain(repo, "config", "--unset-all", "remote.origin.pushurl");
     write(join(repo, ".git", "hooks", "pre-push"), `#!/bin/sh\ntouch '${join(markers, "pre-push")}'\n`, 0o755);
     const head = value(await git.revParse(repo, "HEAD"));
-    value(await git.push(repo, "origin", head, "tokama/0000000a"));
+    value(await git.push(repo, "https://github.com/acme/orders-api.git", head, "tokama/0000000a"));
     expect(ran("pre-push")).toBe(false);
     expect(await plain(bare, "rev-parse", "refs/heads/tokama/0000000a")).toBe(`${head}\n`);
     expect(await git.push(repo, "origin", "main", "x")).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });

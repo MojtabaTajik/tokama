@@ -47,3 +47,10 @@ it("finishNote: a short list line once an action ran", () => {
   expect(finishNote(withFinish({ merged: { baseBranch: "main", commit: "a".repeat(40) }, worktreeRemoved: true }))).toBe("✓ merged into main");
   expect(finishNote(withFinish({ worktreeRemoved: true }))).toBe("■ discarded");
 });
+
+it("finishView: Open PR is disabled for a local-only item, and names no push target", () => {
+  const local = { ...finishable, privacy: "local_only" } as ItemRecord;
+  const view = finishView(local, setup)!;
+  expect(view.buttons[1]).toEqual({ action: "pull_request", label: "Open PR", unavailable: "This item is local only: its template lets nothing leave this machine." });
+  expect(view.pushNote).toBeUndefined();
+});

@@ -78,6 +78,8 @@ export interface GitError {
   readonly exitCode: number | null;
   /** git's stderr (capped) or the refusal message. */
   readonly message: string;
+  /** git's stdout (capped), when git ran and failed: some commands report their result there. */
+  readonly stdout?: string;
 }
 
 export type GitResult<T> = Result<T, GitError>;
@@ -198,17 +200,21 @@ export interface Git {
    */
   mergeFastForward(repo: string, commit: string): Promise<GitResult<void>>;
   /**
-   * The URL a push to `remote` is configured with, as written (`remote.<name>.pushurl`, else
-   * `remote.<name>.url`), before any `insteadOf` rewrite; undefined when the remote has none.
+   * Every URL a push to `remote` goes to, as written: all `remote.<name>.pushurl` values, else all
+   * `remote.<name>.url` values (git pushes to each), before any `insteadOf` rewrite. Empty when
+   * the remote has none.
    */
-  remotePushUrl(repo: string, remote: string): Promise<GitResult<string | undefined>>;
-  /** `remote get-url --push <remote>`: where a push really goes, after `insteadOf` and `pushInsteadOf`. */
+  remotePushUrls(repo: string, remote: string): Promise<GitResult<string[]>>;
+  /** `remote get-url --push <remote>`: where a push really goes (the first URL), after `insteadOf` and `pushInsteadOf`. */
   remoteResolvedPushUrl(repo: string, remote: string): Promise<GitResult<string>>;
   /**
-   * `push --no-verify --porcelain <remote> <commit>:refs/heads/<branch>`: no force. `sshAuthSock`
-   * passes the SSH agent socket to this push only (an SSH remote); no other git call gets it.
+   * `push --no-verify --porcelain <target> <commit>:refs/heads/<branch>`: no force. `target` is a
+   * remote name or a URL. `sshAuthSock` passes the SSH agent socket to this push only (an SSH
+   * remote); no other git call gets it.
    */
-  push(repo: string, remote: string, commit: string, branch: string, options?: { readonly sshAuthSock?: string }): Promise<GitResult<void>>;
+  push(repo: string, target: string, commit: string, branch: string, options?: { readonly sshAuthSock?: string }): Promise<GitResult<void>>;
+  /** `diff --name-only -z --no-renames <from> <to>`: every path that differs between two commits. */
+  diffNames(repo: string, from: string, to: string): Promise<GitResult<string[]>>;
   /** `rev-parse --verify <rev>`: the object id `rev` names. */
   revParse(repo: string, rev: string): Promise<GitResult<string>>;
   /**
@@ -299,14 +305,14 @@ export function createGit(options: GitOptions): Git {
           },
         },
       });
-      const failure = (reason: GitErrorReason, exitCode: number | null, message: string): GitResult<never> =>
-        err({ reason, args, exitCode, message });
+      const failure = (reason: GitErrorReason, exitCode: number | null, message: string, stdout?: string): GitResult<never> =>
+        err({ reason, args, exitCode, message, ...(stdout !== undefined && { stdout: stdout.slice(0, STDERR_CAP) }) });
       if (result.kind === "not-started") return failure("spawn-error", null, result.message);
       const stdout = Number.isFinite(maxBytes) ? await readPrefix(stdoutFile, maxBytes) : { text: await readFile(stdoutFile, "utf8"), cut: false };
       // Some failures are reported on stdout only (commit: "nothing to commit").
       const message = (stderr.length > 0 ? stderr.join("\n") : stdout.text).slice(0, STDERR_CAP);
       if (result.timedOut) return failure("timed-out", result.exitCode, message);
-      if (result.exitCode !== 0) return failure("failed", result.exitCode, message);
+      if (result.exitCode !== 0) return failure("failed", result.exitCode, message, stdout.text);
       return ok(stdout);
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -314,10 +320,12 @@ export function createGit(options: GitOptions): Git {
   }
 
   /**
-   * Settings that disable every filter driver the repo itself configures (local or worktree
-   * scope, includes too). A clean or smudge filter is a command named by config and chosen by
-   * .gitattributes or .git/info/attributes, so `add`, `status`, `diff` and `worktree add` would
-   * run it. Drivers only in the user's global or system config (e.g. git-lfs) stay on.
+   * Settings that disable every filter driver and merge driver the repo itself configures (local
+   * or worktree scope, includes too). A clean or smudge filter is a command named by config and
+   * chosen by .gitattributes or .git/info/attributes, so `add`, `status`, `diff` and `worktree add`
+   * would run it; a merge driver (`merge.<x>.driver`) runs in `merge-tree` and `merge`. With its
+   * command emptied, git reports the file as conflicted instead. Drivers only in the user's global
+   * or system config (e.g. git-lfs) stay on.
    * `required` is left as configured: git then fails on a required driver (e.g. encryption)
    * instead of storing the plain content.
    */
@@ -325,7 +333,7 @@ export function createGit(options: GitOptions): Git {
     repo: string,
     args: readonly string[],
   ): Promise<GitResult<{ config: string[]; required: string[] }>> {
-    const listed = await raw(repo, ["config", "-z", "--show-scope", "--name-only", "--get-regexp", "^filter\\."]);
+    const listed = await raw(repo, ["config", "-z", "--show-scope", "--name-only", "--get-regexp", "^(filter|merge)\\."]);
     if (!listed.ok) {
       // Exit 1: no filter configured.
       if (listed.error.reason === "failed" && listed.error.exitCode === 1) return ok({ config: [], required: [] });
@@ -333,12 +341,16 @@ export function createGit(options: GitOptions): Git {
     }
     const fields = listed.value.split("\0");
     const drivers = new Set<string>();
+    const mergeDrivers = new Set<string>();
     const required = new Set<string>();
     for (let i = 0; i + 1 < fields.length; i += 2) {
       const scope = fields[i] ?? "";
       const name = fields[i + 1] ?? "";
       const dot = name.lastIndexOf(".");
-      const driver = name.slice("filter.".length, dot);
+      const merge = name.startsWith("merge.");
+      // Two-part merge keys (merge.ff, merge.conflictstyle) are settings, not drivers.
+      if (merge && (dot === "merge".length || name.slice(dot + 1) !== "driver")) continue;
+      const driver = name.slice((merge ? "merge." : "filter.").length, dot);
       if (name.slice(dot + 1) === "required") required.add(driver);
       if (scope === "global" || scope === "system") continue;
       // `-c` splits at the first "="; git also ignores a `-c` override of the empty name. Such a
@@ -348,13 +360,16 @@ export function createGit(options: GitOptions): Git {
           reason: "unsafe-config",
           args,
           exitCode: null,
-          message: `filter driver name cannot be disabled safely: ${JSON.stringify(driver)}`,
+          message: `${merge ? "merge" : "filter"} driver name cannot be disabled safely: ${JSON.stringify(driver)}`,
         });
       }
-      drivers.add(driver);
+      (merge ? mergeDrivers : drivers).add(driver);
     }
     return ok({
-      config: [...drivers].flatMap((driver) => FILTER_KEYS.map((key) => `filter.${driver}.${key}=`)),
+      config: [
+        ...[...drivers].flatMap((driver) => FILTER_KEYS.map((key) => `filter.${driver}.${key}=`)),
+        ...[...mergeDrivers].map((driver) => `merge.${driver}.driver=`),
+      ],
       required: [...drivers].filter((driver) => required.has(driver)),
     });
   }
@@ -486,7 +501,8 @@ export function createGit(options: GitOptions): Git {
       }
       const out = await git(repo, args);
       if (out.ok) return ok({ clean: true, tree: out.value.split("\0")[0]!.trim() });
-      const [tree = "", ...paths] = out.error.message.split("\0");
+      // A conflict comes on stdout; stderr may hold other notes (a disabled merge driver).
+      const [tree = "", ...paths] = (out.error.stdout ?? "").split("\0");
       if (out.error.reason === "failed" && out.error.exitCode === 1 && /^[0-9a-f]{40,64}$/.test(tree)) {
         return ok({ clean: false, conflicts: [...new Set(paths.filter((path) => path !== ""))] });
       }
@@ -496,24 +512,28 @@ export function createGit(options: GitOptions): Git {
       const args = ["merge", "--ff-only", "--no-edit", "--no-verify", "-q", commit];
       return refuseOption(args, commit) ?? map(git(repo, args), none);
     },
-    async remotePushUrl(repo, remote) {
-      const refused = refuseOption(["config", "--get", `remote.${remote}.url`], remote);
+    async remotePushUrls(repo, remote) {
+      const refused = refuseOption(["config", "-z", "--get-all", `remote.${remote}.url`], remote);
       if (refused !== undefined) return refused;
       for (const key of ["pushurl", "url"]) {
-        const out = await git(repo, ["config", "--get", `remote.${remote}.${key}`]);
-        if (out.ok) return ok(out.value.trim());
+        const out = await git(repo, ["config", "-z", "--get-all", `remote.${remote}.${key}`]);
+        if (out.ok) return ok(out.value.split("\0").filter((value) => value !== ""));
         // Exit 1: the key is not set.
         if (!(out.error.reason === "failed" && out.error.exitCode === 1)) return out;
       }
-      return ok(undefined);
+      return ok([]);
+    },
+    async diffNames(repo, from, to) {
+      const args = ["diff", "--name-only", "-z", "--no-renames", ...DIFF_SAFE, from, to, "--"];
+      return refuseOption(args, from, to) ?? map(git(repo, args), (out) => out.split("\0").filter((path) => path !== ""));
     },
     async remoteResolvedPushUrl(repo, remote) {
       const args = ["remote", "get-url", "--push", remote];
       return refuseOption(args, remote) ?? map(git(repo, args), trimmed);
     },
-    async push(repo, remote, commit, branch, pushOptions = {}) {
-      const args = ["push", "--no-verify", "--porcelain", remote, `${commit}:refs/heads/${branch}`];
-      const refused = refuseOption(args, remote, commit, branch);
+    async push(repo, target, commit, branch, pushOptions = {}) {
+      const args = ["push", "--no-verify", "--porcelain", target, `${commit}:refs/heads/${branch}`];
+      const refused = refuseOption(args, target, commit, branch);
       if (refused !== undefined) return refused;
       if (!/^[0-9a-f]{40,64}$/.test(commit)) return err({ reason: "invalid-argument", args, exitCode: null, message: `refused commit: ${JSON.stringify(commit)}` });
       const sock = pushOptions.sshAuthSock;

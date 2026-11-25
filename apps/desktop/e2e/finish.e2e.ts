@@ -5,7 +5,19 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { ItemStore, loadHostId, parseTemplateRecord, type RepoId } from "@tokama/core";
+import {
+  type Agent,
+  type AgentRuntime,
+  createGit,
+  createProcessRunner,
+  createRunLoop,
+  ItemStore,
+  loadHostId,
+  parseTemplateRecord,
+  posixProcessTable,
+  type RepoId,
+  systemClock,
+} from "@tokama/core";
 import { expect } from "vitest";
 import { drawer, flow, row, segment } from "./harness.js";
 
@@ -44,25 +56,41 @@ function git(cwd: string, ...args: string[]): string {
   }).trim();
 }
 
-const TEMPLATE = parseTemplateRecord({
-  schemaVersion: 1,
-  ref: "builtin/quick-fix",
-  id: "quick-fix",
-  source: { kind: "builtin" },
-  name: "Quick fix",
-  uses: { repos: { picked: "edit", named: [] }, connections: [], commands: [] },
-  start: { needs: ["text", "repo"], askBeforeCloud: false, notify: false },
-  steps: [
-    { id: "fix", name: "Fix", agentId: "builder", instructions: { text: "Fix it." }, doneWhen: "agent finishes", ifFailed: { action: "ask" }, maxAttempts: 1, data: "none", sees: [], connections: [], commands: [] },
-  ],
-  finish: ["commit"],
-});
+const template = (file: string) =>
+  parseTemplateRecord({
+    schemaVersion: 1,
+    ref: "builtin/quick-fix",
+    id: "quick-fix",
+    source: { kind: "builtin" },
+    name: "Quick fix",
+    uses: { repos: { picked: "edit", named: [] }, connections: [], commands: [] },
+    start: { needs: ["text", "repo"], askBeforeCloud: false, notify: false },
+    steps: [
+      { id: "fix", name: "Fix", agentId: "builder", instructions: { text: `Edit ${file}.` }, doneWhen: "agent finishes", ifFailed: { action: "ask" }, maxAttempts: 1, data: "repo-and-diff", sees: [], connections: [], commands: [] },
+    ],
+    finish: ["commit"],
+  });
 
 const MERGE_TITLE = "Fix the greeting typo";
 const DISCARD_TITLE = "Rename the notes file";
+const NO_TOKENS = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
-/** A repo, its repos.yaml entry, and two done items with a commit each on their worktree branch. */
-function seedRepo(home: string, tmp: string): string {
+/** An agent runtime that writes one file per call, by the item's title, and ends. */
+const scripted = (writes: Record<string, [string, string]>): AgentRuntime => ({
+  async *launch(request) {
+    yield { type: "started", pid: 4242 };
+    const write = Object.entries(writes).find(([title]) => request.prompt.includes(title))?.[1];
+    if (write !== undefined) writeFileSync(join(request.cwd, write[0]), write[1]);
+    yield { type: "end", outcome: "completed", usage: NO_TOKENS };
+  },
+});
+
+/**
+ * A repo, its repos.yaml entry, and two done items made by the real run loop with a scripted
+ * agent: each has its worktree, its commit on the item branch and its steering baseline, as a
+ * real run leaves them.
+ */
+async function seedRepo(home: string, tmp: string): Promise<string> {
   const repo = join(realpathSync(tmp), "orders-api");
   mkdirSync(repo);
   writeFileSync(join(repo, "greeting.txt"), "helo world\n");
@@ -72,33 +100,34 @@ function seedRepo(home: string, tmp: string): string {
   git(repo, "commit", "-q", "-m", "seed");
   git(repo, "config", "user.name", "Test");
   git(repo, "config", "user.email", "test@example.com");
-  writeFileSync(join(repo, ".git", "info", "exclude"), "/.tokama/wt/\n");
   const tokamaHome = join(home, ".tokama");
   mkdirSync(tokamaHome, { recursive: true });
   writeFileSync(join(tokamaHome, "repos.yaml"), `format: 1\nrepos:\n  - id: orders-api\n    path: ${repo}\n    base_branch: main\n`);
-  if (!TEMPLATE.ok) throw new Error("the fixture template does not parse");
   const hostId = loadHostId(tokamaHome);
   if (!hostId.ok) throw new Error(hostId.error);
   const { store } = ItemStore.open({ home: tokamaHome, hostId: hostId.value });
-  const base = git(repo, "rev-parse", "HEAD");
-  for (const [title, file, text] of [
-    [MERGE_TITLE, "greeting.txt", "hello world\n"],
-    [DISCARD_TITLE, "notes.txt", "two\n"],
-  ] as const) {
-    const created = store.create({ template: TEMPLATE.value, title, text: title, repoIds: ["orders-api" as RepoId] });
-    if (!created.ok) throw new Error(created.error.message);
-    const short = created.value.id.slice(-8);
-    const dir = `.tokama/wt/${short}`;
-    git(repo, "worktree", "add", "-q", "-b", `tokama/${short}`, dir, "main");
-    writeFileSync(join(repo, dir, file), text);
-    git(join(repo, dir), "commit", "-q", "-am", `tokama: ${title}`);
-    const commit = git(join(repo, dir), "rev-parse", "HEAD");
-    const ended = store.append(created.value.id, [
-      { type: "worktree_added", repoId: "orders-api" as RepoId, branch: `tokama/${short}`, dir, baseCommit: base },
-      { type: "item_ended", outcome: "done", detail: "Committed.", commits: [{ repoId: "orders-api" as RepoId, commit }] },
-    ]);
-    if (!ended.ok) throw new Error(ended.error.message);
+  const runner = createProcessRunner();
+  const config = { id: "orders-api" as RepoId, path: repo, baseBranch: "main", worktreeFolder: ".tokama/wt", checks: [] };
+  const agent: Agent = { id: "builder" as never, name: "Builder", cliId: "claude-code", model: "haiku", limits: { edit: true, commands: [], web: false }, role: "Builder.", owner: { kind: "builtin" } };
+  const loop = createRunLoop({
+    store,
+    git: createGit({ runner }),
+    runner,
+    clock: systemClock,
+    processes: posixProcessTable,
+    repo: (id) => (id === config.id ? config : undefined),
+    agent: () => agent,
+    runtime: () => scripted({ [MERGE_TITLE]: ["greeting.txt", "hello world\n"], [DISCARD_TITLE]: ["notes.txt", "two\n"] }),
+  });
+  for (const [title, file] of [[MERGE_TITLE, "greeting.txt"], [DISCARD_TITLE, "notes.txt"]] as const) {
+    const parsed = template(file);
+    if (!parsed.ok) throw new Error("the fixture template does not parse");
+    const started = await loop.startItem({ template: parsed.value, repoId: config.id, text: title });
+    if (!started.ok) throw new Error(started.error.message);
+    await loop.settled(started.value);
+    if (store.get(started.value)?.state !== "done") throw new Error(`the seeded item did not end done: ${JSON.stringify(store.get(started.value)?.outcome)}`);
   }
+  await loop.close();
   return repo;
 }
 
@@ -132,7 +161,7 @@ flow(
     expect(git(repoPath, "show", "main:notes.txt")).toBe("one");
   },
   "real",
-  (home, tmp) => {
-    repoPath = seedRepo(home, tmp);
+  async (home, tmp) => {
+    repoPath = await seedRepo(home, tmp);
   },
 );

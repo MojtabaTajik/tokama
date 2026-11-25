@@ -8,6 +8,8 @@
 //   did when the worktree was made.
 // Each can run again after a crash: a commit already in the base branch is merged, a branch
 // already pushed pushes again as a no-op. Messages are plain words without absolute paths.
+import { lstat } from "node:fs/promises";
+import { join } from "node:path";
 import type { Git } from "../../kernel/git/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import type { ItemId } from "../../kernel/schemas/index.js";
@@ -82,6 +84,13 @@ export async function mergeItem(
     if (!commit.ok) return err(`Cannot make the merge commit: ${commit.error.message}`);
     target = commit.value;
   }
+  // git's fast-forward replaces ignored files without a word (a local `.env`): refuse when any
+  // path the merge writes is there already and the base commit does not track it.
+  const untracked = await untrackedInTheWay(git, repo.path, baseTip.value, target);
+  if (!untracked.ok) return untracked;
+  if (untracked.value.length > 0) {
+    return err(`Your checkout has untracked or ignored files where the merge writes (${list(untracked.value)}). Move them away, then merge again; Tokama never overwrites them.`);
+  }
   // The checkout may have switched branch while the merge was made: read it again right before.
   const still = await git.currentRef(repo.path);
   if (!still.ok || still.value !== baseRef) return err(`Your checkout left ${base} while Tokama prepared the merge. Nothing was merged; try again.`);
@@ -104,6 +113,32 @@ export async function mergeItem(
 }
 
 /**
+ * The paths a move from `from` to `to` writes that exist in the checkout although `from` does not
+ * track them: the path itself, or a file where the path needs a folder.
+ */
+async function untrackedInTheWay(git: Git, repoPath: string, from: string, to: string): Promise<Result<string[], string>> {
+  const [names, tracked] = await Promise.all([git.diffNames(repoPath, from, to), git.lsTree(repoPath, from)]);
+  if (!names.ok) return err(`Cannot list what the merge changes: ${names.error.message}`);
+  if (!tracked.ok) return err(`Cannot list the files of the base branch: ${tracked.error.message}`);
+  const known = new Set(tracked.value);
+  const found = new Set<string>();
+  for (const path of names.value) {
+    const parts = path.split("/");
+    for (let depth = 1; depth <= parts.length; depth++) {
+      const prefix = parts.slice(0, depth).join("/");
+      const stat = await lstat(join(repoPath, ...parts.slice(0, depth))).catch(() => undefined);
+      if (stat === undefined) break;
+      const last = depth === parts.length;
+      if ((last || !stat.isDirectory()) && !known.has(prefix)) {
+        found.add(prefix);
+        break;
+      }
+    }
+  }
+  return ok([...found].sort());
+}
+
+/**
  * Removes the worktree, then the branch while it is still at the merged commit. `worktreeRemoved`
  * is true only when both are gone, so Discard stays on offer for whatever is left.
  */
@@ -123,30 +158,37 @@ async function cleanUp(git: Git, repo: WorktreeRepo, worktree: ItemWorktree, com
   return ok({ commit: merged, worktreeRemoved: true });
 }
 
-/** origin's push URL as it is recorded; undefined when the repo has no network origin. */
+/**
+ * origin's push URL as it is recorded; undefined unless origin pushes to exactly one network URL
+ * (a push to several would reach places the pin does not name).
+ */
 export async function originPushUrl(git: Git, repoPath: string): Promise<Result<string | undefined, string>> {
-  const url = await git.remotePushUrl(repoPath, "origin");
-  if (!url.ok) return err(`Cannot read the origin remote: ${url.error.message}`);
-  return ok(url.value === undefined ? undefined : recordableRemote(url.value));
+  const urls = await git.remotePushUrls(repoPath, "origin");
+  if (!urls.ok) return err(`Cannot read the origin remote: ${urls.error.message}`);
+  return ok(urls.value.length === 1 ? recordableRemote(urls.value[0]!) : undefined);
 }
 
 /**
- * Pushes the item's commit to its branch on origin; refused when origin points elsewhere now. The
- * SSH agent socket goes along only when git really pushes over SSH, after its URL rewrites.
+ * Pushes the item's commit to its branch at the pinned URL itself, never to the remote by name:
+ * refused unless origin still pushes to exactly that one URL. The SSH agent socket goes along
+ * only when git really pushes over SSH, after its URL rewrites.
  */
 export async function pushItem(
   git: Git,
   repoPath: string,
   input: { readonly commit: string; readonly branch: string; readonly pushUrl: string; readonly sshAuthSock?: string },
 ): Promise<Result<void, string>> {
-  const now = await originPushUrl(git, repoPath);
-  if (!now.ok) return now;
-  if (now.value !== input.pushUrl) {
-    return err(`origin now points at ${now.value ?? "no network remote"}, not ${input.pushUrl} as when the item started. Tokama pushes only where the item started.`);
+  const urls = await git.remotePushUrls(repoPath, "origin");
+  if (!urls.ok) return err(`Cannot read the origin remote: ${urls.error.message}`);
+  const now = urls.value.map((url) => recordableRemote(url) ?? url);
+  if (now.length !== 1 || now[0] !== input.pushUrl) {
+    const where = now.length === 0 ? "nowhere" : now.join(" and ");
+    return err(`origin now pushes to ${where}, not only to ${input.pushUrl} as when the item started. Tokama pushes only where the item started.`);
   }
+  // With exactly one push URL, origin's resolved URL is the pinned one after git's rewrites.
   const resolved = await git.remoteResolvedPushUrl(repoPath, "origin");
   if (!resolved.ok) return err(`Cannot read where origin pushes: ${resolved.error.message}`);
   const ssh = input.sshAuthSock !== undefined && overSsh(resolved.value);
-  const pushed = await git.push(repoPath, "origin", input.commit, input.branch, ssh ? { sshAuthSock: input.sshAuthSock! } : {});
+  const pushed = await git.push(repoPath, input.pushUrl, input.commit, input.branch, ssh ? { sshAuthSock: input.sshAuthSock! } : {});
   return pushed.ok ? ok(undefined) : err(`git could not push ${input.branch}: ${pushed.error.message}`);
 }
