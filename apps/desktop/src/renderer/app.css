@@ -561,7 +561,10 @@ button:focus-visible {
   display: inline-flex;
   border: 1px solid var(--hairline);
   border-radius: 8px;
-  overflow: hidden;
+  /* Counts of three digits can make the segments wider than the filter: they scroll, nothing is cut off. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
 }
 
 .segment {
