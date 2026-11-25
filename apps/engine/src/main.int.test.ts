@@ -64,6 +64,7 @@ describe("engine process", () => {
     })();
 
     expect(await engineClient.query({ type: "board" })).toEqual({ ok: true, data: { items: [] } });
+    expect(await engineClient.query({ type: "diagnostics_settings" })).toMatchObject({ ok: true, data: { crashWaiting: false } });
     // Item storage is open in the home folder.
     for (const file of ["host.json", "items", "tokama.db"]) expect(existsSync(join(homeOf(dir), file))).toBe(true);
     const firstPid = lockPid(dir);
@@ -94,6 +95,22 @@ describe("engine process", () => {
     expect(crashes).toMatchObject({ ok: true, data: { entries: [{ type: "crash", source: "engine", kind: "unclean_exit", engineVersion: "0.0.0" }] } });
     const setup = await second.query({ type: "setup" });
     expect(setup.ok && setup.data.health.crashWaiting).toBe(true);
+  });
+
+  it.each(["SIGTERM", "SIGINT"] as const)("counts a stop by %s as clean: the next start has no crash flag and no crash entry", { timeout: 40_000 }, async (signal) => {
+    const dir = tempEngineDir(cleanups);
+    killEngineAfter(dir);
+    const first = await connect({ dir, start: { command: process.execPath, args: [MAIN, "--dir", dir, "--home", homeOf(dir)] }, startTimeoutMs: 15_000, reconnect: false });
+    if (!first.ok) throw new Error(first.error.message);
+    const pid = lockPid(dir) ?? 0;
+    process.kill(pid, signal);
+    await waitFor(() => !existsSync(`${dir}/engine.lock`), 15_000, "engine stopped");
+    await first.value.close();
+
+    const second = await connectStarting(dir);
+    expect(await second.query({ type: "diagnostics_list", types: ["crash"] })).toMatchObject({ ok: true, data: { entries: [] } });
+    const setup = await second.query({ type: "setup" });
+    expect(setup.ok && setup.data.health.crashWaiting).toBe(false);
   });
 
   it("removes its files on SIGTERM", { timeout: 30_000 }, async () => {
