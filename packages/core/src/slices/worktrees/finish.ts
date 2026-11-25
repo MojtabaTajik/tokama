@@ -13,6 +13,7 @@ import { join } from "node:path";
 import type { Git } from "../../kernel/git/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import type { FinishRefusal, ItemId } from "../../kernel/schemas/index.js";
+import { cutText } from "../../kernel/text/index.js";
 import { overSsh, recordableRemote } from "./remote.js";
 import { removeWorktree, type ItemWorktree, type WorktreeRepo } from "./worktree.js";
 
@@ -43,7 +44,7 @@ const shortRef = (ref: string) => ref.replace(/^refs\/heads\//, "");
 /** The merge commit's message: `Merge tokama/<id>: <title>` plus the `Tokama-Item` trailer. */
 export function mergeMessage(itemId: ItemId, branch: string, title: string): string {
   const oneLine = title.replace(/[\s\p{Cc}]+/gu, " ").trim();
-  const subject = oneLine.length > SUBJECT_MAX ? `${oneLine.slice(0, SUBJECT_MAX - 1)}…` : oneLine;
+  const subject = cutText(oneLine, SUBJECT_MAX);
   return `Merge ${branch}${subject === "" ? "" : `: ${subject}`}\n\nTokama-Item: ${itemId}\n`;
 }
 

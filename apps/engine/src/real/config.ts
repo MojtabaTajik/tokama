@@ -4,6 +4,7 @@
 import { homedir } from "node:os";
 import { sep } from "node:path";
 import {
+  cutText,
   type Agent,
   type AgentId,
   type AgentLocation,
@@ -151,7 +152,7 @@ function accessOf(agent: ReturnType<typeof resolveAgent>): { agentAccess?: Templ
 export function roleLine(role: string): string | undefined {
   const line = role.split("\n").find((candidate) => candidate.trim() !== "")?.trim();
   if (line === undefined) return undefined;
-  return line.length > 200 ? `${line.slice(0, 199)}…` : line;
+  return cutText(line, 200);
 }
 
 export function templateSummary(template: TemplateRecord, agents: LoadedAgents): TemplateSummary {

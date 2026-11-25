@@ -643,7 +643,7 @@ describe("instructions that look like a file", () => {
 describe("untrusted text in messages", () => {
   it("escapes C0, DEL, C1 and bidi characters and cuts long values", () => {
     expect(clean("a\u0000b\u001bc\u007fd\u0085e‮f⁦g‏h")).toBe("a\\u{0}b\\u{1b}c\\u{7f}d\\u{85}e\\u{202e}f\\u{2066}g\\u{200f}h");
-    expect(clean("x".repeat(100))).toBe(`${"x".repeat(80)}…`);
+    expect(clean("x".repeat(100))).toBe(`${"x".repeat(79)}…`);
     expect(quote('say "hi"')).toBe('"say \\"hi\\""');
   });
 

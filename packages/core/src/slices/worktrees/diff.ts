@@ -7,6 +7,7 @@
 import type { DiffEntry, Git } from "../../kernel/git/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import { DIFF_LIMITS, type DiffFile, type DiffHunk, type DiffStatus, type ItemDiff } from "../../kernel/schemas/index.js";
+import { cutText } from "../../kernel/text/index.js";
 
 /** An item diff without the worktree it was read from. */
 export type TreeDiff = Omit<ItemDiff, "worktree">;
@@ -63,7 +64,8 @@ function hunksOf(section: Section): { header: string; lines: string[] }[] {
 }
 
 const jsonBytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), "utf8");
-const cutLine = (line: string) => (line.length > DIFF_LIMITS.lineChars ? `${line.slice(0, DIFF_LIMITS.lineChars)}…` : line);
+// The schema allows lineChars plus the `…` mark.
+const cutLine = (line: string) => cutText(line, DIFF_LIMITS.lineChars + 1);
 
 /** The diff of `entries` (from `diffFiles`) with the hunks of `patch` (from `diffPatch`), within DIFF_LIMITS. */
 export function buildDiff(entries: readonly DiffEntry[], patch: { readonly text: string; readonly cut: boolean }): TreeDiff {

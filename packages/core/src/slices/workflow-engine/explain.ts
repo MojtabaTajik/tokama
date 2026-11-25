@@ -4,6 +4,7 @@
 // more round the round-trip cap, Retry step after a work failure the same failure twice or a
 // template that asks, and a run failure inside an attempt names its failure.
 import type { AttemptRecord, Decision, StopThen, StoredDecision, StoredItem, StoredStep, TemplateRecord, TemplateStepDef } from "../../kernel/schemas/index.js";
+import { cutText } from "../../kernel/text/index.js";
 import { roundAttempts } from "../items/index.js";
 import { attemptLimit, ONE_MORE_ID, ONE_MORE_ROUND_ID, RETRY_ID, sameFailureTwice } from "./counters.js";
 
@@ -114,4 +115,4 @@ const backTarget = (def: TemplateStepDef | undefined): string | undefined => {
 export const minutes = (ms: number): string => `${Math.max(1, Math.round(ms / 60_000))} m`;
 
 const times = (n: number): string => (n === 1 ? "once" : `${n} times`);
-const cut = (text: string): string => (text.length > WHY_MAX ? `${text.slice(0, WHY_MAX - 1)}…` : text);
+const cut = (text: string): string => cutText(text, WHY_MAX);

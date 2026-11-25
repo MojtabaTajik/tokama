@@ -18,6 +18,7 @@ import {
   MAX_TRANSCRIPT_TAIL_LINES,
   terminalText,
 } from "../../kernel/schemas/index.js";
+import { cutText } from "../../kernel/text/index.js";
 import { toolSubject } from "../execution/index.js";
 
 /**
@@ -93,7 +94,7 @@ export function toolLine(event: Extract<AgentCallEvent, { type: "tool_call" }>, 
   const subject = toolSubject(event.input);
   const relative = subject?.split(`${worktree}/`).join("").split(worktree).join(".");
   const line = terminalText(`→ ${event.name}${relative === undefined || relative === "" ? "" : ` ${relative}`}`).replace(/\s+/g, " ").trim();
-  return line.length > MAX_TOOL_LINE_CHARS ? `${line.slice(0, MAX_TOOL_LINE_CHARS - 1)}…` : line;
+  return cutText(line, MAX_TOOL_LINE_CHARS);
 }
 
 const checkTail = (path: string | undefined) => (path === undefined ? Promise.resolve(null) : tailOf(path, MAX_CHECK_TAIL_BYTES, MAX_CHECK_TAIL_LINES));
@@ -106,4 +107,4 @@ async function tailOf(path: string, maxBytes: number, maxLines: number): Promise
 /** The last line with words in it, cut to fit. */
 const summaryOf = (output: TextTail | null): string => cut(output?.text.split("\n").findLast((candidate) => candidate.trim() !== "")?.trim() ?? "");
 
-const cut = (line: string): string => (line.length > MAX_SUMMARY_CHARS ? `${line.slice(0, MAX_SUMMARY_CHARS - 1)}…` : line);
+const cut = (line: string): string => cutText(line, MAX_SUMMARY_CHARS);

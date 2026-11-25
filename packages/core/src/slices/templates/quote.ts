@@ -1,5 +1,6 @@
 // Values from a template file go into problem messages, which are shown in the app and in logs.
 // Control and bidi characters there could forge lines or reorder the text, so they are escaped.
+import { cutText } from "../../kernel/text/index.js";
 
 // C0, DEL, C1, and the bidi marks, embeddings, overrides and isolates. Matching control
 // characters is the point of this pattern.
@@ -9,8 +10,7 @@ const MAX_CHARS = 80;
 
 /** The value with unsafe characters escaped as `\u{..}` and cut to about 80 characters. */
 export function clean(value: string): string {
-  const chars = [...value];
-  const cut = chars.length > MAX_CHARS ? `${chars.slice(0, MAX_CHARS).join("")}…` : value;
+  const cut = cutText(value, MAX_CHARS);
   return cut.replace(UNSAFE, (char) => `\\u{${char.codePointAt(0)!.toString(16)}}`);
 }
 

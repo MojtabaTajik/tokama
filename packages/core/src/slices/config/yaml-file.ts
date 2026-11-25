@@ -4,6 +4,7 @@
 import { isMap, isScalar, isSeq, LineCounter, parseDocument, type Document, type Node } from "yaml";
 import type { z } from "zod";
 import { err, ok, type Result } from "../../kernel/result/index.js";
+import { cutText } from "../../kernel/text/index.js";
 
 /** One thing wrong with a config file. `file` is the name shown to the engineer, not a full path. */
 export interface ConfigProblem {
@@ -70,7 +71,7 @@ export function clean(text: string, max: number): string {
   const escaped = JSON.stringify(text)
     .slice(1, -1)
     .replace(UNSAFE, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`);
-  return escaped.length > max ? `${escaped.slice(0, max)}…` : escaped;
+  return cutText(escaped, max);
 }
 
 /** A raw value for a message: `'claud-code'`, escaped and cut to about 60 characters. */

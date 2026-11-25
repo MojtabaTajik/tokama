@@ -11,6 +11,8 @@ export { spawnDetached, type ChildProcess, type DetachedService } from "./kernel
 export { pidAlive, readPidFile, type PidFile } from "./kernel/process/pid-file.js";
 export { replaceTextSync, type WriteFailure, type WriteFailureReason } from "./kernel/fs-safe/write.js";
 export { manualClock, systemClock, type Clock, type ManualClock, type TimerHandle } from "./kernel/clock/index.js";
+// Small helpers the apps share with core.
+export { CUT_MARK, cutText, type CutOptions } from "./kernel/text/index.js";
 export {
   checkEngineDir,
   defaultEngineDir,

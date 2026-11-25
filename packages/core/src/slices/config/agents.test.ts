@@ -284,7 +284,7 @@ describe("loadAgents", () => {
     writeAgent(personal(), "b", agentFile({ name: '"Line one\\nLine two"' }));
     expect(messages(await loadAgents({ tokamaHome: home }))).toEqual([
       "agents/a.md line 4: runs_on 'claude\\u001b[31mcode' isn't known. Use claude-code, codex-cli or ollama.",
-      `agents/a.md line 7: '${"x".repeat(60)}…' isn't a known field.`,
+      `agents/a.md line 7: '${"x".repeat(59)}…' isn't a known field.`,
       "agents/b.md line 3: name must be one line, with no control characters",
     ]);
   });

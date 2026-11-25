@@ -8,6 +8,7 @@
 import type { Git } from "../../kernel/git/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import type { ItemId } from "../../kernel/schemas/index.js";
+import { CUT_MARK, cutText } from "../../kernel/text/index.js";
 import type { ItemWorktree } from "./worktree.js";
 
 export type CommitErrorReason = "nothing-to-commit" | "git";
@@ -19,7 +20,6 @@ export interface CommitError {
 
 const SUBJECT_MAX = 72;
 const SUBJECT_PREFIX = "tokama: ";
-const SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 /**
  * The commit message: a one-line subject, the full request, and the item trailer. The title and
@@ -46,15 +46,10 @@ export function commitMessage(itemId: ItemId, title: string, text: string): stri
   return `${subject}\n\n${request === "" ? "" : `${request}\n\n`}Tokama-Item: ${itemId}\n`;
 }
 
-/** At most SUBJECT_MAX characters, cut between graphemes (never inside a surrogate pair or a combining sequence), `…` when cut. */
+/** At most SUBJECT_MAX characters, cut between graphemes, `…` when cut; no space before the `…`. */
 function cutSubject(line: string): string {
-  if (line.length <= SUBJECT_MAX) return line;
-  let kept = "";
-  for (const { segment } of SEGMENTER.segment(line)) {
-    if (kept.length + segment.length > SUBJECT_MAX - 1) break;
-    kept += segment;
-  }
-  return `${kept.trimEnd()}…`;
+  const cut = cutText(line, SUBJECT_MAX);
+  return cut === line ? line : `${cut.slice(0, -CUT_MARK.length).trimEnd()}${CUT_MARK}`;
 }
 
 const gitFailure = (error: { readonly message: string }): Result<never, CommitError> => err({ reason: "git", message: error.message });
