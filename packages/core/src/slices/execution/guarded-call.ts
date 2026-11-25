@@ -100,8 +100,9 @@ export async function runGuardedCall(runtime: AgentRuntime, request: AgentCallRe
       scheduleSilenceCheck(Math.max(1, due));
     }, delayMs);
   };
-  // At the start no tool runs; with the silence stop off, look again once a tool could be too quiet.
-  if (settings.silentMs > 0 || settings.toolSilentMs > 0) scheduleSilenceCheck(settings.silentMs > 0 ? settings.silentMs : settings.toolSilentMs);
+  // The first look comes at the shorter limit: a tool may start at once.
+  const firstCheck = Math.min(...[settings.silentMs, settings.toolSilentMs].filter((ms) => ms > 0));
+  if (Number.isFinite(firstCheck)) scheduleSilenceCheck(firstCheck);
   let pollTimer: TimerHandle | undefined;
   let polling: Promise<void> = Promise.resolve();
   const schedulePoll = (watch: FileWatch) => {

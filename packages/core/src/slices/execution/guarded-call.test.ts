@@ -344,6 +344,22 @@ describe("guarded agent call", () => {
       expect(guard.stop).toBeNull();
     });
 
+    it("does not let a subagent's output after its tool call ended hold off the silence stop", async () => {
+      const clock = manualClock();
+      const agent = scriptedAgent(clock, [TURN, { wait: 6 * MIN }, { type: "subagent" }, { hang: true }]);
+      const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings });
+      expect(clock.now()).toBe(10 * MIN);
+      expect(guard.stop).toBe("silent");
+    });
+
+    it("looks first at the shorter limit when toolSilentMs is shorter than silentMs", async () => {
+      const clock = manualClock();
+      const agent = scriptedAgent(clock, [TURN, runTests(), { hang: true }]);
+      const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings: { ...settings, silentMs: 10 * MIN, toolSilentMs: MIN } });
+      expect(clock.now()).toBe(MIN);
+      expect(guard.stop).toBe("tool_silent");
+    });
+
     it("fires with the silence stop off", async () => {
       const clock = manualClock();
       const agent = scriptedAgent(clock, [{ wait: 3 * MIN }, TURN, runTests(), { hang: true }]);

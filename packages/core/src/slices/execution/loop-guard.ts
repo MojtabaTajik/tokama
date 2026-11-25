@@ -48,7 +48,7 @@ export const LoopGuardSettingsSchema = z.strictObject({
 
 export type LoopGuardSettings = z.output<typeof LoopGuardSettingsSchema>;
 
-/** For a small local model, which finishes in few turns and then tends to loop. */
+/** For a small local model, which finishes in few turns and then tends to loop. Its timeout comes before `toolSilentMs`. */
 export const localModelGuardDefaults: LoopGuardSettings = { turnCap: 30, repeatLimit: 6, idleMs: 75_000, silentMs: 300_000, toolSilentMs: 1_200_000, timeoutMs: 600_000 };
 
 /** For Claude Code, which takes many more turns on a real task. */
