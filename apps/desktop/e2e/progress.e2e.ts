@@ -93,6 +93,28 @@ flow("moves only working board cards, and keeps everything still with reduced mo
   expect(await mark.evaluate((el) => getComputedStyle(el).animationName)).toBe("tk-breathe");
 });
 
+flow("moves only running rows in the list, ticks their time in the drawer's format, and keeps them still with reduced motion", async ({ page, resize }) => {
+  await resize(1440, 900);
+  const running = page.locator(".pl-row[data-state='running']").first();
+  await running.waitFor();
+  const animation = (selector: string) => page.locator(selector).first().evaluate((el) => getComputedStyle(el).animationName);
+  const marks = [".pl-row[data-state='running'] .pl-mark", ".pl-row[data-state='running'] .pl-step[data-current] .pl-step-mark", ".pl-group-symbol[data-group='running']"];
+  for (const mark of marks) expect(await animation(mark), mark).toBe("tk-breathe");
+  // Rows that wait or ended, and the steps that are not the current one, stay still.
+  expect(await page.locator(".pl-row:not([data-state='running']) [data-breathe='true'], .pl-row .pl-step:not([data-current]) [data-breathe='true']").count()).toBe(0);
+
+  // The time is the drawer's format and ticks every second.
+  const time = running.locator(".pl-time");
+  await expect.poll(() => time.innerText()).toMatch(/^(\d+ s|\d+ m \d\d s|\d+ h \d\d m)$/);
+  const before = await time.innerText();
+  await expect.poll(() => time.innerText(), { timeout: 5_000 }).not.toBe(before);
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const mark of marks) expect(await animation(mark), mark).toBe("none");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  expect(await animation(marks[0]!)).toBe("tk-breathe");
+});
+
 function hexToRgb(hex: string): string {
   const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
   return `rgb(${r}, ${g}, ${b})`;

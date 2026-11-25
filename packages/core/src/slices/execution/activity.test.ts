@@ -10,11 +10,19 @@ describe("activity words", () => {
     [tool("t", "Edit", "edit", { file_path: "src/orders/list.ts", change: "abc" }), "edit", "editing src/orders/list.ts"],
     [tool("t", "Write", "edit", { file_path: "src/new.ts", change: "abc" }), "edit", "editing src/new.ts"],
     [tool("t", "Bash", "command", { command: "pnpm test src/orders" }), "run", "running pnpm test src/orders"],
-    [tool("t", "Grep", "other", { pattern: "nextCursor", path: "src" }), "read", "searching nextCursor"],
+    [tool("t", "Grep", "other", { pattern: "nextCursor", path: "src" }), "read", "searching \"nextCursor\""],
     [tool("t", "mcp__App Insights__query", "other", { query: "requests | take 10" }), "other", "using App Insights · query"],
     [tool("t", "WebFetch", "other", { url: "https://example.com/private?token=1" }), "other", "using WebFetch"],
   ] as const)("says what %o does", (event, kind, label) => {
     expect(actionOf(event as Extract<AgentCallEvent, { type: "tool_call" }>)).toEqual({ kind, label });
+  });
+
+  it("quotes a search pattern and cuts a long one with an ellipsis inside the quotes", () => {
+    const search = (pattern: string) => actionOf({ name: "Grep", kind: "other", input: { pattern } }).label;
+    expect(search("groundY|lift|0\\.0\\d")).toBe('searching "groundY|lift|0\\.0\\d"');
+    expect(search("x".repeat(40))).toBe(`searching "${"x".repeat(40)}"`);
+    expect(search("x".repeat(41))).toBe(`searching "${"x".repeat(40)}…"`);
+    expect(search("src/**/*.ts")).toBe('searching "src/**/*.ts"');
   });
 
   it("never names a file outside the worktree", () => {

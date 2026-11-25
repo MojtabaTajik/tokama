@@ -8,6 +8,8 @@ import type { FinishAction, ItemRecord, Setup } from "@tokama/core";
 import type { ReactNode } from "react";
 import { AgentLabel } from "../agent/AgentLabel.js";
 import { agentInfo } from "../agent/agent-info.js";
+import { useBreath } from "../drawer/Progress.js";
+import { useNow } from "../useNow.js";
 import { templateOf } from "../drawer/describe.js";
 import { finishNote } from "../drawer/finish-view.js";
 import { currentStep, type GroupKey, type ItemGroup, listEntries, pipelineOf, rowAgent, rowMark, timeOf } from "../model.js";
@@ -52,6 +54,7 @@ const GROUP_SYMBOL = { needs: markOf("needs_you").symbol, running: markOf("runni
 
 export function ItemList({ groups, setup, now, selectedItemId, onSelect, repoId, onFinish, onDiscard, onOpenAgent, footers }: ItemListProps) {
   const focus = useFocusFollow();
+  const breath = useBreath();
   return (
     <div className="pipeline-list" onFocus={focus.onFocus} onBlur={focus.onBlur}>
       {groups.map((group) => {
@@ -59,7 +62,7 @@ export function ItemList({ groups, setup, now, selectedItemId, onSelect, repoId,
         return (
           <section key={group.key} className="pl-group" aria-label={group.name}>
             <h3 className="pl-group-heading">
-              <span className="pl-group-symbol" data-group={group.key} aria-hidden="true">
+              <span className="pl-group-symbol" data-group={group.key} data-breathe={group.key === "running" && group.items.some((item) => item.state === "running")} style={breath} aria-hidden="true">
                 {GROUP_SYMBOL[group.key]}
               </span>
               {group.name}
@@ -95,20 +98,33 @@ interface RowProps {
   readonly onOpenAgent: ((agent: AgentTarget) => void) | undefined;
 }
 
+/** The row's time: a running item's ticks every second in its own component, so only this text renders again. */
+function RowTime({ item, now }: { readonly item: ItemRecord; readonly now: number }) {
+  const working = item.state === "running";
+  const ticking = useNow(working);
+  const time = timeOf(item, working ? ticking : now);
+  return (
+    <span className="pl-time mono" title={time.title}>
+      {time.text}
+    </span>
+  );
+}
+
 function Row({ item, setup, now, selected, onSelect, onFinish, onDiscard, onOpenAgent }: RowProps) {
   const mark = rowMark(item);
   const steps = pipelineOf(item);
   const agent = rowAgent(item, setup?.agents ?? []);
   // Tokama's own steps (checks) have no agent to describe: the row names Tokama in plain text.
   const agentTip = agentInfo(item, currentStep(item) ?? item.steps.length - 1, setup);
-  const time = timeOf(item, now);
+  const breath = useBreath();
+  const working = item.state === "running";
   const template = templateOf(item, setup);
   const ask = item.state === "needs_you" ? (item.decision?.question ?? mark.word) : undefined;
   const finished = finishNote(item);
   return (
     <div className="pl-row-wrap">
       <Button variant="plain" className="pl-row" data-item-id={item.id} data-state={item.state} aria-current={selected ? "true" : undefined} onClick={() => onSelect(item.id)}>
-        <span className="pl-mark" data-tone={mark.tone}>
+        <span className="pl-mark" data-tone={mark.tone} data-breathe={working} style={working ? breath : undefined}>
           <span aria-hidden="true">{mark.symbol}</span>
           <span className="visually-hidden">{mark.word}: </span>
         </span>
@@ -140,7 +156,7 @@ function Row({ item, setup, now, selected, onSelect, onFinish, onDiscard, onOpen
             {steps.map((step, index) => (
               <span key={index} className="pl-step" data-current={step.current || undefined} title={`${step.name} · ${step.mark.word}`} aria-hidden="true">
                 {index > 0 && <span className="pl-link" />}
-                <span className="pl-step-mark" data-tone={step.mark.tone}>
+                <span className="pl-step-mark" data-tone={step.mark.tone} data-breathe={working && step.current && step.mark.tone === "live"} style={working && step.current ? breath : undefined}>
                   {step.mark.symbol}
                 </span>
                 {step.current && <span className="pl-step-name ellipsis">{step.name}</span>}
@@ -149,9 +165,7 @@ function Row({ item, setup, now, selected, onSelect, onFinish, onDiscard, onOpen
             ))}
           </span>
         )}
-        <span className="pl-time mono" title={time.title}>
-          {time.text}
-        </span>
+        <RowTime item={item} now={now} />
       </Button>
       {agent !== undefined && (
         <span className="pl-agent">

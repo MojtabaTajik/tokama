@@ -54,6 +54,15 @@ export function labelText(text: string): string {
   return line.length > MAX_ACTIVITY_LABEL_CHARS ? `…${line.slice(line.length - MAX_ACTIVITY_LABEL_CHARS + 1)}` : line;
 }
 
+/** Longest pattern a search label quotes in full: a long one is cut after this many characters. */
+const MAX_PATTERN_CHARS = 40;
+
+/** A search pattern quoted, so it reads as a pattern: `"groundY|lift"`, or `"groundY|lift|0\.0\d|spawn…"` when long. */
+function quotePattern(pattern: string): string {
+  const line = pattern.replace(/[\p{Cc}\p{Cf}\s]+/gu, " ").trim();
+  return line.length > MAX_PATTERN_CHARS ? `"${line.slice(0, MAX_PATTERN_CHARS)}…"` : `"${line}"`;
+}
+
 /** A tool call in words, as the activity line shows it. */
 export function actionOf(call: Pick<ToolCall, "name" | "kind" | "input">): Action {
   const subject = toolSubject(call.input);
@@ -65,7 +74,7 @@ export function actionOf(call: Pick<ToolCall, "name" | "kind" | "input">): Actio
   if (SEARCH_TOOLS.has(call.name)) {
     // What it looks for says more than where it looks.
     const pattern = typeof call.input["pattern"] === "string" ? call.input["pattern"] : subject;
-    return words("read", "searching", pattern === undefined ? undefined : redactPaths(pattern));
+    return words("read", "searching", pattern === undefined ? undefined : quotePattern(redactPaths(pattern)));
   }
   // A connector's tool: `mcp__<server>__<tool>`.
   const mcp = /^mcp__(.+?)__(.+)$/.exec(call.name);

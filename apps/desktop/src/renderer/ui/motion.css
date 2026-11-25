@@ -28,6 +28,11 @@
   }
 }
 
+/* A mark of something working now, on any element that says so with data-breathe. */
+[data-breathe="true"] {
+  animation: tk-breathe var(--motion-breathe) var(--motion-breathe-ease) infinite;
+}
+
 @keyframes tk-shimmer {
   from {
     background-position: 100% 0;
@@ -49,7 +54,8 @@
 /* Nothing moves: marks and dots stay solid; lights become a still dashed blue line, so "working now" still reads. */
 @media (prefers-reduced-motion: reduce) {
   .track-mark[data-live="true"],
-  .live-dot {
+  .live-dot,
+  [data-breathe="true"] {
     animation: none;
   }
 
