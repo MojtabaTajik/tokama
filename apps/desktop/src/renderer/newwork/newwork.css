@@ -195,14 +195,6 @@
   justify-content: flex-start;
 }
 
-.np-option-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-2);
-  font-size: 12.5px;
-}
-
 .np-reason {
   margin-left: auto;
   color: var(--muted);
@@ -238,4 +230,32 @@
   margin: 0;
   color: var(--fail);
   font-size: 12.5px;
+}
+
+.np-commands {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.np-warning {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.np-warning .symbol {
+  color: var(--warn);
+}
+
+.np-agent {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }

@@ -524,11 +524,11 @@ describe("live updates", () => {
 
 describe("template icons", () => {
   const TEMPLATES = [
-    ["Emergency investigator", "emergency-investigator", "fire", "rose"],
-    ["DB slow query check", "db-slow-query", "database", "clay"],
-    ["Plan and build", "plan-and-build", "hammer", "sky"],
-    ["Quick fix", "quick-fix", "wrench", "moss"],
-    ["Review only", "review-only", "eye", "slate"],
+    ["Emergency investigator", "builtin/emergency-investigator", "fire", "rose"],
+    ["DB slow query check", "builtin/db-slow-query", "database", "clay"],
+    ["Plan and build", "builtin/plan-and-build", "hammer", "sky"],
+    ["Quick fix", "builtin/quick-fix", "wrench", "moss"],
+    ["Review only", "builtin/review-only", "eye", "slate"],
   ] as const;
   const iconOf = (el: Element | null | undefined) => [el?.querySelector(".tpl-icon")?.getAttribute("data-icon"), el?.querySelector(".tpl-icon")?.getAttribute("data-tag")];
 
@@ -550,7 +550,7 @@ describe("template icons", () => {
   });
 
   it("draws the neutral icon, with no tint, for a template the setup does not list", async () => {
-    const orphan = { ...ITEMS.queued, id: "item_1a2b3c4d-0097-4a1b-8c1d-000000000097", title: "Orphan", templateId: "retired-template" } as ItemRecord;
+    const orphan = { ...ITEMS.queued, id: "item_1a2b3c4d-0097-4a1b-8c1d-000000000097", title: "Orphan", templateId: "builtin/retired-template" } as ItemRecord;
     await mount(fakeBridge(CONNECTED, { boardItems: [orphan] }));
     expect(iconOf(row("Orphan").querySelector(".pl-meta"))).toEqual(["diagram-project", null]);
   });

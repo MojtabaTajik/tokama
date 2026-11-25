@@ -41,6 +41,16 @@ export {
   type StoreError,
 } from "./slices/items/index.js";
 export { posixProcessTable, type LeftoverOutcome, type ProcessInfo, type ProcessTable } from "./kernel/process/leftover.js";
+// Config, templates and the cloud rule, for the engine service's real mode.
+export { loadAgents, type Agent, type BrokenAgent, type ConfigProblem, type LoadedAgents } from "./slices/config/index.js";
+export { loadBuiltins, loadTemplates, templateWarnings, type AgentLocation, type TemplateLoad, type TemplateProblem } from "./slices/templates/index.js";
+export { runsInCloud } from "./slices/prompting/index.js";
+// Git and child processes, for the engine service's run loop and its startup checks.
+export { MIN_GIT_VERSION } from "./kernel/git/index.js";
+export type { RunRequest, RunResult } from "./kernel/process/index.js";
+export type { AgentCallRequest, AgentRuntime, ToolLimits } from "./kernel/ports/index.js";
+// Adapters by name: an adapter can be removed, so callers look its factories up at run time.
+export * as adapters from "./composition.js";
 // The run loop and its commands, for the engine service.
 export {
   createRunLoop,
@@ -127,6 +137,10 @@ export {
   type HandshakeReply,
   type HelloMessage,
   type AttemptRecord,
+  type AttemptSummary,
+  type AgentCallEvent,
+  type CliHealth,
+  type Health,
   type AttemptResult,
   type DecisionChoice,
   type DecisionKind,

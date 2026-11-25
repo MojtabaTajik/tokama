@@ -14,6 +14,8 @@ export interface WatchOptions {
   readonly onState: (state: ConnectionState) => void;
   /** Called with every engine event (item and usage updates). */
   readonly onEvent: (event: BridgeEvent) => void;
+  /** What to say when the running engine speaks another API version, in place of the raw refusal. */
+  readonly otherVersion?: string;
 }
 
 export interface ConnectionWatch {
@@ -51,7 +53,7 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
       if (result.ok) await result.value.close();
       return;
     }
-    if (!result.ok) return fail(result.error.message);
+    if (!result.ok) return fail(result.error.code === "unsupported_version" && options.otherVersion !== undefined ? options.otherVersion : result.error.message);
     client = result.value;
     set({ status: "connected", engineId: client.engineId });
     // events() is called in the same tick as the connect result, so no event is missed.

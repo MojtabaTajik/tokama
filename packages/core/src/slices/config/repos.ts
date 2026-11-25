@@ -22,6 +22,9 @@ export interface Repo {
   readonly checks: readonly string[];
 }
 
+/** The most checks a repo may list: as many as a step runs and the engine API carries. */
+export const MAX_CHECKS = 20;
+
 export const DEFAULT_WORKTREE_FOLDER = ".tokama/wt";
 
 // Branch names and remotes reach git as arguments: nothing that reads as an option or a range.
@@ -77,6 +80,7 @@ const RepoEntrySchema = z.strictObject({
         if (problem !== undefined) ctx.addIssue({ code: "custom", message: problem });
       }),
     )
+    .max(MAX_CHECKS)
     .optional(),
 });
 

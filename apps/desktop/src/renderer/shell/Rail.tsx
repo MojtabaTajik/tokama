@@ -4,7 +4,7 @@
 // button opens About. Needs you opens its page. The other buttons are marked aria-disabled until their screens exist.
 import { useEffect, useId, useRef, useState } from "react";
 import { brand } from "../brand/index.js";
-import { AI_CLIS, type CliIssue } from "../model.js";
+import { AI_CLIS, type CliIssue, type HealthProblem } from "../model.js";
 import { AttentionPopup } from "./Attention.js";
 import { AttentionIcon, BoardIcon, InboxIcon, InsightsIcon, PanelIcon, SettingsIcon, UserIcon } from "./icons.js";
 
@@ -19,6 +19,7 @@ const TEXT = {
   attention: "Attention",
   usageLater: "usage data comes later",
   loggedOut: "✕ logged out",
+  notInstalled: "✕ not found",
   about: "About Tokama",
 } as const;
 
@@ -31,6 +32,10 @@ export interface RailProps {
   readonly needsYou: number | undefined;
   /** AI CLIs the engineer has to sign in to again. */
   readonly issues: readonly CliIssue[];
+  /** Git and config problems; they count on Attention only. */
+  readonly problems?: readonly HealthProblem[];
+  /** Attention opened: the issues should be checked again. */
+  readonly onAttention?: () => void;
   /** About is the open view; the Board button then leads back. */
   readonly aboutOpen: boolean;
   /** The Needs you page is the open view. */
@@ -40,13 +45,16 @@ export interface RailProps {
   readonly onAbout: () => void;
 }
 
+const stateOf = (issue: CliIssue | undefined): string =>
+  issue === undefined ? TEXT.usageLater : issue.kind === "not_installed" ? TEXT.notInstalled : TEXT.loggedOut;
+
 /** "Needs you · 2", or just "Needs you" when there are none. */
 const withCount = (label: string, count: number) => (count > 0 ? `${label} · ${count}` : label);
 
-export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, aboutOpen, needsYouOpen, onBoard, onNeedsYou, onAbout }: RailProps) {
+export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, problems = [], onAttention, aboutOpen, needsYouOpen, onBoard, onNeedsYou, onAbout }: RailProps) {
   const tipId = useId();
   const popupId = useId();
-  const attention = issues.length;
+  const attention = issues.length + problems.length;
   const [popupOpen, setPopupOpen] = useState(false);
   const attentionRef = useRef<HTMLDivElement>(null);
   // Escape closes the tooltip while the pointer or focus stays on Insights; leaving brings it back.
@@ -110,7 +118,7 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, abou
             {AI_CLIS.map((cli) => (
               <li key={cli.id}>
                 <span>{cli.name}</span>
-                <span className="insights-state">{issues.some((issue) => issue.cliId === cli.id) ? TEXT.loggedOut : TEXT.usageLater}</span>
+                <span className="insights-state">{stateOf(issues.find((issue) => issue.cliId === cli.id))}</span>
               </li>
             ))}
           </ul>
@@ -129,12 +137,15 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, abou
           aria-haspopup="dialog"
           aria-expanded={popupOpen}
           aria-controls={popupOpen ? popupId : undefined}
-          onClick={() => setPopupOpen(!popupOpen)}
+          onClick={() => {
+            if (!popupOpen) onAttention?.();
+            setPopupOpen(!popupOpen);
+          }}
         >
           <AttentionIcon />
           <Badge count={attention} tone="fail" />
         </button>
-        {popupOpen && <AttentionPopup id={popupId} issues={issues} />}
+        {popupOpen && <AttentionPopup id={popupId} issues={issues} problems={problems} />}
       </div>
       <div className="rail-spacer" />
       <button type="button" className="rail-user" aria-label={TEXT.about} title={TEXT.about} aria-current={aboutOpen ? "page" : undefined} onClick={onAbout}>

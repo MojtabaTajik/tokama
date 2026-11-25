@@ -1,10 +1,12 @@
 // The renderer's engine state: the connection, the setup and the items. The setup and
 // the board load in parallel on every return to "connected" (events may have been missed while
-// away) and on a `setup_changed` event, and `item_updated` events keep the items current in between. A failed load is retried once after a short delay;
+// away) and on a `setup_changed` event, and `item_updated` events keep the items current in between.
+// The setup alone loads again when the window gets focus or on refreshSetup(), so the engine's
+// health checks (a CLI logged in meanwhile) show without a restart. A failed load is retried once after a short delay;
 // after that the last data stays, marked stale, until a retry succeeds. A failed connection
 // drops the data.
 import type { ItemRecord, Setup } from "@tokama/core";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../shared/bridge.js";
 
 export interface EngineData {
@@ -23,6 +25,8 @@ export interface EngineView {
   readonly stale: boolean;
   /** Loads again now. */
   readonly retry: () => void;
+  /** Loads the setup again, e.g. for fresh health checks; a failure keeps the setup there is. */
+  readonly refreshSetup: () => void;
 }
 
 /** Delay before the one automatic retry of a failed load. */
@@ -111,6 +115,21 @@ export function useEngine(bridge: TokamaBridge, retryDelayMs = RETRY_DELAY_MS): 
     };
   }, [bridge, connection, reloads, retryDelayMs]);
 
+  const connected = connection.status === "connected";
+  const refreshSetup = useCallback(() => {
+    if (!connected) return;
+    void bridge
+      .query({ type: "setup" })
+      .then((reply) => {
+        if (reply.ok) setData((current) => (current === undefined ? current : { ...current, setup: reply.data }));
+      })
+      .catch(() => undefined);
+  }, [bridge, connected]);
+  useEffect(() => {
+    window.addEventListener("focus", refreshSetup);
+    return () => window.removeEventListener("focus", refreshSetup);
+  }, [refreshSetup]);
+
   const failed = connection.status === "failed";
   return {
     connection,
@@ -118,5 +137,6 @@ export function useEngine(bridge: TokamaBridge, retryDelayMs = RETRY_DELAY_MS): 
     loadError: failed ? undefined : loadError,
     stale: !failed && data !== undefined && loadError !== undefined,
     retry: () => setReloads((count) => count + 1),
+    refreshSetup,
   };
 }

@@ -8,7 +8,7 @@ import { app, BrowserWindow, dialog, ipcMain, session, shell } from "electron";
 import { CHANNELS } from "../shared/bridge.js";
 import { engineApi } from "./api.js";
 import { type ConnectionWatch, watchConnection } from "./connection.js";
-import { engineCommand, engineDirFor, findExecutable, readLogTail } from "./engine.js";
+import { engineCommand, engineDirFor, findExecutable, otherVersionMessage, readLogTail } from "./engine.js";
 import { pickFolder } from "./folder.js";
 import { appIcons } from "./icon.js";
 import { devServerUrl, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, sampleEngineEnabled, secureWebPreferences } from "./policy.js";
@@ -17,7 +17,8 @@ const rendererDir = join(import.meta.dirname, "..", "renderer");
 const preloadPath = join(import.meta.dirname, "..", "preload", "index.cjs");
 const devServer = devServerUrl(process.env["ELECTRON_RENDERER_URL"], app.isPackaged);
 const isAppPage = (url: string) => isAppUrl(url, rendererDir, devServer);
-// Dev only: `pnpm dev` sets TOKAMA_SAMPLE=1 to start the engine's fake mode with sample data.
+// Dev only: `pnpm dev:sample` sets TOKAMA_SAMPLE=1 to start the engine's fake mode with sample data;
+// `pnpm dev` runs the real engine on ~/.tokama.
 const sample = sampleEngineEnabled(process.env["TOKAMA_SAMPLE"], app.isPackaged);
 
 /** Registers a bridge channel; it answers app pages only. */
@@ -73,6 +74,7 @@ function startWatch(): ConnectionWatch {
     readLogTail: (path) => readLogTail(path),
     onState: (state) => send(CHANNELS.connectionChanged, state),
     onEvent: (event) => send(CHANNELS.event, event),
+    otherVersion: otherVersionMessage(endpoint.ok ? endpoint.value.lockPath : join(dir, "engine.lock")),
   });
 }
 

@@ -98,13 +98,13 @@ describe("fake engine mode", () => {
       for (const step of template.steps) for (const use of step.uses ?? []) expect(template.connections.map((c) => c.connectionId)).toContain(use.connectionId);
     }
     expect(setup.templates.map((template) => `${template.id}/${template.icon}/${template.color}`)).toEqual([
-      "emergency-investigator/fire/rose",
-      "db-slow-query/database/clay",
-      "plan-and-build/hammer/sky",
-      "quick-fix/wrench/moss",
-      "review-only/eye/slate",
+      "builtin/emergency-investigator/fire/rose",
+      "builtin/db-slow-query/database/clay",
+      "builtin/plan-and-build/hammer/sky",
+      "builtin/quick-fix/wrench/moss",
+      "builtin/review-only/eye/slate",
     ]);
-    const emergency = setup.templates.find((template) => template.id === "emergency-investigator");
+    const emergency = setup.templates.find((template) => template.id === "builtin/emergency-investigator");
     expect(emergency?.steps.map((step) => `${step.name}/${step.stage}/${step.agentId ?? "-"}/${step.data}`)).toEqual([
       "Triage/working/local-investigator/none",
       "Query logs and metrics/working/local-investigator/none",
@@ -157,7 +157,7 @@ describe("fake engine mode", () => {
     const { client, next } = await sampleEngine();
     const reply = await client.command({
       type: "start_item",
-      templateId: "quick-fix",
+      templateId: "builtin/quick-fix",
       repoIds: ["checkout-web"],
       text: "\n  Cart badge shows a stale count  \nafter removing an item on mobile.",
     });
@@ -169,7 +169,7 @@ describe("fake engine mode", () => {
     expect(update.item).toMatchObject({
       id: itemId,
       kind: "task",
-      templateId: "quick-fix",
+      templateId: "builtin/quick-fix",
       title: "Cart badge shows a stale count",
       repoIds: ["checkout-web"],
       privacy: "local_only",
@@ -189,19 +189,19 @@ describe("fake engine mode", () => {
     const { client, next } = await sampleEngine();
     const start: Extract<CommandInput, { type: "start_item" }> = {
       type: "start_item",
-      templateId: "plan-and-build",
+      templateId: "builtin/plan-and-build",
       repoIds: ["orders-api"],
       text: "Add retries",
     };
 
-    expect(await client.command({ ...start, templateId: "no-such-template" })).toMatchObject({ ok: false, error: { code: "not_found" } });
+    expect(await client.command({ ...start, templateId: "builtin/no-such-template" })).toMatchObject({ ok: false, error: { code: "not_found" } });
     expect(await client.command({ ...start, repoIds: ["no-such-repo"] })).toMatchObject({ ok: false, error: { code: "not_found" } });
     expect(await client.command({ ...start, repoIds: [] })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
     expect(await client.command({ ...start, text: "   " })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
 
     // An investigation needs no repo. Its event is the first one: the refusals emitted none.
     expect(
-      await client.command({ type: "start_item", templateId: "emergency-investigator", repoIds: [], text: "5xx on /cart" }),
+      await client.command({ type: "start_item", templateId: "builtin/emergency-investigator", repoIds: [], text: "5xx on /cart" }),
     ).toMatchObject({ ok: true });
     expect(await next()).toMatchObject({ seq: 0, item: { kind: "investigation", privacy: "local_and_cloud", repoIds: [] } });
   });
@@ -294,7 +294,7 @@ describe("fake engine mode", () => {
     expect(restarted.item.steps.map((step) => step.state)).toEqual(["running", "pending", "pending", "pending"]);
 
     // A started item runs through its steps to done.
-    const started = await client.command({ type: "start_item", templateId: "quick-fix", repoIds: ["inventory-service"], text: "Fix it" });
+    const started = await client.command({ type: "start_item", templateId: "builtin/quick-fix", repoIds: ["inventory-service"], text: "Fix it" });
     if (!started.ok) throw new Error(started.error.message);
     const { itemId } = started.data;
     expect(await next()).toMatchObject({ seq: 3, item: { id: itemId, state: "queued" } });
@@ -318,7 +318,7 @@ describe("fake engine mode", () => {
     const start = (askBeforeCloud: boolean) =>
       client.command({
         type: "start_item",
-        templateId: "plan-and-build",
+        templateId: "builtin/plan-and-build",
         repoIds: ["orders-api"],
         text: "Add rate limits to /orders",
         options: { askBeforeCloud, notify: true },
@@ -352,9 +352,9 @@ describe("fake engine mode", () => {
       if (!reply.ok) throw new Error(reply.error.message);
       return reply.data.templateId;
     };
-    expect(await suggest("Slow query on order_items at peak")).toBe("db-slow-query");
-    expect(await suggest("Alert: 5xx on checkout")).toBe("emergency-investigator");
-    expect(await suggest("Fix the rounding in invoice totals")).toBe("quick-fix");
-    expect(await suggest("Please review my branch")).toBe("review-only");
+    expect(await suggest("Slow query on order_items at peak")).toBe("builtin/db-slow-query");
+    expect(await suggest("Alert: 5xx on checkout")).toBe("builtin/emergency-investigator");
+    expect(await suggest("Fix the rounding in invoice totals")).toBe("builtin/quick-fix");
+    expect(await suggest("Please review my branch")).toBe("builtin/review-only");
   });
 });

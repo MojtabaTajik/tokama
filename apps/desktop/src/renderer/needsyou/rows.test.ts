@@ -33,6 +33,13 @@ describe("needsYouRows", () => {
     expect(needsYouRows([cloud], setup, NOW)[0]?.kind).toBe(KIND_CLOUD);
   });
 
+  it("names the decision by the kind the engine sends, over any guess", () => {
+    const failed = waiting("item_r", 5, { decision: { ...ITEMS.needsYou.decision, kind: "run_failure", summaryText: undefined } });
+    expect(needsYouRows([failed], setup, NOW)[0]?.kind).toBe("Run failed");
+    const cloud = waiting("item_s", 5, { decision: { ...ITEMS.needsYou.decision, kind: "cloud_summary" } });
+    expect(needsYouRows([cloud], setup, NOW)[0]?.kind).toBe(KIND_CLOUD);
+  });
+
   it("falls back to the step that waits when the decision's index points nowhere, and to no step when none waits", () => {
     const lost = waiting("item_x", 5, { decision: { ...ITEMS.needsYou.decision, stepIndex: 9 } });
     expect(needsYouRows([lost], setup, NOW)[0]?.stepLine).toBe("step 3 of 3 · Propose a fix");

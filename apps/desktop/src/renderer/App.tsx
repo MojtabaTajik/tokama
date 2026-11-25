@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { TokamaBridge } from "../shared/bridge.js";
 import { About } from "./about/About.js";
 import { ItemDrawer } from "./drawer/ItemDrawer.js";
-import { ALL_WORK, type CliIssue, inView, needsYouCount, type View } from "./model.js";
+import { ALL_WORK, type CliIssue, cliIssuesOf, healthProblemsOf, inView, needsYouCount, type View } from "./model.js";
 import { isMac, NewWork, type NewWorkHandle } from "./newwork/NewWork.js";
 import { AddRepoDialog } from "./repos/AddRepoDialog.js";
 import { NeedsYou } from "./needsyou/NeedsYou.js";
@@ -16,7 +16,6 @@ import { useViewState } from "./useViewState.js";
 const PANEL_ID = "sidebar";
 /** How often the times in the list move on. */
 const CLOCK_TICK_MS = 30_000;
-const NO_ISSUES: readonly CliIssue[] = [];
 
 export interface AppProps {
   readonly bridge: TokamaBridge;
@@ -25,12 +24,12 @@ export interface AppProps {
   readonly now?: number;
   /** The app's version, shown in About. */
   readonly version?: string;
-  /** AI CLIs to sign in to again. The engine does not report CLI health yet, so nothing sets this outside tests. */
+  /** AI CLIs to sign in to again, for tests. Default: what the setup's health reports. */
   readonly cliIssues?: readonly CliIssue[];
 }
 
-export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, version = "unknown", cliIssues = NO_ISSUES }: AppProps) {
-  const { connection, data, loadError, stale, retry } = useEngine(bridge, retryDelayMs);
+export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, version = "unknown", cliIssues }: AppProps) {
+  const { connection, data, loadError, stale, retry, refreshSetup } = useEngine(bridge, retryDelayMs);
   const [panelOpen, setPanelOpen] = useState(true);
   // What the main area shows: the board, the Needs you page or About.
   const [page, setPage] = useState<"board" | "needs-you" | "about">("board");
@@ -51,6 +50,9 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
 
   const items = useMemo(() => [...(data?.items.values() ?? [])], [data]);
   const setup = data?.setup;
+  // The engine's startup checks, unless a test gives the issues itself.
+  const issues = useMemo(() => cliIssues ?? cliIssuesOf(setup?.health), [cliIssues, setup]);
+  const problems = useMemo(() => healthProblemsOf(setup?.health), [setup]);
   const views = useViewState((view) => view.kind === "all" || (view.kind === "workflow" ? setup?.templates : setup?.repos)?.some((entry) => entry.id === view.id) === true);
 
   // Cmd (macOS) or Ctrl (elsewhere) and N open New work from anywhere; the sidebar may be closed, so this lives here.
@@ -95,7 +97,9 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
         panelId={PANEL_ID}
         onTogglePanel={() => setPanelOpen(!panelOpen)}
         needsYou={stale ? undefined : needsYouCount(items)}
-        issues={cliIssues}
+        issues={issues}
+        problems={problems}
+        onAttention={refreshSetup}
         aboutOpen={aboutOpen}
         needsYouOpen={page === "needs-you"}
         onBoard={() => setPage("board")}

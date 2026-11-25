@@ -24,7 +24,7 @@ import {
   parseQueryResult,
   type Result,
   type StepRecord,
-  type TemplateId,
+  type TemplateRef,
   type TimerHandle,
   type Setup,
 } from "@tokama/core";
@@ -82,11 +82,11 @@ export class SampleEngine {
    * The template whose name shares the most words with the text; a template of the
    * kind the text suggests (an alert or a bug report reads as an investigation) wins a tie.
    */
-  suggestTemplate(text: string): TemplateId | null {
+  suggestTemplate(text: string): TemplateRef | null {
     const templates = this.setup.templates;
     const words = new Set(text.toLowerCase().match(/[a-z0-9]+/g) ?? []);
     const kind = INVESTIGATION_WORDS.some((word) => words.has(word)) ? "investigation" : "task";
-    let best: { id: TemplateId; score: number } | undefined;
+    let best: { id: TemplateRef; score: number } | undefined;
     for (const template of templates) {
       const nameWords = template.name.toLowerCase().match(/[a-z0-9]+/g) ?? [];
       const score = 2 * nameWords.filter((word) => word.length > 2 && words.has(word)).length + (template.kind === kind ? 1 : 0);
@@ -151,11 +151,11 @@ export class SampleEngine {
       state: "queued",
       createdAt: this.clock.now(),
       cardLine: `queued · ${template.steps.length} steps`,
-      steps: template.steps.map((step) => ({ ...step, state: "pending" })),
+      steps: template.steps.map(({ name, stage, agentId, data, uses }) => ({ name, stage, ...(agentId && { agentId }), data, ...(uses && { uses }), state: "pending" })),
     };
     this.store.put(item);
     this.live.add(item.id);
-    if (command.options?.askBeforeCloud ?? true) this.askBeforeCloud.add(item.id);
+    if (command.options?.askBeforeCloud ?? false) this.askBeforeCloud.add(item.id);
     return ok({ itemId: item.id });
   }
 

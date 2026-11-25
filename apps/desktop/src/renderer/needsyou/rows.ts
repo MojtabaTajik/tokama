@@ -1,14 +1,14 @@
 // What the Needs you page lists: every item that waits for the engineer, oldest first, with what
 // its row says about the decision. Pure functions that take the clock as an argument.
 import type { Decision, ItemRecord, Setup, StepRecord } from "@tokama/core";
-import { stepAgent, type StepAgent, templateOf } from "../drawer/describe.js";
+import { DECISION_KIND, stepAgent, type StepAgent, templateOf } from "../drawer/describe.js";
 import { cliName, timeOf } from "../model.js";
 
 export interface NeedsYouRow {
   readonly item: ItemRecord;
   /** Undefined while the engine has sent no question for the waiting item. */
   readonly decision: Decision | undefined;
-  /** What kind of decision it is, in a word. The engine sends no kind, so it comes from the record itself. */
+  /** What kind of decision it is, in a word: the engine's kind, or, from an engine that sends none, a guess from the record. */
   readonly kind: string;
   /** "step 4 of 4 · Propose a fix"; undefined when the item has no step that waits. */
   readonly stepLine: string | undefined;
@@ -53,7 +53,7 @@ export function needsYouRows(items: readonly ItemRecord[], setup: Setup | undefi
       return {
         item,
         decision,
-        kind: cloud ? KIND_CLOUD : KIND_OTHER,
+        kind: decision?.kind !== undefined ? DECISION_KIND[decision.kind] : cloud ? KIND_CLOUD : KIND_OTHER,
         stepLine: at === undefined ? undefined : `step ${at.index + 1} of ${item.steps.length} · ${at.step.name}`,
         agent,
         cli: cliId === undefined ? undefined : cliName(cliId),

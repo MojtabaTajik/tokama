@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BridgeEvent, ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { App } from "../App.js";
-import { approved, DECISION_ID, needsYou, setup, task } from "../testing/drawer.js";
+import { approved, committed, DECISION_ID, needsYou, setup, task } from "../testing/drawer.js";
 import { ItemDrawer } from "./ItemDrawer.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -430,7 +430,7 @@ describe("ItemDrawer in the app: open, focus and close", () => {
     const { row, setConnection } = await openFromList();
     await setConnection({ status: "failed", reason: "engine exited", logPath: "/tmp/engine.log", logTail: [] });
     expect($("aside.drawer")).toBeNull();
-    expect(container.textContent).not.toContain("emergency-investigator");
+    expect(container.textContent).not.toContain("builtin/emergency-investigator");
     expect(row.isConnected).toBe(false);
   });
 
@@ -442,5 +442,28 @@ describe("ItemDrawer in the app: open, focus and close", () => {
     expect($(".needs-you")).toBeNull();
     const row = $$(".pl-row").find((el) => el.textContent?.includes(needsYou.title));
     expect(row?.closest("section")?.getAttribute("aria-label")).toBe("Running");
+  });
+});
+
+describe("item drawer with real-mode records", () => {
+  it("lists each step's attempts and shows the commit the item made", async () => {
+    const fake = fakeBridge([committed]);
+    await renderDrawer(fake.bridge, committed.id);
+    expect($$(".step-attempt").map((el) => el.textContent)).toEqual(["✕attempt 1 · failed · sh check.sh exit 1", "✓attempt 2 · passed · 1 check passed"]);
+    expect(text(".drawer-state")).toContain("commit 3f2a9c1 on tokama/0b9f3c1e");
+  });
+
+  it("labels a decision by its kind and offers its own choices", async () => {
+    const asked = {
+      ...task,
+      state: "needs_you",
+      decision: { id: DECISION_ID, kind: "run_failure", stepIndex: 1, question: "The run failed. Retry the step, or stop?", why: "The agent call timed out.", choices: [{ id: "retry_step", label: "Retry step" }, { id: "stop", label: "Stop" }] },
+    } as unknown as ItemRecord;
+    const fake = fakeBridge([asked]);
+    await renderDrawer(fake.bridge, asked.id);
+    expect(text(".needs-you-kind")).toBe("Run failed");
+    expect($$(".needs-you .choice").map((el) => el.textContent)).toEqual(["Retry step", "Stop"]);
+    await act(async () => ($$(".needs-you .choice")[0] as HTMLButtonElement).click());
+    expect(fake.command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: asked.id, decisionId: DECISION_ID, choice: "retry_step" });
   });
 });

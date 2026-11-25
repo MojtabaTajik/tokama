@@ -60,7 +60,7 @@ describe("repo commands", () => {
       ok: true,
       data: { path, gitRepo: true, branch: "main", id: "billing-api", checks: ["pnpm test"], problem: null },
     });
-    expect(await client.command({ type: "add_repo", path, checks: ["pnpm test"] })).toEqual({ ok: true, data: { repo: { id: "billing-api", baseBranch: "main" } } });
+    expect(await client.command({ type: "add_repo", path, checks: ["pnpm test"] })).toEqual({ ok: true, data: { repo: { id: "billing-api", baseBranch: "main", checks: ["pnpm test"] } } });
     await waitFor(() => events.some((event) => event.kind === "event" && event.event.type === "setup_changed"), 5_000, "setup_changed");
     // The sample repos first, then the repos of repos.yaml.
     expect(await repoIds(client)).toEqual(["orders-api", "checkout-web", "inventory-service", "billing-api"]);
@@ -80,9 +80,9 @@ describe("repo commands", () => {
     const path = gitRepo(root, "orders-api");
     expect(await client.query({ type: "suggest_repo", path })).toMatchObject({ ok: true, data: { id: "orders-api-2" } });
     expect(await client.command({ type: "add_repo", path, id: "orders-api" })).toMatchObject({ ok: false, error: { code: "already_exists" } });
-    expect(await client.command({ type: "add_repo", path })).toEqual({ ok: true, data: { repo: { id: "orders-api-2", baseBranch: "main" } } });
+    expect(await client.command({ type: "add_repo", path })).toEqual({ ok: true, data: { repo: { id: "orders-api-2", baseBranch: "main", checks: expect.any(Array) } } });
     const after = await client.query({ type: "setup" });
-    expect(after.ok && after.data.repos.find((repo) => repo.id === "orders-api-2")).toEqual({ id: "orders-api-2", baseBranch: "main" });
+    expect(after.ok && after.data.repos.find((repo) => repo.id === "orders-api-2")).toEqual({ id: "orders-api-2", baseBranch: "main", checks: expect.any(Array) });
     // A sample repo is not in repos.yaml: removing it is refused and the file is left alone.
     const before = readFileSync(join(home, "repos.yaml"), "utf8");
     expect(await client.command({ type: "remove_repo", repoId: "orders-api" })).toMatchObject({ ok: false, error: { code: "not_found" } });

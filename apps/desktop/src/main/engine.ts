@@ -78,3 +78,13 @@ export function readLogTail(path: string, maxLines = 8, maxBytes = 4096): string
 function absoluteEntries(path: string): string[] {
   return path.split(delimiter).filter((entry) => isAbsolute(entry));
 }
+
+/**
+ * What the app says when an engine of another version still runs (it keeps running after the app
+ * quits): stop it, then Retry starts this version's engine. The command signals the pid the
+ * engine wrote to its own lock file; the engine stops cleanly on SIGTERM.
+ */
+export function otherVersionMessage(lockPath: string): string {
+  const quoted = `'${lockPath.replaceAll("'", "'\\''")}'`;
+  return `An older Tokama engine is still running. Quit it, then press Retry. In a terminal: kill $(cut -d' ' -f1 ${quoted})`;
+}

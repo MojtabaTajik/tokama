@@ -6,7 +6,7 @@ import type { ItemRecord, Setup } from "@tokama/core";
 export const DECISION_ID = "decision_5e1c9a7b-3f2d-4c8e-9a6b-1d2e3f4a5b6c";
 
 export const setup = {
-  repos: [{ id: "orders-api", baseBranch: "main" }],
+  repos: [{ id: "orders-api", baseBranch: "main", checks: ["pnpm test"] }],
   connections: [
     { id: "app-insights-prod", name: "App Insights · prod", type: "App Insights" },
     { id: "postgres-prod", name: "Postgres · prod", type: "Postgres" },
@@ -18,16 +18,17 @@ export const setup = {
     { id: "local-builder", name: "Local builder", cliId: "claude-code", model: "qwen3-coder:30b", runsOn: "local" },
   ],
   templates: [
-    { id: "emergency-investigator", name: "Emergency investigator", icon: "fire", color: "rose", kind: "investigation", connections: [], steps: [{ name: "Triage", stage: "working", data: "none" }] },
-    { id: "plan-and-build", name: "Plan and build", icon: "hammer", color: "sky", kind: "task", connections: [], steps: [{ name: "Plan", stage: "working", data: "none" }] },
+    { id: "builtin/emergency-investigator", name: "Emergency investigator", icon: "fire", color: "rose", kind: "investigation", connections: [], steps: [{ name: "Triage", stage: "working", data: "none" }], start: { needs: ["text"], askBeforeCloud: false }, warnings: [] },
+    { id: "builtin/plan-and-build", name: "Plan and build", icon: "hammer", color: "sky", kind: "task", connections: [], steps: [{ name: "Plan", stage: "working", data: "none" }], start: { needs: ["text", "repo"], askBeforeCloud: false }, warnings: [] },
   ],
+  health: { git: { ok: true }, clis: [], config: [] },
 } as unknown as Setup;
 
 export const needsYou = {
   schemaVersion: 1,
   id: "item_1a2b3c4d-0003-4a1b-8c1d-000000000003",
   kind: "investigation",
-  templateId: "emergency-investigator",
+  templateId: "builtin/emergency-investigator",
   title: "Orders API returns 500 after deploy",
   text: "Alert: orders-api 5xx rate at 4% since the 14:02 deploy.",
   repoIds: ["orders-api"],
@@ -77,7 +78,7 @@ export const task = {
   schemaVersion: 1,
   id: "item_1a2b3c4d-0008-4a1b-8c1d-000000000008",
   kind: "task",
-  templateId: "plan-and-build",
+  templateId: "builtin/plan-and-build",
   title: "Paginate the orders list",
   text: "Add cursor pagination.",
   repoIds: ["orders-api"],
@@ -90,4 +91,27 @@ export const task = {
     { name: "Run checks", stage: "verifying", state: "pending", data: "none" },
     { name: "Review", stage: "review", state: "pending", agentId: "reviewer", data: "repo-and-diff" },
   ],
+} as unknown as ItemRecord;
+
+/** A finished task as real mode sends it: attempts with checks, and the commit it made. */
+export const committed = {
+  ...task,
+  id: "item_1a2b3c4d-0010-4a1b-8c1d-000000000010",
+  templateId: "builtin/plan-and-build",
+  state: "done",
+  steps: [
+    {
+      name: "Plan",
+      stage: "working",
+      state: "passed",
+      agentId: "architect",
+      data: "repo-and-diff",
+      detail: "passed on attempt 2",
+      attempts: [
+        { attempt: 1, result: "failed", checks: [{ command: "sh check.sh", passed: false, exitCode: 1 }] },
+        { attempt: 2, result: "passed", checks: [{ command: "sh check.sh", passed: true, exitCode: 0 }] },
+      ],
+    },
+  ],
+  outcome: { kind: "done", commits: [{ repoId: "orders-api", commit: "3f2a9c1d4e5f60718293a4b5c6d7e8f901234567", branch: "tokama/0b9f3c1e" }] },
 } as unknown as ItemRecord;

@@ -135,6 +135,11 @@
   color: var(--warn);
 }
 
+.needs-you-kind {
+  font-size: 11.5px;
+  color: var(--warn);
+}
+
 .needs-you-why {
   font-size: 12.5px;
   color: var(--muted);
@@ -275,6 +280,32 @@
   font-size: 11.5px;
   color: var(--text-2);
   overflow-wrap: anywhere;
+}
+
+.step-attempts {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step-attempt {
+  display: flex;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.step-attempt .mark[data-tone="pass"] {
+  color: var(--pass);
+}
+
+.step-attempt .mark[data-tone="fail"] {
+  color: var(--fail);
+}
+
+.step-attempt .mark[data-tone="warn"] {
+  color: var(--warn);
 }
 
 .dot {

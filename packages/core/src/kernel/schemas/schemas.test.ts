@@ -32,7 +32,7 @@ const item = () => ({
   schemaVersion: 1,
   id: ITEM_ID,
   kind: "investigation",
-  templateId: "emergency-investigator",
+  templateId: "builtin/emergency-investigator",
   title: "Checkout latency spike",
   text: "Alert: checkout p95 above 1.5 s",
   repoIds: ["orders-api"],
@@ -187,7 +187,7 @@ describe("engine API messages", () => {
       requestId: "r1",
       command: {
         type: "start_item",
-        templateId: "plan-and-build",
+        templateId: "builtin/plan-and-build",
         repoIds: ["orders-api"],
         text: "Add retries",
         options: { askBeforeCloud: false, notify: true },
@@ -235,8 +235,8 @@ describe("engine API messages", () => {
     ["an unknown command", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "delete_everything" } }],
     ["an empty requestId", { apiVersion: API_VERSION, kind: "query", requestId: "", query: { type: "item", itemId: ITEM_ID } }],
     ["a decision without an id", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "resolve_decision", itemId: ITEM_ID, choice: "approve" } }],
-    ["a blank start text", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "start_item", templateId: "quick-fix", repoIds: [], text: " \n " } }],
-    ["an unknown start option", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "start_item", templateId: "quick-fix", repoIds: [], text: "x", options: { yolo: true } } }],
+    ["a blank start text", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "start_item", templateId: "builtin/quick-fix", repoIds: [], text: " \n " } }],
+    ["an unknown start option", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "start_item", templateId: "builtin/quick-fix", repoIds: [], text: "x", options: { yolo: true } } }],
     ["an empty choice", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "resolve_decision", itemId: ITEM_ID, decisionId: DECISION_ID, choice: "" } }],
     ["the removed approve_step command", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "approve_step", itemId: ITEM_ID, stepIndex: 0 } }],
     ["a negative seq", { apiVersion: API_VERSION, kind: "event", seq: -1, event: { type: "item_updated", item: item() } }],
@@ -360,20 +360,29 @@ describe("itemStage", () => {
 
 describe("setup query result", () => {
   const setup = {
-    repos: [{ id: "orders-api", baseBranch: "main" }],
+    repos: [{ id: "orders-api", baseBranch: "main", checks: [] }],
     connections: [{ id: "postgres-prod", name: "Postgres · prod", type: "Postgres" }],
     agents: [{ id: "architect", name: "Architect", cliId: "claude-code", model: "opus", runsOn: "cloud" }],
     templates: [
       {
-        id: "review-only",
+        id: "orders-api/review-only",
         name: "Review only",
         kind: "task",
         connections: [{ connectionId: "postgres-prod", access: "read-only" }],
         steps: [
           { name: "Review", stage: "review", agentId: "architect", data: "repo-and-diff", uses: [{ connectionId: "postgres-prod", access: "read-only" }] },
+          { name: "Build", stage: "working", agentId: "architect", data: "repo-and-diff", checks: { from: "repo" } },
         ],
+        start: { needs: ["text", "repo"], askBeforeCloud: false },
+        setup: "pnpm install",
+        warnings: [],
       },
     ],
+    health: {
+      git: { ok: true, version: "git version 2.54.0" },
+      clis: [{ cliId: "claude-code", installed: true, loggedIn: false, message: "Claude Code is not logged in." }],
+      config: [{ file: "repos.yaml", message: "repos.yaml line 2: base_branch is missing" }],
+    },
   };
 
   it("accepts a valid result", () => {
@@ -389,6 +398,9 @@ describe("setup query result", () => {
     ["a template colour outside the 8 tag colours", { templates: [{ ...setup.templates[0], color: "red" }] }, "templates.0.color"],
     ["a template icon that is not an icon name", { templates: [{ ...setup.templates[0], icon: "Fire Icon" }] }, "templates.0.icon"],
     ["a template without steps", { templates: [{ ...setup.templates[0], steps: [] }] }, "templates.0.steps"],
+    ["a template id without its repo", { templates: [{ ...setup.templates[0], id: "review-only" }] }, "templates.0.id"],
+    ["a template without its start", { templates: [{ ...setup.templates[0], start: undefined }] }, "templates.0.start"],
+    ["a CLI health entry for an unknown CLI", { health: { ...setup.health, clis: [{ cliId: "gemini", installed: true, loggedIn: true }] } }, "health.clis.0.cliId"],
     ["an unknown AI CLI", { agents: [{ ...setup.agents[0], cliId: "gemini" }] }, "agents.0.cliId"],
     ["an agent that runs nowhere", { agents: [{ ...setup.agents[0], runsOn: "edge" }] }, "agents.0.runsOn"],
     ["an uppercase repo id", { repos: [{ id: "Orders", baseBranch: "main" }] }, "repos.0.id"],
