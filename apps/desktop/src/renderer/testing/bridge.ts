@@ -3,14 +3,22 @@
 import type { ItemRecord } from "@tokama/core";
 import { act } from "react";
 import { vi } from "vitest";
-import type { BridgeEvent, ConnectionState, OpenResult, TokamaBridge } from "../../shared/bridge.js";
+import type { AboutInfo, BridgeEvent, ConnectionState, OpenResult, TokamaBridge } from "../../shared/bridge.js";
 import { items, setup } from "./sample.js";
 
 export type Reply = { ok: true; data: unknown } | { ok: false; error: { code: string; message: string } };
 
+export const ABOUT_INFO: AboutInfo = {
+  app: { version: "1.2.3", built: "2026-11-24", commit: "85a75e3" },
+  engine: { version: "1.2.3", apiVersion: 4, pid: 48211 },
+  dataFolder: "~/.tokama",
+  runtime: { electron: "45.4.1", node: "24.1.0" },
+  platform: "macOS · arm64",
+};
+
 export const CONNECTED: ConnectionState = { status: "connected", engineId: "e-1" };
 
-export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | Promise<Reply> | undefined; commandReply?: (command: { type: string }) => Reply; pickFolder?: () => Promise<string | null>; openTemplateFile?: () => Promise<OpenResult> } = {}) {
+export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | Promise<Reply> | undefined; commandReply?: (command: { type: string }) => Reply; pickFolder?: () => Promise<string | null>; openTemplateFile?: () => Promise<OpenResult>; about?: AboutInfo; copyBuildInfo?: () => Promise<void>; showDataFolder?: () => Promise<OpenResult> } = {}) {
   let connectionListener: ((state: ConnectionState) => void) | undefined;
   // Every subscriber hears every event: the app and the open drawer both listen.
   const eventListeners = new Set<(event: BridgeEvent) => void>();
@@ -36,6 +44,9 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
     command: vi.fn(async (c: { type: string }): Promise<Reply> => options.commandReply?.(c) ?? { ok: false, error: { code: "not_implemented", message: c.type } }),
     pickFolder: vi.fn(options.pickFolder ?? (async () => null)),
     openTemplateFile: vi.fn(options.openTemplateFile ?? (async (): Promise<OpenResult> => ({ ok: true }))),
+    getAboutInfo: vi.fn(async () => options.about ?? ABOUT_INFO),
+    copyBuildInfo: vi.fn(options.copyBuildInfo ?? (async () => undefined)),
+    showDataFolder: vi.fn(options.showDataFolder ?? (async (): Promise<OpenResult> => ({ ok: true }))),
     onEvent: vi.fn((listener: (event: BridgeEvent) => void) => {
       eventListeners.add(listener);
       return () => {
@@ -55,5 +66,7 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
   const command = bridge.command as unknown as ReturnType<typeof vi.fn>;
   const retryConnection = bridge.retryConnection as unknown as ReturnType<typeof vi.fn>;
   const openTemplateFile = bridge.openTemplateFile as unknown as ReturnType<typeof vi.fn>;
-  return { bridge, query, command, retryConnection, openTemplateFile, setConnection, pushItem, pushEvent, stops };
+  const copyBuildInfo = bridge.copyBuildInfo as unknown as ReturnType<typeof vi.fn>;
+  const showDataFolder = bridge.showDataFolder as unknown as ReturnType<typeof vi.fn>;
+  return { bridge, query, copyBuildInfo, showDataFolder, command, retryConnection, openTemplateFile, setConnection, pushItem, pushEvent, stops };
 }

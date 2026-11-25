@@ -26,13 +26,11 @@ export interface AppProps {
   readonly retryDelayMs?: number;
   /** A fixed time for tests; otherwise the clock runs. */
   readonly now?: number;
-  /** The app's version, shown in About. */
-  readonly version?: string;
   /** AI CLIs to sign in to again, for tests. Default: what the setup's health reports. */
   readonly cliIssues?: readonly CliIssue[];
 }
 
-export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, version = "unknown", cliIssues }: AppProps) {
+export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, cliIssues }: AppProps) {
   const { connection, data, loadError, stale, retry, refreshSetup } = useEngine(bridge, retryDelayMs);
   const [panelOpen, setPanelOpen] = useState(true);
   // What the main area shows: the board, the Needs you page, Insights or About; Settings takes the whole window.
@@ -154,7 +152,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
         />
       )}
       {aboutOpen ? (
-        <About version={version} onClose={() => setPage("board")} />
+        <About bridge={bridge} connection={connection.status} onClose={() => setPage("board")} />
       ) : page === "insights" ? (
         <Insights
           connection={connection}

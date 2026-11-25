@@ -1,15 +1,13 @@
 // @vitest-environment happy-dom
 // The empty and error states, each rendered from the condition that causes it, and About.
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConnectionState } from "../shared/bridge.js";
 import { App, type AppProps } from "./App.js";
 import { brand } from "./brand/index.js";
 import { REPOS_EXAMPLE, REPOS_FILE } from "./shell/EmptyStates.js";
-import { CONNECTED, fakeBridge } from "./testing/bridge.js";
+import { ABOUT_INFO, CONNECTED, fakeBridge } from "./testing/bridge.js";
 import { ITEMS, NOW, setup } from "./testing/sample.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -228,39 +226,104 @@ describe("an AI CLI that is logged out", () => {
 });
 
 describe("About", () => {
-  const notices = readFileSync(join(import.meta.dirname, "..", "..", "THIRD_PARTY_NOTICES.md"), "utf8");
-  const open = async (props: Partial<AppProps> = {}) => {
-    const fake = await mount(fakeBridge(CONNECTED), { version: "1.2.3", ...props });
+  const open = async (fake = fakeBridge(CONNECTED)) => {
+    await mount(fake);
     await click($('.rail button[aria-label="About Tokama"]'));
     return fake;
   };
+  const rows = () => $$(".about-row").map((row) => [row.querySelector("dt")?.textContent, row.querySelector("dd")?.textContent]);
 
-  it("opens from the rail's user button and shows the name, the version and the licence", async () => {
+  it("opens from the rail's user button and shows the name, the version, the platform and the lead", async () => {
     await open();
     expect(text("main h1")).toBe("About");
-    expect(text(".about-name")).toBe("Tokama");
-    expect(text(".about-version")).toBe("Version 1.2.3");
-    expect(text(".about-body")).toContain("Apache License 2.0");
+    expect($(".about-wordmark")?.getAttribute("alt")).toBe("Tokama");
+    expect(text(".about-version")).toBe("Version 1.2.3·macOS · arm64");
+    expect(text(".about-lead")).toContain("Agent workbench for engineers.");
+    expect(text(".about-links")).toContain("Open source under the Apache License 2.0");
+    expect(text(".about-foot")).toBe("Tokama · Apache License 2.0Made in Amsterdam");
     expect($('.rail-user[aria-label="About Tokama"]')?.getAttribute("aria-current")).toBe("page");
   });
 
-  it("shows the third-party notices file as text, with the Font Awesome Free credit", async () => {
+  it("says how the name is said and where it comes from, in soft text", async () => {
     await open();
-    expect(text(".about-notices")).toBe(notices);
-    expect(text(".about-notices")).toContain("Font Awesome Free");
-    expect(text(".about-notices")).toContain("CC BY 4.0");
-    expect($(".about-notices *")).toBeNull();
+    expect(text(".about-aka")).toBe("Tokama · say to-KA-maNamed after the Tokay gecko and the Agama lizard.");
+    expect($(".about-aka em")?.textContent).toBe("to-KA-ma");
+  });
+
+  it("lists the build facts, with the engine's status from the connection", async () => {
+    await open();
+    expect(rows()).toEqual([
+      ["App", "1.2.3 · 2026-11-24 · 85a75e3"],
+      ["Engine", "1.2.3 · running · pid 48211"],
+      ["Engine API", "v4"],
+      ["Data folder", "~/.tokama"],
+      ["Runtime", "Electron 45.4.1 · Node 24.1.0"],
+    ]);
+  });
+
+  it("asks the main process to copy the build info and to show the data folder", async () => {
+    const fake = await open();
+    await click($(".about-copy"));
+    expect(fake.copyBuildInfo).toHaveBeenCalledOnce();
+    expect(text(".about-copy")).toBe("Copied");
+    await click(($$(".about-row button")[0] ?? null));
+    expect(fake.showDataFolder).toHaveBeenCalledOnce();
+    expect(text(".about-row button")).toBe("Show in Finder");
+    expect($(".about-error")).toBeNull();
+  });
+
+  it("says so when the build info cannot be copied or the folder cannot open", async () => {
+    await open(fakeBridge(CONNECTED, { copyBuildInfo: async () => Promise.reject(new Error("no")), showDataFolder: async () => ({ ok: false, message: "No file manager." }) }));
+    await click($(".about-copy"));
+    expect(text(".about-copy")).toBe("Could not copy");
+    await click($(".about-row button"));
+    expect(text(".about-error")).toBe("No file manager.");
+  });
+
+  it("names the file manager by system", async () => {
+    await open(fakeBridge(CONNECTED, { about: { ...ABOUT_INFO, platform: "Linux · x64" } }));
+    expect(text(".about-row button")).toBe("Show in file manager");
+  });
+
+  it("lists the third-party notices closed except the first, and each opens on click", async () => {
+    await open();
+    const heads = () => $$(".about-notice-head").map((head) => head.getAttribute("aria-expanded"));
+    expect(text(".about-count")).toBe("5");
+    expect(heads()).toEqual(["true", "false", "false", "false", "false"]);
+    expect(text(".about-notice-body")).toContain("Font Awesome Free icons");
+    await click($$(".about-notice-head")[1] ?? null);
+    expect(heads()).toEqual(["true", "true", "false", "false", "false"]);
+    expect($$(".about-notice-head")[1]?.textContent).toContain("45.4.1");
+    await click($$(".about-notice-head")[0] ?? null);
+    expect(heads()).toEqual(["false", "true", "false", "false", "false"]);
+  });
+
+  it("expands every notice with Expand all, then collapses them", async () => {
+    await open();
+    await click($(".about-all"));
+    expect($$(".about-notice-body")).toHaveLength(5);
+    expect(text(".about-all")).toBe("Collapse all");
+    await click($(".about-all"));
+    expect($$(".about-notice-body")).toHaveLength(0);
+    expect(text(".about-all")).toBe("Expand all");
+  });
+
+  it("renders notice and build text as text", async () => {
+    await open(fakeBridge(CONNECTED, { about: { ...ABOUT_INFO, dataFolder: "<img src=x onerror=alert(1)>" } }));
+    expect($(".about-row img")).toBeNull();
+    expect(rows()[3]?.[1]).toBe("<img src=x onerror=alert(1)>");
   });
 
   it("links to tokama.dev, opened by the window in the system browser", async () => {
     await open();
     const link = $(".about-link") as HTMLAnchorElement;
-    expect([link.textContent, link.getAttribute("href"), link.getAttribute("target"), link.getAttribute("rel")]).toEqual(["tokama.dev", "https://tokama.dev", "_blank", "noreferrer noopener"]);
+    expect([link.textContent, link.getAttribute("href"), link.getAttribute("target"), link.getAttribute("rel")]).toEqual(["tokama.dev↗", "https://tokama.dev", "_blank", "noreferrer noopener"]);
   });
 
   it("takes the logo from the brand assets folder", async () => {
     await open();
-    expect($(".about-id img")?.getAttribute("src")).toBe(brand.markUrl);
+    const [mark, wordmark] = $$(".about-logo img");
+    expect([mark?.getAttribute("src"), wordmark?.getAttribute("src")]).toEqual([brand.markUrl, brand.wordmarkUrl]);
   });
 
   it("replaces the board and the drawer, and the way back is the button, the Board icon, the avatar or a sidebar row", async () => {
@@ -277,9 +340,11 @@ describe("About", () => {
     }
   });
 
-  it("shows an unknown version as such when the build gives none", async () => {
-    await mount(fakeBridge(CONNECTED));
-    await click($('.rail button[aria-label="About Tokama"]'));
-    expect(text(".about-version")).toBe("Version unknown");
+  it("shows a placeholder, then says so, when the build info cannot be read", async () => {
+    const fake = fakeBridge(CONNECTED);
+    (fake.bridge.getAboutInfo as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("gone"));
+    await open(fake);
+    expect(text(".about-version")).toBe("Version …");
+    expect(text(".about-section .about-soft")).toBe("The build info could not be read.");
   });
 });
