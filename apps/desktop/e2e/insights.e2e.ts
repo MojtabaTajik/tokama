@@ -28,7 +28,7 @@ flow("shows plan usage in the Insights tooltip, opens Insights, shows a day on h
   await page.locator(".main-header h1", { hasText: "Insights" }).waitFor();
   await expect.poll(() => page.locator(".ins-card").count(), { message: "one card per AI CLI" }).toBe(3);
   await expect.poll(() => page.locator('.ins-card[aria-label="Claude Code"] .ins-badge').innerText()).toBe("MAX");
-  await expect.poll(() => page.locator('.ins-card[aria-label="Claude Code"] .ins-countdown').first().innerText()).toMatch(/^↻ \d+h \d+m$/);
+  await expect.poll(() => page.locator('.ins-card[aria-label="Claude Code"] .ins-countdown').first().textContent()).toMatch(/^↻resets in \d+h \d+m$/);
   await expect.poll(() => page.locator(".ins-summary-cell").count(), { message: "the token summary" }).toBe(5);
   await expect.poll(() => page.locator(".ins-col").count(), { message: "14 days" }).toBe(14);
   await expect.poll(() => page.locator(".ins-estimate").innerText()).toMatch(/^≈ estimate · prices as of \d{4}-\d{2}-\d{2}/);
@@ -62,7 +62,10 @@ flow("shows plan usage in the Insights tooltip, opens Insights, shows a day on h
   await page.getByRole("button", { name: "14 days" }).click();
   await page.getByRole("button", { name: "Tokens", exact: true }).click();
   await page.getByRole("button", { name: "All on this Mac" }).click();
-  await expect.poll(() => page.locator('[role="table"][aria-label="By model"] [role="row"]').count(), { message: "a header and three models" }).toBe(4);
+  // Claude Code's three models from its logs, beside Tokama's calls on the other CLIs.
+  await expect
+    .poll(() => page.locator(".ins-model-name").allInnerTexts(), { message: "the Claude Code models" })
+    .toEqual(expect.arrayContaining(["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]));
   await expect.poll(() => page.locator(".ins-repo[data-other]").innerText()).toBe("other folders");
   await expect.poll(() => page.locator(".ins-cost-head").innerText()).toMatch(/^≈ \$[\d,.]+\s*at API rates · last 14 days\s*✓\s*Your plan covers it$/);
   await expect.poll(() => page.locator(".ins-scan").count(), { message: "the sample scan is done" }).toBe(0);
@@ -76,7 +79,9 @@ flow(
     await page.locator('.rail button[aria-label="Insights"]').click();
     await page.locator(".main-header h1", { hasText: "Insights" }).waitFor();
     await expect.poll(() => page.locator(".ins-col").count(), { message: "14 days" }).toBe(14);
-    await page.getByText("No agent calls in this range.").waitFor();
+    // By model, by repo and the top items: each says it is empty.
+    await page.getByText("No agent calls in this range.").first().waitFor();
+    await expect.poll(() => page.getByText("No agent calls in this range.").count()).toBe(3);
     await expect.poll(() => page.locator(".ins-hero").innerText()).toBe("0 tokens");
     // Codex CLI has no plan source yet: unknown, never a number.
     await expect.poll(() => page.locator('.ins-card[aria-label="Codex CLI"]').innerText()).toContain("plan not reported");
