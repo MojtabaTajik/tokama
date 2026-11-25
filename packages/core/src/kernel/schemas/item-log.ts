@@ -13,7 +13,19 @@ import {
   StepIdSchema,
   TemplateRefSchema,
 } from "./ids.js";
-import { AttemptResultSchema, DecisionKindSchema, ItemOutcomeSchema, ItemStateSchema, RunFailureSchema, StepStateSchema } from "./item.js";
+import {
+  AttemptResultSchema,
+  DecisionKindSchema,
+  FinishActionSchema,
+  FinishRefusalSchema,
+  GitChangeSchema,
+  ItemOutcomeSchema,
+  ItemStateSchema,
+  PullRequestUrlSchema,
+  PushUrlSchema,
+  RunFailureSchema,
+  StepStateSchema,
+} from "./item.js";
 
 export const ITEM_EVENT_SCHEMA_VERSION = 1;
 export const STORED_ITEM_SCHEMA_VERSION = 1;
@@ -80,6 +92,11 @@ const WorktreeAddedSchema = z.strictObject({
   dir: RepoDirSchema,
   /** The commit the branch started from; the item's commit has it as its parent. */
   baseCommit: GIT_ID.optional(),
+  /**
+   * Where `origin` pushed when the worktree was made, before any agent ran, without user info.
+   * Open PR pushes only while origin still points there. Absent when the repo has no origin.
+   */
+  pushUrl: PushUrlSchema.optional(),
 });
 /**
  * The item's protected baseline, taken once after setup passed at Start: SHA-256 over the files
@@ -165,6 +182,40 @@ const ItemEndedSchema = z.strictObject({
  * follow the attempt's end and the item's end.
  */
 const UsageRecordedSchema = z.strictObject({ type: z.literal("usage_recorded"), usage: AgentCallUsageSchema });
+/**
+ * Finish actions on a done item, each one a change outside the worktree that the engineer starts.
+ * `finish_started` comes first; exactly one of the result events ends it.
+ */
+const FinishStartedSchema = z.strictObject({ type: z.literal("finish_started"), action: FinishActionSchema });
+/** The item's commit is in the base branch of the engineer's checkout. */
+const MergedSchema = z.strictObject({
+  type: z.literal("merged"),
+  repoId: RepoIdSchema,
+  baseBranch: z.string().min(1).max(200),
+  /** The base branch's commit after the merge: the item's commit, or the merge commit. */
+  commit: GIT_ID,
+  /** Whether the worktree and branch were removed; a worktree with changes is kept. */
+  worktreeRemoved: z.boolean(),
+  detail: z.string().min(1).max(500).optional(),
+});
+const PrOpenedSchema = z.strictObject({ type: z.literal("pr_opened"), repoId: RepoIdSchema, url: PullRequestUrlSchema });
+/** The worktree and the branch are gone. */
+const DiscardedSchema = z.strictObject({ type: z.literal("discarded"), repoId: RepoIdSchema });
+/** The action did not run to its end, or was refused; the detail says why in plain words. */
+const FinishFailedSchema = z.strictObject({
+  type: z.literal("finish_failed"),
+  action: FinishActionSchema,
+  detail: z.string().min(1).max(500),
+  reason: FinishRefusalSchema.optional(),
+  /** With `steering_changed`: what changed, and the digest of the shared git entries seen then. */
+  changes: z.array(GitChangeSchema).max(30).optional(),
+  gitDigest: SHA256.optional(),
+});
+/**
+ * The engineer said they made the git config or hooks changes a Finish action was refused for:
+ * the item's baseline becomes this one (kept beside the log under its digest).
+ */
+const GitChangesAcceptedSchema = z.strictObject({ type: z.literal("git_changes_accepted"), repoId: RepoIdSchema, protectedDigest: SHA256 });
 /** Deletes the item. The log keeps its history; nothing may follow a tombstone. */
 const TombstoneSchema = z.strictObject({ type: z.literal("tombstone"), reason: z.string().min(1).max(200).optional() });
 
@@ -183,6 +234,12 @@ export const ItemEventBodySchema = z.discriminatedUnion("type", [
   DecisionResolvedSchema,
   ItemEndedSchema,
   UsageRecordedSchema,
+  FinishStartedSchema,
+  MergedSchema,
+  PrOpenedSchema,
+  DiscardedSchema,
+  FinishFailedSchema,
+  GitChangesAcceptedSchema,
   TombstoneSchema,
 ]);
 
@@ -210,6 +267,12 @@ export const ItemEventSchema = z.discriminatedUnion("type", [
   DecisionResolvedSchema.extend(envelope),
   ItemEndedSchema.extend(envelope),
   UsageRecordedSchema.extend(envelope),
+  FinishStartedSchema.extend(envelope),
+  MergedSchema.extend(envelope),
+  PrOpenedSchema.extend(envelope),
+  DiscardedSchema.extend(envelope),
+  FinishFailedSchema.extend(envelope),
+  GitChangesAcceptedSchema.extend(envelope),
   TombstoneSchema.extend(envelope),
 ]);
 
@@ -263,6 +326,30 @@ export const StoredDecisionSchema = z.strictObject({
 });
 
 /** An item as its event log describes it. Derived, never edited: fold the log to get it. */
+export const StoredFinishSchema = z.strictObject({
+  /** The action running now. */
+  running: FinishActionSchema.optional(),
+  merged: z.strictObject({ baseBranch: z.string(), commit: GIT_ID, at: EpochMsSchema }).optional(),
+  pullRequest: z.strictObject({ url: PullRequestUrlSchema, at: EpochMsSchema }).optional(),
+  /** The worktree and branch are gone: discarded, or removed after a merge. */
+  worktreeRemoved: z.boolean(),
+  /** The last action that did not succeed, until the next one starts. */
+  failed: z
+    .strictObject({
+      action: FinishActionSchema,
+      detail: z.string(),
+      reason: FinishRefusalSchema.optional(),
+      changes: z.array(GitChangeSchema).optional(),
+      gitDigest: SHA256.optional(),
+      at: EpochMsSchema,
+    })
+    .optional(),
+  /** When the last action ended. */
+  at: EpochMsSchema.optional(),
+  /** A note on the last result, e.g. why a merged item's worktree was kept. */
+  detail: z.string().optional(),
+});
+
 export const StoredItemSchema = z.strictObject({
   schemaVersion: z.literal(STORED_ITEM_SCHEMA_VERSION),
   id: ItemIdSchema,
@@ -273,7 +360,9 @@ export const StoredItemSchema = z.strictObject({
   title: z.string(),
   text: z.string(),
   repoIds: z.array(RepoIdSchema),
-  worktrees: z.array(z.strictObject({ repoId: RepoIdSchema, branch: z.string(), dir: RepoDirSchema, baseCommit: GIT_ID.optional(), protectedDigest: SHA256.optional() })),
+  worktrees: z.array(
+    z.strictObject({ repoId: RepoIdSchema, branch: z.string(), dir: RepoDirSchema, baseCommit: GIT_ID.optional(), pushUrl: PushUrlSchema.optional(), protectedDigest: SHA256.optional() }),
+  ),
   state: ItemStateSchema,
   /** The step the item is in; absent before the first step and between steps. */
   currentStepId: StepIdSchema.optional(),
@@ -283,6 +372,8 @@ export const StoredItemSchema = z.strictObject({
   deleted: z.boolean(),
   /** What each agent call used, in log order; absent before the first call ends. */
   calls: z.array(AgentCallUsageSchema).optional(),
+  /** The finish actions on a done item; absent until the first one starts. */
+  finish: StoredFinishSchema.optional(),
   createdAt: EpochMsSchema,
   updatedAt: EpochMsSchema,
   /** The seq of the last event folded in. */
@@ -299,3 +390,4 @@ export type AttemptRecord = z.output<typeof AttemptRecordSchema>;
 export type StoredStep = z.output<typeof StoredStepSchema>;
 export type StoredDecision = z.output<typeof StoredDecisionSchema>;
 export type StoredItem = z.output<typeof StoredItemSchema>;
+export type StoredFinish = z.output<typeof StoredFinishSchema>;

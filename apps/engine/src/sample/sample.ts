@@ -19,6 +19,8 @@ import {
   type DecisionId,
   type DecisionDiffResult,
   err,
+  finishActions,
+  type FinishAction,
   type ItemId,
   type ItemRecord,
   ok,
@@ -78,7 +80,40 @@ export class SampleEngine {
         return this.resolveDecision(command);
       case "stop_item":
         return this.stopItem(command.itemId);
+      case "finish_item":
+        return this.finishItem(command.itemId, command.action);
+      case "accept_git_changes":
+        // The sample items touch no repo, so no Finish action is ever refused for its git config.
+        return err({ code: "invalid_state", message: "No Finish action was refused for changed git config or hooks." });
     }
+  }
+
+  /** The action's result at once: no repo is touched, and the pull request URL is made up. */
+  private finishItem(itemId: ItemId, action: FinishAction): Result<null, CommandError> {
+    const item = this.store.get(itemId);
+    if (!item) return err({ code: "not_found", message: `no item ${itemId}` });
+    if (!finishActions(item).includes(action) || item.finish === undefined) {
+      return err({ code: "invalid_state", message: `${action} is not available for item ${itemId} now` });
+    }
+    const base = this.setup.repos.find((repo) => repo.id === item.repoIds[0])?.baseBranch ?? "main";
+    const finish = { ...item.finish };
+    delete finish.failed;
+    delete finish.detail;
+    let cardLine: string;
+    if (action === "merge") {
+      const commit = randomUUID().replaceAll("-", "").padEnd(40, "0").slice(0, 40);
+      Object.assign(finish, { merged: { baseBranch: base, commit }, worktreeRemoved: true });
+      cardLine = `merged into ${base} · ${commit.slice(0, 7)}`;
+    } else if (action === "pull_request") {
+      const url = `https://${item.finish.pushTarget ?? "github.com/northwind/orders-api"}/pull/128`;
+      finish.pullRequest = { url };
+      cardLine = `PR opened · ${url.replace(/^https:\/\//, "")}`;
+    } else {
+      finish.worktreeRemoved = true;
+      cardLine = "discarded";
+    }
+    this.store.put({ ...item, finish, cardLine });
+    return ok(null);
   }
 
   /**

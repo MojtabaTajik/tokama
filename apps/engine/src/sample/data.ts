@@ -18,6 +18,8 @@ export const ITEM_IDS = {
   building: "item_1a2b3c4d-0008-4a1b-8c1d-000000000008",
   failed: "item_1a2b3c4d-0009-4a1b-8c1d-000000000009",
   quickChange: "item_1a2b3c4d-0010-4a1b-8c1d-000000000010",
+  /** A done task with a commit on its branch: Finish offers Merge, Open PR and Discard. */
+  finished: "item_1a2b3c4d-0011-4a1b-8c1d-000000000011",
 } as const;
 
 const agents = {
@@ -134,7 +136,7 @@ const templates = {
 
 export const sampleSetup = {
   repos: [
-    { id: "orders-api", baseBranch: "main", checks: ["pnpm test", "pnpm lint"] },
+    { id: "orders-api", baseBranch: "main", checks: ["pnpm test", "pnpm lint"], path: "~/code/orders-api" },
     { id: "checkout-web", baseBranch: "main", checks: ["npm test"] },
     { id: "inventory-service", baseBranch: "develop", checks: [] },
   ],
@@ -147,7 +149,7 @@ export const sampleSetup = {
   ],
   agents: [agents.architect, agents.investigator, agents.reviewer, agents.builder],
   templates: [templates.emergency, templates.slowQuery, templates.planAndBuild, templates.quickFix, templates.quickChange, templates.reviewOnly],
-  health: { git: { ok: true, version: "git version 2.54.0" }, clis: [{ cliId: "claude-code", installed: true, loggedIn: true, version: "2.1.331" }], config: [] },
+  health: { git: { ok: true, version: "git version 2.54.0" }, clis: [{ cliId: "claude-code", installed: true, loggedIn: true, version: "2.1.331" }], gh: { installed: true, loggedIn: true }, config: [] },
 };
 
 type StepState = "pending" | "running" | "needs_you" | "passed" | "failed";
@@ -293,6 +295,26 @@ export function sampleItems(now: number) {
       createdAt: ago(now, 180),
       cardLine: "missing index on order_items(order_id)",
       steps: steps(templates.slowQuery, ["passed", "passed", "passed"]),
+    },
+    {
+      ...base,
+      id: ITEM_IDS.finished,
+      kind: "task",
+      templateId: templates.quickFix.id,
+      title: "Fix the null check in cart totals",
+      text: "Cart totals crash when a line has no price. Fix the null check.",
+      repoIds: ["orders-api"],
+      privacy: "local_and_cloud",
+      state: "done",
+      createdAt: ago(now, 150),
+      cardLine: "commit 3f2a9c1 · tokama/00000011",
+      steps: steps(templates.quickFix, ["passed", "passed"]),
+      outcome: {
+        kind: "done",
+        detail: "Committed 3f2a9c1e8b7d on tokama/00000011.",
+        commits: [{ repoId: "orders-api", commit: "3f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39", branch: "tokama/00000011" }],
+      },
+      finish: { worktreeRemoved: false, pushTarget: "github.com/northwind/orders-api" },
     },
     {
       ...base,

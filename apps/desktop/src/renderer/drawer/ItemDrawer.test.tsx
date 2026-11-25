@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BridgeEvent, ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { App } from "../App.js";
-import { approved, committed, DECISION_ID, needsYou, setup, task } from "../testing/drawer.js";
+import { approved, committed, DECISION_ID, finishable, needsYou, setup, task } from "../testing/drawer.js";
 import { ItemDrawer } from "./ItemDrawer.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -37,6 +37,7 @@ function fakeBridge(start: ItemRecord[]) {
     }),
     query,
     command,
+    saveLayout: vi.fn(async () => undefined),
     onEvent: vi.fn((listener: (event: BridgeEvent) => void) => {
       eventListeners.add(listener);
       return () => eventListeners.delete(listener);
@@ -629,5 +630,268 @@ describe("item drawer with real-mode records", () => {
     expect($$(".needs-you .choice").map((el) => el.textContent)).toEqual(["Retry step", "Stop"]);
     await act(async () => ($$(".needs-you .choice")[0] as HTMLButtonElement).click());
     expect(fake.command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: asked.id, decisionId: DECISION_ID, choice: "retry_step" });
+  });
+});
+
+describe("item drawer: Finish", () => {
+  const button = (label: string) => $$(".finish .choice, .finish-ended .link").find((el) => el.textContent === label) as HTMLButtonElement;
+  const key = (name: string) => act(async () => void document.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true })));
+  const rows = () => $$(".finish-row").map((el) => [el.querySelector(".finish-title")?.textContent, el.querySelector(".choice")?.textContent, (el.querySelector(".choice") as HTMLButtonElement).disabled]);
+
+  it("shows no Finish section for items that are not done or have no worktree", async () => {
+    await renderDrawer(fakeBridge([committed]).bridge, committed.id);
+    expect($(".finish")).toBeNull();
+    await renderDrawer(fakeBridge([task]).bridge, task.id);
+    expect($(".finish")).toBeNull();
+  });
+
+  it("offers the three rows under the item branch; Merge and Open PR send finish_item, with the push target shown first", async () => {
+    const fake = fakeBridge([finishable]);
+    await renderDrawer(fake.bridge, finishable.id);
+    expect(text(".finish-head")).toBe("Finishtokama/0b9f3c1e · 1 commit ahead of main");
+    expect(rows()).toEqual([
+      ["Merge into main", "Merge into main", false],
+      ["Open PR", "Open PR", false],
+      ["Discard", "Discard…", false],
+    ]);
+    expect($$(".finish-row .finish-text")[1]?.textContent).toContain("to github.com/northwind/orders-api and opens a pull request with gh");
+    await act(async () => button("Merge into main").click());
+    expect(fake.command).toHaveBeenCalledWith({ type: "finish_item", itemId: finishable.id, action: "merge" });
+    await fake.push({ ...finishable, finish: { ...finishable.finish!, running: "merge" } });
+    expect(text(".finish-running")).toContain("Merging into main");
+    expect(rows().every(([, , disabled]) => disabled)).toBe(true);
+    await fake.push({ ...finishable, finish: { worktreeRemoved: true, merged: { baseBranch: "main", commit: "abcdef1234567890abcdef1234567890abcdef12" } } });
+    expect($(".finish")).toBeNull();
+    expect(text(".finish-ended-title")).toBe("merged: Merged into main · abcdef1");
+    expect(text(".drawer-state")).toContain("· merged");
+  });
+
+  it("says a refused merge in place; a conflict offers Open PR instead", async () => {
+    const refused = { ...finishable, finish: { ...finishable.finish!, failed: { action: "merge", reason: "conflict", detail: "The branch conflicts with main in README.md." } } } as unknown as ItemRecord;
+    const fake = fakeBridge([refused]);
+    await renderDrawer(fake.bridge, refused.id);
+    expect(text(".finish-notice-title")).toBe("! main has moved and the merge has conflicts.");
+    expect(text(".finish-notice-body")).toBe("The branch conflicts with main in README.md.");
+    await act(async () => button("Open PR instead").click());
+    expect(fake.command).toHaveBeenCalledWith({ type: "finish_item", itemId: refused.id, action: "pull_request" });
+  });
+
+  it("asks before Discard, in place; Keep and Escape cancel without closing the drawer, Discard sends it", async () => {
+    const fake = fakeBridge([finishable]);
+    const onClose = await renderDrawer(fake.bridge, finishable.id);
+    await act(async () => button("Discard…").click());
+    expect(text(".finish-confirm-title")).toBe("Discard this work?");
+    expect(text(".finish-confirm .finish-text")).toBe("Deletes the worktree and the branch tokama/0b9f3c1e with its 1 commit. The item and its log stay. This can't be undone.");
+    expect(fake.command).not.toHaveBeenCalled();
+    await key("Escape");
+    expect($(".finish-confirm")).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => button("Discard…").click());
+    await act(async () => ($$(".finish-confirm .choice").find((el) => el.textContent === "Keep") as HTMLButtonElement).click());
+    expect(fake.command).not.toHaveBeenCalled();
+    await act(async () => button("Discard…").click());
+    await act(async () => ($$(".finish-confirm .choice").find((el) => el.textContent === "Discard") as HTMLButtonElement).click());
+    expect(fake.command).toHaveBeenCalledWith({ type: "finish_item", itemId: finishable.id, action: "discard" });
+  });
+
+  it("opens the Discard question at once when asked from the list", async () => {
+    await act(async () => root.render(<ItemDrawer bridge={fakeBridge([finishable]).bridge} itemId={finishable.id} setup={setup} onClose={vi.fn()} request={{ seq: 1, discard: true }} />));
+    expect(text(".finish-confirm-title")).toBe("Discard this work?");
+  });
+
+  it("turns Open PR off with gh's state and offers Check again; a refused command is said in the engine's words", async () => {
+    const fake = fakeBridge([finishable]);
+    const onCheckAgain = vi.fn();
+    const loggedOut = { ...setup, health: { ...setup.health, gh: { installed: true, loggedIn: false } } } as Setup;
+    await act(async () => root.render(<ItemDrawer bridge={fake.bridge} itemId={finishable.id} setup={loggedOut} onClose={vi.fn()} onCheckAgain={onCheckAgain} />));
+    expect(button("Open PR").disabled).toBe(true);
+    expect(text(".finish-off")).toBe("✕ logged out · run gh auth login in a terminalCheck again");
+    await act(async () => ($(".finish-off .link") as HTMLButtonElement).click());
+    expect(onCheckAgain).toHaveBeenCalledTimes(1);
+    fake.replyWith(async () => ({ ok: false, error: { code: "invalid_state", message: "Merge is still running." } }));
+    await act(async () => button("Merge into main").click());
+    expect(text(".drawer-notice")).toContain("Merge is still running.");
+  });
+
+  it("after a pull request: PR #12 open with its URL as text, and Remove worktree asks first", async () => {
+    const pr = { ...finishable, finish: { ...finishable.finish!, pullRequest: { url: "https://github.com/northwind/orders-api/pull/12" } } } as ItemRecord;
+    const fake = fakeBridge([pr]);
+    await renderDrawer(fake.bridge, pr.id);
+    expect(text(".finish-ended-title")).toBe("pull request: PR #12 open");
+    expect(text(".finish-url")).toBe("https://github.com/northwind/orders-api/pull/12");
+    expect($(".finish-ended a")).toBeNull();
+    expect(text(".drawer-state")).toContain("· PR open");
+    await act(async () => button("Remove worktree").click());
+    await act(async () => ($$(".finish-confirm .choice").find((el) => el.textContent === "Discard") as HTMLButtonElement).click());
+    expect(fake.command).toHaveBeenCalledWith({ type: "finish_item", itemId: pr.id, action: "discard" });
+  });
+
+  it("a discarded item reads as discarded", async () => {
+    const gone = { ...finishable, finish: { worktreeRemoved: true } } as ItemRecord;
+    await renderDrawer(fakeBridge([gone]).bridge, gone.id);
+    expect(text(".drawer-state")).toBe("⊘discarded");
+    expect(text(".finish-ended-title")).toBe("discarded: Discarded");
+  });
+
+  it("shows engine text as text only", async () => {
+    const hostile = { ...finishable, finish: { ...finishable.finish!, failed: { action: "merge", detail: "<img src=x onerror=alert(1)> conflict" } } } as unknown as ItemRecord;
+    await renderDrawer(fakeBridge([hostile]).bridge, hostile.id);
+    expect($(".finish img")).toBeNull();
+    expect(text(".finish-notice-body")).toBe("<img src=x onerror=alert(1)> conflict");
+  });
+});
+
+describe("a Done row's split button", () => {
+  const showDone = async (items: ItemRecord[]) => {
+    const fake = fakeBridge(items);
+    await act(async () => root.render(<App bridge={fake.bridge} retryDelayMs={10} now={finishable.createdAt + 60_000} />));
+    const done = $$(".filter-bar .segment").find((el) => el.textContent?.startsWith("Done")) as HTMLButtonElement;
+    await act(async () => done.click());
+    return fake;
+  };
+  const wrapOf = (itemId: string) => $$(".pl-row-wrap").find((el) => el.querySelector(".pl-row")?.getAttribute("data-item-id") === itemId)!;
+
+  it("merges from the main part, and offers the three ways from ▾", async () => {
+    const fake = await showDone([finishable, committed]);
+    const wrap = wrapOf(finishable.id);
+    expect(wrap.querySelector(".finish-split-main")?.textContent).toBe("Merge into main");
+    // A done item without a worktree has no split button.
+    expect(wrapOf(committed.id).querySelector(".finish-split")).toBeNull();
+    await act(async () => (wrap.querySelector(".finish-split-main") as HTMLButtonElement).click());
+    expect(fake.command).toHaveBeenCalledWith({ type: "finish_item", itemId: finishable.id, action: "merge" });
+    const more = wrap.querySelector(".finish-split-more") as HTMLButtonElement;
+    expect(more.getAttribute("aria-label")).toBe(`More ways to finish ${finishable.title}`);
+    await act(async () => more.click());
+    expect(more.getAttribute("aria-expanded")).toBe("true");
+    expect([...wrap.querySelectorAll("[role=menuitem]")].map((el) => el.textContent)).toEqual(["Merge into mainlocal merge, then clean up", "Open PRpush and open with gh", "Discard…"]);
+    expect(document.activeElement?.textContent).toBe("Merge into mainlocal merge, then clean up");
+    await act(async () => void document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+    expect(wrap.querySelector("[role=menu]")).toBeNull();
+    expect(document.activeElement).toBe(more);
+  });
+
+  it("Discard… opens the item with its Discard question; nothing is sent", async () => {
+    const fake = await showDone([finishable]);
+    const wrap = wrapOf(finishable.id);
+    await act(async () => (wrap.querySelector(".finish-split-more") as HTMLButtonElement).click());
+    await act(async () => ([...wrap.querySelectorAll("[role=menuitem]")].find((el) => el.textContent === "Discard…") as HTMLButtonElement).click());
+    expect(text(".finish-confirm-title")).toBe("Discard this work?");
+    expect(fake.command).not.toHaveBeenCalled();
+  });
+
+  it("after a finish, the row says how it ended where the steps were, and has no split button", async () => {
+    await showDone([{ ...finishable, finish: { worktreeRemoved: false, pullRequest: { url: "https://github.com/northwind/orders-api/pull/12" } } } as ItemRecord]);
+    const wrap = wrapOf(finishable.id);
+    expect(wrap.querySelector(".pl-finish")?.textContent).toBe("↗pull request: PR #12 open");
+    expect(wrap.querySelector(".pl-pipe")).toBeNull();
+    expect(wrap.querySelector(".finish-split")).toBeNull();
+  });
+});
+
+describe("Finish: review fixes", () => {
+  const showDone = async (items: ItemRecord[]) => {
+    const fake = fakeBridge(items);
+    await act(async () => root.render(<App bridge={fake.bridge} retryDelayMs={10} now={finishable.createdAt + 60_000} />));
+    await act(async () => ($$(".filter-bar .segment").find((el) => el.textContent?.startsWith("Done")) as HTMLButtonElement).click());
+    return fake;
+  };
+  const wrap = () => $$(".pl-row-wrap").find((el) => el.querySelector(".pl-row")?.getAttribute("data-item-id") === finishable.id)!;
+  const menuItems = () => [...wrap().querySelectorAll<HTMLButtonElement>("[role=menuitem]")];
+  const openMenu = () => act(async () => (wrap().querySelector(".finish-split-more") as HTMLButtonElement).click());
+  const pickDiscard = () => act(async () => menuItems().find((el) => el.textContent === "Discard…")!.click());
+  const key = (name: string) => act(async () => void document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true })));
+
+  it("the Discard question goes when an action starts, and does not come back once nothing is left to discard", async () => {
+    const fake = fakeBridge([finishable]);
+    await renderDrawer(fake.bridge, finishable.id);
+    await act(async () => ($$(".finish .choice").find((el) => el.textContent === "Discard…") as HTMLButtonElement).click());
+    expect($(".finish-confirm")).not.toBeNull();
+    await fake.push({ ...finishable, finish: { ...finishable.finish!, running: "merge" } });
+    expect($(".finish-confirm")).toBeNull();
+    await fake.push({ ...finishable, finish: { worktreeRemoved: true, merged: { baseBranch: "main", commit: "a".repeat(40) } } });
+    expect($(".finish-confirm")).toBeNull();
+  });
+
+  it("Discard… from the row asks again after Keep", async () => {
+    await showDone([finishable]);
+    await openMenu();
+    await pickDiscard();
+    await act(async () => ($$(".finish-confirm .choice").find((el) => el.textContent === "Keep") as HTMLButtonElement).click());
+    expect($(".finish-confirm")).toBeNull();
+    await openMenu();
+    await pickDiscard();
+    expect(text(".finish-confirm-title")).toBe("Discard this work?");
+  });
+
+  it("a command the row sent and the engine refused opens the item with the engine's words", async () => {
+    const fake = await showDone([finishable]);
+    fake.replyWith(async () => ({ ok: false, error: { code: "invalid_request", message: "Local-only mode is on: nothing leaves this machine, so Tokama does not push." } }));
+    await openMenu();
+    await act(async () => menuItems().find((el) => el.textContent?.startsWith("Open PR"))!.click());
+    expect(text(".drawer-notice")).toContain("Local-only mode is on");
+    expect($("aside.drawer h2")?.textContent).toBe(finishable.title);
+  });
+
+  it("the menu: the arrow toggles it closed, arrows and Home/End move, an off Open PR is reachable but does nothing, a pick returns focus to the row", async () => {
+    const loggedOut = { ...setup, health: { ...setup.health, gh: { installed: true, loggedIn: false } } } as Setup;
+    const fake = fakeBridge([finishable]);
+    const original = fake.query.getMockImplementation()!;
+    fake.query.mockImplementation(async (q) => (q.type === "setup" ? { ok: true, data: loggedOut } : original(q)));
+    await act(async () => root.render(<App bridge={fake.bridge} retryDelayMs={10} now={finishable.createdAt + 60_000} />));
+    await act(async () => ($$(".filter-bar .segment").find((el) => el.textContent?.startsWith("Done")) as HTMLButtonElement).click());
+    await openMenu();
+    expect(menuItems().every((el) => el.tabIndex === -1)).toBe(true);
+    const pr = menuItems()[1]!;
+    expect(pr.getAttribute("aria-disabled")).toBe("true");
+    expect(pr.textContent).toBe("Open PRgh is installed but not logged in.");
+    await key("ArrowDown");
+    expect(document.activeElement).toBe(pr);
+    await key("End");
+    expect(document.activeElement?.textContent).toBe("Discard…");
+    await key("Home");
+    expect(document.activeElement?.textContent).toBe("Merge into mainlocal merge, then clean up");
+    await act(async () => pr.click());
+    expect(fake.command).not.toHaveBeenCalled();
+    // A mousedown on the arrow's own symbol, then its click: the menu closes, and stays closed.
+    const more = wrap().querySelector(".finish-split-more") as HTMLButtonElement;
+    await act(async () => {
+      more.querySelector("span")!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      more.click();
+    });
+    expect(wrap().querySelector("[role=menu]")).toBeNull();
+    await openMenu();
+    await act(async () => menuItems()[0]!.click());
+    expect(fake.command).toHaveBeenCalledWith({ type: "finish_item", itemId: finishable.id, action: "merge" });
+    expect(document.activeElement).toBe(wrap().querySelector(".pl-row"));
+  });
+});
+
+describe("Finish: git config or hooks changed", () => {
+  const refused = {
+    ...finishable,
+    finish: {
+      ...finishable.finish!,
+      failed: {
+        action: "merge",
+        reason: "steering_changed",
+        detail: "The repo's git config or hooks changed since the item started.",
+        changes: [
+          { what: "setting core.sshcommand", before: "ssh", after: "<b>touch pwned</b>; ssh" },
+          { what: "hook pre-push added", after: "#!/bin/sh exit 0" },
+        ],
+      },
+    },
+  } as unknown as ItemRecord;
+
+  it("lists each change with its values as text, and I made this change sends accept_git_changes", async () => {
+    const fake = fakeBridge([refused]);
+    await renderDrawer(fake.bridge, refused.id);
+    expect(text(".finish-notice-title")).toBe("! The repo's git config or hooks changed.");
+    expect($$(".finish-changes li").map((el) => el.textContent)).toEqual(["setting core.sshcommandwas sshnow <b>touch pwned</b>; ssh", "hook pre-push addednow #!/bin/sh exit 0"]);
+    expect($(".finish-changes b")).toBeNull();
+    const accept = $$(".finish-row .choice").find((el) => el.textContent === "I made this change") as HTMLButtonElement;
+    expect(accept.closest(".finish-row")?.getAttribute("data-action")).toBe("merge");
+    await act(async () => accept.click());
+    expect(fake.command).toHaveBeenCalledWith({ type: "accept_git_changes", itemId: refused.id });
   });
 });

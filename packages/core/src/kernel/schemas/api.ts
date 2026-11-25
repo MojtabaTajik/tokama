@@ -5,7 +5,7 @@
 // parser returns (ids branded).
 import { z } from "zod";
 import { DecisionIdSchema, ItemIdSchema, RepoIdSchema, TemplateRefSchema } from "./ids.js";
-import { ItemRecordSchema } from "./item.js";
+import { FinishActionSchema, ItemRecordSchema } from "./item.js";
 import { UsageRangeSchema, UsageReportSchema, UsageScopeSchema } from "./usage.js";
 import { AgentsListSchema } from "./agents.js";
 import { AiCliListSchema } from "./ai-clis.js";
@@ -15,7 +15,7 @@ import { MachineReportSchema } from "./machine.js";
 import { RepoSummarySchema, SetupSchema } from "./setup.js";
 import { MAX_TEMPLATE_ENTRIES, TemplateDetailSchema, TemplateEntrySchema, TemplateFileKeySchema } from "./template-files.js";
 
-export const API_VERSION = 4;
+export const API_VERSION = 5;
 
 const apiVersion = z.literal(API_VERSION);
 const requestId = z.string().min(1).max(128);
@@ -56,6 +56,14 @@ export const CommandSchema = z.discriminatedUnion("type", [
     note: z.string().max(MAX_NOTE_CHARS).optional(),
   }),
   z.strictObject({ type: z.literal("stop_item"), itemId: ItemIdSchema }),
+  // A change outside the worktree on a done item, which Tokama runs itself: merge its commit into
+  // the base branch, push it and open a pull request, or remove its worktree and branch. Replies
+  // once the start is recorded; the result comes as item_updated events.
+  z.strictObject({ type: z.literal("finish_item"), itemId: ItemIdSchema, action: FinishActionSchema }),
+  // After a Finish action was refused because the repo's git config or hooks changed: the
+  // engineer made those changes, so they become the item's new baseline. Refused when they changed
+  // again since the refusal.
+  z.strictObject({ type: z.literal("accept_git_changes"), itemId: ItemIdSchema }),
   // Adds a folder to repos.yaml. Omitted fields take the suggest_repo values. The engine checks
   // every field and answers a bad one in plain words, so the id is free text here.
   z.strictObject({
@@ -181,6 +189,8 @@ export const CommandResultSchemas = {
   start_item: z.strictObject({ itemId: ItemIdSchema }),
   resolve_decision: z.null(),
   stop_item: z.null(),
+  finish_item: z.null(),
+  accept_git_changes: z.null(),
   add_repo: z.strictObject({ repo: RepoSummarySchema }),
   init_repo: z.strictObject({ gitInit: z.boolean(), ignoreRules: z.number().int().min(0).nullable() }),
   first_commit: z.strictObject({ commit: z.string().max(64), files: z.number().int().min(0) }),

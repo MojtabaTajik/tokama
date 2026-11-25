@@ -2,7 +2,7 @@
 // home, and a scripted agent runtime in place of Claude Code. Start, checks and commit; a
 // decision; stop; and a restart while a step runs.
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { connect, type EngineClient } from "@tokama/client";
@@ -153,7 +153,7 @@ describe("real mode", () => {
     const { client } = await engine(scripted([{ writes: {} }]));
     const reply = await client.query({ type: "setup" });
     if (!reply.ok) throw new Error(reply.error.message);
-    expect(reply.data.repos).toEqual([{ id: "orders-api", baseBranch: "main", checks: ["sh check.sh"] }]);
+    expect(reply.data.repos).toEqual([{ id: "orders-api", baseBranch: "main", checks: ["sh check.sh"], path: repoPath }]);
     expect(reply.data.agents).toContainEqual({ id: "builder", name: "Builder", cliId: "claude-code", model: "sonnet", runsOn: "cloud" });
     expect(reply.data.templates.map((t) => t.id)).toEqual(["orders-api/careful-fix", "builtin/quick-fix", "builtin/quick-change", "builtin/plan-and-build", "builtin/review-only"]);
     expect(reply.data.templates[1]).toMatchObject({
@@ -220,6 +220,40 @@ describe("real mode", () => {
     expect(await client.command({ type: "resolve_decision", itemId: id, decisionId: second.decision!.id, choice: "approve" })).toEqual({ ok: true, data: null });
     const done = await waitItem(client, id, (i) => i.state === "done", "done");
     expect(git("show", `${done.outcome?.commits?.[0]?.commit}:greeting.txt`)).toBe("hello world");
+  });
+
+  it("finishes a done item on command: Merge fast-forwards main and removes the worktree; the record and card say so", SLOW, async () => {
+    git("remote", "add", "origin", "https://ci-bot:secret@github.com/acme/orders-api.git");
+    const { client } = await engine(scripted([{ writes: { "greeting.txt": "hello world\n" } }]));
+    const id = await start(client);
+    const done = await waitItem(client, id, (i) => i.state === "done", "done");
+    // origin as it was at Start, without its user info, is where Open PR would push.
+    expect(done.finish).toEqual({ worktreeRemoved: false, pushTarget: "github.com/acme/orders-api" });
+    expect(readFileSync(join(home, "items", id, "events.jsonl"), "utf8")).not.toContain("secret");
+    const commit = done.outcome!.commits![0]!;
+    expect(await client.command({ type: "finish_item", itemId: id, action: "merge" })).toEqual({ ok: true, data: null });
+    const merged = await waitItem(client, id, (i) => i.finish?.merged !== undefined, "merged");
+    expect(merged.finish).toEqual({ merged: { baseBranch: "main", commit: commit.commit }, worktreeRemoved: true, pushTarget: "github.com/acme/orders-api", at: expect.any(Number) });
+    expect(merged.cardLine).toBe(`merged into main · ${commit.commit.slice(0, 7)}`);
+    expect(git("rev-parse", "main")).toBe(commit.commit);
+    expect(git("branch", "--list", commit.branch!)).toBe("");
+    expect(await client.command({ type: "finish_item", itemId: id, action: "discard" })).toMatchObject({ ok: false, error: { code: "invalid_state" } });
+  });
+
+  it("finishes a done item on command: a refused Merge is recorded with why, and Discard removes the worktree", SLOW, async () => {
+    const { client } = await engine(scripted([{ writes: { "greeting.txt": "hello world\n" } }]));
+    const id = await start(client);
+    await waitItem(client, id, (i) => i.state === "done", "done");
+    git("switch", "-q", "-c", "feature");
+    await client.command({ type: "finish_item", itemId: id, action: "merge" });
+    const refused = await waitItem(client, id, (i) => i.finish?.failed !== undefined, "refused");
+    expect(refused.finish?.failed).toEqual({ action: "merge", reason: "other_branch", detail: "Your checkout is on feature, not main. Switch it to main, then merge again. Tokama does not switch branches for you." });
+    expect(await client.command({ type: "finish_item", itemId: id, action: "pull_request" })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
+    await client.command({ type: "finish_item", itemId: id, action: "discard" });
+    const discarded = await waitItem(client, id, (i) => i.finish?.worktreeRemoved === true, "discarded");
+    expect(discarded.cardLine).toBe("discarded");
+    expect(discarded.finish?.failed).toBeUndefined();
+    expect(git("worktree", "list")).not.toContain(".tokama/wt");
   });
 
   it("asks after a failed attempt; Retry once more runs the step again and commits", SLOW, async () => {

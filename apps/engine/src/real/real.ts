@@ -46,11 +46,15 @@ export interface RealEngineOptions {
   readonly runtime?: (agent: Agent) => AgentRuntime | undefined;
   /** Time between SIGTERM and SIGKILL for a leftover agent tree at start. */
   readonly recoveryGraceMs?: number;
+  /** argv that starts gh for Open PR. Default: `["gh"]`. */
+  readonly ghCommand?: readonly [string, ...string[]];
+  /** The SSH agent socket, for a push to an SSH remote only. Default: this process's SSH_AUTH_SOCK. */
+  readonly sshAuthSock?: string;
   readonly log: (message: string) => void;
 }
 
 /** The commands about items; repo commands are the engine's own. */
-type ItemCommand = Extract<Command, { type: "start_item" | "resolve_decision" | "stop_item" }>;
+type ItemCommand = Extract<Command, { type: "start_item" | "resolve_decision" | "stop_item" | "finish_item" | "accept_git_changes" }>;
 
 const fail = (code: CommandError["code"], message: string): Result<never, CommandError> => err({ code, message });
 
@@ -79,6 +83,7 @@ export class RealEngine {
     this.unsubscribe = items.subscribe(project);
 
     const runtime = options.runtime ?? defaultRuntime(options.runner);
+    const sshAuthSock = "sshAuthSock" in options ? options.sshAuthSock : process.env["SSH_AUTH_SOCK"];
     this.loop = createRunLoop({
       store: items,
       git: createGit({ runner: options.runner }),
@@ -90,6 +95,8 @@ export class RealEngine {
       runtime,
       ...(options.recoveryGraceMs !== undefined && { recoveryGraceMs: options.recoveryGraceMs }),
       log,
+      ...(options.ghCommand !== undefined && { ghCommand: options.ghCommand }),
+      ...(sshAuthSock !== undefined && sshAuthSock !== "" && { sshAuthSock }),
     });
     this.ready = this.loop.ready;
   }
@@ -136,6 +143,10 @@ export class RealEngine {
         return this.loop.resolveDecision(command.itemId, command.decisionId, command.choice, command.note);
       case "stop_item":
         return this.loop.stopItem(command.itemId);
+      case "finish_item":
+        return this.loop.finishItem(command.itemId, command.action);
+      case "accept_git_changes":
+        return this.loop.acceptGitChanges(command.itemId);
     }
   }
 

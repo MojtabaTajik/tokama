@@ -80,7 +80,7 @@ import { type HealthChecks, machineChecks } from "./real/health.js";
 import { runningGroups } from "./machine.js";
 import { RealEngine } from "./real/real.js";
 import { SampleEngine } from "./sample/sample.js";
-import { agentsFor, loadConfig, startProblem, stepProblems } from "./real/config.js";
+import { agentsFor, displayPath, loadConfig, startProblem, stepProblems } from "./real/config.js";
 import { sampleTemplateLoads } from "./sample/templates.js";
 import { sampleMachineReport } from "./sample/machine.js";
 import { sampleClaudePlan, sampleLogEntries, sampleOtherPlans, sampleUsageRows } from "./sample/usage.js";
@@ -124,6 +124,8 @@ export interface EngineOptions {
    * usage scope reads. Absent: the logs are never read.
    */
   readonly claudeLogs?: string;
+  /** Real mode: argv that starts gh for Open PR and its check. Default: `["gh"]`. */
+  readonly ghCommand?: readonly [string, ...string[]];
   /** Default: the system clock. */
   readonly clock?: Clock;
   /** A connection that sends no hello within this time is closed. Default 5 s. */
@@ -239,9 +241,10 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
           clock: options.clock ?? systemClock,
           processes: options.processTable ?? posixProcessTable,
           runner,
-          checks: options.checks ?? machineChecks(runner),
+          checks: options.checks ?? machineChecks(runner, options.ghCommand),
           ...(options.runtime !== undefined && { runtime: options.runtime }),
           ...(options.recoveryGraceMs !== undefined && { recoveryGraceMs: options.recoveryGraceMs }),
+          ...(options.ghCommand !== undefined && { ghCommand: options.ghCommand }),
           log,
         }).catch((error: unknown) => {
           realFailure = `Tokama could not start running items: ${String(error)}`.slice(0, 1000);
@@ -411,7 +414,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       return base;
     }
     const added = loaded.value.filter((repo) => !base.repos.some((known) => known.id === repo.id));
-    return { ...base, repos: [...base.repos, ...added.map((repo) => ({ id: repo.id, baseBranch: repo.baseBranch, checks: [...repo.checks] }))] };
+    return { ...base, repos: [...base.repos, ...added.map((repo) => ({ id: repo.id, baseBranch: repo.baseBranch, checks: [...repo.checks], path: displayPath(repo.path) }))] };
   };
 
   /** Every template file, read again on each query so the page shows the files as they are now. */

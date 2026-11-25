@@ -1,6 +1,8 @@
 // What is set up on this machine, read fresh from Tokama's home folder and the repos: repos,
 // agents (personal, each repo's shared ones, built-in) and templates. Reading never fails: a file
 // that does not load becomes a config problem and the rest still loads.
+import { homedir } from "node:os";
+import { sep } from "node:path";
 import {
   type Agent,
   type AgentId,
@@ -173,7 +175,7 @@ export function toSetup(config: Config, health: Health): Setup {
     return [templateSummary(template, agentsFor(config, template))];
   });
   return {
-    repos: config.repos.map((repo) => ({ id: repo.id, baseBranch: repo.baseBranch, checks: repo.checks.filter((check) => check.length <= 500).slice(0, 20) })),
+    repos: config.repos.map((repo) => ({ id: repo.id, baseBranch: repo.baseBranch, checks: repo.checks.filter((check) => check.length <= 500).slice(0, 20), path: displayPath(repo.path) })),
     connections: [],
     agents,
     templates,
@@ -184,4 +186,9 @@ export function toSetup(config: Config, health: Health): Setup {
 /** The loaded template with this ref. */
 export function findTemplate(config: Config, ref: string): TemplateLoad | undefined {
   return config.templates.find((load) => (load.ok ? load.template.ref === ref : load.ref === ref));
+}
+
+/** A folder for display: the home folder as `~`. */
+export function displayPath(path: string, home = homedir()): string {
+  return home.length > 1 && (path === home || path.startsWith(`${home}${sep}`)) ? `~${path.slice(home.length)}` : path;
 }

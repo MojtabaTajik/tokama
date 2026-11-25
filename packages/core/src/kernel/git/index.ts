@@ -20,6 +20,7 @@ export {
   type GitErrorReason,
   type GitOptions,
   type GitResult,
+  type MergeTreeResult,
   type NumstatEntry,
   type StatusEntry,
   type TreeChange,

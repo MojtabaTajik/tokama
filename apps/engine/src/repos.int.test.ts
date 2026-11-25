@@ -133,7 +133,7 @@ describe("repo commands", () => {
     expect(text).toContain("base_branch: develop");
     expect(text).toContain("- pnpm lint");
     const setup = await client.query({ type: "setup" });
-    expect(setup.ok && setup.data.repos.find((repo) => repo.id === "billing-api")).toEqual({ id: "billing-api", baseBranch: "develop", checks: ["pnpm test", "pnpm lint"] });
+    expect(setup.ok && setup.data.repos.find((repo) => repo.id === "billing-api")).toEqual({ id: "billing-api", baseBranch: "develop", checks: ["pnpm test", "pnpm lint"], path: expect.stringMatching(/billing-api$/) });
 
     expect(await client.command({ type: "update_repo", repoId: "billing-api", baseBranch: "bad branch", checks: [] })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
     expect(await client.command({ type: "update_repo", repoId: "billing-api", baseBranch: "main", checks: ["a | b"] })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
@@ -152,7 +152,7 @@ describe("repo commands", () => {
     expect(await client.command({ type: "add_repo", path, id: "orders-api" })).toMatchObject({ ok: false, error: { code: "already_exists" } });
     expect(await client.command({ type: "add_repo", path })).toEqual({ ok: true, data: { repo: { id: "orders-api-2", baseBranch: "main", checks: expect.any(Array) } } });
     const after = await client.query({ type: "setup" });
-    expect(after.ok && after.data.repos.find((repo) => repo.id === "orders-api-2")).toEqual({ id: "orders-api-2", baseBranch: "main", checks: expect.any(Array) });
+    expect(after.ok && after.data.repos.find((repo) => repo.id === "orders-api-2")).toEqual({ id: "orders-api-2", baseBranch: "main", checks: expect.any(Array), path: expect.stringMatching(/orders-api$/) });
     // A sample repo is not in repos.yaml: removing it is refused and the file is left alone.
     const before = readFileSync(join(home, "repos.yaml"), "utf8");
     expect(await client.command({ type: "remove_repo", repoId: "orders-api" })).toMatchObject({ ok: false, error: { code: "not_found" } });

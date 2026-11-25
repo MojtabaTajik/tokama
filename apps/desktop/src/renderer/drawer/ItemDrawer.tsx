@@ -10,6 +10,8 @@ import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { attemptLine, decisionKind, hasEnded, nextRunLine, runLine, itemMark, KIND, outcomeLine, PRIVACY, stepAgent, stepMark, stepPosition, templateOf, whereLine } from "./describe.js";
 import { DecisionChoices } from "./DecisionChoices.js";
 import { DiffTab, useDecisionDiff } from "./DiffView.js";
+import { Finish } from "./Finish.js";
+import { finishState, isDiscarded } from "./finish-view.js";
 import { useItem } from "./useItem.js";
 
 const TEXT = {
@@ -78,9 +80,16 @@ export interface ItemDrawerProps {
   readonly onClose: () => void;
   /** Changes each time the engineer asks for the item's diff (Review the diff): the drawer shows its Diff tab. */
   readonly diffAsked?: number | undefined;
+  /** Reads the setup again (Finish's Check again). */
+  readonly onCheckAgain?: () => void;
+  /**
+   * What the list asked for this item: its Discard question, or a refusal to show. Each new `seq`
+   * asks again.
+   */
+  readonly request?: { readonly seq: number; readonly discard?: true; readonly notice?: string } | undefined;
 }
 
-export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked }: ItemDrawerProps) {
+export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckAgain, request }: ItemDrawerProps) {
   const { item, error, refresh } = useItem(bridge, itemId);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<Notice | undefined>(undefined);
@@ -106,6 +115,10 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked }: ItemDr
     setBusy(false);
     setTab("Steps");
   }, [itemId]);
+  // A refusal of a command the list sent for this item, in the engine's words.
+  useEffect(() => {
+    if (request?.notice !== undefined) setNotice({ tone: "warn", text: request.notice });
+  }, [request?.seq, request?.notice]);
   // On close, focus goes back to the opener, if it is still on the screen; if the item moved to
   // another group or column meanwhile, to the item's current row or card.
   useEffect(
@@ -156,7 +169,9 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked }: ItemDr
     // The button that sent it can be gone (the Stop confirmation): keep focus in the drawer.
     if (document.activeElement === document.body || document.activeElement === null) drawer.current?.focus();
     if (reply.ok) return;
-    setNotice(problem(reply.error.code, reply.error.message));
+    // A refused finish action says why in the engine's own words.
+    const refusedFinish = command.type === "finish_item" && (reply.error.code === "invalid_state" || reply.error.code === "invalid_request");
+    setNotice(refusedFinish ? { tone: "warn", text: reply.error.message } : problem(reply.error.code, reply.error.message));
     if (REFRESH_ON.has(reply.error.code)) refresh();
   };
 
@@ -222,6 +237,18 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked }: ItemDr
       {item?.state === "needs_you" && <NeedsYou item={item} setup={setup} decision={item.decision} busy={busy} onChoose={resolve} />}
       {item !== undefined && item.state !== "needs_you" && <After item={item} setup={setup} />}
 
+      {item?.state === "done" && (
+        <Finish
+          item={item}
+          setup={setup}
+          busy={busy}
+          askDiscard={request?.discard === true ? request.seq : undefined}
+          {...(onCheckAgain !== undefined && { onCheckAgain })}
+          onFinish={(action) => void send({ type: "finish_item", itemId: item.id, action })}
+          onAcceptChanges={() => void send({ type: "accept_git_changes", itemId: item.id })}
+        />
+      )}
+
       {item && (
         <>
           <Tabs tabs={tabs} shown={shown} onPick={setTab} />
@@ -259,10 +286,13 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked }: ItemDr
   );
 }
 
+/** A discarded item's work is gone: it reads as discarded rather than done. */
+const DISCARDED = { symbol: "⊘", word: "discarded", tone: "muted" } as const;
+
 function StateLine({ item }: { readonly item: ItemRecord }) {
-  const mark = itemMark(item.state);
+  const mark = isDiscarded(item) ? DISCARDED : itemMark(item.state);
   const position = stepPosition(item);
-  const outcome = outcomeLine(item);
+  const outcome = isDiscarded(item) ? undefined : (finishState(item) ?? outcomeLine(item));
   return (
     <p className="drawer-state">
       <span className="mark" data-tone={mark.tone} aria-hidden="true">

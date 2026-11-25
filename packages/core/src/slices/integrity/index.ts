@@ -2,6 +2,9 @@
 export { baseCategory, patternCategory, type ProtectedCategory } from "./protected.js";
 export {
   protectedSet,
+  sharedGitHashes,
+  sharedGitSettings,
+  type GitSetting,
   tamperChanges,
   type IntegrityError,
   type ProtectedArea,

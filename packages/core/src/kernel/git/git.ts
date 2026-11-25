@@ -78,6 +78,8 @@ export interface GitError {
   readonly exitCode: number | null;
   /** git's stderr (capped) or the refusal message. */
   readonly message: string;
+  /** git's stdout (capped), when git ran and failed: some commands report their result there. */
+  readonly stdout?: string;
 }
 
 export type GitResult<T> = Result<T, GitError>;
@@ -175,10 +177,44 @@ export interface Git {
   writeTree(repo: string): Promise<GitResult<string>>;
   /** `commit -q --no-verify -m <message>` of the index; returns the new commit id. */
   commit(repo: string, message: string): Promise<GitResult<string>>;
-  /** `commit-tree <tree> -p <parent> -m <message>`: a commit of exactly `tree`; returns its id. No ref moves. */
-  commitTree(repo: string, tree: string, parent: string, message: string): Promise<GitResult<string>>;
+  /**
+   * `commit-tree <tree> -p <parent>... -m <message>`: a commit of exactly `tree` (two parents for a
+   * merge commit); returns its id. No ref moves.
+   */
+  commitTree(repo: string, tree: string, parent: string | readonly string[], message: string): Promise<GitResult<string>>;
   /** `update-ref <ref> <newId> <oldId>`: moves `ref` (under refs/) only if it still points at `oldId`. */
   updateRef(repo: string, ref: string, newId: string, oldId: string): Promise<GitResult<void>>;
+  /** `symbolic-ref -q HEAD`: the full ref the checkout is on, e.g. refs/heads/main; undefined when HEAD is detached. */
+  currentRef(repo: string): Promise<GitResult<string | undefined>>;
+  /** `merge-base --is-ancestor <ancestor> <descendant>`. */
+  isAncestor(repo: string, ancestor: string, descendant: string): Promise<GitResult<boolean>>;
+  /**
+   * `merge-tree --write-tree` of two commits, in the object store only: no checkout, index or
+   * working tree is touched. A clean merge gives its tree; a conflicted one the conflicted paths.
+   */
+  mergeTree(repo: string, ours: string, theirs: string): Promise<GitResult<MergeTreeResult>>;
+  /**
+   * `merge --ff-only --no-edit <commit>` in the checkout at `repo`: moves its branch and working
+   * tree forward. git refuses, and changes nothing, when local changes or untracked files would be
+   * overwritten.
+   */
+  mergeFastForward(repo: string, commit: string): Promise<GitResult<void>>;
+  /**
+   * Every URL a push to `remote` goes to, as written: all `remote.<name>.pushurl` values, else all
+   * `remote.<name>.url` values (git pushes to each), before any `insteadOf` rewrite. Empty when
+   * the remote has none.
+   */
+  remotePushUrls(repo: string, remote: string): Promise<GitResult<string[]>>;
+  /** `remote get-url --push <remote>`: where a push really goes (the first URL), after `insteadOf` and `pushInsteadOf`. */
+  remoteResolvedPushUrl(repo: string, remote: string): Promise<GitResult<string>>;
+  /**
+   * `push --no-verify --porcelain <target> <commit>:refs/heads/<branch>`: no force. `target` is a
+   * remote name or a URL. `sshAuthSock` passes the SSH agent socket to this push only (an SSH
+   * remote); no other git call gets it.
+   */
+  push(repo: string, target: string, commit: string, branch: string, options?: { readonly sshAuthSock?: string }): Promise<GitResult<void>>;
+  /** `diff --name-only -z --no-renames <from> <to>`: every path that differs between two commits. */
+  diffNames(repo: string, from: string, to: string): Promise<GitResult<string[]>>;
   /** `rev-parse --verify <rev>`: the object id `rev` names. */
   revParse(repo: string, rev: string): Promise<GitResult<string>>;
   /**
@@ -215,6 +251,8 @@ export interface Git {
   checkGitVersion(): Promise<GitResult<string>>;
 }
 
+export type MergeTreeResult = { readonly clean: true; readonly tree: string } | { readonly clean: false; readonly conflicts: readonly string[] };
+
 export interface GitDirs {
   readonly gitDir: string;
   readonly commonDir: string;
@@ -236,12 +274,18 @@ export function createGit(options: GitOptions): Git {
   const safe = (config: readonly string[]) => config.flatMap((setting) => ["-c", setting]);
 
   /** Runs git with the safe config plus `extraConfig`; stdout comes back whole, through a temp file. */
-  async function raw(repo: string, args: readonly string[], extraConfig: readonly string[] = []): Promise<GitResult<string>> {
-    return map(capped(repo, args, extraConfig, Infinity), (out) => out.text);
+  async function raw(repo: string, args: readonly string[], extraConfig: readonly string[] = [], extraEnv: Readonly<Record<string, string>> = {}): Promise<GitResult<string>> {
+    return map(capped(repo, args, extraConfig, Infinity, extraEnv), (out) => out.text);
   }
 
   /** As `raw`, but only the first `maxBytes` of stdout are read. */
-  async function capped(repo: string, args: readonly string[], extraConfig: readonly string[], maxBytes: number): Promise<GitResult<{ text: string; cut: boolean }>> {
+  async function capped(
+    repo: string,
+    args: readonly string[],
+    extraConfig: readonly string[],
+    maxBytes: number,
+    extraEnv: Readonly<Record<string, string>> = {},
+  ): Promise<GitResult<{ text: string; cut: boolean }>> {
     const dir = await mkdtemp(join(tmpdir(), "tokama-git-"));
     try {
       const stdoutFile = join(dir, "stdout");
@@ -250,7 +294,7 @@ export function createGit(options: GitOptions): Git {
       const result = await options.runner.run({
         command: { argv: [gitPath, "--no-pager", ...safe(GIT_SAFE_CONFIG), ...safe(extraConfig), ...args] },
         cwd: repo,
-        env: GIT_ENV,
+        env: { ...GIT_ENV, ...extraEnv },
         timeoutMs,
         stdout: { file: stdoutFile },
         stderr: {
@@ -261,14 +305,14 @@ export function createGit(options: GitOptions): Git {
           },
         },
       });
-      const failure = (reason: GitErrorReason, exitCode: number | null, message: string): GitResult<never> =>
-        err({ reason, args, exitCode, message });
+      const failure = (reason: GitErrorReason, exitCode: number | null, message: string, stdout?: string): GitResult<never> =>
+        err({ reason, args, exitCode, message, ...(stdout !== undefined && { stdout: stdout.slice(0, STDERR_CAP) }) });
       if (result.kind === "not-started") return failure("spawn-error", null, result.message);
       const stdout = Number.isFinite(maxBytes) ? await readPrefix(stdoutFile, maxBytes) : { text: await readFile(stdoutFile, "utf8"), cut: false };
       // Some failures are reported on stdout only (commit: "nothing to commit").
       const message = (stderr.length > 0 ? stderr.join("\n") : stdout.text).slice(0, STDERR_CAP);
       if (result.timedOut) return failure("timed-out", result.exitCode, message);
-      if (result.exitCode !== 0) return failure("failed", result.exitCode, message);
+      if (result.exitCode !== 0) return failure("failed", result.exitCode, message, stdout.text);
       return ok(stdout);
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -276,10 +320,12 @@ export function createGit(options: GitOptions): Git {
   }
 
   /**
-   * Settings that disable every filter driver the repo itself configures (local or worktree
-   * scope, includes too). A clean or smudge filter is a command named by config and chosen by
-   * .gitattributes or .git/info/attributes, so `add`, `status`, `diff` and `worktree add` would
-   * run it. Drivers only in the user's global or system config (e.g. git-lfs) stay on.
+   * Settings that disable every filter driver and merge driver the repo itself configures (local
+   * or worktree scope, includes too). A clean or smudge filter is a command named by config and
+   * chosen by .gitattributes or .git/info/attributes, so `add`, `status`, `diff` and `worktree add`
+   * would run it; a merge driver (`merge.<x>.driver`) runs in `merge-tree` and `merge`. With its
+   * command emptied, git reports the file as conflicted instead. Drivers only in the user's global
+   * or system config (e.g. git-lfs) stay on.
    * `required` is left as configured: git then fails on a required driver (e.g. encryption)
    * instead of storing the plain content.
    */
@@ -287,7 +333,7 @@ export function createGit(options: GitOptions): Git {
     repo: string,
     args: readonly string[],
   ): Promise<GitResult<{ config: string[]; required: string[] }>> {
-    const listed = await raw(repo, ["config", "-z", "--show-scope", "--name-only", "--get-regexp", "^filter\\."]);
+    const listed = await raw(repo, ["config", "-z", "--show-scope", "--name-only", "--get-regexp", "^(filter|merge)\\."]);
     if (!listed.ok) {
       // Exit 1: no filter configured.
       if (listed.error.reason === "failed" && listed.error.exitCode === 1) return ok({ config: [], required: [] });
@@ -295,12 +341,16 @@ export function createGit(options: GitOptions): Git {
     }
     const fields = listed.value.split("\0");
     const drivers = new Set<string>();
+    const mergeDrivers = new Set<string>();
     const required = new Set<string>();
     for (let i = 0; i + 1 < fields.length; i += 2) {
       const scope = fields[i] ?? "";
       const name = fields[i + 1] ?? "";
       const dot = name.lastIndexOf(".");
-      const driver = name.slice("filter.".length, dot);
+      const merge = name.startsWith("merge.");
+      // Two-part merge keys (merge.ff, merge.conflictstyle) are settings, not drivers.
+      if (merge && (dot === "merge".length || name.slice(dot + 1) !== "driver")) continue;
+      const driver = name.slice((merge ? "merge." : "filter.").length, dot);
       if (name.slice(dot + 1) === "required") required.add(driver);
       if (scope === "global" || scope === "system") continue;
       // `-c` splits at the first "="; git also ignores a `-c` override of the empty name. Such a
@@ -310,25 +360,28 @@ export function createGit(options: GitOptions): Git {
           reason: "unsafe-config",
           args,
           exitCode: null,
-          message: `filter driver name cannot be disabled safely: ${JSON.stringify(driver)}`,
+          message: `${merge ? "merge" : "filter"} driver name cannot be disabled safely: ${JSON.stringify(driver)}`,
         });
       }
-      drivers.add(driver);
+      (merge ? mergeDrivers : drivers).add(driver);
     }
     return ok({
-      config: [...drivers].flatMap((driver) => FILTER_KEYS.map((key) => `filter.${driver}.${key}=`)),
+      config: [
+        ...[...drivers].flatMap((driver) => FILTER_KEYS.map((key) => `filter.${driver}.${key}=`)),
+        ...[...mergeDrivers].map((driver) => `merge.${driver}.driver=`),
+      ],
       required: [...drivers].filter((driver) => required.has(driver)),
     });
   }
 
-  async function git(repo: string, args: readonly string[]): Promise<GitResult<string>> {
-    return map(gitCapped(repo, args, Infinity), (out) => out.text);
+  async function git(repo: string, args: readonly string[], extraEnv: Readonly<Record<string, string>> = {}): Promise<GitResult<string>> {
+    return map(gitCapped(repo, args, Infinity, extraEnv), (out) => out.text);
   }
 
-  async function gitCapped(repo: string, args: readonly string[], maxBytes: number): Promise<GitResult<{ text: string; cut: boolean }>> {
+  async function gitCapped(repo: string, args: readonly string[], maxBytes: number, extraEnv: Readonly<Record<string, string>> = {}): Promise<GitResult<{ text: string; cut: boolean }>> {
     const overrides = await filterOverrides(repo, args);
     if (!overrides.ok) return overrides;
-    const result = await capped(repo, args, overrides.value.config, maxBytes);
+    const result = await capped(repo, args, overrides.value.config, maxBytes, extraEnv);
     const { required } = overrides.value;
     const refusedRequired =
       !result.ok &&
@@ -417,8 +470,74 @@ export function createGit(options: GitOptions): Git {
       return map(git(repo, ["rev-parse", "--verify", "HEAD"]), trimmed);
     },
     async commitTree(repo, tree, parent, message) {
-      const args = ["commit-tree", tree, "-p", parent, "-m", message];
-      return refuseOption(args, tree, parent) ?? map(git(repo, args), trimmed);
+      const parents = typeof parent === "string" ? [parent] : [...parent];
+      const args = ["commit-tree", tree, ...parents.flatMap((p) => ["-p", p]), "-m", message];
+      return refuseOption(args, tree, ...parents) ?? map(git(repo, args), trimmed);
+    },
+    async currentRef(repo) {
+      const args = ["symbolic-ref", "-q", "HEAD"];
+      const out = await git(repo, args);
+      // Exit 1: HEAD is detached.
+      if (!out.ok && out.error.reason === "failed" && out.error.exitCode === 1) return ok(undefined);
+      return out.ok ? ok(out.value.trim()) : out;
+    },
+    async isAncestor(repo, ancestor, descendant) {
+      const args = ["merge-base", "--is-ancestor", ancestor, descendant];
+      const refused = refuseOption(args, ancestor, descendant);
+      if (refused !== undefined) return refused;
+      const out = await git(repo, args);
+      if (!out.ok && out.error.reason === "failed" && out.error.exitCode === 1) return ok(false);
+      return out.ok ? ok(true) : out;
+    },
+    async mergeTree(repo, ours, theirs) {
+      const args = ["merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", ours, theirs];
+      const refused = refuseOption(args, ours, theirs);
+      if (refused !== undefined) return refused;
+      // git exits 1 both on a conflict and on some errors (an unknown rev): both commits are
+      // checked first, and a conflict is told by its output, a tree id and the paths.
+      for (const rev of [ours, theirs]) {
+        const known = await git(repo, ["rev-parse", "--verify", "--end-of-options", `${rev}^{commit}`]);
+        if (!known.ok) return known;
+      }
+      const out = await git(repo, args);
+      if (out.ok) return ok({ clean: true, tree: out.value.split("\0")[0]!.trim() });
+      // A conflict comes on stdout; stderr may hold other notes (a disabled merge driver).
+      const [tree = "", ...paths] = (out.error.stdout ?? "").split("\0");
+      if (out.error.reason === "failed" && out.error.exitCode === 1 && /^[0-9a-f]{40,64}$/.test(tree)) {
+        return ok({ clean: false, conflicts: [...new Set(paths.filter((path) => path !== ""))] });
+      }
+      return out;
+    },
+    async mergeFastForward(repo, commit) {
+      const args = ["merge", "--ff-only", "--no-edit", "--no-verify", "-q", commit];
+      return refuseOption(args, commit) ?? map(git(repo, args), none);
+    },
+    async remotePushUrls(repo, remote) {
+      const refused = refuseOption(["config", "-z", "--get-all", `remote.${remote}.url`], remote);
+      if (refused !== undefined) return refused;
+      for (const key of ["pushurl", "url"]) {
+        const out = await git(repo, ["config", "-z", "--get-all", `remote.${remote}.${key}`]);
+        if (out.ok) return ok(out.value.split("\0").filter((value) => value !== ""));
+        // Exit 1: the key is not set.
+        if (!(out.error.reason === "failed" && out.error.exitCode === 1)) return out;
+      }
+      return ok([]);
+    },
+    async diffNames(repo, from, to) {
+      const args = ["diff", "--name-only", "-z", "--no-renames", ...DIFF_SAFE, from, to, "--"];
+      return refuseOption(args, from, to) ?? map(git(repo, args), (out) => out.split("\0").filter((path) => path !== ""));
+    },
+    async remoteResolvedPushUrl(repo, remote) {
+      const args = ["remote", "get-url", "--push", remote];
+      return refuseOption(args, remote) ?? map(git(repo, args), trimmed);
+    },
+    async push(repo, target, commit, branch, pushOptions = {}) {
+      const args = ["push", "--no-verify", "--porcelain", target, `${commit}:refs/heads/${branch}`];
+      const refused = refuseOption(args, target, commit, branch);
+      if (refused !== undefined) return refused;
+      if (!/^[0-9a-f]{40,64}$/.test(commit)) return err({ reason: "invalid-argument", args, exitCode: null, message: `refused commit: ${JSON.stringify(commit)}` });
+      const sock = pushOptions.sshAuthSock;
+      return map(git(repo, args, sock === undefined || sock === "" ? {} : { SSH_AUTH_SOCK: sock }), none);
     },
     async updateRef(repo, ref, newId, oldId) {
       const args = ["update-ref", ref, newId, oldId];

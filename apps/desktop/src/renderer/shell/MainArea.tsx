@@ -2,7 +2,7 @@
 // "All work › Plan and build", with a List | Board switch for workflows), the status switch, and
 // the pipeline list or the workflow's kanban. When the engine is not available, its failure
 // details take the place of the list; a failed load shows its reason and a Retry action there.
-import type { ItemRecord, Setup } from "@tokama/core";
+import type { FinishAction, ItemRecord, Setup } from "@tokama/core";
 import type { ReactNode } from "react";
 import { Board } from "../board/Board.js";
 import type { ConnectionState } from "../../shared/bridge.js";
@@ -41,6 +41,10 @@ export interface MainAreaProps {
   readonly views: ViewState;
   readonly selectedItemId: string | undefined;
   readonly onSelectItem: (itemId: string) => void;
+  /** Finish actions from a Done row's split button. */
+  readonly onFinish?: (itemId: string, action: FinishAction) => void | Promise<void>;
+  /** Discard… from a Done row: opens the item with its Discard question. */
+  readonly onDiscard?: (itemId: string) => void;
   /** Pinned below the board: the New work input. */
   readonly composer?: ReactNode;
 }
@@ -134,6 +138,8 @@ function Body(props: MainAreaProps & { readonly template: Setup["templates"][num
               selectedItemId={selectedItemId}
               onSelect={onSelectItem}
               repoId={views.view.kind === "repo" ? views.view.id : undefined}
+              {...(props.onFinish !== undefined && { onFinish: props.onFinish })}
+              {...(props.onDiscard !== undefined && { onDiscard: props.onDiscard })}
             />
           )}
         </>

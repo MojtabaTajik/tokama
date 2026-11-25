@@ -1,6 +1,6 @@
 // The app shell: icon rail, sidebar, main area, and the item drawer when an item is open.
-import type { UsageRange } from "@tokama/core";
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import type { FinishAction, UsageRange } from "@tokama/core";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TokamaBridge } from "../shared/bridge.js";
 import { DEFAULT_DESKTOP_STATE, type DesktopState, DRAWER_WIDTH, SECTIONS, SIDEBAR_WIDTH } from "../shared/desktop-state.js";
 import { About } from "./about/About.js";
@@ -56,6 +56,28 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(undefined);
   // Counts each "Review the diff": the drawer shows the item's Diff tab, also when it shows the item already.
   const [diffAsked, setDiffAsked] = useState<number | undefined>(undefined);
+  // What a Done row asked of the drawer: Discard… opens the item with its question, and a refused
+  // finish command opens it with the refusal. `seq` makes each request new.
+  const [rowRequest, setRowRequest] = useState<{ itemId: string; seq: number; discard?: true; notice?: string } | undefined>(undefined);
+  const requests = useRef(0);
+  const selectItem = useCallback((itemId: string | undefined) => {
+    setRowRequest(undefined);
+    setSelectedItemId(itemId);
+  }, []);
+  // A finish action from a Done row; the result comes back as item updates.
+  const finishFromRow = useCallback(
+    async (itemId: string, action: FinishAction) => {
+      const reply = await bridge.command({ type: "finish_item", itemId, action }).catch((cause: unknown) => ({ ok: false as const, error: { code: "bridge_error", message: String(cause) } }));
+      if (reply.ok) return;
+      setSelectedItemId(itemId);
+      setRowRequest({ itemId, seq: ++requests.current, notice: reply.error.message });
+    },
+    [bridge],
+  );
+  const discardFromRow = useCallback((itemId: string) => {
+    setSelectedItemId(itemId);
+    setRowRequest({ itemId, seq: ++requests.current, discard: true });
+  }, []);
   const composer = useRef<NewWorkHandle>(null);
   // New work asked for on a page that has no composer: the board opens, then the composer.
   const [openComposerOnBoard, setOpenComposerOnBoard] = useState(false);
@@ -261,7 +283,9 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
           now={now}
           views={views}
           selectedItemId={selectedItemId}
-          onSelectItem={setSelectedItemId}
+          onSelectItem={selectItem}
+          onFinish={finishFromRow}
+          onDiscard={discardFromRow}
           composer={composerNode}
         />
       )}
@@ -279,7 +303,17 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
       )}
       {setUpNote !== undefined && <RepoNote note={setUpNote} onStart={() => startIn({ kind: "repo", id: setUpNote.id })} onDismiss={() => setSetUpNote(undefined)} />}
       {editedRepo !== undefined && <RepoDialog bridge={bridge} repo={editedRepo} onClose={() => setEditingRepo(undefined)} />}
-      {drawerOpen && <ItemDrawer bridge={bridge} itemId={selectedItemId} setup={setup} diffAsked={diffAsked} onClose={() => setSelectedItemId(undefined)} />}
+      {drawerOpen && (
+        <ItemDrawer
+          bridge={bridge}
+          itemId={selectedItemId}
+          setup={setup}
+          diffAsked={diffAsked}
+          onClose={() => selectItem(undefined)}
+          onCheckAgain={refreshSetup}
+          request={rowRequest?.itemId === selectedItemId ? rowRequest : undefined}
+        />
+      )}
       {panelOpen && (
         <ResizeEdge
           label="Resize sidebar"

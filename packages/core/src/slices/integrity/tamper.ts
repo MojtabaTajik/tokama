@@ -133,7 +133,7 @@ const SCP_ADDRESS = /^(?:[^@/:\s]+@)?(?:\[[^\]/\s]+\]|[A-Za-z0-9_.~][A-Za-z0-9_.
  * scheme alone; only a value without one can be scp-style.
  */
 function networkUrl(value: string | undefined): boolean {
-  if (value === undefined) return false;
+  if (value === undefined || /[#?\\]/.test(value)) return false;
   return value.includes("://") ? NETWORK_URL.test(value) : SCP_ADDRESS.test(value);
 }
 
@@ -150,6 +150,9 @@ function ignoredRecord(record: string): boolean {
   const section = key.slice(0, first);
   const name = key.slice(last + 1);
   if (IGNORED_KEYS[section]?.has(name) !== true) return false;
+  // Only a plain remote name: git also reads `remote.<url>.*` for a push or fetch to that URL, so
+  // a section named by a URL can redirect one.
+  if (section === "remote" && !remoteName(key.slice(first + 1, last))) return false;
   if (section === "remote" && (name === "url" || name === "pushurl")) return networkUrl(value);
   if (section === "branch" && (name === "remote" || name === "pushremote")) return remoteName(value);
   return true;
@@ -332,6 +335,73 @@ export async function protectedSet(git: Git, input: ProtectedSetInput): Promise<
   }
 
   return ok({ hash });
+}
+
+/**
+ * Only the shared git dir's entries of the protected set (config, config.worktree, info files and
+ * hooks), with the same keys and hashes: what steers git in every checkout of the repo. Reads no
+ * worktree, so it stays cheap on a large checkout.
+ */
+export async function sharedGitHashes(git: Git, repoPath: string): Promise<Result<ProtectedHashes, IntegrityError>> {
+  const dirs = await git.gitDirs(repoPath);
+  if (!dirs.ok) return err({ message: `cannot find the repo's git dir: ${dirs.error.message}` });
+  const { commonDir } = dirs.value;
+  const paths = [...SHARED_GIT_FILES];
+  for (const dir of SHARED_GIT_DIRS) paths.push(...(await walk(commonDir, dir, undefined)));
+  const hashes = new Map<string, ProtectedFile & { hash: string }>();
+  for (const path of paths) {
+    const full = join(commonDir, ...path.split("/"));
+    let hashed: string | undefined;
+    if (path === "config" || path === "config.worktree") {
+      const config = await hashConfig(git, full, path);
+      if (!config.ok) return config;
+      hashed = config.value;
+    } else hashed = await hashPath(full);
+    if (hashed !== undefined) hashes.set(`git:${path}`, { area: "git", path, category: "git", hash: hashed });
+  }
+  return ok(hashes);
+}
+
+/** One setting of a shared git config file, as git reads it; `value` is absent for a bare key. */
+export interface GitSetting {
+  readonly file: string;
+  readonly key: string;
+  readonly value?: string;
+}
+
+/**
+ * The settings and hooks behind `sharedGitHashes`, kept beside an item's baseline so that a later
+ * change can be shown setting by setting. Settings are the counted ones (the remote and tracking
+ * keys a push or fetch writes are left out); hook texts are cut to `textMax` characters.
+ */
+export async function sharedGitSettings(
+  git: Git,
+  repoPath: string,
+  textMax = 2_000,
+): Promise<Result<{ settings: GitSetting[]; hooks: Record<string, string> }, IntegrityError>> {
+  const dirs = await git.gitDirs(repoPath);
+  if (!dirs.ok) return err({ message: `cannot find the repo's git dir: ${dirs.error.message}` });
+  const { commonDir } = dirs.value;
+  const settings: GitSetting[] = [];
+  for (const file of ["config", "config.worktree"]) {
+    const full = join(commonDir, file);
+    if ((await hashPath(full)) === undefined) continue;
+    const listed = await git.configList(full);
+    if (!listed.ok) return err({ message: `cannot read git config ${file}: ${listed.error.message}` });
+    for (const record of listed.value) {
+      if (ignoredRecord(record)) continue;
+      const { key, value } = splitRecord(record);
+      settings.push({ file, key, ...(value !== undefined && { value }) });
+    }
+  }
+  const hooks: Record<string, string> = {};
+  for (const dir of SHARED_GIT_DIRS) {
+    for (const path of await walk(commonDir, dir, undefined)) {
+      const read = await readTextFile(join(commonDir, ...path.split("/")), { maxBytes: 256 * 1024 });
+      hooks[path] = read.ok ? read.value.slice(0, textMax) : "(not readable as text)";
+    }
+  }
+  return ok({ settings, hooks });
 }
 
 /** What changed in the protected set between two hashings, sorted; empty when nothing did. */

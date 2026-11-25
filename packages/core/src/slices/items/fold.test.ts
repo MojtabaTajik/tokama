@@ -305,3 +305,52 @@ describe("foldItem", () => {
     expect(log).toEqual(copy);
   });
 });
+
+describe("finish events", () => {
+  const COMMIT = "a".repeat(40);
+  const worktree: ItemEventBody = { type: "worktree_added", repoId: "orders-api" as never, branch: "tokama/0000000a", dir: ".tokama/wt/0000000a", baseCommit: "b".repeat(40), pushUrl: "https://github.com/acme/orders-api.git" };
+  const done: ItemEventBody[] = [created(), worktree, { type: "item_ended", outcome: "done", commits: [{ repoId: "orders-api" as never, commit: COMMIT }] }];
+  const start = (action: "merge" | "pull_request" | "discard"): ItemEventBody => ({ type: "finish_started", action });
+
+  it("follow a done item: the running action, its result, and the next action clears the last failure", () => {
+    expect(fold(done).worktrees[0]?.pushUrl).toBe("https://github.com/acme/orders-api.git");
+    expect(fold([...done, start("merge")]).finish).toEqual({ running: "merge", worktreeRemoved: false });
+    const failed = fold([...done, start("merge"), { type: "finish_failed", action: "merge", detail: "dirty" }]);
+    expect(failed.finish).toMatchObject({ worktreeRemoved: false, failed: { action: "merge", detail: "dirty" } });
+    expect(failed.finish?.running).toBeUndefined();
+    expect(failed.state).toBe("done");
+    const opened = fold([...done, start("merge"), { type: "finish_failed", action: "merge", detail: "dirty" }, start("pull_request"), { type: "pr_opened", repoId: "orders-api" as never, url: "https://github.com/acme/orders-api/pull/7" }]);
+    expect(opened.finish).toMatchObject({ pullRequest: { url: "https://github.com/acme/orders-api/pull/7" }, worktreeRemoved: false });
+    expect(opened.finish?.failed).toBeUndefined();
+    const merged = fold([...done, start("merge"), { type: "merged", repoId: "orders-api" as never, baseBranch: "main", commit: COMMIT, worktreeRemoved: false, detail: "kept" }]);
+    expect(merged.finish).toMatchObject({ merged: { baseBranch: "main", commit: COMMIT }, worktreeRemoved: false, detail: "kept" });
+    expect(fold([...done, start("merge"), { type: "merged", repoId: "orders-api" as never, baseBranch: "main", commit: COMMIT, worktreeRemoved: false }, start("discard"), { type: "discarded", repoId: "orders-api" as never }]).finish?.worktreeRemoved).toBe(true);
+  });
+
+  it("git_changes_accepted: after a refusal for changed git config or hooks, sets the new baseline and clears the refusal", () => {
+    const D1 = "1".repeat(64);
+    const D2 = "2".repeat(64);
+    const withBaseline: ItemEventBody[] = [created(), worktree, { type: "baseline_recorded", repoId: "orders-api" as never, protectedDigest: D1 }, done[2]!];
+    const refused: ItemEventBody[] = [...withBaseline, start("merge"), { type: "finish_failed", action: "merge", reason: "steering_changed", detail: "changed", changes: [{ what: "setting core.autocrlf", after: "input" }], gitDigest: D2 }];
+    expect(fold(refused).finish?.failed).toMatchObject({ reason: "steering_changed", changes: [{ what: "setting core.autocrlf" }], gitDigest: D2 });
+    const accepted = fold([...refused, { type: "git_changes_accepted", repoId: "orders-api" as never, protectedDigest: D2 }]);
+    expect(accepted.worktrees[0]?.protectedDigest).toBe(D2);
+    expect(accepted.finish?.failed).toBeUndefined();
+    expect(foldError([...withBaseline, { type: "git_changes_accepted", repoId: "orders-api" as never, protectedDigest: D2 }])).toMatch(/no Finish action was refused/);
+    expect(foldError([...refused, start("merge"), { type: "git_changes_accepted", repoId: "orders-api" as never, protectedDigest: D2 }])).toMatch(/still running/);
+  });
+
+  it("refuse what does not fit: an item not done, a second start, a result without its start, anything after the worktree is gone", () => {
+    expect(foldError([created(), worktree, start("discard")])).toMatch(/only once the item is done/);
+    expect(foldError([created(), worktree, { type: "item_ended", outcome: "stopped" }, start("discard")])).toMatch(/only once the item is done/);
+    expect(foldError([created(), { type: "item_ended", outcome: "done" }, start("discard")])).toMatch(/no worktree/);
+    expect(foldError([created(), worktree, { type: "item_ended", outcome: "done" }, start("merge")])).toMatch(/no commit/);
+    expect(foldError([...done, start("merge"), start("discard")])).toMatch(/merge is still running/);
+    expect(foldError([...done, { type: "discarded", repoId: "orders-api" as never }])).toMatch(/without a running discard/);
+    expect(foldError([...done, start("merge"), { type: "finish_failed", action: "discard", detail: "x" }])).toMatch(/without a running discard/);
+    expect(foldError([...done, start("discard"), { type: "discarded", repoId: "orders-api" as never }, start("discard")])).toMatch(/worktree is gone/);
+    expect(foldError([...done, start("pull_request"), { type: "pr_opened", repoId: "orders-api" as never, url: "https://github.com/acme/orders-api/pull/7" }, start("merge")])).toMatch(/pull request/);
+    expect(foldError([...done, start("discard"), { type: "tombstone" }])).toMatch(/still running/);
+    expect(foldError([...done, { type: "step_started", stepId: BUILD }])).toMatch(/has ended/);
+  });
+});

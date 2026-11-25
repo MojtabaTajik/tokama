@@ -5,7 +5,10 @@ import {
   AgentCallEventSchema,
   COMMAND_ERROR_CODES,
   parseCommandResult,
+  finishActions,
   itemStage,
+  PullRequestUrlSchema,
+  PushUrlSchema,
   parseAgentId,
   parseCallId,
   parseClientMessage,
@@ -505,5 +508,38 @@ describe("decision", () => {
     };
     const parsed = parseItemRecord({ ...item(), state: "needs_you", decision });
     expect(parsed.ok && parsed.value.decision).toEqual(decision);
+  });
+});
+
+describe("finish", () => {
+  const record = (finish: object | undefined, commits = true) => ({
+    outcome: { kind: "done" as const, ...(commits && { commits: [{ repoId: "orders-api" as never, commit: "a".repeat(40) }] }) },
+    ...(finish !== undefined && { finish: { worktreeRemoved: false, ...finish } }),
+  });
+
+  it("finishActions: all three on a fresh commit; only Discard without a commit, after a merge or a pull request; none while one runs or once removed", () => {
+    expect(finishActions(record({}))).toEqual(["merge", "pull_request", "discard"]);
+    expect(finishActions(record({}, false))).toEqual(["discard"]);
+    expect(finishActions(record({ merged: { baseBranch: "main", commit: "b".repeat(40) } }))).toEqual(["discard"]);
+    expect(finishActions(record({ pullRequest: { url: "https://github.com/a/b/pull/1" } }))).toEqual(["discard"]);
+    expect(finishActions(record({ running: "merge" }))).toEqual([]);
+    expect(finishActions(record({ worktreeRemoved: true }))).toEqual([]);
+    expect(finishActions(record(undefined))).toEqual([]);
+    expect(finishActions({ outcome: { kind: "no_action_needed" }, finish: { worktreeRemoved: false } })).toEqual([]);
+  });
+
+  it("finish_item takes one of the three actions", () => {
+    expect(parseCommand({ type: "finish_item", itemId: ITEM_ID, action: "merge" }).ok).toBe(true);
+    expect(parseCommand({ type: "finish_item", itemId: ITEM_ID, action: "push" }).ok).toBe(false);
+    expect(parseCommandResult("finish_item", null)).toEqual({ ok: true, value: null });
+  });
+
+  it("URLs: a pull request page only, and a push URL never with a password", () => {
+    expect(PullRequestUrlSchema.safeParse("https://github.com/acme/orders-api/pull/12").success).toBe(true);
+    for (const url of ["http://github.com/a/b/pull/1", "https://github.com/a/b/issues/1", "javascript:alert(1)", "https://github.com/a/b/pull/1?x=<b>"]) {
+      expect(PullRequestUrlSchema.safeParse(url).success, url).toBe(false);
+    }
+    expect(PushUrlSchema.safeParse("git@github.com:acme/orders-api.git").success).toBe(true);
+    expect(PushUrlSchema.safeParse("https://user:secret@github.com/acme/orders-api.git").success).toBe(false);
   });
 });

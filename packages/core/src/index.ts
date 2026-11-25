@@ -86,6 +86,8 @@ export { createMonitor, type ItemGroup, type Monitor, type MonitorOptions } from
 // Process control and git, for the engine service to hand to the slices that need them.
 export { createProcessRunner, findOnPath, type ProcessRunner } from "./kernel/process/index.js";
 export { createGit, type Git } from "./kernel/git/index.js";
+// Open PR's gh check, for the engine service's startup checks.
+export { ghStatus, hostedRepo, type GhStatus, type HostedRepo } from "./slices/worktrees/index.js";
 // repos.yaml: load it, and the changes the engine makes to it.
 export {
   addRepo,
@@ -111,6 +113,7 @@ export {
   COMMAND_ERROR_CODES,
   CONNECTION_ERROR_CODES,
   currentStepIndex,
+  finishActions,
   itemStage,
   parseAgentId,
   parseCallId,
@@ -174,6 +177,9 @@ export {
   type DecisionId,
   type EngineEvent,
   type EngineMessage,
+  type FinishAction,
+  type FinishRefusal,
+  type GitChange,
   type EventMessage,
   type HandshakeReply,
   type HelloMessage,

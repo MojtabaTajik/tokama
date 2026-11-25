@@ -730,6 +730,125 @@ button:focus-visible {
   color: var(--warn);
 }
 
+.pl-finish {
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.pl-finish .mark {
+  margin-right: 6px;
+}
+
+.pl-finish .mark[data-tone="pass"] {
+  color: var(--pass);
+}
+
+.pl-finish .mark[data-tone="warn"] {
+  color: var(--warn);
+}
+
+.pl-finish .mark[data-tone="live"] {
+  color: var(--live);
+}
+
+/* A Done row's split button: shown while the row is hovered or has focus. */
+
+.pl-row-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.pl-row-wrap > .pl-row {
+  width: 100%;
+}
+
+.finish-split {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  /* Above the rows after it, so its menu is never painted under them. */
+  z-index: 5;
+  display: none;
+  transform: translateY(-50%);
+}
+
+.pl-row-wrap:hover .finish-split,
+.pl-row-wrap:focus-within .finish-split,
+.finish-split[data-open] {
+  display: flex;
+}
+
+.finish-split-main,
+.finish-split-more {
+  min-height: 28px;
+  border: 1px solid var(--primary-border);
+  background: var(--primary-fill);
+  color: var(--primary-text);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.finish-split-main {
+  padding: 0 10px;
+  border-radius: 6px 0 0 6px;
+}
+
+.finish-split-more {
+  padding: 0 8px;
+  border-left-color: var(--primary-text);
+  border-radius: 0 6px 6px 0;
+}
+
+.finish-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  padding: 4px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--raised);
+}
+
+.finish-menu [role="menuitem"] {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.finish-menu [role="menuitem"]:hover:not([aria-disabled="true"]),
+.finish-menu [role="menuitem"]:focus-visible {
+  background: var(--panel);
+}
+
+.finish-menu [role="menuitem"][aria-disabled="true"] {
+  color: var(--muted);
+  cursor: default;
+}
+
+.finish-menu [role="menuitem"].danger {
+  color: var(--fail);
+}
+
+.finish-menu-note {
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .pl-pipe {
   display: flex;
   align-items: center;
@@ -833,7 +952,8 @@ button:focus-visible {
     grid-area: main;
   }
 
-  .pl-pipe {
+  .pl-pipe,
+  .pl-finish {
     grid-area: pipe;
   }
 
