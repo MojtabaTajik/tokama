@@ -1,10 +1,10 @@
 // The icon rail: panel toggle, Board, Needs you, Insights, Settings, Attention, then the user.
-// Insights is the one usage entry: hovering or focusing it lists each AI CLI's plan windows, and
+// Insights is the one usage entry: hovering or focusing it lists each AI CLI's plan limits, and
 // clicking opens the Insights page. A CLI that is logged out or at its limit puts a ✕ on the icon,
 // one near its limit a !. Attention opens a popup with the issues and how to fix them. The user
 // button opens About. Needs you opens its page, Settings opens Settings.
 import type { UsageReport } from "@tokama/core";
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { brand } from "../brand/index.js";
 import { cliAlert, railBadge } from "../insights/usage-model.js";
 import { AI_CLIS, type CliIssue, type HealthProblem } from "../model.js";
@@ -56,6 +56,53 @@ export interface RailProps {
 }
 
 /** "Needs you · 2", or just "Needs you" when there are none. */
+/** How long the pointer rests on Insights before the tooltip opens, and how long it may be away before it closes. */
+export const TIP_OPEN_MS = 120;
+export const TIP_CLOSE_MS = 200;
+
+/**
+ * Whether the Insights tooltip shows. Hover opens it after a short rest and closes it after a short
+ * absence; a leave and a new enter within that time change nothing. Focus opens it at once. A
+ * dismissed tooltip comes back when the pointer returns.
+ * `onShown` hears each change once.
+ */
+function useInsightsTip(onShown: ((shown: boolean) => void) | undefined) {
+  const [open, setOpen] = useState(false);
+  const state = useRef({ hover: false, focus: false, dismissed: false, open: false });
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const notify = useRef(onShown);
+  notify.current = onShown;
+  const show = useCallback((next: boolean) => {
+    clearTimeout(timer.current);
+    timer.current = undefined;
+    if (state.current.open === next) return;
+    state.current.open = next;
+    setOpen(next);
+    notify.current?.(next);
+  }, []);
+  const hold = useCallback(
+    (by: "hover" | "focus", held: boolean) => {
+      const s = state.current;
+      s[by] = held;
+      // A dismissed tooltip comes back when the pointer returns, or once pointer and focus have both left.
+      if ((by === "hover" && held) || (!s.hover && !s.focus)) s.dismissed = false;
+      const wanted = (s.hover || s.focus) && !s.dismissed;
+      clearTimeout(timer.current);
+      timer.current = undefined;
+      if (wanted === s.open) return;
+      if (wanted && s.focus) return show(true);
+      timer.current = setTimeout(() => show(wanted), wanted ? TIP_OPEN_MS : TIP_CLOSE_MS);
+    },
+    [show],
+  );
+  const dismiss = useCallback(() => {
+    state.current.dismissed = true;
+    show(false);
+  }, [show]);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  return { open, hold, dismiss };
+}
+
 const withCount = (label: string, count: number) => (count > 0 ? `${label} · ${count}` : label);
 
 export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, problems = [], onAttention, usage, now = Date.now(), insightsOpen = false, onInsights, onInsightsTip, aboutOpen, needsYouOpen, onBoard, onNeedsYou, onAbout, onSettings }: RailProps) {
@@ -64,12 +111,15 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
   const attention = issues.length + problems.length;
   const [popupOpen, setPopupOpen] = useState(false);
   const attentionRef = useRef<HTMLDivElement>(null);
-  // Escape closes the tooltip while the pointer or focus stays on Insights; leaving brings it back.
-  const [tipDismissed, setTipDismissed] = useState(false);
+  // The Insights tooltip. Its own state, not a CSS :hover, decides when it shows: the wrapper holds
+  // the button and the tooltip, so moving between them keeps it open, and short delays absorb the
+  // enter and leave events a pointer sends at an edge, so it never flickers. Escape or a click
+  // closes it until the pointer and the focus have both left.
+  const tip = useInsightsTip(onInsightsTip);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setTipDismissed(true);
+        tip.dismiss();
         setPopupOpen(false);
       }
     };
@@ -83,15 +133,7 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
       document.removeEventListener("keydown", onKey);
       document.removeEventListener("mousedown", onPress);
     };
-  }, []);
-  // The tooltip shows while the pointer or the focus is on Insights: it closes when neither is.
-  const tipHolds = useRef({ hover: false, focus: false });
-  const tipHeld = (by: "hover" | "focus", held: boolean) => {
-    const before = tipHolds.current.hover || tipHolds.current.focus;
-    tipHolds.current = { ...tipHolds.current, [by]: held };
-    const after = tipHolds.current.hover || tipHolds.current.focus;
-    if (after !== before) onInsightsTip?.(after);
-  };
+  }, [tip.dismiss]);
   const badge = railBadge(AI_CLIS.map((cli) => cliAlert(usage?.clis.find((plan) => plan.cliId === cli.id), issues.find((issue) => issue.cliId === cli.id), now)));
   const needsYouLabel = needsYou === undefined ? `${TEXT.needsYou} · ${TEXT.outOfDate}` : withCount(TEXT.needsYou, needsYou);
   return (
@@ -123,23 +165,7 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
         <InboxIcon />
         <Badge count={needsYou ?? 0} tone="warn" />
       </button>
-      <div
-        className="insights"
-        data-dismissed={tipDismissed || undefined}
-        onMouseEnter={() => {
-          setTipDismissed(false);
-          tipHeld("hover", true);
-        }}
-        onMouseLeave={() => {
-          setTipDismissed(false);
-          tipHeld("hover", false);
-        }}
-        onFocus={() => {
-          setTipDismissed(false);
-          tipHeld("focus", true);
-        }}
-        onBlur={() => tipHeld("focus", false)}
-      >
+      <div className="insights" data-open={tip.open || undefined} onMouseEnter={() => tip.hold("hover", true)} onMouseLeave={() => tip.hold("hover", false)} onFocus={() => tip.hold("focus", true)} onBlur={() => tip.hold("focus", false)}>
         <button
           type="button"
           className="rail-button"
@@ -149,7 +175,7 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
           aria-current={insightsOpen ? "page" : undefined}
           onClick={() => {
             // The page shows the same numbers; the tooltip comes back when the pointer returns.
-            setTipDismissed(true);
+            tip.dismiss();
             onInsights?.();
           }}
         >

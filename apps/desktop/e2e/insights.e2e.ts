@@ -12,6 +12,13 @@ flow("shows plan usage in the Insights tooltip, opens Insights, shows a day on h
   const tip = page.locator(".insights-tip");
   await tip.waitFor({ state: "visible" });
   await expect.poll(() => tip.innerText(), { message: "the tooltip lists the windows" }).toMatch(/Claude Code[\s\S]*Session 36%[\s\S]*Fable weekly 12% \(50% share\)[\s\S]*Codex CLI[\s\S]*! near limit[\s\S]*Weekly 84%/);
+  // The pointer rests on the icon: the tooltip stays shown, with no flicker, while the data refreshes.
+  const shown: boolean[] = [];
+  for (let i = 0; i < 20; i++) {
+    shown.push(await tip.isVisible());
+    await page.waitForTimeout(50);
+  }
+  expect(shown.every(Boolean)).toBe(true);
   await screenshot("6-insights-tooltip");
 
   await insights.click();

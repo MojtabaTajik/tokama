@@ -396,8 +396,7 @@ button:focus-visible {
   width: 12px;
 }
 
-.insights:not([data-dismissed]):hover .insights-tip,
-.insights:not([data-dismissed]):focus-within .insights-tip {
+.insights[data-open] .insights-tip {
   display: flex;
 }
 

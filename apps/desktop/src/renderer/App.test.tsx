@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ConnectionState, TokamaBridge } from "../shared/bridge.js";
 import { App } from "./App.js";
 import { brand } from "./brand/index.js";
+import { TIP_OPEN_MS } from "./shell/Rail.js";
 import { CONNECTED, fakeBridge } from "./testing/bridge.js";
 import { ITEMS, items, NOW, setup } from "./testing/sample.js";
 import { usageReport } from "./testing/usage.js";
@@ -77,6 +78,7 @@ describe("App shell", () => {
     const usageQueries = () => fake.query.mock.calls.filter(([q]) => q.type === "usage").length;
     expect(usageQueries()).toBe(1);
     await act(async () => $(".insights")!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, relatedTarget: document.body })));
+    await wait(TIP_OPEN_MS + 30);
     expect(usageQueries()).toBe(2);
   });
 
@@ -89,7 +91,7 @@ describe("App shell", () => {
     await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
     await click($('.rail button[aria-label="Insights"]')!);
     expect(text(".main-header h1")).toBe("Insights");
-    expect($(".insights")?.hasAttribute("data-dismissed")).toBe(true);
+    expect($(".insights")?.hasAttribute("data-open")).toBe(false);
     expect($('.rail button[aria-label="Insights"]')?.getAttribute("aria-current")).toBe("page");
     expect($('.rail button[aria-label="Board"]')?.hasAttribute("aria-current")).toBe(false);
     expect($$(".ins-plan").map((plan) => plan.getAttribute("aria-label"))).toEqual(["Claude Code", "Codex CLI", "Ollama"]);
@@ -100,11 +102,14 @@ describe("App shell", () => {
   it("closes the Insights tooltip on Escape and brings it back when the pointer or focus returns", async () => {
     await render(fakeBridge(CONNECTED).bridge);
     const insights = $(".insights")!;
-    expect(insights.hasAttribute("data-dismissed")).toBe(false);
+    expect(insights.hasAttribute("data-open")).toBe(false);
+    await act(async () => insights.dispatchEvent(new FocusEvent("focusin", { bubbles: true })));
+    expect(insights.hasAttribute("data-open")).toBe(true);
     await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
-    expect(insights.hasAttribute("data-dismissed")).toBe(true);
-    await act(async () => insights.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
-    expect(insights.hasAttribute("data-dismissed")).toBe(false);
+    expect(insights.hasAttribute("data-open")).toBe(false);
+    await act(async () => insights.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, relatedTarget: document.body })));
+    await wait(TIP_OPEN_MS + 30);
+    expect(insights.hasAttribute("data-open")).toBe(true);
   });
 
   it("shows the needs-you count as an amber badge and no attention badge at zero", async () => {
