@@ -89,8 +89,9 @@ function thenOf(item: StoredItem, step: StoredStep, last: AttemptRecord): StopTh
   item.steps.forEach((other, index) => {
     if (other.id === step.id) return;
     for (const attempt of other.attempts) {
-      // Strictly after: events written together share a time, and those came before it.
-      if (attempt.endedAt === undefined || attempt.result === undefined || attempt.startedAt <= last.endedAt!) continue;
+      // Started once it ended. Separate writes can share a millisecond, so the same time counts as
+      // after, unless the attempt also started no later than this one (a log written at one time).
+      if (attempt.endedAt === undefined || attempt.result === undefined || attempt.startedAt < last.endedAt! || attempt.startedAt <= last.startedAt) continue;
       if (latest === undefined || attempt.endedAt >= latest.attempt.endedAt!) latest = { index, attempt };
     }
   });

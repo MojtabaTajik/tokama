@@ -70,6 +70,12 @@ describe("summarizeOutput", () => {
     expect(summarizeOutput("Must change\n- a.ts:1 x\nVERDICT: changes", false)).toMatchObject({ kind: "lines", format: "none" });
   });
 
+  it("an output that is only a verdict line still shows it, in the schema", () => {
+    expect(summarizeOutput("VERDICT: APPROVE", true)).toEqual({ kind: "lines", format: "no_verdict", lines: ["VERDICT: APPROVE"] });
+    expect(summarizeOutput("\nVERDICT: approve\n", false)).toEqual({ kind: "lines", format: "none", lines: ["VERDICT: approve"] });
+    expect(summarizeOutput("VERDICT: changes", true)).toEqual({ kind: "verdict", verdict: "changes", mustFix: [], more: 0, lines: ["VERDICT: changes"] });
+  });
+
   it("says an empty or blank output is empty", () => {
     expect(summarizeOutput("", true)).toEqual({ kind: "empty" });
     expect(summarizeOutput(" \n\t\n", false)).toEqual({ kind: "empty" });

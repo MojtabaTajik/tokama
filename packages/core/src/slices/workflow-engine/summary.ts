@@ -43,13 +43,14 @@ function summarize(text: string, verdictFormat: boolean): OutputSummary {
   };
 }
 
-/** The first non-empty lines as written, without the verdict line, each cut to fit. */
+/**
+ * The first non-empty lines as written, each cut to fit: without verdict lines, unless the output
+ * holds nothing else (`VERDICT: APPROVE` alone is no verdict, and still says something).
+ */
 function firstLines(lines: readonly string[], count: number): string[] {
-  return lines
-    .map((line) => line.trim())
-    .filter((line) => line !== "" && !VERDICT_LINE.test(line))
-    .slice(0, count)
-    .map(cut);
+  const written = lines.map((line) => line.trim()).filter((line) => line !== "");
+  const words = written.filter((line) => !VERDICT_LINE.test(line));
+  return (words.length > 0 ? words : written).slice(0, count).map(cut);
 }
 
 /** The items of the first "Must change" (or "Must fix") section, up to the next heading. */

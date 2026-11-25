@@ -40,6 +40,13 @@ describe("explainStop", () => {
     expect(DecisionSchema.shape.stopped.safeParse(stopped).success).toBe(true);
   });
 
+  it("a later attempt that started in the same millisecond the stopped one ended still ran after it", () => {
+    const review = step("review", [attempt(1, T, { endedAt: T + 10, result: "failed" })]);
+    const build = step("build", [attempt(1, T - 50, { endedAt: T - 20, result: "passed" }), attempt(2, T + 10, { endedAt: T + 30, result: "passed" })]);
+    const decision = asked("after_failure", "review", T + 40, ["one_more_attempt", "stop"]);
+    expect(explainStop(itemOf([build, review], [decision]), decision, template)?.then).toEqual({ kind: "later", stepIndex: 0, attempt: 2, result: "passed" });
+  });
+
   it("a checks step at its limit: its own failed checks, and every attempt failed them", () => {
     const failed = [check("pnpm test", false), check("pnpm lint", true), check("pnpm typecheck", false)];
     const build = step("build", [1, 2, 3].map((n) => attempt(n, T + n * 10, { endedAt: T + n * 10 + 5, result: "failed", checks: failed })));
