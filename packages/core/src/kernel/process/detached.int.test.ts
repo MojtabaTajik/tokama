@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -29,5 +29,14 @@ describe("spawnDetached", () => {
   it("fails without spawning when the log cannot be opened", () => {
     const logPath = join(dir, "missing", "engine.log");
     expect(spawnDetached({ command: "/bin/sh", args: ["-c", "exit 0"], env: {}, logPath })).toMatchObject({ ok: false, error: { message: expect.stringContaining(`cannot prepare ${logPath}`) } });
+  });
+
+  it("refuses a symlink in place of the log and leaves its target alone", () => {
+    const target = join(dir, "elsewhere");
+    writeFileSync(target, "keep\n", { mode: 0o644 });
+    symlinkSync(target, join(dir, "engine.log"));
+    expect(spawnDetached({ command: "/bin/sh", args: ["-c", "echo out"], env: {}, logPath: join(dir, "engine.log") }).ok).toBe(false);
+    expect(readFileSync(target, "utf8")).toBe("keep\n");
+    expect(statSync(target).mode & 0o777).toBe(0o644);
   });
 });

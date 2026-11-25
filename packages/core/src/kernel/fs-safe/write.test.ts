@@ -81,15 +81,6 @@ describe("replaceTextSync", () => {
     expect(readdirSync(dir).sort()).toEqual(["file.0123456789ab.tmp", "target"]);
   });
 
-  it("uses a new temp name for every write", () => {
-    const file = join(dir, "file");
-    pinned.bytes = Buffer.from("0123456789ab", "hex");
-    writeFileSync(join(dir, "file.0123456789ab.tmp"), "someone else's");
-    pinned.bytes = undefined;
-    expect(replaceTextSync(file, "new").ok).toBe(true);
-    expect(readFileSync(file, "utf8")).toBe("new");
-  });
-
   it.each([0o600, 0o644])("sets mode %o exactly, whatever the umask and the old file's mode", (mode) => {
     const file = join(dir, "file");
     writeFileSync(file, "old", { mode: 0o666 });

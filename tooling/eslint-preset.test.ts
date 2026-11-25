@@ -124,6 +124,7 @@ const ESCAPE_SPECIFIERS = [
 const ELECTRON_SPECIFIERS = ["electron", "electron/main", "electron/renderer"];
 const MODULE_ZONES = ["kernel/process", "kernel/egress", "adapters/agent/fake"];
 const CHILD_PROCESS = new Set(["child_process", "node:child_process"]);
+const PROCESS = new Set(["process", "node:process"]);
 const NETWORK_ZONES = ["kernel/egress", "adapters/agent/fake"];
 
 let eslint: ESLint;
@@ -193,7 +194,9 @@ describe("eslint preset: process and network modules", () => {
     const path = `${core}/slices/items/virtual.ts`;
     const rules = CHILD_PROCESS.has(specifier) ? [IMPORTS, KERNEL_ONLY] : [IMPORTS];
     expect(await errorRules(path, `import "${specifier}";`)).toEqual(rules);
-    expect(await errorRules(path, `export * from "${specifier}";`)).toEqual(rules);
+    // `export *` also re-exports process.kill.
+    const reexported = PROCESS.has(specifier) ? [IMPORTS, KERNEL_ONLY] : rules;
+    expect(await errorRules(path, `export * from "${specifier}";`)).toEqual(reexported);
     expect(await errorRules(path, `export const m = await import("${specifier}");`)).toEqual([SYNTAX]);
   });
 
@@ -343,6 +346,9 @@ describe("eslint preset: writes, renames, signals and child processes only throu
     ['import { renameSync } from "fs";\nexport { renameSync };', KERNEL_ONLY],
     ['import { writeFile } from "node:fs/promises";\nexport { writeFile };', KERNEL_ONLY],
     ['import { rename } from "fs/promises";\nexport { rename };', KERNEL_ONLY],
+    ['import { copyFileSync, ftruncateSync } from "node:fs";\nexport { copyFileSync, ftruncateSync };', KERNEL_ONLY],
+    ['import { cp } from "node:fs/promises";\nexport { cp };', KERNEL_ONLY],
+    ['import { kill } from "node:process";\nexport { kill };', KERNEL_ONLY],
     ['import * as fs from "node:fs";\nexport { fs };', KERNEL_ONLY],
     ['import fs from "node:fs";\nexport { fs };', KERNEL_ONLY],
     ['import { promises } from "node:fs";\nexport { promises };', KERNEL_ONLY],

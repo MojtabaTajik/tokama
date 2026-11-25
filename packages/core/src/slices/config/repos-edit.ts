@@ -6,8 +6,9 @@
 // file behind it is replaced.
 import { constants } from "node:fs";
 import { homedir } from "node:os";
+import { access, lstat, mkdir, realpath, stat } from "node:fs/promises";
 // eslint-disable-next-line no-restricted-imports -- a new .gitignore is created exclusively (flag wx), so the user's own file is never replaced.
-import { access, lstat, mkdir, realpath, stat, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { Document, isMap, isScalar, isSeq, parseDocument } from "yaml";
 import { readJsonFile, replaceTextSync } from "../../kernel/fs-safe/index.js";

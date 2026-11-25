@@ -339,7 +339,7 @@ describe("engine service", () => {
     expect((await client(dir)).engineId).toBe(handle.engineId);
   });
 
-  it("waits for a fresh lock that names no pid yet: another engine is still writing it", async () => {
+  it("still waits for a fresh lock that names no pid yet: another engine is still writing it", async () => {
     const dir = tempEngineDir(cleanups);
     mkdirSync(dir, { mode: 0o700 });
     writeFileSync(join(dir, "engine.lock"), "", { mode: 0o600 });

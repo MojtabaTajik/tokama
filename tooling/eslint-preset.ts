@@ -119,16 +119,30 @@ const FS_WRITE_NAMES = [
   "rename",
   "renameSync",
   "createWriteStream",
+  "copyFile",
+  "copyFileSync",
+  "cp",
+  "cpSync",
+  "truncate",
+  "truncateSync",
+  "ftruncate",
+  "ftruncateSync",
+  "symlink",
+  "symlinkSync",
+  "link",
+  "linkSync",
 ];
-const FS_PROMISES_WRITE_NAMES = ["default", "writeFile", "appendFile", "rename"];
+const FS_PROMISES_WRITE_NAMES = ["default", "writeFile", "appendFile", "rename", "copyFile", "cp", "truncate", "symlink", "link"];
 // A separate rule from @typescript-eslint/no-restricted-imports, so these bans hold next to every
 // zone's own import patterns without restating them there. Namespace imports of node:fs are
-// refused too, since they reach every name.
+// refused too, since they reach every name. `open`/`openSync` stay allowed, since reads need
+// them; a write through a file handle is caught in review.
 const kernelOnlyImports = {
   paths: [
     ...["fs", "node:fs"].map((name) => ({ name, importNames: FS_WRITE_NAMES, message: KERNEL_ONLY })),
     ...["fs/promises", "node:fs/promises"].map((name) => ({ name, importNames: FS_PROMISES_WRITE_NAMES, message: KERNEL_ONLY })),
     ...["child_process", "node:child_process"].map((name) => ({ name, message: KERNEL_ONLY })),
+    ...["process", "node:process"].map((name) => ({ name, importNames: ["kill"], message: KERNEL_ONLY })),
   ],
 };
 const SOURCE_FILES = ["packages/*/src/**/*.{ts,tsx,mts,cts}", "apps/*/src/**/*.{ts,tsx,mts,cts}"];

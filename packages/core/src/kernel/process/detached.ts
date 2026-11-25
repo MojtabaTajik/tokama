@@ -1,6 +1,6 @@
 // Starts a background service (the engine) that outlives the process that starts it.
 import { type ChildProcess, type StdioOptions, spawn } from "node:child_process";
-import { closeSync, fchmodSync, openSync, readdirSync } from "node:fs";
+import { closeSync, constants, fchmodSync, fstatSync, openSync, readdirSync } from "node:fs";
 import { devNull } from "node:os";
 import { err, ok, type Result } from "../result/index.js";
 
@@ -23,8 +23,11 @@ export function spawnDetached(service: DetachedService): Result<ChildProcess, { 
   let logFd: number;
   let nullFd: number;
   try {
-    logFd = openSync(service.logPath, "a", 0o600);
+    // Never through a symlink, never blocking on a FIFO in the log's place. O_NONBLOCK does
+    // nothing for a regular file, so the child still writes normally.
+    logFd = openSync(service.logPath, constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0), 0o600);
     try {
+      if (!fstatSync(logFd).isFile()) throw new Error("not a regular file");
       nullFd = openSync(devNull, "r");
     } catch (error) {
       closeSync(logFd);

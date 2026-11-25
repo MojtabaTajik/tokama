@@ -14,8 +14,9 @@
 // drain ends, so an engine starting meanwhile sees a live engine instead of a stale lock.
 // Threat model: local desktop, no network listener.
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { chmodSync, closeSync, mkdirSync, openSync, readFileSync, unlinkSync } from "node:fs";
 // eslint-disable-next-line no-restricted-imports -- the engine lock is created exclusively (O_EXCL), which is the lock itself; renameSync moves a damaged board index aside.
-import { chmodSync, closeSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
+import { renameSync, writeSync } from "node:fs";
 import { connect, createServer, type Server, type Socket } from "node:net";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -998,7 +999,7 @@ async function lockIsLive(endpoint: LockSpec): Promise<{ live: boolean; socketPa
   const lock = readPidFile(endpoint.lockPath);
   if (lock === undefined) return { live: await socketAnswers(endpoint.socketPath), socketPath: endpoint.socketPath };
   const ageMs = Date.now() - lock.writtenAt;
-  const socketPath = lock.fields[2] || endpoint.socketPath;
+  const socketPath = lock.fields.slice(2).join(" ") || endpoint.socketPath;
   if (await socketAnswers(socketPath)) return { live: true, socketPath };
   if (lock.pid !== undefined && !pidAlive(lock.pid)) return { live: false, socketPath };
   // No pid yet: the lock is still being written.
