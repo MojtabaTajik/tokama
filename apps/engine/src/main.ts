@@ -51,7 +51,9 @@ async function main(): Promise<number> {
 
   // Claude Code's session logs, read only for the "all on this Mac" usage view; never in sample mode.
   const claudeLogs = sample ? undefined : join(homedir(), ".claude", "projects");
-  const started = await startEngine({ dir, home, signal: root.signal, log, sample, engineVersion: engineVersion(), onDiagnostics: (opened) => (diagnostics = opened), ...(claudeLogs !== undefined && { claudeLogs }) });
+  // Fake engine mode only: TOKAMA_SAMPLE_HISTORY=200 adds a long history of finished items.
+  const history = sample ? Math.min(5000, Math.max(0, Number.parseInt(process.env["TOKAMA_SAMPLE_HISTORY"] ?? "0", 10) || 0)) : 0;
+  const started = await startEngine({ dir, home, signal: root.signal, log, sample, sampleHistory: history, engineVersion: engineVersion(), onDiagnostics: (opened) => (diagnostics = opened), ...(claudeLogs !== undefined && { claudeLogs }) });
   if (!started.ok) {
     log(started.error.message);
     if (started.error.code === "stopped") return 0;

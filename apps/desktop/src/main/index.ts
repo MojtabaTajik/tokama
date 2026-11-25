@@ -80,7 +80,11 @@ function startWatch(onConnected: () => void, onItemEvent: (event: BridgeEvent["e
     dir,
     // The SSH agent socket reaches the engine for Open PR's push to an SSH remote; the engine's
     // process runner drops it again for every agent, check and other git call.
-    env: buildEnv(process.env, process.env["SSH_AUTH_SOCK"] === undefined ? {} : { SSH_AUTH_SOCK: process.env["SSH_AUTH_SOCK"] }),
+    // In sample mode, TOKAMA_SAMPLE_HISTORY reaches the engine too (a long history for trying the work list).
+    env: buildEnv(process.env, {
+      ...(process.env["SSH_AUTH_SOCK"] !== undefined && { SSH_AUTH_SOCK: process.env["SSH_AUTH_SOCK"] }),
+      ...(sample && process.env["TOKAMA_SAMPLE_HISTORY"] !== undefined && { TOKAMA_SAMPLE_HISTORY: process.env["TOKAMA_SAMPLE_HISTORY"] }),
+    }),
     sample,
   });
   const lockPath = endpoint.ok ? endpoint.value.lockPath : join(dir, "engine.lock");

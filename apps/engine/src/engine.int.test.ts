@@ -76,6 +76,33 @@ describe("engine service", () => {
     expect(board.ok && board.data.items.map((item) => item.title)).toEqual(["Checkout latency spike"]);
   });
 
+  it("answers item_list from the items in its store, and refuses a search or page size over the limits", async () => {
+    const dir = tempEngineDir(cleanups);
+    const handle = await engine(dir);
+    const engineClient = await client(dir);
+    expect(await engineClient.query({ type: "item_list", group: "done", limit: 50 })).toEqual({ ok: true, data: { items: [], nextCursor: null, total: 0, days: [] } });
+
+    // Items put in the store after the engine started are listed, with their state as it is now.
+    handle.store.put(sampleItem("Checkout latency spike"));
+    handle.store.put({ ...sampleItem("Checkout latency spike"), state: "done" });
+    const page = await engineClient.query({ type: "item_list", group: "done", q: "LATENCY", limit: 50 });
+    expect(page.ok && page.data.items.map((item) => [item.title, item.state])).toEqual([["Checkout latency spike", "done"]]);
+    expect(page.ok && page.data.total).toBe(1);
+    expect(page.ok && page.data.days.map((day) => day.count)).toEqual([1]);
+    expect(await engineClient.query({ type: "item_list", group: "running", limit: 50 })).toMatchObject({ ok: true, data: { total: 0 } });
+
+    for (const query of [
+      { type: "item_list", group: "done", limit: 1001 },
+      { type: "item_list", group: "done", limit: 0 },
+      { type: "item_list", group: "done", limit: 50, q: "x".repeat(201) },
+      { type: "item_list", group: "done", limit: 50, before: "1; DROP TABLE list_items" },
+      { type: "item_list", group: "done", limit: 50, since: "yesterday" },
+      { type: "item_list", group: "all", limit: 50 },
+    ]) {
+      expect(await engineClient.query(query as never)).toMatchObject({ ok: false, error: { code: "invalid_request" } });
+    }
+  });
+
   it("pushes an item_updated event only when the store changes", async () => {
     const dir = tempEngineDir(cleanups);
     const handle = await engine(dir);

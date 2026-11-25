@@ -5,7 +5,7 @@ import { type CommandInput, type EngineEvent, type ItemRecord, itemStage, manual
 import { afterEach, describe, expect, it } from "vitest";
 import { startEngine } from "../engine.js";
 import { tempEngineDir, waitFor } from "../testing/helpers.js";
-import { DECISION_ID, DIFF_DECISION_ID, ITEM_IDS, LIMIT_DECISION_ID } from "./data.js";
+import { DECISION_ID, DIFF_DECISION_ID, ITEM_IDS, LIMIT_DECISION_ID, sampleHistory } from "./data.js";
 import { SAMPLE_TICK_MS } from "./sample.js";
 
 const NOW = 1_780_000_000_000;
@@ -474,5 +474,37 @@ describe("fake engine mode", () => {
     expect(await suggest("Alert: 5xx on checkout")).toBe("builtin/emergency-investigator");
     expect(await suggest("Fix the rounding in invoice totals")).toBe("builtin/quick-fix");
     expect(await suggest("Please review my branch")).toBe("builtin/review-only");
+  });
+});
+
+describe("sample history", () => {
+  it("lists a long history in pages, and searches template and agent names of the sample setup", async () => {
+    const dir = tempEngineDir(cleanups);
+    const started = await startEngine({ dir, sample: true, sampleHistory: 200, clock: manualClock(NOW) });
+    if (!started.ok) throw new Error(started.error.message);
+    cleanups.push(() => started.value.close());
+    const connected = await connect({ dir, startTimeoutMs: 2_000 });
+    if (!connected.ok) throw new Error(connected.error.message);
+    cleanups.push(() => connected.value.close());
+    const client = connected.value;
+
+    const history = sampleHistory(NOW, 200);
+    const historyDone = history.filter((item) => item.state !== "failed").length;
+    const first = await client.query({ type: "item_list", group: "done", limit: 50 });
+    if (!first.ok) throw new Error(first.error.message);
+    // The sample's own done items (today) and the history's.
+    expect(first.data.total).toBeGreaterThanOrEqual(historyDone);
+    expect(first.data.items).toHaveLength(50);
+    expect(first.data.nextCursor).not.toBeNull();
+    const next = await client.query({ type: "item_list", group: "done", limit: 50, before: first.data.nextCursor! });
+    expect(next.ok && next.data.items[0]!.createdAt).toBeLessThanOrEqual(first.data.items.at(-1)!.createdAt);
+
+    // "Quick change" is a template name; "orders builder" an agent name (Plan and build's Build step).
+    const byTemplate = await client.query({ type: "item_list", group: "done", q: "quick change", limit: 1000 });
+    expect(byTemplate.ok && byTemplate.data.items.length > 0 && byTemplate.data.items.every((item) => item.templateId === "builtin/quick-change")).toBe(true);
+    const byAgent = await client.query({ type: "item_list", group: "failed", q: "Orders BUILDER", limit: 1000 });
+    expect(byAgent.ok && byAgent.data.items.length > 0 && byAgent.data.items.every((item) => item.steps.some((step) => step.agentId === "orders-builder"))).toBe(true);
+    const one = await client.query({ type: "item_list", group: "done", q: "(#12)", limit: 50 });
+    expect(one.ok && one.data.items.map((item) => item.title)).toEqual([history[11]!.title]);
   });
 });

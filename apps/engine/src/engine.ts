@@ -26,6 +26,8 @@ import {
   type AiClisResult,
   API_VERSION,
   type BoardResult,
+  type ItemListResult,
+  type ItemRecord,
   checkEngineDir,
   type Clock,
   type CommandErrorCode,
@@ -89,6 +91,7 @@ import { EngineDiagnostics, isDiagnosticsCommand } from "./diagnostics.js";
 import { listAgents } from "./agents-list.js";
 import { aiClis } from "./ai-clis.js";
 import { ItemIndex } from "./item-index.js";
+import { ItemList, nameHits } from "./item-list.js";
 import { type HealthChecks, machineChecks } from "./real/health.js";
 import { runningGroups } from "./machine.js";
 import { RealEngine } from "./real/real.js";
@@ -111,6 +114,8 @@ export interface EngineOptions {
   readonly store?: MemoryItemStore;
   /** Fake engine mode: serve the sample data set and handle commands on it (sample/sample.ts). */
   readonly sample?: boolean;
+  /** Fake engine mode only: this many generated finished items over the last two months, for trying long lists. */
+  readonly sampleHistory?: number;
   /**
    * Tokama's home folder (`~/.tokama`): item logs in `items/`, the board index in `tokama.db`, and
    * `repos.yaml`. Without it nothing is stored; in sample mode only repos.yaml is.
@@ -294,11 +299,25 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   }
 
   const store = options.store ?? new MemoryItemStore();
+  // The work list's index follows the store from here on, so the sample's and real mode's items reach it.
+  const list = ItemList.open();
+  const putInList = (item: ItemRecord) => {
+    try {
+      list.put(item);
+    } catch (error) {
+      log(`cannot update the work list for ${item.id}: ${String(error)}`);
+      diagnostics?.store.error("engine", "storage", error);
+    }
+  };
+  for (const item of store.list()) putInList(item);
+  const unfollowList = store.subscribe(putInList);
+  // The last setup served: the work-list search matches template and agent names from it.
+  let servedSetup: SetupResult | undefined;
   // What running items do now: pushed to every client, at most once a second per item, once the
   // event stream below exists (the sample items have their activity from the start).
   let pushActivity: (latest: ItemActivity) => void = () => {};
   const activity = new ActivityFeed(options.clock ?? systemClock, (latest) => pushActivity(latest));
-  const sample = options.sample ? new SampleEngine(store, options.clock ?? systemClock, activity) : undefined;
+  const sample = options.sample ? new SampleEngine(store, options.clock ?? systemClock, activity, options.sampleHistory) : undefined;
   const runner = options.runner ?? createProcessRunner();
   // Real mode: the engine stores items. Its run loop starts restart recovery at once. If it cannot
   // start, the engine still answers, and its setup says why nothing can run.
@@ -532,7 +551,8 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       } else if (message.query.type === "setup") {
         const current = await real.setup();
         diagnostics?.setClis(current.health.clis);
-        return { ok: true, data: { ...current, health: { ...current.health, ...crashFlag() } } satisfies SetupResult };
+        servedSetup = { ...current, health: { ...current.health, ...crashFlag() } };
+        return { ok: true, data: servedSetup };
       } else if (message.query.type === "suggest_template") { return { ok: true, data: { templateId: await real.suggestTemplate() } as SuggestTemplateResult };
       } else if (message.query.type === "decision_diff") {
         const diff = await real.decisionDiff(message.query.itemId, message.query.decisionId);
@@ -568,9 +588,16 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     const query = message.query;
     switch (query.type) {
       case "setup":
-        return { ok: true, data: await setup() };
+        servedSetup = await setup();
+        return { ok: true, data: servedSetup };
       case "board":
         return { ok: true, data: { items: store.list() } satisfies BoardResult };
+      case "item_list": {
+        const names = query.q === undefined || query.q.trim() === "" ? undefined : nameHits(servedSetup ?? (real === undefined ? await setup() : await real.setup()), query.q);
+        const page = list.page(query, names);
+        const items = page.ids.flatMap((id) => store.get(id) ?? []);
+        return { ok: true, data: { items, nextCursor: page.nextCursor, total: page.total, days: page.days } satisfies ItemListResult };
+      }
       case "item": {
         const item = store.get(query.itemId);
         return item ? { ok: true, data: { item } satisfies ItemResult } : { ok: false, error: { code: "not_found", message: `no item ${query.itemId}` } };
@@ -778,6 +805,8 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     // Closing the server removes the socket file. Only then may another engine take over.
     await new Promise<void>((resolve) => server.close(() => resolve()));
     releaseStorage();
+    unfollowList();
+    list.close();
     if (ownsLock(lockPath, lockContent)) {
       unlinkIfPresent(socketPath);
       unlinkIfPresent(tokenPath);

@@ -41,7 +41,7 @@ import {
 import type { ActivityFeed } from "../activity-feed.js";
 import type { MemoryItemStore } from "../store.js";
 import { checksReply, logReply, sampleChecks, sampleLogs } from "./attempts.js";
-import { DIFF_DECISION_ID, ITEM_IDS, sampleDiff, sampleItems, sampleOutputs, sampleSetup } from "./data.js";
+import { DIFF_DECISION_ID, ITEM_IDS, sampleDiff, sampleHistory, sampleItems, sampleOutputs, sampleSetup } from "./data.js";
 
 /** How often the fake engine moves a working item on by one step. */
 export const SAMPLE_TICK_MS = 20_000;
@@ -97,11 +97,12 @@ export class SampleEngine {
     private readonly store: MemoryItemStore,
     private readonly clock: Clock,
     private readonly activity?: ActivityFeed,
+    history = 0,
   ) {
     const setup = parseQueryResult("setup", sampleSetup);
     if (!setup.ok) throw new Error(`invalid sample setup: ${JSON.stringify(setup.error.issues)}`);
     this.setup = setup.value;
-    for (const raw of sampleItems(clock.now())) {
+    for (const raw of [...sampleItems(clock.now()), ...sampleHistory(clock.now(), history)]) {
       const item = parseItemRecord(raw);
       if (!item.ok) throw new Error(`invalid sample item ${raw.id}: ${JSON.stringify(item.error.issues)}`);
       store.put(item.value);
