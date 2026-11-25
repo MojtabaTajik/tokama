@@ -115,10 +115,7 @@ describe("App shell", () => {
   it("marks the buttons that are not wired yet as aria-disabled", async () => {
     await render(fakeBridge(CONNECTED).bridge);
     const disabled = $$('[aria-disabled="true"]').map((el) => el.getAttribute("aria-label") ?? el.textContent);
-    expect(disabled).toEqual([
-      "Insights",
-      "Settings",
-    ]);
+    expect(disabled).toEqual(["Insights"]);
     expect($('button[aria-label="Sidebar"]')?.hasAttribute("aria-disabled")).toBe(false);
   });
 });

@@ -1,0 +1,234 @@
+/* The Agents page, in Settings. Colours come from theme.css tokens only. */
+.agents {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+.agents-list-pane {
+  flex: 0 0 260px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  padding: 14px 12px 0;
+  border-right: 1px solid var(--hairline);
+  overflow: auto;
+}
+
+.agents-hint,
+.agents-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.agents-filter {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--input);
+  color: var(--text);
+  font: inherit;
+}
+
+.agents-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agent-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-row:hover,
+.agent-row[aria-pressed="true"] {
+  background: var(--raised);
+}
+
+.agent-row[aria-pressed="true"] {
+  color: var(--text);
+}
+
+.agent-row-line {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.agent-row-flag,
+.agent-broken-title .symbol,
+.agents-problems-title .symbol {
+  color: var(--fail);
+}
+
+.agent-row-flag {
+  margin-right: 6px;
+  font-size: 12px;
+}
+
+.agents-problems {
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-left: 2px solid var(--fail);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.agents-problems-title {
+  margin: 0 0 4px;
+  color: var(--text);
+}
+
+.agents-problems .symbol {
+  display: inline-block;
+  width: 1.4em;
+}
+
+.agents-problems ul,
+.agent-problems,
+.agent-notes {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.agents-problems li,
+.agent-problems li {
+  overflow-wrap: anywhere;
+}
+
+.agent-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 14px 22px 20px;
+  overflow: auto;
+}
+
+.agent-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding-bottom: 8px;
+}
+
+.agent-head-icon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--raised);
+  color: var(--text-2);
+}
+
+.agent-head-text {
+  min-width: 0;
+}
+
+.agent-head-text h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.agent-head-text p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.agent-broken-title {
+  color: var(--text-2);
+}
+
+.agent-stored {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.agent-stored .mono {
+  color: var(--text-2);
+}
+
+.agent-field {
+  padding: 12px 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.agent-field-label {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.agent-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--text-2);
+}
+
+.monogram {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--raised);
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.agent-notes {
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.agent-role {
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--input);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agent-broken-title .symbol {
+  display: inline-block;
+  width: 1.4em;
+}
+
+.agent-problems {
+  margin-top: 8px;
+}

@@ -17,6 +17,7 @@ import { join } from "node:path";
 import {
   addRepo,
   type AddRepoResult,
+  type AgentsListResult,
   API_VERSION,
   type BoardResult,
   checkEngineDir,
@@ -58,6 +59,7 @@ import {
   type AgentRuntime,
   type ProcessRunner,
 } from "@tokama/core";
+import { listAgents } from "./agents-list.js";
 import { ItemIndex } from "./item-index.js";
 import { type HealthChecks, machineChecks } from "./real/health.js";
 import { RealEngine } from "./real/real.js";
@@ -345,6 +347,9 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
         const { path, gitRepo, branch, id, checks, problem } = suggested.value;
         return { ok: true, data: { path, gitRepo, branch: branch ?? null, id: id ?? null, checks: [...checks], problem: problem ?? null } satisfies SuggestRepoResult };
       }
+      case "agents_list":
+        if (options.home === undefined) return { ok: false, error: { code: "not_implemented", message: "this engine has no Tokama home folder for agents" } };
+        return { ok: true, data: (await listAgents(options.home)) satisfies AgentsListResult };
     }
   };
 

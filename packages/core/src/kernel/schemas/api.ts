@@ -7,6 +7,7 @@ import { z } from "zod";
 import { DecisionIdSchema, ItemIdSchema, RepoIdSchema, TemplateRefSchema } from "./ids.js";
 import { ItemRecordSchema } from "./item.js";
 import { AgentCallUsageSchema } from "./usage.js";
+import { AgentsListSchema } from "./agents.js";
 import { RepoSummarySchema, SetupSchema } from "./setup.js";
 
 export const API_VERSION = 3;
@@ -70,6 +71,8 @@ export const QuerySchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("suggest_template"), text: z.string().max(4000) }),
   /** What the engine proposes for a folder before add_repo: id, base branch and checks. */
   z.strictObject({ type: z.literal("suggest_repo"), path: folderPath }),
+  /** Every agent: personal, each repo's shared ones and the built-ins, with the files that do not load. */
+  z.strictObject({ type: z.literal("agents_list") }),
 ]);
 
 export const EventSchema = z.discriminatedUnion("type", [
@@ -99,6 +102,7 @@ export const QueryResultSchemas = {
   item: z.strictObject({ item: ItemRecordSchema }),
   suggest_template: z.strictObject({ templateId: TemplateRefSchema.nullable() }),
   suggest_repo: RepoSuggestionSchema,
+  agents_list: AgentsListSchema,
 } as const satisfies Record<z.output<typeof QuerySchema>["type"], z.ZodType>;
 
 /** The data of a successful reply, per command type. */
@@ -239,6 +243,7 @@ export type ItemResult = QueryResult<"item">;
 export type SetupResult = QueryResult<"setup">;
 export type SuggestTemplateResult = QueryResult<"suggest_template">;
 export type SuggestRepoResult = QueryResult<"suggest_repo">;
+export type AgentsListResult = QueryResult<"agents_list">;
 export type CommandType = keyof typeof CommandResultSchemas;
 export type CommandResult<T extends CommandType> = z.output<(typeof CommandResultSchemas)[T]>;
 export type StartItemResult = CommandResult<"start_item">;

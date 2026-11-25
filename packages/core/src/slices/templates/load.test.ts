@@ -6,7 +6,11 @@ import { TemplateRecordSchema } from "../../kernel/schemas/index.js";
 import { BUILTIN_TEMPLATES, loadBuiltins, loadTemplates, templateJsonSchema, type TemplateLoad } from "./index.js";
 import type { AgentLocation } from "./validate.js";
 
-const AGENTS: ReadonlyMap<string, AgentLocation> = new Map([["builder", { cloud: true }]]);
+const AGENTS: ReadonlyMap<string, AgentLocation> = new Map([
+  ["architect", { cloud: true }],
+  ["builder", { cloud: true }],
+  ["reviewer", { cloud: true }],
+]);
 
 const template = (name: string, instructions = "Do the work.") => `format: 1
 name: ${name}
@@ -58,6 +62,8 @@ describe("loadTemplates", () => {
       ["orders-api/quick-fix", "quick-fix", "Orders fix", { kind: "repo", repoId: "orders-api", file: ".tokama/templates/quick-fix.yaml" }],
       ["billing/quick-fix", "quick-fix", "Billing fix", { kind: "repo", repoId: "billing", file: ".tokama/templates/quick-fix.yaml" }],
       ["builtin/quick-fix", "quick-fix", "Quick fix", { kind: "builtin" }],
+      ["builtin/plan-and-build", "plan-and-build", "Plan and build", { kind: "builtin" }],
+      ["builtin/review-only", "review-only", "Review only", { kind: "builtin" }],
     ]);
   });
 
@@ -114,7 +120,7 @@ describe("loadTemplates", () => {
     expect(failures(loads)).toEqual([
       { ok: false, origin: "builtin", file: ".tokama/templates", problems: [{ line: 1, message: expect.stringContaining('cannot be named "builtin"') }] },
     ]);
-    expect(loaded(loads).map((t) => t.name)).toEqual(["Quick fix"]);
+    expect(loaded(loads).map((t) => t.name)).toEqual(["Quick fix", "Plan and build", "Review only"]);
   });
 
   describe("files refused by the safe reads", () => {

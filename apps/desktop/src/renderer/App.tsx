@@ -6,6 +6,7 @@ import { ItemDrawer } from "./drawer/ItemDrawer.js";
 import { ALL_WORK, type CliIssue, cliIssuesOf, healthProblemsOf, inView, needsYouCount, type View } from "./model.js";
 import { isMac, NewWork, type NewWorkHandle } from "./newwork/NewWork.js";
 import { AddRepoDialog } from "./repos/AddRepoDialog.js";
+import { Settings } from "./settings/Settings.js";
 import { NeedsYou } from "./needsyou/NeedsYou.js";
 import { MainArea } from "./shell/MainArea.js";
 import { Rail } from "./shell/Rail.js";
@@ -31,8 +32,8 @@ export interface AppProps {
 export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, version = "unknown", cliIssues }: AppProps) {
   const { connection, data, loadError, stale, retry, refreshSetup } = useEngine(bridge, retryDelayMs);
   const [panelOpen, setPanelOpen] = useState(true);
-  // What the main area shows: the board, the Needs you page or About.
-  const [page, setPage] = useState<"board" | "needs-you" | "about">("board");
+  // What the main area shows: the board, the Needs you page or About; Settings takes the whole window.
+  const [page, setPage] = useState<"board" | "needs-you" | "about" | "settings">("board");
   const aboutOpen = page === "about";
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(undefined);
   const composer = useRef<NewWorkHandle>(null);
@@ -90,6 +91,14 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
     />
   );
 
+  if (page === "settings") {
+    return (
+      <div className="shell">
+        <Settings bridge={bridge} connection={connection} setup={setup} onBack={() => setPage("board")} />
+      </div>
+    );
+  }
+
   return (
     <div className="shell">
       <Rail
@@ -105,6 +114,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
         onBoard={() => setPage("board")}
         onNeedsYou={() => setPage("needs-you")}
         onAbout={() => setPage(aboutOpen ? "board" : "about")}
+        onSettings={() => setPage("settings")}
       />
       {panelOpen && (
         <Sidebar
