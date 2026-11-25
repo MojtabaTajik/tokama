@@ -1,11 +1,15 @@
 // The icon rail: panel toggle, Board, Needs you, Insights, Settings, Attention, then the user.
-// Insights is the one usage entry: hovering or focusing it lists each AI CLI, and a logged-out one
-// puts a ✕ on the icon. Attention opens a popup with the issues and how to fix them. The user
-// button opens About. Needs you opens its page, Settings opens Settings. Insights is marked aria-disabled until its page exists.
+// Insights is the one usage entry: hovering or focusing it lists each AI CLI's plan windows, and
+// clicking opens the Insights page. A CLI that is logged out or at its limit puts a ✕ on the icon,
+// one near its limit a !. Attention opens a popup with the issues and how to fix them. The user
+// button opens About. Needs you opens its page, Settings opens Settings.
+import type { UsageReport } from "@tokama/core";
 import { useEffect, useId, useRef, useState } from "react";
 import { brand } from "../brand/index.js";
+import { cliAlert, railBadge } from "../insights/usage-model.js";
 import { AI_CLIS, type CliIssue, type HealthProblem } from "../model.js";
 import { AttentionPopup } from "./Attention.js";
+import { InsightsTip } from "./InsightsTip.js";
 import { AttentionIcon, BoardIcon, InboxIcon, InsightsIcon, PanelIcon, SettingsIcon, UserIcon } from "./icons.js";
 
 const TEXT = {
@@ -17,9 +21,6 @@ const TEXT = {
   insights: "Insights",
   settings: "Settings",
   attention: "Attention",
-  usageLater: "usage data comes later",
-  loggedOut: "✕ logged out",
-  notInstalled: "✕ not found",
   about: "About Tokama",
 } as const;
 
@@ -36,6 +37,14 @@ export interface RailProps {
   readonly problems?: readonly HealthProblem[];
   /** Attention opened: the issues should be checked again. */
   readonly onAttention?: () => void;
+  /** The plan windows the tooltip lists; undefined until loaded. */
+  readonly usage?: UsageReport | undefined;
+  readonly now?: number;
+  /** The Insights page is the open view. */
+  readonly insightsOpen?: boolean;
+  readonly onInsights?: () => void;
+  /** The tooltip opened (true) or closed (false): its numbers should be current while it shows. */
+  readonly onInsightsTip?: (shown: boolean) => void;
   /** About is the open view; the Board button then leads back. */
   readonly aboutOpen: boolean;
   /** The Needs you page is the open view. */
@@ -46,13 +55,10 @@ export interface RailProps {
   readonly onSettings: () => void;
 }
 
-const stateOf = (issue: CliIssue | undefined): string =>
-  issue === undefined ? TEXT.usageLater : issue.kind === "not_installed" ? TEXT.notInstalled : TEXT.loggedOut;
-
 /** "Needs you · 2", or just "Needs you" when there are none. */
 const withCount = (label: string, count: number) => (count > 0 ? `${label} · ${count}` : label);
 
-export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, problems = [], onAttention, aboutOpen, needsYouOpen, onBoard, onNeedsYou, onAbout, onSettings }: RailProps) {
+export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, problems = [], onAttention, usage, now = Date.now(), insightsOpen = false, onInsights, onInsightsTip, aboutOpen, needsYouOpen, onBoard, onNeedsYou, onAbout, onSettings }: RailProps) {
   const tipId = useId();
   const popupId = useId();
   const attention = issues.length + problems.length;
@@ -78,6 +84,15 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
       document.removeEventListener("mousedown", onPress);
     };
   }, []);
+  // The tooltip shows while the pointer or the focus is on Insights: it closes when neither is.
+  const tipHolds = useRef({ hover: false, focus: false });
+  const tipHeld = (by: "hover" | "focus", held: boolean) => {
+    const before = tipHolds.current.hover || tipHolds.current.focus;
+    tipHolds.current = { ...tipHolds.current, [by]: held };
+    const after = tipHolds.current.hover || tipHolds.current.focus;
+    if (after !== before) onInsightsTip?.(after);
+  };
+  const badge = railBadge(AI_CLIS.map((cli) => cliAlert(usage?.clis.find((plan) => plan.cliId === cli.id), issues.find((issue) => issue.cliId === cli.id), now)));
   const needsYouLabel = needsYou === undefined ? `${TEXT.needsYou} · ${TEXT.outOfDate}` : withCount(TEXT.needsYou, needsYou);
   return (
     <nav className="rail" aria-label={TEXT.rail}>
@@ -93,7 +108,7 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
       >
         <PanelIcon />
       </button>
-      <button type="button" className="rail-button" aria-label={TEXT.board} title={TEXT.board} aria-current={aboutOpen || needsYouOpen ? undefined : "page"} onClick={onBoard}>
+      <button type="button" className="rail-button" aria-label={TEXT.board} title={TEXT.board} aria-current={aboutOpen || needsYouOpen || insightsOpen ? undefined : "page"} onClick={onBoard}>
         <BoardIcon />
       </button>
       <button
@@ -108,21 +123,41 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
         <InboxIcon />
         <Badge count={needsYou ?? 0} tone="warn" />
       </button>
-      <div className="insights" data-dismissed={tipDismissed || undefined} onMouseEnter={() => setTipDismissed(false)} onMouseLeave={() => setTipDismissed(false)} onFocus={() => setTipDismissed(false)}>
-        <button type="button" className="rail-button" data-tone={issues.length > 0 ? "fail" : undefined} aria-label={TEXT.insights} aria-describedby={tipId} aria-disabled="true">
+      <div
+        className="insights"
+        data-dismissed={tipDismissed || undefined}
+        onMouseEnter={() => {
+          setTipDismissed(false);
+          tipHeld("hover", true);
+        }}
+        onMouseLeave={() => {
+          setTipDismissed(false);
+          tipHeld("hover", false);
+        }}
+        onFocus={() => {
+          setTipDismissed(false);
+          tipHeld("focus", true);
+        }}
+        onBlur={() => tipHeld("focus", false)}
+      >
+        <button
+          type="button"
+          className="rail-button"
+          data-tone={badge?.tone}
+          aria-label={TEXT.insights}
+          aria-describedby={tipId}
+          aria-current={insightsOpen ? "page" : undefined}
+          onClick={() => {
+            // The page shows the same numbers; the tooltip comes back when the pointer returns.
+            setTipDismissed(true);
+            onInsights?.();
+          }}
+        >
           <InsightsIcon />
-          <Badge count={issues.length} tone="fail" symbol="✕" />
+          {badge !== undefined && <Badge count={1} tone={badge.tone} symbol={badge.symbol} />}
         </button>
         <div role="tooltip" id={tipId} className="insights-tip">
-          <p className="insights-title">{TEXT.insights}</p>
-          <ul>
-            {AI_CLIS.map((cli) => (
-              <li key={cli.id}>
-                <span>{cli.name}</span>
-                <span className="insights-state">{stateOf(issues.find((issue) => issue.cliId === cli.id))}</span>
-              </li>
-            ))}
-          </ul>
+          <InsightsTip usage={usage} issues={issues} now={now} />
         </div>
       </div>
       <button type="button" className="rail-button" aria-label={TEXT.settings} title={TEXT.settings} onClick={onSettings}>

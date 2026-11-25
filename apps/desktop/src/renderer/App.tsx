@@ -1,8 +1,11 @@
 // The app shell: icon rail, sidebar, main area, and the item drawer when an item is open.
+import type { UsageRange } from "@tokama/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TokamaBridge } from "../shared/bridge.js";
 import { About } from "./about/About.js";
 import { ItemDrawer } from "./drawer/ItemDrawer.js";
+import { Insights } from "./insights/Insights.js";
+import { useUsage } from "./insights/useUsage.js";
 import { ALL_WORK, type CliIssue, cliIssuesOf, healthProblemsOf, inView, needsYouCount, type View } from "./model.js";
 import { isMac, NewWork, type NewWorkHandle } from "./newwork/NewWork.js";
 import { AddRepoDialog } from "./repos/AddRepoDialog.js";
@@ -32,8 +35,13 @@ export interface AppProps {
 export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, version = "unknown", cliIssues }: AppProps) {
   const { connection, data, loadError, stale, retry, refreshSetup } = useEngine(bridge, retryDelayMs);
   const [panelOpen, setPanelOpen] = useState(true);
-  // What the main area shows: the board, the Needs you page or About; Settings takes the whole window.
-  const [page, setPage] = useState<"board" | "needs-you" | "about" | "settings">("board");
+  // What the main area shows: the board, the Needs you page, Insights or About; Settings takes the whole window.
+  const [page, setPage] = useState<"board" | "needs-you" | "insights" | "about" | "settings">("board");
+  // The tooltip and the page share one report; the page's range picks its days.
+  const [usageRange, setUsageRange] = useState<UsageRange>(14);
+  // The report loads every minute only while someone looks at it: the page, or the rail tooltip.
+  const [tipShown, setTipShown] = useState(false);
+  const usage = useUsage(bridge, connection, usageRange, page === "insights" || tipShown);
   const aboutOpen = page === "about";
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(undefined);
   const composer = useRef<NewWorkHandle>(null);
@@ -109,6 +117,14 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
         issues={issues}
         problems={problems}
         onAttention={refreshSetup}
+        usage={usage.report}
+        now={now}
+        insightsOpen={page === "insights"}
+        onInsights={() => setPage("insights")}
+        onInsightsTip={(shown) => {
+          setTipShown(shown);
+          if (shown) usage.refresh();
+        }}
         aboutOpen={aboutOpen}
         needsYouOpen={page === "needs-you"}
         onBoard={() => setPage("board")}
@@ -139,6 +155,19 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
       )}
       {aboutOpen ? (
         <About version={version} onClose={() => setPage("board")} />
+      ) : page === "insights" ? (
+        <Insights
+          connection={connection}
+          onRetryConnection={() => void bridge.retryConnection()}
+          usage={usage}
+          range={usageRange}
+          onRange={setUsageRange}
+          setup={setup}
+          items={items}
+          issues={issues}
+          now={now}
+          onSelectItem={setSelectedItemId}
+        />
       ) : page === "needs-you" ? (
         <NeedsYou
           bridge={bridge}

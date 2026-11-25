@@ -58,7 +58,7 @@ describe("the Needs you page", () => {
   it("opens from the rail, marks it as the current page and leads back to the board", async () => {
     await render(fakeBridge(CONNECTED, { boardItems: withOlder }).bridge);
     expect(railButton(/^Needs you/).getAttribute("aria-label")).toBe("Needs you · 2");
-    expect($(".rail button[aria-disabled]")?.getAttribute("aria-label")).not.toMatch(/^Needs you/);
+    expect(railButton(/^Needs you/).hasAttribute("aria-disabled")).toBe(false);
     await openPage();
     expect(text("main h1")).toBe("Needs you");
     expect(railButton(/^Needs you/).getAttribute("aria-current")).toBe("page");

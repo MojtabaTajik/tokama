@@ -22,6 +22,7 @@ import {
   viewKey,
 } from "./model.js";
 import { ITEMS, items, NOW, setup } from "./testing/sample.js";
+import { usageReport } from "./testing/usage.js";
 
 const titles = (list: readonly ItemRecord[]) => list.map((item) => item.title);
 const template = (id: string) => setup.templates.find((candidate) => candidate.id === id)!;
@@ -30,6 +31,7 @@ describe("test data", () => {
   it("matches the engine API schemas", () => {
     expect(parseQueryResult("setup", setup).ok).toBe(true);
     for (const item of items) expect(parseItemRecord(item)).toMatchObject({ ok: true });
+    expect(parseQueryResult("usage", usageReport)).toMatchObject({ ok: true });
   });
 });
 
