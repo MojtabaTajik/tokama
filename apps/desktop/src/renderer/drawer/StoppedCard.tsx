@@ -59,8 +59,8 @@ export function StoppedCard({ bridge, item, setup, decision, busy, full, onChoos
           <div className="stopped-fact">
             <dt>{TEXT.then}</dt>
             <dd className="stopped-then">
-              <span className="mark" data-tone={then.tone} aria-hidden="true">
-                {then.symbol}
+              <span className="mark" data-tone={then.mark.tone} aria-hidden="true">
+                {then.mark.symbol}
               </span>
               {then.text}
             </dd>
@@ -73,7 +73,7 @@ export function StoppedCard({ bridge, item, setup, decision, busy, full, onChoos
       </div>
       <div className="stopped-actions">
         <DecisionChoices key={decision.id} decision={decision} busy={busy} danger="stop" onChoose={(choice, note) => onChoose(decision, choice, note)} />
-        <button type="button" className="link stopped-link" onClick={() => onShow(link.to, stepIndex)}>
+        <button type="button" className="link" onClick={() => onShow(link.to, stepIndex)}>
           {link.text}
         </button>
       </div>
@@ -100,7 +100,7 @@ function Said({ said }: { readonly said: ReturnType<typeof saidOf> }) {
             <ul className="stopped-items">
               {said.items.map((item, index) => (
                 <li key={index}>
-                  {item.ref !== undefined && <code className="stopped-ref">{item.ref}</code>}
+                  {item.ref !== undefined && <code className="st-code">{item.ref}</code>}
                   <span>{item.text}</span>
                 </li>
               ))}

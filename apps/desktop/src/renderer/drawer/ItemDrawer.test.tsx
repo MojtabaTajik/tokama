@@ -1384,7 +1384,7 @@ describe("the card of a step that stopped", () => {
       ["Why it stopped", "Review may run once per round, so it has not checked the fix."],
     ]);
     expect($(".stopped b")).toBeNull();
-    expect($$(".stopped-ref").map((el) => el.textContent)).toEqual(["src/start-card.css:31", "src/a.ts:2"]);
+    expect($$(".stopped-items code").map((el) => el.textContent)).toEqual(["src/start-card.css:31", "src/a.ts:2"]);
     expect($$(".stopped .choice").map((el) => [el.textContent, el.className])).toEqual([
       ["Run Review again", "choice primary"],
       ["End: no action needed", "choice"],

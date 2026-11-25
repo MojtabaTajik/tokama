@@ -2,7 +2,7 @@
 // where its link goes. Pure functions over the engine's decision and the step's output, tested
 // without React. Every line comes as words, with a symbol where it has a tone.
 import type { Decision, OutputSummary, StepRecord } from "@tokama/core";
-import type { Tone } from "./describe.js";
+import { attemptMark, type Mark } from "./describe.js";
 import type { OutputState } from "./StepOutput.js";
 
 type Stopped = NonNullable<Decision["stopped"]>;
@@ -90,24 +90,28 @@ function plainSummary(text: string): OutputSummary {
 const mustFixCount = (state: OutputState | undefined): number =>
   state?.kind === "loaded" && state.output.summary?.kind === "verdict" ? state.output.summary.mustFix.length + state.output.summary.more : 0;
 
-/** What ran after the step's attempt, with its symbol and tone. */
-export function thenLine(then: Stopped["then"], steps: readonly Pick<StepRecord, "name">[], said: OutputState | undefined): { readonly symbol: string; readonly tone: Tone; readonly text: string } {
+/** Nothing ran after the attempt. */
+const NOTHING: Mark = { symbol: "–", word: "nothing", tone: "muted" };
+
+/** What ran after the step's attempt, with the mark of how it ended. */
+export function thenLine(then: Stopped["then"], steps: readonly Pick<StepRecord, "name">[], said: OutputState | undefined): { readonly mark: Mark; readonly text: string } {
   switch (then.kind) {
     case "none":
-      return { symbol: "–", tone: "muted", text: TEXT.nothing };
+      return { mark: NOTHING, text: TEXT.nothing };
     case "checks_failed":
-      return { symbol: "✕", tone: "fail", text: TEXT.checksFailed(then.failed, then.total) };
+      return { mark: attemptMark("failed"), text: TEXT.checksFailed(then.failed, then.total) };
     case "later": {
       const step = steps[then.stepIndex]?.name ?? `Step ${then.stepIndex + 1}`;
+      const mark = attemptMark(then.result);
       switch (then.result) {
         case "passed":
-          return { symbol: "✓", tone: "pass", text: TEXT.fixed(step, mustFixCount(said) > 1, then.attempt, then.checks !== undefined) };
+          return { mark, text: TEXT.fixed(step, mustFixCount(said) > 1, then.attempt, then.checks !== undefined) };
         case "failed":
-          return { symbol: "✕", tone: "fail", text: TEXT.laterFailed(step, then.attempt, then.checks) };
+          return { mark, text: TEXT.laterFailed(step, then.attempt, then.checks) };
         case "run_failed":
-          return { symbol: "!", tone: "warn", text: TEXT.laterRunFailed(step, then.attempt) };
+          return { mark, text: TEXT.laterRunFailed(step, then.attempt) };
         case "stopped":
-          return { symbol: "■", tone: "muted", text: TEXT.laterStopped(step, then.attempt) };
+          return { mark, text: TEXT.laterStopped(step, then.attempt) };
       }
     }
   }

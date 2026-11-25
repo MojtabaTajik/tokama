@@ -15,7 +15,7 @@ flow("a step that stopped at its limit explains itself: what the reviewer said, 
   expect(await card.locator(".stopped-title").innerText()).toContain("Review stopped at its limit");
   const fact = (label: string) => card.locator(".stopped-fact", { has: page.getByText(label, { exact: true }) }).locator("dd");
   await expect.poll(() => fact("Reviewer said").innerText(), { message: "the verdict" }).toContain("Asked for changes · 1 must fix");
-  expect(await card.locator(".stopped-ref").allInnerTexts()).toEqual(["src/start-card.css:31"]);
+  expect(await card.locator(".stopped-items code").allInnerTexts()).toEqual(["src/start-card.css:31"]);
   expect(await fact("Reviewer said").innerText()).toContain("the start card changes layout while it fades out");
   expect(await fact("Then").innerText()).toContain("Build fixed it in attempt 2 (checks passed).");
   expect(await fact("Why it stopped").innerText()).toBe("Review may run once per round, so it has not checked the fix.");

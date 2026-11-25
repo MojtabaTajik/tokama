@@ -6,19 +6,19 @@ const loaded = (text: string, summary?: object) => ({ kind: "loaded", output: { 
 
 describe("thenLine", () => {
   it("names the failed checks of the attempt itself", () => {
-    expect(thenLine({ kind: "checks_failed", failed: ["pnpm test", "pnpm typecheck"], total: 5 }, steps, undefined)).toEqual({ symbol: "✕", tone: "fail", text: "Checks failed: 2 of 5 (pnpm test, pnpm typecheck)." });
+    expect(thenLine({ kind: "checks_failed", failed: ["pnpm test", "pnpm typecheck"], total: 5 }, steps, undefined)).toEqual({ mark: { symbol: "✕", word: "failed", tone: "fail" }, text: "Checks failed: 2 of 5 (pnpm test, pnpm typecheck)." });
   });
 
   it("says how the later attempt of another step ended, with a symbol for each", () => {
     const later = (result: "passed" | "failed" | "run_failed" | "stopped", checks?: { passed: number; total: number }) => thenLine({ kind: "later", stepIndex: 0, attempt: 2, result, ...(checks && { checks }) }, steps, undefined);
-    expect(later("passed")).toEqual({ symbol: "✓", tone: "pass", text: "Build fixed it in attempt 2." });
-    expect(later("failed", { passed: 3, total: 5 })).toEqual({ symbol: "✕", tone: "fail", text: "Build failed in attempt 2 (checks failed: 2 of 5)." });
+    expect(later("passed")).toEqual({ mark: { symbol: "✓", word: "passed", tone: "pass" }, text: "Build fixed it in attempt 2." });
+    expect(later("failed", { passed: 3, total: 5 })).toEqual({ mark: { symbol: "✕", word: "failed", tone: "fail" }, text: "Build failed in attempt 2 (checks failed: 2 of 5)." });
     expect(later("run_failed").text).toBe("The run of Build failed in attempt 2.");
     expect(later("stopped").text).toBe("Build was stopped in attempt 2.");
   });
 
   it("says nothing ran after it", () => {
-    expect(thenLine({ kind: "none" }, steps, undefined)).toEqual({ symbol: "–", tone: "muted", text: "Nothing ran after it." });
+    expect(thenLine({ kind: "none" }, steps, undefined)).toEqual({ mark: { symbol: "–", word: "nothing", tone: "muted" }, text: "Nothing ran after it." });
   });
 });
 
