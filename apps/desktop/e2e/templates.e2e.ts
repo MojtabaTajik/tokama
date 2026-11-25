@@ -9,7 +9,7 @@ import { expect } from "vitest";
 import { flow } from "./harness.js";
 
 flow("shows templates with their flow, steps and problems in Settings", async ({ page, screenshot }) => {
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: /^Settings(?: · \d+\+? diagnostics waiting)?$/ }).click();
   await page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Templates" }).click();
   const list = page.getByRole("list", { name: "Template files" });
   await list.getByRole("button", { name: /Plan and build.*orders-api/ }).waitFor();
@@ -53,7 +53,7 @@ flow(
       (shell as { openPath: unknown }).openPath = async (path: string) => (opened.push(path), "");
     });
 
-    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await page.getByRole("button", { name: /^Settings(?: · \d+\+? diagnostics waiting)?$/ }).click();
     await page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Templates" }).click();
     const list = page.getByRole("list", { name: "Template files" });
     await list.getByRole("button", { name: /docs-fix\.yaml.*✕ \d+ problems?/ }).click();
