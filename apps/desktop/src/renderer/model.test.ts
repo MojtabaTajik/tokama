@@ -2,6 +2,7 @@ import { parseItemRecord, parseQueryResult, type ItemRecord } from "@tokama/core
 import { describe, expect, it } from "vitest";
 import {
   AI_CLIS,
+  attemptOf,
   badgesOf,
   boardColumns,
   bucketOf,
@@ -155,7 +156,38 @@ describe("needsYouCount", () => {
   });
 });
 
+describe("attemptOf", () => {
+  const attempt = (n: number, result?: "passed" | "failed") => ({ attempt: n, ...(result !== undefined && { result }), checks: [] });
+
+  it("is the attempt in progress", () => {
+    expect(attemptOf({ state: "running", attempts: [attempt(1, "failed"), attempt(2)] })).toBe(2);
+  });
+
+  it("is the last attempt for a step that waits for you or has failed", () => {
+    expect(attemptOf({ state: "needs_you", attempts: [attempt(1, "passed")] })).toBe(1);
+    expect(attemptOf({ state: "failed", attempts: [attempt(1, "failed"), attempt(2, "failed")] })).toBe(2);
+  });
+
+  it("is the next attempt when a running step's last attempt has ended", () => {
+    expect(attemptOf({ state: "running", attempts: [attempt(1, "failed")] })).toBe(2);
+  });
+
+  it("is the first attempt for a step that has started and recorded none", () => {
+    expect(attemptOf({ state: "running" })).toBe(1);
+    expect(attemptOf({ state: "needs_you", attempts: [] })).toBe(1);
+  });
+
+  it("is none for a step that has not started", () => {
+    expect(attemptOf({ state: "pending" })).toBeUndefined();
+  });
+});
+
 describe("pipelineOf", () => {
+  it("carries the attempt of each step", () => {
+    expect(pipelineOf(ITEMS.working).map((step) => step.attempt)).toEqual([1, 1, undefined]);
+    expect(pipelineOf(ITEMS.queued).map((step) => step.attempt)).toEqual([undefined, undefined, undefined, undefined]);
+  });
+
   const symbols = (item: ItemRecord) => pipelineOf(item).map((step) => step.mark.symbol);
 
   it("gives every step state its symbol and a word", () => {

@@ -664,26 +664,64 @@ button:focus-visible {
   color: var(--muted);
 }
 
-.pl-row {
+/* A row is its wrapper's grid: the row button spans it as a subgrid, and the agent label, which
+   cannot sit inside a button, is a sibling in the agent's column. The button's ::before covers the
+   whole wrapper, so a press anywhere but on the label or the finish buttons selects the row. */
+.pl-row-wrap {
+  position: relative;
   display: grid;
-  grid-template-columns: 22px minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 140px) 52px;
+  grid-template-columns: 22px minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 170px) 52px;
   align-items: center;
   gap: 4px 14px;
   padding: 9px 8px;
-  border: 0;
   border-top: 1px solid var(--hairline);
+}
+
+.pl-row-wrap:hover {
+  background: var(--panel);
+}
+
+.pl-row-wrap:has(> .pl-row[aria-current="true"]) {
+  background: var(--raised);
+}
+
+.pl-row {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-template-rows: subgrid;
+  align-items: center;
+  gap: inherit;
+  margin: 0;
+  padding: 0;
+  border: 0;
   background: transparent;
   color: var(--text-2);
   text-align: left;
   cursor: pointer;
 }
 
-.pl-row:hover {
-  background: var(--panel);
+.pl-row::before {
+  content: "";
+  position: absolute;
+  inset: 0;
 }
 
-.pl-row[aria-current="true"] {
-  background: var(--raised);
+/* Above the cover, so the titles on the steps and the time still show on hover. */
+.pl-step,
+.pl-time {
+  position: relative;
+  z-index: 1;
+}
+
+.pl-row:focus-visible {
+  outline: none;
+}
+
+.pl-row:focus-visible::before {
+  outline: 1px solid var(--link);
+  outline-offset: -1px;
 }
 
 .pl-mark {
@@ -754,16 +792,6 @@ button:focus-visible {
 }
 
 /* A Done row's split button: shown while the row is hovered or has focus. */
-
-.pl-row-wrap {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-}
-
-.pl-row-wrap > .pl-row {
-  width: 100%;
-}
 
 .finish-split {
   position: absolute;
@@ -868,6 +896,8 @@ button:focus-visible {
 
 .pl-step[data-current] {
   flex: 0 1 auto;
+  /* What does not fit is cut here, so it never runs over the next mark. */
+  overflow: hidden;
 }
 
 .pl-link {
@@ -884,12 +914,26 @@ button:focus-visible {
   text-align: center;
 }
 
+/* On a narrow row the name shortens first, but never below a few letters; the attempt clips only after that. */
 .pl-step-name {
+  flex: 0 100 auto;
+  min-width: 1.5em;
   margin-left: 5px;
   color: var(--text-2);
 }
 
+.pl-step-attempt {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  margin-left: 5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 .pl-agent {
+  grid-column: 4;
+  grid-row: 1;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -898,7 +942,9 @@ button:focus-visible {
   color: var(--text-2);
 }
 
+/* The agent label holds column 4, in the wrapper; the time stays in the last. */
 .pl-time {
+  grid-column: 5;
   font-size: 11.5px;
   color: var(--muted);
   text-align: right;
@@ -936,14 +982,18 @@ button:focus-visible {
 }
 
 /* The list is as wide as the main area, which the open drawer narrows. The secondary columns go
-   before the title does: first the pipeline and agent move under the title and the current step's
-   name is dropped, then the agent, then the time. */
+   before the title does: first the pipeline and agent move under the title, then the agent goes,
+   then the time. The current step keeps its name and attempt; its name shortens first. */
 @container list (max-width: 719px) {
-  .pl-row {
-    grid-template-columns: 22px minmax(0, 1fr) fit-content(110px);
+  .pl-row-wrap {
+    grid-template-columns: 22px minmax(0, 1fr) fit-content(190px);
     grid-template-areas:
       "mark main time"
       ".    pipe agent";
+  }
+
+  .pl-row {
+    grid-row: 1 / span 2;
   }
 
   .pl-mark {
@@ -967,14 +1017,10 @@ button:focus-visible {
   .pl-time {
     grid-area: time;
   }
-
-  .pl-step-name {
-    display: none;
-  }
 }
 
 @container list (max-width: 379px) {
-  .pl-row {
+  .pl-row-wrap {
     grid-template-areas:
       "mark main time"
       ".    pipe pipe";
@@ -986,7 +1032,7 @@ button:focus-visible {
 }
 
 @container list (max-width: 259px) {
-  .pl-row {
+  .pl-row-wrap {
     grid-template-columns: 22px minmax(0, 1fr);
     grid-template-areas:
       "mark main"

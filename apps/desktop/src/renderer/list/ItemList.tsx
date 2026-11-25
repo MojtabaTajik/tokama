@@ -1,12 +1,17 @@
 // The pipeline list: one flat row per item, in groups (Needs you, Running, Done, Failed). A row
-// shows the status, the title, the workflow and repos, the item's own steps as a small pipeline,
-// its agent and its time. A row is a native button, so Enter and Space select it as a click does.
-// Engine text (titles, questions, names) is rendered as React text only.
+// shows the status, the title, the workflow and repos, the item's own steps as a small pipeline
+// (the current step with its attempt), its agent with the model, and its time. A row is a native
+// button, so Enter and Space select it as a click does; the agent label next to it has its own
+// tooltip and does not select the row. Engine text (titles, questions, names) is rendered as React
+// text only.
 import type { FinishAction, ItemRecord, Setup } from "@tokama/core";
+import { AgentLabel } from "../agent/AgentLabel.js";
+import { agentInfo } from "../agent/agent-info.js";
 import { templateOf } from "../drawer/describe.js";
 import { finishNote } from "../drawer/finish-view.js";
-import { type ItemGroup, pipelineOf, rowAgent, rowMark, timeOf } from "../model.js";
+import { currentStep, type ItemGroup, pipelineOf, rowAgent, rowMark, timeOf } from "../model.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
+import type { AgentTarget } from "../settings/describe.js";
 import { FinishSplit } from "./FinishSplit.js";
 import { useFocusFollow } from "./useFocusFollow.js";
 
@@ -14,7 +19,12 @@ const TEXT = {
   nothing: { needs: "Nothing waiting", running: "Nothing running", done: "Nothing finished", failed: "Nothing failed" },
   nothingFor: (what: string, name: string) => `${what} for ${name}`,
   steps: "Steps",
+  attempt: (n: number) => `attempt ${n}`,
 } as const;
+
+/** A step in words, for the pipeline's label: "Review running attempt 1", "Plan passed". */
+const stepWords = (step: { readonly name: string; readonly mark: { readonly word: string }; readonly current: boolean; readonly attempt: number | undefined }): string =>
+  `${step.name} ${step.mark.word}${step.current && step.attempt !== undefined ? ` ${TEXT.attempt(step.attempt)}` : ""}`;
 
 export interface ItemListProps {
   readonly groups: readonly ItemGroup[];
@@ -28,11 +38,13 @@ export interface ItemListProps {
   readonly onFinish?: (itemId: string, action: FinishAction) => void | Promise<void>;
   /** Discard… from a Done row: opens the item with its Discard question. */
   readonly onDiscard?: (itemId: string) => void;
+  /** An agent tooltip's "Open in Settings →"; without it the tooltips have no link. */
+  readonly onOpenAgent?: (agent: AgentTarget) => void;
 }
 
 const GROUP_SYMBOL = { needs: "⏸", running: "●", done: "✓", failed: "✕" } as const;
 
-export function ItemList({ groups, setup, now, selectedItemId, onSelect, repoId, onFinish, onDiscard }: ItemListProps) {
+export function ItemList({ groups, setup, now, selectedItemId, onSelect, repoId, onFinish, onDiscard, onOpenAgent }: ItemListProps) {
   const focus = useFocusFollow();
   return (
     <div className="pipeline-list" onFocus={focus.onFocus} onBlur={focus.onBlur}>
@@ -47,7 +59,7 @@ export function ItemList({ groups, setup, now, selectedItemId, onSelect, repoId,
           </h3>
           {group.items.length === 0 && <p className="pl-empty">{repoId === undefined ? TEXT.nothing[group.key] : TEXT.nothingFor(TEXT.nothing[group.key], repoId)}</p>}
           {group.items.map((item) => (
-            <Row key={item.id} item={item} setup={setup} now={now} selected={item.id === selectedItemId} onSelect={onSelect} onFinish={onFinish} onDiscard={onDiscard} />
+            <Row key={item.id} item={item} setup={setup} now={now} selected={item.id === selectedItemId} onSelect={onSelect} onFinish={onFinish} onDiscard={onDiscard} onOpenAgent={onOpenAgent} />
           ))}
         </section>
       ))}
@@ -63,12 +75,15 @@ interface RowProps {
   readonly onSelect: (itemId: string) => void;
   readonly onFinish: ((itemId: string, action: FinishAction) => void | Promise<void>) | undefined;
   readonly onDiscard: ((itemId: string) => void) | undefined;
+  readonly onOpenAgent: ((agent: AgentTarget) => void) | undefined;
 }
 
-function Row({ item, setup, now, selected, onSelect, onFinish, onDiscard }: RowProps) {
+function Row({ item, setup, now, selected, onSelect, onFinish, onDiscard, onOpenAgent }: RowProps) {
   const mark = rowMark(item);
   const steps = pipelineOf(item);
   const agent = rowAgent(item, setup?.agents ?? []);
+  // Tokama's own steps (checks) have no agent to describe: the row names Tokama in plain text.
+  const agentTip = agentInfo(item, currentStep(item) ?? item.steps.length - 1, setup);
   const time = timeOf(item, now);
   const template = templateOf(item, setup);
   const ask = item.state === "needs_you" ? (item.decision?.question ?? mark.word) : undefined;
@@ -104,7 +119,7 @@ function Row({ item, setup, now, selected, onSelect, onFinish, onDiscard }: RowP
             {finished.text}
           </span>
         ) : (
-          <span className="pl-pipe" role="img" aria-label={`${TEXT.steps}: ${steps.map((step) => `${step.name} ${step.mark.word}`).join(", ")}`}>
+          <span className="pl-pipe" role="img" aria-label={`${TEXT.steps}: ${steps.map(stepWords).join(", ")}`}>
             {steps.map((step, index) => (
               <span key={index} className="pl-step" data-current={step.current || undefined} title={`${step.name} · ${step.mark.word}`} aria-hidden="true">
                 {index > 0 && <span className="pl-link" />}
@@ -112,22 +127,27 @@ function Row({ item, setup, now, selected, onSelect, onFinish, onDiscard }: RowP
                   {step.mark.symbol}
                 </span>
                 {step.current && <span className="pl-step-name ellipsis">{step.name}</span>}
+                {step.current && step.attempt !== undefined && <span className="pl-step-attempt">· {TEXT.attempt(step.attempt)}</span>}
               </span>
             ))}
           </span>
         )}
+        <span className="pl-time mono" title={time.title}>
+          {time.text}
+        </span>
+      </button>
+      {agent !== undefined && (
         <span className="pl-agent">
-          {agent && (
+          {agentTip !== undefined ? (
+            <AgentLabel info={agentTip} onOpen={onOpenAgent} />
+          ) : (
             <>
               <span className="agent-dot" data-agent={agent.dot} aria-hidden="true" />
               <span className="ellipsis">{agent.name}</span>
             </>
           )}
         </span>
-        <span className="pl-time mono" title={time.title}>
-          {time.text}
-        </span>
-      </button>
+      )}
       {onFinish !== undefined && onDiscard !== undefined && <FinishSplit item={item} setup={setup} onFinish={onFinish} onDiscard={onDiscard} />}
     </div>
   );

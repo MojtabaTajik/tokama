@@ -59,7 +59,7 @@ describe("pipeline list", () => {
     expect(needs.querySelector(".pl-mark")?.textContent).toBe("⏸needs you: ");
     expect(needs.querySelector(".pl-workflow")?.textContent).toBe("Emergency investigator");
     expect(needs.querySelector(".pl-meta .mono")?.textContent).toBe("orders-api");
-    expect(needs.querySelector(".pl-agent")?.textContent).toBe("Architect");
+    expect(needs.parentElement?.querySelector(".pl-agent")?.textContent).toBe("Architect · opus");
     expect(needs.querySelector(".pl-time")?.textContent).toBe("41 min");
     expect(needs.querySelector(".pl-meta svg")).not.toBeNull();
   });
@@ -79,7 +79,7 @@ describe("pipeline list", () => {
     expect(marks("Fix rounding in invoice totals")).toEqual(["✓", "◐"]);
     expect(marks("Add retry with backoff")).toEqual(["○", "○", "○", "○"]);
     expect([...pipe("Checkout p95 latency spike").querySelectorAll(".pl-step-name")].map((el) => el.textContent)).toEqual(["Query logs"]);
-    expect(pipe("Fix rounding in invoice totals").getAttribute("aria-label")).toBe("Steps: Fix passed, Run checks checking");
+    expect(pipe("Fix rounding in invoice totals").getAttribute("aria-label")).toBe("Steps: Fix passed, Run checks checking attempt 1");
   });
 
   it("draws failed and stopped steps under the Failed and Done filters", async () => {

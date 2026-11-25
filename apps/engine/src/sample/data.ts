@@ -27,7 +27,32 @@ const agents = {
   investigator: { id: "local-investigator", name: "Local investigator", cliId: "claude-code", model: "qwen3-coder:30b", runsOn: "local" },
   reviewer: { id: "reviewer", name: "Reviewer", cliId: "codex-cli", model: "gpt-5-codex", runsOn: "cloud" },
   builder: { id: "local-builder", name: "Local builder", cliId: "claude-code", model: "qwen3-coder:30b", runsOn: "local" },
+  /** Shared by the orders-api repo. */
+  repoBuilder: { id: "orders-builder", name: "Orders builder", cliId: "claude-code", model: "qwen3-coder:30b", runsOn: "local" },
 };
+
+/**
+ * What each sample agent may do and who owns it, as the engine resolves it for a template step:
+ * a built-in, a personal agent, and a repo's agent with more power than the built-ins have.
+ */
+const access = {
+  architect: { name: "Architect", owner: "builtin", cliId: "claude-code", model: "opus", role: "You plan the change and name the files it touches.", edit: false, commands: [], web: false },
+  "local-investigator": { name: "Local investigator", owner: "personal", cliId: "claude-code", model: "qwen3-coder:30b", role: "You find the cause from logs and queries, and change nothing.", edit: false, commands: [], web: false },
+  reviewer: { name: "Reviewer", owner: "builtin", cliId: "codex-cli", model: "gpt-5-codex", role: "You review a diff you did not write.", edit: false, commands: [], web: false },
+  "local-builder": { name: "Local builder", owner: "builtin", cliId: "claude-code", model: "qwen3-coder:30b", role: "You make the change the plan describes, in the worktree.", edit: true, commands: ["pnpm test"], web: false },
+  /** A repo's own agent: it may run more commands and use the web, which the list shows in amber. */
+  "orders-builder": {
+    name: "Orders builder",
+    owner: "repo",
+    repoId: "orders-api",
+    cliId: "claude-code",
+    model: "qwen3-coder:30b",
+    role: "You change orders-api and keep its migrations reversible.",
+    edit: true,
+    commands: ["pnpm test", "pnpm db:migrate", "docker compose up"],
+    web: true,
+  },
+} as const;
 
 const templates = {
   emergency: {
@@ -91,7 +116,7 @@ const templates = {
     warnings: [],
     steps: [
       { name: "Plan", stage: "working", agentId: "architect", data: "repo-and-diff" },
-      { name: "Build", stage: "working", agentId: "local-builder", data: "none" },
+      { name: "Build", stage: "working", agentId: "orders-builder", data: "none" },
       { name: "Run checks", stage: "verifying", data: "none", checks: { from: "repo" } },
       { name: "Review", stage: "review", agentId: "reviewer", data: "repo-and-diff" },
     ],
@@ -134,6 +159,17 @@ const templates = {
   },
 };
 
+/** The template with what each step's agent may do, as the engine's setup reply carries it. */
+function withAccess<T extends { steps: readonly { agentId?: string }[] }>(template: T) {
+  return {
+    ...template,
+    steps: template.steps.map((step) => {
+      const agentAccess = step.agentId === undefined ? undefined : access[step.agentId as keyof typeof access];
+      return agentAccess === undefined ? step : { ...step, agentAccess };
+    }),
+  };
+}
+
 export const sampleSetup = {
   repos: [
     { id: "orders-api", baseBranch: "main", checks: ["pnpm test", "pnpm lint"], path: "~/code/orders-api" },
@@ -147,8 +183,8 @@ export const sampleSetup = {
     { id: "azure-prod", name: "Azure · prod", type: "Azure" },
     { id: "grafana-prod", name: "Grafana · prod", type: "MCP server" },
   ],
-  agents: [agents.architect, agents.investigator, agents.reviewer, agents.builder],
-  templates: [templates.emergency, templates.slowQuery, templates.planAndBuild, templates.quickFix, templates.quickChange, templates.reviewOnly],
+  agents: [agents.architect, agents.investigator, agents.reviewer, agents.builder, agents.repoBuilder],
+  templates: [templates.emergency, templates.slowQuery, templates.planAndBuild, templates.quickFix, templates.quickChange, templates.reviewOnly].map(withAccess),
   health: { git: { ok: true, version: "git version 2.54.0" }, clis: [{ cliId: "claude-code", installed: true, loggedIn: true, version: "2.1.331" }], gh: { installed: true, loggedIn: true }, config: [] },
 };
 
@@ -224,7 +260,7 @@ export function sampleItems(now: number) {
       state: "running",
       createdAt: ago(now, 33),
       cardLine: "turn 18 of 40",
-      steps: steps(templates.planAndBuild, ["passed", "running"], { 0: "plan approved", 1: "waits for Local builder on Ollama" }),
+      steps: steps(templates.planAndBuild, ["passed", "running"], { 0: "plan approved", 1: "waits for Orders builder on Ollama" }),
     },
     {
       ...base,

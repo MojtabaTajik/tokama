@@ -8,6 +8,7 @@ import { Board } from "../board/Board.js";
 import type { ConnectionState } from "../../shared/bridge.js";
 import { ItemList } from "../list/ItemList.js";
 import { ALL_WORK, groupItems, inView, summaryOf, visibleItems } from "../model.js";
+import type { AgentTarget } from "../settings/describe.js";
 import type { Layout, ViewState } from "../useViewState.js";
 import { ConnectionFailure } from "./ConnectionStatus.js";
 import { FirstLaunch, NoWork } from "./EmptyStates.js";
@@ -45,6 +46,8 @@ export interface MainAreaProps {
   readonly onFinish?: (itemId: string, action: FinishAction) => void | Promise<void>;
   /** Discard… from a Done row: opens the item with its Discard question. */
   readonly onDiscard?: (itemId: string) => void;
+  /** An agent tooltip's "Open in Settings →". */
+  readonly onOpenAgent?: (agent: AgentTarget) => void;
   /** Pinned below the board: the New work input. */
   readonly composer?: ReactNode;
 }
@@ -140,6 +143,7 @@ function Body(props: MainAreaProps & { readonly template: Setup["templates"][num
               repoId={views.view.kind === "repo" ? views.view.id : undefined}
               {...(props.onFinish !== undefined && { onFinish: props.onFinish })}
               {...(props.onDiscard !== undefined && { onDiscard: props.onDiscard })}
+              {...(props.onOpenAgent !== undefined && { onOpenAgent: props.onOpenAgent })}
             />
           )}
         </>

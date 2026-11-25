@@ -56,6 +56,13 @@ export const TemplateStepSchema = z.strictObject({
       name: label,
       /** Built in, the engineer's own, or shared by the template's repo. */
       owner: z.enum(["builtin", "personal", "repo"]),
+      /** For a repo agent: the repo that shares it. */
+      repoId: RepoIdSchema.optional(),
+      /** The AI CLI and model this agent runs on, as resolved for this step. */
+      cliId: AiCliIdSchema.optional(),
+      model: label.optional(),
+      /** The first line of the agent's role text, cut to fit. */
+      role: z.string().min(1).max(200).optional(),
       edit: z.boolean(),
       /** Shell commands it may run, as command-policy rules. */
       commands: z.array(z.string().min(1).max(200)).max(50),

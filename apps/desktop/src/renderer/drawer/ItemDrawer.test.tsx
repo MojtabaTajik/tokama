@@ -115,25 +115,25 @@ describe("ItemDrawer sections", () => {
     const steps = $$(".step").map((li) => ({
       mark: li.querySelector(".mark")?.textContent,
       name: li.querySelector(".step-name")?.textContent,
-      dot: li.querySelector(".dot")?.getAttribute("data-dot"),
+      dot: li.querySelector(".dot, .agent-dot")?.getAttribute("data-dot") ?? li.querySelector(".agent-dot")?.getAttribute("data-agent"),
       where: li.querySelector(".step-where")?.textContent,
       detail: li.querySelector(".step-detail")?.textContent,
     }));
     expect(steps).toEqual([
-      { mark: "✓", name: "Triage, passed", dot: "2", where: "Local investigator · local", detail: "scope: orders-api, last 2 h" },
+      { mark: "✓", name: "Triage, passed", dot: "2", where: "Local investigator · qwen3-coder:30b · local", detail: "scope: orders-api, last 2 h" },
       {
         mark: "✓",
         name: "Query logs and metrics, passed",
         dot: "2",
-        where: "Local investigator · local · App Insights (query), Postgres (read-only)",
+        where: "Local investigator · qwen3-coder:30b · local · App Insights (query), Postgres (read-only)",
         detail: "6 queries · 41 rows",
       },
-      { mark: "✓", name: "Find the cause, passed", dot: "2", where: "Local investigator · local", detail: undefined },
+      { mark: "✓", name: "Find the cause, passed", dot: "2", where: "Local investigator · qwen3-coder:30b · local", detail: undefined },
       {
         mark: "⏸",
         name: "Propose a fix, needs you",
         dot: "1",
-        where: "Architect · cloud · sees your approved summary only",
+        where: "Architect · opus · cloud · sees your approved summary only",
         detail: "waits for your approval of the cloud step",
       },
     ]);
@@ -161,10 +161,10 @@ describe("ItemDrawer sections", () => {
     expect(text(".drawer-kind")).toBe("▣ Task · Plan and build · local + cloud");
     expect($(".needs-you")).toBeNull();
     expect($$(".step-where").map((el) => el.textContent)).toEqual([
-      "Architect · cloud · sees the repo and the diff",
-      "Local builder · local",
+      "Architect · opus · cloud · sees the repo and the diff",
+      "Local builder · qwen3-coder:30b · local",
       "Tokama · local",
-      "Reviewer · cloud · sees the repo and the diff",
+      "Reviewer · gpt-5-codex · cloud · sees the repo and the diff",
     ]);
     expect($$(".drawer-actions button").map((el) => [el.textContent, el.className, el.getAttribute("aria-disabled")])).toEqual([["Stop", "choice danger", null]]);
   });
