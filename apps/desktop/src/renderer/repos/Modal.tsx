@@ -53,3 +53,36 @@ export function Problem({ text, alert = false }: { readonly text: string; readon
     </p>
   );
 }
+
+export interface DialogFrameProps {
+  /** The id the heading gets, for the dialog's aria-labelledby. */
+  readonly titleId: string;
+  readonly title: string;
+  /** A line under the title, in the mono font, such as the folder. */
+  readonly subtitle?: string | undefined;
+  readonly onClose: () => void;
+  readonly children: ReactNode;
+  /** The buttons, right-aligned in the footer. */
+  readonly footer: ReactNode;
+}
+
+/** The repo dialogs' layout: a header with the close button, a body and a footer. Close is ✕. */
+export function DialogFrame({ titleId, title, subtitle, onClose, children, footer }: DialogFrameProps) {
+  return (
+    <div className="dlg">
+      <div className="dlg-head">
+        <div className="dlg-titles">
+          <h2 id={titleId} className="modal-title">
+            {title}
+          </h2>
+          {subtitle !== undefined && <span className="dlg-sub mono">{subtitle}</span>}
+        </div>
+        <button type="button" className="dlg-close" aria-label="Close" onClick={onClose}>
+          ✕
+        </button>
+      </div>
+      <div className="dlg-body">{children}</div>
+      <div className="dlg-foot">{footer}</div>
+    </div>
+  );
+}

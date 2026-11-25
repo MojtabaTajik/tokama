@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createGit } from "../../kernel/git/index.js";
 import { createProcessRunner } from "../../kernel/process/index.js";
-import { addRepo, setUpRepo, suggestRepo, type RepoEditOptions } from "./index.js";
+import { addRepo, initRepo, makeFirstCommit, suggestRepo, type RepoEditOptions } from "./index.js";
 
 let root: string;
 let options: RepoEditOptions;
@@ -56,6 +56,14 @@ describe("suggestRepo with git", () => {
   });
 });
 
+/** Both steps, as the dialog runs them. */
+async function setUpRepo(opts: RepoEditOptions, input: { path: string }) {
+  const first = await initRepo(opts, input);
+  if (!first.ok) return first;
+  const second = await makeFirstCommit(opts, input);
+  return second.ok ? ({ ok: true, value: undefined } as const) : second;
+}
+
 describe("setUpRepo with git", () => {
   it("makes a plain folder a repo with a first commit that leaves out the default ignores, then adds it", async () => {
     const folder = join(root, "plain-app");
@@ -63,7 +71,7 @@ describe("setUpRepo with git", () => {
     writeFileSync(join(folder, "index.js"), "console.log(1);\n");
     writeFileSync(join(folder, ".env"), "SECRET=1\n");
     writeFileSync(join(folder, "node_modules", "dep", "a.js"), "1");
-    expect(await suggestRepo(options, folder)).toMatchObject({ ok: true, value: { gitRepo: false, firstCommit: { files: 1, sample: ["index.js"], addsGitignore: true } } });
+    expect(await suggestRepo(options, folder)).toMatchObject({ ok: true, value: { gitRepo: false, firstCommit: { files: 1, sample: [{ path: "index.js", bytes: 16 }], leftOut: [{ name: ".env", files: 1 }, { name: "node_modules/", files: 1 }], addsGitignore: true } } });
 
     expect(await setUpRepo(options, { path: folder })).toEqual({ ok: true, value: undefined });
     expect(readFileSync(join(folder, ".gitignore"), "utf8")).toContain("node_modules/");

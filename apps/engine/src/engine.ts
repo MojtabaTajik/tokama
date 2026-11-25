@@ -49,9 +49,11 @@ import {
   parseHelloMessage,
   type ParseError,
   removeRepo,
+  type RepoEditError,
   type Result,
   suggestRepo,
-  setUpRepo,
+  initRepo,
+  makeFirstCommit,
   updateRepo,
   type SuggestRepoResult,
   type SuggestTemplateResult,
@@ -346,24 +348,28 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   const sampleRepoIds = sample?.setup.repos.map((repo) => repo.id) ?? [];
   const repoOptions = (tokamaHome: string) => ({ tokamaHome, git: (git ??= createGit({ runner: createProcessRunner() })), reservedIds: sampleRepoIds });
 
-  const isRepoCommand = (command: Command): command is Extract<Command, { type: "add_repo" | "init_repo" | "update_repo" | "remove_repo" }> =>
-    command.type === "add_repo" || command.type === "init_repo" || command.type === "update_repo" || command.type === "remove_repo";
+  const isRepoCommand = (command: Command): command is Extract<Command, { type: "add_repo" | "init_repo" | "first_commit" | "update_repo" | "remove_repo" }> =>
+    command.type === "add_repo" || command.type === "init_repo" || command.type === "first_commit" || command.type === "update_repo" || command.type === "remove_repo";
 
-  const repoCommand = async (command: Extract<Command, { type: "add_repo" | "init_repo" | "update_repo" | "remove_repo" }>): Promise<ReplyResult> => {
+  const repoCommand = async (command: Extract<Command, { type: "add_repo" | "init_repo" | "first_commit" | "update_repo" | "remove_repo" }>): Promise<ReplyResult> => {
     const home = options.home;
     if (home === undefined) return { ok: false, error: { code: "not_implemented" satisfies CommandErrorCode, message: "this engine has no Tokama home folder for repos.yaml" } };
     if ((command.type === "update_repo" || command.type === "remove_repo") && sampleRepoIds.includes(command.repoId)) {
       const verb = command.type === "remove_repo" ? "removed" : "edited";
       return { ok: false, error: { code: "not_found" satisfies CommandErrorCode, message: `${command.repoId} is a sample repo; it isn't in repos.yaml, so it can't be ${verb}.` } };
     }
-    if (command.type === "init_repo") {
+    if (command.type === "init_repo" || command.type === "first_commit") {
       // The folder changes, not repos.yaml; it still waits its turn behind the other repo changes.
-      const setUp = repoChanges.then(() => setUpRepo(repoOptions(home), { path: command.path, ...(command.baseBranch === undefined ? {} : { baseBranch: command.baseBranch }) }));
-      repoChanges = setUp.catch(() => undefined);
-      const done = await setUp;
+      const folderChange = repoChanges.then((): Promise<Result<unknown, RepoEditError>> =>
+        command.type === "init_repo"
+          ? initRepo(repoOptions(home), { path: command.path, ...(command.baseBranch === undefined ? {} : { baseBranch: command.baseBranch }) })
+          : makeFirstCommit(repoOptions(home), { path: command.path }),
+      );
+      repoChanges = folderChange.catch(() => undefined);
+      const done = await folderChange;
       if (!done.ok) return { ok: false, error: done.error };
-      log("set up git and a first commit in a folder");
-      return { ok: true, data: null };
+      log(command.type === "init_repo" ? "set up git in a folder" : "made a first commit in a folder");
+      return { ok: true, data: done.value };
     }
     const change = repoChanges.then(() =>
       command.type === "add_repo"
@@ -472,8 +478,8 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
         if (options.home === undefined) return { ok: false, error: { code: "not_implemented", message: "this engine has no Tokama home folder for repos.yaml" } };
         const suggested = await suggestRepo(repoOptions(options.home), query.path);
         if (!suggested.ok) return { ok: false, error: suggested.error };
-        const { path, gitRepo, hasCommits, branch, id, checks, fallbackCheck, firstCommit, problem } = suggested.value;
-        return { ok: true, data: { path, gitRepo, hasCommits, branch: branch ?? null, id: id ?? null, checks: [...checks], fallbackCheck: fallbackCheck ?? null, firstCommit: firstCommit === undefined ? null : { files: firstCommit.files, sample: [...firstCommit.sample], addsGitignore: firstCommit.addsGitignore, refusal: firstCommit.refusal ?? null }, problem: problem ?? null } satisfies SuggestRepoResult };
+        const { path, displayPath, gitRepo, hasCommits, branch, id, checks, checksFrom, branches, fallbackCheck, fallbackFromPackage, firstCommit, problem } = suggested.value;
+        return { ok: true, data: { path, displayPath, gitRepo, hasCommits, branch: branch ?? null, id: id ?? null, checks: [...checks], checksFrom: [...checksFrom], branches: [...branches], fallbackCheck: fallbackCheck ?? null, fallbackFromPackage, firstCommit: firstCommit === undefined ? null : { files: firstCommit.files, bytes: firstCommit.bytes, sample: firstCommit.sample.map((file) => ({ ...file })), more: [...firstCommit.more], addsGitignore: firstCommit.addsGitignore, leftOut: firstCommit.leftOut.map((entry) => ({ ...entry })), refusal: firstCommit.refusal ?? null }, problem: problem ?? null } satisfies SuggestRepoResult };
       }
       case "agents_list":
         if (options.home === undefined) return { ok: false, error: { code: "not_implemented", message: "this engine has no Tokama home folder for agents" } };

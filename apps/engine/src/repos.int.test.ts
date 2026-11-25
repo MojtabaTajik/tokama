@@ -59,7 +59,7 @@ describe("repo commands", () => {
 
     expect(await client.query({ type: "suggest_repo", path })).toEqual({
       ok: true,
-      data: { path, gitRepo: true, hasCommits: true, branch: "main", id: "billing-api", checks: ["pnpm test"], fallbackCheck: null, firstCommit: null, problem: null },
+      data: { path, displayPath: path, gitRepo: true, hasCommits: true, branch: "main", id: "billing-api", checks: ["pnpm test"], checksFrom: ["test"], branches: ["main"], fallbackCheck: null, fallbackFromPackage: false, firstCommit: null, problem: null },
     });
     expect(await client.command({ type: "add_repo", path, checks: ["pnpm test"] })).toEqual({ ok: true, data: { repo: { id: "billing-api", baseBranch: "main", checks: ["pnpm test"] } } });
     await waitFor(() => events.some((event) => event.kind === "event" && event.event.type === "setup_changed"), 5_000, "setup_changed");
@@ -97,9 +97,10 @@ describe("repo commands", () => {
     mkdirSync(path);
     writeFileSync(join(path, "index.js"), "console.log(1);\n");
     const suggested = await client.query({ type: "suggest_repo", path });
-    expect(suggested).toMatchObject({ ok: true, data: { gitRepo: false, problem: "This folder isn't a git repo yet.", firstCommit: { files: 1, sample: ["index.js"], addsGitignore: true, refusal: null }, fallbackCheck: "node --check index.js" } });
+    expect(suggested).toMatchObject({ ok: true, data: { gitRepo: false, problem: "This folder isn't a git repo yet.", firstCommit: { files: 1, sample: [{ path: "index.js", bytes: 16 }], addsGitignore: true, refusal: null }, fallbackCheck: "node --check index.js" } });
     expect(await client.command({ type: "add_repo", path })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
-    expect(await client.command({ type: "init_repo", path })).toEqual({ ok: true, data: null });
+    expect(await client.command({ type: "init_repo", path })).toEqual({ ok: true, data: { gitInit: true, ignoreRules: 5 } });
+    expect(await client.command({ type: "first_commit", path })).toMatchObject({ ok: true, data: { commit: expect.stringMatching(/^[0-9a-f]{7}$/), files: 2 } });
     expect(existsSync(join(home, "repos.yaml"))).toBe(false);
     expect(await client.command({ type: "add_repo", path })).toMatchObject({ ok: true, data: { repo: { id: "plain-app", baseBranch: "main" } } });
     expect(await client.command({ type: "init_repo", path: join(root, "missing") })).toMatchObject({ ok: false, error: { code: "invalid_request" } });

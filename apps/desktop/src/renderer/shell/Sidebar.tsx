@@ -6,7 +6,7 @@ import type { ItemRecord, Setup } from "@tokama/core";
 import { type ReactNode, useEffect, useRef } from "react";
 import type { ConnectionState } from "../../shared/bridge.js";
 import { RepoMenu } from "../repos/RepoMenu.js";
-import { ALL_WORK, type Badge, badgesOf, inView, sameView, type View, viewKey } from "../model.js";
+import { ALL_WORK, type Badge, badgesOf, inView, needsYouCount, sameView, type View, viewKey } from "../model.js";
 import type { Section } from "../useViewState.js";
 import { EngineHealth } from "./ConnectionStatus.js";
 import { AllWorkIcon, RepoIcon } from "./icons.js";
@@ -109,7 +109,7 @@ export function Sidebar(props: SidebarProps) {
       <SectionHeading section="repos" title={TEXT.repos} collapsed={collapsed} onToggle={onToggleSection} summary={badgesOf(items.filter((item) => repos.some((r) => inView(item, r.view))), now)} />
       {!collapsed.has("repos") && (
         <>
-          {repos.map((entry) => row(entry, <RepoIcon />, TEXT.quickTask(entry.name), true, entry.removable && <RepoMenu name={entry.name} onEdit={() => onEditRepo(entry.view.id)} onRemove={() => onRemoveRepo(entry.view.id)} />))}
+          {repos.map((entry) => row(entry, <RepoIcon />, TEXT.quickTask(entry.name), true, entry.removable && <RepoMenu name={entry.name} waiting={needsYouCount(items.filter((item) => inView(item, entry.view)))} onEdit={() => onEditRepo(entry.view.id)} onRemove={() => onRemoveRepo(entry.view.id)} />))}
           {setup !== undefined && repos.length === 0 && <p className="sb-empty">{TEXT.noRepos}</p>}
           <button ref={addRepo} type="button" className="sb-add" onClick={onAddRepo}>
             {TEXT.addRepo}

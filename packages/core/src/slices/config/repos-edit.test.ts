@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Git, GitError, WorktreeEntry } from "../../kernel/git/index.js";
 import { err, ok } from "../../kernel/result/index.js";
-import { addRepo, loadRepos, removeRepo, setUpRepo, suggestRepo, updateRepo, type RepoEditOptions } from "./index.js";
+import { addRepo, initRepo, loadRepos, makeFirstCommit, removeRepo, suggestRepo, updateRepo, type RepoEditOptions } from "./index.js";
 
 let root: string;
 let home: string;
@@ -16,6 +16,8 @@ let gitError: GitError;
 let unborn: Set<string>;
 /** What the fake git was asked to do to a folder, in order, as `init:<branch>`, `add` and `commit`. */
 let calls: string[];
+/** The local branches the fake git lists; empty: just the folder's own. */
+let extraBranches: string[];
 /** How many files the fake `git diff --cached` lists; undefined: one. */
 let stagedCount: number | undefined;
 /** Where the fake git says a folder's work tree is, when not the folder itself. */
@@ -28,6 +30,7 @@ beforeEach(() => {
   worktrees = new Map();
   unborn = new Set();
   calls = [];
+  extraBranches = [];
   stagedCount = undefined;
   topLevels = new Map();
   commitError = undefined;
@@ -35,7 +38,8 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-const git: Pick<Git, "worktreeList" | "revParse" | "topLevel" | "init" | "addAll" | "diffCachedNumstat" | "commit"> = {
+const git: Pick<Git, "worktreeList" | "revParse" | "topLevel" | "branches" | "init" | "addAll" | "diffCachedNumstat" | "commit"> = {
+  branches: async (repo) => ok(extraBranches.length > 0 ? extraBranches : [worktrees.get(repo) ?? "main"]),
   diffCachedNumstat: async () => ok(Array.from({ length: stagedCount ?? 1 }, () => ({ path: "x", added: 1, removed: 0 }))),
   topLevel: async (repo) => ok(topLevels.get(repo) ?? repo),
   init: async (repo, branch) => {
@@ -62,7 +66,7 @@ const git: Pick<Git, "worktreeList" | "revParse" | "topLevel" | "init" | "addAll
     return ok([entry]);
   },
 };
-const options = (): RepoEditOptions => ({ tokamaHome: home, home: "/home/dev", git });
+const options = (): RepoEditOptions => ({ tokamaHome: home, home: root, git });
 const reposFile = () => join(home, "repos.yaml");
 
 /** A folder the fake git sees as a repo on `branch`, with the given files. */
@@ -268,6 +272,14 @@ describe("a repo without commits", () => {
   });
 });
 
+/** Both steps, as the dialog runs them. */
+async function setUpRepo(opts: RepoEditOptions, input: { path: string; baseBranch?: string }) {
+  const first = await initRepo(opts, input);
+  if (!first.ok) return first;
+  const second = await makeFirstCommit(opts, { path: input.path });
+  return second.ok ? ({ ok: true, value: undefined } as const) : second;
+}
+
 describe("first commit", () => {
   const folder = (name: string, files: Record<string, string> = { "index.js": "1" }) => {
     const path = join(root, name);
@@ -288,7 +300,9 @@ describe("first commit", () => {
     const preview = suggestion.ok ? suggestion.value.firstCommit : undefined;
     expect(preview).toMatchObject({ files: 13, addsGitignore: true, refusal: undefined });
     expect(preview?.sample).toHaveLength(10);
-    expect(preview?.sample[0]).toBe("f00.txt");
+    expect(preview?.sample[0]).toMatchObject({ path: "f00.txt", bytes: 1 });
+    expect(preview?.leftOut).toEqual([{ name: ".DS_Store", files: 1 }, { name: ".env", files: 1 }, { name: ".env.local", files: 1 }, { name: "build/", files: 1 }, { name: "dist/", files: 1 }, { name: "node_modules/", files: 1 }]);
+    expect(preview?.bytes).toBe(13);
   });
 
   it("uses the plain names of the folder's own .gitignore instead of the defaults (anchored and wildcard rules are not applied, so the count can only be high)", async () => {
@@ -311,8 +325,8 @@ describe("first commit", () => {
     const path = folder("many", {});
     for (let i = 0; i < 5001; i++) writeFileSync(join(path, `f${i}`), "");
     const many = await suggestRepo(options(), path);
-    expect(many).toMatchObject({ ok: true, value: { firstCommit: { refusal: expect.stringContaining("more than 5,000 files") } } });
-    expect(await setUpRepo(options(), { path })).toMatchObject({ ok: false, error: { code: "invalid_request", message: expect.stringContaining("more than 5,000 files") } });
+    expect(many).toMatchObject({ ok: true, value: { firstCommit: { refusal: expect.stringContaining("up to 5,000 files") } } });
+    expect(await setUpRepo(options(), { path })).toMatchObject({ ok: false, error: { code: "invalid_request", message: expect.stringContaining("up to 5,000 files") } });
 
     const homeDir = folder("home-dir");
     const atHome = { ...options(), home: homeDir };
@@ -351,7 +365,7 @@ describe("first commit", () => {
     const fresh = repo("fresh", { "a.txt": "1" });
     unborn.add(fresh);
     stagedCount = 40;
-    expect(await setUpRepo(options(), { path: fresh })).toMatchObject({ ok: false, error: { message: expect.stringContaining("40 files staged already, more than the 1 shown") } });
+    expect(await setUpRepo(options(), { path: fresh })).toMatchObject({ ok: false, error: { message: expect.stringContaining("40 files staged already, more than the 2 shown") } });
     expect(calls).toEqual(["add"]);
   });
 
@@ -495,7 +509,7 @@ describe("suggestRepo", () => {
     const path = repo("Orders_API", { "package.json": JSON.stringify({ scripts: { test: "vitest run", lint: "eslint .", build: "tsc" } }), "pnpm-lock.yaml": "" }, "develop");
     expect(await suggestRepo(options(), path)).toEqual({
       ok: true,
-      value: { path, gitRepo: true, hasCommits: true, branch: "develop", id: "orders-api", checks: ["pnpm test", "pnpm lint"], fallbackCheck: undefined, problem: undefined },
+      value: { path, displayPath: path.replace(root, "~"), gitRepo: true, hasCommits: true, branch: "develop", id: "orders-api", checks: ["pnpm test", "pnpm lint"], checksFrom: ["test", "lint"], branches: ["develop"], firstCommit: undefined, fallbackCheck: undefined, fallbackFromPackage: false, problem: undefined },
     });
   });
 
@@ -518,6 +532,14 @@ describe("suggestRepo", () => {
     expect(await suggestRepo(options(), repo("js2", { "index.js": "1", "src/main.js": "1" }))).toMatchObject({ value: { fallbackCheck: "node --check src/main.js" } });
     expect(await suggestRepo(options(), repo("js3", { "index.js": "1" }))).toMatchObject({ value: { fallbackCheck: "node --check index.js" } });
     expect((await suggestRepo(options(), repo("none", { "readme.md": "x" }))) as { value: { fallbackCheck: unknown } }).toMatchObject({ value: { fallbackCheck: undefined } });
+  });
+
+  it("offers node --check on the main file of package.json when it has no checks, and lists the branches", async () => {
+    extraBranches = ["zeta", "develop", "main"];
+    const path = repo("lib", { "package.json": JSON.stringify({ main: "src/main.js", scripts: { build: "tsc" } }), "src/main.js": "1" });
+    expect(await suggestRepo(options(), path)).toMatchObject({ ok: true, value: { checks: [], fallbackCheck: "node --check src/main.js", fallbackFromPackage: true, branches: ["main", "zeta", "develop"] } });
+    const hostile = repo("hostile", { "package.json": JSON.stringify({ main: "../x.js; rm -rf /" }) });
+    expect(await suggestRepo(options(), hostile)).toMatchObject({ value: { fallbackCheck: undefined } });
   });
 
   it("offers no fallback with a package.json, or when package.json gives checks", async () => {

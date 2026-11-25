@@ -65,9 +65,11 @@ export const CommandSchema = z.discriminatedUnion("type", [
     baseBranch: z.string().max(255).optional(),
     checks: z.array(checkCommand).max(20).optional(),
   }),
-  // Makes a folder ready to add: git init (branch `baseBranch`, default main) when it is no repo,
-  // a default .gitignore when it has none, and a first commit. Does nothing for a repo with commits.
+  // First step of making a folder ready to add: git init (branch `baseBranch`, default main) when
+  // it is no repo, and a default .gitignore when it has none. Does nothing for a repo with commits.
   z.strictObject({ type: z.literal("init_repo"), path: folderPath, baseBranch: z.string().max(255).optional() }),
+  // Second step: a first commit of what git does not ignore, in a repo that has none.
+  z.strictObject({ type: z.literal("first_commit"), path: folderPath }),
   // Replaces a repo's base branch and checks in repos.yaml, by the add_repo rules. An empty list removes the checks.
   z.strictObject({
     type: z.literal("update_repo"),
@@ -121,6 +123,8 @@ export const EventSchema = z.discriminatedUnion("type", [
 export const RepoSuggestionSchema = z.strictObject({
   /** The folder's real path. */
   path: folderPath,
+  /** The path for display: the home folder written as `~`. */
+  displayPath: z.string().max(1000),
   gitRepo: z.boolean(),
   /** False when the repo has no commit yet; add_repo refuses it. */
   hasCommits: z.boolean(),
@@ -133,13 +137,25 @@ export const RepoSuggestionSchema = z.strictObject({
   firstCommit: z
     .strictObject({
       files: z.number().int().min(0),
-      sample: z.array(z.string().max(1000)).max(10),
+      /** Their size in bytes; 0 when there are too many to measure. */
+      bytes: z.number().int().min(0),
+      sample: z.array(z.strictObject({ path: z.string().max(1000), bytes: z.number().int().min(0) })).max(10),
+      /** The names of the files after the sample, when only a few remain. */
+      more: z.array(z.string().max(1000)).max(6),
       addsGitignore: z.boolean(),
+      /** What the new .gitignore leaves out, top level: files is null when there are too many to count. */
+      leftOut: z.array(z.strictObject({ name: z.string().max(255), files: z.number().int().min(0).nullable() })).max(20),
       refusal: z.string().max(1000).nullable(),
     })
     .nullable(),
-  /** A check to offer when `checks` is empty: `node --check` on a plain JS project's entry file; null when none fits. */
+  /** The package.json scripts the checks come from, such as test and lint. */
+  checksFrom: z.array(z.string().max(100)).max(4),
+  /** Local branch names, the current one first. */
+  branches: z.array(z.string().max(255)).max(20),
+  /** A check to offer when `checks` is empty: `node --check` on the package.json main file or a plain JS project's entry file; null when none fits. */
   fallbackCheck: checkCommand.nullable(),
+  /** The fallback file is the `main` of package.json. */
+  fallbackFromPackage: z.boolean(),
   /** Why the folder can't be added as it is, in plain words; null when it can. */
   problem: z.string().max(1000).nullable(),
 });
@@ -166,7 +182,8 @@ export const CommandResultSchemas = {
   resolve_decision: z.null(),
   stop_item: z.null(),
   add_repo: z.strictObject({ repo: RepoSummarySchema }),
-  init_repo: z.null(),
+  init_repo: z.strictObject({ gitInit: z.boolean(), ignoreRules: z.number().int().min(0).nullable() }),
+  first_commit: z.strictObject({ commit: z.string().max(64), files: z.number().int().min(0) }),
   update_repo: z.strictObject({ repo: RepoSummarySchema }),
   remove_repo: z.null(),
 } as const satisfies Record<z.output<typeof CommandSchema>["type"], z.ZodType>;

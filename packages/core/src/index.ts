@@ -92,7 +92,8 @@ export {
   formatProblem,
   loadRepos,
   removeRepo,
-  setUpRepo,
+  initRepo,
+  makeFirstCommit,
   suggestRepo,
   updateRepo,
   type AddRepoInput,
@@ -101,6 +102,7 @@ export {
   type Repo,
   type RepoEditError,
   type RepoEditOptions,
+  type InitRepoResult,
   type RepoSuggestion,
   type UpdateRepoInput,
 } from "./slices/config/index.js";

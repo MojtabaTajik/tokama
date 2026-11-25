@@ -14,12 +14,14 @@ export { CONFIG_FORMAT, formatProblem, type ConfigError, type ConfigProblem } fr
 export {
   addRepo,
   removeRepo,
-  setUpRepo,
+  initRepo,
+  makeFirstCommit,
   suggestRepo,
   updateRepo,
   type AddRepoInput,
   type RepoEditError,
   type RepoEditOptions,
+  type InitRepoResult,
   type RepoSuggestion,
   type UpdateRepoInput,
 } from "./repos-edit.js";

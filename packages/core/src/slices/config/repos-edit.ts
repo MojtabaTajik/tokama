@@ -6,6 +6,7 @@
 // file behind it is replaced.
 import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
+import { homedir } from "node:os";
 import { access, lstat, mkdir, open, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { Document, isMap, isScalar, isSeq, parseDocument } from "yaml";
@@ -26,7 +27,7 @@ export interface RepoEditError {
 
 export interface RepoEditOptions extends LoadReposOptions {
   /** Tells whether a folder is a git repo's top folder, and its branch. */
-  readonly git: Pick<Git, "worktreeList" | "revParse" | "topLevel" | "init" | "addAll" | "diffCachedNumstat" | "commit">;
+  readonly git: Pick<Git, "worktreeList" | "revParse" | "topLevel" | "branches" | "init" | "addAll" | "diffCachedNumstat" | "commit">;
   /** Ids a new repo can't take though repos.yaml doesn't hold them, such as the sample engine's repos. */
   readonly reservedIds?: readonly string[];
 }
@@ -35,6 +36,8 @@ export interface RepoEditOptions extends LoadReposOptions {
 export interface RepoSuggestion {
   /** The folder's real path. */
   readonly path: string;
+  /** The path for display: the home folder written as `~`. */
+  readonly displayPath: string;
   readonly gitRepo: boolean;
   /** False when the repo has no commit yet: work needs a base commit to start from. */
   readonly hasCommits: boolean;
@@ -44,8 +47,14 @@ export interface RepoSuggestion {
   readonly id: RepoId | undefined;
   /** From package.json scripts: test, then lint, run with the lockfile's package manager. */
   readonly checks: readonly string[];
-  /** For a JS project with no package.json: `node --check` on its entry file, when there is one. */
+  /** The package.json scripts the checks come from, such as `test` and `lint`. */
+  readonly checksFrom: readonly string[];
+  /** Local branch names, the current one first; empty when the folder isn't a repo or has none. */
+  readonly branches: readonly string[];
+  /** With no checks: `node --check` on the package.json `main` file, or on an entry file of a JS project with no package.json. */
   readonly fallbackCheck: string | undefined;
+  /** The fallback file is the `main` of package.json. */
+  readonly fallbackFromPackage: boolean;
   /** Set when Tokama can make the first commit here: no git repo yet, or a repo without commits. */
   readonly firstCommit: FirstCommitPreview | undefined;
   /** Why the folder can't be added as it is, in plain words. */
@@ -78,15 +87,21 @@ export async function suggestRepo(options: RepoEditOptions, path: string): Promi
   const repos = file.ok ? file.value.repos : [];
   const added = await addedAs(repos, folder.value.path);
   const checks = await suggestChecks(folder.value.path);
+  const fallback = checks.commands.length === 0 ? await suggestFallbackCheck(folder.value.path, checks) : undefined;
+  const listed = folder.value.gitProblem === undefined ? await options.git.branches(folder.value.path) : undefined;
   return ok({
     path: folder.value.path,
+    displayPath: displayPath(folder.value.path, options.home),
     gitRepo: folder.value.gitProblem === undefined,
     hasCommits: folder.value.hasCommits,
     branch: folder.value.branch,
     id: suggestId(folder.value.path, takenIds(options, repos)),
     checks: checks.commands,
     firstCommit: folder.value.canSetUp ? await previewFirstCommit(folder.value.path, options.home) : undefined,
-    fallbackCheck: checks.commands.length === 0 && !checks.hasPackageJson ? await suggestFallbackCheck(folder.value.path) : undefined,
+    checksFrom: checks.from,
+    branches: listed?.ok === true ? [...listed.value].sort((a, b) => Number(b === folder.value.branch) - Number(a === folder.value.branch)).slice(0, 20) : [],
+    fallbackCheck: fallback?.command,
+    fallbackFromPackage: fallback?.fromPackage === true,
     problem: folder.value.gitProblem ?? (folder.value.hasCommits ? undefined : NO_COMMITS) ?? (added === undefined ? undefined : `This folder is already added as ${quote(added)}.`),
   });
 }
@@ -162,24 +177,30 @@ export async function updateRepo(options: LoadReposOptions, input: UpdateRepoInp
   return written.ok ? ok({ ...current, baseBranch, checks }) : written;
 }
 
+/** What `initRepo` did, so a client can say it: git init ran, and the .gitignore it wrote has this many rules. */
+export interface InitRepoResult {
+  readonly gitInit: boolean;
+  readonly ignoreRules: number | null;
+}
+
 /**
- * Makes the folder ready to add: `git init` when it is no repo, a default .gitignore when it has
- * none, then a first commit of everything git does not ignore. A repo that has a commit already is
- * left alone, so a second call after a later failure does no harm.
+ * First step of making a folder ready to add: `git init` when it is no repo, and a default
+ * .gitignore when it has none. A repo that has a commit already is left alone, so a second call
+ * after a later failure does no harm.
  */
-export async function setUpRepo(options: RepoEditOptions, input: { readonly path: string; readonly baseBranch?: string }): Promise<Result<void, RepoEditError>> {
+export async function initRepo(options: RepoEditOptions, input: { readonly path: string; readonly baseBranch?: string }): Promise<Result<InitRepoResult, RepoEditError>> {
   const folder = await inspectFolder(options.git, input.path);
   if (!folder.ok) return folder;
-  if (!folder.value.canSetUp) return folder.value.gitProblem === undefined ? ok(undefined) : invalid(folder.value.gitProblem);
+  if (!folder.value.canSetUp) return folder.value.gitProblem === undefined ? ok({ gitInit: false, ignoreRules: null }) : invalid(folder.value.gitProblem);
   const preview = await previewFirstCommit(folder.value.path, options.home);
   if (preview.refusal !== undefined) return invalid(preview.refusal);
   const path = folder.value.path;
-  const failed = (action: string, error: GitError) => invalid(`Tokama couldn't ${action}: ${gitReason(error)}`);
-  if (folder.value.gitProblem !== undefined) {
+  const isNew = folder.value.gitProblem !== undefined;
+  if (isNew) {
     const branch = input.baseBranch?.trim() || "main";
     if (!BRANCH.test(branch) || branch.length > MAX_BRANCH) return invalid(`The base branch ${quote(branch)} must be a branch name, such as main.`);
     const init = await options.git.init(path, branch);
-    if (!init.ok) return failed("set up git here", init.error);
+    if (!init.ok) return invalid(`Tokama couldn't set up git here: ${gitReason(init.error)}`);
   }
   if (preview.addsGitignore) {
     try {
@@ -188,18 +209,44 @@ export async function setUpRepo(options: RepoEditOptions, input: { readonly path
       return invalid(`Tokama couldn't write ${GITIGNORE_FILE} (${(error as NodeJS.ErrnoException).code ?? String(error)}).`);
     }
   }
+  return ok({ gitInit: isNew, ignoreRules: preview.addsGitignore ? DEFAULT_GITIGNORE.length : null });
+}
+
+/**
+ * Second step: a first commit of everything git does not ignore, in a repo that has none. A repo
+ * with a commit already is left alone (`files` is then 0).
+ */
+export async function makeFirstCommit(options: RepoEditOptions, input: { readonly path: string }): Promise<Result<{ readonly commit: string; readonly files: number }, RepoEditError>> {
+  const folder = await inspectFolder(options.git, input.path);
+  if (!folder.ok) return folder;
+  const path = folder.value.path;
+  if (!folder.value.canSetUp) {
+    if (folder.value.gitProblem !== undefined) return invalid(folder.value.gitProblem);
+    const head = await options.git.revParse(path, "HEAD");
+    return head.ok ? ok({ commit: head.value.slice(0, 7), files: 0 }) : invalid(gitReason(head.error));
+  }
+  if (folder.value.gitProblem !== undefined) return invalid("This folder isn't a git repo yet. Set up git first.");
+  const preview = await previewFirstCommit(path, options.home);
+  if (preview.refusal !== undefined) return invalid(preview.refusal);
   const added = await options.git.addAll(path);
-  if (!added.ok) return failed("stage the files", added.error);
+  if (!added.ok) return invalid(gitReason(added.error));
   // Files staged before (in a repo with no commit) are not in the preview, and an ignore rule does
   // not unstage them: refuse rather than commit what the user was not shown.
   const staged = await options.git.diffCachedNumstat(path);
-  if (!staged.ok) return failed("list the staged files", staged.error);
+  if (!staged.ok) return invalid(gitReason(staged.error));
   if (staged.value.length > preview.files + (preview.addsGitignore ? 1 : 0)) {
     return invalid(`Git has ${staged.value.length} files staged already, more than the ${preview.files} shown. Unstage them (git reset) or pick another folder.`);
   }
   const committed = await options.git.commit(path, "Initial commit");
-  if (!committed.ok) return failed("make the first commit", committed.error);
-  return ok(undefined);
+  if (!committed.ok) return invalid(gitReason(committed.error));
+  return ok({ commit: committed.value.slice(0, 7), files: staged.value.length });
+}
+
+/** The path for display: the home folder written as `~`. */
+function displayPath(path: string, home: string | undefined): string {
+  const base = home ?? homedir();
+  if (path === base) return "~";
+  return path.startsWith(`${base}/`) ? `~${path.slice(base.length)}` : path;
 }
 
 /** Why a git call failed, in plain words; the identity problem gets its fix. */
@@ -393,12 +440,14 @@ const LOCKFILES = [
 ] as const;
 
 /** Fixed commands only, never script bodies: `pnpm test`, then `pnpm lint` (`npm run lint` for npm). */
-async function suggestChecks(folder: string): Promise<{ commands: string[]; hasPackageJson: boolean }> {
+async function suggestChecks(folder: string): Promise<{ commands: string[]; from: string[]; hasPackageJson: boolean; main: string | undefined }> {
   const hasPackageJson = await exists(join(folder, "package.json"));
   const pkg = await readJsonFile(join(folder, "package.json"), { maxBytes: 256 * 1024 });
-  if (!pkg.ok || typeof pkg.value !== "object" || pkg.value === null) return { commands: [], hasPackageJson };
+  if (!pkg.ok || typeof pkg.value !== "object" || pkg.value === null) return { commands: [], from: [], hasPackageJson, main: undefined };
+  const main = (pkg.value as { main?: unknown }).main;
+  const mainFile = typeof main === "string" ? main : undefined;
   const scripts = (pkg.value as { scripts?: unknown }).scripts;
-  if (typeof scripts !== "object" || scripts === null) return { commands: [], hasPackageJson };
+  if (typeof scripts !== "object" || scripts === null) return { commands: [], from: [], hasPackageJson, main: mainFile };
   const { test, lint } = scripts as Record<string, unknown>;
   let manager: string = "npm";
   for (const [lockfile, name] of LOCKFILES) {
@@ -408,14 +457,30 @@ async function suggestChecks(folder: string): Promise<{ commands: string[]; hasP
     }
   }
   const checks: string[] = [];
-  if (typeof test === "string" && test.trim() !== "" && !test.includes(NPM_PLACEHOLDER_TEST)) checks.push(`${manager} test`);
-  if (typeof lint === "string" && lint.trim() !== "") checks.push(manager === "npm" ? "npm run lint" : `${manager} lint`);
-  return { commands: checks, hasPackageJson };
+  const from: string[] = [];
+  if (typeof test === "string" && test.trim() !== "" && !test.includes(NPM_PLACEHOLDER_TEST)) {
+    checks.push(`${manager} test`);
+    from.push("test");
+  }
+  if (typeof lint === "string" && lint.trim() !== "") {
+    checks.push(manager === "npm" ? "npm run lint" : `${manager} lint`);
+    from.push("lint");
+  }
+  return { commands: checks, from, hasPackageJson, main: mainFile };
 }
 
-/** `node --check` on the first entry file a plain JS project has: it only proves the file parses. */
-async function suggestFallbackCheck(folder: string): Promise<string | undefined> {
-  for (const file of ENTRY_FILES) if (await isFile(join(folder, file))) return `node --check ${file}`;
+/**
+ * `node --check` on the file named by package.json `main`, or without a package.json on the first
+ * entry file a plain JS project has. It only proves the file parses.
+ */
+async function suggestFallbackCheck(folder: string, found: { hasPackageJson: boolean; main: string | undefined }): Promise<{ command: string; fromPackage: boolean } | undefined> {
+  if (found.hasPackageJson) {
+    const main = found.main;
+    // A plain relative path inside the folder: it becomes a word of a command.
+    if (main !== undefined && /^(?!\/)(?!.*\.\.)[\w./-]+$/.test(main) && (await isFile(join(folder, main)))) return { command: `node --check ${main}`, fromPackage: true };
+    return undefined;
+  }
+  for (const file of ENTRY_FILES) if (await isFile(join(folder, file))) return { command: `node --check ${file}`, fromPackage: false };
   return undefined;
 }
 
