@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DiagnosticEntrySchema, type DiagnosticEntry } from "../../kernel/schemas/index.js";
+import { DiagnosticEntrySchema, DiagnosticsBodySchema, type DiagnosticEntry } from "../../kernel/schemas/index.js";
 import { BODY_OVERHEAD_BYTES, diagnosticsBody, entryBodyBytes, entryText } from "./body.js";
 
 const base = {
@@ -28,5 +28,12 @@ describe("diagnostics body", () => {
   it("is exactly the entries' byte counts plus the overhead", () => {
     const body = diagnosticsBody(entries.map(entryText));
     expect(Buffer.byteLength(body)).toBe(entries.reduce((sum, entry) => sum + entryBodyBytes(entry), 0) + BODY_OVERHEAD_BYTES);
+  });
+});
+
+describe("DiagnosticsBodySchema", () => {
+  it("takes a body of entries and refuses an empty one", () => {
+    expect(DiagnosticsBodySchema.safeParse(JSON.parse(diagnosticsBody(entries.map(entryText)))).success).toBe(true);
+    expect(DiagnosticsBodySchema.safeParse([]).success).toBe(false);
   });
 });

@@ -85,6 +85,7 @@ export { createMachineSource, type MachineSource } from "./kernel/metrics/index.
 export { createMonitor, type ItemGroup, type Monitor, type MonitorOptions } from "./slices/machine/index.js";
 // Diagnostics: the store that cleans and keeps them, and the machine facts they carry.
 export { readMachineFacts } from "./kernel/metrics/index.js";
+export { postGzipJson, type PostFailure, type PostJsonOptions } from "./kernel/egress/index.js";
 export { diagnosticsBody, DiagnosticsStore, entryText, redactText, type DiagnosticsStoreOptions, type RedactionContext } from "./slices/diagnostics/index.js";
 // Process control and git, for the engine service to hand to the slices that need them.
 export { createProcessRunner, findOnPath, type ProcessRunner } from "./kernel/process/index.js";
@@ -155,6 +156,7 @@ export {
   type MachinePoint,
   DIAGNOSTICS_SCHEMA_VERSION,
   DiagnosticEntrySchema,
+  DiagnosticsBodySchema,
   DiagnosticReportSchema,
   MachineFactsSchema,
   MAX_DIAGNOSTICS_BYTES,

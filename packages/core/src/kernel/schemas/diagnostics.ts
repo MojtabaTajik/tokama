@@ -156,6 +156,12 @@ const CrashEntrySchema = z.strictObject({ ...envelope, type: z.literal("crash"),
 
 export const DiagnosticEntrySchema = z.discriminatedUnion("type", [ErrorEntrySchema, WarningEntrySchema, UsageEntrySchema, CrashEntrySchema]);
 
+/**
+ * What Send all posts (gzipped) and Save as file writes: every waiting entry, as a JSON array. Its
+ * text is at most MAX_DIAGNOSTICS_BYTES before gzip.
+ */
+export const DiagnosticsBodySchema = z.array(DiagnosticEntrySchema).min(1);
+
 /** What a client reports to the engine; the engine adds the envelope and cleans the stack. */
 export const DiagnosticReportSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("error"), source: ClientSourceSchema, where: ErrorWhereSchema, stack: z.string().min(1).max(MAX_REPORTED_STACK_CHARS) }),
