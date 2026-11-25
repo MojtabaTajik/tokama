@@ -1,5 +1,5 @@
 // The app shell: icon rail, sidebar, main area, and the item drawer when an item is open.
-import type { FinishAction, UsageRange } from "@tokama/core";
+import type { FinishAction, UsageRange, UsageScope } from "@tokama/core";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TokamaBridge } from "../shared/bridge.js";
 import { DEFAULT_DESKTOP_STATE, type DesktopState, DRAWER_WIDTH, SECTIONS, SIDEBAR_WIDTH } from "../shared/desktop-state.js";
@@ -49,9 +49,11 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   const [settingsPage, setSettingsPage] = useState<SettingsPage | undefined>(undefined);
   // The tooltip and the page share one report; the page's range picks its days.
   const [usageRange, setUsageRange] = useState<UsageRange>(14);
+  // Whose usage the page counts: Tokama's own calls, or every Claude Code call on this machine.
+  const [usageScope, setUsageScope] = useState<UsageScope>("tokama");
   // The report loads every minute only while someone looks at it: the page, or the rail tooltip.
   const [tipShown, setTipShown] = useState(false);
-  const usage = useUsage(bridge, connection, usageRange, page === "insights" || tipShown);
+  const usage = useUsage(bridge, connection, usageRange, usageScope, page === "insights" || tipShown);
   const aboutOpen = page === "about";
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(undefined);
   // Counts each "Review the diff": the drawer shows the item's Diff tab, also when it shows the item already.
@@ -243,6 +245,8 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
           usage={usage}
           range={usageRange}
           onRange={setUsageRange}
+          scope={usageScope}
+          onScope={setUsageScope}
           setup={setup}
           items={items}
           issues={issues}

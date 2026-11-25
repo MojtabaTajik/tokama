@@ -114,7 +114,7 @@ describe("App shell", () => {
     expect($(".insights")?.hasAttribute("data-open")).toBe(false);
     expect($('.rail button[aria-label="Insights"]')?.getAttribute("aria-current")).toBe("page");
     expect($('.rail button[aria-label="Board"]')?.hasAttribute("aria-current")).toBe(false);
-    expect($$(".ins-plan").map((plan) => plan.getAttribute("aria-label"))).toEqual(["Claude Code", "Codex CLI", "Ollama"]);
+    expect($$(".ins-card").map((plan) => plan.getAttribute("aria-label"))).toEqual(["Claude Code", "Codex CLI", "Ollama"]);
     await click($('.rail button[aria-label="Board"]')!);
     expect(text(".main-header h1")).toBe("All work");
   });
@@ -157,7 +157,7 @@ describe("App shell", () => {
   it("queries the setup and the board", async () => {
     const { bridge, query } = fakeBridge(CONNECTED);
     await render(bridge);
-    expect(query.mock.calls.map(([q]) => q)).toEqual([{ type: "setup" }, { type: "board" }, { type: "usage", range: 14 }]);
+    expect(query.mock.calls.map(([q]) => q)).toEqual([{ type: "setup" }, { type: "board" }, { type: "usage", range: 14, scope: "tokama" }]);
   });
 
   it("shows the All work header and the list", async () => {

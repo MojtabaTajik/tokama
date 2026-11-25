@@ -1,12 +1,12 @@
 // @vitest-environment happy-dom
-import type { UsageRange, UsageReport } from "@tokama/core";
+import type { UsageRange, UsageReport, UsageScope } from "@tokama/core";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CONNECTED, fakeBridge } from "../testing/bridge.js";
 import { machineReport } from "../testing/machine.js";
 import { items, NOW, setup } from "../testing/sample.js";
-import { limitsReport, usageReport } from "../testing/usage.js";
+import { allReport, limitsReport, usageReport } from "../testing/usage.js";
 import { Insights, type InsightsProps } from "./Insights.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -36,6 +36,8 @@ function render(overrides: Partial<InsightsProps> = {}, report: UsageReport | un
     usage: { report, error: undefined, refresh: () => undefined },
     range: 14,
     onRange: () => undefined,
+    scope: "tokama",
+    onScope: () => undefined,
     setup,
     items,
     issues: [],
@@ -49,58 +51,214 @@ function render(overrides: Partial<InsightsProps> = {}, report: UsageReport | un
 
 const tableRows = () => $$(".ins-table tbody tr").map((row) => row.querySelector(".ins-item")?.textContent);
 
-describe("Insights: plan usage", () => {
-  it("shows each CLI's windows as meters with reset times, its plan, version and data time, and where the numbers came from", () => {
+describe("Insights: accounts and limits", () => {
+  const card = (name: string) => $(`.ins-card[aria-label="${name}"]`);
+  const meters = (el: Element | null) => [...(el?.querySelectorAll('[role="meter"]') ?? [])].map((meter) => [meter.getAttribute("aria-label"), meter.getAttribute("aria-valuenow")]);
+  const lines = (el: Element | null) => [...(el?.querySelectorAll(".ins-reset") ?? [])].map((line) => line.textContent);
+
+  it("shows a card per AI CLI with its plan badge, version, a meter per limit with a countdown to its reset, and where the numbers came from", () => {
     render();
-    const [claude, codex, ollama] = $$(".ins-plan");
-    expect(claude?.querySelector(".ins-plan-name")?.textContent).toBe("Claude CodeMax plan · 2.1.331");
-    expect(claude?.querySelector(".ins-asof")?.textContent).toBe("as of 14:58");
-    expect([...(claude?.querySelectorAll('[role="meter"]') ?? [])].map((meter) => [meter.getAttribute("aria-label"), meter.getAttribute("aria-valuenow")])).toEqual([
-      ["5-hour window", "36"],
-      ["Weekly window", "58"],
+    expect($$(".ins-card").map((el) => el.getAttribute("aria-label"))).toEqual(["Claude Code", "Codex CLI", "Ollama"]);
+    expect(text("#ins-accounts-title")).toBe("Accounts and limits");
+    // The newest reading of the limits: Claude Code's, two minutes ago.
+    expect(text(".ins-refreshes")).toBe("refreshes every 5 min · as of 14:58");
+    const claude = card("Claude Code");
+    expect(claude?.querySelector(".ins-card-title")?.textContent).toBe("Claude CodeMAX");
+    expect(claude?.querySelector(".ins-badge")?.hasAttribute("data-known")).toBe(true);
+    expect(claude?.querySelector(".ins-card-sub")?.textContent).toBe("2.1.331");
+    expect(meters(claude)).toEqual([
+      ["Session · 5 hours", "36"],
+      ["Weekly", "58"],
     ]);
-    expect(claude?.querySelector(".ins-reset")?.textContent).toBe("resets 17:10 · in 2 h 10 min");
-    expect(claude?.textContent).toContain("Extra usageoff");
+    expect(lines(claude)).toEqual(["↻resets in 2h 10m · at 17:10", "↻resets in 2d 18h · Thu 09:00"]);
+    // The symbol is hidden from screen readers, which hear the words instead.
+    expect(claude?.querySelector('.ins-countdown [aria-hidden="true"]')?.textContent).toBe("↻");
+    expect(claude?.querySelector(".ins-countdown .visually-hidden")?.textContent).toBe("resets in");
     expect(claude?.querySelector(".ins-source")?.textContent).toBe("Source: asked of the CLI itself. Tokama never reads its login.");
-    expect(ollama?.textContent).toContain("Plan windowsnone");
-    expect(ollama?.textContent).toContain("Local models have no plan limit.");
     // Under 60%: a green fill and no word. Near the limit: a word and a symbol beside the red fill, and the data's age.
     expect([...(claude?.querySelectorAll(".meter-fill") ?? [])].map((fill) => fill.getAttribute("data-tone"))).toEqual(["pass", "pass"]);
     expect(claude?.querySelector(".ins-tone")).toBeNull();
+    const codex = card("Codex CLI");
+    expect(codex?.querySelector(".ins-source")?.textContent).toBe("Source: asked of the CLI itself.");
+    expect(codex?.querySelector(".ins-badge")?.textContent).toBe("PLAN ?");
+    expect(codex?.querySelector(".ins-badge")?.hasAttribute("data-known")).toBe(false);
+    expect(codex?.querySelector(".ins-card-sub")?.textContent).toBe("0.169.0 · plan not reported");
     expect(codex?.querySelector('.ins-tone[data-tone="fail"]')?.textContent).toBe("! near limit");
     expect(codex?.querySelector('.meter-fill[data-tone="fail"]')).not.toBeNull();
     expect(codex?.querySelector('[role="meter"]')?.getAttribute("aria-valuetext")).toBe("84%, near limit");
+    expect(lines(codex)).toEqual(["↻resets in 4d 15h · Sat 06:00 · data 34 min old"]);
+    const ollama = card("Ollama");
+    expect(ollama?.querySelector(".ins-badge")?.textContent).toBe("LOCAL");
+    expect(ollama?.querySelector(".ins-card-sub")?.textContent).toBe("local");
+    expect(meters(ollama)).toEqual([]);
+    expect(ollama?.querySelector(".ins-card-note")?.textContent).toBe("Local models have no plan limit.");
     expect($(".ins-key")?.textContent).toBe("■ under 60%■ 60–79% · high■ 80%+ · ! near limit■ 100% · ✕ at limit");
-    expect(codex?.querySelector(".ins-reset")?.textContent).toBe("resets Sat 25 Oct 06:00 · data 34 min old");
+  });
+
+  it("says a CLI is logged in when the engine's check found it so", () => {
+    const health = { ...setup.health, clis: [{ cliId: "claude-code" as const, installed: true, loggedIn: true, version: "2.1.331" }] };
+    render({ setup: { ...setup, health } });
+    expect(card("Claude Code")?.querySelector(".ins-card-sub")?.textContent).toBe("logged in · 2.1.331");
   });
 
   it("shows every Claude Code limit as a meter, a model's weekly limit with its share of the weekly limit", () => {
     render({}, limitsReport);
-    const claude = $(".ins-plan");
-    expect([...(claude?.querySelectorAll('[role="meter"]') ?? [])].map((meter) => [meter.getAttribute("aria-label"), meter.getAttribute("aria-valuenow")])).toEqual([
-      ["Session window", "63"],
-      ["Weekly window", "41"],
-      ["Fable weekly window", "0"],
+    const claude = card("Claude Code");
+    expect(meters(claude)).toEqual([
+      ["Session · 5 hours", "63"],
+      ["Weekly · all models", "41"],
+      ["Weekly · Fable", "0"],
     ]);
-    expect([...(claude?.querySelectorAll(".ins-reset") ?? [])].map((line) => line.textContent)[2]).toBe("50% share of the weekly limit · resets Thu 23 Oct 09:00");
+    expect(lines(claude)[2]).toBe("↻resets in 2d 18h · Thu 09:00 · 50% share of the weekly limit");
   });
 
-  it("colours a high window amber with the word high, and one at its limit red with ✕ at limit, by the shown number", () => {
+  it("colours a high limit amber with the word high, and one at its limit red with ✕ at limit, by the shown number", () => {
     const report = { ...usageReport, clis: [{ cliId: "claude-code", windows: [{ window: "five_hour", usedPercent: 67.6 }, { window: "seven_day", usedPercent: 99.6 }] }] } as UsageReport;
     render({}, report);
-    const claude = $(".ins-plan");
-    expect([...(claude?.querySelectorAll(".ins-window .ins-window-head") ?? [])].map((head) => head.textContent)).toEqual(["5-hour windowhigh68%", "Weekly window✕ at limit100%"]);
+    const claude = card("Claude Code");
+    expect([...(claude?.querySelectorAll(".ins-window .ins-window-head") ?? [])].map((head) => head.textContent)).toEqual(["Session · 5 hourshigh68%", "Weekly✕ at limit100%"]);
     expect([...(claude?.querySelectorAll(".meter-fill") ?? [])].map((fill) => fill.getAttribute("data-tone"))).toEqual(["warn", "fail"]);
+    expect(lines(claude)).toEqual(["reset time unknown", "reset time unknown"]);
   });
 
-  it("says a logged-out CLI is logged out, and unknown windows are unknown", () => {
+  it("says a logged-out CLI is logged out, in a word and a symbol, and why its limits are unknown", () => {
     const report = { ...usageReport, clis: [{ cliId: "claude-code", windows: [], note: "Claude Code did not answer the usage request." }] } as UsageReport;
     render({ issues: [{ cliId: "claude-code", kind: "logged_out" }] }, report);
-    const claude = $(".ins-plan");
-    expect(claude?.querySelector('.ins-alert[data-tone="fail"]')?.textContent).toBe("✕ logged out");
-    expect(claude?.textContent).toContain("Plan windowsunknown");
-    expect(claude?.textContent).toContain("Claude Code did not answer the usage request.");
+    const claude = card("Claude Code");
+    expect(claude?.querySelector('.ins-card-sub [data-tone="fail"]')?.textContent).toBe("✕ logged out");
+    expect(claude?.querySelector(".ins-badge")?.textContent).toBe("PLAN ?");
+    expect(meters(claude)).toEqual([]);
+    expect(claude?.querySelector(".ins-card-note")?.textContent).toBe("Claude Code did not answer the usage request.");
     expect(claude?.querySelector(".ins-source")).toBeNull();
+  });
+
+  it("loads again from the refresh button", async () => {
+    const refresh = vi.fn();
+    render({ usage: { report: usageReport, error: undefined, refresh } });
+    const button = $$("button").find((el) => el.textContent === "↻ Refresh");
+    await click(button ?? null);
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+});
+
+describe("Insights: whose usage", () => {
+  const scopeButtons = () => $$('[aria-label="Whose usage"] button').map((button) => [button.textContent, button.getAttribute("aria-pressed")]);
+
+  it("counts Tokama's work by default, and asks for all of this Mac from the switch", async () => {
+    const onScope = vi.fn<(scope: UsageScope) => void>();
+    render({ onScope });
+    expect(scopeButtons()).toEqual([
+      ["Tokama work", "true"],
+      ["All on this Mac", "false"],
+    ]);
+    expect(text(".ins-scope-note")).toBe("Only calls Tokama made for its items, from each call's own output.");
+    expect($(".ins-scan")).toBeNull();
+    await click($$('[aria-label="Whose usage"] button')[1]!);
+    expect(onScope).toHaveBeenCalledWith("all");
+  });
+
+  it("shows all of this Mac's cost and tables, while the chart and its total stay Tokama's work", () => {
+    render({ scope: "all" }, allReport);
+    expect(scopeButtons()[1]).toEqual(["All on this Mac", "true"]);
+    expect(text(".ins-scope-note")).toMatch(/^Everything Claude Code did on this Mac, read from its local logs in ~\/\.claude/);
+    expect(text(".ins-cost-hero")).toBe("≈ $1,755");
+    expect(text("#ins-chart-title + .muted")).toBe("by workflow · last 14 days · Tokama work only");
+    expect(text(".ins-hero")).toBe("896k tokens");
+    expect(text(".ins-headline .muted")).toBe("≈ $12.10 estimated · all workflows · as of 15:00");
+  });
+
+  it("shows the log scan's progress while it runs, and why the logs cannot be read", () => {
+    render({ scope: "all" }, { ...allReport, scan: { state: "scanning", filesDone: 120, filesTotal: 684 } } as UsageReport);
+    expect($('.ins-scan[role="status"]')?.textContent).toBe("Reading Claude Code logs… 120 of 684 files");
+    // A later scan only adds what changed since: it shows nothing.
+    render({ scope: "all" }, { ...allReport, scan: { state: "scanning", filesDone: 684, filesTotal: 684, asOf: NOW } } as UsageReport);
+    expect($(".ins-scan")).toBeNull();
+    render({ scope: "all" }, { ...allReport, scan: { state: "unavailable", filesDone: 0, filesTotal: 0, note: "Claude Code's logs folder was not found." } } as UsageReport);
+    expect(text(".ins-scan")).toBe("Claude Code's logs folder was not found.");
+  });
+
+  it("does not show the last scope's cost and tables under the new label until its report comes", () => {
+    render({ scope: "all" }, usageReport);
+    expect($(".ins-cost")).toBeNull();
+    expect($(".ins-tables")).toBeNull();
+    expect($$(".placeholder").map((el) => el.textContent)).toEqual(["Loading usage", "Loading usage"]);
+    // The limits and the chart do not depend on the scope: they stay.
+    expect($$(".ins-card")).toHaveLength(3);
+    expect($$(".ins-col")).toHaveLength(14);
+    // When the new scope's load failed, it says why instead of loading for ever.
+    render({ scope: "all", usage: { report: usageReport, error: "the index could not be read", refresh: () => undefined } });
+    expect($$(".placeholder").map((el) => el.textContent)).toEqual(["Could not load usage: the index could not be read", "Could not load usage: the index could not be read"]);
+  });
+});
+
+describe("Insights: cost and token summary", () => {
+  const cells = () => $$(".ins-summary-cell").map((cell) => [...cell.children].map((child) => child.textContent));
+
+  it("shows the cost at API rates, that the plan covers it, and where the tokens went", () => {
+    render();
+    expect(text(".ins-cost-head")).toBe("≈ $12.10at API rates · last 14 days✓Your plan covers it");
+    expect(cells()).toEqual([
+      ["Processed", "896k", "all tokens, in and out"],
+      ["Cached input", "500k", "63% of input · cheap to read"],
+      ["Uncached input", "300k", "full input price"],
+      ["Output", "96k", "written by the model"],
+      ["Cache savings", "≈ $2.25", "10.0× cheaper than without cache"],
+    ]);
+  });
+
+  it("writes billions, and leaves out the plan line and the summary when they are not known", () => {
+    render({ scope: "all" }, allReport);
+    expect(cells().map((cell) => cell[1])).toEqual(["2.34B", "2.29B", "42.6M", "6.90M", "≈ $6,180"]);
+    const noPlan = { ...usageReport, clis: usageReport.clis.map((cli) => ({ ...cli, plan: undefined })), tokenSummary: undefined } as UsageReport;
+    render({}, noPlan);
+    expect($(".ins-covered")).toBeNull();
+    expect($(".ins-summary")).toBeNull();
+    const unpriced = { ...usageReport, totals: { ...usageReport.totals, costUsd: null }, tokenSummary: { ...usageReport.tokenSummary!, cacheSavingsUsd: null, cacheSavingsFactor: null } } as UsageReport;
+    render({}, unpriced);
+    expect(text(".ins-cost-hero")).toBe("unknown");
+    expect(cells()[4]).toEqual(["Cache savings", "unknown", "no cache price known"]);
+  });
+});
+
+describe("Insights: by model and by repo", () => {
+  const rows = (name: string) => $$(`[role="table"][aria-label="${name}"] [role="row"]`).map((row) => [...row.children].map((cell) => cell.textContent));
+
+  it("lists each model's cost, share and tokens, and each repo's share of tokens as a bar, its tokens and cost", () => {
+    render();
+    expect(rows("By model")).toEqual([
+      ["Model", "≈ Cost", "Share", "Tokens"],
+      ["claude-opus-5-5Claude Code", "$11.70", "97%", "692k"],
+      ["gpt-5-codexCodex CLI", "$0.40", "3%", "86k"],
+      ["qwen3-coder:30bOllama", "unknown", "–", "118k"],
+    ]);
+    expect(rows("By repo")).toEqual([
+      ["Repo", "", "Tokens", "≈ Cost"],
+      ["orders-api", "", "692k", "$11.70"],
+      ["checkout-web", "", "204k", "$0.40"],
+    ]);
+    expect($$(".ins-repo-bar").map((bar) => [bar.getAttribute("aria-label"), (bar.firstElementChild as HTMLElement).style.width])).toEqual([
+      ["77% of tokens", "77%"],
+      ["23% of tokens", "23%"],
+    ]);
+  });
+
+  it("names work outside the configured repos other folders, always last, and shows an empty table as its headers", () => {
+    render({ scope: "all" }, allReport);
+    expect(rows("By repo").slice(1).map((row) => [row[0], row[2], row[3]])).toEqual([
+      ["orders-api", "1.21B", "$905"],
+      ["checkout-web", "710M", "$534"],
+      ["other folders", "420M", "$316"],
+    ]);
+    expect($('.ins-repo[data-other]')?.textContent).toBe("other folders");
+    // "other folders" is last even when it has more tokens than a repo.
+    const bigOther = { ...allReport, repos: [{ repoId: null, tokens: 9e9, costUsd: 1 }, ...allReport.repos!.filter((r) => r.repoId !== null)] } as UsageReport;
+    render({ scope: "all" }, bigOther);
+    expect(rows("By repo").slice(1).map((row) => row[0])).toEqual(["orders-api", "checkout-web", "other folders"]);
+    // An empty table shows its headers and nothing else.
+    render({}, { ...usageReport, models: [], repos: [] } as UsageReport);
+    expect(rows("By model")).toEqual([["Model", "≈ Cost", "Share", "Tokens"]]);
+    expect(rows("By repo")).toEqual([["Repo", "", "Tokens", "≈ Cost"]]);
+    expect($(".ins-tables")?.textContent).not.toContain("No agent calls");
   });
 });
 
@@ -224,10 +382,20 @@ describe("Insights: tabs", () => {
     await click($$('[role="tab"]')[1] ?? null);
     expect(tabs()).toEqual([["Usage", "false"], ["Machine", "true"]]);
     expect($('[aria-label="Machine"][role="tabpanel"]')).not.toBeNull();
-    expect($(".ins-plans")).toBeNull();
+    expect($(".ins-cards")).toBeNull();
     expect(bridge.query).toHaveBeenCalledWith({ type: "machine" });
     await click($$('[role="tab"]')[0] ?? null);
-    expect($(".ins-plans")).not.toBeNull();
+    expect($(".ins-cards")).not.toBeNull();
     expect($(".mc-body")).toBeNull();
+  });
+
+  it("keeps the chart's measure and workflow filter across a visit to the Machine tab", async () => {
+    render({ bridge: fakeBridge(CONNECTED, { reply: (query) => (query.type === "machine" ? { ok: true, data: machineReport } : undefined) }).bridge });
+    await click($$(".segment").find((button) => button.textContent === "≈ Cost") ?? null);
+    await click($$(".ins-legend-entry")[1]!);
+    await click($$('[role="tab"]')[1] ?? null);
+    await click($$('[role="tab"]')[0] ?? null);
+    expect(text("#ins-chart-title")).toBe("Estimated cost by day");
+    expect(text(".ins-filter")).toBe("workflowPlan and build✕");
   });
 });

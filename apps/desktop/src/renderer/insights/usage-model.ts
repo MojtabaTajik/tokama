@@ -1,7 +1,7 @@
 // What the Insights page and the rail tooltip derive from the usage report: words for windows and
 // times, alerts per AI CLI, number formats, and the chart's columns. Pure functions that take the
 // clock as an argument, so they are tested without React or a real time.
-import type { CliPlan, Setup, TemplateSummary, TokenUsage, UsageReport } from "@tokama/core";
+import type { CliPlan, LogScan, Setup, TemplateSummary, TokenUsage, UsageReport } from "@tokama/core";
 import type { CliIssue } from "../model.js";
 
 /** A window at or above this share of its limit is high, then near it. */
@@ -100,29 +100,66 @@ export function formatDuration(ms: number): string {
   return `${Math.floor(minutes / 60)} h ${pad(minutes % 60)} min`;
 }
 
-/** "resets 17:10 · in 2 h 38 min", or just the time when it is days away. */
-export function resetText(resetsAt: number | undefined, now: number): string {
-  if (resetsAt === undefined) return "reset time unknown";
-  const left = resetsAt - now;
-  return left < DAY ? `resets ${formatClock(resetsAt, now)} · in ${formatDuration(left)}` : `resets ${formatClock(resetsAt, now)}`;
-}
-
 /** "data 34 min old" once the data is older than a few minutes. */
 export const ageText = (asOf: number, now: number): string | undefined => (now - asOf > SHOW_AGE_AFTER_MS ? `data ${formatDuration(now - asOf)} old` : undefined);
 
 /** Every token of a call or item, cached ones included. */
 export const totalOf = (tokens: TokenUsage): number => tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite;
 
-/** "1.2k", "163k", "2.41M". */
+const TOKEN_UNITS = [
+  ["k", 1e3],
+  ["M", 1e6],
+  ["B", 1e9],
+] as const;
+// Decimals by size: "9.9k" and "163k"; "2.41M", "38.6M" and "420M"; the same for B.
+const tokenDecimals = (value: number, unit: string): number => (value >= 100 ? 0 : value >= 10 ? (unit === "k" ? 0 : 1) : unit === "k" ? 1 : 2);
+
+/** "1.2k", "163k", "2.41M", "2.34B". The unit is chosen after rounding, so 999,950 is "1.00M", never "1000k". */
 export function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 1 : 2)}M`;
-  if (n >= 10_000) return `${Math.round(n / 1000)}k`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  if (n < 1000) return String(n);
+  for (const [index, [unit, size]] of TOKEN_UNITS.entries()) {
+    const value = n / size;
+    const rounded = Number(value.toFixed(tokenDecimals(value, unit)));
+    if (rounded < 1000 || index === TOKEN_UNITS.length - 1) return `${rounded.toFixed(tokenDecimals(rounded, unit))}${unit}`;
+  }
   return String(n);
 }
 
 /** "≈ $3.10"; unknown when nothing could be priced. */
 export const formatCost = (usd: number | null): string => (usd === null ? "unknown" : `≈ $${usd < 100 ? usd.toFixed(2) : Math.round(usd).toLocaleString("en-US")}`);
+
+/** "$3.10", "$1,755": a table cell under a "≈ Cost" header; unknown when nothing could be priced. */
+export const formatUsd = (usd: number | null): string => (usd === null ? "unknown" : formatCost(usd).slice(2));
+
+const CARD_LABELS: Readonly<Record<string, string>> = {
+  five_hour: "Session · 5 hours",
+  session: "Session · 5 hours",
+  seven_day: "Weekly",
+  weekly_all: "Weekly · all models",
+  seven_day_opus: "Weekly · Opus",
+  seven_day_sonnet: "Weekly · Sonnet",
+};
+/** A limit's name on its account card: "Session · 5 hours", "Weekly · all models", "Weekly · Fable". */
+export function cardLabel(w: Pick<PlanWindow, "window" | "scope">): string {
+  if (w.window === "weekly_scoped") return `Weekly · ${w.scope ?? "scoped"}`;
+  return CARD_LABELS[w.window] ?? windowLabel(w);
+}
+
+/** Time to a reset, short: "38m", "2h 41m", "1d 18h". */
+export function countdown(ms: number): string {
+  const minutes = Math.max(0, Math.round(ms / MINUTE));
+  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 24 * 60) return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  return `${Math.floor(minutes / (24 * 60))}d ${Math.floor((minutes % (24 * 60)) / 60)}h`;
+}
+
+/** When a reset happens: "at 17:10" today, "Thu 09:00" this week, else the full date. */
+export function resetWhen(resetsAt: number, now: number): string {
+  const d = new Date(resetsAt);
+  if (sameDay(d, new Date(now))) return `at ${formatClock(resetsAt, now)}`;
+  if (resetsAt - now < 6 * DAY) return `${WEEKDAYS[d.getDay()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return formatClock(resetsAt, now);
+}
 
 export const SOURCE_TEXT: Readonly<Record<NonNullable<CliPlan["source"]>, string>> = {
   request: "asked of the CLI itself",
@@ -135,6 +172,28 @@ export const templateFor = (templateId: string, setup: Setup | undefined): Templ
 export const workflowName = (templateId: string, setup: Setup | undefined): string => templateFor(templateId, setup)?.name ?? templateId.split("/").pop() ?? templateId;
 
 export type Metric = "tokens" | "cost";
+
+/**
+ * Tokama's own calls over the range, whatever the report's scope: its totals in the `tokama`
+ * scope, else the sum of its workflows (which leaves out how many calls had no price).
+ */
+export function tokamaTotals(report: UsageReport): { readonly tokens: number; readonly costUsd: number | null; readonly unpricedCalls: number } {
+  if ((report.scope ?? "tokama") === "tokama") return { tokens: totalOf(report.totals.tokens), costUsd: report.totals.costUsd, unpricedCalls: report.totals.unpricedCalls };
+  const priced = report.workflows.filter((w) => w.costUsd !== null);
+  return {
+    tokens: report.workflows.reduce((sum, w) => sum + w.tokens, 0),
+    costUsd: priced.length === 0 ? null : priced.reduce((sum, w) => sum + (w.costUsd ?? 0), 0),
+    unpricedCalls: 0,
+  };
+}
+
+/** Where reading Claude Code's logs is: progress while the first read runs, the reason when it cannot, else nothing. */
+export function scanText(scan: LogScan | undefined): string | undefined {
+  // Later scans add a few files in moments; only the first one, with nothing read yet, shows progress.
+  if (scan === undefined || scan.state === "ready" || (scan.state === "scanning" && scan.asOf !== undefined)) return undefined;
+  if (scan.state === "scanning") return `Reading Claude Code logs… ${scan.filesDone} of ${scan.filesTotal} files`;
+  return scan.note;
+}
 
 export interface Segment {
   readonly templateId: string;

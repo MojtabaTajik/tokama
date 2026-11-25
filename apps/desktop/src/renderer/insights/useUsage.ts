@@ -2,9 +2,10 @@
 // "connected", on a `usage_changed` event, when the range changes, and on `refresh()` (the
 // tooltip calls it when it opens). While `live` (the page is open or the tooltip shows) it also
 // loads every minute, so data ages and the engine can read plan windows again; otherwise it
-// waits for events, so the engine rarely starts a CLI for it. A load keeps the last report on
-// screen: a refetch never blanks the page.
-import type { UsageRange, UsageReport } from "@tokama/core";
+// waits for events, so the engine rarely starts a CLI for it. While the engine reads Claude Code's
+// logs for the `all` scope, its `usage_changed` events move the progress. A load keeps the last
+// report on screen: a refetch never blanks the page.
+import type { UsageRange, UsageReport, UsageScope } from "@tokama/core";
 import { useCallback, useEffect, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 
@@ -19,7 +20,7 @@ export interface UsageView {
   readonly refresh: () => void;
 }
 
-export function useUsage(bridge: TokamaBridge, connection: ConnectionState, range: UsageRange, live: boolean, refreshMs = USAGE_REFRESH_MS): UsageView {
+export function useUsage(bridge: TokamaBridge, connection: ConnectionState, range: UsageRange, scope: UsageScope, live: boolean, refreshMs = USAGE_REFRESH_MS): UsageView {
   const [report, setReport] = useState<UsageReport | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [reloads, setReloads] = useState(0);
@@ -43,7 +44,7 @@ export function useUsage(bridge: TokamaBridge, connection: ConnectionState, rang
     if (connection.status !== "connected") return;
     let isCurrent = true;
     void bridge
-      .query({ type: "usage", range })
+      .query({ type: "usage", range, scope })
       .then((reply) => {
         if (!isCurrent) return;
         if (reply.ok) {
@@ -55,7 +56,7 @@ export function useUsage(bridge: TokamaBridge, connection: ConnectionState, rang
     return () => {
       isCurrent = false;
     };
-  }, [bridge, connection, range, reloads]);
+  }, [bridge, connection, range, scope, reloads]);
 
   const failed = connection.status === "failed";
   return { report: failed ? undefined : report, error: failed ? undefined : error, refresh };

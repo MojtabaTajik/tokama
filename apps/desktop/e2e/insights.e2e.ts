@@ -4,7 +4,7 @@
 import { expect } from "vitest";
 import { flow } from "./harness.js";
 
-flow("shows plan usage in the Insights tooltip, opens Insights, shows a day on hover and filters by workflow", async ({ page, screenshot }) => {
+flow("shows plan usage in the Insights tooltip, opens Insights, shows a day on hover, filters by workflow and counts all of this Mac", async ({ page, screenshot, resize }) => {
   const insights = page.locator('.rail button[aria-label="Insights"]');
   // Codex CLI is near its weekly limit in the sample: a ! on the icon, words in the tooltip.
   await expect.poll(() => page.locator(".rail .insights .badge").innerText(), { message: "the Insights badge" }).toBe("!");
@@ -26,7 +26,10 @@ flow("shows plan usage in the Insights tooltip, opens Insights, shows a day on h
 
   await insights.click();
   await page.locator(".main-header h1", { hasText: "Insights" }).waitFor();
-  await expect.poll(() => page.locator(".ins-plan").count(), { message: "one column per AI CLI" }).toBe(3);
+  await expect.poll(() => page.locator(".ins-card").count(), { message: "one card per AI CLI" }).toBe(3);
+  await expect.poll(() => page.locator('.ins-card[aria-label="Claude Code"] .ins-badge').innerText()).toBe("MAX");
+  await expect.poll(() => page.locator('.ins-card[aria-label="Claude Code"] .ins-countdown').first().textContent()).toMatch(/^↻resets in \d+h \d+m$/);
+  await expect.poll(() => page.locator(".ins-summary-cell").count(), { message: "the token summary" }).toBe(5);
   await expect.poll(() => page.locator(".ins-col").count(), { message: "14 days" }).toBe(14);
   await expect.poll(() => page.locator(".ins-estimate").innerText()).toMatch(/^≈ estimate · prices as of \d{4}-\d{2}-\d{2}/);
   await page.mouse.move(0, 0);
@@ -53,6 +56,21 @@ flow("shows plan usage in the Insights tooltip, opens Insights, shows a day on h
   await page.getByRole("button", { name: "90 days" }).click();
   await expect.poll(() => page.locator(".ins-col").count(), { message: "90 days" }).toBe(90);
   await screenshot("10-insights-cost-90-days");
+
+  // All of this Mac: Claude Code's sample logs, on three models and outside the sample repos too.
+  await resize(1440, 2240);
+  await page.getByRole("button", { name: "14 days" }).click();
+  await page.getByRole("button", { name: "Tokens", exact: true }).click();
+  await page.getByRole("button", { name: "All on this Mac" }).click();
+  // Claude Code's three models from its logs, beside Tokama's calls on the other CLIs.
+  await expect
+    .poll(() => page.locator(".ins-model-name").allInnerTexts(), { message: "the Claude Code models" })
+    .toEqual(expect.arrayContaining(["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]));
+  await expect.poll(() => page.locator(".ins-repo[data-other]").innerText()).toBe("other folders");
+  await expect.poll(() => page.locator(".ins-cost-head").innerText()).toMatch(/^≈ \$[\d,.]+\s*at API rates · last 14 days\s*✓\s*Your plan covers it$/);
+  await expect.poll(() => page.locator(".ins-scan").count(), { message: "the sample scan is done" }).toBe(0);
+  await page.mouse.move(0, 0);
+  await screenshot("11-insights-all-on-this-mac");
 });
 
 flow(
@@ -61,10 +79,12 @@ flow(
     await page.locator('.rail button[aria-label="Insights"]').click();
     await page.locator(".main-header h1", { hasText: "Insights" }).waitFor();
     await expect.poll(() => page.locator(".ins-col").count(), { message: "14 days" }).toBe(14);
+    // Only the top items say they are empty; the model and repo tables show their headers.
     await page.getByText("No agent calls in this range.").waitFor();
     await expect.poll(() => page.locator(".ins-hero").innerText()).toBe("0 tokens");
     // Codex CLI has no plan source yet: unknown, never a number.
-    await expect.poll(() => page.locator('.ins-plan[aria-label="Codex CLI"]').innerText()).toContain("unknown");
+    await expect.poll(() => page.locator('.ins-card[aria-label="Codex CLI"]').innerText()).toContain("plan not reported");
+    await expect.poll(() => page.locator('.ins-card[aria-label="Codex CLI"] [role="meter"]').count()).toBe(0);
   },
   "real",
 );
