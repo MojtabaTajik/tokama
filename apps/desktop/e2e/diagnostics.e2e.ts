@@ -2,7 +2,7 @@
 // type. Send all goes to a local test server that this file runs (a development build may point
 // the app at a loopback server; a packaged app never reads the variable). The save dialog is
 // replaced in the main process. The crash prompt is reached by killing the sample engine.
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { createServer, type IncomingHttpHeaders } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
@@ -179,3 +179,57 @@ flow("Don't ask again stops the prompt, also after the next crash", async (sessi
   await new Promise((done) => setTimeout(done, 1500));
   expect(await prompt(next.page).count()).toBe(0);
 });
+
+flow("a normal stop of the engine (SIGTERM) does not ask", async ({ page, connection, engine, killEngine }) => {
+  const before = engine();
+  killEngine();
+  await expect
+    .poll(async () => ((await connection()).status === "connected" ? engine()?.engineId : undefined), { timeout: 30_000, message: "a new engine, connected" })
+    .toSatisfy((id: string | undefined) => id !== undefined && id !== before?.engineId);
+  await page.locator(".rail").waitFor();
+  await new Promise((done) => setTimeout(done, 1500));
+  expect(await prompt(page).count()).toBe(0);
+});
+
+flow("the prompt keeps its title and buttons on one row, and stacks them with the primary first when narrow", async (session) => {
+  const { page, screenshot } = session;
+  crashEngine(session);
+  await prompt(page).waitFor();
+  const boxes = async () => {
+    const dialog = prompt(page);
+    const [title, ...buttons] = await Promise.all([dialog.getByRole("heading"), ...["Don’t ask again", "Not now", "Review and send"].map((name) => dialog.getByRole("button", { name }))].map((it) => it.boundingBox()));
+    const lineHeight = await dialog.getByRole("heading").evaluate((node) => Number.parseFloat(getComputedStyle(node).lineHeight));
+    return { title, buttons, lineHeight, dialog: await dialog.boundingBox() };
+  };
+
+  // The default window: one line of title, one row of buttons, the primary action on the right.
+  const wide = await boxes();
+  expect(wide.title?.height ?? 0, "title lines").toBeLessThan((wide.lineHeight || 20) * 1.5);
+  expect(new Set(wide.buttons.map((box) => Math.round(box?.y ?? -1))).size, "button rows").toBe(1);
+  const xs = wide.buttons.map((box) => box?.x ?? 0);
+  expect(xs).toEqual([...xs].sort((a, b) => a - b));
+  // The row's right padding is 16px.
+  expect((wide.dialog?.x ?? 0) + (wide.dialog?.width ?? 0) - ((wide.buttons[2]?.x ?? 0) + (wide.buttons[2]?.width ?? 0)), "primary at the right edge").toBeLessThan(18);
+
+  // A narrow dialog (the window itself never gets this small): a column, Review and send on top, nothing cut off.
+  await prompt(page).evaluate((node) => (node.style.maxWidth = "340px"));
+  const narrow = await boxes();
+  const ys = narrow.buttons.map((box) => box?.y ?? 0);
+  expect(ys[2], "primary on top").toBeLessThan(ys[1] ?? 0);
+  expect(ys[1], "then Not now, then Don't ask again").toBeLessThan(ys[0] ?? 0);
+  for (const box of narrow.buttons) {
+    expect(box?.x ?? -1).toBeGreaterThanOrEqual(narrow.dialog?.x ?? 0);
+    expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual((narrow.dialog?.x ?? 0) + (narrow.dialog?.width ?? 0));
+  }
+  await screenshot("14-crash-prompt-narrow");
+});
+
+flow("a normal stop of the app (SIGTERM) removes its running marker", async ({ app, home }) => {
+  const marker = join(home, ".tokama", "desktop.running");
+  await expect.poll(() => existsSync(marker), { message: "marker while running" }).toBe(true);
+  const child = app.process();
+  const exited = new Promise<void>((done) => child.once("exit", () => done()));
+  process.kill(child.pid ?? 0, "SIGTERM");
+  await exited;
+  expect(existsSync(marker), "marker after SIGTERM").toBe(false);
+}, "sample", (home) => void mkdirSync(join(home, ".tokama"), { recursive: true }));
