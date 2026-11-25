@@ -2,7 +2,7 @@
 // constants only: the renderer and the sandboxed preload import nothing else from outside.
 import type { ClientEvent, CommandReply, QueryReply } from "@tokama/client";
 import type { CommandInput, QueryInput } from "@tokama/core";
-import type { DesktopState, LayoutPatch } from "./desktop-state.js";
+import type { DesktopState, LayoutPatch, NotificationSettings } from "./desktop-state.js";
 
 /** The desktop app's view of its engine connection. */
 export type ConnectionState =
@@ -51,6 +51,9 @@ export const CHANNELS = {
   getDesktopState: "tokama:desktop:get",
   saveLayout: "tokama:desktop:save-layout",
   reportError: "tokama:diagnostics:report-error",
+  saveNotifications: "tokama:notifications:save",
+  viewedItem: "tokama:notifications:viewed",
+  openItem: "tokama:notifications:open-item",
 } as const;
 
 /** What About shows about this build. The main process fills it; every field is plain text or a number. */
@@ -109,4 +112,16 @@ export interface TokamaBridge {
    * the stack cross; the engine cleans them before it records anything.
    */
   reportError(error: { readonly message: string; readonly stack: string }): Promise<void>;
+  /** Remembers the notification switches in `patch`. The main process validates them and ignores any other field. */
+  saveNotifications(patch: Partial<NotificationSettings>): Promise<void>;
+  /**
+   * Tells the main process which item the window shows in the drawer or the full view now (none:
+   * undefined), so it shows no notification for that item while the window is in front.
+   */
+  setViewedItem(itemId: string | undefined): Promise<void>;
+  /**
+   * Calls `listener` with the id of an item the user asked to open by clicking its notification;
+   * one that came before the listener was set is delivered at once. Returns a function that stops it.
+   */
+  onOpenItem(listener: (itemId: string) => void): () => void;
 }

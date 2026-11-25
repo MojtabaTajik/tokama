@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { backgroundModeEnabled, devServerUrl, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, secureWebPreferences, sampleEngineEnabled } from "./policy.js";
+import { backgroundModeEnabled, devServerUrl, e2eEnabled, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, secureWebPreferences, sampleEngineEnabled } from "./policy.js";
 
 describe("secureWebPreferences", () => {
   it("isolates and sandboxes the renderer, with no Node", () => {
@@ -177,5 +177,14 @@ describe("backgroundModeEnabled", () => {
     ["true", false, "darwin", false],
   ] as const)("TOKAMA_E2E=%s, packaged %s, %s: %s", (value, isPackaged, platform, expected) => {
     expect(backgroundModeEnabled(value, isPackaged, platform)).toBe(expected);
+  });
+});
+
+describe("e2eEnabled", () => {
+  it("is on for TOKAMA_E2E=1 in an unpackaged app, on every platform", () => {
+    expect(e2eEnabled("1", false)).toBe(true);
+    expect(e2eEnabled("1", true)).toBe(false);
+    expect(e2eEnabled("0", false)).toBe(false);
+    expect(e2eEnabled(undefined, false)).toBe(false);
   });
 });

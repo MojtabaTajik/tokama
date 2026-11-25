@@ -14,6 +14,16 @@ function subscribe<T>(channel: string, listener: (message: T) => void): () => vo
   };
 }
 
+// A click on a notification can come while the window is still loading, before the renderer has a
+// listener. The latest item id waits here until one is set.
+let openListener: ((itemId: string) => void) | undefined;
+let waitingItemId: string | undefined;
+ipcRenderer.on(CHANNELS.openItem, (_event: IpcRendererEvent, itemId: unknown) => {
+  if (typeof itemId !== "string") return;
+  if (openListener === undefined) waitingItemId = itemId;
+  else openListener(itemId);
+});
+
 export const bridge: TokamaBridge = {
   getConnection: () => ipcRenderer.invoke(CHANNELS.getConnection) as Promise<ConnectionState>,
   retryConnection: () => ipcRenderer.invoke(CHANNELS.retryConnection) as Promise<void>,
@@ -32,6 +42,19 @@ export const bridge: TokamaBridge = {
   saveLayout: (patch) => ipcRenderer.invoke(CHANNELS.saveLayout, patch) as Promise<void>,
   // Only the two strings cross, whatever else the renderer passes.
   reportError: ({ message, stack }) => ipcRenderer.invoke(CHANNELS.reportError, { message: String(message), stack: String(stack) }) as Promise<void>,
+  saveNotifications: (patch) => ipcRenderer.invoke(CHANNELS.saveNotifications, patch) as Promise<void>,
+  setViewedItem: (itemId) => ipcRenderer.invoke(CHANNELS.viewedItem, itemId) as Promise<void>,
+  onOpenItem: (listener) => {
+    openListener = listener;
+    if (waitingItemId !== undefined) {
+      const itemId = waitingItemId;
+      waitingItemId = undefined;
+      listener(itemId);
+    }
+    return () => {
+      if (openListener === listener) openListener = undefined;
+    };
+  },
 };
 
 contextBridge.exposeInMainWorld("tokama", bridge);

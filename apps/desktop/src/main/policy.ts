@@ -103,6 +103,14 @@ export function backgroundModeEnabled(value: string | undefined, isPackaged: boo
   return !isPackaged && value === "1" && platform === "darwin";
 }
 
+/**
+ * Whether the app runs under the UI tests (`TOKAMA_E2E=1`): only outside a packaged app, on every
+ * platform. It records notifications for the test instead of showing them.
+ */
+export function e2eEnabled(value: string | undefined, isPackaged: boolean): boolean {
+  return !isPackaged && value === "1";
+}
+
 /** The one address the app opens in the system browser: the product site. Nothing else ever leaves the window. */
 const WEBSITE = "https://tokama.dev/";
 
