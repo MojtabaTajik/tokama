@@ -60,7 +60,8 @@ describe("Insights: accounts and limits", () => {
     render();
     expect($$(".ins-card").map((el) => el.getAttribute("aria-label"))).toEqual(["Claude Code", "Codex CLI", "Ollama"]);
     expect(text("#ins-accounts-title")).toBe("Accounts and limits");
-    expect(text(".ins-refreshes")).toBe("refreshes every 5 min · as of 15:00");
+    // The newest reading of the limits: Claude Code's, two minutes ago.
+    expect(text(".ins-refreshes")).toBe("refreshes every 5 min · as of 14:58");
     const claude = card("Claude Code");
     expect(claude?.querySelector(".ins-card-title")?.textContent).toBe("Claude CodeMAX");
     expect(claude?.querySelector(".ins-badge")?.hasAttribute("data-known")).toBe(true);
@@ -378,5 +379,15 @@ describe("Insights: tabs", () => {
     await click($$('[role="tab"]')[0] ?? null);
     expect($(".ins-cards")).not.toBeNull();
     expect($(".mc-body")).toBeNull();
+  });
+
+  it("keeps the chart's measure and workflow filter across a visit to the Machine tab", async () => {
+    render({ bridge: fakeBridge(CONNECTED, { reply: (query) => (query.type === "machine" ? { ok: true, data: machineReport } : undefined) }).bridge });
+    await click($$(".segment").find((button) => button.textContent === "≈ Cost") ?? null);
+    await click($$(".ins-legend-entry")[1]!);
+    await click($$('[role="tab"]')[1] ?? null);
+    await click($$('[role="tab"]')[0] ?? null);
+    expect(text("#ins-chart-title")).toBe("Estimated cost by day");
+    expect(text(".ins-filter")).toBe("workflowPlan and build✕");
   });
 });

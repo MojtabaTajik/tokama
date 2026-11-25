@@ -30,6 +30,9 @@ export interface AccountCardsProps {
 }
 
 export function AccountCards({ report, setup, issues, now, onRefresh }: AccountCardsProps) {
+  // When the limits were last read, not when the report was made: a refresh that reads nothing new keeps the time.
+  const readings = report.clis.flatMap((cli) => (cli.asOf === undefined ? [] : [cli.asOf]));
+  const asOf = readings.length === 0 ? report.asOf : Math.max(...readings);
   return (
     <section className="ins-section ins-accounts" aria-labelledby="ins-accounts-title">
       <div className="ins-accounts-head">
@@ -37,7 +40,7 @@ export function AccountCards({ report, setup, issues, now, onRefresh }: AccountC
           {TEXT.title}
         </h2>
         <span className="muted ins-refreshes">
-          {TEXT.refreshes} <span className="mono ins-asof">{formatClock(report.asOf, now)}</span>
+          {TEXT.refreshes} <span className="mono ins-asof">{formatClock(asOf, now)}</span>
         </span>
         <button type="button" className="ins-refresh" onClick={onRefresh}>
           <span aria-hidden="true">↻</span> {TEXT.refresh}

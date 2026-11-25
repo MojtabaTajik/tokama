@@ -5,7 +5,6 @@
 // table. Costs are always marked as estimates with the price table's date. Engine text (titles,
 // names, notes) renders as React text only.
 import type { ItemRecord, Setup, UsageRange, UsageReport, UsageScope } from "@tokama/core";
-import { useState } from "react";
 import type { CliIssue } from "../model.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { AccountCards } from "./AccountCards.js";
@@ -62,11 +61,14 @@ export interface UsageTabProps {
   readonly issues: readonly CliIssue[];
   readonly now: number;
   readonly onSelectItem: (itemId: string) => void;
+  /** The chart's measure and workflow filter, kept by the page so a visit to another tab keeps them. */
+  readonly metric: Metric;
+  readonly onMetric: (metric: Metric) => void;
+  readonly filter: string | undefined;
+  readonly onFilter: (templateId: string | undefined) => void;
 }
 
-export function UsageTab({ report, error, range, onRange, scope, onScope, onRefresh, setup, items, issues, now, onSelectItem }: UsageTabProps) {
-  const [metric, setMetric] = useState<Metric>("tokens");
-  const [filter, setFilter] = useState<string | undefined>(undefined);
+export function UsageTab({ report, error, range, onRange, scope, onScope, onRefresh, setup, items, issues, now, onSelectItem, metric, onMetric: setMetric, filter, onFilter: setFilter }: UsageTabProps) {
   // After a switch the last report stays until the new one comes: its scoped numbers are not shown under the new label.
   const current = (report.scope ?? "tokama") === scope;
   const scan = current && scope === "all" ? scanText(report.scan) : undefined;

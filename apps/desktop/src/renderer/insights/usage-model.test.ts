@@ -14,7 +14,6 @@ import {
   countdown,
   niceMax,
   railBadge,
-  resetText,
   resetWhen,
   scanText,
   share,
@@ -81,12 +80,6 @@ describe("times and numbers", () => {
   it("writes a time today as the clock, and another day with its weekday and date", () => {
     expect(formatClock(at(20, 17, 10), NOW)).toBe("17:10");
     expect(formatClock(at(23, 9), NOW)).toBe("Thu 23 Oct 09:00");
-  });
-
-  it("writes how long until a reset, and leaves it out when it is days away", () => {
-    expect(resetText(NOW + 158 * MINUTE, NOW)).toBe("resets 17:38 · in 2 h 38 min");
-    expect(resetText(at(23, 9), NOW)).toBe("resets Thu 23 Oct 09:00");
-    expect(resetText(undefined, NOW)).toBe("reset time unknown");
   });
 
   it("says how old the data is only once it is more than a few minutes old", () => {

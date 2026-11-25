@@ -6,6 +6,7 @@ import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import type { CliIssue } from "../model.js";
 import { ConnectionFailure } from "../shell/ConnectionStatus.js";
 import { MachineTab } from "./MachineTab.js";
+import type { Metric } from "./usage-model.js";
 import { UsageTab } from "./UsageTab.js";
 import type { UsageView } from "./useUsage.js";
 
@@ -38,6 +39,8 @@ export interface InsightsProps {
 
 export function Insights({ bridge, connection, onRetryConnection, usage, range, onRange, scope, onScope, setup, items, issues, now, onSelectItem, onNewWork }: InsightsProps) {
   const [tab, setTab] = useState<"usage" | "machine">("usage");
+  const [metric, setMetric] = useState<Metric>("tokens");
+  const [filter, setFilter] = useState<string | undefined>(undefined);
   const { report } = usage;
   return (
     <main className="main insights-page" tabIndex={-1}>
@@ -75,6 +78,10 @@ export function Insights({ bridge, connection, onRetryConnection, usage, range, 
               issues={issues}
               now={now}
               onSelectItem={onSelectItem}
+              metric={metric}
+              onMetric={setMetric}
+              filter={filter}
+              onFilter={setFilter}
             />
           )}
         </section>

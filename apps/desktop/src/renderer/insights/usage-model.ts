@@ -100,13 +100,6 @@ export function formatDuration(ms: number): string {
   return `${Math.floor(minutes / 60)} h ${pad(minutes % 60)} min`;
 }
 
-/** "resets 17:10 · in 2 h 38 min", or just the time when it is days away. */
-export function resetText(resetsAt: number | undefined, now: number): string {
-  if (resetsAt === undefined) return "reset time unknown";
-  const left = resetsAt - now;
-  return left < DAY ? `resets ${formatClock(resetsAt, now)} · in ${formatDuration(left)}` : `resets ${formatClock(resetsAt, now)}`;
-}
-
 /** "data 34 min old" once the data is older than a few minutes. */
 export const ageText = (asOf: number, now: number): string | undefined => (now - asOf > SHOW_AGE_AFTER_MS ? `data ${formatDuration(now - asOf)} old` : undefined);
 
