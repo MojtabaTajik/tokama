@@ -83,6 +83,7 @@ describe("the templates queries in real mode", () => {
     execFileSync("git", ["init", "-q", "-b", "main"], { cwd: repo });
     writeFileSync(join(repo, ".tokama", "templates", "docs-fix.yaml"), GOOD);
     writeFileSync(join(repo, ".tokama", "templates", "broken.yaml"), GOOD.replace("agent: builder", "agent: buildr"));
+    writeFileSync(join(repo, ".tokama", "templates", "asks.yaml"), GOOD.replace("needs: [text, repo]", "needs: [text, repo]\n  ask_before_cloud: true"));
     mkdirSync(home, { recursive: true });
     writeFileSync(join(home, "repos.yaml"), `format: 1\nrepos:\n  - id: billing-api\n    path: ${repo}\n    base_branch: main\n    checks: ["true"]\n`);
     const engine = await client({ dir, home });
@@ -98,6 +99,10 @@ describe("the templates queries in real mode", () => {
     if (!broken.ok) throw new Error(broken.error.message);
     expect(broken.data.problems).toEqual([{ line: 10, message: expect.stringContaining('"buildr"') }]);
     expect(broken.data.path).toBe(join(repo, ".tokama", "templates", "broken.yaml"));
+
+    // A template that loads but cannot start now says why.
+    const asks = await engine.query({ type: "template_detail", origin: "billing-api", file: ".tokama/templates/asks.yaml" });
+    expect(asks.ok && asks.data.warnings).toEqual([expect.stringContaining("asks before each cloud step")]);
 
     // An edit shows on the next query, without a restart.
     writeFileSync(join(repo, ".tokama", "templates", "broken.yaml"), GOOD);
