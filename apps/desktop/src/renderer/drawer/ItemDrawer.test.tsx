@@ -37,6 +37,7 @@ function fakeBridge(start: ItemRecord[]) {
     }),
     query,
     command,
+    saveLayout: vi.fn(async () => undefined),
     onEvent: vi.fn((listener: (event: BridgeEvent) => void) => {
       eventListeners.add(listener);
       return () => eventListeners.delete(listener);
