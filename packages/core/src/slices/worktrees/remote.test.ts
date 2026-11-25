@@ -10,6 +10,26 @@ describe("recordableRemote", () => {
     expect(recordableRemote("git@github.com:acme/orders-api.git")).toBe("git@github.com:acme/orders-api.git");
   });
 
+  it("refuses URLs that can read as another host: a fragment, a query, a backslash, a second @", () => {
+    for (const url of [
+      "https://evil.example#@github.com/acme/orders-api.git",
+      "https://127.0.0.1:9999?@github.com/acme/orders-api.git",
+      "https://evil.example\\@github.com/acme/orders-api.git",
+      "https://a@evil.example@github.com/acme/orders-api.git",
+      "git@evil@github.com:acme/orders-api.git",
+      "https://github.com/acme/orders-api.git#main",
+    ]) {
+      expect(recordableRemote(url), url).toBeUndefined();
+    }
+  });
+
+  it("reads host, port and path as a URL parser does, so equal targets compare equal", () => {
+    expect(recordableRemote("https://GitHub.com/acme/orders-api.git")).toBe("https://github.com/acme/orders-api.git");
+    expect(recordableRemote("https://github.com:443/acme/orders-api.git")).toBe("https://github.com/acme/orders-api.git");
+    expect(recordableRemote("https://github.com:8443/acme/orders-api.git")).toBe("https://github.com:8443/acme/orders-api.git");
+    expect(recordableRemote("git@GitHub.com:acme/orders-api.git")).toBe("git@github.com:acme/orders-api.git");
+  });
+
   it("refuses local paths, file URLs, transport helpers and odd text", () => {
     for (const url of ["/srv/git/orders-api.git", "./orders-api", "../x", "file:///srv/x.git", "ext::sh -c touch% /tmp/x", "fd::3", "-uhelp", "", "https://a b", "C:/repo"]) {
       expect(recordableRemote(url), url).toBeUndefined();

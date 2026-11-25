@@ -60,6 +60,10 @@ export const CommandSchema = z.discriminatedUnion("type", [
   // the base branch, push it and open a pull request, or remove its worktree and branch. Replies
   // once the start is recorded; the result comes as item_updated events.
   z.strictObject({ type: z.literal("finish_item"), itemId: ItemIdSchema, action: FinishActionSchema }),
+  // After a Finish action was refused because the repo's git config or hooks changed: the
+  // engineer made those changes, so they become the item's new baseline. Refused when they changed
+  // again since the refusal.
+  z.strictObject({ type: z.literal("accept_git_changes"), itemId: ItemIdSchema }),
   // Adds a folder to repos.yaml. Omitted fields take the suggest_repo values. The engine checks
   // every field and answers a bad one in plain words, so the id is free text here.
   z.strictObject({
@@ -186,6 +190,7 @@ export const CommandResultSchemas = {
   resolve_decision: z.null(),
   stop_item: z.null(),
   finish_item: z.null(),
+  accept_git_changes: z.null(),
   add_repo: z.strictObject({ repo: RepoSummarySchema }),
   init_repo: z.strictObject({ gitInit: z.boolean(), ignoreRules: z.number().int().min(0).nullable() }),
   first_commit: z.strictObject({ commit: z.string().max(64), files: z.number().int().min(0) }),

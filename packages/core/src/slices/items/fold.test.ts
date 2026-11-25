@@ -327,6 +327,19 @@ describe("finish events", () => {
     expect(fold([...done, start("merge"), { type: "merged", repoId: "orders-api" as never, baseBranch: "main", commit: COMMIT, worktreeRemoved: false }, start("discard"), { type: "discarded", repoId: "orders-api" as never }]).finish?.worktreeRemoved).toBe(true);
   });
 
+  it("git_changes_accepted: after a refusal for changed git config or hooks, sets the new baseline and clears the refusal", () => {
+    const D1 = "1".repeat(64);
+    const D2 = "2".repeat(64);
+    const withBaseline: ItemEventBody[] = [created(), worktree, { type: "baseline_recorded", repoId: "orders-api" as never, protectedDigest: D1 }, done[2]!];
+    const refused: ItemEventBody[] = [...withBaseline, start("merge"), { type: "finish_failed", action: "merge", reason: "steering_changed", detail: "changed", changes: [{ what: "setting core.autocrlf", after: "input" }], gitDigest: D2 }];
+    expect(fold(refused).finish?.failed).toMatchObject({ reason: "steering_changed", changes: [{ what: "setting core.autocrlf" }], gitDigest: D2 });
+    const accepted = fold([...refused, { type: "git_changes_accepted", repoId: "orders-api" as never, protectedDigest: D2 }]);
+    expect(accepted.worktrees[0]?.protectedDigest).toBe(D2);
+    expect(accepted.finish?.failed).toBeUndefined();
+    expect(foldError([...withBaseline, { type: "git_changes_accepted", repoId: "orders-api" as never, protectedDigest: D2 }])).toMatch(/no Finish action was refused/);
+    expect(foldError([...refused, start("merge"), { type: "git_changes_accepted", repoId: "orders-api" as never, protectedDigest: D2 }])).toMatch(/still running/);
+  });
+
   it("refuse what does not fit: an item not done, a second start, a result without its start, anything after the worktree is gone", () => {
     expect(foldError([created(), worktree, start("discard")])).toMatch(/only once the item is done/);
     expect(foldError([created(), worktree, { type: "item_ended", outcome: "stopped" }, start("discard")])).toMatch(/only once the item is done/);

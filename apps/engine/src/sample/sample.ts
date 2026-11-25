@@ -82,6 +82,9 @@ export class SampleEngine {
         return this.stopItem(command.itemId);
       case "finish_item":
         return this.finishItem(command.itemId, command.action);
+      case "accept_git_changes":
+        // The sample items touch no repo, so no Finish action is ever refused for its git config.
+        return err({ code: "invalid_state", message: "No Finish action was refused for changed git config or hooks." });
     }
   }
 

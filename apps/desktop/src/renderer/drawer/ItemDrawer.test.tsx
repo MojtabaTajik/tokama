@@ -864,3 +864,33 @@ describe("Finish: review fixes", () => {
     expect(document.activeElement).toBe(wrap().querySelector(".pl-row"));
   });
 });
+
+describe("Finish: git config or hooks changed", () => {
+  const refused = {
+    ...finishable,
+    finish: {
+      ...finishable.finish!,
+      failed: {
+        action: "merge",
+        reason: "steering_changed",
+        detail: "The repo's git config or hooks changed since the item started.",
+        changes: [
+          { what: "setting core.sshcommand", before: "ssh", after: "<b>touch pwned</b>; ssh" },
+          { what: "hook pre-push added", after: "#!/bin/sh exit 0" },
+        ],
+      },
+    },
+  } as unknown as ItemRecord;
+
+  it("lists each change with its values as text, and I made this change sends accept_git_changes", async () => {
+    const fake = fakeBridge([refused]);
+    await renderDrawer(fake.bridge, refused.id);
+    expect(text(".finish-notice-title")).toBe("! The repo's git config or hooks changed.");
+    expect($$(".finish-changes li").map((el) => el.textContent)).toEqual(["setting core.sshcommandwas sshnow <b>touch pwned</b>; ssh", "hook pre-push addednow #!/bin/sh exit 0"]);
+    expect($(".finish-changes b")).toBeNull();
+    const accept = $$(".finish-row .choice").find((el) => el.textContent === "I made this change") as HTMLButtonElement;
+    expect(accept.closest(".finish-row")?.getAttribute("data-action")).toBe("merge");
+    await act(async () => accept.click());
+    expect(fake.command).toHaveBeenCalledWith({ type: "accept_git_changes", itemId: refused.id });
+  });
+});

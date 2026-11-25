@@ -50,12 +50,12 @@ import {
 } from "../../kernel/schemas/index.js";
 import type { Agent, Repo } from "../config/index.js";
 import { callUsage, claudeCodeGuardDefaults, runGuardedCall, type LoopGuardSettings } from "../execution/index.js";
-import { protectedSet, type ProtectedSet } from "../integrity/index.js";
+import { protectedSet, sharedGitSettings, type ProtectedSet } from "../integrity/index.js";
 import { openAttempt, openDecisions, recoverItems, RUN_FAILURE_CHOICES, type ItemStore, type RecoveredItem } from "../items/index.js";
 import { buildPrompt, type StepResults } from "../prompting/index.js";
 import { checksPass, runCommand, type CheckResult } from "../verification/index.js";
 import { commitItem, createWorktree, findItemWorktree, originPushUrl, stageItem, treeDiff, worktreePath, worktreeSnapshot, type ItemWorktree } from "../worktrees/index.js";
-import { createFinisher } from "./finish.js";
+import { createFinisher, GIT_SETTINGS_FILE } from "./finish.js";
 import { attemptLimit, budgetAllowedMs, budgetUsedMs, CONTINUE_ID, countedAttempts, ONE_MORE_ID, sameFailureTwice } from "./counters.js";
 import {
   APPROVE_ID,
@@ -132,6 +132,8 @@ export interface RunLoop {
    * command. Replies once the start is recorded; the result comes as item events.
    */
   finishItem(itemId: ItemId, action: FinishAction): Promise<Result<null, CommandError>>;
+  /** After a Finish action was refused for changed git config or hooks: the engineer made them. */
+  acceptGitChanges(itemId: ItemId): Promise<Result<null, CommandError>>;
   /** Settles when the item's loop waits for the engineer or has ended, and its finish action has ended. */
   settled(itemId: ItemId): Promise<void>;
   /**
@@ -431,6 +433,9 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     const entries = await steeringNow(itemId, repo, worktree);
     if (!entries.ok) return entries;
     writeItemFile(itemId, BASELINE_FILE, `${JSON.stringify(entries.value)}\n`);
+    // The settings and hook texts behind the git entries, so a later change can be shown by name.
+    const settings = await sharedGitSettings(git, repo.path);
+    if (settings.ok) writeItemFile(itemId, GIT_SETTINGS_FILE, `${JSON.stringify(settings.value)}\n`);
     return ok(digestOf(entries.value));
   };
 
@@ -1133,6 +1138,12 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       await ready;
       if (closing) return closed();
       return finisher.start(itemId, action);
+    },
+
+    async acceptGitChanges(itemId) {
+      await ready;
+      if (closing) return closed();
+      return finisher.acceptGitChanges(itemId);
     },
 
     async stopItem(itemId) {

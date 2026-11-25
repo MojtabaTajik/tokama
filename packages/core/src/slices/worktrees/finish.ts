@@ -190,7 +190,9 @@ export async function pushItem(
   const urls = await git.remotePushUrls(repoPath, "origin");
   if (!urls.ok) return err(`Cannot read the origin remote: ${urls.error.message}`);
   const now = urls.value.map((url) => recordableRemote(url) ?? url);
-  if (now.length !== 1 || now[0] !== input.pushUrl) {
+  // Both sides read the same way: a pin recorded by an older Tokama compares as it does now.
+  const pinned = recordableRemote(input.pushUrl);
+  if (pinned === undefined || now.length !== 1 || now[0] !== pinned) {
     const where = now.length === 0 ? "nowhere" : now.join(" and ");
     return err(`origin now pushes to ${where}, not only to ${input.pushUrl} as when the item started. Tokama pushes only where the item started.`);
   }

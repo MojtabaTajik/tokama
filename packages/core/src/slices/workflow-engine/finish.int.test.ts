@@ -10,9 +10,9 @@ import { createGit, type Git } from "../../kernel/git/index.js";
 import { createProcessRunner } from "../../kernel/process/index.js";
 import { TemplateRecordSchema, type FinishAction, type HostId, type ItemId, type RepoId, type StoredItem } from "../../kernel/schemas/index.js";
 import type { Repo } from "../config/index.js";
-import { protectedSet } from "../integrity/index.js";
+import { protectedSet, sharedGitSettings } from "../integrity/index.js";
 import { ItemStore } from "../items/index.js";
-import { commitItem, createWorktree, originPushUrl, stageItem, worktreePath } from "../worktrees/index.js";
+import { commitItem, createWorktree, originPushUrl, pushItem, stageItem, worktreePath } from "../worktrees/index.js";
 import { createFinisher, type FinishDeps } from "./finish.js";
 import { digestOf, steeringEntries } from "./protect.js";
 
@@ -135,6 +135,8 @@ async function doneItem(files: Record<string, string> = { "greeting.txt": "hello
   if (!hashes.ok) throw new Error(hashes.error.message);
   const entries = steeringEntries(hashes.value, worktree.value.branch);
   writeFileSync(join(store.itemDir(id), "baseline.json"), `${JSON.stringify(entries)}\n`);
+  const settings = await sharedGitSettings(git, repo.path);
+  if (settings.ok) writeFileSync(join(store.itemDir(id), "baseline-git.json"), `${JSON.stringify(settings.value)}\n`);
   const ended = store.append(id, [
     { type: "worktree_added", repoId: repo.id, branch, dir: folder, baseCommit, ...(pushUrl.ok && pushUrl.value !== undefined && { pushUrl: pushUrl.value }) },
     { type: "baseline_recorded", repoId: repo.id, protectedDigest: digestOf(entries) },
@@ -261,13 +263,45 @@ describe("Merge", () => {
     const item = await doneItem();
     writeFileSync(join(repo.path, ".git", "hooks", "post-merge"), "#!/bin/sh\necho hi\n");
     const merge = await run(item, "merge");
-    expect(merge.finish?.failed?.detail).toMatch(/^The repo's git config or hooks changed since the item started, so Tokama does not merge or push it\. Check them: added git:hooks\/post-merge \(git\)/);
+    expect(merge.finish?.failed).toMatchObject({ action: "merge", reason: "steering_changed", changes: [{ what: "hook post-merge added", after: "#!/bin/sh echo hi" }] });
     rmSync(join(repo.path, ".git", "hooks", "post-merge"));
     await plain(repo.path, "config", "core.sshCommand", "touch /tmp/pwned; ssh");
     const push = await run(merge, "pull_request");
-    expect(push.finish?.failed?.detail).toMatch(/modified git:config \(git\)/);
+    // Each setting by name, with its value as text.
+    expect(push.finish?.failed).toMatchObject({ action: "pull_request", reason: "steering_changed", changes: [{ what: "setting core.sshcommand", after: "touch /tmp/pwned; ssh" }] });
+    expect(push.finish?.failed?.changes?.[0]?.before).toBeUndefined();
     expect(await plain(bare, "for-each-ref", "refs/heads/")).toBe("");
     expect((await run(push, "discard")).finish?.worktreeRemoved).toBe(true);
+  });
+
+  it("I made this change: the listed changes become the item's baseline, and Merge works again", SLOW, async () => {
+    const item = await doneItem();
+    await plain(repo.path, "config", "core.autocrlf", "input");
+    writeFileSync(join(repo.path, ".git", "hooks", "pre-commit"), "#!/bin/sh\nexit 0\n");
+    const refused = await run(item, "merge");
+    expect(refused.finish?.failed?.changes).toEqual([{ what: "setting core.autocrlf", after: "input" }, { what: "hook pre-commit added", after: "#!/bin/sh exit 0" }]);
+    // Something else changes after the list was shown: the engineer has not seen it.
+    await plain(repo.path, "config", "core.autocrlf", "true");
+    expect(await finisher().acceptGitChanges(item.id)).toMatchObject({ ok: false, error: { code: "stale_decision" } });
+    await plain(repo.path, "config", "core.autocrlf", "input");
+    expect(await finisher().acceptGitChanges(item.id)).toEqual({ ok: true, value: null });
+    const accepted = store.get(item.id)!;
+    expect(accepted.finish?.failed).toBeUndefined();
+    expect(lastEvents(accepted, 1)).toMatchObject([{ type: "git_changes_accepted", repoId: "orders-api" }]);
+    // Nothing beside the log is rewritten: the new baseline is a new file.
+    expect(existsSync(join(store.itemDir(item.id), `baseline-${accepted.worktrees[0]!.protectedDigest}.json`))).toBe(true);
+    const merged = await run(accepted, "merge");
+    expect(merged.finish?.merged?.commit).toBe(commitOf(item));
+    // A new change after that is listed against the new baseline.
+    const other = await doneItem({ "notes.txt": "two\n" });
+    expect(await finisher().acceptGitChanges(other.id)).toMatchObject({ ok: false, error: { code: "invalid_state" } });
+  });
+
+  it("an item without the settings kept at Start lists its changes by file", SLOW, async () => {
+    const item = await doneItem();
+    rmSync(join(store.itemDir(item.id), "baseline-git.json"));
+    await plain(repo.path, "config", "core.autocrlf", "input");
+    expect((await run(item, "merge")).finish?.failed?.changes).toEqual([{ what: "config modified" }]);
   });
 
   it("refuses when the item's baseline is missing or is not the one the log recorded", SLOW, async () => {
@@ -420,13 +454,39 @@ describe("Open PR", () => {
 
   });
 
+  it("refuses a push URL that hides another host behind # or ? (the reviewer's probe), and two url values", SLOW, async () => {
+    // A closed local port: a push that got past the pin would fail with a connection error instead.
+    for (const evil of ["https://127.0.0.1:1#@github.com/acme/orders-api.git", "https://127.0.0.1:1?@github.com/acme/orders-api.git"]) {
+      const item = await doneItem();
+      await plain(repo.path, "config", "remote.origin.pushurl", evil);
+      // Such a URL counts as a change to the git config, so Finish stops before the push.
+      expect((await run(item, "pull_request")).finish?.failed?.reason, evil).toBe("steering_changed");
+      // The pin refuses it on its own too.
+      const pushed = await pushItem(git, repo.path, { commit: commitOf(item), branch: item.worktrees[0]!.branch, pushUrl: ORIGIN });
+      expect(pushed, evil).toMatchObject({ ok: false, error: expect.stringMatching(/^origin now pushes to https:\/\/127\.0\.0\.1:1[#?]@github\.com\/acme\/orders-api\.git, not only to/) });
+      await plain(repo.path, "config", "--unset", "remote.origin.pushurl");
+    }
+    const item = await doneItem();
+    await plain(repo.path, "config", "--add", "remote.origin.url", "https://evil.example.com/x.git");
+    expect((await run(item, "pull_request")).finish?.failed?.detail).toMatch(/^origin now pushes to https:\/\/github\.com\/acme\/orders-api\.git and https:\/\/evil\.example\.com\/x\.git/);
+    expect(await plain(bare, "for-each-ref", "refs/heads/")).toBe("");
+    expect(ghCalls()).not.toContain("--method\nPOST");
+  });
+
+  it("refuses a pushInsteadOf that sends the pinned URL elsewhere: the git config changed", SLOW, async () => {
+    const item = await doneItem();
+    await plain(repo.path, "config", "url.https://evil.example.com/.pushInsteadOf", "https://github.com/");
+    expect((await run(item, "pull_request")).finish?.failed?.reason).toBe("steering_changed");
+    expect(await plain(bare, "for-each-ref", "refs/heads/")).toBe("");
+  });
+
   it("refuses a remote section named by the pinned URL, which would redirect a push to that URL", SLOW, async () => {
     const item = await doneItem();
     const evil = join(root, "evil.git");
     await plain(root, "init", "-q", "--bare", evil);
     await plain(repo.path, "config", `remote.${ORIGIN}.pushurl`, "https://evil.example.com/x.git");
     const done = await run(item, "pull_request");
-    expect(done.finish?.failed?.detail).toMatch(/^The repo's git config or hooks changed since the item started.*modified git:config \(git\)/);
+    expect(done.finish?.failed).toMatchObject({ reason: "steering_changed", changes: [{ what: `setting remote.${ORIGIN}.pushurl`, after: "https://evil.example.com/x.git" }] });
     expect(await plain(bare, "for-each-ref", "refs/heads/")).toBe("");
     // The push names the remote: such a section never applies to it.
     await plain(repo.path, "config", "--remove-section", `remote.${ORIGIN}`);

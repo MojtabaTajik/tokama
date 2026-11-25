@@ -20,18 +20,27 @@ const HOST = /^[A-Za-z0-9.-]+$/;
 export function recordableRemote(url: string): string | undefined {
   const trimmed = url.trim();
   if (trimmed === "" || /[\s\p{Cc}]/u.test(trimmed) || trimmed.startsWith("-") || trimmed.includes("::")) return undefined;
-  const scheme = /^([a-z][a-z0-9+.-]*):\/\/(?:([^/@]*)@)?(.*)$/i.exec(trimmed);
+  // A remote never needs these; they let one URL read as another host (`https://evil#@github.com/x`).
+  if (/[#?\\]/.test(trimmed)) return undefined;
+  const scheme = /^([a-z][a-z0-9+.-]*):\/\/([^/]*)(\/.*)?$/i.exec(trimmed);
   if (scheme !== null) {
     const kind = scheme[1]!.toLowerCase();
-    if (!["https", "http", "ssh", "git"].includes(kind)) return undefined;
-    const user = scheme[2]?.split(":")[0];
-    const keepUser = kind === "ssh" && user !== undefined && user !== "";
-    return `${kind}://${keepUser ? `${user}@` : ""}${scheme[3]}`;
+    if (!["https", "http", "ssh", "git"].includes(kind) || (scheme[2]!.match(/@/g)?.length ?? 0) > 1) return undefined;
+    // The host, port and path as a URL parser reads them, so the pin compares what git connects to.
+    let parsed: URL;
+    try {
+      parsed = new URL(trimmed);
+    } catch {
+      return undefined;
+    }
+    if (parsed.hostname === "") return undefined;
+    const keepUser = kind === "ssh" && parsed.username !== "";
+    return `${kind}://${keepUser ? `${parsed.username}@` : ""}${parsed.host}${parsed.pathname}`;
   }
   // scp-like: [user@]host:path, where host has no "/" (else git reads it as a local path) and is
-  // longer than one letter (a Windows drive, `C:/repo`).
-  const scp = /^(?:([^@/:]+)@)?([^/:]{2,}):(?!\/\/)(.+)$/.exec(trimmed);
-  return scp !== null ? trimmed : undefined;
+  // longer than one letter (a Windows drive, `C:/repo`); one "@" at most before the colon.
+  const scp = /^(?:([^@/:]+)@)?([^@/:]{2,}):(?!\/\/)(.+)$/.exec(trimmed);
+  return scp !== null ? `${scp[1] === undefined ? "" : `${scp[1]}@`}${scp[2]!.toLowerCase()}:${scp[3]}` : undefined;
 }
 
 /** The code host, owner and repo a recorded remote names; undefined when it does not name one. */

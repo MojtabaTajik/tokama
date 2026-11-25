@@ -822,6 +822,31 @@
   overflow-wrap: anywhere;
 }
 
+.finish-changes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+}
+
+.finish-changes li {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.finish-change-what {
+  color: var(--text);
+}
+
+.finish-change-value {
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
 .finish-confirm {
   display: flex;
   flex-direction: column;

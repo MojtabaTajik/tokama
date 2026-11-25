@@ -50,7 +50,17 @@ export const FinishActionSchema = z.enum(["merge", "pull_request", "discard"]);
  * Why a Merge was refused, when it is one of the cases the engineer fixes in the checkout: its
  * uncommitted changes, another branch, a conflict with the base, or files where the merge writes.
  */
-export const FinishRefusalSchema = z.enum(["dirty_checkout", "other_branch", "conflict", "files_in_the_way"]);
+export const FinishRefusalSchema = z.enum(["dirty_checkout", "other_branch", "conflict", "files_in_the_way", "steering_changed"]);
+
+/**
+ * One change to the repo's shared git config or hooks since the item's baseline: what (`setting
+ * core.sshCommand`, `hook pre-push`) and its value before and after, as text, cut to fit.
+ */
+export const GitChangeSchema = z.strictObject({
+  what: z.string().min(1).max(300),
+  before: z.string().max(300).optional(),
+  after: z.string().max(300).optional(),
+});
 
 /** A remote URL as Tokama records it: no spaces or control characters, no password in it. */
 export const PushUrlSchema = z
@@ -154,7 +164,15 @@ export const ItemRecordSchema = z.strictObject({
       /** The worktree and branch are gone: discarded, or removed after a merge. */
       worktreeRemoved: z.boolean(),
       /** The last action that did not succeed, and why, until the next one starts. */
-      failed: z.strictObject({ action: FinishActionSchema, detail: z.string().min(1).max(500), reason: FinishRefusalSchema.optional() }).optional(),
+      failed: z
+        .strictObject({
+          action: FinishActionSchema,
+          detail: z.string().min(1).max(500),
+          reason: FinishRefusalSchema.optional(),
+          /** With `steering_changed`: what changed, so the engineer can say they made it. */
+          changes: z.array(GitChangeSchema).max(30).optional(),
+        })
+        .optional(),
       /** When the last action ended (UTC epoch ms). */
       at: EpochMsSchema.optional(),
       /** A note on the last result, e.g. why the worktree was kept after a merge. */
@@ -168,6 +186,7 @@ export const ItemRecordSchema = z.strictObject({
 export type DecisionKind = z.output<typeof DecisionKindSchema>;
 export type FinishAction = z.output<typeof FinishActionSchema>;
 export type FinishRefusal = z.output<typeof FinishRefusalSchema>;
+export type GitChange = z.output<typeof GitChangeSchema>;
 export type ItemOutcome = z.output<typeof ItemOutcomeSchema>;
 export type AttemptResult = z.output<typeof AttemptResultSchema>;
 export type RunFailure = z.output<typeof RunFailureSchema>;

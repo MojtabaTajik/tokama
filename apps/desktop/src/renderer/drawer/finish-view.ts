@@ -2,7 +2,7 @@
 // to finish (Merge, Open PR, Discard), why one is refused or not available, and how the item
 // ended. Pure functions, tested without React. Every state has a symbol and a word, so colour is
 // never the only signal.
-import type { FinishAction, FinishRefusal, ItemRecord, Setup } from "@tokama/core";
+import type { FinishAction, FinishRefusal, GitChange, ItemRecord, Setup } from "@tokama/core";
 import type { Mark } from "./describe.js";
 
 /** Text with code parts (paths, branches, commands), shown in the mono font. */
@@ -10,8 +10,8 @@ export type Rich = readonly (string | { readonly code: string })[];
 
 export interface FinishButton {
   readonly label: string;
-  /** What the button sends; Discard first asks in place. */
-  readonly action: FinishAction;
+  /** What the button sends; Discard first asks in place; `accept_git_changes` takes the listed changes. */
+  readonly action: FinishAction | "accept_git_changes";
   readonly tone: "primary" | "plain" | "danger";
   readonly disabled?: boolean;
 }
@@ -22,7 +22,7 @@ export interface FinishRow {
   readonly text: Rich;
   readonly button: FinishButton;
   /** A refusal or failure of this action, said in place. */
-  readonly notice?: { readonly headline: string; readonly body: string };
+  readonly notice?: { readonly headline: string; readonly body: string; readonly changes?: readonly GitChange[] };
   /** Why the action is off now, and how to fix it; `recheck` when checking again can help. */
   readonly off?: { readonly status: Rich; readonly recheck: boolean };
 }
@@ -93,7 +93,10 @@ const REFUSAL_HEADLINE: Record<FinishRefusal, (base: string) => string> = {
   other_branch: () => "Your checkout is on another branch.",
   conflict: (base) => `${base} has moved and the merge has conflicts.`,
   files_in_the_way: () => "Your checkout has files where the merge writes.",
+  steering_changed: () => "The repo's git config or hooks changed.",
 };
+
+const ACCEPT: FinishButton = { label: "I made this change", action: "accept_git_changes", tone: "plain" };
 
 export function finishView(item: Pick<ItemRecord, "outcome" | "finish" | "repoIds" | "privacy">, setup: Setup | undefined): FinishView | undefined {
   const finish = item.finish;
@@ -136,17 +139,20 @@ export function finishView(item: Pick<ItemRecord, "outcome" | "finish" | "repoId
   const notice = (action: FinishAction) => {
     if (failure?.action !== action) return undefined;
     const headline = failure.reason !== undefined ? REFUSAL_HEADLINE[failure.reason](base) : `${ACTION_WORD[action]} did not finish.`;
-    return { notice: { headline, body: failure.detail } };
+    return { notice: { headline, body: failure.detail, ...(failure.changes !== undefined && { changes: failure.changes }) } };
   };
   const off = prOff(item, setup);
   const rows: FinishRow[] = [];
   if (committed) {
     const conflict = failure?.action === "merge" && failure.reason === "conflict";
+    const steering = failure?.reason === "steering_changed";
     rows.push({
       action: "merge",
       title: `Merge into ${base}`,
       text: ["Merges into your checkout", ...(repo?.path === undefined ? [] : [" at ", { code: repo.path }]), ", then removes the worktree and the branch."],
-      button: conflict
+      button: steering && failure.action === "merge"
+        ? { ...ACCEPT, disabled: busy }
+        : conflict
         ? { label: "Open PR instead", action: "pull_request", tone: "plain", disabled: busy || off !== undefined }
         : failure?.action === "merge"
           ? { label: "Try again", action: "merge", tone: "plain", disabled: busy }
@@ -157,7 +163,10 @@ export function finishView(item: Pick<ItemRecord, "outcome" | "finish" | "repoId
       action: "pull_request",
       title: "Open PR",
       text: off !== undefined ? [off.why] : ["Pushes ", { code: branch }, " to ", { code: finish.pushTarget ?? "origin" }, " and opens a pull request with gh. The worktree stays until the PR is merged."],
-      button: { label: failure?.action === "pull_request" && off === undefined ? "Try again" : "Open PR", action: "pull_request", tone: "plain", disabled: busy || off !== undefined },
+      button:
+        steering && failure.action === "pull_request"
+          ? { ...ACCEPT, disabled: busy }
+          : { label: failure?.action === "pull_request" && off === undefined ? "Try again" : "Open PR", action: "pull_request", tone: "plain", disabled: busy || off !== undefined },
       ...(off !== undefined && { off: { status: off.status, recheck: off.recheck } }),
       ...notice("pull_request"),
     });

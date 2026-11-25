@@ -3,6 +3,8 @@ export { baseCategory, patternCategory, type ProtectedCategory } from "./protect
 export {
   protectedSet,
   sharedGitHashes,
+  sharedGitSettings,
+  type GitSetting,
   tamperChanges,
   type IntegrityError,
   type ProtectedArea,

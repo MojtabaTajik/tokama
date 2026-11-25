@@ -7,17 +7,18 @@
 // recorded as running (the engine stopped during it) records it as interrupted; every action can
 // simply run again. Actions on one repo run one at a time, since a merge moves the engineer's
 // checkout. Details never hold this machine's paths or a remote's user info.
+import { writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { readTextFile } from "../../kernel/fs-safe/index.js";
 import type { Git } from "../../kernel/git/index.js";
 import type { ProcessRunner } from "../../kernel/process/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
-import { parseTemplateRecord, type CommandErrorCode, type FinishAction, type FinishRefusal, type ItemEventBody, type ItemId, type RepoId, type StoredItem } from "../../kernel/schemas/index.js";
+import { parseTemplateRecord, type CommandErrorCode, type FinishAction, type FinishRefusal, type GitChange, type ItemEventBody, type ItemId, type RepoId, type StoredItem } from "../../kernel/schemas/index.js";
 import type { Repo } from "../config/index.js";
-import { sharedGitHashes } from "../integrity/index.js";
+import { sharedGitHashes, sharedGitSettings, type GitSetting, type TamperChange } from "../integrity/index.js";
 import type { ItemStore } from "../items/index.js";
-import { describeChanges, digestOf, steeringChanges, steeringEntries, type SteeringEntry } from "./protect.js";
+import { digestOf, steeringChanges, steeringEntries, type SteeringEntry } from "./protect.js";
 import { discardWorktree, ghStatus, hostedRepo, mergeItem, openPullRequest, pushItem, withoutUserInfo, type ItemWorktree } from "../worktrees/index.js";
 
 export interface FinishDeps {
@@ -42,6 +43,8 @@ export interface FinishError {
 export interface Finisher {
   /** Records the start and runs the action in the background; its result comes as item events. */
   start(itemId: ItemId, action: FinishAction): Result<null, FinishError>;
+  /** Takes the git config and hooks a Finish action was refused for as the item's new baseline. */
+  acceptGitChanges(itemId: ItemId): Promise<Result<null, FinishError>>;
   /** For a restart: actions recorded as running, on items this host owns, end as interrupted. */
   recover(): void;
   /** Settles once the item's action has ended. */
@@ -51,8 +54,73 @@ export interface Finisher {
 }
 
 const DETAIL_MAX = 500;
-/** The steering baseline the run loop writes beside the item's log at Start. */
+/** The steering baseline the run loop writes beside the item's log at Start, and the git settings kept with it. */
 const BASELINE_FILE = "baseline.json";
+export const GIT_SETTINGS_FILE = "baseline-git.json";
+const VALUE_MAX = 160;
+const CHANGES_MAX = 30;
+
+type GitSettings = { readonly settings: readonly GitSetting[]; readonly hooks: Readonly<Record<string, string>> };
+interface SteeringRefusal {
+  readonly detail: string;
+  readonly reason?: FinishRefusal;
+  readonly changes?: GitChange[];
+  readonly gitDigest?: string;
+}
+
+async function readJson<T>(path: string): Promise<T | undefined> {
+  const read = await readTextFile(path, { maxBytes: 4 * 1024 * 1024 });
+  if (!read.ok) return undefined;
+  try {
+    return JSON.parse(read.value) as T;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A value on one line, cut to fit. */
+const oneLine = (text: string): string => {
+  const line = text.replace(/\s+/g, " ").trim();
+  return line.length > VALUE_MAX ? `${line.slice(0, VALUE_MAX - 1)}…` : line;
+};
+
+/**
+ * What changed, setting by setting and hook by hook when the settings from the baseline were kept;
+ * otherwise by file. Values are text, on one line, cut to fit.
+ */
+export function describeGitChanges(changed: readonly TamperChange[], before: GitSettings | undefined, after: GitSettings | undefined): GitChange[] {
+  const out: GitChange[] = [];
+  const settingsOf = (snapshot: GitSettings, file: string) => {
+    const map = new Map<string, string[]>();
+    for (const s of snapshot.settings) if (s.file === file) map.set(s.key, [...(map.get(s.key) ?? []), s.value ?? "true"]);
+    return map;
+  };
+  for (const change of changed) {
+    const file = change.path;
+    if (before !== undefined && after !== undefined && (file === "config" || file === "config.worktree")) {
+      const was = settingsOf(before, file);
+      const now = settingsOf(after, file);
+      const listed = out.length;
+      for (const key of [...new Set([...was.keys(), ...now.keys()])].sort()) {
+        const a = was.get(key)?.join(", ");
+        const b = now.get(key)?.join(", ");
+        if (a === b) continue;
+        out.push({ what: `setting ${key}${file === "config" ? "" : ` in ${file}`}`, ...(a !== undefined && { before: oneLine(a) }), ...(b !== undefined && { after: oneLine(b) }) });
+      }
+      // A change only in a file the config includes.
+      if (out.length === listed) out.push({ what: `${file} (a file it includes)` });
+      continue;
+    }
+    if (file.startsWith("hooks/")) {
+      const a = before?.hooks[file];
+      const b = after?.hooks[file];
+      out.push({ what: `hook ${file.slice("hooks/".length)} ${change.change}`, ...(a !== undefined && { before: oneLine(a) }), ...(b !== undefined && { after: oneLine(b) }) });
+      continue;
+    }
+    out.push({ what: `${file} ${change.change}` });
+  }
+  return out.length > CHANGES_MAX ? [...out.slice(0, CHANGES_MAX - 1), { what: `and ${out.length - CHANGES_MAX + 1} more changes` }] : out;
+}
 
 /**
  * The entries of the shared git dir: its config, info files and hooks. They steer a merge and a
@@ -112,27 +180,41 @@ export function createFinisher(deps: FinishDeps): Finisher {
     return undefined;
   };
 
+  /** The item's baseline: the steering entries the log's digest names, and the git settings kept with them. */
+  const loadBaseline = async (item: StoredItem): Promise<{ entries: SteeringEntry[]; settings: GitSettings | undefined } | undefined> => {
+    const digest = item.worktrees[0]?.protectedDigest;
+    if (digest === undefined) return undefined;
+    const dir = store.itemDir(item.id);
+    // At Start the run loop writes baseline.json; each accepted change adds files named by digest.
+    for (const [file, settingsFile] of [[BASELINE_FILE, GIT_SETTINGS_FILE], [`baseline-${digest}.json`, `baseline-git-${digest}.json`]] as const) {
+      const entries = await readJson<SteeringEntry[]>(join(dir, file));
+      if (!Array.isArray(entries) || digestOf(entries) !== digest) continue;
+      return { entries, settings: await readJson<GitSettings>(join(dir, settingsFile)) };
+    }
+    return undefined;
+  };
+
   /**
-   * Why git's own config or hooks can't be trusted now: they differ from the item's baseline, or
-   * the baseline can't be read. Undefined when they match.
+   * Why git's own config or hooks can't be trusted now: they differ from the item's baseline (with
+   * what changed), or the baseline can't be read. Undefined when they match.
    */
-  const steeringChanged = async (item: StoredItem, repo: Repo, worktree: ItemWorktree): Promise<string | undefined> => {
-    const saved = await readTextFile(join(store.itemDir(item.id), BASELINE_FILE), { maxBytes: 4 * 1024 * 1024 });
-    let baseline: SteeringEntry[];
-    try {
-      if (!saved.ok) throw new Error(saved.error.message);
-      baseline = JSON.parse(saved.value) as SteeringEntry[];
-      if (!Array.isArray(baseline)) throw new Error("not a list");
-      // The file beside the log counts only when it is the baseline the log recorded.
-      if (digestOf(baseline) !== item.worktrees[0]?.protectedDigest) throw new Error("not the recorded baseline");
-    } catch {
-      return "Tokama has no readable record of the repo's git config and hooks from when the item started, so it does not merge or push it.";
+  const steeringChanged = async (item: StoredItem, repo: Repo, worktree: ItemWorktree): Promise<SteeringRefusal | undefined> => {
+    const baseline = await loadBaseline(item);
+    if (baseline === undefined) {
+      return { detail: "Tokama has no readable record of the repo's git config and hooks from when the item started, so it does not merge or push it." };
     }
     const hashes = await sharedGitHashes(git, repo.path);
-    if (!hashes.ok) return `Cannot read the repo's git config and hooks: ${hashes.error.message}`;
-    const changes = steeringChanges(shared(baseline), shared(steeringEntries(hashes.value, worktree.branch)));
-    if (changes.length === 0) return undefined;
-    return `The repo's git config or hooks changed since the item started, so Tokama does not merge or push it. Check them:\n${describeChanges(changes)}`;
+    if (!hashes.ok) return { detail: `Cannot read the repo's git config and hooks: ${hashes.error.message}` };
+    const now = shared(steeringEntries(hashes.value, worktree.branch));
+    const changed = steeringChanges(shared(baseline.entries), now);
+    if (changed.length === 0) return undefined;
+    const settings = await sharedGitSettings(git, repo.path);
+    return {
+      detail: "The repo's git config or hooks changed since the item started. Tokama merges or pushes only with the ones it started with, or with changes you say you made.",
+      reason: "steering_changed",
+      changes: describeGitChanges(changed, baseline.settings, settings.ok ? settings.value : undefined),
+      gitDigest: digestOf(now),
+    };
   };
 
   /** The action itself; its result as the one event that ends it. */
@@ -140,10 +222,22 @@ export function createFinisher(deps: FinishDeps): Finisher {
     const recorded = item.worktrees[0]!;
     const worktree: ItemWorktree = { branch: recorded.branch, folder: recorded.dir, baseCommit: recorded.baseCommit ?? "" };
     const commit = item.outcome?.commits?.find((c) => c.repoId === repo.id)?.commit ?? item.outcome?.commits?.[0]?.commit;
-    const failed = (detail: string, reason?: FinishRefusal): ItemEventBody => ({ type: "finish_failed", action, detail: scrub(detail, repo), ...(reason !== undefined && { reason }) });
+    const failed = (detail: string, reason?: FinishRefusal, extra: { changes?: GitChange[]; gitDigest?: string } = {}): ItemEventBody => ({
+      type: "finish_failed",
+      action,
+      detail: scrub(detail, repo),
+      ...(reason !== undefined && { reason }),
+      ...(extra.changes !== undefined && { changes: extra.changes.map((c) => ({ what: c.what, ...(c.before !== undefined && { before: scrub(c.before, repo) }), ...(c.after !== undefined && { after: scrub(c.after, repo) }) })) }),
+      ...(extra.gitDigest !== undefined && { gitDigest: extra.gitDigest }),
+    });
     if (action !== "discard") {
       const changed = await steeringChanged(item, repo, worktree);
-      if (changed !== undefined) return failed(changed);
+      if (changed !== undefined) {
+        return failed(changed.detail, changed.reason, {
+          ...(changed.changes !== undefined && { changes: changed.changes }),
+          ...(changed.gitDigest !== undefined && { gitDigest: changed.gitDigest }),
+        });
+      }
     }
     switch (action) {
       case "merge": {
@@ -218,6 +312,33 @@ export function createFinisher(deps: FinishDeps): Finisher {
         if (repoChains.get(repo!.id) === chain) repoChains.delete(repo!.id);
       });
       return ok(null);
+    },
+
+    async acceptGitChanges(itemId) {
+      if (closing) return fail("invalid_state", "The engine is shutting down.");
+      const item = store.get(itemId);
+      if (item === undefined || item.deleted) return fail("not_found", `No item ${itemId}.`);
+      const failure = item.finish?.failed;
+      if (item.finish?.running !== undefined) return fail("invalid_state", `${LABEL[item.finish.running]} is still running.`);
+      if (failure?.reason !== "steering_changed" || failure.gitDigest === undefined) return fail("invalid_state", "No Finish action was refused for changed git config or hooks.");
+      const recorded = item.worktrees[0];
+      const repo = item.repoIds[0] === undefined ? undefined : deps.repo(item.repoIds[0]);
+      if (recorded === undefined || repo === undefined) return fail("not_found", `Repo ${item.repoIds[0] ?? "(none)"} is not set up on this machine.`);
+      const [baseline, hashes, settings] = await Promise.all([loadBaseline(item), sharedGitHashes(git, repo.path), sharedGitSettings(git, repo.path)]);
+      if (baseline === undefined) return fail("invalid_state", "Tokama has no readable record of the item's baseline.");
+      if (!hashes.ok || !settings.ok) return fail("invalid_state", `Cannot read the repo's git config and hooks: ${(hashes.ok ? (settings as { error: { message: string } }).error : hashes.error).message}`);
+      const now = shared(steeringEntries(hashes.value, recorded.branch));
+      // What the engineer saw is what they accept: a later change is listed first.
+      if (digestOf(now) !== failure.gitDigest) return fail("stale_decision", "The git config or hooks changed again since Tokama listed them. Try the action again to see what changed.");
+      const sharedKeys = new Set(shared(baseline.entries).map((e) => e.key));
+      const entries = [...baseline.entries.filter((e) => !sharedKeys.has(e.key)), ...now].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+      const digest = digestOf(entries);
+      const dir = store.itemDir(itemId);
+      // Written before the event that names them, under their digest: nothing is rewritten.
+      writeFileSync(join(dir, `baseline-${digest}.json`), `${JSON.stringify(entries)}\n`, { mode: 0o600 });
+      writeFileSync(join(dir, `baseline-git-${digest}.json`), `${JSON.stringify(settings.value)}\n`, { mode: 0o600 });
+      const appended = store.append(itemId, [{ type: "git_changes_accepted", repoId: recorded.repoId, protectedDigest: digest }]);
+      return appended.ok ? ok(null) : fail("invalid_state", appended.error.message);
     },
 
     recover() {

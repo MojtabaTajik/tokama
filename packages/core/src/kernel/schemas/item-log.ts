@@ -18,6 +18,7 @@ import {
   DecisionKindSchema,
   FinishActionSchema,
   FinishRefusalSchema,
+  GitChangeSchema,
   ItemOutcomeSchema,
   ItemStateSchema,
   PullRequestUrlSchema,
@@ -206,7 +207,15 @@ const FinishFailedSchema = z.strictObject({
   action: FinishActionSchema,
   detail: z.string().min(1).max(500),
   reason: FinishRefusalSchema.optional(),
+  /** With `steering_changed`: what changed, and the digest of the shared git entries seen then. */
+  changes: z.array(GitChangeSchema).max(30).optional(),
+  gitDigest: SHA256.optional(),
 });
+/**
+ * The engineer said they made the git config or hooks changes a Finish action was refused for:
+ * the item's baseline becomes this one (kept beside the log under its digest).
+ */
+const GitChangesAcceptedSchema = z.strictObject({ type: z.literal("git_changes_accepted"), repoId: RepoIdSchema, protectedDigest: SHA256 });
 /** Deletes the item. The log keeps its history; nothing may follow a tombstone. */
 const TombstoneSchema = z.strictObject({ type: z.literal("tombstone"), reason: z.string().min(1).max(200).optional() });
 
@@ -230,6 +239,7 @@ export const ItemEventBodySchema = z.discriminatedUnion("type", [
   PrOpenedSchema,
   DiscardedSchema,
   FinishFailedSchema,
+  GitChangesAcceptedSchema,
   TombstoneSchema,
 ]);
 
@@ -262,6 +272,7 @@ export const ItemEventSchema = z.discriminatedUnion("type", [
   PrOpenedSchema.extend(envelope),
   DiscardedSchema.extend(envelope),
   FinishFailedSchema.extend(envelope),
+  GitChangesAcceptedSchema.extend(envelope),
   TombstoneSchema.extend(envelope),
 ]);
 
@@ -323,7 +334,16 @@ export const StoredFinishSchema = z.strictObject({
   /** The worktree and branch are gone: discarded, or removed after a merge. */
   worktreeRemoved: z.boolean(),
   /** The last action that did not succeed, until the next one starts. */
-  failed: z.strictObject({ action: FinishActionSchema, detail: z.string(), reason: FinishRefusalSchema.optional(), at: EpochMsSchema }).optional(),
+  failed: z
+    .strictObject({
+      action: FinishActionSchema,
+      detail: z.string(),
+      reason: FinishRefusalSchema.optional(),
+      changes: z.array(GitChangeSchema).optional(),
+      gitDigest: SHA256.optional(),
+      at: EpochMsSchema,
+    })
+    .optional(),
   /** When the last action ended. */
   at: EpochMsSchema.optional(),
   /** A note on the last result, e.g. why a merged item's worktree was kept. */

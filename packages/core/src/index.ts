@@ -179,6 +179,7 @@ export {
   type EngineMessage,
   type FinishAction,
   type FinishRefusal,
+  type GitChange,
   type EventMessage,
   type HandshakeReply,
   type HelloMessage,

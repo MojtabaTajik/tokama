@@ -245,6 +245,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
           askDiscard={request?.discard === true ? request.seq : undefined}
           {...(onCheckAgain !== undefined && { onCheckAgain })}
           onFinish={(action) => void send({ type: "finish_item", itemId: item.id, action })}
+          onAcceptChanges={() => void send({ type: "accept_git_changes", itemId: item.id })}
         />
       )}
 

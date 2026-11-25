@@ -54,7 +54,7 @@ export interface RealEngineOptions {
 }
 
 /** The commands about items; repo commands are the engine's own. */
-type ItemCommand = Extract<Command, { type: "start_item" | "resolve_decision" | "stop_item" | "finish_item" }>;
+type ItemCommand = Extract<Command, { type: "start_item" | "resolve_decision" | "stop_item" | "finish_item" | "accept_git_changes" }>;
 
 const fail = (code: CommandError["code"], message: string): Result<never, CommandError> => err({ code, message });
 
@@ -145,6 +145,8 @@ export class RealEngine {
         return this.loop.stopItem(command.itemId);
       case "finish_item":
         return this.loop.finishItem(command.itemId, command.action);
+      case "accept_git_changes":
+        return this.loop.acceptGitChanges(command.itemId);
     }
   }
 

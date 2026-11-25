@@ -176,6 +176,9 @@ describe("a tamper event for each protected category", () => {
       ["remote.origin.pushurl", "file:///srv/evil.git"],
       ["remote.origin.pushurl", "custom://example.invalid/x"],
       ["remote.origin.pushurl", "ext::sh -c touch% pwned"],
+      // A network-looking URL that reads as another host.
+      ["remote.origin.pushurl", "https://evil.example.invalid#@example.invalid/orders-api.git"],
+      ["remote.origin.url", "https://evil.example.invalid?@example.invalid/orders-api.git"],
       // A branch remote that is a path or URL, not a remote name.
       ["branch.main.remote", "/srv/evil.git"],
       ["branch.main.remote", "../evil.git"],

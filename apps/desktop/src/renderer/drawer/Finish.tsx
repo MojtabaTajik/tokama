@@ -18,6 +18,10 @@ const TEXT = {
     committed ? " with its 1 commit. The item and its log stay. This can't be undone." : ". The item and its log stay. This can't be undone.",
   ],
   discardConfirm: "Discard",
+  changes: "What changed",
+  before: "was",
+  after: "now",
+  notYou: "If you did not make these changes, check them first: Tokama would merge or push with them in place. Discard stays available.",
   discardCancel: "Keep",
 } as const;
 
@@ -28,6 +32,8 @@ export interface FinishProps {
   readonly onFinish: (action: FinishAction) => void;
   /** Reads the setup again, e.g. after gh was installed or logged in. */
   readonly onCheckAgain?: () => void;
+  /** The engineer made the listed git config or hooks changes. */
+  readonly onAcceptChanges?: () => void;
   /** Opens the Discard question (Discard… from the list); each new value asks again. */
   readonly askDiscard?: number | undefined;
 }
@@ -48,7 +54,7 @@ function Text({ parts }: { readonly parts: Rich }) {
   );
 }
 
-export function Finish({ item, setup, busy, onFinish, onCheckAgain, askDiscard }: FinishProps) {
+export function Finish({ item, setup, busy, onFinish, onCheckAgain, onAcceptChanges, askDiscard }: FinishProps) {
   const [confirming, setConfirming] = useState(askDiscard !== undefined);
   const keep = useRef<HTMLButtonElement>(null);
   const view = finishView(item, setup);
@@ -154,7 +160,7 @@ export function Finish({ item, setup, busy, onFinish, onCheckAgain, askDiscard }
         </p>
       )}
       {view.rows.map((row) => (
-        <Row key={row.action} row={row} busy={busy} onFinish={onFinish} onDiscard={() => setConfirming(true)} onCheckAgain={onCheckAgain}>
+        <Row key={row.action} row={row} busy={busy} onFinish={onFinish} onDiscard={() => setConfirming(true)} onCheckAgain={onCheckAgain} onAcceptChanges={onAcceptChanges}>
           {row.action === "discard" && confirm}
         </Row>
       ))}
@@ -168,10 +174,11 @@ interface RowProps {
   readonly onFinish: (action: FinishAction) => void;
   readonly onDiscard: () => void;
   readonly onCheckAgain: (() => void) | undefined;
+  readonly onAcceptChanges: (() => void) | undefined;
   readonly children?: ReactNode;
 }
 
-function Row({ row, busy, onFinish, onDiscard, onCheckAgain, children }: RowProps) {
+function Row({ row, busy, onFinish, onDiscard, onCheckAgain, onAcceptChanges, children }: RowProps) {
   const { button } = row;
   const tone = button.tone === "primary" ? "choice primary" : button.tone === "danger" ? "choice danger" : "choice";
   return (
@@ -201,6 +208,26 @@ function Row({ row, busy, onFinish, onDiscard, onCheckAgain, children }: RowProp
                 {row.notice.headline}
               </p>
               <p className="finish-notice-body">{row.notice.body}</p>
+              {row.notice.changes !== undefined && row.notice.changes.length > 0 && (
+                <ul className="finish-changes" aria-label={TEXT.changes}>
+                  {row.notice.changes.map((change, index) => (
+                    <li key={index}>
+                      <span className="finish-change-what mono">{change.what}</span>
+                      {change.before !== undefined && (
+                        <span className="finish-change-value">
+                          {TEXT.before} <code className="mono">{change.before}</code>
+                        </span>
+                      )}
+                      {change.after !== undefined && (
+                        <span className="finish-change-value">
+                          {TEXT.after} <code className="mono">{change.after}</code>
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {row.button.action === "accept_git_changes" && <p className="finish-notice-body">{TEXT.notYou}</p>}
             </div>
           )}
         </div>
@@ -208,7 +235,11 @@ function Row({ row, busy, onFinish, onDiscard, onCheckAgain, children }: RowProp
           type="button"
           className={tone}
           disabled={busy || button.disabled === true}
-          onClick={() => (button.action === "discard" ? onDiscard() : onFinish(button.action))}
+          onClick={() => {
+            if (button.action === "accept_git_changes") onAcceptChanges?.();
+            else if (button.action === "discard") onDiscard();
+            else onFinish(button.action);
+          }}
         >
           {button.label}
         </button>

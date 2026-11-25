@@ -248,8 +248,25 @@ export function applyEvent(item: StoredItem | undefined, event: ItemEvent): Resu
       } else if (event.type === "discarded") {
         finish.worktreeRemoved = true;
       } else {
-        finish.failed = { action, detail: event.detail, ...(event.reason !== undefined && { reason: event.reason }), at: event.at };
+        finish.failed = {
+          action,
+          detail: event.detail,
+          ...(event.reason !== undefined && { reason: event.reason }),
+          ...(event.changes !== undefined && { changes: event.changes }),
+          ...(event.gitDigest !== undefined && { gitDigest: event.gitDigest }),
+          at: event.at,
+        };
       }
+      break;
+    }
+
+    case "git_changes_accepted": {
+      const worktree = next.worktrees.find((w) => w.repoId === event.repoId);
+      if (worktree === undefined) return fail(`the item has no worktree for ${event.repoId}`);
+      if (next.finish?.running !== undefined) return fail(`${next.finish.running} is still running`);
+      if (next.finish?.failed?.reason !== "steering_changed") return fail("no Finish action was refused for changed git config or hooks");
+      worktree.protectedDigest = event.protectedDigest;
+      delete next.finish.failed;
       break;
     }
 
@@ -264,7 +281,7 @@ export function applyEvent(item: StoredItem | undefined, event: ItemEvent): Resu
   return ok(next);
 }
 
-const FINISH_EVENTS: ReadonlySet<string> = new Set(["finish_started", "merged", "pr_opened", "discarded", "finish_failed"]);
+const FINISH_EVENTS: ReadonlySet<string> = new Set(["finish_started", "merged", "pr_opened", "discarded", "finish_failed", "git_changes_accepted"]);
 const RESULT_OF = { merged: "merge", pr_opened: "pull_request", discarded: "discard" } as const;
 
 /** The attempt of the current step that has started and not ended, if any. */
