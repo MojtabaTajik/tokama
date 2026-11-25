@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -59,11 +60,9 @@ describe("openableAttemptPath", () => {
     expect(openableAttemptPath(join(itemDir, "attempts", "linked", "secret.log"), itemDir)).toMatchObject({ ok: false, message: expect.stringContaining("not in the item's folder") });
   });
 
-  it("refuses a non-regular file such as a FIFO", async () => {
-    const { createProcessRunner } = await import("@tokama/core");
+  it("refuses a non-regular file such as a FIFO", () => {
     const fifo = join(itemDir, "pipe.log");
-    const made = await createProcessRunner().run({ command: { argv: ["mkfifo", fifo] }, cwd: itemDir, timeoutMs: 5_000 });
-    expect(made.exitCode).toBe(0);
+    expect(spawnSync("mkfifo", [fifo]).status).toBe(0);
     expect(openableAttemptPath(fifo, itemDir)).toMatchObject({ ok: false, message: expect.stringContaining("not a file") });
   });
 });
