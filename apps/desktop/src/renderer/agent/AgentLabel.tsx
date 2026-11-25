@@ -10,6 +10,7 @@ import { useTip } from "../shell/useTip.js";
 import { type AgentAccess, type AgentInfo, extraPower } from "./agent-info.js";
 import { Button } from "../ui/Button.js";
 import { AgentDotMark } from "../ui/agent.js";
+import { Pill } from "../ui/Pill.js";
 
 const TEXT = {
   builtin: "built-in",
@@ -111,11 +112,11 @@ function Tip({ id, anchor, info, onOpen }: { readonly id: string; readonly ancho
 
 function Owner({ access }: { readonly access: AgentAccess }) {
   return (
-    <span className="al-owner">
+    <Pill round className="al-owner">
       {access.owner === "builtin" ? <ShieldGlyph /> : access.owner === "personal" ? <PersonGlyph /> : <RepoGlyph />}
       {TEXT[access.owner]}
       {access.repoId !== undefined && <span className="mono"> {access.repoId}</span>}
-    </span>
+    </Pill>
   );
 }
 

@@ -9,6 +9,7 @@ import { formatDuration } from "../format/duration.js";
 import { stamp } from "../format/time.js";
 import { ageText, ALERT_TEXT, cardLabel, CLI_MONOGRAMS, liveWindows, resetWhen, shareText, SOURCE_TEXT } from "./usage-model.js";
 import { Button } from "../ui/Button.js";
+import { Pill } from "../ui/Pill.js";
 
 const TEXT = {
   title: "Accounts and limits",
@@ -85,9 +86,9 @@ function AccountCard({ name, plan, setup, issue, now }: AccountCardProps) {
         <span className="ins-card-name">
           <span className="ins-card-title">
             <strong>{name}</strong>
-            <span className="mono ins-badge" data-known={plan.plan !== undefined || undefined}>
+            <Pill className="mono ins-badge" tone={plan.plan !== undefined ? "accent" : undefined}>
               {badge}
-            </span>
+            </Pill>
           </span>
           <span className="muted ins-card-sub">
             {sub.map((part, index) => (

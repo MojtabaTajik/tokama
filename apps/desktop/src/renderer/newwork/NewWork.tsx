@@ -10,6 +10,7 @@ import { Picker } from "./Picker.js";
 import { useSuggestion } from "./useSuggestion.js";
 import { Button } from "../ui/Button.js";
 import { StatusMark } from "../ui/status.js";
+import { Pill } from "../ui/Pill.js";
 
 const TEXT = {
   form: "New work",
@@ -196,9 +197,7 @@ export function NewWork({ bridge, setup, ref, repoId, onStarted }: NewWorkProps)
                 <span className="np-uses">
                   <span className="np-muted">{TEXT.uses}</span>
                   {uses.map((use) => (
-                    <span key={use} className="np-badge">
-                      {use}
-                    </span>
+                    <Pill key={use}>{use}</Pill>
                   ))}
                 </span>
               )}
@@ -213,9 +212,9 @@ export function NewWork({ bridge, setup, ref, repoId, onStarted }: NewWorkProps)
               <p className="np-commands">
                 <span className="np-muted">{TEXT.runs}</span>
                 {commands.map((command) => (
-                  <code key={command} className="np-badge mono">
+                  <Pill key={command} as="code" className="mono">
                     {command}
-                  </code>
+                  </Pill>
                 ))}
               </p>
             )}

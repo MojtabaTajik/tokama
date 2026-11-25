@@ -87,39 +87,6 @@
   color: var(--fail);
 }
 
-.badge {
-  position: absolute;
-  top: 5px;
-  right: 4px;
-  min-width: 15px;
-  height: 15px;
-  padding: 0 var(--space-4);
-  box-sizing: border-box;
-  border-radius: var(--radius-md);
-  color: var(--ground);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 15px;
-  text-align: center;
-}
-
-.badge[data-tone="warn"] {
-  background: var(--warn);
-}
-
-.badge[data-tone="fail"] {
-  background: var(--fail);
-}
-
-.badge[data-tone="neutral"] {
-  border: 1px solid var(--hairline);
-  background: var(--panel);
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-weight: 400;
-  line-height: 13px;
-}
-
 .rail-spacer {
   flex: 1 1 auto;
   min-height: 8px;
@@ -449,30 +416,9 @@
   color: var(--muted);
 }
 
-.sb-badges {
-  display: inline-flex;
-  flex: none;
-  gap: 7px; /* px: off-scale */
-  margin-left: auto;
-  font-size: var(--text-xs);
-  white-space: nowrap;
-}
-
-.panel-heading .sb-badges {
+.panel-heading .status-counts {
   text-transform: none;
   letter-spacing: 0;
-}
-
-.sb-badge[data-kind="needs"] {
-  color: var(--warn);
-}
-
-.sb-badge[data-kind="failed"] {
-  color: var(--fail);
-}
-
-.sb-badge[data-kind="running"] {
-  color: var(--muted);
 }
 
 .sb-plus {

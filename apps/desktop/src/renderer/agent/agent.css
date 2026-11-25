@@ -118,16 +118,10 @@
 }
 
 .al-owner {
-  display: inline-flex;
-  align-items: center;
   gap: 5px; /* px: off-scale */
   min-height: 20px;
   margin-left: auto;
-  padding: 0 7px; /* px: off-scale */
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-lg);
   font-size: var(--text-sm);
-  color: var(--muted);
   white-space: nowrap;
 }
 

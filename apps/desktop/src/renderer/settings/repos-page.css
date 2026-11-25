@@ -88,27 +88,6 @@
   font-size: var(--text-base);
 }
 
-.rp-badges {
-  display: inline-flex;
-  flex: none;
-  gap: var(--space-8);
-  margin-left: auto;
-  font-size: var(--text-xs);
-  white-space: nowrap;
-}
-
-.rp-badge[data-kind="needs"] {
-  color: var(--warn);
-}
-
-.rp-badge[data-kind="failed"] {
-  color: var(--fail);
-}
-
-.rp-badge[data-kind="running"] {
-  color: var(--muted);
-}
-
 .rp-row-path {
   display: block;
   font-size: var(--text-sm);

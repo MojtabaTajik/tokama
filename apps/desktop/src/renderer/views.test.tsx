@@ -346,7 +346,7 @@ describe("sidebar", () => {
 
   it("shows needs you, failed and running badges as a symbol and a count, only above zero", async () => {
     await mount();
-    const shown = (name: string) => [...sidebarRow(name).querySelectorAll(".sb-badge [aria-hidden]")].map((el) => el.textContent);
+    const shown = (name: string) => [...sidebarRow(name).querySelectorAll(".status-count [aria-hidden]")].map((el) => el.textContent);
     expect(shown("All work")).toEqual(["⏸ 1", "✕ 1", "● 3"]);
     expect(shown("Emergency investigator")).toEqual(["⏸ 1", "● 1"]);
     expect(shown("Quick fix")).toEqual(["✕ 1", "● 2"]);
@@ -356,22 +356,22 @@ describe("sidebar", () => {
 
   it("leaves out zero counts and rows without any badge", async () => {
     await mount();
-    expect(sidebarRow("Review only").querySelector(".sb-badges")).toBeNull();
+    expect(sidebarRow("Review only").querySelector(".status-counts")).toBeNull();
     // Only queued: counts nowhere.
-    expect(sidebarRow("Plan and build").querySelector(".sb-badges")).toBeNull();
-    expect(sidebarRow("DB slow query check").querySelector(".sb-badges")).toBeNull();
-    expect(sidebarRow("Emergency investigator").querySelector('.sb-badge[data-kind="failed"]')).toBeNull();
-    expect($$(".sb-badge").every((badge) => !/\b0\b/.test(badge.querySelector("[aria-hidden]")?.textContent ?? ""))).toBe(true);
+    expect(sidebarRow("Plan and build").querySelector(".status-counts")).toBeNull();
+    expect(sidebarRow("DB slow query check").querySelector(".status-counts")).toBeNull();
+    expect(sidebarRow("Emergency investigator").querySelector('.status-count[data-kind="failed"]')).toBeNull();
+    expect($$(".status-count").every((badge) => !/\b0\b/.test(badge.querySelector("[aria-hidden]")?.textContent ?? ""))).toBe(true);
   });
 
   it("gives every badge a word for assistive technology, so colour is not the only signal", async () => {
     await mount();
-    expect([...sidebarRow("All work").querySelectorAll(".sb-badge .visually-hidden")].map((el) => el.textContent)).toEqual(["1 needs you", "1 failed", "3 running"]);
+    expect([...sidebarRow("All work").querySelectorAll(".status-count .visually-hidden")].map((el) => el.textContent)).toEqual(["1 needs you", "1 failed", "3 running"]);
   });
 
   it("does not count a failure from before today in the failed badge", async () => {
     await mount();
-    expect(sidebarRow("All work").querySelector('.sb-badge[data-kind="failed"] [aria-hidden]')?.textContent).toBe("✕ 1");
+    expect(sidebarRow("All work").querySelector('.status-count[data-kind="failed"] [aria-hidden]')?.textContent).toBe("✕ 1");
   });
 
   it("shows an enabled + on every workflow and repo row, and highlights the selected row", async () => {
@@ -388,11 +388,11 @@ describe("sidebar", () => {
     await mount();
     const toggle = (label: string) => $(`button[aria-label="${label}"]`)!;
     expect(toggle("Collapse Workflows").getAttribute("aria-expanded")).toBe("true");
-    expect($(".panel-heading .sb-badges")).toBeNull();
+    expect($(".panel-heading .status-counts")).toBeNull();
     await click(toggle("Collapse Workflows"));
     expect($$(".sb-main").map((el) => el.querySelector(".ellipsis")?.textContent)).toEqual(["All work", "orders-api", "checkout-web", "inventory-service"]);
     expect(toggle("Expand Workflows").getAttribute("aria-expanded")).toBe("false");
-    expect([...$$(".panel-heading")[0]!.querySelectorAll(".sb-badge [aria-hidden]")].map((el) => el.textContent)).toEqual(["⏸ 1", "✕ 1", "● 3"]);
+    expect([...$$(".panel-heading")[0]!.querySelectorAll(".status-count [aria-hidden]")].map((el) => el.textContent)).toEqual(["⏸ 1", "✕ 1", "● 3"]);
     await click(toggle("Collapse Repos"));
     expect($$(".sb-main")).toHaveLength(1);
     await click(toggle("Expand Workflows"));
@@ -499,7 +499,7 @@ describe("live updates", () => {
     await fake.pushItem({ ...ITEMS.working, state: "needs_you" } as ItemRecord);
     expect(titlesIn("Needs you")).toEqual(["Checkout p95 latency spike", "Orders API returns 500 after deploy"]);
     expect(counts()).toEqual(["Active5", "Needs you2", "Done2", "Failed1", "All"]);
-    expect([...sidebarRow("All work").querySelectorAll(".sb-badge [aria-hidden]")].map((el) => el.textContent)).toEqual(["⏸ 2", "✕ 1", "● 2"]);
+    expect([...sidebarRow("All work").querySelectorAll(".status-count [aria-hidden]")].map((el) => el.textContent)).toEqual(["⏸ 2", "✕ 1", "● 2"]);
     expect(text('.badge[data-tone="warn"]')).toBe("2");
   });
 

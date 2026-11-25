@@ -270,7 +270,7 @@ describe("New work input", () => {
     await click(trigger("Template"));
     await click($$('[role="option"]').find((el) => el.textContent?.includes("Emergency investigator"))!);
     expect($(".np-uses")?.textContent).toBe("usesApp Insights · prod (query)");
-    expect($(".np-badge")?.tagName).toBe("SPAN");
+    expect($(".np-uses .pill")?.tagName).toBe("SPAN");
     expect($(".np-steps")?.textContent).toBe("Steps: Triage · Local builder → Query logs · Local builder → Propose a fix · Architect (cloud)");
     await click(trigger("Template"));
     await click($$('[role="option"]').find((el) => el.textContent?.includes("Quick fix"))!);

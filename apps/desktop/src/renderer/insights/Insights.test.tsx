@@ -64,7 +64,7 @@ describe("Insights: accounts and limits", () => {
     expect(text(".ins-refreshes")).toBe("refreshes every 5 min · as of 14:58");
     const claude = card("Claude Code");
     expect(claude?.querySelector(".ins-card-title")?.textContent).toBe("Claude CodeMAX");
-    expect(claude?.querySelector(".ins-badge")?.hasAttribute("data-known")).toBe(true);
+    expect(claude?.querySelector(".ins-badge")?.getAttribute("data-tone")).toBe("accent");
     expect(claude?.querySelector(".ins-card-sub")?.textContent).toBe("2.1.331");
     expect(meters(claude)).toEqual([
       ["Session · 5 hours", "36"],
@@ -81,7 +81,7 @@ describe("Insights: accounts and limits", () => {
     const codex = card("Codex CLI");
     expect(codex?.querySelector(".ins-source")?.textContent).toBe("Source: asked of the CLI itself.");
     expect(codex?.querySelector(".ins-badge")?.textContent).toBe("PLAN ?");
-    expect(codex?.querySelector(".ins-badge")?.hasAttribute("data-known")).toBe(false);
+    expect(codex?.querySelector(".ins-badge")?.hasAttribute("data-tone")).toBe(false);
     expect(codex?.querySelector(".ins-card-sub")?.textContent).toBe("0.169.0 · plan not reported");
     expect(codex?.querySelector('.ins-tone[data-tone="fail"]')?.textContent).toBe("! near limit");
     expect(codex?.querySelector('.meter-fill[data-tone="fail"]')).not.toBeNull();

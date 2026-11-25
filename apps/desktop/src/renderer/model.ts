@@ -6,6 +6,7 @@ import { itemMark, stepAgent, type StepAgent, stepMark } from "./drawer/describe
 import { itemTotal } from "./drawer/progress-view.js";
 import { formatDuration } from "./format/duration.js";
 import { clock, dayLabel, daysBefore, localDay, sameDay, shortDate } from "./format/time.js";
+import type { StatusCount } from "./ui/Badge.js";
 import { type Mark, markOf } from "./ui/status.js";
 
 /** What the main area shows: everything, one workflow's items, or one repo's items. */
@@ -179,13 +180,8 @@ export function groupItems(items: readonly ItemRecord[], filter: Filter, now: nu
   return GROUPS_OF[filter.status].map((key) => ({ key, name: by[key].name, items: by[key].items }));
 }
 
-export type BadgeKind = "needs" | "failed" | "running";
-export interface Badge {
-  readonly kind: BadgeKind;
-  readonly symbol: string;
-  readonly count: number;
-  readonly word: string;
-}
+export type Badge = StatusCount;
+export type BadgeKind = StatusCount["kind"];
 
 /**
  * The sidebar badges of a set of items: needs you, failed today, running. Only counts above zero

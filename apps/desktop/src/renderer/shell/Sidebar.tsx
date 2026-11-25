@@ -12,6 +12,7 @@ import { EngineHealth } from "./ConnectionStatus.js";
 import { AllWorkIcon, RepoIcon } from "../ui/icons.js";
 import { TemplateIcon } from "./TemplateIcon.js";
 import { Button } from "../ui/Button.js";
+import { StatusCounts } from "../ui/Badge.js";
 
 const TEXT = {
   panel: "Sidebar",
@@ -144,7 +145,7 @@ function SectionHeading({ section, title, collapsed, onToggle, summary }: Sectio
         <span aria-hidden="true">{closed ? "▸" : "▾"}</span>
         <span>{title}</span>
       </Button>
-      {closed && <Badges badges={summary} />}
+      {closed && <StatusCounts counts={summary} />}
     </h2>
   );
 }
@@ -169,7 +170,7 @@ function Row({ name, icon, badges, selected, onSelect, mono, startLabel, onStart
       <Button variant="plain" className="sb-main" aria-current={selected ? "page" : undefined} onClick={onSelect}>
         <span className="sb-icon">{icon}</span>
         <span className={mono ? "ellipsis mono" : "ellipsis"}>{name}</span>
-        <Badges badges={badges} />
+        <StatusCounts counts={badges} />
       </Button>
       {startLabel !== undefined && (
         <Button variant="plain" className="sb-plus" aria-label={startLabel} title={startLabel} onClick={onStart}>
@@ -181,21 +182,3 @@ function Row({ name, icon, badges, selected, onSelect, mono, startLabel, onStart
   );
 }
 
-/** Symbol and count per badge, with the word for assistive technology; colour is never the only signal. */
-function Badges({ badges }: { readonly badges: readonly Badge[] }) {
-  if (badges.length === 0) return null;
-  return (
-    <span className="sb-badges mono">
-      {badges.map((badge) => (
-        <span key={badge.kind} className="sb-badge" data-kind={badge.kind} title={`${badge.count} ${badge.word}`}>
-          <span aria-hidden="true">
-            {badge.symbol} {badge.count}
-          </span>
-          <span className="visually-hidden">
-            {badge.count} {badge.word}
-          </span>
-        </span>
-      ))}
-    </span>
-  );
-}

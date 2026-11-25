@@ -5,13 +5,14 @@
 import type { ItemRecord, RepoSummary, Setup } from "@tokama/core";
 import { useEffect, useRef, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
-import { type Badge, badgesOf, bucketOf, inRange, inView, needsYouCount } from "../model.js";
+import { badgesOf, bucketOf, inRange, inView, needsYouCount } from "../model.js";
 import { RemoveRepoDialog } from "../repos/RemoveRepoDialog.js";
 import { RepoDialog } from "../repos/RepoDialog.js";
 import { ConnectionFailure } from "../shell/ConnectionStatus.js";
 import { RepoIcon } from "../ui/icons.js";
 import { useRepoItems } from "./useRepoItems.js";
 import { Button } from "../ui/Button.js";
+import { StatusCounts } from "../ui/Badge.js";
 
 const TEXT = {
   heading: "Repos",
@@ -130,7 +131,7 @@ export function ReposPage({ bridge, connection, setup, now: fixedNow }: ReposPag
                   <span className="rp-row-id mono ellipsis" title={repo.id}>
                     {repo.id}
                   </span>
-                  <Badges badges={badgesOf(itemsOf(repo), now)} />
+                  <StatusCounts counts={badgesOf(itemsOf(repo), now)} />
                 </span>
                 {repo.path !== undefined && (
                   <span className="rp-row-path mono ellipsis" title={repo.path}>
@@ -183,24 +184,6 @@ export function ReposPage({ bridge, connection, setup, now: fixedNow }: ReposPag
   );
 }
 
-/** Symbol and count per badge, with the word for assistive technology; colour is never the only signal. */
-function Badges({ badges }: { readonly badges: readonly Badge[] }) {
-  if (badges.length === 0) return null;
-  return (
-    <span className="rp-badges mono">
-      {badges.map((badge) => (
-        <span key={badge.kind} className="rp-badge" data-kind={badge.kind} title={`${badge.count} ${badge.word}`}>
-          <span aria-hidden="true">
-            {badge.symbol} {badge.count}
-          </span>
-          <span className="visually-hidden">
-            {badge.count} {badge.word}
-          </span>
-        </span>
-      ))}
-    </span>
-  );
-}
 
 interface DetailProps {
   readonly repo: RepoSummary;

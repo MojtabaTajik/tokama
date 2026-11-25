@@ -14,6 +14,7 @@ import { InsightsTip } from "./InsightsTip.js";
 import { useTip } from "./useTip.js";
 import { AttentionIcon, BoardIcon, InboxIcon, InsightsIcon, PanelIcon, SettingsIcon, UserIcon } from "../ui/icons.js";
 import { Button } from "../ui/Button.js";
+import { Badge } from "../ui/Badge.js";
 
 const TEXT = {
   rail: "App",
@@ -212,12 +213,3 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
   );
 }
 
-/** A count on a button, or `symbol` instead of the number when the kind matters more than how many. */
-function Badge({ count, tone, symbol }: { readonly count: number; readonly tone: "warn" | "fail" | "neutral"; readonly symbol?: string }) {
-  if (count <= 0) return null;
-  return (
-    <span className="badge" data-tone={tone} aria-hidden="true">
-      {symbol ?? (count > 99 ? "99+" : count)}
-    </span>
-  );
-}
