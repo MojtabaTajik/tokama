@@ -348,7 +348,7 @@ describe("engine service", () => {
     vi.spyOn(Date, "now").mockReturnValue(now + 60_000);
     cleanups.push(() => vi.restoreAllMocks());
 
-    expect(await startEngine({ dir })).toMatchObject({ ok: false, error: { code: "already_running" } });
+    expect(await startEngine({ dir })).toMatchObject({ ok: false, error: { code: "already_running", message: expect.stringContaining(`pid ${process.pid}, still starting`) } });
     expect(readFileSync(join(dir, "engine.lock"), "utf8")).toBe(`${process.pid} e-starting\n`);
   });
 

@@ -987,7 +987,10 @@ async function acquireLock(endpoint: LockSpec, content: string, log: (message: s
       if (!hasCode(error, "EEXIST")) return err({ code: "start_failed", message: `cannot create ${endpoint.lockPath}: ${String(error)}` });
     }
     const live = await lockIsLive(endpoint);
-    if (live.live) return err({ code: "already_running", message: `an engine is already running on ${live.socketPath}` });
+    if (live.live) {
+      const starting = live.startingPid === undefined ? "" : ` (pid ${live.startingPid}, still starting: it does not answer yet)`;
+      return err({ code: "already_running", message: `an engine is already running on ${live.socketPath}${starting}` });
+    }
     log(`removing a stale lock in ${endpoint.dir}`);
     unlinkIfPresent(endpoint.lockPath);
   }
@@ -1004,7 +1007,7 @@ async function acquireLock(endpoint: LockSpec, content: string, log: (message: s
  * that started later took the pid over after the engine died. When the start time cannot be read,
  * the lock counts as live: a refused start is safe, two engines on one home are not.
  */
-async function lockIsLive(endpoint: LockSpec): Promise<{ live: boolean; socketPath: string }> {
+async function lockIsLive(endpoint: LockSpec): Promise<{ live: boolean; socketPath: string; startingPid?: number }> {
   const lock = readPidFile(endpoint.lockPath);
   if (lock === undefined) return { live: await socketAnswers(endpoint.socketPath), socketPath: endpoint.socketPath };
   const socketPath = lock.fields.slice(2).join(" ") || endpoint.socketPath;
@@ -1013,8 +1016,8 @@ async function lockIsLive(endpoint: LockSpec): Promise<{ live: boolean; socketPa
   if (!pidAlive(lock.pid)) return { live: false, socketPath };
   const info = await posixEngineProcesses.describe(lock.pid).catch(() => "unknown" as const);
   // Nothing read: the process has exited since, or ps printed something unexpected.
-  if (info === undefined) return { live: pidAlive(lock.pid), socketPath };
-  return { live: info === "unknown" || info.startedAt <= lock.writtenAt + START_TIME_SLACK_MS, socketPath };
+  const live = info === undefined ? pidAlive(lock.pid) : info === "unknown" || info.startedAt <= lock.writtenAt + START_TIME_SLACK_MS;
+  return live ? { live, socketPath, startingPid: lock.pid } : { live, socketPath };
 }
 
 /** True when something accepts connections on the socket (or it does not answer in time). */
