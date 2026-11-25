@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { devServerUrl, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, secureWebPreferences, sampleEngineEnabled } from "./policy.js";
+import { backgroundModeEnabled, devServerUrl, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, secureWebPreferences, sampleEngineEnabled } from "./policy.js";
 
 describe("secureWebPreferences", () => {
   it("isolates and sandboxes the renderer, with no Node", () => {
@@ -165,5 +165,17 @@ describe("isWebsiteUrl", () => {
     "",
   ])("refuses %s", (url) => {
     expect(isWebsiteUrl(url)).toBe(false);
+  });
+});
+
+describe("backgroundModeEnabled", () => {
+  it.each([
+    ["1", false, "darwin", true],
+    ["1", true, "darwin", false],
+    ["1", false, "linux", false],
+    [undefined, false, "darwin", false],
+    ["true", false, "darwin", false],
+  ] as const)("TOKAMA_E2E=%s, packaged %s, %s: %s", (value, isPackaged, platform, expected) => {
+    expect(backgroundModeEnabled(value, isPackaged, platform)).toBe(expected);
   });
 });

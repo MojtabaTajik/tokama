@@ -45,6 +45,8 @@ async function launch(workspace: Workspace, output: string[]): Promise<ElectronA
   // The app's HOME is the temp one; its engine dir is the one the running engine uses.
   env["HOME"] = workspace.home;
   env["TOKAMA_ENGINE_DIR"] = workspace.engineDir;
+  // No Dock icon, no focus: the app stays in the background while the developer works.
+  env["TOKAMA_E2E"] = "1";
   delete env["TOKAMA_SAMPLE"];
   delete env["ELECTRON_RENDERER_URL"];
   const app = await _electron.launch({

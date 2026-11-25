@@ -116,6 +116,8 @@ async function launch(tmp: string, baseDir: string, output: string[], mode: Engi
   const env: Record<string, string> = {};
   for (const [name, value] of Object.entries(process.env)) if (value !== undefined) env[name] = value;
   env["TOKAMA_ENGINE_DIR"] = baseDir;
+  // No Dock icon, no focus: the app stays in the background while the developer works.
+  env["TOKAMA_E2E"] = "1";
   // The engine keeps its items, its lock and repos.yaml in `~/.tokama`: that is a folder of this test.
   env["HOME"] = homeOf(tmp);
   mkdirSync(env["HOME"], { recursive: true });
