@@ -81,6 +81,8 @@ flow("lists the sample repos in Settings without Edit or Remove, and fits the na
   expect(await page.getByRole("button", { name: "Remove…" }).count()).toBe(0);
   expect(await page.getByRole("button", { name: "Edit…" }).count()).toBe(0);
   await screenshot("139-repos-sample");
+  await resize(1440, 800);
+  await screenshot("139-repos-1440");
 
   await resize(720, 600);
   const overflow = await page.evaluate(() => {
