@@ -163,6 +163,23 @@ describe("DiagnosticsStore", () => {
     expect(again.list().entries).toEqual([]);
   });
 
+  it("tells when entries are recorded or deleted, and not for a delete that removes nothing", async () => {
+    let calls = 0;
+    const store = await open({ onEntries: () => calls++ });
+    store.warning("engine", "index_rebuilt");
+    store.count("approve");
+    expect(calls).toBe(1);
+    store.flushUsage();
+    expect(calls).toBe(2);
+    store.delete({ ids: ["diag_00000000-0000-7000-8000-000000000000" as DiagnosticId] });
+    expect(calls).toBe(2);
+    store.delete({ all: true });
+    expect(calls).toBe(3);
+    store.updateSettings({ collect: false });
+    store.warning("engine", "index_rebuilt");
+    expect(calls).toBe(3);
+  });
+
   it("detects a crash by the marker a clean stop removes", async () => {
     let changes = 0;
     const first = await open();

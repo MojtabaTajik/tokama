@@ -64,7 +64,7 @@ async function engine(checks: HealthChecks = async () => ({ git: { ok: true }, c
     await started.value.close();
   };
   cleanups.push(stop);
-  return { client, stop };
+  return { client, stop, dir };
 }
 
 async function list(client: EngineClient, query: { types?: ("error" | "warning" | "usage" | "crash")[] } = {}) {
@@ -153,9 +153,25 @@ describe("engine diagnostics", () => {
     expect(events).toContain("setup_changed");
   });
 
-  it("answers not_implemented in sample mode, which keeps no diagnostics", async () => {
-    const { client } = await engine(undefined, { sample: true });
-    expect(await client.query({ type: "diagnostics_list" })).toMatchObject({ ok: false, error: { code: "not_implemented" } });
-    expect(await client.command({ type: "report_diagnostic", report: { type: "usage", action: "approve" } })).toMatchObject({ ok: false, error: { code: "not_implemented" } });
+  it("keeps sample entries of every type in sample mode, in its engine dir and never in the Tokama home", async () => {
+    const { client, dir } = await engine(undefined, { sample: true });
+    const entries = (await list(client)).entries;
+    expect(new Set(entries.map((entry) => entry.type))).toEqual(new Set(["error", "warning", "usage", "crash"]));
+    // The sample crash is seen: no prompt until the sample engine really dies.
+    expect(await client.query({ type: "diagnostics_settings" })).toMatchObject({ ok: true, data: { collect: true, crashWaiting: false } });
+    expect(readdirSync(join(dir, "diagnostics"))).toContain("entries.jsonl");
+    expect(readdirSync(home)).not.toContain("diagnostics");
+  });
+
+  it("tells clients when entries are recorded or deleted", async () => {
+    const { client } = await engine();
+    const events: string[] = [];
+    void (async () => {
+      for await (const event of client.events()) if (event.kind === "event") events.push(event.event.type);
+    })();
+    await client.command({ type: "report_diagnostic", report: { type: "warning", source: "desktop", code: "renderer_unresponsive" } });
+    await expect.poll(() => events.filter((type) => type === "diagnostics_changed").length).toBe(1);
+    await client.command({ type: "diagnostics_delete", all: true });
+    await expect.poll(() => events.filter((type) => type === "diagnostics_changed").length).toBe(2);
   });
 });

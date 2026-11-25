@@ -69,6 +69,8 @@ export interface DiagnosticsStoreOptions {
   readonly clock?: Clock;
   /** Called when the settings or the waiting crash change. */
   readonly onChange?: () => void;
+  /** Called when entries are recorded or deleted. */
+  readonly onEntries?: () => void;
   readonly log?: (message: string) => void;
   /** Size cap of the entries, counted in bytes of the body that sends them all. Default MAX_DIAGNOSTICS_BYTES (2 MB). */
   readonly maxBytes?: number;
@@ -283,6 +285,7 @@ export class DiagnosticsStore {
       this.bytes = this.kept.reduce((sum, item) => sum + item.bytes, 0);
       this.rewrite();
       this.options.onChange?.();
+      this.options.onEntries?.();
     }
     return deleted;
   }
@@ -382,6 +385,7 @@ export class DiagnosticsStore {
       if (this.bytes + BODY_OVERHEAD_BYTES > this.maxBytes || (this.kept[0] !== undefined && this.kept[0].entry.at < now - this.maxAgeMs)) {
         if (!this.prune()) this.rewrite();
       }
+      this.options.onEntries?.();
       if (body.type === "crash") this.options.onChange?.();
     } catch (error) {
       this.log(`cannot record a diagnostic: ${String(error)}`);
