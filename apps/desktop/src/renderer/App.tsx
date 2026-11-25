@@ -9,7 +9,7 @@ import { useUsage } from "./insights/useUsage.js";
 import { ALL_WORK, type CliIssue, cliIssuesOf, healthProblemsOf, inView, needsYouCount, type View } from "./model.js";
 import { isMac, NewWork, type NewWorkHandle } from "./newwork/NewWork.js";
 import { AddRepoDialog } from "./repos/AddRepoDialog.js";
-import { Settings } from "./settings/Settings.js";
+import { Settings, type SettingsPage } from "./settings/Settings.js";
 import { NeedsYou } from "./needsyou/NeedsYou.js";
 import { MainArea } from "./shell/MainArea.js";
 import { Rail } from "./shell/Rail.js";
@@ -37,6 +37,8 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
   const [panelOpen, setPanelOpen] = useState(true);
   // What the main area shows: the board, the Needs you page, Insights or About; Settings takes the whole window.
   const [page, setPage] = useState<"board" | "needs-you" | "insights" | "about" | "settings">("board");
+  // The Settings page to open on: the rail's Settings button opens the default, the tooltip AI CLIs.
+  const [settingsPage, setSettingsPage] = useState<SettingsPage | undefined>(undefined);
   // The tooltip and the page share one report; the page's range picks its days.
   const [usageRange, setUsageRange] = useState<UsageRange>(14);
   // The report loads every minute only while someone looks at it: the page, or the rail tooltip.
@@ -102,7 +104,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
   if (page === "settings") {
     return (
       <div className="shell">
-        <Settings bridge={bridge} connection={connection} setup={setup} onBack={() => setPage("board")} />
+        <Settings bridge={bridge} connection={connection} setup={setup} onBack={() => setPage("board")} {...(settingsPage !== undefined && { initialPage: settingsPage })} />
       </div>
     );
   }
@@ -130,7 +132,20 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
         onBoard={() => setPage("board")}
         onNeedsYou={() => setPage("needs-you")}
         onAbout={() => setPage(aboutOpen ? "board" : "about")}
-        onSettings={() => setPage("settings")}
+        onSettings={() => {
+          setSettingsPage(undefined);
+          setPage("settings");
+        }}
+        setup={setup}
+        onSelectItem={(itemId) => {
+          // About hides the drawer: leave it, so the chosen item shows now.
+          if (aboutOpen) setPage("board");
+          setSelectedItemId(itemId);
+        }}
+        onCliSettings={() => {
+          setSettingsPage("ai-clis");
+          setPage("settings");
+        }}
       />
       {panelOpen && (
         <Sidebar

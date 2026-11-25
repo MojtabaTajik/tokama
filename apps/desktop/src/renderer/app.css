@@ -365,25 +365,30 @@ button:focus-visible {
   anchor-name: --insights;
 }
 
-/* Fixed and anchored to the button, so the scrolling rail does not clip it. */
+/* Fixed and anchored to the button, so the scrolling rail does not clip it. Too tall for the space
+   below the button, it sits on the window's bottom edge instead; taller than the window, it scrolls. */
 .insights-tip {
   position: fixed;
   position-anchor: --insights;
   top: anchor(top);
   left: anchor(right);
+  position-try-fallbacks: --insights-tip-up;
   margin: -6px 0 0 10px;
   z-index: 9;
   display: none;
-  flex-direction: column;
-  gap: 6px;
-  width: 260px;
+  width: 380px;
   box-sizing: border-box;
-  padding: 10px 12px;
   border: 1px solid var(--hairline);
-  border-radius: 8px;
-  background: var(--raised);
-  font-size: 12px;
+  border-radius: 10px;
+  background: var(--panel);
+  font-size: 12.5px;
   color: var(--text-2);
+}
+
+@position-try --insights-tip-up {
+  top: auto;
+  bottom: 8px;
+  margin: 0 0 0 10px;
 }
 
 /* Bridges the gap to the button, so the pointer can move onto the tooltip. */
@@ -396,37 +401,24 @@ button:focus-visible {
   width: 12px;
 }
 
-.insights:not([data-dismissed]):hover .insights-tip,
-.insights:not([data-dismissed]):focus-within .insights-tip {
-  display: flex;
+.insights[data-open] .insights-tip {
+  display: block;
 }
 
-.insights-tip p,
-.insights-tip ul {
-  margin: 0;
-}
-
-.insights-title {
-  color: var(--text);
-  font-weight: 600;
-}
-
-.insights-tip ul {
+/* The scrolling is inside, so the bridge above stays outside the tooltip's clip. */
+.it-scroll {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 0;
-  list-style: none;
+  gap: 14px;
+  max-height: calc(100vh - 18px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  box-sizing: border-box;
+  padding: 16px;
 }
 
-.insights-tip li {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.insights-state {
-  color: var(--muted);
+.insights-tip p {
+  margin: 0;
 }
 
 /* Sidebar rows */

@@ -20,7 +20,10 @@ export type PlanCandidate = { readonly source: PlanSource } & ({ readonly readin
 const ORDER: readonly PlanSource[] = ["request", "run", "cache"];
 const MAX_WINDOWS = 20;
 const WINDOW_CHARS = 64;
+const WORD_CHARS = 32;
 const MAX_PERCENT = 1000;
+// A NaN from a stored sample reads as 0, never as a number past the schema's bounds.
+const clamp = (value: number, max: number): number => (Number.isFinite(value) ? Math.min(max, Math.max(0, value)) : 0);
 
 export function choosePlan(cliId: AiCliId, candidates: readonly PlanCandidate[], now: number, version?: string): CliPlan {
   const live = candidates
@@ -39,8 +42,13 @@ export function choosePlan(cliId: AiCliId, candidates: readonly PlanCandidate[],
     // A run's rate-limit event is the CLI's data as it came: cut to the report's limits.
     windows: reading.windows.slice(0, MAX_WINDOWS).map((w) => ({
       window: w.window.slice(0, WINDOW_CHARS) || "window",
-      usedPercent: Math.min(MAX_PERCENT, Math.max(0, w.usedPercent)),
+      usedPercent: clamp(w.usedPercent, MAX_PERCENT),
       ...(w.resetsAt !== undefined && { resetsAt: w.resetsAt }),
+      ...(w.scope && { scope: w.scope.slice(0, WINDOW_CHARS) }),
+      ...(w.group && { group: w.group.slice(0, WORD_CHARS) }),
+      ...(w.severity && { severity: w.severity.slice(0, WORD_CHARS) }),
+      ...(w.active !== undefined && { active: w.active }),
+      ...(w.sharePercent !== undefined && { sharePercent: clamp(w.sharePercent, 100) }),
     })),
     source,
     asOf: reading.asOf,

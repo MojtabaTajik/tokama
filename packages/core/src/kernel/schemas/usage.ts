@@ -135,11 +135,24 @@ export const PlanSourceSchema = z.enum([
 ]);
 
 export const PlanWindowSchema = z.strictObject({
-  /** The CLI's name for the window, e.g. `five_hour`, `seven_day`, `seven_day_opus`. */
+  /**
+   * The CLI's name for the window: a fixed window such as `five_hour`, `seven_day`, or the kind of a
+   * limit such as `session`, `weekly_all`, `weekly_scoped`.
+   */
   window: z.string().min(1).max(64),
   /** 0 to 100, or above when over the limit. */
   usedPercent: z.number().min(0).max(1000),
   resetsAt: EpochMsSchema.optional(),
+  /** What a scoped limit covers, e.g. the model `Fable`. */
+  scope: z.string().min(1).max(64).optional(),
+  /** The family of limits it belongs to, e.g. `session`, `weekly`. */
+  group: z.string().min(1).max(32).optional(),
+  /** The CLI's word for how close the limit is, e.g. `normal`. */
+  severity: z.string().min(1).max(32).optional(),
+  /** Whether the CLI marks this limit as the one that applies now. */
+  active: z.boolean().optional(),
+  /** A scoped limit's allowance as a share of the whole weekly limit, 0 to 100. */
+  sharePercent: z.number().min(0).max(100).optional(),
 });
 
 /** One AI CLI's plan usage as the engine last read it. Absent values are unknown, never guessed. */
@@ -258,6 +271,32 @@ export const UsageReportSchema = z.strictObject({
   workflows: z.array(z.strictObject({ templateId, tokens, costUsd: cost, calls: z.int().nonnegative() })).max(100),
   /** The Tokama items with the most tokens over the range, at most 50, whatever the scope. */
   items: z.array(UsageItemSchema).max(50),
+  /**
+   * Tokama's agent calls that ended on the current local day (a call over midnight counts in full),
+   * whatever the range and scope: the items with the most tokens, and the day's totals. Absent
+   * from older engines.
+   */
+  today: z
+    .strictObject({
+      /** Most tokens first, at most five. */
+      items: z
+        .array(
+          z.strictObject({
+            itemId: ItemIdSchema,
+            title: z.string().min(1).max(200),
+            /** Each agent once, in the order it first ran today. */
+            agents: z.array(z.strictObject({ agentId: AgentIdSchema, cliId: AiCliIdSchema })).max(20),
+            tokens,
+            /** Wall time of the item's agent calls today. */
+            durationMs: z.int().nonnegative(),
+          }),
+        )
+        .max(5),
+      itemCount: z.int().nonnegative(),
+      tokens: TokenUsageSchema,
+      durationMs: z.int().nonnegative(),
+    })
+    .optional(),
   /** The scope's totals. */
   totals: z.strictObject({
     tokens: TokenUsageSchema,
