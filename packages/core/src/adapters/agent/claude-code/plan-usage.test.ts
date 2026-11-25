@@ -113,14 +113,14 @@ describe("parseGetUsageReply", () => {
     ]);
   });
 
-  it("finds a scope's label on the model or on the scope, and never reads its id", () => {
+  it("finds a scope's label on its model only, and never reads an id or the scope's own name", () => {
     const labelOf = (scope: unknown) => {
       const parsed = parseGetUsageReply(withRateLimits((limits) => ((limits["limits"] as Record<string, unknown>[])[2]!["scope"] = scope)), NOW);
       return parsed.ok ? parsed.value.windows[2]!.scope : parsed.error;
     };
     expect(labelOf({ model: { display_name: "  Opus 4.5 " } })).toBe("Opus 4.5");
     expect(labelOf({ model: { name: "Fable" } })).toBe("Fable");
-    expect(labelOf({ display_name: "Sonnet" })).toBe("Sonnet");
+    expect(labelOf({ display_name: "Northwind", name: "Northwind Inc" })).toBeUndefined();
     expect(labelOf({ model: { id: "fable-1" } })).toBeUndefined();
     expect(labelOf("Fable")).toBeUndefined();
     expect(labelOf(null)).toBeUndefined();

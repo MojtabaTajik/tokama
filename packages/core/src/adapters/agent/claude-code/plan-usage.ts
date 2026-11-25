@@ -219,14 +219,14 @@ function limitWindows(limits: readonly z.output<typeof Limit>[], shares: readonl
 }
 
 /**
- * The name of what a scoped limit covers, e.g. `Fable`. The scope's shape is not documented, so
- * only a display name or a name is looked for, on its model or on the scope itself; ids and other
- * fields are never read.
+ * The model a scoped limit covers, e.g. `Fable`. The scope's shape is not documented, so only its
+ * model's display name or name is looked for; ids, the scope's own name (it could name an account
+ * or an organization) and other fields are never read.
  */
 function scopeLabel(scope: unknown): string | undefined {
   const field = (value: unknown, key: string): unknown => (typeof value === "object" && value !== null ? (value as Record<string, unknown>)[key] : undefined);
   const model = field(scope, "model");
-  for (const candidate of [field(model, "display_name"), field(model, "name"), field(scope, "display_name"), field(scope, "name")]) {
+  for (const candidate of [field(model, "display_name"), field(model, "name")]) {
     if (typeof candidate !== "string") continue;
     const label = candidate.trim();
     if (LABEL.test(label)) return label;

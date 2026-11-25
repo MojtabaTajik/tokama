@@ -55,7 +55,6 @@ export interface RailProps {
   readonly onSettings: () => void;
 }
 
-/** "Needs you · 2", or just "Needs you" when there are none. */
 /** How long the pointer rests on Insights before the tooltip opens, and how long it may be away before it closes. */
 export const TIP_OPEN_MS = 120;
 export const TIP_CLOSE_MS = 200;
@@ -103,6 +102,7 @@ function useInsightsTip(onShown: ((shown: boolean) => void) | undefined) {
   return { open, hold, dismiss };
 }
 
+/** "Needs you · 2", or just "Needs you" when there are none. */
 const withCount = (label: string, count: number) => (count > 0 ? `${label} · ${count}` : label);
 
 export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, problems = [], onAttention, usage, now = Date.now(), insightsOpen = false, onInsights, onInsightsTip, aboutOpen, needsYouOpen, onBoard, onNeedsYou, onAbout, onSettings }: RailProps) {
@@ -114,7 +114,7 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
   // The Insights tooltip. Its own state, not a CSS :hover, decides when it shows: the wrapper holds
   // the button and the tooltip, so moving between them keeps it open, and short delays absorb the
   // enter and leave events a pointer sends at an edge, so it never flickers. Escape or a click
-  // closes it until the pointer and the focus have both left.
+  // closes it until the pointer or the focus comes back.
   const tip = useInsightsTip(onInsightsTip);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
