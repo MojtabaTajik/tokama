@@ -107,11 +107,11 @@ flow("a narrow window makes the drawer give way and then float over the main are
   await screenshot("11-resize-hover");
 
   await resize(1100, 900);
+  await expect.poll(() => widthOf(page, "aside.drawer")).toBe(356);
   expect(await widthOf(page, ".panel")).toBe(264);
-  expect(await widthOf(page, "aside.drawer")).toBe(356);
 
   await resize(760, 700);
-  expect(await page.locator(".shell").getAttribute("data-drawer-floating")).toBe("true");
+  await expect.poll(() => page.locator(".shell").getAttribute("data-drawer-floating")).toBe("true");
   expect(await page.locator("main").evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBeGreaterThanOrEqual(420);
   expect(await drawer(page).evaluate((el) => getComputedStyle(el).position)).toBe("absolute");
   await screenshot("12-resize-floating");
@@ -122,5 +122,5 @@ flow("a narrow window makes the drawer give way and then float over the main are
 
   await resize(1500, 900);
   await row(page, DONE).click();
-  expect(await widthOf(page, "aside.drawer")).toBe(420);
+  await expect.poll(() => widthOf(page, "aside.drawer")).toBe(420);
 });
