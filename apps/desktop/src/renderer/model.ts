@@ -264,7 +264,7 @@ export interface ItemTime {
 }
 
 /**
- * The row's time. A live item shows how long ago it started ("14 m", "1 h 35 m"); a finished one
+ * The row's time. An item that waits shows how long ago it started ("14 m", "1 h 35 m"); a finished one
  * shows its start as a clock time today or a date earlier, and its agent and check time after it
  * ("17:57 · 12 m"), without the time it waited for you. A running item shows how long it has run, to the second.
  */
