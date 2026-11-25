@@ -7,7 +7,7 @@
 // and it started no later than the lock was written. Then the steps, each only when the one
 // before did not stop it: a shutdown request on the engine's socket, SIGTERM, and SIGKILL.
 import { execFile } from "node:child_process";
-import { systemClock, type Clock } from "../clock/index.js";
+import { sleep, systemClock, type Clock } from "../clock/index.js";
 import { hasCode } from "../errno/index.js";
 import { LSTART, parseLstart } from "./leftover.js";
 import { readPidFile } from "./pid-file.js";
@@ -111,7 +111,6 @@ export async function stopOwnEngine(engine: OwnEngine, options: StopOptions): Pr
   if (first.kind === "refused") return first;
   const { lock, startedAt } = first;
   if (options.expectedEngineId !== undefined && lock.engineId !== options.expectedEngineId) return { kind: "replaced" };
-  const sleep = (ms: number) => new Promise<void>((resolve) => clock.setTimeout(resolve, ms));
   const sameEngine = (other: EngineLock | undefined) => other !== undefined && other.pid === lock.pid && other.engineId === lock.engineId;
 
   // Stopped: the process is gone (or the pid is another process's now), or no lock names it any more.
@@ -126,7 +125,7 @@ export async function stopOwnEngine(engine: OwnEngine, options: StopOptions): Pr
     for (;;) {
       if (await stopped()) return true;
       if (clock.now() >= deadline) return false;
-      await sleep(pollMs);
+      await sleep(clock, pollMs);
     }
   };
 

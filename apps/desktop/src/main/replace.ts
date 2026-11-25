@@ -8,7 +8,7 @@ import { closeSync, constants, openSync, readFileSync, unlinkSync } from "node:f
 // eslint-disable-next-line no-restricted-imports -- replace.lock is created exclusively (O_EXCL), which is the lock itself; an atomic replace cannot take a lock.
 import { writeSync } from "node:fs";
 import { join } from "node:path";
-import { hasCode, pidAlive, readEngineLock, readPidFile, stopOwnEngine, type EngineProcesses, type OwnEngine, type StopOutcome } from "@tokama/core";
+import { hasCode, pidAlive, readEngineLock, readPidFile, sleep, stopOwnEngine, systemClock, type Clock, type EngineProcesses, type OwnEngine, type StopOutcome } from "@tokama/core";
 
 export type ReplaceResult =
   /** The old engine is gone; connect again. `forced`: it took SIGKILL, so it could not end cleanly. */
@@ -30,6 +30,8 @@ export interface ReplaceOptions {
   readonly pollMs?: number;
   /** How long another app's replace may take before its `replace.lock` counts as stale. Default 60 s. */
   readonly staleMs?: number;
+  /** Default: the system clock. */
+  readonly clock?: Clock;
 }
 
 const REPLACE_LOCK = "replace.lock";
@@ -37,8 +39,9 @@ const REPLACE_LOCK = "replace.lock";
 export async function replaceOlderEngine(options: ReplaceOptions): Promise<ReplaceResult> {
   const lockPath = join(options.dir, REPLACE_LOCK);
   const staleMs = options.staleMs ?? 60_000;
-  const mine = `${process.pid} ${Date.now()}\n`;
-  if (!takeLock(lockPath, mine, staleMs)) return waitForOther(options, lockPath, staleMs);
+  const clock = options.clock ?? systemClock;
+  const mine = `${process.pid} ${clock.now()}\n`;
+  if (!takeLock(lockPath, mine, staleMs, clock)) return waitForOther(options, lockPath, staleMs, clock);
   try {
     const outcome = await stopOwnEngine(options.engine, {
       ...(options.expectedEngineId !== undefined && { expectedEngineId: options.expectedEngineId }),
@@ -46,6 +49,7 @@ export async function replaceOlderEngine(options: ReplaceOptions): Promise<Repla
       requestShutdown: () => options.requestShutdown(options.dir),
       ...(options.stepMs !== undefined && { stepMs: options.stepMs }),
       ...(options.pollMs !== undefined && { pollMs: options.pollMs }),
+      clock,
     });
     return result(outcome, options.engine.lockPath);
   } finally {
@@ -77,20 +81,20 @@ function result(outcome: StopOutcome, lockPath: string): ReplaceResult {
  * app is done (its `replace.lock` is gone or stale). Either way the caller connects again and sees
  * the outcome for itself.
  */
-async function waitForOther(options: ReplaceOptions, replaceLock: string, staleMs: number): Promise<ReplaceResult> {
+async function waitForOther(options: ReplaceOptions, replaceLock: string, staleMs: number, clock: Clock): Promise<ReplaceResult> {
   const before = readEngineLock(options.engine.lockPath);
-  const deadline = Date.now() + staleMs;
-  while (Date.now() < deadline) {
+  const deadline = clock.now() + staleMs;
+  while (clock.now() < deadline) {
     const now = readEngineLock(options.engine.lockPath);
     if (before === undefined || now === undefined || now.pid !== before.pid || now.engineId !== before.engineId) return { ok: true, forced: false };
-    if (isStale(replaceLock, staleMs)) return { ok: true, forced: false };
-    await new Promise((resolve) => setTimeout(resolve, options.pollMs ?? 200));
+    if (isStale(replaceLock, staleMs, clock)) return { ok: true, forced: false };
+    await sleep(clock, options.pollMs ?? 200);
   }
   return { ok: false, reason: `Another Tokama window is replacing the older engine, and it has not finished. Lock: ${options.engine.lockPath}. Press Retry.` };
 }
 
 /** Creates the lock file; false while another app holds it. A lock older than `staleMs`, or unreadable, is taken over once. */
-function takeLock(path: string, content: string, staleMs: number): boolean {
+function takeLock(path: string, content: string, staleMs: number, clock: Clock): boolean {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0), 0o600);
@@ -104,7 +108,7 @@ function takeLock(path: string, content: string, staleMs: number): boolean {
       // A lock that cannot be made at all does not stop this app's own replace.
       if (!hasCode(error, "EEXIST")) return true;
     }
-    if (!isStale(path, staleMs)) return false;
+    if (!isStale(path, staleMs, clock)) return false;
     try {
       unlinkSync(path);
     } catch {
@@ -118,9 +122,9 @@ function takeLock(path: string, content: string, staleMs: number): boolean {
  * Stale: gone, unreadable, older than `staleMs`, or its app (the pid in it) is no longer running.
  * A lock with no pid yet is being written: stale only once it is old.
  */
-function isStale(path: string, staleMs: number): boolean {
+function isStale(path: string, staleMs: number, clock: Clock): boolean {
   const lock = readPidFile(path);
-  if (lock === undefined || Date.now() - lock.writtenAt > staleMs) return true;
+  if (lock === undefined || clock.now() - lock.writtenAt > staleMs) return true;
   return lock.pid !== undefined && !pidAlive(lock.pid);
 }
 

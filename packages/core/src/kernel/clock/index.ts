@@ -69,3 +69,20 @@ export function manualClock(startMs = 0): ManualClock {
     },
   };
 }
+
+/** Resolves after `ms` on `clock`. */
+export function sleep(clock: Clock, ms: number): Promise<void> {
+  return new Promise((resolve) => clock.setTimeout(resolve, ms));
+}
+
+/** Resolves when `work` settles or after `ms` on `clock`, whichever comes first; never rejects. */
+export function withDeadline(clock: Clock, work: Promise<unknown>, ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = clock.setTimeout(resolve, ms);
+    const done = () => {
+      clock.clearTimeout(timer);
+      resolve();
+    };
+    void work.then(done, done);
+  });
+}

@@ -34,6 +34,7 @@ import {
   displayPath,
   hasCode,
   parseJsonLine,
+  withDeadline,
   type Clock,
   type CommandErrorCode,
   type ConnectionErrorCode,
@@ -827,13 +828,13 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     diagnosticsChanged = () => {};
     entriesChanged = () => {};
     usageAbort.abort();
-    await withDeadline(Promise.allSettled([...inFlight, usage.settled(), machine?.close(), claudeLogs?.settled()]), shutdownTimeoutMs);
+    await withDeadline(clock, Promise.allSettled([...inFlight, usage.settled(), machine?.close(), claudeLogs?.settled()]), shutdownTimeoutMs);
     const allClosed = new Promise<void>((resolve) => {
       onAllClosed = resolve;
       if (connections.size === 0) resolve();
     });
     for (const socket of connections) socket.end();
-    await withDeadline(allClosed, shutdownTimeoutMs);
+    await withDeadline(clock, allClosed, shutdownTimeoutMs);
     for (const socket of connections) socket.destroy();
     // The run loop writes to the item logs; it must be done before another engine may open them.
     await (await realEngine)?.close().catch((error: unknown) => {
@@ -1101,14 +1102,4 @@ function unlinkIfPresent(path: string): void {
   } catch (error) {
     if (!hasCode(error, "ENOENT")) throw error;
   }
-}
-
-function withDeadline(work: Promise<unknown>, ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    void work.finally(() => {
-      clearTimeout(timer);
-      resolve();
-    });
-  });
 }

@@ -10,7 +10,7 @@ export { spawnDetached, type ChildProcess, type DetachedService } from "./kernel
 // Pid files, the pid-alive check and atomic file replacement, for the engine service and the desktop app.
 export { pidAlive, readPidFile, type PidFile } from "./kernel/process/pid-file.js";
 export { replaceTextSync, type WriteFailure, type WriteFailureReason } from "./kernel/fs-safe/write.js";
-export { manualClock, systemClock, type Clock, type ManualClock, type TimerHandle } from "./kernel/clock/index.js";
+export { manualClock, sleep, systemClock, withDeadline, type Clock, type ManualClock, type TimerHandle } from "./kernel/clock/index.js";
 // Small helpers the apps share with core.
 export { hasCode } from "./kernel/errno/index.js";
 export { parseJsonLine } from "./kernel/json-line/index.js";
