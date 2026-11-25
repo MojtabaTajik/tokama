@@ -59,7 +59,7 @@ describe("repo commands", () => {
 
     expect(await client.query({ type: "suggest_repo", path })).toEqual({
       ok: true,
-      data: { path, gitRepo: true, hasCommits: true, branch: "main", id: "billing-api", checks: ["pnpm test"], fallbackCheck: null, problem: null },
+      data: { path, gitRepo: true, hasCommits: true, branch: "main", id: "billing-api", checks: ["pnpm test"], fallbackCheck: null, firstCommit: null, problem: null },
     });
     expect(await client.command({ type: "add_repo", path, checks: ["pnpm test"] })).toEqual({ ok: true, data: { repo: { id: "billing-api", baseBranch: "main", checks: ["pnpm test"] } } });
     await waitFor(() => events.some((event) => event.kind === "event" && event.event.type === "setup_changed"), 5_000, "setup_changed");
@@ -84,6 +84,25 @@ describe("repo commands", () => {
     execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "first", "--allow-empty"], { cwd: path });
     expect(await client.query({ type: "suggest_repo", path })).toMatchObject({ ok: true, data: { hasCommits: true, problem: null } });
     expect(await client.command({ type: "add_repo", path })).toMatchObject({ ok: true });
+  });
+
+  it("sets up git in a plain folder over the API, then adds it", async () => {
+    const { root, home, client } = await setUp({ sample: false });
+    // The commit needs an identity; git reads it from HOME.
+    const oldHome = process.env["HOME"];
+    writeFileSync(join(root, ".gitconfig"), "[user]\n\tname = t\n\temail = t@example.com\n");
+    process.env["HOME"] = root;
+    cleanups.push(() => void (oldHome === undefined ? delete process.env["HOME"] : (process.env["HOME"] = oldHome)));
+    const path = join(root, "plain-app");
+    mkdirSync(path);
+    writeFileSync(join(path, "index.js"), "console.log(1);\n");
+    const suggested = await client.query({ type: "suggest_repo", path });
+    expect(suggested).toMatchObject({ ok: true, data: { gitRepo: false, problem: "This folder isn't a git repo yet.", firstCommit: { files: 1, sample: ["index.js"], addsGitignore: true, refusal: null }, fallbackCheck: "node --check index.js" } });
+    expect(await client.command({ type: "add_repo", path })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
+    expect(await client.command({ type: "init_repo", path })).toEqual({ ok: true, data: null });
+    expect(existsSync(join(home, "repos.yaml"))).toBe(false);
+    expect(await client.command({ type: "add_repo", path })).toMatchObject({ ok: true, data: { repo: { id: "plain-app", baseBranch: "main" } } });
+    expect(await client.command({ type: "init_repo", path: join(root, "missing") })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
   });
 
   it("suggests node --check for a plain JS repo without package.json", async () => {
@@ -142,7 +161,7 @@ describe("repo commands", () => {
   it("answers in plain words for a folder that isn't a repo, and runs two adds one after the other", async () => {
     const { root, client } = await setUp({ sample: false });
     mkdirSync(join(root, "notes"));
-    expect(await client.command({ type: "add_repo", path: join(root, "notes") })).toEqual({ ok: false, error: { code: "invalid_request", message: "This folder isn't a git repo." } });
+    expect(await client.command({ type: "add_repo", path: join(root, "notes") })).toEqual({ ok: false, error: { code: "invalid_request", message: "This folder isn't a git repo yet." } });
     const [a, b] = [gitRepo(root, "a"), gitRepo(root, "b")];
     const results = await Promise.all([client.command({ type: "add_repo", path: a }), client.command({ type: "add_repo", path: b })]);
     expect(results.map((result) => result.ok)).toEqual([true, true]);

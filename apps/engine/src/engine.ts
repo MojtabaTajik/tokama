@@ -51,6 +51,7 @@ import {
   removeRepo,
   type Result,
   suggestRepo,
+  setUpRepo,
   updateRepo,
   type SuggestRepoResult,
   type SuggestTemplateResult,
@@ -345,15 +346,24 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   const sampleRepoIds = sample?.setup.repos.map((repo) => repo.id) ?? [];
   const repoOptions = (tokamaHome: string) => ({ tokamaHome, git: (git ??= createGit({ runner: createProcessRunner() })), reservedIds: sampleRepoIds });
 
-  const isRepoCommand = (command: Command): command is Extract<Command, { type: "add_repo" | "update_repo" | "remove_repo" }> =>
-    command.type === "add_repo" || command.type === "update_repo" || command.type === "remove_repo";
+  const isRepoCommand = (command: Command): command is Extract<Command, { type: "add_repo" | "init_repo" | "update_repo" | "remove_repo" }> =>
+    command.type === "add_repo" || command.type === "init_repo" || command.type === "update_repo" || command.type === "remove_repo";
 
-  const repoCommand = async (command: Extract<Command, { type: "add_repo" | "update_repo" | "remove_repo" }>): Promise<ReplyResult> => {
+  const repoCommand = async (command: Extract<Command, { type: "add_repo" | "init_repo" | "update_repo" | "remove_repo" }>): Promise<ReplyResult> => {
     const home = options.home;
     if (home === undefined) return { ok: false, error: { code: "not_implemented" satisfies CommandErrorCode, message: "this engine has no Tokama home folder for repos.yaml" } };
-    if (command.type !== "add_repo" && sampleRepoIds.includes(command.repoId)) {
+    if ((command.type === "update_repo" || command.type === "remove_repo") && sampleRepoIds.includes(command.repoId)) {
       const verb = command.type === "remove_repo" ? "removed" : "edited";
       return { ok: false, error: { code: "not_found" satisfies CommandErrorCode, message: `${command.repoId} is a sample repo; it isn't in repos.yaml, so it can't be ${verb}.` } };
+    }
+    if (command.type === "init_repo") {
+      // The folder changes, not repos.yaml; it still waits its turn behind the other repo changes.
+      const setUp = repoChanges.then(() => setUpRepo(repoOptions(home), { path: command.path, ...(command.baseBranch === undefined ? {} : { baseBranch: command.baseBranch }) }));
+      repoChanges = setUp.catch(() => undefined);
+      const done = await setUp;
+      if (!done.ok) return { ok: false, error: done.error };
+      log("set up git and a first commit in a folder");
+      return { ok: true, data: null };
     }
     const change = repoChanges.then(() =>
       command.type === "add_repo"
@@ -462,8 +472,8 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
         if (options.home === undefined) return { ok: false, error: { code: "not_implemented", message: "this engine has no Tokama home folder for repos.yaml" } };
         const suggested = await suggestRepo(repoOptions(options.home), query.path);
         if (!suggested.ok) return { ok: false, error: suggested.error };
-        const { path, gitRepo, hasCommits, branch, id, checks, fallbackCheck, problem } = suggested.value;
-        return { ok: true, data: { path, gitRepo, hasCommits, branch: branch ?? null, id: id ?? null, checks: [...checks], fallbackCheck: fallbackCheck ?? null, problem: problem ?? null } satisfies SuggestRepoResult };
+        const { path, gitRepo, hasCommits, branch, id, checks, fallbackCheck, firstCommit, problem } = suggested.value;
+        return { ok: true, data: { path, gitRepo, hasCommits, branch: branch ?? null, id: id ?? null, checks: [...checks], fallbackCheck: fallbackCheck ?? null, firstCommit: firstCommit === undefined ? null : { files: firstCommit.files, sample: [...firstCommit.sample], addsGitignore: firstCommit.addsGitignore, refusal: firstCommit.refusal ?? null }, problem: problem ?? null } satisfies SuggestRepoResult };
       }
       case "agents_list":
         if (options.home === undefined) return { ok: false, error: { code: "not_implemented", message: "this engine has no Tokama home folder for agents" } };

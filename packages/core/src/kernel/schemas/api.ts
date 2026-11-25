@@ -65,6 +65,9 @@ export const CommandSchema = z.discriminatedUnion("type", [
     baseBranch: z.string().max(255).optional(),
     checks: z.array(checkCommand).max(20).optional(),
   }),
+  // Makes a folder ready to add: git init (branch `baseBranch`, default main) when it is no repo,
+  // a default .gitignore when it has none, and a first commit. Does nothing for a repo with commits.
+  z.strictObject({ type: z.literal("init_repo"), path: folderPath, baseBranch: z.string().max(255).optional() }),
   // Replaces a repo's base branch and checks in repos.yaml, by the add_repo rules. An empty list removes the checks.
   z.strictObject({
     type: z.literal("update_repo"),
@@ -126,6 +129,15 @@ export const RepoSuggestionSchema = z.strictObject({
   /** From the folder name; null when it gives no valid id. */
   id: RepoIdSchema.nullable(),
   checks: z.array(checkCommand).max(20),
+  /** Set when a first commit can be made here (no git repo yet, or a repo without commits): what it would hold. */
+  firstCommit: z
+    .strictObject({
+      files: z.number().int().min(0),
+      sample: z.array(z.string().max(1000)).max(10),
+      addsGitignore: z.boolean(),
+      refusal: z.string().max(1000).nullable(),
+    })
+    .nullable(),
   /** A check to offer when `checks` is empty: `node --check` on a plain JS project's entry file; null when none fits. */
   fallbackCheck: checkCommand.nullable(),
   /** Why the folder can't be added as it is, in plain words; null when it can. */
@@ -154,6 +166,7 @@ export const CommandResultSchemas = {
   resolve_decision: z.null(),
   stop_item: z.null(),
   add_repo: z.strictObject({ repo: RepoSummarySchema }),
+  init_repo: z.null(),
   update_repo: z.strictObject({ repo: RepoSummarySchema }),
   remove_repo: z.null(),
 } as const satisfies Record<z.output<typeof CommandSchema>["type"], z.ZodType>;

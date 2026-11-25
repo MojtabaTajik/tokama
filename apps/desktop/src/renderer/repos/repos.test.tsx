@@ -21,7 +21,7 @@ afterEach(() => {
 });
 
 const FOLDER = "/home/dev/code/billing-api";
-const SUGGESTION = { path: FOLDER, gitRepo: true, hasCommits: true, branch: "main", id: "billing-api", checks: ["pnpm test", "pnpm lint"], fallbackCheck: null, problem: null };
+const SUGGESTION = { path: FOLDER, gitRepo: true, hasCommits: true, branch: "main", id: "billing-api", checks: ["pnpm test", "pnpm lint"], fallbackCheck: null, firstCommit: null, problem: null };
 
 async function mountWith(options: { suggestion?: Reply; picked?: string | null; commandReply?: (command: { type: string }) => Reply; setup?: () => Reply | undefined } = {}) {
   const fake = fakeBridge(CONNECTED, {
@@ -85,9 +85,9 @@ describe("+ Add repo", () => {
   });
 
   it("shows why a folder can't be added, and offers no Add", async () => {
-    await mountWith({ suggestion: { ok: true, data: { ...SUGGESTION, gitRepo: false, branch: null, checks: [], problem: "This folder isn't a git repo." } } });
+    await mountWith({ suggestion: { ok: true, data: { ...SUGGESTION, gitRepo: false, branch: null, checks: [], problem: "This folder isn't a git repo yet." } } });
     await click(buttonByText("+ Add repo"));
-    expect($(".repo-problem")?.textContent).toBe("✕ This folder isn't a git repo.");
+    expect($(".repo-problem")?.textContent).toBe("✕ This folder isn't a git repo yet.");
     expect(document.querySelector(".repo-field")).toBeNull();
     expect((buttonByText("Add repo") as HTMLButtonElement).disabled).toBe(true);
   });
@@ -162,6 +162,49 @@ describe("Add repo warnings", () => {
     await mountWith();
     await click(buttonByText("+ Add repo"));
     expect($(".repo-note")).toBeNull();
+  });
+});
+
+describe("Set up git", () => {
+  const preview = { files: 12, sample: ["a.js", "b.js"], addsGitignore: true, refusal: null };
+  const NOT_REPO = { ...SUGGESTION, gitRepo: false, hasCommits: false, branch: null, problem: "This folder isn't a git repo yet.", firstCommit: preview };
+
+  it("offers Set up git and add for a folder that is no repo, lists the files, and sets up then adds", async () => {
+    const fake = await mountWith({ suggestion: { ok: true, data: NOT_REPO } });
+    await click(buttonByText("+ Add repo"));
+    expect($(".repo-problem")?.textContent).toBe("✕ This folder isn't a git repo yet.");
+    expect((buttonByText("Add repo") as HTMLButtonElement).disabled).toBe(true);
+    expect($(".repo-note")?.textContent).toContain("The first commit will hold 12 files:");
+    expect($(".repo-note")?.textContent).toContain("a.js");
+    expect($(".repo-note")?.textContent).toContain("…and 10 more");
+    expect($(".repo-note")?.textContent).toContain(".gitignore");
+    expect(field("Base branch").value).toBe("main");
+    await click(buttonByText("Set up git and add"));
+    expect(fake.command.mock.calls.map(([command]) => (command as { type: string }).type)).toEqual(["init_repo", "add_repo"]);
+    expect(fake.command).toHaveBeenNthCalledWith(1, { type: "init_repo", path: FOLDER, baseBranch: "main" });
+    expect($("dialog.modal")).toBeNull();
+  });
+
+  it("says Make a first commit and add for a repo without commits, and sends no branch", async () => {
+    const fake = await mountWith({ suggestion: { ok: true, data: { ...NOT_REPO, gitRepo: true, branch: "trunk", problem: "This repo has no commits yet. Make a first commit, then add it." } } });
+    await click(buttonByText("+ Add repo"));
+    await click(buttonByText("Make a first commit and add"));
+    expect(fake.command).toHaveBeenNthCalledWith(1, { type: "init_repo", path: FOLDER });
+    expect(fake.command).toHaveBeenNthCalledWith(2, expect.objectContaining({ type: "add_repo", baseBranch: "trunk" }));
+  });
+
+  it("shows the refusal, with no setup button, and adds nothing when git setup fails", async () => {
+    await mountWith({ suggestion: { ok: true, data: { ...NOT_REPO, firstCommit: { ...preview, refusal: "This is your home folder or the root of the disk." } } } });
+    await click(buttonByText("+ Add repo"));
+    expect($("dialog.modal")?.textContent).toContain("✕ This is your home folder");
+    expect(buttonByText("Set up git and add")).toBeUndefined();
+
+    const fake = await mountWith({ suggestion: { ok: true, data: NOT_REPO }, commandReply: () => ({ ok: false, error: { code: "invalid_request", message: "git doesn't know who you are." } }) });
+    await click(buttonByText("Cancel"));
+    await click(buttonByText("+ Add repo"));
+    await click(buttonByText("Set up git and add"));
+    expect(fake.command).toHaveBeenCalledOnce();
+    expect($('[role="alert"]')?.textContent).toBe("✕ Could not set up git: git doesn't know who you are.");
   });
 });
 

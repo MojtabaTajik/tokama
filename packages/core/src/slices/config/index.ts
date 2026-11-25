@@ -14,6 +14,7 @@ export { CONFIG_FORMAT, formatProblem, type ConfigError, type ConfigProblem } fr
 export {
   addRepo,
   removeRepo,
+  setUpRepo,
   suggestRepo,
   updateRepo,
   type AddRepoInput,

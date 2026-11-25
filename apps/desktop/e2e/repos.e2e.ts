@@ -97,3 +97,28 @@ flow(
   },
   "real",
 );
+
+flow(
+  "sets up git in a plain folder, then adds it",
+  async ({ app, page, tmp, home, screenshot }) => {
+    // The first commit needs an identity; git reads it from HOME.
+    writeFileSync(join(home, ".gitconfig"), "[user]\n\tname = t\n\temail = t@example.com\n");
+    const folder = join(tmp, "plain-app");
+    mkdirSync(folder);
+    writeFileSync(join(folder, "index.js"), "console.log(1);\n");
+    await app.evaluate(({ dialog }, path) => {
+      (dialog as { showOpenDialog: unknown }).showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
+    }, folder);
+    await page.getByRole("button", { name: "+ Add repo" }).click();
+    const add = page.getByRole("dialog", { name: "Add repo" });
+    await add.getByText("This folder isn't a git repo yet.").waitFor();
+    await add.getByText("The first commit will hold 1 file:").waitFor();
+    await screenshot("11-add-repo-no-git");
+    await add.getByRole("button", { name: "Set up git and add" }).click();
+    await add.waitFor({ state: "detached" });
+    await sidebarRow(page, "plain-app").waitFor();
+    expect(execFileSync("git", ["log", "--format=%s"], { cwd: folder }).toString().trim()).toBe("Initial commit");
+    expect(readFileSync(join(folder, ".gitignore"), "utf8")).toContain("node_modules/");
+  },
+  "real",
+);

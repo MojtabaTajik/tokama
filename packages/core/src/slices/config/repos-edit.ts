@@ -1,18 +1,19 @@
 // Changes to `repos.yaml`: suggest the settings of a folder, add it as a repo, change a repo's base
-// branch and checks, remove a repo.
+// branch and checks, remove a repo, and set a folder up with git and a first commit.
 // Only the engine calls these, one at a time. The file is edited as a YAML document, so its format
 // line, comments and order stay. The result must pass the rules loadRepos uses before it is
 // written: a temp file in the same folder, fsync, rename. A linked repos.yaml keeps its link: the
 // file behind it is replaced.
 import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { access, lstat, mkdir, open, realpath, rename, stat, unlink } from "node:fs/promises";
+import { access, lstat, mkdir, open, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { Document, isMap, isScalar, isSeq, parseDocument } from "yaml";
 import { readJsonFile } from "../../kernel/fs-safe/index.js";
 import type { Git, GitError } from "../../kernel/git/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import { MAX_CHECK_CHARS, type RepoId, RepoIdSchema } from "../../kernel/schemas/index.js";
+import { DEFAULT_GITIGNORE, type FirstCommitPreview, GITIGNORE_FILE, previewFirstCommit } from "./first-commit.js";
 import { MAX_CONFIG_BYTES } from "./read.js";
 import { BRANCH, checkProblem, DEFAULT_WORKTREE_FOLDER, type LoadReposOptions, type Repo, readReposFile, REPOS_FILE, type ReposFile, ReposFileSchema } from "./repos.js";
 import { clean, CONFIG_FORMAT, formatProblem, parseYaml, quote, type ConfigProblem } from "./yaml-file.js";
@@ -25,7 +26,7 @@ export interface RepoEditError {
 
 export interface RepoEditOptions extends LoadReposOptions {
   /** Tells whether a folder is a git repo's top folder, and its branch. */
-  readonly git: Pick<Git, "worktreeList" | "revParse">;
+  readonly git: Pick<Git, "worktreeList" | "revParse" | "init" | "addAll" | "commit">;
   /** Ids a new repo can't take though repos.yaml doesn't hold them, such as the sample engine's repos. */
   readonly reservedIds?: readonly string[];
 }
@@ -45,6 +46,8 @@ export interface RepoSuggestion {
   readonly checks: readonly string[];
   /** For a JS project with no package.json: `node --check` on its entry file, when there is one. */
   readonly fallbackCheck: string | undefined;
+  /** Set when Tokama can make the first commit here: no git repo yet, or a repo without commits. */
+  readonly firstCommit: FirstCommitPreview | undefined;
   /** Why the folder can't be added as it is, in plain words. */
   readonly problem: string | undefined;
 }
@@ -63,6 +66,7 @@ export interface AddRepoInput {
 const MAX_BRANCH = 100;
 // The placeholder `npm init` writes; it only fails.
 const NPM_PLACEHOLDER_TEST = "no test specified";
+const NOT_A_REPO = "This folder isn't a git repo yet.";
 const NO_COMMITS = "This repo has no commits yet. Make a first commit, then add it.";
 /** The files a plain JS project starts from, in the order `fallbackCheck` tries them. */
 const ENTRY_FILES = ["src/main.js", "main.js", "index.js"] as const;
@@ -81,6 +85,7 @@ export async function suggestRepo(options: RepoEditOptions, path: string): Promi
     branch: folder.value.branch,
     id: suggestId(folder.value.path, takenIds(options, repos)),
     checks: checks.commands,
+    firstCommit: folder.value.canSetUp ? await previewFirstCommit(folder.value.path, options.home) : undefined,
     fallbackCheck: checks.commands.length === 0 && !checks.hasPackageJson ? await suggestFallbackCheck(folder.value.path) : undefined,
     problem: folder.value.gitProblem ?? (folder.value.hasCommits ? undefined : NO_COMMITS) ?? (added === undefined ? undefined : `This folder is already added as ${quote(added)}.`),
   });
@@ -155,6 +160,46 @@ export async function updateRepo(options: LoadReposOptions, input: UpdateRepoInp
   }
   const written = await write(file.value.path, doc);
   return written.ok ? ok({ ...current, baseBranch, checks }) : written;
+}
+
+/**
+ * Makes the folder ready to add: `git init` when it is no repo, a default .gitignore when it has
+ * none, then a first commit of everything git does not ignore. A repo that has a commit already is
+ * left alone, so a second call after a later failure does no harm.
+ */
+export async function setUpRepo(options: RepoEditOptions, input: { readonly path: string; readonly baseBranch?: string }): Promise<Result<void, RepoEditError>> {
+  const folder = await inspectFolder(options.git, input.path);
+  if (!folder.ok) return folder;
+  if (!folder.value.canSetUp) return folder.value.gitProblem === undefined ? ok(undefined) : invalid(folder.value.gitProblem);
+  const preview = await previewFirstCommit(folder.value.path, options.home);
+  if (preview.refusal !== undefined) return invalid(preview.refusal);
+  const path = folder.value.path;
+  const failed = (action: string, error: GitError) => invalid(`Tokama couldn't ${action}: ${gitReason(error)}`);
+  if (folder.value.gitProblem !== undefined) {
+    const branch = input.baseBranch?.trim() || "main";
+    if (!BRANCH.test(branch) || branch.length > MAX_BRANCH) return invalid(`The base branch ${quote(branch)} must be a branch name, such as main.`);
+    const init = await options.git.init(path, branch);
+    if (!init.ok) return failed("set up git here", init.error);
+  }
+  if (preview.addsGitignore) {
+    try {
+      await writeFile(join(path, GITIGNORE_FILE), `${DEFAULT_GITIGNORE.join("\n")}\n`, { flag: "wx" });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") return invalid(`Tokama couldn't write ${GITIGNORE_FILE} (${(error as NodeJS.ErrnoException).code ?? String(error)}).`);
+    }
+  }
+  const added = await options.git.addAll(path);
+  if (!added.ok) return failed("stage the files", added.error);
+  const committed = await options.git.commit(path, "Initial commit");
+  if (!committed.ok) return failed("make the first commit", committed.error);
+  return ok(undefined);
+}
+
+/** Why a git call failed, in plain words; the identity problem gets its fix. */
+function gitReason(error: GitError): string {
+  if (/identity unknown|user\.name|user\.email/i.test(error.message)) return "git doesn't know who you are. Set user.name and user.email in your git config, then try again.";
+  const first = error.message.split("\n").find((line) => line.trim() !== "") ?? error.reason;
+  return clean(first.replace(/^fatal:\s*/, ""), 200);
 }
 
 /** Removes the repo from repos.yaml. Its items and worktrees stay where they are. */
@@ -250,6 +295,8 @@ async function writeAtomic(path: string, text: string): Promise<void> {
 }
 
 interface Folder {
+  /** Tokama can make the first commit: the folder is no git repo yet, or the repo has no commit. */
+  readonly canSetUp?: true;
   /** Real path. */
   readonly path: string;
   /** Why the folder isn't a git repo's top folder; undefined when it is. */
@@ -273,7 +320,10 @@ async function inspectFolder(git: Pick<Git, "worktreeList" | "revParse">, path: 
     return invalid(`The folder ${quotePath(path)} can't be read (${code ?? "unknown error"}).`);
   }
   const worktrees = await git.worktreeList(real);
-  if (!worktrees.ok) return ok({ path: real, hasCommits: false, gitProblem: gitFailure(worktrees.error) });
+  if (!worktrees.ok) {
+    const notRepo = worktrees.error.reason === "failed" && /not a git repository/i.test(worktrees.error.message);
+    return ok({ path: real, hasCommits: false, gitProblem: gitFailure(worktrees.error), ...(notRepo ? { canSetUp: true as const } : {}) });
+  }
   for (const worktree of worktrees.value) {
     if ((await realpathOr(worktree.path)) !== real) continue;
     if (worktree.bare) return ok({ path: real, hasCommits: false, gitProblem: "This folder is a bare git repo; Tokama needs one with files checked out." });
@@ -281,7 +331,7 @@ async function inspectFolder(git: Pick<Git, "worktreeList" | "revParse">, path: 
     // A repo with no commit has no HEAD to resolve: git exits non-zero, which is not a failure to run git.
     const head = await git.revParse(real, "HEAD");
     if (!head.ok && head.error.reason !== "failed") return ok({ path: real, hasCommits: false, gitProblem: gitFailure(head.error) });
-    return ok({ path: real, hasCommits: head.ok, ...(branch !== undefined && BRANCH.test(branch) ? { branch } : {}) });
+    return ok({ path: real, hasCommits: head.ok, ...(head.ok ? {} : { canSetUp: true as const }), ...(branch !== undefined && BRANCH.test(branch) ? { branch } : {}) });
   }
   return ok({ path: real, hasCommits: false, gitProblem: "This folder is inside a git repo. Pick the repo's top folder, the one that holds .git." });
 }
@@ -289,7 +339,7 @@ async function inspectFolder(git: Pick<Git, "worktreeList" | "revParse">, path: 
 /** Why git could not list the folder's worktrees, in plain words. */
 function gitFailure(error: GitError): string {
   if (error.reason !== "failed") return `Tokama couldn't run git to check this folder (${error.reason}).`;
-  if (/not a git repository/i.test(error.message)) return "This folder isn't a git repo.";
+  if (/not a git repository/i.test(error.message)) return NOT_A_REPO;
   // Such as "detected dubious ownership": git names the problem on its first line.
   const first = error.message.split("\n").find((line) => line.trim() !== "") ?? `exit code ${String(error.exitCode)}`;
   return `git can't use this folder: ${clean(first.replace(/^fatal:\s*/, ""), 200)}`;

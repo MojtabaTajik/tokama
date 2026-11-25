@@ -1,14 +1,15 @@
 // suggestRepo against real git: the top folder, a subfolder, a linked worktree and a detached HEAD.
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createGit } from "../../kernel/git/index.js";
 import { createProcessRunner } from "../../kernel/process/index.js";
-import { suggestRepo, type RepoEditOptions } from "./index.js";
+import { addRepo, setUpRepo, suggestRepo, type RepoEditOptions } from "./index.js";
 
 let root: string;
 let options: RepoEditOptions;
+let fullGit: ReturnType<typeof createGit>;
 
 /** Plain git for fixtures, never through the wrapper. HOME is the temp dir: no global config. */
 async function run(cwd: string, ...args: string[]): Promise<void> {
@@ -20,8 +21,11 @@ async function run(cwd: string, ...args: string[]): Promise<void> {
 
 beforeAll(async () => {
   root = realpathSync(mkdtempSync(join(tmpdir(), "tokama-repos-git-")));
+  // The identity the wrapper's own commit needs; HOME is the temp dir.
+  writeFileSync(join(root, ".gitconfig"), "[user]\n\tname = t\n\temail = t@example.com\n");
   const runner = createProcessRunner({ parentEnv: { PATH: process.env["PATH"], HOME: root } });
-  options = { tokamaHome: join(root, "home"), git: createGit({ runner }) };
+  fullGit = createGit({ runner });
+  options = { tokamaHome: join(root, "home"), git: fullGit };
   const repo = join(root, "orders-api");
   mkdirSync(join(repo, "src"), { recursive: true });
   await run(repo, "init", "-q", "-b", "trunk");
@@ -49,5 +53,30 @@ describe("suggestRepo with git", () => {
       ok: true,
       value: { gitRepo: false, problem: "This folder is inside a git repo. Pick the repo's top folder, the one that holds .git." },
     });
+  });
+});
+
+describe("setUpRepo with git", () => {
+  it("makes a plain folder a repo with a first commit that leaves out the default ignores, then adds it", async () => {
+    const folder = join(root, "plain-app");
+    mkdirSync(join(folder, "node_modules", "dep"), { recursive: true });
+    writeFileSync(join(folder, "index.js"), "console.log(1);\n");
+    writeFileSync(join(folder, ".env"), "SECRET=1\n");
+    writeFileSync(join(folder, "node_modules", "dep", "a.js"), "1");
+    expect(await suggestRepo(options, folder)).toMatchObject({ ok: true, value: { gitRepo: false, firstCommit: { files: 1, sample: ["index.js"], addsGitignore: true } } });
+
+    expect(await setUpRepo(options, { path: folder })).toEqual({ ok: true, value: undefined });
+    expect(readFileSync(join(folder, ".gitignore"), "utf8")).toContain("node_modules/");
+    expect(await fullGit.lsTree(folder, "HEAD")).toEqual({ ok: true, value: [".gitignore", "index.js"] });
+    expect(await suggestRepo(options, folder)).toMatchObject({ ok: true, value: { gitRepo: true, hasCommits: true, branch: "main", firstCommit: undefined, problem: undefined } });
+    expect(await addRepo(options, { path: folder })).toMatchObject({ ok: true, value: { baseBranch: "main" } });
+    expect(await setUpRepo(options, { path: folder }), "a second call changes nothing").toEqual({ ok: true, value: undefined });
+  });
+
+  it("makes the first commit in a repo that has none", async () => {
+    const folder = join(root, "unborn");
+    writeFileSync(join(folder, "a.txt"), "1");
+    expect(await setUpRepo(options, { path: folder })).toEqual({ ok: true, value: undefined });
+    expect(await suggestRepo(options, folder)).toMatchObject({ ok: true, value: { hasCommits: true, branch: "main", problem: undefined } });
   });
 });

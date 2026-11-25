@@ -92,6 +92,7 @@ export {
   formatProblem,
   loadRepos,
   removeRepo,
+  setUpRepo,
   suggestRepo,
   updateRepo,
   type AddRepoInput,

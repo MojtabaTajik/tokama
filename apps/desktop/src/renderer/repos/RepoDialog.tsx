@@ -29,6 +29,12 @@ const TEXT = {
   noChecksWhy: "Tokama runs checks after the agent's change, to see whether it still works. Quick fix and Plan and build need at least one; templates where you approve the change work without checks.",
   fallback: (command: string) => `This folder has no package.json. If it is a plain JavaScript project, ${command} at least checks that its entry file parses.`,
   useFallback: (command: string) => `Use ${command}`,
+  setUpGit: "Set up git and add",
+  firstCommit: "Make a first commit and add",
+  firstCommitFiles: (files: number) => `The first commit will hold ${files} ${files === 1 ? "file" : "files"}:`,
+  firstCommitMore: (rest: number) => `…and ${rest} more`,
+  addsGitignore: "Tokama also adds a .gitignore that leaves out .DS_Store, node_modules/, .env*, dist/ and build/.",
+  setUpFailed: (message: string) => `Could not set up git: ${message}`,
 } as const;
 
 export type RepoDialogProps = {
@@ -62,7 +68,7 @@ export function RepoDialog({ bridge, path, repo, onClose }: RepoDialogProps) {
         if (!reply.ok) return setLoaded({ ok: false, message: reply.error.message });
         setLoaded({ ok: true, suggestion: reply.data });
         setId(reply.data.id ?? "");
-        setBaseBranch(reply.data.branch ?? "");
+        setBaseBranch(reply.data.branch ?? (reply.data.firstCommit === null ? "" : "main"));
         setChecks(reply.data.checks.join("\n"));
       });
     return () => {
@@ -71,14 +77,26 @@ export function RepoDialog({ bridge, path, repo, onClose }: RepoDialogProps) {
   }, [bridge, path]);
 
   const suggestion = loaded?.ok ? loaded.suggestion : undefined;
-  const ready = editing || (suggestion !== undefined && suggestion.problem === null);
+  const firstCommit = suggestion?.firstCommit ?? null;
+  const ready = editing || (suggestion !== undefined && (suggestion.problem === null || firstCommit !== null));
+  const canAdd = editing || (suggestion !== undefined && suggestion.problem === null);
   const lines = checks.split("\n").map((line) => line.trim()).filter((line) => line !== "");
   const fallback = suggestion?.fallbackCheck ?? null;
-  const submit = async (event: FormEvent) => {
+  const submit = async (event: FormEvent, setUp = false) => {
     event.preventDefault();
-    if (!ready || busy) return;
+    if (!ready || busy || (!canAdd && !setUp)) return;
     setBusy(true);
     setError(undefined);
+    if (setUp && suggestion !== undefined) {
+      const done = await bridge
+        .command({ type: "init_repo", path: suggestion.path, ...(baseBranch.trim() === "" || suggestion.gitRepo ? {} : { baseBranch: baseBranch.trim() }) })
+        .catch((cause: unknown) => ({ ok: false as const, error: { code: "bridge_error", message: String(cause) } }));
+      if (!done.ok) {
+        setBusy(false);
+        setError(TEXT.setUpFailed(done.error.message));
+        return;
+      }
+    }
     const reply = await bridge
       .command(
         repo !== undefined
@@ -120,6 +138,19 @@ export function RepoDialog({ bridge, path, repo, onClose }: RepoDialogProps) {
             <Field label={TEXT.checks} hint={TEXT.checksHint}>
               {(props) => <textarea {...props} className="mono" rows={3} value={checks} onChange={(event) => setChecks(event.target.value)} spellCheck={false} />}
             </Field>
+            {firstCommit !== null && firstCommit.refusal === null && (
+              <div className="repo-note">
+                <p>{TEXT.firstCommitFiles(firstCommit.files)}</p>
+                <ul className="mono">
+                  {firstCommit.sample.map((file) => (
+                    <li key={file}>{file}</li>
+                  ))}
+                </ul>
+                {firstCommit.files > firstCommit.sample.length && <p>{TEXT.firstCommitMore(firstCommit.files - firstCommit.sample.length)}</p>}
+                {firstCommit.addsGitignore && <p>{TEXT.addsGitignore}</p>}
+              </div>
+            )}
+            {firstCommit?.refusal != null && <Problem text={firstCommit.refusal} />}
             {lines.length === 0 && (
               <div className="repo-note">
                 <p>
@@ -139,9 +170,14 @@ export function RepoDialog({ bridge, path, repo, onClose }: RepoDialogProps) {
         )}
         {error !== undefined && <Problem text={error} alert />}
         <div className="choices">
-          <button type="submit" className="choice primary" disabled={busy || !ready}>
+          <button type="submit" className="choice primary" disabled={busy || !canAdd}>
             {editing ? (busy ? TEXT.saving : TEXT.save) : busy ? TEXT.adding : TEXT.add}
           </button>
+          {firstCommit !== null && firstCommit.refusal === null && (
+            <button type="button" className="choice" disabled={busy} onClick={(event) => void submit(event, true)}>
+              {suggestion?.gitRepo ? TEXT.firstCommit : TEXT.setUpGit}
+            </button>
+          )}
           <button type="button" className="choice" onClick={onClose}>
             {TEXT.cancel}
           </button>

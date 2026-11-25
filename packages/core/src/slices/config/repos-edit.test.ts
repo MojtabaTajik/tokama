@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Git, GitError, WorktreeEntry } from "../../kernel/git/index.js";
 import { err, ok } from "../../kernel/result/index.js";
-import { addRepo, loadRepos, removeRepo, suggestRepo, updateRepo, type RepoEditOptions } from "./index.js";
+import { addRepo, loadRepos, removeRepo, setUpRepo, suggestRepo, updateRepo, type RepoEditOptions } from "./index.js";
 
 let root: string;
 let home: string;
@@ -14,16 +14,38 @@ let worktrees: Map<string, string | undefined>;
 let gitError: GitError;
 /** Folders the fake git gives no HEAD commit. */
 let unborn: Set<string>;
+/** What the fake git was asked to do to a folder, in order, as `init:<branch>`, `add` and `commit`. */
+let calls: string[];
+/** What the fake `git commit` answers; undefined: it works. */
+let commitError: GitError | undefined;
 beforeEach(() => {
   root = realpathSync(mkdtempSync(join(tmpdir(), "tokama-repos-edit-")));
   home = join(root, "tokama-home");
   worktrees = new Map();
   unborn = new Set();
+  calls = [];
+  commitError = undefined;
   gitError = { reason: "failed", args: [], exitCode: 128, message: "fatal: not a git repository (or any of the parent directories): .git" };
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-const git: Pick<Git, "worktreeList" | "revParse"> = {
+const git: Pick<Git, "worktreeList" | "revParse" | "init" | "addAll" | "commit"> = {
+  init: async (repo, branch) => {
+    calls.push(`init:${branch}`);
+    worktrees.set(repo, branch);
+    unborn.add(repo);
+    return ok(undefined);
+  },
+  addAll: async () => {
+    calls.push("add");
+    return ok(undefined);
+  },
+  commit: async (repo) => {
+    calls.push("commit");
+    if (commitError !== undefined) return err(commitError);
+    unborn.delete(repo);
+    return ok("a".repeat(40));
+  },
   revParse: async (repo) => (unborn.has(repo) ? err({ reason: "failed", args: [], exitCode: 128, message: "fatal: Needed a single revision" }) : ok("a".repeat(40))),
   worktreeList: async (repo) => {
     if (!worktrees.has(repo)) return err(gitError);
@@ -135,7 +157,7 @@ repos:
     mkdirSync(join(root, "plain"));
     writeFileSync(join(root, "file.txt"), "x");
     const cases: [string, string][] = [
-      [join(root, "plain"), "This folder isn't a git repo."],
+      [join(root, "plain"), "This folder isn't a git repo yet."],
       [join(root, "missing"), `The folder '${join(root, "missing")}' doesn't exist.`],
       [join(root, "file.txt"), `'${join(root, "file.txt")}' isn't a folder.`],
       ["code/orders-api", "The folder must be a full path, such as /home/me/code/orders-api."],
@@ -235,6 +257,94 @@ describe("a repo without commits", () => {
     const path = repo("odd");
     const broken: RepoEditOptions = { ...options(), git: { ...git, revParse: async () => err({ reason: "timed-out", args: [], exitCode: null, message: "" }) } };
     expect(await suggestRepo(broken, path)).toMatchObject({ ok: true, value: { gitRepo: false, problem: "Tokama couldn't run git to check this folder (timed-out)." } });
+  });
+});
+
+describe("first commit", () => {
+  const folder = (name: string, files: Record<string, string> = { "index.js": "1" }) => {
+    const path = join(root, name);
+    mkdirSync(path, { recursive: true });
+    for (const [file, content] of Object.entries(files)) {
+      mkdirSync(dirname(join(path, file)), { recursive: true });
+      writeFileSync(join(path, file), content);
+    }
+    return path;
+  };
+
+  it("previews a folder that is no repo: counts the files, skips the default ignores, names the first ten", async () => {
+    const files: Record<string, string> = { "node_modules/x/a.js": "1", "dist/b.js": "1", ".env": "1", ".env.local": "1", ".DS_Store": "1", "build/c": "1", "src/main.js": "1" };
+    for (let i = 0; i < 12; i++) files[`f${String(i).padStart(2, "0")}.txt`] = "x";
+    const path = folder("plain", files);
+    const suggestion = await suggestRepo(options(), path);
+    expect(suggestion).toMatchObject({ ok: true, value: { gitRepo: false, hasCommits: false, problem: "This folder isn't a git repo yet." } });
+    const preview = suggestion.ok ? suggestion.value.firstCommit : undefined;
+    expect(preview).toMatchObject({ files: 13, addsGitignore: true, refusal: undefined });
+    expect(preview?.sample).toHaveLength(10);
+    expect(preview?.sample[0]).toBe("f00.txt");
+  });
+
+  it("uses the plain names of the folder's own .gitignore instead of the defaults", async () => {
+    const path = folder("own", { ".gitignore": "# c\n/target/\n*.log\nvendor\n", "target/x": "1", "vendor/y": "1", "a.log": "1", "node_modules/z": "1", "keep.txt": "1" });
+    const suggestion = await suggestRepo(options(), path);
+    expect(suggestion).toMatchObject({ ok: true, value: { firstCommit: { files: 4, addsGitignore: false } } });
+  });
+
+  it("offers a first commit for a repo without commits, and none for a repo with one or a subfolder", async () => {
+    const fresh = repo("fresh", { "a.txt": "1" });
+    unborn.add(fresh);
+    expect(await suggestRepo(options(), fresh)).toMatchObject({ ok: true, value: { gitRepo: true, firstCommit: { files: 1 } } });
+    expect((await suggestRepo(options(), repo("done", { "a.txt": "1" }))) as { value: { firstCommit: unknown } }).toMatchObject({ value: { firstCommit: undefined } });
+    gitError = { reason: "failed", args: [], exitCode: 128, message: "x" };
+    mkdirSync(join(root, "sub"));
+    expect((await suggestRepo(options(), join(root, "sub"))) as { value: { firstCommit: unknown } }).toMatchObject({ value: { firstCommit: undefined } });
+  });
+
+  it("refuses the home folder, and a folder with more than 5,000 files", async () => {
+    const path = folder("many", {});
+    for (let i = 0; i < 5001; i++) writeFileSync(join(path, `f${i}`), "");
+    const many = await suggestRepo(options(), path);
+    expect(many).toMatchObject({ ok: true, value: { firstCommit: { refusal: expect.stringContaining("more than 5,000 files") } } });
+    expect(await setUpRepo(options(), { path })).toMatchObject({ ok: false, error: { code: "invalid_request", message: expect.stringContaining("more than 5,000 files") } });
+
+    const homeDir = folder("home-dir");
+    const atHome = { ...options(), home: homeDir };
+    expect(await suggestRepo(atHome, homeDir)).toMatchObject({ ok: true, value: { firstCommit: { refusal: expect.stringContaining("home folder") } } });
+    expect(await setUpRepo(atHome, { path: homeDir })).toMatchObject({ ok: false, error: { message: expect.stringContaining("home folder") } });
+    expect(calls).toEqual([]);
+  });
+
+  it("sets up git, writes the default .gitignore and commits; the folder can then be added", async () => {
+    const path = folder("plain", { "index.js": "1", "node_modules/x": "1" });
+    expect(await setUpRepo(options(), { path })).toEqual({ ok: true, value: undefined });
+    expect(calls).toEqual(["init:main", "add", "commit"]);
+    expect(readFileSync(join(path, ".gitignore"), "utf8")).toBe(".DS_Store\nnode_modules/\n.env*\ndist/\nbuild/\n");
+    expect(await addRepo(options(), { path })).toMatchObject({ ok: true, value: { baseBranch: "main" } });
+  });
+
+  it("uses the base branch given, keeps an existing .gitignore, and refuses a bad branch", async () => {
+    const path = folder("own", { ".gitignore": "secret\n", "a": "1" });
+    expect(await setUpRepo(options(), { path, baseBranch: "bad branch" })).toMatchObject({ ok: false, error: { message: expect.stringContaining("base branch") } });
+    expect(calls).toEqual([]);
+    expect(await setUpRepo(options(), { path, baseBranch: "trunk" })).toMatchObject({ ok: true });
+    expect(calls[0]).toBe("init:trunk");
+    expect(readFileSync(join(path, ".gitignore"), "utf8")).toBe("secret\n");
+  });
+
+  it("commits in a repo that has none, and does nothing for a repo that has one", async () => {
+    const fresh = repo("fresh", { "a.txt": "1" });
+    unborn.add(fresh);
+    expect(await setUpRepo(options(), { path: fresh })).toMatchObject({ ok: true });
+    expect(calls).toEqual(["add", "commit"]);
+    expect(await setUpRepo(options(), { path: fresh })).toMatchObject({ ok: true });
+    expect(calls).toEqual(["add", "commit"]);
+  });
+
+  it("refuses a subfolder of a repo, and explains a missing git identity", async () => {
+    gitError = { reason: "failed", args: [], exitCode: 128, message: "fatal: something else" };
+    expect(await setUpRepo(options(), { path: folder("sub") })).toMatchObject({ ok: false, error: { message: "git can't use this folder: something else" } });
+    gitError = { reason: "failed", args: [], exitCode: 128, message: "fatal: not a git repository" };
+    commitError = { reason: "failed", args: [], exitCode: 128, message: "Author identity unknown\n\n*** Please tell me who you are." };
+    expect(await setUpRepo(options(), { path: folder("noid") })).toMatchObject({ ok: false, error: { message: expect.stringContaining("user.name and user.email") } });
   });
 });
 
@@ -384,7 +494,7 @@ describe("suggestRepo", () => {
     mkdirSync(join(root, "plain"));
     expect(await suggestRepo(options(), join(root, "plain"))).toMatchObject({
       ok: true,
-      value: { gitRepo: false, branch: undefined, id: "plain", problem: "This folder isn't a git repo." },
+      value: { gitRepo: false, branch: undefined, id: "plain", problem: "This folder isn't a git repo yet." },
     });
     expect(await suggestRepo(options(), join(root, "missing"))).toMatchObject({ ok: false, error: { code: "invalid_request" } });
   });
