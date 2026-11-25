@@ -18,6 +18,15 @@ flow("shows the model and the step line on a row, and opens the agent tooltip on
   await expect.poll(() => flat(wrap.locator(".pl-agent").innerText()), { message: "the agent and its model" }).toBe("Orders builder · qwen3-coder:30b");
   // The step line names the step and its attempt, however narrow the list is.
   await expect.poll(() => flat(wrap.locator(".pl-pipe").innerText())).toMatch(/Build\s*· attempt 1/);
+  // The row's click cover must not hide the time and the steps from the pointer: their titles show on hover.
+  for (const part of [".pl-time", ".pl-step"]) {
+    const hit = await wrap.locator(part).first().evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const top = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+      return top !== null && el.contains(top);
+    });
+    expect(hit, `${part} takes the pointer`).toBe(true);
+  }
   await screenshot("12-agent-row");
 
   const label = wrap.locator(".al-button");

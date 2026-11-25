@@ -459,7 +459,7 @@ function Steps({ item, setup, onOpenAgent }: { readonly item: ItemRecord; readon
                 {step.name}
                 <span className="visually-hidden">, {mark.word}</span>
               </p>
-              <p className="step-where">
+              <div className="step-where">
                 {tip === undefined ? (
                   <>
                     <span className="dot" data-dot={agent.dot} aria-hidden="true" />
@@ -469,7 +469,7 @@ function Steps({ item, setup, onOpenAgent }: { readonly item: ItemRecord; readon
                   <AgentLabel info={tip} onOpen={onOpenAgent} />
                 )}{" "}
                 <span>· {whereLine(step, agents, connections)}</span>
-              </p>
+              </div>
               {step.detail !== undefined && <p className="step-detail mono">{step.detail}</p>}
               {step.attempts !== undefined && step.attempts.length > 0 && (
                 <ol className="step-attempts" aria-label={`${step.name}: ${TEXT.attempts}`}>

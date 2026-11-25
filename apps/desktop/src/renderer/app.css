@@ -708,6 +708,13 @@ button:focus-visible {
   inset: 0;
 }
 
+/* Above the cover, so the titles on the steps and the time still show on hover. */
+.pl-step,
+.pl-time {
+  position: relative;
+  z-index: 1;
+}
+
 .pl-row:focus-visible {
   outline: none;
 }
