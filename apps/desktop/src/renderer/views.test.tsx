@@ -131,7 +131,7 @@ describe("status filter", () => {
     await mount();
     await click(segment("Done"));
     expect(groups()).toEqual([["Done today", ["Try a cache for prices", "Bump the Postgres driver"]]]);
-    expect([...($(".range") as HTMLSelectElement).options].map((option) => option.textContent)).toEqual(["Today", "7 days", "30 days"]);
+    expect([...($(".range") as HTMLSelectElement).options].map((option) => option.textContent)).toEqual(["Today", "7 days", "30 days", "All time"]);
     await choose($(".range"), "7d");
     expect(groups()).toEqual([["Done last 7 days", ["Try a cache for prices", "Bump the Postgres driver", "Remove the old export flag"]]]);
     expect(counts()).toEqual(["Active5", "Needs you1", "Done3", "Failed1", "All"]);
@@ -151,7 +151,11 @@ describe("status filter", () => {
     expect(groups()).toEqual([["Needs you", ["Orders API returns 500 after deploy"]]]);
     await click(segment("All"));
     expect(groups().map(([name]) => name)).toEqual(["Needs you", "Running", "Done today", "Failed today"]);
-    expect($(".range")).toBeNull();
+    // All has the same picker; it limits finished work only.
+    expect(($(".range") as HTMLSelectElement).value).toBe("today");
+    await choose($(".range"), "30d");
+    expect(groups().map(([name]) => name)).toEqual(["Needs you", "Running", "Done last 30 days", "Failed last 30 days"]);
+    expect(groups()[0]).toEqual(["Needs you", ["Orders API returns 500 after deploy"]]);
   });
 
   it("remembers the choice for each view", async () => {

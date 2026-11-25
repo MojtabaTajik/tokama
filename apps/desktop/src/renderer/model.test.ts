@@ -10,6 +10,8 @@ import {
   healthProblemsOf,
   DEFAULT_FILTER,
   filterCounts,
+  listEntries,
+  sinceOf,
   flagOf,
   cardStatus,
   groupItems,
@@ -351,5 +353,22 @@ describe("health from the setup", () => {
       { title: "git cannot be used", detail: "git 2.44 or newer is required; found: git version 2.39.0" },
       { title: "repos.yaml did not load", detail: "repos.yaml line 3: base_branch is missing" },
     ]);
+  });
+});
+
+describe("long list days", () => {
+  const now = new Date(2026, 10, 24, 0, 10).getTime();
+  const at = (day: number, hour: number) => ({ id: `${day}-${hour}`, createdAt: new Date(2026, 10, day, hour).getTime() }) as unknown as ItemRecord;
+
+  it("gives a range's first local day, and none for all time", () => {
+    expect([sinceOf("today", now), sinceOf("7d", now), sinceOf("30d", now), sinceOf("all", now)]).toEqual(["2026-11-24", "2026-11-18", "2026-10-26", undefined]);
+  });
+
+  it("puts a header before each day's first row, splitting at local midnight", () => {
+    const rows = [at(24, 0), at(23, 23), at(23, 1), at(20, 9)];
+    const entries = listEntries(rows, new Map([["2026-11-23", 9]]), now);
+    expect(entries.map((entry) => (entry.kind === "day" ? `${entry.label} ${entry.count}` : entry.item.id))).toEqual(["Today 1", "24-0", "Yesterday 9", "23-23", "23-1", "Fri 20 Nov 1", "20-9"]);
+    // Without days, no headers.
+    expect(listEntries(rows, undefined, now).every((entry) => entry.kind === "item")).toBe(true);
   });
 });

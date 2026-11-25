@@ -371,8 +371,8 @@ describe("App live updates", () => {
     await render(fake.bridge);
     act(() => root.unmount());
     expect(fake.stops.connection).toHaveBeenCalledOnce();
-    // The engine data, the usage report, the diagnostics badge and the crash prompt each listen.
-    expect(fake.stops.event).toHaveBeenCalledTimes(4);
+    // The engine data, the work list, the usage report, the diagnostics badge and the crash prompt each listen.
+    expect(fake.stops.event).toHaveBeenCalledTimes(5);
     root = createRoot(container);
   });
 });

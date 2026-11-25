@@ -1,10 +1,14 @@
 // A bridge over the test data for renderer tests: `setup`, `board` and `item` answer from it, and
-// connection changes and events are pushed by hand inside React's act().
+// `item_list` from it plus the items pushed since (a simple stand-in for the engine's index: group,
+// start day, repo, template and a title search). Connection changes and events are pushed by hand
+// inside React's act().
 import type { ItemRecord } from "@tokama/core";
 import { act } from "react";
 import { vi } from "vitest";
 import type { AboutInfo, BridgeEvent, ConnectionState, DiagnosticsLoad, DiagnosticsSaveResult, DiagnosticsSendResult, OpenResult, TokamaBridge } from "../../shared/bridge.js";
 import { DEFAULT_DESKTOP_STATE, type DesktopState } from "../../shared/desktop-state.js";
+import { localDay } from "../format/day.js";
+import { bucketOf } from "../model.js";
 import { items, setup } from "./sample.js";
 
 export type Reply = { ok: true; data: unknown } | { ok: false; error: { code: string; message: string } };
@@ -26,11 +30,13 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
   const eventListeners = new Set<(event: BridgeEvent) => void>();
   const stops = { connection: vi.fn(), event: vi.fn() };
   const boardItems = options.boardItems ?? items;
+  const listed = new Map(boardItems.map((item) => [item.id, item]));
   const query = vi.fn(async (q: { type: string; itemId?: string }): Promise<Reply> => {
     const custom = options.reply?.(q);
     if (custom) return custom;
     if (q.type === "setup") return { ok: true, data: setup };
     if (q.type === "board") return { ok: true, data: { items: boardItems } };
+    if (q.type === "item_list") return { ok: true, data: itemList([...listed.values()], q as unknown as ListQuery) };
     const item = q.type === "item" ? boardItems.find((candidate) => candidate.id === q.itemId) : undefined;
     if (item) return { ok: true, data: { item } };
     return { ok: false, error: { code: "not_implemented", message: q.type } };
@@ -79,6 +85,7 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
   const setConnection = (state: ConnectionState) => act(async () => connectionListener?.(state));
   let seq = 0;
   const pushItem = (item: ItemRecord) => act(async () => {
+      listed.set(item.id, item);
       for (const listener of eventListeners) listener({ kind: "event", seq: seq++, event: { type: "item_updated", item } });
     });
   const pushEvent = (event: BridgeEvent["event"]) => act(async () => {
@@ -95,4 +102,39 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
   /** A click on a notification: the main process asks the window to open the item. */
   const openItem = (itemId: string) => act(async () => openListener?.(itemId));
   return { bridge, query, saveLayout, saveNotifications, setViewedItem, openItem, copyBuildInfo, showDataFolder, command, retryConnection, openTemplateFile, setConnection, pushItem, pushEvent, stops };
+}
+
+export interface ListQuery {
+  readonly group: string;
+  readonly since?: string;
+  readonly repo?: string;
+  readonly template?: string;
+  readonly q?: string;
+  readonly before?: string;
+  readonly limit: number;
+}
+
+/** The engine's item_list answer over these items. */
+export function itemList(all: readonly ItemRecord[], query: ListQuery) {
+  const groupOf = (item: ItemRecord) => (bucketOf(item) === "active" ? "running" : bucketOf(item));
+  const text = (query.q ?? "").trim().toLowerCase();
+  const finished = query.group === "done" || query.group === "failed";
+  const matching = all
+    .filter((item) => groupOf(item) === query.group)
+    .filter((item) => !finished || query.since === undefined || localDay(item.createdAt) >= query.since)
+    .filter((item) => query.repo === undefined || (item.repoIds as readonly string[]).includes(query.repo))
+    .filter((item) => query.template === undefined || item.templateId === query.template)
+    .filter((item) => text === "" || item.title.toLowerCase().includes(text))
+    .sort((a, b) => b.createdAt - a.createdAt || (a.id < b.id ? 1 : -1));
+  const key = (item: ItemRecord) => `${item.createdAt}:${item.id}`;
+  const start = query.before === undefined ? 0 : matching.findIndex((item) => key(item) === query.before) + 1;
+  const page = matching.slice(start, start + query.limit);
+  const more = start + query.limit < matching.length;
+  const onPage = [...new Set(page.map((item) => localDay(item.createdAt)))];
+  return {
+    items: page,
+    nextCursor: more ? key(page.at(-1)!) : null,
+    total: matching.length,
+    days: finished ? onPage.map((day) => ({ day, count: matching.filter((item) => localDay(item.createdAt) === day).length })) : [],
+  };
 }

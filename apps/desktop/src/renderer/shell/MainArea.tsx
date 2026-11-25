@@ -4,16 +4,14 @@
 // details take the place of the list; a failed load shows its reason and a Retry action there.
 import type { FinishAction, ItemRecord, Setup } from "@tokama/core";
 import type { ReactNode } from "react";
-import { Board } from "../board/Board.js";
-import type { ConnectionState } from "../../shared/bridge.js";
-import { ItemList } from "../list/ItemList.js";
-import { ALL_WORK, groupItems, inView, summaryOf, visibleItems } from "../model.js";
+import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
+import { WorkArea } from "../list/WorkArea.js";
+import { ALL_WORK, inView, summaryOf } from "../model.js";
 import type { AgentTarget } from "../settings/describe.js";
 import type { Layout, ViewState } from "../useViewState.js";
 import { ConnectionFailure, startingWords } from "./ConnectionStatus.js";
 import { FirstLaunch, NoWork } from "./EmptyStates.js";
 import { RepoIcon } from "./icons.js";
-import { StatusFilter } from "./StatusFilter.js";
 import { TemplateIcon } from "./TemplateIcon.js";
 
 const TEXT = {
@@ -30,6 +28,8 @@ const TEXT = {
 } as const;
 
 export interface MainAreaProps {
+  /** The work list loads its pages and searches through it. */
+  readonly bridge: TokamaBridge;
   readonly connection: ConnectionState;
   readonly loadError: string | undefined;
   readonly onRetry: () => void;
@@ -142,24 +142,24 @@ function Body(props: MainAreaProps & { readonly template: Setup["templates"][num
       ) : scoped.length === 0 ? (
         <NoWork />
       ) : (
-        <>
-          <StatusFilter items={scoped} filter={views.filter} now={now} onChange={views.setFilter} />
-          {template !== undefined && views.layout === "board" ? (
-            <Board items={visibleItems(scoped, views.filter, now)} agents={setup.agents} template={template} selectedItemId={selectedItemId} onSelect={onSelectItem} now={now} />
-          ) : (
-            <ItemList
-              groups={groupItems(scoped, views.filter, now)}
-              setup={setup}
-              now={now}
-              selectedItemId={selectedItemId}
-              onSelect={onSelectItem}
-              repoId={views.view.kind === "repo" ? views.view.id : undefined}
-              {...(props.onFinish !== undefined && { onFinish: props.onFinish })}
-              {...(props.onDiscard !== undefined && { onDiscard: props.onDiscard })}
-              {...(props.onOpenAgent !== undefined && { onOpenAgent: props.onOpenAgent })}
-            />
-          )}
-        </>
+        <WorkArea
+          bridge={props.bridge}
+          connected={connection.status === "connected"}
+          setup={setup}
+          scoped={scoped}
+          items={new Map(items.map((item) => [item.id, item]))}
+          view={views.view}
+          filter={views.filter}
+          onFilter={views.setFilter}
+          layout={views.layout}
+          template={template}
+          now={now}
+          selectedItemId={selectedItemId}
+          onSelectItem={onSelectItem}
+          onFinish={props.onFinish}
+          onDiscard={props.onDiscard}
+          onOpenAgent={props.onOpenAgent}
+        />
       )}
     </>
   );

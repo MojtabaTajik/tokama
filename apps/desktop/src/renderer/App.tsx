@@ -353,6 +353,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
         />
       ) : (
         <MainArea
+          bridge={bridge}
           connection={connection}
           loadError={loadError}
           onRetry={retry}

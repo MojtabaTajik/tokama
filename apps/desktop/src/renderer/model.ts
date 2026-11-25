@@ -4,6 +4,7 @@
 import type { AgentSummary, AiCliId, Health, ItemRecord, StepRecord, TemplateSummary } from "@tokama/core";
 import { itemMark, type Mark, stepAgent, type StepAgent, stepMark } from "./drawer/describe.js";
 import { itemTotal } from "./drawer/progress-view.js";
+import { dayLabel, daysBefore, localDay } from "./format/day.js";
 
 /** What the main area shows: everything, one workflow's items, or one repo's items. */
 export type View = { readonly kind: "all" } | { readonly kind: "workflow"; readonly id: string } | { readonly kind: "repo"; readonly id: string };
@@ -44,14 +45,15 @@ export const STATUS_FILTERS: readonly { readonly id: StatusFilter; readonly labe
   { id: "all", label: "All" },
 ];
 
-export type Range = "today" | "7d" | "30d";
+export type Range = "today" | "7d" | "30d" | "all";
 export const RANGES: readonly { readonly id: Range; readonly label: string }[] = [
   { id: "today", label: "Today" },
   { id: "7d", label: "7 days" },
   { id: "30d", label: "30 days" },
+  { id: "all", label: "All time" },
 ];
 /** Whole days before today that a range reaches back: "7 days" is today and the 6 days before it. */
-const RANGE_DAYS: Readonly<Record<Range, number>> = { today: 0, "7d": 6, "30d": 29 };
+const RANGE_DAYS: Readonly<Record<Range, number>> = { today: 0, "7d": 6, "30d": 29, all: Infinity };
 
 export interface Filter {
   readonly status: StatusFilter;
@@ -59,11 +61,18 @@ export interface Filter {
 }
 export const DEFAULT_FILTER: Filter = { status: "active", range: "today" };
 
-/** The range that applies to the list: only Done and Failed offer a choice, the other filters show today. */
-export const effectiveRange = (filter: Filter): Range => (filter.status === "done" || filter.status === "failed" ? filter.range : "today");
+/** Whether the status filter offers a range: Done, Failed and All (where it limits finished work only). */
+export const hasRange = (status: StatusFilter): boolean => status === "done" || status === "failed" || status === "all";
+
+/** The range that applies to the list: Done, Failed and All offer a choice, the other filters show today. */
+export const effectiveRange = (filter: Filter): Range => (hasRange(filter.status) ? filter.range : "today");
+
+/** The first local day of a range, as the engine filters by; undefined for all time. */
+export const sinceOf = (range: Range, now: number): string | undefined => (range === "all" ? undefined : daysBefore(now, RANGE_DAYS[range]));
 
 /** Whether the item was created within the range (local calendar days; the engine records no end time). */
 export function inRange(item: Pick<ItemRecord, "createdAt">, range: Range, now: number): boolean {
+  if (range === "all") return true;
   const today = new Date(now);
   const from = new Date(today.getFullYear(), today.getMonth(), today.getDate() - RANGE_DAYS[range]);
   return item.createdAt >= from.getTime();
@@ -107,11 +116,40 @@ export interface ItemGroup {
   readonly key: GroupKey;
   readonly name: string;
   readonly items: readonly ItemRecord[];
+  /** Every item of the group, also those not loaded; the loaded items by default; undefined while loading. */
+  readonly count?: number | undefined;
+  /** Set when the rows go under day headers: each local day's full count. */
+  readonly days?: ReadonlyMap<string, number> | undefined;
 }
 
-const RANGE_WORDS: Readonly<Record<Range, string>> = { today: "today", "7d": "last 7 days", "30d": "last 30 days" };
+export type ListEntry = { readonly kind: "day"; readonly day: string; readonly label: string; readonly count: number } | { readonly kind: "item"; readonly item: ItemRecord };
+
+/**
+ * The rows of a group in their order, with a day header before the first row of each local start
+ * day: "Today", "Yesterday", "Sun 22 Nov". A day split over two pages keeps one header; its count
+ * is the full count the engine gave, or the loaded rows when it gave none.
+ */
+export function listEntries(items: readonly ItemRecord[], days: ReadonlyMap<string, number> | undefined, now: number): ListEntry[] {
+  if (days === undefined) return items.map((item) => ({ kind: "item", item }));
+  const entries: ListEntry[] = [];
+  let last: string | undefined;
+  for (const item of items) {
+    const day = localDay(item.createdAt);
+    if (day !== last) {
+      last = day;
+      entries.push({ kind: "day", day, label: dayLabel(day, now), count: days.get(day) ?? items.filter((other) => localDay(other.createdAt) === day).length });
+    }
+    entries.push({ kind: "item", item });
+  }
+  return entries;
+}
+
+const RANGE_WORDS: Readonly<Record<Range, string>> = { today: "today", "7d": "last 7 days", "30d": "last 30 days", all: "all time" };
+
+/** The range in the words of a group name: "Done last 30 days". */
+export const rangeWords = (range: Range): string => RANGE_WORDS[range];
 /** Which groups each filter shows. */
-const GROUPS_OF: Readonly<Record<StatusFilter, readonly GroupKey[]>> = {
+export const GROUPS_OF: Readonly<Record<StatusFilter, readonly GroupKey[]>> = {
   active: ["needs", "running"],
   needs: ["needs"],
   done: ["done"],
