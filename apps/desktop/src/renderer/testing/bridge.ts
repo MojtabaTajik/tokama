@@ -4,6 +4,7 @@ import type { ItemRecord } from "@tokama/core";
 import { act } from "react";
 import { vi } from "vitest";
 import type { AboutInfo, BridgeEvent, ConnectionState, OpenResult, TokamaBridge } from "../../shared/bridge.js";
+import { DEFAULT_DESKTOP_STATE, type DesktopState } from "../../shared/desktop-state.js";
 import { items, setup } from "./sample.js";
 
 export type Reply = { ok: true; data: unknown } | { ok: false; error: { code: string; message: string } };
@@ -18,7 +19,7 @@ export const ABOUT_INFO: AboutInfo = {
 
 export const CONNECTED: ConnectionState = { status: "connected", engineId: "e-1" };
 
-export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | Promise<Reply> | undefined; commandReply?: (command: { type: string }) => Reply; pickFolder?: () => Promise<string | null>; openTemplateFile?: () => Promise<OpenResult>; about?: AboutInfo; copyBuildInfo?: () => Promise<void>; showDataFolder?: () => Promise<OpenResult> } = {}) {
+export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | Promise<Reply> | undefined; commandReply?: (command: { type: string }) => Reply; pickFolder?: () => Promise<string | null>; openTemplateFile?: () => Promise<OpenResult>; about?: AboutInfo; copyBuildInfo?: () => Promise<void>; showDataFolder?: () => Promise<OpenResult>; desktopState?: DesktopState } = {}) {
   let connectionListener: ((state: ConnectionState) => void) | undefined;
   // Every subscriber hears every event: the app and the open drawer both listen.
   const eventListeners = new Set<(event: BridgeEvent) => void>();
@@ -47,6 +48,8 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
     getAboutInfo: vi.fn(async () => options.about ?? ABOUT_INFO),
     copyBuildInfo: vi.fn(options.copyBuildInfo ?? (async () => undefined)),
     showDataFolder: vi.fn(options.showDataFolder ?? (async (): Promise<OpenResult> => ({ ok: true }))),
+    getDesktopState: vi.fn(async () => options.desktopState ?? DEFAULT_DESKTOP_STATE),
+    saveLayout: vi.fn(async () => undefined),
     onEvent: vi.fn((listener: (event: BridgeEvent) => void) => {
       eventListeners.add(listener);
       return () => {
@@ -68,5 +71,6 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
   const openTemplateFile = bridge.openTemplateFile as unknown as ReturnType<typeof vi.fn>;
   const copyBuildInfo = bridge.copyBuildInfo as unknown as ReturnType<typeof vi.fn>;
   const showDataFolder = bridge.showDataFolder as unknown as ReturnType<typeof vi.fn>;
-  return { bridge, query, copyBuildInfo, showDataFolder, command, retryConnection, openTemplateFile, setConnection, pushItem, pushEvent, stops };
+  const saveLayout = bridge.saveLayout as unknown as ReturnType<typeof vi.fn>;
+  return { bridge, query, saveLayout, copyBuildInfo, showDataFolder, command, retryConnection, openTemplateFile, setConnection, pushItem, pushEvent, stops };
 }

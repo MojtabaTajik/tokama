@@ -1,0 +1,125 @@
+/* The resizable sidebar and drawer. Colours come from theme.css tokens only. */
+.shell {
+  position: relative;
+}
+
+.shell .panel {
+  flex: 0 0 var(--sidebar-w, 264px);
+}
+
+.shell .drawer {
+  flex: 0 0 var(--drawer-w, 420px);
+}
+
+/* Too narrow to sit beside the main area: the drawer floats over it, with a hairline and a shadow. */
+.shell[data-drawer-floating="true"] .drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  width: var(--drawer-w, 420px);
+  background: var(--ground);
+  box-shadow: -12px 0 24px var(--float-shadow);
+}
+
+/* The edge sits on the panel's hairline; its hit area is 6 px wide, centred on it. */
+.resize-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 6;
+  width: 0;
+  cursor: col-resize;
+  outline: none;
+}
+
+.resize-edge-sidebar {
+  /* The rail is 60 px wide. */
+  left: calc(60px + var(--sidebar-w, 264px));
+}
+
+.resize-edge-drawer {
+  right: var(--drawer-w, 420px);
+}
+
+.resize-edge::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 6px;
+}
+
+/* Hover shows the line and the grip, after 150 ms so passing over does not flash. */
+.resize-line,
+.resize-grip {
+  position: absolute;
+  opacity: 0;
+  transition: opacity 0s;
+  pointer-events: none;
+}
+
+.resize-line {
+  top: 0;
+  bottom: 0;
+  left: -1px;
+  width: 2px;
+  background: var(--live);
+}
+
+.resize-grip {
+  top: 46%;
+  left: -9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.resize-edge:hover .resize-line,
+.resize-edge:hover .resize-grip {
+  opacity: 1;
+  transition-delay: 150ms;
+}
+
+/* The keyboard focus and a drag show the line at once; a drag swaps the grip for the width. */
+.resize-edge:focus-visible .resize-line,
+.resize-edge[data-dragging="true"] .resize-line {
+  opacity: 1;
+  transition-delay: 0s;
+}
+
+.resize-edge:focus-visible .resize-line {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+
+.resize-edge[data-dragging="true"] .resize-grip {
+  opacity: 0;
+}
+
+.resize-label {
+  position: absolute;
+  top: 46%;
+  left: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--live-border);
+  border-radius: 4px;
+  background: var(--raised);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* The drawer's label opens to the left of its edge, so it stays inside the window. */
+.resize-edge-drawer .resize-label {
+  left: auto;
+  right: 8px;
+}

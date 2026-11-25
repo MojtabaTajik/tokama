@@ -1,10 +1,14 @@
 // The app shell: icon rail, sidebar, main area, and the item drawer when an item is open.
 import type { UsageRange } from "@tokama/core";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import type { TokamaBridge } from "../shared/bridge.js";
+import { DEFAULT_DESKTOP_STATE, type DesktopState, DRAWER_WIDTH, SECTIONS, SIDEBAR_WIDTH } from "../shared/desktop-state.js";
 import { About } from "./about/About.js";
 import { ItemDrawer } from "./drawer/ItemDrawer.js";
 import { Insights } from "./insights/Insights.js";
+import { fitPanels, sidebarMax } from "./layout/fit.js";
+import { ResizeEdge } from "./layout/ResizeEdge.js";
+import { useWindowWidth } from "./layout/useWindowWidth.js";
 import { useUsage } from "./insights/useUsage.js";
 import { ALL_WORK, type CliIssue, cliIssuesOf, healthProblemsOf, inView, needsYouCount, type View } from "./model.js";
 import { isMac, NewWork, type NewWorkHandle } from "./newwork/NewWork.js";
@@ -27,13 +31,18 @@ export interface AppProps {
   readonly retryDelayMs?: number;
   /** A fixed time for tests; otherwise the clock runs. */
   readonly now?: number;
+  /** What the last run left on this machine: panel widths, view and filter. Default: nothing remembered. */
+  readonly initial?: DesktopState;
   /** AI CLIs to sign in to again, for tests. Default: what the setup's health reports. */
   readonly cliIssues?: readonly CliIssue[];
 }
 
-export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, cliIssues }: AppProps) {
+export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, initial = DEFAULT_DESKTOP_STATE, cliIssues }: AppProps) {
   const { connection, data, loadError, stale, retry, refreshSetup } = useEngine(bridge, retryDelayMs);
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(!initial.sidebar.collapsed);
+  // The widths the user chose; what shows also depends on the window (see fitPanels).
+  const [chosen, setChosen] = useState({ sidebar: initial.sidebar.width, drawer: initial.drawer.width });
+  const windowWidth = useWindowWidth();
   // What the main area shows: the board, the Needs you page, Insights or About; Settings takes the whole window.
   const [page, setPage] = useState<"board" | "needs-you" | "insights" | "about" | "settings">("board");
   // The Settings page to open on: the rail's Settings button opens the default, the tooltip AI CLIs.
@@ -75,7 +84,23 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, cliI
   const issues = useMemo(() => cliIssues ?? cliIssuesOf(setup?.health), [cliIssues, setup]);
   const problems = useMemo(() => healthProblemsOf(setup?.health), [setup]);
   const editedRepo = setup?.repos.find((repo) => repo.id === editingRepo);
-  const views = useViewState((view) => view.kind === "all" || (view.kind === "workflow" ? setup?.templates : setup?.repos)?.some((entry) => entry.id === view.id) === true);
+  const views = useViewState((view) => view.kind === "all" || (view.kind === "workflow" ? setup?.templates : setup?.repos)?.some((entry) => entry.id === view.id) === true, {
+    view: initial.lastView,
+    filter: initial.lastFilter,
+    collapsed: initial.collapsedSections,
+  });
+  // The view, its filter and the collapsed sections are saved when they change, and only once the
+  // setup is known: before that the view shows as All work, which must not replace the remembered one.
+  const savedViews = useRef(JSON.stringify([initial.lastView, initial.lastFilter, initial.collapsedSections]));
+  useEffect(() => {
+    if (setup === undefined) return;
+    const collapsedSections = SECTIONS.filter((section) => views.collapsed.has(section));
+    const next = JSON.stringify([views.view, views.filter, collapsedSections]);
+    if (next === savedViews.current) return;
+    savedViews.current = next;
+    void bridge.saveLayout({ lastView: views.view, lastFilter: views.filter, collapsedSections }).catch(() => undefined);
+  }, [bridge, setup, views.view, views.filter, views.collapsed]);
+  const save = (patch: Parameters<TokamaBridge["saveLayout"]>[0]) => void bridge.saveLayout(patch).catch(() => undefined);
 
   // Cmd (macOS) or Ctrl (elsewhere) and N open New work from anywhere; the sidebar may be closed, so this lives here.
   useEffect(() => {
@@ -120,12 +145,18 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, cliI
     );
   }
 
+  const drawerOpen = !aboutOpen && selectedItemId !== undefined;
+  const fit = fitPanels(windowWidth, { sidebarOpen: panelOpen, drawerOpen, sidebar: chosen.sidebar, drawer: chosen.drawer });
+  const widths = { "--sidebar-w": `${fit.sidebar}px`, "--drawer-w": `${fit.drawer}px` } as CSSProperties;
   return (
-    <div className="shell">
+    <div className="shell" style={widths} data-drawer-floating={fit.floating ? "true" : undefined}>
       <Rail
         panelOpen={panelOpen}
         panelId={PANEL_ID}
-        onTogglePanel={() => setPanelOpen(!panelOpen)}
+        onTogglePanel={() => {
+          setPanelOpen(!panelOpen);
+          save({ sidebar: { width: chosen.sidebar, collapsed: panelOpen } });
+        }}
         needsYou={stale ? undefined : needsYouCount(items)}
         issues={issues}
         problems={problems}
@@ -248,7 +279,33 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, cliI
       )}
       {setUpNote !== undefined && <RepoNote note={setUpNote} onStart={() => startIn({ kind: "repo", id: setUpNote.id })} onDismiss={() => setSetUpNote(undefined)} />}
       {editedRepo !== undefined && <RepoDialog bridge={bridge} repo={editedRepo} onClose={() => setEditingRepo(undefined)} />}
-      {!aboutOpen && selectedItemId !== undefined && <ItemDrawer bridge={bridge} itemId={selectedItemId} setup={setup} diffAsked={diffAsked} onClose={() => setSelectedItemId(undefined)} />}
+      {drawerOpen && <ItemDrawer bridge={bridge} itemId={selectedItemId} setup={setup} diffAsked={diffAsked} onClose={() => setSelectedItemId(undefined)} />}
+      {panelOpen && (
+        <ResizeEdge
+          label="Resize sidebar"
+          side="sidebar"
+          value={fit.sidebar}
+          min={SIDEBAR_WIDTH.min}
+          max={sidebarMax(windowWidth)}
+          defaultValue={SIDEBAR_WIDTH.default}
+          grow={1}
+          onChange={(width) => setChosen((now) => ({ ...now, sidebar: width }))}
+          onCommit={(width) => save({ sidebar: { width, collapsed: false } })}
+        />
+      )}
+      {drawerOpen && (
+        <ResizeEdge
+          label="Resize drawer"
+          side="drawer"
+          value={fit.drawer}
+          min={DRAWER_WIDTH.min}
+          max={DRAWER_WIDTH.max}
+          defaultValue={DRAWER_WIDTH.default}
+          grow={-1}
+          onChange={(width) => setChosen((now) => ({ ...now, drawer: width }))}
+          onCommit={(width) => save({ drawer: { width } })}
+        />
+      )}
     </div>
   );
 }

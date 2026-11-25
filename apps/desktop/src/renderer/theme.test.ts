@@ -18,6 +18,7 @@ const TOKENS: Record<string, string> = {
   "--muted": "#7d8894",
   "--link": "#7fb2ff",
   "--live": "#5c8cff",
+  "--live-border": "#3b66e6",
   "--primary-border": "#1f5bff",
   "--primary-fill": "#0f2257",
   "--primary-text": "#e4ecff",
@@ -69,7 +70,7 @@ function contrast(a: string, b: string): number {
   return (hi! + 0.05) / (lo! + 0.05);
 }
 
-const SCREENS = { "app.css": app, "drawer/drawer.css": readFileSync(join(import.meta.dirname, "drawer", "drawer.css"), "utf8"), "newwork/newwork.css": readFileSync(join(import.meta.dirname, "newwork", "newwork.css"), "utf8"), "shell/states.css": readFileSync(join(import.meta.dirname, "shell", "states.css"), "utf8"), "about/about.css": readFileSync(join(import.meta.dirname, "about", "about.css"), "utf8"), "repos/repos.css": readFileSync(join(import.meta.dirname, "repos", "repos.css"), "utf8"), "settings/settings.css": readFileSync(join(import.meta.dirname, "settings", "settings.css"), "utf8"), "templates/templates.css": readFileSync(join(import.meta.dirname, "templates", "templates.css"), "utf8") };
+const SCREENS = { "app.css": app, "drawer/drawer.css": readFileSync(join(import.meta.dirname, "drawer", "drawer.css"), "utf8"), "newwork/newwork.css": readFileSync(join(import.meta.dirname, "newwork", "newwork.css"), "utf8"), "shell/states.css": readFileSync(join(import.meta.dirname, "shell", "states.css"), "utf8"), "layout/layout.css": readFileSync(join(import.meta.dirname, "layout", "layout.css"), "utf8"), "about/about.css": readFileSync(join(import.meta.dirname, "about", "about.css"), "utf8"), "repos/repos.css": readFileSync(join(import.meta.dirname, "repos", "repos.css"), "utf8"), "settings/settings.css": readFileSync(join(import.meta.dirname, "settings", "settings.css"), "utf8"), "templates/templates.css": readFileSync(join(import.meta.dirname, "templates", "templates.css"), "utf8") };
 
 describe.each(Object.entries(SCREENS))("%s", (_name, css) => {
   it("takes every colour from the theme tokens: no colour literals", () => {

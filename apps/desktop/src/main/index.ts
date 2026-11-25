@@ -4,16 +4,19 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { connect } from "@tokama/client";
 import { API_VERSION, buildEnv, defaultEngineDir, engineEndpoint, err } from "@tokama/core";
-import { app, BrowserWindow, clipboard, dialog, ipcMain, session, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, screen, session, shell } from "electron";
 import { CHANNELS } from "../shared/bridge.js";
 import { buildInfoText } from "../shared/build-info.js";
+import { applyLayoutPatch } from "../shared/desktop-state.js";
 import { aboutInfo } from "./about.js";
 import { engineApi } from "./api.js";
 import { type ConnectionWatch, watchConnection } from "./connection.js";
+import { type DesktopStore, desktopStore } from "./desktop-store.js";
 import { engineCommand, engineDirFor, findExecutable, otherVersionMessage, readLogTail } from "./engine.js";
-import { pickFolder } from "./folder.js";
+import { pickRepoFolder } from "./folder.js";
 import { appIcons } from "./icon.js";
 import { openTemplateFile } from "./template-file.js";
+import { fitBounds, trackWindow } from "./window-state.js";
 import { backgroundModeEnabled, devServerUrl, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, sampleEngineEnabled, secureWebPreferences } from "./policy.js";
 
 const rendererDir = join(import.meta.dirname, "..", "renderer");
@@ -85,19 +88,32 @@ function startWatch(): ConnectionWatch {
 
 const icons = appIcons(process.platform, app.getAppPath(), app.isPackaged);
 
-function createWindow(): void {
+const WINDOW = { width: 1200, height: 800, minWidth: 720, minHeight: 480 } as const;
+
+function createWindow(store: DesktopStore): void {
+  const saved = store.get().window;
+  // The remembered place, moved onto a display that is there now.
+  const placement = fitBounds(saved.bounds, screen.getAllDisplays().map((display) => display.workArea), screen.getPrimaryDisplay().workArea, WINDOW);
   const window = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    minWidth: 720,
-    minHeight: 480,
+    ...placement,
+    minWidth: WINDOW.minWidth,
+    minHeight: WINDOW.minHeight,
     title: "Tokama",
     backgroundColor: "#0B0F17",
     show: false,
     ...(icons.window === undefined ? {} : { icon: icons.window }),
     webPreferences: { ...secureWebPreferences(preloadPath), ...(background ? { backgroundThrottling: false } : {}) },
   });
-  if (!background) window.once("ready-to-show", () => window.show());
+  trackWindow(window, store);
+  // A background test run never shows the window; maximizing or full-screening would show it, so they wait for a real show.
+  if (!background) {
+    window.once("ready-to-show", () => {
+      // Maximizing shows a window at once, so it waits until the page is ready.
+      if (saved.maximized) window.maximize();
+      if (saved.fullscreen) window.setFullScreen(true);
+      window.show();
+    });
+  }
   if (devServer !== undefined) void window.loadURL(devServer.href);
   else void window.loadFile(join(rendererDir, "index.html"));
 }
@@ -106,6 +122,10 @@ void app.whenReady().then(() => {
   if (background) app.dock?.hide();
   if (icons.dock !== undefined) app.dock?.setIcon(icons.dock);
   hardenSession();
+  const tokamaHome = join(homedir(), ".tokama");
+  const store = desktopStore(join(tokamaHome, "desktop.json"), { onError: (error) => console.error("could not save desktop.json:", error) });
+  handle(CHANNELS.getDesktopState, () => store.get());
+  handle(CHANNELS.saveLayout, (patch) => store.update((state) => applyLayoutPatch(state, patch)));
   const watch = startWatch();
   handle(CHANNELS.getConnection, () => watch.state());
   handle(CHANNELS.retryConnection, () => watch.retry());
@@ -113,12 +133,11 @@ void app.whenReady().then(() => {
   handle(CHANNELS.query, (query) => api.query(query));
   handle(CHANNELS.command, (command) => api.command(command));
   // Looked up on each call, so the UI flow tests can stand in for the native picker.
-  handle(CHANNELS.pickFolder, () => pickFolder((options) => {
+  handle(CHANNELS.pickFolder, () => pickRepoFolder((options) => {
     const window = BrowserWindow.getFocusedWindow();
     return window === null ? dialog.showOpenDialog(options) : dialog.showOpenDialog(window, options);
-  }));
+  }, store));
   // shell.openPath is looked up on each call too, so the UI flow tests can stand in for the editor.
-  const tokamaHome = join(homedir(), ".tokama");
   handle(CHANNELS.openTemplateFile, (name) => openTemplateFile(name, { api, tokamaHome, openPath: (path) => shell.openPath(path) }));
   const about = () => {
     const dir = engineDirFor(defaultEngineDir(process.env, homedir()), sample);
@@ -140,10 +159,13 @@ void app.whenReady().then(() => {
     const message = await shell.openPath(tokamaHome);
     return message === "" ? { ok: true } : { ok: false, message };
   });
-  app.on("before-quit", () => void watch.close());
-  createWindow();
+  app.on("before-quit", () => {
+    store.flush();
+    void watch.close();
+  });
+  createWindow(store);
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) createWindow(store);
   });
 });
 

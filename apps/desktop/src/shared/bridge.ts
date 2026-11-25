@@ -2,6 +2,7 @@
 // constants only: the renderer and the sandboxed preload import nothing else from outside.
 import type { ClientEvent, CommandReply, QueryReply } from "@tokama/client";
 import type { CommandInput, QueryInput } from "@tokama/core";
+import type { DesktopState, LayoutPatch } from "./desktop-state.js";
 
 /** The desktop app's view of its engine connection. */
 export type ConnectionState =
@@ -47,6 +48,8 @@ export const CHANNELS = {
   getAboutInfo: "tokama:about:info",
   copyBuildInfo: "tokama:about:copy",
   showDataFolder: "tokama:about:show-folder",
+  getDesktopState: "tokama:desktop:get",
+  saveLayout: "tokama:desktop:save-layout",
 } as const;
 
 /** What About shows about this build. The main process fills it; every field is plain text or a number. */
@@ -96,4 +99,8 @@ export interface TokamaBridge {
   copyBuildInfo(): Promise<void>;
   /** Opens the Tokama home in the system's file manager. */
   showDataFolder(): Promise<OpenResult>;
+  /** What this machine's `desktop.json` holds, validated; the defaults when it is missing or broken. */
+  getDesktopState(): Promise<DesktopState>;
+  /** Remembers the layout choices in `patch`. The main process validates them and ignores any other field. */
+  saveLayout(patch: LayoutPatch): Promise<void>;
 }

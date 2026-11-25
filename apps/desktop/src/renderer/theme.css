@@ -13,6 +13,10 @@
   --muted: #7d8894;
   --link: #7fb2ff;
   --live: #5c8cff;
+  /* The border of the width label while an edge is dragged. */
+  --live-border: #3b66e6;
+  /* The drawer's shadow when it floats over the main area. */
+  --float-shadow: rgba(0, 0, 0, 0.5);
 
   --warn: #d9a93a;
   --fail: #e07a70;

@@ -3,6 +3,7 @@
 // channel names, no Node.
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import { type AboutInfo, type BridgeEvent, CHANNELS, type ConnectionState, type OpenResult, type TokamaBridge } from "../shared/bridge.js";
+import type { DesktopState } from "../shared/desktop-state.js";
 
 /** Subscribes to a pushed channel. Wrapped, so the renderer never receives the IPC event object (it carries `sender`). */
 function subscribe<T>(channel: string, listener: (message: T) => void): () => void {
@@ -27,6 +28,8 @@ export const bridge: TokamaBridge = {
   getAboutInfo: () => ipcRenderer.invoke(CHANNELS.getAboutInfo) as Promise<AboutInfo>,
   copyBuildInfo: () => ipcRenderer.invoke(CHANNELS.copyBuildInfo) as Promise<void>,
   showDataFolder: () => ipcRenderer.invoke(CHANNELS.showDataFolder) as Promise<OpenResult>,
+  getDesktopState: () => ipcRenderer.invoke(CHANNELS.getDesktopState) as Promise<DesktopState>,
+  saveLayout: (patch) => ipcRenderer.invoke(CHANNELS.saveLayout, patch) as Promise<void>,
 };
 
 contextBridge.exposeInMainWorld("tokama", bridge);
