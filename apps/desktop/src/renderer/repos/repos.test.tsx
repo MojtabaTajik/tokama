@@ -266,6 +266,51 @@ describe("Set up git", () => {
     expect(fake.command).toHaveBeenNthCalledWith(3, expect.objectContaining({ type: "add_repo", baseBranch: "trunk" }));
   });
 
+  it("goes back to the form with the engine's words when only the add fails, and a retry adds", async () => {
+    let refuse = true;
+    const fake = await mountWith({
+      suggestion: { ok: true, data: NOT_REPO },
+      commandReply: (command) => (command.type === "add_repo" && refuse ? { ok: false, error: { code: "invalid_request", message: "The id 'Orders API' must be lowercase letters, digits and hyphens." } } : COMMIT_REPLY(command)),
+    });
+    await click(buttonByText("+ Add repo"));
+    await type(field("Id"), "Orders API");
+    await click(buttonByText("Set up git and add"));
+    expect($("dialog.modal h2")?.textContent).toBe("Add repo");
+    expect($('[role="alert"]')?.textContent).toBe("✕ Could not add it: The id 'Orders API' must be lowercase letters, digits and hyphens.");
+    refuse = false;
+    await type(field("Id"), "orders-api");
+    await click(buttonByText("Set up git and add"));
+    expect($("dialog.modal")).toBeNull();
+    expect(fake.command).toHaveBeenLastCalledWith(expect.objectContaining({ type: "add_repo", id: "orders-api" }));
+  });
+
+  it("keeps what the first run did when Try again fails the commit a second time", async () => {
+    let inits = 0;
+    await mountWith({
+      suggestion: { ok: true, data: NOT_REPO },
+      commandReply: (command) =>
+        command.type === "init_repo"
+          ? { ok: true, data: ++inits === 1 ? { gitInit: true, ignoreRules: 5 } : { gitInit: false, ignoreRules: null } }
+          : command.type === "first_commit"
+            ? { ok: false, error: { code: "invalid_request", message: "no identity" } }
+            : { ok: true, data: null },
+    });
+    await click(buttonByText("+ Add repo"));
+    await click(buttonByText("Set up git and add"));
+    await click(buttonByText("Try again"));
+    expect($('[role="alert"]')?.textContent).toContain("The folder now has a .git folder and a .gitignore; nothing else changed.");
+    expect($(".rd-steps")?.textContent).toContain("5 rules");
+  });
+
+  it("keeps the dialog open while git is being set up", async () => {
+    await mountWith({ suggestion: { ok: true, data: NOT_REPO }, commandReply: (command) => (command.type === "first_commit" ? (new Promise<Reply>(() => undefined) as unknown as Reply) : COMMIT_REPLY(command)) });
+    await click(buttonByText("+ Add repo"));
+    await click(buttonByText("Set up git and add"));
+    await click($('button[aria-label="Close"]'));
+    await key($("dialog.modal"), "Escape");
+    expect($("dialog.modal")).not.toBeNull();
+  });
+
   it("explains a refusal, offers Pick another folder, and keeps the primary button off", async () => {
     const fake = await mountWith({ suggestion: { ok: true, data: { ...NOT_REPO, firstCommit: { ...preview, refusal: "This is your home folder. Pick a project folder inside it." } } } });
     await click(buttonByText("+ Add repo"));

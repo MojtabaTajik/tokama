@@ -171,21 +171,31 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
     setPhase("init");
     const init = await bridge.command({ type: "init_repo", path: suggestion.path, ...(suggestion.gitRepo || baseBranch.trim() === "" ? {} : { baseBranch: baseBranch.trim() }) }).catch(bridgeFailure);
     if (!init.ok) return fail("init", init.error.message);
-    setInitResult(init.data);
+    setInitResult((before) => ({ gitInit: before?.gitInit === true || init.data.gitInit, ignoreRules: before?.ignoreRules ?? init.data.ignoreRules }));
     setPhase("commit");
     const commit = await bridge.command({ type: "first_commit", path: suggestion.path }).catch(bridgeFailure);
     if (!commit.ok) return fail("commit", commit.error.message);
     setPhase("add");
     const added = await bridge.command(saveCommand()).catch(bridgeFailure);
-    if (!added.ok) return fail("add", added.error.message);
+    if (!added.ok) {
+      // The folder is a repo with a commit now: the form takes over, and the error shows there.
+      setPhase(undefined);
+      setBusy(false);
+      setError(TEXT.failed(added.error.message));
+      return;
+    }
     setBusy(false);
     onClose();
     onSetUp?.({ id: id.trim() || suggestion.id || "", commit: commit.data.commit, files: commit.data.files });
   };
 
+  // Set-up runs on once started: the dialog stays until it ends.
+  const close = () => {
+    if (!busy) onClose();
+  };
   const branchName = baseBranch.trim() || suggestion?.branch || "main";
   const cancel = (
-    <button type="button" className="choice" onClick={onClose}>
+    <button type="button" className="choice" onClick={close}>
       {TEXT.cancel}
     </button>
   );
@@ -223,15 +233,15 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
     };
     const left = [initResult?.gitInit === true && "a .git folder", initResult?.ignoreRules != null && "a .gitignore"].filter((part) => part !== false).join(" and ");
     return (
-      <Modal labelledBy={titleId} onClose={onClose}>
+      <Modal labelledBy={titleId} onClose={close}>
         <DialogFrame
           titleId={titleId}
           title={TEXT.settingUp}
           subtitle={suggestion?.displayPath}
-          onClose={onClose}
+          onClose={close}
           footer={failure === undefined ? <button type="button" className="choice" disabled>{TEXT.working}</button> : cancel}
         >
-          <ol className="rd-steps">
+          <ol className="rd-steps" aria-live="polite">
             {keys.map((key) => {
               const state = stateOf(key);
               const failed = failure !== undefined && failure.phase === phase && key === activeKey;
@@ -421,6 +431,7 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
         {idField}
         {suggestion.gitRepo && checksField}
         {suggestion.gitRepo && noChecks}
+        {error !== undefined && <Problem text={error} alert />}
       </>
     );
     footer = (
@@ -463,9 +474,9 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
   }
 
   return (
-    <Modal labelledBy={titleId} onClose={onClose}>
+    <Modal labelledBy={titleId} onClose={close}>
       <form className="repo-form" onSubmit={(event) => void submit(event)}>
-        <DialogFrame titleId={titleId} title={editing ? TEXT.editTitle : TEXT.title} subtitle={editing ? undefined : (suggestion?.displayPath ?? path)} onClose={onClose} footer={footer}>
+        <DialogFrame titleId={titleId} title={editing ? TEXT.editTitle : TEXT.title} subtitle={editing ? undefined : (suggestion?.displayPath ?? path)} onClose={close} footer={footer}>
           {body}
         </DialogFrame>
       </form>

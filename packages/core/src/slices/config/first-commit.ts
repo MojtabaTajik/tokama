@@ -56,17 +56,21 @@ export async function previewFirstCommit(folder: string, home: string | undefine
   if (entry !== undefined && !entry.isFile()) return refused(UNUSABLE_GITIGNORE);
   const text = entry === undefined ? undefined : await readFile(join(folder, GITIGNORE_FILE), "utf8").catch(() => undefined);
   const addsGitignore = entry === undefined;
+  // `name` skips a file or folder of that name, `name/` only a folder.
   const ignored = new Set<string>([".git"]);
+  const ignoredFolders = new Set<string>();
   const prefixes: string[] = [];
   // Only plain names and `name*` prefixes at any depth; a line with a slash inside is left out, so
   // the walk never skips what git would add.
   const lines = text === undefined ? DEFAULT_GITIGNORE : text.split(/\r?\n/);
   for (const raw of lines) {
-    const line = raw.trim().replace(/\/$/, "");
-    if (/^[^#!*?[\s/\\]+$/.test(line)) ignored.add(line);
+    const trimmed = raw.trim();
+    const folderOnly = trimmed.endsWith("/");
+    const line = folderOnly ? trimmed.slice(0, -1) : trimmed;
+    if (/^[^#!*?[\s/\\]+$/.test(line)) (folderOnly ? ignoredFolders : ignored).add(line);
     else if (/^[^#!*?[\s/\\]+\*$/.test(line)) prefixes.push(line.slice(0, -1));
   }
-  const skipped = (name: string) => ignored.has(name) || prefixes.some((prefix) => name.startsWith(prefix));
+  const skipped = (name: string, folder: boolean) => ignored.has(name) || (folder && ignoredFolders.has(name)) || prefixes.some((prefix) => name.startsWith(prefix));
 
   const paths: string[] = [];
   const sizes: number[] = [];
@@ -74,6 +78,14 @@ export async function previewFirstCommit(folder: string, home: string | undefine
   let files = 0;
   let bytes = 0;
   let folders = 0;
+  // The new .gitignore is part of the commit.
+  if (addsGitignore) {
+    const own = Buffer.byteLength(`${DEFAULT_GITIGNORE.join("\n")}\n`);
+    files = 1;
+    bytes = own;
+    paths.push(GITIGNORE_FILE);
+    sizes.push(own);
+  }
   let budget = LEFT_OUT_BUDGET;
   const sorted = async (dir: string) => (await readdir(dir, { withFileTypes: true }).catch(() => [])).sort((a, b) => (a.isDirectory() === b.isDirectory() ? (a.name < b.name ? -1 : 1) : a.isDirectory() ? 1 : -1));
 
@@ -97,7 +109,7 @@ export async function previewFirstCommit(folder: string, home: string | undefine
   const walk = async (dir: string, prefix: string): Promise<void> => {
     for (const item of await sorted(dir)) {
       if (files > COUNT_LIMIT) return;
-      if (skipped(item.name)) {
+      if (skipped(item.name, item.isDirectory())) {
         if (addsGitignore && prefix === "" && item.name !== ".git") {
           leftOut.push(item.isDirectory() ? { name: `${item.name}/`, files: await countInside(join(dir, item.name)) } : { name: item.name, files: 1 });
         }
@@ -127,7 +139,7 @@ export async function previewFirstCommit(folder: string, home: string | undefine
     sample: paths.slice(0, SAMPLE_SIZE).map((path, index) => ({ path, bytes: sizes[index] ?? 0 })),
     more: files <= SAMPLE_SIZE + MORE_NAMES ? paths.slice(SAMPLE_SIZE) : [],
     addsGitignore,
-    leftOut,
+    leftOut: leftOut.slice(0, 20),
     refusal: tooLarge ? tooMany(files) : undefined,
   };
 }

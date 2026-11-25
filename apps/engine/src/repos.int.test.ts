@@ -97,7 +97,7 @@ describe("repo commands", () => {
     mkdirSync(path);
     writeFileSync(join(path, "index.js"), "console.log(1);\n");
     const suggested = await client.query({ type: "suggest_repo", path });
-    expect(suggested).toMatchObject({ ok: true, data: { gitRepo: false, problem: "This folder isn't a git repo yet.", firstCommit: { files: 1, sample: [{ path: "index.js", bytes: 16 }], addsGitignore: true, refusal: null }, fallbackCheck: "node --check index.js" } });
+    expect(suggested).toMatchObject({ ok: true, data: { gitRepo: false, problem: "This folder isn't a git repo yet.", firstCommit: { files: 2, sample: [{ path: ".gitignore", bytes: 43 }, { path: "index.js", bytes: 16 }], addsGitignore: true, refusal: null }, fallbackCheck: "node --check index.js" } });
     expect(await client.command({ type: "add_repo", path })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
     expect(await client.command({ type: "init_repo", path })).toEqual({ ok: true, data: { gitInit: true, ignoreRules: 5 } });
     expect(await client.command({ type: "first_commit", path })).toMatchObject({ ok: true, data: { commit: expect.stringMatching(/^[0-9a-f]{7}$/), files: 2 } });

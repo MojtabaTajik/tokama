@@ -298,11 +298,12 @@ describe("first commit", () => {
     const suggestion = await suggestRepo(options(), path);
     expect(suggestion).toMatchObject({ ok: true, value: { gitRepo: false, hasCommits: false, problem: "This folder isn't a git repo yet." } });
     const preview = suggestion.ok ? suggestion.value.firstCommit : undefined;
-    expect(preview).toMatchObject({ files: 13, addsGitignore: true, refusal: undefined });
+    expect(preview).toMatchObject({ files: 14, addsGitignore: true, refusal: undefined });
     expect(preview?.sample).toHaveLength(10);
-    expect(preview?.sample[0]).toMatchObject({ path: "f00.txt", bytes: 1 });
+    expect(preview?.sample[0]).toMatchObject({ path: ".gitignore", bytes: 43 });
+    expect(preview?.sample[1]).toMatchObject({ path: "f00.txt", bytes: 1 });
     expect(preview?.leftOut).toEqual([{ name: ".DS_Store", files: 1 }, { name: ".env", files: 1 }, { name: ".env.local", files: 1 }, { name: "build/", files: 1 }, { name: "dist/", files: 1 }, { name: "node_modules/", files: 1 }]);
-    expect(preview?.bytes).toBe(13);
+    expect(preview?.bytes).toBe(13 + 43);
   });
 
   it("uses the plain names of the folder's own .gitignore instead of the defaults (anchored and wildcard rules are not applied, so the count can only be high)", async () => {
@@ -314,7 +315,7 @@ describe("first commit", () => {
   it("offers a first commit for a repo without commits, and none for a repo with one or a subfolder", async () => {
     const fresh = repo("fresh", { "a.txt": "1" });
     unborn.add(fresh);
-    expect(await suggestRepo(options(), fresh)).toMatchObject({ ok: true, value: { gitRepo: true, firstCommit: { files: 1 } } });
+    expect(await suggestRepo(options(), fresh)).toMatchObject({ ok: true, value: { gitRepo: true, firstCommit: { files: 2 } } });
     expect((await suggestRepo(options(), repo("done", { "a.txt": "1" }))) as { value: { firstCommit: unknown } }).toMatchObject({ value: { firstCommit: undefined } });
     gitError = { reason: "failed", args: [], exitCode: 128, message: "x" };
     mkdirSync(join(root, "sub"));
@@ -367,6 +368,13 @@ describe("first commit", () => {
     stagedCount = 40;
     expect(await setUpRepo(options(), { path: fresh })).toMatchObject({ ok: false, error: { message: expect.stringContaining("40 files staged already, more than the 2 shown") } });
     expect(calls).toEqual(["add"]);
+  });
+
+  it("skips a name/ rule for folders only, so a file named build is committed and not listed as left out", async () => {
+    const path = folder("scripts", { build: "#!/bin/sh", "index.js": "1", "dist/a.js": "1" });
+    const suggestion = await suggestRepo(options(), path);
+    expect(suggestion).toMatchObject({ ok: true, value: { firstCommit: { files: 3, leftOut: [{ name: "dist/", files: 1 }] } } });
+    expect(suggestion.ok && suggestion.value.firstCommit?.sample.map((file) => file.path)).toEqual([".gitignore", "build", "index.js"]);
   });
 
   it("does not skip nested folders for an anchored rule, and skips name* prefixes", async () => {

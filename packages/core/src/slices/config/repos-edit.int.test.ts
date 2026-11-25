@@ -71,7 +71,7 @@ describe("setUpRepo with git", () => {
     writeFileSync(join(folder, "index.js"), "console.log(1);\n");
     writeFileSync(join(folder, ".env"), "SECRET=1\n");
     writeFileSync(join(folder, "node_modules", "dep", "a.js"), "1");
-    expect(await suggestRepo(options, folder)).toMatchObject({ ok: true, value: { gitRepo: false, firstCommit: { files: 1, sample: [{ path: "index.js", bytes: 16 }], leftOut: [{ name: ".env", files: 1 }, { name: "node_modules/", files: 1 }], addsGitignore: true } } });
+    expect(await suggestRepo(options, folder)).toMatchObject({ ok: true, value: { gitRepo: false, firstCommit: { files: 2, sample: [{ path: ".gitignore", bytes: 43 }, { path: "index.js", bytes: 16 }], leftOut: [{ name: ".env", files: 1 }, { name: "node_modules/", files: 1 }], addsGitignore: true } } });
 
     expect(await setUpRepo(options, { path: folder })).toEqual({ ok: true, value: undefined });
     expect(readFileSync(join(folder, ".gitignore"), "utf8")).toContain("node_modules/");

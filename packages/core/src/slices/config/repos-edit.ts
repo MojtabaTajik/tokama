@@ -234,7 +234,7 @@ export async function makeFirstCommit(options: RepoEditOptions, input: { readonl
   // not unstage them: refuse rather than commit what the user was not shown.
   const staged = await options.git.diffCachedNumstat(path);
   if (!staged.ok) return invalid(gitReason(staged.error));
-  if (staged.value.length > preview.files + (preview.addsGitignore ? 1 : 0)) {
+  if (staged.value.length > preview.files) {
     return invalid(`Git has ${staged.value.length} files staged already, more than the ${preview.files} shown. Unstage them (git reset) or pick another folder.`);
   }
   const committed = await options.git.commit(path, "Initial commit");
