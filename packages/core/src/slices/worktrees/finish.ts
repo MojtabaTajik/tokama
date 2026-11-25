@@ -169,9 +169,11 @@ export async function originPushUrl(git: Git, repoPath: string): Promise<Result<
 }
 
 /**
- * Pushes the item's commit to its branch at the pinned URL itself, never to the remote by name:
- * refused unless origin still pushes to exactly that one URL. The SSH agent socket goes along
- * only when git really pushes over SSH, after its URL rewrites.
+ * Pushes the item's commit to its branch on origin, refused unless origin pushes to exactly one
+ * URL and that is the pinned one (git pushes to every pushurl). The push names the remote, not
+ * the URL: git reads `remote.<url>.*` for a push to a URL, so a section named by the pinned URL
+ * could redirect it, and the URL as written keeps its own credentials. The SSH agent socket goes
+ * along only when git really pushes over SSH, after its URL rewrites.
  */
 export async function pushItem(
   git: Git,
@@ -189,6 +191,6 @@ export async function pushItem(
   const resolved = await git.remoteResolvedPushUrl(repoPath, "origin");
   if (!resolved.ok) return err(`Cannot read where origin pushes: ${resolved.error.message}`);
   const ssh = input.sshAuthSock !== undefined && overSsh(resolved.value);
-  const pushed = await git.push(repoPath, input.pushUrl, input.commit, input.branch, ssh ? { sshAuthSock: input.sshAuthSock! } : {});
+  const pushed = await git.push(repoPath, "origin", input.commit, input.branch, ssh ? { sshAuthSock: input.sshAuthSock! } : {});
   return pushed.ok ? ok(undefined) : err(`git could not push ${input.branch}: ${pushed.error.message}`);
 }

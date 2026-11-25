@@ -159,6 +159,9 @@ describe("a tamper event for each protected category", () => {
       // A value or subsection that ends like an ignored key does not hide the key.
       ["remote.origin.uploadpack", "x\nremote.origin.url"],
       ["remote.origin.url.uploadpack", "touch pwned"],
+      // A remote section named by a URL: git reads it for a push or fetch to that URL.
+      ["remote.https://example.invalid/orders-api.git.pushurl", "https://evil.example.invalid/x.git"],
+      ["remote.git@example.invalid:orders-api.git.url", "git@evil.example.invalid:x.git"],
       // A url or pushurl that is a local path or a transport helper.
       ["remote.origin.url", "/srv/evil.git"],
       ["remote.origin.url", "../evil.git"],

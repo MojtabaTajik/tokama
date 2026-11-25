@@ -14,7 +14,7 @@ import { protectedSet } from "../integrity/index.js";
 import { ItemStore } from "../items/index.js";
 import { commitItem, createWorktree, originPushUrl, stageItem, worktreePath } from "../worktrees/index.js";
 import { createFinisher, type FinishDeps } from "./finish.js";
-import { steeringEntries } from "./protect.js";
+import { digestOf, steeringEntries } from "./protect.js";
 
 const SLOW = { timeout: 30_000 };
 const HOST = "host_0190a000-0000-7000-8000-000000000001" as HostId;
@@ -133,9 +133,11 @@ async function doneItem(files: Record<string, string> = { "greeting.txt": "hello
   if (!set.ok) throw new Error(set.error.message);
   const hashes = await set.value.hash();
   if (!hashes.ok) throw new Error(hashes.error.message);
-  writeFileSync(join(store.itemDir(id), "baseline.json"), `${JSON.stringify(steeringEntries(hashes.value, worktree.value.branch))}\n`);
+  const entries = steeringEntries(hashes.value, worktree.value.branch);
+  writeFileSync(join(store.itemDir(id), "baseline.json"), `${JSON.stringify(entries)}\n`);
   const ended = store.append(id, [
     { type: "worktree_added", repoId: repo.id, branch, dir: folder, baseCommit, ...(pushUrl.ok && pushUrl.value !== undefined && { pushUrl: pushUrl.value }) },
+    { type: "baseline_recorded", repoId: repo.id, protectedDigest: digestOf(entries) },
     { type: "item_ended", outcome: "done", detail: "Committed.", commits: [{ repoId: repo.id, commit: commit.value }] },
   ]);
   if (!ended.ok) throw new Error(ended.error.message);
@@ -263,10 +265,25 @@ describe("Merge", () => {
     expect((await run(push, "discard")).finish?.worktreeRemoved).toBe(true);
   });
 
-  it("refuses when Tokama has no baseline for the item", SLOW, async () => {
+  it("refuses when the item's baseline is missing or is not the one the log recorded", SLOW, async () => {
     const item = await doneItem();
-    rmSync(join(store.itemDir(item.id), "baseline.json"));
+    const file = join(store.itemDir(item.id), "baseline.json");
+    const saved = readFileSync(file, "utf8");
+    // A replaced file that matches the repo as it is now still does not count.
+    writeFileSync(file, saved.replace(/"hash":"[^"]*"/, '"hash":"sha256:0"'));
     expect((await run(item, "merge")).finish?.failed?.detail).toMatch(/no readable record of the repo's git config and hooks/);
+    rmSync(file);
+    expect((await run(store.get(item.id)!, "merge")).finish?.failed?.detail).toMatch(/no readable record/);
+  });
+
+  it("does not walk the checkout: a deep ignored folder does not block a merge", SLOW, async () => {
+    const deep = join(repo.path, "build", ...Array.from({ length: 14 }, (_, i) => `d${i}`));
+    mkdirSync(deep, { recursive: true });
+    writeFileSync(join(deep, "out.txt"), "x\n");
+    writeFileSync(join(repo.path, ".gitignore"), ".gitignore\nbuild/\n");
+    const done = await run(await doneItem(), "merge");
+    expect(done.finish?.failed).toBeUndefined();
+    expect(done.finish?.merged?.baseBranch).toBe("main");
   });
 
   it("keeps a worktree that has files outside the commit, and Discard still removes it", SLOW, async () => {
@@ -396,12 +413,22 @@ describe("Open PR", () => {
     // A start with two push URLs records no pin at all.
     expect((await doneItem()).worktrees[0]?.pushUrl).toBeUndefined();
 
-    // Pushes go to the pinned URL, not to the remote by name.
-    await plain(repo.path, "config", "--unset-all", "remote.origin.pushurl");
+  });
+
+  it("refuses a remote section named by the pinned URL, which would redirect a push to that URL", SLOW, async () => {
+    const item = await doneItem();
+    const evil = join(root, "evil.git");
+    await plain(root, "init", "-q", "--bare", evil);
+    await plain(repo.path, "config", `remote.${ORIGIN}.pushurl`, "https://evil.example.com/x.git");
+    const done = await run(item, "pull_request");
+    expect(done.finish?.failed?.detail).toMatch(/^The repo's git config or hooks changed since the item started.*modified git:config \(git\)/);
+    expect(await plain(bare, "for-each-ref", "refs/heads/")).toBe("");
+    // The push names the remote: such a section never applies to it.
+    await plain(repo.path, "config", "--remove-section", `remote.${ORIGIN}`);
     const pushes: unknown[] = [];
     const spy: Git = { ...git, push: (...args) => (pushes.push(args[1]), Promise.resolve({ ok: true, value: undefined })) };
     await run(await doneItem(), "pull_request", { git: spy });
-    expect(pushes).toEqual([ORIGIN]);
+    expect(pushes).toEqual(["origin"]);
   });
 
   it("refuses Open PR for a local-only item: its template sends nothing out", SLOW, async () => {

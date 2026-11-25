@@ -15,9 +15,9 @@ import type { ProcessRunner } from "../../kernel/process/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import { parseTemplateRecord, type CommandErrorCode, type FinishAction, type ItemEventBody, type ItemId, type RepoId, type StoredItem } from "../../kernel/schemas/index.js";
 import type { Repo } from "../config/index.js";
-import { protectedSet } from "../integrity/index.js";
+import { sharedGitHashes } from "../integrity/index.js";
 import type { ItemStore } from "../items/index.js";
-import { describeChanges, steeringChanges, steeringEntries, type SteeringEntry } from "./protect.js";
+import { describeChanges, digestOf, steeringChanges, steeringEntries, type SteeringEntry } from "./protect.js";
 import { discardWorktree, ghStatus, hostedRepo, mergeItem, openPullRequest, pushItem, withoutUserInfo, type ItemWorktree } from "../worktrees/index.js";
 
 export interface FinishDeps {
@@ -123,11 +123,12 @@ export function createFinisher(deps: FinishDeps): Finisher {
       if (!saved.ok) throw new Error(saved.error.message);
       baseline = JSON.parse(saved.value) as SteeringEntry[];
       if (!Array.isArray(baseline)) throw new Error("not a list");
+      // The file beside the log counts only when it is the baseline the log recorded.
+      if (digestOf(baseline) !== item.worktrees[0]?.protectedDigest) throw new Error("not the recorded baseline");
     } catch {
       return "Tokama has no readable record of the repo's git config and hooks from when the item started, so it does not merge or push it.";
     }
-    const set = await protectedSet(git, { repoPath: repo.path, worktreePath: repo.path, worktreeFolder: repo.worktreeFolder, baseCommit: worktree.baseCommit, branch: worktree.branch });
-    const hashes = set.ok ? await set.value.hash() : set;
+    const hashes = await sharedGitHashes(git, repo.path);
     if (!hashes.ok) return `Cannot read the repo's git config and hooks: ${hashes.error.message}`;
     const changes = steeringChanges(shared(baseline), shared(steeringEntries(hashes.value, worktree.branch)));
     if (changes.length === 0) return undefined;
