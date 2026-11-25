@@ -62,6 +62,11 @@ export const AgentCallEventSchema = z.discriminatedUnion("type", [
    * call with a `tool_call` and no `tool_result` yet is still running.
    */
   z.strictObject({ type: z.literal("tool_result"), id: z.string().min(1) }),
+  /**
+   * A subagent the agent started sent a message or a tool result. It is no turn or tool call of
+   * the agent; it shows that the tool call which runs the subagent is still at work.
+   */
+  z.strictObject({ type: z.literal("subagent") }),
   /** The CLI reported its plan usage. */
   z.strictObject({
     type: z.literal("rate_limit"),

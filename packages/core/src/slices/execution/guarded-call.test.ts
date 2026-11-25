@@ -334,6 +334,16 @@ describe("guarded agent call", () => {
       expect(guard.stop).toBeNull();
     });
 
+    it("does not stop a subagent at work: its messages keep the call alive", async () => {
+      const clock = manualClock();
+      const task = call("other", "Task", { prompt: "explore the repo" });
+      const agent = scriptedAgent(clock, [TURN, task, ...repeat(8, () => [{ wait: 5 * MIN }, { type: "subagent" }]), { type: "tool_result", id: `t${callIds}` }, TURN, text("done")]);
+      const { end, guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings });
+      expect(clock.now()).toBe(40 * MIN);
+      expect(end.outcome).toBe("completed");
+      expect(guard.stop).toBeNull();
+    });
+
     it("fires with the silence stop off", async () => {
       const clock = manualClock();
       const agent = scriptedAgent(clock, [{ wait: 3 * MIN }, TURN, runTests(), { hang: true }]);

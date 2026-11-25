@@ -232,7 +232,7 @@ export function createStreamParser(cwd: string, home: string = homedir()): Strea
           assistantError = { code: line.error, text: said };
         }
         // A subagent's turns and tool calls are not the parent's; its tokens still count.
-        if (typeof line.parent_tool_use_id === "string") return [];
+        if (typeof line.parent_tool_use_id === "string") return [{ type: "subagent" }];
         // One turn per API message, which arrives as one line per content block.
         const newTurn = message.id === undefined || !seenMessages.has(message.id);
         if (message.id !== undefined) seenMessages.add(message.id);
@@ -241,7 +241,7 @@ export function createStreamParser(cwd: string, home: string = homedir()): Strea
       }
       case "user": {
         // A subagent's tool results are not the parent's, as its tool calls are not.
-        if (typeof line.parent_tool_use_id === "string") return [];
+        if (typeof line.parent_tool_use_id === "string") return [{ type: "subagent" }];
         return line.message.content.flatMap((block): AgentCallEvent[] => {
           if (block.type !== "tool_result" || block.tool_use_id === undefined || endedTools.has(block.tool_use_id)) return [];
           endedTools.add(block.tool_use_id);

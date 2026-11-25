@@ -86,6 +86,8 @@ export function createActivityTracker(startedAt: number): ActivityTracker {
         case "rate_limit":
           return false;
         case "started":
+        case "subagent":
+          // The agent itself did nothing new: its action stays, but the call is alive.
           break;
         case "turn":
           // The agent takes a new turn only once its tools answered: none still runs. This also
