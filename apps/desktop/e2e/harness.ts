@@ -104,7 +104,8 @@ export function flow(name: string, fn: (session: Session) => Promise<void>, mode
       }
       trace(name, "stopping the engine");
       await stopEngine(engineDir);
-      rmSync(tmp, { recursive: true, force: true });
+      // The engine may still be writing into a repo folder as it stops: retry a busy folder.
+      rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
       trace(name, "done");
     }
     // Reached only when the flow passed: a failed one has thrown already.

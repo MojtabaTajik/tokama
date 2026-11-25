@@ -2,7 +2,7 @@
 // empty home (first launch). The native folder picker is replaced in the main process for the
 // test; the engine still checks the folder it gets.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { expect } from "vitest";
 import { flow, outDir, sidebarRow } from "./harness.js";
@@ -198,6 +198,7 @@ flow(
     await dialog.getByText(/This folder has 5,100 files/).waitFor();
     await shot("c2-many");
     await page.keyboard.press("Escape");
+    rmSync(many, { recursive: true, force: true });
 
     // d: a repo with no commits.
     const inventory = join(tmp, "inventory-service");
