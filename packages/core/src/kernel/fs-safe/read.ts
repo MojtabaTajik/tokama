@@ -206,6 +206,10 @@ export interface ReadLinesOptions {
    * no shorter than that; otherwise the read starts at the beginning.
    */
   readonly resume?: { readonly ino: number; readonly offset: number };
+  /** A file last changed before this time (ms) is not read: the read ends at its size at once. */
+  readonly modifiedSince?: number;
+  /** Stops between chunks; the result then ends at the last complete line read. */
+  readonly signal?: AbortSignal;
 }
 
 export interface ReadLinesResult {
@@ -226,7 +230,7 @@ export interface ReadLinesResult {
  * line plus one chunk. Never throws, except what `onLine` throws.
  */
 export async function readLinesFrom(path: string, options: ReadLinesOptions, onLine: (line: string) => void): Promise<Result<ReadLinesResult, ReadFailure>> {
-  const { maxFileBytes, maxLineBytes, resume } = options;
+  const { maxFileBytes, maxLineBytes, resume, modifiedSince, signal } = options;
   let handle: promises.FileHandle;
   try {
     handle = await open(path, FLAGS);
@@ -244,6 +248,7 @@ export async function readLinesFrom(path: string, options: ReadLinesOptions, onL
     if (!info.isFile()) return failure(path, "not_regular_file", "not a regular file");
     if (info.size > maxFileBytes) return failure(path, "too_large", `larger than ${maxFileBytes} bytes`);
     const start = resume !== undefined && resume.ino === info.ino && resume.offset <= info.size ? resume.offset : 0;
+    if (modifiedSince !== undefined && info.mtimeMs < modifiedSince) return ok({ ino: info.ino, size: info.size, start, end: info.size, skipped: 0 });
     // Read only what was there at fstat: a line written after it is read next time.
     const stop = info.size;
     const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -254,7 +259,7 @@ export async function readLinesFrom(path: string, options: ReadLinesOptions, onL
     let position = start;
     let end = start;
     const chunk = Buffer.alloc(CHUNK_BYTES);
-    while (position < stop) {
+    while (position < stop && signal?.aborted !== true) {
       let bytesRead: number;
       try {
         ({ bytesRead } = await handle.read(chunk, 0, Math.min(CHUNK_BYTES, stop - position), position));

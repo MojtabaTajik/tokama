@@ -5,7 +5,7 @@
 //
 // The reader is Claude Code's adapter, looked up by name: the adapter may have been removed.
 // Project folders are matched to repos after each scan, so a repo added later counts from the
-// next scan on; the index keeps only a hash of each folder name.
+// next scan on; the index keeps the match by a hash of each folder name, never the name.
 import { realpath } from "node:fs/promises";
 import { adapters, type Clock, type LogScan, pricedEntry, rangeStart, type RepoId, type UsageEntry } from "@tokama/core";
 import type { ItemIndex, LocalMessage } from "./item-index.js";
@@ -61,7 +61,6 @@ export class ClaudeLogs {
   private found = true;
   /** Project folder names by hash, from the last scan: in memory only. */
   private projects: ReadonlyMap<string, string> = new Map();
-  private repoByProject = new Map<string, RepoId | null>();
 
   constructor(private readonly deps: ClaudeLogsDeps) {
     const factories: Record<string, unknown> = { ...adapters };
@@ -90,9 +89,15 @@ export class ClaudeLogs {
 
   /** Claude Code's usage since `since`, per day, model and repo, priced from the table. */
   entries(since: number): UsageEntry[] {
+    if (this.scan === undefined) return [];
     return this.deps.index.localDays(since).map((row) =>
-      pricedEntry({ day: row.day, model: row.model, cliId: "claude-code", repoId: this.repoByProject.get(row.project) ?? null, tokens: row.tokens, calls: row.messages }),
+      pricedEntry({ day: row.day, model: row.model, cliId: "claude-code", repoId: row.repoId, tokens: row.tokens, calls: row.messages }),
     );
+  }
+
+  /** The time from which the logs hold Claude Code's calls; undefined while they hold none. */
+  coveredFrom(): number | undefined {
+    return this.scan === undefined ? undefined : this.deps.index.localCoveredFrom();
   }
 
   /** Waits for a scan in flight; for tests and shutdown. */
@@ -141,6 +146,6 @@ export class ClaudeLogs {
       const real = await realpath(repo.path).catch(() => repo.path);
       repos.push({ id: repo.id, paths: real === repo.path ? [repo.path] : [repo.path, real], worktreeFolder: repo.worktreeFolder });
     }
-    this.repoByProject = new Map([...this.projects].map(([project, folder]) => [project, (repoOf(folder, repos) as RepoId | undefined) ?? null]));
+    this.deps.index.saveLocalProjects(new Map([...this.projects].map(([project, folder]) => [project, repoOf(folder, repos) ?? null])));
   }
 }

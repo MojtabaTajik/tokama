@@ -26,7 +26,7 @@ import {
 
 export const INDEX_SCHEMA_VERSION = 3;
 
-const TABLES = ["items", "usage_calls", "plan_samples", "claude_local_messages", "claude_local_files"];
+const TABLES = ["items", "usage_calls", "plan_samples", "claude_local_messages", "claude_local_files", "claude_local_projects"];
 
 /** One message's usage from Claude Code's logs. */
 export interface LocalMessage {
@@ -44,6 +44,8 @@ export interface LocalDayRow {
   readonly day: string;
   readonly model: string;
   readonly project: string;
+  /** Null: the project is outside the configured repos, or not matched yet. */
+  readonly repoId: RepoId | null;
   readonly tokens: TokenUsage;
   readonly messages: number;
 }
@@ -106,6 +108,10 @@ const CREATE = `
     file_key TEXT PRIMARY KEY,
     ino INTEGER NOT NULL,
     offset INTEGER NOT NULL
+  ) STRICT;
+  CREATE TABLE claude_local_projects (
+    project TEXT PRIMARY KEY,
+    repo_id TEXT
   ) STRICT;
 `;
 
@@ -194,18 +200,34 @@ export class ItemIndex {
     });
   }
 
-  /** Claude Code's usage since `since`, summed per local day, model and project. */
+  /** Stores which repo each project hash belongs to (null: none), so it holds across restarts. */
+  saveLocalProjects(repos: ReadonlyMap<string, string | null>): void {
+    this.transaction(() => {
+      const put = this.db.prepare("INSERT INTO claude_local_projects (project, repo_id) VALUES (?, ?) ON CONFLICT (project) DO UPDATE SET repo_id = excluded.repo_id");
+      for (const [project, repoId] of repos) put.run(project, repoId);
+    });
+  }
+
+  /** The time of the oldest message kept from the logs: Claude Code's calls before it are not in them. */
+  localCoveredFrom(): number | undefined {
+    const row = this.db.prepare("SELECT min(at) AS at FROM claude_local_messages").get() as { at: number | null };
+    return row.at ?? undefined;
+  }
+
+  /** Claude Code's usage since `since`, summed per local day, model and project, with the project's repo. */
   localDays(since: number): LocalDayRow[] {
     const rows = this.db
       .prepare(
-        `SELECT day, model, project, sum(input) AS input, sum(output) AS output, sum(cache_read) AS cache_read, sum(cache_write) AS cache_write, count(*) AS messages
-         FROM claude_local_messages WHERE at >= ? GROUP BY day, model, project ORDER BY day, model, project`,
+        `SELECT m.day, m.model, m.project, p.repo_id, sum(m.input) AS input, sum(m.output) AS output, sum(m.cache_read) AS cache_read, sum(m.cache_write) AS cache_write, count(*) AS messages
+         FROM claude_local_messages m LEFT JOIN claude_local_projects p ON p.project = m.project
+         WHERE m.at >= ? GROUP BY m.day, m.model, m.project ORDER BY m.day, m.model, m.project`,
       )
-      .all(since) as unknown as { day: string; model: string; project: string; input: number; output: number; cache_read: number; cache_write: number; messages: number }[];
+      .all(since) as unknown as { day: string; model: string; project: string; repo_id: string | null; input: number; output: number; cache_read: number; cache_write: number; messages: number }[];
     return rows.map((row) => ({
       day: row.day,
       model: row.model,
       project: row.project,
+      repoId: row.repo_id as RepoId | null,
       tokens: { input: row.input, output: row.output, cacheRead: row.cache_read, cacheWrite: row.cache_write },
       messages: row.messages,
     }));

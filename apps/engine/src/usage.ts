@@ -55,6 +55,8 @@ export interface UsageDeps {
     refresh(): void;
     status(): LogScan;
     entries(since: number): readonly UsageEntry[];
+    /** From when the logs hold Claude Code's calls; undefined while they hold none. */
+    coveredFrom(): number | undefined;
   };
 }
 
@@ -103,7 +105,17 @@ export class UsageService {
     if (scope === "tokama") return summarizeUsage({ rows, range, now, clis, scope });
     const logs = this.deps.logs;
     logs?.refresh();
-    return summarizeUsage({ rows, range, now, clis, scope, logs: logs?.entries(rangeStart(now, range)) ?? [], scan: logs?.status() ?? NO_LOGS });
+    const logsFrom = logs?.coveredFrom();
+    return summarizeUsage({
+      rows,
+      range,
+      now,
+      clis,
+      scope,
+      logs: logs?.entries(rangeStart(now, range)) ?? [],
+      ...(logsFrom !== undefined && { logsFrom }),
+      scan: logs?.status() ?? NO_LOGS,
+    });
   }
 
   /** Waits for a usage request in flight; for tests and shutdown. */

@@ -40,7 +40,7 @@ export interface ScanLogsOptions {
   readonly onFile: (fileKey: string, mark: LogMark, messages: readonly LoggedUsage[]) => void;
   /** Files done of the files found. */
   readonly onProgress?: (done: number, total: number) => void;
-  /** Stops between files. */
+  /** Stops between files and between chunks of a file. */
   readonly signal?: AbortSignal;
   /** Default: 512 MiB. A larger file is skipped. */
   readonly maxFileBytes?: number;
@@ -189,7 +189,14 @@ export async function scanClaudeLogs(options: ScanLogsOptions): Promise<ScanLogs
     const resume = options.mark(fileKey);
     const read = await readLinesFrom(
       join(root, ...file.rel.split("/")),
-      { maxFileBytes: options.maxFileBytes ?? MAX_FILE_BYTES, maxLineBytes: MAX_LINE_BYTES, ...(resume !== undefined && { resume }) },
+      {
+        maxFileBytes: options.maxFileBytes ?? MAX_FILE_BYTES,
+        maxLineBytes: MAX_LINE_BYTES,
+        // A log untouched since before the range holds nothing to count.
+        modifiedSince: options.since,
+        ...(resume !== undefined && { resume }),
+        ...(options.signal !== undefined && { signal: options.signal }),
+      },
       (line) => {
         const parsed = parseLogLine(line, file.project);
         if (parsed.bad) skippedLines++;

@@ -23,10 +23,12 @@ export interface SummaryInput {
   /**
    * With a scope, the report also has per-day totals, the token summary and the model and repo
    * tables for it. In the `all` scope, `logs` holds Claude Code's usage from its own logs, which
-   * already include the Claude Code calls Tokama ran: those rows are not counted again.
+   * include the Claude Code calls Tokama ran from `logsFrom` on: those rows are not counted again.
+   * Earlier ones (Claude Code deletes old logs), or all of them without `logsFrom`, still count.
    */
   readonly scope?: UsageScope;
   readonly logs?: readonly UsageEntry[];
+  readonly logsFrom?: number;
   readonly scan?: LogScan;
 }
 
@@ -56,7 +58,7 @@ export function rangeStart(now: number, range: UsageRange): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() - (range - 1)).getTime();
 }
 
-export function summarizeUsage({ rows, range, now, clis, scope, logs = [], scan }: SummaryInput): UsageReport {
+export function summarizeUsage({ rows, range, now, clis, scope, logs = [], logsFrom, scan }: SummaryInput): UsageReport {
   const start = rangeStart(now, range);
   const inRange = rows.filter((row) => row.call.endedAt >= start && row.call.endedAt <= now);
 
@@ -134,7 +136,12 @@ export function summarizeUsage({ rows, range, now, clis, scope, logs = [], scan 
   const entries =
     scope === "tokama"
       ? inRange.flatMap((row) => callEntries(row, localDate(row.call.endedAt)))
-      : [...logs.filter((entry) => days.has(entry.day)), ...inRange.filter((row) => row.call.cliId !== "claude-code").flatMap((row) => callEntries(row, localDate(row.call.endedAt)))];
+      : [
+          ...logs.filter((entry) => days.has(entry.day)),
+          ...inRange
+            .filter((row) => row.call.cliId !== "claude-code" || logsFrom === undefined || row.call.endedAt < logsFrom)
+            .flatMap((row) => callEntries(row, localDate(row.call.endedAt))),
+        ];
   const parts = breakdown(entries);
   return {
     ...report,

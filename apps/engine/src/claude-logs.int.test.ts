@@ -60,7 +60,7 @@ describe("ClaudeLogs", () => {
       clock,
       onChange: () => changes++,
     });
-    return { logs, clock, root, project, changes: () => changes };
+    return { logs, index, clock, root, project, changes: () => changes };
   }
 
   it("scans in the background with progress, then has the usage per day, model and repo", async () => {
@@ -101,6 +101,17 @@ describe("ClaudeLogs", () => {
     await logs.settled();
     expect(logs.entries(0).reduce((n, e) => n + e.calls, 0)).toBe(5);
     expect(logs.status().asOf).toBe(now + 61_000);
+  });
+
+  it("keeps the repo of each project across a restart, before the next scan ends", async () => {
+    const now = Date.now();
+    const { logs, index, root } = setUp(now, "/Users/someone/orders-api");
+    logs.refresh();
+    await logs.settled();
+    const restarted = new ClaudeLogs({ index, root, repos: async () => [], clock: manualClock(now), onChange: () => {} });
+    expect(restarted.status().state).toBe("scanning");
+    expect(restarted.entries(0).filter((e) => e.repoId === "orders-api")).toHaveLength(3);
+    expect(restarted.coveredFrom()).toBe(now - 10 * MINUTE);
   });
 
   it("says when there are no logs", async () => {

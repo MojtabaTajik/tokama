@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -303,5 +303,26 @@ describe("readLinesFrom", () => {
     expect(reason((await lines(join(dir, "folder.jsonl"))).result)).toBe("not_regular_file");
     expect(reason((await lines(write("big.jsonl", "x".repeat(50)), { maxFileBytes: 10, maxLineBytes: 100 })).result)).toBe("too_large");
     expect(reason((await lines(join(dir, "missing.jsonl"))).result)).toBe("not_found");
+  });
+
+  it("ends at the size of a file not changed since a time, without reading it", async () => {
+    const path = write("old.jsonl", "a\nb\n");
+    utimesSync(path, new Date(1_000_000), new Date(1_000_000));
+    const { seen, result } = await lines(path, { ...LIMITS, modifiedSince: 2_000_000 });
+    expect(seen).toEqual([]);
+    expect(result.ok && result.value).toMatchObject({ start: 0, end: 4, size: 4 });
+    expect((await lines(path, { ...LIMITS, modifiedSince: 500_000 })).seen).toEqual(["a", "b"]);
+  });
+
+  it("stops when aborted and ends at the last complete line read", async () => {
+    const stop = new AbortController();
+    const path = write("long.jsonl", `${"line\n".repeat(100_000)}`);
+    const seen: string[] = [];
+    const result = await readLinesFrom(path, { ...LIMITS, signal: stop.signal }, (line) => {
+      seen.push(line);
+      stop.abort();
+    });
+    expect(seen.length).toBeLessThan(100_000);
+    expect(result.ok && result.value.end).toBe(seen.length * 5);
   });
 });

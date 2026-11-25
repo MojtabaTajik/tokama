@@ -129,7 +129,7 @@ describe("summarizeUsage with a scope", () => {
 
   it("counts the logs and Tokama's calls on other CLIs in the all scope, never Tokama's Claude Code calls twice", () => {
     const scan = { state: "ready" as const, filesDone: 3, filesTotal: 3, asOf: NOW };
-    const report = summarizeUsage({ rows, range: 14, now: NOW, clis: [], scope: "all", logs, scan });
+    const report = summarizeUsage({ rows, range: 14, now: NOW, clis: [], scope: "all", logs, logsFrom: at(13, 0), scan });
     expect(UsageReportSchema.safeParse(report).success).toBe(true);
     expect(report.totals).toEqual({ tokens: tokens(M + 5000, 500, M, 0), costUsd: 4 + 0.1, calls: 3, unpricedCalls: 0 });
     expect(report.days.at(-1)).toMatchObject({ tokens: M, costUsd: 4 });
@@ -141,5 +141,16 @@ describe("summarizeUsage with a scope", () => {
     expect(report.scan).toEqual(scan);
     // Tokama's workflows and items stay Tokama's, whatever the scope.
     expect(report.workflows).toEqual([{ templateId: "plan-and-build", tokens: 6650, costUsd: 1, calls: 2 }]);
+  });
+
+  it("counts Tokama's Claude Code calls the logs do not hold: before they start, or all without logs", () => {
+    // The logs hold Claude Code's calls from yesterday 12:00 on; today's call is in them, the call
+    // two days ago is not.
+    const tokamaRows = [row(call({ endedAt: at(0, 10), tokens: tokens(M, 0, 0, 0) }), ORDERS), row(call({ endedAt: at(2, 10), tokens: tokens(M, 0, 0, 0) }), ORDERS)];
+    const covered = summarizeUsage({ rows: tokamaRows, range: 14, now: NOW, clis: [], scope: "all", logs: [], logsFrom: at(1, 12) });
+    expect(covered.totals).toMatchObject({ calls: 1, tokens: tokens(M, 0, 0, 0), costUsd: 4 });
+    expect(covered.days.at(-3)).toMatchObject({ tokens: M });
+    const none = summarizeUsage({ rows: tokamaRows, range: 14, now: NOW, clis: [], scope: "all", logs: [] });
+    expect(none.totals).toMatchObject({ calls: 2, costUsd: 8 });
   });
 });

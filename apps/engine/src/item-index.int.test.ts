@@ -398,7 +398,10 @@ describe("ItemIndex: Claude Code's usage from its logs", () => {
     // The same message in another log, and the first log read again from the start.
     index.saveLocalFile("f2", { ino: 2, offset: 20 }, [message("req_2", day1, 50)]);
     index.saveLocalFile("f1", { ino: 1, offset: 10 }, [message("req_1", day1, 5)]);
-    expect(index.localDays(0)).toEqual([{ day: "2026-11-23", model: "claude-opus-5-5", project: "p1", tokens: { input: 20, output: 450, cacheRead: 200, cacheWrite: 10 }, messages: 2 }]);
+    expect(index.localDays(0)).toEqual([{ day: "2026-11-23", model: "claude-opus-5-5", project: "p1", repoId: null, tokens: { input: 20, output: 450, cacheRead: 200, cacheWrite: 10 }, messages: 2 }]);
+    index.saveLocalProjects(new Map([["p1", "orders-api"]]));
+    expect(index.localDays(0)[0]?.repoId).toBe("orders-api");
+    expect(index.localCoveredFrom()).toBe(day1);
     expect(index.localMark("f1")).toEqual({ ino: 1, offset: 10 });
     expect(index.localMark("f3")).toBeUndefined();
   });

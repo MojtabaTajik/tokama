@@ -271,6 +271,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
             refresh: () => {},
             status: () => ({ state: "ready", filesDone: 412, filesTotal: 412, asOf: clock.now() - 40_000 }),
             entries: () => sampleLogEntries(sample.setup, clock.now()),
+            coveredFrom: () => 0,
           },
           clock,
           onChange: usageChanged,
