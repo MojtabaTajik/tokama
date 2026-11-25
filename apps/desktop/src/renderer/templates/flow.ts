@@ -4,9 +4,9 @@
 // without React; the component only draws it.
 import type { TemplateStepView, TemplateView } from "@tokama/core";
 
-export const SLOT = 148;
+export const SLOT = 128;
 export const NODE_HEIGHT = 48;
-const GAP = 28;
+const GAP = 24;
 const SELF_ROOM = 52;
 const BACK_ROOM = 44;
 const BACK_STEP = 26;
