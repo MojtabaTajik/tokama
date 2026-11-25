@@ -13,6 +13,7 @@ export interface CutOptions {
 /** `text` as it is when it has at most `max` UTF-16 units; otherwise cut to at most `max`, the `…` mark included. */
 export function cutText(text: string, max: number, options: CutOptions = {}): string {
   if (text.length <= max) return text;
+  if (max < 1) return "";
   const room = Math.max(0, max - 1);
   const segments = SEGMENTER.segment(text);
   if (options.keep === "tail") {

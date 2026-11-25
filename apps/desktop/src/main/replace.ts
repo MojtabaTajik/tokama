@@ -30,7 +30,7 @@ export interface ReplaceOptions {
   readonly pollMs?: number;
   /** How long another app's replace may take before its `replace.lock` counts as stale. Default 60 s. */
   readonly staleMs?: number;
-  /** Default: the system clock. */
+  /** Default: the system clock. It must follow wall time: a lock's age is read from its file time. */
   readonly clock?: Clock;
 }
 

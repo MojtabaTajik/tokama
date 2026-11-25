@@ -11,9 +11,10 @@ describe("cutText", () => {
     expect(cutText("", 0)).toBe("");
   });
 
-  it("keeps only the mark when nothing else fits", () => {
+  it("keeps only the mark when nothing else fits, and nothing when max is below 1", () => {
     expect(cutText("abc", 1)).toBe("…");
-    expect(cutText("abc", 0)).toBe("…");
+    expect(cutText("abc", 0)).toBe("");
+    expect(cutText("abc", -1, { keep: "tail" })).toBe("");
   });
 
   it("never splits a surrogate pair", () => {

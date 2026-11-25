@@ -145,7 +145,7 @@ const kernelOnlyImports = {
     ...["fs/promises", "node:fs/promises"].map((name) => ({ name, importNames: FS_PROMISES_WRITE_NAMES, message: KERNEL_ONLY })),
     ...["child_process", "node:child_process"].map((name) => ({ name, message: KERNEL_ONLY })),
     ...["process", "node:process"].map((name) => ({ name, importNames: ["kill"], message: KERNEL_ONLY })),
-    ...["crypto", "node:crypto"].map((name) => ({ name, importNames: ["createHash"], message: SHA256_ONLY })),
+    ...["crypto", "node:crypto"].map((name) => ({ name, importNames: ["createHash", "hash", "default"], message: SHA256_ONLY })),
   ],
 };
 const SOURCE_FILES = ["packages/*/src/**/*.{ts,tsx,mts,cts}", "apps/*/src/**/*.{ts,tsx,mts,cts}"];

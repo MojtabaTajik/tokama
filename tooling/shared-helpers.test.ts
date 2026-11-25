@@ -18,7 +18,7 @@ interface Copy {
 }
 
 const COPIES: readonly Copy[] = [
-  { name: "text cut with an ellipsis", pattern: /\.slice\([^\n]*?\)\}…|…\$\{[^}\n]*\.slice\(/, use: "cutText from kernel/text" },
+  { name: "text cut with an ellipsis", pattern: /\.slice\([^\n]*?\)\}(?:…|\$\{CUT_MARK\})|(?:…|\$\{CUT_MARK\})\$\{[^}\n]*\.slice\(/, use: "cutText from kernel/text", home: /^packages\/core\/src\/kernel\/text\// },
   { name: "errno helper", pattern: /\b(?:function|const|let)\s+(?:hasCode|errnoCode)\b/, use: "hasCode or errnoCode from kernel/errno", home: /^packages\/core\/src\/kernel\/errno\// },
   { name: "inline errno read", pattern: /ErrnoException\)\.code|"code" in error\b/, use: "hasCode or errnoCode from kernel/errno", home: /^packages\/core\/src\/kernel\/errno\// },
   { name: "sha256 helper", pattern: /\b(?:function|const|let)\s+sha256\w*\s*[=(]/, use: "sha256Hex from kernel/hash", home: /^packages\/core\/src\/kernel\/hash\// },
@@ -53,6 +53,7 @@ describe("shared helpers: no local copies", () => {
     ["text cut with an ellipsis", "return line.length > max ? `${line.slice(0, max - 1)}…` : line;"],
     ["text cut with an ellipsis", "const cut = chars.length > MAX ? `${chars.slice(0, MAX).join(\"\")}…` : value;"],
     ["text cut with an ellipsis", "return `…${line.slice(line.length - MAX + 1)}`;"],
+    ["text cut with an ellipsis", "return `${line.slice(0, max - 1)}${CUT_MARK}`;"],
     ["errno helper", "function hasCode(error: unknown, code: string): boolean {"],
     ["inline errno read", "if ((error as NodeJS.ErrnoException).code !== \"EEXIST\") return true;"],
     ["inline errno read", "if (!(error instanceof Error && \"code\" in error && error.code === \"ENOENT\"))"],

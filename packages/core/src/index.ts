@@ -14,7 +14,7 @@ export { manualClock, sleep, systemClock, withDeadline, type Clock, type ManualC
 // Small helpers the apps share with core.
 export { hasCode } from "./kernel/errno/index.js";
 export { parseJsonLine } from "./kernel/json-line/index.js";
-export { CUT_MARK, cutText, displayPath, type CutOptions } from "./kernel/text/index.js";
+export { cutText, displayPath, type CutOptions } from "./kernel/text/index.js";
 export {
   checkEngineDir,
   defaultEngineDir,

@@ -8,7 +8,7 @@
 import type { Git } from "../../kernel/git/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import type { ItemId } from "../../kernel/schemas/index.js";
-import { CUT_MARK, cutText } from "../../kernel/text/index.js";
+import { cutText } from "../../kernel/text/index.js";
 import type { ItemWorktree } from "./worktree.js";
 
 export type CommitErrorReason = "nothing-to-commit" | "git";
@@ -49,7 +49,8 @@ export function commitMessage(itemId: ItemId, title: string, text: string): stri
 /** At most SUBJECT_MAX characters, cut between graphemes, `…` when cut; no space before the `…`. */
 function cutSubject(line: string): string {
   const cut = cutText(line, SUBJECT_MAX);
-  return cut === line ? line : `${cut.slice(0, -CUT_MARK.length).trimEnd()}${CUT_MARK}`;
+  // No space before the mark.
+  return cut === line ? line : cut.replace(/\s+(?=…$)/, "");
 }
 
 const gitFailure = (error: { readonly message: string }): Result<never, CommitError> => err({ reason: "git", message: error.message });
