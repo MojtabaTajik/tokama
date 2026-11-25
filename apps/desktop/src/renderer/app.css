@@ -124,6 +124,15 @@ button:focus-visible {
   background: var(--fail);
 }
 
+.badge[data-tone="neutral"] {
+  border: 1px solid var(--hairline);
+  background: var(--panel);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-weight: 400;
+  line-height: 13px;
+}
+
 .rail-spacer {
   flex: 1 1 auto;
   min-height: 8px;

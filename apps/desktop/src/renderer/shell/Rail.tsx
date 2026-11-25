@@ -1,7 +1,8 @@
 // The icon rail: panel toggle, Board, Needs you, Insights, Settings, Attention, then the user.
 // Insights is the one usage entry: hovering or focusing it lists each AI CLI's plan limits, and
 // clicking opens the Insights page. A CLI that is logged out or at its limit puts a ✕ on the icon,
-// one near its limit a !. Attention opens a popup with the issues and how to fix them. The user
+// one near its limit a !. Settings counts the diagnostics entries waiting to be sent. Attention
+// opens a popup with the issues and how to fix them. The user
 // button opens About. Needs you opens its page, Settings opens Settings.
 import type { Setup, UsageReport } from "@tokama/core";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
@@ -22,6 +23,7 @@ const TEXT = {
   insights: "Insights",
   usage: "Usage",
   settings: "Settings",
+  diagnosticsWaiting: "diagnostics waiting",
   attention: "Attention",
   about: "About Tokama",
 } as const;
@@ -61,6 +63,8 @@ export interface RailProps {
   readonly onSelectItem?: (itemId: string) => void;
   /** The tooltip's Settings link: the AI CLIs settings. */
   readonly onCliSettings?: () => void;
+  /** Diagnostics entries waiting to be sent; they count on Settings. */
+  readonly diagnosticsWaiting?: number;
 }
 
 export { TIP_CLOSE_MS, TIP_OPEN_MS } from "./useTip.js";
@@ -68,7 +72,7 @@ export { TIP_CLOSE_MS, TIP_OPEN_MS } from "./useTip.js";
 /** "Needs you · 2", or just "Needs you" when there are none. */
 const withCount = (label: string, count: number) => (count > 0 ? `${label} · ${count}` : label);
 
-export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, problems = [], onAttention, usage, now = Date.now(), insightsOpen = false, onInsights, onInsightsTip, aboutOpen, needsYouOpen, onBoard, onNeedsYou, onAbout, onSettings, setup, onSelectItem, onCliSettings }: RailProps) {
+export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, problems = [], onAttention, usage, now = Date.now(), insightsOpen = false, onInsights, onInsightsTip, aboutOpen, needsYouOpen, onBoard, onNeedsYou, onAbout, onSettings, setup, onSelectItem, onCliSettings, diagnosticsWaiting = 0 }: RailProps) {
   const tipId = useId();
   const popupId = useId();
   const attention = issues.length + problems.length;
@@ -106,6 +110,7 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
     };
   }, [closeTip]);
   const badge = railBadge(AI_CLIS.map((cli) => cliAlert(usage?.clis.find((plan) => plan.cliId === cli.id), issues.find((issue) => issue.cliId === cli.id), now)));
+  const settingsLabel = diagnosticsWaiting > 0 ? `${TEXT.settings} · ${diagnosticsWaiting > 99 ? "99+" : diagnosticsWaiting} ${TEXT.diagnosticsWaiting}` : TEXT.settings;
   const needsYouLabel = needsYou === undefined ? `${TEXT.needsYou} · ${TEXT.outOfDate}` : withCount(TEXT.needsYou, needsYou);
   return (
     <nav className="rail" aria-label={TEXT.rail}>
@@ -174,8 +179,9 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
           </div>
         </div>
       </div>
-      <button type="button" className="rail-button" aria-label={TEXT.settings} title={TEXT.settings} onClick={onSettings}>
+      <button type="button" className="rail-button" aria-label={settingsLabel} title={settingsLabel} onClick={onSettings}>
         <SettingsIcon />
+        <Badge count={diagnosticsWaiting} tone="neutral" />
       </button>
       <div className="attention" ref={attentionRef}>
         <button
@@ -206,7 +212,7 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
 }
 
 /** A count on a button, or `symbol` instead of the number when the kind matters more than how many. */
-function Badge({ count, tone, symbol }: { readonly count: number; readonly tone: "warn" | "fail"; readonly symbol?: string }) {
+function Badge({ count, tone, symbol }: { readonly count: number; readonly tone: "warn" | "fail" | "neutral"; readonly symbol?: string }) {
   if (count <= 0) return null;
   return (
     <span className="badge" data-tone={tone} aria-hidden="true">

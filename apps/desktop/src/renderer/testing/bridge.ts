@@ -3,7 +3,7 @@
 import type { ItemRecord } from "@tokama/core";
 import { act } from "react";
 import { vi } from "vitest";
-import type { AboutInfo, BridgeEvent, ConnectionState, OpenResult, TokamaBridge } from "../../shared/bridge.js";
+import type { AboutInfo, BridgeEvent, ConnectionState, DiagnosticsLoad, DiagnosticsSaveResult, DiagnosticsSendResult, OpenResult, TokamaBridge } from "../../shared/bridge.js";
 import { DEFAULT_DESKTOP_STATE, type DesktopState } from "../../shared/desktop-state.js";
 import { items, setup } from "./sample.js";
 
@@ -19,7 +19,7 @@ export const ABOUT_INFO: AboutInfo = {
 
 export const CONNECTED: ConnectionState = { status: "connected", engineId: "e-1" };
 
-export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | Promise<Reply> | undefined; commandReply?: (command: { type: string }) => Reply; pickFolder?: () => Promise<string | null>; openTemplateFile?: () => Promise<OpenResult>; openAttemptFile?: () => Promise<OpenResult>; about?: AboutInfo; copyBuildInfo?: () => Promise<void>; showDataFolder?: () => Promise<OpenResult>; desktopState?: DesktopState } = {}) {
+export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | Promise<Reply> | undefined; commandReply?: (command: { type: string }) => Reply; pickFolder?: () => Promise<string | null>; openTemplateFile?: () => Promise<OpenResult>; openAttemptFile?: () => Promise<OpenResult>; about?: AboutInfo; copyBuildInfo?: () => Promise<void>; showDataFolder?: () => Promise<OpenResult>; desktopState?: DesktopState; loadDiagnostics?: () => Promise<DiagnosticsLoad>; sendDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSendResult>; saveDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSaveResult> } = {}) {
   let connectionListener: ((state: ConnectionState) => void) | undefined;
   let openListener: ((itemId: string) => void) | undefined;
   // Every subscriber hears every event: the app and the open drawer both listen.
@@ -61,6 +61,10 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
         openListener = undefined;
       };
     }),
+    loadDiagnostics: vi.fn(options.loadDiagnostics ?? (async (): Promise<DiagnosticsLoad> => ({ ok: true, items: [] }))),
+    sendDiagnostics: vi.fn(options.sendDiagnostics ?? (async (): Promise<DiagnosticsSendResult> => ({ ok: false, reason: "nothing", count: 0 }))),
+    saveDiagnostics: vi.fn(options.saveDiagnostics ?? (async (): Promise<DiagnosticsSaveResult> => ({ ok: false, reason: "cancelled" }))),
+    stopCrashPrompt: vi.fn(async () => undefined),
     onEvent: vi.fn((listener: (event: BridgeEvent) => void) => {
       eventListeners.add(listener);
       return () => {

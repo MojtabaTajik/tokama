@@ -259,7 +259,7 @@ describe("App shell", () => {
   it("queries the setup and the board", async () => {
     const { bridge, query } = fakeBridge(CONNECTED);
     await render(bridge);
-    expect(query.mock.calls.map(([q]) => q)).toEqual([{ type: "setup" }, { type: "board" }, { type: "usage", range: 14, scope: "tokama" }]);
+    expect(query.mock.calls.map(([q]) => q)).toEqual([{ type: "setup" }, { type: "board" }, { type: "usage", range: 14, scope: "tokama" }, { type: "diagnostics_list", limit: 100 }, { type: "diagnostics_settings" }]);
   });
 
   it("shows the All work header and the list", async () => {
@@ -324,11 +324,12 @@ describe("App live updates", () => {
   it("queries again on every return to connected", async () => {
     const fake = fakeBridge(CONNECTED);
     await render(fake.bridge);
-    expect(fake.query).toHaveBeenCalledTimes(3);
+    // The setup, the board, usage, the diagnostics badge and the crash flag.
+    expect(fake.query).toHaveBeenCalledTimes(5);
     await fake.setConnection({ status: "reconnecting" });
-    expect(fake.query).toHaveBeenCalledTimes(3);
+    expect(fake.query).toHaveBeenCalledTimes(5);
     await fake.setConnection({ status: "connected", engineId: "e-1" });
-    expect(fake.query).toHaveBeenCalledTimes(6);
+    expect(fake.query).toHaveBeenCalledTimes(10);
   });
 
   it("replaces the board with the engine's current one after a reconnect, whatever the events said", async () => {
@@ -353,7 +354,7 @@ describe("App live updates", () => {
     await render(fake.bridge);
     expect(fake.query).not.toHaveBeenCalled();
     await fake.setConnection(CONNECTED);
-    expect(fake.query).toHaveBeenCalledTimes(3);
+    expect(fake.query).toHaveBeenCalledTimes(5);
   });
 
   it("shows a failed load as text", async () => {
@@ -367,8 +368,8 @@ describe("App live updates", () => {
     await render(fake.bridge);
     act(() => root.unmount());
     expect(fake.stops.connection).toHaveBeenCalledOnce();
-    // The engine data and the usage report each listen.
-    expect(fake.stops.event).toHaveBeenCalledTimes(2);
+    // The engine data, the usage report, the diagnostics badge and the crash prompt each listen.
+    expect(fake.stops.event).toHaveBeenCalledTimes(4);
     root = createRoot(container);
   });
 });

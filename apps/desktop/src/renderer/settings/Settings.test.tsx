@@ -82,7 +82,7 @@ describe("Settings > Agents", () => {
     await open(withAgents());
     const nav = $('nav[aria-label="Settings"]')!;
     expect($$('nav[aria-label="Settings"] [role="group"]').map((group) => [group.getAttribute("aria-label"), [...group.querySelectorAll("button")].map((el) => el.textContent)])).toEqual([
-      ["Personal", ["Notifications"]],
+      ["Personal", ["Notifications", "Diagnostics"]],
       ["Setup", ["Repos", "Templates", "Agents"]],
       ["Engine", ["AI CLIs"]],
     ]);
