@@ -14,7 +14,7 @@ import { openAttemptFile } from "./attempt-file.js";
 import { type ConnectionWatch, watchConnection } from "./connection.js";
 import { type DesktopStore, desktopStore } from "./desktop-store.js";
 import { DIAGNOSTICS_URL, diagnosticsService, saveToFile } from "./diagnostics-send.js";
-import { createReporter, mainErrorReport, pidAlive, rateLimit, rendererErrorReport, rendererGoneKind, type Reporter, runMarker } from "./diagnostics.js";
+import { createReporter, mainErrorReport, pidAlive, rateLimit, rendererErrorReport, rendererGoneKind, rendererUsageReport, type Reporter, runMarker } from "./diagnostics.js";
 import { engineCommand, engineDirFor, findExecutable, otherVersionMessage, readLogTail } from "./engine.js";
 import { pickRepoFolder } from "./folder.js";
 import { createNotifier } from "./notifier.js";
@@ -163,6 +163,11 @@ void app.whenReady().then(() => {
   handle(CHANNELS.reportError, (input) => {
     const report = rendererErrorReport(input);
     if (report !== undefined && rendererReports()) reporter.report(report);
+  });
+  const rendererUsage = rateLimit(120, 60_000);
+  handle(CHANNELS.countUsage, (input) => {
+    const report = rendererUsageReport(input);
+    if (report !== undefined && rendererUsage()) reporter.report(report);
   });
   // Notifications: told about every item update, and it learns the board again on each connect.
   const notifier = createNotifier({

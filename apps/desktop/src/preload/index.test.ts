@@ -21,7 +21,7 @@ const [, pushOpenItem] = electron.on.mock.calls.find(([channel]) => channel === 
 describe("preload bridge", () => {
   it("exposes window.tokama with only the bridge methods", () => {
     expect(exposed).toEqual([["tokama", bridge]]);
-    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "getAboutInfo", "getConnection", "getDesktopState", "onConnection", "onEvent", "onOpenItem", "openAttemptFile", "openTemplateFile", "pickFolder", "query", "reportError", "retryConnection", "saveLayout", "saveNotifications", "setViewedItem", "showDataFolder", "loadDiagnostics", "sendDiagnostics", "saveDiagnostics", "stopCrashPrompt"].sort());
+    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "countUsage", "getAboutInfo", "getConnection", "getDesktopState", "onConnection", "onEvent", "onOpenItem", "openAttemptFile", "openTemplateFile", "pickFolder", "query", "reportError", "retryConnection", "saveLayout", "saveNotifications", "setViewedItem", "showDataFolder", "loadDiagnostics", "sendDiagnostics", "saveDiagnostics", "stopCrashPrompt"].sort());
   });
 
   it("query and command invoke their channels with the request only", async () => {
@@ -64,6 +64,14 @@ describe("preload bridge", () => {
     const error = { message: "x is undefined", stack: "TypeError: x is undefined", source: "engine", where: "startup" } as { message: string; stack: string };
     await bridge.reportError(error);
     expect(electron.invoke).toHaveBeenCalledWith(CHANNELS.reportError, { message: "x is undefined", stack: "TypeError: x is undefined" });
+  });
+
+  it("countUsage sends the action name only, as a string", async () => {
+    electron.invoke.mockResolvedValue(undefined);
+    await bridge.countUsage("expand_view");
+    expect(electron.invoke).toHaveBeenLastCalledWith(CHANNELS.countUsage, "expand_view");
+    await bridge.countUsage({ toString: () => "expand_view", extra: 1 } as never);
+    expect(electron.invoke).toHaveBeenLastCalledWith(CHANNELS.countUsage, "expand_view");
   });
 
   it("the diagnostics calls pass a list of strings only: never a URL, text or other fields", async () => {

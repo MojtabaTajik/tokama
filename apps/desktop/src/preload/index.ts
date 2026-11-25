@@ -44,6 +44,8 @@ export const bridge: TokamaBridge = {
   saveLayout: (patch) => ipcRenderer.invoke(CHANNELS.saveLayout, patch) as Promise<void>,
   // Only the two strings cross, whatever else the renderer passes.
   reportError: ({ message, stack }) => ipcRenderer.invoke(CHANNELS.reportError, { message: String(message), stack: String(stack) }) as Promise<void>,
+  // Only the action's name crosses, as a string.
+  countUsage: (action) => ipcRenderer.invoke(CHANNELS.countUsage, String(action)) as Promise<void>,
   saveNotifications: (patch) => ipcRenderer.invoke(CHANNELS.saveNotifications, patch) as Promise<void>,
   setViewedItem: (itemId) => ipcRenderer.invoke(CHANNELS.viewedItem, itemId) as Promise<void>,
   onOpenItem: (listener) => {

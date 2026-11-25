@@ -394,7 +394,10 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
           onCheckAgain={refreshSetup}
           onOpenAgent={openAgent}
           request={rowRequest?.itemId === selectedItemId ? rowRequest : undefined}
-          onExpand={() => setExpanded({ itemId: selectedItemId, page: page === "needs-you" ? "needs-you" : "board" })}
+          onExpand={() => {
+            void bridge.countUsage("expand_view").catch(() => undefined);
+            setExpanded({ itemId: selectedItemId, page: page === "needs-you" ? "needs-you" : "board" });
+          }}
           expanded={full ? { back: backTo, wide: windowWidth - RAIL_WIDTH - fit.sidebar >= SIDE_BY_SIDE_MIN_WIDTH, onCollapse: () => setExpanded(undefined) } : undefined}
         />
       )}

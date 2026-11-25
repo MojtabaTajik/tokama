@@ -128,11 +128,13 @@ describe("App shell", () => {
   });
 
   it("opens the drawer's item in the full view and back, keeps it across Insights, and ends it from the sidebar", async () => {
-    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
+    const fake = fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) });
+    await render(fake.bridge);
     await click($(".pl-row")!);
     const title = text(".drawer h2");
     const expand = () => click($('.drawer button[aria-label="Open full view"]')!);
     await expand();
+    expect(fake.bridge.countUsage).toHaveBeenCalledExactlyOnceWith("expand_view");
     expect($(".drawer")).toBeNull();
     expect($('[aria-label="Resize drawer"]')).toBeNull();
     expect($('aside[aria-label="Sidebar"]')).not.toBeNull();
@@ -152,6 +154,7 @@ describe("App shell", () => {
     expect(text(".drawer h2"), "the drawer on the same item").toBe(title);
 
     await expand();
+    expect(fake.bridge.countUsage).toHaveBeenCalledTimes(2);
     await click($$(".sb-main").find((el) => el.textContent?.includes("Plan and build"))!);
     expect($(".expanded")).toBeNull();
     expect(text(".main-header h1")).toBe("Plan and build");
