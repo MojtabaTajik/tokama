@@ -1,17 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { NOW, setup } from "../testing/sample.js";
 import { allReport, usageReport } from "../testing/usage.js";
+import { formatDuration } from "../format/duration.js";
+import { stamp } from "../format/time.js";
 import {
   ageText,
   cardLabel,
   chartModel,
   cliAlert,
-  formatClock,
   formatCost,
-  formatDuration,
   formatTokens,
   formatUsd,
-  countdown,
   niceMax,
   railBadge,
   resetWhen,
@@ -78,14 +77,14 @@ describe("plan window words", () => {
 
 describe("times and numbers", () => {
   it("writes a time today as the clock, and another day with its weekday and date", () => {
-    expect(formatClock(at(20, 17, 10), NOW)).toBe("17:10");
-    expect(formatClock(at(23, 9), NOW)).toBe("Thu 23 Oct 09:00");
+    expect(stamp(at(20, 17, 10), NOW)).toBe("17:10");
+    expect(stamp(at(23, 9), NOW)).toBe("Thu 23 Oct 09:00");
   });
 
   it("says how old the data is only once it is more than a few minutes old", () => {
     expect(ageText(NOW - 2 * MINUTE, NOW)).toBeUndefined();
-    expect(ageText(NOW - 34 * MINUTE, NOW)).toBe("data 34 min old");
-    expect(formatDuration(3 * 24 * 60 * MINUTE)).toBe("3 days");
+    expect(ageText(NOW - 34 * MINUTE, NOW)).toBe("data 34 m old");
+    expect(ageText(NOW - 3 * 24 * 60 * MINUTE, NOW)).toBe("data 3 d 00 h old");
   });
 
   it("formats tokens compactly and costs as estimates, unknown when nothing was priced", () => {
@@ -149,7 +148,7 @@ describe("Usage v2 words and numbers", () => {
   });
 
   it("counts down to a reset in minutes, hours or days, and says when it is", () => {
-    expect([countdown(-5 * MIN), countdown(38 * MIN), countdown(161 * MIN), countdown((42 * 60 + 5) * MIN)]).toEqual(["0m", "38m", "2h 41m", "1d 18h"]);
+    expect([-5 * MIN, 38 * MIN, 161 * MIN, (42 * 60 + 5) * MIN].map((ms) => formatDuration(ms, "coarse"))).toEqual(["0 s", "38 m", "2 h 41 m", "1 d 18 h"]);
     const now = new Date(2025, 9, 20, 15, 0).getTime();
     expect(resetWhen(new Date(2025, 9, 20, 17, 10).getTime(), now)).toBe("at 17:10");
     expect(resetWhen(new Date(2025, 9, 23, 9, 0).getTime(), now)).toBe("Thu 09:00");

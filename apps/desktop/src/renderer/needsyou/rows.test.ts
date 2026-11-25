@@ -22,7 +22,7 @@ describe("needsYouRows", () => {
       agent: { name: "Architect", runsOn: "cloud" },
       cli: "Claude Code",
       workflow: { name: "Emergency investigator", icon: "fire", color: "rose" },
-      since: "41 min",
+      since: "41 m ago",
     });
   });
 

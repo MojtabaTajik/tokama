@@ -60,7 +60,7 @@ flow("shows the Checks and Log tabs in the expanded view, and no Checks tab on a
   await full.locator(".ck-lines").first().waitFor();
   expect(await full.locator(".ck-columns").first().innerText()).toMatch(/RESULT\s+COMMAND\s+EXIT\s+DURATION\s+SUMMARY/i);
   expect(await full.locator(".ck-check").first().locator(".ck-dur").innerText()).toBe("–");
-  expect(await full.locator(".ck-attempt").nth(1).locator(".ck-dur").first().innerText()).toBe("1 min 58 s");
+  expect(await full.locator(".ck-attempt").nth(1).locator(".ck-dur").first().innerText()).toBe("1 m 58 s");
   await screenshot("42-expanded-checks");
 
   await resize(1440, 1100);

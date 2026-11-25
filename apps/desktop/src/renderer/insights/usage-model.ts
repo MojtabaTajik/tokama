@@ -2,6 +2,8 @@
 // times, alerts per AI CLI, number formats, and the chart's columns. Pure functions that take the
 // clock as an argument, so they are tested without React or a real time.
 import type { CliPlan, LogScan, Setup, TemplateSummary, TokenUsage, UsageReport } from "@tokama/core";
+import { formatDuration } from "../format/duration.js";
+import { clock, sameDay, stamp, weekday } from "../format/time.js";
 import type { CliIssue } from "../model.js";
 
 /** A window at or above this share of its limit is high, then near it. */
@@ -80,28 +82,8 @@ export function railBadge(alerts: readonly (CliAlert | undefined)[]): { readonly
   return undefined;
 }
 
-const pad = (n: number) => String(n).padStart(2, "0");
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-
-/** "17:10" today, else "Thu 23 Oct 09:00". */
-export function formatClock(at: number, now: number): string {
-  const d = new Date(at);
-  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  return sameDay(d, new Date(now)) ? time : `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]} ${time}`;
-}
-
-/** "29 min", "2 h 38 min", "3 days". */
-export function formatDuration(ms: number): string {
-  const minutes = Math.max(0, Math.round(ms / MINUTE));
-  if (minutes < 60) return `${minutes} min`;
-  if (ms >= 2 * DAY) return `${Math.floor(ms / DAY)} days`;
-  return `${Math.floor(minutes / 60)} h ${pad(minutes % 60)} min`;
-}
-
-/** "data 34 min old" once the data is older than a few minutes. */
-export const ageText = (asOf: number, now: number): string | undefined => (now - asOf > SHOW_AGE_AFTER_MS ? `data ${formatDuration(now - asOf)} old` : undefined);
+/** "data 34 m old" once the data is older than a few minutes. */
+export const ageText = (asOf: number, now: number): string | undefined => (now - asOf > SHOW_AGE_AFTER_MS ? `data ${formatDuration(now - asOf, "coarse")} old` : undefined);
 
 /** Every token of a call or item, cached ones included. */
 export const totalOf = (tokens: TokenUsage): number => tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite;
@@ -145,20 +127,11 @@ export function cardLabel(w: Pick<PlanWindow, "window" | "scope">): string {
   return CARD_LABELS[w.window] ?? windowLabel(w);
 }
 
-/** Time to a reset, short: "38m", "2h 41m", "1d 18h". */
-export function countdown(ms: number): string {
-  const minutes = Math.max(0, Math.round(ms / MINUTE));
-  if (minutes < 60) return `${minutes}m`;
-  if (minutes < 24 * 60) return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
-  return `${Math.floor(minutes / (24 * 60))}d ${Math.floor((minutes % (24 * 60)) / 60)}h`;
-}
-
 /** When a reset happens: "at 17:10" today, "Thu 09:00" this week, else the full date. */
 export function resetWhen(resetsAt: number, now: number): string {
-  const d = new Date(resetsAt);
-  if (sameDay(d, new Date(now))) return `at ${formatClock(resetsAt, now)}`;
-  if (resetsAt - now < 6 * DAY) return `${WEEKDAYS[d.getDay()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  return formatClock(resetsAt, now);
+  if (sameDay(resetsAt, now)) return `at ${clock(resetsAt)}`;
+  if (resetsAt - now < 6 * DAY) return `${weekday(resetsAt)} ${clock(resetsAt)}`;
+  return stamp(resetsAt, now);
 }
 
 export const SOURCE_TEXT: Readonly<Record<NonNullable<CliPlan["source"]>, string>> = {
@@ -238,7 +211,7 @@ export function chartModel(report: UsageReport, metric: Metric, setup: Setup | u
       const value = group === undefined ? 0 : metric === "tokens" ? group.tokens : (group.costUsd ?? 0);
       return value > 0 ? [{ templateId, value }] : [];
     });
-    return { date: day.date, weekday: WEEKDAYS[d.getDay()]!, day: String(d.getDate()), segments, total: segments.reduce((sum, s) => sum + s.value, 0) };
+    return { date: day.date, weekday: weekday(d.getTime()), day: String(d.getDate()), segments, total: segments.reduce((sum, s) => sum + s.value, 0) };
   });
   const max = niceMax(Math.max(0, ...columns.map((c) => c.total)));
   return { series, columns, max, ticks: [0, 0.25, 0.5, 0.75, 1].map((f) => f * max) };

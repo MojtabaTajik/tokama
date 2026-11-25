@@ -8,7 +8,8 @@ import { stepAgent } from "../drawer/describe.js";
 import { currentStep } from "../model.js";
 import { ConnectionFailure } from "../shell/ConnectionStatus.js";
 import { MachineChart } from "./MachineChart.js";
-import { chartModel, formatBytes, formatClock, formatSeconds, formatSize, ofAllCores, onePercent, wholePercent } from "./machine-model.js";
+import { clock, clockSeconds } from "../format/time.js";
+import { chartModel, formatBytes, formatSize, ofAllCores, onePercent, wholePercent } from "./machine-model.js";
 import { useMachine } from "./useMachine.js";
 import { workflowName } from "./usage-model.js";
 
@@ -105,7 +106,7 @@ function NowMeters({ report }: { readonly report: MachineReport }) {
           {TEXT.nowTitle}
         </h2>
         <span className="muted">
-          {TEXT.specs(report.cores, formatSize(report.memoryTotalBytes))} · {TEXT.asOf} <span className="mono">{formatSeconds(report.asOf)}</span>
+          {TEXT.specs(report.cores, formatSize(report.memoryTotalBytes))} · {TEXT.asOf} <span className="mono">{clockSeconds(report.asOf)}</span>
         </span>
       </header>
       <div className="mc-meters">
@@ -158,7 +159,7 @@ function ChartSection({ report }: { readonly report: MachineReport }) {
         </h2>
         <span className="muted">{TEXT.sampled(Math.round(report.everyMs / 1000))}</span>
       </header>
-      {(leading || gaps) && <p className="muted mc-hint">{gaps || first === undefined ? TEXT.noSamples : TEXT.noSamplesFrom(formatClock(first.at))}</p>}
+      {(leading || gaps) && <p className="muted mc-hint">{gaps || first === undefined ? TEXT.noSamples : TEXT.noSamplesFrom(clock(first.at))}</p>}
       <MachineChart report={report} />
     </section>
   );

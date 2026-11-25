@@ -60,7 +60,7 @@ describe("pipeline list", () => {
     expect(needs.querySelector(".pl-workflow")?.textContent).toBe("Emergency investigator");
     expect(needs.querySelector(".pl-meta .mono")?.textContent).toBe("orders-api");
     expect(needs.parentElement?.querySelector(".pl-agent")?.textContent).toBe("Architect · opus");
-    expect(needs.querySelector(".pl-time")?.textContent).toBe("41 min");
+    expect(needs.querySelector(".pl-time")?.textContent).toBe("41 m");
     expect(needs.querySelector(".pl-meta svg")).not.toBeNull();
   });
 

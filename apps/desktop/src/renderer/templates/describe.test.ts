@@ -111,8 +111,8 @@ describe("small words", () => {
     expect(andList([])).toBe("");
     expect(andList(["a"])).toBe("a");
     expect(andList(["a", "b", "c"])).toBe("a, b and c");
-    expect(budgetText(90)).toBe("1 h 30 min");
-    expect(budgetText(45)).toBe("45 min");
-    expect(budgetText(120)).toBe("2 h");
+    expect(budgetText(90)).toBe("1 h 30 m");
+    expect(budgetText(45)).toBe("45 m");
+    expect(budgetText(120)).toBe("2 h 00 m");
   });
 });

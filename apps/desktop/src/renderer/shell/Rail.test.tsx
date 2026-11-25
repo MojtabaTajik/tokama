@@ -167,10 +167,10 @@ describe("Rail: Insights tooltip", () => {
     expect(tip.querySelector(".it-status")?.textContent).toBe("CCClaude Code✓ logged in · version 2.1.331");
     const today = tip.querySelector('[aria-label="Today"]');
     expect([...(today?.querySelectorAll(".it-item") ?? [])].map((row) => [...row.children].map((cell) => cell.textContent))).toEqual([
-      [ITEMS.verifying.title, "141k", "26 min", "Architect · Reviewer"],
-      [ITEMS.needsYou.title, "63k", "18 min", "Local builder"],
+      [ITEMS.verifying.title, "141k", "26 m", "Architect · Reviewer"],
+      [ITEMS.needsYou.title, "63k", "18 m", "Local builder"],
     ]);
-    expect(tip.querySelector(".it-totals")?.textContent).toBe("Tokens today242kinput 171k · output 23k · cache read 48kAgent time today44 min");
+    expect(tip.querySelector(".it-totals")?.textContent).toBe("Tokens today242kinput 171k · output 23k · cache read 48kAgent time today44 m");
     expect(tip.querySelector(".it-foot")?.textContent).toBe("From each call’s result event. Recorded, not limited.Settings");
     // Choosing an item or Settings closes the tooltip and hands focus back to Insights.
     const button = container.querySelector<HTMLButtonElement>('.rail button[aria-label="Insights"]')!;

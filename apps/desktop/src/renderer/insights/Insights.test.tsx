@@ -70,7 +70,7 @@ describe("Insights: accounts and limits", () => {
       ["Session · 5 hours", "36"],
       ["Weekly", "58"],
     ]);
-    expect(lines(claude)).toEqual(["↻resets in 2h 10m · at 17:10", "↻resets in 2d 18h · Thu 09:00"]);
+    expect(lines(claude)).toEqual(["↻resets in 2 h 10 m · at 17:10", "↻resets in 2 d 18 h · Thu 09:00"]);
     // The symbol is hidden from screen readers, which hear the words instead.
     expect(claude?.querySelector('.ins-countdown [aria-hidden="true"]')?.textContent).toBe("↻");
     expect(claude?.querySelector(".ins-countdown .visually-hidden")?.textContent).toBe("resets in");
@@ -86,7 +86,7 @@ describe("Insights: accounts and limits", () => {
     expect(codex?.querySelector('.ins-tone[data-tone="fail"]')?.textContent).toBe("! near limit");
     expect(codex?.querySelector('.meter-fill[data-tone="fail"]')).not.toBeNull();
     expect(codex?.querySelector('[role="meter"]')?.getAttribute("aria-valuetext")).toBe("84%, near limit");
-    expect(lines(codex)).toEqual(["↻resets in 4d 15h · Sat 06:00 · data 34 min old"]);
+    expect(lines(codex)).toEqual(["↻resets in 4 d 15 h · Sat 06:00 · data 34 m old"]);
     const ollama = card("Ollama");
     expect(ollama?.querySelector(".ins-badge")?.textContent).toBe("LOCAL");
     expect(ollama?.querySelector(".ins-card-sub")?.textContent).toBe("local");
@@ -109,7 +109,7 @@ describe("Insights: accounts and limits", () => {
       ["Weekly · all models", "41"],
       ["Weekly · Fable", "0"],
     ]);
-    expect(lines(claude)[2]).toBe("↻resets in 2d 18h · Thu 09:00 · 50% share of the weekly limit");
+    expect(lines(claude)[2]).toBe("↻resets in 2 d 18 h · Thu 09:00 · 50% share of the weekly limit");
   });
 
   it("colours a high limit amber with the word high, and one at its limit red with ✕ at limit, by the shown number", () => {
@@ -342,8 +342,8 @@ describe("Insights: top items", () => {
     render();
     const cells = $$(".ins-table tbody tr").map((row) => [...row.querySelectorAll("td")].map((td) => td.textContent));
     expect(cells).toEqual([
-      ["Fix rounding in invoice totals", "Plan and build", "ArchitectCCReviewerCX", "163k", "29 min", "≈ $3.10"],
-      ["Orders API returns 500 after deploy", "Emergency investigator", "Local builderOL", "118k", "41 min", "local · $0"],
+      ["Fix rounding in invoice totals", "Plan and build", "ArchitectCCReviewerCX", "163k", "29 m", "≈ $3.10"],
+      ["Orders API returns 500 after deploy", "Emergency investigator", "Local builderOL", "118k", "41 m", "local · $0"],
     ]);
   });
 

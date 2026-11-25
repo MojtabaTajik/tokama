@@ -2,6 +2,7 @@
 // Finish, and what the template can use. Pure functions, tested without React. Everything here
 // comes from the template's fields; nothing is guessed from names or instruction text.
 import type { AgentSummary, ConnectionSummary, Finish, StartNeed, TemplateEntry, TemplateStepView, TemplateView } from "@tokama/core";
+import { formatDuration } from "../format/duration.js";
 import { cliName } from "../model.js";
 
 const NEEDS: Record<StartNeed, string> = { text: "a task description", repo: "one repo", repos: "one or more repos" };
@@ -154,13 +155,8 @@ export function usesOf(template: Pick<TemplateView, "uses" | "steps">, connectio
   };
 }
 
-/** "90 min", "2 h", "1 h 30 min". */
-export function budgetText(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  if (hours === 0) return `${rest} min`;
-  return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
-}
+/** "45 m", "2 h 00 m", "1 h 30 m". */
+export const budgetText = (minutes: number): string => formatDuration(minutes * 60_000, "coarse");
 
 export type Status = { readonly symbol: "✓" | "✕"; readonly word: string; readonly tone: "pass" | "fail" };
 

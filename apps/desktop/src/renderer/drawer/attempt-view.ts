@@ -5,6 +5,7 @@
 import type { AttemptSummary, ItemRecord, QueryResult, Setup, StepRecord } from "@tokama/core";
 import { useEffect, useState } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
+import { formatDuration } from "../format/duration.js";
 
 /** How often a running attempt's checks or transcript are read again while its tab is open. */
 export const POLL_MS = 2000;
@@ -44,15 +45,8 @@ export function checkedStepName(item: Pick<ItemRecord, "steps">, index: number):
   return item.steps[index]?.name ?? "the step";
 }
 
-/** "4.2 s", "14 s", "1 min 52 s"; "–" when not known. */
-export function durationText(ms: number | null): string {
-  if (ms === null) return "–";
-  const seconds = ms / 1000;
-  if (seconds < 10) return `${seconds.toFixed(1)} s`;
-  if (seconds < 60) return `${Math.round(seconds)} s`;
-  const whole = Math.round(seconds);
-  return `${Math.floor(whole / 60)} min ${String(whole % 60).padStart(2, "0")} s`;
-}
+/** "4.2 s", "14 s", "1 m 52 s"; "–" when not known. */
+export const durationText = (ms: number | null): string => (ms === null ? "–" : formatDuration(ms, "fine"));
 
 /** "512 B", "96 KB", "212.4 MB". */
 export function sizeText(bytes: number): string {

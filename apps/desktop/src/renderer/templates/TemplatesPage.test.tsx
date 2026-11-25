@@ -73,7 +73,7 @@ describe("TemplatesPage", () => {
       "3Review: Reviewer (Codex CLI, cloud) reviews the work; sends the repo and diff to the cloud; done when it approves; if it fails, ask you; if it asks for changes, go back to Build, up to 2 times.",
     ]);
     expect(section("You get at the end")).toBe("You get at the end✓Commit · on the item’s branch✓Pull request · opened from the item’s branch");
-    expect($(".tp-head")?.textContent).toContain("budget 1 h 30 min");
+    expect($(".tp-head")?.textContent).toContain("budget 1 h 30 m");
   });
 
   it("shows a broken file's problems with their lines; a line opens the file there", async () => {

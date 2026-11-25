@@ -5,7 +5,9 @@
 import type { CliHealth, Setup, UsageReport } from "@tokama/core";
 import { stepAgent } from "../drawer/describe.js";
 import { Meter } from "../insights/Meter.js";
-import { ALERT_TEXT, alertTone, ageText, CLI_MONOGRAMS, cliAlert, formatClock, formatDuration, formatTokens, liveWindows, shareText, totalOf, windowLabel, windowShort } from "../insights/usage-model.js";
+import { formatDuration } from "../format/duration.js";
+import { stamp } from "../format/time.js";
+import { ALERT_TEXT, alertTone, ageText, CLI_MONOGRAMS, cliAlert, formatTokens, liveWindows, shareText, totalOf, windowLabel, windowShort } from "../insights/usage-model.js";
 import { AI_CLIS, type CliIssue } from "../model.js";
 
 const TEXT = {
@@ -48,7 +50,7 @@ export interface InsightsTipProps {
 export function InsightsTip({ usage, issues, health, setup, now, onSelectItem, onCliSettings }: InsightsTipProps) {
   const claude = usage?.clis.find((plan) => plan.cliId === CLAUDE.id);
   const windows = liveWindows(claude, now);
-  const age = claude?.asOf === undefined ? undefined : (ageText(claude.asOf, now) ?? `${TEXT.asOf} ${formatClock(claude.asOf, now)}`);
+  const age = claude?.asOf === undefined ? undefined : (ageText(claude.asOf, now) ?? `${TEXT.asOf} ${stamp(claude.asOf, now)}`);
   const others = AI_CLIS.slice(1).flatMap((cli) => {
     const plan = usage?.clis.find((entry) => entry.cliId === cli.id);
     const issue = issues.find((entry) => entry.cliId === cli.id);
@@ -76,7 +78,7 @@ export function InsightsTip({ usage, issues, health, setup, now, onSelectItem, o
         ) : windows.length > 0 ? (
           windows.map((w, index) => (
             <Meter key={`${index}-${w.window}`} name={windowLabel(w)} usedPercent={w.usedPercent}>
-              {[shareText(w), w.resetsAt === undefined ? undefined : `${TEXT.resets} ${formatClock(w.resetsAt, now)}`].filter(Boolean).join(" · ") || undefined}
+              {[shareText(w), w.resetsAt === undefined ? undefined : `${TEXT.resets} ${stamp(w.resetsAt, now)}`].filter(Boolean).join(" · ") || undefined}
             </Meter>
           ))
         ) : (
@@ -95,7 +97,7 @@ export function InsightsTip({ usage, issues, health, setup, now, onSelectItem, o
                 }
                 usedPercent={w.usedPercent}
               >
-                {[issue === undefined ? undefined : ALERT_TEXT[issue.kind], w.resetsAt === undefined ? undefined : `${TEXT.resets} ${formatClock(w.resetsAt, now)}`].filter(Boolean).join(" · ") || undefined}
+                {[issue === undefined ? undefined : ALERT_TEXT[issue.kind], w.resetsAt === undefined ? undefined : `${TEXT.resets} ${stamp(w.resetsAt, now)}`].filter(Boolean).join(" · ") || undefined}
               </Meter>
             ))}
             {live.length === 0 && alert !== undefined && (
@@ -127,7 +129,7 @@ export function InsightsTip({ usage, issues, health, setup, now, onSelectItem, o
                   {item.title}
                 </button>
                 <span className="mono it-tokens">{formatTokens(item.tokens)}</span>
-                <span className="mono it-time">{formatDuration(item.durationMs)}</span>
+                <span className="mono it-time">{formatDuration(item.durationMs, "coarse")}</span>
                 <span className="it-agents">{item.agents.map((agent) => stepAgent({ agentId: agent.agentId, data: "none" }, setup?.agents ?? []).name).join(" · ")}</span>
               </div>
             ))}
@@ -149,7 +151,7 @@ export function InsightsTip({ usage, issues, health, setup, now, onSelectItem, o
             ].join(" · ")}
           </span>
           <span className="it-total-name">{TEXT.timeToday}</span>
-          <span className="mono it-total">{formatDuration(today.durationMs)}</span>
+          <span className="mono it-total">{formatDuration(today.durationMs, "coarse")}</span>
         </div>
       )}
 

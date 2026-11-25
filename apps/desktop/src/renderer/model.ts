@@ -4,7 +4,8 @@
 import type { AgentSummary, AiCliId, Health, ItemRecord, StepRecord, TemplateSummary } from "@tokama/core";
 import { itemMark, type Mark, stepAgent, type StepAgent, stepMark } from "./drawer/describe.js";
 import { itemTotal } from "./drawer/progress-view.js";
-import { dayLabel, daysBefore, localDay } from "./format/day.js";
+import { formatDuration } from "./format/duration.js";
+import { clock, dayLabel, daysBefore, localDay, sameDay, shortDate } from "./format/time.js";
 
 /** What the main area shows: everything, one workflow's items, or one repo's items. */
 export type View = { readonly kind: "all" } | { readonly kind: "workflow"; readonly id: string } | { readonly kind: "repo"; readonly id: string };
@@ -260,31 +261,26 @@ export function rowAgent(item: Pick<ItemRecord, "steps">, agents: readonly Agent
   return step && stepAgent(step, agents);
 }
 
-const clock = (at: Date) => at.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
-const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
-
 export interface ItemTime {
   readonly text: string;
   readonly title: string;
 }
 
 /**
- * The row's time. A live item shows how long ago it started ("14 min", "1 h 35"); a finished one
+ * The row's time. A live item shows how long ago it started ("14 m", "1 h 35 m"); a finished one
  * shows its start as a clock time today or a date earlier, and its agent and check time after it
  * ("17:57 · 12 m"), without the time it waited for you.
  */
 export function timeOf(item: Pick<ItemRecord, "state" | "createdAt" | "durationMs">, now: number): ItemTime {
-  const start = new Date(item.createdAt);
-  const title = `started ${sameDay(start, new Date(now)) ? clock(start) : `${start.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} ${clock(start)}`}`;
+  const start = item.createdAt;
+  const today = sameDay(start, now);
+  const title = `started ${today ? clock(start) : `${shortDate(start)} ${clock(start)}`}`;
   if (bucketOf(item) === "done" || bucketOf(item) === "failed") {
-    const text = sameDay(start, new Date(now)) ? clock(start) : start.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+    const text = today ? clock(start) : shortDate(start);
     const total = itemTotal(item);
     return total === undefined ? { text, title } : { text: `${text} · ${total}`, title: `${title} · ${total} of agent and check time` };
   }
-  const minutes = Math.max(0, Math.floor((now - item.createdAt) / 60_000));
-  if (minutes < 60) return { text: `${minutes} min`, title };
-  const rest = minutes % 60;
-  return { text: `${Math.floor(minutes / 60)} h${rest === 0 ? "" : ` ${rest}`}`, title };
+  return { text: formatDuration(now - start, "coarse"), title };
 }
 
 export interface BoardColumn {

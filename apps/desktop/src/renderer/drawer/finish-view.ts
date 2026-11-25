@@ -3,6 +3,7 @@
 // ended. Pure functions, tested without React. Every state has a symbol and a word, so colour is
 // never the only signal.
 import type { FinishAction, FinishRefusal, GitChange, ItemRecord, Setup } from "@tokama/core";
+import { clock } from "../format/time.js";
 import type { Mark } from "./describe.js";
 
 /** Text with code parts (paths, branches, commands), shown in the mono font. */
@@ -72,9 +73,7 @@ const branchOf = (item: Pick<ItemRecord, "outcome">): string => item.outcome?.co
 /** "PR #12" from its URL. */
 export const prName = (url: string): string => `PR #${/\/pull\/(\d+)$/.exec(url)?.[1] ?? "?"}`;
 
-const clock = (at: number | undefined): string | undefined =>
-  at === undefined ? undefined : new Date(at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-const withTime = (text: string, at: number | undefined): string => [text, clock(at)].filter((part) => part !== undefined).join(" · ");
+const withTime = (text: string, at: number | undefined): string => (at === undefined ? text : `${text} · ${clock(at)}`);
 
 /** Why Open PR is off: a local-only item, nowhere to push, or gh missing or logged out. */
 function prOff(item: Pick<ItemRecord, "finish" | "privacy">, setup: Setup | undefined): { readonly why: string; readonly status: Rich; readonly recheck: boolean } | undefined {

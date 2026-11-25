@@ -12,7 +12,8 @@ import { CostSummary } from "./CostSummary.js";
 import { TopItems } from "./TopItems.js";
 import { Legend, UsageChart } from "./UsageChart.js";
 import { UsageTables } from "./UsageTables.js";
-import { formatClock, formatCost, formatTokens, type Metric, scanText, templateFor, tokamaTotals, workflowName } from "./usage-model.js";
+import { stamp } from "../format/time.js";
+import { formatCost, formatTokens, type Metric, scanText, templateFor, tokamaTotals, workflowName } from "./usage-model.js";
 
 const RANGES: readonly UsageRange[] = [14, 30, 90];
 const SCOPES: readonly (readonly [UsageScope, string])[] = [
@@ -155,7 +156,7 @@ function Headline({ report, filter, metric, setup, now }: { readonly report: Usa
   return (
     <p className="ins-headline">
       <strong className="ins-hero">{metric === "tokens" ? tokenText : formatCost(cost)}</strong>
-      <span className="muted">{[metric === "tokens" ? costText : tokenText, scope, unpriced, `as of ${formatClock(report.asOf, now)}`].filter(Boolean).join(" · ")}</span>
+      <span className="muted">{[metric === "tokens" ? costText : tokenText, scope, unpriced, `as of ${stamp(report.asOf, now)}`].filter(Boolean).join(" · ")}</span>
     </p>
   );
 }

@@ -6,6 +6,7 @@
 // The days are one tab stop: arrow keys, Home and End move between them (each a labelled image).
 import type { Setup, UsageReport } from "@tokama/core";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { weekdayDate } from "../format/time.js";
 import { TemplateIcon, tagOf } from "../shell/TemplateIcon.js";
 import { type ChartModel, chartModel, formatCost, formatTokens, type Metric, share, templateFor, tickLabel, workflowName } from "./usage-model.js";
 
@@ -145,7 +146,7 @@ function DayTip({ report, model, index, metric, setup }: { readonly report: Usag
   const day = report.days[index];
   const items = (day?.workflows ?? []).flatMap((w) => w.items);
   const count = (day?.workflows ?? []).reduce((sum, w) => sum + w.itemCount, 0);
-  const date = new Date(`${column.date}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  const date = weekdayDate(new Date(`${column.date}T12:00:00`).getTime());
   return (
     <div className="ins-tip" data-side={index < model.columns.length / 2 ? "right" : "left"} role="status">
       <p className="ins-tip-date mono">{date}</p>

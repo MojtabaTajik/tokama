@@ -4,7 +4,8 @@
 import type { Setup, UsageReport } from "@tokama/core";
 import { stepAgent } from "../drawer/describe.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
-import { formatCost, formatDuration, formatTokens, templateFor, totalOf, workflowName } from "./usage-model.js";
+import { formatDuration } from "../format/duration.js";
+import { formatCost, formatTokens, templateFor, totalOf, workflowName } from "./usage-model.js";
 
 const CLI_SHORT = { "claude-code": "CC", "codex-cli": "CX", ollama: "OL" } as const;
 
@@ -95,7 +96,7 @@ export function TopItems({ report, setup, filter, note, openable, onOpen }: TopI
                     </span>
                   </td>
                   <td className="num mono">{formatTokens(totalOf(item.tokens))}</td>
-                  <td className="num mono">{formatDuration(item.durationMs)}</td>
+                  <td className="num mono">{formatDuration(item.durationMs, "coarse")}</td>
                   <td className="num mono" data-muted={item.local || undefined}>
                     {item.local ? TEXT.local : formatCost(item.costUsd)}
                   </td>

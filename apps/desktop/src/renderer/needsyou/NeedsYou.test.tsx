@@ -73,7 +73,7 @@ describe("the Needs you page", () => {
     await render(fakeBridge(CONNECTED, { boardItems: withOlder }).bridge);
     await openPage();
     expect(rowTitles()).toEqual(["Plan is ready <b>for review</b>", "Orders API returns 500 after deploy"]);
-    expect(text(".summary")).toBe("2 waiting · oldest item started 1 h 10 ago");
+    expect(text(".summary")).toBe("2 waiting · oldest item started 1 h 10 m ago");
     expect($(".nr-row b")).toBeNull();
   });
 
@@ -84,12 +84,12 @@ describe("the Needs you page", () => {
     expect(plan?.querySelector(".nr-kind")?.textContent).toBe("⏸ Decision");
     expect(plan?.querySelector(".nr-workflow")?.textContent).toBe("Plan and build");
     expect(plan?.querySelector(".nr-where")?.textContent).toBe("step 1 of 2 · PlanArchitectClaude Code");
-    expect(plan?.querySelector(".nr-time")?.textContent).toBe("started 1 h 10 ago");
+    expect(plan?.querySelector(".nr-time")?.textContent).toBe("started 1 h 10 m ago");
     expect(plan?.querySelector(".nr-question")?.textContent).toBe("Approve the plan?");
     expect(choiceButtons(plan!).map((button) => button.textContent)).toEqual(["Yes", "No"]);
     expect(choiceButtons(plan!)[0]?.className).toBe("choice primary");
     expect(cloudRow?.querySelector(".nr-kind")?.textContent).toBe("⏸ Cloud-step approval");
-    expect(cloudRow?.querySelector(".nr-time")?.textContent).toBe("started 41 min ago");
+    expect(cloudRow?.querySelector(".nr-time")?.textContent).toBe("started 41 m ago");
     expect(cloudRow?.querySelector(".nr-question")?.textContent).toBe(DECISION.question);
     expect(choiceButtons(cloudRow!).map((button) => button.getAttribute("aria-label"))).toEqual(["Approve and send: Orders API returns 500 after deploy"]);
   });
