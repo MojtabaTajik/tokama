@@ -78,12 +78,13 @@ flow("the window comes back where it was, and a broken file gives the defaults",
   const bounds = await next.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.getBounds());
   expect([bounds?.width, bounds?.height]).toEqual([1010, 690]);
 
-  // A window left maximized opens maximized.
+  // A window left maximized opens maximized. On macOS the test run keeps windows hidden, and maximizing would show one, so it is left out there.
   const maximized = await next.restart(() => {
     const file = saved(home);
     writeFileSync(join(home, ".tokama", "desktop.json"), JSON.stringify({ ...file, window: { ...(file["window"] as object), maximized: true } }));
   });
-  await expect.poll(() => maximized.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isMaximized())).toBe(true);
+  if (process.platform !== "darwin") await expect.poll(() => maximized.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isMaximized())).toBe(true);
+  else expect(await maximized.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isVisible())).toBe(false);
 
   // The file is damaged while the app is closed; the next start must not fail on it.
   const again = await maximized.restart(() => writeFileSync(join(home, ".tokama", "desktop.json"), "{ not json"));
