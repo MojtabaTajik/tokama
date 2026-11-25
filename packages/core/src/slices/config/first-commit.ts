@@ -80,11 +80,11 @@ export async function previewFirstCommit(folder: string, home: string | undefine
   let folders = 0;
   // The new .gitignore is part of the commit.
   if (addsGitignore) {
-    const own = Buffer.byteLength(`${DEFAULT_GITIGNORE.join("\n")}\n`);
+    const ignoreBytes = Buffer.byteLength(`${DEFAULT_GITIGNORE.join("\n")}\n`);
     files = 1;
-    bytes = own;
+    bytes = ignoreBytes;
     paths.push(GITIGNORE_FILE);
-    sizes.push(own);
+    sizes.push(ignoreBytes);
   }
   let budget = LEFT_OUT_BUDGET;
   const sorted = async (dir: string) => (await readdir(dir, { withFileTypes: true }).catch(() => [])).sort((a, b) => (a.isDirectory() === b.isDirectory() ? (a.name < b.name ? -1 : 1) : a.isDirectory() ? 1 : -1));
@@ -132,7 +132,9 @@ export async function previewFirstCommit(folder: string, home: string | undefine
     }
   };
   await walk(folder, "");
-  const tooLarge = files > MAX_FIRST_COMMIT_FILES;
+  // The files of the folder itself: the new .gitignore is not one of them.
+  const own = files - (addsGitignore ? 1 : 0);
+  const tooLarge = own > MAX_FIRST_COMMIT_FILES;
   return {
     files,
     bytes: tooLarge ? 0 : bytes,
@@ -140,6 +142,6 @@ export async function previewFirstCommit(folder: string, home: string | undefine
     more: files <= SAMPLE_SIZE + MORE_NAMES ? paths.slice(SAMPLE_SIZE) : [],
     addsGitignore,
     leftOut: leftOut.slice(0, 20),
-    refusal: tooLarge ? tooMany(files) : undefined,
+    refusal: tooLarge ? tooMany(own) : undefined,
   };
 }
