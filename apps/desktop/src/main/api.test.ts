@@ -76,3 +76,19 @@ describe("engineApi.command", () => {
     expect(await engineApi(() => undefined).command({ type: "stop_item", itemId: ITEM_ID })).toMatchObject({ ok: false, error: { code: "not_connected" } });
   });
 });
+
+describe("engineApi.command and diagnostics", () => {
+  it("refuses a diagnostics report from the window, which has its own narrow channel", async () => {
+    const { client, command } = fakeClient();
+    const reply = await engineApi(() => client).command({ type: "report_diagnostic", report: { type: "crash", source: "desktop", kind: "unclean_exit" } });
+    expect(reply).toMatchObject({ ok: false, error: { code: "invalid_request" } });
+    expect(command).not.toHaveBeenCalled();
+  });
+
+  it("forwards the diagnostics settings and delete commands", async () => {
+    const { client, command } = fakeClient();
+    await engineApi(() => client).command({ type: "diagnostics_settings", collect: false });
+    await engineApi(() => client).command({ type: "diagnostics_delete", all: true });
+    expect(command).toHaveBeenCalledTimes(2);
+  });
+});

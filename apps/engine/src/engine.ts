@@ -13,7 +13,8 @@
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { chmodSync, closeSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
 import { connect, createServer, type Server, type Socket } from "node:net";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import {
   addRepo,
   type AddRepoResult,
@@ -73,7 +74,9 @@ import {
   type Agent,
   type AgentRuntime,
   type ProcessRunner,
+  type MachineFacts,
 } from "@tokama/core";
+import { EngineDiagnostics, isDiagnosticsCommand } from "./diagnostics.js";
 import { listAgents } from "./agents-list.js";
 import { aiClis } from "./ai-clis.js";
 import { ItemIndex } from "./item-index.js";
@@ -129,6 +132,14 @@ export interface EngineOptions {
   readonly ghCommand?: readonly [string, ...string[]];
   /** Default: the system clock. */
   readonly clock?: Clock;
+  /** The version diagnostics entries carry. Default "0.0.0". */
+  readonly engineVersion?: string;
+  /** The user's home folder, cleaned from diagnostics as a path. Default: this process's home. */
+  readonly userHome?: string;
+  /** Machine facts for diagnostics entries. Default: read from this machine. */
+  readonly machineFacts?: MachineFacts;
+  /** Called once diagnostics are open, early in the start, so errors during the rest of it are recorded. */
+  readonly onDiagnostics?: (diagnostics: EngineDiagnostics) => void;
   /** A connection that sends no hello within this time is closed. Default 5 s. */
   readonly helloTimeoutMs?: number;
   /** How long shutdown waits for in-flight requests and open connections. Default 5 s. */
@@ -163,6 +174,9 @@ const STARTING_GRACE_MS = 10_000;
 const PROBE_TIMEOUT_MS = 1_000;
 // A client that stops reading is disconnected once this much output is queued for it.
 const MAX_QUEUED_BYTES = 8 * MAX_MESSAGE_BYTES;
+// The folder that holds the engine and the packages it runs: the checkout in development. Stacks
+// keep the built files below it (`<app>/apps/engine/dist/engine.js`).
+const CODE_ROOT = resolve(import.meta.dirname, "..", "..", "..");
 
 export async function startEngine(options: EngineOptions): Promise<Result<EngineHandle, StartError>> {
   const log = options.log ?? (() => {});
@@ -181,8 +195,11 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   // The item store has one writer: the engine that holds the home folder's own lock. Engines with
   // different engine dirs can share a home, so the engine dir's lock does not cover it.
   let storage: Storage | undefined;
+  let diagnostics: EngineDiagnostics | undefined;
   // Set once events can go out; the index calls it when it records new agent calls.
   let usageRecorded = () => {};
+  // Set once events can go out; diagnostics call it when a crash is recorded or the settings change.
+  let diagnosticsChanged = () => {};
   const homeLock = options.home !== undefined && !options.sample ? { lockPath: join(options.home, "engine.lock"), socketPath, dir: options.home } : undefined;
   const homeLockContent = `${process.pid} ${engineId} ${socketPath}\n`;
   if (homeLock !== undefined) {
@@ -195,8 +212,27 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       }
       const locked = await acquireLock(homeLock, homeLockContent, log);
       if (!locked.ok) return locked;
-      const result = await openStorage(home, options.clock ?? systemClock, log, () => usageRecorded());
-      if (!result.ok) releaseLock(homeLock.lockPath, homeLockContent);
+      // Only the engine holding the home lock may read or clear the last engine's crash marker.
+      diagnostics = await EngineDiagnostics.open({
+        home,
+        userHome: options.userHome ?? homedir(),
+        codeRoots: [CODE_ROOT],
+        engineVersion: options.engineVersion ?? "0.0.0",
+        ...(options.machineFacts !== undefined && { machine: options.machineFacts }),
+        clock: options.clock ?? systemClock,
+        onChange: () => diagnosticsChanged(),
+        log,
+      }).catch((error: unknown) => {
+        log(`diagnostics are off for this run: ${String(error)}`);
+        return undefined;
+      });
+      if (diagnostics !== undefined) options.onDiagnostics?.(diagnostics);
+      const result = await openStorage(home, options.clock ?? systemClock, log, () => usageRecorded(), diagnostics);
+      if (!result.ok) {
+        diagnostics?.close();
+        diagnostics = undefined;
+        releaseLock(homeLock.lockPath, homeLockContent);
+      }
       return result;
     })();
     if (!opened.ok) {
@@ -207,6 +243,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   }
   const releaseStorage = () => {
     storage?.close();
+    diagnostics?.close();
     if (homeLock !== undefined) releaseLock(homeLock.lockPath, homeLockContent);
   };
 
@@ -246,10 +283,12 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
           ...(options.runtime !== undefined && { runtime: options.runtime }),
           ...(options.recoveryGraceMs !== undefined && { recoveryGraceMs: options.recoveryGraceMs }),
           ...(options.ghCommand !== undefined && { ghCommand: options.ghCommand }),
+          ...(diagnostics !== undefined && { onError: (error: unknown) => diagnostics?.store.error("engine", "storage", error) }),
           log,
         }).catch((error: unknown) => {
           realFailure = `Tokama could not start running items: ${String(error)}`.slice(0, 1000);
           log(realFailure);
+          diagnostics?.store.error("engine", "startup", error);
           return undefined;
         });
   const clock = options.clock ?? systemClock;
@@ -390,14 +429,20 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     repoChanges = change.catch(() => undefined);
     const result = await change;
     if (!result.ok) return { ok: false, error: result.error };
-    // Real mode reads the repos again, so the run loop sees the change at once.
-    await (await realEngine)?.refresh();
+    // Real mode reads the repos again, so the run loop sees the change at once, and diagnostics
+    // clean the new repo's name and folder from then on.
+    await Promise.all([(await realEngine)?.refresh(), diagnostics?.refreshRepos()]);
     broadcast({ type: "setup_changed" });
     log(`${{ add_repo: "added", update_repo: "updated", remove_repo: "removed" }[command.type]} repo ${result.value.id}`);
     if (command.type === "remove_repo") return { ok: true, data: null };
     const repo = { id: result.value.id, baseBranch: result.value.baseBranch, checks: [...result.value.checks] };
     return { ok: true, data: command.type === "add_repo" ? ({ repo } satisfies AddRepoResult) : ({ repo } satisfies UpdateRepoResult) };
   };
+
+  const noDiagnostics: ReplyResult = { ok: false, error: { code: "not_implemented" satisfies CommandErrorCode, message: "this engine keeps no diagnostics" } };
+
+  /** The crash flag for the setup's health, when the engine keeps diagnostics. */
+  const crashFlag = () => (diagnostics === undefined ? {} : { crashWaiting: diagnostics.store.settings().crashWaiting });
 
   /** The sample setup in sample mode, with the repos of repos.yaml after its own. */
   const setup = async (): Promise<SetupResult> => {
@@ -406,7 +451,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
           connections: [],
           agents: [],
           templates: [],
-          health: { git: { ok: true }, clis: [], config: realFailure === undefined ? [] : [{ file: "engine", message: realFailure }] },
+          health: { git: { ok: true }, clis: [], config: realFailure === undefined ? [] : [{ file: "engine", message: realFailure }], ...crashFlag() },
         };
     if (options.home === undefined) return base;
     const loaded = await loadRepos({ tokamaHome: options.home });
@@ -434,17 +479,25 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   };
 
   const dispatch = async (message: ClientMessage): Promise<ReplyResult> => {
+    const result = await answer(message);
+    if (result.ok && message.kind === "command") diagnostics?.countCommand(message.command, (id) => store.list().find((item) => item.id === id), result.data);
+    return result;
+  };
+
+  const answer = async (message: ClientMessage): Promise<ReplyResult> => {
     // Real mode answers once its config is read and its items are projected into the store.
     const real = await realEngine;
     if (real !== undefined) {
       if (message.kind === "command") {
         const { command } = message;
-        if (!isRepoCommand(command)) {
+        if (!isRepoCommand(command) && !isDiagnosticsCommand(command)) {
           const result = await real.command(command);
           return result.ok ? { ok: true, data: result.value } : { ok: false, error: result.error };
         }
       } else if (message.query.type === "setup") {
-        return { ok: true, data: (await real.setup()) satisfies SetupResult };
+        const current = await real.setup();
+        diagnostics?.setClis(current.health.clis);
+        return { ok: true, data: { ...current, health: { ...current.health, ...crashFlag() } } satisfies SetupResult };
       } else if (message.query.type === "suggest_template") { return { ok: true, data: { templateId: await real.suggestTemplate() } as SuggestTemplateResult };
       } else if (message.query.type === "decision_diff") {
         const diff = await real.decisionDiff(message.query.itemId, message.query.decisionId);
@@ -457,6 +510,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     if (message.kind === "command") {
       const command = message.command;
       if (isRepoCommand(command)) return repoCommand(command);
+      if (isDiagnosticsCommand(command)) return diagnostics?.command(command) ?? noDiagnostics;
       if (!sample) {
         const code: CommandErrorCode = "not_implemented";
         return { ok: false, error: { code, message: `command "${message.command.type}" is not implemented yet` } };
@@ -510,6 +564,9 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       }
       case "usage":
         return { ok: true, data: (await usage.report(query.range, query.scope)) satisfies UsageResult };
+      case "diagnostics_list":
+      case "diagnostics_settings":
+        return diagnostics?.query(query) ?? noDiagnostics;
       case "machine": {
         if (sample !== undefined) return { ok: true, data: sampleMachineReport(store.list(), clock.now()) satisfies MachineResult };
         if (machine === undefined) return { ok: false, error: { code: "not_implemented", message: "this engine cannot read the machine on this operating system" } };
@@ -551,6 +608,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     const work = dispatch(parsed.value)
       .catch((error: unknown): ReplyResult => {
         log(`request failed: ${String(error)}`);
+        diagnostics?.store.error("engine", "request", error);
         return { ok: false, error: { code: "internal", message: "the engine failed to handle the request" } };
       })
       .then((result) => reply(socket, parsed.value.requestId, result));
@@ -603,6 +661,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   }
   const unsubscribe = store.subscribe((item) => broadcast({ type: "item_updated", item }));
   usageRecorded = usageChanged;
+  diagnosticsChanged = () => broadcast({ type: "setup_changed" });
 
   const stopTicking = sample?.startTicking();
 
@@ -615,6 +674,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     stopTicking?.();
     unsubscribe();
     usageRecorded = () => {};
+    diagnosticsChanged = () => {};
     usageAbort.abort();
     await withDeadline(Promise.allSettled([...inFlight, usage.settled(), machine?.close(), claudeLogs?.settled()]), shutdownTimeoutMs);
     const allClosed = new Promise<void>((resolve) => {
@@ -625,7 +685,10 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     await withDeadline(allClosed, shutdownTimeoutMs);
     for (const socket of connections) socket.destroy();
     // The run loop writes to the item logs; it must be done before another engine may open them.
-    await (await realEngine)?.close().catch((error: unknown) => log(`closing the run loop failed: ${String(error)}`));
+    await (await realEngine)?.close().catch((error: unknown) => {
+      log(`closing the run loop failed: ${String(error)}`);
+      diagnostics?.store.error("engine", "shutdown", error);
+    });
     // Closing the server removes the socket file. Only then may another engine take over.
     await new Promise<void>((resolve) => server.close(() => resolve()));
     releaseStorage();
@@ -645,8 +708,18 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   // Recovery can take seconds (a grace period per leftover tree). It runs once the socket answers,
   // so an engine starting meanwhile sees this one as live rather than its lock as stale.
   const real = await realEngine;
+  // The AI CLIs entries name, once the startup checks are done; the setup query keeps them current.
+  if (real !== undefined && diagnostics !== undefined) {
+    const known = diagnostics;
+    void real.setup().then((current) => known.setClis(current.health.clis), () => undefined);
+  }
   if (real !== undefined && !shuttingDown) {
-    for (const recovered of await real.ready.catch((error: unknown) => (log(`restart recovery failed: ${String(error)}`), []))) {
+    const recoveryFailed = (error: unknown) => {
+      log(`restart recovery failed: ${String(error)}`);
+      diagnostics?.store.error("engine", "recovery", error);
+      return [];
+    };
+    for (const recovered of await real.ready.catch(recoveryFailed)) {
       const kills = recovered.kills.map(({ pid, outcome }) => `${pid} ${outcome.kind}${"reason" in outcome ? ` (${outcome.reason})` : ""}${"message" in outcome ? ` (${outcome.message})` : ""}`);
       log(`item ${recovered.itemId}: step ${recovered.stepId} was running; asking retry or stop${kills.length > 0 ? `; processes: ${kills.join(", ")}` : ""}${recovered.error ? `; not recorded: ${recovered.error.message}` : ""}`);
     }
@@ -668,14 +741,17 @@ interface Storage {
 }
 
 /** Loads the item logs and rebuilds the board index from them. The index follows every change after that. */
-async function openStorage(home: string, clock: Clock, log: (message: string) => void, onUsage: () => void): Promise<Result<Storage, StartError>> {
+async function openStorage(home: string, clock: Clock, log: (message: string) => void, onUsage: () => void, diagnostics?: EngineDiagnostics): Promise<Result<Storage, StartError>> {
   let index: ItemIndex | undefined;
   try {
     const hostId = loadHostId(home, clock);
     if (!hostId.ok) return err({ code: "start_failed", message: hostId.error });
     const { store: items, problems } = ItemStore.open({ home, hostId: hostId.value, clock });
-    for (const problem of problems) log(`item ${problem.itemId} is not loaded: ${problem.message}`);
-    index = openIndex(join(home, "tokama.db"), items.list(), clock, log);
+    for (const problem of problems) {
+      log(`item ${problem.itemId} is not loaded: ${problem.message}`);
+      diagnostics?.store.warning("engine", "item_not_loaded");
+    }
+    index = openIndex(join(home, "tokama.db"), items.list(), clock, log, () => diagnostics?.store.warning("engine", "index_rebuilt"));
     const opened = index;
     const unsubscribe = items.subscribe((item) => {
       // The event is on disk already; a failed index write must not fail the append.
@@ -683,6 +759,7 @@ async function openStorage(home: string, clock: Clock, log: (message: string) =>
         if (opened.put(item) > 0) onUsage();
       } catch (error) {
         log(`cannot update the board index for ${item.id}: ${String(error)}`);
+        diagnostics?.store.error("engine", "storage", error);
       }
     });
     return ok({
@@ -703,7 +780,7 @@ async function openStorage(home: string, clock: Clock, log: (message: string) =>
  * Opens the board index and rebuilds it from the logs. A database that cannot be opened or
  * rebuilt is moved aside with its -wal and -shm files (it holds only derived data) and made anew.
  */
-function openIndex(file: string, items: readonly StoredItem[], clock: Clock, log: (message: string) => void): ItemIndex {
+function openIndex(file: string, items: readonly StoredItem[], clock: Clock, log: (message: string) => void, onRebuild: () => void): ItemIndex {
   try {
     const index = ItemIndex.open(file);
     try {
@@ -716,6 +793,7 @@ function openIndex(file: string, items: readonly StoredItem[], clock: Clock, log
   } catch (error) {
     const aside = `${file}.damaged-${clock.now()}`;
     log(`the board index ${file} is damaged (${String(error)}); moving it to ${aside} and rebuilding it`);
+    onRebuild();
     for (const suffix of ["", "-wal", "-shm"]) {
       try {
         renameSync(`${file}${suffix}`, `${aside}${suffix}`);

@@ -20,7 +20,7 @@ const exposed = [...electron.exposeInMainWorld.mock.calls];
 describe("preload bridge", () => {
   it("exposes window.tokama with only the bridge methods", () => {
     expect(exposed).toEqual([["tokama", bridge]]);
-    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "getAboutInfo", "getConnection", "getDesktopState", "onConnection", "onEvent", "openTemplateFile", "pickFolder", "query", "retryConnection", "saveLayout", "showDataFolder"]);
+    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "getAboutInfo", "getConnection", "getDesktopState", "onConnection", "onEvent", "openTemplateFile", "pickFolder", "query", "reportError", "retryConnection", "saveLayout", "showDataFolder"].sort());
   });
 
   it("query and command invoke their channels with the request only", async () => {
@@ -49,6 +49,13 @@ describe("preload bridge", () => {
     const name = { origin: "orders-api", file: ".tokama/templates/plan.yaml", path: "/bin/sh" } as { origin: string; file: string };
     await expect(bridge.openTemplateFile(name)).resolves.toEqual({ ok: true });
     expect(electron.invoke).toHaveBeenCalledWith(CHANNELS.openTemplateFile, { origin: "orders-api", file: ".tokama/templates/plan.yaml" });
+  });
+
+  it("reportError sends the message and stack only, as strings", async () => {
+    electron.invoke.mockResolvedValue(undefined);
+    const error = { message: "x is undefined", stack: "TypeError: x is undefined", source: "engine", where: "startup" } as { message: string; stack: string };
+    await bridge.reportError(error);
+    expect(electron.invoke).toHaveBeenCalledWith(CHANNELS.reportError, { message: "x is undefined", stack: "TypeError: x is undefined" });
   });
 
   it("pickFolder invokes its channel with no arguments", async () => {

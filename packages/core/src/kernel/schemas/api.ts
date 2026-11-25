@@ -4,7 +4,15 @@
 // `*Input` types are what a sender builds (ids as plain strings); the other types are what a
 // parser returns (ids branded).
 import { z } from "zod";
-import { DecisionIdSchema, ItemIdSchema, RepoIdSchema, TemplateRefSchema } from "./ids.js";
+import { DecisionIdSchema, DiagnosticIdSchema, EpochMsSchema, ItemIdSchema, RepoIdSchema, TemplateRefSchema } from "./ids.js";
+import {
+  DiagnosticReportSchema,
+  DiagnosticsListSchema,
+  DiagnosticsSettingsSchema,
+  DiagnosticTypeSchema,
+  MAX_LISTED_DIAGNOSTICS,
+  VersionLabelSchema,
+} from "./diagnostics.js";
 import { FinishActionSchema, ItemRecordSchema } from "./item.js";
 import { UsageRangeSchema, UsageReportSchema, UsageScopeSchema } from "./usage.js";
 import { AgentsListSchema } from "./agents.js";
@@ -87,6 +95,23 @@ export const CommandSchema = z.discriminatedUnion("type", [
   }),
   // Removes a repo from repos.yaml. Its items and worktrees are kept.
   z.strictObject({ type: z.literal("remove_repo"), repoId: RepoIdSchema }),
+  // Deletes diagnostics entries: the listed ids, or every entry with `all`. Exactly one of the two.
+  z.strictObject({
+    type: z.literal("diagnostics_delete"),
+    ids: z.array(DiagnosticIdSchema).min(1).max(1000).optional(),
+    all: z.literal(true).optional(),
+  }),
+  // Changes the diagnostics settings: turn collecting on or off, make a new install id, or mark
+  // the waiting crash as seen. Replies with the settings after the change.
+  z.strictObject({
+    type: z.literal("diagnostics_settings"),
+    collect: z.boolean().optional(),
+    resetInstallId: z.literal(true).optional(),
+    crashSeen: z.literal(true).optional(),
+  }),
+  // An error, warning, usage count or crash a client saw. The engine cleans and records it when
+  // collecting is on, and does nothing when it is off. `appVersion` is the client app's version.
+  z.strictObject({ type: z.literal("report_diagnostic"), report: DiagnosticReportSchema, appVersion: VersionLabelSchema.optional() }),
 ]);
 
 export const QuerySchema = z.discriminatedUnion("type", [
@@ -120,6 +145,19 @@ export const QuerySchema = z.discriminatedUnion("type", [
    * read them: it samples while a client keeps asking and stops soon after.
    */
   z.strictObject({ type: z.literal("machine") }),
+  /**
+   * Diagnostics entries, newest first: of the given types (default all) recorded from `since` up to
+   * `until` (inclusive, epoch ms), at most `limit` (default and most: MAX_LISTED_DIAGNOSTICS).
+   */
+  z.strictObject({
+    type: z.literal("diagnostics_list"),
+    types: z.array(DiagnosticTypeSchema).min(1).max(DiagnosticTypeSchema.options.length).optional(),
+    since: EpochMsSchema.optional(),
+    until: EpochMsSchema.optional(),
+    limit: z.int().min(1).max(MAX_LISTED_DIAGNOSTICS).optional(),
+  }),
+  /** Whether diagnostics are collected, the install id, and whether a crash report waits. */
+  z.strictObject({ type: z.literal("diagnostics_settings") }),
 ]);
 
 export const EventSchema = z.discriminatedUnion("type", [
@@ -196,6 +234,8 @@ export const QueryResultSchemas = {
   template_detail: TemplateDetailSchema,
   usage: UsageReportSchema,
   machine: MachineReportSchema,
+  diagnostics_list: DiagnosticsListSchema,
+  diagnostics_settings: DiagnosticsSettingsSchema,
 } as const satisfies Record<z.output<typeof QuerySchema>["type"], z.ZodType>;
 
 /** The data of a successful reply, per command type. */
@@ -210,6 +250,9 @@ export const CommandResultSchemas = {
   first_commit: z.strictObject({ commit: z.string().max(64), files: z.number().int().min(0) }),
   update_repo: z.strictObject({ repo: RepoSummarySchema }),
   remove_repo: z.null(),
+  diagnostics_delete: z.strictObject({ deleted: z.int().min(0) }),
+  diagnostics_settings: DiagnosticsSettingsSchema,
+  report_diagnostic: z.null(),
 } as const satisfies Record<z.output<typeof CommandSchema>["type"], z.ZodType>;
 
 /** The codes this engine sends in a command's error reply. Clients accept any code. */
@@ -361,6 +404,8 @@ export type TemplatesResult = QueryResult<"templates">;
 export type TemplateDetailResult = QueryResult<"template_detail">;
 export type UsageResult = QueryResult<"usage">;
 export type MachineResult = QueryResult<"machine">;
+export type DiagnosticsListResult = QueryResult<"diagnostics_list">;
+export type DiagnosticsSettingsResult = QueryResult<"diagnostics_settings">;
 export type CommandType = keyof typeof CommandResultSchemas;
 export type CommandResult<T extends CommandType> = z.output<(typeof CommandResultSchemas)[T]>;
 export type StartItemResult = CommandResult<"start_item">;

@@ -162,7 +162,7 @@ describe("real mode", () => {
       steps: [{ name: "Fix", agentId: "builder", data: "repo-and-diff", checks: { from: "repo" } }],
       warnings: [],
     });
-    expect(reply.data.health).toEqual({ git: { ok: true, version: "git version 2.54.0" }, clis: [{ cliId: "claude-code", installed: true, loggedIn: true }], config: [] });
+    expect(reply.data.health).toEqual({ crashWaiting: false, git: { ok: true, version: "git version 2.54.0" }, clis: [{ cliId: "claude-code", installed: true, loggedIn: true }], config: [] });
   });
 
   it("runs Quick fix: the agent edits, the repo's checks pass, and Tokama commits on the item branch", SLOW, async () => {

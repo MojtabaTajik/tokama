@@ -15,3 +15,20 @@ export function createMachineSource(runner: ProcessRunner, platform: NodeJS.Plat
   if (platform === "linux") return createLinuxSource();
   return undefined;
 }
+export {
+  cpuFamily,
+  gpuModel,
+  linuxFacts,
+  macosFacts,
+  osFactsFor,
+  parseNvidiaInformation,
+  parseOsRelease,
+  parseSystemVersion,
+  ramRange,
+  readMachineFacts,
+  vramRange,
+  windowsFacts,
+  type FactsDeps,
+  type NodeFacts,
+  type OsFacts,
+} from "./facts.js";

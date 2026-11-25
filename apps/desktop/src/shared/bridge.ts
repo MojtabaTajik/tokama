@@ -50,6 +50,7 @@ export const CHANNELS = {
   showDataFolder: "tokama:about:show-folder",
   getDesktopState: "tokama:desktop:get",
   saveLayout: "tokama:desktop:save-layout",
+  reportError: "tokama:diagnostics:report-error",
 } as const;
 
 /** What About shows about this build. The main process fills it; every field is plain text or a number. */
@@ -103,4 +104,9 @@ export interface TokamaBridge {
   getDesktopState(): Promise<DesktopState>;
   /** Remembers the layout choices in `patch`. The main process validates them and ignores any other field. */
   saveLayout(patch: LayoutPatch): Promise<void>;
+  /**
+   * Reports an error the window did not catch, for the engine's diagnostics. Only the message and
+   * the stack cross; the engine cleans them before it records anything.
+   */
+  reportError(error: { readonly message: string; readonly stack: string }): Promise<void>;
 }

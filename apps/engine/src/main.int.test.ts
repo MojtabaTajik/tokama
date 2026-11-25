@@ -80,6 +80,22 @@ describe("engine process", () => {
     expect(await engineClient.query({ type: "board" })).toEqual({ ok: true, data: { items: [] } });
   });
 
+  it("records a crash after it was killed, and flags it on the next start", { timeout: 40_000 }, async () => {
+    const dir = tempEngineDir(cleanups);
+    killEngineAfter(dir);
+    const first = await connect({ dir, start: { command: process.execPath, args: [MAIN, "--dir", dir, "--home", homeOf(dir)] }, startTimeoutMs: 15_000, reconnect: false });
+    if (!first.ok) throw new Error(first.error.message);
+    expect(await first.value.query({ type: "diagnostics_settings" })).toMatchObject({ ok: true, data: { collect: true, crashWaiting: false } });
+    process.kill(lockPid(dir) ?? 0, "SIGKILL");
+    await first.value.close();
+
+    const second = await connectStarting(dir);
+    const crashes = await second.query({ type: "diagnostics_list", types: ["crash"] });
+    expect(crashes).toMatchObject({ ok: true, data: { entries: [{ type: "crash", source: "engine", kind: "unclean_exit", engineVersion: "0.0.0" }] } });
+    const setup = await second.query({ type: "setup" });
+    expect(setup.ok && setup.data.health.crashWaiting).toBe(true);
+  });
+
   it("removes its files on SIGTERM", { timeout: 30_000 }, async () => {
     const dir = tempEngineDir(cleanups);
     killEngineAfter(dir);

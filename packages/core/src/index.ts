@@ -83,6 +83,9 @@ export {
 // Machine readings: the OS source and the on-demand monitor, for the engine service.
 export { createMachineSource, type MachineSource } from "./kernel/metrics/index.js";
 export { createMonitor, type ItemGroup, type Monitor, type MonitorOptions } from "./slices/machine/index.js";
+// Diagnostics: the store that cleans and keeps them, and the machine facts they carry.
+export { readMachineFacts } from "./kernel/metrics/index.js";
+export { DiagnosticsStore, redactText, type DiagnosticsStoreOptions, type RedactionContext } from "./slices/diagnostics/index.js";
 // Process control and git, for the engine service to hand to the slices that need them.
 export { createProcessRunner, findOnPath, type ProcessRunner } from "./kernel/process/index.js";
 export { createGit, type Git } from "./kernel/git/index.js";
@@ -150,6 +153,27 @@ export {
   type UsageReport,
   type UsageResult,
   type MachinePoint,
+  DIAGNOSTICS_SCHEMA_VERSION,
+  DiagnosticEntrySchema,
+  DiagnosticReportSchema,
+  MachineFactsSchema,
+  MAX_DIAGNOSTICS_BYTES,
+  MAX_LISTED_DIAGNOSTICS,
+  MAX_REPORTED_STACK_CHARS,
+  MAX_STACK_CHARS,
+  type CrashKind,
+  type DiagnosticEntry,
+  type DiagnosticReport,
+  type DiagnosticReportInput,
+  type DiagnosticsList,
+  type DiagnosticsListResult,
+  type DiagnosticsSettings,
+  type DiagnosticsSettingsResult,
+  type DiagnosticType,
+  type ErrorWhere,
+  type MachineFacts,
+  type UsageAction,
+  type WarningCode,
   type MachineReport,
   type MachineResult,
   type ItemProcessSetUsage,

@@ -12,6 +12,7 @@ import { aboutInfo } from "./about.js";
 import { engineApi } from "./api.js";
 import { type ConnectionWatch, watchConnection } from "./connection.js";
 import { type DesktopStore, desktopStore } from "./desktop-store.js";
+import { createReporter, mainErrorReport, pidAlive, rateLimit, rendererErrorReport, rendererGoneKind, type Reporter, runMarker } from "./diagnostics.js";
 import { engineCommand, engineDirFor, findExecutable, otherVersionMessage, readLogTail } from "./engine.js";
 import { pickRepoFolder } from "./folder.js";
 import { appIcons } from "./icon.js";
@@ -59,7 +60,7 @@ function send(channel: string, message: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, message);
 }
 
-function startWatch(): ConnectionWatch {
+function startWatch(onConnected: () => void): ConnectionWatch {
   // One dir for both sides: the client gets it directly, the engine as `--dir`, since the
   // engine's reduced env has no TOKAMA_ENGINE_DIR or XDG_RUNTIME_DIR to find it by itself.
   const dir = engineDirFor(defaultEngineDir(process.env, homedir()), sample);
@@ -82,7 +83,10 @@ function startWatch(): ConnectionWatch {
     },
     logPath: endpoint.ok ? endpoint.value.logPath : join(dir, "engine.log"),
     readLogTail: (path) => readLogTail(path),
-    onState: (state) => send(CHANNELS.connectionChanged, state),
+    onState: (state) => {
+      send(CHANNELS.connectionChanged, state);
+      if (state.status === "connected") onConnected();
+    },
     onEvent: (event) => send(CHANNELS.event, event),
     otherVersion: otherVersionMessage(endpoint.ok ? endpoint.value.lockPath : join(dir, "engine.lock")),
   });
@@ -92,7 +96,7 @@ const icons = appIcons(process.platform, app.getAppPath(), app.isPackaged);
 
 const WINDOW = { width: 1200, height: 800, minWidth: 720, minHeight: 480 } as const;
 
-function createWindow(store: DesktopStore): void {
+function createWindow(store: DesktopStore, reporter: Reporter): void {
   const saved = store.get().window;
   // The remembered place, moved onto a display that is there now.
   const placement = fitBounds(saved.bounds, screen.getAllDisplays().map((display) => display.workArea), screen.getPrimaryDisplay().workArea, WINDOW);
@@ -107,6 +111,7 @@ function createWindow(store: DesktopStore): void {
     webPreferences: { ...secureWebPreferences(preloadPath), ...(background ? { backgroundThrottling: false } : {}) },
   });
   trackWindow(window, store);
+  window.on("unresponsive", () => reporter.report({ type: "warning", source: "renderer", code: "renderer_unresponsive" }));
   // A background test run never shows the window; maximizing or full-screening would show it, so they wait for a real show.
   if (!background) {
     window.once("ready-to-show", () => {
@@ -128,7 +133,29 @@ void app.whenReady().then(() => {
   const store = desktopStore(join(tokamaHome, "desktop.json"), { onError: (error) => console.error("could not save desktop.json:", error) });
   handle(CHANNELS.getDesktopState, () => store.get());
   handle(CHANNELS.saveLayout, (patch) => store.update((state) => applyLayoutPatch(state, patch)));
-  const watch = startWatch();
+  // Diagnostics: reports wait for the engine, and go out once it answers. An engine that does not
+  // know the command (an older one still running) refuses it, and the report is dropped.
+  let engineClient: () => ReturnType<ConnectionWatch["client"]> = () => undefined;
+  const reporter = createReporter(async (report) => {
+    const client = engineClient();
+    if (client === undefined) return "retry";
+    const reply = await client.command({ type: "report_diagnostic", report, appVersion: app.getVersion() });
+    return reply.ok ? "sent" : reply.error.code === "disconnected" ? "retry" : "dropped";
+  });
+  process.on("uncaughtExceptionMonitor", (error, origin) => reporter.report(mainErrorReport(error, origin === "unhandledRejection" ? "unhandled_rejection" : "uncaught")));
+  const marker = runMarker(join(tokamaHome, "desktop.running"), process.pid, pidAlive);
+  if (marker.crashedBefore) reporter.report({ type: "crash", source: "desktop", kind: "unclean_exit" });
+  app.on("render-process-gone", (_event, _contents, details) => {
+    const kind = rendererGoneKind(details.reason);
+    if (kind !== undefined) reporter.report({ type: "crash", source: "renderer", kind });
+  });
+  const rendererReports = rateLimit(20, 60_000);
+  handle(CHANNELS.reportError, (input) => {
+    const report = rendererErrorReport(input);
+    if (report !== undefined && rendererReports()) reporter.report(report);
+  });
+  const watch = startWatch(() => void reporter.flush());
+  engineClient = () => watch.client();
   handle(CHANNELS.getConnection, () => watch.state());
   handle(CHANNELS.retryConnection, () => watch.retry());
   const api = engineApi(() => watch.client());
@@ -163,11 +190,12 @@ void app.whenReady().then(() => {
   });
   app.on("before-quit", () => {
     store.flush();
+    marker.clear();
     void watch.close();
   });
-  createWindow(store);
+  createWindow(store, reporter);
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow(store);
+    if (BrowserWindow.getAllWindows().length === 0) createWindow(store, reporter);
   });
 });
 

@@ -24,6 +24,11 @@ export function engineApi(client: () => EngineClient | undefined): EngineApi {
     command: async (input) => {
       const command = parseCommand(input);
       if (!command.ok) return invalid("command", command.error);
+      // The window reports errors and usage through their own narrow channels; the main process
+      // composes the report, so the window never names its source or fields.
+      if (command.value.type === "report_diagnostic") {
+        return { ok: false, error: { code: BRIDGE_ERROR_CODES.invalidRequest, message: "the app sends diagnostics reports itself" } };
+      }
       return (await client()?.command(command.value)) ?? notConnected();
     },
   };

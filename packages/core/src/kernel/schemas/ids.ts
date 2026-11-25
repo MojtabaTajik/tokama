@@ -30,6 +30,15 @@ export const CallIdSchema = generated("call").brand<"CallId">();
 export const DecisionIdSchema = generated("decision").brand<"DecisionId">();
 /** The machine that created a record. Made once per machine and kept in Tokama's home folder. */
 export const HostIdSchema = generated("host").brand<"HostId">();
+/** One diagnostics entry. */
+export const DiagnosticIdSchema = generated("diag").brand<"DiagnosticId">();
+/**
+ * This install, for diagnostics only: random, never derived from the machine, and replaced when
+ * the user resets it. Unlike the host id, it ties no record to a machine for good.
+ */
+export const InstallIdSchema = generated("install").brand<"InstallId">();
+/** One run of the engine, from its start to its stop. */
+export const SessionIdSchema = generated("session").brand<"SessionId">();
 
 export type TemplateId = z.output<typeof TemplateIdSchema>;
 export type AgentId = z.output<typeof AgentIdSchema>;
@@ -41,6 +50,9 @@ export type ItemId = z.output<typeof ItemIdSchema>;
 export type CallId = z.output<typeof CallIdSchema>;
 export type DecisionId = z.output<typeof DecisionIdSchema>;
 export type HostId = z.output<typeof HostIdSchema>;
+export type DiagnosticId = z.output<typeof DiagnosticIdSchema>;
+export type InstallId = z.output<typeof InstallIdSchema>;
+export type SessionId = z.output<typeof SessionIdSchema>;
 
 /** Milliseconds since the Unix epoch, as the kernel clock returns them. */
 export const EpochMsSchema = z.int().nonnegative();
