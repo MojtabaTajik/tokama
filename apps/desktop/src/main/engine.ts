@@ -80,11 +80,12 @@ function absoluteEntries(path: string): string[] {
 }
 
 /**
- * What the app says when an engine of another version still runs (it keeps running after the app
- * quits): stop it, then Retry starts this version's engine. The command signals the pid the
- * engine wrote to its own lock file; the engine stops cleanly on SIGTERM.
+ * How the command line of this app's engine for `dir` ends, from the entry file on, as
+ * engineCommand builds it. The entry is matched by its last path segments, so an engine started
+ * from another checkout of the app, for the same engine dir, counts as this app's own too.
  */
-export function otherVersionMessage(lockPath: string): string {
-  const quoted = `'${lockPath.replaceAll("'", "'\\''")}'`;
-  return `An older Tokama engine is still running. Quit it, then press Retry. In a terminal: kill $(cut -d' ' -f1 ${quoted})`;
+export function engineCommandEnd(dir: string, sample = false): string {
+  return `${ENTRY_END} --dir ${dir}${sample ? " --sample" : ""}`;
 }
+
+const ENTRY_END = "/engine/dist/main.js";

@@ -106,8 +106,21 @@ function descendants(snapshot: readonly ProcessInfo[], root: ProcessInfo): Proce
 const identity = (p: ProcessInfo) => `${p.pid}@${p.startedAt}`;
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-// `  350     1   350 Mon Nov 23 08:16:27 2026`: pid, ppid, pgid, then lstart in the C locale.
-const PS_LINE = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+[A-Z][a-z]{2}\s+([A-Z][a-z]{2})\s+(\d{1,2})\s+(\d{2}):(\d{2}):(\d{2})\s+(\d{4})\s*$/;
+/** `Mon Nov 23 08:16:27 2026`: ps's lstart in the C locale. */
+export const LSTART = "[A-Z][a-z]{2}\\s+[A-Z][a-z]{2}\\s+\\d{1,2}\\s+\\d{2}:\\d{2}:\\d{2}\\s+\\d{4}";
+const LSTART_PARTS = /^[A-Z][a-z]{2}\s+([A-Z][a-z]{2})\s+(\d{1,2})\s+(\d{2}):(\d{2}):(\d{2})\s+(\d{4})$/;
+// `  350     1   350 Mon Nov 23 08:16:27 2026`: pid, ppid, pgid, then lstart.
+const PS_LINE = new RegExp(`^\\s*(\\d+)\\s+(\\d+)\\s+(\\d+)\\s+(${LSTART})\\s*$`);
+
+/** Epoch ms of a ps lstart printed with `TZ=UTC LC_ALL=C`; undefined when it is not one. */
+export function parseLstart(text: string): number | undefined {
+  const match = LSTART_PARTS.exec(text.trim());
+  if (match === null) return undefined;
+  const [, month, day, hours, minutes, seconds, year] = match;
+  const monthIndex = MONTHS.indexOf(month ?? "");
+  if (monthIndex < 0) return undefined;
+  return Date.UTC(Number(year), monthIndex, Number(day), Number(hours), Number(minutes), Number(seconds));
+}
 
 /** Parses `ps -A -o pid= -o ppid= -o pgid= -o lstart=` output, run with `TZ=UTC LC_ALL=C`. */
 export function parsePsOutput(output: string): ProcessInfo[] {
@@ -115,10 +128,9 @@ export function parsePsOutput(output: string): ProcessInfo[] {
   for (const line of output.split("\n")) {
     const match = PS_LINE.exec(line);
     if (match === null) continue;
-    const [, pid, ppid, pgid, month, day, hours, minutes, seconds, year] = match;
-    const monthIndex = MONTHS.indexOf(month ?? "");
-    if (monthIndex < 0) continue;
-    const startedAt = Date.UTC(Number(year), monthIndex, Number(day), Number(hours), Number(minutes), Number(seconds));
+    const [, pid, ppid, pgid, lstart] = match;
+    const startedAt = parseLstart(lstart ?? "");
+    if (startedAt === undefined) continue;
     processes.push({ pid: Number(pid), ppid: Number(ppid), pgid: Number(pgid), startedAt });
   }
   return processes;

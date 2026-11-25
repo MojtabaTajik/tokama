@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { engineCommand, engineDirFor, findExecutable, otherVersionMessage, readLogTail } from "./engine.js";
+import { engineCommand, engineCommandEnd, engineDirFor, findExecutable, readLogTail } from "./engine.js";
 
 let dir: string;
 beforeEach(() => {
@@ -86,11 +86,20 @@ describe("readLogTail", () => {
   });
 });
 
-describe("otherVersionMessage", () => {
-  it("names the command that stops the engine by the pid in its lock file, quoted for the shell", () => {
-    expect(otherVersionMessage("/home/dev/.tokama/run/engine.lock")).toBe(
-      "An older Tokama engine is still running. Quit it, then press Retry. In a terminal: kill $(cut -d' ' -f1 '/home/dev/.tokama/run/engine.lock')",
-    );
-    expect(otherVersionMessage("/tmp/it's/engine.lock")).toContain(`'/tmp/it'\\''s/engine.lock'`);
+describe("engineCommandEnd", () => {
+  it("is how the command line of the engine engineCommand builds ends, for the real and the sample engine", () => {
+    for (const sample of [false, true]) {
+      const command = engineCommand({ node: "/usr/bin/node", entry: "/src/tokama/apps/engine/dist/main.js", dir: "/home/dev/.tokama/run", env: {}, sample });
+      if (!command.ok) throw new Error(command.error);
+      expect([command.value.command, ...command.value.args].join(" ").endsWith(engineCommandEnd("/home/dev/.tokama/run", sample))).toBe(true);
+    }
+  });
+
+  it("does not match the sample engine's dir for the real engine, or the other way round", () => {
+    const sampleLine = "/usr/bin/node /src/apps/engine/dist/main.js --dir /home/dev/.tokama/run/sample --sample";
+    const realLine = "/usr/bin/node /src/apps/engine/dist/main.js --dir /home/dev/.tokama/run";
+    expect(sampleLine.endsWith(engineCommandEnd("/home/dev/.tokama/run"))).toBe(false);
+    expect(realLine.endsWith(engineCommandEnd("/home/dev/.tokama/run/sample", true))).toBe(false);
+    expect(realLine.endsWith(engineCommandEnd("/dev/.tokama/run"))).toBe(false);
   });
 });

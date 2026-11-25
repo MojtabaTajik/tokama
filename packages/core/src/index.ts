@@ -41,6 +41,18 @@ export {
   type StoreError,
 } from "./slices/items/index.js";
 export { posixProcessTable, type LeftoverOutcome, type ProcessInfo, type ProcessTable } from "./kernel/process/leftover.js";
+// Stopping this app's own older engine, for the desktop app after an update.
+export {
+  posixEngineProcesses,
+  readEngineLock,
+  stopOwnEngine,
+  verifyOwnEngine,
+  type EngineLock,
+  type EngineProcesses,
+  type OwnEngine,
+  type StopOutcome,
+  type VerifyOutcome,
+} from "./kernel/process/own-engine.js";
 // Config, templates and the cloud rule, for the engine service's real mode.
 export { BUILTIN_AGENT_IDS, loadAgents, type Agent, type BrokenAgent, type ConfigProblem, type LoadedAgents } from "./slices/config/index.js";
 export { loadBuiltins, loadTemplates, templateWarnings, type AgentLocation, type TemplateLoad, type TemplateProblem } from "./slices/templates/index.js";
@@ -128,6 +140,8 @@ export {
   parseEngineMessage,
   parseHandshakeReply,
   parseHelloMessage,
+  parseOpeningMessage,
+  parseShutdownReply,
   newId,
   parseItemEvent,
   parseItemId,
@@ -271,6 +285,9 @@ export {
   type TemplateSummary,
   type TokenUsage,
   type WelcomeMessage,
+  type OpeningMessage,
+  type ShutdownReply,
+  type ShutdownRequest,
   type Setup,
   type SetupResult,
   DIFF_LIMITS,

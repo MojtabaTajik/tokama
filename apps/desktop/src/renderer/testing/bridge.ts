@@ -38,6 +38,8 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
   const bridge = {
     getConnection: vi.fn(async () => initial),
     retryConnection: vi.fn(async () => undefined),
+    restartEngine: vi.fn(async () => undefined),
+    waitForEngine: vi.fn(async () => undefined),
     onConnection: vi.fn((listener: (state: ConnectionState) => void) => {
       connectionListener = listener;
       return stops.connection;

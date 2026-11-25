@@ -27,6 +27,8 @@ ipcRenderer.on(CHANNELS.openItem, (_event: IpcRendererEvent, itemId: unknown) =>
 export const bridge: TokamaBridge = {
   getConnection: () => ipcRenderer.invoke(CHANNELS.getConnection) as Promise<ConnectionState>,
   retryConnection: () => ipcRenderer.invoke(CHANNELS.retryConnection) as Promise<void>,
+  restartEngine: () => ipcRenderer.invoke(CHANNELS.restartEngine) as Promise<void>,
+  waitForEngine: () => ipcRenderer.invoke(CHANNELS.waitForEngine) as Promise<void>,
   onConnection: (listener) => subscribe<ConnectionState>(CHANNELS.connectionChanged, listener),
   // The reply's type follows the request's: main validates the request, the client parses the reply.
   query: (query) => ipcRenderer.invoke(CHANNELS.query, query) as never,

@@ -15,6 +15,8 @@ import {
   HandshakeReplySchema,
   type HelloMessage,
   HelloMessageSchema,
+  type OpeningMessage,
+  OpeningMessageSchema,
   type Query,
   type QueryResult,
   QueryResultSchemas,
@@ -22,6 +24,8 @@ import {
   type QueryType,
   type ServerMessage,
   ServerMessageSchema,
+  type ShutdownReply,
+  ShutdownReplySchema,
 } from "./api.js";
 import {
   type AgentId,
@@ -65,6 +69,9 @@ export const parseQuery = (input: unknown): Result<Query, ParseError> => parseWi
 export const parseCommand = (input: unknown): Result<Command, ParseError> => parseWith(CommandSchema, input);
 export const parseHelloMessage = (input: unknown): Result<HelloMessage, ParseError> => parseWith(HelloMessageSchema, input);
 export const parseHandshakeReply = (input: unknown): Result<HandshakeReply, ParseError> => parseWith(HandshakeReplySchema, input);
+/** Parses a client's first message: a hello or a shutdown request. */
+export const parseOpeningMessage = (input: unknown): Result<OpeningMessage, ParseError> => parseWith(OpeningMessageSchema, input);
+export const parseShutdownReply = (input: unknown): Result<ShutdownReply, ParseError> => parseWith(ShutdownReplySchema, input);
 /** Parses a successful reply's data for the query type that asked for it. */
 export function parseQueryResult<T extends QueryType>(type: T, data: unknown): Result<QueryResult<T>, ParseError> {
   // The schema map is indexed by a generic key, which TypeScript widens to the union of schemas.

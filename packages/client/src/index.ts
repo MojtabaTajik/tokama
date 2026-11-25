@@ -1,6 +1,7 @@
 // Public entry of @tokama/client, the typed engine API client used by desktop and CLI.
 export {
   connect,
+  requestShutdown,
   type ClientEvent,
   type CommandReply,
   type ConnectError,

@@ -37,6 +37,7 @@ import {
   parseHandshakeReply,
   parseQueryResult,
   parseServerMessage,
+  parseShutdownReply,
   type QueryInput,
   type QueryResult,
   type QueryType,
@@ -77,6 +78,11 @@ export type ConnectErrorCode =
 export interface ConnectError {
   readonly code: ConnectErrorCode;
   readonly message: string;
+  /**
+   * With `unsupported_version`: the running engine's API version, and how many items it runs
+   * (absent from an engine too old to say).
+   */
+  readonly engine?: { readonly apiVersion: number; readonly runningItems?: number };
 }
 
 /** A reply's result: `data` on success, or an error code such as `not_found`, `not_implemented`, `disconnected`, `timeout`. */
@@ -480,13 +486,65 @@ function openSession(endpoint: EngineEndpoint, timeoutMs: number, handlers: Sess
         }
         const reply = parseHandshakeReply(parseJson(line));
         if (!reply.ok) return settle(err({ code: "protocol_error", message: "the engine did not answer the hello" }));
-        if (reply.value.kind === "connection_error") return settle(err({ code: handshakeCode(reply.value.code), message: reply.value.message }));
+        const engine = { apiVersion: reply.value.apiVersion, ...(reply.value.runningItems !== undefined && { runningItems: reply.value.runningItems }) };
+        if (reply.value.kind === "connection_error") {
+          const code = handshakeCode(reply.value.code);
+          return settle(err({ code, message: reply.value.message, ...(code === "unsupported_version" && { engine }) }));
+        }
         if (reply.value.apiVersion !== API_VERSION) {
-          return settle(err({ code: "unsupported_version", message: `engine speaks API version ${reply.value.apiVersion}` }));
+          return settle(err({ code: "unsupported_version", message: `engine speaks API version ${reply.value.apiVersion}`, engine }));
         }
         session = { socket, engineId: reply.value.engineId };
         settle(ok(session));
       }
+    });
+  });
+}
+
+/**
+ * Asks the engine in `dir` to stop, with its token, in place of a hello; every engine from the
+ * version that added the request accepts it, whatever its API version. True when the engine
+ * accepted; false when it refused (an engine older than the request), did not answer within
+ * `timeoutMs`, or is not there.
+ */
+export function requestShutdown(dir: string, timeoutMs = 2_000): Promise<boolean> {
+  const endpoint = engineEndpoint(dir);
+  if (!endpoint.ok) return Promise.resolve(false);
+  const { tokenPath, socketPath } = endpoint.value;
+  return new Promise((resolve) => {
+    // The token goes only into a directory that is ours and private, as for a hello.
+    if (!checkEngineDir(endpoint.value.dir).ok) return resolve(false);
+    let token: string;
+    try {
+      token = readFileSync(tokenPath, "utf8").trim();
+    } catch {
+      return resolve(false);
+    }
+    const socket = connectSocket(socketPath);
+    const decoder = new LineDecoder();
+    let settled = false;
+    const settle = (accepted: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket.destroy();
+      resolve(accepted);
+    };
+    const timer = setTimeout(() => settle(false), timeoutMs);
+    socket.once("connect", () => {
+      const request = encodeLine({ kind: "shutdown", apiVersion: API_VERSION, token });
+      if (request.ok) socket.write(request.value);
+      else settle(false);
+    });
+    socket.on("error", () => settle(false));
+    socket.on("close", () => settle(false));
+    socket.on("data", (chunk: Buffer) => {
+      const lines = decoder.push(chunk);
+      if (!lines.ok) return settle(false);
+      const first = lines.value[0];
+      if (first === undefined) return;
+      const reply = parseShutdownReply(parseJson(first));
+      settle(reply.ok && reply.value.kind === "shutdown_accepted");
     });
   });
 }

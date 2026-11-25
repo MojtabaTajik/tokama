@@ -6,7 +6,8 @@ import type { DesktopState, LayoutPatch, NotificationSettings } from "./desktop-
 
 /** The desktop app's view of its engine connection. */
 export type ConnectionState =
-  | { readonly status: "starting" }
+  /** `updating`: an older engine is being stopped, and this version's starts next. */
+  | { readonly status: "starting"; readonly updating?: true }
   | { readonly status: "connected"; readonly engineId: string }
   | { readonly status: "reconnecting" }
   | {
@@ -16,7 +17,19 @@ export type ConnectionState =
       readonly logPath: string;
       /** The last lines of the log, when it could be read. */
       readonly logTail: readonly string[];
+      /** An older engine of this app still runs and may be busy: the app asks before it restarts it. */
+      readonly older?: OlderEngine;
     };
+
+export interface OlderEngine {
+  /** Items it runs now; absent when it is too old to say. */
+  readonly runningItems?: number;
+  /** The user chose Wait: the app restarts it once nothing runs. */
+  readonly waiting: boolean;
+  readonly lockPath: string;
+  /** The pid in its lock, when it could be read. */
+  readonly pid?: number;
+}
 
 /**
  * An engine event with its stream position. Losing and regaining the connection comes through
@@ -40,6 +53,8 @@ export const CHANNELS = {
   getConnection: "tokama:connection:get",
   connectionChanged: "tokama:connection:changed",
   retryConnection: "tokama:connection:retry",
+  restartEngine: "tokama:connection:restart-engine",
+  waitForEngine: "tokama:connection:wait-engine",
   query: "tokama:engine:query",
   command: "tokama:engine:command",
   event: "tokama:engine:event",
@@ -128,6 +143,10 @@ export interface TokamaBridge {
   getConnection(): Promise<ConnectionState>;
   /** After a failed connection: tries to start and reach the engine again. Does nothing in any other state. */
   retryConnection(): Promise<void>;
+  /** With an older engine on screen: stop it now and start this version's. Does nothing in any other state. */
+  restartEngine(): Promise<void>;
+  /** With an older busy engine on screen: restart it once nothing runs. Does nothing in any other state. */
+  waitForEngine(): Promise<void>;
   /** Calls `listener` on every change; returns a function that stops it. */
   onConnection(listener: (state: ConnectionState) => void): () => void;
   /** Any engine API query. The main process validates it before it reaches the engine. */

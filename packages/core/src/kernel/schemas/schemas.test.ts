@@ -17,6 +17,8 @@ import {
   parseEngineMessage,
   parseHandshakeReply,
   parseHelloMessage,
+  parseOpeningMessage,
+  parseShutdownReply,
   parseItemId,
   parseItemRecord,
   parseQuery,
@@ -366,6 +368,20 @@ describe("handshake messages", () => {
     const refusal = { kind: "connection_error", apiVersion: 9, code: "unsupported_version", message: "engine speaks 9" };
     expect(parseHandshakeReply(refusal)).toEqual({ ok: true, value: refusal });
     expect(parseHandshakeReply({ kind: "connection_error", apiVersion: 1, code: "", message: "" }).ok).toBe(false);
+  });
+
+  it("reads runningItems in a welcome and a version refusal, and refuses a negative count", () => {
+    expect(parseHandshakeReply({ kind: "welcome", apiVersion: 1, engineId: "e1", runningItems: 2 })).toMatchObject({ ok: true, value: { runningItems: 2 } });
+    expect(parseHandshakeReply({ kind: "connection_error", apiVersion: 1, code: "unsupported_version", message: "m", runningItems: 0 })).toMatchObject({ ok: true, value: { runningItems: 0 } });
+    expect(parseHandshakeReply({ kind: "welcome", apiVersion: 1, engineId: "e1", runningItems: -1 }).ok).toBe(false);
+  });
+
+  it("accepts a shutdown request of any version as an opening message, and needs its token", () => {
+    expect(parseOpeningMessage({ kind: "shutdown", apiVersion: API_VERSION + 4, token: "t0k", extra: 1 })).toMatchObject({ ok: true, value: { kind: "shutdown" } });
+    expect(parseOpeningMessage({ kind: "hello", apiVersion: 1, token: "t0k" })).toMatchObject({ ok: true, value: { kind: "hello" } });
+    expect(parseOpeningMessage({ kind: "shutdown", apiVersion: 1 }).ok).toBe(false);
+    expect(parseShutdownReply({ kind: "shutdown_accepted", apiVersion: 1 }).ok).toBe(true);
+    expect(parseShutdownReply({ kind: "connection_error", apiVersion: 1, code: "bad_message", message: "m" }).ok).toBe(true);
   });
 
   it("keeps handshake messages out of the normal message parsers", () => {

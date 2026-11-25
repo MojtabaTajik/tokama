@@ -357,6 +357,8 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
           loadError={loadError}
           onRetry={retry}
           onRetryConnection={() => void bridge.retryConnection()}
+          onRestartEngine={() => void bridge.restartEngine()}
+          onWaitForEngine={() => void bridge.waitForEngine()}
           setup={setup}
           items={items}
           now={now}
