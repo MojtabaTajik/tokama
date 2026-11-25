@@ -2,7 +2,7 @@
 // each loop. A retry loops over its own step (drawn above); a `back:` goes back to an earlier step
 // (drawn below, one level deeper per loop so the lines do not cross). Pure geometry, tested
 // without React; the component only draws it.
-import type { AgentSummary, TemplateStepView, TemplateView } from "@tokama/core";
+import type { TemplateStepView, TemplateView } from "@tokama/core";
 
 export const SLOT = 148;
 export const NODE_HEIGHT = 48;
@@ -51,7 +51,7 @@ export interface Flow {
 }
 
 /** The agent's dot by its join order, as on the board: 1 to 3, then neutral. */
-export function dotOf(agentId: string, agents: readonly Pick<AgentSummary, "id">[]): Dot {
+export function dotOf(agentId: string, agents: readonly { readonly id: string }[]): Dot {
   const index = agents.findIndex((agent) => agent.id === agentId);
   return index >= 0 && index < 3 ? ((index + 1) as 1 | 2 | 3) : "neutral";
 }
@@ -89,7 +89,7 @@ function loopsOf(steps: readonly TemplateStepView[]): LoopSpec[] {
   return loops;
 }
 
-export function flowOf(template: Pick<TemplateView, "steps">, agents: readonly Pick<AgentSummary, "id">[]): Flow {
+export function flowOf(template: Pick<TemplateView, "steps">, agents: readonly { readonly id: string }[]): Flow {
   const specs = loopsOf(template.steps);
   const selfAbove = specs.some((loop) => loop.kind === "self");
   const backs = specs.filter((loop) => loop.kind === "back").length;

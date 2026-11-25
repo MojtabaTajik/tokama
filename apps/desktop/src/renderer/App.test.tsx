@@ -118,6 +118,20 @@ describe("App shell", () => {
     expect(disabled).toEqual(["Insights"]);
     expect($('button[aria-label="Sidebar"]')?.hasAttribute("aria-disabled")).toBe(false);
   });
+
+  it("opens Settings in place of the rail and the sidebar, switches to Templates, and Back leads to the board", async () => {
+    const fake = fakeBridge(CONNECTED, { reply: (query) => (query.type === "templates" ? { ok: true, data: { templates: [] } } : undefined) });
+    await render(fake.bridge);
+    await click($('button[aria-label="Settings"]')!);
+    expect($("nav.rail")).toBeNull();
+    expect($('nav[aria-label="Settings"] [aria-current="page"]')?.textContent).toBe("Agents");
+    await click($$('nav[aria-label="Settings"] button').find((el) => el.textContent === "Templates")!);
+    expect($('nav[aria-label="Settings"] [aria-current="page"]')?.textContent).toBe("Templates");
+    expect(fake.query).toHaveBeenCalledWith({ type: "templates" });
+    await click($$("nav button").find((el) => el.textContent === "← Back")!);
+    expect($("nav.rail")).not.toBeNull();
+    expect(rowTitles().length).toBeGreaterThan(0);
+  });
 });
 
 describe("App live updates", () => {

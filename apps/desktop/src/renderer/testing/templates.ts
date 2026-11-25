@@ -1,10 +1,10 @@
 // Test data for the Templates page, shaped like the sample engine's template files: one that loads
 // (Plan and build, with a retry and a review loop) and one with problems. Plain literals cast to the
-// engine types; templates.test.ts checks them against the engine schemas.
+// engine types; templates/describe.test.ts checks them against the engine schemas.
 import type { TemplateDetail, TemplateEntry, TemplateStepView, TemplateView } from "@tokama/core";
 
-const step = (fields: Partial<TemplateStepView> & Pick<TemplateStepView, "id" | "name" | "agentId">): TemplateStepView =>
-  ({ doneWhen: "agent finishes", ifFailed: { action: "ask" }, maxAttempts: 1, data: "none", sees: [], connections: [], commands: [], ...fields }) as TemplateStepView;
+const step = (fields: { readonly id: string; readonly name: string; readonly agentId: string } & Record<string, unknown>): TemplateStepView =>
+  ({ doneWhen: "agent finishes", ifFailed: { action: "ask" }, maxAttempts: 1, data: "none", sees: [], connections: [], commands: [], ...fields }) as unknown as TemplateStepView;
 
 export const planAndBuild = {
   schemaVersion: 1,
