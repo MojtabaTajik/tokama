@@ -2,7 +2,7 @@
 // home, and a scripted agent runtime in place of Claude Code. Start, checks and commit; a
 // decision; stop; and a restart while a step runs.
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { connect, type EngineClient } from "@tokama/client";
@@ -223,14 +223,17 @@ describe("real mode", () => {
   });
 
   it("finishes a done item on command: Merge fast-forwards main and removes the worktree; the record and card say so", SLOW, async () => {
+    git("remote", "add", "origin", "https://ci-bot:secret@github.com/acme/orders-api.git");
     const { client } = await engine(scripted([{ writes: { "greeting.txt": "hello world\n" } }]));
     const id = await start(client);
     const done = await waitItem(client, id, (i) => i.state === "done", "done");
-    expect(done.finish).toEqual({ worktreeRemoved: false });
+    // origin as it was at Start, without its user info, is where Open PR would push.
+    expect(done.finish).toEqual({ worktreeRemoved: false, pushTarget: "github.com/acme/orders-api" });
+    expect(readFileSync(join(home, "items", id, "events.jsonl"), "utf8")).not.toContain("secret");
     const commit = done.outcome!.commits![0]!;
     expect(await client.command({ type: "finish_item", itemId: id, action: "merge" })).toEqual({ ok: true, data: null });
     const merged = await waitItem(client, id, (i) => i.finish?.merged !== undefined, "merged");
-    expect(merged.finish).toEqual({ merged: { baseBranch: "main", commit: commit.commit }, worktreeRemoved: true });
+    expect(merged.finish).toEqual({ merged: { baseBranch: "main", commit: commit.commit }, worktreeRemoved: true, pushTarget: "github.com/acme/orders-api" });
     expect(merged.cardLine).toBe(`merged into main · ${commit.commit.slice(0, 7)}`);
     expect(git("rev-parse", "main")).toBe(commit.commit);
     expect(git("branch", "--list", commit.branch!)).toBe("");
