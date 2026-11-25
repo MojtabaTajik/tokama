@@ -265,10 +265,10 @@ describe("Merge", () => {
     const merge = await run(item, "merge");
     expect(merge.finish?.failed).toMatchObject({ action: "merge", reason: "steering_changed", changes: [{ what: "hook post-merge added", after: "#!/bin/sh echo hi" }] });
     rmSync(join(repo.path, ".git", "hooks", "post-merge"));
-    await plain(repo.path, "config", "core.sshCommand", "touch /tmp/pwned; ssh");
+    await plain(repo.path, "config", "core.sshCommand", "touch pwned; ssh");
     const push = await run(merge, "pull_request");
     // Each setting by name, with its value as text.
-    expect(push.finish?.failed).toMatchObject({ action: "pull_request", reason: "steering_changed", changes: [{ what: "setting core.sshcommand", after: "touch /tmp/pwned; ssh" }] });
+    expect(push.finish?.failed).toMatchObject({ action: "pull_request", reason: "steering_changed", changes: [{ what: "setting core.sshcommand", after: "touch pwned; ssh" }] });
     expect(push.finish?.failed?.changes?.[0]?.before).toBeUndefined();
     expect(await plain(bare, "for-each-ref", "refs/heads/")).toBe("");
     expect((await run(push, "discard")).finish?.worktreeRemoved).toBe(true);
