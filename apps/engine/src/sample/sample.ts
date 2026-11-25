@@ -5,7 +5,7 @@
 // repos.yaml in Tokama's home in this mode too, and setup lists those repos after the sample ones.
 //
 // Removal: delete this folder; in engine.ts the `sample` lines (the usage service's sample branch
-// with them), the SampleEngine, sample usage and systemClock
+// with them, and the machine query's sample branch), the SampleEngine, sample usage, sample machine and systemClock
 // imports and EngineOptions.clock (if nothing else uses them by then); in main.ts the `--sample`
 // flag; and in main.int.test.ts the test "serves the sample data set with --sample".
 import { randomUUID } from "node:crypto";

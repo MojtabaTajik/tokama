@@ -1,0 +1,8 @@
+Name:	node
+State:	S (sleeping)
+Pid:	4242
+PPid:	4100
+VmPeak:	 1290000 kB
+VmRSS:	  164828 kB
+RssAnon:	  120000 kB
+Threads:	11

@@ -65,6 +65,9 @@ export {
 } from "./slices/workflow-engine/index.js";
 // Usage reports: roll-ups, estimated costs and the plan window choice, for the engine service.
 export { callCost, choosePlan, localDate, priceOf, PRICES_AS_OF, rangeStart, summarizeUsage, totalTokens, type PlanCandidate, type PlanReading, type UsageRow } from "./slices/usage/index.js";
+// Machine readings: the OS source and the on-demand monitor, for the engine service.
+export { createMachineSource, type MachineSource } from "./kernel/metrics/index.js";
+export { createMonitor, type ItemGroup, type Monitor, type MonitorOptions } from "./slices/machine/index.js";
 // Process control and git, for the engine service to hand to the slices that need them.
 export { createProcessRunner, type ProcessRunner } from "./kernel/process/index.js";
 export { createGit, type Git } from "./kernel/git/index.js";
@@ -119,6 +122,11 @@ export {
   type UsageRange,
   type UsageReport,
   type UsageResult,
+  type MachinePoint,
+  type MachineReport,
+  type MachineResult,
+  type ItemProcessSetUsage,
+  type ProcessSetUsage,
   type AiCliId,
   type AgentSummary,
   type AgentId,
