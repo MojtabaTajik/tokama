@@ -152,6 +152,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
       ref={composer}
       bridge={bridge}
       setup={setup}
+      repoId={page === "board" && views.view.kind === "repo" ? views.view.id : undefined}
       onStarted={(itemId, started) => {
         // Show the new item where the user is, or in All work when this view would hide it.
         setPage("board");
@@ -169,7 +170,8 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
     );
   }
 
-  const drawerOpen = !aboutOpen && selectedItemId !== undefined;
+  // The drawer belongs to the work views. Insights and About hide it; the item stays selected, so going back reopens it.
+  const drawerOpen = (page === "board" || page === "needs-you") && selectedItemId !== undefined;
   const fit = fitPanels(windowWidth, { sidebarOpen: panelOpen, drawerOpen, sidebar: chosen.sidebar, drawer: chosen.drawer });
   const widths = { "--sidebar-w": `${fit.sidebar}px`, "--drawer-w": `${fit.drawer}px` } as CSSProperties;
   return (
@@ -204,8 +206,8 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
         }}
         setup={setup}
         onSelectItem={(itemId) => {
-          // About hides the drawer: leave it, so the chosen item shows now.
-          if (aboutOpen) setPage("board");
+          // Insights and About hide the drawer: leave them, so the chosen item shows now.
+          if (page === "insights" || aboutOpen) setPage("board");
           setSelectedItemId(itemId);
         }}
         onCliSettings={() => {
@@ -251,7 +253,10 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
           items={items}
           issues={issues}
           now={now}
-          onSelectItem={setSelectedItemId}
+          onSelectItem={(itemId) => {
+            setPage("board");
+            setSelectedItemId(itemId);
+          }}
           onNewWork={() => {
             setPage("board");
             setOpenComposerOnBoard(true);

@@ -155,7 +155,7 @@ describe("ItemDrawer sections", () => {
     expect(document.activeElement?.textContent).toBe("Findings");
   });
 
-  it("adds Diff and Checks for a task, and Open worktree, disabled", async () => {
+  it("adds Diff and Checks for a task", async () => {
     await renderDrawer(fakeBridge([task]).bridge, task.id);
     expect($$('[role="tab"]').map((tab) => tab.textContent)).toEqual(["Steps", "Evidence", "Findings", "Log", "Diff", "Checks"]);
     expect(text(".drawer-kind")).toBe("▣ Task · Plan and build · local + cloud");
@@ -166,19 +166,16 @@ describe("ItemDrawer sections", () => {
       "Tokama · local",
       "Reviewer · cloud · sees the repo and the diff",
     ]);
-    expect($$(".drawer-actions button").map((el) => [el.textContent, el.getAttribute("aria-disabled")])).toEqual([
-      ["Open worktree", "true"],
-      ["Add a hint", "true"],
-      ["Stop", null],
-    ]);
+    expect($$(".drawer-actions button").map((el) => [el.textContent, el.className, el.getAttribute("aria-disabled")])).toEqual([["Stop", "choice danger", null]]);
   });
 
-  it("shows no Open worktree for an investigation and no Stop once the item has ended", async () => {
+  it("shows only the actions that work: Stop while the item runs, no actions once it has ended", async () => {
     const { bridge, push } = fakeBridge([needsYou]);
     await renderDrawer(bridge, needsYou.id);
-    expect($$(".drawer-actions button").map((el) => el.textContent)).toEqual(["Add a hint", "Stop"]);
+    expect($$(".drawer-actions button").map((el) => el.textContent)).toEqual(["Stop"]);
+    expect(document.body.textContent).not.toMatch(/Open worktree|Add a hint/);
     await push({ ...approved, state: "done" } as ItemRecord);
-    expect($$(".drawer-actions button").map((el) => el.textContent)).toEqual(["Add a hint"]);
+    expect($(".drawer-actions")).toBeNull();
     expect(text(".drawer-state")).toBe("✓done");
   });
 

@@ -232,6 +232,18 @@ describe("New work input", () => {
     expect(start().disabled).toBe(false);
   });
 
+  it("chooses the open repo's list repo, until the user picks repos themselves", async () => {
+    await mount();
+    await click($$(".sb-main").find((row) => row.querySelector(".ellipsis")?.textContent === "checkout-web"));
+    await focusInput();
+    expect(trigger("Repos").textContent).toBe("Reposcheckout-web▾");
+    await click(trigger("Repos"));
+    await click($$('[role="option"]')[0]);
+    expect(trigger("Repos").textContent).toBe("Repos2 repos▾");
+    await click($$(".sb-main").find((row) => row.querySelector(".ellipsis")?.textContent === "All work"));
+    expect(trigger("Repos").textContent).toBe("Repos2 repos▾");
+  });
+
   it("searches repos and lets several be chosen", async () => {
     await mount();
     await focusInput();

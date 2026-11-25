@@ -22,7 +22,7 @@ export function About({ bridge, connection, onClose }: AboutProps) {
   const [failed, setFailed] = useState(false);
   const [copy, setCopy] = useState<"idle" | "copied" | "failed">("idle");
   const [folderError, setFolderError] = useState<string | undefined>(undefined);
-  const [open, setOpen] = useState<ReadonlySet<string>>(new Set(["fa"]));
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const resetCopy = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
     let live = true;
@@ -34,7 +34,6 @@ export function About({ bridge, connection, onClose }: AboutProps) {
   }, [bridge]);
 
   const notices = noticesFor(info?.runtime.electron ?? "unknown");
-  const allOpen = notices.every((notice) => open.has(notice.id));
   const toggle = (id: string) => setOpen((now) => {
     const next = new Set(now);
     if (!next.delete(id)) next.add(id);
@@ -125,9 +124,6 @@ export function About({ bridge, connection, onClose }: AboutProps) {
             <div className="about-section-head">
               <h2 id="about-notices" className="about-heading">Third-party notices</h2>
               <span className="about-count">{notices.length}</span>
-              <button type="button" className="about-action about-all" onClick={() => setOpen(allOpen ? new Set() : new Set(notices.map((notice) => notice.id)))}>
-                {allOpen ? "Collapse all" : "Expand all"}
-              </button>
             </div>
             <ul className="about-notices">
               {notices.map((notice) => {

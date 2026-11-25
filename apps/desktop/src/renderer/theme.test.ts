@@ -46,6 +46,9 @@ describe("theme.css", () => {
   it("gives primary button text at least 4.5:1 contrast on its fill", () => {
     expect(contrast(TOKENS["--primary-text"]!, TOKENS["--primary-fill"]!)).toBeGreaterThanOrEqual(4.5);
   });
+  it.each(["--text-2", "--fail"])("reads %s, the drawer button text, at 4.5:1 or better on the panel and the hover fill", (name) => {
+    for (const ground of ["--panel", "--raised"]) expect(contrast(TOKENS[name]!, TOKENS[ground]!)).toBeGreaterThanOrEqual(4.5);
+  });
   it.each(Object.keys(TOKENS).filter((name) => name.startsWith("--tag-")))("reads %s at 4.5:1 or better on the ground and the panel", (name) => {
     for (const ground of ["--ground", "--panel"]) expect(contrast(TOKENS[name]!, TOKENS[ground]!)).toBeGreaterThanOrEqual(4.5);
   });

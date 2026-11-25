@@ -50,6 +50,34 @@ describe("Rail: Insights tooltip", () => {
     expect(open()).toBe(false);
   });
 
+  it("closes when the Insights page opens, and stays closed there whatever the pointer does", () => {
+    vi.useFakeTimers();
+    const onInsightsTip = vi.fn<(shown: boolean) => void>();
+    render({ onInsightsTip });
+    fire("mouseover");
+    fire("focusin");
+    expect(open()).toBe(true);
+    render({ onInsightsTip, insightsOpen: true });
+    expect(open()).toBe(false);
+    expect(onInsightsTip.mock.calls).toEqual([[true], [false]]);
+    // The browser re-sends enter events at an edge, and a focus can come back: nothing opens it.
+    for (let i = 0; i < 5; i++) {
+      fire("mouseout");
+      fire("mouseover");
+      fire("focusin");
+      wait(TIP_OPEN_MS * 2);
+      expect(open()).toBe(false);
+    }
+    expect(onInsightsTip.mock.calls).toEqual([[true], [false]]);
+    // Leaving the page and coming back with the pointer opens it again.
+    fire("mouseout");
+    fire("focusout");
+    render({ onInsightsTip, insightsOpen: false });
+    fire("mouseover");
+    wait(TIP_OPEN_MS);
+    expect(open()).toBe(true);
+  });
+
   it("opens after the pointer rests, and does not flicker on the enter and leave events an edge sends", () => {
     vi.useFakeTimers();
     const onInsightsTip = vi.fn<(shown: boolean) => void>();
