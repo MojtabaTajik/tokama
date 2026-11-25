@@ -64,10 +64,10 @@ describe("StepText", () => {
   });
 
   it("nests italics in bold, and leaves loose or spaced stars as written", async () => {
-    await render("**bold and *both* here** and 2 * 3 * 4 and a*b*c and **open and `**` code and *\n\n** spaced **");
+    await render("**bold and *both* here** and 2 * 3 * 4 and a*b*c and x**2 + y**2 and **open and `**` code and *\n\n** spaced **");
     expect($$("strong").map((el) => el.innerHTML)).toEqual(["bold and <em>both</em> here"]);
     const shown = container.textContent ?? "";
-    for (const part of ["2 * 3 * 4", "a*b*c", "**open and ", "** spaced **"]) expect(shown).toContain(part);
+    for (const part of ["2 * 3 * 4", "a*b*c", "x**2 + y**2", "**open and ", "** spaced **"]) expect(shown).toContain(part);
     expect($$(".st-code").map((el) => el.textContent)).toEqual(["**"]);
   });
 

@@ -73,7 +73,7 @@ describe("finishView: the offer", () => {
 describe("finishView: how the item ended", () => {
   it("Merged · abc1234, with the worktree removed and when", () => {
     const view = ended(finishView(withFinish({ merged: { baseBranch: "main", commit: "abc1234def5678901234567890abcdef12345678" }, worktreeRemoved: true, at: AT }), setup));
-    expect([view.mark.symbol, view.mark.word, view.title, flat(view.detail), view.removable]).toEqual(["✓", "merged", "Merged into main · abc1234", "Worktree and branch removed · 14:58", false]);
+    expect([view.mark.symbol, view.mark.word, view.title, flat(view.detail), view.removable]).toEqual(["✓", "merged", "Merged into main · abc1234 · 14:58", "Worktree and branch removed", false]);
   });
 
   it("a merge that kept the worktree says why and offers Remove worktree", () => {

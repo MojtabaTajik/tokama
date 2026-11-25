@@ -361,6 +361,20 @@ describe("ItemDrawer change to approve", () => {
     expect(text(".after")).toBe("●Local builder is making your changes · run 2 of 3Your note: \"Keep the old name.\"");
     await push({ ...again, state: "done", steps: [{ ...again.steps[0]!, state: "passed" }], outcome: { kind: "done", commits: [{ repoId: "orders-api", commit: "3f9c2e1d4e5f60718293a4b5c6d7e8f901234567", branch: "tokama/abc" }] } } as unknown as ItemRecord);
     expect(text(".after")).toBe("✓Committed · 3f9c2e1Paginate the orders list · on tokama/abc · Done");
+    // The second line sits in a body beside the mark, as in the Merged card.
+    expect($(".after > .mark + .after-body > .after-head + .after-text")).not.toBeNull();
+  });
+
+  it("after a merge shows the Merged card alone: the Committed card is gone with its branch", async () => {
+    const commit = { repoId: "orders-api", commit: "3f9c2e1d4e5f60718293a4b5c6d7e8f901234567", branch: "tokama/abc" };
+    const done = { ...task, state: "done", outcome: { kind: "done", commits: [commit] }, finish: undefined } as unknown as ItemRecord;
+    const { bridge, push } = fakeBridge([done]);
+    await renderDrawer(bridge, done.id);
+    expect(text(".after")).toContain("Committed · 3f9c2e1");
+    await push({ ...done, finish: { worktreeRemoved: true, at: Date.UTC(2026, 10, 25, 14, 58), merged: { baseBranch: "main", commit: commit.commit } } } as unknown as ItemRecord);
+    expect($(".after")).toBeNull();
+    expect($$(".finish-ended")).toHaveLength(1);
+    expect(text(".finish-ended-body")).toMatch(/^merged: Merged into main · 3f9c2e1 · \d\d:\d\dWorktree and branch removed$/);
   });
 });
 
@@ -1300,6 +1314,16 @@ describe("ItemDrawer full view", () => {
     await click(tab("Steps"));
     await show(bridge, plan.id, { onExpand: vi.fn(), ...full(vi.fn(), false) });
     expect(selected()).toBe("Steps");
+  });
+
+  it("shows Output in the full view for an approval whose diff lists no changed file", async () => {
+    const empty = { ...plan, id: "item_1a2b3c4d-0022-4a1b-8c1d-000000000022", decision: { ...plan.decision!, hasDiff: true } } as ItemRecord;
+    const fake = bridgeFor([empty]);
+    const base = fake.query.getMockImplementation()!;
+    fake.query.mockImplementation(async (q: { type: string; itemId?: string; stepIndex?: number }) => (q.type === "decision_diff" ? { ok: true, data: { ...diff, files: [], moreFiles: 0 } } : base(q)));
+    await show(fake.bridge, empty.id, { onExpand: vi.fn(), ...full() });
+    expect(selected()).toBe("Output");
+    expect($$('[role="tab"]').map((el) => el.textContent)).toEqual(["Steps", "Output", "Checks", "Log"]);
   });
 
   it("leaves focus where it is when the view switches without its button going away", async () => {

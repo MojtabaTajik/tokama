@@ -820,18 +820,23 @@
 
 .after {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  gap: 10px;
   margin: 0 0 12px;
-  padding: 10px 12px;
+  padding: 12px 14px;
   border: 1px solid var(--hairline);
   border-radius: 6px;
   background: var(--panel);
 }
 
-.after-head {
+.after-body {
   display: flex;
-  gap: 8px;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.after-head {
   margin: 0;
   color: var(--text);
 }
@@ -845,7 +850,7 @@
 }
 
 .after-text {
-  margin: 0 0 0 20px;
+  margin: 0;
   font-size: 12.5px;
   color: var(--text-2);
   overflow-wrap: anywhere;

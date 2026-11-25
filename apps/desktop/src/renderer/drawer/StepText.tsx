@@ -127,8 +127,8 @@ function inline(text: string, depth = 0): ReactNode[] {
       }
     } else if (char === "*" && depth < MAX_DEPTH) {
       const mark = text.startsWith("**", at) ? "**" : "*";
-      // An opening mark is followed by a word; a lone * must not sit inside a word (2*3*4).
-      const opens = !isSpace(text[at + mark.length]) && text[at + mark.length] !== "*" && (mark === "**" || !/[\p{L}\p{N}]/u.test(text[at - 1] ?? ""));
+      // An opening mark is followed by a word and does not sit inside one (2*3*4, x**2).
+      const opens = !isSpace(text[at + mark.length]) && text[at + mark.length] !== "*" && !/[\p{L}\p{N}]/u.test(text[at - 1] ?? "");
       const end = opens && !spent.has(mark) ? closer(text, mark, at + mark.length) : -1;
       if (opens && end < 0) spent.add(mark);
       if (end >= 0) {

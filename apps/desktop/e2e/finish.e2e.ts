@@ -178,7 +178,7 @@ flow(
     expect(git(repoPath, "worktree", "list").split("\n").filter((entry) => entry.includes(".tokama/wt"))).toHaveLength(1);
     expect(git(repoPath, "branch", "--list", "tokama/*").split("\n").filter(Boolean)).toHaveLength(1);
     await row(page, MERGE_TITLE).click();
-    await expect.poll(() => drawer(page).locator(".finish-ended").innerText(), { message: "the merged end" }).toMatch(/Merged into main · [0-9a-f]{7}\s+Worktree and branch removed · \d\d:\d\d/);
+    await expect.poll(() => drawer(page).locator(".finish-ended").innerText(), { message: "the merged end" }).toMatch(/Merged into main · [0-9a-f]{7} · \d\d:\d\d\s+Worktree and branch removed/);
     await screenshot("finish-5-merged");
 
     await row(page, DISCARD_TITLE).click();

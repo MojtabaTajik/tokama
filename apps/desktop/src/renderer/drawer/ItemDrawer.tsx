@@ -258,8 +258,8 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
   // A step you approve shows what its agent wrote, from the latest attempt, for each new question.
   const approval = item?.state === "needs_you" && item.decision?.kind === "plan_approval" ? item.decision : undefined;
   // The full view's decision bar has no room for the output: each new question to approve one,
-  // and each entry into the full view with one waiting, shows the Output tab.
-  const outputAsked = full && approval !== undefined && approval.hasDiff !== true ? approval.id : undefined;
+  // and each entry into the full view with one waiting, shows the Output tab (unless it has changed files to show on Diff).
+  const outputAsked = full && approval !== undefined && !carriesDiff(diff) ? approval.id : undefined;
   const outputShownFor = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (outputAsked !== undefined && outputShownFor.current !== outputAsked) setTab("Output");
@@ -536,16 +536,17 @@ function NeedsYou({ item, setup, decision, busy, output, full, changedFiles, onS
  */
 function After({ item, setup }: { readonly item: ItemRecord; readonly setup: Setup | undefined }) {
   const commit = item.outcome?.commits?.[0];
-  if (item.state === "done" && commit !== undefined) {
+  // After a merge the branch is gone: the Merged card in Finish says it all.
+  if (item.state === "done" && commit !== undefined && item.finish?.merged === undefined) {
     return (
       <section className="after" data-tone="pass" aria-label={TEXT.committed(commit.commit.slice(0, 7))}>
-        <p className="after-head">
-          <span className="mark" aria-hidden="true">
-            ✓
-          </span>
-          {TEXT.committed(commit.commit.slice(0, 7))}
-        </p>
-        <p className="after-text">{TEXT.committedLine(item.title, commit.branch)}</p>
+        <span className="mark" aria-hidden="true">
+          ✓
+        </span>
+        <div className="after-body">
+          <p className="after-head">{TEXT.committed(commit.commit.slice(0, 7))}</p>
+          <p className="after-text">{TEXT.committedLine(item.title, commit.branch)}</p>
+        </div>
       </section>
     );
   }
@@ -554,13 +555,13 @@ function After({ item, setup }: { readonly item: ItemRecord; readonly setup: Set
   const line = TEXT.makingChanges(stepAgent(step, setup?.agents ?? []).name, runLine(step));
   return (
     <section className="after" data-tone="live" aria-label={line}>
-      <p className="after-head">
-        <span className="mark" aria-hidden="true">
-          ●
-        </span>
-        {line}
-      </p>
-      <p className="after-text">{TEXT.yourNote(step.changesNote)}</p>
+      <span className="mark" aria-hidden="true">
+        ●
+      </span>
+      <div className="after-body">
+        <p className="after-head">{line}</p>
+        <p className="after-text">{TEXT.yourNote(step.changesNote)}</p>
+      </div>
     </section>
   );
 }
