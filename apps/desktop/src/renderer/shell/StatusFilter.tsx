@@ -3,7 +3,7 @@
 // end the search: its result count, the field, and a clear button (Esc clears too).
 import type { ItemRecord } from "@tokama/core";
 import { type Filter, filterCounts, hasRange, type Range, RANGES, STATUS_FILTERS, type StatusFilter as Status } from "../model.js";
-import { SearchIcon } from "./icons.js";
+import { SearchIcon } from "../ui/icons.js";
 
 const TEXT = {
   group: "Status filter",

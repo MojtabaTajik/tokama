@@ -11,7 +11,7 @@ import type { AgentTarget } from "../settings/describe.js";
 import type { Layout, ViewState } from "../useViewState.js";
 import { ConnectionFailure, startingWords } from "./ConnectionStatus.js";
 import { FirstLaunch, NoWork } from "./EmptyStates.js";
-import { RepoIcon } from "./icons.js";
+import { RepoIcon } from "../ui/icons.js";
 import { TemplateIcon } from "./TemplateIcon.js";
 
 const TEXT = {

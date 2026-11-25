@@ -25,7 +25,7 @@ import {
   visibleItems,
 } from "../model.js";
 import type { AgentTarget } from "../settings/describe.js";
-import { SearchIcon } from "../shell/icons.js";
+import { SearchIcon } from "../ui/icons.js";
 import { StatusFilter } from "../shell/StatusFilter.js";
 import type { Layout } from "../useViewState.js";
 import { ItemList } from "./ItemList.js";

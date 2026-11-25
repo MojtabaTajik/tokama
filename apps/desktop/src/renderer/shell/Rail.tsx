@@ -12,7 +12,7 @@ import { AI_CLIS, type CliIssue, type HealthProblem } from "../model.js";
 import { AttentionPopup } from "./Attention.js";
 import { InsightsTip } from "./InsightsTip.js";
 import { useTip } from "./useTip.js";
-import { AttentionIcon, BoardIcon, InboxIcon, InsightsIcon, PanelIcon, SettingsIcon, UserIcon } from "./icons.js";
+import { AttentionIcon, BoardIcon, InboxIcon, InsightsIcon, PanelIcon, SettingsIcon, UserIcon } from "../ui/icons.js";
 
 const TEXT = {
   rail: "App",

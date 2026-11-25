@@ -9,7 +9,7 @@ import { type Badge, badgesOf, bucketOf, inRange, inView, needsYouCount } from "
 import { RemoveRepoDialog } from "../repos/RemoveRepoDialog.js";
 import { RepoDialog } from "../repos/RepoDialog.js";
 import { ConnectionFailure } from "../shell/ConnectionStatus.js";
-import { RepoIcon } from "../shell/icons.js";
+import { RepoIcon } from "../ui/icons.js";
 import { useRepoItems } from "./useRepoItems.js";
 
 const TEXT = {

@@ -14,7 +14,7 @@ import { AgentLabel } from "../agent/AgentLabel.js";
 import { agentInfo } from "../agent/agent-info.js";
 import type { AgentTarget } from "../settings/describe.js";
 import { itemElement } from "../list/useFocusFollow.js";
-import { CollapseIcon, ExpandIcon, RepoIcon } from "../shell/icons.js";
+import { CollapseIcon, ExpandIcon, RepoIcon } from "../ui/icons.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { changesRepo } from "./attempt-view.js";
 import { ChecksTab } from "./ChecksTab.js";

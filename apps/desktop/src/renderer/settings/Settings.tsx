@@ -6,7 +6,7 @@
 import type { Setup } from "@tokama/core";
 import { useState, type ComponentType } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
-import { AgentIcon, BellIcon, BookIcon, PulseIcon, TemplateListIcon, TerminalIcon } from "../shell/icons.js";
+import { AgentIcon, BellIcon, BookIcon, PulseIcon, TemplateListIcon, TerminalIcon } from "../ui/icons.js";
 import { TemplatesPage } from "../templates/TemplatesPage.js";
 import { AgentsPage } from "./AgentsPage.js";
 import type { AgentTarget } from "./describe.js";

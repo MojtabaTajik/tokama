@@ -9,7 +9,7 @@ import { RepoMenu } from "../repos/RepoMenu.js";
 import { ALL_WORK, type Badge, badgesOf, inView, needsYouCount, sameView, type View, viewKey } from "../model.js";
 import type { Section } from "../useViewState.js";
 import { EngineHealth } from "./ConnectionStatus.js";
-import { AllWorkIcon, RepoIcon } from "./icons.js";
+import { AllWorkIcon, RepoIcon } from "../ui/icons.js";
 import { TemplateIcon } from "./TemplateIcon.js";
 
 const TEXT = {

@@ -8,7 +8,7 @@
 // files over the engine's line limit and anything else left out say so and name the worktree.
 import type { Decision, DiffFile, ItemDiff } from "@tokama/core";
 import { type ReactNode, useEffect, useState } from "react";
-import { ExpandIcon } from "../shell/icons.js";
+import { ExpandIcon } from "../ui/icons.js";
 import type { TokamaBridge } from "../../shared/bridge.js";
 
 /** The engine shows the hunks of files with up to this many changed lines. */
