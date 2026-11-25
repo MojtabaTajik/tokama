@@ -61,3 +61,46 @@ flow("a tab chosen with the mouse shows no focus ring; one reached with the arro
   await page.getByRole("tab", { name: "Usage", selected: true }).waitFor();
   expect(await ring()).toEqual({ name: "Usage", outline: "solid" });
 });
+
+flow("on a page that scrolls, the Machine tab keeps equal gaps left and right, with no content under the scroll bar", async ({ page, resize, screenshot }) => {
+  for (const [name, width] of [["default", 1000], ["narrow", 760]] as const) {
+    await resize(width, 600);
+    await page.locator('.rail button[aria-label="Insights"]').click();
+    await page.getByRole("tab", { name: "Machine" }).click();
+    await expect.poll(() => page.locator("svg.mc-svg").count(), { message: "CPU and memory charts" }).toBe(2);
+    await expect.poll(() => page.locator(".mc-table tbody .mc-item").count()).toBeGreaterThan(0);
+    const body = page.locator(".mc-body");
+    expect(await body.evaluate((el) => el.scrollHeight > el.clientHeight), `${name}: the page scrolls`).toBe(true);
+    await page.mouse.move(0, 0);
+    await screenshot(`insights-machine-${name}`);
+    const gaps = await page.evaluate(() => {
+      const body = document.querySelector(".mc-body")!.getBoundingClientRect();
+      // The scroller's inner box: from its left edge to the left of its scroll bar.
+      const inner = document.querySelector(".mc-body") as HTMLElement;
+      const left = body.left + inner.clientLeft;
+      const right = left + inner.clientWidth;
+      const parts = [".mc-meters", ".mc-meter:nth-child(3)", ".mc-plot", ".mc-axis", ".ins-table-wrap"].map((selector) => {
+        const el = document.querySelector(selector);
+        if (el === null) throw new Error(`${selector} is not on the page`);
+        const at = el.getBoundingClientRect();
+        return { selector, left: at.left - left, right: right - at.right };
+      });
+      // The table may scroll sideways inside its wrapper: its last column must be inside the wrapper, scrolled to the end.
+      const wrap = document.querySelector(".ins-table-wrap") as HTMLElement;
+      wrap.scrollLeft = wrap.scrollWidth;
+      const wrapRight = wrap.getBoundingClientRect().right;
+      const labels = [...document.querySelectorAll(".mc-top, .mc-tick, .mc-table th:last-child, .mc-table td:last-child")].map((el) => {
+        const at = el.getBoundingClientRect();
+        const limit = el.closest(".ins-table-wrap") === null ? right : wrapRight - wrap.offsetWidth + wrap.clientWidth;
+        return { text: (el.textContent ?? "").trim(), inside: at.right <= limit + 0.5 };
+      });
+      // From the page's left edge to the first section, and from the section to the window's right edge: the scroll bar is part of that gap.
+      const page = document.querySelector(".insights-page")!.getBoundingClientRect();
+      const section = document.querySelector(".mc-body .ins-section")!.getBoundingClientRect();
+      return { parts, labels, section: { left: section.left - page.left, right: window.innerWidth - section.right } };
+    });
+    for (const part of gaps.parts) expect(part.right, `${name}: ${part.selector} ends inside the content box`).toBeGreaterThanOrEqual(-0.5);
+    expect(gaps.labels.filter((label) => !label.inside), `${name}: labels cut`).toEqual([]);
+    expect(Math.abs(gaps.section.right - gaps.section.left), `${name}: section gaps left ${gaps.section.left}, right ${gaps.section.right}`).toBeLessThanOrEqual(2);
+  }
+});

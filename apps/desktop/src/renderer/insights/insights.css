@@ -8,7 +8,11 @@
 .ins-body {
   flex: 1 1 auto;
   overflow: auto;
-  padding: var(--space-16) 0 var(--space-28);
+  /* The page's right padding is 22px: the scroll area takes it over, so its scroll bar sits at the window's
+     edge, and keeps 14px of its own plus the 8px bar (always reserved): equal gaps on both sides. */
+  margin-right: calc(-1 * var(--space-22));
+  padding: var(--space-16) var(--space-14) var(--space-28) 0;
+  scrollbar-gutter: stable;
 }
 
 .ins-section {
