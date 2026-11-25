@@ -30,7 +30,9 @@ async function main(): Promise<number> {
   const root = new AbortController();
   for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => root.abort());
 
-  const started = await startEngine({ dir, home, signal: root.signal, log, sample });
+  // Claude Code's session logs, read only for the "all on this Mac" usage view; never in sample mode.
+  const claudeLogs = sample ? undefined : join(homedir(), ".claude", "projects");
+  const started = await startEngine({ dir, home, signal: root.signal, log, sample, ...(claudeLogs !== undefined && { claudeLogs }) });
   if (!started.ok) {
     log(started.error.message);
     if (started.error.code === "stopped") return 0;

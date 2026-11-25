@@ -2,7 +2,7 @@
 // up the same way on every start (a seeded generator, days in local time), and plan readings that
 // show every state the Insights page draws: a CLI well inside its limits, one near its weekly
 // limit, and a local model host without a plan.
-import type { AgentCallUsage, CliPlan, ItemId, ItemRecord, PlanReading, Setup, UsageRow } from "@tokama/core";
+import { type AgentCallUsage, type CliPlan, type ItemId, type ItemRecord, localDate, type PlanReading, pricedEntry, type Setup, type UsageEntry, type UsageRow } from "@tokama/core";
 
 const MINUTE = 60_000;
 const DAYS = 90;
@@ -95,7 +95,8 @@ export function sampleUsageRows(setup: Setup, items: readonly ItemRecord[], now:
             tokens,
             ...(cliId === "claude-code" && { models: { [CLAUDE_MODEL]: tokens } }),
           };
-          rows.push({ itemId, title, templateId: template.id, call });
+          const repo = setup.repos[pick % Math.max(1, setup.repos.length)];
+          rows.push({ itemId, title, templateId: template.id, ...(repo !== undefined && { repoId: repo.id }), call });
         }
       }
     }
@@ -129,4 +130,42 @@ export function sampleOtherPlans(now: number): CliPlan[] {
     },
     { cliId: "ollama", windows: [], note: "Local models have no plan limit." },
   ];
+}
+
+/**
+ * Claude Code's sample usage from its own logs: more than Tokama ran, on three models, in the
+ * sample repos and outside them, every day of the last 90.
+ */
+export function sampleLogEntries(setup: Setup, now: number): UsageEntry[] {
+  const today = new Date(now);
+  const entries: UsageEntry[] = [];
+  const models = [
+    { model: "claude-opus-5-5", scale: 1 },
+    { model: "claude-sonnet-5-5", scale: 0.6 },
+    { model: "claude-haiku-5-5", scale: 0.2 },
+  ];
+  for (let daysAgo = DAYS - 1; daysAgo >= 0; daysAgo--) {
+    const next = random(daysAgo * 104_729 + 3);
+    const day = localDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() - daysAgo).getTime());
+    for (const [n, { model, scale }] of models.entries()) {
+      const repoId = n === 2 ? null : (setup.repos[n % Math.max(1, setup.repos.length)]?.id ?? null);
+      const messages = Math.round((40 + next() * 260) * scale);
+      entries.push(
+        pricedEntry({
+          day,
+          model,
+          cliId: "claude-code",
+          repoId,
+          calls: messages,
+          tokens: {
+            input: messages * Math.round(5 + next() * 40),
+            output: messages * Math.round(200 + next() * 900),
+            cacheRead: messages * Math.round(20_000 + next() * 60_000),
+            cacheWrite: messages * Math.round(500 + next() * 3_000),
+          },
+        }),
+      );
+    }
+  }
+  return entries;
 }

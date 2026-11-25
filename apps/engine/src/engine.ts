@@ -75,7 +75,8 @@ import { SampleEngine } from "./sample/sample.js";
 import { agentsFor, loadConfig, startProblem, stepProblems } from "./real/config.js";
 import { sampleTemplateLoads } from "./sample/templates.js";
 import { sampleMachineReport } from "./sample/machine.js";
-import { sampleClaudePlan, sampleOtherPlans, sampleUsageRows } from "./sample/usage.js";
+import { sampleClaudePlan, sampleLogEntries, sampleOtherPlans, sampleUsageRows } from "./sample/usage.js";
+import { ClaudeLogs } from "./claude-logs.js";
 import { claudePlanSources, type PlanSources, UsageService } from "./usage.js";
 import { MemoryItemStore } from "./store.js";
 import { templateDetail, templateEntries, type TemplateFiles } from "./templates.js";
@@ -110,6 +111,11 @@ export interface EngineOptions {
   readonly planSources?: PlanSources;
   /** Where the machine query reads memory and processes. Default: this OS's source, none on an OS without one. */
   readonly machineSource?: MachineSource;
+  /**
+   * Real mode: Claude Code's projects folder (`~/.claude/projects`), whose session logs the `all`
+   * usage scope reads. Absent: the logs are never read.
+   */
+  readonly claudeLogs?: string;
   /** Default: the system clock. */
   readonly clock?: Clock;
   /** A connection that sends no hello within this time is closed. Default 5 s. */
@@ -239,12 +245,33 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   // Stops a usage request in flight when the engine shuts down.
   const usageAbort = new AbortController();
   const index = storage?.index;
+  const tokamaHome = options.home;
+  const claudeLogs =
+    index !== undefined && tokamaHome !== undefined && options.claudeLogs !== undefined
+      ? new ClaudeLogs({
+          index,
+          root: options.claudeLogs,
+          repos: async () => {
+            const loaded = await loadRepos({ tokamaHome });
+            return loaded.ok ? loaded.value : [];
+          },
+          clock,
+          onChange: usageChanged,
+          log,
+          signal: usageAbort.signal,
+        })
+      : undefined;
   const usage = new UsageService(
     sample
       ? {
           rows: () => sampleUsageRows(sample.setup, store.list(), clock.now()),
           sources: { request: async () => ({ ok: true, value: sampleClaudePlan(clock.now()) }) },
           otherClis: sampleOtherPlans,
+          logs: {
+            refresh: () => {},
+            status: () => ({ state: "ready", filesDone: 412, filesTotal: 412, asOf: clock.now() - 40_000 }),
+            entries: () => sampleLogEntries(sample.setup, clock.now()),
+          },
           clock,
           onChange: usageChanged,
         }
@@ -252,6 +279,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
           rows: (since) => index?.usageRows(since) ?? [],
           ...(index !== undefined && { samples: { get: (cliId) => index.planSample(cliId), save: (cliId, reading) => index.savePlanSample(cliId, reading) } }),
           sources: options.planSources ?? claudePlanSources(usageAbort.signal),
+          ...(claudeLogs !== undefined && { logs: claudeLogs }),
           clock,
           onChange: usageChanged,
           log,
@@ -426,7 +454,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
         return { ok: true, data: detail satisfies TemplateDetailResult };
       }
       case "usage":
-        return { ok: true, data: (await usage.report(query.range)) satisfies UsageResult };
+        return { ok: true, data: (await usage.report(query.range, query.scope)) satisfies UsageResult };
       case "machine": {
         if (sample !== undefined) return { ok: true, data: sampleMachineReport(store.list(), clock.now()) satisfies MachineResult };
         if (machine === undefined) return { ok: false, error: { code: "not_implemented", message: "this engine cannot read the machine on this operating system" } };
@@ -533,7 +561,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     unsubscribe();
     usageRecorded = () => {};
     usageAbort.abort();
-    await withDeadline(Promise.allSettled([...inFlight, usage.settled(), machine?.close()]), shutdownTimeoutMs);
+    await withDeadline(Promise.allSettled([...inFlight, usage.settled(), machine?.close(), claudeLogs?.settled()]), shutdownTimeoutMs);
     const allClosed = new Promise<void>((resolve) => {
       onAllClosed = resolve;
       if (connections.size === 0) resolve();

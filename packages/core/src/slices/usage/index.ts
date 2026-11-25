@@ -2,3 +2,4 @@
 export { callCost, priceOf, PRICES_AS_OF, tokenCost } from "./prices.js";
 export { localDate, rangeStart, summarizeUsage, totalTokens, type SummaryInput, type UsageRow } from "./summary.js";
 export { choosePlan, FRESH_MS, type PlanCandidate, type PlanReading } from "./plan.js";
+export { breakdown, callEntries, pricedEntry, type Breakdown, type UsageEntry } from "./breakdown.js";

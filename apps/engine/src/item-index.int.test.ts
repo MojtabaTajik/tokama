@@ -156,9 +156,9 @@ describe("ItemIndex", () => {
     spend(store, item, 2);
     expect(added).toEqual([0, 1, 1]);
     const rows = live.usageRows(0);
-    expect(rows.map((row) => [row.itemId, row.title, row.templateId, row.call.tokens.input])).toEqual([
-      [item.id, "Fix it", REF, 1],
-      [item.id, "Fix it", REF, 2],
+    expect(rows.map((row) => [row.itemId, row.title, row.templateId, row.repoId, row.call.tokens.input])).toEqual([
+      [item.id, "Fix it", REF, "orders-api", 1],
+      [item.id, "Fix it", REF, "orders-api", 2],
     ]);
     expect(live.usageRows(T0 + 2 * 60_000)).toHaveLength(1);
 
@@ -190,8 +190,8 @@ describe("ItemIndex", () => {
     expect(statSync(file).mode & 0o777).toBe(0o600);
 
     const raw = new DatabaseSync(file);
-    expect(raw.prepare("PRAGMA user_version").get()).toEqual({ user_version: 2 });
-    expect(raw.prepare("SELECT schema_version FROM items").all()).toEqual([{ schema_version: 2 }]);
+    expect(raw.prepare("PRAGMA user_version").get()).toEqual({ user_version: 3 });
+    expect(raw.prepare("SELECT schema_version FROM items").all()).toEqual([{ schema_version: 3 }]);
     raw.exec("PRAGMA user_version = 99");
     raw.close();
 
@@ -383,5 +383,48 @@ describe("engine start with a home folder", () => {
     const second = await startEngine({ dir, home: join(dirname(home), `${home.split("/").pop()}-second`) });
     expect(second).toMatchObject({ ok: false, error: { code: "already_running" } });
     expect(() => statSync(join(home, "tokama.db"))).toThrow();
+  });
+});
+
+describe("ItemIndex: Claude Code's usage from its logs", () => {
+  const message = (key: string, at: number, output: number, model = "claude-opus-5-5", project = "p1") => ({ key, at, model, project, tokens: { input: 10, output, cacheRead: 100, cacheWrite: 5 } });
+  // Local times, so the days do not depend on the machine's time zone.
+  const day1 = new Date(2026, 10, 23, 9).getTime();
+  const day2 = new Date(2026, 10, 24, 9).getTime();
+
+  it("counts a message once across logs and reads, with its largest counts", () => {
+    const index = openIndex();
+    index.saveLocalFile("f1", { ino: 1, offset: 10 }, [message("req_1", day1, 5), message("req_1", day1 + 1, 400), message("req_2", day1, 50)]);
+    // The same message in another log, and the first log read again from the start.
+    index.saveLocalFile("f2", { ino: 2, offset: 20 }, [message("req_2", day1, 50)]);
+    index.saveLocalFile("f1", { ino: 1, offset: 10 }, [message("req_1", day1, 5)]);
+    expect(index.localDays(0)).toEqual([{ day: "2026-11-23", model: "claude-opus-5-5", project: "p1", tokens: { input: 20, output: 450, cacheRead: 200, cacheWrite: 10 }, messages: 2 }]);
+    expect(index.localMark("f1")).toEqual({ ino: 1, offset: 10 });
+    expect(index.localMark("f3")).toBeUndefined();
+  });
+
+  it("sums per local day, model and project, and keeps it across an item rebuild", () => {
+    const index = openIndex();
+    index.saveLocalFile("f1", { ino: 1, offset: 1 }, [message("a", day1, 1), message("b", day2, 2), message("c", day2, 3, "claude-sonnet-5-5"), message("d", day2, 4, "claude-opus-5-5", "p2")]);
+    index.rebuild([create(openStore(), "Fix it")]);
+    expect(index.localDays(0).map((row) => [row.day, row.model, row.project, row.tokens.output, row.messages])).toEqual([
+      ["2026-11-23", "claude-opus-5-5", "p1", 1, 1],
+      ["2026-11-24", "claude-opus-5-5", "p1", 2, 1],
+      ["2026-11-24", "claude-opus-5-5", "p2", 4, 1],
+      ["2026-11-24", "claude-sonnet-5-5", "p1", 3, 1],
+    ]);
+    expect(index.localDays(day2).map((row) => row.day)).not.toContain("2026-11-23");
+  });
+
+  it("forgets the marks of logs that are gone and messages older than the range", () => {
+    const index = openIndex();
+    index.saveLocalFile("f1", { ino: 1, offset: 1 }, [message("a", day1, 1)]);
+    index.saveLocalFile("f2", { ino: 2, offset: 2 }, [message("b", day2, 2)]);
+    index.pruneLocal(undefined, day2);
+    expect(index.localDays(0).map((row) => row.day)).toEqual(["2026-11-24"]);
+    expect(index.localMark("f1")).toEqual({ ino: 1, offset: 1 });
+    index.pruneLocal(["f2"], day2);
+    expect(index.localMark("f1")).toBeUndefined();
+    expect(index.localMark("f2")).toEqual({ ino: 2, offset: 2 });
   });
 });

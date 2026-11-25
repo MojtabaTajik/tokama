@@ -1,6 +1,7 @@
 // The usage report: the recorded calls of the range rolled up by day, workflow and item, with
 // estimated costs. Days are the engine's local days, the same machine the desktop app runs on.
-import type { AgentCallUsage, CliPlan, ItemId, TokenUsage, UsageRange, UsageReport } from "../../kernel/schemas/index.js";
+import type { AgentCallUsage, CliPlan, ItemId, LogScan, RepoId, TokenUsage, UsageRange, UsageReport, UsageScope } from "../../kernel/schemas/index.js";
+import { breakdown, callEntries, type UsageEntry } from "./breakdown.js";
 import { callCost, PRICES_AS_OF } from "./prices.js";
 
 /** One recorded call with the item it belongs to. */
@@ -9,6 +10,8 @@ export interface UsageRow {
   readonly title: string;
   /** The workflow key exactly as the item record carries it. */
   readonly templateId: string;
+  /** The item's first repo. */
+  readonly repoId?: RepoId;
   readonly call: AgentCallUsage;
 }
 
@@ -17,6 +20,14 @@ export interface SummaryInput {
   readonly range: UsageRange;
   readonly now: number;
   readonly clis: readonly CliPlan[];
+  /**
+   * With a scope, the report also has per-day totals, the token summary and the model and repo
+   * tables for it. In the `all` scope, `logs` holds Claude Code's usage from its own logs, which
+   * already include the Claude Code calls Tokama ran: those rows are not counted again.
+   */
+  readonly scope?: UsageScope;
+  readonly logs?: readonly UsageEntry[];
+  readonly scan?: LogScan;
 }
 
 const DAY_ITEMS = 5;
@@ -45,7 +56,7 @@ export function rangeStart(now: number, range: UsageRange): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() - (range - 1)).getTime();
 }
 
-export function summarizeUsage({ rows, range, now, clis }: SummaryInput): UsageReport {
+export function summarizeUsage({ rows, range, now, clis, scope, logs = [], scan }: SummaryInput): UsageReport {
   const start = rangeStart(now, range);
   const inRange = rows.filter((row) => row.call.endedAt >= start && row.call.endedAt <= now);
 
@@ -97,7 +108,8 @@ export function summarizeUsage({ rows, range, now, clis }: SummaryInput): UsageR
   }
 
   const byTokens = <T extends { tokens: number }>(a: T, b: T) => b.tokens - a.tokens;
-  return {
+  const totals = { tokens, costUsd, calls: inRange.length, unpricedCalls };
+  const report: UsageReport = {
     range,
     asOf: now,
     pricesAsOf: PRICES_AS_OF,
@@ -114,6 +126,28 @@ export function summarizeUsage({ rows, range, now, clis }: SummaryInput): UsageR
       .sort((a, b) => totalTokens(b.tokens) - totalTokens(a.tokens))
       .slice(0, TOP_ITEMS)
       .map(({ agents, ...item }) => ({ ...item, agents: [...agents].map(([agentId, cliId]) => ({ agentId: agentId as AgentCallUsage["agentId"], cliId })) })),
-    totals: { tokens, costUsd, calls: inRange.length, unpricedCalls },
+    totals,
+  };
+  if (scope === undefined) return report;
+
+  const days = new Set(dates);
+  const entries =
+    scope === "tokama"
+      ? inRange.flatMap((row) => callEntries(row, localDate(row.call.endedAt)))
+      : [...logs.filter((entry) => days.has(entry.day)), ...inRange.filter((row) => row.call.cliId !== "claude-code").flatMap((row) => callEntries(row, localDate(row.call.endedAt)))];
+  const parts = breakdown(entries);
+  return {
+    ...report,
+    scope,
+    days: report.days.map((day) => {
+      const part = parts.days.get(day.date);
+      return { ...day, tokens: part?.tokens ?? 0, costUsd: part?.costUsd ?? null };
+    }),
+    // Tokama's own totals keep each call's cost exactly as the call has it.
+    totals: scope === "tokama" ? totals : parts.totals,
+    tokenSummary: parts.tokenSummary,
+    models: parts.models,
+    repos: parts.repos,
+    ...(scan !== undefined && { scan }),
   };
 }
