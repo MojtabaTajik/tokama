@@ -62,10 +62,11 @@ flow("closes the rail tooltip when Insights opens and keeps it closed there", as
   await page.locator(".main-header h1", { hasText: "Insights" }).waitFor();
   const box = await insights.boundingBox();
   if (box === null) throw new Error("the Insights button has no box");
-  // The pointer stays near the rail and moves a little, as a hand does.
-  for (let i = 0; i < 6; i++) {
-    await page.mouse.move(box.x + box.width / 2 + (i % 2 === 0 ? 3 : -3), box.y + box.height / 2);
-    await page.waitForTimeout(100);
+  // The pointer leaves the button and comes back, as an edge of the button sends it.
+  for (let i = 0; i < 4; i++) {
+    await page.mouse.move(box.x + box.width + 120, box.y + box.height / 2);
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.waitForTimeout(300);
     expect(await tip.isVisible(), "the tooltip stays closed over the Insights page").toBe(false);
   }
 });

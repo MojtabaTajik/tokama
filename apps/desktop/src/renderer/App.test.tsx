@@ -127,6 +127,20 @@ describe("App shell", () => {
     }
   });
 
+  it("leaves focus on the rail button that hid the drawer, also after a round trip", async () => {
+    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
+    await click($(".pl-row")!);
+    const insights = $('.rail button[aria-label="Insights"]') as HTMLElement;
+    for (let trip = 0; trip < 2; trip++) {
+      insights.focus();
+      await click(insights);
+      expect($(".drawer")).toBeNull();
+      expect(document.activeElement, `trip ${trip}`).toBe(insights);
+      await click($('.rail button[aria-label="Board"]')!);
+      expect($(".drawer")).not.toBeNull();
+    }
+  });
+
   it("opens the Insights page from the rail and goes back with Board", async () => {
     await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
     await click($('.rail button[aria-label="Insights"]')!);

@@ -118,9 +118,11 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
     if (request?.notice !== undefined) setNotice({ tone: "warn", text: request.notice });
   }, [request?.seq, request?.notice]);
   // On close, focus goes back to the opener, if it is still on the screen; if the item moved to
-  // another group or column meanwhile, to the item's current row or card.
+  // another group or column meanwhile, to the item's current row or card. Focus that already sits
+  // on another control (the rail button that hid the drawer) stays there.
   useEffect(
     () => () => {
+      if (document.activeElement !== null && document.activeElement !== document.body) return;
       const target = opener.current;
       if (target instanceof HTMLElement && target.isConnected) target.focus();
       else itemElement(currentId.current)?.focus();

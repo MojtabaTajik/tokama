@@ -341,14 +341,6 @@
   background: var(--raised);
 }
 
-.drawer-actions .choice.danger:hover:not(:disabled) {
-  border-color: var(--fail);
-}
-
-.link.danger {
-  color: var(--fail);
-}
-
 .drawer-confirm {
   display: flex;
   flex-direction: column;

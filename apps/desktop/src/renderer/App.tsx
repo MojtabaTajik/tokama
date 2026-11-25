@@ -62,6 +62,10 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   // finish command opens it with the refusal. `seq` makes each request new.
   const [rowRequest, setRowRequest] = useState<{ itemId: string; seq: number; discard?: true; notice?: string } | undefined>(undefined);
   const requests = useRef(0);
+  // A row's request is for one showing of the drawer: leaving the work views drops it, so the drawer does not repeat it on return.
+  useEffect(() => {
+    if (page !== "board" && page !== "needs-you") setRowRequest(undefined);
+  }, [page]);
   const selectItem = useCallback((itemId: string | undefined) => {
     setRowRequest(undefined);
     setSelectedItemId(itemId);
@@ -206,8 +210,8 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
         }}
         setup={setup}
         onSelectItem={(itemId) => {
-          // Insights and About hide the drawer: leave them, so the chosen item shows now.
-          if (page === "insights" || aboutOpen) setPage("board");
+          // About hides the drawer: leave it, so the chosen item shows now.
+          if (aboutOpen) setPage("board");
           setSelectedItemId(itemId);
         }}
         onCliSettings={() => {
