@@ -96,6 +96,31 @@ describe("redactText", () => {
     expect(redactText("token: 'abc123secret'", none)).toBe("token: '<token>'");
   });
 
+  it("removes values whose key names a secret, and long keys after =", () => {
+    const cases: [string, string][] = [
+      ["DB_PASSWORD=hunter2", "DB_PASSWORD=<token>"],
+      [`{"client_secret":"zzz","refresh_token":"r1"}`, `{"client_secret":"<token>","refresh_token":"<token>"}`],
+      ["STRIPE_KEY=rk_live_51HabcdefghijklmnopqrstuvWXYZ0123", "STRIPE_KEY=<token>"],
+      ["GOOGLE_API_KEY=AIzaSyA1b2c3d4e5f6g7h8i9j0kLmNoPqRsTuV", "GOOGLE_API_KEY=<token>"],
+      ["AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY", "AWS_SECRET_ACCESS_KEY=<token>"],
+      [`"password":"p@ss w0rd"`, `"password":"<token>"`],
+      ["--api-key=AbCdEf and GITHUB_TOKEN=abcd1234 private_key: 'x y'", "--api-key=<token> and GITHUB_TOKEN=<token> private_key: '<token>'"],
+      ["credentials = s3cr3t", "credentials = <token>"],
+    ];
+    for (const [input, expected] of cases) expect(redactText(input, none)).toBe(expected);
+    for (const fragment of ["hunter2", "zzz", "r1\"", "rk_live", "AIza", "wJalr", "p@ss", "w0rd", "s3cr3t"]) {
+      expect(cases.map(([input]) => redactText(input, none)).join("\n")).not.toContain(fragment);
+    }
+  });
+
+  it("stays fast on long runs of secret-looking keys", () => {
+    const started = performance.now();
+    redactText("password=".repeat(3500), none);
+    redactText(`${"a".repeat(31_000)}@`, none);
+    redactText(`${"secret_".repeat(4000)}x`, none);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
   it("removes paths after a placeholder, and never keeps a path that climbs out of a code root", () => {
     expect(redactText("<path>/acme/secret.ts and cmd >/Volumes/Acme/out.txt", none)).toBe("<path> and cmd ><path>");
     expect(redactText("at a (/opt/tokama/dist/../../../work/acme-corp/orders.js:1:1)", { ...none, codeRoots: ["/opt/tokama"] })).toBe("at a (<path>:1:1)");

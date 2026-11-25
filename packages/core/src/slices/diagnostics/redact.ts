@@ -49,8 +49,10 @@ const TOKEN_SHAPES = [
   /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g,
 ];
 const BEARER = /\b(Bearer|Basic|token)\s+[A-Za-z0-9._~+/=-]{8,}/gi;
-// Also quoted, as in JSON: `"password":"..."`, `token: '...'`.
-const SECRET_ASSIGNMENT = /\b(password|passwd|secret|token|api[_-]?key|access[_-]?key|auth)(["']?\s*[=:]\s*["']?)[^\s'",;}]+/gi;
+// A value whose key names a secret, the key's other parts included: `DB_PASSWORD=...`,
+// `"client_secret":"..."`, `--api-key=...`. A quoted value goes whole, spaces too, up to its quote.
+const SECRET_ASSIGNMENT =
+  /(?<![A-Za-z0-9_.-])([A-Za-z0-9_.-]*(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|auth|credential)[A-Za-z0-9_.-]*["']?\s*[=:]\s*)("[^"\n]*"|'[^'\n]*'|[^\s'",;})]+)/gi;
 const WINDOWS_PATH = /\b[A-Za-z]:\\[^\s'"<>()|*?]*/g;
 const UNC_PATH = /\\\\[^\s'"<>()|*?]+/g;
 // Not inside a word of any script, and not after `<app>`, whose built-file path is kept.
@@ -59,7 +61,8 @@ const ABSOLUTE_PATH = new RegExp(`(?<![\\p{L}\\p{N}_.~/\\\\-])(?<!<app>)~?/${PAT
 // `node:internal/...` stays, and not inside `<app>/...`.
 const RELATIVE_PATH = /(?<![\p{L}\p{N}_.+=/\\<-])(?<!node:)[\p{L}\p{N}_.+=-]+(?:[/\\][\p{L}\p{N}_.+=-]+)+[/\\]?/gu;
 const LONG_HEX = /(?<![A-Za-z0-9])[0-9a-fA-F]{32,}(?![A-Za-z0-9])/g;
-const LONG_BASE64 = /(?<![A-Za-z0-9+/=_-])[A-Za-z0-9+/_-]{32,}={0,2}(?![A-Za-z0-9+/=_-])/g;
+// Not after `=`, so `STRIPE_KEY=rk_live_...` is caught too.
+const LONG_BASE64 = /(?<![A-Za-z0-9+/_-])[A-Za-z0-9+/_-]{32,}={0,2}(?![A-Za-z0-9+/=_-])/g;
 
 /** Cleans any text by the rules above. Pure; never throws. */
 export function redactText(input: string, context: RedactionContext): string {
@@ -83,7 +86,10 @@ export function redactText(input: string, context: RedactionContext): string {
   text = text.replace(EMAIL, "<email>");
   for (const shape of TOKEN_SHAPES) text = text.replace(shape, "<token>");
   text = text.replace(BEARER, "$1 <token>");
-  text = text.replace(SECRET_ASSIGNMENT, "$1$2<token>");
+  text = text.replace(SECRET_ASSIGNMENT, (_match, key: string, value: string) => {
+    const quote = value[0] === '"' || value[0] === "'" ? value[0] : "";
+    return `${key}${quote}<token>${quote}`;
+  });
   text = text.replace(WINDOWS_PATH, "<path>").replace(UNC_PATH, "<path>");
   text = text.replace(ABSOLUTE_PATH, "<path>");
   text = text.replace(RELATIVE_PATH, "<path>");
