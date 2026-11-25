@@ -26,3 +26,4 @@ Tokama's home is `<temp>/h/.tokama`, never `~/.tokama`. The engine process keeps
 on purpose: Claude Code finds its login there (on macOS in the login keychain), so a temp `HOME`
 would always read as logged out. Claude Code writes its usual session files under `~/.claude`.
 The engine stores no usage, so each run prints the tokens from Claude Code's session transcript.
+
