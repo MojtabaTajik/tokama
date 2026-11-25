@@ -433,8 +433,8 @@ describe("repo row menu", () => {
     await click(menuItem("Remove…"));
     const waiting = needsYouCount(items.filter((item) => (item.repoIds as readonly string[]).includes("orders-api")));
     const text = $("dialog.modal .dlg-body")?.textContent ?? "";
-    if (waiting > 0) expect(text).toContain(`${waiting} ${waiting === 1 ? "item waits" : "items wait"} for you in it.`);
-    else expect(text).not.toContain("for you in it.");
+    expect(waiting).toBeGreaterThan(0);
+    expect(text).toContain(`${waiting} ${waiting === 1 ? "item waits" : "items wait"} for you in it.`);
   });
 
   it("moves focus to + Add repo once the removed repo's row is gone", async () => {

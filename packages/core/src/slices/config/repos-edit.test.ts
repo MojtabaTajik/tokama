@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Git, GitError, WorktreeEntry } from "../../kernel/git/index.js";
 import { err, ok } from "../../kernel/result/index.js";
+import { previewFirstCommit } from "./first-commit.js";
 import { addRepo, initRepo, loadRepos, makeFirstCommit, removeRepo, suggestRepo, updateRepo, type RepoEditOptions } from "./index.js";
 
 let root: string;
@@ -18,8 +19,8 @@ let unborn: Set<string>;
 let calls: string[];
 /** The local branches the fake git lists; empty: just the folder's own. */
 let extraBranches: string[];
-/** How many files the fake `git diff --cached` lists; undefined: one. */
-let stagedCount: number | undefined;
+/** The paths the fake `git diff --cached` lists; undefined: what the preview names. */
+let stagedPaths: string[] | undefined;
 /** Where the fake git says a folder's work tree is, when not the folder itself. */
 let topLevels: Map<string, string>;
 /** What the fake `git commit` answers; undefined: it works. */
@@ -31,7 +32,7 @@ beforeEach(() => {
   unborn = new Set();
   calls = [];
   extraBranches = [];
-  stagedCount = undefined;
+  stagedPaths = undefined;
   topLevels = new Map();
   commitError = undefined;
   gitError = { reason: "failed", args: [], exitCode: 128, message: "fatal: not a git repository (or any of the parent directories): .git" };
@@ -40,7 +41,7 @@ afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 const git: Pick<Git, "worktreeList" | "revParse" | "topLevel" | "branches" | "init" | "addAll" | "diffCachedNumstat" | "commit"> = {
   branches: async (repo) => ok(extraBranches.length > 0 ? extraBranches : [worktrees.get(repo) ?? "main"]),
-  diffCachedNumstat: async () => ok(Array.from({ length: stagedCount ?? 1 }, () => ({ path: "x", added: 1, removed: 0 }))),
+  diffCachedNumstat: async (repo) => ok((stagedPaths ?? [...(await previewFirstCommit(repo, root)).paths]).map((path) => ({ path, added: 1, removed: 0 }))),
   topLevel: async (repo) => ok(topLevels.get(repo) ?? repo),
   init: async (repo, branch) => {
     calls.push(`init:${branch}`);
@@ -362,12 +363,15 @@ describe("first commit", () => {
     expect(calls).toEqual(["add", "commit"]);
   });
 
-  it("refuses to commit more files than the preview showed, such as ones staged before", async () => {
-    const fresh = repo("fresh", { "a.txt": "1" });
+  it("refuses to commit a path the preview did not name, such as one staged before or let through by a negation", async () => {
+    const fresh = repo("fresh", { "a.txt": "1", ".gitignore": "secret*\n!secret.key\n", "secret.key": "k" });
     unborn.add(fresh);
-    stagedCount = 40;
-    expect(await setUpRepo(options(), { path: fresh })).toMatchObject({ ok: false, error: { message: expect.stringContaining("40 files staged already, more than the 2 shown") } });
+    // The walk skips `secret*`; git, with the negation, would commit secret.key.
+    stagedPaths = ["a.txt", ".gitignore", "secret.key", "node_modules/x"];
+    expect(await setUpRepo(options(), { path: fresh })).toMatchObject({ ok: false, error: { message: expect.stringContaining("Git would also commit 2 files, such as 'secret.key', 'node_modules/x'") } });
     expect(calls).toEqual(["add"]);
+    stagedPaths = ["a.txt", ".gitignore"];
+    expect(await setUpRepo(options(), { path: fresh })).toMatchObject({ ok: true });
   });
 
   it("skips a name/ rule for folders only, so a file named build is committed and not listed as left out", async () => {
@@ -519,6 +523,17 @@ describe("suggestRepo", () => {
       ok: true,
       value: { path, displayPath: path.replace(root, "~"), gitRepo: true, hasCommits: true, branch: "develop", id: "orders-api", checks: ["pnpm test", "pnpm lint"], checksFrom: ["test", "lint"], branches: ["develop"], firstCommit: undefined, fallbackCheck: undefined, fallbackFromPackage: false, problem: undefined },
     });
+  });
+
+  it("writes the home folder as ~ also when home is given as a link to it", async () => {
+    const path = repo("Linked_App");
+    symlinkSync(root, join(tmpdir(), `tokama-home-link-${process.pid}`));
+    const link = join(tmpdir(), `tokama-home-link-${process.pid}`);
+    try {
+      expect(await suggestRepo({ ...options(), home: link }, path)).toMatchObject({ ok: true, value: { displayPath: "~/Linked_App" } });
+    } finally {
+      rmSync(link, { force: true });
+    }
   });
 
   it("suggests npm checks without a lockfile, and skips npm's placeholder test", async () => {

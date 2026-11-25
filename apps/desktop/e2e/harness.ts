@@ -4,7 +4,7 @@
 // touched: HOME points into it in every mode, so the engine's Tokama home (items, repos.yaml) is
 // `<home>/.tokama` of this test. The app, then the engine, are stopped at the end of every test.
 import { execFileSync } from "node:child_process";
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -51,6 +51,26 @@ function trace(name: string, phase: string): void {
   } catch {
     // Tracing never fails a test.
   }
+}
+
+/** The first paths still in a folder that could not be removed, to find what kept writing into it. */
+function leftBehind(dir: string, limit = 20): string[] {
+  const found: string[] = [];
+  const walk = (folder: string) => {
+    let names: string[] = [];
+    try {
+      names = readdirSync(folder);
+    } catch {
+      return;
+    }
+    for (const name of names) {
+      if (found.length >= limit) return;
+      found.push(join(folder, name));
+      walk(join(folder, name));
+    }
+  };
+  walk(dir);
+  return found;
 }
 
 /** `promise`, or undefined after `ms`. */
@@ -105,7 +125,12 @@ export function flow(name: string, fn: (session: Session) => Promise<void>, mode
       trace(name, "stopping the engine");
       await stopEngine(engineDir);
       // The engine may still be writing into a repo folder as it stops: retry a busy folder.
-      rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      try {
+        rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      } catch (error) {
+        trace(name, `cleanup failed (${(error as NodeJS.ErrnoException).code ?? "error"}), left behind: ${leftBehind(tmp).join(", ")}`);
+        throw error;
+      }
       trace(name, "done");
     }
     // Reached only when the flow passed: a failed one has thrown already.

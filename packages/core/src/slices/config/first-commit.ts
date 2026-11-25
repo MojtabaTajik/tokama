@@ -28,6 +28,8 @@ export interface FirstCommitPreview {
   readonly bytes: number;
   /** The first few, as paths in the folder, with their sizes. */
   readonly sample: readonly { readonly path: string; readonly bytes: number }[];
+  /** Every path the commit would hold (NFC), when there are no more than the limit; empty above it. Not sent to clients. */
+  readonly paths: ReadonlySet<string>;
   /** The names of the files after the sample, when there are only a few. */
   readonly more: readonly string[];
   /** The folder has no .gitignore, so Tokama would add the default one. */
@@ -44,7 +46,7 @@ const UNUSABLE_GITIGNORE = ".gitignore here is a link or a folder, which git won
 const tooMany = (files: number) =>
   `This folder has ${files > COUNT_LIMIT ? `more than ${COUNT_LIMIT.toLocaleString("en-US")}` : files.toLocaleString("en-US")} files. Tokama sets up git only for folders with up to ${MAX_FIRST_COMMIT_FILES.toLocaleString("en-US")} files. If this really is one project, run git init and make a first commit yourself, then add it again.`;
 
-const refused = (refusal: string): FirstCommitPreview => ({ files: 0, bytes: 0, sample: [], more: [], addsGitignore: false, leftOut: [], refusal });
+const refused = (refusal: string): FirstCommitPreview => ({ files: 0, bytes: 0, sample: [], paths: new Set(), more: [], addsGitignore: false, leftOut: [], refusal });
 
 export async function previewFirstCommit(folder: string, home: string | undefined): Promise<FirstCommitPreview> {
   const homeReal = await realpath(home ?? homedir()).catch(() => undefined);
@@ -73,6 +75,7 @@ export async function previewFirstCommit(folder: string, home: string | undefine
   const skipped = (name: string, folder: boolean) => ignored.has(name) || (folder && ignoredFolders.has(name)) || prefixes.some((prefix) => name.startsWith(prefix));
 
   const paths: string[] = [];
+  const all = new Set<string>();
   const sizes: number[] = [];
   const leftOut: { name: string; files: number | null }[] = [];
   let files = 0;
@@ -84,6 +87,7 @@ export async function previewFirstCommit(folder: string, home: string | undefine
     files = 1;
     bytes = ignoreBytes;
     paths.push(GITIGNORE_FILE);
+    all.add(GITIGNORE_FILE);
     sizes.push(ignoreBytes);
   }
   let budget = LEFT_OUT_BUDGET;
@@ -124,6 +128,7 @@ export async function previewFirstCommit(folder: string, home: string | undefine
       if (files <= MAX_FIRST_COMMIT_FILES) {
         const size = (await lstat(join(dir, item.name)).catch(() => undefined))?.size ?? 0;
         bytes += size;
+        all.add(`${prefix}${item.name}`.normalize("NFC"));
         if (paths.length < SAMPLE_SIZE + MORE_NAMES) {
           paths.push(`${prefix}${item.name}`);
           sizes.push(size);
@@ -138,6 +143,7 @@ export async function previewFirstCommit(folder: string, home: string | undefine
   return {
     files,
     bytes: tooLarge ? 0 : bytes,
+    paths: tooLarge ? new Set() : all,
     sample: paths.slice(0, SAMPLE_SIZE).map((path, index) => ({ path, bytes: sizes[index] ?? 0 })),
     more: files <= SAMPLE_SIZE + MORE_NAMES ? paths.slice(SAMPLE_SIZE) : [],
     addsGitignore,

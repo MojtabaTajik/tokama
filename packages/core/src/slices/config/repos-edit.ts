@@ -91,7 +91,7 @@ export async function suggestRepo(options: RepoEditOptions, path: string): Promi
   const listed = folder.value.gitProblem === undefined ? await options.git.branches(folder.value.path) : undefined;
   return ok({
     path: folder.value.path,
-    displayPath: displayPath(folder.value.path, options.home),
+    displayPath: await displayPath(folder.value.path, options.home),
     gitRepo: folder.value.gitProblem === undefined,
     hasCommits: folder.value.hasCommits,
     branch: folder.value.branch,
@@ -234,17 +234,21 @@ export async function makeFirstCommit(options: RepoEditOptions, input: { readonl
   // not unstage them: refuse rather than commit what the user was not shown.
   const staged = await options.git.diffCachedNumstat(path);
   if (!staged.ok) return invalid(gitReason(staged.error));
-  if (staged.value.length > preview.files) {
-    return invalid(`Git has ${staged.value.length} files staged already, more than the ${preview.files} shown. Unstage them (git reset) or pick another folder.`);
+  // A path the preview did not name is refused, however it got staged: files staged before, or one
+  // a negation in the folder's own .gitignore (`secret*` then `!secret.key`) lets through.
+  const unexpected = staged.value.map((entry) => entry.path).filter((entry) => !preview.paths.has(entry.normalize("NFC")));
+  if (unexpected.length > 0) {
+    const shown = unexpected.slice(0, 3).map((entry) => quote(entry)).join(", ");
+    return invalid(`Git would also commit ${plural(unexpected.length)}, such as ${shown}, which the list did not show. Unstage them (git reset) or fix the .gitignore, then try again.`);
   }
   const committed = await options.git.commit(path, "Initial commit");
   if (!committed.ok) return invalid(gitReason(committed.error));
   return ok({ commit: committed.value.slice(0, 7), files: staged.value.length });
 }
 
-/** The path for display: the home folder written as `~`. */
-function displayPath(path: string, home: string | undefined): string {
-  const base = home ?? homedir();
+/** The path for display: the home folder (as its real path, which is what `path` is) written as `~`. */
+async function displayPath(path: string, home: string | undefined): Promise<string> {
+  const base = await realpathOr(home ?? homedir());
   if (path === base) return "~";
   return path.startsWith(`${base}/`) ? `~${path.slice(base.length)}` : path;
 }
@@ -405,6 +409,8 @@ function gitFailure(error: GitError): string {
   const first = error.message.split("\n").find((line) => line.trim() !== "") ?? `exit code ${String(error.exitCode)}`;
   return `git can't use this folder: ${clean(first.replace(/^fatal:\s*/, ""), 200)}`;
 }
+
+const plural = (count: number) => `${count} ${count === 1 ? "file" : "files"}`;
 
 /** The id of the repo already added at this real path. */
 async function addedAs(repos: readonly Repo[], real: string): Promise<string | undefined> {

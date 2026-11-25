@@ -81,6 +81,18 @@ describe("setUpRepo with git", () => {
     expect(await setUpRepo(options, { path: folder }), "a second call changes nothing").toEqual({ ok: true, value: undefined });
   });
 
+  it("refuses a first commit that a negation in the folder's .gitignore would extend to a file the preview skipped", async () => {
+    const folder = join(root, "negated");
+    mkdirSync(folder);
+    writeFileSync(join(folder, ".gitignore"), "secret*\n!secret.key\n");
+    writeFileSync(join(folder, "secret.key"), "k");
+    writeFileSync(join(folder, "index.js"), "1");
+    expect(await suggestRepo(options, folder)).toMatchObject({ ok: true, value: { firstCommit: { files: 2 } } });
+    expect(await initRepo(options, { path: folder })).toMatchObject({ ok: true });
+    expect(await makeFirstCommit(options, { path: folder })).toMatchObject({ ok: false, error: { message: expect.stringContaining("secret.key") } });
+    expect(await fullGit.revParse(folder, "HEAD")).toMatchObject({ ok: false });
+  });
+
   it("makes the first commit in a repo that has none", async () => {
     const folder = join(root, "unborn");
     writeFileSync(join(folder, "a.txt"), "1");
