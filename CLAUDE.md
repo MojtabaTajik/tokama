@@ -42,6 +42,6 @@ GitHub issues in `tokama-dev/tokama` track actual implementation work only: code
 - Labels: exactly one type label, plus area labels for the packages touched, plus modifiers when they apply.
   - Type: `feature` (new capability), `bug` (something broken), `improvement` (better version of something built), `documentation`, `chore` (tooling, CI, deps, repo setup).
   - Area: `area:core`, `area:cli`, `area:desktop`.
-  - Modifiers: `security` (sandboxing, process spawn, input handling, egress), `question` (decision needed from a maintainer).
+  - Modifiers: `security` (sandboxing, process spawn, input handling, egress), `question` (decision needed from a maintainer), `ci:macos` (run the macOS CI job on this PR; add it, then push a commit or run the workflow by hand on the branch, because the label is read when a run starts).
   - Closing: `duplicate`, `wontfix`.
 - Use only these labels. Add a new one only when an existing label can't express it and it will be used on more than one issue; remove labels that stop being used. Update this list when the label set changes.
