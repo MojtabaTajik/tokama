@@ -106,7 +106,7 @@ describe.skipIf(!enabled || createRuntime === undefined)("run loop against the r
         repo: (id) => (id === repo.id ? repo : undefined),
         agent: () => agent,
         runtime: () => createRuntime!({ runner: counting }),
-        guard: { turnCap: 30, repeatLimit: 6, idleMs: 0, silentMs: 0, timeoutMs: 180_000 },
+        guard: { turnCap: 30, repeatLimit: 6, idleMs: 0, silentMs: 0, toolSilentMs: 0, timeoutMs: 180_000 },
       });
       const started = await loop.startItem({ template: template.value, repoId: repo.id, text: "greeting.txt has a typo: it must say exactly `hello world`." });
       if (!started.ok) throw new Error(started.error.message);

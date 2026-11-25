@@ -4,7 +4,7 @@
 // with its own `end` event, and the report says which guard stopped it and how much time was wasted.
 import type { Clock, TimerHandle } from "../../kernel/clock/index.js";
 import type { AgentCallRequest, AgentRuntime } from "../../kernel/ports/index.js";
-import { type AgentCallEvent, type PlanSnapshot, quietForMs } from "../../kernel/schemas/index.js";
+import type { AgentCallEvent, PlanSnapshot } from "../../kernel/schemas/index.js";
 import { type ActivityState, createActivityTracker } from "./activity.js";
 import {
   createFileWatch,
@@ -82,19 +82,26 @@ export async function runGuardedCall(runtime: AgentRuntime, request: AgentCallRe
   if (signal.aborted) controller.abort();
 
   const timeout = clock.setTimeout(() => requestStop("timeout"), settings.timeoutMs);
-  // One timer, due when the silence would reach `silentMs`: an event since moves it later, and a
-  // tool still running checks again `silentMs` on, by when its result has moved the last event.
+  // One timer for both silence stops. The limit that applies is `silentMs` while no tool runs and
+  // `toolSilentMs` while one does. The timer is due when the silence would reach that limit, or
+  // after the other limit, since an event in between can start or end a tool; an event since
+  // moves the due time later.
   let silenceTimer: TimerHandle | undefined;
+  const silenceLimit = (toolRunning: boolean) => (toolRunning ? { reason: "tool_silent" as const, ms: settings.toolSilentMs } : { reason: "silent" as const, ms: settings.silentMs });
   const scheduleSilenceCheck = (delayMs: number) => {
     silenceTimer = clock.setTimeout(() => {
       if (controller.signal.aborted) return;
       const state = activity.state();
       const now = clock.now();
-      if (quietForMs(state, now, settings.silentMs) !== undefined) return requestStop("silent");
-      scheduleSilenceCheck(state.toolRunning === null ? state.lastEventAt + settings.silentMs - now : settings.silentMs);
+      const limit = silenceLimit(state.toolRunning !== null);
+      if (limit.ms > 0 && now - state.lastEventAt >= limit.ms) return requestStop(limit.reason);
+      const other = silenceLimit(state.toolRunning === null).ms;
+      const due = Math.min(limit.ms > 0 ? state.lastEventAt + limit.ms - now : Infinity, other > 0 ? other : Infinity);
+      scheduleSilenceCheck(Math.max(1, due));
     }, delayMs);
   };
-  if (settings.silentMs > 0) scheduleSilenceCheck(settings.silentMs);
+  // At the start no tool runs; with the silence stop off, look again once a tool could be too quiet.
+  if (settings.silentMs > 0 || settings.toolSilentMs > 0) scheduleSilenceCheck(settings.silentMs > 0 ? settings.silentMs : settings.toolSilentMs);
   let pollTimer: TimerHandle | undefined;
   let polling: Promise<void> = Promise.resolve();
   const schedulePoll = (watch: FileWatch) => {

@@ -35,10 +35,10 @@ export const ItemOutcomeSchema = z.enum(["done", "no_action_needed", "failed", "
 export const AttemptResultSchema = z.enum(["passed", "failed", "run_failed", "stopped"]);
 
 /**
- * Why a run failed: an agent call error, the agent sent nothing for too long (`silent`), or the
- * engine stopped while the attempt ran.
+ * Why a run failed: an agent call error, the agent sent nothing for too long (`silent`, or
+ * `tool_silent` while one of its tool calls ran), or the engine stopped while the attempt ran.
  */
-export const RunFailureSchema = z.enum([...AgentCallErrorKindSchema.options, "silent", "engine_restart"]);
+export const RunFailureSchema = z.enum([...AgentCallErrorKindSchema.options, "silent", "tool_silent", "engine_restart"]);
 
 
 /** Connections a step may use, each with the access it asks for ("query", "read-only"). */

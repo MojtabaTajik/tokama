@@ -99,7 +99,7 @@ function engine(runtime: AgentRuntime, overrides: Partial<RunLoopDeps> = {}): Ru
     repo: (id) => (id === repo.id ? repo : undefined),
     agent: (_repo, id) => AGENTS[id],
     runtime: () => runtime,
-    guard: { turnCap: 150, repeatLimit: 6, idleMs: 0, silentMs: 0, timeoutMs: 60_000 },
+    guard: { turnCap: 150, repeatLimit: 6, idleMs: 0, silentMs: 0, toolSilentMs: 0, timeoutMs: 60_000 },
     recoveryGraceMs: 0,
     ...overrides,
   });
@@ -703,7 +703,7 @@ describe("run loop: counters", () => {
   });
 
   it("a guard timeout is a run failure: it asks and does not count", SLOW, async () => {
-    const loop = engine(fakeRuntime([hangs(), edits(FIXED)]), { guard: { turnCap: 150, repeatLimit: 6, idleMs: 0, silentMs: 0, timeoutMs: 300 } });
+    const loop = engine(fakeRuntime([hangs(), edits(FIXED)]), { guard: { turnCap: 150, repeatLimit: 6, idleMs: 0, silentMs: 0, toolSilentMs: 0, timeoutMs: 300 } });
     const id = await start(loop, template([{ ...BUILD_CHECKED, maxAttempts: 1 }]));
     expect(item(id).steps[0]?.attempts[0]).toMatchObject({ result: "run_failed", failure: "timeout" });
     expect(openDecision(id)).toMatchObject({ kind: "run_failure", detail: "The agent call ran for 1 m (the limit)." });
@@ -712,7 +712,7 @@ describe("run loop: counters", () => {
   });
 
   it("a silent agent is a run failure: it is stopped, asks Retry step / Stop and does not count", SLOW, async () => {
-    const loop = engine(fakeRuntime([hangs(), edits(FIXED)]), { guard: { turnCap: 150, repeatLimit: 6, idleMs: 0, silentMs: 300, timeoutMs: 60_000 } });
+    const loop = engine(fakeRuntime([hangs(), edits(FIXED)]), { guard: { turnCap: 150, repeatLimit: 6, idleMs: 0, silentMs: 300, toolSilentMs: 0, timeoutMs: 60_000 } });
     // An "agent finishes" step: without the run failure, the stopped call would pass it.
     const id = await start(loop, template([{ id: "build", agentId: "builder", doneWhen: "agent finishes", maxAttempts: 1 }]));
     expect(item(id).steps[0]?.attempts[0]).toMatchObject({ result: "run_failed", failure: "silent" });
@@ -721,6 +721,18 @@ describe("run loop: counters", () => {
     expect(asked?.choices.map((c) => c.label)).toEqual(["Retry step", "Stop"]);
     await answer(loop, id, "retry_step");
     // max_attempts is 1, and the second attempt still ran: the silence did not count.
+    expect(item(id).steps[0]?.attempts.map((a) => a.result)).toEqual(["run_failed", "passed"]);
+    expect(item(id).state).toBe("done");
+  });
+
+  it("an agent frozen inside a tool call is a run failure: it is stopped, asks Retry step / Stop and does not count", SLOW, async () => {
+    const loop = engine(fakeRuntime([hangs(undefined, true), edits(FIXED)]), { guard: { turnCap: 150, repeatLimit: 6, idleMs: 0, silentMs: 0, toolSilentMs: 300, timeoutMs: 60_000 } });
+    const id = await start(loop, template([{ id: "build", agentId: "builder", doneWhen: "agent finishes", maxAttempts: 1 }]));
+    expect(item(id).steps[0]?.attempts[0]).toMatchObject({ result: "run_failed", failure: "tool_silent" });
+    const asked = openDecision(id);
+    expect(asked).toMatchObject({ kind: "run_failure", stepId: "build", detail: `${AGENTS["builder"]!.name}'s command ran for 1 m with no output.` });
+    expect(asked?.choices.map((c) => c.label)).toEqual(["Retry step", "Stop"]);
+    await answer(loop, id, "retry_step");
     expect(item(id).steps[0]?.attempts.map((a) => a.result)).toEqual(["run_failed", "passed"]);
     expect(item(id).state).toBe("done");
   });
@@ -918,7 +930,7 @@ describe("run loop: protection", () => {
   const commitOf = (id: ItemId) => item(id).outcome?.commits?.[0]?.commit;
 
   it("a call that times out after changing Tokama's files stops the item; nothing is committed", SLOW, async () => {
-    const loop = engine(fakeRuntime([editsThenHangs(TAMPER_FILES), edits(FIXED)]), { guard: { turnCap: 150, repeatLimit: 6, idleMs: 0, silentMs: 0, timeoutMs: 300 } });
+    const loop = engine(fakeRuntime([editsThenHangs(TAMPER_FILES), edits(FIXED)]), { guard: { turnCap: 150, repeatLimit: 6, idleMs: 0, silentMs: 0, toolSilentMs: 0, timeoutMs: 300 } });
     const id = await start(loop, template([BUILD_CHECKED]));
     expect(item(id)).toMatchObject({ state: "failed", outcome: { detail: expect.stringContaining("worktree:.tokama/templates/evil.yaml (tokama)") } });
     expect(commitOf(id)).toBeUndefined();
