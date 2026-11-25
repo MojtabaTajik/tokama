@@ -70,6 +70,15 @@ export function ReposPage({ bridge, connection, setup, now: fixedNow }: ReposPag
     if (shrank && (document.activeElement === null || document.activeElement === document.body)) addButton.current?.focus();
   }, [repos.length]);
 
+  // A dialog does not wait for the engine to come back: a lost connection closes it.
+  const connected = connection.status === "connected";
+  useEffect(() => {
+    if (connected) return;
+    setAdding(undefined);
+    setEditing(false);
+    setRemoving(false);
+  }, [connected]);
+
   if (connection.status === "failed") {
     return (
       <section className="rp-page" aria-label={TEXT.heading}>

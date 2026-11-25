@@ -5,10 +5,11 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { Page } from "playwright-core";
 import { expect } from "vitest";
 import { flow } from "./harness.js";
 
-const openRepos = async (page: import("@playwright/test").Page) => {
+const openRepos = async (page: Page) => {
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Repos" }).click();
 };

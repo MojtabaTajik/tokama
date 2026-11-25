@@ -206,6 +206,18 @@ describe("Repos page", () => {
 });
 
 describe("Add, Edit and Remove", () => {
+  it("closes an open dialog when the connection is lost and does not open it again on return", async () => {
+    const fake = await mount();
+    await click(buttonByText("Edit…"));
+    expect($("dialog.modal")).not.toBeNull();
+    const render = (connection: ConnectionState) => act(async () => root.render(<ReposPage bridge={fake.bridge} connection={connection} setup={withRepos(REPOS)} now={NOW} />));
+    await render({ status: "reconnecting", attempt: 1 } as unknown as ConnectionState);
+    expect($("dialog.modal")).toBeNull();
+    await render(CONNECTED);
+    expect(rows()).toHaveLength(3);
+    expect($("dialog.modal")).toBeNull();
+  });
+
   it("adds a repo: the picker, the dialog, then add_repo", async () => {
     const fake = await mount();
     await click(buttonByText("+ Add repo"));
