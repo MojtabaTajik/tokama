@@ -308,7 +308,7 @@ class Client implements EngineClient {
     if (session.error.code !== "not_running" || !start) return session;
     // The engine started last is still running, so it is still booting: on a loaded machine that takes
     // seconds. Another engine started meanwhile boots as slowly and can take the dir over once the
-    // first one stops. Only an engine that has not served for STARTING_GRACE_MS is started again.
+    // first one stops. Another engine is started only when this one has not served within STARTING_GRACE_MS.
     if (this.child !== undefined && this.child.exitCode === null && this.child.signalCode === null && Date.now() - this.lastStart < STARTING_GRACE_MS) return session;
     // The first start is immediate; each further one waits twice as long as the one before.
     const delay = this.starts === 0 ? 0 : START_BACKOFF_MS * 2 ** (this.starts - 1);
