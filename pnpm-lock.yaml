@@ -265,6 +265,21 @@ importers:
         specifier: workspace:*
         version: link:../../packages/client
 
+  e2e:
+    devDependencies:
+      '@tokama/client':
+        specifier: workspace:*
+        version: link:../packages/client
+      '@tokama/core':
+        specifier: workspace:*
+        version: link:../packages/core
+      electron:
+        specifier: 45.4.1
+        version: 45.4.1(supports-color@7.2.0)
+      playwright-core:
+        specifier: 1.65.1
+        version: 1.65.1
+
   packages/client:
     dependencies:
       '@tokama/core':
