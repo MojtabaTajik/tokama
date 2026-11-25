@@ -1,7 +1,7 @@
 // The item drawer on the right of the board: kind, template, title and state; the "needs you"
 // note with the decision's buttons; the tabs; the actions. It keeps its own copy of the item
 // (useItem), so it works next to any list that opens it. Engine text (titles, questions, the
-// cloud summary, step details) is rendered as React text only.
+// cloud summary, step details, agent output) is rendered as React text only.
 import type { CommandErrorCode, Decision, ItemRecord, Setup } from "@tokama/core";
 import { type KeyboardEvent, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
@@ -14,6 +14,7 @@ import { attemptLine, decisionKind, hasEnded, nextRunLine, runLine, itemMark, KI
 import { DecisionChoices } from "./DecisionChoices.js";
 import { DiffTab, useDecisionDiff } from "./DiffView.js";
 import { Finish } from "./Finish.js";
+import { StepOutput, type OutputState, useStepOutput } from "./StepOutput.js";
 import { finishState, isDiscarded } from "./finish-view.js";
 import { useItem } from "./useItem.js";
 
@@ -46,6 +47,10 @@ const TEXT = {
   committedLine: (title: string, branch: string | undefined) => `${title}${branch === undefined ? "" : ` · on ${branch}`} · Done`,
   makingChanges: (agent: string, run: string | undefined) => `${agent} is making your changes${run === undefined ? "" : ` · ${run}`}`,
   yourNote: (note: string) => `Your note: "${note}"`,
+  wrote: (step: string, agent: string | undefined) => `${step} · what ${agent ?? "the agent"} wrote`,
+  attempt: (attempt: number) => `attempt ${attempt}`,
+  seeDiff: "See the changed files in the Diff tab",
+  output: "Output",
 } as const;
 
 type Tab = "Steps" | "Evidence" | "Findings" | "Log" | "Diff" | "Checks";
@@ -203,6 +208,13 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
     lastAsked.current = diffAsked;
   }, [diffAsked]);
   const diff = useDecisionDiff(bridge, itemId, item?.state === "needs_you" ? item.decision : undefined);
+  // A step you approve shows what its agent wrote, from the latest attempt, for each new question.
+  const approval = item?.state === "needs_you" && item.decision?.kind === "plan_approval" ? item.decision : undefined;
+  const output = useStepOutput(bridge, itemId, approval?.stepIndex ?? 0, undefined, approval?.id);
+  const showDiff = () => {
+    setTab("Diff");
+    document.getElementById(tabId("Diff"))?.focus();
+  };
 
   const template = item && templateOf(item, setup);
   const tabs = item ? tabsOf(item) : [];
@@ -239,7 +251,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
         </p>
       )}
 
-      {item?.state === "needs_you" && <NeedsYou item={item} setup={setup} decision={item.decision} busy={busy} onChoose={resolve} />}
+      {item?.state === "needs_you" && <NeedsYou item={item} setup={setup} decision={item.decision} busy={busy} output={output} onShowDiff={showDiff} onChoose={resolve} />}
       {item !== undefined && item.state !== "needs_you" && <After item={item} setup={setup} />}
 
       {item?.state === "done" && (
@@ -259,7 +271,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
           <Tabs tabs={tabs} shown={shown} onPick={setTab} />
           <div className="drawer-panel" role="tabpanel" id={panelId(shown)} aria-labelledby={tabId(shown)}>
             {shown === "Steps" ? (
-              <Steps item={item} setup={setup} onOpenAgent={onOpenAgent} />
+              <Steps bridge={bridge} item={item} setup={setup} onOpenAgent={onOpenAgent} />
             ) : shown === "Diff" && diff !== undefined ? (
               <DiffTab key={item.decision?.id} state={diff} baseBranch={setup?.repos.find((repo) => repo.id === item.repoIds[0])?.baseBranch} />
             ) : (
@@ -326,10 +338,13 @@ interface NeedsYouProps {
   readonly setup: Setup | undefined;
   readonly decision: Decision | undefined;
   readonly busy: boolean;
+  /** What the step's agent wrote, for a step you approve. */
+  readonly output: OutputState | undefined;
+  readonly onShowDiff: () => void;
   readonly onChoose: (decision: Decision, choice: string, note?: string) => void;
 }
 
-function NeedsYou({ item, setup, decision, busy, onChoose }: NeedsYouProps) {
+function NeedsYou({ item, setup, decision, busy, output, onShowDiff, onChoose }: NeedsYouProps) {
   const step = decision === undefined ? undefined : item.steps[decision.stepIndex];
   const agent = step?.agentId === undefined ? undefined : stepAgent(step, setup?.agents ?? []).name;
   const kind = decision === undefined ? undefined : decisionKind(decision);
@@ -355,6 +370,20 @@ function NeedsYou({ item, setup, decision, busy, onChoose }: NeedsYouProps) {
               <pre className="cloud-summary-text mono" tabIndex={0} aria-label={TEXT.willBeSent}>
                 {decision.summaryText}
               </pre>
+            </div>
+          )}
+          {output !== undefined && step !== undefined && (
+            <div className="step-output">
+              <p className="step-output-label">
+                <span>{TEXT.wrote(step.name, agent)}</span>
+                {output.kind === "loaded" && <span className="muted mono">{TEXT.attempt(output.output.attempt)}</span>}
+                {decision.hasDiff === true && (
+                  <button type="button" className="link" onClick={onShowDiff}>
+                    {TEXT.seeDiff}
+                  </button>
+                )}
+              </p>
+              <StepOutput state={output} label={TEXT.wrote(step.name, agent)} />
             </div>
           )}
           <DecisionChoices key={decision.id} decision={decision} busy={busy} agent={agent} run={nextRunLine(step)} onChoose={(choice, note) => onChoose(decision, choice, note)} />
@@ -439,7 +468,14 @@ function Tabs({ tabs, shown, onPick }: { readonly tabs: readonly Tab[]; readonly
   );
 }
 
-function Steps({ item, setup, onOpenAgent }: { readonly item: ItemRecord; readonly setup: Setup | undefined; readonly onOpenAgent: ItemDrawerProps["onOpenAgent"] }) {
+interface StepsProps {
+  readonly bridge: TokamaBridge;
+  readonly item: ItemRecord;
+  readonly setup: Setup | undefined;
+  readonly onOpenAgent: ItemDrawerProps["onOpenAgent"];
+}
+
+function Steps({ bridge, item, setup, onOpenAgent }: StepsProps) {
   if (item.steps.length === 0) return <p className="placeholder">{TEXT.noSteps}</p>;
   const agents = setup?.agents ?? [];
   const connections = setup?.connections ?? [];
@@ -476,11 +512,17 @@ function Steps({ item, setup, onOpenAgent }: { readonly item: ItemRecord; readon
                   {step.attempts.map((attempt) => {
                     const line = attemptLine(attempt);
                     return (
-                      <li key={attempt.attempt} className="step-attempt mono">
-                        <span className="mark" data-tone={line.mark.tone} aria-hidden="true">
-                          {line.mark.symbol}
+                      <li key={attempt.attempt} className="step-attempt">
+                        <span className="mono">
+                          <span className="mark" data-tone={line.mark.tone} aria-hidden="true">
+                            {line.mark.symbol}
+                          </span>
+                          {line.text}
                         </span>
-                        {line.text}
+                        {/* Only an ended attempt of an agent's step has an output. */}
+                        {step.agentId !== undefined && attempt.result !== undefined && (
+                          <AttemptOutput bridge={bridge} itemId={item.id} stepIndex={index} attempt={attempt.attempt} label={`${step.name}, ${TEXT.attempt(attempt.attempt)}: ${TEXT.output}`} />
+                        )}
                       </li>
                     );
                   })}
@@ -491,6 +533,18 @@ function Steps({ item, setup, onOpenAgent }: { readonly item: ItemRecord; readon
         );
       })}
     </ol>
+  );
+}
+
+/** An attempt's output, collapsed; it is asked for the first time the engineer opens it. */
+function AttemptOutput({ bridge, itemId, stepIndex, attempt, label }: { readonly bridge: TokamaBridge; readonly itemId: string; readonly stepIndex: number; readonly attempt: number; readonly label: string }) {
+  const [opened, setOpened] = useState(false);
+  const output = useStepOutput(bridge, itemId, stepIndex, attempt, opened ? `${stepIndex} ${attempt}` : undefined);
+  return (
+    <details className="attempt-output" onToggle={(event) => event.currentTarget.open && setOpened(true)}>
+      <summary aria-label={label}>{TEXT.output}</summary>
+      {output !== undefined && <StepOutput state={output} label={label} />}
+    </details>
   );
 }
 

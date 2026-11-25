@@ -96,6 +96,27 @@
   color: var(--muted);
 }
 
+.nr-output {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+/* The first lines of what the step's agent wrote, as in the row's note: three lines at most. */
+.nr-preview {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  color: var(--text-2);
+  font-size: 12.5px;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
 .nr-question {
   color: var(--text-2);
   overflow-wrap: anywhere;
