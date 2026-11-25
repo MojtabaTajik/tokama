@@ -21,7 +21,7 @@ export interface EngineLock {
 
 /** The OS-specific part: read one process, signal one process. One per OS. */
 export interface EngineProcesses {
-  /** Start time (epoch ms, to the second) and full command line of a live pid; undefined when there is none. */
+  /** Start time (epoch ms, to the second) and full command line of a live pid; undefined when there is none. Rejects when it cannot tell. */
   describe(pid: number): Promise<{ readonly startedAt: number; readonly command: string } | undefined>;
   /** Never throws for a pid that is gone. */
   signal(pid: number, signal: "SIGTERM" | "SIGKILL"): void;
@@ -43,7 +43,7 @@ export interface OwnEngine {
 
 export type VerifyOutcome =
   | { readonly kind: "verified"; readonly lock: EngineLock; readonly startedAt: number }
-  | { readonly kind: "refused"; readonly reason: "no_lock" | "unsafe" | "gone" | "not_engine" | "pid_reused"; readonly pid?: number };
+  | { readonly kind: "refused"; readonly reason: "no_lock" | "unsafe" | "gone" | "not_engine" | "pid_reused" | "unreadable"; readonly pid?: number };
 
 export type StopOutcome =
   /** The engine stopped (or let go of its locks) after this step. */
@@ -90,7 +90,12 @@ export async function verifyOwnEngine(engine: OwnEngine, processes: EngineProces
   if (lock === undefined) return { kind: "refused", reason: "no_lock" };
   const { pid } = lock;
   if (!Number.isSafeInteger(pid) || pid <= 1 || pid === selfPid || !engine.commandEnd.startsWith("/")) return { kind: "refused", reason: "unsafe", pid };
-  const info = await processes.describe(pid);
+  let info: Awaited<ReturnType<EngineProcesses["describe"]>>;
+  try {
+    info = await processes.describe(pid);
+  } catch {
+    return { kind: "refused", reason: "unreadable", pid };
+  }
   if (info === undefined) return { kind: "refused", reason: "gone", pid };
   if (!info.command.endsWith(engine.commandEnd)) return { kind: "refused", reason: "not_engine", pid };
   // The engine writes its lock after it starts; a process that started later took a reused pid.
@@ -113,7 +118,8 @@ export async function stopOwnEngine(engine: OwnEngine, options: StopOptions): Pr
 
   // Stopped: the process is gone (or the pid is another process's now), or no lock names it any more.
   const stopped = async () => {
-    const info = await processes.describe(lock.pid);
+    const info = await processes.describe(lock.pid).catch(() => "unknown" as const);
+    if (info === "unknown") return false;
     if (info === undefined || info.startedAt !== startedAt) return true;
     return [engine.lockPath, ...(engine.otherLocks ?? [])].every((path) => lockPid(path) !== lock.pid);
   };
@@ -136,13 +142,17 @@ export async function stopOwnEngine(engine: OwnEngine, options: StopOptions): Pr
       // The check again, right before the signal: the same lock, the same process.
       const again = await verifyOwnEngine(engine, processes, selfPid);
       if (again.kind === "verified" && !sameEngine(again.lock)) return { kind: "replaced" };
+      // The process list could not be read: no signal on a guess.
+      if (again.kind === "refused" && again.reason === "unreadable") return again;
       if (again.kind !== "verified" || again.startedAt !== startedAt) {
         const current = readEngineLock(engine.lockPath);
         return current !== undefined && !sameEngine(current) ? { kind: "replaced" } : { kind: "stopped", by: steps[index - 1]?.by ?? "shutdown", lock };
       }
     }
     // An engine that refuses the request (one from before it existed) gets SIGTERM at once.
-    const sent = await step.send().catch(() => false);
+    const sent = await Promise.resolve()
+      .then(step.send)
+      .catch(() => false);
     if (sent && (await waitStopped())) return { kind: "stopped", by: step.by, lock };
   }
   return { kind: "still_running", lock };
@@ -152,13 +162,17 @@ export async function stopOwnEngine(engine: OwnEngine, options: StopOptions): Pr
 export const posixEngineProcesses: EngineProcesses = {
   describe(pid) {
     if (!Number.isSafeInteger(pid) || pid <= 0) return Promise.resolve(undefined);
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       execFile(
         "ps",
         ["-ww", "-p", String(pid), "-o", "lstart=", "-o", "command="],
         { env: { PATH: "/usr/bin:/bin", LC_ALL: "C", TZ: "UTC" }, timeout: 10_000, maxBuffer: 1024 * 1024 },
-        // ps exits with 1 when there is no such process.
-        (error, stdout) => resolve(error ? undefined : parseDescribe(stdout)),
+        // ps exits with 1 and prints nothing when there is no such process; any other failure is not knowing.
+        (error, stdout) => {
+          if (error === null) return resolve(parseDescribe(stdout));
+          if (error.code === 1 && stdout.trim() === "") return resolve(undefined);
+          reject(error);
+        },
       );
     });
   },
@@ -187,7 +201,8 @@ export function parseDescribe(output: string): { startedAt: number; command: str
 function readSmallFile(path: string): { text: string; mtimeMs: number } | undefined {
   let fd: number | undefined;
   try {
-    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    // Non-blocking, so a FIFO in its place cannot hang the caller.
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
     const stat = fstatSync(fd);
     if (!stat.isFile() || stat.size > MAX_LOCK_BYTES) return undefined;
     const buffer = Buffer.alloc(stat.size);

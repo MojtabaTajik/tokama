@@ -108,6 +108,29 @@ describe("replaceOlderEngine", () => {
     if (kind === "reused") expect(oldEngineNotes(dir)).toEqual(["ready"]);
   });
 
+  it("takes over a replace.lock whose app is no longer running", async () => {
+    const root = tempDir();
+    const dir = join(root, "run");
+    const pid = await oldEngine(root, dir);
+    const done = spawn("/usr/bin/true");
+    await new Promise((resolve) => done.once("exit", resolve));
+    writeFileSync(join(dir, "replace.lock"), `${done.pid ?? 0} ${Date.now()}\n`);
+    expect(await replaceOlderEngine(options(dir))).toEqual({ ok: true, forced: false });
+    await vi.waitFor(() => expect(alive(pid)).toBe(false));
+  });
+
+  it("stops waiting for another app once it is done, even when the old engine still runs", async () => {
+    const root = tempDir();
+    const dir = join(root, "run");
+    const pid = await oldEngine(root, dir);
+    // Another running app (this test process) holds replace.lock, then lets go without stopping the engine.
+    writeFileSync(join(dir, "replace.lock"), `${process.pid} ${Date.now()}\n`);
+    setTimeout(() => rmSync(join(dir, "replace.lock")), 200);
+    expect(await replaceOlderEngine(options(dir))).toEqual({ ok: true, forced: false });
+    expect(alive(pid)).toBe(true);
+    expect(oldEngineNotes(dir)).toEqual(["ready"]);
+  });
+
   it("with two apps at once, only one sends anything; the other waits for the old engine to go", async () => {
     const root = tempDir();
     const dir = join(root, "run");

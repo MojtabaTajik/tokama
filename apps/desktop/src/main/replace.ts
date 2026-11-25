@@ -4,7 +4,7 @@
 //
 // Two apps may find the same older engine. The first one takes `replace.lock` in the engine dir
 // and stops it; the other sends nothing and waits until the old engine lets go of its lock.
-import { closeSync, constants, fstatSync, openSync, readFileSync, unlinkSync, writeSync } from "node:fs";
+import { closeSync, constants, fstatSync, openSync, readFileSync, readSync, unlinkSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { readEngineLock, stopOwnEngine, type EngineProcesses, type OwnEngine, type StopOutcome } from "@tokama/core";
 
@@ -34,7 +34,7 @@ export async function replaceOlderEngine(options: ReplaceOptions): Promise<Repla
   const lockPath = join(options.dir, REPLACE_LOCK);
   const staleMs = options.staleMs ?? 60_000;
   const mine = `${process.pid} ${Date.now()}\n`;
-  if (!takeLock(lockPath, mine, staleMs)) return waitForOther(options, staleMs);
+  if (!takeLock(lockPath, mine, staleMs)) return waitForOther(options, lockPath, staleMs);
   try {
     const outcome = await stopOwnEngine(options.engine, {
       processes: options.processes,
@@ -59,6 +59,7 @@ function result(outcome: StopOutcome, lockPath: string): ReplaceResult {
     case "refused":
       // It stopped by itself meanwhile: connect, and the new engine starts.
       if (outcome.reason === "no_lock" || outcome.reason === "gone") return { ok: true, forced: false };
+      if (outcome.reason === "unreadable") return { ok: false, reason: `Tokama could not read the process list (ps) to check pid ${outcome.pid ?? "?"} in ${lockPath}, so it stopped nothing. Press Retry.` };
       return {
         ok: false,
         reason: `An engine of another version is running, but Tokama could not confirm that pid ${outcome.pid ?? "?"} in ${lockPath} is its own engine for this folder, so it stopped nothing. Stop that engine yourself, then press Retry.`,
@@ -66,13 +67,18 @@ function result(outcome: StopOutcome, lockPath: string): ReplaceResult {
   }
 }
 
-/** Another app is replacing the engine: wait until the old engine lets go of its lock. */
-async function waitForOther(options: ReplaceOptions, staleMs: number): Promise<ReplaceResult> {
+/**
+ * Another app is replacing the engine: wait until the old engine lets go of its lock, or the other
+ * app is done (its `replace.lock` is gone or stale). Either way the caller connects again and sees
+ * the outcome for itself.
+ */
+async function waitForOther(options: ReplaceOptions, replaceLock: string, staleMs: number): Promise<ReplaceResult> {
   const before = readEngineLock(options.engine.lockPath);
   const deadline = Date.now() + staleMs;
   while (Date.now() < deadline) {
     const now = readEngineLock(options.engine.lockPath);
     if (before === undefined || now === undefined || now.pid !== before.pid || now.engineId !== before.engineId) return { ok: true, forced: false };
+    if (isStale(replaceLock, staleMs)) return { ok: true, forced: false };
     await new Promise((resolve) => setTimeout(resolve, options.pollMs ?? 200));
   }
   return { ok: false, reason: `Another Tokama window is replacing the older engine, and it has not finished. Lock: ${options.engine.lockPath}. Press Retry.` };
@@ -103,15 +109,29 @@ function takeLock(path: string, content: string, staleMs: number): boolean {
   return false;
 }
 
+/** Stale: gone, unreadable, older than `staleMs`, or its app (the pid in it) is no longer running. */
 function isStale(path: string, staleMs: number): boolean {
   let fd: number | undefined;
   try {
-    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
-    return Date.now() - fstatSync(fd).mtimeMs > staleMs;
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || Date.now() - stat.mtimeMs > staleMs) return true;
+    const buffer = Buffer.alloc(Math.min(stat.size, 64));
+    const pid = Number.parseInt(buffer.subarray(0, readSync(fd, buffer, 0, buffer.length, 0)).toString("utf8"), 10);
+    return Number.isInteger(pid) && pid > 0 && !alive(pid);
   } catch {
     return true;
   } finally {
     if (fd !== undefined) closeSync(fd);
+  }
+}
+
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
   }
 }
 

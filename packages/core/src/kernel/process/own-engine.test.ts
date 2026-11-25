@@ -201,6 +201,31 @@ describe("stopOwnEngine", () => {
   });
 });
 
+describe("stopOwnEngine when things go wrong", () => {
+  beforeEach(() => writeLock(engine.lockPath, `${PID} e-1\n`));
+
+  it("sends nothing when the process list cannot be read", async () => {
+    const signals: string[] = [];
+    const table: EngineProcesses = { describe: () => Promise.reject(new Error("ps timed out")), signal: (_pid, signal) => void signals.push(signal) };
+    const requestShutdown = vi.fn(async () => true);
+    expect(await stopOwnEngine(engine, { processes: table, requestShutdown, ...fast })).toEqual({ kind: "refused", reason: "unreadable", pid: PID });
+    expect(requestShutdown).not.toHaveBeenCalled();
+    expect(signals).toEqual([]);
+  });
+
+  it("goes on to the next step when a signal fails, and does not throw", async () => {
+    const { table, live } = fakeProcesses({ [PID]: { startedAt: STARTED, command: ENGINE_LINE } });
+    const failing: EngineProcesses = {
+      describe: table.describe,
+      signal: (pid, signal) => {
+        if (signal === "SIGTERM") throw Object.assign(new Error("kill EPERM"), { code: "EPERM" });
+        live.delete(pid);
+      },
+    };
+    expect(await stopOwnEngine(engine, { processes: failing, requestShutdown: async () => false, ...fast })).toMatchObject({ kind: "stopped", by: "sigkill" });
+  });
+});
+
 describe("parseDescribe", () => {
   it("reads the start time and the whole command line, spaces included", () => {
     expect(parseDescribe("Wed Nov 25 09:00:09 2026     /usr/bin/node /My Code/apps/engine/dist/main.js --dir /tmp/a b\n")).toEqual({
