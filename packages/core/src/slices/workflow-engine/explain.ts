@@ -61,10 +61,8 @@ function limitWhy(item: StoredItem, step: StoredStep, def: TemplateStepDef | und
 
 function runFailureWhy(attempt: AttemptRecord): string {
   switch (attempt.failure) {
-    case "timeout": {
-      const minutes = attempt.endedAt === undefined ? undefined : Math.max(1, Math.round((attempt.endedAt - attempt.startedAt) / 60_000));
-      return minutes === undefined ? "The agent call timed out." : `The agent call timed out after ${minutes} min.`;
-    }
+    case "timeout":
+      return attempt.endedAt === undefined ? "The agent call ran too long." : `The agent call ran for ${minutes(attempt.endedAt - attempt.startedAt)} (the limit).`;
     case "quota":
       return "The agent's plan has no quota left.";
     case "rate_limit":
@@ -111,6 +109,9 @@ const backTarget = (def: TemplateStepDef | undefined): string | undefined => {
   const rule = def === undefined ? undefined : def.doneWhen === "reviewer approves" ? def.ifChangesRequested : def.ifFailed;
   return rule?.action === "back" ? rule.stepId : undefined;
 };
+
+/** A duration in whole minutes, at least 1: `90 m`. */
+export const minutes = (ms: number): string => `${Math.max(1, Math.round(ms / 60_000))} m`;
 
 const times = (n: number): string => (n === 1 ? "once" : `${n} times`);
 const cut = (text: string): string => (text.length > WHY_MAX ? `${text.slice(0, WHY_MAX - 1)}…` : text);

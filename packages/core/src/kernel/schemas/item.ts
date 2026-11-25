@@ -30,12 +30,15 @@ export const ItemOutcomeSchema = z.enum(["done", "no_action_needed", "failed", "
 
 /**
  * How an attempt ended. `run_failed` means the run failed, not the work (quota, rate limit, CLI
- * crash, timeout, engine restart); it does not count as an attempt.
+ * crash, timeout, a silent agent, engine restart); it does not count as an attempt.
  */
 export const AttemptResultSchema = z.enum(["passed", "failed", "run_failed", "stopped"]);
 
-/** Why a run failed: an agent call error, or the engine stopped while the attempt ran. */
-export const RunFailureSchema = z.enum([...AgentCallErrorKindSchema.options, "engine_restart"]);
+/**
+ * Why a run failed: an agent call error, the agent sent nothing for too long (`silent`), or the
+ * engine stopped while the attempt ran.
+ */
+export const RunFailureSchema = z.enum([...AgentCallErrorKindSchema.options, "silent", "engine_restart"]);
 
 
 /** Connections a step may use, each with the access it asks for ("query", "read-only"). */

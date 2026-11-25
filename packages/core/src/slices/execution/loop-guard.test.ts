@@ -35,13 +35,13 @@ const turnWith = (watch: ReturnType<typeof createStreamWatch>, call: AgentCallEv
 
 describe("loop guard settings", () => {
   it("has defaults per runtime, each within the bounds", () => {
-    expect(localModelGuardDefaults).toEqual({ turnCap: 30, repeatLimit: 6, idleMs: 75_000, timeoutMs: 600_000 });
-    expect(claudeCodeGuardDefaults).toEqual({ turnCap: 150, repeatLimit: 6, idleMs: 180_000, timeoutMs: 2_700_000 });
+    expect(localModelGuardDefaults).toEqual({ turnCap: 30, repeatLimit: 6, idleMs: 75_000, silentMs: 300_000, timeoutMs: 600_000 });
+    expect(claudeCodeGuardDefaults).toEqual({ turnCap: 150, repeatLimit: 6, idleMs: 180_000, silentMs: 600_000, timeoutMs: 5_400_000 });
     for (const defaults of [localModelGuardDefaults, claudeCodeGuardDefaults]) expect(LoopGuardSettingsSchema.safeParse(defaults).success).toBe(true);
   });
 
   it("applies overrides over the local-model defaults, or over the defaults it is given", () => {
-    expect(loopGuardSettings({ turnCap: 80, idleMs: 0 })).toEqual({ ok: true, value: { turnCap: 80, repeatLimit: 6, idleMs: 0, timeoutMs: 600_000 } });
+    expect(loopGuardSettings({ turnCap: 80, idleMs: 0 })).toEqual({ ok: true, value: { turnCap: 80, repeatLimit: 6, idleMs: 0, silentMs: 300_000, timeoutMs: 600_000 } });
     expect(loopGuardSettings({ repeatLimit: 0 }, claudeCodeGuardDefaults)).toEqual({ ok: true, value: { ...claudeCodeGuardDefaults, repeatLimit: 0 } });
     expect(loopGuardSettings(undefined, claudeCodeGuardDefaults)).toEqual({ ok: true, value: claudeCodeGuardDefaults });
   });
@@ -53,6 +53,9 @@ describe("loop guard settings", () => {
     [{ repeatLimit: 1.5 }],
     [{ repeatLimit: 1 }],
     [{ idleMs: 9_999 }],
+    [{ silentMs: -1 }],
+    [{ silentMs: 9_999 }],
+    [{ silentMs: 2_147_483_648 }],
     [{ idle: 10 }],
     [null],
   ])("refuses %j", (overrides) => {
@@ -60,7 +63,12 @@ describe("loop guard settings", () => {
   });
 
   it("takes the bounds themselves", () => {
-    expect(loopGuardSettings({ timeoutMs: 2_147_483_647, repeatLimit: 2, idleMs: 10_000 }).ok).toBe(true);
+    expect(loopGuardSettings({ timeoutMs: 2_147_483_647, repeatLimit: 2, idleMs: 10_000, silentMs: 10_000 }).ok).toBe(true);
+    expect(loopGuardSettings({ silentMs: 2_147_483_647 }).ok).toBe(true);
+  });
+
+  it("takes silentMs 0, which turns the silence stop off", () => {
+    expect(loopGuardSettings({ silentMs: 0 }, claudeCodeGuardDefaults)).toEqual({ ok: true, value: { ...claudeCodeGuardDefaults, silentMs: 0 } });
   });
 });
 
@@ -316,6 +324,8 @@ describe("guard report", () => {
     for (const at of [7_000, 7_100, 7_200, 7_300]) stream.observe(TURN, at);
     expect(guardReport(stream, files, 0, 10_000, "idle").loop).toBe(true); // 6 turns after the change
     for (const stop of ["turn_cap", "repeat_limit", "timeout"] as const) expect(guardReport(stream, files, 0, 10_000, stop).loop).toBe(true);
+    // A frozen CLI wastes the time too, but it is not a loop.
+    expect(guardReport(stream, files, 0, 10_000, "silent")).toMatchObject({ loop: false, wastedMs: 7_000 });
     expect(guardReport(stream, files, 0, 10_000, null)).toMatchObject({ loop: false, wastedMs: 0, msAfterLastChange: 7_000 });
   });
 
