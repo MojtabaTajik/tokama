@@ -195,8 +195,16 @@ flow("a list row's time sits on its title line and the agent labels share one ri
       // Stacked, the agent sits right under the time; in columns it sits left of it.
       if (narrow) expect(Math.abs(g.agent.right - g.time.right), `agent right vs time right (${g.name})`).toBeLessThanOrEqual(1);
     }
-    const clipped = await page.locator(".pl-time").evaluateAll((els) => els.filter((el) => el.scrollWidth > el.clientWidth).map((el) => el.textContent));
-    expect(clipped, `clipped times (${narrow ? "narrow" : "wide"})`).toEqual([]);
+    // The longest time a row can show, put into the first row, and the list must not scroll sideways.
+    const overflow = await page.locator(".pl-time").first().evaluate((el) => {
+      const kept = el.textContent;
+      el.textContent = "24 Sept · 10 h 05 m";
+      const clippedTimes = [...document.querySelectorAll(".pl-time")].filter((time) => time.scrollWidth > time.clientWidth).length;
+      el.textContent = kept;
+      const scrollers = [...document.querySelectorAll(".pl-row-wrap")].map((wrap) => wrap.scrollWidth - wrap.clientWidth);
+      return { clippedTimes, rowOverflow: Math.max(0, ...scrollers) };
+    });
+    expect(overflow, `clipped times and row overflow (${narrow ? "narrow" : "wide"})`).toEqual({ clippedTimes: 0, rowOverflow: 0 });
     const rights = all.map((g) => g.agent?.right ?? 0);
     expect(Math.max(...rights) - Math.min(...rights), "agent right edges").toBeLessThanOrEqual(1);
   }

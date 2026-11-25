@@ -859,11 +859,11 @@ button:focus-visible {
    cannot sit inside a button, is a sibling in the agent's column. The button's ::before covers the
    whole wrapper, so a press anywhere but on the label or the finish buttons selects the row. The
    time column is one width for every row, so the agent labels share an edge: it fits the longest
-   time, `HH:MM · 1 h 05 m` (16 characters of 6.9 px at 11.5 px). */
+   time, `24 Sept · 10 h 05 m` (19 characters of 0.6 em at 11.5 px). */
 .pl-row-wrap {
   position: relative;
   display: grid;
-  grid-template-columns: 22px minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 170px) 116px;
+  grid-template-columns: 22px minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 170px) 132px;
   align-items: center;
   gap: 4px 14px;
   padding: 9px 8px;
