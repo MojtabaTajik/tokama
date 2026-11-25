@@ -63,7 +63,7 @@ export const TIP_CLOSE_MS = 200;
 /**
  * Whether the Insights tooltip shows. Hover opens it after a short rest and closes it after a short
  * absence; a leave and a new enter within that time change nothing. Focus opens it at once. A
- * dismissed tooltip comes back when the pointer returns.
+ * dismissed tooltip comes back when the pointer or the focus returns.
  * `onShown` hears each change once.
  */
 function useInsightsTip(onShown: ((shown: boolean) => void) | undefined) {
@@ -84,8 +84,8 @@ function useInsightsTip(onShown: ((shown: boolean) => void) | undefined) {
     (by: "hover" | "focus", held: boolean) => {
       const s = state.current;
       s[by] = held;
-      // A dismissed tooltip comes back when the pointer returns, or once pointer and focus have both left.
-      if ((by === "hover" && held) || (!s.hover && !s.focus)) s.dismissed = false;
+      // A dismissed tooltip comes back when the pointer or the focus returns.
+      if (held || (!s.hover && !s.focus)) s.dismissed = false;
       const wanted = (s.hover || s.focus) && !s.dismissed;
       clearTimeout(timer.current);
       timer.current = undefined;

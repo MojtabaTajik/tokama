@@ -78,6 +78,13 @@ describe("Rail: Insights tooltip", () => {
     expect(onInsightsTip.mock.calls).toEqual([[true], [false]]);
   });
 
+  it("opens on focus after an Escape pressed while nothing held it", () => {
+    render();
+    act(() => void document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    fire("focusin");
+    expect(open()).toBe(true);
+  });
+
   it("does not open for a pointer that only passes over Insights", () => {
     vi.useFakeTimers();
     render();
