@@ -9,7 +9,7 @@ import { useUsage } from "./insights/useUsage.js";
 import { ALL_WORK, type CliIssue, cliIssuesOf, healthProblemsOf, inView, needsYouCount, type View } from "./model.js";
 import { isMac, NewWork, type NewWorkHandle } from "./newwork/NewWork.js";
 import { AddRepoDialog } from "./repos/AddRepoDialog.js";
-import { Settings } from "./settings/Settings.js";
+import { Settings, type SettingsPage } from "./settings/Settings.js";
 import { NeedsYou } from "./needsyou/NeedsYou.js";
 import { MainArea } from "./shell/MainArea.js";
 import { Rail } from "./shell/Rail.js";
@@ -26,17 +26,17 @@ export interface AppProps {
   readonly retryDelayMs?: number;
   /** A fixed time for tests; otherwise the clock runs. */
   readonly now?: number;
-  /** The app's version, shown in About. */
-  readonly version?: string;
   /** AI CLIs to sign in to again, for tests. Default: what the setup's health reports. */
   readonly cliIssues?: readonly CliIssue[];
 }
 
-export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, version = "unknown", cliIssues }: AppProps) {
+export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, cliIssues }: AppProps) {
   const { connection, data, loadError, stale, retry, refreshSetup } = useEngine(bridge, retryDelayMs);
   const [panelOpen, setPanelOpen] = useState(true);
   // What the main area shows: the board, the Needs you page, Insights or About; Settings takes the whole window.
   const [page, setPage] = useState<"board" | "needs-you" | "insights" | "about" | "settings">("board");
+  // The Settings page to open on: the rail's Settings button opens the default, the tooltip AI CLIs.
+  const [settingsPage, setSettingsPage] = useState<SettingsPage | undefined>(undefined);
   // The tooltip and the page share one report; the page's range picks its days.
   const [usageRange, setUsageRange] = useState<UsageRange>(14);
   // The report loads every minute only while someone looks at it: the page, or the rail tooltip.
@@ -44,6 +44,8 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
   const usage = useUsage(bridge, connection, usageRange, page === "insights" || tipShown);
   const aboutOpen = page === "about";
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(undefined);
+  // Counts each "Review the diff": the drawer shows the item's Diff tab, also when it shows the item already.
+  const [diffAsked, setDiffAsked] = useState<number | undefined>(undefined);
   const composer = useRef<NewWorkHandle>(null);
   // New work asked for on a page that has no composer: the board opens, then the composer.
   const [openComposerOnBoard, setOpenComposerOnBoard] = useState(false);
@@ -109,7 +111,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
   if (page === "settings") {
     return (
       <div className="shell">
-        <Settings bridge={bridge} connection={connection} setup={setup} onBack={() => setPage("board")} />
+        <Settings bridge={bridge} connection={connection} setup={setup} onBack={() => setPage("board")} {...(settingsPage !== undefined && { initialPage: settingsPage })} />
       </div>
     );
   }
@@ -137,7 +139,20 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
         onBoard={() => setPage("board")}
         onNeedsYou={() => setPage("needs-you")}
         onAbout={() => setPage(aboutOpen ? "board" : "about")}
-        onSettings={() => setPage("settings")}
+        onSettings={() => {
+          setSettingsPage(undefined);
+          setPage("settings");
+        }}
+        setup={setup}
+        onSelectItem={(itemId) => {
+          // About hides the drawer: leave it, so the chosen item shows now.
+          if (aboutOpen) setPage("board");
+          setSelectedItemId(itemId);
+        }}
+        onCliSettings={() => {
+          setSettingsPage("ai-clis");
+          setPage("settings");
+        }}
       />
       {panelOpen && (
         <Sidebar
@@ -161,7 +176,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
         />
       )}
       {aboutOpen ? (
-        <About version={version} onClose={() => setPage("board")} />
+        <About bridge={bridge} connection={connection.status} onClose={() => setPage("board")} />
       ) : page === "insights" ? (
         <Insights
           bridge={bridge}
@@ -193,6 +208,10 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
           now={now}
           selectedItemId={selectedItemId}
           onSelectItem={setSelectedItemId}
+          onReviewDiff={(itemId) => {
+            setSelectedItemId(itemId);
+            setDiffAsked((count) => (count ?? 0) + 1);
+          }}
           composer={composerNode}
         />
       ) : (
@@ -211,7 +230,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
         />
       )}
       {addingRepo !== undefined && <AddRepoDialog bridge={bridge} path={addingRepo} onClose={() => setAddingRepo(undefined)} />}
-      {!aboutOpen && selectedItemId !== undefined && <ItemDrawer bridge={bridge} itemId={selectedItemId} setup={setup} onClose={() => setSelectedItemId(undefined)} />}
+      {!aboutOpen && selectedItemId !== undefined && <ItemDrawer bridge={bridge} itemId={selectedItemId} setup={setup} diffAsked={diffAsked} onClose={() => setSelectedItemId(undefined)} />}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ConnectionState, TokamaBridge } from "../shared/bridge.js";
 import { App } from "./App.js";
 import { brand } from "./brand/index.js";
+import { TIP_OPEN_MS } from "./shell/Rail.js";
 import { CONNECTED, fakeBridge } from "./testing/bridge.js";
 import { ITEMS, items, NOW, setup } from "./testing/sample.js";
 import { machineReport } from "./testing/machine.js";
@@ -49,7 +50,9 @@ describe("App shell", () => {
 
   it("has every rail destination and the user (who opens About), and no usage rings", async () => {
     await render(fakeBridge(CONNECTED).bridge);
-    const labels = $$(".rail button").map((button) => button.getAttribute("aria-label"));
+    const labels = $$(".rail button")
+      .filter((button) => button.closest(".insights-tip") === null)
+      .map((button) => button.getAttribute("aria-label"));
     expect(labels).toEqual(["Sidebar", "Board", "Needs you · 1", "Insights", "Settings", "Attention", "About Tokama"]);
     expect($(".usage-ring")).toBeNull();
     expect($('.rail-user[aria-label="About Tokama"]')).not.toBeNull();
@@ -58,13 +61,12 @@ describe("App shell", () => {
   it("lists every AI CLI with its windows, reset times and data age in the Insights tooltip, and marks one near its limit", async () => {
     await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
     const insights = $('.rail button[aria-label="Insights"]')!;
-    const tip = $('.rail [role="tooltip"]')!;
-    expect(insights.getAttribute("aria-describedby")).toBe(tip.id);
-    expect([...tip.querySelectorAll("li")].map((li) => [...li.children].map((child) => child.textContent))).toEqual([
-      ["Claude Code", "5-hour 36% · resets 17:10", "Weekly 58% · resets Thu 23 Oct 09:00", "as of 14:58"],
-      ["Codex CLI! near limit", "Weekly 84% · resets Sat 25 Oct 06:00", "data 34 min old"],
-      ["Ollama", "no plan limit"],
-    ]);
+    const tip = $(".rail .insights-tip")!;
+    expect(insights.getAttribute("aria-controls")).toBe(tip.id);
+    expect(insights.getAttribute("aria-expanded")).toBe("false");
+    expect([...tip.querySelectorAll('[role="meter"]')].map((meter) => meter.getAttribute("aria-label"))).toEqual(["5-hour window", "Weekly window", "Codex CLI Weekly window"]);
+    expect(tip.querySelector(".it-other .ins-tone")?.textContent).toBe("! near limit");
+    expect(tip.querySelector(".it-section-head .it-aside")?.textContent).toBe("as of 14:58");
     // The ! is a symbol on the icon, beside the words in the tooltip.
     expect($$(".rail .badge").map((badge) => [badge.getAttribute("data-tone"), badge.textContent])).toEqual([
       ["warn", "1"],
@@ -78,19 +80,38 @@ describe("App shell", () => {
     const usageQueries = () => fake.query.mock.calls.filter(([q]) => q.type === "usage").length;
     expect(usageQueries()).toBe(1);
     await act(async () => $(".insights")!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, relatedTarget: document.body })));
+    await wait(TIP_OPEN_MS + 30);
     expect(usageQueries()).toBe(2);
+  });
+
+  it("opens the AI CLIs settings from the tooltip, and the rail's Settings on its first page again", async () => {
+    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
+    await click($(".insights-tip .it-link")!);
+    expect($(".settings-entry[aria-current='page']")?.textContent).toBe("AI CLIs");
+    await click($(".settings-back")!);
+    await click($('.rail button[aria-label="Settings"]')!);
+    expect($(".settings-entry[aria-current='page']")?.textContent).toBe("Agents");
+  });
+
+  it("opens a Today item from the tooltip in the drawer, leaving About so the drawer shows", async () => {
+    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
+    await click($('.rail-user[aria-label="About Tokama"]')!);
+    expect($(".drawer")).toBeNull();
+    await click($(".insights-tip .it-title")!);
+    expect($(".drawer")).not.toBeNull();
+    expect(text(".main-header h1")).toBe("All work");
   });
 
   it("says usage is not loaded yet in the Insights tooltip until the engine answers", async () => {
     await render(fakeBridge(CONNECTED).bridge);
-    expect($$('.rail [role="tooltip"] li').map((li) => li.textContent)).toEqual(["Claude Codeusage not loaded yet", "Codex CLIusage not loaded yet", "Ollamausage not loaded yet"]);
+    expect($$(".rail .insights-tip .it-note").map((note) => note.textContent)).toEqual(["usage not loaded yet", "usage not loaded yet"]);
   });
 
   it("opens the Insights page from the rail and goes back with Board", async () => {
     await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
     await click($('.rail button[aria-label="Insights"]')!);
     expect(text(".main-header h1")).toBe("Insights");
-    expect($(".insights")?.hasAttribute("data-dismissed")).toBe(true);
+    expect($(".insights")?.hasAttribute("data-open")).toBe(false);
     expect($('.rail button[aria-label="Insights"]')?.getAttribute("aria-current")).toBe("page");
     expect($('.rail button[aria-label="Board"]')?.hasAttribute("aria-current")).toBe(false);
     expect($$(".ins-plan").map((plan) => plan.getAttribute("aria-label"))).toEqual(["Claude Code", "Codex CLI", "Ollama"]);
@@ -112,11 +133,14 @@ describe("App shell", () => {
   it("closes the Insights tooltip on Escape and brings it back when the pointer or focus returns", async () => {
     await render(fakeBridge(CONNECTED).bridge);
     const insights = $(".insights")!;
-    expect(insights.hasAttribute("data-dismissed")).toBe(false);
+    expect(insights.hasAttribute("data-open")).toBe(false);
+    await act(async () => insights.dispatchEvent(new FocusEvent("focusin", { bubbles: true })));
+    expect(insights.hasAttribute("data-open")).toBe(true);
     await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
-    expect(insights.hasAttribute("data-dismissed")).toBe(true);
-    await act(async () => insights.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
-    expect(insights.hasAttribute("data-dismissed")).toBe(false);
+    expect(insights.hasAttribute("data-open")).toBe(false);
+    await act(async () => insights.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, relatedTarget: document.body })));
+    await wait(TIP_OPEN_MS + 30);
+    expect(insights.hasAttribute("data-open")).toBe(true);
   });
 
   it("shows the needs-you count as an amber badge and no attention badge at zero", async () => {

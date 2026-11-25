@@ -64,13 +64,28 @@ flow("a workflow with only finished items shows each live group as empty, and a 
   expect(await page.locator(".pl-row").count()).toBe(0);
 });
 
-flow("About shows the version, the licences and the website link", async ({ page, screenshot }) => {
+flow("About shows the version, the build facts, the notices and the website link", async ({ page, screenshot, engine, resize }) => {
+  // The size of the design board, so the screenshot sits next to it.
+  await resize(1440, 1280);
   await page.getByRole("button", { name: "About Tokama" }).click();
   await page.getByRole("heading", { name: "About" }).waitFor();
-  expect(await page.locator(".about-version").innerText()).toBe(`Version ${version}`);
-  expect(await page.locator(".about-notices").innerText()).toContain("Font Awesome Free");
+  await page.locator(".about-row").first().waitFor();
+  expect(await page.locator(".about-version .mono").innerText()).toBe(version);
+  expect(await page.locator(".about-aka").innerText()).toContain("Named after the Tokay gecko and the Agama lizard.");
+  const rows = await page.locator(".about-row").evaluateAll((els) => els.map((el) => el.querySelector("dd")?.textContent));
+  expect(rows[0]).toMatch(new RegExp(`^${version.replaceAll(".", "\\.")} · \\d{4}-\\d{2}-\\d{2} · \\S+$`));
+  expect(rows[1]).toBe(`${version} · running · pid ${engine()?.pid}`);
+  expect(rows[3]).toBe("~/.tokama");
+  expect(await page.locator(".about-foot").innerText()).toBe("Tokama · Apache License 2.0");
   expect(await page.locator(".about-link").getAttribute("href")).toBe("https://tokama.dev");
+
+  // The first notice is open, as on the board.
+  expect(await page.locator(".about-notice-body").count()).toBe(1);
   await screenshot("9-about");
+  await page.getByRole("button", { name: "Expand all" }).click();
+  expect(await page.locator(".about-notice-body").count()).toBe(5);
+  await page.getByRole("button", { name: "Collapse all" }).click();
+  expect(await page.locator(".about-notice-body").count()).toBe(0);
 
   await page.getByRole("button", { name: "Back to work" }).click();
   await page.locator("main h1", { hasText: "All work" }).waitFor();

@@ -6,7 +6,8 @@ import type { ProcessRunner, RunRequest, RunResult } from "../../../kernel/proce
 import { compareVersions, GET_USAGE_FROM, parseGetUsageReply, parseUsageCache, readClaudePlanCache, requestClaudePlan } from "./plan-usage.js";
 
 // The fixtures keep the real shapes Claude Code 2.1.332 wrote (codenamed buckets, microsecond
-// reset times, 0 to 100 utilization) with made-up values and no account data.
+// reset times, 0 to 100 utilization, the `limits` list with a model-scoped weekly limit and its
+// share) with made-up values and no account data.
 const fixture = (name: string) => readFileSync(join(import.meta.dirname, "testing", "fixtures", name), "utf8");
 const REPLY = fixture("get-usage.jsonl").trim();
 const NOW = Date.UTC(2025, 9, 20, 14, 32);
@@ -30,11 +31,35 @@ function fakeRunner(replies: { version: Reply; usage?: Reply }): ProcessRunner &
   };
 }
 
+/** The recorded reply with its `rate_limits` changed. */
+function withRateLimits(change: (limits: Record<string, unknown>) => void): string {
+  const reply = JSON.parse(REPLY) as { response: { response: { rate_limits: Record<string, unknown> } } };
+  change(reply.response.response.rate_limits);
+  return JSON.stringify(reply);
+}
+
 const clock = { now: () => NOW, setTimeout: () => 0 as never, clearTimeout: () => undefined };
 
 describe("parseGetUsageReply", () => {
-  it("reads the windows, reset times, plan and extra usage of a recorded reply", () => {
+  it("reads every limit of a recorded reply, a model-scoped weekly limit with its share included", () => {
     expect(parseGetUsageReply(REPLY, NOW)).toEqual({
+      ok: true,
+      value: {
+        windows: [
+          { window: "session", usedPercent: 36, resetsAt: Date.parse("2025-10-20T17:10:00.299Z"), group: "session", severity: "normal", active: false },
+          { window: "weekly_all", usedPercent: 58, resetsAt: Date.parse("2025-10-23T09:00:00.299Z"), group: "weekly", severity: "normal", active: true },
+          // The share is the allowance (50), not the used part of the weekly limit (3).
+          { window: "weekly_scoped", usedPercent: 7, resetsAt: Date.parse("2025-10-23T09:00:00Z"), scope: "Fable", group: "weekly", severity: "normal", active: false, sharePercent: 50 },
+        ],
+        asOf: NOW,
+        plan: "pro",
+        extraUsage: "off",
+      },
+    });
+  });
+
+  it("reads the fixed windows of a reply without a limits list", () => {
+    expect(parseGetUsageReply(withRateLimits((limits) => delete limits["limits"]), NOW)).toEqual({
       ok: true,
       value: {
         windows: [
@@ -46,6 +71,60 @@ describe("parseGetUsageReply", () => {
         extraUsage: "off",
       },
     });
+  });
+
+  it("refuses a limits list it does not know, and falls back to the fixed windows", () => {
+    const windowsOf = (change: (limits: Record<string, unknown>) => void) => {
+      const parsed = parseGetUsageReply(withRateLimits(change), NOW);
+      return parsed.ok ? parsed.value.windows.map((w) => w.window) : parsed.error;
+    };
+    const fixed = ["five_hour", "seven_day"];
+    const firstLimit = (limits: Record<string, unknown>) => (limits["limits"] as Record<string, unknown>[])[0]!;
+    expect(windowsOf((limits) => (firstLimit(limits)["kind"] = "monthly"))).toEqual(fixed);
+    expect(windowsOf((limits) => (firstLimit(limits)["group"] = "daily"))).toEqual(fixed);
+    expect(windowsOf((limits) => (firstLimit(limits)["percent"] = "12"))).toEqual(fixed);
+    expect(windowsOf((limits) => (firstLimit(limits)["percent"] = -1))).toEqual(fixed);
+    expect(windowsOf((limits) => (limits["limits"] = []))).toEqual(fixed);
+    expect(windowsOf((limits) => (limits["limits"] = { kind: "session" }))).toEqual(fixed);
+    expect(windowsOf((limits) => (limits["limits"] = Array.from({ length: 21 }, () => firstLimit(limits))))).toEqual(fixed);
+  });
+
+  it("clamps odd values and keeps a scoped limit without a readable label", () => {
+    const parsed = parseGetUsageReply(
+      withRateLimits((limits) => {
+        const [session, weekly, scoped] = limits["limits"] as Record<string, unknown>[];
+        session!["percent"] = 2500.456;
+        session!["resets_at"] = "not a time";
+        session!["severity"] = "<b>bad</b>";
+        weekly!["is_active"] = "yes";
+        scoped!["scope"] = { model: { display_name: "<img src=x>", id: "claude-x" }, surface: "cli" };
+        limits["weekly_scoped_shares"] = [
+          { limit_index: 0, used_percent_of_weekly: 1, allowance_percent_of_weekly: 40 },
+          { limit_index: 2, used_percent_of_weekly: 1, allowance_percent_of_weekly: 250 },
+        ];
+      }),
+      NOW,
+    );
+    expect(parsed.ok && parsed.value.windows).toEqual([
+      // A share pointing at a limit that is not scoped is ignored.
+      { window: "session", usedPercent: 1000, group: "session", active: false },
+      { window: "weekly_all", usedPercent: 58, resetsAt: Date.parse("2025-10-23T09:00:00.299Z"), group: "weekly", severity: "normal" },
+      { window: "weekly_scoped", usedPercent: 7, resetsAt: Date.parse("2025-10-23T09:00:00Z"), group: "weekly", severity: "normal", active: false, sharePercent: 100 },
+    ]);
+  });
+
+  it("finds a scope's label on its model only, and never reads an id or the scope's own name", () => {
+    const labelOf = (scope: unknown) => {
+      const parsed = parseGetUsageReply(withRateLimits((limits) => ((limits["limits"] as Record<string, unknown>[])[2]!["scope"] = scope)), NOW);
+      return parsed.ok ? parsed.value.windows[2]!.scope : parsed.error;
+    };
+    expect(labelOf({ model: { display_name: "  Opus 4.5 " } })).toBe("Opus 4.5");
+    expect(labelOf({ model: { name: "Fable" } })).toBe("Fable");
+    expect(labelOf({ display_name: "Northwind", name: "Northwind Inc" })).toBeUndefined();
+    expect(labelOf({ model: { id: "fable-1" } })).toBeUndefined();
+    expect(labelOf("Fable")).toBeUndefined();
+    expect(labelOf(null)).toBeUndefined();
+    expect(labelOf({ model: { display_name: "x".repeat(49) } })).toBeUndefined();
   });
 
   it("reports a login without plan windows, an error reply and an unknown shape as unknown, never as numbers", () => {
@@ -60,31 +139,46 @@ describe("parseGetUsageReply", () => {
     expect(parseGetUsageReply(REPLY.replace('"request_id":"tokama-usage"', '"request_id":"other"'), NOW).ok).toBe(false);
   });
 
-  it("skips a window without a utilization and keeps one whose reset time is missing", () => {
-    const reply = JSON.parse(REPLY) as { response: { response: { rate_limits: Record<string, unknown> } } };
-    reply.response.response.rate_limits["five_hour"] = { utilization: null, resets_at: null };
-    reply.response.response.rate_limits["seven_day"] = { utilization: 101.5 };
-    const parsed = parseGetUsageReply(JSON.stringify(reply), NOW);
+  it("skips a fixed window without a utilization and keeps one whose reset time is missing", () => {
+    const parsed = parseGetUsageReply(
+      withRateLimits((limits) => {
+        delete limits["limits"];
+        limits["five_hour"] = { utilization: null, resets_at: null };
+        limits["seven_day"] = { utilization: 101.5 };
+      }),
+      NOW,
+    );
     expect(parsed.ok && parsed.value.windows).toEqual([{ window: "seven_day", usedPercent: 101.5 }]);
   });
 });
 
 describe("parseUsageCache", () => {
-  it("reads the cached windows with their fetch time and keeps no account data", () => {
+  it("reads the cached limits with their fetch time and keeps no account data", () => {
     const parsed = parseUsageCache(fixture("claude-config.json"));
     expect(parsed).toEqual({
       ok: true,
       value: {
         windows: [
-          { window: "five_hour", usedPercent: 41, resetsAt: Date.parse("2025-10-20T17:10:00.299Z") },
-          { window: "seven_day", usedPercent: 63, resetsAt: Date.parse("2025-10-23T09:00:00.299Z") },
-          { window: "seven_day_sonnet", usedPercent: 12, resetsAt: Date.parse("2025-10-23T09:00:00Z") },
+          { window: "session", usedPercent: 41, resetsAt: Date.parse("2025-10-20T17:10:00.299Z"), group: "session", severity: "normal", active: true },
+          { window: "weekly_all", usedPercent: 63, resetsAt: Date.parse("2025-10-23T09:00:00.299Z"), group: "weekly", severity: "normal", active: false },
+          { window: "weekly_scoped", usedPercent: 0, resetsAt: Date.parse("2025-10-23T09:00:00Z"), scope: "Fable", group: "weekly", severity: "normal", active: false, sharePercent: 50 },
         ],
         asOf: 1760970000000,
         extraUsage: "off",
       },
     });
     expect(JSON.stringify(parsed)).not.toMatch(/example\.com|00000000-|orders-api/);
+  });
+
+  it("reads the cached fixed windows when the cache has no limits list", () => {
+    const config = JSON.parse(fixture("claude-config.json")) as { cachedUsageUtilization: { utilization: Record<string, unknown> } };
+    delete config.cachedUsageUtilization.utilization["limits"];
+    const parsed = parseUsageCache(JSON.stringify(config));
+    expect(parsed.ok && parsed.value.windows).toEqual([
+      { window: "five_hour", usedPercent: 41, resetsAt: Date.parse("2025-10-20T17:10:00.299Z") },
+      { window: "seven_day", usedPercent: 63, resetsAt: Date.parse("2025-10-23T09:00:00.299Z") },
+      { window: "seven_day_sonnet", usedPercent: 12, resetsAt: Date.parse("2025-10-23T09:00:00Z") },
+    ]);
   });
 
   it("has nothing to read in a config without the cache", () => {

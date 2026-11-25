@@ -4,6 +4,8 @@
 // The "working" investigation is the one the tick moves (and loops); the others stay put.
 
 export const DECISION_ID = "decision_5e1c9a7b-3f2d-4c8e-9a6b-1d2e3f4a5b6c";
+/** The Quick change item's question: approve the diff it shows. */
+export const DIFF_DECISION_ID = "decision_5e1c9a7b-3f2d-4c8e-9a6b-1d2e3f4a5b6d";
 
 export const ITEM_IDS = {
   queued: "item_1a2b3c4d-0001-4a1b-8c1d-000000000001",
@@ -15,6 +17,7 @@ export const ITEM_IDS = {
   flaky: "item_1a2b3c4d-0007-4a1b-8c1d-000000000007",
   building: "item_1a2b3c4d-0008-4a1b-8c1d-000000000008",
   failed: "item_1a2b3c4d-0009-4a1b-8c1d-000000000009",
+  quickChange: "item_1a2b3c4d-0010-4a1b-8c1d-000000000010",
 } as const;
 
 const agents = {
@@ -105,6 +108,17 @@ const templates = {
       { name: "Run checks", stage: "verifying", data: "none", checks: { from: "repo" } },
     ],
   },
+  quickChange: {
+    id: "builtin/quick-change",
+    name: "Quick change",
+    kind: "task",
+    icon: "bolt",
+    color: "rose",
+    connections: [],
+    start: { needs: ["text", "repo"], askBeforeCloud: false },
+    warnings: [],
+    steps: [{ name: "Change", stage: "review", agentId: "local-builder", data: "none" }],
+  },
   reviewOnly: {
     id: "builtin/review-only",
     name: "Review only",
@@ -132,7 +146,7 @@ export const sampleSetup = {
     { id: "grafana-prod", name: "Grafana · prod", type: "MCP server" },
   ],
   agents: [agents.architect, agents.investigator, agents.reviewer, agents.builder],
-  templates: [templates.emergency, templates.slowQuery, templates.planAndBuild, templates.quickFix, templates.reviewOnly],
+  templates: [templates.emergency, templates.slowQuery, templates.planAndBuild, templates.quickFix, templates.quickChange, templates.reviewOnly],
   health: { git: { ok: true, version: "git version 2.54.0" }, clis: [{ cliId: "claude-code", installed: true, loggedIn: true, version: "2.1.331" }], config: [] },
 };
 
@@ -296,6 +310,34 @@ export function sampleItems(now: number) {
     },
     {
       ...base,
+      id: ITEM_IDS.quickChange,
+      kind: "task",
+      templateId: templates.quickChange.id,
+      title: "Log the warehouse id on sync failures",
+      text: "When an inventory sync fails, the log line does not say which warehouse. Add the warehouse id.",
+      repoIds: ["inventory-service"],
+      privacy: "local_only",
+      state: "needs_you",
+      createdAt: ago(now, 9),
+      cardLine: "Approve this step's result?",
+      decision: {
+        id: DIFF_DECISION_ID,
+        kind: "plan_approval",
+        stepIndex: 0,
+        question: "Approve this change and commit it?",
+        why: "Local builder changed 4 files in a worktree of inventory-service. Nothing is committed until you approve. Request changes sends your note to Local builder for another run.",
+        hasDiff: true,
+        choices: [
+          { id: "approve", label: "Approve and commit" },
+          { id: "request_changes", label: "Request changes" },
+          { id: "no_action_needed", label: "End: no action needed" },
+          { id: "stop", label: "Stop" },
+        ],
+      },
+      steps: steps(templates.quickChange, ["needs_you"], { 0: "waits for you" }).map((step) => ({ ...step, runs: 1, maxAttempts: 3, attempts: [{ attempt: 1, result: "passed", checks: [] }] })),
+    },
+    {
+      ...base,
       id: ITEM_IDS.flaky,
       kind: "task",
       templateId: templates.quickFix.id,
@@ -310,3 +352,60 @@ export function sampleItems(now: number) {
     },
   ];
 }
+
+/** The change the Quick change item asks you to approve. */
+export const sampleDiff = {
+  files: [
+    {
+      path: "src/sync/worker.ts",
+      status: "modified",
+      added: 2,
+      removed: 1,
+      binary: false,
+      cut: false,
+      hunks: [
+        {
+          header: "@@ -41,7 +41,8 @@ export async function syncWarehouse(warehouse: Warehouse) {",
+          lines: [
+            "   try {",
+            "     await pushStock(warehouse);",
+            "   } catch (error) {",
+            '-    log.error("inventory sync failed", { error });',
+            '+    log.error("inventory sync failed", { error, warehouseId: warehouse.id });',
+            "+    metrics.increment(\"sync.failed\", { warehouse: warehouse.id });",
+            "     throw error;",
+            "   }",
+            " }",
+          ],
+        },
+      ],
+    },
+    {
+      path: "src/sync/worker.test.ts",
+      status: "modified",
+      added: 6,
+      removed: 0,
+      binary: false,
+      cut: false,
+      hunks: [
+        {
+          header: "@@ -88,3 +88,9 @@ describe(\"syncWarehouse\", () => {",
+          lines: [
+            "   });",
+            "+",
+            '+  it("logs the warehouse id when a sync fails", async () => {',
+            "+    await expect(syncWarehouse(failing)).rejects.toThrow();",
+            '+    expect(log.error).toHaveBeenCalledWith("inventory sync failed", expect.objectContaining({ warehouseId: "wh-7" }));',
+            "+  });",
+            " });",
+          ],
+        },
+      ],
+    },
+    { path: "docs/sync-dashboard.png", status: "modified", added: null, removed: null, binary: true, cut: true, hunks: [] },
+    { path: "fixtures/warehouses.json", status: "modified", added: 1204, removed: 310, binary: false, cut: true, hunks: [] },
+  ],
+  moreFiles: 0,
+  cut: true,
+  worktree: { repoId: "inventory-service", dir: ".tokama/wt/1a2b3c4d", branch: "tokama/1a2b3c4d", baseCommit: "85a75e3c0ffee0000000000000000000000000ab" },
+};

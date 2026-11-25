@@ -7,6 +7,8 @@ import type { ItemRecord, Setup } from "@tokama/core";
 import { type MouseEvent, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { DecisionChoices } from "../drawer/DecisionChoices.js";
+import { nextRunLine } from "../drawer/describe.js";
+import { ChangedFiles, useDecisionDiff } from "../drawer/DiffView.js";
 import { type Notice, problem, REFRESH_ON } from "../drawer/ItemDrawer.js";
 import { ConnectionFailure } from "../shell/ConnectionStatus.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
@@ -29,6 +31,7 @@ const TEXT = {
   waiting: (count: number) => `${count} waiting`,
   oldest: (since: string) => `oldest item started ${since} ago`,
   started: (since: string) => `started ${since} ago`,
+  review: "Review the diff",
 } as const;
 
 export interface NeedsYouProps {
@@ -46,6 +49,8 @@ export interface NeedsYouProps {
   readonly now: number;
   readonly selectedItemId: string | undefined;
   readonly onSelectItem: (itemId: string) => void;
+  /** Opens the item's drawer on its Diff tab. */
+  readonly onReviewDiff: (itemId: string) => void;
   /** Pinned below the list: the New work input, so it keeps working from this page. */
   readonly composer?: ReactNode;
 }
@@ -96,7 +101,7 @@ export function NeedsYou(props: NeedsYouProps) {
             ) : (
               <ol className="nr-list" aria-label={TEXT.list}>
                 {rows.map((row, index) => (
-                  <Row key={row.item.id} row={row} index={index} bridge={props.bridge} selected={row.item.id === props.selectedItemId} onSelect={props.onSelectItem} onRefresh={onRetry} />
+                  <Row key={row.item.id} row={row} index={index} bridge={props.bridge} selected={row.item.id === props.selectedItemId} onSelect={props.onSelectItem} onReviewDiff={props.onReviewDiff} onRefresh={onRetry} />
                 ))}
               </ol>
             )}
@@ -131,12 +136,14 @@ interface RowProps {
   readonly bridge: TokamaBridge;
   readonly selected: boolean;
   readonly onSelect: (itemId: string) => void;
+  readonly onReviewDiff: (itemId: string) => void;
   readonly onRefresh: () => void;
 }
 
-function Row({ row, index, bridge, selected, onSelect, onRefresh }: RowProps) {
+function Row({ row, index, bridge, selected, onSelect, onReviewDiff, onRefresh }: RowProps) {
   const { item, decision } = row;
   const [busy, setBusy] = useState(false);
+  const diff = useDecisionDiff(bridge, item.id, decision);
   const [notice, setNotice] = useState<Notice | undefined>(undefined);
   // The row can be gone when the reply arrives (the answer worked and the item moved on).
   const mounted = useRef(true);
@@ -147,12 +154,12 @@ function Row({ row, index, bridge, selected, onSelect, onRefresh }: RowProps) {
     };
   }, []);
 
-  const choose = async (choice: string) => {
+  const choose = async (choice: string, note?: string) => {
     if (decision === undefined) return;
     setBusy(true);
     setNotice(undefined);
     const reply = await bridge
-      .command({ type: "resolve_decision", itemId: item.id, decisionId: decision.id, choice })
+      .command({ type: "resolve_decision", itemId: item.id, decisionId: decision.id, choice, ...(note !== undefined && { note }) })
       .catch((cause: unknown) => ({ ok: false as const, error: { code: "bridge_error", message: String(cause) } }));
     if (!mounted.current) return;
     setBusy(false);
@@ -162,7 +169,7 @@ function Row({ row, index, bridge, selected, onSelect, onRefresh }: RowProps) {
   };
   // A click on the row's free space selects it as the title does; buttons and the summary keep their own clicks.
   const onRowClick = (event: MouseEvent<HTMLElement>) => {
-    if ((event.target as Element).closest("button, pre") === null) onSelect(item.id);
+    if ((event.target as Element).closest("button, pre, textarea, form") === null) onSelect(item.id);
   };
 
   return (
@@ -206,6 +213,7 @@ function Row({ row, index, bridge, selected, onSelect, onRefresh }: RowProps) {
           </pre>
         </div>
       )}
+      {diff !== undefined && <ChangedFiles state={diff} context={item.title} />}
       {notice !== undefined && (
         <p className="drawer-notice" data-tone={notice.tone} role="status">
           <span className="symbol" aria-hidden="true">
@@ -215,7 +223,22 @@ function Row({ row, index, bridge, selected, onSelect, onRefresh }: RowProps) {
         </p>
       )}
       {decision !== undefined && (
-        <DecisionChoices decision={decision} busy={busy} context={item.title} onChoose={(choice) => void choose(choice)} />
+        <DecisionChoices
+          key={decision.id}
+          decision={decision}
+          busy={busy}
+          context={item.title}
+          agent={row.agent?.name}
+          run={nextRunLine(item.steps[decision.stepIndex])}
+          extra={
+            decision.hasDiff === true ? (
+              <button type="button" className="link nr-review" aria-label={`${TEXT.review}: ${item.title}`} onClick={() => onReviewDiff(item.id)}>
+                {TEXT.review}
+              </button>
+            ) : undefined
+          }
+          onChoose={(choice, note) => void choose(choice, note)}
+        />
       )}
     </li>
   );

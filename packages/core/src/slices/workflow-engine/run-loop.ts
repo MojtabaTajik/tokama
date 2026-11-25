@@ -25,7 +25,9 @@ import { err, ok, type Result } from "../../kernel/result/index.js";
 import {
   CallIdSchema,
   DecisionIdSchema,
+  MAX_NOTE_CHARS,
   newId,
+  REQUEST_CHANGES_ID,
   parseTemplateRecord,
   type AgentCallErrorKind,
   type AttemptRecord,
@@ -34,6 +36,7 @@ import {
   type DecisionChoice,
   type DecisionKind,
   type ItemEventBody,
+  type ItemDiff,
   type ItemId,
   type ItemOutcome,
   type RepoId,
@@ -50,7 +53,7 @@ import { protectedSet, type ProtectedSet } from "../integrity/index.js";
 import { openAttempt, openDecisions, recoverItems, RUN_FAILURE_CHOICES, type ItemStore, type RecoveredItem } from "../items/index.js";
 import { buildPrompt, type StepResults } from "../prompting/index.js";
 import { checksPass, runCommand, type CheckResult } from "../verification/index.js";
-import { commitItem, createWorktree, findItemWorktree, stageItem, worktreePath, worktreeSnapshot, type ItemWorktree } from "../worktrees/index.js";
+import { commitItem, createWorktree, findItemWorktree, stageItem, treeDiff, worktreePath, worktreeSnapshot, type ItemWorktree } from "../worktrees/index.js";
 import { attemptLimit, budgetAllowedMs, budgetUsedMs, CONTINUE_ID, countedAttempts, ONE_MORE_ID, sameFailureTwice } from "./counters.js";
 import {
   APPROVE_ID,
@@ -112,7 +115,10 @@ export interface RunLoop {
   /** Settles once restart recovery is done and the items it left are picked up again. */
   readonly ready: Promise<readonly RecoveredItem[]>;
   startItem(input: StartItemInput): Promise<Result<ItemId, CommandError>>;
-  resolveDecision(itemId: ItemId, decisionId: string, choice: string): Promise<Result<null, CommandError>>;
+  /** `note` goes only with Request changes: the words the step's next attempt gets. */
+  resolveDecision(itemId: ItemId, decisionId: string, choice: string, note?: string): Promise<Result<null, CommandError>>;
+  /** The change an open decision about a step you approve shows: the base commit to the tree it would commit. */
+  decisionDiff(itemId: ItemId, decisionId: string): Promise<Result<ItemDiff, CommandError>>;
   /** Kills the running agent or check, keeps the worktree, and ends the item as stopped. */
   stopItem(itemId: ItemId): Promise<Result<null, CommandError>>;
   /** Settles when the item's loop waits for the engineer or has ended. */
@@ -131,6 +137,8 @@ const RETRY = choice(RUN_FAILURE_CHOICES[0].id, RUN_FAILURE_CHOICES[0].label);
 const ONE_MORE = choice(ONE_MORE_ID, "Retry once more");
 const NO_ACTION = choice("no_action_needed", "End: no action needed");
 const APPROVE = choice(APPROVE_ID, "Approve");
+const APPROVE_AND_COMMIT = choice(APPROVE_ID, "Approve and commit");
+const REQUEST_CHANGES = choice(REQUEST_CHANGES_ID, "Request changes");
 const CONTINUE = choice(CONTINUE_ID, "Continue");
 // Answers to questions about a whole tree; each covers only the tree it was asked about.
 const USE_RECORDED = choice("use_recorded_tree", "Review the checked tree");
@@ -341,7 +349,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     return { ...worktree, path };
   };
 
-  const worktreeOf = (ctx: Context): Worktree | undefined => {
+  const worktreeOf = (ctx: Pick<Context, "item" | "repo">): Worktree | undefined => {
     const w = ctx.item.worktrees[0];
     if (w === undefined || w.baseCommit === undefined) return undefined;
     return located(ctx.item.id, ctx.repo, {
@@ -574,11 +582,20 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
         if (latest === undefined || attempt.endedAt >= latest.attempt.endedAt!) latest = { step, attempt };
       }
     }
-    if (latest === undefined || latest.attempt.result !== "failed") return undefined;
+    if (latest === undefined) return undefined;
+    if (latest.attempt.result === "passed") {
+      const note = changesAsked(ctx.item, latest.step.id, latest.attempt);
+      return note === undefined ? undefined : { feedback: { fromStepId: latest.step.id, text: `You asked for changes:\n${note}` } };
+    }
+    if (latest.attempt.result !== "failed") return undefined;
     const text = await readItemFile(ctx.item.id, `${attemptDir(latest.step.id, latest.attempt.attempt)}/feedback.txt`);
     if (text === undefined) return undefined;
     return stepDef(ctx.template, latest.step.id).doneWhen === "reviewer approves" ? { feedback: { fromStepId: latest.step.id, text } } : { lastCheckOutput: text };
   };
+
+  /** The note of a Request changes answer to the approval asked after this attempt. */
+  const changesAsked = (item: StoredItem, stepId: StepId, attempt: AttemptRecord): string | undefined =>
+    item.decisions.findLast((d) => d.kind === "plan_approval" && d.stepId === stepId && d.askedAt >= attempt.endedAt! && d.resolved?.choice === REQUEST_CHANGES.id)?.resolved?.note;
 
   /** `{{ <step>.summary }}`: the final reply of the step's latest passed attempt, for each step this one sees. */
   const resultsFor = async (ctx: Context, step: TemplateStepDef): Promise<StepResults> => {
@@ -700,11 +717,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       case "agent finishes":
         return passStep(item, stepId, [attemptEnded(stepId, attempt, "passed")]);
       case "you approve":
-        append(item.id, [
-          attemptEnded(stepId, attempt, "passed"),
-          decision("plan_approval", stepId, [APPROVE, choice(RETRY.id, "Run again"), NO_ACTION, STOP], `Step ${step.name} is done and waits for your approval.`),
-        ]);
-        return WAIT;
+        return askApproval(ctx, step, attempt);
       case "reviewer approves": {
         const reply = (await readItemFile(item.id, `${attemptDir(stepId, attempt)}/agent.txt`)) ?? "";
         const verdict = parseVerdict(reply);
@@ -716,6 +729,38 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       case "checks pass":
         return runChecksOf(ctx, stepId, attempt, signal);
     }
+  };
+
+  /**
+   * The engineer approves one tree, and Finish commits that tree: it is staged and judged before
+   * the question, and the question carries it, so the diff shown is the change committed.
+   */
+  const askApproval = async (ctx: Context, step: TemplateStepDef, attempt: number): Promise<Next> => {
+    const { item } = ctx;
+    const fail = (text: string) => runFailed(item, step.id, attempt, "crash", text);
+    const worktree = worktreeOf(ctx);
+    if (worktree === undefined) return fail("The item has no worktree with a recorded base commit.");
+    const staged = await stageItem(git, worktree.path);
+    if (!staged.ok) return fail(`Cannot stage the changes: ${staged.error.message}`);
+    const judged = await judgeTree(ctx, worktree, staged.value, step.id, fail);
+    if (judged !== undefined) return judged;
+    const files = await git.diffFiles(worktree.path, worktree.baseCommit, staged.value);
+    if (!files.ok) return fail(`Cannot compare the changes with the base commit: ${files.error.message}`);
+    const found = deps.agent(ctx.repo, step.agentId, ctx.template);
+    const agent = found !== undefined && "name" in found ? found.name : step.agentId;
+    const changed = `${files.value.length} file${files.value.length === 1 ? "" : "s"}`;
+    // Approve ends the item with a commit when this is the last step and the template commits.
+    const commits = ctx.template.steps.at(-1)?.id === step.id && ctx.template.finish.includes("commit");
+    const text = commits
+      ? `${agent} changed ${changed} in a worktree of ${ctx.repo.id}. Nothing is committed until you approve. Request changes sends your note to ${agent} for another run.`
+      : `${agent} finished step ${step.name} and changed ${changed}. Approve to go on. Request changes sends your note to ${agent} for another run.`;
+    // Only the question carries the tree: Finish commits it when nothing ran after the approval,
+    // and a later step's work is committed as before.
+    append(item.id, [
+      attemptEnded(step.id, attempt, "passed"),
+      decision("plan_approval", step.id, [commits ? APPROVE_AND_COMMIT : APPROVE, REQUEST_CHANGES, NO_ACTION, STOP], text, { tree: staged.value }),
+    ]);
+    return WAIT;
   };
 
   const runChecksOf = async (ctx: Context, stepId: StepId, attempt: number, signal: AbortSignal): Promise<Next> => {
@@ -812,26 +857,37 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     if (gate !== undefined) return gate;
     const fail = (text: string) => askRunFailure(item, text);
 
-    // The tree to commit: the last one the checks passed on or a reviewer approved; without
-    // either, the worktree as it is now.
+    // The tree to commit: the one you approved, when no attempt ran after you were asked (even the
+    // base tree, when the step changed nothing); else the last one the checks passed on or a
+    // reviewer approved; without either, the worktree as it is now.
+    const approval = item.decisions.findLast((d) => d.kind === "plan_approval" && d.tree !== undefined && d.resolved?.choice === APPROVE.id);
+    const approvedLast = approval !== undefined && !item.steps.some((s) => s.attempts.some((a) => a.endedAt !== undefined && a.endedAt > approval.askedAt));
     const recorded = lastTree(item);
     let tree: string;
-    if (recorded === undefined) {
+    // Files changed after that tree are not committed unless the engineer says so.
+    let compare: "approved" | "checked" | undefined;
+    if (approvedLast) {
+      tree = approval.tree!;
+      compare = "approved";
+    } else if (recorded === undefined) {
       const staged = await stageItem(git, worktree.path);
       if (!staged.ok) return fail(`Cannot stage the changes: ${staged.error.message}`);
       tree = staged.value;
     } else {
       tree = recorded.tree!;
-      // A step that ran after it may have changed files nothing checked: those are not committed
-      // unless the engineer says so.
-      if (item.steps.some((s) => s.attempts.some((a) => a !== recorded && a.endedAt !== undefined && a.endedAt > recorded.endedAt!))) {
-        const staged = await stageItem(git, worktree.path);
-        if (!staged.ok) return fail(`Cannot stage the changes: ${staged.error.message}`);
-        if (staged.value !== tree && !treeAnswered(item, staged.value, COMMIT_CHECKED.id)) {
-          const text = `A step after the checks changed files; only checked work is committed. Changed:\n${await changedPaths(worktree, tree, staged.value)}`;
-          append(item.id, [decision("tamper", undefined, [COMMIT_CHECKED, STOP], text, { tree: staged.value })]);
-          return WAIT;
-        }
+      if (item.steps.some((s) => s.attempts.some((a) => a !== recorded && a.endedAt !== undefined && a.endedAt > recorded.endedAt!))) compare = "checked";
+    }
+    if (compare !== undefined) {
+      const staged = await stageItem(git, worktree.path);
+      if (!staged.ok) return fail(`Cannot stage the changes: ${staged.error.message}`);
+      if (staged.value !== tree && !treeAnswered(item, staged.value, COMMIT_CHECKED.id)) {
+        const changed = await changedPaths(worktree, tree, staged.value);
+        const [text, commitChoice] =
+          compare === "approved"
+            ? [`The worktree changed after you approved it; only the approved change is committed. Changed:\n${changed}`, choice(COMMIT_CHECKED.id, "Commit the approved tree")]
+            : [`A step after the checks changed files; only checked work is committed. Changed:\n${changed}`, COMMIT_CHECKED];
+        append(item.id, [decision("tamper", undefined, [commitChoice, STOP], text, { tree: staged.value })]);
+        return WAIT;
       }
     }
     const judged = await judgeTree(ctx, worktree, tree, undefined, fail);
@@ -1007,7 +1063,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       return ok(created.value.id);
     },
 
-    async resolveDecision(itemId, decisionId, chosen) {
+    async resolveDecision(itemId, decisionId, chosen, note) {
       await ready;
       if (closing) return closed();
       const item = liveItem(itemId);
@@ -1015,11 +1071,35 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       const asked = item.value.decisions.find((d) => d.id === decisionId);
       if (asked === undefined || asked.resolved !== undefined) return failure("stale_decision", `Decision ${decisionId} is not open.`);
       if (!asked.choices.some((c) => c.id === chosen)) return failure("invalid_choice", `"${chosen}" is not a choice of ${decisionId}.`);
-      const appended = store.append(itemId, [{ type: "decision_resolved", decisionId: asked.id, choice: chosen }]);
+      const words = note?.trim().slice(0, MAX_NOTE_CHARS) ?? "";
+      if (words !== "" && chosen !== REQUEST_CHANGES.id) return failure("invalid_request", "Only Request changes takes a note.");
+      const appended = store.append(itemId, [{ type: "decision_resolved", decisionId: asked.id, choice: chosen, ...(words !== "" && { note: words }) }]);
       if (!appended.ok) return failure("invalid_state", appended.error.message);
       const next = nextAfter(appended.value, asked, chosen);
       if (next.kind !== "wait") void drive(itemId, next);
       return ok(null);
+    },
+
+    async decisionDiff(itemId, decisionId) {
+      await ready;
+      if (closing) return closed();
+      const item = store.get(itemId);
+      if (item === undefined || item.deleted) return failure("not_found", `No item ${itemId}.`);
+      const asked = item.decisions.find((d) => d.id === decisionId);
+      if (asked === undefined || asked.resolved !== undefined || asked.kind !== "plan_approval" || asked.tree === undefined) {
+        return failure("stale_decision", `Decision ${decisionId} is not open, or has no change to show.`);
+      }
+      // A query records nothing: the repo is looked up here, not through contextOf.
+      const repoId = item.repoIds[0];
+      const repo = repoId === undefined ? undefined : deps.repo(repoId);
+      if (repo === undefined) return failure("not_found", `Repo ${repoId ?? "(none)"} is not set up on this machine.`);
+      rootsOf(item.id).set(repo.path, `<repo ${repo.id}>`);
+      const worktree = worktreeOf({ item, repo });
+      if (worktree === undefined) return failure("invalid_state", "The item's worktree has no recorded base commit.");
+      // The trees are read as git objects: what the worktree holds now plays no part.
+      const diff = await treeDiff(git, worktree.path, worktree.baseCommit, asked.tree);
+      if (!diff.ok) return failure("invalid_state", detail(`Cannot read the change: ${diff.error.message}`));
+      return ok({ ...diff.value, worktree: { repoId: repo.id, dir: item.worktrees[0]!.dir, branch: worktree.branch, baseCommit: worktree.baseCommit } });
     },
 
     async stopItem(itemId) {

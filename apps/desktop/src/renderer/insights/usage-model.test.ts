@@ -14,8 +14,12 @@ import {
   resetText,
   share,
   tickLabel,
+  shareText,
   windowLabel,
-  windowTone,
+  windowShort,
+  levelOf,
+  LEVEL_TONE,
+  LEVEL_WORD,
   workflowName,
 } from "./usage-model.js";
 
@@ -23,12 +27,34 @@ const MINUTE = 60_000;
 const at = (day: number, hour: number, minute = 0) => new Date(2025, 9, day, hour, minute).getTime();
 
 describe("plan window words", () => {
-  it("names the windows Claude Code reports, and any other by its own name", () => {
-    expect([windowLabel("five_hour"), windowLabel("seven_day"), windowLabel("seven_day_opus"), windowLabel("weekly_scoped")]).toEqual(["5-hour window", "Weekly window", "Weekly · Opus", "weekly scoped"]);
+  it("names the windows and limits Claude Code reports, and any other by its own name", () => {
+    const names = ["five_hour", "seven_day", "seven_day_opus", "session", "weekly_all", "weekly_scoped", "monthly_extra"].map((window) => windowLabel({ window }));
+    expect(names).toEqual(["5-hour window", "Weekly window", "Weekly · Opus", "Session window", "Weekly window", "Scoped weekly window", "monthly extra"]);
+    expect([windowLabel({ window: "weekly_scoped", scope: "Fable" }), windowShort({ window: "weekly_scoped", scope: "Fable" }), windowShort({ window: "session" })]).toEqual(["Fable weekly window", "Fable weekly", "Session"]);
   });
 
-  it("marks a window near its limit from 80% and at its limit from 100%", () => {
-    expect([windowTone(79.9), windowTone(80), windowTone(99), windowTone(100), windowTone(130)]).toEqual([undefined, "warn", "warn", "fail", "fail"]);
+  it("says how much of the weekly limit a scoped limit may use", () => {
+    expect([shareText({ sharePercent: 49.6 }), shareText({})]).toEqual(["50% share of the weekly limit", undefined]);
+  });
+
+  it("levels the rail badge by the shown number, as the meter does", () => {
+    const plan = (usedPercent: number) => ({ cliId: "claude-code" as const, windows: [{ window: "session", usedPercent }] });
+    expect([79.4, 79.6, 99.4, 99.6].map((p) => cliAlert(plan(p), undefined, 0))).toEqual([undefined, "near_limit", "near_limit", "limit"]);
+  });
+
+  it("levels a window: ok under 60%, high to 79%, near its limit from 80%, at it from 100%, each above ok with a word", () => {
+    const levels = [0, 59.9, 60, 79.9, 80, 99, 100, 130].map(levelOf);
+    expect(levels).toEqual(["ok", "ok", "high", "high", "near", "near", "limit", "limit"]);
+    expect(levels.map((level) => [LEVEL_TONE[level], LEVEL_WORD[level]])).toEqual([
+      ["pass", undefined],
+      ["pass", undefined],
+      ["warn", "high"],
+      ["warn", "high"],
+      ["fail", "! near limit"],
+      ["fail", "! near limit"],
+      ["fail", "✕ at limit"],
+      ["fail", "✕ at limit"],
+    ]);
   });
 
   it("puts a login problem before the windows, and badges the rail with ✕ before !", () => {

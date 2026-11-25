@@ -1,9 +1,17 @@
-import { type ItemState, parseItemRecord, parseQueryResult, type StepState } from "@tokama/core";
+import { type ItemState, MAX_NOTE_CHARS as ENGINE_NOTE_CHARS, parseItemRecord, parseQueryResult, REQUEST_CHANGES_ID as ENGINE_REQUEST_CHANGES, type StepState } from "@tokama/core";
 import { describe, expect, it } from "vitest";
 import { approved, committed, needsYou, task, setup } from "../testing/drawer.js";
+import { MAX_NOTE_CHARS, REQUEST_CHANGES_ID } from "./DecisionChoices.js";
 import { attemptLine, hasEnded, itemMark, outcomeLine, stepAgent, stepMark, stepPosition, templateName, whereLine } from "./describe.js";
 
 const { agents, connections } = setup;
+
+describe("the decision note", () => {
+  it("uses the engine's choice id and note limit", () => {
+    expect(REQUEST_CHANGES_ID).toBe(ENGINE_REQUEST_CHANGES);
+    expect(MAX_NOTE_CHARS).toBe(ENGINE_NOTE_CHARS);
+  });
+});
 
 describe("drawer test data", () => {
   it("matches the engine schemas", () => {

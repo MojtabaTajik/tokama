@@ -92,7 +92,12 @@ describe("usage query", () => {
     expect(report.days.at(-1)?.workflows.length).toBeGreaterThan(0);
     await waitFor(() => usageChanged(events) > 0, 5_000, "usage_changed");
     const again = await engineClient.query({ type: "usage", range: 90 });
-    expect(again.ok && again.data.clis[0]).toMatchObject({ source: "request", windows: [{ window: "five_hour", usedPercent: 36 }, { window: "seven_day", usedPercent: 58 }] });
+    expect(again.ok && again.data.clis[0]).toMatchObject({ source: "request", windows: [
+        { window: "session", usedPercent: 36 },
+        { window: "weekly_all", usedPercent: 58 },
+        { window: "weekly_scoped", usedPercent: 12, scope: "Fable", sharePercent: 50 },
+      ],
+    });
     expect(again.ok && again.data.days).toHaveLength(90);
   });
 

@@ -155,7 +155,7 @@ describe("real mode", () => {
     if (!reply.ok) throw new Error(reply.error.message);
     expect(reply.data.repos).toEqual([{ id: "orders-api", baseBranch: "main", checks: ["sh check.sh"] }]);
     expect(reply.data.agents).toContainEqual({ id: "builder", name: "Builder", cliId: "claude-code", model: "sonnet", runsOn: "cloud" });
-    expect(reply.data.templates.map((t) => t.id)).toEqual(["orders-api/careful-fix", "builtin/quick-fix", "builtin/plan-and-build", "builtin/review-only"]);
+    expect(reply.data.templates.map((t) => t.id)).toEqual(["orders-api/careful-fix", "builtin/quick-fix", "builtin/quick-change", "builtin/plan-and-build", "builtin/review-only"]);
     expect(reply.data.templates[1]).toMatchObject({
       kind: "task",
       start: { needs: ["text", "repo"], askBeforeCloud: false },
@@ -187,6 +187,39 @@ describe("real mode", () => {
     expect(usage.data.totals).toMatchObject({ calls: 1, costUsd: null, unpricedCalls: 1 });
     expect(usage.data.items).toEqual([expect.objectContaining({ itemId: id, title: "Fix the greeting typo", templateId: "builtin/quick-fix", agents: [{ agentId: "builder", cliId: "claude-code" }] })]);
     expect(usage.data.days.at(-1)?.workflows).toEqual([expect.objectContaining({ templateId: "builtin/quick-fix", itemCount: 1 })]);
+  });
+
+  it("runs Quick change on a repo with no checks: you see the diff, ask for changes with a note, approve, and get a commit", SLOW, async () => {
+    writeFileSync(join(home, "repos.yaml"), `format: 1\nrepos:\n  - id: orders-api\n    path: ${repoPath}\n    base_branch: main\n    checks: []\n`);
+    const runtime = scripted([{ writes: { "greeting.txt": "hello wrld\n" } }, { writes: { "greeting.txt": "hello world\n" } }]);
+    const { client } = await engine(runtime);
+    // Quick fix cannot run here: the repo lists no checks.
+    const quickFix = await start(client);
+    expect(await waitItem(client, quickFix, (i) => i.state === "needs_you", "Quick fix asks")).toMatchObject({ decision: { kind: "run_failure", why: expect.stringContaining("lists none") } });
+
+    const id = await start(client, { templateId: "builtin/quick-change" });
+    const diffOf = async () => {
+      const waiting = await waitItem(client, id, (i) => i.decision?.hasDiff === true, "the approval");
+      const reply = await client.query({ type: "decision_diff", itemId: id, decisionId: waiting.decision!.id });
+      if (!reply.ok) throw new Error(reply.error.message);
+      return { waiting, diff: reply.data };
+    };
+    const first = await diffOf();
+    expect(first.waiting.decision?.choices.map((c) => c.label)).toEqual(["Approve and commit", "Request changes", "End: no action needed", "Stop"]);
+    expect(first.waiting.decision).toMatchObject({ question: "Approve this change and commit it?", why: "Builder changed 1 file in a worktree of orders-api. Nothing is committed until you approve. Request changes sends your note to Builder for another run." });
+    expect(first.waiting.steps[0]).toMatchObject({ maxAttempts: 3, attempts: [{ attempt: 1, result: "passed" }] });
+    expect(first.diff.files).toMatchObject([{ path: "greeting.txt", status: "modified", added: 1, removed: 1, hunks: [{ lines: ["-helo world", "+hello wrld"] }] }]);
+    expect(first.diff.worktree).toMatchObject({ repoId: "orders-api", branch: expect.stringMatching(/^tokama\//) });
+
+    expect(await client.command({ type: "resolve_decision", itemId: id, decisionId: first.waiting.decision!.id, choice: "request_changes", note: "Spell world right." })).toEqual({ ok: true, data: null });
+    const second = await waitItem(client, id, (i) => i.decision?.hasDiff === true && i.decision.id !== first.waiting.decision!.id, "the second approval");
+    // While it ran again, the step carried the note; at the question it carries none.
+    expect(second.steps[0]?.changesNote).toBeUndefined();
+    expect(runtime.requests[1]?.prompt).toContain("Spell world right.");
+
+    expect(await client.command({ type: "resolve_decision", itemId: id, decisionId: second.decision!.id, choice: "approve" })).toEqual({ ok: true, data: null });
+    const done = await waitItem(client, id, (i) => i.state === "done", "done");
+    expect(git("show", `${done.outcome?.commits?.[0]?.commit}:greeting.txt`)).toBe("hello world");
   });
 
   it("asks after a failed attempt; Retry once more runs the step again and commits", SLOW, async () => {

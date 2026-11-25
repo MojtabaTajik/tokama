@@ -3,9 +3,11 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { connect } from "@tokama/client";
-import { buildEnv, defaultEngineDir, engineEndpoint, err } from "@tokama/core";
-import { app, BrowserWindow, dialog, ipcMain, session, shell } from "electron";
+import { API_VERSION, buildEnv, defaultEngineDir, engineEndpoint, err } from "@tokama/core";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, session, shell } from "electron";
 import { CHANNELS } from "../shared/bridge.js";
+import { buildInfoText } from "../shared/build-info.js";
+import { aboutInfo } from "./about.js";
 import { engineApi } from "./api.js";
 import { type ConnectionWatch, watchConnection } from "./connection.js";
 import { engineCommand, engineDirFor, findExecutable, otherVersionMessage, readLogTail } from "./engine.js";
@@ -115,6 +117,26 @@ void app.whenReady().then(() => {
   // shell.openPath is looked up on each call too, so the UI flow tests can stand in for the editor.
   const tokamaHome = join(homedir(), ".tokama");
   handle(CHANNELS.openTemplateFile, (name) => openTemplateFile(name, { api, tokamaHome, openPath: (path) => shell.openPath(path) }));
+  const about = () => {
+    const dir = engineDirFor(defaultEngineDir(process.env, homedir()), sample);
+    const endpoint = engineEndpoint(dir);
+    return aboutInfo({
+      version: app.getVersion(),
+      build: __BUILD__,
+      apiVersion: API_VERSION,
+      tokamaHome,
+      lockPath: endpoint.ok ? endpoint.value.lockPath : join(dir, "engine.lock"),
+      platform: process.platform,
+      arch: process.arch,
+      versions: process.versions,
+    });
+  };
+  handle(CHANNELS.getAboutInfo, about);
+  handle(CHANNELS.copyBuildInfo, () => clipboard.writeText(buildInfoText(about(), watch.state().status)));
+  handle(CHANNELS.showDataFolder, async () => {
+    const message = await shell.openPath(tokamaHome);
+    return message === "" ? { ok: true } : { ok: false, message };
+  });
   app.on("before-quit", () => void watch.close());
   createWindow();
   app.on("activate", () => {

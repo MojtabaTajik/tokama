@@ -25,6 +25,7 @@ import {
   type Clock,
   type CommandErrorCode,
   type ConnectionErrorCode,
+  type DecisionDiffResult,
   type ClientMessage,
   type Command,
   createGit,
@@ -415,6 +416,9 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       } else if (message.query.type === "setup") {
         return { ok: true, data: (await real.setup()) satisfies SetupResult };
       } else if (message.query.type === "suggest_template") { return { ok: true, data: { templateId: await real.suggestTemplate() } as SuggestTemplateResult };
+      } else if (message.query.type === "decision_diff") {
+        const diff = await real.decisionDiff(message.query.itemId, message.query.decisionId);
+        return diff.ok ? { ok: true, data: diff.value satisfies DecisionDiffResult } : { ok: false, error: diff.error };
       }
     }
     if (message.kind === "command") {
@@ -436,6 +440,11 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       case "item": {
         const item = store.get(query.itemId);
         return item ? { ok: true, data: { item } satisfies ItemResult } : { ok: false, error: { code: "not_found", message: `no item ${query.itemId}` } };
+      }
+      case "decision_diff": {
+        const diff = sample?.decisionDiff(query.itemId, query.decisionId);
+        if (diff === undefined) return { ok: false, error: { code: "not_implemented", message: "this engine serves no items" } };
+        return diff.ok ? { ok: true, data: diff.value satisfies DecisionDiffResult } : { ok: false, error: diff.error };
       }
       case "suggest_template":
         return { ok: true, data: { templateId: sample?.suggestTemplate(query.text) ?? null } satisfies SuggestTemplateResult };

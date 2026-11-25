@@ -57,6 +57,38 @@ describe("prices", () => {
 });
 
 describe("summarizeUsage", () => {
+  it("lists today's items with their tokens, agents and agent time, and today's totals, whatever the range", () => {
+    const today = [
+      row(ITEM_A, "builtin/plan-and-build", call({ endedAt: at(0, 9), startedAt: at(0, 9) - 120_000 })),
+      row(ITEM_B, "builtin/db-check", call({ endedAt: at(0, 10), agentId: "reviewer" as AgentCallUsage["agentId"], cliId: "codex-cli", tokens: MILLION })),
+      row(ITEM_A, "builtin/plan-and-build", call({ endedAt: at(0, 11), agentId: "builder" as AgentCallUsage["agentId"] })),
+      // Just before midnight: yesterday, not today.
+      row(ITEM_A, "builtin/plan-and-build", call({ endedAt: new Date(2025, 9, 19, 23, 59).getTime(), tokens: MILLION })),
+    ];
+    const report = summarizeUsage({ rows: today, range: 14, now: NOW, clis: [] });
+    expect(report.today).toEqual({
+      items: [
+        { itemId: ITEM_B, title: "Slow query", agents: [{ agentId: "reviewer", cliId: "codex-cli" }], tokens: 1_000_000, durationMs: 60_000 },
+        { itemId: ITEM_A, title: "Add order export", agents: [{ agentId: "architect", cliId: "claude-code" }, { agentId: "builder", cliId: "claude-code" }], tokens: 2 * 1150, durationMs: 180_000 },
+      ],
+      itemCount: 2,
+      tokens: { input: 1_000_200, output: 100, cacheRead: 2000, cacheWrite: 0 },
+      durationMs: 240_000,
+    });
+    expect(UsageReportSchema.safeParse(report).success).toBe(true);
+    // Seven items today: the five with the most tokens, and the count of all.
+    const many = Array.from({ length: 7 }, (_, n) => row(`item_0190a000-0000-7000-8000-00000000010${n}` as ItemId, "builtin/quick-fix", call({ endedAt: at(0, 9), tokens: { ...MILLION, input: n + 1 } }), `Item ${n}`));
+    const busy = summarizeUsage({ rows: many, range: 14, now: NOW, clis: [] }).today;
+    expect(busy?.items.map((item) => item.title)).toEqual(["Item 6", "Item 5", "Item 4", "Item 3", "Item 2"]);
+    expect(busy?.itemCount).toBe(7);
+    // An item with more agents than the report holds keeps the first 20, in the range list and today.
+    const crowded = Array.from({ length: 25 }, (_, n) => row(ITEM_A, "builtin/quick-fix", call({ endedAt: at(0, 9), agentId: `agent-${n}` as AgentCallUsage["agentId"] })));
+    const full = summarizeUsage({ rows: crowded, range: 14, now: NOW, clis: [] });
+    expect([full.items[0]?.agents.length, full.today?.items[0]?.agents.length]).toEqual([20, 20]);
+    expect(UsageReportSchema.safeParse(full).success).toBe(true);
+    expect(summarizeUsage({ rows: [], range: 14, now: NOW, clis: [] }).today).toEqual({ items: [], itemCount: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, durationMs: 0 });
+  });
+
   const rows = [
     row(ITEM_A, "plan-and-build", call({ endedAt: at(0, 10), reportedCostUsd: 1 })),
     row(ITEM_A, "plan-and-build", call({ endedAt: at(0, 11), agentId: "reviewer" as never, cliId: "codex-cli", model: "gpt-5-codex" })),
@@ -189,6 +221,16 @@ describe("choosePlan", () => {
     expect(plan.windows).toHaveLength(20);
     expect(plan.windows[0]?.window).toHaveLength(64);
     expect([plan.windows[1]?.usedPercent, plan.windows[2]?.usedPercent]).toEqual([1000, 0]);
+    expect(CliPlanSchema.safeParse(plan).success).toBe(true);
+  });
+
+  it("keeps a limit's scope, group, severity, state and share, cut to the report's limits", () => {
+    const scoped = { window: "weekly_scoped", usedPercent: Number.NaN, scope: "F".repeat(80), group: "g".repeat(40), severity: "normal", active: false, sharePercent: 250 };
+    const plan = choosePlan("claude-code", [{ source: "request", reading: { windows: [scoped, { window: "session", usedPercent: 12, sharePercent: -5 }], asOf: NOW } }], NOW);
+    expect(plan.windows).toEqual([
+      { window: "weekly_scoped", usedPercent: 0, scope: "F".repeat(64), group: "g".repeat(32), severity: "normal", active: false, sharePercent: 100 },
+      { window: "session", usedPercent: 12, sharePercent: 0 },
+    ]);
     expect(CliPlanSchema.safeParse(plan).success).toBe(true);
   });
 

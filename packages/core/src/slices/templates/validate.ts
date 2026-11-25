@@ -367,8 +367,9 @@ async function buildStep(step: StepFile, i: number, scope: StepScope): Promise<T
 
   const ifFailed: TemplateStepDef["ifFailed"] =
     typeof step.if_failed === "object" ? { action: "back", stepId: step.if_failed.back } : { action: step.if_failed ?? "ask" };
-  // A step that is retried or sent back to must be able to run more than once.
-  const loops = ifFailed.action === "retry" || scope.backTargets.has(step.id);
+  // A step that is retried, sent back to, or that you approve (Request changes runs it again) must
+  // be able to run more than once.
+  const loops = ifFailed.action === "retry" || scope.backTargets.has(step.id) || doneWhen === "you approve";
   const def: TemplateStepDef = {
     id: step.id,
     name: step.name,

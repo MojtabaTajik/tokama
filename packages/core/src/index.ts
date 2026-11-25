@@ -53,6 +53,7 @@ export type { AgentCallRequest, AgentRuntime, ToolLimits } from "./kernel/ports/
 export * as adapters from "./composition.js";
 // The run loop and its commands, for the engine service.
 export {
+  attemptLimit,
   createRunLoop,
   parseVerdict,
   titleFrom,
@@ -232,6 +233,14 @@ export {
   type WelcomeMessage,
   type Setup,
   type SetupResult,
+  DIFF_LIMITS,
+  MAX_NOTE_CHARS,
+  REQUEST_CHANGES_ID,
+  type DecisionDiffResult,
+  type DiffFile,
+  type DiffHunk,
+  type DiffStatus,
+  type ItemDiff,
 } from "./kernel/schemas/index.js";
 // Template files for the Templates page: the validator, for the engine service's sample
 // templates, and the records the page shows.
