@@ -131,7 +131,27 @@ export function startProblem(template: TemplateRecord): string | undefined {
 function accessOf(agent: ReturnType<typeof resolveAgent>): { agentAccess?: TemplateSummary["steps"][number]["agentAccess"] } {
   if (agent === undefined || "problem" in agent) return {};
   const { limits } = agent;
-  return { agentAccess: { name: agent.name, owner: agent.owner.kind, edit: limits.edit, commands: limits.commands.filter((c) => c.length <= 200).slice(0, 50), web: limits.web } };
+  const role = roleLine(agent.role);
+  return {
+    agentAccess: {
+      name: agent.name,
+      owner: agent.owner.kind,
+      ...(agent.owner.kind === "repo" && { repoId: agent.owner.repoId }),
+      cliId: agent.cliId,
+      model: agent.model,
+      ...(role !== undefined && { role }),
+      edit: limits.edit,
+      commands: limits.commands.filter((c) => c.length <= 200).slice(0, 50),
+      web: limits.web,
+    },
+  };
+}
+
+/** The first non-blank line of a role text, cut to the length the setup allows. */
+export function roleLine(role: string): string | undefined {
+  const line = role.split("\n").find((candidate) => candidate.trim() !== "")?.trim();
+  if (line === undefined) return undefined;
+  return line.length > 200 ? `${line.slice(0, 199)}…` : line;
 }
 
 export function templateSummary(template: TemplateRecord, agents: LoadedAgents): TemplateSummary {

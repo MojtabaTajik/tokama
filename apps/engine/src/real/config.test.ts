@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { displayPath } from "./config.js";
+import { displayPath, roleLine } from "./config.js";
 
 describe("displayPath", () => {
   it("shows the home folder as ~, and nothing else", () => {
@@ -8,5 +8,21 @@ describe("displayPath", () => {
     expect(displayPath("/Users/samuel/code/x", "/Users/sam")).toBe("/Users/samuel/code/x");
     expect(displayPath("/srv/repos/x", "/Users/sam")).toBe("/srv/repos/x");
     expect(displayPath("/x", "/")).toBe("/x");
+  });
+});
+
+describe("roleLine", () => {
+  it("is the first line with text, trimmed", () => {
+    expect(roleLine("\n  \n  You review a diff.  \nThen more.")).toBe("You review a diff.");
+  });
+
+  it("is undefined for a role with no text", () => {
+    expect(roleLine(" \n\t\n")).toBeUndefined();
+  });
+
+  it("cuts a long line to the 200 characters the setup allows, ending in an ellipsis", () => {
+    const line = roleLine("x".repeat(300));
+    expect(line).toHaveLength(200);
+    expect(line?.endsWith("…")).toBe(true);
   });
 });
