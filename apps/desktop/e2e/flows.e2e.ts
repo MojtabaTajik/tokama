@@ -124,7 +124,7 @@ flow("stops an item after its confirmation", async ({ page }) => {
 flow("switches status filters, workflow and repo views, and List and Board", async ({ page }) => {
   // Status filters on All work.
   await segment(page, "Needs you").click();
-  await expect.poll(() => titles(page)).toEqual([QUICK_CHANGE, NEEDS_YOU]);
+  await expect.poll(() => titles(page)).toEqual([NEEDS_YOU, QUICK_CHANGE]);
   await segment(page, "Done").click();
   await page.locator(".range").selectOption("30d");
   await expect.poll(() => titles(page)).toContain(DONE);
@@ -201,7 +201,7 @@ flow("reconnects after the engine restarts and loads its state again", async ({ 
   expect(seen, "the connection states the renderer saw").toContain("reconnecting");
   expect(seen.at(-1)).toBe("connected");
   // State reloaded from the new engine: the decision is waiting again.
-  await expect.poll(() => titles(page), { message: "the Needs you list after the restart" }).toEqual([QUICK_CHANGE, NEEDS_YOU]);
+  await expect.poll(() => titles(page), { message: "the Needs you list after the restart" }).toEqual([NEEDS_YOU, QUICK_CHANGE]);
   expect(await drawer(page).locator(".needs-you").count(), "the open drawer follows").toBe(1);
 });
 
@@ -218,7 +218,7 @@ flow("Quick change: New work offers it for a repo with no checks; the drawer sho
   await page.keyboard.press("Escape");
   await expect.poll(() => page.locator(".np-reason").innerText(), { message: "why Quick fix can't run" }).toContain("inventory-service lists none");
   expect(await page.locator(".np-start").isDisabled()).toBe(true);
-  await screenshot("9-new-work-no-checks");
+  await screenshot("11-new-work-no-checks");
   await page.locator(".np-suggest").getByRole("button", { name: "Use Quick change" }).click();
   await page.locator(".np-start:not([disabled])").waitFor();
   await page.keyboard.press("Escape");
@@ -229,7 +229,7 @@ flow("Quick change: New work offers it for a repo with no checks; the drawer sho
   const note = drawer(page).locator(".needs-you");
   await expect.poll(() => note.locator(".decision-diff-files").innerText(), { message: "the changed files" }).toContain("modified src/sync/worker.ts +2 −1");
   expect(await note.locator(".decision-diff-text").innerText()).toContain("+    log.error(\"inventory sync failed\", { error, warehouseId: warehouse.id });");
-  await screenshot("10-quick-change-diff");
+  await screenshot("12-quick-change-diff");
 
   await note.getByRole("button", { name: "Request changes" }).click();
   await note.locator(".decision-note-text").fill("Leave the metrics line out.");
