@@ -65,29 +65,7 @@
   color: var(--muted);
 }
 
-.track-mark[data-tone="pass"],
-.track-says[data-tone="pass"] {
-  color: var(--pass);
-}
-
-.track-mark[data-tone="live"] {
-  color: var(--live);
-}
-
-.track-mark[data-tone="warn"],
-.track-says[data-tone="warn"] {
-  color: var(--warn);
-}
-
-.track-mark[data-tone="fail"],
-.track-says[data-tone="fail"] {
-  color: var(--fail);
-}
-
-.track-says[data-tone="muted"] {
-  color: var(--muted);
-}
-
+/* Tone colours come from the drawer's shared [data-tone] rules. */
 .track-name {
   min-width: 0;
   overflow: hidden;

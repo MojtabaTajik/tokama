@@ -1,6 +1,6 @@
 import type { AgentSummary, ItemActivity, ItemRecord, StepRecord } from "@tokama/core";
 import { describe, expect, it } from "vitest";
-import { activityView, formatDuration, itemTotal, quietForMs, splitAction, stepTimes, trackOf } from "./progress-view.js";
+import { activityView, itemTotal, quietForMs, splitAction, stepTimes, trackOf } from "./progress-view.js";
 
 const step = (name: string, state: StepRecord["state"], extra: Partial<StepRecord> = {}): StepRecord => ({ name, stage: "working", state, data: "none", agentId: "builder", ...extra }) as StepRecord;
 const AGENTS = [{ id: "builder", name: "Builder" }] as unknown as AgentSummary[];
@@ -10,27 +10,6 @@ const activity = (patch: Partial<ItemActivity> = {}): ItemActivity =>
 const running = (build: Partial<StepRecord> = {}): Pick<ItemRecord, "state" | "steps"> => ({
   state: "running",
   steps: [step("Plan", "passed"), step("Build", "running", { attempts: [{ attempt: 1, result: "failed", checks: [] }, { attempt: 2, startedAt: NOW - 192_000, checks: [] }], ...build }), step("Review", "pending")],
-});
-
-describe("formatDuration", () => {
-  it.each([
-    [0, "0 s"],
-    [45_900, "45 s"],
-    [59_999, "59 s"],
-    [60_000, "1 m 00 s"],
-    [252_000, "4 m 12 s"],
-    [3_599_000, "59 m 59 s"],
-    [3_900_000, "1 h 05 m"],
-    [-5_000, "0 s"],
-  ])("writes %i ms as %s", (ms, text) => {
-    expect(formatDuration(ms)).toBe(text);
-  });
-
-  it("leaves the seconds out of a coarse duration from one minute on", () => {
-    expect(formatDuration(45_000, "coarse")).toBe("45 s");
-    expect(formatDuration(732_000, "coarse")).toBe("12 m");
-    expect(formatDuration(3_900_000, "coarse")).toBe("1 h 05 m");
-  });
 });
 
 describe("quiet", () => {

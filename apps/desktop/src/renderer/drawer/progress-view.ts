@@ -4,21 +4,8 @@
 // as a symbol and a word, so colour is never the only signal. There is no percent: Tokama cannot
 // know how long an agent will take.
 import type { AgentSummary, AttemptSummary, ItemActivity, ItemRecord, StepRecord } from "@tokama/core";
-import { stepAgent, type Tone } from "./describe.js";
-
-/**
- * A duration as the live timer shows it: `45 s`, `4 m 12 s`, `1 h 05 m`. `coarse` leaves the
- * seconds out from one minute on (`12 m`), for totals and waiting times next to other words.
- */
-export function formatDuration(ms: number, precision: "exact" | "coarse" = "exact"): string {
-  const seconds = Math.max(0, Math.floor(ms / 1000));
-  if (seconds < 60) return `${seconds} s`;
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  if (hours > 0) return `${hours} h ${pad(minutes)} m`;
-  return precision === "coarse" ? `${minutes} m` : `${minutes} m ${pad(seconds % 60)} s`;
-}
+import { formatDuration } from "../format/duration.js";
+import { stepAgent, stepMark, type Tone } from "./describe.js";
 
 /** No agent event for this long, with no tool running, reads as quiet. */
 export const QUIET_AFTER_MS = 120_000;
@@ -53,22 +40,22 @@ export function trackOf(item: Pick<ItemRecord, "state" | "steps">): { readonly s
   const ended = item.state === "done" || item.state === "failed" || item.state === "stopped";
   const steps = item.steps.map((step, index): TrackStep => {
     const base = { name: step.name, current: index === current, live: false };
+    const mark = stepMark(step.state);
     switch (step.state) {
       case "passed":
-        return { ...base, symbol: "✓", word: "done", tone: "pass" };
+        return { ...base, symbol: mark.symbol, word: "done", tone: mark.tone };
       case "running":
+        // Checking is Tokama running the checks: its own mark, still live.
         return step.stage === "verifying"
-          ? { ...base, symbol: "◐", word: "checking", tone: "live", live: item.state === "running" }
-          : { ...base, symbol: "●", word: "running", tone: "live", live: item.state === "running" };
+          ? { ...base, symbol: "◐", word: "checking", tone: mark.tone, live: item.state === "running" }
+          : { ...base, symbol: mark.symbol, word: mark.word, tone: mark.tone, live: item.state === "running" };
       case "needs_you":
-        return { ...base, symbol: "⏸", word: "needs you", tone: "warn", says: "needs you" };
       case "failed":
-        return { ...base, symbol: "✕", word: "failed", tone: "fail", says: "failed" };
       case "stopped":
-        return { ...base, symbol: "■", word: "stopped", tone: "muted", says: "stopped" };
+        return { ...base, symbol: mark.symbol, word: mark.word, tone: mark.tone, says: mark.word };
       case "pending":
         // Steps after a failure, or left when the item ended, did not run.
-        return (stoppedAt >= 0 && index > stoppedAt) || ended ? { ...base, symbol: "–", word: "not run", tone: "muted" } : { ...base, symbol: "○", word: "not started", tone: "muted" };
+        return (stoppedAt >= 0 && index > stoppedAt) || ended ? { ...base, symbol: "–", word: "not run", tone: mark.tone } : { ...base, symbol: mark.symbol, word: "not started", tone: mark.tone };
     }
   });
   return { steps, label: `Steps: ${steps.map((step) => `${step.name} ${step.word}`).join(", ")}` };
