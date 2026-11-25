@@ -16,6 +16,7 @@ import type { AgentTarget } from "../settings/describe.js";
 import { FinishSplit } from "./FinishSplit.js";
 import { useFocusFollow } from "./useFocusFollow.js";
 import { Button } from "../ui/Button.js";
+import { markOf } from "../ui/status.js";
 
 const TEXT = {
   nothing: { needs: "Nothing waiting", running: "Nothing running", done: "Nothing finished", failed: "Nothing failed" },
@@ -46,7 +47,7 @@ export interface ItemListProps {
   readonly footers?: Partial<Record<GroupKey, ReactNode>>;
 }
 
-const GROUP_SYMBOL = { needs: "⏸", running: "●", done: "✓", failed: "✕" } as const;
+const GROUP_SYMBOL = { needs: markOf("needs_you").symbol, running: markOf("running").symbol, done: markOf("done").symbol, failed: markOf("failed").symbol } as const;
 
 export function ItemList({ groups, setup, now, selectedItemId, onSelect, repoId, onFinish, onDiscard, onOpenAgent, footers }: ItemListProps) {
   const focus = useFocusFollow();

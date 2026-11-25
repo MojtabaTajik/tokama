@@ -4,6 +4,7 @@
 // it before, when that is still on the page.
 import { type ReactNode, useLayoutEffect, useRef } from "react";
 import { CloseButton } from "../ui/Button.js";
+import { StatusMark } from "../ui/status.js";
 
 export interface ModalProps {
   /** The id of the element that names the dialog (its heading). */
@@ -49,7 +50,7 @@ export function Modal({ labelledBy, onClose, children }: ModalProps) {
 export function Problem({ text, alert = false }: { readonly text: string; readonly alert?: boolean }) {
   return (
     <p className="repo-problem" role={alert ? "alert" : undefined}>
-      <span aria-hidden="true">✕ </span>
+      <StatusMark status="failed" />{" "}
       {text}
     </p>
   );

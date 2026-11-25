@@ -4,6 +4,7 @@
 // from the engine and render as React text only.
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { Button } from "../ui/Button.js";
+import { markOf } from "../ui/status.js";
 
 export interface PickerOption {
   readonly id: string;
@@ -159,7 +160,7 @@ export function Picker({ label, summary, searchLabel, groups, selected, multi, o
                     onClick={() => pick(option.id)}
                   >
                     <span className="np-check" aria-hidden="true">
-                      {selected.has(option.id) ? "✓" : ""}
+                      {selected.has(option.id) ? markOf("passed").symbol : ""}
                     </span>
                     <span className="ellipsis">{option.label}</span>
                     {option.tag !== undefined && <span className="np-tag">{option.tag}</span>}

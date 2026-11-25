@@ -11,6 +11,7 @@ import { dotOf, flowOf } from "./flow.js";
 import { FlowDiagram } from "./FlowDiagram.js";
 import { keyId, useReload, useTemplateDetail, useTemplateList } from "./useTemplates.js";
 import { Button } from "../ui/Button.js";
+import { markOf } from "../ui/status.js";
 
 const TEXT = {
   title: "Templates",
@@ -328,7 +329,7 @@ function FileText({ id, text, problemLines, mark }: { readonly id: string; reado
         return (
           <div key={n} id={`${id}-${n}`} className="tp-file-line" data-problem={bad || undefined} data-mark={mark === n || undefined}>
             <span className="tp-file-n">{n}</span>
-            <span className="tp-file-flag">{bad ? "✕" : ""}</span>
+            <span className="tp-file-flag">{bad ? markOf("failed").symbol : ""}</span>
             <span className="tp-file-text">{line}</span>
           </div>
         );

@@ -3,6 +3,7 @@
 // available. All of it is React text.
 import type { ConnectionState } from "../../shared/bridge.js";
 import { Button } from "../ui/Button.js";
+import { markOf } from "../ui/status.js";
 
 const TEXT = {
   health: {
@@ -40,10 +41,10 @@ export function startingWords(state: Extract<ConnectionState, { status: "startin
 
 // A symbol with every status, so colour is never the only signal.
 const SYMBOL: Record<ConnectionState["status"], string> = {
-  starting: "◌",
-  connected: "●",
-  reconnecting: "◐",
-  failed: "✕",
+  starting: markOf("queued").symbol,
+  connected: markOf("running").symbol,
+  reconnecting: markOf("checking").symbol,
+  failed: markOf("failed").symbol,
 };
 
 /** Symbol and word; healthy is a quiet dot whose word only screen readers get. */

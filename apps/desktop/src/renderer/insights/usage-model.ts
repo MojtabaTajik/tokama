@@ -5,6 +5,7 @@ import type { CliPlan, LogScan, Setup, TemplateSummary, TokenUsage, UsageReport 
 import { formatDuration } from "../format/duration.js";
 import { clock, sameDay, stamp, weekday } from "../format/time.js";
 import type { CliIssue } from "../model.js";
+import { markOf, type Tone as StatusTone } from "../ui/status.js";
 
 /** A window at or above this share of its limit is high, then near it. */
 export const HIGH = 60;
@@ -36,7 +37,8 @@ export function windowLabel(w: Pick<PlanWindow, "window" | "scope">): string {
 export const windowShort = (w: Pick<PlanWindow, "window" | "scope">): string => windowLabel(w).replace(/ window$/, "");
 /** "50% share of the weekly limit" for a scoped limit with a known share. */
 export const shareText = (w: Pick<PlanWindow, "sharePercent">): string | undefined => (w.sharePercent === undefined ? undefined : `${Math.round(w.sharePercent)}% share of the weekly limit`);
-export type Tone = "warn" | "fail";
+/** The tone of a limit alert. */
+type Tone = Extract<StatusTone, "warn" | "fail">;
 
 /**
  * How full a window is: under 60% ok, 60 to 79% high, 80% or more near its limit, 100% at it.
@@ -76,9 +78,9 @@ export const ALERT_TEXT: Readonly<Record<CliAlert, string>> = {
 export const alertTone = (alert: CliAlert): Tone => (alert === "near_limit" ? "warn" : "fail");
 
 /** The badge on the Insights icon: ✕ when any CLI is logged out, missing or at its limit, else ! when one is near it. */
-export function railBadge(alerts: readonly (CliAlert | undefined)[]): { readonly symbol: "✕" | "!"; readonly tone: Tone } | undefined {
-  if (alerts.some((alert) => alert !== undefined && alertTone(alert) === "fail")) return { symbol: "✕", tone: "fail" };
-  if (alerts.includes("near_limit")) return { symbol: "!", tone: "warn" };
+export function railBadge(alerts: readonly (CliAlert | undefined)[]): { readonly symbol: string; readonly tone: Tone } | undefined {
+  if (alerts.some((alert) => alert !== undefined && alertTone(alert) === "fail")) return { symbol: markOf("failed").symbol, tone: "fail" };
+  if (alerts.includes("near_limit")) return { symbol: markOf("warning").symbol, tone: "warn" };
   return undefined;
 }
 

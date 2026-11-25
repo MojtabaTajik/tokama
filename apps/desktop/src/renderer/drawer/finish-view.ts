@@ -4,7 +4,7 @@
 // never the only signal.
 import type { FinishAction, FinishRefusal, GitChange, ItemRecord, Setup } from "@tokama/core";
 import { clock } from "../format/time.js";
-import type { Mark } from "./describe.js";
+import { type Mark, markOf } from "../ui/status.js";
 
 /** Text with code parts (paths, branches, commands), shown in the mono font. */
 export type Rich = readonly (string | { readonly code: string })[];
@@ -110,7 +110,7 @@ export function finishView(item: Pick<ItemRecord, "outcome" | "finish" | "repoId
     if (finish.merged !== undefined) {
       return {
         kind: "ended",
-        mark: { symbol: "✓", word: "merged", tone: "pass" },
+        mark: markOf("done", "merged"),
         title: withTime(`Merged into ${finish.merged.baseBranch} · ${finish.merged.commit.slice(0, 7)}`, finish.at),
         detail: [finish.worktreeRemoved ? "Worktree and branch removed" : (finish.detail ?? "The worktree is kept.")],
         removable,
@@ -203,11 +203,11 @@ export const isDiscarded = (item: Pick<ItemRecord, "finish">): boolean =>
 export function finishNote(item: Pick<ItemRecord, "finish">): { readonly mark: Mark; readonly text: string } | undefined {
   const finish = item.finish;
   if (finish === undefined) return undefined;
-  if (finish.running !== undefined) return { mark: { symbol: "●", word: "running", tone: "live" }, text: `${ACTION_WORD[finish.running]} running` };
-  if (finish.merged !== undefined) return { mark: { symbol: "✓", word: "merged", tone: "pass" }, text: `Merged into ${finish.merged.baseBranch} · ${finish.merged.commit.slice(0, 7)}` };
+  if (finish.running !== undefined) return { mark: markOf("running"), text: `${ACTION_WORD[finish.running]} running` };
+  if (finish.merged !== undefined) return { mark: markOf("done", "merged"), text: `Merged into ${finish.merged.baseBranch} · ${finish.merged.commit.slice(0, 7)}` };
   if (finish.pullRequest !== undefined) return { mark: { symbol: "↗", word: "pull request", tone: "pass" }, text: `${prName(finish.pullRequest.url)} open` };
   if (finish.worktreeRemoved) return { mark: { symbol: "⊘", word: "discarded", tone: "muted" }, text: "Discarded" };
-  if (finish.failed !== undefined) return { mark: { symbol: "!", word: "refused", tone: "warn" }, text: `${ACTION_WORD[finish.failed.action]} did not finish` };
+  if (finish.failed !== undefined) return { mark: markOf("warning", "refused"), text: `${ACTION_WORD[finish.failed.action]} did not finish` };
   return undefined;
 }
 

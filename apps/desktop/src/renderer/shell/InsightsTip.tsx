@@ -10,6 +10,7 @@ import { stamp } from "../format/time.js";
 import { ALERT_TEXT, alertTone, ageText, CLI_MONOGRAMS, cliAlert, formatTokens, liveWindows, shareText, totalOf, windowLabel, windowShort } from "../insights/usage-model.js";
 import { AI_CLIS, type CliIssue } from "../model.js";
 import { Button } from "../ui/Button.js";
+import { StatusMark } from "../ui/status.js";
 
 const TEXT = {
   loggedIn: "logged in",
@@ -171,9 +172,7 @@ function ClaudeStatus({ health, issue }: { readonly health: CliHealth | undefine
   if (issue !== undefined) {
     return (
       <span className="it-status-line">
-        <span className="it-symbol" data-tone="fail">
-          ✕
-        </span>{" "}
+        <StatusMark status="failed" className="it-symbol" />{" "}
         {[issue.kind === "logged_out" ? TEXT.loggedOut : TEXT.notFound, version].filter(Boolean).join(" · ")}
       </span>
     );

@@ -4,6 +4,7 @@
 import type { AgentSummary, ConnectionSummary, Finish, StartNeed, TemplateEntry, TemplateStepView, TemplateView } from "@tokama/core";
 import { formatDuration } from "../format/duration.js";
 import { cliName } from "../model.js";
+import { type Mark, markOf } from "../ui/status.js";
 
 const NEEDS: Record<StartNeed, string> = { text: "a task description", repo: "one repo", repos: "one or more repos" };
 
@@ -158,12 +159,12 @@ export function usesOf(template: Pick<TemplateView, "uses" | "steps">, connectio
 /** "45 m", "2 h 00 m", "1 h 30 m". */
 export const budgetText = (minutes: number): string => formatDuration(minutes * 60_000, "coarse");
 
-export type Status = { readonly symbol: "✓" | "✕"; readonly word: string; readonly tone: "pass" | "fail" };
+export type Status = Mark;
 
 /** ✓ valid, or ✕ and how many problems: a symbol and a word, never colour alone. */
 export function statusOf(entry: Pick<TemplateEntry, "problemCount">): Status {
-  if (entry.problemCount === 0) return { symbol: "✓", word: "valid", tone: "pass" };
-  return { symbol: "✕", word: entry.problemCount === 1 ? "1 problem" : `${entry.problemCount} problems`, tone: "fail" };
+  if (entry.problemCount === 0) return markOf("passed", "valid");
+  return markOf("failed", entry.problemCount === 1 ? "1 problem" : `${entry.problemCount} problems`);
 }
 
 /** The list row's second line: the repo and the file, or "built-in". */

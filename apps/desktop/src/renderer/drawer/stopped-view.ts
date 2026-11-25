@@ -2,7 +2,8 @@
 // where its link goes. Pure functions over the engine's decision and the step's output, tested
 // without React. Every line comes as words, with a symbol where it has a tone.
 import type { Decision, OutputSummary, StepRecord } from "@tokama/core";
-import { attemptMark, type Mark } from "./describe.js";
+import { attemptMark } from "./describe.js";
+import type { Mark } from "../ui/status.js";
 import type { OutputState } from "./StepOutput.js";
 
 type Stopped = NonNullable<Decision["stopped"]>;

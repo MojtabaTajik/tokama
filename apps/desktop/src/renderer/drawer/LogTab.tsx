@@ -11,6 +11,7 @@ import type { AgentTarget } from "../settings/describe.js";
 import { agentSteps, attemptsOf, capNote, type StepAttempt, transcriptLines, useAttemptReply } from "./attempt-view.js";
 import { attemptLine } from "./describe.js";
 import { OpenFile } from "./OpenFile.js";
+import { StatusMark } from "../ui/status.js";
 
 const TEXT = {
   none: "No agent has run yet. Each attempt's transcript appears here.",
@@ -73,9 +74,7 @@ function AttemptLog({ bridge, item, setup, entry, onOpenAgent }: AttemptLogProps
         <p className="placeholder">{TEXT.loading}</p>
       ) : reply.kind !== "loaded" ? (
         <p className="drawer-error" role="alert">
-          <span className="symbol" aria-hidden="true">
-            ✕
-          </span>
+          <StatusMark status="failed" className="symbol" />
           {TEXT.failed(reply.message)}
         </p>
       ) : (

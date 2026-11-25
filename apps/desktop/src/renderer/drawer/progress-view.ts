@@ -5,7 +5,8 @@
 // know how long an agent will take.
 import type { AgentSummary, AttemptSummary, ItemActivity, ItemRecord, StepRecord } from "@tokama/core";
 import { formatDuration } from "../format/duration.js";
-import { stepAgent, stepMark, type Tone } from "./describe.js";
+import { stepAgent, stepMark } from "./describe.js";
+import { markOf, type Tone } from "../ui/status.js";
 
 /** No agent event for this long, with no tool running, reads as quiet. */
 export const QUIET_AFTER_MS = 120_000;
@@ -47,7 +48,7 @@ export function trackOf(item: Pick<ItemRecord, "state" | "steps">): { readonly s
       case "running":
         // Checking is Tokama running the checks: its own mark, still live.
         return step.stage === "verifying"
-          ? { ...base, symbol: "◐", word: "checking", tone: mark.tone, live: item.state === "running" }
+          ? { ...base, symbol: markOf("checking").symbol, word: markOf("checking").word, tone: mark.tone, live: item.state === "running" }
           : { ...base, symbol: mark.symbol, word: mark.word, tone: mark.tone, live: item.state === "running" };
       case "needs_you":
       case "failed":

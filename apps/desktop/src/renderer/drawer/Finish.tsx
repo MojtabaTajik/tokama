@@ -7,6 +7,7 @@ import type { FinishAction, ItemRecord, Setup } from "@tokama/core";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { finishView, type FinishRow, type Rich } from "./finish-view.js";
 import { Button } from "../ui/Button.js";
+import { StatusMark } from "../ui/status.js";
 
 const TEXT = {
   finish: "Finish",
@@ -127,9 +128,7 @@ export function Finish({ item, setup, busy, onFinish, onCheckAgain, onAcceptChan
           </p>
           {view.failure !== undefined && (
             <p className="finish-notice-body" role="status">
-              <span className="mark" data-tone="fail" aria-hidden="true">
-                ✕
-              </span>{" "}
+              <StatusMark status="failed" />{" "}
               {view.failure}
             </p>
           )}

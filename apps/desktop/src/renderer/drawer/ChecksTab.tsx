@@ -7,6 +7,7 @@ import type { AttemptCheck, CheckState, ItemRecord, Setup } from "@tokama/core";
 import type { TokamaBridge } from "../../shared/bridge.js";
 import { attemptsOf, capNote, checkedStepName, checkSteps, durationText, type StepAttempt, useAttemptReply } from "./attempt-view.js";
 import { OpenFile } from "./OpenFile.js";
+import { type Mark, markOf, StatusMark } from "../ui/status.js";
 
 const TEXT = {
   noChecks: "This item's steps run no checks.",
@@ -28,20 +29,20 @@ const TEXT = {
   passedCount: (all: number) => `${all} ${all === 1 ? "check" : "checks"} passed`,
 } as const;
 
-const STATE: Record<CheckState, { readonly symbol: string; readonly word: string; readonly tone: string }> = {
-  passed: { symbol: "✓", word: "passed", tone: "pass" },
-  failed: { symbol: "✕", word: "failed", tone: "fail" },
-  running: { symbol: "●", word: "running", tone: "live" },
-  waiting: { symbol: "○", word: "waiting", tone: "muted" },
-  not_run: { symbol: "!", word: "did not run", tone: "warn" },
+const STATE: Record<CheckState, Mark> = {
+  passed: markOf("passed"),
+  failed: markOf("failed"),
+  running: markOf("running"),
+  waiting: markOf("waiting"),
+  not_run: markOf("warning", "did not run"),
 };
 
-const RESULT: Record<string, { readonly symbol: string; readonly word: string; readonly tone: string }> = {
-  passed: { symbol: "✓", word: "passed", tone: "pass" },
-  failed: { symbol: "✕", word: "failed", tone: "fail" },
-  run_failed: { symbol: "!", word: "run failed", tone: "warn" },
-  stopped: { symbol: "■", word: "stopped", tone: "muted" },
-  running: { symbol: "●", word: "running", tone: "live" },
+const RESULT: Record<string, Mark> = {
+  passed: markOf("passed"),
+  failed: markOf("failed"),
+  run_failed: markOf("run_failed"),
+  stopped: markOf("stopped"),
+  running: markOf("running"),
 };
 
 export interface ChecksTabProps {
@@ -93,9 +94,7 @@ function AttemptChecks({ bridge, item, entry, named }: { readonly bridge: Tokama
         <p className="placeholder">{TEXT.loading}</p>
       ) : reply.kind !== "loaded" ? (
         <p className="drawer-error" role="alert">
-          <span className="symbol" aria-hidden="true">
-            ✕
-          </span>
+          <StatusMark status="failed" className="symbol" />
           {TEXT.failed(reply.message)}
         </p>
       ) : reply.data.checks.length === 0 ? (

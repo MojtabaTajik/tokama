@@ -6,6 +6,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
 import { StepText } from "./StepText.js";
 import { Button } from "../ui/Button.js";
+import { StatusMark } from "../ui/status.js";
 
 const TEXT = {
   loading: "Loading the step's output",
@@ -75,9 +76,7 @@ export function StepOutput({ state, label }: { readonly state: OutputState; read
     case "failed":
       return (
         <p className="drawer-error" role="alert">
-          <span className="symbol" aria-hidden="true">
-            ✕
-          </span>
+          <StatusMark status="failed" className="symbol" />
           {TEXT.failed(state.message)}
         </p>
       );

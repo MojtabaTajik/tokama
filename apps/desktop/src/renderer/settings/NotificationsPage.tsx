@@ -6,6 +6,7 @@ import type { TokamaBridge } from "../../shared/bridge.js";
 import { DEFAULT_DESKTOP_STATE, type NotificationSettings } from "../../shared/desktop-state.js";
 import { brand } from "../brand/index.js";
 import { Button } from "../ui/Button.js";
+import { markOf, type Tone } from "../ui/status.js";
 
 const TEXT = {
   heading: "Notifications",
@@ -20,11 +21,10 @@ const TEXT = {
   soundOff: "Silent. Sound is off.",
 } as const;
 
-type Tone = "warn" | "pass" | "fail" | "quiet";
-const ROWS: readonly { readonly key: keyof NotificationSettings; readonly name: string; readonly glyph: string; readonly tone: Tone; readonly help: string }[] = [
-  { key: "needsYou", name: "Needs you", glyph: "⏸", tone: "warn", help: "An item waits for your decision, like approving a plan or a change." },
-  { key: "finished", name: "Finished", glyph: "✓", tone: "pass", help: "An item is done and ready to merge, open a PR or discard." },
-  { key: "failed", name: "Failed", glyph: "✕", tone: "fail", help: "An item stopped because a step failed." },
+const ROWS: readonly { readonly key: keyof NotificationSettings; readonly name: string; readonly glyph: string; readonly tone: Tone | "quiet"; readonly help: string }[] = [
+  { key: "needsYou", name: "Needs you", glyph: markOf("needs_you").symbol, tone: "warn", help: "An item waits for your decision, like approving a plan or a change." },
+  { key: "finished", name: "Finished", glyph: markOf("done").symbol, tone: "pass", help: "An item is done and ready to merge, open a PR or discard." },
+  { key: "failed", name: "Failed", glyph: markOf("failed").symbol, tone: "fail", help: "An item stopped because a step failed." },
   { key: "sound", name: "Sound", glyph: "♪", tone: "quiet", help: "Play the macOS notification sound with each one." },
 ];
 

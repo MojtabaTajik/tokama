@@ -1,5 +1,6 @@
 // A load that failed: ✕ and what could not load, the reason, and Retry. Announced as an alert.
 import { Button } from "./Button.js";
+import { StatusMark } from "./status.js";
 
 export interface ErrorRetryProps {
   /** What could not load: "Could not load the agents". */
@@ -13,9 +14,7 @@ export function ErrorRetry({ title, detail, onRetry }: ErrorRetryProps) {
   return (
     <div className="failure" role="alert">
       <p className="failure-title">
-        <span className="symbol" aria-hidden="true">
-          ✕
-        </span>
+        <StatusMark status="failed" className="symbol" />
         {title}
       </p>
       {detail !== undefined && <p className="detail">{detail}</p>}

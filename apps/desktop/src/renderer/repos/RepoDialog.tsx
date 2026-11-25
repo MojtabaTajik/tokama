@@ -9,6 +9,7 @@ import { type FormEvent, type ReactNode, useEffect, useId, useState } from "reac
 import type { TokamaBridge } from "../../shared/bridge.js";
 import { DialogFrame, Modal, Problem } from "./Modal.js";
 import { Button } from "../ui/Button.js";
+import { markOf, StatusMark } from "../ui/status.js";
 
 const TEXT = {
   title: "Add repo",
@@ -249,7 +250,7 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
               return (
                 <li key={key} data-state={failed ? "failed" : state}>
                   <span className="rd-mark" aria-hidden="true">
-                    {failed ? "✕" : state === "done" ? "✓" : state === "active" ? "●" : "○"}
+                    {markOf(failed ? "failed" : state === "done" ? "done" : state === "active" ? "running" : "pending").symbol}
                   </span>
                   <span className="rd-sr">{failed ? "failed" : state === "done" ? "done" : state === "active" ? "running" : "waiting"}</span> {labels[key]}
                 </li>
@@ -259,7 +260,7 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
           {failure !== undefined && (
             <div className="repo-note rd-failure" role="alert">
               <p className="rd-failure-title">
-                <span aria-hidden="true">✕ </span>
+                <StatusMark status="failed" />{" "}
                 {TEXT.stepFailed[failure.phase]}
               </p>
               <p>

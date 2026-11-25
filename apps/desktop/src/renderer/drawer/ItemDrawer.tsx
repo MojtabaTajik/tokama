@@ -34,6 +34,7 @@ import { attemptTime, stepTimes } from "./progress-view.js";
 import { useNow } from "../useNow.js";
 import { Button, CloseButton } from "../ui/Button.js";
 import { ErrorRetry } from "../ui/ErrorRetry.js";
+import { markOf } from "../ui/status.js";
 
 const TEXT = {
   drawer: "Item",
@@ -371,7 +372,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
       {notice && (
         <p className="drawer-notice" data-tone={notice.tone} role="status">
           <span className="symbol" aria-hidden="true">
-            {notice.tone === "warn" ? "!" : "✕"}
+            {markOf(notice.tone === "warn" ? "warning" : "failed").symbol}
           </span>
           {notice.text}
         </p>

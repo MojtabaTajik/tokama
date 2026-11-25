@@ -10,6 +10,7 @@ import { type AgentTarget, agentRows, filterRows, isTarget, limitsNotes, limitsT
 import { useAgents } from "./useAgents.js";
 import { Button } from "../ui/Button.js";
 import { ErrorRetry } from "../ui/ErrorRetry.js";
+import { StatusMark } from "../ui/status.js";
 
 const TEXT = {
   heading: "Agents",
@@ -99,9 +100,7 @@ function Problems({ data }: { readonly data: AgentsListResult }) {
   return (
     <div className="agents-problems" role="group" aria-label={TEXT.problemsHeading}>
       <p className="agents-problems-title">
-        <span className="symbol" aria-hidden="true">
-          ✕
-        </span>
+        <StatusMark status="failed" className="symbol" />
         {TEXT.problemsHeading}
       </p>
       <ul>
@@ -177,9 +176,7 @@ function BrokenDetail({ entry }: { readonly entry: BrokenAgentDetail }) {
         <div className="agent-head-text">
           <h2 className="ellipsis">{entry.id}</h2>
           <p className="agent-broken-title">
-            <span className="symbol" aria-hidden="true">
-              ✕
-            </span>
+            <StatusMark status="failed" className="symbol" />
             {TEXT.brokenTitle}
           </p>
         </div>

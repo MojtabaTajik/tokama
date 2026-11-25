@@ -11,6 +11,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { ExpandIcon } from "../ui/icons.js";
 import type { TokamaBridge } from "../../shared/bridge.js";
 import { Button } from "../ui/Button.js";
+import { StatusMark } from "../ui/status.js";
 
 /** The engine shows the hunks of files with up to this many changed lines. */
 export const FILE_LINES = 1000;
@@ -186,9 +187,7 @@ function Status({ state }: { readonly state: Exclude<DiffState, { kind: "loaded"
   if (state.kind === "loading") return <p className="placeholder">{TEXT.loading}</p>;
   return (
     <p className="drawer-error" role="alert">
-      <span className="symbol" aria-hidden="true">
-        ✕
-      </span>
+      <StatusMark status="failed" className="symbol" />
       {TEXT.failed(state.message)}
     </p>
   );

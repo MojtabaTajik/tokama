@@ -17,6 +17,7 @@ import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { type NeedsYouRow, needsYouRows } from "./rows.js";
 import { Button } from "../ui/Button.js";
 import { ErrorRetry } from "../ui/ErrorRetry.js";
+import { markOf } from "../ui/status.js";
 
 const TEXT = {
   title: "Needs you",
@@ -221,7 +222,7 @@ function Row({ row, index, bridge, selected, onSelect, onReviewDiff, onRefresh }
       {notice !== undefined && (
         <p className="drawer-notice" data-tone={notice.tone} role="status">
           <span className="symbol" aria-hidden="true">
-            {notice.tone === "warn" ? "!" : "✕"}
+            {markOf(notice.tone === "warn" ? "warning" : "failed").symbol}
           </span>
           {notice.text}
         </p>

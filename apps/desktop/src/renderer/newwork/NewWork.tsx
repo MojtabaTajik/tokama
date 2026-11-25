@@ -9,6 +9,7 @@ import { agentLines, commandsOf, KIND_GROUPS, missing, needsRepo, noChecks, repo
 import { Picker } from "./Picker.js";
 import { useSuggestion } from "./useSuggestion.js";
 import { Button } from "../ui/Button.js";
+import { StatusMark } from "../ui/status.js";
 
 const TEXT = {
   form: "New work",
@@ -251,9 +252,7 @@ export function NewWork({ bridge, setup, ref, repoId, onStarted }: NewWorkProps)
             </div>
             {error !== undefined && (
               <p className="np-error" role="alert">
-                <span className="symbol" aria-hidden="true">
-                  ✕
-                </span>
+                <StatusMark status="failed" className="symbol" />
                 {error}
               </p>
             )}

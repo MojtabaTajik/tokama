@@ -9,6 +9,7 @@ import { DATE_FILTERS, type DateFilter, failedLine, inDateRange, sendingLine, se
 import { useDiagnostics } from "./useDiagnostics.js";
 import { Button } from "../ui/Button.js";
 import { ErrorRetry } from "../ui/ErrorRetry.js";
+import { StatusMark } from "../ui/status.js";
 
 const TEXT = {
   heading: "Diagnostics",
@@ -260,13 +261,11 @@ function TypeIcon({ type }: { readonly type: ShownType }) {
 
 function BarStatus({ bar }: { readonly bar: Bar }) {
   if (bar.status === "idle") return null;
-  const [symbol, tone, text] =
-    bar.status === "sending" ? ["◐", "live", sendingLine(bar.count)] : bar.status === "sent" ? ["✓", "pass", sentLine(bar.count, bar.kept)] : bar.status === "failed" ? ["✕", "fail", failedLine(bar.count, bar.reason, bar.detail)] : ["✕", "fail", bar.text];
+  const [status, text] =
+    bar.status === "sending" ? (["checking", sendingLine(bar.count)] as const) : bar.status === "sent" ? (["passed", sentLine(bar.count, bar.kept)] as const) : (["failed", bar.status === "failed" ? failedLine(bar.count, bar.reason, bar.detail) : bar.text] as const);
   return (
     <p className="dg-status" role="status">
-      <span className="dg-status-symbol" data-tone={tone} aria-hidden="true">
-        {symbol}
-      </span>
+      <StatusMark status={status} className="dg-status-symbol" />
       <span>{text}</span>
     </p>
   );

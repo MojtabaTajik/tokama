@@ -2,10 +2,11 @@
 // and board columns. Pure functions that take the clock as an argument, so they are tested
 // without React or a real time.
 import type { AgentSummary, AiCliId, Health, ItemRecord, StepRecord, TemplateSummary } from "@tokama/core";
-import { itemMark, type Mark, stepAgent, type StepAgent, stepMark } from "./drawer/describe.js";
+import { itemMark, stepAgent, type StepAgent, stepMark } from "./drawer/describe.js";
 import { itemTotal } from "./drawer/progress-view.js";
 import { formatDuration } from "./format/duration.js";
 import { clock, dayLabel, daysBefore, localDay, sameDay, shortDate } from "./format/time.js";
+import { type Mark, markOf } from "./ui/status.js";
 
 /** What the main area shows: everything, one workflow's items, or one repo's items. */
 export type View = { readonly kind: "all" } | { readonly kind: "workflow"; readonly id: string } | { readonly kind: "repo"; readonly id: string };
@@ -181,7 +182,7 @@ export function groupItems(items: readonly ItemRecord[], filter: Filter, now: nu
 export type BadgeKind = "needs" | "failed" | "running";
 export interface Badge {
   readonly kind: BadgeKind;
-  readonly symbol: "⏸" | "✕" | "●";
+  readonly symbol: string;
   readonly count: number;
   readonly word: string;
 }
@@ -195,9 +196,9 @@ export function badgesOf(items: readonly ItemRecord[], now: number): Badge[] {
   const failed = items.filter((item) => item.state === "failed" && inRange(item, "today", now)).length;
   const running = items.filter((item) => item.state === "running").length;
   const badges: Badge[] = [
-    { kind: "needs", symbol: "⏸", count: needs, word: needs === 1 ? "needs you" : "need you" },
-    { kind: "failed", symbol: "✕", count: failed, word: "failed" },
-    { kind: "running", symbol: "●", count: running, word: "running" },
+    { kind: "needs", symbol: markOf("needs_you").symbol, count: needs, word: needs === 1 ? "needs you" : "need you" },
+    { kind: "failed", symbol: markOf("failed").symbol, count: failed, word: "failed" },
+    { kind: "running", symbol: markOf("running").symbol, count: running, word: "running" },
   ];
   return badges.filter((badge) => badge.count > 0);
 }
@@ -235,7 +236,7 @@ export function attemptOf(step: Pick<StepRecord, "state" | "attempts">): number 
 
 /** A step's mark: a running step in a verifying stage reads as checking. */
 const markOfStep = (step: Pick<StepRecord, "state" | "stage">): Mark =>
-  step.state === "running" && step.stage === "verifying" ? { symbol: "◐", word: "checking", tone: "live" } : stepMark(step.state);
+  step.state === "running" && step.stage === "verifying" ? markOf("checking") : stepMark(step.state);
 
 /** The row's status mark: the item's own, except that an item in a checking step reads as checking, as its pipeline does. */
 export function rowMark(item: Pick<ItemRecord, "state" | "steps">): Mark {
@@ -315,12 +316,12 @@ export type Flag = { readonly mark: Mark; readonly text: string };
 
 /** The card's flag line: what a needs-you item asks, where a failed item failed, or that it was stopped. */
 export function flagOf(item: Pick<ItemRecord, "state" | "steps" | "decision">): Flag | undefined {
-  if (item.state === "needs_you") return { mark: { symbol: "⏸", word: "needs you", tone: "warn" }, text: item.decision?.question ?? "needs you" };
+  if (item.state === "needs_you") return { mark: markOf("needs_you"), text: item.decision?.question ?? "needs you" };
   if (item.state === "failed") {
     const step = item.steps.find((s) => s.state === "failed");
-    return { mark: { symbol: "✕", word: "failed", tone: "fail" }, text: step ? `failed at ${step.name}` : "failed" };
+    return { mark: markOf("failed"), text: step ? `failed at ${step.name}` : "failed" };
   }
-  if (item.state === "stopped") return { mark: { symbol: "■", word: "stopped", tone: "muted" }, text: "stopped" };
+  if (item.state === "stopped") return { mark: markOf("stopped"), text: "stopped" };
   return undefined;
 }
 
@@ -330,7 +331,7 @@ export function flagOf(item: Pick<ItemRecord, "state" | "steps" | "decision">): 
  */
 export type CardStatus = { readonly live: true; readonly word: "working" | "checking" } | ({ readonly live: false } & Flag);
 
-const DONE: Mark = { symbol: "✓", word: "done", tone: "pass" };
+const DONE: Mark = markOf("done");
 
 export function cardStatus(item: Pick<ItemRecord, "state" | "steps" | "decision" | "createdAt" | "durationMs">, now: number): CardStatus | undefined {
   const running = item.steps.find((step) => step.state === "running");
