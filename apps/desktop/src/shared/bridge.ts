@@ -44,7 +44,22 @@ export const CHANNELS = {
   event: "tokama:engine:event",
   pickFolder: "tokama:dialog:pick-folder",
   openTemplateFile: "tokama:template:open",
+  getAboutInfo: "tokama:about:info",
+  copyBuildInfo: "tokama:about:copy",
+  showDataFolder: "tokama:about:show-folder",
 } as const;
+
+/** What About shows about this build. The main process fills it; every field is plain text or a number. */
+export interface AboutInfo {
+  readonly app: { readonly version: string; /** The build day, `YYYY-MM-DD`; "unknown" without git. */ readonly built: string; /** The short commit; "unknown" without git. */ readonly commit: string };
+  /** `pid` is the engine's own, from its lock file; absent while no engine has written one. */
+  readonly engine: { readonly version: string; readonly apiVersion: number; readonly pid?: number };
+  /** The Tokama home, written with `~` for the user's home folder. */
+  readonly dataFolder: string;
+  readonly runtime: { readonly electron: string; readonly node: string };
+  /** The system and CPU, for example "macOS · arm64". */
+  readonly platform: string;
+}
 
 /** Where the engine found a template file: a repo id and the repo-relative path. */
 export interface TemplateFileName {
@@ -75,4 +90,10 @@ export interface TokamaBridge {
    * where the file is and opens only template files in a `.tokama` folder or the Tokama home.
    */
   openTemplateFile(name: TemplateFileName): Promise<OpenResult>;
+  /** What About shows about this build. */
+  getAboutInfo(): Promise<AboutInfo>;
+  /** Puts the build info as text on the clipboard. The main process writes it; the renderer sends no text. */
+  copyBuildInfo(): Promise<void>;
+  /** Opens the Tokama home in the system's file manager. */
+  showDataFolder(): Promise<OpenResult>;
 }

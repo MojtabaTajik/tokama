@@ -9,3 +9,21 @@ data. The font, the CSS and the brands set are not used.
 - Icons: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). No changes were made to the icon shapes.
 - Code in the `@fortawesome/free-solid-svg-icons` package: MIT.
 - Source and licence terms: https://fontawesome.com/license/free
+
+## Electron
+
+Electron 45 runs the desktop app (MIT, Copyright Electron contributors, Copyright GitHub Inc.). It bundles
+Chromium and Node.js, which carry their own licences.
+
+## Chromium
+
+Chromium renders the window. It includes many third-party components under their own licences (BSD-3-Clause
+and others); the full list ships with the app as `LICENSES.chromium.html`. Copyright The Chromium Authors.
+
+## Node.js
+
+Node.js runs the Tokama engine as a background service (MIT, Copyright Node.js contributors).
+
+## React and React DOM
+
+React draws every screen in the app (MIT, Copyright Meta Platforms, Inc. and affiliates).
