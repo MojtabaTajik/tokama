@@ -177,7 +177,9 @@ export class RealEngine {
     const template = item === undefined ? undefined : parseTemplateRecord(item.template.record);
     const stepId = item?.steps[stepIndex]?.id;
     const def = template?.ok === true ? template.value.steps.find((step) => step.id === stepId) : undefined;
-    return ok({ ...output.value, summary: summarizeOutput(output.value.text, def?.doneWhen === "reviewer approves") });
+    // Built field by field: the loop's tail is for the summary only, and the reply's schema is strict.
+    const { text, truncated, tail } = output.value;
+    return ok({ attempt: output.value.attempt, text, truncated, summary: summarizeOutput(text, def?.doneWhen === "reviewer approves", tail) });
   }
 
   /** Each check of a step's attempt with the end of its saved output. */

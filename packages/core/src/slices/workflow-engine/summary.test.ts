@@ -93,4 +93,14 @@ describe("summarizeOutput", () => {
     }
     expect(summarizeOutput(many, true)).toMatchObject({ kind: "verdict", more: 197 });
   });
+
+  it("a cut output: the verdict comes from its tail, the must-fix items from its head", () => {
+    const head = "**Must change**\n1. `a.ts:3` add the missing test.\n\nSome notes that go on and on";
+    const mustFix = [{ ref: "a.ts:3", text: "add the missing test" }];
+    expect(summarizeOutput(head, true, "more notes\n\nVERDICT: changes\n")).toMatchObject({ kind: "verdict", verdict: "changes", mustFix });
+    expect(summarizeOutput(head, true, "more notes\r\n\r\nVERDICT: approve\r\n")).toMatchObject({ kind: "verdict", verdict: "approve", mustFix });
+    // Without the tail the same head holds no verdict; a tail that breaks the format is none.
+    expect(summarizeOutput(head, true)).toMatchObject({ kind: "lines", format: "no_verdict" });
+    expect(summarizeOutput(head, true, "VERDICT: changes\nOne more thing.")).toMatchObject({ kind: "lines", format: "no_verdict" });
+  });
 });

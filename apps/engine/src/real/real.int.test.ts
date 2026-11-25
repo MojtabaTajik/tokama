@@ -22,8 +22,8 @@ let root: string;
 let home: string;
 let repoPath: string;
 
-/** What the agent does in a call: write these files, or hang until the call is stopped. */
-type Behavior = { readonly writes: Readonly<Record<string, string>> } | "hang";
+/** What the agent does in a call: write these files and say `says` (default "Done."), or hang until the call is stopped. */
+type Behavior = { readonly writes: Readonly<Record<string, string>>; readonly says?: string } | "hang";
 
 /** A runtime that plays the script in order (the last entry repeats), and keeps every request. */
 function scripted(script: readonly Behavior[]): AgentRuntime & { requests: AgentCallRequest[]; hanging: Promise<void> } {
@@ -48,7 +48,7 @@ function scripted(script: readonly Behavior[]): AgentRuntime & { requests: Agent
         mkdirSync(dirname(join(request.cwd, path)), { recursive: true });
         writeFileSync(join(request.cwd, path), content);
       }
-      yield { type: "text", text: "Done." };
+      yield { type: "text", text: behavior.says ?? "Done." };
       yield { type: "end", outcome: "completed", usage: NO_TOKENS };
     },
   };
@@ -228,6 +228,42 @@ describe("real mode", () => {
     expect(await client.command({ type: "resolve_decision", itemId: id, decisionId: second.decision!.id, choice: "approve" })).toEqual({ ok: true, data: null });
     const done = await waitItem(client, id, (i) => i.state === "done", "done");
     expect(git("show", `${done.outcome?.commits?.[0]?.commit}:greeting.txt`)).toBe("hello world");
+  });
+
+  it("reads the verdict of a reviewer's output longer than the reply carries from its end", SLOW, async () => {
+    writeFileSync(
+      join(repoPath, ".tokama", "templates", "long-review.yaml"),
+      `format: 1
+name: Long review
+uses:
+  repos: edit
+start:
+  needs: [text, repo]
+steps:
+  - id: fix
+    name: Fix
+    agent: builder
+    instructions: Fix the greeting.
+    done_when: agent finishes
+    data: repo-and-diff
+  - id: review
+    name: Review
+    agent: reviewer
+    instructions: Review the greeting.
+    done_when: reviewer approves
+    data: repo-and-diff
+finish: [commit]
+`,
+    );
+    const says = `**Must change**\n1. \`greeting.txt:1\` fix the typo.\n\n${"A note that goes on.\n".repeat(10_000)}VERDICT: changes`;
+    expect(says.length).toBeGreaterThan(200 * 1024);
+    const { client } = await engine(scripted([{ writes: { "greeting.txt": "hello world\n" } }, { writes: {}, says }]));
+    const id = await start(client, { templateId: "orders-api/long-review" });
+    await waitItem(client, id, (i) => i.state === "needs_you", "the review's question");
+    const reply = await client.query({ type: "step_output", itemId: id, stepIndex: 1 });
+    if (!reply.ok) throw new Error(reply.error.message);
+    expect(reply.data).toMatchObject({ attempt: 1, truncated: true, summary: { kind: "verdict", verdict: "changes", mustFix: [{ ref: "greeting.txt:1", text: "fix the typo" }] } });
+    expect(Object.keys(reply.data).sort()).toEqual(["attempt", "summary", "text", "truncated"]);
   });
 
   it("serves each attempt's checks and transcript as cut, cleaned text with totals and no paths; Open the file gets the path", SLOW, async () => {

@@ -16,22 +16,24 @@ const BARE_REF = /(?<![\w./-])([\w./-]*[\w-]\.[A-Za-z0-9]+:\d+(?:[-–]\d+)?)(?!
 
 /**
  * The summary of an output. `verdictFormat` says the step's template asks for a verdict (a
- * `reviewer approves` step). Never throws: whatever goes wrong reads as the first lines.
+ * `reviewer approves` step). `tail` is the end of an output that `text` holds only the start of:
+ * the verdict is read from it, the rest from `text`. Never throws: whatever goes wrong reads as
+ * the first lines.
  */
-export function summarizeOutput(text: string, verdictFormat: boolean): OutputSummary {
+export function summarizeOutput(text: string, verdictFormat: boolean, tail?: string): OutputSummary {
   try {
-    return summarize(text, verdictFormat);
+    return summarize(text, verdictFormat, tail);
   } catch {
     const lines = firstLines(text.split(/\r?\n/), MAX_SUMMARY_ITEMS);
     return lines.length === 0 ? { kind: "empty" } : { kind: "lines", format: verdictFormat ? "no_verdict" : "none", lines };
   }
 }
 
-function summarize(text: string, verdictFormat: boolean): OutputSummary {
+function summarize(text: string, verdictFormat: boolean, tail: string | undefined): OutputSummary {
   const lines = text.split(/\r?\n/);
   if (lines.every((line) => line.trim() === "")) return { kind: "empty" };
   if (!verdictFormat) return { kind: "lines", format: "none", lines: firstLines(lines, PLAIN_LINES) };
-  const verdict = parseVerdict(text);
+  const verdict = parseVerdict(tail ?? text);
   if (verdict === undefined) return { kind: "lines", format: "no_verdict", lines: firstLines(lines, MAX_SUMMARY_ITEMS) };
   const items = mustFixItems(lines);
   return {

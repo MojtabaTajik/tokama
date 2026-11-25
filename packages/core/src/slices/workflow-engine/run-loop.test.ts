@@ -315,10 +315,21 @@ describe("run loop: done_when", () => {
     const latest = await loop.stepOutput(id, 0);
     expect(latest.ok && { attempt: latest.value.attempt, length: latest.value.text.length, truncated: latest.value.truncated }).toEqual({ attempt: 2, length: 64 * 1024, truncated: true });
     expect(await loop.stepOutput(id, 0, 1)).toMatchObject({ ok: true, value: { attempt: 1, text: plan } });
+    expect(await loop.stepOutput(id, 0, 1)).not.toHaveProperty("value.tail");
     expect(await loop.stepOutput(id, 0, 3)).toMatchObject({ ok: false, error: { code: "not_found" } });
     expect(await loop.stepOutput(id, 1)).toMatchObject({ ok: false, error: { code: "not_found" } });
 
     const attempts = join(tokamaHome, "items", id, "attempts");
+    // A 200 KiB output: the head stops at the cap, the tail holds its last lines, verdict included.
+    const long = `**Must change**\n1. \`a.ts:3\` add a test.\n\n${"filler line\n".repeat(200 * 100)}VERDICT: changes\n`;
+    writeFileSync(join(attempts, "plan-2", "agent.txt"), long);
+    const cut = await loop.stepOutput(id, 0, 2);
+    if (!cut.ok) throw new Error(cut.error.message);
+    expect({ length: cut.value.text.length, truncated: cut.value.truncated }).toEqual({ length: 64 * 1024, truncated: true });
+    expect(cut.value.text.startsWith("**Must change**")).toBe(true);
+    expect(cut.value.tail?.endsWith("filler line\nVERDICT: changes")).toBe(true);
+    expect(cut.value.tail!.length).toBeLessThanOrEqual(16 * 1024);
+
     unlinkSync(join(attempts, "plan-1", "agent.txt"));
     expect(await loop.stepOutput(id, 0, 1)).toEqual({ ok: false, error: { code: "not_found", message: "Attempt 1 has no saved output." } });
     writeFileSync(join(attempts, "plan-2", "agent.txt"), Buffer.from([0x61, 0x00, 0xff, 0xfe]));

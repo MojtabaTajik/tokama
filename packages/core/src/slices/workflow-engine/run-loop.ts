@@ -16,7 +16,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Clock } from "../../kernel/clock/index.js";
-import { appendTextSync, readTextFile, readTextHead, replaceTextSync } from "../../kernel/fs-safe/index.js";
+import { appendTextSync, readTextFile, readTextHead, readTextTail, replaceTextSync } from "../../kernel/fs-safe/index.js";
 import type { Git } from "../../kernel/git/index.js";
 import type { AgentRuntime, ToolLimits } from "../../kernel/ports/index.js";
 import type { ProcessRunner } from "../../kernel/process/index.js";
@@ -125,6 +125,12 @@ export interface StartItemInput {
   readonly title?: string;
 }
 
+/** A step's output as the loop reads it: the reply's head, and the end of a cut one. */
+export type StepOutput = StepOutputResult & {
+  /** The last whole lines of an output cut at the cap, for reading its verdict; absent when it was not cut. */
+  readonly tail?: string;
+};
+
 export interface CommandError {
   readonly code: CommandErrorCode;
   readonly message: string;
@@ -140,7 +146,7 @@ export interface RunLoop {
   /** The change an open decision about a step you approve shows: the base commit to the tree it would commit. */
   decisionDiff(itemId: ItemId, decisionId: string): Promise<Result<ItemDiff, CommandError>>;
   /** The final message of the agent of a step's attempt (by index, as the item record lists steps); default the latest attempt. */
-  stepOutput(itemId: ItemId, stepIndex: number, attempt?: number): Promise<Result<StepOutputResult, CommandError>>;
+  stepOutput(itemId: ItemId, stepIndex: number, attempt?: number): Promise<Result<StepOutput, CommandError>>;
   /** Each check of a step's attempt with the end of its saved output; while it runs, the planned ones too. */
   attemptChecks(itemId: ItemId, stepIndex: number, attempt: number): Promise<Result<AttemptChecksResult, CommandError>>;
   /** The end of a step attempt's transcript and the agent's final message. */
@@ -187,6 +193,8 @@ const failureRule = (step: TemplateStepDef) => (step.doneWhen === "reviewer appr
 const DEFAULT_COMMAND_TIMEOUT_MS = 20 * 60_000;
 const DETAIL_MAX = 500;
 const FEEDBACK_MAX_BYTES = 64 * 1024;
+/** How much of the end of a cut step output the loop reads for its verdict. */
+const OUTPUT_TAIL_BYTES = 16 * 1024;
 const TITLE_MAX = 200;
 const COVERS_MAX = 200;
 const BASELINE_FILE = "baseline.json";
@@ -1255,7 +1263,14 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       const asked = attempt === undefined ? step.attempts.at(-1) : step.attempts.find((a) => a.attempt === attempt);
       if (asked === undefined) return failure("not_found", attempt === undefined ? "The step has not run yet." : `The step has no attempt ${attempt}.`);
       // The ids come from the stored item, never from the query. Errors leave the path out.
-      const read = await readTextHead(itemPath(item.id, `${attemptDir(step.id, asked.attempt)}/agent.txt`), { maxBytes: MAX_STEP_OUTPUT_BYTES });
+      const path = itemPath(item.id, `${attemptDir(step.id, asked.attempt)}/agent.txt`);
+      const read = await readTextHead(path, { maxBytes: MAX_STEP_OUTPUT_BYTES });
+      if (read.ok && read.value.truncated) {
+        // A cut output loses its end, where a reviewer's verdict is: the end comes too. A failed
+        // read of it leaves it out; the head still serves.
+        const tail = await readTextTail(path, { maxBytes: OUTPUT_TAIL_BYTES, maxLines: Number.MAX_SAFE_INTEGER, countLinesUpTo: 0 });
+        return ok({ attempt: asked.attempt, ...read.value, ...(tail.ok && { tail: tail.value.text }) });
+      }
       if (read.ok) return ok({ attempt: asked.attempt, ...read.value });
       if (read.error.reason === "not_found") return failure("not_found", `Attempt ${asked.attempt} has no saved output.`);
       if (read.error.reason === "invalid_utf8") return failure("invalid_state", `The output of attempt ${asked.attempt} is not text.`);
