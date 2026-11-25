@@ -15,7 +15,7 @@ import { MachineReportSchema } from "./machine.js";
 import { RepoSummarySchema, SetupSchema } from "./setup.js";
 import { MAX_TEMPLATE_ENTRIES, TemplateDetailSchema, TemplateEntrySchema, TemplateFileKeySchema } from "./template-files.js";
 
-export const API_VERSION = 4;
+export const API_VERSION = 5;
 
 const apiVersion = z.literal(API_VERSION);
 const requestId = z.string().min(1).max(128);
