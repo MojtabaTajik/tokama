@@ -50,6 +50,8 @@ import {
   type SuggestTemplateResult,
   systemClock,
   type SetupResult,
+  type TemplateDetailResult,
+  type TemplatesResult,
   ItemStore,
   loadHostId,
   posixProcessTable,
@@ -64,7 +66,9 @@ import { ItemIndex } from "./item-index.js";
 import { type HealthChecks, machineChecks } from "./real/health.js";
 import { RealEngine } from "./real/real.js";
 import { SampleEngine } from "./sample/sample.js";
+import { sampleTemplateLoads } from "./sample/templates.js";
 import { MemoryItemStore } from "./store.js";
+import { templateDetail, templateEntries, type TemplateFiles } from "./templates.js";
 
 export interface EngineOptions {
   /** Directory for the socket, token and lock; created with mode 0700 if missing. */
@@ -303,6 +307,9 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     return { ...base, repos: [...base.repos, ...added.map((repo) => ({ id: repo.id, baseBranch: repo.baseBranch, checks: [...repo.checks] }))] };
   };
 
+  /** Every template file, read again on each query so the page shows the files as they are now. */
+  const templateFiles = async (): Promise<TemplateFiles> => ({ loads: sample ? await sampleTemplateLoads() : [], repoPath: () => undefined });
+
   const dispatch = async (message: ClientMessage): Promise<ReplyResult> => {
     // Real mode answers once its config is read and its items are projected into the store.
     const real = await realEngine;
@@ -350,6 +357,13 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       case "agents_list":
         if (options.home === undefined) return { ok: false, error: { code: "not_implemented", message: "this engine has no Tokama home folder for agents" } };
         return { ok: true, data: (await listAgents(options.home)) satisfies AgentsListResult };
+      case "templates":
+        return { ok: true, data: { templates: templateEntries(await templateFiles()) } satisfies TemplatesResult };
+      case "template_detail": {
+        const detail = templateDetail(await templateFiles(), { origin: query.origin, file: query.file });
+        if (detail === undefined) return { ok: false, error: { code: "not_found", message: `no template file ${query.file} in ${query.origin}` } };
+        return { ok: true, data: detail satisfies TemplateDetailResult };
+      }
     }
   };
 

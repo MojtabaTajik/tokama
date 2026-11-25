@@ -49,6 +49,7 @@ export * from "./item-log.js";
 export * from "./usage.js";
 export * from "./setup.js";
 export * from "./template.js";
+export * from "./template-files.js";
 export { parseWith, type ParseError, type ParseIssue } from "./parse.js";
 
 export const parseClientMessage = (input: unknown): Result<ClientMessage, ParseError> => parseWith(ClientMessageSchema, input);

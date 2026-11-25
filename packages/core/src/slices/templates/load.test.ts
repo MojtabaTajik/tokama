@@ -89,8 +89,21 @@ describe("loadTemplates", () => {
         origin: "orders-api",
         file: ".tokama/templates/a.yaml",
         problems: [{ line: 7, message: 'Step "work": the instructions file "instructions/gone.md" does not exist.' }],
+        text: template("A", "instructions/gone.md"),
       },
     ]);
+  });
+
+  it("keeps the text of every file it could read", async () => {
+    const orders = repo("orders-api", { "good.yaml": template("Good"), "bad.yaml": "name: [\n" });
+    const loads = await loadTemplates({ repos: [orders], agents: AGENTS });
+    expect(loads.map((load) => [load.ok ? load.template.ref : load.ref, load.text])).toEqual(
+      expect.arrayContaining([
+        ["orders-api/good", template("Good")],
+        ["orders-api/bad", "name: [\n"],
+        ["builtin/quick-fix", BUILTIN_TEMPLATES.get("quick-fix")],
+      ]),
+    );
   });
 
   it("reports a broken template without hiding the others", async () => {

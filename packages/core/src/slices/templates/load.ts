@@ -5,7 +5,7 @@ import { lstat } from "node:fs/promises";
 import { join } from "node:path";
 import { listFiles, readTextFileInside, type ReadFailure } from "../../kernel/fs-safe/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
-import { RepoIdSchema, TemplateIdSchema, type RepoId, type TemplateRecord, type TemplateRef } from "../../kernel/schemas/index.js";
+import { MAX_TEMPLATE_FILE_BYTES, RepoIdSchema, TemplateIdSchema, type RepoId, type TemplateRecord, type TemplateRef } from "../../kernel/schemas/index.js";
 import { BUILTIN_TEMPLATES } from "./builtin.js";
 import { quote } from "./quote.js";
 import { templateWarnings } from "./warnings.js";
@@ -14,7 +14,7 @@ import { validateTemplate, type AgentLocation, type TemplateProblem, type Valida
 /** The folder inside a repo that holds its templates. */
 export const TEMPLATES_DIR = ".tokama/templates";
 const BUILTIN = "builtin";
-const MAX_TEMPLATE_BYTES = 256 * 1024;
+const MAX_TEMPLATE_BYTES = MAX_TEMPLATE_FILE_BYTES;
 const MAX_TEMPLATE_LINES = 5_000;
 const MAX_INSTRUCTION_BYTES = 64 * 1024;
 const MAX_TEMPLATES_PER_REPO = 100;
@@ -34,11 +34,15 @@ export interface LoadInput {
   readonly agents: ReadonlyMap<string, AgentLocation>;
 }
 
-/** One template file, loaded or not. `ref` is absent when the file name is not a valid id. */
+/**
+ * One template file, loaded or not. `ref` is absent when the file name is not a valid id. `text`
+ * is the file as read, absent when it could not be read.
+ */
 export type TemplateLoad =
-  | { readonly ok: true; readonly template: TemplateRecord; readonly warnings: readonly string[] }
+  | { readonly ok: true; readonly template: TemplateRecord; readonly warnings: readonly string[]; readonly text: string }
   | {
       readonly ok: false;
+      readonly text?: string;
       readonly ref?: TemplateRef;
       /** `builtin`, or the repo id. */
       readonly origin: string;
@@ -58,7 +62,7 @@ export async function loadBuiltins(agents: ReadonlyMap<string, AgentLocation>): 
   const loads: TemplateLoad[] = [];
   for (const [id, text] of BUILTIN_TEMPLATES) {
     const ref = `${BUILTIN}/${id}` as TemplateRef;
-    loads.push(toLoad(await validateTemplate(text, { ref, source: { kind: "builtin" }, agents }), BUILTIN, ref, ref));
+    loads.push(toLoad(await validateTemplate(text, { ref, source: { kind: "builtin" }, agents }), BUILTIN, ref, ref, text));
   }
   return loads;
 }
@@ -116,7 +120,7 @@ async function loadRepo(repo: RepoLocation, agents: ReadonlyMap<string, AgentLoc
       agents,
       readInstructions: (relative) => readInstructions(dir, relative),
     };
-    loads.push(toLoad(await validateTemplate(text.value, ctx), repoId, file, ref));
+    loads.push(toLoad(await validateTemplate(text.value, ctx), repoId, file, ref, text.value));
   }
   return loads;
 }
@@ -163,6 +167,6 @@ async function firstLink(base: string, relative: string): Promise<string | undef
   return undefined;
 }
 
-function toLoad(result: Result<TemplateRecord, TemplateProblem[]>, origin: string, file: string, ref: TemplateRef): TemplateLoad {
-  return result.ok ? { ok: true, template: result.value, warnings: templateWarnings(result.value) } : { ok: false, ref, origin, file, problems: result.error };
+function toLoad(result: Result<TemplateRecord, TemplateProblem[]>, origin: string, file: string, ref: TemplateRef, text: string): TemplateLoad {
+  return result.ok ? { ok: true, template: result.value, warnings: templateWarnings(result.value), text } : { ok: false, ref, origin, file, problems: result.error, text };
 }
