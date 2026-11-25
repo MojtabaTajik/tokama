@@ -9,7 +9,8 @@ import { type MouseEvent, type ReactNode, useLayoutEffect, useRef, useState } fr
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { DecisionChoices } from "../drawer/DecisionChoices.js";
 import { nextRunLine } from "../drawer/describe.js";
-import { ChangedFiles, useDecisionDiff } from "../drawer/DiffView.js";
+import { useDecisionDiff } from "../drawer/useDecisionDiff.js";
+import { ChangedFiles } from "../ui/DiffView.js";
 import { type Notice, problem, REFRESH_ON } from "../drawer/ItemDrawer.js";
 import { previewOf, useStepOutput } from "../drawer/StepOutput.js";
 import { ConnectionFailure } from "../shell/ConnectionStatus.js";

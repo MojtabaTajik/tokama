@@ -3,23 +3,21 @@
 // headings as an outline and the agent that wrote it beside it. The text is shown with StepOutput
 // (React text only); the outline holds the headings' own words as text.
 import type { ItemRecord, Setup, StepRecord } from "@tokama/core";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
 import { AgentLabel } from "../agent/AgentLabel.js";
 import { agentInfo } from "../agent/agent-info.js";
 import type { AgentTarget } from "../settings/describe.js";
 import { StepOutput, useStepOutput } from "./StepOutput.js";
-import { blocksOf } from "./StepText.js";
+import { blocksOf } from "../ui/Markdown.js";
 import { Button } from "../ui/Button.js";
 import { Placeholder } from "../ui/EmptyState.js";
+import { CopyButton, toClipboard } from "../ui/CopyButton.js";
 
 const TEXT = {
   none: "No step has written an output yet.",
   head: (step: string) => `${step} step · output`,
   meta: (attempt: number, size: string) => `attempt ${attempt} · ${size}`,
-  copy: "Copy",
-  copied: "Copied",
-  copyFailed: "Could not copy",
   about: "About this output",
   outline: "On this page",
   writtenBy: "Written by",
@@ -87,7 +85,7 @@ function StepSection({ bridge, item, setup, index, attempt, full, onOpenAgent, f
         <p className="ot-head">
           <span>{head}</span>
           {output?.kind === "loaded" && <span className="mono">{TEXT.meta(output.output.attempt, sizeOf(output.output.text))}</span>}
-          {text !== undefined && text.trim() !== "" && <Copy text={text} />}
+          {text !== undefined && text.trim() !== "" && <CopyButton size="sm" className="ot-copy" copy={toClipboard(text)} />}
         </p>
         {output !== undefined && <StepOutput state={output} label={head} />}
       </article>
@@ -110,26 +108,5 @@ function StepSection({ bridge, item, setup, index, attempt, full, onOpenAgent, f
         </aside>
       )}
     </section>
-  );
-}
-
-function Copy({ text }: { readonly text: string }) {
-  const [done, setDone] = useState<"copied" | "failed" | undefined>(undefined);
-  return (
-    <Button
-      variant="secondary" size="sm"
-      className="ot-copy"
-      onClick={() =>
-        // No clipboard at all (an old or locked-down runtime) reads as a failed copy.
-        void Promise.resolve()
-          .then(() => navigator.clipboard.writeText(text))
-          .then(
-          () => setDone("copied"),
-          () => setDone("failed"),
-        )
-      }
-    >
-      {done === "copied" ? TEXT.copied : done === "failed" ? TEXT.copyFailed : TEXT.copy}
-    </Button>
   );
 }

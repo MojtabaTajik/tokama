@@ -14,13 +14,15 @@ import { AgentLabel } from "../agent/AgentLabel.js";
 import { agentInfo } from "../agent/agent-info.js";
 import type { AgentTarget } from "../settings/describe.js";
 import { itemElement } from "../list/useFocusFollow.js";
-import { CollapseIcon, ExpandIcon, RepoIcon } from "../ui/icons.js";
+import { CollapseIcon, RepoIcon } from "../ui/icons.js";
+import { ExpandButton } from "../ui/ExpandButton.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { changesRepo } from "./attempt-view.js";
 import { ChecksTab } from "./ChecksTab.js";
 import { attemptLine, decisionKind, hasEnded, nextRunLine, runLine, itemMark, KIND, outcomeLine, PRIVACY, stepAgent, stepMark, stepPosition, templateOf, whereLine } from "./describe.js";
 import { DecisionChoices, inTextField } from "./DecisionChoices.js";
-import { DiffTab, type DiffState, useDecisionDiff } from "./DiffView.js";
+import { DiffTab, type DiffState } from "../ui/DiffView.js";
+import { useDecisionDiff } from "./useDecisionDiff.js";
 import { Finish } from "./Finish.js";
 import { LogTab } from "./LogTab.js";
 import { OutputTab, shownAttempt } from "./OutputTab.js";
@@ -353,9 +355,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
         </div>
       )}
       {item && onExpand !== undefined && (
-        <Button variant="quiet" size="icon" className="drawer-expand" aria-label={TEXT.expand} title={TEXT.expand} onClick={onExpand}>
-          <ExpandIcon />
-        </Button>
+        <ExpandButton className="drawer-expand" label={TEXT.expand} onClick={onExpand} />
       )}
       <CloseButton className="drawer-close" label={TEXT.close} onClick={onClose} />
     </header>

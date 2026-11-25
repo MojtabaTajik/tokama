@@ -1,16 +1,16 @@
 // The About view: what this build is, the product site, the build facts and the licences. All
 // text renders as text. The only link that opens is the product site; the window sends it to the
 // system browser and follows no other.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { AboutInfo, ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { buildRows } from "../../shared/build-info.js";
 import { brand } from "../brand/index.js";
 import { notices as noticesFor } from "./notices.js";
 import { Button } from "../ui/Button.js";
+import { CopyButton } from "../ui/CopyButton.js";
 
 /** The product site. The window opens this one address in the system browser; no other link is followed. */
 export const WEBSITE_URL = "https://tokama.dev";
-const COPIED_FOR_MS = 2000;
 
 export interface AboutProps {
   readonly bridge: TokamaBridge;
@@ -21,16 +21,13 @@ export interface AboutProps {
 export function About({ bridge, connection, onClose }: AboutProps) {
   const [info, setInfo] = useState<AboutInfo | undefined>(undefined);
   const [failed, setFailed] = useState(false);
-  const [copy, setCopy] = useState<"idle" | "copied" | "failed">("idle");
   const [folderError, setFolderError] = useState<string | undefined>(undefined);
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
-  const resetCopy = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
     let live = true;
     bridge.getAboutInfo().then((next) => live && setInfo(next), () => live && setFailed(true));
     return () => {
       live = false;
-      clearTimeout(resetCopy.current);
     };
   }, [bridge]);
 
@@ -40,12 +37,6 @@ export function About({ bridge, connection, onClose }: AboutProps) {
     if (!next.delete(id)) next.add(id);
     return next;
   });
-  const copyInfo = async () => {
-    const done = await bridge.copyBuildInfo().then(() => true, () => false);
-    setCopy(done ? "copied" : "failed");
-    clearTimeout(resetCopy.current);
-    resetCopy.current = setTimeout(() => setCopy("idle"), COPIED_FOR_MS);
-  };
   const showFolder = async () => {
     const result = await bridge.showDataFolder().catch(() => ({ ok: false as const, message: "The folder could not be opened." }));
     setFolderError(result.ok ? undefined : result.message);
@@ -95,9 +86,7 @@ export function About({ bridge, connection, onClose }: AboutProps) {
           <section aria-labelledby="about-build" className="about-section">
             <div className="about-section-head">
               <h2 id="about-build" className="about-heading">Build</h2>
-              <Button variant="link" className="about-action about-copy" disabled={info === undefined} onClick={() => void copyInfo()}>
-                {copy === "copied" ? "Copied" : copy === "failed" ? "Could not copy" : "Copy build info"}
-              </Button>
+              <CopyButton variant="link" className="about-action about-copy" label="Copy build info" disabled={info === undefined} copy={() => bridge.copyBuildInfo()} />
             </div>
             {info === undefined ? (
               <p className="about-soft">{failed ? "The build info could not be read." : "Reading the build info…"}</p>

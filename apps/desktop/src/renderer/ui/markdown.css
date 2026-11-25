@@ -1,0 +1,99 @@
+/* An agent's text with light structure (ui/Markdown.tsx). */
+
+.step-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  font-size: var(--text-base);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.step-text p,
+.step-text ul,
+.step-text ol,
+.step-text pre {
+  margin: 0;
+}
+
+.st-heading {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.st-heading[data-level="1"] {
+  font-size: var(--text-lg);
+}
+
+.st-heading[data-level="2"] {
+  font-size: 13.5px;
+}
+
+.st-para {
+  white-space: pre-wrap;
+}
+
+.st-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-left: var(--space-20);
+  white-space: pre-wrap;
+}
+
+.st-code {
+  padding: 0 3px; /* px: off-scale */
+  border-radius: 3px; /* px: off-scale */
+  background: var(--panel);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.st-pre {
+  padding: var(--space-6) var(--space-8);
+  overflow-x: auto;
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text);
+  font-size: var(--text-sm);
+  white-space: pre;
+}
+
+.ot[data-full] .step-text {
+  gap: var(--space-14);
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--text-2);
+}
+
+.ot[data-full] .st-heading {
+  /* The pinned decision bar must not cover a heading the outline scrolled to. */
+  scroll-margin-top: 140px;
+  color: var(--text);
+}
+
+.ot[data-full] .st-heading[data-level="1"],
+.ot[data-full] .st-heading[data-level="2"]:first-child {
+  font-size: 19px;
+  line-height: 1.35;
+}
+
+.ot[data-full] .st-heading[data-level="2"],
+.ot[data-full] .st-heading[data-level="3"] {
+  margin-top: var(--space-8);
+  font-size: var(--text-xl);
+}
+
+.ot[data-full] .st-list {
+  gap: var(--space-6);
+  padding-left: var(--space-24);
+}
+
+.ot[data-full] .st-code {
+  padding: 1px 5px; /* px: off-scale */
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-base);
+}
+

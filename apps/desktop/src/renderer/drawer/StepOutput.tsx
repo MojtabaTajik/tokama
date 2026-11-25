@@ -1,10 +1,10 @@
 // What a step's agent wrote last in an attempt (the `step_output` query): in the drawer's
 // approval card, collapsed under each attempt on the Steps tab, and as a short preview on the
-// Needs you row. The text is shown with StepText, as React text only.
+// Needs you row. The text is shown with Markdown, as React text only.
 import type { StepOutputResult } from "@tokama/core";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
-import { StepText } from "./StepText.js";
+import { Markdown } from "../ui/Markdown.js";
 import { Button } from "../ui/Button.js";
 import { StatusMark } from "../ui/status.js";
 import { Placeholder } from "../ui/EmptyState.js";
@@ -86,7 +86,7 @@ export function StepOutput({ state, label }: { readonly state: OutputState; read
       return (
         <>
           <div className="step-output-text" tabIndex={0} role="region" aria-label={label}>
-            <StepText text={state.output.text} />
+            <Markdown text={state.output.text} />
           </div>
           {state.output.truncated && <Cut />}
         </>
@@ -117,7 +117,7 @@ export function StepPreview({ state, label, isPlan, onShowFull }: { readonly sta
   return (
     <>
       <div ref={box} className="step-output-preview" data-cut={cut ? "true" : undefined} role="region" aria-label={label}>
-        <StepText text={state.output.text} />
+        <Markdown text={state.output.text} />
       </div>
       {cut && (
         <Button variant="link" className="step-output-more" onClick={onShowFull}>

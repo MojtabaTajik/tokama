@@ -6,13 +6,12 @@
 // text (bidi controls, line separators) are shown as visible escapes, and a path with a control
 // character is shown quoted, so a line cannot read differently from what it does. Binary files,
 // files over the engine's line limit and anything else left out say so and name the worktree.
-import type { Decision, DiffFile, ItemDiff } from "@tokama/core";
-import { type ReactNode, useEffect, useState } from "react";
-import { ExpandIcon } from "../ui/icons.js";
-import type { TokamaBridge } from "../../shared/bridge.js";
-import { Button } from "../ui/Button.js";
-import { StatusMark } from "../ui/status.js";
-import { Placeholder } from "../ui/EmptyState.js";
+import type { DiffFile, ItemDiff } from "@tokama/core";
+import { type ReactNode, useState } from "react";
+import { Button } from "./Button.js";
+import { Placeholder } from "./EmptyState.js";
+import { ExpandButton } from "./ExpandButton.js";
+import { StatusMark } from "./status.js";
 
 /** The engine shows the hunks of files with up to this many changed lines. */
 export const FILE_LINES = 1000;
@@ -156,34 +155,6 @@ const count = (value: number) => value.toLocaleString("en");
 
 export type DiffState = { readonly kind: "loading" } | { readonly kind: "failed"; readonly message: string } | { readonly kind: "loaded"; readonly diff: ItemDiff };
 
-const LOADING: DiffState = { kind: "loading" };
-
-/**
- * The change of an open decision, asked for again when the decision changes. An answer is kept
- * with the decision it is for, so a newer question never shows an older change, not even for one frame.
- */
-export function useDecisionDiff(bridge: TokamaBridge, itemId: string, decision: Decision | undefined): DiffState | undefined {
-  const [answer, setAnswer] = useState<{ readonly for: string; readonly state: DiffState } | undefined>(undefined);
-  const decisionId = decision?.hasDiff === true ? decision.id : undefined;
-  useEffect(() => {
-    if (decisionId === undefined) return;
-    let current = true;
-    void bridge
-      .query({ type: "decision_diff", itemId, decisionId })
-      .then((reply) => {
-        if (current) setAnswer({ for: decisionId, state: reply.ok ? { kind: "loaded", diff: reply.data } : { kind: "failed", message: reply.error.message } });
-      })
-      .catch((cause: unknown) => {
-        if (current) setAnswer({ for: decisionId, state: { kind: "failed", message: String(cause) } });
-      });
-    return () => {
-      current = false;
-    };
-  }, [bridge, itemId, decisionId]);
-  if (decisionId === undefined) return undefined;
-  return answer?.for === decisionId ? answer.state : LOADING;
-}
-
 function Status({ state }: { readonly state: Exclude<DiffState, { kind: "loaded" }> }) {
   if (state.kind === "loading") return <Placeholder>{TEXT.loading}</Placeholder>;
   return (
@@ -313,9 +284,7 @@ function FilePanel({ file, worktree, baseBranch, layout, split, onSplit, onExpan
         )}
         {hidden === undefined && layout === "narrow" && <span className="dv-switch dv-muted">{TEXT.tooNarrow}</span>}
         {onExpand !== undefined && (
-          <Button variant="quiet" size="icon-sm" className="expand-button" aria-label={TEXT.expand} title={TEXT.expandTip} onClick={onExpand}>
-            <ExpandIcon />
-          </Button>
+          <ExpandButton className="expand-button" label={TEXT.expand} tip={TEXT.expandTip} onClick={onExpand} />
         )}
       </p>
       {hidden === undefined && sideBySide ? (

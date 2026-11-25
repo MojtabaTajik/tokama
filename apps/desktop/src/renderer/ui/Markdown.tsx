@@ -149,7 +149,7 @@ function inline(text: string, depth = 0): ReactNode[] {
   return out;
 }
 
-export function StepText({ text }: { readonly text: string }) {
+export function Markdown({ text }: { readonly text: string }) {
   return (
     <div className="step-text">
       {blocksOf(text).map((block, index) => {
