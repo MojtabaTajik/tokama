@@ -5,7 +5,7 @@ import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Page } from "playwright-core";
 import { expect } from "vitest";
-import { drawer, flow, row } from "./harness.js";
+import { drawer, flow, row, segment } from "./harness.js";
 
 const DONE = "Slow query on order_items";
 
@@ -116,4 +116,39 @@ flow("a narrow window makes the drawer give way and then float over the main are
   await resize(1500, 900);
   await row(page, DONE).click();
   await expect.poll(() => widthOf(page, ".drawer")).toBe(420);
+});
+
+flow("the drawer's content has the same gap to its right edge as to its left, at the default and the widest drawer", async ({ page, resize, screenshot }) => {
+  await resize(1200, 600);
+  await segment(page, "Done").click();
+  await page.locator(".range").selectOption("30d");
+  await row(page, "Fix the null check in cart totals").click();
+  await drawer(page).getByRole("heading", { name: "Fix the null check in cart totals" }).waitFor();
+  await drawer(page).locator(".finish").waitFor();
+
+  // A short window: the drawer scrolls, so a classic scroll bar (always shown on Linux, and with a mouse on macOS) takes room.
+  const scrolls = () => page.locator(".drawer").evaluate((panel) => panel.scrollHeight > panel.clientHeight);
+
+  const gaps = () =>
+    page.locator(".drawer").evaluate((panel) => {
+      const box = panel.getBoundingClientRect();
+      // From the panel's inner left edge to the window's right edge: a scrollbar is part of the gap.
+      const left = box.left + panel.clientLeft;
+      const right = window.innerWidth;
+      return [".drawer-header", '[role="tablist"]', ".step", ".finish"].map((selector) => {
+        const el = panel.querySelector(selector);
+        if (el === null) throw new Error(`${selector} is not in the drawer`);
+        const at = el.getBoundingClientRect();
+        return { selector, left: Math.round((at.left - left) * 10) / 10, right: Math.round((right - at.right) * 10) / 10 };
+      });
+    });
+  for (const [name, key] of [["default", undefined], ["widest", "End"]] as const) {
+    if (key !== undefined) {
+      await edge(page, "drawer").focus();
+      await page.keyboard.press(key);
+    }
+    expect(await scrolls(), `${name}: the drawer scrolls`).toBe(true);
+    await screenshot(`drawer-padding-${name}`);
+    for (const gap of await gaps()) expect(Math.abs(gap.right - gap.left), `${name}: ${gap.selector} left ${gap.left}, right ${gap.right}`).toBeLessThanOrEqual(2);
+  }
 });

@@ -112,8 +112,8 @@ export function finishView(item: Pick<ItemRecord, "outcome" | "finish" | "repoId
       return {
         kind: "ended",
         mark: { symbol: "✓", word: "merged", tone: "pass" },
-        title: `Merged into ${finish.merged.baseBranch} · ${finish.merged.commit.slice(0, 7)}`,
-        detail: [finish.worktreeRemoved ? withTime("Worktree and branch removed", finish.at) : (finish.detail ?? "The worktree is kept.")],
+        title: withTime(`Merged into ${finish.merged.baseBranch} · ${finish.merged.commit.slice(0, 7)}`, finish.at),
+        detail: [finish.worktreeRemoved ? "Worktree and branch removed" : (finish.detail ?? "The worktree is kept.")],
         removable,
         ...failed,
       };

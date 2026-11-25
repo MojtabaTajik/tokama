@@ -2,7 +2,7 @@
 // approval card, collapsed under each attempt on the Steps tab, and as a short preview on the
 // Needs you row. The text is shown with StepText, as React text only.
 import type { StepOutputResult } from "@tokama/core";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
 import { StepText } from "./StepText.js";
 
@@ -12,6 +12,8 @@ const TEXT = {
   failed: (message: string) => `Could not load the output: ${message}`,
   empty: "The agent wrote no final message.",
   truncated: "Showing the first 64 KiB. The rest is in the item's folder on this machine.",
+  showFullPlan: "Show full plan",
+  showFullOutput: "Show full output",
 } as const;
 
 export type OutputState =
@@ -51,6 +53,17 @@ export function useStepOutput(bridge: TokamaBridge, itemId: string, stepIndex: n
   return answer?.for === asked ? answer.state : LOADING;
 }
 
+function Cut() {
+  return (
+    <p className="step-output-cut">
+      <span className="symbol" aria-hidden="true">
+        !
+      </span>
+      {TEXT.truncated}
+    </p>
+  );
+}
+
 /** The output in a focusable scroll box, so a long plan can be read with the keyboard. */
 export function StepOutput({ state, label }: { readonly state: OutputState; readonly label: string }) {
   switch (state.kind) {
@@ -74,17 +87,45 @@ export function StepOutput({ state, label }: { readonly state: OutputState; read
           <div className="step-output-text" tabIndex={0} role="region" aria-label={label}>
             <StepText text={state.output.text} />
           </div>
-          {state.output.truncated && (
-            <p className="step-output-cut">
-              <span className="symbol" aria-hidden="true">
-                !
-              </span>
-              {TEXT.truncated}
-            </p>
-          )}
+          {state.output.truncated && <Cut />}
         </>
       );
   }
+}
+
+/**
+ * The first lines of the output, faded where they are cut, for the approval card. When the whole
+ * output fits it is shown as it is; when it does not, "Show full plan" (a Plan step) or "Show full output" goes to the place that has it all.
+ */
+export function StepPreview({ state, label, isPlan, onShowFull }: { readonly state: OutputState; readonly label: string; readonly isPlan: boolean; readonly onShowFull: () => void }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [cut, setCut] = useState(false);
+  const loaded = state.kind === "loaded";
+  useLayoutEffect(() => {
+    const element = box.current;
+    if (element === null) return;
+    const measure = () => setCut(element.scrollHeight > element.clientHeight + 1);
+    measure();
+    // The drawer can be dragged wider or narrower, which moves the line breaks.
+    if (typeof ResizeObserver === "undefined") return;
+    const watcher = new ResizeObserver(measure);
+    watcher.observe(element);
+    return () => watcher.disconnect();
+  }, [state, loaded]);
+  if (state.kind !== "loaded" || state.output.text.trim() === "") return <StepOutput state={state} label={label} />;
+  return (
+    <>
+      <div ref={box} className="step-output-preview" data-cut={cut ? "true" : undefined} role="region" aria-label={label}>
+        <StepText text={state.output.text} />
+      </div>
+      {cut && (
+        <button type="button" className="link step-output-more" onClick={onShowFull}>
+          {isPlan ? TEXT.showFullPlan : TEXT.showFullOutput}
+        </button>
+      )}
+      {state.output.truncated && <Cut />}
+    </>
+  );
 }
 
 /** The first lines of the output as plain words, without Markdown marks, for a preview. */

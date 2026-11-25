@@ -8,7 +8,6 @@ import type { TokamaBridge } from "../../shared/bridge.js";
 import { AgentLabel } from "../agent/AgentLabel.js";
 import { agentInfo } from "../agent/agent-info.js";
 import type { AgentTarget } from "../settings/describe.js";
-import { ExpandIcon } from "../shell/icons.js";
 import { StepOutput, useStepOutput } from "./StepOutput.js";
 import { blocksOf } from "./StepText.js";
 
@@ -19,8 +18,6 @@ const TEXT = {
   copy: "Copy",
   copied: "Copied",
   copyFailed: "Could not copy",
-  expand: "Open output in full view",
-  expandTip: "Open in full view",
   about: "About this output",
   outline: "On this page",
   writtenBy: "Written by",
@@ -44,12 +41,10 @@ export interface OutputTabProps {
   readonly setup: Setup | undefined;
   /** The full view: outlines and agents beside the outputs. */
   readonly full: boolean;
-  /** ⤢ in each output's header, in the drawer. */
-  readonly onExpand?: (() => void) | undefined;
   readonly onOpenAgent?: ((agent: AgentTarget) => void) | undefined;
 }
 
-export function OutputTab({ bridge, item, setup, full, onExpand, onOpenAgent }: OutputTabProps) {
+export function OutputTab({ bridge, item, setup, full, onOpenAgent }: OutputTabProps) {
   const shown = item.steps.flatMap((step, index) => {
     const attempt = shownAttempt(step);
     return attempt === undefined ? [] : [{ index, attempt }];
@@ -58,7 +53,7 @@ export function OutputTab({ bridge, item, setup, full, onExpand, onOpenAgent }: 
   return (
     <div className="ot" data-full={full ? "true" : undefined}>
       {shown.map(({ index, attempt }) => (
-        <StepSection key={`${index} ${attempt}`} bridge={bridge} item={item} setup={setup} index={index} attempt={attempt} full={full} onExpand={onExpand} onOpenAgent={onOpenAgent} />
+        <StepSection key={`${index} ${attempt}`} bridge={bridge} item={item} setup={setup} index={index} attempt={attempt} full={full} onOpenAgent={onOpenAgent} />
       ))}
     </div>
   );
@@ -69,7 +64,7 @@ interface StepSectionProps extends OutputTabProps {
   readonly attempt: number;
 }
 
-function StepSection({ bridge, item, setup, index, attempt, full, onExpand, onOpenAgent }: StepSectionProps) {
+function StepSection({ bridge, item, setup, index, attempt, full, onOpenAgent }: StepSectionProps) {
   const step = item.steps[index]!;
   const output = useStepOutput(bridge, item.id, index, attempt, `${index} ${attempt}`);
   const section = useRef<HTMLElement>(null);
@@ -85,11 +80,6 @@ function StepSection({ bridge, item, setup, index, attempt, full, onExpand, onOp
           <span>{head}</span>
           {output?.kind === "loaded" && <span className="mono">{TEXT.meta(output.output.attempt, sizeOf(output.output.text))}</span>}
           {text !== undefined && text.trim() !== "" && <Copy text={text} />}
-          {onExpand !== undefined && (
-            <button type="button" className="expand-button" aria-label={TEXT.expand} title={TEXT.expandTip} onClick={onExpand}>
-              <ExpandIcon />
-            </button>
-          )}
         </p>
         {output !== undefined && <StepOutput state={output} label={head} />}
       </article>
