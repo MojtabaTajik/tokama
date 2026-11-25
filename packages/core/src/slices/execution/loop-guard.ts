@@ -5,6 +5,8 @@
 // - idle: no file changed for `idleMs`, after at least one change, with the agent still taking
 //   turns, and the step's checks pass;
 // - silent: the agent sent no event for `silentMs` while no tool call of it ran: a frozen CLI;
+// - tool_silent: the agent sent no event for `toolSilentMs` while a tool call of it ran: a CLI
+//   frozen inside a tool call;
 // - timeout: the call ran for `timeoutMs`.
 // Edit, test, edit, test is work, not a loop: a new edit or a file change starts the repeat counts
 // again. One long file write is not idle: the idle stop needs turns after the last change.
@@ -28,8 +30,14 @@ export const LoopGuardSettingsSchema = z.strictObject({
     .int()
     .nonnegative()
     .refine((ms) => ms === 0 || ms >= 10_000, { message: "0 or at least 10000" }),
-  /** 0 turns the silence stop off. A running tool call is not silence: its own timeout is the CLI's. */
+  /** 0 turns the silence stop off. A running tool call is not silence: `toolSilentMs` covers it. */
   silentMs: z
+    .int()
+    .nonnegative()
+    .max(MAX_TIMER_MS)
+    .refine((ms) => ms === 0 || ms >= 10_000, { message: "0 or at least 10000" }),
+  /** 0 turns it off. No event for this long while a tool call runs: the CLI froze inside it. */
+  toolSilentMs: z
     .int()
     .nonnegative()
     .max(MAX_TIMER_MS)
@@ -40,11 +48,11 @@ export const LoopGuardSettingsSchema = z.strictObject({
 
 export type LoopGuardSettings = z.output<typeof LoopGuardSettingsSchema>;
 
-/** For a small local model, which finishes in few turns and then tends to loop. */
-export const localModelGuardDefaults: LoopGuardSettings = { turnCap: 30, repeatLimit: 6, idleMs: 75_000, silentMs: 300_000, timeoutMs: 600_000 };
+/** For a small local model, which finishes in few turns and then tends to loop. Its timeout comes before `toolSilentMs`. */
+export const localModelGuardDefaults: LoopGuardSettings = { turnCap: 30, repeatLimit: 6, idleMs: 75_000, silentMs: 300_000, toolSilentMs: 1_200_000, timeoutMs: 600_000 };
 
 /** For Claude Code, which takes many more turns on a real task. */
-export const claudeCodeGuardDefaults: LoopGuardSettings = { turnCap: 150, repeatLimit: 6, idleMs: 180_000, silentMs: 600_000, timeoutMs: 5_400_000 };
+export const claudeCodeGuardDefaults: LoopGuardSettings = { turnCap: 150, repeatLimit: 6, idleMs: 180_000, silentMs: 600_000, toolSilentMs: 1_200_000, timeoutMs: 5_400_000 };
 
 const LoopGuardOverridesSchema = LoopGuardSettingsSchema.partial();
 
@@ -52,17 +60,18 @@ const LoopGuardOverridesSchema = LoopGuardSettingsSchema.partial();
 export function loopGuardSettings(overrides: unknown = {}, defaults: LoopGuardSettings = localModelGuardDefaults): Result<LoopGuardSettings, ParseError> {
   const parsed = parseWith(LoopGuardOverridesSchema, overrides);
   if (!parsed.ok) return parsed;
-  const { turnCap, repeatLimit, idleMs, silentMs, timeoutMs } = parsed.value;
+  const { turnCap, repeatLimit, idleMs, silentMs, toolSilentMs, timeoutMs } = parsed.value;
   return ok({
     turnCap: turnCap ?? defaults.turnCap,
     repeatLimit: repeatLimit ?? defaults.repeatLimit,
     idleMs: idleMs ?? defaults.idleMs,
     silentMs: silentMs ?? defaults.silentMs,
+    toolSilentMs: toolSilentMs ?? defaults.toolSilentMs,
     timeoutMs: timeoutMs ?? defaults.timeoutMs,
   });
 }
 
-export type StopReason = "turn_cap" | "repeat_limit" | "idle" | "silent" | "timeout";
+export type StopReason = "turn_cap" | "repeat_limit" | "idle" | "silent" | "tool_silent" | "timeout";
 
 /** No idle stop until the agent took this many turns after the last change. */
 export const MIN_TURNS_AFTER_CHANGE = 2;
@@ -292,7 +301,7 @@ export interface GuardReport {
   readonly lastChangeAt: number | null;
   /** Time burned in a loop: the time after the last file change of a call a guard stopped, else 0. */
   readonly wastedMs: number;
-  /** A call stopped by the turn cap, repeat limit or timeout, or idle-stopped long after its last change. A silent agent is frozen, not looping. */
+  /** A call stopped by the turn cap, repeat limit or timeout, or idle-stopped long after its last change. A silent agent is frozen, not looping, inside a tool call or not. */
   readonly loop: boolean;
   /** Absent when the working tree was not watched. */
   readonly idleWatch?: IdleWatchStats;
@@ -303,7 +312,7 @@ export function guardReport(stream: StreamWatch, files: FileWatch | undefined, s
   const since = lastChangeAt ?? startedAt;
   const turnsAfterLastChange = stream.turnsAfter(since);
   const msAfterLastChange = Math.max(0, endedAt - since);
-  const loop = stop === "idle" ? turnsAfterLastChange > LOOP_TURNS_AFTER_CHANGE : stop !== null && stop !== "silent";
+  const loop = stop === "idle" ? turnsAfterLastChange > LOOP_TURNS_AFTER_CHANGE : stop !== null && stop !== "silent" && stop !== "tool_silent";
   return {
     stop,
     turns: stream.turns(),

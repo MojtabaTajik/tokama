@@ -800,6 +800,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     // done_when decides.
     const { end } = call;
     if (call.guard.stop === "silent") return runFailed(item, stepId, attempt, "silent", `${agent.name} was silent for ${minutes(guard.silentMs)}.`);
+    if (call.guard.stop === "tool_silent") return runFailed(item, stepId, attempt, "tool_silent", `${agent.name}'s command ran for ${minutes(guard.toolSilentMs)} with no output.`);
     if (call.guard.stop === "timeout" || end.errorKind === "timeout") return runFailed(item, stepId, attempt, "timeout", `The agent call ran for ${minutes(guard.timeoutMs)} (the limit).`);
     const guardStopped = call.guard.stop !== null;
     if (end.outcome === "failed" && !guardStopped) return runFailed(item, stepId, attempt, end.errorKind ?? "crash", end.error ?? "The agent call failed.");

@@ -71,9 +71,10 @@ export const loops = (files: Readonly<Record<string, string>>): Behavior =>
   };
 
 /** Runs until the call is stopped; `onStart` runs once the call is under way. */
-export const hangs = (onStart?: () => void): Behavior =>
+export const hangs = (onStart?: () => void, toolOpen = false): Behavior =>
   async function* ({ signal }) {
     yield { type: "turn" };
+    if (toolOpen) yield { type: "tool_call", id: "frozen", name: "Bash", kind: "command", input: { command: "npm test" } };
     onStart?.();
     await new Promise<void>((resolve) => (signal.aborted ? resolve() : signal.addEventListener("abort", () => resolve(), { once: true })));
     yield { type: "end", outcome: "aborted", usage: NO_TOKENS };

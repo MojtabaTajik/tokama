@@ -130,7 +130,7 @@ describe("guarded agent call", () => {
       },
     };
     const agent = scriptedAgent(clock, [TURN, editFile("a.ts", "fix"), tree.write("a.ts"), ...repeat(20, (i) => [{ wait: 2_000 }, TURN, readFile("a.ts", i)])]);
-    const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, files, settings: { turnCap: 12, repeatLimit: 0, idleMs: 10_000, silentMs: 0, timeoutMs: 60_000 } });
+    const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, files, settings: { turnCap: 12, repeatLimit: 0, idleMs: 10_000, silentMs: 0, toolSilentMs: 0, timeoutMs: 60_000 } });
     expect(guard).toMatchObject({ stop: "turn_cap", turns: 12 });
     expect(guard.idleWatch?.checksRun).toBe(1);
     expect(signals.map((signal) => signal.aborted)).toEqual([true]);
@@ -151,7 +151,7 @@ describe("guarded agent call", () => {
   it("uses the settings it is given", async () => {
     const clock = manualClock();
     const agent = scriptedAgent(clock, [TURN, runTests(), { hang: true }]);
-    const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings: { turnCap: 0, repeatLimit: 0, idleMs: 0, silentMs: 0, timeoutMs: 5_000 } });
+    const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings: { turnCap: 0, repeatLimit: 0, idleMs: 0, silentMs: 0, toolSilentMs: 0, timeoutMs: 5_000 } });
     expect(guard).toMatchObject({ stop: "timeout", wastedMs: 5_000 });
   });
 
@@ -172,7 +172,7 @@ describe("guarded agent call", () => {
         yield { type: "end", outcome: "completed", usage: USAGE };
       },
     };
-    const { end, guard } = await runGuardedCall(deaf, REQUEST, live(), { clock, settings: { turnCap: 2, repeatLimit: 0, idleMs: 0, silentMs: 0, timeoutMs: 60_000 } });
+    const { end, guard } = await runGuardedCall(deaf, REQUEST, live(), { clock, settings: { turnCap: 2, repeatLimit: 0, idleMs: 0, silentMs: 0, toolSilentMs: 0, timeoutMs: 60_000 } });
     expect(end.outcome).toBe("completed");
     expect(guard.stop).toBeNull();
   });
@@ -185,7 +185,7 @@ describe("guarded agent call", () => {
         yield { type: "end", outcome: "failed", usage: USAGE, error: "killed" };
       },
     };
-    const { end, guard } = await runGuardedCall(deaf, REQUEST, live(), { clock, settings: { turnCap: 2, repeatLimit: 0, idleMs: 0, silentMs: 0, timeoutMs: 60_000 } });
+    const { end, guard } = await runGuardedCall(deaf, REQUEST, live(), { clock, settings: { turnCap: 2, repeatLimit: 0, idleMs: 0, silentMs: 0, toolSilentMs: 0, timeoutMs: 60_000 } });
     expect(end.outcome).toBe("failed");
     expect(guard.stop).toBe("turn_cap");
   });
@@ -196,7 +196,7 @@ describe("guarded agent call", () => {
     // A step without checks: checksPass answers false.
     const files = { snapshot: tree.options.snapshot, checksPass: () => Promise.resolve(false) };
     const agent = scriptedAgent(clock, [TURN, editFile("a.ts", "fix"), tree.write("a.ts"), ...repeat(50, (i) => [TURN, readFile("a.ts", i), { wait: 10_000 }])]);
-    const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, files, settings: { turnCap: 0, repeatLimit: 0, idleMs: 10_000, silentMs: 0, timeoutMs: 400_000 } });
+    const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, files, settings: { turnCap: 0, repeatLimit: 0, idleMs: 10_000, silentMs: 0, toolSilentMs: 0, timeoutMs: 400_000 } });
     expect(guard.stop).toBe("timeout");
   });
 
@@ -268,7 +268,7 @@ describe("guarded agent call", () => {
 
     it("does not stop while a tool runs, even for longer than silentMs", async () => {
       const clock = manualClock();
-      const agent = scriptedAgent(clock, [TURN, runTests(), { wait: 25 * MIN }, { type: "tool_result", id: `t${callIds}` }, { wait: 9 * MIN }, TURN, text("done")]);
+      const agent = scriptedAgent(clock, [TURN, runTests(), { wait: 19 * MIN }, { type: "tool_result", id: `t${callIds}` }, { wait: 9 * MIN }, TURN, text("done")]);
       const { end, guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings });
       expect(end.outcome).toBe("completed");
       expect(guard.stop).toBeNull();
@@ -276,9 +276,9 @@ describe("guarded agent call", () => {
 
     it("counts from the tool's result once the tool ends", async () => {
       const clock = manualClock();
-      const agent = scriptedAgent(clock, [TURN, runTests(), { wait: 25 * MIN }, { type: "tool_result", id: `t${callIds}` }, { hang: true }]);
+      const agent = scriptedAgent(clock, [TURN, runTests(), { wait: 19 * MIN }, { type: "tool_result", id: `t${callIds}` }, { hang: true }]);
       const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings });
-      expect(clock.now()).toBe(35 * MIN);
+      expect(clock.now()).toBe(29 * MIN);
       expect(guard.stop).toBe("silent");
     });
 
@@ -303,15 +303,83 @@ describe("guarded agent call", () => {
     it("is off at silentMs 0", async () => {
       const clock = manualClock();
       const agent = scriptedAgent(clock, [TURN, { hang: true }]);
-      const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings: { ...settings, silentMs: 0, timeoutMs: 30 * MIN } });
+      const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings: { ...settings, silentMs: 0, toolSilentMs: 0, timeoutMs: 30 * MIN } });
       expect(clock.now()).toBe(30 * MIN);
       expect(guard.stop).toBe("timeout");
     });
 
-    it("leaves a tool that never ends to the call's cap", async () => {
+  });
+
+  describe("tool silence stop", () => {
+    const settings = claudeCodeGuardDefaults;
+
+    it("stops a CLI frozen inside one tool call after toolSilentMs", async () => {
+      const clock = manualClock();
+      const agent = scriptedAgent(clock, [TURN, { wait: MIN }, runTests(), { hang: true }]);
+      const { end, guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings });
+      expect(clock.now()).toBe(21 * MIN);
+      expect(end.outcome).toBe("aborted");
+      expect(guard).toMatchObject({ stop: "tool_silent", turns: 1, wastedMs: 21 * MIN, loop: false });
+    });
+
+    it("does not stop while events arrive, though the tool call stays open", async () => {
+      const clock = manualClock();
+      const open = runTests();
+      const openId = `t${callIds}`;
+      // The agent's text and another call's results arrive while the first call stays open.
+      const agent = scriptedAgent(clock, [TURN, open, ...repeat(5, (i) => [{ wait: 15 * MIN }, i % 2 === 0 ? text("still here") : { type: "tool_result", id: "other" }]), { type: "tool_result", id: openId }, TURN, text("done")]);
+      const { end, guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings });
+      expect(clock.now()).toBe(75 * MIN);
+      expect(end.outcome).toBe("completed");
+      expect(guard.stop).toBeNull();
+    });
+
+    it("does not stop a subagent at work: its messages keep the call alive", async () => {
+      const clock = manualClock();
+      const task = call("other", "Task", { prompt: "explore the repo" });
+      const agent = scriptedAgent(clock, [TURN, task, ...repeat(8, () => [{ wait: 5 * MIN }, { type: "subagent" }]), { type: "tool_result", id: `t${callIds}` }, TURN, text("done")]);
+      const { end, guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings });
+      expect(clock.now()).toBe(40 * MIN);
+      expect(end.outcome).toBe("completed");
+      expect(guard.stop).toBeNull();
+    });
+
+    it("does not let a subagent's output after its tool call ended hold off the silence stop", async () => {
+      const clock = manualClock();
+      const agent = scriptedAgent(clock, [TURN, { wait: 6 * MIN }, { type: "subagent" }, { hang: true }]);
+      const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings });
+      expect(clock.now()).toBe(10 * MIN);
+      expect(guard.stop).toBe("silent");
+    });
+
+    it("looks first at the shorter limit when toolSilentMs is shorter than silentMs", async () => {
       const clock = manualClock();
       const agent = scriptedAgent(clock, [TURN, runTests(), { hang: true }]);
-      const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings });
+      const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings: { ...settings, silentMs: 10 * MIN, toolSilentMs: MIN } });
+      expect(clock.now()).toBe(MIN);
+      expect(guard.stop).toBe("tool_silent");
+    });
+
+    it("fires with the silence stop off", async () => {
+      const clock = manualClock();
+      const agent = scriptedAgent(clock, [{ wait: 3 * MIN }, TURN, runTests(), { hang: true }]);
+      const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings: { ...settings, silentMs: 0 } });
+      expect(clock.now()).toBe(23 * MIN);
+      expect(guard.stop).toBe("tool_silent");
+    });
+
+    it("still stops a silent agent on time after a tool call ends, when toolSilentMs is much longer", async () => {
+      const clock = manualClock();
+      const agent = scriptedAgent(clock, [TURN, runTests(), { wait: 5 * MIN }, { type: "tool_result", id: `t${callIds}` }, { hang: true }]);
+      const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings: { ...settings, silentMs: MIN, toolSilentMs: 60 * MIN } });
+      expect(clock.now()).toBe(6 * MIN);
+      expect(guard.stop).toBe("silent");
+    });
+
+    it("is off at toolSilentMs 0: a tool that never ends goes to the call's cap", async () => {
+      const clock = manualClock();
+      const agent = scriptedAgent(clock, [TURN, runTests(), { hang: true }]);
+      const { guard } = await runGuardedCall(agent, REQUEST, live(), { clock, settings: { ...settings, toolSilentMs: 0 } });
       expect(clock.now()).toBe(90 * MIN);
       expect(guard.stop).toBe("timeout");
     });

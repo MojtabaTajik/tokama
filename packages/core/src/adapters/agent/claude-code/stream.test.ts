@@ -163,10 +163,11 @@ describe("Claude Code stream parser", () => {
     expect(parser.scrub("ENOENT: /home/dev/work/repo/x and /home/dev/y")).toBe("ENOENT: ./x and ~/y");
   });
 
-  it("does not count a subagent's messages as the parent's turns or tool calls", () => {
+  it("does not count a subagent's messages as the parent's turns or tool calls, only as a sign of life", () => {
     const sub = line({ type: "assistant", parent_tool_use_id: "toolu_task", message: { id: "s1", content: [{ type: "tool_use", id: "st1", name: "Bash", input: { command: "ls" } }], usage: { input_tokens: 7 } } });
-    const { events, state } = parse([sub, toolUse("t1", "Bash", { command: "ls" })]);
-    expect(events.map((event) => event.type)).toEqual(["turn", "tool_call"]);
+    const subResult = line({ type: "user", parent_tool_use_id: "toolu_task", message: { content: [{ type: "tool_result", tool_use_id: "st1" }] } });
+    const { events, state } = parse([sub, subResult, toolUse("t1", "Bash", { command: "ls" })]);
+    expect(events.map((event) => event.type)).toEqual(["subagent", "subagent", "turn", "tool_call"]);
     expect(state.usage.input).toBe(7);
   });
 

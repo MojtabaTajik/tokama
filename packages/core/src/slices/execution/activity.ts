@@ -85,6 +85,11 @@ export function createActivityTracker(startedAt: number): ActivityTracker {
       switch (event.type) {
         case "rate_limit":
           return false;
+        case "subagent":
+          // A subagent runs inside one of the agent's tool calls: while one is open, the call is
+          // alive and the agent's action stays. Without one, it is not the agent's own event.
+          if (running.size === 0) return false;
+          break;
         case "started":
           break;
         case "turn":

@@ -84,6 +84,9 @@ describe("explainStop", () => {
     const silent = step("plan", [attempt(1, T, { endedAt: T + 12 * MIN, result: "run_failed", failure: "silent", detail: "Planner was silent for 10 m." })]);
     const quiet = asked("run_failure", "plan", T + 12 * MIN, ["retry_step", "stop"]);
     expect(explainStop(itemOf([silent], [quiet]), quiet, template)?.why).toBe("Planner was silent for 10 m.");
+    const frozen = step("plan", [attempt(1, T, { endedAt: T + 22 * MIN, result: "run_failed", failure: "tool_silent", detail: "Planner's command ran for 20 m with no output." })]);
+    const stuck = asked("run_failure", "plan", T + 22 * MIN, ["retry_step", "stop"]);
+    expect(explainStop(itemOf([frozen], [stuck]), stuck, template)?.why).toBe("Planner's command ran for 20 m with no output.");
     const crashed = step("review", [attempt(1, T, { endedAt: T + 5, result: "run_failed", failure: "crash", detail: "The reviewer's reply did not end with VERDICT: approve or VERDICT: changes." })]);
     const noVerdict = asked("run_failure", "review", T + 5, ["retry_step", "stop"]);
     expect(explainStop(itemOf([crashed], [noVerdict]), noVerdict, template)?.why).toBe("The reviewer's reply did not end with VERDICT: approve or VERDICT: changes.");
