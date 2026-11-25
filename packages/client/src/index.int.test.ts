@@ -215,8 +215,10 @@ describe("@tokama/client", () => {
   // pid, and otherwise takes the lock and only listens after DELAY ms (a slow start).
   function slowEngine(dir: string, delayMs: number) {
     const starts = join(tempDir(), "starts");
+    const pids = join(tempDir(), "pids");
     const engine = `const fs = require("fs"), net = require("net"), path = require("path");
       const dir = process.env.DIR, lock = path.join(dir, "engine.lock");
+      fs.appendFileSync(process.env.PIDS, process.pid + "\\n");
       const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
       try {
         fs.writeFileSync(lock, process.pid + " e-slow\\n", { flag: "wx", mode: 0o600 });
@@ -232,11 +234,17 @@ describe("@tokama/client", () => {
         const welcome = JSON.stringify({ kind: "welcome", apiVersion: Number(process.env.API), engineId: "e-slow" }) + "\\n";
         net.createServer((socket) => { socket.once("data", () => socket.write(welcome)); socket.on("error", () => {}); }).listen(path.join(dir, "engine.sock"));
       }, Number(process.env.DELAY));`;
+    // Only the fake engines' own pids, each while it still runs: it ends itself after 90 s.
     cleanups.push(() => {
-      const pid = Number(readFileSync(join(dir, "engine.lock"), { encoding: "utf8", flag: "a+" }).split(" ")[0]);
-      if (pid > 1 && pid !== process.pid) process.kill(pid, "SIGKILL");
+      for (const pid of readFileSync(pids, { encoding: "utf8", flag: "a+" }).split("\n").filter(Boolean).map(Number)) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // Already gone.
+        }
+      }
     });
-    const start = { command: process.execPath, args: ["-e", engine], env: { ...process.env, STARTS: starts, DIR: dir, DELAY: String(delayMs), API: String(API_VERSION) } };
+    const start = { command: process.execPath, args: ["-e", engine], env: { ...process.env, STARTS: starts, PIDS: pids, DIR: dir, DELAY: String(delayMs), API: String(API_VERSION) } };
     return { start, starts: () => readFileSync(starts, { encoding: "utf8", flag: "a+" }) };
   }
 

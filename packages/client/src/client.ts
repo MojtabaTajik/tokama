@@ -189,6 +189,8 @@ class Client implements EngineClient {
   private startError: string | undefined;
   /** The lock of an engine that is still starting, and since when the client has waited for it. */
   private waiting: { readonly lock: PidFile; readonly since: number } | undefined;
+  /** The last lock whose writer's start time was read, and whether that writer was live. */
+  private checked: { readonly lock: PidFile; readonly live: boolean } | undefined;
   private readonly wakeups = new Set<() => void>();
 
   constructor(
@@ -198,13 +200,15 @@ class Client implements EngineClient {
 
   /** First connection: start the engine if needed and wait for it. */
   async open(): Promise<Result<void, ConnectError>> {
-    const deadline = Date.now() + (this.options.startTimeoutMs ?? 10_000);
+    const timeoutMs = this.options.startTimeoutMs ?? 10_000;
+    let deadline = Date.now() + timeoutMs;
     for (;;) {
       const attempt = await this.attempt();
       if (attempt.ok || TERMINAL.has(attempt.error.code)) return attempt;
       if (!this.options.start) return attempt;
-      const starting = attempt.error.code === "not_running" && this.waiting !== undefined;
-      if (Date.now() >= deadline && !starting) return err({ code: "timeout", message: `the engine did not start: ${attempt.error.message}` });
+      // While an engine is still starting the timeout does not run; once it is gone, a full one starts.
+      if (attempt.error.code === "not_running" && this.waiting !== undefined) deadline = Date.now() + timeoutMs;
+      if (Date.now() >= deadline) return err({ code: "timeout", message: `the engine did not start: ${attempt.error.message}` });
       await this.sleep(50);
     }
   }
@@ -330,11 +334,13 @@ class Client implements EngineClient {
     // would only exit with code 3, so the client waits, without counting a start.
     if (await this.engineStarting()) {
       const limitMs = this.options.startingLimitMs ?? STARTING_LIMIT_MS;
-      if (this.waiting !== undefined && Date.now() - this.waiting.since >= limitMs) {
-        const pid = this.waiting.lock.pid ?? "unknown";
+      const waiting = this.waiting;
+      // At the limit the start time is read again: the pid may belong to another process by now.
+      if (waiting !== undefined && Date.now() - waiting.since >= limitMs && (await this.engineStarting(true))) {
+        const pid = waiting.lock.pid ?? "unknown";
         return err({ code: "start_failed", message: `the engine (pid ${pid}) has been starting for ${Math.round(limitMs / 1000)} s and does not answer; see ${this.endpoint.logPath}` });
       }
-      return session;
+      if (this.waiting !== undefined) return session;
     }
     // The engine started last is still running but has not taken the lock yet: on a loaded machine
     // that takes seconds. Another engine started meanwhile could take the dir over once the first
@@ -353,14 +359,22 @@ class Client implements EngineClient {
   }
 
   /** True while an engine that is still starting holds the engine dir's lock; tracks how long the client has waited for it. */
-  private async engineStarting(): Promise<boolean> {
+  private async engineStarting(recheck = false): Promise<boolean> {
     const lock = readPidFile(this.endpoint.lockPath);
-    const known = this.waiting?.lock;
-    const same = lock !== undefined && known !== undefined && known.pid === lock.pid && known.writtenAt === lock.writtenAt;
-    // The start time is read once per lock (`ps` is slow, and this runs every 50 ms); after that a live pid is enough.
-    const live = lock !== undefined && (same && lock.pid !== undefined ? pidAlive(lock.pid) : await lockWriterLive(lock, posixEngineProcesses));
+    const sameLock = (other: PidFile | undefined) => lock !== undefined && other !== undefined && other.pid === lock.pid && other.writtenAt === lock.writtenAt;
+    const checked = this.checked;
+    let live = false;
+    if (lock !== undefined) {
+      // The start time is read once per lock (`ps` is slow, and this runs every 50 ms); after that a
+      // live pid is enough. A lock with no pid yet needs no `ps`.
+      if (!recheck && lock.pid !== undefined && checked !== undefined && sameLock(checked.lock)) live = checked.live && pidAlive(lock.pid);
+      else {
+        live = await lockWriterLive(lock, posixEngineProcesses);
+        this.checked = { lock, live };
+      }
+    }
     if (!live) this.waiting = undefined;
-    else if (!same) this.waiting = { lock, since: Date.now() };
+    else if (!sameLock(this.waiting?.lock) && lock !== undefined) this.waiting = { lock, since: Date.now() };
     return live;
   }
 
