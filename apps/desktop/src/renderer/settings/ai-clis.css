@@ -1,0 +1,273 @@
+/* The AI CLIs page, in Settings. Colours come from theme.css tokens only. */
+.ai-clis {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+.ai-clis-list-pane {
+  flex: 0 0 260px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  padding: 14px 12px;
+  border-right: 1px solid var(--hairline);
+  overflow: auto;
+}
+
+.ai-clis-filter {
+  min-height: 34px;
+  margin-bottom: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--input);
+  color: var(--text);
+  font: inherit;
+}
+
+.ai-clis-hint {
+  margin: 0;
+  padding: 0 8px 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.ai-clis-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ai-cli-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ai-cli-row:hover,
+.ai-cli-row[aria-pressed="true"] {
+  background: var(--raised);
+}
+
+.ai-cli-row[aria-pressed="true"] {
+  color: var(--text);
+}
+
+.ai-cli-row .monogram {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+}
+
+.ai-cli-row-state {
+  margin-left: auto;
+  flex: none;
+}
+
+.ai-clis [data-tone="pass"] {
+  color: var(--pass);
+}
+
+.ai-clis [data-tone="warn"] {
+  color: var(--warn);
+}
+
+.ai-clis [data-tone="fail"] {
+  color: var(--fail);
+}
+
+.ai-clis [data-tone="muted"] {
+  color: var(--muted);
+}
+
+.ai-cli-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 28px 32px 40px;
+  overflow: auto;
+}
+
+.ai-cli-detail > article {
+  max-width: 820px;
+  margin: 0 auto;
+}
+
+.ai-cli-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding-bottom: 18px;
+}
+
+.ai-cli-head-icon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--raised);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.ai-cli-head-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ai-cli-head-text h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ai-cli-head-text p {
+  margin: 0;
+}
+
+.ai-cli-desc {
+  color: var(--text-2);
+}
+
+.ai-cli-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-top: 6px;
+  font-size: 12.5px;
+}
+
+.ai-cli-version {
+  color: var(--muted);
+}
+
+.ai-cli-check {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--link);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ai-cli-check:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.ai-cli-login {
+  padding-top: 4px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.ai-cli-unsupported {
+  margin: 0;
+  padding: 14px 0;
+  border-top: 1px solid var(--hairline);
+  color: var(--muted);
+}
+
+.ai-cli-section {
+  margin: 0;
+  padding: 18px 0 2px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.ai-cli-row-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.ai-cli-row-field[data-inline] {
+  flex-direction: row;
+  align-items: center;
+  gap: 16px;
+}
+
+.ai-cli-row-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ai-cli-row-label h3 {
+  margin: 0;
+  font-size: inherit;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.ai-cli-row-label p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.ai-cli-value {
+  margin: 0;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.ai-cli-value.mono {
+  font-size: 13px;
+}
+
+.ai-cli-instructions {
+  margin-left: auto;
+  text-align: right;
+}
+
+.ai-cli-instructions p {
+  margin: 0;
+}
+
+.ai-cli-env {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ai-cli-env li {
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--raised);
+  font-size: 12px;
+  color: var(--text-2);
+}

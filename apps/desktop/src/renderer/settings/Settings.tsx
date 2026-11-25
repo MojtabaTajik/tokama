@@ -6,10 +6,11 @@ import { useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { TemplatesPage } from "../templates/TemplatesPage.js";
 import { AgentsPage } from "./AgentsPage.js";
+import { AiClisPage } from "./AiClisPage.js";
 
 const TEXT = { nav: "Settings", back: "← Back", title: "Settings", later: "comes later" } as const;
 
-export type SettingsPage = "templates" | "agents";
+export type SettingsPage = "templates" | "agents" | "ai-clis";
 
 const GROUPS: readonly { readonly name: string; readonly pages: readonly { readonly id: SettingsPage | undefined; readonly label: string }[] }[] = [
   { name: "Personal", pages: [{ id: undefined, label: "Notifications" }, { id: undefined, label: "Usage" }] },
@@ -23,7 +24,7 @@ const GROUPS: readonly { readonly name: string; readonly pages: readonly { reado
       { id: undefined, label: "Privacy" },
     ],
   },
-  { name: "Engine", pages: [{ id: undefined, label: "AI CLIs" }, { id: undefined, label: "Local models" }, { id: undefined, label: "Git & worktrees" }, { id: undefined, label: "Run limits" }] },
+  { name: "Engine", pages: [{ id: "ai-clis", label: "AI CLIs" }, { id: undefined, label: "Local models" }, { id: undefined, label: "Git & worktrees" }, { id: undefined, label: "Run limits" }] },
 ];
 
 export interface SettingsProps {
@@ -65,6 +66,8 @@ export function Settings({ bridge, connection, setup, onBack, initialPage = "age
       </nav>
       {page === "templates" ? (
         <TemplatesPage bridge={bridge} connection={connection} agents={setup?.agents ?? []} connections={setup?.connections ?? []} />
+      ) : page === "ai-clis" ? (
+        <AiClisPage bridge={bridge} connection={connection} setup={setup} />
       ) : (
         <AgentsPage bridge={bridge} connection={connection} setup={setup} />
       )}

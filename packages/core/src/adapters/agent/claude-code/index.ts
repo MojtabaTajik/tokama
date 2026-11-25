@@ -6,3 +6,6 @@ export { claudeCodeStatus, type ClaudeCodeStatusOptions } from "./status.js";
 export { readClaudePlanCache, requestClaudePlan, type ClaudePlan, type ClaudePlanOptions } from "./plan-usage.js";
 // Usage on this machine from Claude Code's session logs: usage fields only, never message content.
 export { claudeProjectFolder, parseLogLine, projectKey, repoOfProject, scanClaudeLogs, type LoggedUsage, type LogMark, type RepoPaths, type ScanLogsOptions, type ScanLogsResult } from "./session-logs.js";
+// What a call runs (arguments, instructions, environment names), for the AI CLIs page.
+export { CLAUDE_CODE_COMMAND } from "./command.js";
+export { claudeCodeLaunch, type ClaudeCodeLaunch } from "./launch.js";

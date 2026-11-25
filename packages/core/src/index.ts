@@ -83,7 +83,7 @@ export {
 export { createMachineSource, type MachineSource } from "./kernel/metrics/index.js";
 export { createMonitor, type ItemGroup, type Monitor, type MonitorOptions } from "./slices/machine/index.js";
 // Process control and git, for the engine service to hand to the slices that need them.
-export { createProcessRunner, type ProcessRunner } from "./kernel/process/index.js";
+export { createProcessRunner, findOnPath, type ProcessRunner } from "./kernel/process/index.js";
 export { createGit, type Git } from "./kernel/git/index.js";
 // repos.yaml: load it, and the changes the engine makes to it.
 export {
@@ -216,6 +216,9 @@ export {
   type AgentOwner,
   type AgentsList,
   type AgentsListResult,
+  type AiCli,
+  type AiCliState,
+  type AiClisResult,
   type BrokenAgentDetail,
   MAX_LISTED_AGENTS,
   MAX_ROLE_CHARS,

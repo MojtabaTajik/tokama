@@ -41,6 +41,7 @@ import { type ItemEvent, ItemEventSchema } from "./item-log.js";
 import { type ParseError, parseWith } from "./parse.js";
 
 export * from "./agents.js";
+export * from "./ai-clis.js";
 export * from "./api.js";
 export * from "./ids.js";
 export * from "./item.js";

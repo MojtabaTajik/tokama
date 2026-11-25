@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentCallRequest, ToolLimits } from "../../../kernel/ports/index.js";
-import { buildArgs, userMessage, usesShell } from "./args.js";
+import { argGroups, buildArgs, userMessage, usesShell } from "./args.js";
 
 const request = (limits?: ToolLimits, extra: Partial<AgentCallRequest> = {}): AgentCallRequest => ({
   model: "claude-haiku-5-5",
@@ -103,5 +103,25 @@ describe("Claude Code args", () => {
     expect(line.endsWith("\n")).toBe(true);
     expect(line.slice(0, -1)).not.toContain("\n");
     expect(JSON.parse(line)).toEqual({ type: "user", message: { role: "user", content: [{ type: "text", text: "fix the bug\nplease" }] } });
+  });
+});
+
+describe("argGroups", () => {
+  it("flattens in group order into the argv buildArgs returns, for every kind of limits", () => {
+    for (const limits of [{ edit: false, commands: [], web: false }, { edit: true, commands: ["git diff"], web: true }]) {
+      const req = request(limits, { role: "Be brief." });
+      const groups = argGroups(req, "/tmp/s.json");
+      const whole = buildArgs(req, "/tmp/s.json");
+      if (!groups.ok || !whole.ok) throw new Error("expected both to build");
+      const { headless, model, permission, instructions } = groups.value;
+      expect([...headless, ...model, ...permission, ...instructions]).toEqual(whole.value);
+      expect(instructions).toEqual(["--append-system-prompt=Be brief."]);
+      expect(permission).toContain("--settings=/tmp/s.json");
+    }
+  });
+
+  it("leaves the instructions empty without a role", () => {
+    const groups = argGroups(request());
+    expect(groups.ok && groups.value.instructions).toEqual([]);
   });
 });

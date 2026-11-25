@@ -27,6 +27,24 @@ const UNSAFE_WORD = /[(),]/;
  * - Single-value flags use `--flag=value`, so a value that starts with `-` is never read as a flag.
  */
 export function buildArgs(request: AgentCallRequest, settingsPath?: string): Result<string[], string> {
+  const groups = argGroups(request, settingsPath);
+  if (!groups.ok) return groups;
+  const { headless, model, permission, instructions } = groups.value;
+  return ok([...headless, ...model, ...permission, ...instructions]);
+}
+
+/** The argv of `buildArgs`, by what each flag is for. Flattened in this order, it is the argv. */
+export interface ArgGroups {
+  /** No terminal, and events Tokama can read. */
+  readonly headless: string[];
+  readonly model: string[];
+  /** What the session may do: sandbox, tools, rules, settings. */
+  readonly permission: string[];
+  /** The agent's role. The step's prompt is not an argument: it goes to stdin. */
+  readonly instructions: string[];
+}
+
+export function argGroups(request: AgentCallRequest, settingsPath?: string): Result<ArgGroups, string> {
   const limits = request.limits ?? READ_ONLY;
   if (request.model === "" || request.model.startsWith("-")) return err(`not a model name: "${request.model}"`);
   const prefixes = rulePrefixes(limits.commands);
@@ -45,23 +63,17 @@ export function buildArgs(request: AgentCallRequest, settingsPath?: string): Res
   const allow = [...(limits.edit ? ["Edit(./**)"] : []), ...commands, ...(limits.web ? WEB_TOOLS : [])];
   const deny = [`Read(${TOKAMA_HOME}/**)`, `Edit(${TOKAMA_HOME}/**)`, ...(limits.web ? [] : WEB_TOOLS)];
 
-  const args = [
-    "-p",
-    "--input-format=stream-json",
-    "--output-format=stream-json",
-    "--verbose",
-    `--model=${request.model}`,
-    "--restricted",
-    "--permission-mode=dontAsk",
-    "--strict-mcp-config",
-    `--tools=${tools.join(",")}`,
-  ];
+  const permission = ["--restricted", "--permission-mode=dontAsk", "--strict-mcp-config", `--tools=${tools.join(",")}`];
   // The list flags take every following word up to the next flag.
-  if (allow.length > 0) args.push("--allowedTools", ...allow);
-  args.push("--disallowedTools", ...deny);
-  if (settingsPath !== undefined) args.push(`--settings=${settingsPath}`);
-  if (request.role !== undefined && request.role !== "") args.push(`--append-system-prompt=${request.role}`);
-  return ok(args);
+  if (allow.length > 0) permission.push("--allowedTools", ...allow);
+  permission.push("--disallowedTools", ...deny);
+  if (settingsPath !== undefined) permission.push(`--settings=${settingsPath}`);
+  return ok({
+    headless: ["-p", "--input-format=stream-json", "--output-format=stream-json", "--verbose"],
+    model: [`--model=${request.model}`],
+    permission,
+    instructions: request.role !== undefined && request.role !== "" ? [`--append-system-prompt=${request.role}`] : [],
+  });
 }
 
 /** True when the step allows any shell command, so the session has the Bash tool. */
