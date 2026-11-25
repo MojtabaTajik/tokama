@@ -9,7 +9,7 @@ import { MachineTab } from "./MachineTab.js";
 import type { Metric } from "./usage-model.js";
 import { UsageTab } from "./UsageTab.js";
 import type { UsageView } from "./useUsage.js";
-import { Button } from "../ui/Button.js";
+import { Tabs } from "../ui/Tabs.js";
 
 const TEXT = {
   title: "Insights",
@@ -38,6 +38,8 @@ export interface InsightsProps {
   readonly onNewWork: () => void;
 }
 
+const TABS = ["usage", "machine"] as const;
+
 export function Insights({ bridge, connection, onRetryConnection, usage, range, onRange, scope, onScope, setup, items, issues, now, onSelectItem, onNewWork }: InsightsProps) {
   const [tab, setTab] = useState<"usage" | "machine">("usage");
   const [metric, setMetric] = useState<Metric>("tokens");
@@ -49,14 +51,7 @@ export function Insights({ bridge, connection, onRetryConnection, usage, range, 
         <h1 className="ellipsis">{TEXT.title}</h1>
         <span className="summary">{TEXT.summary}</span>
       </header>
-      <div className="ins-tabs" role="tablist" aria-label={TEXT.tabs}>
-        <Button variant="plain" role="tab" className="ins-tab" aria-selected={tab === "usage"} onClick={() => setTab("usage")}>
-          {TEXT.usage}
-        </Button>
-        <Button variant="plain" role="tab" className="ins-tab" aria-selected={tab === "machine"} onClick={() => setTab("machine")}>
-          {TEXT.machine}
-        </Button>
-      </div>
+      <Tabs tabs={TABS} selected={tab} onSelect={setTab} label={TEXT.tabs} labelOf={(id) => (id === "usage" ? TEXT.usage : TEXT.machine)} />
       {tab === "machine" ? (
         <MachineTab bridge={bridge} connection={connection} onRetryConnection={onRetryConnection} setup={setup} items={items} onSelectItem={onSelectItem} onNewWork={onNewWork} />
       ) : (

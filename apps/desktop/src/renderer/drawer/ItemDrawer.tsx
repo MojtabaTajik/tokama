@@ -8,7 +8,7 @@
 // rendered as React text only. While the item runs, the header shows the live activity line (who
 // works, the latest action, the time) in place of the state line, and every item shows its step track.
 import type { AgentSummary, CommandErrorCode, Decision, ItemRecord, Setup } from "@tokama/core";
-import { type KeyboardEvent, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
 import { AgentLabel } from "../agent/AgentLabel.js";
 import { agentInfo } from "../agent/agent-info.js";
@@ -36,6 +36,7 @@ import { Button, CloseButton } from "../ui/Button.js";
 import { ErrorRetry } from "../ui/ErrorRetry.js";
 import { markOf } from "../ui/status.js";
 import { AgentChip } from "../ui/agent.js";
+import { Tabs } from "../ui/Tabs.js";
 
 const TEXT = {
   drawer: "Item",
@@ -401,7 +402,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
 
       {item && (
         <>
-          <Tabs tabs={tabs} shown={shown} onPick={setTab} />
+          <Tabs className="drawer-tabs" tabs={tabs} selected={shown} onSelect={setTab} label={TEXT.views} idOf={tabId} panelIdOf={panelId} />
           <div className="drawer-panel" role="tabpanel" id={panelId(shown)} aria-labelledby={tabId(shown)} data-tab={shown}>
             {shown === "Steps" ? (
               <Steps bridge={bridge} item={item} setup={setup} onOpenAgent={onOpenAgent} unfold={stoppedDecision?.stepIndex} />
@@ -586,36 +587,6 @@ function After({ item, setup }: { readonly item: ItemRecord; readonly setup: Set
 
 const tabId = (tab: Tab) => `drawer-tab-${tab.toLowerCase()}`;
 const panelId = (tab: Tab) => `drawer-panel-${tab.toLowerCase()}`;
-
-function Tabs({ tabs, shown, onPick }: { readonly tabs: readonly Tab[]; readonly shown: Tab; readonly onPick: (tab: Tab) => void }) {
-  // Arrow keys move between tabs; only the shown tab is in the Tab order.
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
-    if (step === 0) return;
-    event.preventDefault();
-    const next = tabs[(tabs.indexOf(shown) + step + tabs.length) % tabs.length] ?? shown;
-    onPick(next);
-    document.getElementById(tabId(next))?.focus();
-  };
-  return (
-    <div className="drawer-tabs" role="tablist" aria-label={TEXT.views} onKeyDown={onKeyDown}>
-      {tabs.map((tab) => (
-        <Button
-          variant="plain"
-          key={tab}
-          role="tab"
-          id={tabId(tab)}
-          aria-selected={tab === shown}
-          aria-controls={tab === shown ? panelId(tab) : undefined}
-          tabIndex={tab === shown ? 0 : -1}
-          onClick={() => onPick(tab)}
-        >
-          {tab}
-        </Button>
-      ))}
-    </div>
-  );
-}
 
 interface StepsProps {
   readonly bridge: TokamaBridge;
