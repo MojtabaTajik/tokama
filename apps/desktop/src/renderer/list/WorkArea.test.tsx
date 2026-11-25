@@ -179,4 +179,56 @@ describe("long work list", () => {
     await wait(REFRESH_DELAY_MS + 50);
     expect(titles()[0]).toBe(running.title);
   });
+
+  it("shows a group as loading while its first page is on its way, never the board's rows", async () => {
+    let hold = true;
+    const fake = fakeBridge(CONNECTED, { boardItems: [...items, ...history(120)], reply: (query) => (query.type === "item_list" && hold ? new Promise<Reply>(() => undefined) : undefined) });
+    await mount(fake);
+    await click(segment("Done"));
+    expect($$(".pl-row")).toHaveLength(0);
+    expect($(".pl-group-count")).toBeNull();
+    expect($(".pl-empty")).toBeNull();
+    hold = false;
+    await choose("30d");
+    expect($$(".pl-row")).toHaveLength(50);
+  });
+
+  it("drops a search reply that comes after the search changed", async () => {
+    let late: ((reply: Reply) => void) | undefined;
+    const fake = fakeBridge(CONNECTED, {
+      reply: (query) => {
+        const q = query as { type: string; q?: string; group?: string };
+        return q.type === "item_list" && q.q === "ca" && q.group === "needs" ? new Promise<Reply>((resolve) => (late = resolve)) : undefined;
+      },
+    });
+    await mount(fake);
+    await click(segment("All"));
+    await type("ca");
+    await act(async () => $(".search-input")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    await type("birds");
+    expect($(".pl-no-match")).not.toBeNull();
+    await act(async () => late?.({ ok: true, data: { items: [ITEMS.needsYou], nextCursor: null, total: 1, days: [] } }));
+    expect($(".pl-no-match")).not.toBeNull();
+    expect(titles()).toEqual([]);
+  });
+
+  it("keeps as many rows when an event loads the group again, the oldest moving to the next page, and loads again on reconnect", async () => {
+    const fake = await mount(fakeBridge(CONNECTED, { boardItems: [...items, ...history(120)] }));
+    await click(segment("Done"));
+    await choose("30d");
+    await click(button("Load older"));
+    expect($$(".pl-row")).toHaveLength(100);
+    await fake.pushItem({ ...(ITEMS.working as ItemRecord), state: "done", createdAt: NOW - 60_000 });
+    await wait(REFRESH_DELAY_MS + 50);
+    expect($$(".pl-row")).toHaveLength(100);
+    expect(titles()[0]).toBe(ITEMS.working.title);
+    expect($(".pl-more")?.textContent).toBe("Load olderShowing 100 of 124");
+
+    const before = fake.query.mock.calls.length;
+    await fake.setConnection({ status: "reconnecting" });
+    await fake.setConnection(CONNECTED);
+    const again = fake.query.mock.calls.slice(before).map(([query]) => query as { type: string; limit?: number });
+    expect(again.filter((query) => query.type === "item_list").map((query) => query.limit)).toEqual([100]);
+    expect($$(".pl-row")).toHaveLength(100);
+  });
 });

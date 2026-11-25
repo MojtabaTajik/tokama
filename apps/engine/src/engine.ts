@@ -56,6 +56,7 @@ import {
   LineDecoder,
   loadRepos,
   MAX_MESSAGE_BYTES,
+  localDate,
   ok,
   parseClientMessage,
   parseOpeningMessage,
@@ -189,6 +190,8 @@ const STARTING_GRACE_MS = 10_000;
 const PROBE_TIMEOUT_MS = 1_000;
 // A client that stops reading is disconnected once this much output is queued for it.
 const MAX_QUEUED_BYTES = 8 * MAX_MESSAGE_BYTES;
+/** The most bytes of item records one item_list reply holds, well under the message limit. */
+const LIST_REPLY_BUDGET = MAX_MESSAGE_BYTES / 2;
 // The folder that holds the engine and the packages it runs: the checkout in development. Stacks
 // keep the built files below it (`<app>/apps/engine/dist/engine.js`).
 const CODE_ROOT = resolve(import.meta.dirname, "..", "..", "..");
@@ -309,7 +312,12 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       diagnostics?.store.error("engine", "storage", error);
     }
   };
-  for (const item of store.list()) putInList(item);
+  // A store passed in may already hold items; one that cannot list leaves the list to its later puts.
+  try {
+    for (const item of store.list()) putInList(item);
+  } catch (error) {
+    log(`cannot fill the work list: ${String(error)}`);
+  }
   const unfollowList = store.subscribe(putInList);
   // The last setup served: the work-list search matches template and agent names from it.
   let servedSetup: SetupResult | undefined;
@@ -595,8 +603,25 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       case "item_list": {
         const names = query.q === undefined || query.q.trim() === "" ? undefined : nameHits(servedSetup ?? (real === undefined ? await setup() : await real.setup()), query.q);
         const page = list.page(query, names);
-        const items = page.ids.flatMap((id) => store.get(id) ?? []);
-        return { ok: true, data: { items, nextCursor: page.nextCursor, total: page.total, days: page.days } satisfies ItemListResult };
+        // A page ends early at half the message limit; its cursor then goes on from its last row.
+        const items: ItemRecord[] = [];
+        let bytes = 0;
+        let cut = false;
+        for (const id of page.ids) {
+          const item = store.get(id);
+          if (item === undefined) continue;
+          bytes += Buffer.byteLength(JSON.stringify(item));
+          if (items.length > 0 && bytes > LIST_REPLY_BUDGET) {
+            cut = true;
+            break;
+          }
+          items.push(item);
+        }
+        const last = items.at(-1);
+        const nextCursor = cut && last !== undefined ? `${last.createdAt}:${last.id}` : page.nextCursor;
+        const shownDays = new Set(items.map((item) => localDate(item.createdAt)));
+        const days = page.days.filter((day) => shownDays.has(day.day));
+        return { ok: true, data: { items, nextCursor, total: page.total, days } satisfies ItemListResult };
       }
       case "item": {
         const item = store.get(query.itemId);

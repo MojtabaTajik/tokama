@@ -38,6 +38,8 @@ describe("day keys and labels", () => {
     expect(daysBefore(after, 1)).toBe("2026-10-25");
     expect(dayLabel("2026-10-25", after)).toBe("Yesterday");
     expect(daysBefore(local(3, 30, 0, 30), 1)).toBe("2026-03-29");
+    // 24 hours before 23:30 on the 25-hour day is still that day; the calendar says the 24th.
+    expect(daysBefore(local(10, 25, 23, 30), 1)).toBe("2026-10-24");
     expect(daysBefore(local(11, 24, 12), 29)).toBe("2026-10-26");
   });
 });

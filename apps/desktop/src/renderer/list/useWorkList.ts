@@ -43,6 +43,7 @@ export interface GroupPage {
 }
 
 export interface WorkList {
+  /** One page set per request, for that request: a group whose request changed reads as loading, never as the old rows. */
   readonly pages: ReadonlyMap<GroupKey, GroupPage>;
   readonly loadOlder: (group: GroupKey) => void;
   /** Loads a group again from its first page, after a failed load. */
@@ -59,8 +60,10 @@ export function useWorkList(bridge: TokamaBridge, connected: boolean, requests: 
   const [pages, setPages] = useState<ReadonlyMap<GroupKey, GroupPage>>(() => new Map());
   const current = useRef(pages);
   current.current = pages;
-  // The last request sent per group: a reply to an older one is dropped.
+  // The last request sent per group: a reply to an older one is dropped. One counter for all
+  // groups, so a group asked for again never reuses the token of a reply still on its way.
   const tokens = useRef(new Map<GroupKey, number>());
+  const sent = useRef(0);
 
   const update = useCallback((group: GroupKey, change: (page: GroupPage) => GroupPage | undefined) => {
     setPages((before) => {
@@ -76,10 +79,12 @@ export function useWorkList(bridge: TokamaBridge, connected: boolean, requests: 
     (group: GroupKey, mode: Mode) => {
       const page = current.current.get(group);
       if (page === undefined) return;
-      const token = (tokens.current.get(group) ?? 0) + 1;
+      const token = ++sent.current;
       tokens.current.set(group, token);
       const { request } = page;
-      const limit = mode === "refresh" ? Math.min(MAX_PAGE, Math.max(PAGE_SIZE, page.items.length)) : PAGE_SIZE;
+      // A refresh during Load older replaces it, so it takes the older page's rows too.
+      const wanted = page.items.length + (page.loading === "older" ? PAGE_SIZE : 0);
+      const limit = mode === "refresh" ? Math.min(MAX_PAGE, Math.max(PAGE_SIZE, wanted)) : PAGE_SIZE;
       const before = mode === "older" ? page.cursor : undefined;
       if (mode === "first") update(group, () => empty(request));
       if (mode === "older") update(group, (p) => ({ ...p, loading: "older", failed: undefined }));
@@ -171,8 +176,14 @@ export function useWorkList(bridge: TokamaBridge, connected: boolean, requests: 
     };
   }, [bridge, load]);
 
+  const shown = new Map(
+    requests.map((request): [GroupKey, GroupPage] => {
+      const page = pages.get(request.group);
+      return [request.group, page !== undefined && keyOf(page.request) === keyOf(request) ? page : empty(request)];
+    }),
+  );
   return {
-    pages,
+    pages: shown,
     loadOlder: useCallback((group: GroupKey) => load(group, "older"), [load]),
     retry: useCallback((group: GroupKey) => load(group, "first"), [load]),
   };

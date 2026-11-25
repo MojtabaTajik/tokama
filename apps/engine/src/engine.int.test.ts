@@ -103,6 +103,30 @@ describe("engine service", () => {
     }
   });
 
+  it("ends an item_list page before the reply gets too large, and goes on from there", async () => {
+    const dir = tempEngineDir(cleanups);
+    const handle = await engine(dir);
+    const engineClient = await client(dir);
+    // 600 items of about 4.5 KB each: 1000 of them would not fit in one message.
+    for (let n = 1; n <= 600; n++) {
+      const id = `item_00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+      handle.store.put({ ...sampleItem(`Item ${n}`), id, state: "done", text: "x".repeat(4000), createdAt: 1_760_000_000_000 + n } as never);
+    }
+    const seen = new Set<string>();
+    let before: string | undefined;
+    let pages = 0;
+    do {
+      const page = await engineClient.query({ type: "item_list", group: "done", limit: 1000, ...(before !== undefined && { before }) });
+      if (!page.ok) throw new Error(page.error.message);
+      expect(page.data.total).toBe(600);
+      for (const item of page.data.items) seen.add(item.id);
+      before = page.data.nextCursor ?? undefined;
+      pages++;
+    } while (before !== undefined && pages < 10);
+    expect(pages).toBeGreaterThan(1);
+    expect(seen.size).toBe(600);
+  });
+
   it("pushes an item_updated event only when the store changes", async () => {
     const dir = tempEngineDir(cleanups);
     const handle = await engine(dir);
