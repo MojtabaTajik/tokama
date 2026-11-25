@@ -741,7 +741,11 @@ describe("ItemDrawer stop", () => {
     await click(button("Stop"));
     await click(button("Stop item"));
     expect(text('[role="status"]')).toBe("!The item had already ended. The drawer shows the item as it is now.");
-    expect(query).toHaveBeenLastCalledWith({ type: "item", itemId: task.id });
+    // The item again, then, as it has ended, what it changed.
+    expect(query.mock.calls.slice(-2).map(([q]) => q)).toEqual([
+      { type: "item", itemId: task.id },
+      { type: "item_diff", itemId: task.id },
+    ]);
     expect(text(".drawer-state")).toBe("✓done");
   });
 });

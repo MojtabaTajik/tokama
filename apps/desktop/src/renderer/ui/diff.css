@@ -14,6 +14,36 @@
   color: var(--text);
 }
 
+/* An ended item's header: a mark and the state, then what the diff is compared with. */
+.dv-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.dv-head-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-6);
+  margin: 0;
+  font-size: var(--text-base);
+  color: var(--text-2);
+}
+
+.dv-head-line .mark {
+  width: 14px;
+  text-align: center;
+}
+
+.dv-head-sub {
+  margin: 0;
+  padding-left: var(--space-20);
+  font-size: var(--text-md);
+  color: var(--text-2);
+}
+
 .dv-muted,
 .dv-flag {
   color: var(--muted);
@@ -274,7 +304,8 @@
   margin-left: 0;
 }
 
-.dv[data-layout="wide"] > .dv-summary {
+.dv[data-layout="wide"] > .dv-summary,
+.dv[data-layout="wide"] > .dv-head {
   grid-column: 1 / -1;
 }
 

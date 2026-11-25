@@ -1331,7 +1331,7 @@ describe("run loop: item diff", () => {
     expect((await loop.finishItem(id, "merge")).ok).toBe(true);
     await loop.settled(id);
     const commit = item(id).finish!.merged!.commit;
-    await plain(repo.path, "reset", "-q", "--hard", item(id).worktrees[0]!.baseCommit);
+    await plain(repo.path, "reset", "-q", "--hard", item(id).worktrees[0]!.baseCommit!);
     await plain(repo.path, "reflog", "expire", "--expire=now", "--all");
     await plain(repo.path, "gc", "-q", "--prune=now");
     expect(await loop.itemDiff(id)).toEqual({ ok: true, value: { kind: "gone", repoId: "orders-api", commit } });
