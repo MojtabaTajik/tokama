@@ -31,6 +31,7 @@ import {
   type ItemListResult,
   type ItemRecord,
   checkEngineDir,
+  displayPath,
   type Clock,
   type CommandErrorCode,
   type ConnectionErrorCode,
@@ -103,7 +104,7 @@ import { type HealthChecks, machineChecks } from "./real/health.js";
 import { runningGroups } from "./machine.js";
 import { RealEngine } from "./real/real.js";
 import { SampleEngine } from "./sample/sample.js";
-import { agentsFor, displayPath, loadConfig, startProblem, stepProblems } from "./real/config.js";
+import { agentsFor, loadConfig, startProblem, stepProblems } from "./real/config.js";
 import { sampleTemplateLoads } from "./sample/templates.js";
 import { openSampleDiagnostics } from "./sample/diagnostics.js";
 import { sampleMachineReport } from "./sample/machine.js";

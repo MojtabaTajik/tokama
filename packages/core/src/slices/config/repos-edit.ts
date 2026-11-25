@@ -15,6 +15,7 @@ import { readJsonFile, replaceTextSync } from "../../kernel/fs-safe/index.js";
 import type { Git, GitError } from "../../kernel/git/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import { MAX_CHECK_CHARS, type RepoId, RepoIdSchema } from "../../kernel/schemas/index.js";
+import { displayPath } from "../../kernel/text/index.js";
 import { DEFAULT_GITIGNORE, type FirstCommitPreview, GITIGNORE_FILE, previewFirstCommit } from "./first-commit.js";
 import { MAX_CONFIG_BYTES } from "./read.js";
 import { BRANCH, checkProblem, DEFAULT_WORKTREE_FOLDER, type LoadReposOptions, type Repo, readReposFile, REPOS_FILE, type ReposFile, ReposFileSchema } from "./repos.js";
@@ -92,7 +93,7 @@ export async function suggestRepo(options: RepoEditOptions, path: string): Promi
   const listed = folder.value.gitProblem === undefined ? await options.git.branches(folder.value.path) : undefined;
   return ok({
     path: folder.value.path,
-    displayPath: await displayPath(folder.value.path, options.home),
+    displayPath: await realDisplayPath(folder.value.path, options.home),
     gitRepo: folder.value.gitProblem === undefined,
     hasCommits: folder.value.hasCommits,
     branch: folder.value.branch,
@@ -248,10 +249,8 @@ export async function makeFirstCommit(options: RepoEditOptions, input: { readonl
 }
 
 /** The path for display: the home folder (as its real path, which is what `path` is) written as `~`. */
-async function displayPath(path: string, home: string | undefined): Promise<string> {
-  const base = await realpathOr(home ?? homedir());
-  if (path === base) return "~";
-  return path.startsWith(`${base}/`) ? `~${path.slice(base.length)}` : path;
+async function realDisplayPath(path: string, home: string | undefined): Promise<string> {
+  return displayPath(path, { home: await realpathOr(home ?? homedir()) });
 }
 
 /** Why a git call failed, in plain words; the identity problem gets its fix. */

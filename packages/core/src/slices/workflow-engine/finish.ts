@@ -14,7 +14,7 @@ import type { Git } from "../../kernel/git/index.js";
 import type { ProcessRunner } from "../../kernel/process/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import { parseTemplateRecord, type CommandErrorCode, type FinishAction, type FinishRefusal, type GitChange, type ItemEventBody, type ItemId, type RepoId, type StoredItem } from "../../kernel/schemas/index.js";
-import { cutText } from "../../kernel/text/index.js";
+import { cutText, scrubPaths } from "../../kernel/text/index.js";
 import type { Repo } from "../config/index.js";
 import { sharedGitHashes, sharedGitSettings, type GitSetting, type TamperChange } from "../integrity/index.js";
 import type { ItemStore } from "../items/index.js";
@@ -141,7 +141,7 @@ export function createFinisher(deps: FinishDeps): Finisher {
 
   const scrub = (text: string, repo: Repo | undefined): string => {
     const roots: [string, string][] = [...(repo === undefined ? [] : [[repo.path, `<repo ${repo.id}>`] as [string, string]]), [tmpdir(), "<tmp>"], [homedir(), "~"]];
-    const out = roots.filter(([path]) => path.length > 1).reduce((acc, [path, name]) => acc.split(path).join(name), withoutUserInfo(text));
+    const out = scrubPaths(withoutUserInfo(text), { roots });
     const line = out.replace(/\s+/g, " ").trim() || "(no detail)";
     return cutText(line, DETAIL_MAX);
   };

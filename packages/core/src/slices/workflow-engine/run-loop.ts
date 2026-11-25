@@ -54,7 +54,7 @@ import {
   type TemplateStepDef,
   type RunFailure,
 } from "../../kernel/schemas/index.js";
-import { cutText } from "../../kernel/text/index.js";
+import { cutText, scrubPaths } from "../../kernel/text/index.js";
 import type { Agent, Repo } from "../config/index.js";
 import { type ActivityState, callUsage, claudeCodeGuardDefaults, labelText, redactPaths, runGuardedCall, type LoopGuardSettings } from "../execution/index.js";
 import { protectedSet, sharedGitSettings, type ProtectedSet } from "../integrity/index.js";
@@ -268,11 +268,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     if (map === undefined) roots.set(itemId, (map = new Map([[store.itemDir(itemId), "<item folder>"], [dirname(store.itemDir(itemId)), "<items folder>"]])));
     return map;
   };
-  const scrub = (text: string) =>
-    [[homedir(), "~"] as const, ...[...roots.values()].flatMap((map) => [...map])]
-      .filter(([path]) => path.length > 1)
-      .sort((a, b) => b[0].length - a[0].length)
-      .reduce((out, [path, name]) => out.split(path).join(name), text);
+  const scrub = (text: string) => scrubPaths(text, { roots: [[homedir(), "~"], ...[...roots.values()].flatMap((map) => [...map])] });
   const detail = (text: string) => cut(scrub(text));
 
   const reportActivity = (item: StoredItem, stepId: StepId, attempt: number, by: ItemActivity["by"], state: ActivityState | undefined) => {

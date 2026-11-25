@@ -6,6 +6,7 @@ import { isAbsolute, normalize, relative, sep } from "node:path";
 import { z } from "zod";
 import { sha256Hex } from "../../../kernel/hash/index.js";
 import type { AgentCallErrorKind, AgentCallEvent, RateLimitWindow, TokenUsage } from "../../../kernel/schemas/index.js";
+import { scrubPaths } from "../../../kernel/text/index.js";
 
 // A count the CLI reports. A missing or odd value counts as absent rather than dropping the line.
 const count = z.int().nonnegative().optional().catch(undefined);
@@ -164,15 +165,8 @@ export function createStreamParser(cwd: string, home: string = homedir()): Strea
     return undefined;
   };
 
-  const scrub = (text: string): string => {
-    let out = text;
-    // Longest first, so the cwd is replaced before the home folder that may hold it.
-    const replacements: Array<[string, string]> = [...roots.map((root): [string, string] => [root, "."]), [home, "~"]];
-    for (const [from, to] of replacements.filter(([from]) => from.length > 1).sort((a, b) => b[0].length - a[0].length)) {
-      out = out.split(from).join(to);
-    }
-    return out;
-  };
+  // Longest first, so the cwd is replaced before the home folder that may hold it.
+  const scrub = (text: string): string => scrubPaths(text, { roots: [...roots.map((root): [string, string] => [root, "."]), [home, "~"]] });
 
   /**
    * The fields that make two tool calls the same call. A path is relative to the working

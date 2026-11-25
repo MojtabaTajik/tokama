@@ -13,6 +13,7 @@ import {
   type TemplateRecord,
   type TemplateStepDef,
 } from "../../kernel/schemas/index.js";
+import { scrubPaths } from "../../kernel/text/index.js";
 import { CHECK_OUTPUT_MAX_BYTES, chooseMark, fence, randomMark, tail } from "./fence.js";
 import { TOKAMA_RULES } from "./rules.js";
 
@@ -343,6 +344,5 @@ function repoPath(path: unknown): string {
 /** Writes the worktree as `.` and the home folder as `~`; longest first, as the worktree is usually inside home. */
 function scrubber(worktreeRoot: string | undefined, home: string): (text: string) => string {
   const replacements: Array<[string, string]> = [...(worktreeRoot === undefined ? [] : [[worktreeRoot, "."] as [string, string]]), [home, "~"]];
-  const ordered = replacements.filter(([from]) => from.length > 1).sort((a, b) => b[0].length - a[0].length);
-  return (text) => ordered.reduce((out, [from, to]) => out.split(from).join(to), text);
+  return (text) => scrubPaths(text, { roots: replacements });
 }
