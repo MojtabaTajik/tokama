@@ -173,6 +173,7 @@ describe("Merge", () => {
     const done = await run(item, "merge");
     expect(done.finish).toMatchObject({ merged: { baseBranch: "main", commit: commitOf(item) }, worktreeRemoved: true });
     expect(done.finish?.running).toBeUndefined();
+    expect(done.finish?.at).toBeGreaterThanOrEqual(done.outcome!.at);
     expect(await plain(repo.path, "rev-parse", "main")).toBe(commitOf(item));
     expect(readFileSync(join(repo.path, "greeting.txt"), "utf8")).toBe("hello world\n");
     expect(existsSync(wtPath(item))).toBe(false);
@@ -202,6 +203,7 @@ describe("Merge", () => {
     const done = await run(item, "merge");
     expect(done.finish?.failed).toMatchObject({ action: "merge" });
     expect(done.finish?.failed?.detail).toMatch(/uncommitted changes \(notes\.txt\).*never stashes/);
+    expect(done.finish?.failed?.reason).toBe("dirty_checkout");
     expect(readFileSync(join(repo.path, "notes.txt"), "utf8")).toBe("mine, not committed\n");
     expect(await plain(repo.path, "rev-parse", "main")).toBe(item.worktrees[0]!.baseCommit);
     expect(await plain(repo.path, "stash", "list")).toBe("");
@@ -214,6 +216,7 @@ describe("Merge", () => {
     await plain(repo.path, "switch", "-q", "-c", "feature");
     const done = await run(item, "merge");
     expect(done.finish?.failed?.detail).toBe("Your checkout is on feature, not main. Switch it to main, then merge again. Tokama does not switch branches for you.");
+    expect(done.finish?.failed?.reason).toBe("other_branch");
     expect(await plain(repo.path, "branch", "--show-current")).toBe("feature");
     expect(await plain(repo.path, "rev-parse", "main")).toBe(item.worktrees[0]!.baseCommit);
   });
@@ -225,6 +228,7 @@ describe("Merge", () => {
     const before = await plain(repo.path, "rev-parse", "main");
     const done = await run(item, "merge");
     expect(done.finish?.failed?.detail).toMatch(/^The branch conflicts with main in greeting\.txt\./);
+    expect(done.finish?.failed?.reason).toBe("conflict");
     expect(await plain(repo.path, "rev-parse", "main")).toBe(before);
     expect(await plain(repo.path, "status", "--porcelain")).toBe("");
     expect(existsSync(join(repo.path, ".git", "MERGE_HEAD"))).toBe(false);
@@ -249,6 +253,7 @@ describe("Merge", () => {
     const done = await run(item, "merge");
     expect(done.finish?.failed?.detail).toBe("Your checkout has untracked or ignored files where the merge writes (.env). Move them away, then merge again; Tokama never overwrites them.");
     expect(readFileSync(join(repo.path, ".env"), "utf8")).toBe("SECRET=mine\n");
+    expect(done.finish?.failed?.reason).toBe("files_in_the_way");
     expect(await plain(repo.path, "rev-parse", "main")).toBe(item.worktrees[0]!.baseCommit);
   });
 
