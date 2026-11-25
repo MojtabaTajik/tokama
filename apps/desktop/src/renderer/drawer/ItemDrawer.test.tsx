@@ -139,23 +139,16 @@ describe("ItemDrawer sections", () => {
     ]);
   });
 
-  it("has the tabs of an investigation, without Evidence and Findings; the others than Steps say their data comes later", async () => {
+  it("has only the Steps tab for an investigation: Evidence, Findings, Log and Checks are hidden", async () => {
     await renderDrawer(fakeBridge([needsYou]).bridge, needsYou.id);
-    expect($$('[role="tab"]').map((tab) => [tab.textContent, tab.getAttribute("aria-selected")])).toEqual([
-      ["Steps", "true"],
-      ["Log", "false"],
-    ]);
-    await click(button("Log"));
-    expect(text('[role="tabpanel"]')).toBe("Log comes later: the engine does not send this data yet.");
-    expect($(".step")).toBeNull();
-    await act(async () => $('[role="tablist"]')?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true })));
-    expect(text('[role="tab"][aria-selected="true"]')).toBe("Steps");
-    expect(document.activeElement?.textContent).toBe("Steps");
+    expect($$('[role="tab"]').map((tab) => [tab.textContent, tab.getAttribute("aria-selected")])).toEqual([["Steps", "true"]]);
+    expect($(".step")).not.toBeNull();
+    expect(text('[role="tabpanel"]')).not.toContain("comes later");
   });
 
-  it("adds Diff and Checks for a task", async () => {
+  it("adds Diff for a task", async () => {
     await renderDrawer(fakeBridge([task]).bridge, task.id);
-    expect($$('[role="tab"]').map((tab) => tab.textContent)).toEqual(["Steps", "Log", "Diff", "Checks"]);
+    expect($$('[role="tab"]').map((tab) => tab.textContent)).toEqual(["Steps", "Diff"]);
     expect(text(".drawer-kind")).toBe("▣ Task · Plan and build · local + cloud");
     expect($(".needs-you")).toBeNull();
     expect($$(".step-where").map((el) => el.textContent)).toEqual([
@@ -542,7 +535,6 @@ describe("ItemDrawer switching items", () => {
     const pending = deferred();
     replyWith(() => pending.promise);
     await renderDrawer(bridge, needsYou.id);
-    await click(button("Log"));
     await click(button("Approve and send"));
     await renderDrawer(bridge, task.id);
     expect(text('[role="tab"][aria-selected="true"]')).toBe("Steps");
