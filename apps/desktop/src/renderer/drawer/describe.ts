@@ -1,6 +1,6 @@
 // What the item drawer says about an item and its steps. Pure functions, tested without React.
 // Every state comes as a symbol and a word, so colour is never the only signal.
-import type { AgentSummary, ConnectionSummary, ItemKind, ItemRecord, ItemState, Privacy, StepRecord, StepState, Setup } from "@tokama/core";
+import type { AgentSummary, AttemptSummary, ConnectionSummary, DecisionKind, ItemKind, ItemRecord, ItemState, Privacy, StepRecord, StepState, Setup } from "@tokama/core";
 
 export type Tone = "warn" | "live" | "pass" | "fail" | "muted";
 export interface Mark {
@@ -36,6 +36,47 @@ export const KIND: Record<ItemKind, { readonly symbol: string; readonly word: st
 };
 
 export const PRIVACY: Record<Privacy, string> = { local_only: "local only", local_and_cloud: "local + cloud" };
+
+/** Why the engine asks, as a short label above the question. */
+export const DECISION_KIND: Record<DecisionKind, string> = {
+  plan_approval: "approval",
+  cloud_summary: "cloud step approval",
+  outside_change: "change outside the worktree",
+  after_failure: "step failed",
+  run_failure: "run failed",
+  budget: "time budget used",
+  tamper: "protected files changed",
+};
+
+const ATTEMPT_RESULT: Record<NonNullable<AttemptSummary["result"]>, Mark> = {
+  passed: { symbol: "✓", word: "passed", tone: "pass" },
+  failed: { symbol: "✕", word: "failed", tone: "fail" },
+  run_failed: { symbol: "!", word: "run failed", tone: "warn" },
+  stopped: { symbol: "■", word: "stopped", tone: "muted" },
+};
+const RUNNING_ATTEMPT: Mark = { symbol: "●", word: "running", tone: "live" };
+
+/** An attempt as one line: "attempt 2 · failed · sh check.sh exit 1", with its mark. */
+export function attemptLine(attempt: AttemptSummary): { readonly mark: Mark; readonly text: string } {
+  const mark = attempt.result === undefined ? RUNNING_ATTEMPT : ATTEMPT_RESULT[attempt.result];
+  const failedCheck = attempt.checks.find((check) => !check.passed);
+  const why =
+    failedCheck !== undefined
+      ? `${failedCheck.command} ${failedCheck.exitCode === null ? "stopped by a signal" : `exit ${failedCheck.exitCode}`}`
+      : attempt.result === "run_failed"
+        ? (attempt.detail ?? attempt.failure)
+        : attempt.checks.length > 0 && attempt.result === "passed"
+          ? `${attempt.checks.length} ${attempt.checks.length === 1 ? "check" : "checks"} passed`
+          : undefined;
+  return { mark, text: [`attempt ${attempt.attempt}`, mark.word, ...(why === undefined ? [] : [why])].join(" · ") };
+}
+
+/** How the item ended, with its commit: "commit 3f2a9c1 on tokama/0b9f3c1e". */
+export function outcomeLine(item: Pick<ItemRecord, "outcome">): string | undefined {
+  const commit = item.outcome?.commits?.[0];
+  if (commit !== undefined) return `commit ${commit.commit.slice(0, 7)}${commit.branch === undefined ? "" : ` on ${commit.branch}`}`;
+  return item.outcome?.detail;
+}
 
 /** Item states after which nothing runs any more. */
 export const hasEnded = (item: Pick<ItemRecord, "state">): boolean => item.state === "done" || item.state === "failed" || item.state === "stopped";

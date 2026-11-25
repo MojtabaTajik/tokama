@@ -14,9 +14,9 @@ const tplStep = (name: string, stage: string, agentId?: string) => ({ name, stag
 
 export const setup = {
   repos: [
-    { id: "orders-api", baseBranch: "main" },
-    { id: "checkout-web", baseBranch: "main" },
-    { id: "inventory-service", baseBranch: "develop" },
+    { id: "orders-api", baseBranch: "main", checks: ["pnpm test"] },
+    { id: "checkout-web", baseBranch: "main", checks: [] },
+    { id: "inventory-service", baseBranch: "develop", checks: [] },
   ],
   connections: [{ id: "app-insights-prod", name: "App Insights · prod", type: "App Insights" }],
   agents: [
@@ -26,34 +26,35 @@ export const setup = {
   ],
   templates: [
     {
-      id: "emergency-investigator",
+      id: "builtin/emergency-investigator",
       name: "Emergency investigator",
       icon: "fire",
       color: "rose",
-      kind: "investigation",
+      kind: "investigation", start: { needs: ["text"], askBeforeCloud: false }, warnings: [],
       connections: [],
       steps: [tplStep("Triage", "working", "local-builder"), tplStep("Query logs", "working", "local-builder"), tplStep("Propose a fix", "review", "architect")],
     },
-    { id: "db-slow-query", name: "DB slow query check", icon: "database", color: "clay", kind: "investigation", connections: [], steps: [tplStep("Explain plans", "working", "local-builder")] },
+    { id: "builtin/db-slow-query", name: "DB slow query check", icon: "database", color: "clay", kind: "investigation", start: { needs: ["text"], askBeforeCloud: false }, warnings: [], connections: [], steps: [tplStep("Explain plans", "working", "local-builder")] },
     {
-      id: "plan-and-build",
+      id: "builtin/plan-and-build",
       name: "Plan and build",
       icon: "hammer",
       color: "sky",
-      kind: "task",
+      kind: "task", start: { needs: ["text", "repo"], askBeforeCloud: false }, warnings: [],
       connections: [],
       steps: [tplStep("Plan", "working", "architect"), tplStep("Build", "working", "local-builder"), tplStep("Run checks", "verifying"), tplStep("Review", "review", "reviewer")],
     },
-    { id: "quick-fix", name: "Quick fix", icon: "wrench", color: "moss", kind: "task", connections: [], steps: [tplStep("Fix", "working", "local-builder"), tplStep("Run checks", "verifying")] },
-    { id: "review-only", name: "Review only", icon: "eye", color: "slate", kind: "task", connections: [], steps: [tplStep("Review", "review", "reviewer")] },
+    { id: "builtin/quick-fix", name: "Quick fix", icon: "wrench", color: "moss", kind: "task", start: { needs: ["text", "repo"], askBeforeCloud: false }, warnings: [], connections: [], steps: [tplStep("Fix", "working", "local-builder"), tplStep("Run checks", "verifying")] },
+    { id: "builtin/review-only", name: "Review only", icon: "eye", color: "slate", kind: "task", start: { needs: ["text", "repo"], askBeforeCloud: false }, warnings: [], connections: [], steps: [tplStep("Review", "review", "reviewer")] },
   ],
+  health: { git: { ok: true }, clis: [], config: [] },
 } as unknown as Setup;
 
 const item = (n: number, minutesAgo: number, fields: Record<string, unknown>) => ({
   schemaVersion: 1,
   id: id(n),
   kind: "task",
-  templateId: "quick-fix",
+  templateId: "builtin/quick-fix",
   text: "",
   repoIds: [],
   privacy: "local_only",
@@ -63,7 +64,7 @@ const item = (n: number, minutesAgo: number, fields: Record<string, unknown>) =>
 
 export const ITEMS = {
   queued: item(1, 2, {
-    templateId: "plan-and-build",
+    templateId: "builtin/plan-and-build",
     title: "Add retry with backoff",
     repoIds: ["orders-api"],
     state: "queued",
@@ -71,7 +72,7 @@ export const ITEMS = {
   }),
   working: item(2, 14, {
     kind: "investigation",
-    templateId: "emergency-investigator",
+    templateId: "builtin/emergency-investigator",
     title: "Checkout p95 latency spike",
     repoIds: ["checkout-web"],
     state: "running",
@@ -79,7 +80,7 @@ export const ITEMS = {
   }),
   needsYou: item(3, 41, {
     kind: "investigation",
-    templateId: "emergency-investigator",
+    templateId: "builtin/emergency-investigator",
     repoIds: ["orders-api"],
     privacy: "local_and_cloud",
     title: "Orders API returns 500 after deploy",

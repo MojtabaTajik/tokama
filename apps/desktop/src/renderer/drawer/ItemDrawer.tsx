@@ -7,7 +7,7 @@ import { type KeyboardEvent, useEffect, useId, useLayoutEffect, useRef, useState
 import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
 import { itemElement } from "../list/useFocusFollow.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
-import { hasEnded, itemMark, KIND, PRIVACY, stepAgent, stepMark, stepPosition, templateOf, whereLine } from "./describe.js";
+import { attemptLine, DECISION_KIND, hasEnded, itemMark, KIND, outcomeLine, PRIVACY, stepAgent, stepMark, stepPosition, templateOf, whereLine } from "./describe.js";
 import { useItem } from "./useItem.js";
 
 const TEXT = {
@@ -24,6 +24,7 @@ const TEXT = {
   views: "Views",
   later: (tab: string) => `${tab} comes later: the engine does not send this data yet.`,
   noSteps: "This item has no steps.",
+  attempts: "Attempts",
   actions: "Actions",
   openWorktree: "Open worktree",
   addHint: "Add a hint",
@@ -230,6 +231,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose }: ItemDrawerProps) 
 function StateLine({ item }: { readonly item: ItemRecord }) {
   const mark = itemMark(item.state);
   const position = stepPosition(item);
+  const outcome = outcomeLine(item);
   return (
     <p className="drawer-state">
       <span className="mark" data-tone={mark.tone} aria-hidden="true">
@@ -237,6 +239,7 @@ function StateLine({ item }: { readonly item: ItemRecord }) {
       </span>
       <span data-tone={mark.tone}>{mark.word}</span>
       {position && <span className="drawer-position"> · {position}</span>}
+      {outcome && <span className="drawer-position mono"> · {outcome}</span>}
     </p>
   );
 }
@@ -271,6 +274,7 @@ function NeedsYou({ decision, busy, onChoose }: NeedsYouProps) {
     <section className="needs-you" aria-label={TEXT.needsYou}>
       {decision ? (
         <>
+          {decision.kind !== undefined && <p className="needs-you-kind">{DECISION_KIND[decision.kind]}</p>}
           <p className="needs-you-question">
             <span className="mark" aria-hidden="true">
               ⏸
@@ -373,6 +377,21 @@ function Steps({ item, setup }: { readonly item: ItemRecord; readonly setup: Set
                 {agent.name} · {whereLine(step, agents, connections)}
               </p>
               {step.detail !== undefined && <p className="step-detail mono">{step.detail}</p>}
+              {step.attempts !== undefined && step.attempts.length > 0 && (
+                <ol className="step-attempts" aria-label={`${step.name}: ${TEXT.attempts}`}>
+                  {step.attempts.map((attempt) => {
+                    const line = attemptLine(attempt);
+                    return (
+                      <li key={attempt.attempt} className="step-attempt mono">
+                        <span className="mark" data-tone={line.mark.tone} aria-hidden="true">
+                          {line.mark.symbol}
+                        </span>
+                        {line.text}
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
             </div>
           </li>
         );

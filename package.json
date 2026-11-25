@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "pnpm --filter @tokama/desktop dev",
+    "dev:sample": "pnpm --filter @tokama/desktop dev:sample",
     "build": "tsc --build && pnpm --filter @tokama/desktop build",
     "clean": "tsc --build --clean",
     "typecheck": "tsc --build && pnpm --recursive exec tsc --project tsconfig.test.json && tsc --project tooling/tsconfig.json && tsc --project tooling/removal-test",

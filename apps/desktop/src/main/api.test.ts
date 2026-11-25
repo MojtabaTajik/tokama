@@ -61,7 +61,7 @@ describe("engineApi.command", () => {
 
   it("refuses an invalid command, naming the bad field, without reaching the engine", async () => {
     const { client, command } = fakeClient();
-    const reply = await engineApi(() => client).command({ type: "start_item", templateId: "quick-fix", repoIds: [], text: "   " });
+    const reply = await engineApi(() => client).command({ type: "start_item", templateId: "builtin/quick-fix", repoIds: [], text: "   " });
     expect(reply).toMatchObject({ ok: false, error: { code: "invalid_request", message: expect.stringContaining("text") } });
     expect(command).not.toHaveBeenCalled();
   });

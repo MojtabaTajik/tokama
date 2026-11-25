@@ -5,6 +5,8 @@ import {
   badgesOf,
   boardColumns,
   bucketOf,
+  cliIssuesOf,
+  healthProblemsOf,
   DEFAULT_FILTER,
   filterCounts,
   flagOf,
@@ -33,11 +35,11 @@ describe("test data", () => {
 
 describe("views", () => {
   it("keys each view apart", () => {
-    expect([{ kind: "all" }, { kind: "workflow", id: "quick-fix" }, { kind: "repo", id: "quick-fix" }].map((view) => viewKey(view as never))).toEqual(["all", "workflow:quick-fix", "repo:quick-fix"]);
+    expect([{ kind: "all" }, { kind: "workflow", id: "builtin/quick-fix" }, { kind: "repo", id: "quick-fix" }].map((view) => viewKey(view as never))).toEqual(["all", "workflow:builtin/quick-fix", "repo:quick-fix"]);
   });
 
   it("scopes items by workflow or by repo", () => {
-    expect(titles(items.filter((item) => inView(item, { kind: "workflow", id: "emergency-investigator" })))).toEqual(["Checkout p95 latency spike", "Orders API returns 500 after deploy"]);
+    expect(titles(items.filter((item) => inView(item, { kind: "workflow", id: "builtin/emergency-investigator" })))).toEqual(["Checkout p95 latency spike", "Orders API returns 500 after deploy"]);
     expect(titles(items.filter((item) => inView(item, { kind: "repo", id: "inventory-service" })))).toEqual(["Stock sync drops <b>items</b>"]);
     expect(items.every((item) => inView(item, { kind: "all" }))).toBe(true);
   });
@@ -212,24 +214,24 @@ describe("boardColumns", () => {
     boardColumns(list, template(templateId)).map((column): [string, string[]] => [column.name, titles(column.items)]);
 
   it("has Queued, one column per step and Done", () => {
-    expect(columns("plan-and-build", []).map(([name]) => name)).toEqual(["Queued", "Plan", "Build", "Run checks", "Review", "Done"]);
+    expect(columns("builtin/plan-and-build", []).map(([name]) => name)).toEqual(["Queued", "Plan", "Build", "Run checks", "Review", "Done"]);
   });
 
   it("puts each item in its column", () => {
-    expect(columns("emergency-investigator", [ITEMS.working, ITEMS.needsYou])).toEqual([
+    expect(columns("builtin/emergency-investigator", [ITEMS.working, ITEMS.needsYou])).toEqual([
       ["Queued", []],
       ["Triage", []],
       ["Query logs", ["Checkout p95 latency spike"]],
       ["Propose a fix", ["Orders API returns 500 after deploy"]],
       ["Done", []],
     ]);
-    expect(columns("plan-and-build", [ITEMS.queued])[0]).toEqual(["Queued", ["Add retry with backoff"]]);
-    expect(columns("quick-fix", [ITEMS.verifying, ITEMS.done, ITEMS.failed, ITEMS.stopped]).map(([, list]) => list)).toEqual([[], [], ["Fix rounding in invoice totals"], ["Bump the Postgres driver", "Flaky checkout test", "Try a cache for prices"]]);
+    expect(columns("builtin/plan-and-build", [ITEMS.queued])[0]).toEqual(["Queued", ["Add retry with backoff"]]);
+    expect(columns("builtin/quick-fix", [ITEMS.verifying, ITEMS.done, ITEMS.failed, ITEMS.stopped]).map(([, list]) => list)).toEqual([[], [], ["Fix rounding in invoice totals"], ["Bump the Postgres driver", "Flaky checkout test", "Try a cache for prices"]]);
   });
 
   it("keeps an item with more steps than its template in the last step column", () => {
     const long = { ...ITEMS.working, steps: [...ITEMS.working.steps, ...ITEMS.working.steps].map((step, index) => ({ ...step, state: index < 5 ? "passed" : "running" })) } as ItemRecord;
-    expect(columns("emergency-investigator", [long]).map(([, list]) => list.length)).toEqual([0, 0, 0, 1, 0]);
+    expect(columns("builtin/emergency-investigator", [long]).map(([, list]) => list.length)).toEqual([0, 0, 0, 1, 0]);
   });
 });
 
@@ -254,6 +256,33 @@ describe("AI_CLIS", () => {
       ["claude-code", "Claude Code"],
       ["codex-cli", "Codex CLI"],
       ["ollama", "Ollama"],
+    ]);
+  });
+});
+
+describe("health from the setup", () => {
+  const health = {
+    git: { ok: false, message: "git 2.44 or newer is required; found: git version 2.39.0" },
+    clis: [
+      { cliId: "claude-code", installed: true, loggedIn: false },
+      { cliId: "codex-cli", installed: false, loggedIn: false },
+      { cliId: "ollama", installed: false, loggedIn: false },
+    ],
+    config: [{ file: "repos.yaml", message: "repos.yaml line 3: base_branch is missing" }],
+  } as const;
+
+  it("turns logged-out and missing CLIs into rail issues; Ollama has no login", () => {
+    expect(cliIssuesOf(health as never)).toEqual([
+      { cliId: "claude-code", kind: "logged_out" },
+      { cliId: "codex-cli", kind: "not_installed" },
+    ]);
+    expect(cliIssuesOf(undefined)).toEqual([]);
+  });
+
+  it("lists git and config problems in the engine's words", () => {
+    expect(healthProblemsOf(health as never)).toEqual([
+      { title: "git cannot be used", detail: "git 2.44 or newer is required; found: git version 2.39.0" },
+      { title: "repos.yaml did not load", detail: "repos.yaml line 3: base_branch is missing" },
     ]);
   });
 });

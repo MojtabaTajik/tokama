@@ -1,7 +1,7 @@
 // What the shell derives from engine records: views, status filters, groups, badges, pipelines
 // and board columns. Pure functions that take the clock as an argument, so they are tested
 // without React or a real time.
-import type { AgentSummary, AiCliId, ItemRecord, StepRecord, TemplateSummary } from "@tokama/core";
+import type { AgentSummary, AiCliId, Health, ItemRecord, StepRecord, TemplateSummary } from "@tokama/core";
 import { itemMark, type Mark, stepAgent, type StepAgent, stepMark } from "./drawer/describe.js";
 
 /** What the main area shows: everything, one workflow's items, or one repo's items. */
@@ -281,7 +281,29 @@ export type LoginCliId = Exclude<AiCliId, "ollama">;
 /** Something wrong with an AI CLI that the engineer has to fix outside Tokama. */
 export interface CliIssue {
   readonly cliId: LoginCliId;
-  readonly kind: "logged_out";
+  readonly kind: "logged_out" | "not_installed";
+}
+
+/** Something else the engine found wrong: git, or a config file that did not load. */
+export interface HealthProblem {
+  readonly title: string;
+  readonly detail: string;
+}
+
+/** The AI CLIs the engine found logged out or missing. */
+export function cliIssuesOf(health: Health | undefined): CliIssue[] {
+  return (health?.clis ?? []).flatMap((cli): CliIssue[] => {
+    if (cli.cliId === "ollama") return [];
+    if (!cli.installed) return [{ cliId: cli.cliId, kind: "not_installed" as const }];
+    return cli.loggedIn ? [] : [{ cliId: cli.cliId, kind: "logged_out" as const }];
+  });
+}
+
+/** Git and config problems, each with the engine's own words. */
+export function healthProblemsOf(health: Health | undefined): HealthProblem[] {
+  if (health === undefined) return [];
+  const git = health.git.ok ? [] : [{ title: "git cannot be used", detail: health.git.message ?? "git did not answer." }];
+  return [...git, ...health.config.map((problem) => ({ title: `${problem.file} did not load`, detail: problem.message }))];
 }
 
 /** What to run in a terminal to sign in again, as each CLI's own help lists it. Tokama never runs it. */

@@ -1,11 +1,11 @@
 // The New work input, floating at the bottom of the main area. A single line until it is focused;
 // then it expands upward with the Template and Repos dropdowns, what the template uses, its steps
-// on one line, the one run option and Start (Cmd or Ctrl and Enter). Start sends `start_item` and
+// on one line, the commands it runs on this machine, its warnings and Start (Cmd or Ctrl and Enter). Start sends `start_item` and
 // hands the new item's id up. Engine text (names, error messages) renders as React text only.
 import type { ItemRecord, Setup } from "@tokama/core";
 import { type FormEvent, type KeyboardEvent, type Ref, useId, useImperativeHandle, useRef, useState } from "react";
 import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
-import { KIND_GROUPS, missing, needsRepo, stepsLine, usesOf } from "./needs.js";
+import { commandsOf, KIND_GROUPS, missing, needsRepo, reposFor, stepsLine, usesOf } from "./needs.js";
 import { Picker } from "./Picker.js";
 import { useSuggestion } from "./useSuggestion.js";
 
@@ -25,7 +25,8 @@ const TEXT = {
   repoCount: (count: number) => `${count} repos`,
   uses: "uses",
   steps: "Steps",
-  askBeforeCloud: "Ask before cloud steps",
+  runs: "Runs on your machine",
+  warning: "Warning",
   start: "Start",
   starting: "Starting…",
   notConnected: "Not connected to the engine. Try again when it is back.",
@@ -55,7 +56,6 @@ export function NewWork({ bridge, setup, ref, onStarted }: NewWorkProps) {
   const [text, setText] = useState("");
   const [picked, setPicked] = useState<string | undefined>(undefined);
   const [repoIds, setRepoIds] = useState<readonly string[]>([]);
-  const [askBeforeCloud, setAskBeforeCloud] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -69,8 +69,9 @@ export function NewWork({ bridge, setup, ref, onStarted }: NewWorkProps) {
   // suggestion is still shown, so the name does not flicker, but Start waits for the current one.
   const shown = setup.templates.find((candidate) => candidate.id === (picked ?? suggestedId));
   const template = picked !== undefined || suggestion?.fresh === true ? shown : undefined;
-  // In the setup's order; a repo that left the setup since it was chosen drops out.
-  const chosenRepos = setup.repos.filter((repo) => repoIds.includes(repo.id)).map((repo) => repo.id);
+  // In the setup's order; a repo that left the setup, or that the template cannot run on, drops out.
+  const repos = reposFor(shown, setup.repos);
+  const chosenRepos = repos.filter((repo) => repoIds.includes(repo.id)).map((repo) => repo.id);
   const reason = missing({ template, text, repoIds: chosenRepos });
 
   useImperativeHandle(ref, () => ({
@@ -96,8 +97,8 @@ export function NewWork({ bridge, setup, ref, onStarted }: NewWorkProps) {
     if (template === undefined || reason !== undefined || busy) return;
     setBusy(true);
     setError(undefined);
-    // Always sent: the engine's own default for a missing option is to ask.
-    const command = { type: "start_item", templateId: template.id, repoIds: chosenRepos, text: text.trim(), options: { askBeforeCloud } } as const;
+    // No options: the engine decides their defaults.
+    const command = { type: "start_item", templateId: template.id, repoIds: chosenRepos, text: text.trim() } as const;
     const reply = await bridge.command(command).catch((cause: unknown) => ({ ok: false as const, error: { code: "bridge_error", message: String(cause) } }));
     setBusy(false);
     if (!reply.ok) {
@@ -128,6 +129,7 @@ export function NewWork({ bridge, setup, ref, onStarted }: NewWorkProps) {
 
   const toggleRepo = (id: string) => setRepoIds(repoIds.includes(id) ? repoIds.filter((repoId) => repoId !== id) : [...repoIds, id]);
   const uses = shown ? usesOf(shown, setup.connections) : [];
+  const commands = shown ? commandsOf(shown, setup.repos, chosenRepos) : [];
 
   return (
     <div className="np">
@@ -177,7 +179,7 @@ export function NewWork({ bridge, setup, ref, onStarted }: NewWorkProps) {
                 searchLabel={TEXT.searchRepos}
                 multi
                 selected={new Set(chosenRepos)}
-                groups={[{ options: setup.repos.map((repo) => ({ id: repo.id, label: repo.id })) }]}
+                groups={[{ options: repos.map((repo) => ({ id: repo.id, label: repo.id })) }]}
                 onPick={toggleRepo}
               />
               {uses.length > 0 && (
@@ -197,10 +199,26 @@ export function NewWork({ bridge, setup, ref, onStarted }: NewWorkProps) {
                 {stepsLine(shown, setup.agents)}
               </p>
             )}
+            {commands.length > 0 && (
+              <p className="np-commands">
+                <span className="np-muted">{TEXT.runs}</span>
+                {commands.map((command) => (
+                  <code key={command} className="np-badge mono">
+                    {command}
+                  </code>
+                ))}
+              </p>
+            )}
+            {shown?.warnings.map((warning) => (
+              <p key={warning} className="np-warning">
+                <span className="symbol" aria-hidden="true">
+                  !
+                </span>
+                <span className="visually-hidden">{TEXT.warning}: </span>
+                {warning}
+              </p>
+            ))}
             <div className="np-row np-foot">
-              <label className="np-option-label">
-                <input type="checkbox" checked={askBeforeCloud} onChange={(event) => setAskBeforeCloud(event.target.checked)} /> {TEXT.askBeforeCloud}
-              </label>
               <span id={reasonId} className="np-reason">
                 {reason}
               </span>

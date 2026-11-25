@@ -23,8 +23,8 @@ afterEach(() => {
 });
 
 const NEW_ID = "item_1a2b3c4d-0099-4a1b-8c1d-000000000099";
-const newItem = { ...ITEMS.queued, id: NEW_ID, title: "Fix the retry loop", templateId: "quick-fix", createdAt: NOW } as unknown as ItemRecord;
-const SUGGEST = "plan-and-build";
+const newItem = { ...ITEMS.queued, id: NEW_ID, title: "Fix the retry loop", templateId: "builtin/quick-fix", createdAt: NOW } as unknown as ItemRecord;
+const SUGGEST = "builtin/plan-and-build";
 
 interface Options {
   readonly suggest?: string | null;
@@ -71,15 +71,14 @@ const plus = (label: string) => $(`.sb-plus[aria-label="${label}"]`) as HTMLButt
 const reason = () => $(".np-reason")?.textContent;
 
 describe("New work input", () => {
-  it("is one line until focused, then expands with the template, repos, steps and option", async () => {
+  it("is one line until focused, then expands with the template, repos and steps, and no run option", async () => {
     await mount();
     expect($(".np-body")).toBeNull();
     expect(input().placeholder).toBe("Describe a task or paste an alert…");
     await focusInput();
     expect($(".np-body")).not.toBeNull();
     expect($$(".np-trigger").map((el) => el.textContent)).toEqual(["TemplateChoose…▾", "ReposChoose…▾"]);
-    const box = $('.np-option-label input') as HTMLInputElement;
-    expect(box.checked).toBe(false);
+    expect($('.np-body input[type="checkbox"]')).toBeNull();
     expect(start().textContent).toMatch(/^Start/);
   });
 
@@ -112,8 +111,8 @@ describe("New work input", () => {
     await wait(300);
     expect([...waiting.keys()]).toEqual(["a", "ab"]);
     // The newer answer first, then the older one, which must not replace it.
-    await answer("ab", "plan-and-build");
-    await answer("a", "quick-fix");
+    await answer("ab", "builtin/plan-and-build");
+    await answer("a", "builtin/quick-fix");
     expect(trigger("Template").textContent).toBe("TemplatePlan and build (suggested)▾");
     await click(trigger("Repos"));
     await click($$('[role="option"]')[0]);
@@ -126,7 +125,7 @@ describe("New work input", () => {
     expect(start().disabled).toBe(true);
     expect(reason()).toBe("Choose a template");
     await wait(300);
-    await answer("abc", "quick-fix");
+    await answer("abc", "builtin/quick-fix");
     expect(trigger("Template").textContent).toBe("TemplateQuick fix (suggested)▾");
     expect(start().disabled).toBe(false);
 
@@ -139,7 +138,7 @@ describe("New work input", () => {
     // So does blank text.
     await type(input(), "abcde");
     await wait(300);
-    await answer("abcde", "quick-fix");
+    await answer("abcde", "builtin/quick-fix");
     expect(trigger("Template").textContent).toBe("TemplateQuick fix (suggested)▾");
     await type(input(), "  ");
     expect(trigger("Template").textContent).toBe("TemplateChoose…▾");
@@ -187,7 +186,7 @@ describe("New work input", () => {
     await click($$('[role="option"]').find((el) => el.textContent?.includes("Quick fix"))!);
     expect(reason()).toBe("Describe the work or paste an alert");
     await type(input(), "Fix the retry loop");
-    expect(reason()).toBe("Choose at least one repo");
+    expect(reason()).toBe("Choose one repo");
     expect(trigger("Repos").textContent).toBe("ReposChoose…▾");
     // The blocked form sends nothing, by Ctrl+Enter or by a submit.
     await press(input(), "Enter", { ctrlKey: true });
@@ -228,7 +227,7 @@ describe("New work input", () => {
   it("shows the template's connections as read-only 'uses' badges and its steps on one line", async () => {
     const withUses = {
       ...setup,
-      templates: setup.templates.map((t) => (t.id === "emergency-investigator" ? { ...t, connections: [{ connectionId: "app-insights-prod", access: "query" }] } : t)),
+      templates: setup.templates.map((t) => (t.id === "builtin/emergency-investigator" ? { ...t, connections: [{ connectionId: "app-insights-prod", access: "query" }] } : t)),
     } as unknown as Setup;
     await mount({ setup: withUses });
     await focusInput();
@@ -296,10 +295,9 @@ describe("New work input", () => {
     await type(input(), "  Fix the retry loop  ");
     await click(trigger("Repos"));
     await click($$('[role="option"]')[0]);
-    await click($('.np-option-label input'));
     await click(start());
     expect(fake.command).toHaveBeenCalledTimes(1);
-    expect(fake.command).toHaveBeenCalledWith({ type: "start_item", templateId: "quick-fix", repoIds: ["orders-api"], text: "Fix the retry loop", options: { askBeforeCloud: true } });
+    expect(fake.command).toHaveBeenCalledWith({ type: "start_item", templateId: "builtin/quick-fix", repoIds: ["orders-api"], text: "Fix the retry loop" });
     // The drawer opens at once; the row appears with the engine's event and is the selected one.
     await wait(0);
     expect($("aside.drawer h2")?.textContent).toBe("Fix the retry loop");
@@ -310,16 +308,49 @@ describe("New work input", () => {
     expect(input().value).toBe("");
   });
 
-  it("sends 'ask before cloud steps' as false by default, because the engine's own default is to ask", async () => {
+  it("has no ask-before-cloud option and sends no options: the engine decides their defaults", async () => {
     const fake = await mount();
     await focusInput();
     await type(input(), "Review the diff");
     await click(trigger("Template"));
     await click($$('[role="option"]').find((el) => el.textContent?.includes("Review only"))!);
+    expect(document.body.textContent).not.toContain("Ask before cloud steps");
     await click(trigger("Repos"));
     await click($$('[role="option"]')[1]);
     await press(input(), "Enter", { ctrlKey: true });
-    expect(fake.command.mock.calls[0]![0]).toMatchObject({ templateId: "review-only", repoIds: ["checkout-web"], options: { askBeforeCloud: false } });
+    expect(fake.command.mock.calls[0]![0]).toEqual({ type: "start_item", templateId: "builtin/review-only", repoIds: ["checkout-web"], text: "Review the diff" });
+  });
+
+  it("shows the commands the template runs on this machine before Start: setup, then the chosen repo's checks", async () => {
+    const quickFix = setup.templates.find((t) => t.id === "builtin/quick-fix")!;
+    const withSetup = {
+      ...setup,
+      templates: setup.templates.map((t) => (t === quickFix ? { ...t, setup: "pnpm install", steps: t.steps.map((s, i) => (i === 1 ? { ...s, checks: { from: "repo" } } : s)) } : t)),
+    } as Setup;
+    await mount({ suggest: null, setup: withSetup });
+    await focusInput();
+    await click(trigger("Template"));
+    await click($$('[role="option"]').find((el) => el.textContent?.includes("Quick fix"))!);
+    const commands = () => $$(".np-commands code").map((el) => el.textContent);
+    expect(commands()).toEqual(["pnpm install", "the repo's checks"]);
+    await click(trigger("Repos"));
+    await click($$('[role="option"]')[0]);
+    expect(commands()).toEqual(["pnpm install", "pnpm test"]);
+  });
+
+  it("shows the template's warnings, and asks for one repo when the template needs one", async () => {
+    const warned = { ...setup, templates: setup.templates.map((t) => (t.id === "builtin/quick-fix" ? { ...t, warnings: ["Step Fix cannot run: builder runs on ollama."] } : t)) } as Setup;
+    await mount({ suggest: null, setup: warned });
+    await focusInput();
+    await type(input(), "Fix it");
+    await click(trigger("Template"));
+    await click($$('[role="option"]').find((el) => el.textContent?.includes("Quick fix"))!);
+    expect($(".np-warning")?.textContent).toContain("Step Fix cannot run: builder runs on ollama.");
+    expect($(".np-reason")?.textContent).toBe("Choose one repo");
+    await click(trigger("Repos"));
+    await click($$('[role="option"]')[0]);
+    await click($$('[role="option"]')[1]);
+    expect($(".np-reason")?.textContent).toBe("Choose one repo");
   });
 
   it("starts with Cmd+Enter from the text field", async () => {
@@ -329,7 +360,7 @@ describe("New work input", () => {
     await click(trigger("Template"));
     await click($$('[role="option"]').find((el) => el.textContent?.includes("Emergency investigator"))!);
     await press(search() ?? input(), "Enter", { metaKey: true });
-    expect(fake.command).toHaveBeenCalledWith(expect.objectContaining({ type: "start_item", templateId: "emergency-investigator", repoIds: [], text: "5xx on checkout" }));
+    expect(fake.command).toHaveBeenCalledWith(expect.objectContaining({ type: "start_item", templateId: "builtin/emergency-investigator", repoIds: [], text: "5xx on checkout" }));
   });
 
   it("shows an error from start_item inline and keeps the draft", async () => {

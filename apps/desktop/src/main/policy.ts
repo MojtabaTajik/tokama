@@ -87,7 +87,7 @@ export function guardedHandler<T>(
 
 /**
  * Whether the app starts the engine in its fake mode (`--sample`, sample data): only outside a
- * packaged app, and only when the dev script sets TOKAMA_SAMPLE=1.
+ * packaged app, and only when the dev:sample script sets TOKAMA_SAMPLE=1.
  */
 export function sampleEngineEnabled(value: string | undefined, isPackaged: boolean): boolean {
   return !isPackaged && value === "1";

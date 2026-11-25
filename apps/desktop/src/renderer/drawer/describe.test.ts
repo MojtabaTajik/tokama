@@ -1,14 +1,14 @@
 import { type ItemState, parseItemRecord, parseQueryResult, type StepState } from "@tokama/core";
 import { describe, expect, it } from "vitest";
-import { approved, needsYou, task, setup } from "../testing/drawer.js";
-import { hasEnded, itemMark, stepAgent, stepMark, stepPosition, templateName, whereLine } from "./describe.js";
+import { approved, committed, needsYou, task, setup } from "../testing/drawer.js";
+import { attemptLine, hasEnded, itemMark, outcomeLine, stepAgent, stepMark, stepPosition, templateName, whereLine } from "./describe.js";
 
 const { agents, connections } = setup;
 
 describe("drawer test data", () => {
   it("matches the engine schemas", () => {
     expect(parseQueryResult("setup", setup).ok).toBe(true);
-    for (const item of [needsYou, approved, task]) expect(parseItemRecord(item)).toMatchObject({ ok: true });
+    for (const item of [needsYou, approved, task, committed]) expect(parseItemRecord(item)).toMatchObject({ ok: true });
   });
 });
 
@@ -76,6 +76,24 @@ describe("templateName", () => {
   it("uses the setup's template name, else the id", () => {
     expect(templateName(needsYou, setup)).toBe("Emergency investigator");
     expect(templateName({ templateId: "unknown" as never }, setup)).toBe("unknown");
-    expect(templateName(needsYou, undefined)).toBe("emergency-investigator");
+    expect(templateName(needsYou, undefined)).toBe("builtin/emergency-investigator");
+  });
+});
+
+describe("attempts and outcome", () => {
+  it("says how each attempt ended, naming the failed check", () => {
+    expect(attemptLine({ attempt: 1, result: "failed", checks: [{ command: "sh check.sh", passed: false, exitCode: 1 }] })).toEqual({
+      mark: { symbol: "✕", word: "failed", tone: "fail" },
+      text: "attempt 1 · failed · sh check.sh exit 1",
+    });
+    expect(attemptLine({ attempt: 2, result: "passed", checks: [{ command: "sh check.sh", passed: true, exitCode: 0 }] }).text).toBe("attempt 2 · passed · 1 check passed");
+    expect(attemptLine({ attempt: 3, result: "run_failed", failure: "engine_restart", checks: [] }).text).toBe("attempt 3 · run failed · engine_restart");
+    expect(attemptLine({ attempt: 4, checks: [] })).toMatchObject({ mark: { word: "running" }, text: "attempt 4 · running" });
+  });
+
+  it("shows the commit and branch of a done item, or how it ended", () => {
+    expect(outcomeLine(committed)).toBe("commit 3f2a9c1 on tokama/0b9f3c1e");
+    expect(outcomeLine({ outcome: { kind: "stopped", detail: "Stopped by the engineer." } })).toBe("Stopped by the engineer.");
+    expect(outcomeLine(task)).toBeUndefined();
   });
 });
