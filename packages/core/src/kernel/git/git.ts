@@ -137,6 +137,8 @@ export interface WorktreeEntry {
 export interface Git {
   /** `status --porcelain -z --untracked-files=all`. */
   status(repo: string): Promise<GitResult<StatusEntry[]>>;
+  /** `rev-parse --show-toplevel`: the folder git treats as the work tree of `repo`. */
+  topLevel(repo: string): Promise<GitResult<string>>;
   /** `init -q -b <branch>`: a new repo in `repo`, which must exist. */
   init(repo: string, branch: string): Promise<GitResult<void>>;
   /** `add -A`. */
@@ -357,6 +359,7 @@ export function createGit(options: GitOptions): Git {
 
   return {
     status: (repo) => map(git(repo, ["status", "--porcelain", "-z", "--untracked-files=all"]), parseStatus),
+    topLevel: (repo) => map(git(repo, ["rev-parse", "--show-toplevel"]), trimmed),
     async init(repo, branch) {
       const args = ["init", "-q", "-b", branch];
       return refuseOption(args, branch) ?? map(git(repo, args), none);

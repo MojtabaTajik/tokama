@@ -16,6 +16,10 @@ let gitError: GitError;
 let unborn: Set<string>;
 /** What the fake git was asked to do to a folder, in order, as `init:<branch>`, `add` and `commit`. */
 let calls: string[];
+/** How many files the fake `git diff --cached` lists; undefined: one. */
+let stagedCount: number | undefined;
+/** Where the fake git says a folder's work tree is, when not the folder itself. */
+let topLevels: Map<string, string>;
 /** What the fake `git commit` answers; undefined: it works. */
 let commitError: GitError | undefined;
 beforeEach(() => {
@@ -24,12 +28,16 @@ beforeEach(() => {
   worktrees = new Map();
   unborn = new Set();
   calls = [];
+  stagedCount = undefined;
+  topLevels = new Map();
   commitError = undefined;
   gitError = { reason: "failed", args: [], exitCode: 128, message: "fatal: not a git repository (or any of the parent directories): .git" };
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-const git: Pick<Git, "worktreeList" | "revParse" | "init" | "addAll" | "commit"> = {
+const git: Pick<Git, "worktreeList" | "revParse" | "topLevel" | "init" | "addAll" | "diffCachedNumstat" | "commit"> = {
+  diffCachedNumstat: async () => ok(Array.from({ length: stagedCount ?? 1 }, () => ({ path: "x", added: 1, removed: 0 }))),
+  topLevel: async (repo) => ok(topLevels.get(repo) ?? repo),
   init: async (repo, branch) => {
     calls.push(`init:${branch}`);
     worktrees.set(repo, branch);
@@ -283,10 +291,10 @@ describe("first commit", () => {
     expect(preview?.sample[0]).toBe("f00.txt");
   });
 
-  it("uses the plain names of the folder's own .gitignore instead of the defaults", async () => {
+  it("uses the plain names of the folder's own .gitignore instead of the defaults (anchored and wildcard rules are not applied, so the count can only be high)", async () => {
     const path = folder("own", { ".gitignore": "# c\n/target/\n*.log\nvendor\n", "target/x": "1", "vendor/y": "1", "a.log": "1", "node_modules/z": "1", "keep.txt": "1" });
     const suggestion = await suggestRepo(options(), path);
-    expect(suggestion).toMatchObject({ ok: true, value: { firstCommit: { files: 4, addsGitignore: false } } });
+    expect(suggestion).toMatchObject({ ok: true, value: { firstCommit: { files: 5, addsGitignore: false } } });
   });
 
   it("offers a first commit for a repo without commits, and none for a repo with one or a subfolder", async () => {
@@ -337,6 +345,40 @@ describe("first commit", () => {
     expect(calls).toEqual(["add", "commit"]);
     expect(await setUpRepo(options(), { path: fresh })).toMatchObject({ ok: true });
     expect(calls).toEqual(["add", "commit"]);
+  });
+
+  it("refuses to commit more files than the preview showed, such as ones staged before", async () => {
+    const fresh = repo("fresh", { "a.txt": "1" });
+    unborn.add(fresh);
+    stagedCount = 40;
+    expect(await setUpRepo(options(), { path: fresh })).toMatchObject({ ok: false, error: { message: expect.stringContaining("40 files staged already, more than the 1 shown") } });
+    expect(calls).toEqual(["add"]);
+  });
+
+  it("does not skip nested folders for an anchored rule, and skips name* prefixes", async () => {
+    const path = folder("mono", { ".gitignore": "/node_modules\nsecret*\n", "node_modules/a": "1", "packages/p/node_modules/b": "1", "secret.key": "1", "secrets/c": "1", "ok.txt": "1" });
+    expect(await suggestRepo(options(), path)).toMatchObject({ ok: true, value: { firstCommit: { files: 4 } } });
+  });
+
+  it("refuses a repo whose work tree is another folder, a .gitignore that is a link, and a .git git can't use", async () => {
+    const fresh = repo("fresh", { "a.txt": "1" });
+    unborn.add(fresh);
+    topLevels.set(fresh, join(root, "elsewhere"));
+    expect(await setUpRepo(options(), { path: fresh })).toMatchObject({ ok: false, error: { message: "This repo's git settings point outside the folder, so Tokama won't use it." } });
+    expect(await addRepo(options(), { path: fresh })).toMatchObject({ ok: false });
+    expect(calls).toEqual([]);
+
+    const linked = folder("linked", { "real-ignore": "x", ".env": "1" });
+    symlinkSync(join(linked, "real-ignore"), join(linked, ".gitignore"));
+    expect(await setUpRepo(options(), { path: linked })).toMatchObject({ ok: false, error: { message: expect.stringContaining("link or a folder") } });
+    const dirIgnore = folder("dir-ignore", {});
+    mkdirSync(join(dirIgnore, ".gitignore"));
+    expect(await suggestRepo(options(), dirIgnore)).toMatchObject({ ok: true, value: { firstCommit: { refusal: expect.stringContaining("link or a folder") } } });
+
+    const dotGit = folder("dot-git", {});
+    symlinkSync(join(root, "nowhere"), join(dotGit, ".git"));
+    expect(await setUpRepo(options(), { path: dotGit })).toMatchObject({ ok: false, error: { message: expect.stringContaining(".git entry") } });
+    expect(calls).toEqual([]);
   });
 
   it("refuses a subfolder of a repo, and explains a missing git identity", async () => {

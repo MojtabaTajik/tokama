@@ -26,7 +26,7 @@ export interface RepoEditError {
 
 export interface RepoEditOptions extends LoadReposOptions {
   /** Tells whether a folder is a git repo's top folder, and its branch. */
-  readonly git: Pick<Git, "worktreeList" | "revParse" | "init" | "addAll" | "commit">;
+  readonly git: Pick<Git, "worktreeList" | "revParse" | "topLevel" | "init" | "addAll" | "diffCachedNumstat" | "commit">;
   /** Ids a new repo can't take though repos.yaml doesn't hold them, such as the sample engine's repos. */
   readonly reservedIds?: readonly string[];
 }
@@ -185,11 +185,18 @@ export async function setUpRepo(options: RepoEditOptions, input: { readonly path
     try {
       await writeFile(join(path, GITIGNORE_FILE), `${DEFAULT_GITIGNORE.join("\n")}\n`, { flag: "wx" });
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") return invalid(`Tokama couldn't write ${GITIGNORE_FILE} (${(error as NodeJS.ErrnoException).code ?? String(error)}).`);
+      return invalid(`Tokama couldn't write ${GITIGNORE_FILE} (${(error as NodeJS.ErrnoException).code ?? String(error)}).`);
     }
   }
   const added = await options.git.addAll(path);
   if (!added.ok) return failed("stage the files", added.error);
+  // Files staged before (in a repo with no commit) are not in the preview, and an ignore rule does
+  // not unstage them: refuse rather than commit what the user was not shown.
+  const staged = await options.git.diffCachedNumstat(path);
+  if (!staged.ok) return failed("list the staged files", staged.error);
+  if (staged.value.length > preview.files + (preview.addsGitignore ? 1 : 0)) {
+    return invalid(`Git has ${staged.value.length} files staged already, more than the ${preview.files} shown. Unstage them (git reset) or pick another folder.`);
+  }
   const committed = await options.git.commit(path, "Initial commit");
   if (!committed.ok) return failed("make the first commit", committed.error);
   return ok(undefined);
@@ -198,6 +205,7 @@ export async function setUpRepo(options: RepoEditOptions, input: { readonly path
 /** Why a git call failed, in plain words; the identity problem gets its fix. */
 function gitReason(error: GitError): string {
   if (/identity unknown|user\.name|user\.email/i.test(error.message)) return "git doesn't know who you are. Set user.name and user.email in your git config, then try again.";
+  if (/nothing to commit|nothing added/i.test(error.message)) return "git ignores every file in this folder, so there is nothing to commit.";
   const first = error.message.split("\n").find((line) => line.trim() !== "") ?? error.reason;
   return clean(first.replace(/^fatal:\s*/, ""), 200);
 }
@@ -307,7 +315,7 @@ interface Folder {
 }
 
 /** The path is user input (a folder picker result): a full path to a readable folder. */
-async function inspectFolder(git: Pick<Git, "worktreeList" | "revParse">, path: string): Promise<Result<Folder, RepoEditError>> {
+async function inspectFolder(git: Pick<Git, "worktreeList" | "revParse" | "topLevel">, path: string): Promise<Result<Folder, RepoEditError>> {
   if (path === "" || path.includes("\0") || !isAbsolute(path)) return invalid("The folder must be a full path, such as /home/me/code/orders-api.");
   let real: string;
   try {
@@ -322,12 +330,18 @@ async function inspectFolder(git: Pick<Git, "worktreeList" | "revParse">, path: 
   const worktrees = await git.worktreeList(real);
   if (!worktrees.ok) {
     const notRepo = worktrees.error.reason === "failed" && /not a git repository/i.test(worktrees.error.message);
+    // A .git entry git can't use (a link to nowhere): git init would write through it.
+    if (notRepo && (await exists(join(real, ".git")))) return ok({ path: real, hasCommits: false, gitProblem: "This folder has a .git entry that git can't use. Remove it or pick another folder." });
     return ok({ path: real, hasCommits: false, gitProblem: gitFailure(worktrees.error), ...(notRepo ? { canSetUp: true as const } : {}) });
   }
   for (const worktree of worktrees.value) {
     if ((await realpathOr(worktree.path)) !== real) continue;
     if (worktree.bare) return ok({ path: real, hasCommits: false, gitProblem: "This folder is a bare git repo; Tokama needs one with files checked out." });
     const branch = worktree.branch?.replace(/^refs\/heads\//, "");
+    // A core.worktree setting can point the work tree elsewhere: `add -A` would stage that folder.
+    const top = await git.topLevel(real);
+    if (!top.ok) return ok({ path: real, hasCommits: false, gitProblem: gitFailure(top.error) });
+    if ((await realpathOr(top.value)) !== real) return ok({ path: real, hasCommits: false, gitProblem: "This repo's git settings point outside the folder, so Tokama won't use it." });
     // A repo with no commit has no HEAD to resolve: git exits non-zero, which is not a failure to run git.
     const head = await git.revParse(real, "HEAD");
     if (!head.ok && head.error.reason !== "failed") return ok({ path: real, hasCommits: false, gitProblem: gitFailure(head.error) });

@@ -78,7 +78,7 @@ export function RepoDialog({ bridge, path, repo, onClose }: RepoDialogProps) {
 
   const suggestion = loaded?.ok ? loaded.suggestion : undefined;
   const firstCommit = suggestion?.firstCommit ?? null;
-  const ready = editing || (suggestion !== undefined && (suggestion.problem === null || firstCommit !== null));
+  const ready = editing || (suggestion !== undefined && (suggestion.problem === null || (firstCommit !== null && firstCommit.refusal === null)));
   const canAdd = editing || (suggestion !== undefined && suggestion.problem === null);
   const lines = checks.split("\n").map((line) => line.trim()).filter((line) => line !== "");
   const fallback = suggestion?.fallbackCheck ?? null;
@@ -125,6 +125,7 @@ export function RepoDialog({ bridge, path, repo, onClose }: RepoDialogProps) {
         {!editing && loaded === undefined && <p role="status">{TEXT.reading}</p>}
         {loaded?.ok === false && <Problem text={loaded.message} />}
         {suggestion?.problem != null && <Problem text={suggestion.problem} />}
+        {firstCommit?.refusal != null && <Problem text={firstCommit.refusal} />}
         {ready && (
           <>
             <Field label={TEXT.id} hint={editing ? TEXT.idFixed : TEXT.idHint}>
@@ -150,7 +151,6 @@ export function RepoDialog({ bridge, path, repo, onClose }: RepoDialogProps) {
                 {firstCommit.addsGitignore && <p>{TEXT.addsGitignore}</p>}
               </div>
             )}
-            {firstCommit?.refusal != null && <Problem text={firstCommit.refusal} />}
             {lines.length === 0 && (
               <div className="repo-note">
                 <p>
