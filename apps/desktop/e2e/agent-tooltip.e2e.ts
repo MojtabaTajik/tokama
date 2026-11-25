@@ -4,13 +4,27 @@
 // Screenshots go to the e2e output folder like the other flows'.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Locator } from "playwright-core";
+import type { Locator, Page } from "playwright-core";
 import { expect } from "vitest";
 import { drawer, flow } from "./harness.js";
 
 const TITLE = "Paginate the orders list";
 /** --warn in theme.css. */
 const AMBER = "rgb(217, 169, 58)";
+
+/**
+ * Opens the item's drawer by a click on its row and takes the pointer off the list. The open drawer
+ * narrows the list and makes its rows taller, which puts another row's agent label under the pointer
+ * left on the clicked row; that label's tooltip then opens, stays open while the pointer is on it,
+ * and covers the labels the test hovers next. The pointer leaves before the list moves, and no
+ * tooltip is left open when this returns.
+ */
+async function openItem(page: Page): Promise<void> {
+  await page.locator(".pl-row", { has: page.locator(".pl-title", { hasText: TITLE }) }).click();
+  await page.mouse.move(0, 0);
+  await drawer(page).getByRole("heading", { name: TITLE }).waitFor();
+  await page.locator('[role="tooltip"]').waitFor({ state: "detached" });
+}
 
 /** The text of an element on one line: boxes that sit side by side read as separate lines. */
 const flat = (text: Promise<string>): Promise<string> => text.then((value) => value.replace(/\s+/g, " ").trim());
@@ -98,9 +112,8 @@ flow("opens the agent tooltip on keyboard focus, reaches its link with Tab, and 
 });
 
 flow("shows the agent tooltip in the drawer, closes only it on Escape, and opens the agent in Settings", async ({ page, screenshot }) => {
-  await page.locator(".pl-row", { has: page.locator(".pl-title", { hasText: TITLE }) }).click();
+  await openItem(page);
   const panel = drawer(page);
-  await panel.getByRole("heading", { name: TITLE }).waitFor();
   const labels = panel.locator(".step-where .al-button");
   await expect.poll(() => labels.allInnerTexts().then((texts) => texts.map((text) => text.replace(/\s+/g, " ")))).toEqual(["Architect · opus", "Orders builder · qwen3-coder:30b", "Reviewer · gpt-5-codex"]);
   await labels.nth(1).hover();
@@ -172,13 +185,8 @@ flow(
   "keeps the agent names whole in a drawer at its narrowest and puts the text after them under them",
   async ({ page, resize, screenshot }) => {
     await resize(NARROW_WINDOW, 900);
-    await page
-      .locator(".pl-row", {
-        has: page.locator(".pl-title", { hasText: TITLE }),
-      })
-      .click();
+    await openItem(page);
     const panel = drawer(page);
-    await panel.getByRole("heading", { name: TITLE }).waitFor();
     expect(Math.round((await panel.boundingBox())!.width)).toBe(340);
     const steps = panel.locator(".step-where", {
       has: page.locator(".al-button"),
@@ -215,8 +223,7 @@ flow(
     });
     await wrap.waitFor();
     // The drawer is closed: the list has the whole main area minus the sidebar. Open it to narrow the list to its minimum.
-    await wrap.locator(".pl-row").click();
-    await drawer(page).getByRole("heading", { name: TITLE }).waitFor();
+    await openItem(page);
     const shapes = new Map<string, LabelShape>();
     for (const row of await page.locator(".pl-row-wrap").all()) {
       const label = row.locator(".al-button");
