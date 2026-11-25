@@ -35,9 +35,11 @@ export interface DecisionChoicesProps {
   readonly run?: string | undefined;
   /** Shown at the end of the buttons' row, e.g. "Review the diff". */
   readonly extra?: ReactNode;
+  /** The choice drawn as a danger button, e.g. Stop. */
+  readonly danger?: string;
 }
 
-export function DecisionChoices({ decision, busy, onChoose, context, agent, run, extra }: DecisionChoicesProps) {
+export function DecisionChoices({ decision, busy, onChoose, context, agent, run, extra, danger }: DecisionChoicesProps) {
   const [noting, setNoting] = useState(false);
   const [note, setNote] = useState("");
   const noteId = useId();
@@ -97,7 +99,7 @@ export function DecisionChoices({ decision, busy, onChoose, context, agent, run,
         <button
           key={choice.id}
           type="button"
-          className={position === 0 ? "choice primary" : "choice"}
+          className={position === 0 ? "choice primary" : choice.id === danger ? "choice danger" : "choice"}
           disabled={busy}
           aria-label={named(choice.label)}
           onClick={() => (choice.id === REQUEST_CHANGES_ID ? setNoting(true) : onChoose(choice.id))}

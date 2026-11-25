@@ -3,7 +3,7 @@
 // headings as an outline and the agent that wrote it beside it. The text is shown with StepOutput
 // (React text only); the outline holds the headings' own words as text.
 import type { ItemRecord, Setup, StepRecord } from "@tokama/core";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
 import { AgentLabel } from "../agent/AgentLabel.js";
 import { agentInfo } from "../agent/agent-info.js";
@@ -42,9 +42,11 @@ export interface OutputTabProps {
   /** The full view: outlines and agents beside the outputs. */
   readonly full: boolean;
   readonly onOpenAgent?: ((agent: AgentTarget) => void) | undefined;
+  /** Scrolls to this step's section, again for each new `seq`: a stopped step's "See the notes". */
+  readonly focus?: { readonly stepIndex: number; readonly seq: number } | undefined;
 }
 
-export function OutputTab({ bridge, item, setup, full, onOpenAgent }: OutputTabProps) {
+export function OutputTab({ bridge, item, setup, full, onOpenAgent, focus }: OutputTabProps) {
   const shown = item.steps.flatMap((step, index) => {
     const attempt = shownAttempt(step);
     return attempt === undefined ? [] : [{ index, attempt }];
@@ -53,7 +55,7 @@ export function OutputTab({ bridge, item, setup, full, onOpenAgent }: OutputTabP
   return (
     <div className="ot" data-full={full ? "true" : undefined}>
       {shown.map(({ index, attempt }) => (
-        <StepSection key={`${index} ${attempt}`} bridge={bridge} item={item} setup={setup} index={index} attempt={attempt} full={full} onOpenAgent={onOpenAgent} />
+        <StepSection key={`${index} ${attempt}`} bridge={bridge} item={item} setup={setup} index={index} attempt={attempt} full={full} onOpenAgent={onOpenAgent} focus={focus} />
       ))}
     </div>
   );
@@ -64,10 +66,14 @@ interface StepSectionProps extends OutputTabProps {
   readonly attempt: number;
 }
 
-function StepSection({ bridge, item, setup, index, attempt, full, onOpenAgent }: StepSectionProps) {
+function StepSection({ bridge, item, setup, index, attempt, full, onOpenAgent, focus }: StepSectionProps) {
   const step = item.steps[index]!;
   const output = useStepOutput(bridge, item.id, index, attempt, `${index} ${attempt}`);
   const section = useRef<HTMLElement>(null);
+  const asked = focus?.stepIndex === index ? focus.seq : undefined;
+  useEffect(() => {
+    if (asked !== undefined) section.current?.scrollIntoView?.({ block: "start" });
+  }, [asked]);
   const text = output?.kind === "loaded" ? output.output.text : undefined;
   const headings = text === undefined ? [] : blocksOf(text).flatMap((block) => (block.kind === "heading" ? [block.text] : []));
   const head = TEXT.head(step.name);

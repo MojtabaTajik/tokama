@@ -149,6 +149,125 @@
   overflow-wrap: anywhere;
 }
 
+/* A step that stopped: what its agent said, what ran after, why it stopped. Labels above their
+   content in the drawer; a label column beside it in the full view. */
+
+.stopped {
+  gap: 10px;
+}
+
+.stopped-main {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.stopped-title {
+  font-weight: 500;
+}
+
+.stopped-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+}
+
+.stopped-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  font-size: 12.5px;
+}
+
+.stopped-fact dt {
+  font-size: 11px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.stopped-fact dd {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  min-width: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.stopped-fact dd.stopped-then {
+  flex-direction: row;
+  gap: 8px;
+}
+
+.stopped-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stopped-items li {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+}
+
+.stopped-ref {
+  max-width: 100%;
+  padding: 0 5px;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  background: var(--input);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.stopped-lines {
+  padding: 6px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--input);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.stopped-lines > div {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.stopped-note {
+  color: var(--muted);
+}
+
+.stopped-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.stopped-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
 .cloud-summary {
   display: flex;
   flex-direction: column;
@@ -1445,6 +1564,55 @@
 
 .ex-decision .needs-you-why {
   padding-left: 1.4em;
+}
+
+/* The full view's bar for a step that stopped: facts on the left, buttons and the link on the right. */
+.ex-decision.stopped {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 14px 40px;
+  padding: 14px 28px 16px 26px;
+}
+
+.ex-decision.stopped > .stopped-main {
+  flex: 1 1 560px;
+}
+
+.ex-decision .stopped-facts {
+  display: grid;
+  grid-template-columns: 124px minmax(0, 1fr);
+  gap: 8px 16px;
+  padding-left: 1.4em;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ex-decision .stopped-fact {
+  display: contents;
+}
+
+.ex-decision .stopped-fact dt {
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.ex-decision .stopped-items li {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.ex-decision > .stopped-actions {
+  flex: 0 0 auto;
+  align-items: flex-end;
+}
+
+.ex-decision > .stopped-actions > .choices {
+  justify-content: flex-end;
 }
 
 .expanded > .after {

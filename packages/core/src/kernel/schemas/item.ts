@@ -109,6 +109,47 @@ export const StepRecordSchema = z.strictObject({
 /** The choice that answers a step you approve with "change this"; only it may carry a note. */
 export const REQUEST_CHANGES_ID = "request_changes";
 
+/** The most must-fix items and first lines an output summary carries. */
+export const MAX_SUMMARY_ITEMS = 3;
+/** The longest must-fix text or first line an output summary carries. */
+export const MAX_SUMMARY_LINE_CHARS = 300;
+const summaryLine = z.string().min(1).max(MAX_SUMMARY_LINE_CHARS);
+
+/**
+ * What an agent's output says, as far as Tokama can read it: the verdict with its must-fix items
+ * (each with the file:line it names, when it names one), or its first lines as written when it has
+ * no verdict, or nothing when it is empty. All of it is text from the output.
+ */
+export const OutputSummarySchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("verdict"),
+    verdict: z.enum(["approve", "changes"]),
+    mustFix: z.array(z.strictObject({ ref: z.string().min(1).max(200).optional(), text: summaryLine })).max(MAX_SUMMARY_ITEMS),
+    /** Must-fix items past the ones carried. */
+    more: z.int().nonnegative(),
+    /** The first lines, for a verdict without a must-fix list. */
+    lines: z.array(summaryLine).max(MAX_SUMMARY_ITEMS),
+  }),
+  /** `no_verdict`: the step has a verdict format, but the output did not follow it. `none`: the step has none. */
+  z.strictObject({ kind: z.literal("lines"), format: z.enum(["no_verdict", "none"]), lines: z.array(summaryLine).min(1).max(MAX_SUMMARY_ITEMS) }),
+  z.strictObject({ kind: z.literal("empty") }),
+]);
+
+/** What ran after a step's last attempt, for the card of a step that stopped. */
+export const StopThenSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("none") }),
+  /** The attempt's own checks failed: these commands, of `total`. */
+  z.strictObject({ kind: z.literal("checks_failed"), failed: z.array(z.string().min(1).max(500)).min(1).max(20), total: z.int().min(1) }),
+  /** The latest attempt of another step that ran after it, with its checks when it had any. */
+  z.strictObject({
+    kind: z.literal("later"),
+    stepIndex: z.int().nonnegative(),
+    attempt: z.int().min(1),
+    result: AttemptResultSchema,
+    checks: z.strictObject({ passed: z.int().nonnegative(), total: z.int().min(1) }).optional(),
+  }),
+]);
+
 /** A question put to the engineer. Present only while the item's state is `needs_you`. */
 export const DecisionSchema = z.strictObject({
   id: DecisionIdSchema,
@@ -121,6 +162,18 @@ export const DecisionSchema = z.strictObject({
   summaryText: z.string().min(1).max(20_000).optional(),
   /** For a step you approve: the engine serves the change to approve through `decision_diff`. */
   hasDiff: z.boolean().optional(),
+  /**
+   * For a step that failed or reached a limit: whether it was a limit, what ran after its last
+   * ended attempt, and why Tokama stopped, in plain words. What the agent said comes with the
+   * attempt's `step_output`.
+   */
+  stopped: z
+    .strictObject({
+      limit: z.boolean(),
+      then: StopThenSchema,
+      why: z.string().min(1).max(500),
+    })
+    .optional(),
   choices: z
     .array(z.strictObject({ id: z.string().min(1).max(64), label: z.string().min(1).max(64) }))
     .min(1)
@@ -200,6 +253,8 @@ export type Privacy = z.output<typeof PrivacySchema>;
 export type ConnectionUses = z.output<typeof ConnectionUsesSchema>;
 export type StepRecord = z.output<typeof StepRecordSchema>;
 export type Decision = z.output<typeof DecisionSchema>;
+export type OutputSummary = z.output<typeof OutputSummarySchema>;
+export type StopThen = z.output<typeof StopThenSchema>;
 export type ItemRecord = z.output<typeof ItemRecordSchema>;
 
 /** The index of the step the item is in: the first step that has not passed, or -1 when all passed. */

@@ -13,7 +13,7 @@ import {
   MAX_LISTED_DIAGNOSTICS,
   VersionLabelSchema,
 } from "./diagnostics.js";
-import { FinishActionSchema, ItemRecordSchema } from "./item.js";
+import { FinishActionSchema, ItemRecordSchema, OutputSummarySchema } from "./item.js";
 import { UsageRangeSchema, UsageReportSchema, UsageScopeSchema } from "./usage.js";
 import { AgentsListSchema } from "./agents.js";
 import { AiCliListSchema } from "./ai-clis.js";
@@ -232,6 +232,8 @@ export const StepOutputSchema = z.strictObject({
   text: z.string().max(MAX_STEP_OUTPUT_BYTES),
   /** The agent wrote more than the reply carries. */
   truncated: z.boolean(),
+  /** What the output says, as far as Tokama can read it; absent where the engine does not read it. */
+  summary: OutputSummarySchema.optional(),
 });
 
 /** The data of a successful reply, per query type. */

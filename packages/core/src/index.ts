@@ -67,13 +67,17 @@ export * as adapters from "./composition.js";
 export {
   attemptLimit,
   createRunLoop,
+  explainStop,
+  lastEnded,
   parseVerdict,
+  summarizeOutput,
   titleFrom,
   VERDICT_RULE,
   type CommandError,
   type RunLoop,
   type RunLoopDeps,
   type StartItemInput,
+  type Stopped,
   type Verdict,
 } from "./slices/workflow-engine/index.js";
 // Usage reports: roll-ups, estimated costs and the plan window choice, for the engine service.
@@ -296,6 +300,8 @@ export {
   type DecisionDiffResult,
   MAX_STEP_OUTPUT_BYTES,
   type StepOutputResult,
+  type OutputSummary,
+  type StopThen,
   MAX_ATTEMPT_CHECKS,
   MAX_CHECK_TAIL_BYTES,
   MAX_CHECK_TAIL_LINES,

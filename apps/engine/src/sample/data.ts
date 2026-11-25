@@ -10,6 +10,9 @@ export const DIFF_DECISION_ID = "decision_5e1c9a7b-3f2d-4c8e-9a6b-1d2e3f4a5b6d";
 /** The Plan approval item's question: approve the plan its Plan step wrote, which changed no files. */
 export const PLAN_DECISION_ID = "decision_5e1c9a7b-3f2d-4c8e-9a6b-1d2e3f4a5b6e";
 
+/** The Review limit item's question: Review asked for changes, Build fixed them, and Review may not run again. */
+export const LIMIT_DECISION_ID = "decision_5e1c9a7b-3f2d-4c8e-9a6b-1d2e3f4a5b6f";
+
 export const ITEM_IDS = {
   queued: "item_1a2b3c4d-0001-4a1b-8c1d-000000000001",
   working: "item_1a2b3c4d-0002-4a1b-8c1d-000000000002",
@@ -25,6 +28,8 @@ export const ITEM_IDS = {
   finished: "item_1a2b3c4d-0011-4a1b-8c1d-000000000011",
   /** A Plan and build task whose Plan step waits for your approval of the plan. */
   planApproval: "item_1a2b3c4d-0012-4a1b-8c1d-000000000012",
+  /** A Plan and build task whose Review step stopped at its limit after Build fixed what it asked for. */
+  reviewLimit: "item_1a2b3c4d-0013-4a1b-8c1d-000000000013",
 } as const;
 
 const agents = {
@@ -434,6 +439,51 @@ export function sampleItems(now: number) {
     },
     {
       ...base,
+      id: ITEM_IDS.reviewLimit,
+      kind: "task",
+      templateId: templates.planAndBuild.id,
+      title: "Keep the start card still while it fades",
+      text: "The start card jumps while it fades out in checkout-web. Keep its layout still.",
+      repoIds: ["checkout-web"],
+      privacy: "local_and_cloud",
+      state: "needs_you",
+      createdAt: ago(now, 18),
+      cardLine: "The step failed. Retry it, or end the item?",
+      decision: {
+        id: LIMIT_DECISION_ID,
+        kind: "after_failure",
+        stepIndex: 3,
+        question: "The step failed. Retry it, or end the item?",
+        why: "Step Review reached its limit of 1 attempts.",
+        stopped: {
+          limit: true,
+          then: { kind: "later", stepIndex: 1, attempt: 2, result: "passed", checks: { passed: 2, total: 2 } },
+          why: "Review may run once per round, so it has not checked the fix.",
+        },
+        choices: [
+          { id: "one_more_attempt", label: "Run Review again" },
+          { id: "no_action_needed", label: "End: no action needed" },
+          { id: "stop", label: "Stop" },
+        ],
+      },
+      steps: steps(templates.planAndBuild, ["passed", "passed", "passed", "needs_you"], { 0: "plan approved", 1: "passed on attempt 2", 2: "passed on attempt 2", 3: "waits for you" }).map((step, index) => {
+        const attempts = [
+          [{ attempt: 1, result: "passed", checks: [] }],
+          [
+            { attempt: 1, result: "passed", checks: [] },
+            { attempt: 2, result: "passed", checks: [] },
+          ],
+          [
+            { attempt: 1, result: "passed", checks: [{ command: "npm test", passed: true, exitCode: 0 }] },
+            { attempt: 2, result: "passed", checks: [{ command: "npm test", passed: true, exitCode: 0 }] },
+          ],
+          [{ attempt: 1, result: "failed", detail: "The reviewer asked for changes.", checks: [] }],
+        ][index];
+        return { ...step, attempts, ...(index === 3 && { runs: 1, maxAttempts: 1 }) };
+      }),
+    },
+    {
+      ...base,
       id: ITEM_IDS.flaky,
       kind: "task",
       templateId: templates.quickFix.id,
@@ -498,6 +548,25 @@ export const sampleOutputs: Readonly<Record<string, Readonly<Record<number, read
         "",
         "- `src/cart/total.ts` reads `line.price ?? 0`.",
         "- `src/cart/total.test.ts` adds a case for a line with no price.",
+      ].join("\n"),
+    ],
+  },
+  [ITEM_IDS.reviewLimit]: {
+    3: [
+      [
+        "**Needs changes.** The change follows the plan, but one visual bug needs fixing first.",
+        "",
+        "**Must change**",
+        "",
+        "1. **`src/start-card.css:31`: the start card changes layout while it fades out.** The `[hidden]` rule sets `display: block`, which beats the card's `display: flex`, so its two lines jump onto one while it fades. Fix: keep `display: flex` in the hidden rule.",
+        "",
+        "**Checked and fine**",
+        "- The fade still takes 250 ms (`src/start-card.css:12`).",
+        "",
+        "**Minor (optional)**",
+        "- `src/start-card.ts:40`: the timer is not cleared when the card is removed.",
+        "",
+        "VERDICT: changes",
       ].join("\n"),
     ],
   },

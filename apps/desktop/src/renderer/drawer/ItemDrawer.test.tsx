@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BridgeEvent, ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { App } from "../App.js";
-import { approved, committed, DECISION_ID, finishable, needsYou, setup, task } from "../testing/drawer.js";
+import { approved, committed, DECISION_ID, finishable, needsYou, setup, stoppedReview, task } from "../testing/drawer.js";
 import { ItemDrawer } from "./ItemDrawer.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -1358,5 +1358,77 @@ describe("ItemDrawer full view", () => {
     await click(button("Stop"));
     await click(button("Stop item"));
     expect(command).toHaveBeenCalledWith({ type: "stop_item", itemId: plan.id });
+  });
+});
+
+describe("the card of a step that stopped", () => {
+  const REVIEW = ["**Must change**", "1. **`src/start-card.css:31`: the card <b>shifts</b> while it fades.** Long reason.", "2. `src/a.ts:2` two", "3. three", "4. four", "", "VERDICT: changes"].join("\n");
+  const summary = { kind: "verdict", verdict: "changes", mustFix: [{ ref: "src/start-card.css:31", text: "the card <b>shifts</b> while it fades" }, { ref: "src/a.ts:2", text: "two" }, { text: "three" }], more: 1, lines: [] };
+  const withOutput = (reply: Reply, item: ItemRecord = stoppedReview) => {
+    const fake = fakeBridge([item]);
+    const base = fake.query.getMockImplementation()!;
+    fake.query.mockImplementation(async (q: { type: string; itemId?: string }) => (q.type === "step_output" ? reply : base(q)));
+    return fake;
+  };
+  const facts = () => $$(".stopped-fact").map((fact) => [fact.querySelector("dt")?.textContent, fact.querySelector("dd")?.textContent]);
+  const tab = (name: string) => $$('[role="tab"]').find((el) => el.textContent === name);
+
+  it("says what the reviewer said, what ran after and why it stopped, as text, with the step on its button", async () => {
+    const { bridge, query } = withOutput({ ok: true, data: { attempt: 1, text: REVIEW, truncated: false, summary } });
+    await renderDrawer(bridge, stoppedReview.id);
+    expect(query.mock.calls.filter(([q]) => (q as { type: string }).type === "step_output").map(([q]) => q)).toContainEqual({ type: "step_output", itemId: stoppedReview.id, stepIndex: 3, attempt: 1 });
+    expect(text(".stopped-title")).toBe("⏸Review stopped at its limit");
+    expect(facts()).toEqual([
+      ["Reviewer said", "Asked for changes · 4 must fixsrc/start-card.css:31the card <b>shifts</b> while it fadessrc/a.ts:2twothree1 more in Reviewer’s notes"],
+      ["Then", "✓Build fixed them in attempt 2 (checks passed)."],
+      ["Why it stopped", "Review may run once per round, so it has not checked the fix."],
+    ]);
+    expect($(".stopped b")).toBeNull();
+    expect($$(".stopped-ref").map((el) => el.textContent)).toEqual(["src/start-card.css:31", "src/a.ts:2"]);
+    expect($$(".stopped .choice").map((el) => [el.textContent, el.className])).toEqual([
+      ["Run Review again", "choice primary"],
+      ["End: no action needed", "choice"],
+      ["Stop", "choice danger"],
+    ]);
+    expect($(".needs-you-kind")).toBeNull();
+  });
+
+  it("See Reviewer’s notes opens the Output tab; the stopped step's output starts unfolded in Steps", async () => {
+    const { bridge } = withOutput({ ok: true, data: { attempt: 1, text: REVIEW, truncated: false, summary } });
+    await renderDrawer(bridge, stoppedReview.id);
+    const unfolded = $$(".step").map((li) => li.querySelector("details")?.open ?? null);
+    expect(unfolded).toEqual([false, false, null, true]);
+    await click(button("See Reviewer’s notes →"));
+    expect(tab("Output")?.getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("answers with the choice", async () => {
+    const { bridge, command } = withOutput({ ok: true, data: { attempt: 1, text: REVIEW, truncated: false, summary } });
+    await renderDrawer(bridge, stoppedReview.id);
+    await click(button("Run Review again"));
+    expect(command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: stoppedReview.id, decisionId: stoppedReview.decision!.id, choice: "one_more_attempt" });
+  });
+
+  it("an empty output says so, and the link opens the Log", async () => {
+    const failed = { ...stoppedReview, decision: { ...stoppedReview.decision!, kind: "run_failure", stopped: { limit: false, then: { kind: "none" }, why: "The agent call timed out after 20 min." } } } as ItemRecord;
+    const { bridge } = withOutput({ ok: true, data: { attempt: 1, text: "", truncated: false, summary: { kind: "empty" } } }, failed);
+    await renderDrawer(bridge, failed.id);
+    expect(text(".stopped-title")).toBe("⏸Review failed");
+    expect(facts()).toEqual([
+      ["Reviewer said", "Nothing. The call ended before Reviewer wrote any output."],
+      ["Then", "–Nothing ran after it."],
+      ["Why it stopped", "The agent call timed out after 20 min."],
+    ]);
+    await click(button("See the log →"));
+    expect(tab("Log")?.getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("an output in an unknown format shows its first lines as written", async () => {
+    const lines = ["Looks mostly fine. Two things:", "1) the fade timing feels off", "2) <img src=x onerror=alert(1)>"];
+    const { bridge } = withOutput({ ok: true, data: { attempt: 1, text: lines.join("\n"), truncated: false, summary: { kind: "lines", format: "no_verdict", lines } } });
+    await renderDrawer(bridge, stoppedReview.id);
+    expect($$(".stopped-lines > div").map((el) => el.textContent)).toEqual(lines);
+    expect(text(".stopped-lines + .stopped-note")).toBe("First lines, as written. Tokama found no verdict in this output.");
+    expect($(".stopped img")).toBeNull();
   });
 });
