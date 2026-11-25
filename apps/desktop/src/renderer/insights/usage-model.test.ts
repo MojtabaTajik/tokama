@@ -1,17 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { NOW, setup } from "../testing/sample.js";
-import { usageReport } from "../testing/usage.js";
+import { allReport, usageReport } from "../testing/usage.js";
 import {
   ageText,
+  cardLabel,
   chartModel,
   cliAlert,
   formatClock,
   formatCost,
   formatDuration,
   formatTokens,
+  formatUsd,
+  countdown,
   niceMax,
   railBadge,
   resetText,
+  resetWhen,
+  scanText,
   share,
   tickLabel,
   shareText,
@@ -20,6 +25,7 @@ import {
   levelOf,
   LEVEL_TONE,
   LEVEL_WORD,
+  tokamaTotals,
   workflowName,
 } from "./usage-model.js";
 
@@ -120,5 +126,55 @@ describe("chartModel", () => {
   it("rounds the axis top up to 1, 2, 2.5 or 5 times a power of ten, and labels ticks per measure", () => {
     expect([niceMax(0), niceMax(3), niceMax(180), niceMax(2_400), niceMax(4_800), niceMax(9_100)]).toEqual([1, 5, 200, 2_500, 5_000, 10_000]);
     expect([tickLabel(0, "tokens"), tickLabel(250_000, "tokens"), tickLabel(2.5, "cost"), tickLabel(5, "cost")]).toEqual(["0", "250k", "$2.50", "$5"]);
+  });
+});
+
+describe("Usage v2 words and numbers", () => {
+  const MIN = 60_000;
+
+  it("writes billions, and picks the unit after rounding so no value reads 1000k or 1000M", () => {
+    expect([999_499, 999_950, 9_999_999, 99_950_000, 420_000_000, 999_999_500, 2_339_500_000, 99_960_000_000].map(formatTokens)).toEqual([
+      "999k",
+      "1.00M",
+      "10.0M",
+      "100M",
+      "420M",
+      "1.00B",
+      "2.34B",
+      "100B",
+    ]);
+  });
+
+  it("writes a table cost without the estimate sign, and unknown without a price", () => {
+    expect([formatUsd(3.1), formatUsd(1755), formatUsd(null)]).toEqual(["$3.10", "$1,755", "unknown"]);
+  });
+
+  it("names each limit as its card shows it", () => {
+    expect(
+      [{ window: "five_hour" }, { window: "session" }, { window: "seven_day" }, { window: "weekly_all" }, { window: "weekly_scoped", scope: "Fable" }, { window: "weekly_scoped" }, { window: "odd_one" }].map(cardLabel),
+    ).toEqual(["Session · 5 hours", "Session · 5 hours", "Weekly", "Weekly · all models", "Weekly · Fable", "Weekly · scoped", "odd one"]);
+  });
+
+  it("counts down to a reset in minutes, hours or days, and says when it is", () => {
+    expect([countdown(-5 * MIN), countdown(38 * MIN), countdown(161 * MIN), countdown((42 * 60 + 5) * MIN)]).toEqual(["0m", "38m", "2h 41m", "1d 18h"]);
+    const now = new Date(2025, 9, 20, 15, 0).getTime();
+    expect(resetWhen(new Date(2025, 9, 20, 17, 10).getTime(), now)).toBe("at 17:10");
+    expect(resetWhen(new Date(2025, 9, 23, 9, 0).getTime(), now)).toBe("Thu 09:00");
+    expect(resetWhen(new Date(2025, 9, 29, 9, 0).getTime(), now)).toBe("Wed 29 Oct 09:00");
+  });
+
+  it("totals Tokama's own calls in either scope", () => {
+    expect(tokamaTotals(usageReport)).toEqual({ tokens: 896_000, costUsd: 12.1, unpricedCalls: 2 });
+    expect(tokamaTotals(allReport)).toEqual({ tokens: 896_000, costUsd: 12.1, unpricedCalls: 0 });
+    expect(tokamaTotals({ ...allReport, workflows: allReport.workflows.map((w) => ({ ...w, costUsd: null })) })).toMatchObject({ costUsd: null });
+  });
+
+  it("shows the first log scan's progress and why the logs cannot be read, and nothing else", () => {
+    expect(scanText(undefined)).toBeUndefined();
+    expect(scanText({ state: "ready", filesDone: 9, filesTotal: 9 })).toBeUndefined();
+    expect(scanText({ state: "scanning", filesDone: 3, filesTotal: 9 })).toBe("Reading Claude Code logs… 3 of 9 files");
+    expect(scanText({ state: "scanning", filesDone: 3, filesTotal: 9, asOf: 1 })).toBeUndefined();
+    expect(scanText({ state: "unavailable", filesDone: 0, filesTotal: 0, note: "No logs folder." })).toBe("No logs folder.");
+    expect(scanText({ state: "unavailable", filesDone: 0, filesTotal: 0 })).toBe("Claude Code's logs could not be read.");
   });
 });

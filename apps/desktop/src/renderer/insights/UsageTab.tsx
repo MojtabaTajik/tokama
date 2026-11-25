@@ -28,6 +28,7 @@ const TEXT = {
     all: "Everything Claude Code did on this Mac, read from its local logs in ~/.claude, including sessions you ran yourself. Read-only; nothing leaves this machine.",
   },
   loading: "Loading usage",
+  failed: (error: string) => `Could not load usage: ${error}`,
   range: "Range",
   days: (n: number) => `${n} days`,
   metric: "Measure",
@@ -49,6 +50,8 @@ const TEXT = {
 
 export interface UsageTabProps {
   readonly report: UsageReport;
+  /** Why the last load failed: after a switch, the new scope's numbers did not come. */
+  readonly error: string | undefined;
   readonly range: UsageRange;
   readonly onRange: (range: UsageRange) => void;
   readonly scope: UsageScope;
@@ -61,12 +64,13 @@ export interface UsageTabProps {
   readonly onSelectItem: (itemId: string) => void;
 }
 
-export function UsageTab({ report, range, onRange, scope, onScope, onRefresh, setup, items, issues, now, onSelectItem }: UsageTabProps) {
+export function UsageTab({ report, error, range, onRange, scope, onScope, onRefresh, setup, items, issues, now, onSelectItem }: UsageTabProps) {
   const [metric, setMetric] = useState<Metric>("tokens");
   const [filter, setFilter] = useState<string | undefined>(undefined);
   // After a switch the last report stays until the new one comes: its scoped numbers are not shown under the new label.
   const current = (report.scope ?? "tokama") === scope;
   const scan = current && scope === "all" ? scanText(report.scan) : undefined;
+  const waiting = error === undefined ? TEXT.loading : TEXT.failed(error);
   return (
     <>
       <div className="ins-scope-row">
@@ -92,7 +96,7 @@ export function UsageTab({ report, range, onRange, scope, onScope, onRefresh, se
         </div>
       </div>
       <AccountCards report={report} setup={setup} issues={issues} now={now} onRefresh={onRefresh} />
-      {current ? <CostSummary report={report} /> : <p className="placeholder ins-section">{TEXT.loading}</p>}
+      {current ? <CostSummary report={report} /> : <p className="placeholder ins-section">{waiting}</p>}
       <section className="ins-section" aria-labelledby="ins-chart-title">
         <header className="ins-section-head">
           <h2 id="ins-chart-title" className="ins-h2">
@@ -122,7 +126,7 @@ export function UsageTab({ report, range, onRange, scope, onScope, onRefresh, se
         <UsageChart report={report} setup={setup} metric={metric} filter={filter} onFilter={setFilter} />
         <p className="muted ins-hint">{TEXT.hint}</p>
       </section>
-      {current ? <UsageTables report={report} /> : <p className="placeholder ins-section">{TEXT.loading}</p>}
+      {current ? <UsageTables report={report} /> : <p className="placeholder ins-section">{waiting}</p>}
       <TopItems
         report={report}
         setup={setup}

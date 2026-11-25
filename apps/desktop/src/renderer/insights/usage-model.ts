@@ -113,12 +113,22 @@ export const ageText = (asOf: number, now: number): string | undefined => (now -
 /** Every token of a call or item, cached ones included. */
 export const totalOf = (tokens: TokenUsage): number => tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite;
 
-/** "1.2k", "163k", "2.41M", "2.34B". */
+const TOKEN_UNITS = [
+  ["k", 1e3],
+  ["M", 1e6],
+  ["B", 1e9],
+] as const;
+// Decimals by size: "9.9k" and "163k"; "2.41M", "38.6M" and "420M"; the same for B.
+const tokenDecimals = (value: number, unit: string): number => (value >= 100 ? 0 : value >= 10 ? (unit === "k" ? 0 : 1) : unit === "k" ? 1 : 2);
+
+/** "1.2k", "163k", "2.41M", "2.34B". The unit is chosen after rounding, so 999,950 is "1.00M", never "1000k". */
 export function formatTokens(n: number): string {
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(n >= 100_000_000_000 ? 0 : n >= 10_000_000_000 ? 1 : 2)}B`;
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 100_000_000 ? 0 : n >= 10_000_000 ? 1 : 2)}M`;
-  if (n >= 10_000) return `${Math.round(n / 1000)}k`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  if (n < 1000) return String(n);
+  for (const [index, [unit, size]] of TOKEN_UNITS.entries()) {
+    const value = n / size;
+    const rounded = Number(value.toFixed(tokenDecimals(value, unit)));
+    if (rounded < 1000 || index === TOKEN_UNITS.length - 1) return `${rounded.toFixed(tokenDecimals(rounded, unit))}${unit}`;
+  }
   return String(n);
 }
 
@@ -184,9 +194,10 @@ export function tokamaTotals(report: UsageReport): { readonly tokens: number; re
   };
 }
 
-/** Where reading Claude Code's logs is: progress while it runs, the reason when it cannot, nothing when done. */
+/** Where reading Claude Code's logs is: progress while the first read runs, the reason when it cannot, else nothing. */
 export function scanText(scan: LogScan | undefined): string | undefined {
-  if (scan === undefined || scan.state === "ready") return undefined;
+  // Later scans add a few files in moments; only the first one, with nothing read yet, shows progress.
+  if (scan === undefined || scan.state === "ready" || (scan.state === "scanning" && scan.asOf !== undefined)) return undefined;
   if (scan.state === "scanning") return `Reading Claude Code logs… ${scan.filesDone} of ${scan.filesTotal} files`;
   return scan.note ?? "Claude Code's logs could not be read.";
 }

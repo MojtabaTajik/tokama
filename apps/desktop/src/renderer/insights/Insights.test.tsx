@@ -69,8 +69,10 @@ describe("Insights: accounts and limits", () => {
       ["Session · 5 hours", "36"],
       ["Weekly", "58"],
     ]);
-    expect(lines(claude)).toEqual(["↻ 2h 10m · at 17:10", "↻ 2d 18h · Thu 09:00"]);
-    expect(claude?.querySelector(".ins-countdown")?.getAttribute("aria-label")).toBe("resets in 2h 10m");
+    expect(lines(claude)).toEqual(["↻resets in 2h 10m · at 17:10", "↻resets in 2d 18h · Thu 09:00"]);
+    // The symbol is hidden from screen readers, which hear the words instead.
+    expect(claude?.querySelector('.ins-countdown [aria-hidden="true"]')?.textContent).toBe("↻");
+    expect(claude?.querySelector(".ins-countdown .visually-hidden")?.textContent).toBe("resets in");
     expect(claude?.querySelector(".ins-source")?.textContent).toBe("Source: asked of the CLI itself. Tokama never reads its login.");
     // Under 60%: a green fill and no word. Near the limit: a word and a symbol beside the red fill, and the data's age.
     expect([...(claude?.querySelectorAll(".meter-fill") ?? [])].map((fill) => fill.getAttribute("data-tone"))).toEqual(["pass", "pass"]);
@@ -82,7 +84,7 @@ describe("Insights: accounts and limits", () => {
     expect(codex?.querySelector('.ins-tone[data-tone="fail"]')?.textContent).toBe("! near limit");
     expect(codex?.querySelector('.meter-fill[data-tone="fail"]')).not.toBeNull();
     expect(codex?.querySelector('[role="meter"]')?.getAttribute("aria-valuetext")).toBe("84%, near limit");
-    expect(lines(codex)).toEqual(["↻ 4d 15h · Sat 06:00 · data 34 min old"]);
+    expect(lines(codex)).toEqual(["↻resets in 4d 15h · Sat 06:00 · data 34 min old"]);
     const ollama = card("Ollama");
     expect(ollama?.querySelector(".ins-badge")?.textContent).toBe("LOCAL");
     expect(ollama?.querySelector(".ins-card-sub")?.textContent).toBe("local");
@@ -105,7 +107,7 @@ describe("Insights: accounts and limits", () => {
       ["Weekly · all models", "41"],
       ["Weekly · Fable", "0"],
     ]);
-    expect(lines(claude)[2]).toBe("↻ 2d 18h · Thu 09:00 · 50% share of the weekly limit");
+    expect(lines(claude)[2]).toBe("↻resets in 2d 18h · Thu 09:00 · 50% share of the weekly limit");
   });
 
   it("colours a high limit amber with the word high, and one at its limit red with ✕ at limit, by the shown number", () => {
@@ -166,6 +168,9 @@ describe("Insights: whose usage", () => {
   it("shows the log scan's progress while it runs, and why the logs cannot be read", () => {
     render({ scope: "all" }, { ...allReport, scan: { state: "scanning", filesDone: 120, filesTotal: 684 } } as UsageReport);
     expect($('.ins-scan[role="status"]')?.textContent).toBe("Reading Claude Code logs… 120 of 684 files");
+    // A later scan only adds what changed since: it shows nothing.
+    render({ scope: "all" }, { ...allReport, scan: { state: "scanning", filesDone: 684, filesTotal: 684, asOf: NOW } } as UsageReport);
+    expect($(".ins-scan")).toBeNull();
     render({ scope: "all" }, { ...allReport, scan: { state: "unavailable", filesDone: 0, filesTotal: 0, note: "Claude Code's logs folder was not found." } } as UsageReport);
     expect(text(".ins-scan")).toBe("Claude Code's logs folder was not found.");
   });
@@ -178,6 +183,9 @@ describe("Insights: whose usage", () => {
     // The limits and the chart do not depend on the scope: they stay.
     expect($$(".ins-card")).toHaveLength(3);
     expect($$(".ins-col")).toHaveLength(14);
+    // When the new scope's load failed, it says why instead of loading for ever.
+    render({ scope: "all", usage: { report: usageReport, error: "the index could not be read", refresh: () => undefined } });
+    expect($$(".placeholder").map((el) => el.textContent)).toEqual(["Could not load usage: the index could not be read", "Could not load usage: the index could not be read"]);
   });
 });
 

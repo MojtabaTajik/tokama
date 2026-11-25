@@ -64,6 +64,7 @@ export function Insights({ bridge, connection, onRetryConnection, usage, range, 
           ) : (
             <UsageTab
               report={report}
+              error={usage.error}
               range={range}
               onRange={onRange}
               scope={scope}

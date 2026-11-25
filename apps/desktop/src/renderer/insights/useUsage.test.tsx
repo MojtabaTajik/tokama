@@ -22,8 +22,7 @@ const REFRESH_MS = 20;
 const wait = (ms: number) => act(async () => new Promise((resolve) => setTimeout(resolve, ms)));
 let view: UsageView | undefined;
 function Probe({ bridge, live, scope }: { readonly bridge: TokamaBridge; readonly live: boolean; readonly scope: UsageScope }) {
-  // A long minute poll, so only the scan poll can tick in the scan test.
-  view = useUsage(bridge, CONNECTED, 14, scope, live, scope === "all" ? 60_000 : REFRESH_MS, REFRESH_MS);
+  view = useUsage(bridge, CONNECTED, 14, scope, live, REFRESH_MS);
   return null;
 }
 
@@ -68,15 +67,12 @@ describe("useUsage", () => {
     expect(view?.report?.scope).toBe("all");
   });
 
-  it("loads every second while the logs are read, and stops when the scan is done", async () => {
-    let scans = 2;
-    const { usageQueries, render } = setup(() => (scans-- > 0 ? ({ ...allReport, scan: { state: "scanning", filesDone: 1, filesTotal: 9 } } as UsageReport) : allReport));
-    await render(true, "all");
-    for (let tick = 0; tick < 3; tick++) await wait(REFRESH_MS * 1.5);
-    const done = usageQueries();
-    expect(done).toBeGreaterThanOrEqual(3);
+  it("loads again on each usage_changed the engine sends while it reads the logs", async () => {
+    let scans = 1;
+    const { fake, render } = setup(() => (scans-- > 0 ? ({ ...allReport, scan: { state: "scanning", filesDone: 1, filesTotal: 9 } } as UsageReport) : allReport));
+    await render(false, "all");
+    expect(view?.report?.scan?.state).toBe("scanning");
+    await fake.pushEvent({ type: "usage_changed" });
     expect(view?.report?.scan?.state).toBe("ready");
-    await wait(REFRESH_MS * 4);
-    expect(usageQueries()).toBe(done);
   });
 });

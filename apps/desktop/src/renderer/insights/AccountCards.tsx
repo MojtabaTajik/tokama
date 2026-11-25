@@ -101,8 +101,9 @@ function AccountCard({ name, plan, setup, issue, now }: AccountCardProps) {
               TEXT.resetUnknown
             ) : (
               <>
-                <span className="mono ins-countdown" aria-label={`resets in ${countdown(w.resetsAt - now)}`}>
-                  ↻ {countdown(w.resetsAt - now)}
+                <span className="mono ins-countdown">
+                  <span aria-hidden="true">↻</span>
+                  <span className="visually-hidden">resets in</span> {countdown(w.resetsAt - now)}
                 </span>
                 {` · ${resetWhen(w.resetsAt, now)}`}
               </>
