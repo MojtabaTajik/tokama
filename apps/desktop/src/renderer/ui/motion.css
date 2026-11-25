@@ -5,6 +5,8 @@
  * Loaded after every screen's stylesheet, so the reduced-motion fallbacks win.
  */
 :root {
+  /* A short wait, so a pointer passing over something does not make it flash. */
+  --motion-fast: 150ms;
   /* Breathing: a mark of something working now. JS that aligns marks to one clock uses 2 s too. */
   --motion-breathe: 2s;
   --motion-breathe-ease: ease-in-out;

@@ -8,7 +8,7 @@
   display: flex;
   min-width: 0;
   max-width: 100%;
-  margin-left: -6px;
+  margin-left: calc(-1 * var(--space-6));
   overflow: hidden;
 }
 
@@ -19,16 +19,16 @@
   flex-wrap: wrap;
   align-content: flex-start;
   align-items: center;
-  gap: 0 6px;
+  gap: 0 var(--space-6);
   min-width: 0;
   max-width: 100%;
   height: 24px;
   overflow: hidden;
-  padding: 0 6px;
+  padding: 0 var(--space-6);
   border: 0;
-  border-radius: 5px;
+  border-radius: 5px; /* px: off-scale */
   background: transparent;
-  font-size: 12px;
+  font-size: var(--text-md);
   color: inherit;
   cursor: default;
   text-decoration: underline dotted var(--muted);
@@ -41,7 +41,7 @@
 }
 
 .al-button:focus-visible {
-  outline: 1px solid var(--link);
+  outline: var(--focus-ring);
   outline-offset: -1px;
 }
 
@@ -50,7 +50,7 @@
   display: flex;
   flex: 0 1 auto;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-6);
   min-width: 0;
   line-height: 24px;
 }
@@ -60,7 +60,7 @@
   line-height: 24px;
   white-space: nowrap;
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--text-sm);
   color: var(--muted);
 }
 
@@ -80,16 +80,16 @@
   overflow: visible;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-10);
   box-sizing: border-box;
   width: 340px;
   max-width: calc(100vw - 16px);
-  padding: 12px 14px;
+  padding: var(--space-12) var(--space-14);
   border: 1px solid var(--hairline);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--panel);
-  box-shadow: 0 10px 30px var(--float-shadow);
-  font-size: 12.5px;
+  box-shadow: var(--shadow-popup);
+  font-size: var(--text-base);
   color: var(--text-2);
   text-align: left;
   white-space: normal;
@@ -109,7 +109,7 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-8);
 }
 
 .al-name {
@@ -120,26 +120,26 @@
 .al-owner {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 5px; /* px: off-scale */
   min-height: 20px;
   margin-left: auto;
-  padding: 0 7px;
+  padding: 0 7px; /* px: off-scale */
   border: 1px solid var(--hairline);
-  border-radius: 10px;
-  font-size: 11.5px;
+  border-radius: var(--radius-lg);
+  font-size: var(--text-sm);
   color: var(--muted);
   white-space: nowrap;
 }
 
 .al-owner .mono {
-  font-size: 11.5px;
+  font-size: var(--text-sm);
   color: var(--text-2);
 }
 
 .al-run {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-8);
 }
 
 .al-cli {
@@ -148,7 +148,7 @@
   justify-content: center;
   width: 22px;
   height: 20px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--raised);
   font-family: var(--font-mono);
   font-size: 10.5px;
@@ -164,15 +164,15 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 7px;
-  padding-top: 10px;
+  gap: var(--space-4) 7px; /* px: off-scale */
+  padding-top: var(--space-10);
   border-top: 1px solid var(--hairline);
-  font-size: 12px;
+  font-size: var(--text-md);
 }
 
 .al-may-label {
-  margin-right: 2px;
-  font-size: 11px;
+  margin-right: var(--space-2);
+  font-size: var(--text-xs);
   letter-spacing: 0.7px;
   text-transform: uppercase;
   color: var(--muted);
@@ -181,7 +181,7 @@
 .al-can {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 5px; /* px: off-scale */
   color: var(--muted);
 }
 
@@ -209,7 +209,7 @@
 
 .al-foot {
   display: flex;
-  padding-top: 10px;
+  padding-top: var(--space-10);
   border-top: 1px solid var(--hairline);
 }
 
@@ -217,7 +217,7 @@
   padding: 0;
   border: 0;
   background: transparent;
-  font-size: 12.5px;
+  font-size: var(--text-base);
   color: var(--link);
   cursor: pointer;
 }

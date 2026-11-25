@@ -2,7 +2,7 @@
 .state {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-10);
   max-width: 460px;
   margin: 8vh auto 0;
 }
@@ -26,10 +26,10 @@
 
 .state-code {
   margin: 0;
-  padding: 10px 12px;
+  padding: var(--space-10) var(--space-12);
   background: var(--input);
   border: 1px solid var(--hairline);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text-2);
   overflow-x: auto;
 }
@@ -37,7 +37,7 @@
 .state-fields {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: 4px 14px;
+  gap: var(--space-4) var(--space-14);
   margin: 0;
   color: var(--muted);
 }
@@ -55,12 +55,12 @@
 }
 
 .failure .hint {
-  margin-top: 12px;
+  margin-top: var(--space-12);
   color: var(--muted);
 }
 
 .failure .older-log {
-  margin-top: 8px;
+  margin-top: var(--space-8);
 }
 
 .inline-action {
@@ -80,10 +80,10 @@
 
 .sb-empty {
   margin: 0;
-  padding: 0 10px;
+  padding: 0 var(--space-10);
   color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: var(--text-md);
+  line-height: var(--leading-body);
 }
 
 /* Rail: the Attention popup, fixed and anchored to its button like the Insights tooltip. */
@@ -97,18 +97,18 @@
   position-anchor: --attention;
   bottom: anchor(bottom);
   left: anchor(right);
-  margin: 0 0 -6px 10px;
+  margin: 0 0 calc(-1 * var(--space-6)) var(--space-10);
   z-index: 9;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-10);
   width: 300px;
   box-sizing: border-box;
-  padding: 12px;
+  padding: var(--space-12);
   border: 1px solid var(--hairline);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--raised);
-  font-size: 12px;
+  font-size: var(--text-md);
   color: var(--text-2);
 }
 
@@ -124,7 +124,7 @@
 .attention-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-12);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -133,7 +133,7 @@
 .attention-item {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-4);
 }
 
 .attention-kind {
@@ -152,8 +152,8 @@
 .attention-login {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-top: 4px;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
 }
 
 .attention-howto {
@@ -166,10 +166,10 @@
 
 .attention-command {
   align-self: flex-start;
-  padding: 4px 8px;
+  padding: var(--space-4) var(--space-8);
   background: var(--input);
   border: 1px solid var(--hairline);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text);
   user-select: all;
 }
@@ -190,6 +190,6 @@ button.rail-user {
 }
 
 .rail-user:focus-visible {
-  outline: 1px solid var(--link);
-  outline-offset: 1px;
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
 }

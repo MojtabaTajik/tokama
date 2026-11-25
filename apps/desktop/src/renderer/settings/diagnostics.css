@@ -10,13 +10,13 @@
 .dg-head {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 24px 28px 14px;
+  gap: var(--space-4);
+  padding: var(--space-24) var(--space-28) var(--space-14);
 }
 
 .dg-title {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--text-title);
   font-weight: 600;
   color: var(--text);
 }
@@ -28,47 +28,47 @@
 }
 
 .dg-intro code {
-  font-size: 12px;
+  font-size: var(--text-md);
   color: var(--text);
 }
 
 .dg-cap {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--text-md);
   color: var(--muted);
 }
 
 .dg-state {
-  padding: 0 28px;
+  padding: 0 var(--space-28);
 }
 
 .dg-filters {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 14px;
-  padding: 0 28px 12px;
+  gap: var(--space-10) var(--space-14);
+  padding: 0 var(--space-28) var(--space-12);
 }
 
 .dg-types {
   display: flex;
   border: 1px solid var(--hairline);
-  border-radius: 6px;
+  border-radius: var(--radius);
   overflow: hidden;
 }
 
 .dg-type {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-6);
   min-height: 32px;
-  padding: 0 12px;
+  padding: 0 var(--space-12);
   border: 0;
   border-left: 1px solid var(--hairline);
   background: transparent;
   color: var(--text-2);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--text-base);
   cursor: pointer;
 }
 
@@ -82,31 +82,31 @@
 }
 
 .dg-count {
-  font-size: 11.5px;
+  font-size: var(--text-sm);
   color: var(--muted);
 }
 
 .dg-date {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
+  gap: var(--space-8);
+  font-size: var(--text-base);
   color: var(--text-2);
 }
 
 .dg-date select {
   min-height: 32px;
-  padding: 0 8px;
+  padding: 0 var(--space-8);
   border: 1px solid var(--hairline);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--input);
   color: var(--text);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--text-base);
 }
 
 .dg-note {
-  font-size: 12px;
+  font-size: var(--text-md);
   color: var(--muted);
 }
 
@@ -131,14 +131,14 @@
   display: grid;
   grid-template-columns: 112px 104px minmax(0, 1fr);
   align-items: center;
-  gap: 0 10px;
-  padding: 0 20px 0 18px;
+  gap: 0 var(--space-10);
+  padding: 0 var(--space-20) 0 var(--space-18);
 }
 
 .dg-columns {
   min-height: 34px;
   border-bottom: 1px solid var(--hairline);
-  font-size: 11px;
+  font-size: var(--text-xs);
   letter-spacing: 0.7px;
   text-transform: uppercase;
   color: var(--muted);
@@ -172,7 +172,7 @@
 }
 
 .dg-time {
-  font-size: 12px;
+  font-size: var(--text-md);
   color: var(--text-2);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -181,8 +181,8 @@
 .dg-type-label {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12.5px;
+  gap: var(--space-6);
+  font-size: var(--text-base);
 }
 
 .dg-symbol {
@@ -209,36 +209,36 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 16px 24px 20px;
+  gap: var(--space-10);
+  padding: var(--space-16) var(--space-24) var(--space-20);
 }
 
 .dg-detail-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 12px;
+  gap: var(--space-4) var(--space-12);
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--text-base);
 }
 
 .dg-size {
   margin-left: auto;
-  font-size: 12px;
+  font-size: var(--text-md);
   color: var(--muted);
 }
 
 .dg-detail-title {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--text-xl);
   font-weight: 600;
   color: var(--text);
 }
 
 .dg-exact {
   margin: 0;
-  padding-top: 4px;
-  font-size: 11px;
+  padding-top: var(--space-4);
+  font-size: var(--text-xs);
   font-weight: 400;
   letter-spacing: 0.7px;
   text-transform: uppercase;
@@ -247,12 +247,12 @@
 
 .dg-text {
   margin: 0;
-  padding: 10px 12px;
+  padding: var(--space-10) var(--space-12);
   border: 1px solid var(--hairline);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--input);
   color: var(--text-2);
-  font-size: 11.5px;
+  font-size: var(--text-sm);
   line-height: 1.7;
   white-space: pre;
   overflow-x: auto;
@@ -262,11 +262,11 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  margin: 8px 28px;
-  padding: 44px 24px;
+  gap: var(--space-8);
+  margin: var(--space-8) var(--space-28);
+  padding: var(--space-44) var(--space-24);
   border: 1px solid var(--hairline);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   text-align: center;
 }
 
@@ -276,21 +276,21 @@
   justify-content: center;
   width: 40px;
   height: 40px;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--panel);
   color: var(--text-2);
 }
 
 .dg-empty-title {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--text-lg);
   font-weight: 600;
   color: var(--text);
 }
 
 .dg-empty-text {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--text-base);
   color: var(--text-2);
 }
 
@@ -298,9 +298,9 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 12px;
+  gap: var(--space-10) var(--space-12);
   margin-top: auto;
-  padding: 12px 28px;
+  padding: var(--space-12) var(--space-28);
   border-top: 1px solid var(--hairline);
   background: var(--ground);
 }
@@ -316,9 +316,9 @@ div.dg-bar-end {
 .dg-status {
   flex: 1 1 100%;
   display: flex;
-  gap: 8px;
+  gap: var(--space-8);
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--text-base);
   color: var(--text);
 }
 
@@ -338,14 +338,14 @@ div.dg-bar-end {
   display: inline-flex;
   align-items: center;
   min-height: 40px;
-  padding: 0 16px;
+  padding: 0 var(--space-16);
   box-sizing: border-box;
   border: 1px solid var(--hairline);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-2);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--text-body);
   font-weight: 500;
   cursor: pointer;
 }
@@ -374,22 +374,22 @@ div.dg-bar-end {
 .dg-collect {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  font-size: 12.5px;
+  gap: var(--space-10);
+  font-size: var(--text-base);
   color: var(--text-2);
 }
 
 .dg-switch {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-10);
   min-height: 32px;
   padding: 0;
   border: 0;
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--text-base);
   cursor: pointer;
 }
 
@@ -412,7 +412,7 @@ div.dg-bar-end {
   height: 20px;
   box-sizing: border-box;
   border: 1px solid var(--hairline);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--input);
 }
 
@@ -444,7 +444,7 @@ div.dg-bar-end {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px;
+  padding: var(--space-16);
   background: var(--float-shadow);
 }
 
@@ -456,36 +456,36 @@ div.dg-bar-end {
   display: flex;
   flex-direction: column;
   border: 1px solid var(--hairline);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--panel);
-  box-shadow: 0 10px 30px var(--float-shadow);
+  box-shadow: var(--shadow-popup);
 }
 
 .crash-prompt-body {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 16px 16px 14px;
+  gap: var(--space-6);
+  padding: var(--space-16) var(--space-16) var(--space-14);
 }
 
 .crash-prompt-title {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--text-xl);
   font-weight: 600;
   color: var(--text);
 }
 
 .crash-prompt-text {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--text-base);
   color: var(--text-2);
 }
 
 .crash-prompt-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  padding: 12px 16px;
+  gap: var(--space-8);
+  padding: var(--space-12) var(--space-16);
   border-top: 1px solid var(--hairline);
 }
 
