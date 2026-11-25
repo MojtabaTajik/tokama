@@ -13,6 +13,7 @@ export { replaceTextSync, type WriteFailure, type WriteFailureReason } from "./k
 export { manualClock, systemClock, type Clock, type ManualClock, type TimerHandle } from "./kernel/clock/index.js";
 // Small helpers the apps share with core.
 export { hasCode } from "./kernel/errno/index.js";
+export { parseJsonLine } from "./kernel/json-line/index.js";
 export { CUT_MARK, cutText, displayPath, type CutOptions } from "./kernel/text/index.js";
 export {
   checkEngineDir,

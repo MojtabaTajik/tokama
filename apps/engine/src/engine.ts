@@ -33,6 +33,7 @@ import {
   checkEngineDir,
   displayPath,
   hasCode,
+  parseJsonLine,
   type Clock,
   type CommandErrorCode,
   type ConnectionErrorCode,
@@ -711,7 +712,8 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   };
 
   const handleHello = (socket: Socket, line: string): boolean => {
-    const hello = parseOpeningMessage(parseJson(line));
+    const opening = parseJsonLine(line);
+    const hello = parseOpeningMessage(opening.ok ? opening.value : undefined);
     if (!hello.ok) {
       fail(socket, "bad_message", "the first message must be a hello");
       return false;
@@ -740,7 +742,8 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   };
 
   const handleMessage = (socket: Socket, line: string) => {
-    const json = parseJson(line);
+    const parsedLine = parseJsonLine(line);
+    const json = parsedLine.ok ? parsedLine.value : undefined;
     const parsed = parseClientMessage(json);
     if (!parsed.ok) {
       const requestId = requestIdOf(json);
@@ -1076,14 +1079,6 @@ function listen(socketPath: string): Promise<Server> {
 function sameToken(expected: Buffer, given: string): boolean {
   const candidate = Buffer.from(given);
   return candidate.length === expected.length && timingSafeEqual(candidate, expected);
-}
-
-function parseJson(line: string): unknown {
-  try {
-    return JSON.parse(line);
-  } catch {
-    return undefined;
-  }
 }
 
 function requestIdOf(json: unknown): string | undefined {

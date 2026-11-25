@@ -7,6 +7,7 @@
 import * as nodeFs from "node:fs";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import { parseItemEvent, type ItemEvent } from "../../kernel/schemas/index.js";
+import { parseJsonLine } from "../../kernel/json-line/index.js";
 
 /** The file operations the log uses, so a test can watch their order. */
 export type LogFs = Pick<
@@ -46,13 +47,9 @@ export function readLog(file: string, fs: LogFs = nodeFs): Result<ReadLog, LogEr
   const tail = lines.pop() ?? "";
   const events: ItemEvent[] = [];
   for (const [index, line] of lines.entries()) {
-    let json: unknown;
-    try {
-      json = JSON.parse(line);
-    } catch {
-      return err({ code: "corrupt", message: `${file}: line ${index + 1} is not JSON` });
-    }
-    const event = parseItemEvent(json);
+    const json = parseJsonLine(line);
+    if (!json.ok) return err({ code: "corrupt", message: `${file}: line ${index + 1} is not JSON` });
+    const event = parseItemEvent(json.value);
     if (!event.ok) {
       const issue = event.error.issues[0];
       return err({ code: "corrupt", message: `${file}: line ${index + 1}: ${issue?.path ? `${issue.path}: ` : ""}${issue?.message ?? "invalid event"}` });

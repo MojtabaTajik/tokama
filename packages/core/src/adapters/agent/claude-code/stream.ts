@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { isAbsolute, normalize, relative, sep } from "node:path";
 import { z } from "zod";
 import { sha256Hex } from "../../../kernel/hash/index.js";
+import { parseJsonLine } from "../../../kernel/json-line/index.js";
 import type { AgentCallErrorKind, AgentCallEvent, RateLimitWindow, TokenUsage } from "../../../kernel/schemas/index.js";
 import { scrubPaths } from "../../../kernel/text/index.js";
 
@@ -203,13 +204,9 @@ export function createStreamParser(cwd: string, home: string = homedir()): Strea
 
   const parseLine = (text: string): AgentCallEvent[] => {
     if (!text.startsWith("{")) return [];
-    let json: unknown;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      return [];
-    }
-    const parsed = Line.safeParse(json);
+    const json = parseJsonLine(text);
+    if (!json.ok) return [];
+    const parsed = Line.safeParse(json.value);
     if (!parsed.success) return [];
     const line = parsed.data;
     switch (line.type) {

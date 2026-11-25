@@ -36,6 +36,7 @@ import {
   parseCommandResult,
   isUnknownEvent,
   parseHandshakeReply,
+  parseJsonLine,
   parseQueryResult,
   parseServerMessage,
   spawnDetached,
@@ -348,7 +349,8 @@ class Client implements EngineClient {
   }
 
   private onLine(line: string): void {
-    const json = parseJson(line);
+    const parsedLine = parseJsonLine(line);
+    const json = parsedLine.ok ? parsedLine.value : undefined;
     const message = parseServerMessage(json);
     if (!message.ok) {
       // A connection error ends the connection; the close that follows triggers the reconnect.
@@ -471,7 +473,8 @@ function openSession(endpoint: EngineEndpoint, timeoutMs: number, handlers: Sess
           handlers.onLine(line);
           continue;
         }
-        const reply = parseHandshakeReply(parseJson(line));
+        const json = parseJsonLine(line);
+        const reply = parseHandshakeReply(json.ok ? json.value : undefined);
         if (!reply.ok) return settle(err({ code: "protocol_error", message: "the engine did not answer the hello" }));
         const engine = { apiVersion: reply.value.apiVersion, ...(reply.value.runningItems !== undefined && { runningItems: reply.value.runningItems }) };
         if (reply.value.kind === "connection_error") {
@@ -530,7 +533,8 @@ export function requestShutdown(dir: string, timeoutMs = 2_000): Promise<boolean
       if (!lines.ok) return settle(false);
       const first = lines.value[0];
       if (first === undefined) return;
-      const reply = parseShutdownReply(parseJson(first));
+      const json = parseJsonLine(first);
+      const reply = parseShutdownReply(json.ok ? json.value : undefined);
       settle(reply.ok && reply.value.kind === "shutdown_accepted");
     });
   });
@@ -543,13 +547,5 @@ function handshakeCode(code: string): ConnectErrorCode {
 
 function failure(code: string, message: string): RequestResult {
   return { ok: false, error: { code, message } };
-}
-
-function parseJson(line: string): unknown {
-  try {
-    return JSON.parse(line);
-  } catch {
-    return undefined;
-  }
 }
 

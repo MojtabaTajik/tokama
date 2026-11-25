@@ -10,6 +10,7 @@ import { homedir } from "node:os";
 import { join, posix } from "node:path";
 import { listFiles, listFolders, readLinesFrom } from "../../../kernel/fs-safe/index.js";
 import { sha256Hex } from "../../../kernel/hash/index.js";
+import { parseJsonLine } from "../../../kernel/json-line/index.js";
 import type { TokenUsage } from "../../../kernel/schemas/index.js";
 
 /** One assistant message's usage. */
@@ -121,12 +122,9 @@ const id = (value: unknown): string | undefined => (typeof value === "string" &&
 export function parseLogLine(line: string, project: string): { usage?: LoggedUsage; bad?: true } {
   // Cheap checks first: most lines are user turns, tool output and bookkeeping.
   if (!line.includes('"type":"assistant"') || !line.includes('"usage"')) return {};
-  let value: unknown;
-  try {
-    value = JSON.parse(line);
-  } catch {
-    return { bad: true };
-  }
+  const json = parseJsonLine(line);
+  if (!json.ok) return { bad: true };
+  const value = json.value;
   if (typeof value !== "object" || value === null) return { bad: true };
   const entry = value as { type?: unknown; timestamp?: unknown; requestId?: unknown; message?: unknown };
   if (entry.type !== "assistant") return {};
