@@ -234,7 +234,7 @@ describe("timeOf", () => {
   const started = (minutesAgo: number, state: ItemRecord["state"] = "running") => timeOf({ state, createdAt: NOW - minutesAgo * 60_000 }, NOW);
 
   it("shows how long a live item has run", () => {
-    expect(started(0).text).toBe("0 s");
+    expect(started(0).text).toBe("0 m");
     expect(started(14).text).toBe("14 m");
     expect(started(60).text).toBe("1 h 00 m");
     expect(started(95).text).toBe("1 h 35 m");

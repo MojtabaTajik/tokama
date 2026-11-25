@@ -35,8 +35,10 @@ describe("long and short durations", () => {
     expect(formatDuration(112_000, "fine")).toBe("1 m 52 s");
   });
 
-  it("says how long ago", () => {
+  it("says how long ago, to the minute, as a clock that ticks slower than a second shows it", () => {
+    expect(formatDuration(45_000, "minutes")).toBe("0 m");
+    expect(formatDuration(732_000, "minutes")).toBe("12 m");
     expect(ago(732_000)).toBe("12 m ago");
-    expect(ago(30_000)).toBe("30 s ago");
+    expect(ago(30_000)).toBe("0 m ago");
   });
 });

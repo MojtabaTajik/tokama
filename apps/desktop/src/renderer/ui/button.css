@@ -2,10 +2,14 @@
  * The one button block (ui/Button.tsx). Loaded before the screens' sheets: a screen's class on a
  * button places it (margin, alignment, width) and plain buttons draw themselves there.
  */
-.btn {
-  box-sizing: border-box;
+/* No weight of its own, so .mono and a screen's font or colour still apply. */
+:where(.btn) {
   font: inherit;
   color: inherit;
+}
+
+.btn {
+  box-sizing: border-box;
   cursor: pointer;
 }
 

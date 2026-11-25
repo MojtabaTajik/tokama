@@ -110,7 +110,7 @@ function AccountCard({ name, plan, setup, issue, now }: AccountCardProps) {
               <>
                 <span className="mono ins-countdown">
                   <span aria-hidden="true">↻</span>
-                  <span className="visually-hidden">resets in</span> {formatDuration(w.resetsAt - now, "coarse")}
+                  <span className="visually-hidden">resets in</span> {formatDuration(w.resetsAt - now, "minutes")}
                 </span>
                 {` · ${resetWhen(w.resetsAt, now)}`}
               </>

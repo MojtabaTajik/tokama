@@ -277,7 +277,7 @@ export function timeOf(item: Pick<ItemRecord, "state" | "createdAt" | "durationM
     const total = itemTotal(item);
     return total === undefined ? { text, title } : { text: `${text} · ${total}`, title: `${title} · ${total} of agent and check time` };
   }
-  return { text: formatDuration(now - start, "coarse"), title };
+  return { text: formatDuration(now - start, "minutes"), title };
 }
 
 export interface BoardColumn {

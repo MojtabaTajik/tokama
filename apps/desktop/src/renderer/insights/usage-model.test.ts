@@ -148,7 +148,7 @@ describe("Usage v2 words and numbers", () => {
   });
 
   it("counts down to a reset in minutes, hours or days, and says when it is", () => {
-    expect([-5 * MIN, 38 * MIN, 161 * MIN, (42 * 60 + 5) * MIN].map((ms) => formatDuration(ms, "coarse"))).toEqual(["0 s", "38 m", "2 h 41 m", "1 d 18 h"]);
+    expect([-5 * MIN, 38 * MIN, 161 * MIN, (42 * 60 + 5) * MIN].map((ms) => formatDuration(ms, "minutes"))).toEqual(["0 m", "38 m", "2 h 41 m", "1 d 18 h"]);
     const now = new Date(2025, 9, 20, 15, 0).getTime();
     expect(resetWhen(new Date(2025, 9, 20, 17, 10).getTime(), now)).toBe("at 17:10");
     expect(resetWhen(new Date(2025, 9, 23, 9, 0).getTime(), now)).toBe("Thu 09:00");
