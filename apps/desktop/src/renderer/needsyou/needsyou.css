@@ -1,0 +1,110 @@
+/* The Needs you page. Colours come from theme.css tokens only. */
+.main:focus {
+  outline: none;
+}
+
+.nr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0 0 20px;
+  list-style: none;
+}
+
+.nr-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-left: 2px solid var(--warn);
+  border-radius: 6px;
+  background: var(--panel);
+  cursor: default;
+}
+
+.nr-row[aria-current="true"] {
+  background: var(--raised);
+}
+
+.nr-row p {
+  margin: 0;
+}
+
+.nr-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 12px;
+}
+
+.nr-kind {
+  color: var(--warn);
+}
+
+.nr-workflow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+}
+
+.nr-time {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.nr-title {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.nr-title:hover {
+  text-decoration: underline;
+}
+
+.nr-where {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.nr-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nr-cli,
+.nr-muted {
+  color: var(--muted);
+}
+
+.nr-question {
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.nr-row .drawer-notice[data-tone="warn"] {
+  color: var(--warn);
+}
+
+.nr-row .drawer-notice[data-tone="fail"] {
+  color: var(--fail);
+}

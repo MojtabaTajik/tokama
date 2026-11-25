@@ -42,10 +42,10 @@ type Tab = "Steps" | "Evidence" | "Findings" | "Log" | "Diff" | "Checks";
 const tabsOf = (item: Pick<ItemRecord, "kind">): readonly Tab[] =>
   item.kind === "task" ? ["Steps", "Evidence", "Findings", "Log", "Diff", "Checks"] : ["Steps", "Evidence", "Findings", "Log"];
 
-type Notice = { readonly tone: "warn" | "fail"; readonly text: string };
+export type Notice = { readonly tone: "warn" | "fail"; readonly text: string };
 
 /** What the drawer says when a command fails, by error code. */
-function problem(code: string, message: string): Notice {
+export function problem(code: string, message: string): Notice {
   switch (code as CommandErrorCode | (typeof BRIDGE_ERROR_CODES)[keyof typeof BRIDGE_ERROR_CODES]) {
     case "stale_decision":
       return { tone: "warn", text: TEXT.stale };
@@ -61,7 +61,7 @@ function problem(code: string, message: string): Notice {
 }
 
 /** Codes after which the drawer's copy of the item is out of date. */
-const REFRESH_ON = new Set(["stale_decision", "invalid_state", "not_found"]);
+export const REFRESH_ON = new Set(["stale_decision", "invalid_state", "not_found"]);
 
 export interface ItemDrawerProps {
   readonly bridge: TokamaBridge;
