@@ -199,6 +199,7 @@ export {
 // Template files for the Templates page: the validator, for the engine service's sample
 // templates, and the records the page shows.
 export { validateTemplate, type ValidateContext } from "./slices/templates/index.js";
+export { MAX_TEMPLATE_ENTRIES } from "./kernel/schemas/index.js";
 export type {
   DoneWhen,
   Finish,

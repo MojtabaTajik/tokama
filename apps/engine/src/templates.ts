@@ -1,12 +1,14 @@
 // The templates and template_detail queries: every template file the engine loaded, as list
 // entries, and one file in full. The caller loads the files; this only shapes the replies.
 import { join } from "node:path";
-import type { TemplateDetail, TemplateEntry, TemplateFileKey, TemplateLoad, TemplateView } from "@tokama/core";
+import { MAX_MESSAGE_BYTES, MAX_TEMPLATE_ENTRIES, type TemplateDetail, type TemplateEntry, type TemplateFileKey, type TemplateLoad, type TemplateView } from "@tokama/core";
 
 const MAX_PROBLEMS = 100;
 const MAX_WARNINGS = 50;
 const MAX_MESSAGE = 1000;
 const BUILTIN = "builtin";
+/** Room for the reply's envelope (version, request id, framing) around the detail. */
+const ENVELOPE_BYTES = 4 * 1024;
 
 export interface TemplateFiles {
   /** Every template file, loaded or not. */
@@ -22,7 +24,7 @@ export function keyOf(load: TemplateLoad): TemplateFileKey {
 }
 
 export function templateEntries(files: TemplateFiles): TemplateEntry[] {
-  return files.loads.map((load) => entryOf(load, files));
+  return files.loads.slice(0, MAX_TEMPLATE_ENTRIES).map((load) => entryOf(load, files));
 }
 
 /** The file at `key`, or undefined when the engine found none there. */
@@ -30,14 +32,19 @@ export function templateDetail(files: TemplateFiles, key: TemplateFileKey): Temp
   const load = files.loads.find((candidate) => sameKey(keyOf(candidate), key));
   if (load === undefined) return undefined;
   const entry = entryOf(load, files);
-  return {
+  const detail: TemplateDetail = {
     entry,
     template: load.ok ? viewOf(load.template) : null,
     problems: load.ok ? [] : load.problems.slice(0, MAX_PROBLEMS).map((problem) => ({ line: problem.line, message: cap(problem.message) })),
     warnings: load.ok ? load.warnings.slice(0, MAX_WARNINGS).map(cap) : [],
     text: load.text ?? null,
+    textTooLarge: false,
     path: entry.openable ? fullPath(files, entry) : null,
   };
+  // JSON can make text up to six times longer (control characters), so a file within the read
+  // limit can still overflow a message. The problems matter more than the text: drop the text.
+  if (Buffer.byteLength(JSON.stringify(detail)) + ENVELOPE_BYTES > MAX_MESSAGE_BYTES) return { ...detail, text: null, textTooLarge: true };
+  return detail;
 }
 
 function entryOf(load: TemplateLoad, files: TemplateFiles): TemplateEntry {

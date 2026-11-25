@@ -7,6 +7,8 @@ import { IconNameSchema, TagColorSchema, TemplateRecordSchema, TemplateStepDefSc
 
 /** The longest template file the engine reads, in bytes; a file's text is never longer. */
 export const MAX_TEMPLATE_FILE_BYTES = 256 * 1024;
+/** The most template files one `templates` reply lists. */
+export const MAX_TEMPLATE_ENTRIES = 2000;
 const message = z.string().min(1).max(1000);
 
 /** Where a template file is: `builtin` and the built-in's ref, or a repo id and the repo-relative path. */
@@ -54,8 +56,10 @@ export const TemplateDetailSchema = z.strictObject({
   problems: z.array(TemplateProblemSchema).max(100),
   /** Things the template does that the engineer may not expect. */
   warnings: z.array(message).max(50),
-  /** The file as read; null when it could not be read. */
+  /** The file as read; null when it could not be read or is too large to send. */
   text: z.string().max(MAX_TEMPLATE_FILE_BYTES).nullable(),
+  /** The file was read but left out: with it, the reply would be larger than a message may be. */
+  textTooLarge: z.boolean(),
   /** The file's full path on the engine's machine, when `entry.openable`. */
   path: z.string().min(1).max(4096).nullable(),
 });

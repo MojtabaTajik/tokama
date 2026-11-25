@@ -134,6 +134,15 @@ describe("TemplatesPage", () => {
     expect($$(".tp-row .tp-row-name").map((el) => el.textContent)).toEqual(["flaky-test-fix.yaml"]);
   });
 
+  it("keeps the problems and says so when the file is too large to send", async () => {
+    const big = { ...flakyDetail, text: null, textTooLarge: true };
+    await render(bridgeWith({ entries: [flakyEntry], detail: () => ({ ok: true, data: big }) }));
+    expect($$(".tp-problems li")).toHaveLength(2);
+    expect(button("line 3")).toBeUndefined();
+    expect(button("Show file")).toBeUndefined();
+    expect($(".tp-actions")?.textContent).toContain("The file is too large to show here");
+  });
+
   it("renders engine and file text as text, never as markup", async () => {
     const hostile = { ...flakyDetail, problems: [{ line: 1, message: "<img src=x onerror=alert(1)>" }], text: "<script>alert(1)</script>\n" };
     await render(bridgeWith({ entries: [flakyEntry], detail: () => ({ ok: true, data: hostile }) }));

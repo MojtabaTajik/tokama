@@ -1,4 +1,4 @@
-import { parseQueryResult, type TemplateLoad } from "@tokama/core";
+import { API_VERSION, encodeLine, MAX_TEMPLATE_ENTRIES, parseQueryResult, type TemplateLoad } from "@tokama/core";
 import { describe, expect, it } from "vitest";
 import { sampleTemplateLoads } from "./sample/templates.js";
 import { templateDetail, templateEntries, type TemplateFiles } from "./templates.js";
@@ -66,6 +66,28 @@ describe("templateDetail", () => {
 
   it("finds nothing at an unknown place", async () => {
     expect(templateDetail(await files(), { origin: "orders-api", file: ".tokama/templates/gone.yaml" })).toBeUndefined();
+  });
+
+  it("drops the text, not the problems, when the file would make the reply too large to send", () => {
+    // 200 000 control characters: within the read limit, but over a megabyte as JSON.
+    const text = "\u0001".repeat(200_000);
+    const load: TemplateLoad = { ok: false, origin: "orders-api", file: ".tokama/templates/odd.yaml", problems: [{ line: 1, message: "The file cannot be read as a template." }], text };
+    const detail = templateDetail({ loads: [load], repoPath: () => undefined }, { origin: "orders-api", file: ".tokama/templates/odd.yaml" });
+    expect(detail).toMatchObject({ text: null, textTooLarge: true, problems: [{ line: 1 }] });
+    const reply = encodeLine({ apiVersion: API_VERSION, kind: "reply", requestId: "r".repeat(128), result: { ok: true, data: detail } });
+    expect(reply.ok).toBe(true);
+  });
+
+  it("sends the text of an ordinary file", async () => {
+    const detail = templateDetail(await files(), { origin: "orders-api", file: ".tokama/templates/plan-and-build.yaml" });
+    expect(detail?.textTooLarge).toBe(false);
+  });
+
+  it("lists no more files than a reply may hold", () => {
+    const loads: TemplateLoad[] = Array.from({ length: MAX_TEMPLATE_ENTRIES + 5 }, (_, i) => ({ ok: false, origin: "orders-api", file: `.tokama/templates/t${i}.yaml`, problems: [{ line: 1, message: "x" }] }));
+    const entries = templateEntries({ loads, repoPath: () => undefined });
+    expect(entries).toHaveLength(MAX_TEMPLATE_ENTRIES);
+    expect(parseQueryResult("templates", { templates: entries }).ok).toBe(true);
   });
 
   it("keeps a reply inside the schema's limits", () => {

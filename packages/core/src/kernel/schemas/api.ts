@@ -9,7 +9,7 @@ import { ItemRecordSchema } from "./item.js";
 import { AgentCallUsageSchema } from "./usage.js";
 import { AgentsListSchema } from "./agents.js";
 import { RepoSummarySchema, SetupSchema } from "./setup.js";
-import { TemplateDetailSchema, TemplateEntrySchema, TemplateFileKeySchema } from "./template-files.js";
+import { MAX_TEMPLATE_ENTRIES, TemplateDetailSchema, TemplateEntrySchema, TemplateFileKeySchema } from "./template-files.js";
 
 export const API_VERSION = 3;
 
@@ -108,7 +108,7 @@ export const QueryResultSchemas = {
   suggest_template: z.strictObject({ templateId: TemplateRefSchema.nullable() }),
   suggest_repo: RepoSuggestionSchema,
   agents_list: AgentsListSchema,
-  templates: z.strictObject({ templates: z.array(TemplateEntrySchema).max(2000) }),
+  templates: z.strictObject({ templates: z.array(TemplateEntrySchema).max(MAX_TEMPLATE_ENTRIES) }),
   template_detail: TemplateDetailSchema,
 } as const satisfies Record<z.output<typeof QuerySchema>["type"], z.ZodType>;
 

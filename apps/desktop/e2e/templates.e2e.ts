@@ -10,8 +10,9 @@ import { flow } from "./harness.js";
 
 flow("shows templates with their flow, steps and problems in Settings", async ({ page, screenshot }) => {
   await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Templates" }).click();
   const list = page.getByRole("list", { name: "Template files" });
-  await list.getByRole("button", { name: /Plan and build/ }).waitFor();
+  await list.getByRole("button", { name: /Plan and build.*orders-api/ }).waitFor();
   expect(await page.getByRole("navigation", { name: "Settings" }).locator('[aria-current="page"]').textContent()).toBe("Templates");
   expect(await list.locator(".tp-status").allTextContents()).toEqual(expect.arrayContaining(["✓ valid", "✕ 2 problems"]));
 
@@ -53,12 +54,13 @@ flow(
     });
 
     await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Templates" }).click();
     const list = page.getByRole("list", { name: "Template files" });
     await list.getByRole("button", { name: /docs-fix\.yaml.*✕ \d+ problems?/ }).click();
     const detail = page.locator("main.tp-detail");
     await detail.getByRole("heading", { name: /^✕ \d+ problems?$/ }).waitFor();
     expect(await detail.locator(".tp-problems").textContent()).toContain('"buildr"');
-    await list.getByRole("button", { name: /Quick fix/ }).waitFor();
+    for (const name of [/Quick fix.*✓ valid.*built-in/, /Plan and build.*✓ valid.*built-in/, /Review only.*✓ valid.*built-in/]) await list.getByRole("button", { name }).waitFor();
 
     await detail.getByRole("button", { name: "Open in editor" }).click();
     await expect.poll(() => app.evaluate(() => (globalThis as { opened?: string[] }).opened ?? [])).toEqual([realpathSync(file)]);

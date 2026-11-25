@@ -52,6 +52,7 @@ export const planDetail = {
   problems: [],
   warnings: [],
   text: "format: 1\nname: Plan and build\n",
+  textTooLarge: false,
   path: "/work/orders-api/.tokama/templates/plan-and-build.yaml",
 } as unknown as TemplateDetail;
 
@@ -64,5 +65,6 @@ export const flakyDetail = {
   ],
   warnings: [],
   text: "format: 1\nname: Flaky test fix\n    agent: reviewr\n  - id: x\n      back: buld\n",
+  textTooLarge: false,
   path: null,
 } as unknown as TemplateDetail;

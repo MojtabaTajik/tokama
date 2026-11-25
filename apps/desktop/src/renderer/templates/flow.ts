@@ -108,7 +108,9 @@ export function flowOf(template: Pick<TemplateView, "steps">, agents: readonly {
   ];
   const arrows = nodes.slice(1).map((_, i) => ({ x1: x(i) + nodeWidth, x2: x(i + 1), y: middle }));
 
-  let depth = 0;
+  // Shorter back lines run nearer the row and longer ones below them, so no two lines cross.
+  const bySpan = specs.filter((spec) => spec.kind === "back").sort((a, b) => Math.abs(a.from - a.to) - Math.abs(b.from - b.to));
+  const depthOf = new Map(bySpan.map((spec, depth) => [spec, depth]));
   const loops = specs.map((spec): FlowLoop => {
     const line = { kind: spec.kind, from: spec.from, to: spec.to, label: spec.label };
     if (spec.kind === "self") {
@@ -124,8 +126,7 @@ export function flowOf(template: Pick<TemplateView, "steps">, agents: readonly {
         labelY: 10,
       };
     }
-    const drop = bottom + BACK_ROOM - 10 + depth * BACK_STEP;
-    depth += 1;
+    const drop = bottom + BACK_ROOM - 10 + (depthOf.get(spec) ?? 0) * BACK_STEP;
     const fx = centre(spec.from);
     const tx = centre(spec.to);
     return {

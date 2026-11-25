@@ -28,6 +28,7 @@ const TEXT = {
   noFile: "There is no file on this machine to open.",
   showFile: "Show file",
   hideFile: "Hide file",
+  tooLarge: "The file is too large to show here; open it in your editor.",
   file: "File",
   cannotUse: "New work can’t use this template until the file is fixed.",
   warnings: "Worth knowing",
@@ -138,7 +139,7 @@ interface DetailProps {
 }
 
 function Detail({ bridge, detail, agents, connections }: DetailProps) {
-  const { entry, template, problems, warnings, text } = detail;
+  const { entry, template, problems, warnings, text, textTooLarge } = detail;
   const fileId = useId();
   const [fileOpen, setFileOpen] = useState(false);
   const [mark, setMark] = useState<number | undefined>(undefined);
@@ -195,6 +196,7 @@ function Detail({ bridge, detail, agents, connections }: DetailProps) {
             {fileOpen ? TEXT.hideFile : TEXT.showFile}
           </button>
         )}
+        {textTooLarge && <span className="tp-quiet">{TEXT.tooLarge}</span>}
         {openNote !== undefined && (
           <span className="tp-open-note" role="alert">
             {openNote}

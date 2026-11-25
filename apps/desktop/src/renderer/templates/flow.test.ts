@@ -57,6 +57,15 @@ describe("flowOf", () => {
     expect(twoBacks.top).toBeLessThan(flow.top);
   });
 
+  it("puts a shorter back line above a longer one from the same step, so they do not cross", () => {
+    const review3 = { ...review, ifFailed: { action: "back", stepId: "plan" }, ifChangesRequested: { action: "back", stepId: "build" } } as TemplateStepView;
+    const crossing = flowOf(withSteps(plan, build, review3), setup.agents);
+    const [toPlan, toBuild] = crossing.loops.filter((loop) => loop.kind === "back");
+    expect([toPlan!.to, toBuild!.to]).toEqual([1, 2]);
+    // Review → Build (span 1) runs nearer the row than Review → Plan (span 2).
+    expect(toBuild!.labelY).toBeLessThan(toPlan!.labelY);
+  });
+
   it("draws a back: to the same step as a self loop", () => {
     const same = flowOf(withSteps({ ...build, ifFailed: { action: "back", stepId: "build" } } as TemplateStepView), setup.agents);
     expect(same.loops.map((loop) => loop.kind)).toEqual(["self"]);
