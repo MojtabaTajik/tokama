@@ -133,6 +133,7 @@ export function applyEvent(item: StoredItem | undefined, event: ItemEvent): Resu
         exitCode: event.exitCode,
         passed: event.passed,
         ...(event.outputFile !== undefined && { outputFile: event.outputFile }),
+        ...(event.durationMs !== undefined && { durationMs: event.durationMs }),
         at: event.at,
       });
       break;

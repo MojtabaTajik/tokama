@@ -13,6 +13,7 @@ import {
   readTextFile,
   readTextFileInside,
   readTextHead,
+  readTextTail,
   type ReadFailure,
   type ReadFailureReason,
 } from "./index.js";
@@ -147,6 +148,51 @@ describe("readTextHead", () => {
     expect(reason(await readTextHead(join(dir, "sub"), BIG))).toBe("not_regular_file");
     expect(reason(await readTextHead("/dev/zero", BIG))).toBe("not_regular_file");
     expect(reason(await readTextHead(write("bad", Buffer.from([0x61, 0xff, 0x62])), BIG))).toBe("invalid_utf8");
+  });
+});
+
+describe("readTextHead with replaceInvalid", () => {
+  it("reads invalid UTF-8 as U+FFFD instead of failing", async () => {
+    expect(await readTextHead(write("bad", Buffer.from([0x61, 0xff, 0x62])), { ...BIG, replaceInvalid: true })).toEqual({ ok: true, value: { text: "a\ufffdb", truncated: false } });
+  });
+});
+
+describe("readTextTail", () => {
+  const CAPS = { maxBytes: 1024, maxLines: 3, countLinesUpTo: 1024 * 1024 };
+  const lines = (n: number) => Array.from({ length: n }, (_, i) => `line ${i + 1}\n`).join("");
+
+  it("reads a small file whole, with its size and line count", async () => {
+    expect(await readTextTail(write("a.txt", "one\ntwo\n"), CAPS)).toEqual({ ok: true, value: { text: "one\ntwo", truncated: false, totalBytes: 8, totalLines: 2 } });
+    expect(await readTextTail(write("b.txt", "one\ntwo"), CAPS)).toEqual({ ok: true, value: { text: "one\ntwo", truncated: false, totalBytes: 7, totalLines: 2 } });
+    expect(await readTextTail(write("empty", ""), CAPS)).toEqual({ ok: true, value: { text: "", truncated: false, totalBytes: 0, totalLines: 0 } });
+  });
+
+  it("keeps the last maxLines lines and counts them all", async () => {
+    expect(await readTextTail(write("ten", lines(10)), CAPS)).toEqual({ ok: true, value: { text: "line 8\nline 9\nline 10", truncated: true, totalBytes: 71, totalLines: 10 } });
+  });
+
+  it("reads only the last maxBytes of a large file and leaves out the line the cap cuts", async () => {
+    const path = write("big", lines(100_000));
+    const tail = await readTextTail(path, { maxBytes: 30, maxLines: 400, countLinesUpTo: 64 * 1024 * 1024 });
+    expect(tail).toEqual({ ok: true, value: { text: "line 99999\nline 100000", truncated: true, totalBytes: expect.any(Number), totalLines: 100_000 } });
+    // Past the counting limit, the size is known and the line count is not.
+    const uncounted = await readTextTail(path, { maxBytes: 20, maxLines: 400, countLinesUpTo: 1000 });
+    expect(uncounted.ok && uncounted.value.totalLines).toBeNull();
+  });
+
+  it("reads invalid UTF-8 and a character the cap splits without failing", async () => {
+    expect(await readTextTail(write("bad", Buffer.from([0x61, 0xff, 0x62, 0x0a])), CAPS)).toEqual({ ok: true, value: { text: "a\ufffdb", truncated: false, totalBytes: 4, totalLines: 1 } });
+    // One long line larger than the cap: nothing whole is left.
+    expect(await readTextTail(write("long", `${"é".repeat(50)}\n`), { ...CAPS, maxBytes: 11 })).toEqual({ ok: true, value: { text: "", truncated: true, totalBytes: 101, totalLines: 1 } });
+  });
+
+  it("keeps the open rules", async () => {
+    symlinkSync(write("target.txt", "secret"), join(dir, "link"));
+    mkdirSync(join(dir, "sub"));
+    expect(reason(await readTextTail(join(dir, "missing"), CAPS))).toBe("not_found");
+    expect(reason(await readTextTail(join(dir, "link"), CAPS))).toBe("symlink");
+    expect(reason(await readTextTail(join(dir, "sub"), CAPS))).toBe("not_regular_file");
+    expect(reason(await readTextTail("/dev/zero", CAPS))).toBe("not_regular_file");
   });
 });
 

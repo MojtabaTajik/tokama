@@ -10,10 +10,12 @@ export {
   readTextFile,
   readTextFileInside,
   readTextHead,
+  readTextTail,
   type ReadFailure,
   type ReadFailureReason,
   type ReadLinesOptions,
   type ReadLinesResult,
   type ReadTextOptions,
+  type TextTail,
 } from "./read.js";
 export { appendTextSync, replaceTextSync, type WriteFailure, type WriteFailureReason } from "./write.js";

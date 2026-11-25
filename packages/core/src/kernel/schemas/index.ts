@@ -42,6 +42,7 @@ import { type ParseError, parseWith } from "./parse.js";
 
 export * from "./agents.js";
 export * from "./ai-clis.js";
+export * from "./attempt-files.js";
 export * from "./api.js";
 export * from "./diagnostics.js";
 export * from "./diff.js";
