@@ -168,6 +168,6 @@ describe("Usage v2 words and numbers", () => {
     expect(scanText({ state: "scanning", filesDone: 3, filesTotal: 9 })).toBe("Reading Claude Code logs… 3 of 9 files");
     expect(scanText({ state: "scanning", filesDone: 3, filesTotal: 9, asOf: 1 })).toBeUndefined();
     expect(scanText({ state: "unavailable", filesDone: 0, filesTotal: 0, note: "No logs folder." })).toBe("No logs folder.");
-    expect(scanText({ state: "unavailable", filesDone: 0, filesTotal: 0 })).toBe("Claude Code's logs could not be read.");
+    expect(scanText({ state: "unavailable", filesDone: 0, filesTotal: 0 })).toBeUndefined();
   });
 });

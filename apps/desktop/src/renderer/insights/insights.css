@@ -381,10 +381,6 @@
   background: var(--tag-slate);
 }
 
-.ins-empty {
-  margin: 0;
-  font-size: 12.5px;
-}
 
 .monogram {
   flex: none;

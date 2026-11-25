@@ -79,9 +79,8 @@ flow(
     await page.locator('.rail button[aria-label="Insights"]').click();
     await page.locator(".main-header h1", { hasText: "Insights" }).waitFor();
     await expect.poll(() => page.locator(".ins-col").count(), { message: "14 days" }).toBe(14);
-    // By model, by repo and the top items: each says it is empty.
-    await page.getByText("No agent calls in this range.").first().waitFor();
-    await expect.poll(() => page.getByText("No agent calls in this range.").count()).toBe(3);
+    // Only the top items say they are empty; the model and repo tables show their headers.
+    await page.getByText("No agent calls in this range.").waitFor();
     await expect.poll(() => page.locator(".ins-hero").innerText()).toBe("0 tokens");
     // Codex CLI has no plan source yet: unknown, never a number.
     await expect.poll(() => page.locator('.ins-card[aria-label="Codex CLI"]').innerText()).toContain("plan not reported");

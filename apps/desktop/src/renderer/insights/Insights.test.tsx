@@ -79,6 +79,7 @@ describe("Insights: accounts and limits", () => {
     expect([...(claude?.querySelectorAll(".meter-fill") ?? [])].map((fill) => fill.getAttribute("data-tone"))).toEqual(["pass", "pass"]);
     expect(claude?.querySelector(".ins-tone")).toBeNull();
     const codex = card("Codex CLI");
+    expect(codex?.querySelector(".ins-source")?.textContent).toBe("Source: asked of the CLI itself.");
     expect(codex?.querySelector(".ins-badge")?.textContent).toBe("PLAN ?");
     expect(codex?.querySelector(".ins-badge")?.hasAttribute("data-known")).toBe(false);
     expect(codex?.querySelector(".ins-card-sub")?.textContent).toBe("0.169.0 · plan not reported");
@@ -241,7 +242,7 @@ describe("Insights: by model and by repo", () => {
     ]);
   });
 
-  it("names work outside the configured repos other folders, and says when there is nothing", () => {
+  it("names work outside the configured repos other folders, always last, and shows an empty table as its headers", () => {
     render({ scope: "all" }, allReport);
     expect(rows("By repo").slice(1).map((row) => [row[0], row[2], row[3]])).toEqual([
       ["orders-api", "1.21B", "$905"],
@@ -249,8 +250,15 @@ describe("Insights: by model and by repo", () => {
       ["other folders", "420M", "$316"],
     ]);
     expect($('.ins-repo[data-other]')?.textContent).toBe("other folders");
+    // "other folders" is last even when it has more tokens than a repo.
+    const bigOther = { ...allReport, repos: [{ repoId: null, tokens: 9e9, costUsd: 1 }, ...allReport.repos!.filter((r) => r.repoId !== null)] } as UsageReport;
+    render({ scope: "all" }, bigOther);
+    expect(rows("By repo").slice(1).map((row) => row[0])).toEqual(["orders-api", "checkout-web", "other folders"]);
+    // An empty table shows its headers and nothing else.
     render({}, { ...usageReport, models: [], repos: [] } as UsageReport);
-    expect($$(".ins-tables .ins-empty").map((el) => el.textContent)).toEqual(["No agent calls in this range.", "No agent calls in this range."]);
+    expect(rows("By model")).toEqual([["Model", "≈ Cost", "Share", "Tokens"]]);
+    expect(rows("By repo")).toEqual([["Repo", "", "Tokens", "≈ Cost"]]);
+    expect($(".ins-tables")?.textContent).not.toContain("No agent calls");
   });
 });
 

@@ -192,7 +192,7 @@ export function scanText(scan: LogScan | undefined): string | undefined {
   // Later scans add a few files in moments; only the first one, with nothing read yet, shows progress.
   if (scan === undefined || scan.state === "ready" || (scan.state === "scanning" && scan.asOf !== undefined)) return undefined;
   if (scan.state === "scanning") return `Reading Claude Code logs… ${scan.filesDone} of ${scan.filesTotal} files`;
-  return scan.note ?? "Claude Code's logs could not be read.";
+  return scan.note;
 }
 
 export interface Segment {

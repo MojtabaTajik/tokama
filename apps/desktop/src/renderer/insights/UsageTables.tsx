@@ -1,6 +1,6 @@
 // The scope's usage by model (estimated cost, share of the priced cost, tokens) and by repo
 // (a bar for the share of tokens, tokens, estimated cost), side by side. Work outside the
-// configured repos is one "other folders" row.
+// configured repos is one "other folders" row, always last. An empty table shows its headers only.
 import type { UsageReport } from "@tokama/core";
 import { AI_CLIS } from "../model.js";
 import { formatTokens, formatUsd } from "./usage-model.js";
@@ -17,7 +17,6 @@ const TEXT = {
   shareOfTokens: "Share of tokens",
   tokens: "Tokens",
   other: "other folders",
-  empty: "No agent calls in this range.",
   noShare: "–",
 } as const;
 
@@ -31,7 +30,8 @@ export function repoShares(repos: NonNullable<UsageReport["repos"]>): number[] {
 
 export function UsageTables({ report }: { readonly report: UsageReport }) {
   const models = report.models ?? [];
-  const repos = report.repos ?? [];
+  // The engine sorts by tokens; "other folders" goes last whatever its size.
+  const repos = [...(report.repos ?? [])].sort((a, b) => Number(a.repoId === null) - Number(b.repoId === null));
   const shares = repoShares(repos);
   return (
     <div className="ins-section ins-tables">
@@ -67,7 +67,6 @@ export function UsageTables({ report }: { readonly report: UsageReport }) {
             </div>
           ))}
         </div>
-        {models.length === 0 && <p className="muted ins-empty">{TEXT.empty}</p>}
       </section>
       <section className="ins-breakdown" aria-labelledby="ins-repo-title">
         <header className="ins-breakdown-head">
@@ -100,7 +99,6 @@ export function UsageTables({ report }: { readonly report: UsageReport }) {
             </div>
           ))}
         </div>
-        {repos.length === 0 && <p className="muted ins-empty">{TEXT.empty}</p>}
       </section>
     </div>
   );

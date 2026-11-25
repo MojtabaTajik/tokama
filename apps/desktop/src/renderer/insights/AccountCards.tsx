@@ -118,7 +118,7 @@ function AccountCard({ name, plan, setup, issue, now }: AccountCardProps) {
       {plan.note !== undefined && <p className="ins-card-note">{plan.note}</p>}
       {plan.source !== undefined && (
         <p className="muted ins-source">
-          {TEXT.source} {SOURCE_TEXT[plan.source]}. {TEXT.neverReadsLogin}
+          {TEXT.source} {SOURCE_TEXT[plan.source]}.{plan.cliId === "claude-code" && ` ${TEXT.neverReadsLogin}`}
         </p>
       )}
     </article>
