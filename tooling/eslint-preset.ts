@@ -105,6 +105,8 @@ const NETWORK_GLOBALS = ["fetch", "WebSocket", "EventSource"].map((name) => ({
 // Exclusive creates (lock files) and the event log are allowed one by one, each with an inline
 // eslint-disable comment that says why.
 const KERNEL_ONLY = "Writes, renames, signals and child processes go through the kernel (fs-safe, process).";
+// Stored digests are compared across versions, so every SHA-256 comes from one helper.
+const SHA256_ONLY = "SHA-256 goes through sha256Hex in the kernel (kernel/hash), so stored digests keep one format.";
 const FS_WRITE_NAMES = [
   "default",
   "promises",
@@ -143,6 +145,7 @@ const kernelOnlyImports = {
     ...["fs/promises", "node:fs/promises"].map((name) => ({ name, importNames: FS_PROMISES_WRITE_NAMES, message: KERNEL_ONLY })),
     ...["child_process", "node:child_process"].map((name) => ({ name, message: KERNEL_ONLY })),
     ...["process", "node:process"].map((name) => ({ name, importNames: ["kill"], message: KERNEL_ONLY })),
+    ...["crypto", "node:crypto"].map((name) => ({ name, importNames: ["createHash"], message: SHA256_ONLY })),
   ],
 };
 const SOURCE_FILES = ["packages/*/src/**/*.{ts,tsx,mts,cts}", "apps/*/src/**/*.{ts,tsx,mts,cts}"];
@@ -307,7 +310,7 @@ export default defineConfig(
     rules: { "no-restricted-globals": "off" },
   },
 
-  // Every package's source: writes, renames, signals and child processes only through the kernel.
+  // Every package's source: writes, renames, signals, child processes and SHA-256 only through the kernel.
   {
     files: SOURCE_FILES,
     ignores: KERNEL_ONLY_EXEMPT,
