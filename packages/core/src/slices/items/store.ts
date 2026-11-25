@@ -1,11 +1,11 @@
 // Item storage: `<home>/items/<item id>/events.jsonl` per item, with the item's other files beside
 // it. The store keeps every item folded in memory, appends new events (fsync first, then the
 // listeners hear about it), and refuses an event that does not fit the item's history.
-import { createHash } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { systemClock, type Clock } from "../../kernel/clock/index.js";
 import { replaceTextSync } from "../../kernel/fs-safe/index.js";
+import { sha256Hex } from "../../kernel/hash/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import {
   HostIdSchema,
@@ -229,7 +229,7 @@ function foldOnto(item: StoredItem | undefined, events: readonly ItemEvent[]): R
 export function templateSnapshot(record: TemplateRecord): TemplateSnapshot {
   const canonical = canonicalJson(record);
   return {
-    sha256: createHash("sha256").update(canonical).digest("hex"),
+    sha256: sha256Hex(canonical),
     record: JSON.parse(canonical) as TemplateSnapshot["record"],
   };
 }

@@ -1,10 +1,10 @@
 // Parses Claude Code's stream-json output (one JSON object per line) into agent call events, and
 // keeps what the end event needs: usage, session id, the result, and the error signals.
 // The stream is outside input: every line is validated, and a line that does not fit is skipped.
-import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { isAbsolute, normalize, relative, sep } from "node:path";
 import { z } from "zod";
+import { sha256Hex } from "../../../kernel/hash/index.js";
 import type { AgentCallErrorKind, AgentCallEvent, RateLimitWindow, TokenUsage } from "../../../kernel/schemas/index.js";
 
 // A count the CLI reports. A missing or odd value counts as absent rather than dropping the line.
@@ -103,7 +103,7 @@ const CHANGE_FIELDS: Record<string, readonly string[]> = {
   NotebookEdit: ["cell_id", "new_source", "edit_mode"],
 };
 type ToolInput = Record<string, string | number | boolean>;
-const hash = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 16);
+const hash = (value: string) => sha256Hex(value, 16);
 const NO_TOKENS: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 export interface CallResult {

@@ -7,8 +7,8 @@
 //   judged in the tree Tokama stages, against the base commit, so a change made at any time is
 //   seen before checks run on it and before it is committed. The engineer approves exact content:
 //   a path with its mode and blob. A later change to the same path asks again.
-import { createHash } from "node:crypto";
 import type { TreeChange } from "../../kernel/git/index.js";
+import { sha256Hex } from "../../kernel/hash/index.js";
 import type { CoveredPath, StoredItem } from "../../kernel/schemas/index.js";
 import { baseCategory, patternCategory, type ProtectedCategory, type ProtectedHashes, type TamperChange } from "../integrity/index.js";
 
@@ -28,9 +28,7 @@ export function steeringEntries(hashes: ProtectedHashes, branch: string): Steeri
 }
 
 export function digestOf(entries: readonly SteeringEntry[]): string {
-  return createHash("sha256")
-    .update(JSON.stringify(entries.map((e) => [e.key, e.hash])))
-    .digest("hex");
+  return sha256Hex(JSON.stringify(entries.map((e) => [e.key, e.hash])));
 }
 
 /** What changed between two sets of steering entries, as tamper changes. */

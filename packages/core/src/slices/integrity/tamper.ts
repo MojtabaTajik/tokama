@@ -14,12 +14,12 @@
 //   ignore rule cannot hide one.
 // Symlinks are hashed by their target string and never followed. Records hold no absolute paths:
 // each file is an area plus a path relative to it.
-import { createHash } from "node:crypto";
 import { constants, type Dirent } from "node:fs";
 import { lstat, open, readdir, readlink } from "node:fs/promises";
 import { dirname, join, posix, relative, resolve, sep } from "node:path";
 import { readTextFile } from "../../kernel/fs-safe/index.js";
 import type { Git } from "../../kernel/git/index.js";
+import { sha256Hex } from "../../kernel/hash/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import { baseCategory, CI_DIRS, patternCategory, type ProtectedCategory, TOKAMA_DIR } from "./protected.js";
 
@@ -104,7 +104,7 @@ async function hashPath(path: string): Promise<string | undefined> {
     // No symlink swapped in since the lstat; non-blocking, so a FIFO cannot hang the read.
     const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     try {
-      return `sha256:${createHash("sha256").update(await handle.readFile()).digest("hex")}`;
+      return `sha256:${sha256Hex(await handle.readFile())}`;
     } finally {
       await handle.close();
     }
@@ -191,7 +191,7 @@ async function includedHashes(git: Git, records: readonly string[], including: s
     if (!text.ok) return err(`cannot read the file ${key} names (${text.error.reason})`);
     const listed = await git.configList(path);
     if (!listed.ok) return err(`the file ${key} names is not valid git config`);
-    hashes.push(createHash("sha256").update(text.value).digest("hex"));
+    hashes.push(sha256Hex(text.value));
     const nested = await includedHashes(git, listed.value, path, depth + 1, count);
     if (!nested.ok) return nested;
     hashes.push(...nested.value);
@@ -212,7 +212,7 @@ async function hashConfig(git: Git, path: string, name: string): Promise<Result<
   const counted = listed.value.filter((record) => !ignoredRecord(record));
   const included = await includedHashes(git, listed.value, path, 0, { files: 0 });
   if (!included.ok) return err({ message: `cannot read git config ${name}: ${included.error}` });
-  return ok(`config:${createHash("sha256").update(JSON.stringify([counted, included.value])).digest("hex")}`);
+  return ok(`config:${sha256Hex(JSON.stringify([counted, included.value]))}`);
 }
 
 /** Every non-directory under `dir`, as paths relative to `root`; symlinked folders are not entered. */

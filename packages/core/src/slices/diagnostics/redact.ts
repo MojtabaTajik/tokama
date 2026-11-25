@@ -7,7 +7,7 @@
 // long hex or base64 runs. The input is cut to INPUT_CAP before any pattern runs, so a huge stack
 // cannot make them slow, and the result is cut far shorter, so a secret split at the input cut
 // never survives.
-import { createHash } from "node:crypto";
+import { sha256Hex } from "../../kernel/hash/index.js";
 import { MAX_STACK_CHARS, MAX_STACK_LINES } from "../../kernel/schemas/index.js";
 
 export interface RedactionContext {
@@ -126,7 +126,7 @@ export function fingerprint(name: string, cleanedStack: string): string {
     .slice(0, 8)
     .map((line) => line.trim().replace(/:\d+(?::\d+)?(?=\)?$)/, ""));
   const basis = frames.length > 0 ? frames : [(lines[0] ?? "").replace(/\d+/g, "#")];
-  return createHash("sha256").update([name, ...basis].join("\n")).digest("hex").slice(0, 16);
+  return sha256Hex([name, ...basis].join("\n"), 16);
 }
 
 const ERROR_NAME = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
