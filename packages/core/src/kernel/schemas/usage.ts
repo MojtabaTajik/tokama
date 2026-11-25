@@ -2,7 +2,7 @@
 // usage report the engine serves: plan windows per AI CLI, and tokens and estimated cost per day,
 // workflow and item.
 import { z } from "zod";
-import { AgentIdSchema, AiCliIdSchema, CallIdSchema, EpochMsSchema, ItemIdSchema, StepIdSchema } from "./ids.js";
+import { AgentIdSchema, AiCliIdSchema, CallIdSchema, EpochMsSchema, ItemIdSchema, RepoIdSchema, StepIdSchema } from "./ids.js";
 
 const count = z.int().nonnegative();
 
@@ -170,6 +170,42 @@ const cost = z.number().nonnegative().nullable();
  */
 const templateId = z.string().min(1).max(200);
 
+/**
+ * Which usage the report counts: `tokama`, the agent calls Tokama ran; `all`, every Claude Code
+ * call on this machine from its session logs (Tokama's included), plus Tokama's calls on other CLIs.
+ */
+export const UsageScopeSchema = z.enum(["tokama", "all"]);
+
+const percent = z.number().min(0).max(100);
+
+/** Where the tokens went, over the scope and range. */
+export const TokenSummarySchema = z.strictObject({
+  /** Every token: input, cache reads, cache writes and output. */
+  processed: tokens,
+  /** Input read from the prompt cache. */
+  cachedInput: tokens,
+  /** Cached input as a share of all input. */
+  cachedInputPercent: percent,
+  /** Input not read from the cache: plain input and cache writes. */
+  uncachedInput: tokens,
+  output: tokens,
+  /** What the cached input would have cost more at the input price; null when no cached model has a price. */
+  cacheSavingsUsd: cost,
+  /** The input price over the cache-read price, weighted by cached tokens: how many times cheaper the cache was. */
+  cacheSavingsFactor: z.number().min(0).nullable(),
+});
+
+/** Where the engine is in reading Claude Code's session logs, for the `all` scope. */
+export const LogScanSchema = z.strictObject({
+  /** `scanning`: the numbers grow until it ends. `unavailable`: see the note. */
+  state: z.enum(["scanning", "ready", "unavailable"]),
+  filesDone: z.int().nonnegative(),
+  filesTotal: z.int().nonnegative(),
+  /** When the last scan ended. */
+  asOf: EpochMsSchema.optional(),
+  note: z.string().min(1).max(500).optional(),
+});
+
 export const UsageItemSchema = z.strictObject({
   itemId: ItemIdSchema,
   title: z.string().min(1).max(200),
@@ -191,12 +227,18 @@ export const UsageReportSchema = z.strictObject({
   /** The date of the price table the estimates use, `YYYY-MM-DD`. */
   pricesAsOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   clis: z.array(CliPlanSchema).max(10),
+  /** The scope counted; absent means `tokama`. */
+  scope: UsageScopeSchema.optional(),
   /** Every day of the range, oldest first, in the engine's local time. */
   days: z
     .array(
       z.strictObject({
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-        /** Only workflows with calls that day. */
+        /** The scope's tokens that day. */
+        tokens: tokens.optional(),
+        /** The scope's estimated cost that day. */
+        costUsd: cost.optional(),
+        /** Tokama's workflows with calls that day, whatever the scope. */
         workflows: z
           .array(
             z.strictObject({
@@ -212,17 +254,38 @@ export const UsageReportSchema = z.strictObject({
       }),
     )
     .max(90),
-  /** Totals per workflow over the range, most tokens first. */
+  /** Totals per Tokama workflow over the range, most tokens first, whatever the scope. */
   workflows: z.array(z.strictObject({ templateId, tokens, costUsd: cost, calls: z.int().nonnegative() })).max(100),
-  /** The items with the most tokens over the range, at most 50. */
+  /** The Tokama items with the most tokens over the range, at most 50, whatever the scope. */
   items: z.array(UsageItemSchema).max(50),
+  /** The scope's totals. */
   totals: z.strictObject({
     tokens: TokenUsageSchema,
     costUsd: cost,
+    /** Agent calls; in the `all` scope, each message of Claude Code's logs counts as one. */
     calls: z.int().nonnegative(),
     /** Calls neither the CLI nor the price table could price; their cost is left out. */
     unpricedCalls: z.int().nonnegative(),
   }),
+  tokenSummary: TokenSummarySchema.optional(),
+  /** The scope's tokens and cost per model, most expensive first, at most 50. */
+  models: z
+    .array(
+      z.strictObject({
+        model: z.string().min(1).max(200),
+        cliId: AiCliIdSchema,
+        tokens,
+        costUsd: cost,
+        /** The model's share of the priced cost; null when the model has no price. */
+        sharePercent: percent.nullable(),
+      }),
+    )
+    .max(50)
+    .optional(),
+  /** The scope's tokens and cost per repo, most tokens first. `repoId` null: work outside the configured repos. */
+  repos: z.array(z.strictObject({ repoId: RepoIdSchema.nullable(), tokens, costUsd: cost })).max(100).optional(),
+  /** Present in the `all` scope. */
+  scan: LogScanSchema.optional(),
 });
 
 export type TokenUsage = z.output<typeof TokenUsageSchema>;
@@ -237,4 +300,7 @@ export type PlanSource = z.output<typeof PlanSourceSchema>;
 export type PlanWindow = z.output<typeof PlanWindowSchema>;
 export type CliPlan = z.output<typeof CliPlanSchema>;
 export type UsageItem = z.output<typeof UsageItemSchema>;
+export type UsageScope = z.output<typeof UsageScopeSchema>;
+export type TokenSummary = z.output<typeof TokenSummarySchema>;
+export type LogScan = z.output<typeof LogScanSchema>;
 export type UsageReport = z.output<typeof UsageReportSchema>;

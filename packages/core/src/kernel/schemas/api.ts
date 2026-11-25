@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { DecisionIdSchema, ItemIdSchema, RepoIdSchema, TemplateRefSchema } from "./ids.js";
 import { ItemRecordSchema } from "./item.js";
-import { UsageRangeSchema, UsageReportSchema } from "./usage.js";
+import { UsageRangeSchema, UsageReportSchema, UsageScopeSchema } from "./usage.js";
 import { AgentsListSchema } from "./agents.js";
 import { MachineReportSchema } from "./machine.js";
 import { RepoSummarySchema, SetupSchema } from "./setup.js";
@@ -79,8 +79,11 @@ export const QuerySchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("templates") }),
   /** One template file in full: the template, its problems with line numbers, and its text. */
   TemplateFileKeySchema.extend({ type: z.literal("template_detail") }),
-  /** Plan windows per AI CLI, and tokens and estimated cost by day, workflow and item over the last `range` days. */
-  z.strictObject({ type: z.literal("usage"), range: UsageRangeSchema }),
+  /**
+   * Plan windows per AI CLI, and tokens and estimated cost by day, workflow, item, model and repo
+   * over the last `range` days. `scope` defaults to `tokama`.
+   */
+  z.strictObject({ type: z.literal("usage"), range: UsageRangeSchema, scope: UsageScopeSchema.optional() }),
   /**
    * CPU and memory of this machine and of Tokama's processes. Asking is what makes the engine
    * read them: it samples while a client keeps asking and stops soon after.

@@ -11,14 +11,17 @@ import {
   choosePlan,
   type CliPlan,
   type Clock,
+  type LogScan,
   type PlanCandidate,
   type PlanReading,
   rangeStart,
   type Result,
   summarizeUsage,
+  type UsageEntry,
   type UsageRange,
   type UsageReport,
   type UsageRow,
+  type UsageScope,
 } from "@tokama/core";
 
 /** One source of Claude Code's plan windows. */
@@ -47,7 +50,17 @@ export interface UsageDeps {
   readonly requestEveryMs?: number;
   /** The other AI CLIs' plans. Default: each says it has no source yet. */
   readonly otherClis?: (now: number) => readonly CliPlan[];
+  /** Claude Code's usage from its own logs, for the `all` scope. Absent: the logs are not read. */
+  readonly logs?: {
+    refresh(): void;
+    status(): LogScan;
+    entries(since: number): readonly UsageEntry[];
+    /** From when the logs hold Claude Code's calls; undefined while they hold none. */
+    coveredFrom(): number | undefined;
+  };
 }
+
+const NO_LOGS: LogScan = { state: "unavailable", filesDone: 0, filesTotal: 0, note: "This engine does not read Claude Code's logs." };
 
 const REQUEST_EVERY_MS = 5 * 60_000;
 // The cache is a large config file; read it at most this often.
@@ -82,13 +95,27 @@ export class UsageService {
 
   constructor(private readonly deps: UsageDeps) {}
 
-  async report(range: UsageRange): Promise<UsageReport> {
+  async report(range: UsageRange, scope: UsageScope = "tokama"): Promise<UsageReport> {
     const now = this.deps.clock.now();
     this.requestIfDue(now);
     const since = Math.min(rangeStart(now, range), now - RUN_LOOKBACK_MS);
     const rows = this.deps.rows(since);
     const claude = choosePlan("claude-code", await this.claudeCandidates(rows, now), now, this.version);
-    return summarizeUsage({ rows, range, now, clis: [claude, ...(this.deps.otherClis?.(now) ?? NOT_YET)] });
+    const clis = [claude, ...(this.deps.otherClis?.(now) ?? NOT_YET)];
+    if (scope === "tokama") return summarizeUsage({ rows, range, now, clis, scope });
+    const logs = this.deps.logs;
+    logs?.refresh();
+    const logsFrom = logs?.coveredFrom();
+    return summarizeUsage({
+      rows,
+      range,
+      now,
+      clis,
+      scope,
+      logs: logs?.entries(rangeStart(now, range)) ?? [],
+      ...(logsFrom !== undefined && { logsFrom }),
+      scan: logs?.status() ?? NO_LOGS,
+    });
   }
 
   /** Waits for a usage request in flight; for tests and shutdown. */
