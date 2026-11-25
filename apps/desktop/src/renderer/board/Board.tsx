@@ -12,9 +12,10 @@ export interface BoardProps {
   readonly template: TemplateSummary;
   readonly selectedItemId: string | undefined;
   readonly onSelect: (itemId: string) => void;
+  readonly now: number;
 }
 
-export function Board({ items, agents, template, selectedItemId, onSelect }: BoardProps) {
+export function Board({ items, agents, template, selectedItemId, onSelect, now }: BoardProps) {
   const focus = useFocusFollow();
   return (
     <div className="columns" onFocus={focus.onFocus} onBlur={focus.onBlur}>
@@ -27,7 +28,7 @@ export function Board({ items, agents, template, selectedItemId, onSelect }: Boa
             <span className="column-count mono">{column.items.length}</span>
           </h3>
           {column.items.map((item) => (
-            <Card key={item.id} item={item} agents={agents} template={template} selected={item.id === selectedItemId} onSelect={onSelect} />
+            <Card key={item.id} item={item} agents={agents} template={template} selected={item.id === selectedItemId} onSelect={onSelect} now={now} />
           ))}
         </section>
       ))}

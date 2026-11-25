@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import type { ItemRecord, Setup } from "@tokama/core";
+import type { ItemActivity, ItemRecord, Setup } from "@tokama/core";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,7 +16,7 @@ type Reply = { ok: true; data: unknown } | { ok: false; error: { code: string; m
  * A bridge over a set of items: `setup`, `board` and `item` answer from it, commands answer
  * with `commandReply` (null by default), and events are pushed by hand to every listener.
  */
-function fakeBridge(start: ItemRecord[]) {
+function fakeBridge(start: ItemRecord[], activities = new Map<string, ItemActivity>()) {
   const store = new Map<string, ItemRecord>(start.map((item) => [item.id, item]));
   const eventListeners = new Set<(event: BridgeEvent) => void>();
   const connectionListeners = new Set<(state: ConnectionState) => void>();
@@ -26,6 +26,7 @@ function fakeBridge(start: ItemRecord[]) {
     if (q.type === "board") return { ok: true, data: { items: [...store.values()] } };
     const item = q.itemId === undefined ? undefined : store.get(q.itemId);
     if (q.type === "item" && item) return { ok: true, data: { item } };
+    if (q.type === "activity" && item) return { ok: true, data: { activity: activities.get(item.id) ?? null } };
     return { ok: false, error: { code: "not_found", message: `no item ${String(q.itemId)}` } };
   });
   const command = vi.fn((c: { type: string }) => commandReply(c));
@@ -583,7 +584,8 @@ describe("ItemDrawer decisions", () => {
     await act(async () => pending.resolve({ ok: true, data: null }));
     await push(approved);
     expect($(".needs-you")).toBeNull();
-    expect(text(".drawer-state")).toBe("●running · step 4 of 4 · Propose a fix");
+    // A running item shows who works and what in place of the state line.
+    expect(text(".activity")).toBe("Architect·working");
     expect($$(".step")[3]?.querySelector(".step-detail")?.textContent).toBe("approved · runs on Architect (opus)");
     expect($('[role="status"]')).toBeNull();
   });
@@ -731,7 +733,8 @@ describe("ItemDrawer live updates", () => {
       for (const listener of listeners) listener({ kind: "event", seq: 1, event: { type: "item_updated", item: approved } });
     });
     await act(async () => pending.resolve({ ok: true, data: { item: needsYou } }));
-    expect(text(".drawer-state")).toBe("●running · step 4 of 4 · Propose a fix");
+    // A running item shows who works and what in place of the state line.
+    expect(text(".activity")).toBe("Architect·working");
   });
 
   it("queries the item again after the engine connection comes back", async () => {
@@ -742,7 +745,8 @@ describe("ItemDrawer live updates", () => {
     await reconnect();
     expect(query.mock.calls.filter(([q]) => q.type === "item")).toHaveLength(2);
     expect($(".needs-you")).toBeNull();
-    expect(text(".drawer-state")).toBe("●running · step 4 of 4 · Propose a fix");
+    // A running item shows who works and what in place of the state line.
+    expect(text(".activity")).toBe("Architect·working");
   });
 
   it("stops listening when it closes", async () => {
@@ -1430,5 +1434,77 @@ describe("the card of a step that stopped", () => {
     expect($$(".stopped-lines > div").map((el) => el.textContent)).toEqual(lines);
     expect(text(".stopped-lines + .stopped-note")).toBe("First lines, as written. Tokama found no verdict in this output.");
     expect($(".stopped img")).toBeNull();
+  });
+});
+
+describe("ItemDrawer live progress", () => {
+  const NOW = 1_780_000_000_000;
+  const live = {
+    ...approved,
+    steps: approved.steps.map((step, index) => (index === 3 ? { ...step, attempts: [{ attempt: 1, startedAt: NOW - 192_000, checks: [] }] } : step)),
+  } as ItemRecord;
+  const activity = (patch: Partial<ItemActivity>): ItemActivity =>
+    ({ itemId: live.id, stepIndex: 3, attempt: 1, by: "agent", lastAction: { kind: "read", label: "reading src/tax/calculator.ts" }, lastEventAt: NOW, toolRunning: null, ...patch }) as ItemActivity;
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("shows who works and what from the engine's activity, ticks every second, and follows activity events", async () => {
+    const { bridge, listeners } = fakeBridge([live], new Map([[live.id, activity({})]]));
+    await renderDrawer(bridge, live.id);
+    expect(text(".activity")).toBe("Architect·reading src/tax/calculator.ts·3 m 12 s");
+    expect($(".activity-head")?.getAttribute("title")).toBe("reading src/tax/calculator.ts");
+    await act(async () => vi.advanceTimersByTime(3_000));
+    expect(text(".activity-time")).toBe("3 m 15 s");
+    await act(async () => {
+      for (const listener of listeners) listener({ kind: "event", seq: 9, event: { type: "item_activity", activity: activity({ lastAction: { kind: "run", label: "running pnpm test" }, toolRunning: { label: "running pnpm test", startedAt: NOW + 3_000 }, lastEventAt: NOW + 3_000 }) } });
+    });
+    await act(async () => vi.advanceTimersByTime(100_000));
+    // A command shows its own time, and a long one is not quiet.
+    expect(text(".activity")).toBe("Architect·running pnpm test·1 m 40 s");
+    // Another item's activity changes nothing.
+    await act(async () => {
+      for (const listener of listeners) listener({ kind: "event", seq: 10, event: { type: "item_activity", activity: { ...activity({}), itemId: "item_other" } as ItemActivity } });
+    });
+    expect(text(".activity-tail")).toBe("pnpm test");
+  });
+
+  it("adds quiet in grey words after 2 minutes without an event, and drops it with the next event", async () => {
+    const { bridge, listeners } = fakeBridge([live], new Map([[live.id, activity({ lastEventAt: NOW - 180_000 })]]));
+    await renderDrawer(bridge, live.id);
+    expect(text(".activity-quiet")).toBe("quiet for 3 m");
+    await act(async () => {
+      for (const listener of listeners) listener({ kind: "event", seq: 1, event: { type: "item_activity", activity: activity({ lastEventAt: NOW }) } });
+    });
+    expect($(".activity-quiet")).toBeNull();
+  });
+
+  it("draws the step track, with the running step live and the item's state line once it waits", async () => {
+    const { bridge, push } = fakeBridge([live]);
+    await renderDrawer(bridge, live.id);
+    expect($(".track")?.getAttribute("aria-label")).toBe("Steps: Triage done, Query logs and metrics done, Find the cause done, Propose a fix running");
+    expect($$(".track-mark").map((mark) => mark.textContent)).toEqual(["✓", "✓", "✓", "●"]);
+    expect($$(".track-mark[data-live='true']")).toHaveLength(1);
+    await push(needsYou);
+    expect($(".activity")).toBeNull();
+    expect(text(".drawer-state")).toBe("⏸needs you · step 4 of 4 · Propose a fix");
+    expect($$(".track-mark[data-live='true']")).toHaveLength(0);
+    expect(text(".track-says")).toBe("needs you");
+  });
+
+  it("shows each finished step's and attempt's time, and the time a step waited for you apart", async () => {
+    const done = {
+      ...committed,
+      steps: committed.steps.map((step, index) =>
+        index === 0 ? { ...step, durationMs: 252_000, waitedMs: 360_000, attempts: [{ attempt: 1, result: "passed", startedAt: NOW - 900_000, endedAt: NOW - 648_000, durationMs: 252_000, checks: [] }] } : step,
+      ),
+    } as ItemRecord;
+    const { bridge } = fakeBridge([done]);
+    await renderDrawer(bridge, done.id);
+    expect($$(".step")[0]?.querySelector(".step-detail")?.textContent).toMatch(/ · 4 m 12 s · waited 6 m for you$/);
+    expect($$(".step")[0]?.querySelector(".step-attempt .mono")?.textContent).toBe("✓attempt 1 · passed · 4 m 12 s");
   });
 });

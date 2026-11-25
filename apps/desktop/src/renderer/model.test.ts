@@ -11,6 +11,7 @@ import {
   DEFAULT_FILTER,
   filterCounts,
   flagOf,
+  cardStatus,
   groupItems,
   inRange,
   inView,
@@ -241,6 +242,27 @@ describe("timeOf", () => {
   it("shows a finished item's start as a clock time today and a date earlier", () => {
     expect(timeOf(ITEMS.done, NOW)).toEqual({ text: "13:00", title: "started 13:00" });
     expect(timeOf(ITEMS.doneLastWeek, NOW)).toEqual({ text: "17 Oct", title: "started 17 Oct 15:00" });
+  });
+
+  it("adds an ended item's agent and check time next to its clock time", () => {
+    expect(timeOf({ ...ITEMS.done, durationMs: 732_000 }, NOW)).toEqual({ text: "13:00 · 12 m", title: "started 13:00 · 12 m of agent and check time" });
+  });
+});
+
+describe("cardStatus", () => {
+  it("gives a working card its word: working, or checking while Tokama runs the checks", () => {
+    expect(cardStatus(ITEMS.working, NOW)).toEqual({ live: true, word: "working" });
+    expect(cardStatus(ITEMS.verifying, NOW)).toEqual({ live: true, word: "checking" });
+  });
+
+  it("keeps the flag of an item that waits, and adds the time and total of an ended one", () => {
+    expect(cardStatus(ITEMS.needsYou, NOW)).toMatchObject({ live: false, mark: { symbol: "⏸" } });
+    expect(cardStatus({ ...ITEMS.done, durationMs: 732_000 }, NOW)).toEqual({ live: false, mark: { symbol: "✓", word: "done", tone: "pass" }, text: "done · 13:00 · 12 m" });
+    expect(cardStatus(ITEMS.failed, NOW)).toMatchObject({ live: false, text: expect.stringMatching(/^failed at Fix · /) });
+  });
+
+  it("has no status line for a queued item", () => {
+    expect(cardStatus(ITEMS.queued, NOW)).toBeUndefined();
   });
 });
 

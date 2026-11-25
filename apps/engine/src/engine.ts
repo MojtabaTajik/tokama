@@ -296,7 +296,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   const store = options.store ?? new MemoryItemStore();
   // What running items do now: pushed to every client, at most once a second per item, once the
   // event stream below exists (the sample items have their activity from the start).
-  let pushActivity = (_latest: ItemActivity) => {};
+  let pushActivity: (latest: ItemActivity) => void = () => {};
   const activity = new ActivityFeed(options.clock ?? systemClock, (latest) => pushActivity(latest));
   const sample = options.sample ? new SampleEngine(store, options.clock ?? systemClock, activity) : undefined;
   const runner = options.runner ?? createProcessRunner();
