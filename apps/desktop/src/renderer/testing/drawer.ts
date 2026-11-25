@@ -115,3 +115,10 @@ export const committed = {
   ],
   outcome: { kind: "done", commits: [{ repoId: "orders-api", commit: "3f2a9c1d4e5f60718293a4b5c6d7e8f901234567", branch: "tokama/0b9f3c1e" }] },
 } as unknown as ItemRecord;
+
+/** A done task whose worktree is still there: Finish offers Merge, Open PR and Discard. */
+export const finishable = {
+  ...committed,
+  id: "item_1a2b3c4d-0011-4a1b-8c1d-000000000011",
+  finish: { worktreeRemoved: false, pushTarget: "github.com/northwind/orders-api" },
+} as unknown as ItemRecord;

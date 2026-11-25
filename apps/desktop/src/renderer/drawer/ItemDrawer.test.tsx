@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BridgeEvent, ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { App } from "../App.js";
-import { approved, committed, DECISION_ID, needsYou, setup, task } from "../testing/drawer.js";
+import { approved, committed, DECISION_ID, finishable, needsYou, setup, task } from "../testing/drawer.js";
 import { ItemDrawer } from "./ItemDrawer.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -629,5 +629,67 @@ describe("item drawer with real-mode records", () => {
     expect($$(".needs-you .choice").map((el) => el.textContent)).toEqual(["Retry step", "Stop"]);
     await act(async () => ($$(".needs-you .choice")[0] as HTMLButtonElement).click());
     expect(fake.command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: asked.id, decisionId: DECISION_ID, choice: "retry_step" });
+  });
+});
+
+describe("item drawer: Finish", () => {
+  const finishButtons = () => $$(".finish .choice").map((el) => [el.textContent, (el as HTMLButtonElement).disabled]);
+  const button = (label: string) => $$(".finish .choice").find((el) => el.textContent === label) as HTMLButtonElement;
+  const key = (name: string) => act(async () => void document.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true })));
+
+  it("shows no Finish section for items that are not done or have no worktree", async () => {
+    await renderDrawer(fakeBridge([committed]).bridge, committed.id);
+    expect($(".finish")).toBeNull();
+    await renderDrawer(fakeBridge([task]).bridge, task.id);
+    expect($(".finish")).toBeNull();
+  });
+
+  it("sends Merge and Open PR as finish_item, and shows the result the engine sends back", async () => {
+    const fake = fakeBridge([finishable]);
+    await renderDrawer(fake.bridge, finishable.id);
+    expect(finishButtons()).toEqual([["Merge into main", false], ["Open PR", false], ["Discard", false]]);
+    expect(text(".finish .finish-why")).toBe("Open PR pushes to github.com/northwind/orders-api");
+    await act(async () => button("Merge into main").click());
+    expect(fake.command).toHaveBeenCalledWith({ type: "finish_item", itemId: finishable.id, action: "merge" });
+    await fake.push({ ...finishable, finish: { ...finishable.finish!, running: "merge" } });
+    expect(text(".finish [role=status]")).toContain("Merging into main");
+    expect(finishButtons()).toEqual([]);
+    await fake.push({ ...finishable, finish: { worktreeRemoved: true, merged: { baseBranch: "main", commit: "abcdef1234567890abcdef1234567890abcdef12" } } });
+    expect($$(".finish-line").map((el) => el.textContent)).toEqual(["✓merged: Merged into main · abcdef1", "■removed: The worktree and branch are removed."]);
+  });
+
+  it("asks before Discard; Keep and Escape cancel without closing the drawer, Discard sends it", async () => {
+    const fake = fakeBridge([finishable]);
+    const onClose = await renderDrawer(fake.bridge, finishable.id);
+    await act(async () => button("Discard").click());
+    expect(text(".finish .drawer-confirm p")).toMatch(/^Discard this item's worktree and branch\?/);
+    expect(fake.command).not.toHaveBeenCalled();
+    await key("Escape");
+    expect($(".finish .drawer-confirm")).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => button("Discard").click());
+    await act(async () => ($$(".finish .drawer-confirm .choice").find((el) => el.textContent === "Keep") as HTMLButtonElement).click());
+    expect(fake.command).not.toHaveBeenCalled();
+    await act(async () => button("Discard").click());
+    await act(async () => ($$(".finish .drawer-confirm .choice").find((el) => el.textContent === "Discard") as HTMLButtonElement).click());
+    expect(fake.command).toHaveBeenCalledWith({ type: "finish_item", itemId: finishable.id, action: "discard" });
+  });
+
+  it("disables Open PR with gh's reason, and shows a refusal in the engine's words", async () => {
+    const fake = fakeBridge([finishable]);
+    const loggedOut = { ...setup, health: { ...setup.health, gh: { installed: true, loggedIn: false, message: "gh is not logged in to github.com. Run `gh auth login`." } } } as Setup;
+    await renderDrawer(fake.bridge, finishable.id, vi.fn(), loggedOut);
+    expect(button("Open PR").disabled).toBe(true);
+    expect($$(".finish-why").map((el) => el.textContent)).toContain("Open PR: gh is not logged in to github.com. Run `gh auth login`.");
+    fake.replyWith(async () => ({ ok: false, error: { code: "invalid_state", message: "Merge is still running." } }));
+    await act(async () => button("Merge into main").click());
+    expect(text(".drawer-notice")).toContain("Merge is still running.");
+  });
+
+  it("shows engine text as text only", async () => {
+    const hostile = { ...finishable, finish: { ...finishable.finish!, failed: { action: "merge", detail: "<img src=x onerror=alert(1)> conflict" } } } as unknown as ItemRecord;
+    await renderDrawer(fakeBridge([hostile]).bridge, hostile.id);
+    expect($(".finish img")).toBeNull();
+    expect(text(".finish")).toContain("<img src=x onerror=alert(1)> conflict");
   });
 });

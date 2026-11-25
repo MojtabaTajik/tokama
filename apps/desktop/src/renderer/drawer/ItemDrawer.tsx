@@ -10,6 +10,7 @@ import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { attemptLine, decisionKind, hasEnded, nextRunLine, runLine, itemMark, KIND, outcomeLine, PRIVACY, stepAgent, stepMark, stepPosition, templateOf, whereLine } from "./describe.js";
 import { DecisionChoices } from "./DecisionChoices.js";
 import { DiffTab, useDecisionDiff } from "./DiffView.js";
+import { Finish } from "./Finish.js";
 import { useItem } from "./useItem.js";
 
 const TEXT = {
@@ -156,7 +157,9 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked }: ItemDr
     // The button that sent it can be gone (the Stop confirmation): keep focus in the drawer.
     if (document.activeElement === document.body || document.activeElement === null) drawer.current?.focus();
     if (reply.ok) return;
-    setNotice(problem(reply.error.code, reply.error.message));
+    // A refused finish action says why in the engine's own words.
+    const refusedFinish = command.type === "finish_item" && (reply.error.code === "invalid_state" || reply.error.code === "invalid_request");
+    setNotice(refusedFinish ? { tone: "warn", text: reply.error.message } : problem(reply.error.code, reply.error.message));
     if (REFRESH_ON.has(reply.error.code)) refresh();
   };
 
@@ -221,6 +224,8 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked }: ItemDr
 
       {item?.state === "needs_you" && <NeedsYou item={item} setup={setup} decision={item.decision} busy={busy} onChoose={resolve} />}
       {item !== undefined && item.state !== "needs_you" && <After item={item} setup={setup} />}
+
+      {item?.state === "done" && <Finish item={item} setup={setup} busy={busy} onFinish={(action) => void send({ type: "finish_item", itemId: item.id, action })} />}
 
       {item && (
         <>

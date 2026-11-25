@@ -4,6 +4,7 @@
 // Engine text (titles, questions, names) is rendered as React text only.
 import type { ItemRecord, Setup } from "@tokama/core";
 import { templateOf } from "../drawer/describe.js";
+import { finishNote } from "../drawer/finish-view.js";
 import { type ItemGroup, pipelineOf, rowAgent, rowMark, timeOf } from "../model.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { useFocusFollow } from "./useFocusFollow.js";
@@ -64,6 +65,7 @@ function Row({ item, setup, now, selected, onSelect }: RowProps) {
   const time = timeOf(item, now);
   const template = templateOf(item, setup);
   const ask = item.state === "needs_you" ? (item.decision?.question ?? mark.word) : undefined;
+  const finished = finishNote(item);
   return (
     <button type="button" className="pl-row" data-item-id={item.id} data-state={item.state} aria-current={selected ? "true" : undefined} onClick={() => onSelect(item.id)}>
       <span className="pl-mark" data-tone={mark.tone}>
@@ -83,6 +85,7 @@ function Row({ item, setup, now, selected, onSelect }: RowProps) {
           )}
         </span>
         {ask !== undefined && <span className="pl-ask ellipsis">⏸ {ask}</span>}
+        {finished !== undefined && <span className="pl-finish ellipsis">{finished}</span>}
       </span>
       <span className="pl-pipe" role="img" aria-label={`${TEXT.steps}: ${steps.map((step) => `${step.name} ${step.mark.word}`).join(", ")}`}>
         {steps.map((step, index) => (

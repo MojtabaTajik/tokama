@@ -1,6 +1,6 @@
 import { type ItemState, MAX_NOTE_CHARS as ENGINE_NOTE_CHARS, parseItemRecord, parseQueryResult, REQUEST_CHANGES_ID as ENGINE_REQUEST_CHANGES, type StepState } from "@tokama/core";
 import { describe, expect, it } from "vitest";
-import { approved, committed, needsYou, task, setup } from "../testing/drawer.js";
+import { approved, committed, finishable, needsYou, task, setup } from "../testing/drawer.js";
 import { MAX_NOTE_CHARS, REQUEST_CHANGES_ID } from "./DecisionChoices.js";
 import { attemptLine, hasEnded, itemMark, outcomeLine, stepAgent, stepMark, stepPosition, templateName, whereLine } from "./describe.js";
 
@@ -16,7 +16,7 @@ describe("the decision note", () => {
 describe("drawer test data", () => {
   it("matches the engine schemas", () => {
     expect(parseQueryResult("setup", setup).ok).toBe(true);
-    for (const item of [needsYou, approved, task, committed]) expect(parseItemRecord(item)).toMatchObject({ ok: true });
+    for (const item of [needsYou, approved, task, committed, finishable]) expect(parseItemRecord(item)).toMatchObject({ ok: true });
   });
 });
 

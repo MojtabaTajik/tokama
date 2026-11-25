@@ -730,6 +730,11 @@ button:focus-visible {
   color: var(--warn);
 }
 
+.pl-finish {
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .pl-pipe {
   display: flex;
   align-items: center;

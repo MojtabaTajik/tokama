@@ -708,5 +708,34 @@
   margin: 0 0 0 20px;
   font-size: 12.5px;
   color: var(--text-2);
+
+/* Finish: a done item's worktree and the actions on it */
+
+.finish {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--hairline);
+  background: var(--panel);
+}
+
+.finish-heading {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.finish-line {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.finish-line .mark {
+  margin-right: 6px;
+}
+
+.finish-why {
+  font-size: 12.5px;
+  color: var(--muted);
   overflow-wrap: anywhere;
 }

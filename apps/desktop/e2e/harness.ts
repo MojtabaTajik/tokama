@@ -91,8 +91,11 @@ const within = <T>(promise: Promise<T>, ms: number): Promise<T | undefined> =>
  */
 export type EngineMode = "sample" | "real" | "unavailable";
 
-/** Runs `fn` against a fresh app; on failure, prints the app and engine output and saves a screenshot. */
-export function flow(name: string, fn: (session: Session) => Promise<void>, mode: EngineMode = "sample"): void {
+/**
+ * Runs `fn` against a fresh app; on failure, prints the app and engine output and saves a screenshot.
+ * `seed` runs before the app starts, with the test's HOME and temp dir, e.g. to write a Tokama home.
+ */
+export function flow(name: string, fn: (session: Session) => Promise<void>, mode: EngineMode = "sample", seed?: (home: string, tmp: string) => void | Promise<void>): void {
   it(name, async () => {
     const tmp = mkdtempSync(join(tmpdir(), "tk-"));
     const output: string[] = [];
@@ -103,6 +106,10 @@ export function flow(name: string, fn: (session: Session) => Promise<void>, mode
     let page: Page | undefined;
     let closeHung = false;
     try {
+      if (seed !== undefined) {
+        mkdirSync(homeOf(tmp), { recursive: true });
+        await seed(homeOf(tmp), tmp);
+      }
       trace(name, "launching");
       app = await launch(tmp, baseDir, output, mode);
       trace(name, "launched");
