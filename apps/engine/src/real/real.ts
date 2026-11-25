@@ -30,6 +30,7 @@ import {
   type RecoveredItem,
   type Result,
   type RunLoop,
+  type RunLoopDeps,
   type Setup,
   type StepOutputResult,
   type StoredItem,
@@ -60,6 +61,8 @@ export interface RealEngineOptions {
   readonly log: (message: string) => void;
   /** Called with an error the engine handles and logs, for diagnostics. */
   readonly onError?: (error: unknown) => void;
+  /** What a running item does now, for live display; `undefined` once nothing runs. */
+  readonly onActivity?: RunLoopDeps["onActivity"];
 }
 
 /** The commands about items; repo commands are the engine's own. */
@@ -107,6 +110,7 @@ export class RealEngine {
       log,
       ...(options.ghCommand !== undefined && { ghCommand: options.ghCommand }),
       ...(sshAuthSock !== undefined && sshAuthSock !== "" && { sshAuthSock }),
+      ...(options.onActivity !== undefined && { onActivity: options.onActivity }),
     });
     this.ready = this.loop.ready;
   }

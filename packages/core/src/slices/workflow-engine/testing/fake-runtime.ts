@@ -46,6 +46,7 @@ export const edits = (files: Readonly<Record<string, string>>, text = "Done."): 
     }
     yield { type: "turn" };
     yield { type: "tool_call", id: "edit-1", name: "Write", kind: "edit", input: { file_path: Object.keys(files)[0] ?? "" } };
+    yield { type: "tool_result", id: "edit-1" };
     yield { type: "text", text };
     yield completed();
   };

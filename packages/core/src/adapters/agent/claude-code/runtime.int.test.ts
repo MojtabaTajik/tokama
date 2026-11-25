@@ -87,7 +87,7 @@ describe("Claude Code runtime", SLOW, () => {
     const events = await collect(runtime().launch(request("success"), new AbortController().signal));
     const [started] = events;
     expect(started?.type).toBe("started");
-    expect(events.map((event) => event.type)).toEqual(["started", "rate_limit", "turn", "text", "tool_call", "turn", "text", "tool_call", "turn", "text", "end"]);
+    expect(events.map((event) => event.type)).toEqual(["started", "rate_limit", "turn", "text", "tool_call", "tool_result", "turn", "text", "tool_call", "tool_result", "turn", "text", "end"]);
     expect(end(events)).toEqual({
       type: "end",
       outcome: "completed",

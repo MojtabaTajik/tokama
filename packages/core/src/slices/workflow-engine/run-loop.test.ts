@@ -11,6 +11,7 @@ import {
   HostIdSchema,
   TemplateRecordSchema,
   type AgentId,
+  type ItemActivity,
   type ItemEvent,
   type ItemId,
   type RepoId,
@@ -235,6 +236,23 @@ describe("run loop: done_when", () => {
     expect(runtime.calls[0]?.request).toMatchObject({ cwd: worktreeDir(id), model: "qwen3-coder", timeoutMs: 60_000 });
     expect(runtime.calls[0]?.request.prompt).toContain("Fix the app");
     expect(runtime.calls[0]?.request.role).toContain("You are builder.");
+  });
+
+  it("reports what the item does now: the agent's actions, then Tokama running each command, and nothing once each ends", SLOW, async () => {
+    const seen: Array<ItemActivity | undefined> = [];
+    const loop = engine(fakeRuntime([edits(FIXED)]), { onActivity: (_id, activity) => seen.push(activity) });
+    const id = await start(loop, template([BUILD_CHECKED], { setup: "sh setup.sh" }));
+    const agent = seen.filter((activity) => activity?.by === "agent");
+    expect(agent[0]).toMatchObject({ itemId: id, stepIndex: 0, attempt: 1, lastAction: { kind: "think", label: "thinking" }, toolRunning: null });
+    expect(agent).toContainEqual(expect.objectContaining({ lastAction: { kind: "edit", label: "editing app.txt" }, toolRunning: { label: "editing app.txt", startedAt: expect.any(Number) } }));
+    const tokama = seen.filter((activity) => activity?.by === "tokama");
+    expect(tokama.map((activity) => activity?.toolRunning?.label)).toEqual(["running sh setup.sh", "running sh check.sh"]);
+    expect(tokama[1]).toMatchObject({ lastAction: { kind: "run", label: "running sh check.sh" } });
+    // The agent call, the setup and the check each end with nothing running.
+    expect(seen.filter((activity) => activity === undefined)).toHaveLength(3);
+    expect(seen.at(-1)).toBeUndefined();
+    // Live activity is never written to the item's log.
+    expect(log(id).map((event) => event.type)).not.toContain("activity");
   });
 
   it("agent finishes: the step passes when the agent completes; with no checks, Finish commits the worktree", SLOW, async () => {

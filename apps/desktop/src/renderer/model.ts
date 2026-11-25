@@ -3,6 +3,7 @@
 // without React or a real time.
 import type { AgentSummary, AiCliId, Health, ItemRecord, StepRecord, TemplateSummary } from "@tokama/core";
 import { itemMark, type Mark, stepAgent, type StepAgent, stepMark } from "./drawer/describe.js";
+import { itemTotal } from "./drawer/progress-view.js";
 
 /** What the main area shows: everything, one workflow's items, or one repo's items. */
 export type View = { readonly kind: "all" } | { readonly kind: "workflow"; readonly id: string } | { readonly kind: "repo"; readonly id: string };
@@ -231,15 +232,16 @@ export interface ItemTime {
 
 /**
  * The row's time. A live item shows how long ago it started ("14 min", "1 h 35"); a finished one
- * shows its start as a clock time today or a date earlier. The engine records no end time, so
- * this is the start.
+ * shows its start as a clock time today or a date earlier, and its agent and check time after it
+ * ("17:57 · 12 m"), without the time it waited for you.
  */
-export function timeOf(item: Pick<ItemRecord, "state" | "createdAt">, now: number): ItemTime {
+export function timeOf(item: Pick<ItemRecord, "state" | "createdAt" | "durationMs">, now: number): ItemTime {
   const start = new Date(item.createdAt);
   const title = `started ${sameDay(start, new Date(now)) ? clock(start) : `${start.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} ${clock(start)}`}`;
   if (bucketOf(item) === "done" || bucketOf(item) === "failed") {
     const text = sameDay(start, new Date(now)) ? clock(start) : start.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-    return { text, title };
+    const total = itemTotal(item);
+    return total === undefined ? { text, title } : { text: `${text} · ${total}`, title: `${title} · ${total} of agent and check time` };
   }
   const minutes = Math.max(0, Math.floor((now - item.createdAt) / 60_000));
   if (minutes < 60) return { text: `${minutes} min`, title };
@@ -286,6 +288,23 @@ export function flagOf(item: Pick<ItemRecord, "state" | "steps" | "decision">): 
   }
   if (item.state === "stopped") return { mark: { symbol: "■", word: "stopped", tone: "muted" }, text: "stopped" };
   return undefined;
+}
+
+/**
+ * The card's status line: a working item's word (it gets a breathing dot), or the flag of an item
+ * that waits or ended; an ended item adds its time and total ("done · 17:57 · 12 m").
+ */
+export type CardStatus = { readonly live: true; readonly word: "working" | "checking" } | ({ readonly live: false } & Flag);
+
+const DONE: Mark = { symbol: "✓", word: "done", tone: "pass" };
+
+export function cardStatus(item: Pick<ItemRecord, "state" | "steps" | "decision" | "createdAt" | "durationMs">, now: number): CardStatus | undefined {
+  const running = item.steps.find((step) => step.state === "running");
+  if (item.state === "running" && running !== undefined) return { live: true, word: running.stage === "verifying" ? "checking" : "working" };
+  const flag = item.state === "done" ? { mark: DONE, text: "done" } : flagOf(item);
+  if (flag === undefined) return undefined;
+  const ended = item.state === "done" || item.state === "failed" || item.state === "stopped";
+  return { live: false, mark: flag.mark, text: ended ? `${flag.text} · ${timeOf(item, now).text}` : flag.text };
 }
 
 /** The AI CLIs that sign in with a command of their own (Ollama runs locally and has none). */

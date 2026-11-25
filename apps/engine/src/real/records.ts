@@ -25,6 +25,7 @@ import {
   type TemplateRecord,
   type TemplateStepDef,
 } from "@tokama/core";
+import { attemptMs, itemMs, stepTimes } from "./timing.js";
 
 const MAX_ATTEMPTS_SHOWN = 50;
 const MAX_CHECKS_SHOWN = 20;
@@ -69,7 +70,7 @@ export function toItemRecord(item: StoredItem): ItemRecord | undefined {
   const steps: StepRecord[] = item.steps.map((step) => {
     const def = defs.get(step.id);
     const checking = def?.doneWhen === "checks pass" && running?.step.id === step.id && running.attempt.processes.some((p) => p.role === "check");
-    const attempts = step.attempts.slice(-MAX_ATTEMPTS_SHOWN).map(toAttempt);
+    const attempts = step.attempts.slice(-MAX_ATTEMPTS_SHOWN).map((attempt) => toAttempt(item, attempt));
     // Runs and the limit count the current round: a step sent back to starts again from run 1.
     const round = def && { runs: countedAttempts(step), maxAttempts: attemptLimit(item, step, def.maxAttempts) };
     const detail = stepDetail(step.state, step.attempts, round);
@@ -86,6 +87,7 @@ export function toItemRecord(item: StoredItem): ItemRecord | undefined {
       ...(attempts.length > 0 && { attempts }),
       ...round,
       ...(note !== undefined && { changesNote: note }),
+      ...stepTimes(item, step),
     };
   });
 
@@ -102,6 +104,7 @@ export function toItemRecord(item: StoredItem): ItemRecord | undefined {
   };
   const finish = toFinish(item);
   const cardLine = cut(finishLine(finish) ?? cardLineOf(item, steps, decision?.kind), 120);
+  const durationMs = itemMs(item);
 
   const record = {
     schemaVersion: 1,
@@ -118,6 +121,7 @@ export function toItemRecord(item: StoredItem): ItemRecord | undefined {
     ...(cardLine !== undefined && { cardLine }),
     ...(decision !== undefined && item.state === "needs_you" && { decision }),
     steps,
+    ...(durationMs !== undefined && { durationMs }),
     ...(outcome && { outcome }),
     ...(finish !== undefined && { finish }),
   } satisfies ItemRecord;
@@ -164,10 +168,14 @@ function finishLine(finish: ItemRecord["finish"]): string | undefined {
   return undefined;
 }
 
-function toAttempt(attempt: AttemptRecord): AttemptSummary {
+function toAttempt(item: StoredItem, attempt: AttemptRecord): AttemptSummary {
   const detail = cut(attempt.detail, 500);
+  const durationMs = attemptMs(item, attempt);
   return {
     attempt: attempt.attempt,
+    startedAt: attempt.startedAt,
+    ...(attempt.endedAt !== undefined && { endedAt: attempt.endedAt }),
+    ...(durationMs !== undefined && { durationMs }),
     ...(attempt.result !== undefined && { result: attempt.result }),
     ...(attempt.failure !== undefined && { failure: attempt.failure }),
     ...(detail !== undefined && { detail }),

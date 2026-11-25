@@ -5,9 +5,10 @@
 // at the top while the page scrolls, and wide tabs. Both are one element, so switching keeps
 // everything open in it: the tab, the chosen file, a note being written. Engine text (titles,
 // questions, the cloud summary, step details, agent output, check output and transcripts) is
-// rendered as React text only.
-import type { CommandErrorCode, Decision, ItemRecord, Setup } from "@tokama/core";
-import { type KeyboardEvent, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+// rendered as React text only. While the item runs, the header shows the live activity line (who
+// works, the latest action, the time) in place of the state line, and every item shows its step track.
+import type { AgentSummary, CommandErrorCode, Decision, ItemRecord, Setup } from "@tokama/core";
+import { type KeyboardEvent, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
 import { AgentLabel } from "../agent/AgentLabel.js";
 import { agentInfo } from "../agent/agent-info.js";
@@ -27,6 +28,10 @@ import { StepOutput, StepPreview, type OutputState, useStepOutput } from "./Step
 import { StoppedCard } from "./StoppedCard.js";
 import { finishState, isDiscarded } from "./finish-view.js";
 import { useItem } from "./useItem.js";
+import { useActivity } from "./useActivity.js";
+import { ActivityLine, StepTrack } from "./Progress.js";
+import { attemptTime, stepTimes } from "./progress-view.js";
+import { useNow } from "../useNow.js";
 
 const TEXT = {
   drawer: "Item",
@@ -300,6 +305,8 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
         {item ? (
           <>
             <h1 id={titleId}>{item.title}</h1>
+            <LiveActivity bridge={bridge} item={item} agents={setup?.agents ?? []} />
+            <StepTrack item={item} />
             <div className="ex-meta">
               <StateLine item={item} />
               <span className="ex-meta-part">
@@ -332,7 +339,8 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
             {template?.name ?? item.templateId} · {PRIVACY[item.privacy]}
           </p>
           <h2 id={titleId}>{item.title}</h2>
-          <StateLine item={item} />
+          <LiveActivity bridge={bridge} item={item} agents={setup?.agents ?? []} fallback={<StateLine item={item} />} />
+          <StepTrack item={item} />
         </div>
       ) : (
         <div className="drawer-heading">
@@ -447,6 +455,17 @@ function StateLine({ item }: { readonly item: ItemRecord }) {
       {outcome && <span className="drawer-position mono"> · {outcome}</span>}
     </p>
   );
+}
+
+/**
+ * The activity line while the item runs a step, ticking every second; `fallback` otherwise. Its
+ * own component, so only this line renders again each second.
+ */
+function LiveActivity({ bridge, item, agents, fallback = null }: { readonly bridge: TokamaBridge; readonly item: ItemRecord; readonly agents: readonly AgentSummary[]; readonly fallback?: ReactNode }) {
+  const running = item.state === "running" && item.steps.some((step) => step.state === "running");
+  const activity = useActivity(bridge, item.id, running);
+  const now = useNow(running);
+  return running ? <ActivityLine item={item} activity={activity} agents={agents} now={now} /> : fallback;
 }
 
 function Missing({ error, onRetry }: { readonly error: { code: string; message: string } | undefined; readonly onRetry: () => void }) {
@@ -651,18 +670,19 @@ function Steps({ bridge, item, setup, onOpenAgent, unfold }: StepsProps) {
                 )}{" "}
                 <span>· {whereLine(step, agents, connections)}</span>
               </div>
-              {step.detail !== undefined && <p className="step-detail mono">{step.detail}</p>}
+              {(step.detail !== undefined || stepTimes(step).length > 0) && <p className="step-detail mono">{[...(step.detail === undefined ? [] : [step.detail]), ...stepTimes(step)].join(" · ")}</p>}
               {step.attempts !== undefined && step.attempts.length > 0 && (
                 <ol className="step-attempts" aria-label={`${step.name}: ${TEXT.attempts}`}>
                   {step.attempts.map((attempt) => {
                     const line = attemptLine(attempt);
+                    const took = attemptTime(attempt);
                     return (
                       <li key={attempt.attempt} className="step-attempt">
                         <span className="mono">
                           <span className="mark" data-tone={line.mark.tone} aria-hidden="true">
                             {line.mark.symbol}
                           </span>
-                          {line.text}
+                          {took === undefined ? line.text : `${line.text} · ${took}`}
                         </span>
                         {/* Only an ended attempt of an agent's step has an output. */}
                         {step.agentId !== undefined && attempt.result !== undefined && (

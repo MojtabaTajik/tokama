@@ -49,6 +49,8 @@ import {
   engineEndpoint,
   err,
   type ItemResult,
+  type ActivityResult,
+  type ItemActivity,
   LineDecoder,
   loadRepos,
   MAX_MESSAGE_BYTES,
@@ -82,6 +84,7 @@ import {
   type ProcessRunner,
   type MachineFacts,
 } from "@tokama/core";
+import { ActivityFeed } from "./activity-feed.js";
 import { EngineDiagnostics, isDiagnosticsCommand } from "./diagnostics.js";
 import { listAgents } from "./agents-list.js";
 import { aiClis } from "./ai-clis.js";
@@ -291,7 +294,11 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   }
 
   const store = options.store ?? new MemoryItemStore();
-  const sample = options.sample ? new SampleEngine(store, options.clock ?? systemClock) : undefined;
+  // What running items do now: pushed to every client, at most once a second per item, once the
+  // event stream below exists (the sample items have their activity from the start).
+  let pushActivity: (latest: ItemActivity) => void = () => {};
+  const activity = new ActivityFeed(options.clock ?? systemClock, (latest) => pushActivity(latest));
+  const sample = options.sample ? new SampleEngine(store, options.clock ?? systemClock, activity) : undefined;
   const runner = options.runner ?? createProcessRunner();
   // Real mode: the engine stores items. Its run loop starts restart recovery at once. If it cannot
   // start, the engine still answers, and its setup says why nothing can run.
@@ -310,6 +317,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
           ...(options.runtime !== undefined && { runtime: options.runtime }),
           ...(options.recoveryGraceMs !== undefined && { recoveryGraceMs: options.recoveryGraceMs }),
           ...(options.ghCommand !== undefined && { ghCommand: options.ghCommand }),
+          onActivity: (itemId, latest) => activity.update(itemId, latest),
           ...(diagnostics !== undefined && { onError: (error: unknown) => diagnostics?.store.error("engine", "storage", error) }),
           log,
         }).catch((error: unknown) => {
@@ -567,6 +575,9 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
         const item = store.get(query.itemId);
         return item ? { ok: true, data: { item } satisfies ItemResult } : { ok: false, error: { code: "not_found", message: `no item ${query.itemId}` } };
       }
+      case "activity":
+        if (store.get(query.itemId) === undefined) return { ok: false, error: { code: "not_found", message: `no item ${query.itemId}` } };
+        return { ok: true, data: { activity: activity.get(query.itemId) } satisfies ActivityResult };
       case "decision_diff": {
         const diff = sample?.decisionDiff(query.itemId, query.decisionId);
         if (diff === undefined) return { ok: false, error: { code: "not_implemented", message: "this engine serves no items" } };
@@ -731,6 +742,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   }
   const unsubscribe = store.subscribe((item) => broadcast({ type: "item_updated", item }));
   usageRecorded = usageChanged;
+  pushActivity = (latest) => broadcast({ type: "item_activity", activity: latest });
   diagnosticsChanged = () => broadcast({ type: "setup_changed" });
   entriesChanged = () => broadcast({ type: "diagnostics_changed" });
 
@@ -743,6 +755,8 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     if (shuttingDown) return closed;
     shuttingDown = true;
     stopTicking?.();
+    pushActivity = () => {};
+    activity.close();
     unsubscribe();
     usageRecorded = () => {};
     diagnosticsChanged = () => {};

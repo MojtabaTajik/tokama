@@ -1,10 +1,12 @@
-// One flat kanban card: the template icon and repos with the privacy label, an optional flag line
-// (needs you, failed, stopped), the title, the engine's one mono line and the agent. The card is
-// a native button, so Enter and Space select it as a click does. Engine text is rendered as React
-// text only.
+// One flat kanban card: the template icon and repos with the privacy label, a status line, the
+// title, the engine's one mono line and the agent. A card that works right now has a breathing dot
+// before "working" or "checking" and a thin light along its top edge; cards that wait or ended are
+// still, with a mark and words (an ended one with its time and total). The card is a native
+// button, so Enter and Space select it as a click does. Engine text is rendered as React text only.
 import type { AgentSummary, ItemRecord, TemplateSummary } from "@tokama/core";
 import { PRIVACY } from "../drawer/describe.js";
-import { flagOf, rowAgent } from "../model.js";
+import { LiveDot } from "../drawer/Progress.js";
+import { cardStatus, rowAgent } from "../model.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
 
 export interface CardProps {
@@ -13,22 +15,31 @@ export interface CardProps {
   readonly template: TemplateSummary;
   readonly selected: boolean;
   readonly onSelect: (itemId: string) => void;
+  /** For an ended card's day or clock time. */
+  readonly now: number;
 }
 
-export function Card({ item, agents, template, selected, onSelect }: CardProps) {
-  const flag = flagOf(item);
+export function Card({ item, agents, template, selected, onSelect, now }: CardProps) {
+  const status = cardStatus(item, now);
   const agent = rowAgent(item, agents);
   return (
-    <button type="button" className="card" data-item-id={item.id} data-state={item.state} aria-current={selected ? "true" : undefined} onClick={() => onSelect(item.id)}>
+    <button type="button" className="card" data-item-id={item.id} data-state={item.state} data-live={status?.live === true} aria-current={selected ? "true" : undefined} onClick={() => onSelect(item.id)}>
+      {status?.live === true && <span className="card-edge" aria-hidden="true" />}
       <span className="card-meta">
         <TemplateIcon icon={template.icon} color={template.color} />
         <span className="ellipsis mono">{item.repoIds.length > 0 ? item.repoIds.join(", ") : ""}</span>
         <span className="card-privacy">{PRIVACY[item.privacy]}</span>
       </span>
-      {flag && (
-        <span className="card-flag ellipsis" data-tone={flag.mark.tone} title={flag.text}>
-          <span aria-hidden="true">{flag.mark.symbol}</span>
-          <span className="visually-hidden">{flag.mark.word}: </span> {flag.text}
+      {status?.live === true && (
+        <span className="card-flag card-working">
+          <LiveDot />
+          {status.word}
+        </span>
+      )}
+      {status?.live === false && (
+        <span className="card-flag ellipsis" data-tone={status.mark.tone} title={status.text}>
+          <span aria-hidden="true">{status.mark.symbol}</span>
+          <span className="visually-hidden">{status.mark.word}: </span> {status.text}
         </span>
       )}
       <span className="card-title">{item.title}</span>

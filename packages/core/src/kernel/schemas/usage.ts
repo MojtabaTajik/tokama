@@ -57,6 +57,11 @@ export const AgentCallEventSchema = z.discriminatedUnion("type", [
     kind: z.enum(["edit", "command", "other"]),
     input: z.record(z.string(), z.json()),
   }),
+  /**
+   * A tool call ended: the CLI sent back the tool's result. `id` is the `tool_call` event's id. A
+   * call with a `tool_call` and no `tool_result` yet is still running.
+   */
+  z.strictObject({ type: z.literal("tool_result"), id: z.string().min(1) }),
   /** The CLI reported its plan usage. */
   z.strictObject({
     type: z.literal("rate_limit"),

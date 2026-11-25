@@ -14,6 +14,7 @@ const COMMIT = "3f2a9c1d4e5f60718293a4b5c6d7e8f901234567";
 
 let home: string;
 let store: ItemStore;
+let clock: ReturnType<typeof manualClock>;
 
 function template(): TemplateRecord {
   const step = (id: string, extra: Record<string, unknown>) => ({
@@ -61,12 +62,67 @@ beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), "tk-records-"));
   const hostId = loadHostId(home);
   if (!hostId.ok) throw new Error(hostId.error);
-  store = ItemStore.open({ home, hostId: hostId.value, clock: manualClock(T0) }).store;
+  clock = manualClock(T0);
+  store = ItemStore.open({ home, hostId: hostId.value, clock }).store;
 });
 
 afterEach(() => rmSync(home, { recursive: true, force: true }));
 
 describe("toItemRecord", () => {
+  it("times each ended attempt, step and the ended item from the log, with the time it waited for you apart, also after a restart", () => {
+    const at = (ms: number, events: Parameters<ItemStore["append"]>[1]) => (item: StoredItem) => {
+      clock.advance(ms);
+      return append(item, events);
+    };
+    const steps: Array<(item: StoredItem) => StoredItem> = [
+      at(10_000, [{ type: "step_started", stepId: FIX }, { type: "attempt_started", stepId: FIX, attempt: 1 }]),
+      at(185_000, [{ type: "attempt_ended", stepId: FIX, attempt: 1, result: "failed" }, { type: "attempt_started", stepId: FIX, attempt: 2 }]),
+      // Attempt 2 asks about a protected change after a minute; you answer 6 minutes later.
+      at(60_000, [{ type: "decision_opened", decisionId: DECISION, kind: "tamper", stepId: FIX, choices: [{ id: "approve", label: "Approve" }] }]),
+      at(360_000, [{ type: "decision_resolved", decisionId: DECISION, choice: "approve" }]),
+      at(192_000, [{ type: "attempt_ended", stepId: FIX, attempt: 2, result: "passed" }, { type: "step_ended", stepId: FIX, result: "passed" }]),
+      at(2_000, [{ type: "step_started", stepId: REVIEW }, { type: "attempt_started", stepId: REVIEW, attempt: 1 }]),
+    ];
+    const running = steps.reduce((item, step) => step(item), created());
+    const live = toItemRecord(running)!;
+    expect(live.durationMs).toBeUndefined();
+    expect(live.steps[1]).toMatchObject({ state: "running", attempts: [{ attempt: 1, startedAt: clock.now() }] });
+    expect(live.steps[1]!.attempts![0]).not.toHaveProperty("durationMs");
+    expect(live.steps[1]).not.toHaveProperty("durationMs");
+
+    const ended = at(252_000, [
+      { type: "attempt_ended", stepId: REVIEW, attempt: 1, result: "passed" },
+      { type: "step_ended", stepId: REVIEW, result: "passed" },
+      { type: "item_ended", outcome: "done" },
+    ])(running);
+    const check = (record: ReturnType<typeof toItemRecord>) => {
+      const [fix, review] = record!.steps;
+      expect(fix!.attempts!.map((attempt) => attempt.durationMs)).toEqual([185_000, 252_000]);
+      expect(fix).toMatchObject({ durationMs: 437_000, waitedMs: 360_000 });
+      expect(review).toMatchObject({ durationMs: 252_000, attempts: [{ startedAt: T0 + 809_000, endedAt: T0 + 1_061_000, durationMs: 252_000 }] });
+      expect(review).not.toHaveProperty("waitedMs");
+      // First attempt start to the end, less the 6 minutes it waited for you.
+      expect(record!.durationMs).toBe(1_051_000 - 360_000);
+    };
+    check(toItemRecord(ended));
+    // A restart folds the same log again: the same figures.
+    const reopened = ItemStore.open({ home, hostId: ended.hostId, clock: manualClock(T0 + 99 * 3_600_000) }).store;
+    check(toItemRecord(reopened.get(ended.id)!));
+  });
+
+  it("does not count the time the engine was down as working time", () => {
+    let item = append(created(), [{ type: "step_started", stepId: FIX }, { type: "attempt_started", stepId: FIX, attempt: 1 }]);
+    // The engine stops during the attempt and comes back 15 hours later; recovery ends the attempt then.
+    clock.advance(15 * 3_600_000);
+    item = append(item, [{ type: "attempt_ended", stepId: FIX, attempt: 1, result: "run_failed", failure: "engine_restart" }, { type: "attempt_started", stepId: FIX, attempt: 2 }]);
+    clock.advance(252_000);
+    item = append(item, [{ type: "attempt_ended", stepId: FIX, attempt: 2, result: "passed" }, { type: "step_ended", stepId: FIX, result: "passed" }, { type: "item_ended", outcome: "stopped" }]);
+    const record = toItemRecord(item)!;
+    expect(record.steps[0]!.attempts!.map((attempt) => attempt.durationMs)).toEqual([undefined, 252_000]);
+    expect(record.steps[0]!.durationMs).toBe(252_000);
+    expect(record.durationMs).toBe(252_000);
+  });
+
   it("maps a new item from its template snapshot: ref, kind, privacy and every step pending", () => {
     const record = toItemRecord(created())!;
     expect(record).toMatchObject({ templateId: "orders-api/careful-fix", kind: "task", privacy: "local_and_cloud", state: "queued", title: "Fix the greeting", cardLine: "starting" });

@@ -40,6 +40,7 @@ import {
   type DecisionChoice,
   type DecisionKind,
   type FinishAction,
+  type ItemActivity,
   type ItemEventBody,
   type ItemDiff,
   type ItemId,
@@ -54,7 +55,7 @@ import {
   type TemplateStepDef,
 } from "../../kernel/schemas/index.js";
 import type { Agent, Repo } from "../config/index.js";
-import { callUsage, claudeCodeGuardDefaults, runGuardedCall, type LoopGuardSettings } from "../execution/index.js";
+import { type ActivityState, callUsage, claudeCodeGuardDefaults, labelText, redactPaths, runGuardedCall, type LoopGuardSettings } from "../execution/index.js";
 import { protectedSet, sharedGitSettings, type ProtectedSet } from "../integrity/index.js";
 import { countedAttempts, openAttempt, openDecisions, recoverItems, RUN_FAILURE_CHOICES, type ItemStore, type RecoveredItem } from "../items/index.js";
 import { buildPrompt, type StepResults } from "../prompting/index.js";
@@ -107,6 +108,12 @@ export interface RunLoopDeps {
   readonly ghCommand?: readonly [string, ...string[]];
   /** The SSH agent socket, for a push to an SSH remote only; agents and checks never get it. */
   readonly sshAuthSock?: string;
+  /**
+   * What a running item does now, for live display: after each event of its agent and as each
+   * setup or check command starts; `undefined` once the agent call or the checks ended. In memory
+   * only: none of it goes to the item's log.
+   */
+  readonly onActivity?: (itemId: ItemId, activity: ItemActivity | undefined) => void;
 }
 
 export interface StartItemInput {
@@ -257,6 +264,18 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       .sort((a, b) => b[0].length - a[0].length)
       .reduce((out, [path, name]) => out.split(path).join(name), text);
   const detail = (text: string) => cut(scrub(text));
+
+  const reportActivity = (item: StoredItem, stepId: StepId, attempt: number, by: ItemActivity["by"], state: ActivityState | undefined) => {
+    if (deps.onActivity === undefined) return;
+    const stepIndex = item.steps.findIndex((step) => step.id === stepId);
+    deps.onActivity(item.id, state === undefined || stepIndex < 0 ? undefined : { itemId: item.id, stepIndex, attempt, by, ...state });
+  };
+  /** Tokama runs a setup or check command: it runs from now, so the item is not quiet. */
+  const commandActivity = (command: string): ActivityState => {
+    const label = labelText(`running ${redactPaths(scrub(command))}`);
+    const now = clock.now();
+    return { lastAction: { kind: "run", label }, lastEventAt: now, toolRunning: { label, startedAt: now } };
+  };
 
   const liveOf = (itemId: ItemId): Live => {
     let entry = live.get(itemId);
@@ -746,8 +765,9 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
           }
           if (event.type === "tool_call") record(toolLine(event, worktree.path), "tool");
         },
+        onActivity: (state) => reportActivity(item, stepId, attempt, "agent", state),
       },
-    );
+    ).finally(() => reportActivity(item, stepId, attempt, "agent", undefined));
     // Recorded first and whatever happened, a stop included: the tokens were spent. Usage is
     // accounting, so a refused write is logged, not a run failure.
     const recorded = store.append(item.id, [
@@ -842,7 +862,8 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     if (!cleaned.ok) return fail(`Cannot remove ignored files before the checks: ${cleaned.error.message}`);
     mkdirSync(itemPath(item.id, dir), { recursive: true, mode: 0o700 });
     if (ctx.template.setup !== undefined) {
-      const setup = await runOne(runner, ctx.template.setup, worktree.path, signal, itemPath(item.id, `${dir}/setup.log`));
+      reportActivity(item, stepId, attempt, "tokama", commandActivity(ctx.template.setup));
+      const setup = await runOne(runner, ctx.template.setup, worktree.path, signal, itemPath(item.id, `${dir}/setup.log`)).finally(() => reportActivity(item, stepId, attempt, "tokama", undefined));
       if (signal.aborted) return WAIT;
       const gate = await intact(ctx, worktree);
       if (gate !== undefined) return gate;
@@ -856,7 +877,8 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     const failures: CheckResult[] = [];
     for (const [index, command] of checkCommands(ctx, stepDef(ctx.template, stepId)).entries()) {
       const outputFile = `${dir}/check-${index + 1}.log`;
-      const result = await runOne(runner, command, worktree.path, signal, itemPath(item.id, outputFile));
+      reportActivity(item, stepId, attempt, "tokama", commandActivity(command));
+      const result = await runOne(runner, command, worktree.path, signal, itemPath(item.id, outputFile)).finally(() => reportActivity(item, stepId, attempt, "tokama", undefined));
       if (signal.aborted) return WAIT;
       if (result.outcome === "refused" || result.outcome === "not-started") return fail(`The check could not run. ${commandFailure(result)}`);
       const passed = result.outcome === "passed";

@@ -226,8 +226,78 @@ export function ago(now: number, minutes: number): number {
   return now - Math.floor(minutes * MINUTE * fit);
 }
 
+/** How long each sample attempt worked, by step and attempt: a few minutes each. */
+const ATTEMPT_MS = [252_000, 185_000, 431_000, 96_000, 318_000];
+/** A running sample attempt started this long ago. */
+const RUNNING_FOR_MS = 192_000;
+/** The done sample item's first step waited this long for your approval. */
+export const SAMPLE_WAIT_MS = 6 * MINUTE;
+
+interface RawAttempt {
+  readonly attempt: number;
+  readonly [field: string]: unknown;
+}
+interface RawStep {
+  readonly state: string;
+  readonly attempts?: readonly RawAttempt[] | undefined;
+  readonly [field: string]: unknown;
+}
+interface RawItem {
+  readonly id: string;
+  readonly state: string;
+  readonly createdAt: number;
+  readonly steps: readonly RawStep[];
+  readonly [field: string]: unknown;
+}
+
+/**
+ * The item with attempt times as the engine derives them from the log: each attempt one after the
+ * other from shortly after the item was created, a running attempt started a few minutes ago, and
+ * the working time of ended steps and of the ended item. Squeezed to fit before `now` near midnight.
+ */
+function withTimes(item: RawItem, now: number, waits: Readonly<Record<number, number>> = {}): RawItem {
+  const ended = item.state === "done" || item.state === "failed";
+  const plan = item.steps.map((step, index) => {
+    const attempts = step.attempts ?? (step.state === "passed" ? [{ attempt: 1, result: "passed", checks: [] }] : []);
+    return attempts.map((attempt, n) => ATTEMPT_MS[(index + n) % ATTEMPT_MS.length]!);
+  });
+  const total = plan.flat().reduce((sum, ms) => sum + ms, 0) + Object.values(waits).reduce((sum, ms) => sum + ms, 0);
+  const room = now - item.createdAt - 2 * 20_000 - (ended ? 0 : RUNNING_FOR_MS);
+  const scale = total > 0 ? Math.max(0, Math.min(1, room / total)) : 1;
+  let at = item.createdAt + 20_000;
+  let first: number | undefined;
+  const steps = item.steps.map((step, index) => {
+    const attempts: RawAttempt[] = (step.attempts ?? (step.state === "passed" ? [{ attempt: 1, result: "passed", checks: [] }] : [])).map((attempt, n) => {
+      const durationMs = Math.round(plan[index]![n]! * scale);
+      const timed = { ...attempt, startedAt: at, endedAt: at + durationMs, durationMs };
+      first ??= at;
+      at += durationMs + 5_000;
+      return timed;
+    });
+    const waitedMs = waits[index];
+    if (waitedMs !== undefined) at += Math.round(waitedMs * scale);
+    if (step.state === "running") {
+      const startedAt = Math.min(now, Math.max(at, now - RUNNING_FOR_MS));
+      attempts.push({ attempt: attempts.length + 1, startedAt, checks: [] });
+    }
+    const worked = attempts.reduce((sum, attempt) => sum + (typeof attempt["durationMs"] === "number" ? attempt["durationMs"] : 0), 0);
+    return {
+      ...step,
+      ...(attempts.length > 0 && { attempts }),
+      ...((step.state === "passed" || step.state === "failed") && attempts.length > 0 && { durationMs: worked }),
+      ...(waitedMs !== undefined && { waitedMs: Math.round(waitedMs * scale) }),
+    };
+  });
+  const waited = Object.values(waits).reduce((sum, ms) => sum + Math.round(ms * scale), 0);
+  return { ...item, steps, ...(ended && first !== undefined && { durationMs: at - 5_000 - first - waited }) };
+}
+
 /** The sample items, created minutes before `now`. */
 export function sampleItems(now: number) {
+  return rawItems(now).map((item) => withTimes(item, now, item.id === ITEM_IDS.finished ? { 0: SAMPLE_WAIT_MS } : {}));
+}
+
+function rawItems(now: number): RawItem[] {
   const base = { schemaVersion: 1 };
   return [
     {

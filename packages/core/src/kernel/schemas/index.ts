@@ -44,6 +44,7 @@ import { type TemplateRecord, TemplateRecordSchema } from "./template.js";
 import { type ItemEvent, ItemEventSchema } from "./item-log.js";
 import { type ParseError, parseWith } from "./parse.js";
 
+export * from "./activity.js";
 export * from "./agents.js";
 export * from "./ai-clis.js";
 export * from "./attempt-files.js";

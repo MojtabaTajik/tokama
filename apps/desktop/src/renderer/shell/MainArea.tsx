@@ -145,7 +145,7 @@ function Body(props: MainAreaProps & { readonly template: Setup["templates"][num
         <>
           <StatusFilter items={scoped} filter={views.filter} now={now} onChange={views.setFilter} />
           {template !== undefined && views.layout === "board" ? (
-            <Board items={visibleItems(scoped, views.filter, now)} agents={setup.agents} template={template} selectedItemId={selectedItemId} onSelect={onSelectItem} />
+            <Board items={visibleItems(scoped, views.filter, now)} agents={setup.agents} template={template} selectedItemId={selectedItemId} onSelect={onSelectItem} now={now} />
           ) : (
             <ItemList
               groups={groupItems(scoped, views.filter, now)}

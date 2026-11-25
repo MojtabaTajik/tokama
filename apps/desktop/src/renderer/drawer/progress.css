@@ -1,0 +1,178 @@
+/*
+ * Live progress: the step track and activity line in the drawer and full view headers, and the
+ * working card. The current step's mark and the card's dot breathe, the line into the current
+ * step carries a slow light, and a light crosses a working card's top edge. The animations and
+ * their still versions for reduced motion are in ui/motion.css.
+ */
+.track {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+
+.expanded .track {
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.track-step {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.track-step[data-current="true"] {
+  flex: none;
+}
+
+.track-mark {
+  flex: none;
+  width: 12px;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* Tone colours come from the drawer's shared [data-tone] rules. */
+.track-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-mark[data-tone="pass"] + .track-name {
+  color: var(--text-2);
+}
+
+.track-step[data-current="true"] .track-name {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.track-says {
+  flex: none;
+  white-space: nowrap;
+}
+
+.track-line {
+  flex: 1 1 14px;
+  min-width: 10px;
+  max-width: 44px;
+  height: 2px;
+  margin: 0 7px;
+  border-radius: 1px;
+  background: var(--hairline);
+}
+
+.track-line[data-live="true"] {
+  background: linear-gradient(90deg, var(--hairline) 0 35%, var(--live) 50%, var(--hairline) 65% 100%);
+  background-size: 300% 100%;
+  animation: tk-shimmer var(--motion-shimmer) var(--motion-shimmer-ease) infinite;
+}
+
+.track-mark[data-live="true"],
+.live-dot {
+  animation: tk-breathe var(--motion-breathe) var(--motion-breathe-ease) infinite;
+}
+
+/* One line that never wraps: who and the time stay whole, the action gives way in its middle. */
+.activity {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.expanded .activity {
+  font-size: 12.5px;
+}
+
+.activity-who {
+  flex: none;
+  color: var(--text-2);
+}
+
+.activity-sep {
+  flex: none;
+  padding: 0 6px;
+}
+
+.activity-head {
+  min-width: 2ch;
+  overflow: hidden;
+  color: var(--text-2);
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+
+.activity-head:empty {
+  min-width: 0;
+}
+
+.activity-tail {
+  flex: none;
+  color: var(--text-2);
+  white-space: pre;
+}
+
+.activity-time {
+  flex: none;
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Quiet is grey words, never a warning colour: a long test run sends nothing while it works. */
+.activity-quiet {
+  flex: none;
+  color: var(--muted);
+}
+
+.card {
+  position: relative;
+  overflow: hidden;
+}
+
+.card-working {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+}
+
+.live-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--live);
+}
+
+.card-edge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.card-edge::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 25%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, var(--live), transparent);
+  animation: tk-sweep var(--motion-sweep) var(--motion-sweep-ease) infinite;
+}
