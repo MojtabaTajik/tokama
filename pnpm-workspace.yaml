@@ -1,6 +1,7 @@
 packages:
   - packages/*
   - apps/*
+  - e2e
 
 # Supply chain: refuse versions younger than one day, fail on unapproved
 # dependency build scripts, refuse git or tarball subdependencies.

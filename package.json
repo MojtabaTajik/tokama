@@ -16,7 +16,8 @@
     "test": "vitest run --config tooling/vitest.config.ts --project fast",
     "test:int": "vitest run --config tooling/vitest.config.ts --project int",
     "test:all": "vitest run --config tooling/vitest.config.ts",
-    "removal-test": "tsc --project tooling/removal-test && node tooling/removal-test/removal-test.ts"
+    "removal-test": "tsc --project tooling/removal-test && node tooling/removal-test/removal-test.ts",
+    "e2e:real": "pnpm build && pnpm --filter @tokama/e2e real"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

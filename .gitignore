@@ -11,3 +11,4 @@ node_modules/
 .DS_Store
 CLAUDE.local.md
 /apps/desktop/e2e-output/
+/e2e/e2e-output/
