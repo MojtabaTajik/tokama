@@ -12,7 +12,7 @@
 // before checks run on it and before it is committed; protected changes the engineer has not
 // approved ask. One tree flows through: the checks pass on it, the reviewer sees its diff, Finish
 // commits it. For `checks pass`: remove ignored files, run setup again, stage, judge, then check.
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Clock } from "../../kernel/clock/index.js";
@@ -374,7 +374,8 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
   const writeItemFile = (itemId: ItemId, rel: string, text: string): void => {
     const path = itemPath(itemId, rel);
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-    writeFileSync(path, text, { mode: 0o600 });
+    const written = replaceTextSync(path, text, 0o600);
+    if (!written.ok) throw new Error(written.error.message);
   };
 
   const readItemFile = async (itemId: ItemId, rel: string): Promise<string | undefined> => {

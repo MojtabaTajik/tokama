@@ -1,8 +1,9 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { systemClock, type Clock, type TimerHandle } from "../../../kernel/clock/index.js";
+import { replaceTextSync } from "../../../kernel/fs-safe/index.js";
 import { createProcessRunner, type ProcessRunner, type RunResult } from "../../../kernel/process/index.js";
 import type { AgentCallRequest, AgentRuntime } from "../../../kernel/ports/index.js";
 import type { AgentCallErrorKind, AgentCallEvent, TokenUsage } from "../../../kernel/schemas/index.js";
@@ -118,8 +119,13 @@ function writeHookFiles(request: AgentCallRequest, hookCommand: readonly string[
   const dir = mkdtempSync(join(tmpdir(), "tokama-claude-call-"));
   chmodSync(dir, 0o700);
   const rules = join(dir, "rules.json");
-  writeFileSync(rules, JSON.stringify({ commands: request.limits?.commands ?? [] }), { mode: 0o600, flag: "wx" });
-  writeFileSync(join(dir, "settings.json"), JSON.stringify(hookSettings([...hookCommand, rules])), { mode: 0o600, flag: "wx" });
+  for (const [path, text] of [
+    [rules, JSON.stringify({ commands: request.limits?.commands ?? [] })],
+    [join(dir, "settings.json"), JSON.stringify(hookSettings([...hookCommand, rules]))],
+  ] as const) {
+    const written = replaceTextSync(path, text, 0o600);
+    if (!written.ok) throw new Error(written.error.message);
+  }
   return dir;
 }
 

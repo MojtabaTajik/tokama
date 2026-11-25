@@ -7,10 +7,9 @@
 // recorded as running (the engine stopped during it) records it as interrupted; every action can
 // simply run again. Actions on one repo run one at a time, since a merge moves the engineer's
 // checkout. Details never hold this machine's paths or a remote's user info.
-import { writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { readTextFile } from "../../kernel/fs-safe/index.js";
+import { readTextFile, replaceTextSync } from "../../kernel/fs-safe/index.js";
 import type { Git } from "../../kernel/git/index.js";
 import type { ProcessRunner } from "../../kernel/process/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
@@ -335,8 +334,10 @@ export function createFinisher(deps: FinishDeps): Finisher {
       const digest = digestOf(entries);
       const dir = store.itemDir(itemId);
       // Written before the event that names them, under their digest: nothing is rewritten.
-      writeFileSync(join(dir, `baseline-${digest}.json`), `${JSON.stringify(entries)}\n`, { mode: 0o600 });
-      writeFileSync(join(dir, `baseline-git-${digest}.json`), `${JSON.stringify(settings.value)}\n`, { mode: 0o600 });
+      for (const [name, value] of [[`baseline-${digest}.json`, entries], [`baseline-git-${digest}.json`, settings.value]] as const) {
+        const written = replaceTextSync(join(dir, name), `${JSON.stringify(value)}\n`, 0o600);
+        if (!written.ok) throw new Error(written.error.message);
+      }
       const appended = store.append(itemId, [{ type: "git_changes_accepted", repoId: recorded.repoId, protectedDigest: digest }]);
       return appended.ok ? ok(null) : fail("invalid_state", appended.error.message);
     },
