@@ -79,12 +79,13 @@ flow("About shows the version, the build facts, the notices and the website link
   expect(await page.locator(".about-foot").innerText()).toBe("Tokama · Apache License 2.0");
   expect(await page.locator(".about-link").getAttribute("href")).toBe("https://tokama.dev");
 
-  // The first notice is open, as on the board.
-  expect(await page.locator(".about-notice-body").count()).toBe(1);
+  // Every notice starts closed and opens on its own click; there is no expand-all control.
+  expect(await page.locator(".about-notice-body").count()).toBe(0);
+  expect(await page.getByRole("button", { name: /expand all|collapse all/i }).count()).toBe(0);
   await screenshot("9-about");
-  await page.getByRole("button", { name: "Expand all" }).click();
-  expect(await page.locator(".about-notice-body").count()).toBe(5);
-  await page.getByRole("button", { name: "Collapse all" }).click();
+  await page.locator(".about-notice-head").first().click();
+  expect(await page.locator(".about-notice-body").count()).toBe(1);
+  await page.locator(".about-notice-head").first().click();
   expect(await page.locator(".about-notice-body").count()).toBe(0);
 
   await page.getByRole("button", { name: "Back to work" }).click();

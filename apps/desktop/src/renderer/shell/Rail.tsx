@@ -69,12 +69,13 @@ export const TIP_CLOSE_MS = 200;
 /**
  * Whether the Insights tooltip shows. Hover opens it after a short rest and closes it after a short
  * absence; a leave and a new enter within that time change nothing. Focus opens it at once. A
- * dismissed tooltip comes back when the pointer or the focus returns.
- * `onShown` hears each change once.
+ * dismissed tooltip comes back when the pointer or the focus returns. While `suppressed`, it stays
+ * closed whatever the pointer does. `onShown` hears each change once.
  */
-function useInsightsTip(onShown: ((shown: boolean) => void) | undefined) {
+function useInsightsTip(onShown: ((shown: boolean) => void) | undefined, suppressed: boolean) {
   const [open, setOpen] = useState(false);
-  const state = useRef({ hover: false, focus: false, dismissed: false, open: false });
+  const state = useRef({ hover: false, focus: false, dismissed: false, open: false, suppressed });
+  state.current.suppressed = suppressed;
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const notify = useRef(onShown);
   notify.current = onShown;
@@ -92,7 +93,7 @@ function useInsightsTip(onShown: ((shown: boolean) => void) | undefined) {
       s[by] = held;
       // A dismissed tooltip comes back when the pointer or the focus returns.
       if (held || (!s.hover && !s.focus)) s.dismissed = false;
-      const wanted = (s.hover || s.focus) && !s.dismissed;
+      const wanted = (s.hover || s.focus) && !s.dismissed && !s.suppressed;
       clearTimeout(timer.current);
       timer.current = undefined;
       if (wanted === s.open) return;
@@ -106,6 +107,9 @@ function useInsightsTip(onShown: ((shown: boolean) => void) | undefined) {
     show(false);
   }, [show]);
   useEffect(() => () => clearTimeout(timer.current), []);
+  useEffect(() => {
+    if (suppressed) show(false);
+  }, [suppressed, show]);
   return { open, hold, dismiss };
 }
 
@@ -121,8 +125,9 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
   // The Insights tooltip. Its own state, not a CSS :hover, decides when it shows: the wrapper holds
   // the button and the tooltip, so moving between them keeps it open, and short delays absorb the
   // enter and leave events a pointer sends at an edge, so it never flickers. Escape or a click
-  // closes it until the pointer or the focus comes back.
-  const tip = useInsightsTip(onInsightsTip);
+  // closes it until the pointer or the focus comes back. It stays closed while the Insights page is
+  // open, which shows the same numbers.
+  const tip = useInsightsTip(onInsightsTip, insightsOpen);
   const insightsButton = useRef<HTMLButtonElement>(null);
   // Closing the tooltip while focus is on one of its buttons hands focus back to Insights, so it
   // never falls to the page; an item drawer then also returns focus there when it closes.
@@ -190,7 +195,6 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
           aria-controls={tipId}
           aria-current={insightsOpen ? "page" : undefined}
           onClick={() => {
-            // The page shows the same numbers; the tooltip comes back when the pointer returns.
             tip.dismiss();
             onInsights?.();
           }}

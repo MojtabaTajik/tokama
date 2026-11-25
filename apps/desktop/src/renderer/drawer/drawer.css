@@ -328,27 +328,17 @@
   background: var(--agent-3);
 }
 
-/* Actions: plain links */
+/* Actions: secondary buttons at the foot of the drawer */
 
 .drawer-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 8px;
   margin-top: auto;
 }
 
-.drawer-actions .link {
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.drawer-actions .link[aria-disabled="true"] {
-  color: var(--muted);
-  cursor: default;
-}
-
-.link.danger {
-  color: var(--fail);
+.drawer-actions .choice:hover:not(:disabled) {
+  background: var(--raised);
 }
 
 .drawer-confirm {

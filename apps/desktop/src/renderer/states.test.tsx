@@ -287,27 +287,21 @@ describe("About", () => {
     expect(text(".about-row button")).toBe("Show in file manager");
   });
 
-  it("lists the third-party notices closed except the first, and each opens on click", async () => {
+  it("lists the third-party notices all closed, and each opens and closes on its own click", async () => {
     await open();
     const heads = () => $$(".about-notice-head").map((head) => head.getAttribute("aria-expanded"));
     expect(text(".about-count")).toBe("5");
-    expect(heads()).toEqual(["true", "false", "false", "false", "false"]);
-    expect(text(".about-notice-body")).toContain("Font Awesome Free icons");
+    expect(heads()).toEqual(["false", "false", "false", "false", "false"]);
+    expect($$(".about-notice-body")).toHaveLength(0);
+    expect($(".about-all")).toBeNull();
     await click($$(".about-notice-head")[1] ?? null);
-    expect(heads()).toEqual(["true", "true", "false", "false", "false"]);
+    expect(heads()).toEqual(["false", "true", "false", "false", "false"]);
     expect($$(".about-notice-head")[1]?.textContent).toContain("45.4.1");
     await click($$(".about-notice-head")[0] ?? null);
-    expect(heads()).toEqual(["false", "true", "false", "false", "false"]);
-  });
-
-  it("expands every notice with Expand all, then collapses them", async () => {
-    await open();
-    await click($(".about-all"));
-    expect($$(".about-notice-body")).toHaveLength(5);
-    expect(text(".about-all")).toBe("Collapse all");
-    await click($(".about-all"));
-    expect($$(".about-notice-body")).toHaveLength(0);
-    expect(text(".about-all")).toBe("Expand all");
+    expect(heads()).toEqual(["true", "true", "false", "false", "false"]);
+    expect(text(".about-notice-body")).toContain("Font Awesome Free icons");
+    await click($$(".about-notice-head")[1] ?? null);
+    expect(heads()).toEqual(["true", "false", "false", "false", "false"]);
   });
 
   it("renders notice and build text as text", async () => {

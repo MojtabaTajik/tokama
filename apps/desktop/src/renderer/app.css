@@ -235,6 +235,8 @@ button:focus-visible {
 }
 
 .main-header {
+  /* Never shrinks under its wrapped text: a fixed min-height would let the column squeeze it. */
+  flex: none;
   display: flex;
   flex-wrap: wrap;
   align-items: center;

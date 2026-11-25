@@ -49,15 +49,19 @@ export interface NewWorkProps {
   readonly bridge: TokamaBridge;
   readonly setup: Setup;
   readonly ref?: Ref<NewWorkHandle>;
+  /** The repo whose list is open: chosen until the user picks repos themselves. */
+  readonly repoId?: string | undefined;
   /** The engine accepted the work: what the new item is and where it belongs. */
   readonly onStarted: (itemId: string, started: Pick<ItemRecord, "templateId" | "repoIds">) => void;
 }
 
-export function NewWork({ bridge, setup, ref, onStarted }: NewWorkProps) {
+export function NewWork({ bridge, setup, ref, repoId, onStarted }: NewWorkProps) {
   const [expanded, setExpanded] = useState(false);
   const [text, setText] = useState("");
   const [picked, setPicked] = useState<string | undefined>(undefined);
-  const [repoIds, setRepoIds] = useState<readonly string[]>([]);
+  // Undefined until the user picks repos: then the open repo list's repo, if any, is the choice.
+  const [picks, setPicks] = useState<readonly string[] | undefined>(undefined);
+  const repoIds = picks ?? (repoId === undefined ? [] : [repoId]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -82,7 +86,7 @@ export function NewWork({ bridge, setup, ref, onStarted }: NewWorkProps) {
       const active = document.activeElement;
       if (active instanceof HTMLElement && active !== input.current) origin.current = active;
       if (prefill?.templateId !== undefined) setPicked(prefill.templateId);
-      if (prefill?.repoId !== undefined) setRepoIds([prefill.repoId]);
+      if (prefill?.repoId !== undefined) setPicks([prefill.repoId]);
       setExpanded(true);
       input.current?.focus();
     },
@@ -110,7 +114,7 @@ export function NewWork({ bridge, setup, ref, onStarted }: NewWorkProps) {
     }
     setText("");
     setPicked(undefined);
-    setRepoIds([]);
+    setPicks(undefined);
     collapse();
     onStarted(reply.data.itemId, { templateId: template.id, repoIds: command.repoIds });
   };
@@ -130,7 +134,7 @@ export function NewWork({ bridge, setup, ref, onStarted }: NewWorkProps) {
     void start();
   };
 
-  const toggleRepo = (id: string) => setRepoIds(repoIds.includes(id) ? repoIds.filter((repoId) => repoId !== id) : [...repoIds, id]);
+  const toggleRepo = (id: string) => setPicks(repoIds.includes(id) ? repoIds.filter((chosen) => chosen !== id) : [...repoIds, id]);
   const uses = shown ? usesOf(shown, setup.connections) : [];
   const commands = shown ? commandsOf(shown, setup.repos, chosenRepos) : [];
   const agents = shown ? agentLines(shown) : [];

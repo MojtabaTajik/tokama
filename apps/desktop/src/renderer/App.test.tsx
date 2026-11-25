@@ -107,6 +107,40 @@ describe("App shell", () => {
     expect($$(".rail .insights-tip .it-note").map((note) => note.textContent)).toEqual(["usage not loaded yet", "usage not loaded yet"]);
   });
 
+  it("hides the item drawer on Insights, Settings and About, and reopens the same item on the board", async () => {
+    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
+    await click($(".pl-row")!);
+    const title = text(".drawer h2");
+    expect($(".drawer")).not.toBeNull();
+    expect(title).toBeTruthy();
+    for (const [label, leave] of [
+      ["Insights", () => click($('.rail button[aria-label="Insights"]')!)],
+      ["About", () => click($('.rail-user[aria-label="About Tokama"]')!)],
+      ["Settings", () => click($('.rail button[aria-label="Settings"]')!)],
+    ] as const) {
+      await leave();
+      expect($(".drawer"), `no drawer on ${label}`).toBeNull();
+      expect($('[aria-label="Resize drawer"]'), `no drawer edge on ${label}`).toBeNull();
+      if (label === "Settings") await click($(".settings-back")!);
+      else await click($('.rail button[aria-label="Board"]')!);
+      expect(text(".drawer h2"), `same item after ${label}`).toBe(title);
+    }
+  });
+
+  it("leaves focus on the rail button that hid the drawer, also after a round trip", async () => {
+    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
+    await click($(".pl-row")!);
+    const insights = $('.rail button[aria-label="Insights"]') as HTMLElement;
+    for (let trip = 0; trip < 2; trip++) {
+      insights.focus();
+      await click(insights);
+      expect($(".drawer")).toBeNull();
+      expect(document.activeElement, `trip ${trip}`).toBe(insights);
+      await click($('.rail button[aria-label="Board"]')!);
+      expect($(".drawer")).not.toBeNull();
+    }
+  });
+
   it("opens the Insights page from the rail and goes back with Board", async () => {
     await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
     await click($('.rail button[aria-label="Insights"]')!);

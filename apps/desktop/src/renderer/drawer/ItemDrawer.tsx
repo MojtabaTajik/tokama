@@ -30,8 +30,6 @@ const TEXT = {
   noSteps: "This item has no steps.",
   attempts: "Attempts",
   actions: "Actions",
-  openWorktree: "Open worktree",
-  addHint: "Add a hint",
   stop: "Stop",
   stopQuestion: "Stop this item? Its agent is stopped; what is recorded so far is kept.",
   stopConfirm: "Stop item",
@@ -120,9 +118,11 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
     if (request?.notice !== undefined) setNotice({ tone: "warn", text: request.notice });
   }, [request?.seq, request?.notice]);
   // On close, focus goes back to the opener, if it is still on the screen; if the item moved to
-  // another group or column meanwhile, to the item's current row or card.
+  // another group or column meanwhile, to the item's current row or card. Focus that already sits
+  // on another control (the rail button that hid the drawer) stays there.
   useEffect(
     () => () => {
+      if (document.activeElement !== null && document.activeElement !== document.body) return;
       const target = opener.current;
       if (target instanceof HTMLElement && target.isConnected) target.focus();
       else itemElement(currentId.current)?.focus();
@@ -264,21 +264,13 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
           {confirmingStop ? (
             <ConfirmStop busy={busy} onStop={stop} onCancel={cancelStop} />
           ) : (
-            <div className="drawer-actions" role="group" aria-label={TEXT.actions}>
-              {item.kind === "task" && (
-                <button type="button" className="link" aria-disabled="true">
-                  {TEXT.openWorktree}
-                </button>
-              )}
-              <button type="button" className="link" aria-disabled="true">
-                {TEXT.addHint}
-              </button>
-              {!hasEnded(item) && (
-                <button type="button" className="link danger" ref={stopLink} disabled={busy} onClick={() => setConfirmingStop(true)}>
+            !hasEnded(item) && (
+              <div className="drawer-actions" role="group" aria-label={TEXT.actions}>
+                <button type="button" className="choice danger" ref={stopLink} disabled={busy} onClick={() => setConfirmingStop(true)}>
                   {TEXT.stop}
                 </button>
-              )}
-            </div>
+              </div>
+            )
           )}
         </>
       )}
