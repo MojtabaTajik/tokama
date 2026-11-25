@@ -272,8 +272,9 @@ export const UsageReportSchema = z.strictObject({
   /** The Tokama items with the most tokens over the range, at most 50, whatever the scope. */
   items: z.array(UsageItemSchema).max(50),
   /**
-   * Tokama's agent calls of the current local day, whatever the range and scope: the items with the
-   * most tokens, and the day's totals. Absent from older engines.
+   * Tokama's agent calls that ended on the current local day (a call over midnight counts in full),
+   * whatever the range and scope: the items with the most tokens, and the day's totals. Absent
+   * from older engines.
    */
   today: z
     .strictObject({

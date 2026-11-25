@@ -22,6 +22,7 @@ const TEXT = {
   today: "Today",
   perItem: "tokens · agent time per item",
   noCalls: "No agent calls today.",
+  todayUnknown: "today's usage unknown: the engine is older than this app",
   more: (n: number) => `and ${n} more ${n === 1 ? "item" : "items"}`,
   tokensToday: "Tokens today",
   timeToday: "Agent time today",
@@ -117,7 +118,7 @@ export function InsightsTip({ usage, issues, health, setup, now, onSelectItem, o
           <span className="it-aside">{TEXT.perItem}</span>
         </div>
         {today === undefined || today.items.length === 0 ? (
-          <p className="it-note">{usage === undefined ? TEXT.loading : TEXT.noCalls}</p>
+          <p className="it-note">{usage === undefined ? TEXT.loading : today === undefined ? TEXT.todayUnknown : TEXT.noCalls}</p>
         ) : (
           <div className="it-items">
             {today.items.slice(0, TODAY_ITEMS).map((item) => (

@@ -60,8 +60,9 @@ describe("App shell", () => {
   it("lists every AI CLI with its windows, reset times and data age in the Insights tooltip, and marks one near its limit", async () => {
     await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
     const insights = $('.rail button[aria-label="Insights"]')!;
-    const tip = $('.rail [role="tooltip"]')!;
-    expect(insights.getAttribute("aria-describedby")).toBe(tip.id);
+    const tip = $(".rail .insights-tip")!;
+    expect(insights.getAttribute("aria-controls")).toBe(tip.id);
+    expect(insights.getAttribute("aria-expanded")).toBe("false");
     expect([...tip.querySelectorAll('[role="meter"]')].map((meter) => meter.getAttribute("aria-label"))).toEqual(["5-hour window", "Weekly window", "Codex CLI Weekly window"]);
     expect(tip.querySelector(".it-other .ins-tone")?.textContent).toBe("! near limit");
     expect(tip.querySelector(".it-section-head .it-aside")?.textContent).toBe("as of 14:58");
@@ -82,9 +83,27 @@ describe("App shell", () => {
     expect(usageQueries()).toBe(2);
   });
 
+  it("opens the AI CLIs settings from the tooltip, and the rail's Settings on its first page again", async () => {
+    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
+    await click($(".insights-tip .it-link")!);
+    expect($(".settings-entry[aria-current='page']")?.textContent).toBe("AI CLIs");
+    await click($(".settings-back")!);
+    await click($('.rail button[aria-label="Settings"]')!);
+    expect($(".settings-entry[aria-current='page']")?.textContent).toBe("Agents");
+  });
+
+  it("opens a Today item from the tooltip in the drawer, leaving About so the drawer shows", async () => {
+    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
+    await click($('.rail-user[aria-label="About Tokama"]')!);
+    expect($(".drawer")).toBeNull();
+    await click($(".insights-tip .it-title")!);
+    expect($(".drawer")).not.toBeNull();
+    expect(text(".main-header h1")).toBe("All work");
+  });
+
   it("says usage is not loaded yet in the Insights tooltip until the engine answers", async () => {
     await render(fakeBridge(CONNECTED).bridge);
-    expect($$('.rail [role="tooltip"] .it-note').map((note) => note.textContent)).toEqual(["usage not loaded yet", "usage not loaded yet"]);
+    expect($$(".rail .insights-tip .it-note").map((note) => note.textContent)).toEqual(["usage not loaded yet", "usage not loaded yet"]);
   });
 
   it("opens the Insights page from the rail and goes back with Board", async () => {

@@ -376,14 +376,8 @@ button:focus-visible {
   margin: -6px 0 0 10px;
   z-index: 9;
   display: none;
-  flex-direction: column;
-  gap: 14px;
   width: 380px;
-  max-height: calc(100vh - 16px);
-  overflow-y: auto;
-  scrollbar-width: thin;
   box-sizing: border-box;
-  padding: 16px;
   border: 1px solid var(--hairline);
   border-radius: 10px;
   background: var(--panel);
@@ -408,7 +402,19 @@ button:focus-visible {
 }
 
 .insights[data-open] .insights-tip {
+  display: block;
+}
+
+/* The scrolling is inside, so the bridge above stays outside the tooltip's clip. */
+.it-scroll {
   display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: calc(100vh - 18px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  box-sizing: border-box;
+  padding: 16px;
 }
 
 .insights-tip p {

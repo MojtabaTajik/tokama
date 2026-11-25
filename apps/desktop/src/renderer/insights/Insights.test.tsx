@@ -82,8 +82,8 @@ describe("Insights: plan usage", () => {
     expect([...(claude?.querySelectorAll(".ins-reset") ?? [])].map((line) => line.textContent)[2]).toBe("50% share of the weekly limit · resets Thu 23 Oct 09:00");
   });
 
-  it("colours a high window amber with the word high, and one at its limit red with ✕ at limit", () => {
-    const report = { ...usageReport, clis: [{ cliId: "claude-code", windows: [{ window: "five_hour", usedPercent: 68 }, { window: "seven_day", usedPercent: 100 }] }] } as UsageReport;
+  it("colours a high window amber with the word high, and one at its limit red with ✕ at limit, by the shown number", () => {
+    const report = { ...usageReport, clis: [{ cliId: "claude-code", windows: [{ window: "five_hour", usedPercent: 67.6 }, { window: "seven_day", usedPercent: 99.6 }] }] } as UsageReport;
     render({}, report);
     const claude = $(".ins-plan");
     expect([...(claude?.querySelectorAll(".ins-window .ins-window-head") ?? [])].map((head) => head.textContent)).toEqual(["5-hour windowhigh68%", "Weekly window✕ at limit100%"]);

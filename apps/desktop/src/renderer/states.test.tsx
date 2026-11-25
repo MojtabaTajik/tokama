@@ -175,7 +175,7 @@ describe("an AI CLI that is logged out", () => {
       ["fail", "✕"],
       ["fail", "1"],
     ]);
-    expect($('.rail [role="tooltip"] .it-other')?.textContent).toBe("CX Codex CLI✕ logged out");
+    expect($(".rail .insights-tip .it-other")?.textContent).toBe("CX Codex CLI✕ logged out");
     expect($('.rail button[aria-label="Attention · 1"]')).not.toBeNull();
   });
 

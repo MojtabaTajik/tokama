@@ -15,10 +15,11 @@ export interface MeterProps {
 }
 
 export function Meter({ name, label = name, usedPercent, children }: MeterProps) {
-  const level = levelOf(usedPercent);
+  // The level follows the shown number, so "60%" never reads as ok.
+  const shown = Math.round(usedPercent);
+  const level = levelOf(shown);
   const word = LEVEL_WORD[level];
   const tone = LEVEL_TONE[level];
-  const shown = Math.round(usedPercent);
   return (
     <div className="ins-window">
       <div className="ins-window-head">

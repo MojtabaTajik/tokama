@@ -19,6 +19,7 @@ const TEXT = {
   needsYou: "Needs you",
   outOfDate: "out of date",
   insights: "Insights",
+  usage: "Usage",
   settings: "Settings",
   attention: "Attention",
   about: "About Tokama",
@@ -122,10 +123,17 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
   // enter and leave events a pointer sends at an edge, so it never flickers. Escape or a click
   // closes it until the pointer or the focus comes back.
   const tip = useInsightsTip(onInsightsTip);
+  const insightsButton = useRef<HTMLButtonElement>(null);
+  // Closing the tooltip while focus is on one of its buttons hands focus back to Insights, so it
+  // never falls to the page; an item drawer then also returns focus there when it closes.
+  const closeTip = useCallback(() => {
+    if (insightsButton.current?.parentElement?.contains(document.activeElement) === true) insightsButton.current.focus();
+    tip.dismiss();
+  }, [tip.dismiss]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        tip.dismiss();
+        closeTip();
         setPopupOpen(false);
       }
     };
@@ -139,7 +147,7 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
       document.removeEventListener("keydown", onKey);
       document.removeEventListener("mousedown", onPress);
     };
-  }, [tip.dismiss]);
+  }, [closeTip]);
   const badge = railBadge(AI_CLIS.map((cli) => cliAlert(usage?.clis.find((plan) => plan.cliId === cli.id), issues.find((issue) => issue.cliId === cli.id), now)));
   const needsYouLabel = needsYou === undefined ? `${TEXT.needsYou} · ${TEXT.outOfDate}` : withCount(TEXT.needsYou, needsYou);
   return (
@@ -176,8 +184,10 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
           type="button"
           className="rail-button"
           data-tone={badge?.tone}
+          ref={insightsButton}
           aria-label={TEXT.insights}
-          aria-describedby={tipId}
+          aria-expanded={tip.open}
+          aria-controls={tipId}
           aria-current={insightsOpen ? "page" : undefined}
           onClick={() => {
             // The page shows the same numbers; the tooltip comes back when the pointer returns.
@@ -188,22 +198,24 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
           <InsightsIcon />
           {badge !== undefined && <Badge count={1} tone={badge.tone} symbol={badge.symbol} />}
         </button>
-        <div role="tooltip" id={tipId} className="insights-tip">
-          <InsightsTip
+        <div role="group" aria-label={TEXT.usage} id={tipId} className="insights-tip">
+          <div className="it-scroll">
+            <InsightsTip
             usage={usage}
             issues={issues}
             health={setup?.health.clis}
             setup={setup}
             now={now}
             onSelectItem={(itemId) => {
-              tip.dismiss();
+              closeTip();
               onSelectItem?.(itemId);
             }}
             onCliSettings={() => {
-              tip.dismiss();
+              closeTip();
               onCliSettings?.();
             }}
-          />
+            />
+          </div>
         </div>
       </div>
       <button type="button" className="rail-button" aria-label={TEXT.settings} title={TEXT.settings} onClick={onSettings}>

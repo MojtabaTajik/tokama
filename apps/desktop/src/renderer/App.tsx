@@ -137,7 +137,11 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, vers
           setPage("settings");
         }}
         setup={setup}
-        onSelectItem={setSelectedItemId}
+        onSelectItem={(itemId) => {
+          // About hides the drawer: leave it, so the chosen item shows now.
+          if (aboutOpen) setPage("board");
+          setSelectedItemId(itemId);
+        }}
         onCliSettings={() => {
           setSettingsPage("ai-clis");
           setPage("settings");

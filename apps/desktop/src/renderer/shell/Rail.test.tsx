@@ -85,6 +85,16 @@ describe("Rail: Insights tooltip", () => {
     expect(open()).toBe(true);
   });
 
+  it("hands focus back to Insights when Escape closes the tooltip from inside it", () => {
+    render();
+    fire("focusin");
+    const link = container.querySelector<HTMLButtonElement>(".insights-tip .it-link")!;
+    link.focus();
+    act(() => void document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(open()).toBe(false);
+    expect(document.activeElement).toBe(container.querySelector('.rail button[aria-label="Insights"]'));
+  });
+
   it("does not open for a pointer that only passes over Insights", () => {
     vi.useFakeTimers();
     render();
@@ -134,10 +144,21 @@ describe("Rail: Insights tooltip", () => {
     ]);
     expect(tip.querySelector(".it-totals")?.textContent).toBe("Tokens today242kinput 171k · output 23k · cache read 48kAgent time today44 min");
     expect(tip.querySelector(".it-foot")?.textContent).toBe("From each call’s result event. Recorded, not limited.Settings");
-    act(() => (today?.querySelector(".it-title") as HTMLElement).click());
+    // Choosing an item or Settings closes the tooltip and hands focus back to Insights.
+    const button = container.querySelector<HTMLButtonElement>('.rail button[aria-label="Insights"]')!;
+    fire("focusin");
+    expect(open()).toBe(true);
+    const title = today?.querySelector<HTMLButtonElement>(".it-title");
+    title?.focus();
+    act(() => title?.click());
     expect(onSelectItem).toHaveBeenCalledWith(ITEMS.verifying.id);
+    expect(open()).toBe(false);
+    expect(document.activeElement).toBe(button);
+    fire("mouseover");
+    expect(open()).toBe(true);
     act(() => (tip.querySelector(".it-link") as HTMLElement).click());
     expect(onCliSettings).toHaveBeenCalledOnce();
+    expect(open()).toBe(false);
   });
 
   it("lists three of today's items and counts the rest", () => {
@@ -154,6 +175,10 @@ describe("Rail: Insights tooltip", () => {
     const tip = container.querySelector(".insights-tip")!;
     expect(tip.querySelector(".it-status-line")?.textContent).toBe("✕ logged out");
     expect(tip.querySelector('[aria-label="Today"] .it-note')?.textContent).toBe("No agent calls today.");
+    const older = { ...usageReport };
+    delete older.today;
+    render({ usage: older });
+    expect(tip.querySelector('[aria-label="Today"] .it-note')?.textContent).toBe("today's usage unknown: the engine is older than this app");
   });
 
 });
