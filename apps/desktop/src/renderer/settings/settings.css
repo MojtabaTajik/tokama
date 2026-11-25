@@ -71,11 +71,6 @@
   color: var(--text);
 }
 
-.settings-entry[aria-disabled="true"] {
-  color: var(--muted);
-  cursor: default;
-}
-
 .settings-heading {
   margin: 0;
   padding: 0 8px;

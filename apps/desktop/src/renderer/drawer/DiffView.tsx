@@ -6,7 +6,7 @@
 // character is shown quoted, so a line cannot read differently from what it does. Binary files,
 // files over the engine's line limit and anything else left out say so and name the worktree.
 import type { Decision, DiffFile, ItemDiff } from "@tokama/core";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useState } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
 
 /** The engine shows the hunks of files with up to this many changed lines. */
@@ -20,8 +20,6 @@ const TEXT = {
   from: (branch: string) => `from ${branch}`,
   changedFiles: "Changed files",
   more: (count: number) => `${count} more file${count === 1 ? "" : "s"} not listed`,
-  open: "Open in your editor ↗",
-  openLater: "Opening a file from Tokama comes later. Open the worktree folder in your editor.",
   where: (repoId: string, path: string) => `In repo ${repoId}: ${path}`,
   binary: "binary",
   tooLarge: "too large",
@@ -214,23 +212,11 @@ function FilePanel({ file, worktree }: { readonly file: DiffFile; readonly workt
   const status = STATUS[file.status];
   const rows = hidden === undefined ? diffRows(file) : [];
   const summary = file.binary ? TEXT.binary : `${status.word} · +${count(file.added ?? 0)} −${count(file.removed ?? 0)}`;
-  const laterId = useId();
-  const open = (
-    <>
-      <button type="button" className="dv-open" aria-disabled="true" title={TEXT.openLater} aria-describedby={laterId}>
-        {TEXT.open}
-      </button>
-      <span id={laterId} className="visually-hidden">
-        {TEXT.openLater}
-      </span>
-    </>
-  );
   return (
     <section className="dv-panel" aria-label={shownPath(file.path)}>
       <p className="dv-panel-head">
         <span className="mono dv-panel-path">{shownPath(file.path)}</span>
         <span className="mono dv-muted">{summary}</span>
-        {hidden === undefined && open}
       </p>
       {hidden === undefined ? (
         <>
@@ -259,7 +245,6 @@ function FilePanel({ file, worktree }: { readonly file: DiffFile; readonly workt
           <span className="dv-note-head">{hidden === "binary" ? TEXT.binaryHead : hidden === "too large" ? TEXT.tooLargeHead : TEXT.cutHead}</span>
           <span className="dv-note-text">{hidden === "binary" ? TEXT.binaryText : hidden === "too large" ? TEXT.tooLargeText((file.added ?? 0) + (file.removed ?? 0)) : TEXT.cutText}</span>
           <span className="dv-note-text mono">{TEXT.where(worktree.repoId, `${worktree.dir}/${shownPath(file.path)}`)}</span>
-          <span>{open}</span>
         </div>
       )}
     </section>

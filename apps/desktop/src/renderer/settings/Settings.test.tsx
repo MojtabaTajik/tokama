@@ -78,6 +78,16 @@ describe("Settings > Agents", () => {
     expect($(".agents img, .agents svg image")).toBeNull();
   });
 
+  it("lists only the pages that work, by group, with no disabled entries", async () => {
+    await open(withAgents());
+    const nav = $('nav[aria-label="Settings"]')!;
+    expect($$('nav[aria-label="Settings"] [role="group"]').map((group) => [group.getAttribute("aria-label"), [...group.querySelectorAll("button")].map((el) => el.textContent)])).toEqual([
+      ["Setup", ["Templates", "Agents"]],
+      ["Engine", ["AI CLIs"]],
+    ]);
+    expect(nav.querySelector('[aria-disabled="true"]')).toBeNull();
+  });
+
   it("shows the first agent's role, runs on, model, limits and source, and another one when picked", async () => {
     await open(withAgents());
     const detail = () => $(".agent-detail")!.textContent ?? "";

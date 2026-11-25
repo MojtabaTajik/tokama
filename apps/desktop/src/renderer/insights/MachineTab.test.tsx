@@ -186,11 +186,6 @@ describe("Machine tab: Tokama processes", () => {
     expect(row.querySelector("button")).toBeNull();
     expect(row.textContent).toContain("Gone item");
   });
-
-  it("says that local-model readings come later", async () => {
-    await render(serve());
-    expect(text(".mc-later")).toBe("Local models come laterGPU, power, temperature and local runs show here once Tokama runs local models.");
-  });
 });
 
 describe("Machine tab: asking again", () => {
