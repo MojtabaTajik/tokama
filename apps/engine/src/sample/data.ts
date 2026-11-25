@@ -239,7 +239,7 @@ interface RawAttempt {
 }
 interface RawStep {
   readonly state: string;
-  readonly attempts?: readonly RawAttempt[];
+  readonly attempts?: readonly RawAttempt[] | undefined;
   readonly [field: string]: unknown;
 }
 interface RawItem {
