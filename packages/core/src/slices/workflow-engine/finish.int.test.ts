@@ -243,6 +243,42 @@ describe("Merge", () => {
     expect(await branchExists(item.worktrees[0]!.branch)).toBe(false);
   });
 
+  it("runs two merges on one repo one after the other: the second becomes a merge commit on the first", SLOW, async () => {
+    const first = await doneItem();
+    const second = await doneItem({ "notes.txt": "two\n" });
+    const finish = finisher();
+    expect(finish.start(first.id, "merge").ok).toBe(true);
+    expect(finish.start(second.id, "merge").ok).toBe(true);
+    await Promise.all([finish.settled(first.id), finish.settled(second.id)]);
+    expect(store.get(first.id)?.finish?.merged?.commit).toBe(commitOf(first));
+    const merge = store.get(second.id)!.finish!.merged!.commit;
+    expect((await plain(repo.path, "rev-list", "--parents", "-n", "1", merge)).split(" ").slice(1)).toEqual([commitOf(first), commitOf(second)]);
+    expect(await plain(repo.path, "rev-parse", "main")).toBe(merge);
+    expect(await plain(repo.path, "status", "--porcelain")).toBe("");
+  });
+
+  it("keeps Discard on offer when the branch had commits that were not merged", SLOW, async () => {
+    const item = await doneItem();
+    // main has the item's commit already; the engineer committed on the item branch after Done.
+    await plain(repo.path, "merge", "-q", "--ff-only", commitOf(item));
+    writeFileSync(join(wtPath(item), "extra.txt"), "later\n");
+    await plain(wtPath(item), "add", "extra.txt");
+    await plain(wtPath(item), "commit", "-q", "-m", "later");
+    const merged = await run(item, "merge");
+    expect(merged.finish).toMatchObject({ merged: { commit: commitOf(item) }, worktreeRemoved: false });
+    expect(merged.finish?.detail).toMatch(/branch tokama\/[0-9a-f]{8} was kept/);
+    expect((await run(merged, "discard")).finish?.worktreeRemoved).toBe(true);
+    expect(await branchExists(item.worktrees[0]!.branch)).toBe(false);
+  });
+
+  it("close() refuses new actions", SLOW, async () => {
+    const item = await doneItem();
+    const finish = finisher();
+    await finish.close();
+    expect(finish.start(item.id, "discard")).toMatchObject({ ok: false, error: { code: "invalid_state" } });
+    expect(store.get(item.id)?.finish).toBeUndefined();
+  });
+
   it("refuses a second merge and an action on an item that is not done", SLOW, async () => {
     const item = await doneItem();
     const merged = await run(item, "merge");
@@ -281,12 +317,22 @@ describe("Open PR", () => {
     expect(done.finish?.pullRequest?.url).toBe("https://github.com/acme/orders-api/pull/3");
   });
 
-  it("records gh's refusal when gh is logged out, and when gh is missing", SLOW, async () => {
+  it("pushes nothing when gh is logged out to the host, or missing", SLOW, async () => {
     ghMode("logged-out");
     const out = await run(await doneItem(), "pull_request");
-    expect(out.finish?.failed?.detail).toMatch(/gh could not open the pull request on github\.com\/acme\/orders-api: .*gh auth login/);
+    expect(out.finish?.failed?.detail).toMatch(/^Nothing was pushed\. gh is not logged in to github\.com\. Run `gh auth login`/);
+    expect(ghCalls()).toContain("auth\nstatus\n--hostname\ngithub.com");
+    expect(ghCalls()).not.toContain("--method\nPOST");
     const missing = await run(await doneItem(), "pull_request", { ghCommand: [join(root, "no-such-gh")] });
-    expect(missing.finish?.failed?.detail).toMatch(/not installed/);
+    expect(missing.finish?.failed?.detail).toMatch(/^Nothing was pushed\. The GitHub CLI \(gh\) is not installed/);
+    expect(await plain(bare, "for-each-ref", "refs/heads/")).toBe("");
+  });
+
+  it("records gh's own refusal after the push", SLOW, async () => {
+    const item = await doneItem();
+    writeFileSync(join(ghDir, "gh"), STUB_GH.replace(`echo "${PR_URL}"; exit 0 ;;`, `echo "gh: Resource not accessible (HTTP 403)" >&2; exit 1 ;;`));
+    const done = await run(item, "pull_request");
+    expect(done.finish?.failed?.detail).toBe("gh could not open the pull request on github.com/acme/orders-api: gh: Resource not accessible (HTTP 403)");
   });
 
   it("refuses to push when origin points somewhere else than when the item started", SLOW, async () => {
@@ -294,7 +340,8 @@ describe("Open PR", () => {
     await plain(repo.path, "remote", "set-url", "origin", "https://evil.example.com/x/y.git");
     const done = await run(item, "pull_request");
     expect(done.finish?.failed?.detail).toMatch(/^origin now points at https:\/\/evil\.example\.com\/x\/y\.git, not https:\/\/github\.com\/acme\/orders-api\.git/);
-    expect(ghCalls()).toBe("");
+    expect(ghCalls()).not.toContain("--method\nPOST");
+    expect(await plain(bare, "for-each-ref", "refs/heads/")).toBe("");
   });
 
   it("refuses without a recorded origin, and in local-only mode", SLOW, async () => {
@@ -306,16 +353,22 @@ describe("Open PR", () => {
     expect(finisher({ localOnly: true }).start((await doneItem()).id, "pull_request")).toMatchObject({ ok: false, error: { code: "invalid_request" } });
   });
 
-  it("gives the SSH agent socket to the push of an SSH remote only", SLOW, async () => {
+  it("gives the SSH agent socket only to a push that really goes over SSH, after git's URL rewrites", SLOW, async () => {
     const pushes: unknown[] = [];
     const spy: Git = { ...git, push: (...args) => (pushes.push(args[4]), Promise.resolve({ ok: true, value: undefined })) };
-    const https = await doneItem();
-    await run(https, "pull_request", { git: spy, sshAuthSock: "/tmp/agent.sock" });
+    await run(await doneItem(), "pull_request", { git: spy, sshAuthSock: "/tmp/agent.sock" });
+    // A user who forces SSH for GitHub: origin is written as HTTPS, git pushes over SSH.
+    await plain(repo.path, "config", "--unset", `url.${bare}.insteadOf`);
+    await plain(repo.path, "config", "url.git@github.com:.insteadOf", "https://github.com/");
+    const forced = await doneItem();
+    expect(forced.worktrees[0]?.pushUrl).toBe(ORIGIN);
+    await run(forced, "pull_request", { git: spy, sshAuthSock: "/tmp/agent.sock" });
+    await plain(repo.path, "config", "--unset", "url.git@github.com:.insteadOf");
     await plain(repo.path, "remote", "set-url", "origin", "git@github.com:acme/orders-api.git");
     const ssh = await doneItem();
     expect(ssh.worktrees[0]?.pushUrl).toBe("git@github.com:acme/orders-api.git");
     await run(ssh, "pull_request", { git: spy, sshAuthSock: "/tmp/agent.sock" });
-    expect(pushes).toEqual([{}, { sshAuthSock: "/tmp/agent.sock" }]);
+    expect(pushes).toEqual([{}, { sshAuthSock: "/tmp/agent.sock" }, { sshAuthSock: "/tmp/agent.sock" }]);
   });
 });
 

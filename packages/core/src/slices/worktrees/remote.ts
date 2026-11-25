@@ -8,8 +8,6 @@ export interface HostedRepo {
   readonly host: string;
   readonly owner: string;
   readonly name: string;
-  /** Pushes go over SSH: the push needs the SSH agent. */
-  readonly ssh: boolean;
 }
 
 const PART = /^(?!\.{1,2}$)[A-Za-z0-9_.-]+$/;
@@ -38,15 +36,22 @@ export function recordableRemote(url: string): string | undefined {
 
 /** The code host, owner and repo a recorded remote names; undefined when it does not name one. */
 export function hostedRepo(url: string): HostedRepo | undefined {
-  const parts = (host: string, path: string, ssh: boolean): HostedRepo | undefined => {
+  const parts = (host: string, path: string): HostedRepo | undefined => {
     const [owner = "", name = "", ...rest] = path.replace(/^\/+/, "").replace(/\/+$/, "").replace(/\.git$/, "").split("/");
     if (rest.length > 0 || !PART.test(owner) || !PART.test(name) || !HOST.test(host)) return undefined;
-    return { host: host.toLowerCase(), owner, name, ssh };
+    return { host: host.toLowerCase(), owner, name };
   };
   const scheme = /^([a-z]+):\/\/(?:[^/@]*@)?([^/:]+)(?::\d+)?(\/.*)$/i.exec(url);
-  if (scheme !== null) return parts(scheme[2]!, scheme[3]!, scheme[1]!.toLowerCase() === "ssh");
+  if (scheme !== null) return parts(scheme[2]!, scheme[3]!);
   const scp = /^(?:[^@/:]+@)?([^/:]+):(.+)$/.exec(url);
-  return scp === null ? undefined : parts(scp[1]!, scp[2]!, true);
+  return scp === null ? undefined : parts(scp[1]!, scp[2]!);
+}
+
+/** Whether git pushes to this URL over SSH: `ssh://`, `git+ssh://`, `ssh+git://` or scp-like `host:path`. */
+export function overSsh(url: string): boolean {
+  const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(url.trim());
+  if (scheme !== null) return ["ssh", "git+ssh", "ssh+git"].includes(scheme[1]!.toLowerCase());
+  return recordableRemote(url) !== undefined;
 }
 
 /** `github.com/acme/orders-api`. */

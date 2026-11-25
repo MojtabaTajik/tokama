@@ -202,6 +202,8 @@ export interface Git {
    * `remote.<name>.url`), before any `insteadOf` rewrite; undefined when the remote has none.
    */
   remotePushUrl(repo: string, remote: string): Promise<GitResult<string | undefined>>;
+  /** `remote get-url --push <remote>`: where a push really goes, after `insteadOf` and `pushInsteadOf`. */
+  remoteResolvedPushUrl(repo: string, remote: string): Promise<GitResult<string>>;
   /**
    * `push --no-verify --porcelain <remote> <commit>:refs/heads/<branch>`: no force. `sshAuthSock`
    * passes the SSH agent socket to this push only (an SSH remote); no other git call gets it.
@@ -504,6 +506,10 @@ export function createGit(options: GitOptions): Git {
         if (!(out.error.reason === "failed" && out.error.exitCode === 1)) return out;
       }
       return ok(undefined);
+    },
+    async remoteResolvedPushUrl(repo, remote) {
+      const args = ["remote", "get-url", "--push", remote];
+      return refuseOption(args, remote) ?? map(git(repo, args), trimmed);
     },
     async push(repo, remote, commit, branch, pushOptions = {}) {
       const args = ["push", "--no-verify", "--porcelain", remote, `${commit}:refs/heads/${branch}`];

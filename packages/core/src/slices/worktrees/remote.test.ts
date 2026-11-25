@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hostedRepo, recordableRemote, withoutUserInfo } from "./remote.js";
+import { hostedRepo, overSsh, recordableRemote, withoutUserInfo } from "./remote.js";
 
 describe("recordableRemote", () => {
   it("keeps network URLs, without a password or an HTTPS user", () => {
@@ -18,10 +18,10 @@ describe("recordableRemote", () => {
 });
 
 describe("hostedRepo", () => {
-  it("reads host, owner and repo, and whether pushes go over SSH", () => {
-    expect(hostedRepo("https://github.com/acme/orders-api.git")).toEqual({ host: "github.com", owner: "acme", name: "orders-api", ssh: false });
-    expect(hostedRepo("git@GitHub.com:acme/orders-api.git")).toEqual({ host: "github.com", owner: "acme", name: "orders-api", ssh: true });
-    expect(hostedRepo("ssh://git@ghe.example.com:2222/acme/orders-api")).toEqual({ host: "ghe.example.com", owner: "acme", name: "orders-api", ssh: true });
+  it("reads host, owner and repo", () => {
+    expect(hostedRepo("https://github.com/acme/orders-api.git")).toEqual({ host: "github.com", owner: "acme", name: "orders-api" });
+    expect(hostedRepo("git@GitHub.com:acme/orders-api.git")).toEqual({ host: "github.com", owner: "acme", name: "orders-api" });
+    expect(hostedRepo("ssh://git@ghe.example.com:2222/acme/orders-api")).toEqual({ host: "ghe.example.com", owner: "acme", name: "orders-api" });
   });
 
   it("refuses paths that are not owner/repo", () => {
@@ -30,6 +30,11 @@ describe("hostedRepo", () => {
     expect(hostedRepo("https://github.com/acme/../x")).toBeUndefined();
     expect(hostedRepo("https://github.com/../x")).toBeUndefined();
   });
+});
+
+it("overSsh: ssh URLs and scp-like addresses, not HTTPS or local paths", () => {
+  for (const url of ["git@github.com:acme/x.git", "ssh://git@github.com/acme/x", "git+ssh://github.com/acme/x"]) expect(overSsh(url), url).toBe(true);
+  for (const url of ["https://github.com/acme/x.git", "/srv/x.git", "file:///srv/x.git"]) expect(overSsh(url), url).toBe(false);
 });
 
 it("withoutUserInfo removes credentials from every URL in a message", () => {

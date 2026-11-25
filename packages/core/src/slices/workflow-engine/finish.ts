@@ -14,7 +14,7 @@ import { err, ok, type Result } from "../../kernel/result/index.js";
 import { type CommandErrorCode, type FinishAction, type ItemEventBody, type ItemId, type RepoId, type StoredItem } from "../../kernel/schemas/index.js";
 import type { Repo } from "../config/index.js";
 import type { ItemStore } from "../items/index.js";
-import { discardWorktree, hostedRepo, mergeItem, openPullRequest, pushItem, withoutUserInfo, type ItemWorktree } from "../worktrees/index.js";
+import { discardWorktree, ghStatus, hostedRepo, mergeItem, openPullRequest, pushItem, withoutUserInfo, type ItemWorktree } from "../worktrees/index.js";
 
 export interface FinishDeps {
   readonly store: ItemStore;
@@ -115,17 +115,18 @@ export function createFinisher(deps: FinishDeps): Finisher {
       case "pull_request": {
         const pushUrl = recorded.pushUrl!;
         const hosted = hostedRepo(pushUrl)!;
+        const gh = { runner: deps.runner, ...(deps.ghCommand !== undefined && { command: deps.ghCommand }) };
+        // Nothing is pushed unless gh can open the pull request on that host afterwards.
+        const ready = await ghStatus(gh, hosted.host);
+        if (!ready.loggedIn) return failed(`Nothing was pushed. ${ready.message ?? "gh cannot open pull requests now."}`);
         const pushed = await pushItem(git, repo.path, {
           commit: commit!,
           branch: worktree.branch,
           pushUrl,
-          ...(hosted.ssh && deps.sshAuthSock !== undefined && { sshAuthSock: deps.sshAuthSock }),
+          ...(deps.sshAuthSock !== undefined && { sshAuthSock: deps.sshAuthSock }),
         });
         if (!pushed.ok) return failed(pushed.error);
-        const opened = await openPullRequest(
-          { runner: deps.runner, ...(deps.ghCommand !== undefined && { command: deps.ghCommand }) },
-          { repo: hosted, itemId: item.id, title: item.title, head: worktree.branch, base: repo.baseBranch },
-        );
+        const opened = await openPullRequest(gh, { repo: hosted, itemId: item.id, title: item.title, head: worktree.branch, base: repo.baseBranch });
         return opened.ok ? { type: "pr_opened", repoId: repo.id, url: opened.value } : failed(opened.error);
       }
       case "discard": {
@@ -149,14 +150,18 @@ export function createFinisher(deps: FinishDeps): Finisher {
       const chain = (repoChains.get(repo!.id) ?? Promise.resolve()).then(async () => {
         let result: ItemEventBody;
         try {
-          result = await perform(started.value, action, repo!);
+          // An action still queued behind another when the engine shuts down does not start.
+          result = closing ? { type: "finish_failed", action, detail: `The engine stopped before ${LABEL[action]} ran; nothing was done. Try again.` } : await perform(started.value, action, repo!);
         } catch (error) {
           result = { type: "finish_failed", action, detail: scrub(`Tokama hit an error: ${error instanceof Error ? error.message : String(error)}`, repo) };
         }
         try {
           append(itemId, [result]);
-        } catch {
-          // Nothing more can be recorded; the next start records the action as interrupted.
+        } catch (error) {
+          // The result did not fit or could not be written: end the action as failed, so the item
+          // does not stay "running". If even that fails, the next start records it as interrupted.
+          const detail = scrub(`Tokama could not record the result of ${LABEL[action]}: ${error instanceof Error ? error.message : String(error)}`, repo);
+          store.append(itemId, [{ type: "finish_failed", action, detail }]);
         }
       });
       repoChains.set(repo!.id, chain);

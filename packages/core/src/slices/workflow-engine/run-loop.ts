@@ -1152,12 +1152,12 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       closing = true;
       recoveryAbort.abort();
       await ready.catch(() => undefined);
-      await finisher.close();
+      // Agents and checks stop first; a finish action that is running ends on its own.
       const chains = [...live.values()].map((entry) => {
         entry.controller.abort();
         return entry.chain;
       });
-      await Promise.allSettled(chains);
+      await Promise.allSettled([...chains, finisher.close()]);
     },
 
     async settled(itemId) {

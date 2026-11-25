@@ -11,7 +11,7 @@
 import type { Git } from "../../kernel/git/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import type { ItemId } from "../../kernel/schemas/index.js";
-import { recordableRemote } from "./remote.js";
+import { overSsh, recordableRemote } from "./remote.js";
 import { removeWorktree, type ItemWorktree, type WorktreeRepo } from "./worktree.js";
 
 export interface MergeResult {
@@ -82,6 +82,9 @@ export async function mergeItem(
     if (!commit.ok) return err(`Cannot make the merge commit: ${commit.error.message}`);
     target = commit.value;
   }
+  // The checkout may have switched branch while the merge was made: read it again right before.
+  const still = await git.currentRef(repo.path);
+  if (!still.ok || still.value !== baseRef) return err(`Your checkout left ${base} while Tokama prepared the merge. Nothing was merged; try again.`);
   // git moves the checkout only forward and refuses, without a change, when a local file would be
   // overwritten; a base branch that moved since it was read makes the fast-forward fail too.
   const moved = await git.mergeFastForward(repo.path, target);
@@ -93,10 +96,17 @@ export async function mergeItem(
         : `git did not move ${base} forward; your checkout is unchanged: ${moved.error.message}`,
     );
   }
+  const after = await git.revParse(repo.path, `${baseRef}^{commit}`);
+  if (!after.ok || after.value !== target) {
+    return err(`git moved your checkout, but ${base} is not at the merge (${short(target)}): the checkout changed branch meanwhile. Check your branches; Tokama recorded no merge.`);
+  }
   return cleanUp(git, repo, worktree, item.commit, target);
 }
 
-/** Removes the worktree, then the branch while it is still at the merged commit. */
+/**
+ * Removes the worktree, then the branch while it is still at the merged commit. `worktreeRemoved`
+ * is true only when both are gone, so Discard stays on offer for whatever is left.
+ */
 async function cleanUp(git: Git, repo: WorktreeRepo, worktree: ItemWorktree, commit: string, merged: string): Promise<Result<MergeResult, string>> {
   const removed = await removeWorktree(git, repo.path, worktree);
   if (!removed.ok) {
@@ -104,11 +114,11 @@ async function cleanUp(git: Git, repo: WorktreeRepo, worktree: ItemWorktree, com
   }
   const tip = await git.revParse(repo.path, `refs/heads/${worktree.branch}`);
   if (tip.ok && tip.value !== commit) {
-    return ok({ commit: merged, worktreeRemoved: true, detail: `The branch ${worktree.branch} was kept: it has commits that were not merged.` });
+    return ok({ commit: merged, worktreeRemoved: false, detail: `The branch ${worktree.branch} was kept: it has commits that were not merged. Discard it once you no longer need them.` });
   }
   if (tip.ok) {
     const deleted = await git.branchDelete(repo.path, worktree.branch);
-    if (!deleted.ok) return ok({ commit: merged, worktreeRemoved: true, detail: `The branch ${worktree.branch} could not be deleted: ${deleted.error.message}` });
+    if (!deleted.ok) return ok({ commit: merged, worktreeRemoved: false, detail: `The branch ${worktree.branch} could not be deleted: ${deleted.error.message}` });
   }
   return ok({ commit: merged, worktreeRemoved: true });
 }
@@ -120,7 +130,10 @@ export async function originPushUrl(git: Git, repoPath: string): Promise<Result<
   return ok(url.value === undefined ? undefined : recordableRemote(url.value));
 }
 
-/** Pushes the item's commit to its branch on origin; refused when origin points elsewhere now. */
+/**
+ * Pushes the item's commit to its branch on origin; refused when origin points elsewhere now. The
+ * SSH agent socket goes along only when git really pushes over SSH, after its URL rewrites.
+ */
 export async function pushItem(
   git: Git,
   repoPath: string,
@@ -131,6 +144,9 @@ export async function pushItem(
   if (now.value !== input.pushUrl) {
     return err(`origin now points at ${now.value ?? "no network remote"}, not ${input.pushUrl} as when the item started. Tokama pushes only where the item started.`);
   }
-  const pushed = await git.push(repoPath, "origin", input.commit, input.branch, input.sshAuthSock === undefined ? {} : { sshAuthSock: input.sshAuthSock });
+  const resolved = await git.remoteResolvedPushUrl(repoPath, "origin");
+  if (!resolved.ok) return err(`Cannot read where origin pushes: ${resolved.error.message}`);
+  const ssh = input.sshAuthSock !== undefined && overSsh(resolved.value);
+  const pushed = await git.push(repoPath, "origin", input.commit, input.branch, ssh ? { sshAuthSock: input.sshAuthSock! } : {});
   return pushed.ok ? ok(undefined) : err(`git could not push ${input.branch}: ${pushed.error.message}`);
 }
