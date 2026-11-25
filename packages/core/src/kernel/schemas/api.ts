@@ -331,11 +331,34 @@ export const HelloMessageSchema = z.object({
   token: z.string().min(1).max(256),
 });
 
+/**
+ * The client's first message in place of a hello: stop now. Every engine version from this one on
+ * accepts it with its token, whatever the `apiVersion`, so a newer app can replace an older engine.
+ */
+export const ShutdownRequestSchema = z.object({
+  kind: z.literal("shutdown"),
+  apiVersion: z.int(),
+  token: z.string().min(1).max(256),
+});
+
+/** What a client may send first: a hello, or a shutdown request. */
+export const OpeningMessageSchema = z.discriminatedUnion("kind", [HelloMessageSchema, ShutdownRequestSchema]);
+
+/** How many items run now (`state` running, or a Finish action in progress); restarting the engine pauses them. */
+const runningItems = z.int().nonnegative().optional();
+
 /** The engine accepted the hello. `engineId` is new on each engine start: a new id means `seq` restarted. */
 export const WelcomeMessageSchema = z.object({
   kind: z.literal("welcome"),
   apiVersion: z.int(),
   engineId: z.string().min(1).max(128),
+  runningItems,
+});
+
+/** The engine accepted a shutdown request; it closes the connection and stops. */
+export const ShutdownAcceptedSchema = z.object({
+  kind: z.literal("shutdown_accepted"),
+  apiVersion: z.int(),
 });
 
 /** The codes this engine sends in a connection error. Clients accept any code. */
@@ -356,10 +379,14 @@ export const ConnectionErrorMessageSchema = z.object({
   apiVersion: z.int(),
   code: z.string().min(1).max(64),
   message: z.string().max(1000),
+  /** With `unsupported_version`, so a client can tell whether replacing the engine pauses work. */
+  runningItems,
 });
 
 /** What the engine answers to a hello. */
 export const HandshakeReplySchema = z.discriminatedUnion("kind", [WelcomeMessageSchema, ConnectionErrorMessageSchema]);
+/** What the engine answers to a shutdown request. An engine older than the request refuses it as a `bad_message`. */
+export const ShutdownReplySchema = z.discriminatedUnion("kind", [ShutdownAcceptedSchema, ConnectionErrorMessageSchema]);
 
 /**
  * An event message of this API version whose event type this side does not know: a newer engine
@@ -406,6 +433,9 @@ export type WelcomeMessage = z.output<typeof WelcomeMessageSchema>;
 export type ConnectionErrorMessage = z.output<typeof ConnectionErrorMessageSchema>;
 export type ConnectionErrorCode = (typeof CONNECTION_ERROR_CODES)[number];
 export type HandshakeReply = z.output<typeof HandshakeReplySchema>;
+export type ShutdownRequest = z.output<typeof ShutdownRequestSchema>;
+export type OpeningMessage = z.output<typeof OpeningMessageSchema>;
+export type ShutdownReply = z.output<typeof ShutdownReplySchema>;
 
 export type QueryType = keyof typeof QueryResultSchemas;
 export type QueryResult<T extends QueryType> = z.output<(typeof QueryResultSchemas)[T]>;

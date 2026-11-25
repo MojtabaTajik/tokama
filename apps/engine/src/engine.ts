@@ -5,7 +5,10 @@
 // carrying the token and the client's API version; after the welcome, the client sends commands
 // and queries (one JSON message per line) and receives replies and events.
 //
-// Shutdown, when the signal aborts or close() is called: refuse new connections, wait for
+// A connection may start with a shutdown request (with the token) in place of the hello: a newer
+// app sends it to replace this engine, whatever its API version.
+//
+// Shutdown, when the signal aborts, close() is called or a client asks for it: refuse new connections, wait for
 // in-flight requests (bounded), close the connections, stop listening, then remove the socket,
 // token and lock files if the lock is still this engine's. The socket keeps answering until the
 // drain ends, so an engine starting meanwhile sees a live engine instead of a stale lock.
@@ -51,7 +54,7 @@ import {
   MAX_MESSAGE_BYTES,
   ok,
   parseClientMessage,
-  parseHelloMessage,
+  parseOpeningMessage,
   type ParseError,
   removeRepo,
   type RepoEditError,
@@ -387,9 +390,9 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   };
 
   /** Sends a connection-level error, then closes the connection. */
-  const fail = (socket: Socket, code: ConnectionErrorCode, message: string) => {
+  const fail = (socket: Socket, code: ConnectionErrorCode, message: string, extra: { runningItems?: number } = {}) => {
     ready.delete(socket);
-    const line = encodeLine({ kind: "connection_error", apiVersion: API_VERSION, code, message });
+    const line = encodeLine({ kind: "connection_error", apiVersion: API_VERSION, code, message, ...extra });
     if (line.ok) write(socket, line.value);
     socket.end();
     // Do not wait on a peer that keeps the connection open.
@@ -624,8 +627,11 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     }
   };
 
+  // Items a restart would pause: those running a step, and done items running a Finish action.
+  const runningItems = () => store.list().filter((item) => item.state === "running" || item.finish?.running !== undefined).length;
+
   const handleHello = (socket: Socket, line: string): boolean => {
-    const hello = parseHelloMessage(parseJson(line));
+    const hello = parseOpeningMessage(parseJson(line));
     if (!hello.ok) {
       fail(socket, "bad_message", "the first message must be a hello");
       return false;
@@ -634,11 +640,20 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       fail(socket, "unauthorized", "wrong engine token");
       return false;
     }
-    if (hello.value.apiVersion !== API_VERSION) {
-      fail(socket, "unsupported_version", `engine speaks API version ${API_VERSION}, client sent ${hello.value.apiVersion}`);
+    // A shutdown request is accepted from any version: a newer app replaces this engine with it.
+    if (hello.value.kind === "shutdown") {
+      log(`a client with API version ${hello.value.apiVersion} asked the engine to stop`);
+      const accepted = encodeLine({ kind: "shutdown_accepted", apiVersion: API_VERSION });
+      if (accepted.ok) write(socket, accepted.value);
+      socket.end();
+      void shutdown();
       return false;
     }
-    const welcome = encodeLine({ kind: "welcome", apiVersion: API_VERSION, engineId });
+    if (hello.value.apiVersion !== API_VERSION) {
+      fail(socket, "unsupported_version", `engine speaks API version ${API_VERSION}, client sent ${hello.value.apiVersion}`, { runningItems: runningItems() });
+      return false;
+    }
+    const welcome = encodeLine({ kind: "welcome", apiVersion: API_VERSION, engineId, runningItems: runningItems() });
     if (welcome.ok) write(socket, welcome.value);
     ready.add(socket);
     return true;

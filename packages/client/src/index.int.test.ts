@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { API_VERSION, parseClientMessage, type CommandMessageInput, type QueryMessageInput } from "@tokama/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { connect } from "./index.js";
+import { connect, requestShutdown } from "./index.js";
 
 let cleanups: (() => unknown)[] = [];
 afterEach(async () => {
@@ -123,14 +123,50 @@ describe("@tokama/client", () => {
 
   it("reports an engine's unsupported_version refusal", async () => {
     const dir = tempDir();
-    await fakeEngine(dir, `${JSON.stringify({ kind: "connection_error", apiVersion: 7, code: "unsupported_version", message: "engine speaks 7" })}\n`);
-    expect(await connect({ dir })).toEqual({ ok: false, error: { code: "unsupported_version", message: "engine speaks 7" } });
+    await fakeEngine(dir, `${JSON.stringify({ kind: "connection_error", apiVersion: 7, code: "unsupported_version", message: "engine speaks 7", runningItems: 2 })}\n`);
+    expect(await connect({ dir })).toEqual({ ok: false, error: { code: "unsupported_version", message: "engine speaks 7", engine: { apiVersion: 7, runningItems: 2 } } });
+  });
+
+  it("reports an older engine's refusal without runningItems as not known", async () => {
+    const dir = tempDir();
+    await fakeEngine(dir, `${JSON.stringify({ kind: "connection_error", apiVersion: 2, code: "unsupported_version", message: "engine speaks 2" })}\n`);
+    expect(await connect({ dir })).toEqual({ ok: false, error: { code: "unsupported_version", message: "engine speaks 2", engine: { apiVersion: 2 } } });
+  });
+
+  it("requestShutdown sends the token in a shutdown request, and is true only when the engine accepts", async () => {
+    const dir = tempDir();
+    const received: unknown[] = [];
+    writeFileSync(join(dir, "engine.token"), "t0k");
+    let answer = { kind: "shutdown_accepted", apiVersion: 9 } as object;
+    const server = createServer((socket) => {
+      socket.once("data", (chunk) => {
+        received.push(JSON.parse(chunk.toString()));
+        socket.end(`${JSON.stringify(answer)}\n`);
+      });
+      socket.on("error", () => {});
+    });
+    await new Promise<void>((resolve) => server.listen(join(dir, "engine.sock"), resolve));
+    cleanups.push(() => new Promise((resolve) => server.close(resolve)));
+    expect(await requestShutdown(dir)).toBe(true);
+    expect(received).toEqual([{ kind: "shutdown", apiVersion: API_VERSION, token: "t0k" }]);
+    // An engine from before the request answers it as a bad first message.
+    answer = { kind: "connection_error", apiVersion: 4, code: "bad_message", message: "the first message must be a hello" };
+    expect(await requestShutdown(dir)).toBe(false);
+  });
+
+  it("requestShutdown is false when no engine answers, and never sends the token into an unsafe dir", async () => {
+    const dir = tempDir();
+    expect(await requestShutdown(dir)).toBe(false);
+    writeFileSync(join(dir, "engine.token"), "t0k");
+    chmodSync(dir, 0o755);
+    expect(await requestShutdown(dir)).toBe(false);
+    chmodSync(dir, 0o700);
   });
 
   it("refuses a welcome of another API version", async () => {
     const dir = tempDir();
-    await fakeEngine(dir, `${JSON.stringify({ kind: "welcome", apiVersion: API_VERSION + 1, engineId: "e1" })}\n`);
-    expect(await connect({ dir })).toMatchObject({ ok: false, error: { code: "unsupported_version" } });
+    await fakeEngine(dir, `${JSON.stringify({ kind: "welcome", apiVersion: API_VERSION + 1, engineId: "e1", runningItems: 0 })}\n`);
+    expect(await connect({ dir })).toMatchObject({ ok: false, error: { code: "unsupported_version", engine: { apiVersion: API_VERSION + 1, runningItems: 0 } } });
   });
 
   it("refuses to send the token into a dir that others can read, or a symlinked dir", async () => {

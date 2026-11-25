@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type ClientEvent, connect, type EngineClient } from "@tokama/client";
+import { type ClientEvent, connect, type EngineClient, requestShutdown } from "@tokama/client";
 import { API_VERSION, MAX_MESSAGE_BYTES } from "@tokama/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { type EngineHandle, startEngine } from "./engine.js";
@@ -44,7 +44,7 @@ async function handshaken(handle: EngineHandle) {
   const raw = await rawConnect(handle.endpoint.socketPath);
   cleanups.push(() => raw.destroy());
   raw.send({ kind: "hello", apiVersion: API_VERSION, token: readFileSync(handle.endpoint.tokenPath, "utf8") });
-  expect(await raw.next()).toEqual({ kind: "welcome", apiVersion: API_VERSION, engineId: handle.engineId });
+  expect(await raw.next()).toEqual({ kind: "welcome", apiVersion: API_VERSION, engineId: handle.engineId, runningItems: 0 });
   return raw;
 }
 
@@ -140,6 +140,57 @@ describe("engine service", () => {
     raw.send({ kind: "hello", apiVersion: API_VERSION - 1, token: readFileSync(handle.endpoint.tokenPath, "utf8") });
     expect(await raw.next()).toMatchObject({ kind: "connection_error", apiVersion: API_VERSION, code: "unsupported_version" });
     await raw.closed;
+  });
+
+  it("says how many items run, in the welcome and in the version refusal", async () => {
+    const dir = tempEngineDir(cleanups);
+    const handle = await engine(dir);
+    const token = readFileSync(handle.endpoint.tokenPath, "utf8");
+    handle.store.put({ ...sampleItem("Running one"), id: "item_1b9f3c1e-6a2d-4f7b-9c1a-2e3d4f5a6b7c" as never, state: "running" });
+    handle.store.put({ ...sampleItem("Running two"), id: "item_2b9f3c1e-6a2d-4f7b-9c1a-2e3d4f5a6b7c" as never, state: "running" });
+    handle.store.put({ ...sampleItem("Needs you"), id: "item_3b9f3c1e-6a2d-4f7b-9c1a-2e3d4f5a6b7c" as never, state: "needs_you" });
+
+    const welcomed = await rawConnect(handle.endpoint.socketPath);
+    cleanups.push(() => welcomed.destroy());
+    welcomed.send({ kind: "hello", apiVersion: API_VERSION, token });
+    expect(await welcomed.next()).toMatchObject({ kind: "welcome", runningItems: 2 });
+
+    const refused = await rawConnect(handle.endpoint.socketPath);
+    refused.send({ kind: "hello", apiVersion: API_VERSION + 1, token });
+    expect(await refused.next()).toMatchObject({ kind: "connection_error", code: "unsupported_version", runningItems: 2 });
+    await refused.closed;
+  });
+
+  it("stops on a shutdown request with its token, from a client of any API version", async () => {
+    const dir = tempEngineDir(cleanups);
+    const handle = await engine(dir);
+    const { socketPath, tokenPath, lockPath } = handle.endpoint;
+
+    const raw = await rawConnect(socketPath);
+    raw.send({ kind: "shutdown", apiVersion: API_VERSION + 3, token: readFileSync(tokenPath, "utf8"), extra: true });
+    expect(await raw.next()).toEqual({ kind: "shutdown_accepted", apiVersion: API_VERSION });
+    await raw.closed;
+    await handle.closed;
+    expect([socketPath, tokenPath, lockPath].filter((path) => existsSync(path))).toEqual([]);
+  });
+
+  it("refuses a shutdown request with a wrong token and keeps running", async () => {
+    const dir = tempEngineDir(cleanups);
+    const handle = await engine(dir);
+
+    const raw = await rawConnect(handle.endpoint.socketPath);
+    raw.send({ kind: "shutdown", apiVersion: API_VERSION, token: "0".repeat(64) });
+    expect(await raw.next()).toMatchObject({ kind: "connection_error", code: "unauthorized" });
+    await raw.closed;
+    await handshaken(handle);
+  });
+
+  it("is stopped by the client's requestShutdown, which an engine that does not know it refuses", async () => {
+    const dir = tempEngineDir(cleanups);
+    const handle = await engine(dir);
+    expect(await requestShutdown(dir)).toBe(true);
+    await handle.closed;
+    expect(await requestShutdown(dir)).toBe(false);
   });
 
   it("closes a connection that does not start with a hello", async () => {
