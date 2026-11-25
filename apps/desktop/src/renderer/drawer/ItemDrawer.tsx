@@ -7,9 +7,9 @@ import { type KeyboardEvent, useEffect, useId, useLayoutEffect, useRef, useState
 import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
 import { itemElement } from "../list/useFocusFollow.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
-import { attemptLine, DECISION_KIND, hasEnded, itemMark, KIND, outcomeLine, PRIVACY, stepAgent, stepMark, stepPosition, templateOf, whereLine } from "./describe.js";
+import { attemptLine, decisionKind, hasEnded, nextRunLine, itemMark, KIND, outcomeLine, PRIVACY, stepAgent, stepMark, stepPosition, templateOf, whereLine } from "./describe.js";
 import { DecisionChoices } from "./DecisionChoices.js";
-import { DecisionDiff } from "./DecisionDiff.js";
+import { DiffTab, useDecisionDiff } from "./DiffView.js";
 import { useItem } from "./useItem.js";
 
 const TEXT = {
@@ -39,6 +39,10 @@ const TEXT = {
   alreadyEnded: "The item had already ended. The drawer shows the item as it is now.",
   notConnected: "Not connected to the engine. Try again when it is back.",
   failed: (message: string) => `Could not send it: ${message}`,
+  committed: (commit: string) => `Committed · ${commit}`,
+  committedLine: (title: string, branch: string | undefined) => `${title}${branch === undefined ? "" : ` · on ${branch}`} · Done`,
+  makingChanges: (agent: string, run: string | undefined) => `${agent} is making your changes${run === undefined ? "" : ` · ${run.toLowerCase()}`}`,
+  yourNote: (note: string) => `Your note: "${note}"`,
 } as const;
 
 type Tab = "Steps" | "Evidence" | "Findings" | "Log" | "Diff" | "Checks";
@@ -99,6 +103,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose }: ItemDrawerProps) 
     setConfirmingStop(false);
     setBusy(false);
     setTab("Steps");
+    openedOn.current = undefined;
   }, [itemId]);
   // On close, focus goes back to the opener, if it is still on the screen; if the item moved to
   // another group or column meanwhile, to the item's current row or card.
@@ -162,6 +167,15 @@ export function ItemDrawer({ bridge, itemId, setup, onClose }: ItemDrawerProps) 
     if (item) void send({ type: "stop_item", itemId: item.id });
   };
 
+  // A change approval opens on its Diff tab, once per item shown.
+  const openedOn = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (item === undefined || openedOn.current === item.id) return;
+    openedOn.current = item.id;
+    if (item.state === "needs_you" && item.decision?.hasDiff === true) setTab("Diff");
+  }, [item]);
+  const diff = useDecisionDiff(bridge, itemId, item?.state === "needs_you" ? item.decision : undefined);
+
   const template = item && templateOf(item, setup);
   const tabs = item ? tabsOf(item) : [];
   const shown = tabs.includes(tab) ? tab : "Steps";
@@ -197,13 +211,20 @@ export function ItemDrawer({ bridge, itemId, setup, onClose }: ItemDrawerProps) 
         </p>
       )}
 
-      {item?.state === "needs_you" && <NeedsYou bridge={bridge} itemId={item.id} decision={item.decision} busy={busy} onChoose={resolve} />}
+      {item?.state === "needs_you" && <NeedsYou item={item} setup={setup} decision={item.decision} busy={busy} onChoose={resolve} />}
+      {item !== undefined && item.state !== "needs_you" && <After item={item} setup={setup} />}
 
       {item && (
         <>
           <Tabs tabs={tabs} shown={shown} onPick={setTab} />
           <div className="drawer-panel" role="tabpanel" id={panelId(shown)} aria-labelledby={tabId(shown)}>
-            {shown === "Steps" ? <Steps item={item} setup={setup} /> : <p className="placeholder">{TEXT.later(shown)}</p>}
+            {shown === "Steps" ? (
+              <Steps item={item} setup={setup} />
+            ) : shown === "Diff" && diff !== undefined ? (
+              <DiffTab key={item.decision?.id} state={diff} baseBranch={setup?.repos.find((repo) => repo.id === item.repoIds[0])?.baseBranch} />
+            ) : (
+              <p className="placeholder">{TEXT.later(shown)}</p>
+            )}
           </div>
           {confirmingStop ? (
             <ConfirmStop busy={busy} onStop={stop} onCancel={cancelStop} />
@@ -266,19 +287,22 @@ function Missing({ error, onRetry }: { readonly error: { code: string; message: 
 }
 
 interface NeedsYouProps {
-  readonly bridge: TokamaBridge;
-  readonly itemId: string;
+  readonly item: ItemRecord;
+  readonly setup: Setup | undefined;
   readonly decision: Decision | undefined;
   readonly busy: boolean;
   readonly onChoose: (decision: Decision, choice: string, note?: string) => void;
 }
 
-function NeedsYou({ bridge, itemId, decision, busy, onChoose }: NeedsYouProps) {
+function NeedsYou({ item, setup, decision, busy, onChoose }: NeedsYouProps) {
+  const step = decision === undefined ? undefined : item.steps[decision.stepIndex];
+  const agent = step?.agentId === undefined ? undefined : stepAgent(step, setup?.agents ?? []).name;
+  const kind = decision === undefined ? undefined : decisionKind(decision);
   return (
     <section className="needs-you" aria-label={TEXT.needsYou}>
       {decision ? (
         <>
-          {decision.kind !== undefined && <p className="needs-you-kind">{DECISION_KIND[decision.kind]}</p>}
+          {kind !== undefined && <p className="needs-you-kind">{kind}</p>}
           <p className="needs-you-question">
             <span className="mark" aria-hidden="true">
               ⏸
@@ -298,8 +322,7 @@ function NeedsYou({ bridge, itemId, decision, busy, onChoose }: NeedsYouProps) {
               </pre>
             </div>
           )}
-          {decision.hasDiff === true && <DecisionDiff bridge={bridge} itemId={itemId} decision={decision} />}
-          <DecisionChoices key={decision.id} decision={decision} busy={busy} onChoose={(choice, note) => onChoose(decision, choice, note)} />
+          <DecisionChoices key={decision.id} decision={decision} busy={busy} agent={agent} run={nextRunLine(step)} onChoose={(choice, note) => onChoose(decision, choice, note)} />
         </>
       ) : (
         <p className="needs-you-question">
@@ -309,6 +332,41 @@ function NeedsYou({ bridge, itemId, decision, busy, onChoose }: NeedsYouProps) {
           {TEXT.noQuestion}
         </p>
       )}
+    </section>
+  );
+}
+
+/**
+ * What happened after a decision: the commit an approval made, or the step running again with the
+ * note of Request changes.
+ */
+function After({ item, setup }: { readonly item: ItemRecord; readonly setup: Setup | undefined }) {
+  const commit = item.outcome?.commits?.[0];
+  if (item.state === "done" && commit !== undefined) {
+    return (
+      <section className="after" data-tone="pass" aria-label={TEXT.committed(commit.commit.slice(0, 7))}>
+        <p className="after-head">
+          <span className="mark" aria-hidden="true">
+            ✓
+          </span>
+          {TEXT.committed(commit.commit.slice(0, 7))}
+        </p>
+        <p className="after-text">{TEXT.committedLine(item.title, commit.branch)}</p>
+      </section>
+    );
+  }
+  const step = item.steps.find((candidate) => candidate.state === "running" && candidate.changesNote !== undefined);
+  if (step?.changesNote === undefined) return null;
+  const line = TEXT.makingChanges(stepAgent(step, setup?.agents ?? []).name, nextRunLine({ ...step, attempts: step.attempts?.slice(0, -1) ?? [] }));
+  return (
+    <section className="after" data-tone="live" aria-label={line}>
+      <p className="after-head">
+        <span className="mark" aria-hidden="true">
+          ●
+        </span>
+        {line}
+      </p>
+      <p className="after-text">{TEXT.yourNote(step.changesNote)}</p>
     </section>
   );
 }

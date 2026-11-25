@@ -205,12 +205,16 @@ describe("real mode", () => {
       return { waiting, diff: reply.data };
     };
     const first = await diffOf();
-    expect(first.waiting.decision?.choices.map((c) => c.label)).toEqual(["Approve", "Request changes", "End: no action needed", "Stop"]);
+    expect(first.waiting.decision?.choices.map((c) => c.label)).toEqual(["Approve and commit", "Request changes", "End: no action needed", "Stop"]);
+    expect(first.waiting.decision).toMatchObject({ question: "Approve this change and commit it?", why: "Builder changed 1 file in a worktree of orders-api. Nothing is committed until you approve. Request changes sends your note to Builder for another run." });
+    expect(first.waiting.steps[0]).toMatchObject({ maxAttempts: 3, attempts: [{ attempt: 1, result: "passed" }] });
     expect(first.diff.files).toMatchObject([{ path: "greeting.txt", status: "modified", added: 1, removed: 1, hunks: [{ lines: ["-helo world", "+hello wrld"] }] }]);
     expect(first.diff.worktree).toMatchObject({ repoId: "orders-api", branch: expect.stringMatching(/^tokama\//) });
 
     expect(await client.command({ type: "resolve_decision", itemId: id, decisionId: first.waiting.decision!.id, choice: "request_changes", note: "Spell world right." })).toEqual({ ok: true, data: null });
     const second = await waitItem(client, id, (i) => i.decision?.hasDiff === true && i.decision.id !== first.waiting.decision!.id, "the second approval");
+    // While it ran again, the step carried the note; at the question it carries none.
+    expect(second.steps[0]?.changesNote).toBeUndefined();
     expect(runtime.requests[1]?.prompt).toContain("Spell world right.");
 
     expect(await client.command({ type: "resolve_decision", itemId: id, decisionId: second.decision!.id, choice: "approve" })).toEqual({ ok: true, data: null });

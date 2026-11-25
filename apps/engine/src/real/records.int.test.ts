@@ -71,8 +71,8 @@ describe("toItemRecord", () => {
     const record = toItemRecord(created())!;
     expect(record).toMatchObject({ templateId: "orders-api/careful-fix", kind: "task", privacy: "local_and_cloud", state: "queued", title: "Fix the greeting", cardLine: "starting" });
     expect(record.steps).toEqual([
-      { name: "Fix", stage: "working", state: "pending", agentId: "builder", data: "repo-and-diff" },
-      { name: "Review", stage: "review", state: "pending", agentId: "reviewer", data: "none" },
+      { name: "Fix", stage: "working", state: "pending", agentId: "builder", data: "repo-and-diff", maxAttempts: 3 },
+      { name: "Review", stage: "review", state: "pending", agentId: "reviewer", data: "none", maxAttempts: 3 },
     ]);
   });
 

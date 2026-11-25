@@ -30,7 +30,7 @@ async function changeFrom(base: string) {
   const diff = await treeDiff(git, repo, base, tree.value);
   if (!diff.ok) throw new Error(diff.error.message);
   // The reply would pass the API schema.
-  ItemDiffSchema.parse({ ...diff.value, worktree: { repoId: "orders-api", dir: ".tokama/wt/x", branch: "tokama/x" } });
+  ItemDiffSchema.parse({ ...diff.value, worktree: { repoId: "orders-api", dir: ".tokama/wt/x", branch: "tokama/x", baseCommit: base } });
   return diff.value;
 }
 
@@ -116,18 +116,30 @@ describe("treeDiff on a real repo", () => {
     expect(diff.ok && diff.value.files[0]?.hunks[0]?.lines).toEqual(["-a", "+b"]);
   });
 
-  it("keeps a huge change within the limits and marks what it leaves out", SLOW, async () => {
+  it("keeps a huge change within the byte budget and marks what it leaves out", SLOW, async () => {
     const base = await seed({ "small.txt": "a\n" });
-    // Quotes and control bytes take more room as JSON than as text.
-    write("big.txt", `${'"\u0001'.repeat(300)}\n`.repeat(4000));
+    // Under the line limit, but quotes and control bytes take more room as JSON than as text.
+    write("big.txt", `${'"\u0001'.repeat(300)}\n`.repeat(900));
     write("small.txt", "b\n");
     const diff = await changeFrom(base);
     expect(Buffer.byteLength(JSON.stringify(diff))).toBeLessThan(DIFF_LIMITS.hunkBytes + DIFF_LIMITS.fileBytes + 1024);
     const big = diff.files.find((f) => f.path === "big.txt")!;
-    expect(big).toMatchObject({ added: 4000, removed: 0, cut: true });
+    expect(big).toMatchObject({ added: 900, removed: 0, cut: true });
+    expect(big.hunks.length).toBeGreaterThan(0);
     expect(diff.cut).toBe(true);
     // Every changed file is still listed with its counts.
     expect(diff.files.map((f) => f.path)).toEqual(["big.txt", "small.txt"]);
+  });
+
+  it("lists a file over the line limit with its counts only", SLOW, async () => {
+    const base = await seed({ "a.txt": "a\n" });
+    write("lock.json", "x\n".repeat(DIFF_LIMITS.fileLines + 1));
+    write("a.txt", "b\n");
+    const diff = await changeFrom(base);
+    expect(diff.files).toMatchObject([
+      { path: "a.txt", hunks: [{ lines: ["-a", "+b"] }], cut: false },
+      { path: "lock.json", added: DIFF_LIMITS.fileLines + 1, removed: 0, binary: false, hunks: [], cut: true },
+    ]);
   });
 
   it("refuses ids that git would read as options", SLOW, async () => {

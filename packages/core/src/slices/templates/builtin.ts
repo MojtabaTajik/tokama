@@ -28,8 +28,8 @@ const QUICK_CHANGE = `# For repos without tests or checks: you review the change
 # you saw; Request changes runs the step again with your note.
 format: 1
 name: Quick change
-icon: code
-color: sand
+icon: bolt
+color: rose
 uses:
   repos: edit
 start:

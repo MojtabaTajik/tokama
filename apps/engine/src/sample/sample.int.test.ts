@@ -102,7 +102,7 @@ describe("fake engine mode", () => {
       "builtin/db-slow-query/database/clay",
       "builtin/plan-and-build/hammer/sky",
       "builtin/quick-fix/wrench/moss",
-      "builtin/quick-change/code/sand",
+      "builtin/quick-change/bolt/rose",
       "builtin/review-only/eye/slate",
     ]);
     const emergency = setup.templates.find((template) => template.id === "builtin/emergency-investigator");
@@ -246,12 +246,14 @@ describe("fake engine mode", () => {
     expect(diff.data.files.map((file) => [file.path, file.added, file.removed])).toEqual([
       ["src/sync/worker.ts", 2, 1],
       ["src/sync/worker.test.ts", 6, 0],
+      ["docs/sync-dashboard.png", null, null],
+      ["fixtures/warehouses.json", 1204, 310],
     ]);
     expect(await client.query({ type: "decision_diff", itemId: ITEM_IDS.needsYou, decisionId: DECISION_ID })).toMatchObject({ ok: false, error: { code: "stale_decision" } });
 
     const resolve: CommandInput = { type: "resolve_decision", itemId: ITEM_IDS.quickChange, decisionId: DIFF_DECISION_ID, choice: "request_changes", note: "Also log the sync id." };
     expect(await client.command(resolve)).toEqual({ ok: true, data: null });
-    expect((await next()).item).toMatchObject({ id: ITEM_IDS.quickChange, state: "running", steps: [{ state: "running", detail: expect.stringContaining("runs again with your note") }] });
+    expect((await next()).item).toMatchObject({ id: ITEM_IDS.quickChange, state: "running", steps: [{ state: "running", detail: expect.stringContaining("runs again with your note"), changesNote: "Also log the sync id." }] });
     expect(await client.query({ type: "decision_diff", itemId: ITEM_IDS.quickChange, decisionId: DIFF_DECISION_ID })).toMatchObject({ ok: false, error: { code: "stale_decision" } });
   });
 

@@ -7,7 +7,8 @@ import type { ItemRecord, Setup } from "@tokama/core";
 import { type MouseEvent, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { DecisionChoices } from "../drawer/DecisionChoices.js";
-import { DecisionDiff } from "../drawer/DecisionDiff.js";
+import { nextRunLine } from "../drawer/describe.js";
+import { ChangedFiles, useDecisionDiff } from "../drawer/DiffView.js";
 import { type Notice, problem, REFRESH_ON } from "../drawer/ItemDrawer.js";
 import { ConnectionFailure } from "../shell/ConnectionStatus.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
@@ -30,6 +31,7 @@ const TEXT = {
   waiting: (count: number) => `${count} waiting`,
   oldest: (since: string) => `oldest item started ${since} ago`,
   started: (since: string) => `started ${since} ago`,
+  review: "Review the diff",
 } as const;
 
 export interface NeedsYouProps {
@@ -138,6 +140,7 @@ interface RowProps {
 function Row({ row, index, bridge, selected, onSelect, onRefresh }: RowProps) {
   const { item, decision } = row;
   const [busy, setBusy] = useState(false);
+  const diff = useDecisionDiff(bridge, item.id, decision);
   const [notice, setNotice] = useState<Notice | undefined>(undefined);
   // The row can be gone when the reply arrives (the answer worked and the item moved on).
   const mounted = useRef(true);
@@ -207,7 +210,7 @@ function Row({ row, index, bridge, selected, onSelect, onRefresh }: RowProps) {
           </pre>
         </div>
       )}
-      {decision?.hasDiff === true && <DecisionDiff bridge={bridge} itemId={item.id} decision={decision} context={item.title} />}
+      {diff !== undefined && <ChangedFiles state={diff} context={item.title} />}
       {notice !== undefined && (
         <p className="drawer-notice" data-tone={notice.tone} role="status">
           <span className="symbol" aria-hidden="true">
@@ -217,7 +220,23 @@ function Row({ row, index, bridge, selected, onSelect, onRefresh }: RowProps) {
         </p>
       )}
       {decision !== undefined && (
-        <DecisionChoices key={decision.id} decision={decision} busy={busy} context={item.title} onChoose={(choice, note) => void choose(choice, note)} />
+        <DecisionChoices
+          key={decision.id}
+          decision={decision}
+          busy={busy}
+          context={item.title}
+          agent={row.agent?.name}
+          run={nextRunLine(item.steps[decision.stepIndex])}
+          extra={
+            decision.hasDiff === true ? (
+              // Opens the drawer, which opens a change approval on its Diff tab.
+              <button type="button" className="link nr-review" aria-label={`${TEXT.review}: ${item.title}`} onClick={() => onSelect(item.id)}>
+                {TEXT.review}
+              </button>
+            ) : undefined
+          }
+          onChoose={(choice, note) => void choose(choice, note)}
+        />
       )}
     </li>
   );

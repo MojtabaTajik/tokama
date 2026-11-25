@@ -6,6 +6,7 @@ import {
   type AttemptSummary,
   type Decision,
   type DecisionKind,
+  REQUEST_CHANGES_ID,
   type ItemKind,
   type ItemRecord,
   openAttempt,
@@ -64,6 +65,7 @@ export function toItemRecord(item: StoredItem): ItemRecord | undefined {
     const checking = def?.doneWhen === "checks pass" && running?.step.id === step.id && running.attempt.processes.some((p) => p.role === "check");
     const attempts = step.attempts.slice(-MAX_ATTEMPTS_SHOWN).map(toAttempt);
     const detail = stepDetail(step.state, step.attempts, def?.maxAttempts);
+    const note = step.state === "running" ? changesNoteOf(item, step.id) : undefined;
     return {
       name: def?.name ?? step.id,
       stage: checking ? "verifying" : def ? stageOf(def) : "working",
@@ -74,10 +76,12 @@ export function toItemRecord(item: StoredItem): ItemRecord | undefined {
       ...(def && def.connections.length > 0 && { uses: def.connections.map(({ connectionId, access }) => ({ connectionId, access })) }),
       ...(detail !== undefined && { detail }),
       ...(attempts.length > 0 && { attempts }),
+      ...(def && { maxAttempts: def.maxAttempts }),
+      ...(note !== undefined && { changesNote: note }),
     };
   });
 
-  const decision = toDecision(item);
+  const decision = toDecision(item, template);
   const outcome = item.outcome && {
     kind: item.outcome.kind,
     ...(cut(item.outcome.detail, 500) !== undefined && { detail: cut(item.outcome.detail, 500)! }),
@@ -143,18 +147,26 @@ function stepDetail(state: StepRecord["state"], attempts: readonly AttemptRecord
   }
 }
 
+/** The note of Request changes, when it is the step's latest answer: the step runs again with it. */
+function changesNoteOf(item: StoredItem, stepId: string): string | undefined {
+  const last = item.decisions.findLast((d) => d.stepId === stepId && d.resolved !== undefined);
+  return last?.kind === "plan_approval" && last.resolved?.choice === REQUEST_CHANGES_ID ? last.resolved.note : undefined;
+}
+
 /** The oldest open question. A restart can leave two open; the next shows once this one is answered. */
-function toDecision(item: StoredItem): Decision | undefined {
+function toDecision(item: StoredItem, template: TemplateRecord | undefined): Decision | undefined {
   const open = openDecisions(item)[0];
   if (open === undefined) return undefined;
   const at = [open.stepId, item.currentStepId].map((id) => item.steps.findIndex((step) => step.id === id)).find((index) => index >= 0);
   const pending = item.steps.findIndex((step) => step.state !== "passed");
   const why = cut(open.detail, 500);
+  // Approving a change of the last step commits it.
+  const commits = open.kind === "plan_approval" && open.tree !== undefined && template !== undefined && template.steps.at(-1)?.id === open.stepId && template.finish.includes("commit");
   return {
     id: open.id,
     kind: open.kind,
     stepIndex: at ?? (pending >= 0 ? pending : item.steps.length - 1),
-    question: QUESTIONS[open.kind],
+    question: commits ? "Approve this change and commit it?" : QUESTIONS[open.kind],
     ...(why !== undefined && { why }),
     ...(open.kind === "plan_approval" && open.tree !== undefined && { hasDiff: true }),
     choices: open.choices.slice(0, 5),

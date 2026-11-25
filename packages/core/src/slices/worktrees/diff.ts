@@ -102,9 +102,13 @@ export function buildDiff(entries: readonly DiffEntry[], patch: { readonly text:
     fileBytes += cost;
     files.push(file);
 
-    const hunks = own.flatMap(hunksOf);
+    // A file with more changed lines than the limit is listed with its counts only.
+    const tooLarge = !binary && (entry.added ?? 0) + (entry.removed ?? 0) > DIFF_LIMITS.fileLines;
+    if (tooLarge) file.cut = true;
+    const hunks = tooLarge ? [] : own.flatMap(hunksOf);
     const hasLines = !binary && (entry.added ?? 0) + (entry.removed ?? 0) > 0;
     if (hasLines && hunks.length === 0) file.cut = true;
+    if (tooLarge) continue;
     const kept: DiffHunk[] = [];
     for (const hunk of hunks) {
       const header = cutLine(hunk.header);

@@ -1,6 +1,6 @@
 // What the item drawer says about an item and its steps. Pure functions, tested without React.
 // Every state comes as a symbol and a word, so colour is never the only signal.
-import type { AgentSummary, AttemptSummary, ConnectionSummary, DecisionKind, ItemKind, ItemRecord, ItemState, Privacy, StepRecord, StepState, Setup } from "@tokama/core";
+import type { AgentSummary, AttemptSummary, ConnectionSummary, Decision, DecisionKind, ItemKind, ItemRecord, ItemState, Privacy, StepRecord, StepState, Setup } from "@tokama/core";
 
 export type Tone = "warn" | "live" | "pass" | "fail" | "muted";
 export interface Mark {
@@ -47,6 +47,18 @@ export const DECISION_KIND: Record<DecisionKind, string> = {
   budget: "Time budget used",
   tamper: "Protected files changed",
 };
+
+/** The kind of a decision in a word: an approval that shows a diff is a change approval. */
+export function decisionKind(decision: Pick<Decision, "kind" | "hasDiff">): string | undefined {
+  if (decision.hasDiff === true) return "Change approval";
+  return decision.kind === undefined ? undefined : DECISION_KIND[decision.kind];
+}
+
+/** "Run 2 of 3": the run Request changes would start, or undefined when the step's limit is not known. */
+export function nextRunLine(step: Pick<StepRecord, "attempts" | "maxAttempts"> | undefined): string | undefined {
+  if (step?.maxAttempts === undefined) return undefined;
+  return `Run ${(step.attempts?.length ?? 0) + 1} of ${step.maxAttempts}`;
+}
 
 const ATTEMPT_RESULT: Record<NonNullable<AttemptSummary["result"]>, Mark> = {
   passed: { symbol: "✓", word: "passed", tone: "pass" },

@@ -137,6 +137,7 @@ const RETRY = choice(RUN_FAILURE_CHOICES[0].id, RUN_FAILURE_CHOICES[0].label);
 const ONE_MORE = choice(ONE_MORE_ID, "Retry once more");
 const NO_ACTION = choice("no_action_needed", "End: no action needed");
 const APPROVE = choice(APPROVE_ID, "Approve");
+const APPROVE_AND_COMMIT = choice(APPROVE_ID, "Approve and commit");
 const REQUEST_CHANGES = choice(REQUEST_CHANGES_ID, "Request changes");
 const CONTINUE = choice(CONTINUE_ID, "Continue");
 // Answers to questions about a whole tree; each covers only the tree it was asked about.
@@ -743,11 +744,21 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     if (!staged.ok) return fail(`Cannot stage the changes: ${staged.error.message}`);
     const judged = await judgeTree(ctx, worktree, staged.value, step.id, fail);
     if (judged !== undefined) return judged;
+    const files = await git.diffFiles(worktree.path, worktree.baseCommit, staged.value);
+    if (!files.ok) return fail(`Cannot compare the changes with the base commit: ${files.error.message}`);
+    const found = deps.agent(ctx.repo, step.agentId, ctx.template);
+    const agent = found !== undefined && "name" in found ? found.name : step.agentId;
+    const changed = `${files.value.length} file${files.value.length === 1 ? "" : "s"}`;
+    // Approve ends the item with a commit when this is the last step and the template commits.
+    const commits = ctx.template.steps.at(-1)?.id === step.id && ctx.template.finish.includes("commit");
+    const text = commits
+      ? `${agent} changed ${changed} in a worktree of ${ctx.repo.id}. Nothing is committed until you approve. Request changes sends your note to ${agent} for another run.`
+      : `${agent} finished step ${step.name} and changed ${changed}. Approve to go on. Request changes sends your note to ${agent} for another run.`;
     // Only the question carries the tree: Finish commits it when nothing ran after the approval,
     // and a later step's work is committed as before.
     append(item.id, [
       attemptEnded(step.id, attempt, "passed"),
-      decision("plan_approval", step.id, [APPROVE, REQUEST_CHANGES, NO_ACTION, STOP], `Step ${step.name} is done and waits for your approval. Request changes runs it again with your note.`, { tree: staged.value }),
+      decision("plan_approval", step.id, [commits ? APPROVE_AND_COMMIT : APPROVE, REQUEST_CHANGES, NO_ACTION, STOP], text, { tree: staged.value }),
     ]);
     return WAIT;
   };
@@ -1088,7 +1099,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       // The trees are read as git objects: what the worktree holds now plays no part.
       const diff = await treeDiff(git, worktree.path, worktree.baseCommit, asked.tree);
       if (!diff.ok) return failure("invalid_state", detail(`Cannot read the change: ${diff.error.message}`));
-      return ok({ ...diff.value, worktree: { repoId: repo.id, dir: item.worktrees[0]!.dir, branch: worktree.branch } });
+      return ok({ ...diff.value, worktree: { repoId: repo.id, dir: item.worktrees[0]!.dir, branch: worktree.branch, baseCommit: worktree.baseCommit } });
     },
 
     async stopItem(itemId) {

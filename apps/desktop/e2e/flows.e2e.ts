@@ -222,17 +222,30 @@ flow("Quick change: New work offers it for a repo with no checks; the drawer sho
   await page.locator(".np-start:not([disabled])").waitFor();
   await page.keyboard.press("Escape");
 
-  // The sample Quick change item waits with its diff.
-  await segment(page, "Needs you").click();
-  await row(page, QUICK_CHANGE).click();
-  const note = drawer(page).locator(".needs-you");
-  await expect.poll(() => note.locator(".decision-diff-files").innerText(), { message: "the changed files" }).toContain("modified src/sync/worker.ts +2 −1");
-  expect(await note.locator(".decision-diff-text").innerText()).toContain("+    log.error(\"inventory sync failed\", { error, warehouseId: warehouse.id });");
-  await screenshot("12-quick-change-diff");
+  // On Needs you, the row lists the changed files; Review the diff opens the drawer on its Diff tab.
+  const rail = page.getByRole("navigation", { name: "App" });
+  await rail.getByRole("button", { name: /^Needs you/ }).click();
+  const waiting = page.locator(".nr-row", { hasText: QUICK_CHANGE });
+  await expect.poll(() => waiting.locator(".dv-changed-list").innerText(), { message: "the row's changed files" }).toContain("src/sync/worker.ts");
+  expect(await waiting.locator(".dv-changed-list").innerText()).toContain("binary · too large");
+  await screenshot("12-quick-change-row");
+  await waiting.getByRole("button", { name: /^Review the diff/ }).click();
+  const tab = drawer(page).getByRole("tab", { name: "Diff" });
+  await expect.poll(() => tab.getAttribute("aria-selected"), { message: "the drawer opens on Diff" }).toBe("true");
+  const table = drawer(page).getByRole("table", { name: "Unified diff of src/sync/worker.ts" });
+  await expect.poll(() => table.innerText(), { message: "the first file's lines" }).toContain("log.error(\"inventory sync failed\", { error, warehouseId: warehouse.id });");
+  await screenshot("13-quick-change-diff");
 
+  // A file over the line limit says why it is not drawn.
+  await drawer(page).locator(".dv-file", { hasText: "fixtures/warehouses.json" }).click();
+  await expect.poll(() => drawer(page).locator(".dv-note-head").innerText(), { message: "the too-large note" }).toBe("Too large to show here.");
+
+  // Request changes: the note goes to the agent, and the step runs again with it.
+  const note = drawer(page).locator(".needs-you");
   await note.getByRole("button", { name: "Request changes" }).click();
   await note.locator(".decision-note-text").fill("Leave the metrics line out.");
-  await note.getByRole("button", { name: "Send and run again" }).click();
+  await screenshot("14-quick-change-note");
+  await note.getByRole("button", { name: "Send to Local builder" }).click();
   await note.waitFor({ state: "detached" });
-  await expect.poll(() => drawer(page).locator(".step-detail").first().innerText(), { message: "the step runs again" }).toContain("runs again with your note");
+  await expect.poll(() => drawer(page).locator(".after").innerText(), { message: "the step runs again with the note" }).toContain('Your note: "Leave the metrics line out."');
 });

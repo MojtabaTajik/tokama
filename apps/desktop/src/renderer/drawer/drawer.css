@@ -360,37 +360,353 @@
   border-top: 1px solid var(--hairline);
 }
 
-/* The change a decision asks you to approve, and the note of Request changes */
+/* The change a decision asks you to approve: the Diff tab, the Needs you row's list, the note of Request changes */
 
-.decision-diff-files {
+.dv {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.dv-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.dv-strong {
+  color: var(--text);
+}
+
+.dv-muted,
+.dv-flag {
+  color: var(--muted);
+}
+
+.dv-flag {
+  flex: none;
+  white-space: nowrap;
+}
+
+.dv-branch {
+  font-size: 11.5px;
+}
+
+.dv-added {
+  color: var(--pass);
+}
+
+.dv-removed {
+  color: var(--fail);
+}
+
+.dv-files {
+  display: flex;
+  flex-direction: column;
   margin: 0;
   padding: 0;
   list-style: none;
+  border-top: 1px solid var(--hairline);
+}
+
+.dv-files > li {
+  border-bottom: 1px solid var(--hairline);
+}
+
+.dv-file {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dv-file[aria-pressed="true"] {
+  background: var(--raised);
+}
+
+.dv-status {
+  font-size: 11px;
+  color: var(--text-2);
+  text-align: center;
+}
+
+/* The end of a long path stays in view: the ellipsis cuts its start. */
+.dv-path {
+  overflow: hidden;
+  font-size: 11.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
+.dv-counts {
+  display: inline-flex;
+  gap: 8px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.dv-more {
+  padding: 6px;
   font-size: 12px;
+  color: var(--muted);
+}
+
+.dv-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--input);
+}
+
+.dv-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 11px;
+}
+
+.dv-panel-path {
+  font-size: 11.5px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.dv-open {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.dv-note .dv-open {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+}
+
+/* Long lines scroll inside the diff, never the drawer. */
+.dv-lines {
+  max-height: 420px;
+  overflow: auto;
+  padding: 4px 0;
+  font-size: 11.5px;
+  line-height: 1.65;
+}
+
+.dv-row {
+  display: grid;
+  grid-template-columns: 30px 30px 16px max-content;
+  min-width: 100%;
+}
+
+.dv-num {
+  padding-right: 6px;
+  color: var(--muted);
+  text-align: right;
+}
+
+.dv-sign {
+  color: var(--muted);
+  text-align: center;
+}
+
+.dv-text {
+  padding-right: 12px;
+  color: var(--text-2);
+  white-space: pre;
+}
+
+.dv-row[data-kind="hunk"] {
+  background: var(--panel);
+}
+
+.dv-row[data-kind="hunk"] .dv-text {
+  color: var(--link);
+}
+
+.dv-row[data-kind="added"] .dv-sign,
+.dv-row[data-kind="added"] .dv-text {
+  color: var(--pass);
+}
+
+.dv-row[data-kind="removed"] .dv-sign,
+.dv-row[data-kind="removed"] .dv-text {
+  color: var(--fail);
+}
+
+.dv-row[data-kind="note"] .dv-text {
+  color: var(--muted);
+}
+
+.dv-note {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 12px;
+  font-size: 12.5px;
+}
+
+.dv-note-head {
+  color: var(--text);
+}
+
+.dv-note-text {
+  margin: 0;
   color: var(--text-2);
   overflow-wrap: anywhere;
 }
 
-.decision-diff-text {
-  max-height: 360px;
-  white-space: pre;
-  overflow-wrap: normal;
+.dv-rest {
+  padding: 8px 12px;
+  border-top: 1px solid var(--hairline);
+  font-size: 12px;
+}
+
+.dv-changed {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dv-changed-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.dv-label {
+  font-size: 11px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.dv-changed-list {
+  margin: 0;
+  padding: 8px 10px;
+  list-style: none;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--input);
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: var(--text-2);
+}
+
+.dv-changed-list > li {
+  display: flex;
+  gap: 10px;
+}
+
+.dv-changed-list .dv-path {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dv-muted-line {
+  color: var(--muted);
 }
 
 .decision-note {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   font-size: 12.5px;
   color: var(--text-2);
 }
 
 .decision-note-text {
-  padding: 6px 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
   border: 1px solid var(--hairline);
-  border-radius: 4px;
+  border-radius: 6px;
   background: var(--input);
   color: var(--text);
   font: inherit;
+  line-height: 1.6;
   resize: vertical;
+}
+
+.decision-note-hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.nr-review {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--link);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+/* After a decision: the commit an approval made, or the step running again with your note */
+
+.after {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.after-head {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  color: var(--text);
+}
+
+.after[data-tone="pass"] .mark {
+  color: var(--pass);
+}
+
+.after[data-tone="live"] .mark {
+  color: var(--live);
+}
+
+.after-text {
+  margin: 0 0 0 20px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
 }

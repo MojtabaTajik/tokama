@@ -14,6 +14,8 @@ export const DIFF_LIMITS = {
   fileBytes: 128 * 1024,
   /** Files listed in one reply; the rest are counted in `moreFiles`. */
   files: 500,
+  /** Changed lines of one file whose hunks are shown; a larger file is listed with its counts only. */
+  fileLines: 1000,
   /** Characters of one hunk line; a longer line is cut and ends with "…". */
   lineChars: 1000,
   /** Bytes of the unified diff the engine reads from git. */
@@ -40,7 +42,10 @@ export const DiffFileSchema = z.strictObject({
   removed: z.int().nonnegative().nullable(),
   binary: z.boolean(),
   hunks: z.array(DiffHunkSchema).max(DIFF_LIMITS.hunkBytes),
-  /** Some or all of the file's content is not shown: hunks left out to keep the reply small, or a binary file. */
+  /**
+   * Some or all of the file's content is not shown: a binary file, a file over `fileLines`
+   * changed lines, or hunks left out to keep the reply small.
+   */
   cut: z.boolean(),
 });
 
@@ -51,7 +56,13 @@ export const ItemDiffSchema = z.strictObject({
   /** Anything was left out: hunks of a listed file, or files. */
   cut: z.boolean(),
   /** Where to see all of it: the item's worktree, as a folder relative to its repo. */
-  worktree: z.strictObject({ repoId: RepoIdSchema, dir: RepoDirSchema, branch: z.string().min(1).max(200) }),
+  worktree: z.strictObject({
+    repoId: RepoIdSchema,
+    dir: RepoDirSchema,
+    branch: z.string().min(1).max(200),
+    /** The commit the item started from. */
+    baseCommit: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/, "must be a git object id"),
+  }),
 });
 
 export type DiffStatus = z.output<typeof DiffStatusSchema>;

@@ -213,59 +213,91 @@ describe("ItemDrawer change to approve", () => {
   const DIFF_DECISION = "decision_00000000-0000-4000-8000-0000000000d1";
   const waiting = {
     ...task,
+    templateId: "builtin/quick-change",
     state: "needs_you",
     decision: {
       id: DIFF_DECISION,
       kind: "plan_approval",
       stepIndex: 0,
-      question: "Approve this step's result?",
+      question: "Approve this change and commit it?",
+      why: "Local builder changed 4 files in a worktree of orders-api. Nothing is committed until you approve.",
       hasDiff: true,
       choices: [
-        { id: "approve", label: "Approve" },
+        { id: "approve", label: "Approve and commit" },
         { id: "request_changes", label: "Request changes" },
+        { id: "no_action_needed", label: "End: no action needed" },
         { id: "stop", label: "Stop" },
       ],
     },
+    steps: [{ name: "Change", stage: "review", state: "needs_you", agentId: "local-builder", data: "none", maxAttempts: 3, attempts: [{ attempt: 1, result: "passed", checks: [] }] }],
   } as unknown as ItemRecord;
+  const file = (path: string, extra: Record<string, unknown> = {}) => ({ path, status: "modified", added: 1, removed: 1, binary: false, cut: false, hunks: [], ...extra });
   const diff = {
     files: [
-      { path: "src/a.ts", status: "modified", added: 1, removed: 1, binary: false, cut: false, hunks: [{ header: "@@ -1 +1 @@", lines: ['-<img src=x onerror="alert(1)">', "+<b>bold</b>"] }] },
-      { path: "src/new.ts", oldPath: "src/old.ts", status: "renamed", added: 0, removed: 0, binary: false, cut: false, hunks: [] },
-      { path: "logo.png", status: "added", added: null, removed: null, binary: true, cut: false, hunks: [] },
+      file("src/a.ts", { hunks: [{ header: "@@ -4,2 +4,2 @@ function total() {", lines: [" keep", '-<img src=x onerror="alert(1)">', "+<b>bold</b>", "\\ No newline at end of file"] }] }),
+      file("src/new.ts", { oldPath: "src/old.ts", status: "renamed", added: 0, removed: 0 }),
+      file("logo.png", { status: "added", added: null, removed: null, binary: true, cut: true }),
+      file("package-lock.json", { added: 1220, removed: 313, cut: true }),
     ],
     moreFiles: 2,
     cut: true,
-    worktree: { repoId: "orders-api", dir: ".tokama/wt/abc", branch: "tokama/abc" },
+    worktree: { repoId: "orders-api", dir: ".tokama/wt/abc", branch: "tokama/abc", baseCommit: "85a75e3c0ffee0000000000000000000000000ab" },
   };
-  const withDiff = (reply: Reply) => {
-    const fake = fakeBridge([waiting]);
+  const withDiff = (reply: Reply, items: ItemRecord[] = [waiting]) => {
+    const fake = fakeBridge(items);
     const base = fake.query.getMockImplementation()!;
     fake.query.mockImplementation(async (q: { type: string; itemId?: string }) => (q.type === "decision_diff" ? reply : base(q)));
     return fake;
   };
+  const tab = (name: string) => $$('[role="tab"]').find((el) => el.textContent === name);
+  const pick = (path: string) => click($$(".dv-file").find((el) => el.querySelector(".dv-path")?.textContent?.startsWith(path)));
+  const rows = () => $$(".dv-row").map((row) => [...row.querySelectorAll('[role="cell"]')].map((cell) => cell.textContent).join("|"));
 
-  it("shows the changed files with their counts and the hunks as text, and says what is left out", async () => {
+  it("opens on the Diff tab; the decision shows its question, why, and only Approve and commit and Request changes", async () => {
     const { bridge, query } = withDiff({ ok: true, data: diff });
     await renderDrawer(bridge, waiting.id);
+    expect(tab("Diff")?.getAttribute("aria-selected")).toBe("true");
     expect(query).toHaveBeenCalledWith({ type: "decision_diff", itemId: waiting.id, decisionId: DIFF_DECISION });
-    expect($$(".decision-diff-files li").map((el) => el.textContent)).toEqual([
-      "modified src/a.ts +1 −1",
-      "renamed src/old.ts → src/new.ts +0 −0",
-      "added logo.png binary, not shown",
-      "2 more files not listed",
-    ]);
-    expect(text(".decision-diff-text")).toBe('── src/a.ts\n@@ -1 +1 @@\n-<img src=x onerror="alert(1)">\n+<b>bold</b>');
-    expect($(".decision-diff-text")?.children.length).toBe(0);
-    expect($$(".drawer img, .drawer b")).toEqual([]);
-    expect(text(".decision-diff .needs-you-why")).toContain("Part of the change is not shown here (too big, or binary). Open the worktree in your editor to check all of it: orders-api/.tokama/wt/abc (branch tokama/abc).");
+    expect(text(".needs-you-kind")).toBe("Change approval");
+    expect(text(".needs-you-question")).toBe("⏸Approve this change and commit it?");
+    expect($$(".needs-you .choice").map((el) => el.textContent)).toEqual(["Approve and commit", "Request changes"]);
+    expect(text(".dv-summary")).toBe("6 files+1,221 −314·tokama/abcfrom main 85a75e3");
   });
 
-  it("shows a path with a line break quoted, so its hunks never sit under a made-up file name", async () => {
+  it("lists the files with status, counts or why they are not drawn, and shows the first file with line numbers, as text", async () => {
+    const { bridge } = withDiff({ ok: true, data: diff });
+    await renderDrawer(bridge, waiting.id);
+    expect($$(".dv-file").map((el) => el.textContent)).toEqual([
+      "Mmodifiedsrc/a.ts+1−1",
+      "Rrenamedsrc/old.ts → src/new.ts+0−0",
+      "Aaddedlogo.pngbinary",
+      "Mmodifiedpackage-lock.jsontoo large",
+    ]);
+    expect(text(".dv-more")).toBe("2 more files not listed");
+    expect($$(".dv-file").map((el) => el.getAttribute("aria-pressed"))).toEqual(["true", "false", "false", "false"]);
+    expect(text(".dv-panel-head")).toBe("src/a.tsmodified · +1 −1Open in your editor ↗");
+    expect(rows()).toEqual(["|||@@ -4,2 +4,2 @@ function total() {", "4|4||keep", "5||−|<img src=x onerror=\"alert(1)\">", "|5|+|<b>bold</b>", "|||\\ No newline at end of file"]);
+    expect($$(".dv-row [aria-label]").map((el) => el.getAttribute("aria-label"))).toEqual(["unchanged", "removed", "added"]);
+    expect($$(".drawer img, .drawer b")).toEqual([]);
+  });
+
+  it("says why a binary or too-large file is not drawn, and where to find it", async () => {
+    const { bridge } = withDiff({ ok: true, data: diff });
+    await renderDrawer(bridge, waiting.id);
+    await pick("logo.png");
+    expect(text(".dv-note")).toBe("Binary file, not shown here.Open it in your editor or an image viewer to compare.In repo orders-api: .tokama/wt/abc/logo.pngOpen in your editor ↗");
+    await pick("package-lock.json");
+    expect(text(".dv-note-head")).toBe("Too large to show here.");
+    expect($$(".dv-note-text")[0]?.textContent).toBe("1,533 changed lines; the drawer shows files up to 1,000 changed lines. Open it in your editor to review.");
+    expect($(".dv-open")?.getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("shows a path with a line break quoted, so its lines never sit under a made-up file name", async () => {
     const tricky = { ...diff, cut: false, moreFiles: 0, files: [{ ...diff.files[0]!, path: "notes\n── src/auth.ts" }] };
     const { bridge } = withDiff({ ok: true, data: tricky });
     await renderDrawer(bridge, waiting.id);
-    expect(text(".decision-diff-files li")).toBe('modified "notes\\n── src/auth.ts" +1 −1');
-    expect(text(".decision-diff-text")?.split("\n")[0]).toBe('── "notes\\n── src/auth.ts"');
+    expect(text(".dv-file .dv-path")).toBe('"notes\\n── src/auth.ts"');
+    expect(text(".dv-panel-path")).toBe('"notes\\n── src/auth.ts"');
   });
 
   it("shows characters that reorder text as visible escapes, in paths and lines", async () => {
@@ -273,22 +305,24 @@ describe("ItemDrawer change to approve", () => {
     const tricky = { ...diff, cut: false, moreFiles: 0, files: [{ ...diff.files[0]!, path: "a\u202esj.txt", hunks: [{ header: "@@ -1 +1 @@", lines: [line, "+a\u2028b\u200f\u061c"] }] }] };
     const { bridge } = withDiff({ ok: true, data: tricky });
     await renderDrawer(bridge, waiting.id);
-    expect(text(".decision-diff-files li")).toBe("modified a<U+202E>sj.txt +1 −1");
-    expect(text(".decision-diff-text")).toBe("── a<U+202E>sj.txt\n@@ -1 +1 @@\n+x = 1; /* <U+202E> } <U+2066> if (admin) <U+2069> */\n+a<U+2028>b<U+200F><U+061C>");
-    expect(text(".decision-diff")).not.toMatch(/\p{Bidi_Control}|[\u2028\u2029]/u);
+    expect(text(".dv-file .dv-path")).toBe("a<U+202E>sj.txt");
+    expect(rows().slice(1)).toEqual(["|1|+|x = 1; /* <U+202E> } <U+2066> if (admin) <U+2069> */", "|2|+|a<U+2028>b<U+200F><U+061C>"]);
+    expect(text(".drawer")).not.toMatch(/\p{Bidi_Control}|[\u2028\u2029]/u);
   });
 
   it("says when the change cannot be loaded", async () => {
     const { bridge } = withDiff({ ok: false, error: { code: "stale_decision", message: "Decision is not open." } });
     await renderDrawer(bridge, waiting.id);
-    expect(text(".decision-diff .drawer-error")).toBe("✕Could not load the change: Decision is not open.");
+    expect(text(".drawer-panel .drawer-error")).toBe("✕Could not load the change: Decision is not open.");
   });
 
-  it("Request changes asks for a note and sends it with the answer; Cancel goes back to the buttons", async () => {
+  it("Request changes opens a note for the agent's next run in place of the buttons; Cancel brings them back", async () => {
     const { bridge, command } = withDiff({ ok: true, data: diff });
     await renderDrawer(bridge, waiting.id);
     await click(button("Request changes"));
     expect(command).not.toHaveBeenCalled();
+    expect($$(".needs-you .choice").map((el) => el.textContent)).toEqual(["Send to Local builder", "Cancel"]);
+    expect(text(".decision-note-hint")).toBe("Goes into Local builder's next run with the current diff. Run 2 of 3.");
     await click(button("Cancel"));
     await click(button("Request changes"));
     const note = $(".decision-note-text") as HTMLTextAreaElement;
@@ -296,8 +330,17 @@ describe("ItemDrawer change to approve", () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(note, "  Keep the old name.  ");
       note.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    await click(button("Send and run again"));
+    await click(button("Send to Local builder"));
     expect(command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: waiting.id, decisionId: DIFF_DECISION, choice: "request_changes", note: "Keep the old name." });
+  });
+
+  it("after the decision: the step running again with your note, then the commit", async () => {
+    const again = { ...waiting, state: "running", decision: undefined, steps: [{ ...waiting.steps[0]!, state: "running", changesNote: "Keep the old name.", attempts: [{ attempt: 1, result: "passed", checks: [] }, { attempt: 2, checks: [] }] }] } as unknown as ItemRecord;
+    const { bridge, push } = withDiff({ ok: true, data: diff }, [again]);
+    await renderDrawer(bridge, again.id);
+    expect(text(".after")).toBe("●Local builder is making your changes · run 2 of 3Your note: \"Keep the old name.\"");
+    await push({ ...again, state: "done", steps: [{ ...again.steps[0]!, state: "passed" }], outcome: { kind: "done", commits: [{ repoId: "orders-api", commit: "3f9c2e1d4e5f60718293a4b5c6d7e8f901234567", branch: "tokama/abc" }] } } as unknown as ItemRecord);
+    expect(text(".after")).toBe("✓Committed · 3f9c2e1Paginate the orders list · on tokama/abc · Done");
   });
 });
 

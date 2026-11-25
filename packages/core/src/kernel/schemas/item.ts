@@ -65,6 +65,10 @@ export const StepRecordSchema = z.strictObject({
   detail: z.string().min(1).max(200).optional(),
   /** The step's attempts so far, oldest first. */
   attempts: z.array(AttemptSummarySchema).max(50).optional(),
+  /** How often the step may run in the item. */
+  maxAttempts: z.int().min(1).max(50).optional(),
+  /** While the step runs again after Request changes: the note it was sent with. */
+  changesNote: z.string().min(1).max(2000).optional(),
 });
 
 /** The choice that answers a step you approve with "change this"; only it may carry a note. */

@@ -173,7 +173,9 @@ export class SampleEngine {
     }
     if (command.choice === REQUEST_CHANGES_ID) {
       // The step runs again with the note; the tick moves the item on from here.
-      this.store.put(this.run(withoutDecision(item), item.decision.stepIndex, "runs again with your note · "));
+      const again = this.run(withoutDecision(item), item.decision.stepIndex, "runs again with your note · ");
+      const note = command.note?.trim();
+      this.store.put(note ? { ...again, steps: again.steps.map((step, i) => (i === item.decision!.stepIndex ? { ...step, changesNote: note } : step)) } : again);
       this.live.add(item.id);
       return ok(null);
     }
