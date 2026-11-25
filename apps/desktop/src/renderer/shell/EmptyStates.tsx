@@ -1,5 +1,6 @@
 // The two screens that stand in for the list: first launch (no repos yet) and a view with no work.
 // All text is fixed app text; nothing from the engine is shown here.
+import { EmptyState } from "../ui/EmptyState.js";
 
 const TEXT = {
   noRepos: "Add your first repos",
@@ -27,9 +28,8 @@ repos:
 
 export function FirstLaunch() {
   return (
-    <section className="state" aria-label={TEXT.noRepos}>
-      <h2 className="state-title">{TEXT.noRepos}</h2>
-      <p className="state-text">
+    <EmptyState className="state" title={TEXT.noRepos}>
+      <p className="empty-state-text">
         {TEXT.noReposBefore}
         <code className="mono">{REPOS_FILE}</code>
         {TEXT.noReposAfter}
@@ -43,15 +43,12 @@ export function FirstLaunch() {
           </div>
         ))}
       </dl>
-    </section>
+    </EmptyState>
   );
 }
 
 export function NoWork() {
   return (
-    <section className="state" aria-label={TEXT.noWork}>
-      <h2 className="state-title">{TEXT.noWork}</h2>
-      <p className="state-text">{TEXT.noWorkHint}</p>
-    </section>
+    <EmptyState className="state" title={TEXT.noWork} text={TEXT.noWorkHint} />
   );
 }

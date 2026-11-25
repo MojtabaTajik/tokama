@@ -7,6 +7,7 @@ import type { TokamaBridge } from "../../shared/bridge.js";
 import { StepText } from "./StepText.js";
 import { Button } from "../ui/Button.js";
 import { StatusMark } from "../ui/status.js";
+import { Placeholder } from "../ui/EmptyState.js";
 
 const TEXT = {
   loading: "Loading the step's output",
@@ -70,7 +71,7 @@ function Cut() {
 export function StepOutput({ state, label }: { readonly state: OutputState; readonly label: string }) {
   switch (state.kind) {
     case "loading":
-      return <p className="placeholder">{TEXT.loading}</p>;
+      return <Placeholder>{TEXT.loading}</Placeholder>;
     case "missing":
       return <p className="step-output-none">{TEXT.missing}</p>;
     case "failed":

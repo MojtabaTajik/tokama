@@ -10,6 +10,7 @@ import type { Metric } from "./usage-model.js";
 import { UsageTab } from "./UsageTab.js";
 import type { UsageView } from "./useUsage.js";
 import { Tabs } from "../ui/Tabs.js";
+import { Placeholder } from "../ui/EmptyState.js";
 
 const TEXT = {
   title: "Insights",
@@ -59,7 +60,7 @@ export function Insights({ bridge, connection, onRetryConnection, usage, range, 
           {connection.status === "failed" ? (
             <ConnectionFailure state={connection} onRetry={onRetryConnection} />
           ) : report === undefined ? (
-            <p className="placeholder">{usage.error === undefined ? TEXT.loading : `${TEXT.failed}: ${usage.error}`}</p>
+            <Placeholder>{usage.error === undefined ? TEXT.loading : `${TEXT.failed}: ${usage.error}`}</Placeholder>
           ) : (
             <UsageTab
               report={report}

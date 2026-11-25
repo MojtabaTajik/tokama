@@ -10,6 +10,7 @@ import { useDiagnostics } from "./useDiagnostics.js";
 import { Button } from "../ui/Button.js";
 import { ErrorRetry } from "../ui/ErrorRetry.js";
 import { StatusMark } from "../ui/status.js";
+import { EmptyState, Placeholder } from "../ui/EmptyState.js";
 
 const TEXT = {
   heading: "Diagnostics",
@@ -88,9 +89,9 @@ export function DiagnosticsPage({ bridge, connection, now: fixedNow }: Diagnosti
           {connection.status === "failed" ? (
             <ConnectionFailure state={connection} onRetry={() => void bridge.retryConnection()} />
           ) : connection.status !== "connected" ? (
-            <p className="placeholder">{TEXT.starting}</p>
+            <Placeholder>{TEXT.starting}</Placeholder>
           ) : state.status === "loading" ? (
-            <p className="placeholder">{TEXT.loading}</p>
+            <Placeholder>{TEXT.loading}</Placeholder>
           ) : (
             <ErrorRetry title={TEXT.loadFailed} onRetry={() => void reload()} />
           )}
@@ -143,13 +144,7 @@ export function DiagnosticsPage({ bridge, connection, now: fixedNow }: Diagnosti
     <section className="dg" aria-label={TEXT.heading}>
       {head}
       {empty ? (
-        <div className="dg-empty">
-          <span className="dg-empty-icon" aria-hidden="true">
-            <PulseIcon />
-          </span>
-          <h2 className="dg-empty-title">{TEXT.empty}</h2>
-          <p className="dg-empty-text">{TEXT.emptyHint}</p>
-        </div>
+        <EmptyState className="dg-empty" icon={<PulseIcon />} title={TEXT.empty} text={TEXT.emptyHint} />
       ) : (
         <>
           <div className="dg-filters">

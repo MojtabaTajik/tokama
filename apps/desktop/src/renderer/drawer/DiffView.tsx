@@ -12,6 +12,7 @@ import { ExpandIcon } from "../ui/icons.js";
 import type { TokamaBridge } from "../../shared/bridge.js";
 import { Button } from "../ui/Button.js";
 import { StatusMark } from "../ui/status.js";
+import { Placeholder } from "../ui/EmptyState.js";
 
 /** The engine shows the hunks of files with up to this many changed lines. */
 export const FILE_LINES = 1000;
@@ -184,7 +185,7 @@ export function useDecisionDiff(bridge: TokamaBridge, itemId: string, decision: 
 }
 
 function Status({ state }: { readonly state: Exclude<DiffState, { kind: "loaded" }> }) {
-  if (state.kind === "loading") return <p className="placeholder">{TEXT.loading}</p>;
+  if (state.kind === "loading") return <Placeholder>{TEXT.loading}</Placeholder>;
   return (
     <p className="drawer-error" role="alert">
       <StatusMark status="failed" className="symbol" />
@@ -228,7 +229,7 @@ export function DiffTab({ state, baseBranch, layout = "drawer", onExpand, by }: 
   const [split, setSplit] = useState(true);
   if (state.kind !== "loaded") return <Status state={state} />;
   const { diff } = state;
-  if (diff.files.length === 0 && diff.moreFiles === 0) return <p className="placeholder">{TEXT.none}</p>;
+  if (diff.files.length === 0 && diff.moreFiles === 0) return <Placeholder>{TEXT.none}</Placeholder>;
   const sum = totals(diff);
   const file = diff.files[Math.min(picked, diff.files.length - 1)];
   return (

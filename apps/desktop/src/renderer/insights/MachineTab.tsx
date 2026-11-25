@@ -14,6 +14,7 @@ import { useMachine } from "./useMachine.js";
 import { workflowName } from "./usage-model.js";
 import { Button } from "../ui/Button.js";
 import { AgentChip, AgentDotMark } from "../ui/agent.js";
+import { Placeholder } from "../ui/EmptyState.js";
 
 const CLI_SHORT = { "claude-code": "CC", "codex-cli": "CX", ollama: "OL" } as const;
 
@@ -73,7 +74,7 @@ export function MachineTab({ bridge, connection, onRetryConnection, setup, items
       {connection.status === "failed" ? (
         <ConnectionFailure state={connection} onRetry={onRetryConnection} />
       ) : report === undefined ? (
-        <p className="placeholder">{error === undefined ? TEXT.loading : `${TEXT.failed}: ${error}`}</p>
+        <Placeholder>{error === undefined ? TEXT.loading : `${TEXT.failed}: ${error}`}</Placeholder>
       ) : (
         <>
           {error !== undefined && <p className="muted mc-hint">{TEXT.refreshFailed(error)}</p>}

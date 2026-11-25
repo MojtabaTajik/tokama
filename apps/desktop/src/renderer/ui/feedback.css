@@ -1,4 +1,4 @@
-/* What a screen shows instead of its content: a failed load (ui/ErrorRetry.tsx). */
+/* What a screen shows instead of its content: a failed load (ui/ErrorRetry.tsx), an empty state or a placeholder. */
 .failure {
   max-width: 640px;
   margin-bottom: var(--space-16);
@@ -14,4 +14,41 @@
   display: inline-block;
   width: 1.4em;
   color: var(--fail);
+}
+
+/* Nothing here yet (ui/EmptyState.tsx). */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+}
+
+.empty-state-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-lg);
+  background: var(--raised);
+  color: var(--text-2);
+}
+
+.empty-state-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.empty-state-text {
+  margin: 0;
+  color: var(--text-2);
+  line-height: 1.55;
+}
+
+/* A quiet line in place of content. */
+.placeholder {
+  margin: 0;
+  color: var(--muted);
 }

@@ -11,6 +11,7 @@ import type { AgentTarget } from "../settings/describe.js";
 import { StepOutput, useStepOutput } from "./StepOutput.js";
 import { blocksOf } from "./StepText.js";
 import { Button } from "../ui/Button.js";
+import { Placeholder } from "../ui/EmptyState.js";
 
 const TEXT = {
   none: "No step has written an output yet.",
@@ -52,7 +53,7 @@ export function OutputTab({ bridge, item, setup, full, onOpenAgent, focus }: Out
     const attempt = shownAttempt(step);
     return attempt === undefined ? [] : [{ index, attempt }];
   });
-  if (shown.length === 0) return <p className="placeholder">{TEXT.none}</p>;
+  if (shown.length === 0) return <Placeholder>{TEXT.none}</Placeholder>;
   return (
     <div className="ot" data-full={full ? "true" : undefined}>
       {shown.map(({ index, attempt }) => (

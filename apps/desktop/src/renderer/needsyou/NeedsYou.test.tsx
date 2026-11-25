@@ -104,7 +104,7 @@ describe("the Needs you page", () => {
     expect(fake.command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: ITEMS.needsYou.id, decisionId: DECISION.id, choice: "approve" });
     await fake.pushItem({ ...ITEMS.needsYou, state: "running", decision: undefined } as ItemRecord);
     expect($(".nr-row")).toBeNull();
-    expect(text(".state-title")).toBe("Nothing is waiting for you");
+    expect(text(".empty-state-title")).toBe("Nothing is waiting for you");
     expect(text(".summary")).toBe("0 waiting");
     expect($(".badge")).toBeNull();
     // Focus lands on the page, not on the document.
@@ -282,7 +282,7 @@ describe("the Needs you page", () => {
   it("shows an empty state, not a list, when nothing waits", async () => {
     await render(fakeBridge(CONNECTED, { boardItems: withoutWaiting }).bridge);
     await openPage();
-    expect(text(".state-title")).toBe("Nothing is waiting for you");
+    expect(text(".empty-state-title")).toBe("Nothing is waiting for you");
     expect($(".nr-list")).toBeNull();
   });
 
@@ -291,17 +291,17 @@ describe("the Needs you page", () => {
     const fake = fakeBridge(CONNECTED, { boardItems: withoutWaiting, reply: (q) => (failing && q.type === "setup" ? { ok: false, error: { code: "timeout", message: "no answer" } } : undefined) });
     await render(fake.bridge);
     await openPage();
-    expect($(".state-title")).not.toBeNull();
+    expect($(".empty-state-title")).not.toBeNull();
     failing = true;
     await fake.setConnection({ status: "reconnecting" });
     await fake.setConnection({ status: "connected", engineId: "e-1" });
     await wait(40);
-    expect($(".state-title")).toBeNull();
+    expect($(".empty-state-title")).toBeNull();
     expect(text(".failure-title")).toBe("✕Could not refresh the list. It may be out of date");
     failing = false;
     await click($$("button").find((button) => button.textContent === "Retry"));
     expect($(".failure")).toBeNull();
-    expect($(".state-title")).not.toBeNull();
+    expect($(".empty-state-title")).not.toBeNull();
   });
 
   it("shows why the engine is not available instead of a list", async () => {
@@ -309,7 +309,7 @@ describe("the Needs you page", () => {
     await render(fake.bridge);
     await openPage();
     expect($(".nr-list")).toBeNull();
-    expect($(".state-title")).toBeNull();
+    expect($(".empty-state-title")).toBeNull();
     expect($(".board .failure, .board .retry")).not.toBeNull();
     expect($(".summary")).toBeNull();
   });

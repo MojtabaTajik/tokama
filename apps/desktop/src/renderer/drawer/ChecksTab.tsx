@@ -8,6 +8,7 @@ import type { TokamaBridge } from "../../shared/bridge.js";
 import { attemptsOf, capNote, checkedStepName, checkSteps, durationText, type StepAttempt, useAttemptReply } from "./attempt-view.js";
 import { OpenFile } from "./OpenFile.js";
 import { type Mark, markOf, StatusMark } from "../ui/status.js";
+import { Placeholder } from "../ui/EmptyState.js";
 
 const TEXT = {
   noChecks: "This item's steps run no checks.",
@@ -55,9 +56,9 @@ export interface ChecksTabProps {
 
 export function ChecksTab({ bridge, item, setup, full }: ChecksTabProps) {
   const steps = checkSteps(item, setup);
-  if (steps.length === 0) return <p className="placeholder">{TEXT.noChecks}</p>;
+  if (steps.length === 0) return <Placeholder>{TEXT.noChecks}</Placeholder>;
   const attempts = attemptsOf(item, steps);
-  if (attempts.length === 0) return <p className="placeholder">{TEXT.noAttempts(checkedStepName(item, steps[0]!))}</p>;
+  if (attempts.length === 0) return <Placeholder>{TEXT.noAttempts(checkedStepName(item, steps[0]!))}</Placeholder>;
   return (
     <div className="ck" data-full={full ? "true" : undefined}>
       {attempts.map((entry) => (
@@ -91,7 +92,7 @@ function AttemptChecks({ bridge, item, entry, named }: { readonly bridge: Tokama
         <span className="ck-attempt-word">{word}</span>
       </p>
       {reply.kind === "loading" ? (
-        <p className="placeholder">{TEXT.loading}</p>
+        <Placeholder>{TEXT.loading}</Placeholder>
       ) : reply.kind !== "loaded" ? (
         <p className="drawer-error" role="alert">
           <StatusMark status="failed" className="symbol" />

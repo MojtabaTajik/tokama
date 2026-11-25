@@ -37,6 +37,7 @@ import { ErrorRetry } from "../ui/ErrorRetry.js";
 import { markOf } from "../ui/status.js";
 import { AgentChip } from "../ui/agent.js";
 import { Tabs } from "../ui/Tabs.js";
+import { Placeholder } from "../ui/EmptyState.js";
 
 const TEXT = {
   drawer: "Item",
@@ -471,8 +472,8 @@ function LiveActivity({ bridge, item, agents, fallback = null }: { readonly brid
 }
 
 function Missing({ error, onRetry }: { readonly error: { code: string; message: string } | undefined; readonly onRetry: () => void }) {
-  if (!error) return <p className="placeholder">{TEXT.loading}</p>;
-  if (error.code === "not_found") return <p className="placeholder">{TEXT.gone}</p>;
+  if (!error) return <Placeholder>{TEXT.loading}</Placeholder>;
+  if (error.code === "not_found") return <Placeholder>{TEXT.gone}</Placeholder>;
   return <ErrorRetry title={TEXT.loadFailed} detail={error.message} onRetry={onRetry} />;
 }
 
@@ -598,7 +599,7 @@ interface StepsProps {
 }
 
 function Steps({ bridge, item, setup, onOpenAgent, unfold }: StepsProps) {
-  if (item.steps.length === 0) return <p className="placeholder">{TEXT.noSteps}</p>;
+  if (item.steps.length === 0) return <Placeholder>{TEXT.noSteps}</Placeholder>;
   const agents = setup?.agents ?? [];
   const connections = setup?.connections ?? [];
   return (

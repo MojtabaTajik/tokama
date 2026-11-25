@@ -12,6 +12,7 @@ import { agentSteps, attemptsOf, capNote, type StepAttempt, transcriptLines, use
 import { attemptLine } from "./describe.js";
 import { OpenFile } from "./OpenFile.js";
 import { StatusMark } from "../ui/status.js";
+import { Placeholder } from "../ui/EmptyState.js";
 
 const TEXT = {
   none: "No agent has run yet. Each attempt's transcript appears here.",
@@ -34,7 +35,7 @@ export interface LogTabProps {
 
 export function LogTab({ bridge, item, setup, full, onOpenAgent }: LogTabProps) {
   const attempts = attemptsOf(item, agentSteps(item));
-  if (attempts.length === 0) return <p className="placeholder">{TEXT.none}</p>;
+  if (attempts.length === 0) return <Placeholder>{TEXT.none}</Placeholder>;
   return (
     <div className="lg" data-full={full ? "true" : undefined}>
       {attempts.map((entry) => (
@@ -71,7 +72,7 @@ function AttemptLog({ bridge, item, setup, entry, onOpenAgent }: AttemptLogProps
         <span className="lg-meta mono">{line.text.split(" · ").slice(1).join(" · ")}</span>
       </p>
       {reply.kind === "loading" ? (
-        <p className="placeholder">{TEXT.loading}</p>
+        <Placeholder>{TEXT.loading}</Placeholder>
       ) : reply.kind !== "loaded" ? (
         <p className="drawer-error" role="alert">
           <StatusMark status="failed" className="symbol" />

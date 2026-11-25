@@ -261,11 +261,6 @@
   padding-top: var(--space-14);
 }
 
-.placeholder {
-  margin: 0;
-  color: var(--muted);
-}
-
 .detail {
   margin: 0 0 var(--space-8);
   color: var(--text-2);

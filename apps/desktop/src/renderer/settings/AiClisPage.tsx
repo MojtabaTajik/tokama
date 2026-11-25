@@ -10,6 +10,7 @@ import { monogram } from "./describe.js";
 import { useAiClis } from "./useAiClis.js";
 import { Button } from "../ui/Button.js";
 import { ErrorRetry } from "../ui/ErrorRetry.js";
+import { Placeholder } from "../ui/EmptyState.js";
 
 const TEXT = {
   heading: "AI CLIs",
@@ -86,7 +87,7 @@ export function AiClisPage({ bridge, connection, setup }: AiClisPageProps) {
             })}
           </ul>
         )}
-        {state.status === "loaded" && shown.length === 0 && <p className="placeholder">{TEXT.noMatch}</p>}
+        {state.status === "loaded" && shown.length === 0 && <Placeholder>{TEXT.noMatch}</Placeholder>}
       </div>
       <div className="ai-cli-detail">{selected === undefined ? null : <Detail cli={selected} checking={state.status === "loaded" && state.checking} onCheck={reload} />}</div>
     </section>
@@ -94,8 +95,8 @@ export function AiClisPage({ bridge, connection, setup }: AiClisPageProps) {
 }
 
 function Body({ state, connected, onRetry }: { readonly state: ReturnType<typeof useAiClis>["state"]; readonly connected: boolean; readonly onRetry: () => void }) {
-  if (!connected) return <p className="placeholder">{TEXT.starting}</p>;
-  if (state.status === "loading") return <p className="placeholder">{TEXT.loading}</p>;
+  if (!connected) return <Placeholder>{TEXT.starting}</Placeholder>;
+  if (state.status === "loading") return <Placeholder>{TEXT.loading}</Placeholder>;
   if (state.status === "loaded") return null;
   return <ErrorRetry title={TEXT.loadFailed} detail={state.message} onRetry={onRetry} />;
 }

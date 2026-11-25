@@ -19,6 +19,7 @@ import { Button } from "../ui/Button.js";
 import { ErrorRetry } from "../ui/ErrorRetry.js";
 import { markOf } from "../ui/status.js";
 import { AgentChip } from "../ui/agent.js";
+import { EmptyState, Placeholder } from "../ui/EmptyState.js";
 
 const TEXT = {
   title: "Needs you",
@@ -96,14 +97,11 @@ export function NeedsYou(props: NeedsYouProps) {
           <>
             {loadError !== undefined && <LoadFailure message={loadError} text={stale ? TEXT.staleFailed : TEXT.loadFailed} onRetry={onRetry} />}
             {!loaded ? (
-              loadError === undefined && <p className="placeholder">{connection.status === "starting" ? TEXT.starting : connection.status === "reconnecting" ? TEXT.reconnecting : TEXT.loading}</p>
+              loadError === undefined && <Placeholder>{connection.status === "starting" ? TEXT.starting : connection.status === "reconnecting" ? TEXT.reconnecting : TEXT.loading}</Placeholder>
             ) : rows.length === 0 ? (
               // An empty list from an earlier load is no all-clear.
               !stale && (
-                <section className="state" aria-label={TEXT.empty}>
-                  <h2 className="state-title">{TEXT.empty}</h2>
-                  <p className="state-text">{TEXT.emptyHint}</p>
-                </section>
+                <EmptyState className="state" title={TEXT.empty} text={TEXT.emptyHint} />
               )
             ) : (
               <ol className="nr-list" aria-label={TEXT.list}>

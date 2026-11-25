@@ -281,7 +281,7 @@ describe("Add, Edit and Remove", () => {
     await click(buttonByText("Remove…"));
     await click(buttonByText("Remove repo"));
     await render(withRepos([]));
-    expect(text(".rp-empty h2")).toBe("No repos added yet");
+    expect(text(".rp-empty .empty-state-title")).toBe("No repos added yet");
     expect(document.activeElement?.textContent).toBe("+ Add repo");
   });
 });

@@ -13,6 +13,7 @@ import { RepoIcon } from "../ui/icons.js";
 import { useRepoItems } from "./useRepoItems.js";
 import { Button } from "../ui/Button.js";
 import { StatusCounts } from "../ui/Badge.js";
+import { EmptyState } from "../ui/EmptyState.js";
 
 const TEXT = {
   heading: "Repos",
@@ -151,16 +152,17 @@ export function ReposPage({ bridge, connection, setup, now: fixedNow }: ReposPag
       </div>
       <div className="rp-pane">
         {selected === undefined ? (
-          <div className="rp-empty">
-            <span className="rp-icon" data-size="large">
-              <RepoIcon size={22} />
-            </span>
-            <h2>{TEXT.emptyTitle}</h2>
-            <p>{TEXT.emptyText}</p>
-            <Button variant="primary" size="lg" onClick={() => void pickFolder()}>
-              {TEXT.addEmpty}
-            </Button>
-          </div>
+          <EmptyState
+            className="rp-empty"
+            icon={<RepoIcon size={22} />}
+            title={TEXT.emptyTitle}
+            text={TEXT.emptyText}
+            action={
+              <Button variant="primary" size="lg" onClick={() => void pickFolder()}>
+                {TEXT.addEmpty}
+              </Button>
+            }
+          />
         ) : (
           <Detail repo={selected} line={itemsLine(itemsOf(selected), now)} onEdit={() => setEditing(true)} onRemove={() => setRemoving(true)} />
         )}

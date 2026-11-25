@@ -15,6 +15,7 @@ import { RepoIcon } from "../ui/icons.js";
 import { TemplateIcon } from "./TemplateIcon.js";
 import { Button } from "../ui/Button.js";
 import { ErrorRetry } from "../ui/ErrorRetry.js";
+import { Placeholder } from "../ui/EmptyState.js";
 
 const TEXT = {
   allWork: "All work",
@@ -124,7 +125,7 @@ function Body(props: MainAreaProps & { readonly template: Setup["templates"][num
     <>
       {loadError !== undefined && <ErrorRetry title={TEXT.loadFailed} detail={loadError} onRetry={onRetry} />}
       {setup === undefined ? (
-        loadError === undefined && <p className="placeholder">{waiting(connection)}</p>
+        loadError === undefined && <Placeholder>{waiting(connection)}</Placeholder>
       ) : setup.repos.length === 0 ? (
         <FirstLaunch />
       ) : scoped.length === 0 ? (

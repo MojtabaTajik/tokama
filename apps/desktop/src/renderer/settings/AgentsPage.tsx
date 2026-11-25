@@ -11,6 +11,7 @@ import { useAgents } from "./useAgents.js";
 import { Button } from "../ui/Button.js";
 import { ErrorRetry } from "../ui/ErrorRetry.js";
 import { StatusMark } from "../ui/status.js";
+import { Placeholder } from "../ui/EmptyState.js";
 
 const TEXT = {
   heading: "Agents",
@@ -76,20 +77,20 @@ export function AgentsPage({ bridge, connection, setup, initialAgent }: AgentsPa
                 </li>
               ))}
             </ul>
-            {shown.length === 0 && <p className="placeholder">{rows.length === 0 ? TEXT.empty : TEXT.noMatch}</p>}
+            {shown.length === 0 && <Placeholder>{rows.length === 0 ? TEXT.empty : TEXT.noMatch}</Placeholder>}
             <Problems data={data} />
           </>
         )}
         <p className="agents-note">{TEXT.edit}</p>
       </div>
-      <div className="agent-detail">{selected === undefined ? <p className="placeholder">{data === undefined ? "" : TEXT.select}</p> : selected.broken ? <BrokenDetail entry={selected.entry} /> : <Detail agent={selected.agent} />}</div>
+      <div className="agent-detail">{selected === undefined ? <Placeholder>{data === undefined ? "" : TEXT.select}</Placeholder> : selected.broken ? <BrokenDetail entry={selected.entry} /> : <Detail agent={selected.agent} />}</div>
     </section>
   );
 }
 
 function Body({ state, connected, onRetry }: { readonly state: ReturnType<typeof useAgents>["state"]; readonly connected: boolean; readonly onRetry: () => void }) {
-  if (!connected) return <p className="placeholder">{TEXT.starting}</p>;
-  if (state.status === "loading") return <p className="placeholder">{TEXT.loading}</p>;
+  if (!connected) return <Placeholder>{TEXT.starting}</Placeholder>;
+  if (state.status === "loading") return <Placeholder>{TEXT.loading}</Placeholder>;
   if (state.status === "loaded") return null;
   return <ErrorRetry title={TEXT.loadFailed} detail={state.message} onRetry={onRetry} />;
 }
