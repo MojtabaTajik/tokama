@@ -77,7 +77,7 @@ const withoutEnd = (text: string) => text.replace(/[.!\s]+$/, "");
 /** The chip for `state` with `running` items running. A chip shows only for a ready update, and as a status line while it installs. */
 export function updateChip(state: UpdateState, running: number): UpdateChipView | undefined {
   if (state.status === "stalled") {
-    return { kind: "stalled", version: state.version, critical: false, label: STALLED, title: STALLED, action: STALLED_ACTION, accessibleName: `${STALLED}. ${STALLED_ACTION}`, running };
+    return { kind: "stalled", version: state.version, critical: false, label: STALLED, title: STALLED, action: STALLED_ACTION, accessibleName: `${STALLED}. ${STALLED_ACTION} Click to show the notice.`, running };
   }
   if (state.status === "installing") {
     return { kind: "installing", version: state.version, critical: false, label: RESTARTING, title: RESTARTING, action: "", accessibleName: RESTARTING, running };

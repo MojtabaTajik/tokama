@@ -246,10 +246,10 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
     }
   };
   const activateUpdate = () => {
-    // The installer did not answer: its button asks it again; nothing runs, the engine is stopped.
-    if (updateView?.kind === "stalled") return void restartForUpdate();
-    // A click on the chip only opens the panel; restarting is Restart now, a second, clear button.
+    // A click on the chip or the rail icon only opens something; restarting is a second, clear button.
+    // The installer did not answer: the notice in the sidebar has Restart Tokama, which quits the app.
     openSidebar();
+    if (updateView?.kind === "stalled") return;
     setUpdatePanel((open) => (panelOpen ? !open : true));
   };
   const openUpdateNotes = () => void bridge.openUpdateNotes().catch(() => undefined);

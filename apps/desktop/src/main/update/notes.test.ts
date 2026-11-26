@@ -15,6 +15,7 @@ describe("updateNotesUrl", () => {
   it("opens the page of a downloading or ready update only", () => {
     expect(updateNotesUrl({ status: "ready", version: "0.2.0" })).toMatch(/v0\.2\.0$/);
     expect(updateNotesUrl({ status: "downloading", version: "0.2.0", percent: 1, transferred: 1, total: 2 })).toMatch(/v0\.2\.0$/);
+    expect(updateNotesUrl({ status: "stalled", version: "0.2.0" })).toMatch(/v0\.2\.0$/);
     expect(updateNotesUrl({ status: "idle" })).toBeUndefined();
     expect(updateNotesUrl({ status: "installing", version: "0.2.0" })).toBeUndefined();
     expect(updateNotesUrl({ status: "error", stage: "check", at: 1 })).toBeUndefined();

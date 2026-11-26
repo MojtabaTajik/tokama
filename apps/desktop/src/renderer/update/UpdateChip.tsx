@@ -113,7 +113,7 @@ export function UpdateChip({ view, running, busy, panelOpen, onActivate, onResta
         <span className="up-stalled-text">
           {STALLED}. {STALLED_ACTION}
         </span>
-        <Button variant="secondary" onClick={onActivate}>
+        <Button variant="secondary" onClick={onRestartNow}>
           {RESTART_TOKAMA}
         </Button>
       </div>

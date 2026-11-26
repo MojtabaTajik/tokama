@@ -485,6 +485,7 @@ void app.whenReady().then(async () => {
           resumeWatch: () => watch.resume(),
           stopEngine: stopOwnEngine,
           quitAndInstall: (relaunch) => updateEngine.quitAndInstall(relaunch),
+          quitApp: () => app.quit(),
           watchInstallError: updates.watchInstallError,
           reportFailure: () => updates.warn("update_install_failed"),
           now: () => Date.now(),

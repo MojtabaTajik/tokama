@@ -40,6 +40,7 @@ function setup(options: { state?: UpdateState; running?: number | undefined; sec
       calls.push(`quitAndInstall:${relaunch}`);
       if (options.quitThrows === true) throw new Error("no");
     },
+    quitApp: () => calls.push("quitApp"),
     watchInstallError: (listener) => {
       installError = listener;
       return () => void (installError = undefined);
@@ -114,20 +115,22 @@ describe("the install", () => {
     expect(reported).toEqual(["update_install_failed"]);
   });
 
-  it("recovers when the installer throws at once", async () => {
-    const { deps, calls, state } = setup({ quitThrows: true });
+  it("stalls, and puts nothing back, when the installer throws at once: it may be armed already", async () => {
+    const { deps, calls, state, reported } = setup({ quitThrows: true });
     expect(await createInstaller(deps)({ relaunch: true })).toEqual({ ok: false, reason: "failed" });
-    expect(calls.slice(-2)).toEqual(["resume", "state:error"]);
-    expect(state().status).toBe("error");
+    expect(calls).not.toContain("resume");
+    expect(state()).toEqual({ status: "stalled", version: "0.2.0" });
+    expect(reported).toEqual(["update_install_failed"]);
   });
 
-  it("recovers from a native installer error that comes before the app quits, and tells the caller once", async () => {
+  it("stalls, and puts nothing back, when the installer refuses after the hand-over, and tells the caller once", async () => {
     const { deps, calls, state, reported, failInstaller } = setup();
     const onFailed = vi.fn();
     expect(await createInstaller(deps)({ relaunch: true, onFailed })).toEqual({ ok: true });
     failInstaller();
-    expect(calls.slice(-2)).toEqual(["resume", "state:error"]);
-    expect(state()).toMatchObject({ status: "error", stage: "install" });
+    failInstaller();
+    expect(calls).not.toContain("resume");
+    expect(state()).toEqual({ status: "stalled", version: "0.2.0" });
     expect(reported).toEqual(["update_install_failed"]);
     expect(onFailed).toHaveBeenCalledOnce();
   });
@@ -146,7 +149,7 @@ describe("the install", () => {
     expect(reported).toEqual([]);
   });
 
-  it("asks the installer again from the stalled state, without counting or stopping anything", async () => {
+  it("only quits the app from the stalled state: the installer is never asked a second time, and nothing is counted, stopped or started", async () => {
     const { deps, calls, state, timeOut } = setup();
     const install = createInstaller(deps);
     await install({ relaunch: true });
@@ -154,26 +157,21 @@ describe("the install", () => {
     expect(state().status).toBe("stalled");
     const before = calls.length;
     expect(await install({ relaunch: true })).toEqual({ ok: true });
-    expect(calls.slice(before)).toEqual(["state:installing", "quitAndInstall:true"]);
+    expect(await install({ relaunch: true })).toEqual({ ok: true });
+    expect(calls.slice(before)).toEqual(["quitApp", "quitApp"]);
+    expect(calls.filter((call) => call.startsWith("quitAndInstall"))).toEqual(["quitAndInstall:true"]);
+    expect(calls).not.toContain("resume");
   });
 
-  it("still recovers when the installer refuses while stalled", async () => {
-    const { deps, calls, state, timeOut, failInstaller } = setup();
-    await createInstaller(deps)({ relaunch: true });
-    timeOut();
-    failInstaller();
-    expect(calls.slice(-2)).toEqual(["resume", "state:error"]);
-    expect(state()).toMatchObject({ status: "error", stage: "install" });
-  });
-
-  it("still recovers from a refusal that comes after the silence", async () => {
-    const { deps, calls, state, timeOut, failInstaller } = setup();
+  it("does not put the engine back when a refusal comes after the silence either", async () => {
+    const { deps, calls, state, reported, timeOut, failInstaller } = setup();
     const onFailed = vi.fn();
     await createInstaller(deps)({ relaunch: true, onFailed });
     timeOut();
     failInstaller();
-    expect(calls.slice(-2)).toEqual(["resume", "state:error"]);
-    expect(state().status).toBe("error");
+    expect(calls).not.toContain("resume");
+    expect(state()).toEqual({ status: "stalled", version: "0.2.0" });
+    expect(reported).toEqual(["update_install_failed"]);
     expect(onFailed).toHaveBeenCalledOnce();
   });
 

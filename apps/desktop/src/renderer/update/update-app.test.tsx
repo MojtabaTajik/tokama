@@ -98,13 +98,25 @@ describe("App: ready update", () => {
     expect(installUpdate).toHaveBeenCalledTimes(2);
   });
 
-  it("says the update did not install when the installer is silent, and Restart Tokama asks it again, with items running too", async () => {
+  it("says the update did not install when the installer is silent; Restart Tokama is the one button that acts, with items running too", async () => {
     const { setUpdate, installUpdate } = await start();
     await setUpdate({ status: "stalled", version: "0.2.0" });
     const notice = $('.sb-foot [role="status"]')!;
     expect(notice.textContent).toContain("Update didn't install. Tokama will try again when you quit.");
     await click([...notice.querySelectorAll("button")].find((button) => button.textContent === "Restart Tokama")!);
     expect(installUpdate).toHaveBeenCalledTimes(1);
+    expect($('[role="dialog"]')).toBeNull();
+  });
+
+  it("opens the sidebar notice from the collapsed rail icon, and does not restart on that click", async () => {
+    const { setUpdate, installUpdate } = await start({}, COLLAPSED);
+    await setUpdate({ status: "stalled", version: "0.2.0" });
+    expect($(".panel")).toBeNull();
+    const icon = $(".up-rail-button")!;
+    expect(icon.getAttribute("aria-label")).toBe("Update didn't install. Tokama will try again when you quit. Click to show the notice.");
+    await click(icon);
+    expect(installUpdate).not.toHaveBeenCalled();
+    expect($('.sb-foot [role="status"]')?.textContent).toContain("Update didn't install.");
     expect($('[role="dialog"]')).toBeNull();
   });
 

@@ -68,14 +68,12 @@ describe("update state", () => {
     expect(next(idle, { type: "install_aborted" })).toBe(idle);
   });
 
-  it("stalls when the installer is silent, is asked again from there, and fails like an install", () => {
+  it("stalls when the installer is silent or refuses, and stays there: nothing starts an install from it", () => {
     const installing: UpdateState = { status: "installing", version: "0.2.0" };
     const stalled = next(installing, { type: "install_stalled" });
     expect(stalled).toEqual({ status: "stalled", version: "0.2.0" });
     expect(next(idle, { type: "install_stalled" })).toBe(idle);
-    expect(next(stalled, { type: "install_started" })).toEqual(installing);
-    expect(next(stalled, { type: "install_failed", at: 4 })).toEqual({ status: "error", stage: "install", at: 4, version: "0.2.0" });
-    for (const event of [{ type: "check_started" }, { type: "available", version: "0.3.0" }, { type: "downloaded", version: "0.3.0" }, { type: "error", at: 1 }] as const) {
+    for (const event of [{ type: "install_started" }, { type: "install_failed", at: 4 }, { type: "install_aborted" }, { type: "check_started" },{ type: "available", version: "0.3.0" }, { type: "downloaded", version: "0.3.0" }, { type: "error", at: 1 }] as const) {
       expect(next(stalled, event)).toBe(stalled);
     }
   });

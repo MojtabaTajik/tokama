@@ -11,7 +11,7 @@ export function releaseNotesUrl(version: string): string | undefined {
   return /^\d+\.\d+\.\d+$/.test(version) ? `${RELEASES}v${version}` : undefined;
 }
 
-/** The release page of the update that downloads or is ready; undefined in any other state. */
+/** The release page of the update that downloads, is ready or did not install; undefined in any other state. */
 export function updateNotesUrl(state: UpdateState): string | undefined {
-  return state.status === "downloading" || state.status === "ready" ? releaseNotesUrl(state.version) : undefined;
+  return state.status === "downloading" || state.status === "ready" || state.status === "stalled" ? releaseNotesUrl(state.version) : undefined;
 }

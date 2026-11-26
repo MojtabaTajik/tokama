@@ -43,14 +43,12 @@ export function next(state: UpdateState, event: UpdateEvent): UpdateState {
       if (state.status === "downloading") return { status: "error", stage: "download", at: event.at, version: state.version, ...(state.critical !== undefined && { critical: state.critical }) };
       return { status: "error", stage: "check", at: event.at };
     case "install_started":
-      // From stalled it is the retry: the installer is asked again.
-      if (state.status === "stalled") return { status: "installing", version: state.version };
       return state.status === "ready" ? { status: "installing", version: state.version, ...(state.critical !== undefined && { critical: state.critical }) } : state;
     case "install_stalled":
       return state.status === "installing" ? { status: "stalled", version: state.version } : state;
     case "install_aborted":
       return state.status === "installing" ? { status: "ready", version: state.version, ...(state.critical !== undefined && { critical: state.critical }) } : state;
     case "install_failed":
-      return state.status === "installing" || state.status === "stalled" ? { status: "error", stage: "install", at: event.at, version: state.version } : state;
+      return state.status === "installing" ? { status: "error", stage: "install", at: event.at, version: state.version } : state;
   }
 }
