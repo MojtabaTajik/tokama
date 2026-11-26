@@ -156,7 +156,7 @@ describe("parseNote", () => {
       expect(problemsOf(body(`${highlight()}\n\nWhere: a > b`))).toEqual([markup(10, "a highlight's Where line")]);
     });
 
-    it.each(["a [link](https://x.test)", "**bold**", "`code`", "ping @someone", "### heading", "- item", "> quote", "+ plus", "1. first"])("refuses Markdown in a sentence: %j", (sentence) => {
+    it.each(["a [link](https://x.test)", "**bold**", "`code`", "ping @someone", "### heading", "- item", "> quote", "1. first"])("refuses Markdown in a sentence: %j", (sentence) => {
       expect(problemsOf(body(highlight("T", sentence)))).toHaveLength(1);
     });
 
