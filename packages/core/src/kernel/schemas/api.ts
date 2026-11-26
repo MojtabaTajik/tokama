@@ -27,7 +27,10 @@ import { MachineReportSchema } from "./machine.js";
 import { RepoSummarySchema, SetupSchema } from "./setup.js";
 import { MAX_TEMPLATE_ENTRIES, TemplateDetailSchema, TemplateEntrySchema, TemplateFileKeySchema } from "./template-files.js";
 
-export const API_VERSION = 14;
+export const API_VERSION = 15;
+
+/** The first API version whose engine understands `ifIdle` in a shutdown request; an older engine stops whatever it runs. */
+export const SHUTDOWN_IF_IDLE_SINCE = 15;
 
 /** The most branches the engine lists for a base branch choice; `moreBranches` counts the rest. */
 export const MAX_BRANCH_CHOICES = 200;
@@ -461,6 +464,8 @@ export const ShutdownRequestSchema = z.object({
   kind: z.literal("shutdown"),
   apiVersion: z.int(),
   token: z.string().min(1).max(256),
+  /** Stop only when no item is running, queued or finishing; otherwise the engine answers `shutdown_refused` and keeps running. */
+  ifIdle: z.boolean().optional(),
 });
 
 /** What a client may send first: a hello, or a shutdown request. */
@@ -485,6 +490,16 @@ export const WelcomeMessageSchema = z.object({
 export const ShutdownAcceptedSchema = z.object({
   kind: z.literal("shutdown_accepted"),
   apiVersion: z.int(),
+});
+
+/**
+ * The engine did not stop: the request had `ifIdle` and items are busy, or the engine could not
+ * count them (then `runningItems` is absent). The engine keeps running and closes the connection.
+ */
+export const ShutdownRefusedSchema = z.object({
+  kind: z.literal("shutdown_refused"),
+  apiVersion: z.int(),
+  runningItems,
 });
 
 /** The codes this engine sends in a connection error. Clients accept any code. */
@@ -514,7 +529,7 @@ export const ConnectionErrorMessageSchema = z.object({
 /** What the engine answers to a hello. */
 export const HandshakeReplySchema = z.discriminatedUnion("kind", [WelcomeMessageSchema, ConnectionErrorMessageSchema]);
 /** What the engine answers to a shutdown request. An engine older than the request refuses it as a `bad_message`. */
-export const ShutdownReplySchema = z.discriminatedUnion("kind", [ShutdownAcceptedSchema, ConnectionErrorMessageSchema]);
+export const ShutdownReplySchema = z.discriminatedUnion("kind", [ShutdownAcceptedSchema, ShutdownRefusedSchema, ConnectionErrorMessageSchema]);
 
 /**
  * An event message of this API version whose event type this side does not know: a newer engine

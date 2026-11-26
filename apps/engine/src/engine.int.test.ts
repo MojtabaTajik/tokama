@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, sym
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ClientEvent, connect, type EngineClient, requestShutdown } from "@tokama/client";
-import { API_VERSION, manualClock, MAX_MESSAGE_BYTES } from "@tokama/core";
+import { API_VERSION, err, manualClock, MAX_MESSAGE_BYTES } from "@tokama/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type EngineHandle, startEngine } from "./engine.js";
 import { rawConnect, sampleItem, tempEngineDir, waitFor } from "./testing/helpers.js";
@@ -293,6 +293,94 @@ describe("engine service", () => {
     expect(await raw.next()).toMatchObject({ kind: "connection_error", code: "unauthorized" });
     await raw.closed;
     await handshaken(handle);
+  });
+
+  describe("a shutdown request with ifIdle", () => {
+    const putItem = (handle: EngineHandle, n: number, state: "running" | "queued" | "needs_you") =>
+      handle.store.put({ ...sampleItem(`Item ${n}`), id: `item_${n}b9f3c1e-6a2d-4f7b-9c1a-2e3d4f5a6b7c` as never, state });
+    const askIfIdle = async (handle: EngineHandle) => {
+      const raw = await rawConnect(handle.endpoint.socketPath);
+      cleanups.push(() => raw.destroy());
+      raw.send({ kind: "shutdown", apiVersion: API_VERSION, token: readFileSync(handle.endpoint.tokenPath, "utf8"), ifIdle: true });
+      return raw;
+    };
+
+    it("is refused with the count while items run or wait to start, and the engine keeps serving", async () => {
+      const dir = tempEngineDir(cleanups);
+      const handle = await engine(dir);
+      putItem(handle, 1, "running");
+      putItem(handle, 2, "queued");
+      putItem(handle, 3, "needs_you");
+
+      const raw = await askIfIdle(handle);
+      expect(await raw.next()).toEqual({ kind: "shutdown_refused", apiVersion: API_VERSION, runningItems: 2 });
+      await raw.closed;
+
+      const welcomed = await rawConnect(handle.endpoint.socketPath);
+      cleanups.push(() => welcomed.destroy());
+      welcomed.send({ kind: "hello", apiVersion: API_VERSION, token: readFileSync(handle.endpoint.tokenPath, "utf8") });
+      expect(await welcomed.next()).toMatchObject({ kind: "welcome", runningItems: 1 });
+      expect(existsSync(handle.endpoint.socketPath)).toBe(true);
+    });
+
+    it("stops the engine when nothing runs, even with an item that waits for the user", async () => {
+      const dir = tempEngineDir(cleanups);
+      const handle = await engine(dir);
+      putItem(handle, 3, "needs_you");
+      const { socketPath, tokenPath, lockPath } = handle.endpoint;
+
+      const raw = await askIfIdle(handle);
+      expect(await raw.next()).toEqual({ kind: "shutdown_accepted", apiVersion: API_VERSION });
+      await raw.closed;
+      await handle.closed;
+      expect([socketPath, tokenPath, lockPath].filter((path) => existsSync(path))).toEqual([]);
+    });
+
+    it("stops a busy engine when the request does not say ifIdle", async () => {
+      const dir = tempEngineDir(cleanups);
+      const handle = await engine(dir);
+      putItem(handle, 1, "running");
+      const raw = await rawConnect(handle.endpoint.socketPath);
+      cleanups.push(() => raw.destroy());
+      raw.send({ kind: "shutdown", apiVersion: API_VERSION, token: readFileSync(handle.endpoint.tokenPath, "utf8") });
+      expect(await raw.next()).toEqual({ kind: "shutdown_accepted", apiVersion: API_VERSION });
+      await handle.closed;
+    });
+
+    it("refuses without a count when the store cannot list its items", async () => {
+      const dir = tempEngineDir(cleanups);
+      const handle = await engine(dir);
+      const spy = vi.spyOn(handle.store, "list").mockImplementation(() => {
+        throw new Error("unreadable");
+      });
+      const raw = await askIfIdle(handle);
+      expect(await raw.next()).toEqual({ kind: "shutdown_refused", apiVersion: API_VERSION });
+      spy.mockRestore();
+    });
+
+    it("answers a command that arrives while the engine drains with invalid_state", async () => {
+      const dir = tempEngineDir(cleanups);
+      // A machine reading that stays open holds the drain, so a connected client can still send.
+      let release = () => {};
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      cleanups.push(() => release());
+      const started = await startEngine({
+        dir,
+        machineSource: { memory: async () => (await gate, err("no access")), processes: async () => (await gate, err("no access")) },
+      });
+      if (!started.ok) throw new Error(started.error.message);
+      cleanups.push(() => started.value.close());
+      const connected = await client(dir);
+      const reading = connected.query({ type: "machine" });
+
+      const raw = await askIfIdle(started.value);
+      expect(await raw.next()).toEqual({ kind: "shutdown_accepted", apiVersion: API_VERSION });
+      const late = await connected.command({ type: "stop_item", itemId: ITEM_ID });
+      expect(late).toMatchObject({ ok: false, error: { code: "invalid_state", message: "The engine is shutting down." } });
+      release();
+      await reading;
+      await started.value.closed;
+    });
   });
 
   it("is stopped by the client's requestShutdown, which an engine that does not know it refuses", async () => {

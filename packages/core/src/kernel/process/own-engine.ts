@@ -1,13 +1,8 @@
-// Stops this app's own engine for one engine dir (an older version still running after an
-// update), and never any other process.
-//
-// The engine dir's lock names the engine's pid. That pid can belong to another process by now
-// (the engine died and the pid was reused), so before every step the pid must pass three checks:
-// it is alive, its command line ends with this app's engine entry and `--dir <this engine dir>`,
-// and it started no later than the lock was written. Then the steps, each only when the one
-// before did not stop it: a shutdown request on the engine's socket, SIGTERM, and SIGKILL.
+// What an engine's lock file says, and the per-OS parts a client needs around it: reading one
+// process, signalling one process. The decision to stop an engine lives in `@tokama/client`: it
+// never asks the OS whether a pid is the engine, it asks the engine's socket, and it signals only
+// through `EngineProcesses.signal` and only while that socket still answers.
 import { execFile } from "node:child_process";
-import { sleep, systemClock, type Clock } from "../clock/index.js";
 import { hasCode } from "../errno/index.js";
 import { LSTART, parseLstart } from "./leftover.js";
 import { pidAlive, readPidFile, type PidFile } from "./pid-file.js";
@@ -26,52 +21,6 @@ export interface EngineProcesses {
   describe(pid: number): Promise<{ readonly startedAt: number; readonly command: string } | undefined>;
   /** Never throws for a pid that is gone. */
   signal(pid: number, signal: "SIGTERM" | "SIGKILL"): void;
-}
-
-/** Which engine counts as this app's own. */
-export interface OwnEngine {
-  /** `<engine dir>/engine.lock`. */
-  readonly lockPath: string;
-  /**
-   * How the engine's command line ends, from the entry file on: e.g.
-   * `/engine/dist/main.js --dir /home/dev/.tokama/run`. Must start with `/`, so it matches whole
-   * path segments only.
-   */
-  readonly commandEnd: string;
-  /** Other locks the engine holds (the Tokama home's); stopped means none names its pid any more. */
-  readonly otherLocks?: readonly string[];
-}
-
-export type VerifyOutcome =
-  | { readonly kind: "verified"; readonly lock: EngineLock; readonly startedAt: number }
-  | { readonly kind: "refused"; readonly reason: "no_lock" | "unsafe" | "gone" | "not_engine" | "pid_reused" | "unreadable"; readonly pid?: number };
-
-export type StopOutcome =
-  /** The engine stopped (or let go of its locks) after this step. */
-  | { readonly kind: "stopped"; readonly by: "shutdown" | "sigterm" | "sigkill"; readonly lock: EngineLock }
-  /** The check failed before the first step; nothing was sent. */
-  | Extract<VerifyOutcome, { kind: "refused" }>
-  /** The lock names another engine now: someone else replaced it. Nothing more was sent. */
-  | { readonly kind: "replaced" }
-  /** Still running after SIGKILL. */
-  | { readonly kind: "still_running"; readonly lock: EngineLock };
-
-export interface StopOptions {
-  readonly processes: EngineProcesses;
-  /**
-   * The engine id the lock named when the caller decided to stop it. When the lock names another
-   * engine by now (another app replaced it meanwhile), nothing is sent.
-   */
-  readonly expectedEngineId?: string;
-  /** Sends the shutdown request on the engine's socket; true when the engine accepted it. */
-  readonly requestShutdown: () => Promise<boolean>;
-  readonly clock?: Clock;
-  /** How long each step waits for the engine to stop. Default 15 s. */
-  readonly stepMs?: number;
-  /** How often it looks meanwhile. Default 200 ms. */
-  readonly pollMs?: number;
-  /** This process, which is never signalled. */
-  readonly selfPid?: number;
 }
 
 /** The lock's pid, engine id and write time; undefined when it is missing, not a plain file, or malformed. */
@@ -103,79 +52,6 @@ export async function lockWriterLive(lock: PidFile, processes: EngineProcesses, 
   // Nothing read: the process has exited since, or ps printed something unexpected.
   if (info === undefined) return pidAlive(lock.pid);
   return info === "unknown" || info.startedAt <= lock.writtenAt + START_TIME_SLACK_MS;
-}
-
-export async function verifyOwnEngine(engine: OwnEngine, processes: EngineProcesses, selfPid = process.pid): Promise<VerifyOutcome> {
-  const lock = readEngineLock(engine.lockPath);
-  if (lock === undefined) return { kind: "refused", reason: "no_lock" };
-  const { pid } = lock;
-  if (!Number.isSafeInteger(pid) || pid <= 1 || pid === selfPid || !engine.commandEnd.startsWith("/")) return { kind: "refused", reason: "unsafe", pid };
-  let info: Awaited<ReturnType<EngineProcesses["describe"]>>;
-  try {
-    info = await processes.describe(pid);
-  } catch {
-    return { kind: "refused", reason: "unreadable", pid };
-  }
-  if (info === undefined) return { kind: "refused", reason: "gone", pid };
-  if (!info.command.endsWith(engine.commandEnd)) return { kind: "refused", reason: "not_engine", pid };
-  // The engine writes its lock after it starts; a process that started later took a reused pid.
-  if (info.startedAt > lock.writtenAt) return { kind: "refused", reason: "pid_reused", pid };
-  return { kind: "verified", lock, startedAt: info.startedAt };
-}
-
-export async function stopOwnEngine(engine: OwnEngine, options: StopOptions): Promise<StopOutcome> {
-  const { processes } = options;
-  const clock = options.clock ?? systemClock;
-  const stepMs = options.stepMs ?? 15_000;
-  const pollMs = options.pollMs ?? 200;
-  const selfPid = options.selfPid ?? process.pid;
-
-  const first = await verifyOwnEngine(engine, processes, selfPid);
-  if (first.kind === "refused") return first;
-  const { lock, startedAt } = first;
-  if (options.expectedEngineId !== undefined && lock.engineId !== options.expectedEngineId) return { kind: "replaced" };
-  const sameEngine = (other: EngineLock | undefined) => other !== undefined && other.pid === lock.pid && other.engineId === lock.engineId;
-
-  // Stopped: the process is gone (or the pid is another process's now), or no lock names it any more.
-  const stopped = async () => {
-    const info = await processes.describe(lock.pid).catch(() => "unknown" as const);
-    if (info === "unknown") return false;
-    if (info === undefined || info.startedAt !== startedAt) return true;
-    return [engine.lockPath, ...(engine.otherLocks ?? [])].every((path) => readPidFile(path)?.pid !== lock.pid);
-  };
-  const waitStopped = async () => {
-    const deadline = clock.now() + stepMs;
-    for (;;) {
-      if (await stopped()) return true;
-      if (clock.now() >= deadline) return false;
-      await sleep(clock, pollMs);
-    }
-  };
-
-  const steps = [
-    { by: "shutdown", send: () => options.requestShutdown() },
-    { by: "sigterm", send: () => (processes.signal(lock.pid, "SIGTERM"), Promise.resolve(true)) },
-    { by: "sigkill", send: () => (processes.signal(lock.pid, "SIGKILL"), Promise.resolve(true)) },
-  ] as const;
-  for (const [index, step] of steps.entries()) {
-    if (index > 0) {
-      // The check again, right before the signal: the same lock, the same process.
-      const again = await verifyOwnEngine(engine, processes, selfPid);
-      if (again.kind === "verified" && !sameEngine(again.lock)) return { kind: "replaced" };
-      // The process list could not be read: no signal on a guess.
-      if (again.kind === "refused" && again.reason === "unreadable") return again;
-      if (again.kind !== "verified" || again.startedAt !== startedAt) {
-        const current = readEngineLock(engine.lockPath);
-        return current !== undefined && !sameEngine(current) ? { kind: "replaced" } : { kind: "stopped", by: steps[index - 1]?.by ?? "shutdown", lock };
-      }
-    }
-    // An engine that refuses the request (one from before it existed) gets SIGTERM at once.
-    const sent = await Promise.resolve()
-      .then(step.send)
-      .catch(() => false);
-    if (sent && (await waitStopped())) return { kind: "stopped", by: step.by, lock };
-  }
-  return { kind: "still_running", lock };
 }
 
 /** macOS and Linux. */
