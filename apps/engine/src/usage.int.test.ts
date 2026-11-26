@@ -132,4 +132,44 @@ describe("usage query", () => {
     expect(second.ok && second.data.totals.calls).toBe(2);
     expect(usageChanged(events)).toBe(1);
   });
+
+  it("tells clients only when an item records a call: not for calls the logs held at start, and not when an item that has calls changes in another way", async () => {
+    const home = mkdtempSync(join(tmpdir(), "tokama-usage-"));
+    cleanups.push(() => rmSync(home, { recursive: true, force: true }));
+    const hostId = loadHostId(home);
+    if (!hostId.ok) throw new Error(hostId.error);
+    const before = ItemStore.open({ home, hostId: hostId.value, clock: systemClock }).store;
+    const now = Date.now();
+    // Finished before the start, so the start-up recovery leaves it alone; it holds a call.
+    const finished = before.create({ template, title: "Fix the retry loop", text: "", repoIds: ["orders-api" as RepoId] });
+    const running = before.create({ template, title: "Fix the checkout timeout", text: "", repoIds: ["orders-api" as RepoId] });
+    if (!finished.ok || !running.ok) throw new Error("cannot create the items");
+    spend(before, finished.value, 1, now - 10 * MINUTE);
+    const ended = before.append(finished.value.id, [{ type: "attempt_ended", stepId: BUILD, attempt: 1, result: "passed" }, { type: "step_ended", stepId: BUILD, result: "passed" }, { type: "item_ended", outcome: "done" }]);
+    if (!ended.ok) throw new Error(ended.error.message);
+    spend(before, running.value, 1, now - 5 * MINUTE);
+
+    const dir = tempEngineDir(cleanups);
+    const started = await startEngine({ dir, home, planSources: {}, processTable: { list: async () => [], bootTime: () => 0, signalGroup: () => undefined } });
+    if (!started.ok) throw new Error(started.error.message);
+    cleanups.push(() => started.value.close());
+    const engineClient = await client(dir);
+    const events = collect(engineClient);
+    // A reply comes after every event that was sent before it on the same connection; the pause lets the client read them.
+    const settle = async () => void (await engineClient.query({ type: "board" }));
+
+    // A change without a call to an item that has one.
+    const deleted = started.value.items!.append(finished.value.id, [{ type: "tombstone" }]);
+    if (!deleted.ok) throw new Error(deleted.error.message);
+    await settle();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(usageChanged(events)).toBe(0);
+
+    // A new call.
+    spend(started.value.items!, started.value.items!.get(running.value.id)!, 2, Date.now());
+    await waitFor(() => usageChanged(events) === 1, 5_000, "usage_changed");
+    await settle();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(usageChanged(events)).toBe(1);
+  });
 });
