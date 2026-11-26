@@ -66,7 +66,7 @@ export function updatesRow(state: UpdateState, version: string, running: number,
           tone: "link",
           notes: state.version,
           main: `${state.version} is ready`,
-          sub: count > 0 ? `${items(count)} running. Restart once ${count === 1 ? "it finishes" : "they finish"}. Tokama never restarts by itself.` : `${CANT_TELL}. Try again in a moment. Tokama never restarts by itself.`,
+          sub: count > 0 ? `${items(count)} running. You can restart when ${count === 1 ? "it finishes" : "they finish"}. Tokama never restarts by itself.` : `${CANT_TELL}. Try again in a moment. Tokama never restarts by itself.`,
           action: { label: "Restart now", kind: "restart", primary: true, disabled: true },
         };
       }
@@ -75,7 +75,7 @@ export function updatesRow(state: UpdateState, version: string, running: number,
         tone: "link",
         notes: state.version,
         main: `${state.version} is ready`,
-        sub: running > 0 ? `${items(running)} running. Restart once ${running === 1 ? "it finishes" : "they finish"}. Tokama never restarts by itself.` : "Restart now, or Tokama installs it when you quit with nothing running. It never restarts by itself.",
+        sub: running > 0 ? `${items(running)} running. You can restart when ${running === 1 ? "it finishes" : "they finish"}. Tokama never restarts by itself.` : "Restart now, or Tokama installs it when you quit with nothing running. It never restarts by itself.",
         action: { label: "Restart now", kind: "restart", primary: true, disabled: running > 0 },
       };
     }

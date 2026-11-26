@@ -50,28 +50,32 @@ describe("App: ready update", () => {
     await click($(".up-chip")!);
     expect(installUpdate).not.toHaveBeenCalled();
     const panel = $('[role="dialog"]')!;
-    expect(panel.textContent).toContain("3 items are running. Tokama updates when they finish and you restart.");
+    expect(panel.textContent).toContain("3 items are still running. You can restart when they finish.");
     expect(panel.textContent).toContain("Checkout p95 latency spike · ");
     expect(panel.querySelector('button[aria-disabled="true"]')?.textContent).toBe("Restart now");
-    await click([...panel.querySelectorAll("button")].find((button) => button.textContent === "Restart later")!);
+    await click([...panel.querySelectorAll("button")].find((button) => button.textContent === "Not now")!);
     expect($('[role="dialog"]')).toBeNull();
   });
 
-  it("restarts at once, with no panel, when nothing runs", async () => {
+  it("opens the panel on a click even with nothing running, and restarts only after Restart now", async () => {
     const { setUpdate, installUpdate } = await start({ boardItems: idle });
     await setUpdate(READY);
     await click($(".up-chip")!);
+    expect(installUpdate).not.toHaveBeenCalled();
+    const panel = $('[role="dialog"]')!;
+    expect(panel.textContent).toContain("Nothing is running. Restarting takes a few seconds.");
+    await click([...panel.querySelectorAll("button")].find((button) => button.textContent === "Restart now")!);
     expect(installUpdate).toHaveBeenCalledTimes(1);
-    expect($('[role="dialog"]')).toBeNull();
   });
 
-  it("opens the panel when the main process finds something running that the window did not see", async () => {
+  it("says what runs when the main process finds something that the window did not see", async () => {
     const { setUpdate, installUpdate } = await start({ boardItems: idle, installUpdate: async () => ({ ok: false, reason: "busy", running: 1 }) });
     await setUpdate(READY);
     await click($(".up-chip")!);
+    await click([...$('[role="dialog"]')!.querySelectorAll("button")].find((button) => button.textContent === "Restart now")!);
     expect(installUpdate).toHaveBeenCalledTimes(1);
     const panel = $('[role="dialog"]')!;
-    expect(panel.textContent).toContain("1 item is running. Tokama updates when it finishes and you restart.");
+    expect(panel.textContent).toContain("1 item is still running. You can restart when it finishes.");
     expect(panel.textContent).not.toContain("Nothing is running");
     expect(panel.querySelector('button[aria-disabled="true"]')?.textContent).toBe("Restart now");
   });
@@ -80,16 +84,17 @@ describe("App: ready update", () => {
     const { setUpdate, installUpdate } = await start({ boardItems: idle, installUpdate: async () => ({ ok: false, reason: "busy" }) });
     await setUpdate(READY);
     await click($(".up-chip")!);
+    const restartNowOf = () => [...$('[role="dialog"]')!.querySelectorAll("button")].find((button) => button.textContent === "Restart now")!;
+    await click(restartNowOf());
+    expect(installUpdate).toHaveBeenCalledTimes(1);
     const panel = $('[role="dialog"]')!;
     expect(panel.textContent).toContain("Tokama can't tell what's running right now");
     expect(panel.textContent).not.toContain("Nothing is running");
-    const restartNow = [...panel.querySelectorAll("button")].find((button) => button.textContent === "Restart now")!;
-    expect(restartNow.getAttribute("aria-disabled")).toBe("true");
-    await click(restartNow);
-    expect(installUpdate).toHaveBeenCalledTimes(1);
-    // Closing the panel lets the next click ask again.
-    await click([...panel.querySelectorAll("button")].find((button) => button.textContent === "Restart later")!);
+    expect(restartNowOf().getAttribute("aria-disabled")).toBe("true");
+    // Closing the panel lets the next Restart now ask again.
+    await click([...panel.querySelectorAll("button")].find((button) => button.textContent === "Not now")!);
     await click($(".up-chip")!);
+    await click(restartNowOf());
     expect(installUpdate).toHaveBeenCalledTimes(2);
   });
 
@@ -113,7 +118,7 @@ describe("App: ready update", () => {
     const { setUpdate, installUpdate } = await start({}, COLLAPSED);
     await setUpdate(READY);
     expect($(".panel")).toBeNull();
-    expect($(".up-rail-button")?.getAttribute("aria-label")).toBe("Update: Tokama 0.2.0 is ready. 3 items are running. Restart once they finish.");
+    expect($(".up-rail-button")?.getAttribute("aria-label")).toBe("Update: Tokama 0.2.0 is ready. 3 items are running. You can restart when they finish.");
     await click($(".up-rail-button")!);
     expect(installUpdate).not.toHaveBeenCalled();
     expect($(".panel")).not.toBeNull();
@@ -143,7 +148,7 @@ describe("App: About updates row", () => {
     expect(checkForUpdates).toHaveBeenCalledTimes(1);
     await setUpdate(READY);
     expect(row()).toContain("0.2.0 is ready");
-    expect(row()).toContain("3 items are running. Restart once they finish. Tokama never restarts by itself.");
+    expect(row()).toContain("3 items are running. You can restart when they finish. Tokama never restarts by itself.");
     const restart = $(".about-update button")!;
     expect(restart.getAttribute("aria-disabled")).toBe("true");
   });

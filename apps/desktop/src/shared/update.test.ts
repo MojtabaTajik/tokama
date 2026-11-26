@@ -21,16 +21,16 @@ describe("updateChip", () => {
       critical: false,
       label: "Update",
       title: "Tokama 0.2.0 is ready",
-      action: "Click to restart and update",
-      accessibleName: "Update: Tokama 0.2.0 is ready. Click to restart and update.",
+      action: "Click to update, then confirm the restart",
+      accessibleName: "Update: Tokama 0.2.0 is ready. Click to update, then confirm the restart.",
       running: 0,
     });
   });
 
   it("names the running items in the action line, in the singular and the plural", () => {
-    expect(updateChip({ status: "ready", version: "0.2.0" }, 2)?.action).toBe("2 items are running. Restart once they finish");
-    expect(updateChip({ status: "ready", version: "0.2.0" }, 1)?.action).toBe("1 item is running. Restart once it finishes");
-    expect(updateChip({ status: "ready", version: "0.2.0" }, 2)?.accessibleName).toBe("Update: Tokama 0.2.0 is ready. 2 items are running. Restart once they finish.");
+    expect(updateChip({ status: "ready", version: "0.2.0" }, 2)?.action).toBe("2 items are running. You can restart when they finish");
+    expect(updateChip({ status: "ready", version: "0.2.0" }, 1)?.action).toBe("1 item is running. You can restart when it finishes");
+    expect(updateChip({ status: "ready", version: "0.2.0" }, 2)?.accessibleName).toBe("Update: Tokama 0.2.0 is ready. 2 items are running. You can restart when they finish.");
   });
 
   it("marks an important update with the word, the reason and a title that starts with it", () => {
@@ -40,7 +40,7 @@ describe("updateChip", () => {
       label: "Important update",
       title: "Important update · 0.2.2",
       reason: "Fixes a security problem. Update soon.",
-      accessibleName: "Important update: Tokama 0.2.2. Fixes a security problem. Update soon. Click to restart and update.",
+      accessibleName: "Important update: Tokama 0.2.2. Fixes a security problem. Update soon. Click to update, then confirm the restart.",
     });
   });
 
@@ -59,8 +59,8 @@ describe("updateChip", () => {
 
 describe("update texts", () => {
   it("builds the action line and the panel text", () => {
-    expect(updateAction(0)).toBe("Click to restart and update");
-    expect(updatePanelText(2)).toBe("2 items are running. Tokama updates when they finish and you restart.");
-    expect(updatePanelText(1)).toBe("1 item is running. Tokama updates when it finishes and you restart.");
+    expect(updateAction(0)).toBe("Click to update, then confirm the restart");
+    expect(updatePanelText(2)).toBe("2 items are still running. You can restart when they finish.");
+    expect(updatePanelText(1)).toBe("1 item is still running. You can restart when it finishes.");
   });
 });

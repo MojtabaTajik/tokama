@@ -223,7 +223,7 @@ describe("Rail: update icon", () => {
   it("shows the icon above the user button and calls back on a click", () => {
     const onActivate = vi.fn();
     render({ update: { view: updateChip({ status: "ready", version: "0.2.0" }, 0)!, onActivate, onOpenNotes: noop } });
-    expect(icon()?.getAttribute("aria-label")).toBe("Update: Tokama 0.2.0 is ready. Click to restart and update.");
+    expect(icon()?.getAttribute("aria-label")).toBe("Update: Tokama 0.2.0 is ready. Click to update, then confirm the restart.");
     const children = [...container.querySelector(".rail")!.children];
     expect(children.at(-1)?.classList.contains("rail-user")).toBe(true);
     expect(children.at(-2)?.classList.contains("up-rail")).toBe(true);

@@ -43,8 +43,9 @@ describe("UpdateChip", () => {
   it("shows the word Update and an accessible name that says what a click does", () => {
     render(READY);
     expect(chip().textContent).toBe("Update");
-    expect(chip().getAttribute("aria-label")).toBe("Update: Tokama 0.2.0 is ready. Click to restart and update.");
-    expect(chip().hasAttribute("aria-expanded")).toBe(false);
+    expect(chip().getAttribute("aria-label")).toBe("Update: Tokama 0.2.0 is ready. Click to update, then confirm the restart.");
+    expect(chip().getAttribute("aria-haspopup")).toBe("dialog");
+    expect(chip().getAttribute("aria-expanded")).toBe("false");
   });
 
   it("shows the word and the symbol for an important update, with the reason in the tooltip", () => {
@@ -61,7 +62,7 @@ describe("UpdateChip", () => {
     render(READY);
     expect(tooltip()).toBeNull();
     act(() => void chip().dispatchEvent(new FocusEvent("focusin", { bubbles: true })));
-    expect(tooltip()?.textContent).toBe("Tokama 0.2.0 is readyClick to restart and updateWhat's new in 0.2.0");
+    expect(tooltip()?.textContent).toBe("Tokama 0.2.0 is readyClick to update, then confirm the restartWhat's new in 0.2.0");
     expect(chip().getAttribute("aria-describedby")).toBe(tooltip()?.id);
     key("Escape");
     expect(tooltip()).toBeNull();
@@ -85,39 +86,44 @@ describe("UpdateChip", () => {
     render(READY, RUNNING);
     act(() => void container.querySelector(".up")!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
     act(() => void vi.advanceTimersByTime(TIP_OPEN_MS));
-    expect(tooltip()?.textContent).toContain("2 items are running. Restart once they finish");
+    expect(tooltip()?.textContent).toContain("2 items are running. You can restart when they finish");
   });
 
-  it("asks to restart at once with nothing running: no panel", () => {
-    const { onActivate } = render(READY);
+  it("only tells its owner of a click, with nothing running: the chip itself never restarts", () => {
+    const { onActivate, onRestartNow } = render(READY);
     act(() => chip().click());
     expect(onActivate).toHaveBeenCalledTimes(1);
-    expect(panel()).toBeNull();
+    expect(onRestartNow).not.toHaveBeenCalled();
   });
 
   it("lists the running items in the panel, with Restart now off and the reason why", () => {
     const { onRestartNow, onClosePanel } = render(READY, RUNNING, { panelOpen: true });
     expect(chip().getAttribute("aria-expanded")).toBe("true");
-    expect(panel()?.getAttribute("aria-label")).toBe("Update waits for running items");
+    expect(panel()?.getAttribute("aria-label")).toBe("Update");
     const text = panel()!.textContent!;
-    expect(text).toContain("2 items are running. Tokama updates when they finish and you restart.");
+    expect(text).toContain("Tokama 0.2.0 is ready");
+    expect(text).toContain("2 items are still running. You can restart when they finish.");
     expect(text).toContain("Fix flaky cart total test · Quick fix");
     expect(text).toContain("Slow stock lookup query · DB slow query check");
-    expect(text).toContain("Restart now works once nothing runs. Tokama never stops running work to update and never restarts by itself.");
+    expect(text).toContain("What's new in 0.2.0");
+    expect(text).toContain("Tokama never stops running work to update, and it never restarts by itself.");
     const now = [...panel()!.querySelectorAll("button")].find((button) => button.textContent === "Restart now")!;
     expect(now.getAttribute("aria-disabled")).toBe("true");
     expect(now.getAttribute("aria-describedby")).not.toBeNull();
     act(() => now.click());
     expect(onRestartNow).not.toHaveBeenCalled();
-    const later = [...panel()!.querySelectorAll("button")].find((button) => button.textContent === "Restart later")!;
+    const later = [...panel()!.querySelectorAll("button")].find((button) => button.textContent === "Not now")!;
     act(() => later.click());
     expect(onClosePanel).toHaveBeenCalledTimes(1);
   });
 
-  it("turns Restart now on once nothing runs, with the panel still open", () => {
+  it("says nothing runs, and makes Restart now the main button, once nothing runs", () => {
     const { onRestartNow } = render(READY, [], { panelOpen: true });
+    expect(panel()!.textContent).toContain("Nothing is running. Restarting takes a few seconds.");
+    expect(panel()!.textContent).toContain("Tokama never stops running work to update, and it never restarts by itself.");
     const now = [...panel()!.querySelectorAll("button")].find((button) => button.textContent === "Restart now")!;
     expect(now.hasAttribute("aria-disabled")).toBe(false);
+    expect(now.className).toContain("primary");
     act(() => now.click());
     expect(onRestartNow).toHaveBeenCalledTimes(1);
   });
@@ -156,7 +162,7 @@ describe("UpdateRailIcon", () => {
 
   it("is the download icon with a dot, named like the chip", () => {
     const onActivate = rail(READY);
-    expect(button().getAttribute("aria-label")).toBe("Update: Tokama 0.2.0 is ready. Click to restart and update.");
+    expect(button().getAttribute("aria-label")).toBe("Update: Tokama 0.2.0 is ready. Click to update, then confirm the restart.");
     expect(container.querySelector(".up-dot")).not.toBeNull();
     expect(container.querySelector(".badge")).toBeNull();
     act(() => button().click());
@@ -165,7 +171,7 @@ describe("UpdateRailIcon", () => {
 
   it("is the warning icon with a ! badge for an important update", () => {
     rail(CRITICAL);
-    expect(button().getAttribute("aria-label")).toBe("Important update: Tokama 0.2.2. This update fixes a security problem. Click to restart and update.");
+    expect(button().getAttribute("aria-label")).toBe("Important update: Tokama 0.2.2. This update fixes a security problem. Click to update, then confirm the restart.");
     expect(container.querySelector(".badge")?.textContent).toBe("!");
     expect(container.querySelector(".up-dot")).toBeNull();
   });
@@ -173,7 +179,7 @@ describe("UpdateRailIcon", () => {
   it("opens the same tooltip as the chip", () => {
     rail(READY, 1);
     act(() => void button().dispatchEvent(new FocusEvent("focusin", { bubbles: true })));
-    expect(tooltip()?.textContent).toBe("Tokama 0.2.0 is ready1 item is running. Restart once it finishesWhat's new in 0.2.0");
+    expect(tooltip()?.textContent).toBe("Tokama 0.2.0 is ready1 item is running. You can restart when it finishesWhat's new in 0.2.0");
     key("Escape");
     expect(tooltip()).toBeNull();
   });

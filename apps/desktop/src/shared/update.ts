@@ -49,17 +49,22 @@ export interface UpdateChipView {
 
 const items = (count: number) => (count === 1 ? "1 item is" : `${count} items are`);
 
-/** The action line: what a click does now. */
+const when = (count: number) => (count === 1 ? "it finishes" : "they finish");
+
+/** The action line of the tooltip: what a click does. A click only opens the panel; restarting is a second, clear button. */
 export function updateAction(running: number): string {
-  return running > 0 ? `${items(running)} running. Restart once ${running === 1 ? "it finishes" : "they finish"}` : "Click to restart and update";
+  return running > 0 ? `${items(running)} running. You can restart when ${when(running)}` : "Click to update, then confirm the restart";
 }
 
-/** The first line of the panel that opens with items running. */
+/** The line of the panel that opens with items running. */
 export function updatePanelText(running: number): string {
-  return `${items(running)} running. Tokama updates when ${running === 1 ? "it finishes" : "they finish"} and you restart.`;
+  return `${items(running)} still running. You can restart when ${when(running)}.`;
 }
 
-export const RESTART_NOW_BLOCKED = "Restart now works once nothing runs. Tokama never stops running work to update and never restarts by itself.";
+/** The line of the panel when nothing runs. */
+export const NOTHING_RUNNING = "Nothing is running. Restarting takes a few seconds.";
+/** The panel's last line, always there: why Restart now may be off, and that it is never done by itself. */
+export const RESTART_NOW_BLOCKED = "Tokama never stops running work to update, and it never restarts by itself.";
 /** What the update says when the engine would not say how many items run: nothing is installed then. */
 export const CANT_TELL = "Tokama can't tell what's running right now";
 export const RESTARTING = "Restarting to update…";

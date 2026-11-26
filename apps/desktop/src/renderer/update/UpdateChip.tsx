@@ -1,11 +1,11 @@
 // The ready update at the foot of the sidebar as a chip, and in the collapsed rail as an icon. Both
-// show a tooltip on hover and on keyboard focus (Escape closes it) and do the same on a click:
-// with nothing running they restart into the update at once; with items running the chip opens a
-// small panel that lists them and keeps Restart now off until nothing runs. Tokama never restarts
-// by itself. While the restart is under way the chip is a status line. Release text (the reason) is
-// rendered as React text only.
+// show a tooltip on hover and on keyboard focus (Escape closes it), and a click on either always
+// opens the same small panel: the version, why it matters, what runs, What's new, Not now and
+// Restart now. A click alone never restarts; Restart now is a second, clear button, and it is off
+// while items run. Tokama never restarts by itself. While the restart is under way the chip is a
+// status line. Release text (the reason) is rendered as React text only.
 import { type CSSProperties, useEffect, useId, useLayoutEffect, useRef } from "react";
-import { CANT_TELL, RESTARTING, RESTART_NOW_BLOCKED, RESTART_TOKAMA, STALLED, STALLED_ACTION, type UpdateChipView, updatePanelText } from "../../shared/update.js";
+import { CANT_TELL, NOTHING_RUNNING, RESTARTING, RESTART_NOW_BLOCKED, RESTART_TOKAMA, STALLED, STALLED_ACTION, type UpdateChipView, updatePanelText } from "../../shared/update.js";
 import { Badge } from "../ui/Badge.js";
 import { Button } from "../ui/Button.js";
 import { Chip } from "../ui/Chip.js";
@@ -15,10 +15,9 @@ import { Tooltip } from "../ui/Tooltip.js";
 import { useTip } from "../ui/useTip.js";
 
 const TEXT = {
-  panel: "Update waits for running items",
-  later: "Restart later",
+  panel: "Update",
+  later: "Not now",
   now: "Restart now",
-  nothingRuns: "Nothing is running now. Restart to update.",
 } as const;
 
 /** An item that runs now, as the panel lists it. */
@@ -138,8 +137,8 @@ export function UpdateChip({ view, running, busy, panelOpen, onActivate, onResta
         data-critical={view.critical || undefined}
         data-ring=""
         aria-label={view.accessibleName}
-        aria-haspopup={view.running > 0 ? "dialog" : undefined}
-        aria-expanded={view.running > 0 ? showPanel : undefined}
+        aria-haspopup="dialog"
+        aria-expanded={showPanel}
         aria-describedby={tip.open ? tipId : undefined}
         style={{ anchorName: anchor } as CSSProperties}
         onClick={() => {
@@ -150,12 +149,23 @@ export function UpdateChip({ view, running, busy, panelOpen, onActivate, onResta
         {view.label}
       </Chip>
       {tip.open && !showPanel && <UpdateTip id={tipId} anchor={anchor} view={view} placement="above" onOpenNotes={onOpenNotes} />}
-      {showPanel && <UpdatePanel anchor={anchor} running={running} busy={busy} onRestartNow={onRestartNow} onClose={onClosePanel} />}
+      {showPanel && <UpdatePanel anchor={anchor} view={view} running={running} busy={busy} onRestartNow={onRestartNow} onClose={onClosePanel} onOpenNotes={onOpenNotes} />}
     </div>
   );
 }
 
-function UpdatePanel({ anchor, running, busy, onRestartNow, onClose }: { readonly anchor: string; readonly running: readonly RunningItem[]; readonly busy: { readonly running?: number } | undefined; readonly onRestartNow: () => void; readonly onClose: () => void }) {
+interface UpdatePanelProps {
+  readonly anchor: string;
+  readonly view: UpdateChipView;
+  readonly running: readonly RunningItem[];
+  readonly busy: { readonly running?: number } | undefined;
+  readonly onRestartNow: () => void;
+  readonly onClose: () => void;
+  readonly onOpenNotes: () => void;
+}
+
+/** What a click on the chip opens: the version, why it matters, what runs, and a clear Restart now. */
+function UpdatePanel({ anchor, view, running, busy, onRestartNow, onClose, onOpenNotes }: UpdatePanelProps) {
   const ref = useRef<HTMLElement>(null);
   const whyId = useId();
   // In the top layer, so the scrolling sidebar does not clip it.
@@ -168,9 +178,14 @@ function UpdatePanel({ anchor, running, busy, onRestartNow, onClose }: { readonl
   const unlisted = running.length === 0 && busy !== undefined;
   const count = running.length > 0 ? running.length : (busy?.running ?? 0);
   const blocked = running.length > 0 || busy !== undefined;
-  const text = !blocked ? TEXT.nothingRuns : unlisted && count === 0 ? CANT_TELL : updatePanelText(count);
+  const text = !blocked ? NOTHING_RUNNING : unlisted && count === 0 ? CANT_TELL : updatePanelText(count);
   return (
     <section ref={ref} role="dialog" aria-label={TEXT.panel} popover="manual" className="up-panel" style={{ positionAnchor: anchor } as CSSProperties}>
+      <span className="up-tip-title" data-critical={view.critical || undefined}>
+        {view.critical && <WarningIcon size={13} />}
+        <span>{view.title}</span>
+      </span>
+      {view.reason !== undefined && <span className="up-panel-text">{view.reason}</span>}
       <span className="up-panel-text">{text}</span>
       {running.length > 0 && (
         <ul className="up-panel-items">
@@ -184,19 +199,20 @@ function UpdatePanel({ anchor, running, busy, onRestartNow, onClose }: { readonl
           ))}
         </ul>
       )}
+      <Button variant="link" className="up-tip-link" onClick={onOpenNotes}>
+        What's new in <span className="mono">{view.version}</span>
+      </Button>
       <div className="up-panel-actions">
-        <Button variant="primary" onClick={onClose}>
+        <Button variant="secondary" onClick={onClose}>
           {TEXT.later}
         </Button>
-        <Button variant="secondary" aria-disabled={blocked || undefined} aria-describedby={blocked ? whyId : undefined} onClick={() => !blocked && onRestartNow()}>
+        <Button variant={blocked ? "secondary" : "primary"} aria-disabled={blocked || undefined} aria-describedby={whyId} onClick={() => !blocked && onRestartNow()}>
           {TEXT.now}
         </Button>
       </div>
-      {blocked && (
-        <span id={whyId} className="up-panel-why">
-          {RESTART_NOW_BLOCKED}
-        </span>
-      )}
+      <span id={whyId} className="up-panel-why">
+        {RESTART_NOW_BLOCKED}
+      </span>
     </section>
   );
 }

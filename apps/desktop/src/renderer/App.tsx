@@ -234,8 +234,8 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
     setPanelOpen(true);
     save({ sidebar: { width: chosen.sidebar, collapsed: false } });
   };
-  // Nothing runs: the click is the decision and restarts at once. Otherwise, or when the main
-  // process finds something running that the window did not see, the panel opens.
+  // Restart now asks the main process, which counts the running items itself. When it finds
+  // something running that the window did not list (or cannot tell), the panel says so.
   const [updateBusy, setUpdateBusy] = useState<{ readonly running?: number } | undefined>(undefined);
   const restartForUpdate = async () => {
     const result = await bridge.installUpdate().catch(() => ({ ok: false as const, reason: "failed" as const }));
@@ -246,8 +246,9 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
     }
   };
   const activateUpdate = () => {
-    // The installer did not answer: the click asks it again; nothing runs, the engine is stopped.
-    if (updateView?.kind === "stalled" || runningNow.length === 0) return void restartForUpdate();
+    // The installer did not answer: its button asks it again; nothing runs, the engine is stopped.
+    if (updateView?.kind === "stalled") return void restartForUpdate();
+    // A click on the chip only opens the panel; restarting is Restart now, a second, clear button.
     openSidebar();
     setUpdatePanel((open) => (panelOpen ? !open : true));
   };

@@ -52,8 +52,8 @@ describe("updatesRow", () => {
   });
 
   it("keeps Restart now off while items run, in the plural and the singular", () => {
-    expect(row({ status: "ready", version: "0.2.0" }, 2)).toMatchObject({ sub: "2 items are running. Restart once they finish. Tokama never restarts by itself.", action: { disabled: true } });
-    expect(row({ status: "ready", version: "0.2.0" }, 1)?.sub).toBe("1 item is running. Restart once it finishes. Tokama never restarts by itself.");
+    expect(row({ status: "ready", version: "0.2.0" }, 2)).toMatchObject({ sub: "2 items are running. You can restart when they finish. Tokama never restarts by itself.", action: { disabled: true } });
+    expect(row({ status: "ready", version: "0.2.0" }, 1)?.sub).toBe("1 item is running. You can restart when it finishes. Tokama never restarts by itself.");
   });
 
   it("says the update did not install, and offers Restart Tokama", () => {
@@ -68,7 +68,7 @@ describe("updatesRow", () => {
     const refused = updatesRow({ status: "ready", version: "0.2.0" }, "0.1.0", 0, NOW, {});
     expect(refused?.sub).toBe("Tokama can't tell what's running right now. Try again in a moment. Tokama never restarts by itself.");
     expect(refused?.action).toMatchObject({ label: "Restart now", disabled: true });
-    expect(updatesRow({ status: "ready", version: "0.2.0" }, "0.1.0", 0, NOW, { running: 2 })?.sub).toBe("2 items are running. Restart once they finish. Tokama never restarts by itself.");
+    expect(updatesRow({ status: "ready", version: "0.2.0" }, "0.1.0", 0, NOW, { running: 2 })?.sub).toBe("2 items are running. You can restart when they finish. Tokama never restarts by itself.");
   });
 
   it("shows the restart as a status without a button", () => {

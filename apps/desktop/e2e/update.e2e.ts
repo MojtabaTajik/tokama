@@ -30,7 +30,7 @@ async function openAbout(page: Page): Promise<void> {
 flow(
   "a ready update shows the chip with its tooltip, and a click with items running opens the panel and installs nothing",
   async ({ page, tmp, screenshot }) => {
-    const button = chip(page, /^Update: Tokama 0\.2\.0 is ready\. \d+ items are running\. Restart once they finish\.$/);
+    const button = chip(page, /^Update: Tokama 0\.2\.0 is ready\. \d+ items are running\. You can restart when they finish\.$/);
     await button.waitFor();
     expect(await button.innerText()).toBe("Update");
     const tip = await hoverTip(page, button);
@@ -42,9 +42,9 @@ flow(
     await tip.waitFor({ state: "detached" });
 
     await button.click();
-    const panel = page.getByRole("dialog", { name: "Update waits for running items" });
+    const panel = page.getByRole("dialog", { name: "Update" });
     await panel.waitFor();
-    expect(await panel.innerText()).toMatch(/items are running\. Tokama updates when they finish and you restart\./);
+    expect(await panel.innerText()).toMatch(/items are still running\. You can restart when they finish\./);
     const now = panel.getByRole("button", { name: "Restart now" });
     expect(await now.getAttribute("aria-disabled")).toBe("true");
     await now.click({ force: true });
@@ -60,11 +60,18 @@ flow(
 );
 
 flow(
-  "a click with nothing running restarts into the update at once: the engine stops and the installer is told to start the app again",
+  "a click on the chip only opens the panel; Restart now then stops the engine and tells the installer to start the app again",
   async ({ page, tmp, engine }) => {
     const before = engine();
     expect(before).toBeDefined();
-    await chip(page, /^Update: Tokama 0\.2\.0 is ready\. Click to restart and update\.$/).click();
+    await chip(page, /^Update: Tokama 0\.2\.0 is ready\. Click to update, then confirm the restart\.$/).click();
+    const panel = page.getByRole("dialog", { name: "Update" });
+    await panel.waitFor();
+    expect(await panel.innerText()).toContain("Nothing is running. Restarting takes a few seconds.");
+    // The click alone changed nothing.
+    await page.waitForTimeout(300);
+    expect(existsSync(installedFile(tmp))).toBe(false);
+    await panel.getByRole("button", { name: "Restart now" }).click();
     await expect.poll(() => existsSync(installedFile(tmp)), { timeout: 30_000 }).toBe(true);
     expect(JSON.parse(readFileSync(installedFile(tmp), "utf8"))).toEqual({ version: "0.2.0", relaunch: true });
     expect(engine()).toBeUndefined();
@@ -114,7 +121,7 @@ flow(
     await openAbout(page);
     const section = page.locator("section", { has: page.getByRole("heading", { name: "Updates" }) });
     await section.getByText("0.2.0 is ready").waitFor();
-    expect(await section.innerText()).toMatch(/items are running\. Restart once they finish\. Tokama never restarts by itself\./);
+    expect(await section.innerText()).toMatch(/items are running\. You can restart when they finish\. Tokama never restarts by itself\./);
     expect(await section.getByRole("button", { name: "Restart now" }).getAttribute("aria-disabled")).toBe("true");
   },
   "sample",
