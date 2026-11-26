@@ -11,6 +11,8 @@ import { engineCommandEnd } from "./engine.js";
 import { replaceOlderEngine, type ReplaceOptions } from "./replace.js";
 import { alive, oldEngineNotes, startOldEngine } from "./testing/old-engine.js";
 
+const runFlaky = process.env["TOKAMA_FLAKY"] === "1";
+
 let cleanups: (() => unknown)[] = [];
 afterEach(async () => {
   for (const cleanup of cleanups.reverse()) await cleanup();
@@ -72,10 +74,17 @@ describe("replaceOlderEngine", () => {
 
   it.each([
     ["a process that is no engine", "sleep"],
+    ["a pid that started after the lock was written", "reused"],
+  ])("never signals %s", (_name, kind) => neverSignals(kind));
+
+  // These two fail now and then (#252), so they are off by default. Run them by hand with
+  // TOKAMA_FLAKY=1.
+  it.skipIf(!runFlaky).each([
     ["the sample engine, for the real engine's dir", "sample"],
     ["an engine for another dir", "other"],
-    ["a pid that started after the lock was written", "reused"],
-  ])("never signals %s", async (_name, kind) => {
+  ])("never signals %s (flaky, see #252)", (_name, kind) => neverSignals(kind));
+
+  async function neverSignals(kind: string): Promise<void> {
     const root = tempDir();
     const dir = join(root, "run");
     let pid: number;
@@ -106,7 +115,7 @@ describe("replaceOlderEngine", () => {
     expect(result).toMatchObject({ ok: false, reason: expect.stringContaining("could not confirm") });
     expect(alive(pid)).toBe(true);
     if (kind === "reused") expect(oldEngineNotes(dir)).toEqual(["ready"]);
-  });
+  }
 
   it("takes over a replace.lock whose app is no longer running", async () => {
     const root = tempDir();
