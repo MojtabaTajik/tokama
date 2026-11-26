@@ -87,7 +87,7 @@ describe("the What's new card", () => {
     const line = card()?.querySelector(".wn-security");
     expect(line?.textContent).toBe(`Security · ${SECURITY_LINE}`);
     expect(line?.querySelector("svg")).not.toBeNull();
-    expect(card()?.firstElementChild?.nextElementSibling).toBe(line);
+    expect(card()?.querySelector(".wn-card-body")?.firstElementChild).toBe(line);
   });
 
   it("Got it closes it for good: the main process is told once, and it is gone", async () => {

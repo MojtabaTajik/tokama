@@ -33,7 +33,7 @@ extraResources:
   - from: ../../whats-new
     to: whats-new
     filter:
-      - "*.md"
+      - "[0-9]*.[0-9]*.[0-9]*.md"
   # Electron's and Chromium's licence texts sit beside Electron.app, not in it.
   - from: node_modules/electron/dist/LICENSE
     to: LICENSE-electron

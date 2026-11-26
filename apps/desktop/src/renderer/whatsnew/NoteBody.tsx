@@ -21,8 +21,8 @@ export function NoteBody({ note }: { readonly note: Note }) {
       )}
       {note.highlights.length > 0 && (
         <ul className="wn-highlights">
-          {note.highlights.map((highlight) => (
-            <li key={highlight.title} className="wn-highlight">
+          {note.highlights.map((highlight, index) => (
+            <li key={index} className="wn-highlight">
               <span className="wn-highlight-title">{highlight.title}</span>
               <span className="wn-highlight-text">{highlight.text}</span>
               {highlight.where !== undefined && <span className="wn-highlight-where">{highlight.where}</span>}

@@ -129,7 +129,7 @@ describe("releaseNotesFor", () => {
 
   it("refuses a note with problems, naming the file and every problem, and does not fall back to the changelog", () => {
     const bad = NOTE.replace("date: 2026-12-03", "date: 2026-02-30").replace("A soft chirp.", "<b>chirp</b>");
-    expect(() => releaseNotesFor(checkout({ "0.2.0.md": bad }), "0.2.0")).toThrow(/^whats-new\/0\.2\.0\.md: date "2026-02-30" is not a real YYYY-MM-DD day; line 8: "<" and ">" are not allowed in a highlight's sentence$/);
+    expect(() => releaseNotesFor(checkout({ "0.2.0.md": bad }), "0.2.0")).toThrow(/^whats-new\/0\.2\.0\.md: date "2026-02-30" is not a real YYYY-MM-DD day; line 8: markup characters .* are not allowed in a highlight's sentence$/);
   });
 
   it("refuses a note whose version is not its file name", () => {

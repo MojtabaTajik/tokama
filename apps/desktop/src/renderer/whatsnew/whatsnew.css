@@ -12,6 +12,19 @@
   box-shadow: var(--shadow-popup);
 }
 
+/* A long note scrolls inside the card; the title and the buttons stay in view. */
+.wn-card {
+  max-height: 70vh;
+}
+
+.wn-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .wn-card-head {
   display: flex;
   flex-direction: column;

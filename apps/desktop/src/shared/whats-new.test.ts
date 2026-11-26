@@ -150,9 +150,18 @@ describe("parseNote", () => {
     });
 
     it("refuses < and > in a title, a sentence and a Where line", () => {
-      expect(problemsOf(body(highlight("<b>x</b>")))).toEqual(['line 6: "<" and ">" are not allowed in a highlight\'s title']);
-      expect(problemsOf(body(highlight("T", "Press <b>x</b>.")))).toEqual(['line 8: "<" and ">" are not allowed in a highlight\'s sentence']);
-      expect(problemsOf(body(`${highlight()}\n\nWhere: a > b`))).toEqual(['line 10: "<" and ">" are not allowed in a highlight\'s Where line']);
+      const markup = (line: number, what: string) => `line ${line}: markup characters (< > [ ] \` * @, or a leading # > + - or number) are not allowed in ${what}`;
+      expect(problemsOf(body(highlight("<b>x</b>")))).toEqual([markup(6, "a highlight's title")]);
+      expect(problemsOf(body(highlight("T", "Press <b>x</b>.")))).toEqual([markup(8, "a highlight's sentence")]);
+      expect(problemsOf(body(`${highlight()}\n\nWhere: a > b`))).toEqual([markup(10, "a highlight's Where line")]);
+    });
+
+    it.each(["a [link](https://x.test)", "**bold**", "`code`", "ping @someone", "### heading", "- item", "> quote", "+ plus", "1. first"])("refuses Markdown in a sentence: %j", (sentence) => {
+      expect(problemsOf(body(highlight("T", sentence)))).toHaveLength(1);
+    });
+
+    it("keeps ordinary punctuation", () => {
+      expect(parseNote(body(highlight("Faster: 2x, (mostly) fine!", "It's quicker; try it - or not. 3 of 4 work_flows."))).ok).toBe(true);
     });
 
     it("needs a sentence for each highlight", () => {

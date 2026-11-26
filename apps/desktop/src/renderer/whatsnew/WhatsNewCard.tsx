@@ -38,7 +38,9 @@ export function WhatsNewCard({ note, onGotIt, onSeeAll }: WhatsNewCardProps) {
           {TEXT.cardTitle}
         </h3>
       </div>
-      <NoteBody note={note} />
+      <div className="wn-card-body">
+        <NoteBody note={note} />
+      </div>
       <div className="wn-card-actions">
         <Button onClick={onSeeAll}>{TEXT.seeAll}</Button>
         <Button variant="primary" onClick={onGotIt}>

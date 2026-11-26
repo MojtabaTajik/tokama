@@ -24,7 +24,8 @@
 // lines: up to 3 highlights, each a `## ` title (1-60 characters), one sentence (1-200) and
 // optionally a `Where:` line (1-80), then optionally one last `+ N smaller fixes` line. A note
 // says something: a highlight, `security: true` or a fix count. There is no other markup: no
-// links, lists, HTML or inline formatting, and "<" and ">" are not allowed. A file is at most
+// links, lists, HTML or inline formatting: the characters < > [ ] ` * @ are not allowed, and a
+// line does not start with # > + - or a number and a dot. A file is at most
 // 8 KiB of UTF-8, with LF or CRLF line ends and no tabs or other control characters.
 //
 // The release check runs this file on a runner where nothing is installed, with Node's type
@@ -151,7 +152,8 @@ export function parseNote(text: string, fileName?: string): ParseResult {
   const checkText = (line: number, what: string, value: string, max: number): void => {
     const size = length(value);
     if (size < 1 || size > max) problems.push(`line ${line}: ${what} is ${size} characters, ${size < 1 ? "at least 1" : `at most ${max}`}`);
-    if (/[<>]/.test(value)) problems.push(`line ${line}: "<" and ">" are not allowed in ${what}`);
+    // The same text is the GitHub release body, which reads Markdown: nothing that could become markup.
+    if (/[<>[\]`*@]/.test(value) || /^(?:[#>+-]|\d+\.)/.test(value)) problems.push(`line ${line}: markup characters (< > [ ] \` * @, or a leading # > + - or number) are not allowed in ${what}`);
   };
   const startsBlock = (block: Block | undefined): boolean => block !== undefined && /^(## |Where:|\+)/.test(block.lines[0] ?? "");
 
