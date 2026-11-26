@@ -9,9 +9,12 @@
     "dev:sample": "tsc --build ../../tsconfig.json && install-electron && TOKAMA_SAMPLE=1 electron-vite dev",
     "build": "electron-vite build && node -e \"for (const f of ['dist/main/index.js', 'dist/preload/index.cjs', 'dist/renderer/index.html']) require('fs').accessSync(f)\"",
     "e2e": "install-electron && vitest run --config e2e/vitest.config.ts",
-    "icons": "node scripts/make-icons.ts"
+    "icons": "node scripts/make-icons.ts",
+    "package": "install-electron && node scripts/package.ts",
+    "package:dmg": "install-electron && node scripts/package.ts --dmg"
   },
   "devDependencies": {
+    "@electron/fuses": "1.8.0",
     "@fortawesome/free-solid-svg-icons": "7.3.1",
     "@resvg/resvg-js": "2.6.2",
     "@tokama/client": "workspace:*",
@@ -19,6 +22,7 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "electron": "45.4.1",
+    "electron-builder": "26.18.1",
     "electron-vite": "6.0.0",
     "playwright-core": "1.65.1",
     "react": "19.3.1",

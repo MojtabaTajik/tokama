@@ -1,7 +1,7 @@
 // Electron main process: one hardened window, and the connection to the engine service through
 // @tokama/client. The engine runs detached and keeps running when the app quits.
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { connect, requestShutdown } from "@tokama/client";
 import { API_VERSION, buildEnv, defaultEngineDir, engineEndpoint, err, pidAlive, posixEngineProcesses, readEngineLock } from "@tokama/core";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, screen, session, shell } from "electron";
@@ -15,7 +15,8 @@ import { type ConnectionWatch, watchConnection } from "./connection.js";
 import { type DesktopStore, desktopStore } from "./desktop-store.js";
 import { DIAGNOSTICS_URL, diagnosticsService, saveToFile } from "./diagnostics-send.js";
 import { createReporter, mainErrorReport, rateLimit, rendererErrorReport, rendererGoneKind, rendererUsageReport, type Reporter, runMarker } from "./diagnostics.js";
-import { engineCommand, engineCommandEnd, engineDirFor, findExecutable, readLogTail } from "./engine.js";
+import { engineCommand, engineCommandEnd, engineDirFor, engineRuntime, readLogTail } from "./engine.js";
+import { offerMove, runsFromCopy, shouldOfferMove } from "./move-to-applications.js";
 import { replaceOlderEngine } from "./replace.js";
 import { pickRepoFolder } from "./folder.js";
 import { createNotifier } from "./notifier.js";
@@ -72,11 +73,10 @@ function startWatch(onConnected: () => void, onItemEvent: (event: BridgeEvent["e
   // engine's reduced env has no TOKAMA_ENGINE_DIR or XDG_RUNTIME_DIR to find it by itself.
   const dir = engineDirFor(defaultEngineDir(process.env, homedir()), sample);
   const endpoint = engineEndpoint(dir);
-  // Dev layout: apps/desktop is the app path, the engine is built to apps/engine/dist.
-  // A packaged app will ship the engine and a runtime with it (not yet).
+  // In development the engine is the checkout's built apps/engine/dist on the node found on PATH;
+  // a packaged app runs the Node and the engine bundle it ships.
   const start = engineCommand({
-    node: findExecutable("node", process.env["PATH"]),
-    entry: resolve(app.getAppPath(), "..", "engine", "dist", "main.js"),
+    ...engineRuntime({ platform: process.platform, isPackaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath, path: process.env["PATH"] }),
     dir,
     // The SSH agent socket reaches the engine for Open PR's push to an SSH remote; the engine's
     // process runner drops it again for every agent, check and other git call.
@@ -156,7 +156,60 @@ function createWindow(store: DesktopStore, reporter: Reporter): BrowserWindow {
   return window;
 }
 
-void app.whenReady().then(() => {
+/** Brings a window to the front, restoring it when minimized. A background test run never takes focus. */
+function showWindow(window: BrowserWindow): void {
+  if (background) return;
+  if (window.isMinimized()) window.restore();
+  window.show();
+  app.focus({ steal: true });
+  window.focus();
+}
+
+// One app process per user when packaged, so two windows never run two updaters. Development and the UI tests start many.
+const primary = !app.isPackaged || app.requestSingleInstanceLock();
+if (!primary) app.quit();
+// Set once the app is ready: shows the main window, making it again when it was closed.
+let showMain: (() => void) | undefined;
+app.on("second-instance", () => showMain?.());
+
+/** Unfinished items of an engine that runs from the copy of the app in Applications: 0 when there is none, undefined when that could not be told. */
+async function itemsRunningInApplications(): Promise<number | undefined> {
+  const dir = engineDirFor(defaultEngineDir(process.env, homedir()), sample);
+  const endpoint = engineEndpoint(dir);
+  if (!endpoint.ok) return undefined;
+  const lock = readEngineLock(endpoint.value.lockPath);
+  if (lock === undefined) return 0;
+  const described = await posixEngineProcesses.describe(lock.pid).then(
+    (found) => ({ found }),
+    () => undefined,
+  );
+  if (described === undefined) return undefined;
+  if (described.found === undefined || !runsFromCopy(described.found.command)) return 0;
+  // No start: this only asks an engine that already runs.
+  const connected = await connect({ dir });
+  if (!connected.ok) return undefined;
+  try {
+    const reply = await connected.value.query({ type: "board" });
+    return reply.ok ? reply.data.items.filter((item) => item.state === "queued" || item.state === "running" || item.state === "needs_you").length : undefined;
+  } finally {
+    await connected.value.close().catch(() => undefined);
+  }
+}
+
+void app.whenReady().then(async () => {
+  if (!primary) return;
+  // Before anything starts an engine: a packaged app outside Applications asks to move there, and quits either way.
+  if (shouldOfferMove({ platform: process.platform, isPackaged: app.isPackaged, inApplications: () => app.isInApplicationsFolder() })) {
+    await offerMove({
+      ask: async (question) => (await dialog.showMessageBox({ type: "question", ...question, defaultId: 0, cancelId: 1 })).response,
+      askSync: (question) => dialog.showMessageBoxSync({ type: "question", ...question, defaultId: 0, cancelId: 1 }),
+      moveToApplicationsFolder: (options) => app.moveToApplicationsFolder(options),
+      showErrorBox: (title, content) => dialog.showErrorBox(title, content),
+      itemsRunningInApplications,
+    });
+    app.quit();
+    return;
+  }
   if (background) app.dock?.hide();
   if (icons.dock !== undefined) app.dock?.setIcon(icons.dock);
   hardenSession();
@@ -212,12 +265,7 @@ void app.whenReady().then(() => {
   const openItem = (itemId: string) => {
     const existing = BrowserWindow.getAllWindows()[0];
     const window = existing ?? createWindow(store, reporter);
-    if (!background) {
-      if (window.isMinimized()) window.restore();
-      window.show();
-      app.focus({ steal: true });
-      window.focus();
-    }
+    showWindow(window);
     const tell = () => window.webContents.send(CHANNELS.openItem, itemId);
     // A window made just now is told once its page has loaded, whatever its loading state says yet.
     if (existing === undefined || window.webContents.isLoading()) window.webContents.once("did-finish-load", tell);
@@ -286,6 +334,10 @@ void app.whenReady().then(() => {
     void watch.close();
   });
   createWindow(store, reporter);
+  showMain = () => {
+    const window = BrowserWindow.getAllWindows()[0] ?? createWindow(store, reporter);
+    showWindow(window);
+  };
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(store, reporter);
   });

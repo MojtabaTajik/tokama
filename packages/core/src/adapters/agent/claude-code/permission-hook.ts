@@ -26,8 +26,12 @@ export function hookReply(input: string, rules: unknown): string | undefined {
   return deny(`Tokama: this step does not allow "${decision.part}" (${decision.reason}).`);
 }
 
-/** Claude Code settings that run `hookArgv` before every Bash call. */
+/**
+ * Claude Code settings that run `hookArgv` before every Bash call. `onFailure: "block"` makes a
+ * hook that cannot start (its binary or script is missing) block the call; without it Claude Code
+ * lets the call run unchecked.
+ */
 export function hookSettings(hookArgv: readonly string[]): unknown {
   const command = hookArgv.map((arg) => `'${arg.replaceAll("'", `'\\''`)}'`).join(" ");
-  return { hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command }] }] } };
+  return { hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command, onFailure: "block" }] }] } };
 }

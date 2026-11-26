@@ -19,7 +19,7 @@ import { chmodSync, closeSync, mkdirSync, openSync, readFileSync, unlinkSync } f
 import { renameSync, writeSync } from "node:fs";
 import { connect, createServer, type Server, type Socket } from "node:net";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import {
   addRepo,
   type AddRepoResult,
@@ -161,6 +161,8 @@ export interface EngineOptions {
   readonly clock?: Clock;
   /** The build version diagnostics entries and the handshake carry. Default "0.0.0". */
   readonly engineVersion?: string;
+  /** Folders that hold this engine's own code; their built files show as `<app>/…` in diagnostics. Default: none. */
+  readonly codeRoots?: readonly string[];
   /** The user's home folder, cleaned from diagnostics as a path. Default: this process's home. */
   readonly userHome?: string;
   /** Machine facts for diagnostics entries. Default: read from this machine. */
@@ -202,10 +204,6 @@ const MAX_QUEUED_BYTES = 8 * MAX_MESSAGE_BYTES;
 const LIST_REPLY_BUDGET = MAX_MESSAGE_BYTES / 2;
 /** Room kept in a board reply for the message envelope around its items and counts. */
 const REPLY_MARGIN_BYTES = 4096;
-// The folder that holds the engine and the packages it runs: the checkout in development. Stacks
-// keep the built files below it (`<app>/apps/engine/dist/engine.js`).
-const CODE_ROOT = resolve(import.meta.dirname, "..", "..", "..");
-
 export async function startEngine(options: EngineOptions): Promise<Result<EngineHandle, StartError>> {
   const log = options.log ?? (() => {});
   const endpoint = engineEndpoint(options.dir);
@@ -247,7 +245,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       diagnostics = await EngineDiagnostics.open({
         home,
         userHome: options.userHome ?? homedir(),
-        codeRoots: [CODE_ROOT],
+        codeRoots: options.codeRoots ?? [],
         engineVersion: version,
         ...(options.machineFacts !== undefined && { machine: options.machineFacts }),
         clock: options.clock ?? systemClock,
@@ -278,7 +276,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     diagnostics = await openSampleDiagnostics({
       dir: endpoint.value.dir,
       userHome: options.userHome ?? homedir(),
-      codeRoots: [CODE_ROOT],
+      codeRoots: options.codeRoots ?? [],
       engineVersion: version,
       ...(options.machineFacts !== undefined && { machine: options.machineFacts }),
       clock: options.clock ?? systemClock,

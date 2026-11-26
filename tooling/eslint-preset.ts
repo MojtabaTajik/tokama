@@ -249,6 +249,9 @@ export default defineConfig(
   globalIgnores([
     "packages/*/dist/**",
     "apps/*/dist/**",
+    "apps/desktop/release/**",
+    "apps/desktop/package-stage/**",
+    "apps/desktop/package-cache/**",
     "coverage/**",
     ".worktrees/**",
     ".agent/**",

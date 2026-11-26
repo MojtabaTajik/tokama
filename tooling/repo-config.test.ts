@@ -37,6 +37,10 @@ describe("repo config: build output ignores are anchored", () => {
     ["packages/core/dist/index.js", true],
     ["apps/desktop/dist/main.js", true],
     ["coverage/index.html", true],
+    ["apps/desktop/release/mac-arm64/x.js", true],
+    ["apps/desktop/package-stage/engine/dist/main.js", true],
+    ["apps/desktop/package-cache/node/x.js", true],
+    ["apps/desktop/src/main/release/x.ts", false],
     ["packages/core/src/slices/items/dist/step.ts", false],
     ["packages/core/src/slices/items/coverage/step.ts", false],
   ])("ESLint and git ignore %s: %s", async (path, ignored) => {

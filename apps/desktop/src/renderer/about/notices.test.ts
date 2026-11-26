@@ -17,8 +17,18 @@ describe("notices", () => {
     expect(list.find((notice) => notice.id === "electron")?.version).toBe("45.4.1");
     expect(list.find((notice) => notice.id === "chromium")?.version).toBe("in Electron 45");
     expect(list.find((notice) => notice.id === "react")?.version).toBe(reactVersion);
-    // The engine runs on the node found on PATH, not on Electron's own.
-    expect(list.find((notice) => notice.id === "node")?.version).not.toContain("Electron");
+  });
+
+  it("names the yaml and zod versions that core depends on", () => {
+    const core = JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "..", "..", "..", "packages", "core", "package.json"), "utf8")) as { dependencies: Record<string, string> };
+    const list = notices("45.4.1");
+    expect(list.find((notice) => notice.id === "yaml")?.version).toBe(core.dependencies["yaml"]);
+    expect(list.find((notice) => notice.id === "zod")?.version).toBe(core.dependencies["zod"]);
+  });
+
+  it("names the Node.js version the packaged app ships", () => {
+    const pinned: unknown = JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "..", "packaging", "node-runtime.json"), "utf8"));
+    expect(notices("45.4.1").find((notice) => notice.id === "node")?.version).toBe((pinned as { version: string }).version);
   });
 
   it("gives every notice a licence, a copyright line and a text", () => {

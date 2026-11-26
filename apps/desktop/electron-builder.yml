@@ -1,0 +1,52 @@
+# Packs the built app (dist/) and the engine folder staged by scripts/package.ts into Tokama.app.
+# The mac block is release-ready (hardened runtime); scripts/package.ts overrides it for local ad-hoc builds.
+appId: dev.tokama.app
+productName: Tokama
+directories:
+  output: release
+  buildResources: build
+# dist/tsc holds declaration output only, so it stays out.
+files:
+  - dist/main/**
+  - dist/preload/**
+  - dist/renderer/**
+  - package.json
+asar: true
+npmRebuild: false
+nodeGypRebuild: false
+# The Electron that install-electron verified; nothing is downloaded twice.
+electronDist: node_modules/electron/dist
+extraResources:
+  - from: package-stage/engine
+    to: engine
+  # Electron's and Chromium's licence texts sit beside Electron.app, not in it.
+  - from: node_modules/electron/dist/LICENSE
+    to: LICENSE-electron
+  - from: node_modules/electron/dist/LICENSES.chromium.html
+    to: LICENSES.chromium.html
+artifactName: ${productName}-${version}-${arch}.${ext}
+publish: null
+# Written into the asar's package.json, so the packaged app's name is "Tokama" (its data folder and
+# single-instance lock); development keeps @tokama/desktop.
+extraMetadata:
+  productName: Tokama
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  # grantFileProtocolExtraPrivileges stays on: the renderer loads from file://. Cookie encryption stays off: the app sets no cookies.
+mac:
+  target:
+    - target: dmg
+      arch: [arm64]
+    - target: zip
+      arch: [arm64]
+  category: public.app-category.developer-tools
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: false
+dmg:
+  sign: true
