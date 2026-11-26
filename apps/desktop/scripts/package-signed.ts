@@ -98,7 +98,14 @@ export function signNotarizeDmg(release: string, dmg: string, env: SignedEnv): v
     }
     throw new Error(`the notary service did not accept the dmg (${outcome.status ?? "no status"}): ${submitted.stderr.trim()}`);
   }
-  const stapled = tool("xcrun", ["stapler", "staple", dmg]);
+  // The ticket may not be available for a short while after the service says Accepted.
+  let stapled = tool("xcrun", ["stapler", "staple", dmg]);
+  for (const wait of [10, 20, 40]) {
+    if (stapled.status === 0) break;
+    process.stdout.write(`stapler staple failed, trying again in ${wait} s\n`);
+    spawnSync("sleep", [String(wait)]);
+    stapled = tool("xcrun", ["stapler", "staple", dmg]);
+  }
   if (stapled.status !== 0) throw new Error(`stapler staple: ${stapled.stdout}${stapled.stderr}`.trim());
 }
 
