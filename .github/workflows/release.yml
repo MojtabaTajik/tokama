@@ -24,7 +24,8 @@ concurrency:
 
 jobs:
   # Read-only, on Linux, before any secret is in reach: the ref is a version tag that names the
-  # package version, the changelog has its section, the tagged commit is on main and CI passed on it.
+  # package version, the release notes come from whats-new/<version>.md or, when there is no note,
+  # the changelog's section, the tagged commit is on main and CI passed on it.
   check:
     name: check
     runs-on: ubuntu-latest

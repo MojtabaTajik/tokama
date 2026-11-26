@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { changelogSection, feedUrlFor, tagVersion } from "./release-check.js";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { changelogSection, feedUrlFor, releaseNotesFor, tagVersion } from "./release-check.js";
 
 describe("tagVersion", () => {
   it("reads the version of a v<x.y.z> tag", () => {
@@ -87,5 +90,60 @@ describe("feedUrlFor", () => {
 
   it.each(["http://example.test/mac/", "https://example.test/mac", "https://exa mple.test/", "https://example.test/mac/\nx=y/", "file:///etc/", "https://example.test/mac/?a=b"])("refuses the input %j", (input) => {
     expect(() => feedUrlFor("workflow_dispatch", input)).toThrow(/feed URL/);
+  });
+});
+
+describe("releaseNotesFor", () => {
+  const NOTE = "---\nversion: 0.2.0\ndate: 2026-12-03\n---\n\n## Sounds\n\nA soft chirp.\n\n+ 2 smaller fixes\n";
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+  /** A checkout with a changelog and these files in `whats-new/`. */
+  const checkout = (files: Record<string, string>, changelog = "# Changelog\n\n## 0.2.0\n\nFrom the changelog.\n"): string => {
+    const dir = mkdtempSync(join(tmpdir(), "tk-notes-240-"));
+    dirs.push(dir);
+    writeFileSync(join(dir, "CHANGELOG.md"), changelog);
+    mkdirSync(join(dir, "whats-new"));
+    for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, "whats-new", name), text);
+    return dir;
+  };
+
+  it("takes the note, as the release body, when there is one", () => {
+    expect(releaseNotesFor(checkout({ "0.2.0.md": NOTE }), "0.2.0")).toEqual({ notes: "### Sounds\n\nA soft chirp.\n\n+ 2 smaller fixes", source: "whats-new/0.2.0.md" });
+  });
+
+  it("takes the changelog section when there is no note for the version", () => {
+    expect(releaseNotesFor(checkout({ "0.1.0.md": NOTE.replace("0.2.0", "0.1.0") }), "0.2.0")).toEqual({ notes: "From the changelog.", source: "CHANGELOG.md" });
+  });
+
+  it("takes the changelog section when the repo has no whats-new folder", () => {
+    const dir = checkout({});
+    rmSync(join(dir, "whats-new"), { recursive: true });
+    expect(releaseNotesFor(dir, "0.2.0").source).toBe("CHANGELOG.md");
+  });
+
+  it("does not need a changelog section when there is a note", () => {
+    expect(releaseNotesFor(checkout({ "0.2.0.md": NOTE }, "# Changelog\n"), "0.2.0").source).toBe("whats-new/0.2.0.md");
+  });
+
+  it("refuses a note with problems, naming the file and every problem, and does not fall back to the changelog", () => {
+    const bad = NOTE.replace("date: 2026-12-03", "date: 2026-02-30").replace("A soft chirp.", "<b>chirp</b>");
+    expect(() => releaseNotesFor(checkout({ "0.2.0.md": bad }), "0.2.0")).toThrow(/^whats-new\/0\.2\.0\.md: date "2026-02-30" is not a real YYYY-MM-DD day; line 8: "<" and ">" are not allowed in a highlight's sentence$/);
+  });
+
+  it("refuses a note whose version is not its file name", () => {
+    expect(() => releaseNotesFor(checkout({ "0.2.0.md": NOTE.replace("version: 0.2.0", "version: 0.2.1") }), "0.2.0")).toThrow(/does not match the file name 0\.2\.0\.md/);
+  });
+
+  it("refuses a note over 8 KiB without reading it, and a note that is not a plain file", () => {
+    expect(() => releaseNotesFor(checkout({ "0.2.0.md": `${NOTE}${" ".repeat(9000)}` }), "0.2.0")).toThrow(/^whats-new\/0\.2\.0\.md: the file is \d+ bytes, at most 8192$/);
+    const dir = checkout({ "real.md": NOTE });
+    symlinkSync(join(dir, "whats-new", "real.md"), join(dir, "whats-new", "0.2.0.md"));
+    expect(() => releaseNotesFor(dir, "0.2.0")).toThrow(/is not a plain file/);
+  });
+
+  it("still fails with the changelog's own message when there is neither", () => {
+    expect(() => releaseNotesFor(checkout({}, "# Changelog\n"), "0.2.0")).toThrow(/CHANGELOG\.md has no "## 0\.2\.0" section/);
   });
 });
