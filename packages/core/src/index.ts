@@ -79,6 +79,7 @@ export {
   explainStop,
   lastEnded,
   parseVerdict,
+  ROUND_TRIPS,
   summarizeOutput,
   titleFrom,
   VERDICT_RULE,

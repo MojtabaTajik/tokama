@@ -1,9 +1,11 @@
 // The read-only flow diagram of a template: Start, the steps, Finish, in one row, with a line for
-// each loop. A retry loops over its own step (drawn above); a `back:` goes back to an earlier step
-// (drawn below, one level deeper per loop so the lines do not cross). Pure geometry, tested
-// without React; the component only draws it.
+// each loop. A retry, or a back to its own step, loops over that step (drawn above, limited by
+// attempts); a back to an earlier step is drawn below, one level deeper per loop so the lines do
+// not cross, and is limited by round trips. Pure geometry, tested without React; the component
+// only draws it.
 import type { TemplateStepView, TemplateView } from "@tokama/core";
 import { type AgentDot, agentDot } from "../ui/agent.js";
+import { attempts, ROUND_TRIPS } from "./limits.js";
 
 export const SLOT = 128;
 export const NODE_HEIGHT = 48;
@@ -59,8 +61,6 @@ interface LoopSpec {
   readonly words: string;
 }
 
-const upTo = (count: number) => `up to ${count}`;
-
 function loopsOf(steps: readonly TemplateStepView[]): LoopSpec[] {
   const index = (id: string) => steps.findIndex((step) => step.id === id) + 1;
   const loops: LoopSpec[] = [];
@@ -68,17 +68,26 @@ function loopsOf(steps: readonly TemplateStepView[]): LoopSpec[] {
     const at = i + 1;
     const failing = step.doneWhen === "checks pass" ? "checks fail" : "fails";
     const whenFailing = step.doneWhen === "checks pass" ? "when its checks fail" : "when it fails";
+    const failedRetry = (): LoopSpec => ({ kind: "self", from: at, to: at, label: `${failing} · retry, up to ${step.maxAttempts}`, words: `${step.name} tries again ${whenFailing}, up to ${attempts(step.maxAttempts)}` });
     if (step.ifFailed.action === "retry") {
-      loops.push({ kind: "self", from: at, to: at, label: `${failing} · retry, ${upTo(step.maxAttempts)}`, words: `${step.name} tries again ${whenFailing}, ${upTo(step.maxAttempts)} attempts` });
+      loops.push(failedRetry());
     } else if (step.ifFailed.action === "back") {
       const to = index(step.ifFailed.stepId);
       const target = steps[to - 1]?.name ?? step.ifFailed.stepId;
-      loops.push({ kind: to === at ? "self" : "back", from: at, to, label: `${failing} · back to ${target}`, words: `${step.name} goes back to ${target} ${whenFailing}, ${upTo(step.maxAttempts)} attempts` });
+      loops.push(
+        to === at
+          ? failedRetry()
+          : { kind: "back", from: at, to, label: `${failing} · back to ${target}`, words: `${step.name} sends the work back to ${target} ${whenFailing} and runs again after it, up to ${ROUND_TRIPS} round trips, then asks you` },
+      );
     }
     if (step.ifChangesRequested?.action === "back") {
       const to = index(step.ifChangesRequested.stepId);
       const target = steps[to - 1]?.name ?? step.ifChangesRequested.stepId;
-      loops.push({ kind: to === at ? "self" : "back", from: at, to, label: `changes · back to ${target}`, words: `${step.name} goes back to ${target} when it asks for changes, ${upTo(step.maxAttempts)} times` });
+      loops.push(
+        to === at
+          ? { kind: "self", from: at, to, label: `changes · retry, up to ${step.maxAttempts}`, words: `${step.name} tries again when it asks for changes, up to ${attempts(step.maxAttempts)}` }
+          : { kind: "back", from: at, to, label: `changes · back to ${target}`, words: `${step.name} sends the work back to ${target} when it asks for changes and checks again after each fix, up to ${ROUND_TRIPS} round trips, then asks you` },
+      );
     }
   });
   return loops;

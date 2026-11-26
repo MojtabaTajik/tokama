@@ -1,8 +1,9 @@
-import { parseQueryResult, type TemplateStepView, type TemplateView } from "@tokama/core";
+import { parseQueryResult, ROUND_TRIPS as ENGINE_ROUND_TRIPS, type TemplateStepView, type TemplateView } from "@tokama/core";
 import { describe, expect, it } from "vitest";
 import { setup } from "../testing/sample.js";
 import { builtinEntry, flakyDetail, flakyEntry, planAndBuild, planDetail } from "../testing/templates.js";
 import { agentPhrase, andList, budgetText, placeOf, startSentence, statusOf, stepSentence, titleOf, usesOf } from "./describe.js";
+import { ROUND_TRIPS } from "./limits.js";
 
 const agents = setup.agents;
 const [plan, build, review] = planAndBuild.steps as [TemplateStepView, TemplateStepView, TemplateStepView];
@@ -20,7 +21,7 @@ describe("stepSentence", () => {
     expect(planAndBuild.steps.map((step) => stepSentence(step, planAndBuild, agents))).toEqual([
       "Architect (Claude Code, cloud) works in the item’s worktree; sends the repo and diff to the cloud; done when you approve; if it fails, ask you.",
       "Local builder (Claude Code, this machine) works in the item’s worktree; done when the repo’s checks pass; if checks fail, try again, up to 3 attempts.",
-      "Reviewer (Codex CLI, cloud) reviews the work; sends the repo and diff to the cloud; done when it approves; if it fails, ask you; if it asks for changes, go back to Build, up to 2 times.",
+      "Reviewer (Codex CLI, cloud) reviews the work; sends the repo and diff to the cloud; done when it approves; if it fails, ask you; if it asks for changes, send the work back to Build and check again after each fix, up to 3 round trips, then ask you.",
     ]);
   });
 
@@ -28,12 +29,23 @@ describe("stepSentence", () => {
     [{ doneWhen: "agent finishes", ifFailed: { action: "stop" } }, "done when the agent finishes; if it fails, stop."],
     [{ doneWhen: "checks pass", checks: { commands: ["pnpm test"] } }, "done when pnpm test passes;"],
     [{ doneWhen: "checks pass", checks: { commands: ["pnpm test", "pnpm lint"] } }, "done when pnpm test and pnpm lint pass;"],
-    [{ ifFailed: { action: "back", stepId: "plan" }, maxAttempts: 2 }, "if checks fail, go back to Plan, up to 2 attempts."],
+    [{ ifFailed: { action: "back", stepId: "plan" }, maxAttempts: 2 }, "if checks fail, send the work back to Plan and run again after it, up to 3 round trips, then ask you."],
+    [{ ifFailed: { action: "back", stepId: "build" }, maxAttempts: 2 }, "if checks fail, try again, up to 2 attempts."],
     [{ ifFailed: { action: "retry" }, maxAttempts: 1 }, "try again, up to 1 attempt."],
     [{ doneWhen: "reviewer approves", ifChangesRequested: { action: "ask" } }, "if it asks for changes, ask you."],
-    [{ doneWhen: "reviewer approves", ifChangesRequested: { action: "back", stepId: "build" }, maxAttempts: 1 }, "go back to Build, once."],
+    [{ doneWhen: "reviewer approves", ifChangesRequested: { action: "back", stepId: "build" }, maxAttempts: 1 }, "if it asks for changes, try again, up to 1 attempt."],
+    [{ doneWhen: "reviewer approves", ifChangesRequested: { action: "back", stepId: "plan" } }, "if it asks for changes, send the work back to Plan and check again after each fix, up to 3 round trips, then ask you."],
   ] as const)("says %j as …%s", (fields, ending) => {
     expect(sentenceOf(fields as Partial<TemplateStepView>)).toContain(ending);
+  });
+
+  it("does not tie the round trips to max_attempts", () => {
+    const back = { ifFailed: { action: "back", stepId: plan.id } } as const;
+    expect(sentenceOf({ ...back, maxAttempts: 1 })).toBe(sentenceOf({ ...back, maxAttempts: 5 }));
+  });
+
+  it("keeps the round-trip cap equal to the engine's", () => {
+    expect(ROUND_TRIPS).toBe(ENGINE_ROUND_TRIPS);
   });
 
   it("names what a cloud step sends, and nothing for a local one", () => {

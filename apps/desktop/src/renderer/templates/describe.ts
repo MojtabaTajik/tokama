@@ -5,6 +5,7 @@ import type { AgentSummary, ConnectionSummary, Finish, StartNeed, TemplateEntry,
 import { formatDuration } from "../format/duration.js";
 import { cliName } from "../model.js";
 import { type Mark, markOf } from "../ui/status.js";
+import { attempts, ROUND_TRIPS } from "./limits.js";
 
 const NEEDS: Record<StartNeed, string> = { text: "a task description", repo: "one repo", repos: "one or more repos" };
 
@@ -76,16 +77,16 @@ function donePhrase(step: TemplateStepView): string {
   }
 }
 
-const attempts = (count: number): string => (count === 1 ? "1 attempt" : `${count} attempts`);
-const times = (count: number): string => (count === 1 ? "once" : `up to ${count} times`);
-
 function failedPhrase(step: TemplateStepView, template: Pick<TemplateView, "steps">): string {
   const when = step.doneWhen === "checks pass" ? "if checks fail" : "if it fails";
   switch (step.ifFailed.action) {
     case "retry":
       return `${when}, try again, up to ${attempts(step.maxAttempts)}`;
     case "back":
-      return `${when}, go back to ${stepName(template, step.ifFailed.stepId)}, up to ${attempts(step.maxAttempts)}`;
+      // Back to its own step is a retry; back to an earlier step is capped by round trips.
+      return step.ifFailed.stepId === step.id
+        ? `${when}, try again, up to ${attempts(step.maxAttempts)}`
+        : `${when}, send the work back to ${stepName(template, step.ifFailed.stepId)} and run again after it, up to ${ROUND_TRIPS} round trips, then ask you`;
     case "ask":
       return `${when}, ask you`;
     case "stop":
@@ -95,9 +96,11 @@ function failedPhrase(step: TemplateStepView, template: Pick<TemplateView, "step
 
 function changesPhrase(step: TemplateStepView, template: Pick<TemplateView, "steps">): string {
   if (step.ifChangesRequested === undefined) return "";
-  return step.ifChangesRequested.action === "back"
-    ? `if it asks for changes, go back to ${stepName(template, step.ifChangesRequested.stepId)}, ${times(step.maxAttempts)}`
-    : "if it asks for changes, ask you";
+  if (step.ifChangesRequested.action !== "back") return "if it asks for changes, ask you";
+  const { stepId } = step.ifChangesRequested;
+  return stepId === step.id
+    ? `if it asks for changes, try again, up to ${attempts(step.maxAttempts)}`
+    : `if it asks for changes, send the work back to ${stepName(template, stepId)} and check again after each fix, up to ${ROUND_TRIPS} round trips, then ask you`;
 }
 
 /** What leaves the machine, said only for a cloud agent: a local one keeps everything here. */

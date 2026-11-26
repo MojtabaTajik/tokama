@@ -70,7 +70,7 @@ describe("TemplatesPage", () => {
     expect($$(".tp-steps li").map((li) => li.textContent)).toEqual([
       "1Plan: Architect (Claude Code, cloud) works in the item’s worktree; sends the repo and diff to the cloud; done when you approve; if it fails, ask you.",
       "2Build: Local builder (Claude Code, this machine) works in the item’s worktree; done when the repo’s checks pass; if checks fail, try again, up to 3 attempts.",
-      "3Review: Reviewer (Codex CLI, cloud) reviews the work; sends the repo and diff to the cloud; done when it approves; if it fails, ask you; if it asks for changes, go back to Build, up to 2 times.",
+      "3Review: Reviewer (Codex CLI, cloud) reviews the work; sends the repo and diff to the cloud; done when it approves; if it fails, ask you; if it asks for changes, send the work back to Build and check again after each fix, up to 3 round trips, then ask you.",
     ]);
     expect(section("You get at the end")).toBe("You get at the end✓Commit · on the item’s branch✓Pull request · opened from the item’s branch");
     expect($(".tp-head")?.textContent).toContain("budget 1 h 30 m");
