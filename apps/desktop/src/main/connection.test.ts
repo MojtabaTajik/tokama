@@ -292,13 +292,24 @@ describe("watchConnection", () => {
       expect(connect).toHaveBeenCalledTimes(3);
     });
 
-    it("asks rather than replacing again when an older build still answers right after a replace", async () => {
+    it("is used as it is, with no screen, when it refuses the replace (an item is queued that its count leaves out)", async () => {
+      const old = () => sameApi("e-old", "0.1.0", 0);
+      const connect = vi.fn<Connect>().mockResolvedValueOnce(ok(old())).mockResolvedValueOnce(ok(old()));
+      const { watcher, states, stop } = watch(connect, [], async () => ({ kind: "refused", runningItems: 1 }), APP);
+      await settle();
+      await settle();
+      expect(stop).toHaveBeenCalledOnce();
+      expect(watcher.state()).toEqual({ status: "connected", engineId: "e-old" });
+      expect(states.map((s) => s.status)).toEqual(["starting", "connected"]);
+    });
+
+    it("is used as it is, not replaced again, when an older build still answers right after a replace", async () => {
       const connect = vi.fn<Connect>().mockImplementation(async () => ok(sameApi("e-old", "0.1.0", 0)));
       const { watcher, stop } = watch(connect, [], undefined, APP);
       await settle();
       await settle();
       expect(stop).toHaveBeenCalledOnce();
-      expect(watcher.state()).toMatchObject({ status: "failed", reason: OLDER_TEXT, older: { runningItems: 0 } });
+      expect(watcher.state()).toEqual({ status: "connected", engineId: "e-old" });
     });
 
     it.each([

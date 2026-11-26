@@ -8,7 +8,7 @@ import { createQuitHandler } from "./quit.js";
 import { next } from "./state.js";
 
 /** The install's collaborators, as fakes that write their calls into one list. */
-function setup(options: { state?: UpdateState; running?: number | undefined; stop?: StopResult | "throws"; quitThrows?: boolean; engineId?: string | undefined } = {}) {
+function setup(options: { state?: UpdateState; running?: number | undefined; stop?: StopResult | "throws"; quitThrows?: boolean; engineId?: string | undefined; countedApi?: number } = {}) {
   const calls: string[] = [];
   let state: UpdateState = options.state ?? { status: "ready", version: "0.2.0" };
   let installError: (() => void) | undefined;
@@ -23,7 +23,7 @@ function setup(options: { state?: UpdateState; running?: number | undefined; sto
     },
     runningNow: async () => {
       calls.push("running");
-      return "running" in options ? options.running : 0;
+      return { items: "running" in options ? options.running : 0, ...(options.countedApi !== undefined && { apiVersion: options.countedApi }) };
     },
     suspendWatch: async () => {
       calls.push("suspend");
@@ -105,6 +105,12 @@ describe("the install", () => {
       expect(calls).toEqual(["running", "state:installing", "suspend", "stop:engine-1:15", "resume", "state:ready"]);
       expect(state()).toEqual({ status: "ready", version: "0.2.0" });
     }
+  });
+
+  it("takes the engine's API version from the count when the watch had no client, so the stop knows whether ifIdle is understood", async () => {
+    const { deps, calls } = setup({ engineId: undefined, countedApi: 14 });
+    await createInstaller(deps)({ relaunch: true });
+    expect(calls).toContain("stop:-:14");
   });
 
   it("stops without an engine id when the connection had none", async () => {

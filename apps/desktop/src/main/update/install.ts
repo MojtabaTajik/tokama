@@ -17,8 +17,8 @@ import type { UpdateEvent } from "./state.js";
 export interface InstallDeps {
   state(): UpdateState;
   dispatch(event: UpdateEvent): void;
-  /** Items the engine runs now: 0 when there is no engine, undefined when that could not be told. */
-  runningNow(): Promise<number | undefined>;
+  /** Items the engine runs now (0 when there is no engine, undefined when that could not be told) and the API version of the engine that said it. */
+  runningNow(): Promise<{ readonly items: number | undefined; readonly apiVersion?: number }>;
   /** Closes the engine connection for good until `resumeWatch`; gives the id and handshake of the engine it was connected to. */
   suspendWatch(): Promise<{ readonly engineId?: string; readonly engine?: EngineInfo }>;
   resumeWatch(): void;
@@ -66,15 +66,18 @@ export function createInstaller(deps: InstallDeps): (options: InstallOptions) =>
     if (deps.state().status !== "ready") return { ok: false, reason: "not_ready" };
     running = true;
     try {
-      const count = await deps.runningNow();
+      const { items: count, apiVersion } = await deps.runningNow();
       // Fail closed: when the count cannot be told, the update waits.
       if (count === undefined || count > 0) return { ok: false, reason: "busy", ...(count !== undefined && { running: count }) };
       // The state may have changed while the engine was asked.
       if (deps.state().status !== "ready") return { ok: false, reason: "not_ready" };
       deps.dispatch({ type: "install_started" });
-      const { engineId, engine } = await deps.suspendWatch();
+      const suspended = await deps.suspendWatch();
+      // The watch had no client: the engine the count asked tells its API version, so one that does
+      // not know `ifIdle` is stopped only because it was just counted idle.
+      const engine = suspended.engine ?? (apiVersion === undefined ? undefined : { apiVersion, runningItems: count });
       // An item that started since the count is not stopped: the engine refuses while one runs.
-      const stopped = await deps.stopEngine({ engineId, engine }).catch((): StopResult => ({ kind: "still_running" }));
+      const stopped = await deps.stopEngine({ engineId: suspended.engineId, engine }).catch((): StopResult => ({ kind: "still_running" }));
       if (stopped.kind === "refused") {
         deps.resumeWatch();
         deps.dispatch({ type: "install_aborted" });

@@ -143,7 +143,10 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
     if (!result.ok) return refused(result.error, mine, mode, replaced);
     const connected = result.value;
     const { stopEngine } = options;
-    if (stopEngine !== undefined && action(connected.engine) === "replace") {
+    // After a replace attempt the engine is used as it is: the engine refused (an item is queued, or a
+    // command is in flight, which its handshake count leaves out), or it answered again; either way
+    // it speaks this API, so there is nothing to ask.
+    if (stopEngine !== undefined && !replaced && action(connected.engine) === "replace") {
       // Closed first: a client left open would reconnect, and start an engine, while the old one stops.
       await connected.close();
       if (closed || mine !== attempt) return;

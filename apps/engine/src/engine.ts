@@ -161,6 +161,8 @@ export interface EngineOptions {
   readonly planSources?: PlanSources;
   /** Where the machine query reads memory and processes. Default: this OS's source, none on an OS without one. */
   readonly machineSource?: MachineSource;
+  /** Tests only: awaited before each command is handled, so a test can hold a command in flight. */
+  readonly beforeCommand?: (command: Command) => Promise<void>;
   /**
    * Real mode: Claude Code's projects folder (`~/.claude/projects`), whose session logs the `all`
    * usage scope reads. Absent: the logs are never read.
@@ -547,6 +549,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   };
 
   const dispatch = async (message: ClientMessage): Promise<ReplyResult> => {
+    if (message.kind === "command") await options.beforeCommand?.(message.command);
     const result = await answer(message);
     if (result.ok && message.kind === "command") diagnostics?.countCommand(message.command, (id) => store.list().find((item) => item.id === id), result.data);
     return result;
