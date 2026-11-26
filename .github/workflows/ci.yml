@@ -41,6 +41,7 @@ jobs:
     outputs:
       docs_only: ${{ steps.plan.outputs.docs_only }}
       skip_nightly: ${{ steps.plan.outputs.skip_nightly }}
+      removal_test: ${{ steps.plan.outputs.removal_test }}
     steps:
       - id: plan
         env:
@@ -52,6 +53,7 @@ jobs:
         run: |
           docs_only=false
           skip_nightly=false
+          removal_test=true
           if [ "$EVENT" = pull_request ]; then
             # Docs-only means every changed path (and every renamed-from path) is documentation:
             # docs/, issue templates, README files and Markdown files in the repository root.
@@ -59,6 +61,11 @@ jobs:
             files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[] | .filename, (.previous_filename // empty)') || files=
             if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -Evq '^(docs/|\.github/ISSUE_TEMPLATE/)|(^|/)README\.md$|^[^/]+\.md$'; then
               docs_only=true
+            fi
+            # The real-tree removal test only matters when a change can break it: adapters, the
+            # composition file, the apps and the removal test itself. An empty list (failed query) runs it.
+            if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -Eq '^(packages/core/src/adapters/|packages/core/src/composition\.ts$|apps/|tooling/removal-test/)'; then
+              removal_test=false
             fi
           elif [ "$EVENT" = schedule ]; then
             last=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?event=schedule&status=success&per_page=1" --jq '.workflow_runs[0].head_sha // empty') || last=
@@ -68,7 +75,8 @@ jobs:
           fi
           echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
           echo "skip_nightly=$skip_nightly" >> "$GITHUB_OUTPUT"
-          echo "docs_only=$docs_only skip_nightly=$skip_nightly"
+          echo "removal_test=$removal_test" >> "$GITHUB_OUTPUT"
+          echo "docs_only=$docs_only skip_nightly=$skip_nightly removal_test=$removal_test"
 
   # The required check is `ci (ubuntu-latest)`. It must report on every pull request, so on a
   # docs-only change this job still starts and skips its steps; skipping the whole job would
@@ -112,10 +120,11 @@ jobs:
         run: pnpm lint
       - if: needs.plan.outputs.docs_only != 'true'
         run: pnpm test:all
-      # On pull requests test:all runs the removal test's fixture cases; the run on the real tree
-      # waits for the push to main, the nightly run and manual runs.
+      # The run on the real tree: on pull requests only when the plan job saw a change that can
+      # break it; always on push to main, the nightly run and manual runs. test:all already runs
+      # the removal test's fixture cases.
       - name: Adapter removal test (real tree)
-        if: needs.plan.outputs.docs_only != 'true' && github.event_name != 'pull_request'
+        if: needs.plan.outputs.docs_only != 'true' && needs.plan.outputs.removal_test == 'true'
         run: pnpm removal-test
       # Desktop UI flow tests: the built app on a sample engine. install-electron downloads the
       # Electron binary into this cache and checks it against electron's checksums.json, on a
