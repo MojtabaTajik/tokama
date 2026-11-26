@@ -1,8 +1,8 @@
-// The change a step made, as the engine serves it for a decision the engineer answers: the files
-// that differ between the item's base commit and the tree the decision is about, with their line
-// counts and hunks. Repo content: clients show it as text only. The reply stays far below the
-// API's message size: hunk text and file entries each have a byte budget, and what does not fit
-// is marked, never dropped without a word.
+// The change a step made, as the engine serves it for a decision the engineer answers, and what an
+// ended item changed: the files that differ between two trees, with their line counts and hunks.
+// Repo content: clients show it as text only. The reply stays far below the API's message size:
+// hunk text and file entries each have a byte budget, and what does not fit is marked, never
+// dropped without a word.
 import { z } from "zod";
 import { RepoIdSchema } from "./ids.js";
 import { RepoDirSchema } from "./item-log.js";
@@ -49,23 +49,46 @@ export const DiffFileSchema = z.strictObject({
   cut: z.boolean(),
 });
 
-export const ItemDiffSchema = z.strictObject({
+const GitIdSchema = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/, "must be a git object id");
+
+/** The files that differ between two trees, without where they were read. */
+export const TreeDiffSchema = z.strictObject({
   files: z.array(DiffFileSchema).max(DIFF_LIMITS.files),
   /** Files that differ but are not listed. */
   moreFiles: z.int().nonnegative(),
   /** Anything was left out: hunks of a listed file, or files. */
   cut: z.boolean(),
+});
+
+export const ItemDiffSchema = TreeDiffSchema.extend({
   /** Where to see all of it: the item's worktree, as a folder relative to its repo. */
   worktree: z.strictObject({
     repoId: RepoIdSchema,
     dir: RepoDirSchema,
     branch: z.string().min(1).max(200),
     /** The commit the item started from. */
-    baseCommit: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/, "must be a git object id"),
+    baseCommit: GitIdSchema,
   }),
 });
+
+/**
+ * What an ended item changed, for its Diff tab. `worktree`: the item's worktree as it is now,
+ * uncommitted changes included, against the commit the item started from (a done item not merged
+ * yet, one with a pull request open, or a stopped or failed one). `merged`: the commit the merge
+ * left on the base branch against its first parent, the base branch before it. `gone`: that
+ * commit is no longer in the repo. `none`: nothing to compare, e.g. no worktree was made or it
+ * was removed.
+ */
+export const ItemChangeSchema = z.discriminatedUnion("kind", [
+  ItemDiffSchema.extend({ kind: z.literal("worktree") }),
+  TreeDiffSchema.extend({ kind: z.literal("merged"), repoId: RepoIdSchema, baseBranch: z.string().min(1).max(200), commit: GitIdSchema, parent: GitIdSchema }),
+  z.strictObject({ kind: z.literal("gone"), repoId: RepoIdSchema, commit: GitIdSchema }),
+  z.strictObject({ kind: z.literal("none") }),
+]);
 
 export type DiffStatus = z.output<typeof DiffStatusSchema>;
 export type DiffHunk = z.output<typeof DiffHunkSchema>;
 export type DiffFile = z.output<typeof DiffFileSchema>;
+export type TreeDiff = z.output<typeof TreeDiffSchema>;
 export type ItemDiff = z.output<typeof ItemDiffSchema>;
+export type ItemChange = z.output<typeof ItemChangeSchema>;

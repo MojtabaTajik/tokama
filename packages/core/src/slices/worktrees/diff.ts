@@ -6,11 +6,10 @@
 // cut. Every call goes through the hardened git wrapper.
 import type { DiffEntry, Git } from "../../kernel/git/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
-import { DIFF_LIMITS, type DiffFile, type DiffHunk, type DiffStatus, type ItemDiff } from "../../kernel/schemas/index.js";
+import { DIFF_LIMITS, type DiffFile, type DiffHunk, type DiffStatus, type TreeDiff } from "../../kernel/schemas/index.js";
 import { cutText } from "../../kernel/text/index.js";
 
-/** An item diff without the worktree it was read from. */
-export type TreeDiff = Omit<ItemDiff, "worktree">;
+export type { TreeDiff };
 
 const STATUS: Readonly<Record<string, DiffStatus>> = { A: "added", M: "modified", D: "deleted", R: "renamed", T: "type_changed" };
 

@@ -1273,3 +1273,150 @@ describe("run loop: review fixes", () => {
     });
   }
 });
+
+describe("run loop: item diff", () => {
+  const shown = (files: readonly { path: string; status: string; added: number | null; removed: number | null }[]) => files.map((f) => [f.path, f.status, f.added, f.removed]);
+
+  it("a done item not merged: its commit against the base commit; files left in the worktree after Done are not in it", SLOW, async () => {
+    const loop = engine(fakeRuntime([edits(FIXED)]));
+    const id = await start(loop, template([{ id: "build" }]));
+    expect(item(id)).toMatchObject({ state: "done", outcome: { kind: "done" } });
+    expect(await loop.itemDiff(id)).toMatchObject({ ok: true, value: { kind: "worktree", files: [{ path: "app.txt", status: "modified", hunks: [{ lines: ["-broken", "+fixed"] }] }] } });
+
+    writeFileSync(join(worktreeDir(id), "later.txt"), "left after Done\n");
+    const diff = await loop.itemDiff(id);
+    if (!diff.ok || diff.value.kind !== "worktree") throw new Error(JSON.stringify(diff));
+    expect(shown(diff.value.files)).toEqual([["app.txt", "modified", 1, 1]]);
+    const { dir, branch, baseCommit } = item(id).worktrees[0]!;
+    expect(diff.value.worktree).toEqual({ repoId: "orders-api", dir, branch, baseCommit });
+    expect(await plain(worktreeDir(id), "status", "--porcelain")).toBe("?? later.txt");
+    // A query records nothing.
+    const events = log(id).length;
+    await loop.itemDiff(id);
+    expect(log(id)).toHaveLength(events);
+  });
+
+  it("a done item whose worktree folder is gone still shows its commit; a repo that does not read is an error, not a gone commit", SLOW, async () => {
+    const loop = engine(fakeRuntime([edits(FIXED)]));
+    const id = await start(loop, template([{ id: "build" }]));
+    rmSync(worktreeDir(id), { recursive: true, force: true });
+    const diff = await loop.itemDiff(id);
+    if (!diff.ok || diff.value.kind !== "worktree") throw new Error(JSON.stringify(diff));
+    expect(shown(diff.value.files)).toEqual([["app.txt", "modified", 1, 1]]);
+
+    rmSync(join(repo.path, ".git"), { recursive: true, force: true });
+    const broken = await loop.itemDiff(id);
+    expect(broken).toMatchObject({ ok: false, error: { code: "invalid_state", message: expect.stringContaining("Cannot read repo orders-api") } });
+    expect(JSON.stringify(broken)).not.toContain(root);
+  });
+
+  it("a merged item: the merged commit against the base branch before it; a merge commit against its first parent", SLOW, async () => {
+    const loop = engine(fakeRuntime([edits(FIXED), edits({ "notes.txt": "new\n" })]));
+    const fastForward = await start(loop, template([{ id: "build" }]));
+    expect((await loop.finishItem(fastForward, "merge")).ok).toBe(true);
+    await loop.settled(fastForward);
+    const merged = item(fastForward).finish?.merged;
+    expect(merged).toMatchObject({ baseBranch: "main" });
+    const diff = await loop.itemDiff(fastForward);
+    if (!diff.ok || diff.value.kind !== "merged") throw new Error(JSON.stringify(diff));
+    expect(diff.value).toMatchObject({ repoId: "orders-api", baseBranch: "main", commit: merged!.commit, parent: item(fastForward).worktrees[0]!.baseCommit });
+    expect(shown(diff.value.files)).toEqual([["app.txt", "modified", 1, 1]]);
+
+    // main moves on before the second item merges: Merge makes a merge commit.
+    const second = await start(loop, template([{ id: "build" }]));
+    writeFileSync(join(repo.path, "other.txt"), "on main\n");
+    await plain(repo.path, "add", "other.txt");
+    await plain(repo.path, "commit", "-q", "-m", "other work");
+    const before = await plain(repo.path, "rev-parse", "main");
+    expect((await loop.finishItem(second, "merge")).ok).toBe(true);
+    await loop.settled(second);
+    const viaMerge = await loop.itemDiff(second);
+    if (!viaMerge.ok || viaMerge.value.kind !== "merged") throw new Error(JSON.stringify(viaMerge));
+    expect(viaMerge.value.parent).toBe(before);
+    expect(shown(viaMerge.value.files)).toEqual([["notes.txt", "added", 1, 0]]);
+  });
+
+  it("an item merged by hand before Merge was clicked shows its own commit, not the tip of the base branch", SLOW, async () => {
+    const loop = engine(fakeRuntime([edits(FIXED)]));
+    const id = await start(loop, template([{ id: "build" }]));
+    const { branch, baseCommit } = item(id).worktrees[0]!;
+    const own = await plain(repo.path, "rev-parse", branch!);
+    await plain(repo.path, "merge", "-q", "--ff-only", branch!);
+    writeFileSync(join(repo.path, "later.txt"), "unrelated\n");
+    await plain(repo.path, "add", "later.txt");
+    await plain(repo.path, "commit", "-q", "-m", "unrelated work");
+    expect((await loop.finishItem(id, "merge")).ok).toBe(true);
+    await loop.settled(id);
+    expect(item(id).finish?.merged?.commit).not.toBe(own);
+    const diff = await loop.itemDiff(id);
+    if (!diff.ok || diff.value.kind !== "merged") throw new Error(JSON.stringify(diff));
+    expect(diff.value).toMatchObject({ commit: own, parent: baseCommit });
+    expect(shown(diff.value.files)).toEqual([["app.txt", "modified", 1, 1]]);
+  });
+
+  it("a merged commit that is no longer in the repo is gone, not an error; a repo that does not read is an error", SLOW, async () => {
+    const loop = engine(fakeRuntime([edits(FIXED)]));
+    const id = await start(loop, template([{ id: "build" }]));
+    expect((await loop.finishItem(id, "merge")).ok).toBe(true);
+    await loop.settled(id);
+    const commit = item(id).finish!.merged!.commit;
+    await plain(repo.path, "reset", "-q", "--hard", item(id).worktrees[0]!.baseCommit!);
+    await plain(repo.path, "reflog", "expire", "--expire=now", "--all");
+    await plain(repo.path, "gc", "-q", "--prune=now");
+    expect(await loop.itemDiff(id)).toEqual({ ok: true, value: { kind: "gone", repoId: "orders-api", commit } });
+
+    rmSync(join(repo.path, ".git"), { recursive: true, force: true });
+    const broken = await loop.itemDiff(id);
+    expect(broken).toMatchObject({ ok: false, error: { code: "invalid_state", message: expect.stringContaining("Cannot read repo orders-api") } });
+    expect(JSON.stringify(broken)).not.toContain(root);
+  });
+
+  it("a discarded item, an item that never ran and one that has not ended", SLOW, async () => {
+    const loop = engine(fakeRuntime([edits(FIXED)]));
+    const id = await start(loop, template([{ id: "build" }]));
+    expect((await loop.finishItem(id, "discard")).ok).toBe(true);
+    await loop.settled(id);
+    expect(await loop.itemDiff(id)).toEqual({ ok: true, value: { kind: "none" } });
+    expect(await loop.itemDiff("item_00000000-0000-4000-8000-000000000000" as ItemId)).toMatchObject({ ok: false, error: { code: "not_found" } });
+
+    let running!: () => void;
+    const underWay = new Promise<void>((resolve) => (running = resolve));
+    const hanging = engine(fakeRuntime([hangs(() => running())]));
+    const started = await hanging.startItem({ template: template([BUILD_CHECKED]), repoId: repo.id, text: "Fix it" });
+    if (!started.ok) throw new Error(started.error.message);
+    await underWay;
+    expect(await hanging.itemDiff(started.value)).toMatchObject({ ok: false, error: { code: "invalid_state" } });
+    await hanging.stopItem(started.value);
+    await hanging.settled(started.value);
+  });
+
+  it("a stopped item with its worktree left: what is in the worktree now; refused once the files that steer git there changed", SLOW, async () => {
+    let running!: () => void;
+    const underWay = new Promise<void>((resolve) => (running = resolve));
+    const loop = engine(fakeRuntime([hangs(() => running())]));
+    const started = await loop.startItem({ template: template([BUILD_CHECKED]), repoId: repo.id, text: "Fix it" });
+    if (!started.ok) throw new Error(started.error.message);
+    const id = started.value;
+    await underWay;
+    await loop.stopItem(id);
+    await loop.settled(id);
+    expect(item(id).state).toBe("stopped");
+    expect(await loop.itemDiff(id)).toMatchObject({ ok: true, value: { kind: "worktree", files: [] } });
+
+    writeFileSync(join(worktreeDir(id), "app.txt"), "half fixed\n");
+    writeFileSync(join(worktreeDir(id), "draft.txt"), "draft\n");
+    const diff = await loop.itemDiff(id);
+    if (!diff.ok || diff.value.kind !== "worktree") throw new Error(JSON.stringify(diff));
+    expect(shown(diff.value.files)).toEqual([
+      ["app.txt", "modified", 1, 1],
+      ["draft.txt", "added", 1, 0],
+    ]);
+    expect(await plain(worktreeDir(id), "diff", "--cached", "--name-only")).toBe("");
+
+    writeFileSync(join(worktreeDir(id), ".gitattributes"), "*.txt filter=x\n");
+    expect(await loop.itemDiff(id)).toMatchObject({ ok: false, error: { code: "invalid_state", message: expect.stringContaining("so Tokama does not read it") } });
+
+    rmSync(worktreeDir(id), { recursive: true, force: true });
+    expect(await loop.itemDiff(id)).toEqual({ ok: true, value: { kind: "none" } });
+  });
+});

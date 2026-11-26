@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import type { Decision, ItemActivity, ItemRecord, Setup } from "@tokama/core";
+import type { Decision, ItemActivity, ItemChange, ItemRecord, Setup } from "@tokama/core";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,7 +9,7 @@ import { BACKEND_IDS, backendOf } from "../brand/backends/index.js";
 import { board, itemList, type ListQuery } from "../testing/bridge.js";
 import { approved, committed, DECISION_ID, finishable, needsYou, setup, stoppedReview, task } from "../testing/drawer.js";
 import { cardOffersStop } from "./DecisionChoices.js";
-import { ItemDrawer } from "./ItemDrawer.js";
+import { ItemDrawer, tabsOf } from "./ItemDrawer.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -30,6 +30,7 @@ function fakeBridge(start: ItemRecord[], activities = new Map<string, ItemActivi
     if (q.type === "item_list") return { ok: true, data: itemList([...store.values()], q as unknown as ListQuery) };
     const item = q.itemId === undefined ? undefined : store.get(q.itemId);
     if (q.type === "item" && item) return { ok: true, data: { item } };
+    if (q.type === "item_diff") return { ok: true, data: { kind: "none" } };
     if (q.type === "activity" && item) return { ok: true, data: { activity: activities.get(item.id) ?? null } };
     return { ok: false, error: { code: "not_found", message: `no item ${String(q.itemId)}` } };
   });
@@ -741,7 +742,11 @@ describe("ItemDrawer stop", () => {
     await click(button("Stop"));
     await click(button("Stop item"));
     expect(text('[role="status"]')).toBe("!The item had already ended. The drawer shows the item as it is now.");
-    expect(query).toHaveBeenLastCalledWith({ type: "item", itemId: task.id });
+    // The item again, then, as it has ended, what it changed.
+    expect(query.mock.calls.slice(-2).map(([q]) => q)).toEqual([
+      { type: "item", itemId: task.id },
+      { type: "item_diff", itemId: task.id },
+    ]);
     expect(text(".drawer-state")).toBe("✓done");
   });
 });
@@ -1183,7 +1188,7 @@ describe("ItemDrawer full view", () => {
   const tab = (name: string) => $$('[role="tab"]').find((el) => el.textContent === name);
   const cells = (row: Element) => [...row.querySelectorAll('[role="cell"]')].map((cell) => cell.textContent).join("|");
 
-  it("has the drawer's tabs: Steps, Output, Checks and Log, and Diff while a decision carries a diff", async () => {
+  it("has the drawer's tabs: Steps, Output, Checks and Log, and Diff while a decision carries a diff or an ended item changed a repo", async () => {
     const { bridge } = bridgeFor([task, change]);
     await show(bridge, task.id, full());
     expect($$('[role="tab"]').map((el) => el.textContent)).toEqual(["Steps", "Output", "Checks", "Log"]);
@@ -1395,6 +1400,83 @@ describe("ItemDrawer full view", () => {
     await click(button("Stop"));
     await click(button("Stop item"));
     expect(command).toHaveBeenCalledWith({ type: "stop_item", itemId: plan.id });
+  });
+});
+
+describe("tabsOf", () => {
+  const BASE = "85a75e3c0ffee0000000000000000000000000ab";
+  const tree = { files: [{ path: "a.ts", status: "modified" as const, added: 1, removed: 0, binary: false, cut: false, hunks: [] }], moreFiles: 0, cut: false };
+  const change: ItemChange = { kind: "worktree", ...tree, worktree: { repoId: "orders-api" as never, dir: ".tokama/wt/a", branch: "tokama/a", baseCommit: BASE } };
+  const loaded = (value: ItemChange) => ({ kind: "loaded", change: value }) as const;
+  const withDiff = ["Steps", "Output", "Diff", "Checks", "Log"];
+  const without = ["Steps", "Output", "Checks", "Log"];
+
+  it.each([
+    ["a done item that changed nothing", committed, loaded({ kind: "none" }), without],
+    ["a done item not merged, with files", finishable, loaded(change), withDiff],
+    ["a merged item", committed, loaded({ kind: "merged", ...tree, repoId: "orders-api" as never, baseBranch: "main", commit: "a".repeat(40), parent: BASE }), withDiff],
+    ["a merged item whose commit is gone", committed, loaded({ kind: "gone", repoId: "orders-api" as never, commit: "a".repeat(40) }), withDiff],
+    ["a discarded item with a commit", committed, { kind: "discarded" } as const, withDiff],
+    ["a discarded item without a commit", task, undefined, without],
+    ["an ended item while its change loads", finishable, { kind: "loading" } as const, without],
+  ])("%s", (_label, item, state, tabs) => {
+    expect(tabsOf(item, undefined, state)).toEqual(tabs);
+  });
+
+  it("hides Checks and Diff on an investigation, and keeps Diff for an open decision with a diff", () => {
+    expect(tabsOf(needsYou, undefined, undefined)).toEqual(["Steps", "Output", "Log"]);
+    expect(tabsOf(task, { kind: "loaded", diff: tree }, undefined)).toEqual(withDiff);
+  });
+});
+
+describe("the Diff tab of an item not merged", () => {
+  it("shows what the branch changed against its base, with no Merge button in the diff", async () => {
+    const change = {
+      kind: "worktree",
+      files: [{ path: "src/a.ts", status: "modified", added: 3, removed: 1, binary: false, cut: false, hunks: [{ header: "@@ -1 +1 @@", lines: ["-old", "+new"] }] }],
+      moreFiles: 0,
+      cut: false,
+      worktree: { repoId: "orders-api", dir: ".tokama/wt/a", branch: "tokama/0b9f3c1e", baseCommit: "85a75e3c0ffee0000000000000000000000000ab" },
+    };
+    const fake = fakeBridge([finishable]);
+    const base = fake.query.getMockImplementation()!;
+    fake.query.mockImplementation(async (q: { type: string; itemId?: string }) => (q.type === "item_diff" ? { ok: true, data: change } : base(q)));
+    await act(async () => root.render(<ItemDrawer bridge={fake.bridge} itemId={finishable.id} setup={setup} onClose={vi.fn()} />));
+    const diffTab = $$('[role="tab"]').find((el) => el.textContent === "Diff");
+    expect(diffTab).toBeDefined();
+    await click(diffTab);
+    expect($$(".dv-head-line, .dv-head-sub").map((el) => el.textContent)).toEqual([
+      "○Not merged yet·branch tokama/0b9f3c1e·1 file, +3 −1",
+      "Compared with main at 85a75e3, where the item started.",
+    ]);
+    expect($$(".dv button").filter((el) => /merge/i.test(el.textContent ?? ""))).toEqual([]);
+  });
+
+  it("keeps the Diff tab and its last answer while the change is asked for again after a merge", async () => {
+    const worktree = { repoId: "orders-api", dir: ".tokama/wt/a", branch: "tokama/0b9f3c1e", baseCommit: "85a75e3c0ffee0000000000000000000000000ab" };
+    const tree = { files: [{ path: "src/a.ts", status: "modified", added: 3, removed: 1, binary: false, cut: false, hunks: [] }], moreFiles: 0, cut: false };
+    const sha = "abc1234def5678900000000000000000000000ff";
+    const second = deferred();
+    let asked = 0;
+    const fake = fakeBridge([finishable]);
+    const base = fake.query.getMockImplementation()!;
+    fake.query.mockImplementation(async (q: { type: string; itemId?: string }) => {
+      if (q.type !== "item_diff") return base(q);
+      return ++asked === 1 ? { ok: true, data: { kind: "worktree", ...tree, worktree } } : second.promise;
+    });
+    await act(async () => root.render(<ItemDrawer bridge={fake.bridge} itemId={finishable.id} setup={setup} onClose={vi.fn()} />));
+    const diffTab = $$('[role="tab"]').find((el) => el.textContent === "Diff") as HTMLElement;
+    await click(diffTab);
+    await act(async () => diffTab.focus());
+    const merged ={ ...finishable, finish: { worktreeRemoved: true, merged: { baseBranch: "main", commit: sha } } } as ItemRecord;
+    await fake.push(merged);
+    expect(asked).toBe(2);
+    expect($$('[role="tab"]').map((el) => el.textContent)).toContain("Diff");
+    expect(text('[role="tab"][aria-selected="true"]')).toBe("Diff");
+    expect(document.activeElement).toBe(diffTab);
+    expect($(".dv-head-line")?.textContent).toContain("Not merged yet");
+    await act(async () => second.resolve({ ok: true, data: { kind: "merged", ...tree, repoId: "orders-api", baseBranch: "main", commit: sha, parent: worktree.baseCommit } }));
+    expect($(".dv-head-line")?.textContent).toContain("Merged as abc1234");
   });
 });
 

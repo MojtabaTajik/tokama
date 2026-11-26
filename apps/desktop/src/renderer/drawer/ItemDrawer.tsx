@@ -23,6 +23,9 @@ import { attemptLine, decisionKind, hasEnded, nextRunLine, runLine, itemMark, KI
 import { cardOffersStop, DecisionChoices, inTextField } from "./DecisionChoices.js";
 import { DiffTab, type DiffState } from "../ui/DiffView.js";
 import { useDecisionDiff } from "./useDecisionDiff.js";
+import { ItemDiffTab } from "./ItemDiffTab.js";
+import { showsChange, type ItemDiffState } from "./item-diff-view.js";
+import { useItemDiff } from "./useItemDiff.js";
 import { Finish } from "./Finish.js";
 import { LogTab } from "./LogTab.js";
 import { OutputTab, shownAttempt } from "./OutputTab.js";
@@ -84,13 +87,14 @@ export type Tab = "Steps" | "Output" | "Diff" | "Checks" | "Log";
 const carriesDiff = (diff: DiffState | undefined): boolean => diff !== undefined && (diff.kind !== "loaded" || diff.diff.files.length + diff.diff.moreFiles > 0);
 
 /**
- * The tabs, the same in the drawer and the full view: Diff only while a decision carries a diff
- * with changed files, Checks only on an item that changes a repo.
+ * The tabs, the same in the drawer and the full view: Diff while a decision carries a diff with
+ * changed files, and on an ended item that changed its repo (`change`); Checks only on an item
+ * that changes a repo.
  */
-export const tabsOf = (item: Pick<ItemRecord, "kind" | "repoIds">, diff: DiffState | undefined): readonly Tab[] => [
+export const tabsOf = (item: Pick<ItemRecord, "kind" | "repoIds" | "outcome" | "finish">, diff: DiffState | undefined, change?: ItemDiffState): readonly Tab[] => [
   "Steps",
   "Output",
-  ...(carriesDiff(diff) ? (["Diff"] as const) : []),
+  ...(carriesDiff(diff) || showsChange(item, change) ? (["Diff"] as const) : []),
   ...(changesRepo(item) ? (["Checks"] as const) : []),
   "Log",
 ];
@@ -269,6 +273,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
     lastAsked.current = diffAsked;
   }, [diffAsked]);
   const diff = useDecisionDiff(bridge, itemId, item?.state === "needs_you" ? item.decision : undefined);
+  const change = useItemDiff(bridge, item);
   // A step you approve shows what its agent wrote, from the latest attempt, for each new question.
   const approval = item?.state === "needs_you" && item.decision?.kind === "plan_approval" ? item.decision : undefined;
   // The full view's decision bar has no room for the output: each new question to approve one,
@@ -296,7 +301,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
   const changedFiles = diff?.kind === "loaded" && diff.diff.files.length + diff.diff.moreFiles > 0;
 
   const template = item && templateOf(item, setup);
-  const tabs = item ? tabsOf(item, diff) : [];
+  const tabs = item ? tabsOf(item, diff, change) : [];
   const shown = tabs.includes(tab) ? tab : "Steps";
   // ⤢ on the diff inside the drawer: the full view on the Diff tab.
   const expandTo = onExpand === undefined || full ? undefined : (to: Tab) => () => {
@@ -416,6 +421,14 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
               <ChecksTab bridge={bridge} item={item} setup={setup} full={full} />
             ) : shown === "Log" ? (
               <LogTab bridge={bridge} item={item} setup={setup} full={full} onOpenAgent={onOpenAgent} />
+            ) : change !== undefined ? (
+              <ItemDiffTab
+                item={item}
+                state={change}
+                baseBranch={setup?.repos.find((repo) => repo.id === item.repoIds[0])?.baseBranch}
+                layout={expanded === undefined ? "drawer" : expanded.wide ? "wide" : "narrow"}
+                onExpand={expandTo?.("Diff")}
+              />
             ) : diff !== undefined ? (
               <DiffTab
                 key={item.decision?.id}

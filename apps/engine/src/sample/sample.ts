@@ -18,6 +18,7 @@ import {
   currentStepIndex,
   type DecisionId,
   type DecisionDiffResult,
+  type ItemDiffResult,
   err,
   finishActions,
   type FinishAction,
@@ -41,7 +42,7 @@ import {
 import type { ActivityFeed } from "../activity-feed.js";
 import type { MemoryItemStore } from "../store.js";
 import { checksReply, logReply, sampleChecks, sampleLogs } from "./attempts.js";
-import { DIFF_DECISION_ID, ITEM_IDS, sampleDiff, sampleHistory, sampleItems, sampleOutputs, sampleSetup } from "./data.js";
+import { DIFF_DECISION_ID, failedDiff, finishedDiff, ITEM_IDS, sampleDiff, sampleHistory, sampleItems, sampleOutputs, sampleSetup } from "./data.js";
 
 /** How often the fake engine moves a working item on by one step. */
 export const SAMPLE_TICK_MS = 20_000;
@@ -310,6 +311,27 @@ export class SampleEngine {
     if (item.decision?.id !== decisionId || decisionId !== DIFF_DECISION_ID) return err({ code: "stale_decision", message: `decision ${decisionId} is not open, or has no change to show` });
     const diff = parseQueryResult("decision_diff", sampleDiff);
     if (!diff.ok) throw new Error(`invalid sample diff: ${JSON.stringify(diff.error.issues)}`);
+    return ok(diff.value);
+  }
+
+  /**
+   * What an ended sample item changed: the done item's branch until it is merged, then the commit
+   * Merge made up; the failed item's worktree. Other items changed nothing.
+   */
+  itemDiff(itemId: ItemId): Result<ItemDiffResult, CommandError> {
+    const item = this.store.get(itemId);
+    if (!item) return err({ code: "not_found", message: `no item ${itemId}` });
+    if (item.state !== "done" && item.state !== "failed" && item.state !== "stopped") return err({ code: "invalid_state", message: `item ${itemId} has not ended` });
+    const canned = itemId === ITEM_IDS.finished ? finishedDiff : itemId === ITEM_IDS.failed ? failedDiff : undefined;
+    const merged = item.finish?.merged;
+    const change =
+      canned === undefined || (item.finish?.worktreeRemoved === true && merged === undefined)
+        ? { kind: "none" }
+        : merged !== undefined
+          ? { kind: "merged", files: canned.files, moreFiles: canned.moreFiles, cut: canned.cut, repoId: canned.worktree.repoId, baseBranch: merged.baseBranch, commit: merged.commit, parent: canned.worktree.baseCommit }
+          : { kind: "worktree", ...canned };
+    const diff = parseQueryResult("item_diff", change);
+    if (!diff.ok) throw new Error(`invalid sample item diff: ${JSON.stringify(diff.error.issues)}`);
     return ok(diff.value);
   }
 

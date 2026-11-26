@@ -322,6 +322,7 @@ export {
   MAX_NOTE_CHARS,
   REQUEST_CHANGES_ID,
   type DecisionDiffResult,
+  type ItemDiffResult,
   MAX_STEP_OUTPUT_BYTES,
   type StepOutputResult,
   type OutputSummary,
@@ -342,6 +343,8 @@ export {
   type DiffHunk,
   type DiffStatus,
   type ItemDiff,
+  type ItemChange,
+  type TreeDiff,
 } from "./kernel/schemas/index.js";
 // Template files for the Templates page: the validator, for the engine service's sample
 // templates, and the records the page shows.

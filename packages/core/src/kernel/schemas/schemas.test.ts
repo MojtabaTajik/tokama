@@ -270,6 +270,7 @@ describe("engine API messages", () => {
     { apiVersion: API_VERSION, kind: "event", seq: 0, event: { type: "item_updated", item: item() } },
     { apiVersion: API_VERSION, kind: "event", seq: 1, event: { type: "usage_changed" } },
     { apiVersion: API_VERSION, kind: "query", requestId: "r8", query: { type: "usage", range: 30 } },
+    { apiVersion: API_VERSION, kind: "query", requestId: "r9", query: { type: "item_diff", itemId: ITEM_ID } },
   ];
 
   it.each(valid.map((message) => [`${message.kind} ${JSON.stringify(message).slice(0, 60)}`, message]))(
@@ -297,6 +298,8 @@ describe("engine API messages", () => {
     ["an unknown command", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "delete_everything" } }],
     ["an empty requestId", { apiVersion: API_VERSION, kind: "query", requestId: "", query: { type: "item", itemId: ITEM_ID } }],
     ["a decision without an id", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "resolve_decision", itemId: ITEM_ID, choice: "approve" } }],
+    ["an item diff without an item", { apiVersion: API_VERSION, kind: "query", requestId: "r1", query: { type: "item_diff" } }],
+    ["an item diff with an extra key", { apiVersion: API_VERSION, kind: "query", requestId: "r1", query: { type: "item_diff", itemId: ITEM_ID, base: "main" } }],
     ["a blank start text", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "start_item", templateId: "builtin/quick-fix", repoIds: [], text: " \n " } }],
     ["an unknown start option", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "start_item", templateId: "builtin/quick-fix", repoIds: [], text: "x", options: { yolo: true } } }],
     ["an empty choice", { apiVersion: API_VERSION, kind: "command", requestId: "r1", command: { type: "resolve_decision", itemId: ITEM_ID, decisionId: DECISION_ID, choice: "" } }],
@@ -434,6 +437,25 @@ describe("query results", () => {
     expect(parseQueryResult("board", { items: [], counts: [{ day: "yesterday", templateId: "builtin/quick-fix", repoIds: [], done: 1, failed: 0 }] }).ok).toBe(false);
     expect(parseQueryResult("board", { items: [], counts: [{ day: null, templateId: "builtin/quick-fix", repoIds: [], done: -1, failed: 0 }] }).ok).toBe(false);
     expect(parseQueryResult("item", { item: { ...item(), state: "lost" } }).ok).toBe(false);
+  });
+});
+
+describe("item diff query result", () => {
+  const sha = "a".repeat(40);
+  const tree = { files: [], moreFiles: 0, cut: false };
+  const worktree = { repoId: "orders-api", dir: ".tokama/wt/a1b2c3d4", branch: "tokama/a1b2c3d4", baseCommit: sha };
+
+  it.each([
+    ["worktree", { kind: "worktree", ...tree, worktree }],
+    ["merged", { kind: "merged", ...tree, repoId: "orders-api", baseBranch: "main", commit: sha, parent: "b".repeat(40) }],
+    ["gone", { kind: "gone", repoId: "orders-api", commit: sha }],
+    ["none", { kind: "none" }],
+  ])("accepts a %s change", (_kind, change) => {
+    expect(parseQueryResult("item_diff", change)).toEqual({ ok: true, value: change });
+  });
+
+  it("refuses a commit that is not a git object id", () => {
+    expect(parseQueryResult("item_diff", { kind: "gone", repoId: "orders-api", commit: "main" }).ok).toBe(false);
   });
 });
 

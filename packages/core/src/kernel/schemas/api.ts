@@ -19,13 +19,13 @@ import { ItemActivitySchema } from "./activity.js";
 import { AgentsListSchema } from "./agents.js";
 import { AiCliListSchema } from "./ai-clis.js";
 import { AttemptChecksSchema, AttemptFileSchema, AttemptLogSchema } from "./attempt-files.js";
-import { ItemDiffSchema } from "./diff.js";
+import { ItemChangeSchema, ItemDiffSchema } from "./diff.js";
 import { MAX_NOTE_CHARS } from "./item-log.js";
 import { MachineReportSchema } from "./machine.js";
 import { RepoSummarySchema, SetupSchema } from "./setup.js";
 import { MAX_TEMPLATE_ENTRIES, TemplateDetailSchema, TemplateEntrySchema, TemplateFileKeySchema } from "./template-files.js";
 
-export const API_VERSION = 11;
+export const API_VERSION = 12;
 
 const apiVersion = z.literal(API_VERSION);
 const requestId = z.string().min(1).max(128);
@@ -172,6 +172,8 @@ export const QuerySchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("activity"), itemId: ItemIdSchema }),
   /** The change an open decision is about (one with `hasDiff`): base commit to the tree it would commit. */
   z.strictObject({ type: z.literal("decision_diff"), itemId: ItemIdSchema, decisionId: DecisionIdSchema }),
+  /** What an ended item changed: its worktree against its base commit, or the commit it was merged as. */
+  z.strictObject({ type: z.literal("item_diff"), itemId: ItemIdSchema }),
   /** The final message the agent of a step's attempt wrote; `attempt` defaults to the step's latest. */
   z.strictObject({ type: z.literal("step_output"), itemId: ItemIdSchema, stepIndex: z.int().nonnegative().max(1000), attempt: z.int().min(1).max(10_000).optional() }),
   /** Each check command of a step's attempt, with the end of its saved output. */
@@ -304,6 +306,7 @@ export const QueryResultSchemas = {
   item: z.strictObject({ item: ItemRecordSchema }),
   activity: z.strictObject({ activity: ItemActivitySchema.nullable() }),
   decision_diff: ItemDiffSchema,
+  item_diff: ItemChangeSchema,
   step_output: StepOutputSchema,
   attempt_checks: AttemptChecksSchema,
   attempt_log: AttemptLogSchema,
@@ -516,6 +519,7 @@ export type ListGroup = z.output<typeof ListGroupSchema>;
 export type ItemResult = QueryResult<"item">;
 export type ActivityResult = QueryResult<"activity">;
 export type DecisionDiffResult = QueryResult<"decision_diff">;
+export type ItemDiffResult = QueryResult<"item_diff">;
 export type StepOutputResult = QueryResult<"step_output">;
 export type AttemptChecksResult = QueryResult<"attempt_checks">;
 export type AttemptLogResult = QueryResult<"attempt_log">;
