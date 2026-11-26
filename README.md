@@ -12,10 +12,11 @@ Early and pre-release. The first alpha download is planned for 6 December 2026 (
 
 Read this before you run a template.
 
-- Agents and checks run as you, with your user rights on your Mac. Tokama is not a sandbox.
 - Tokama does its work in git worktrees, so your main checkout stays untouched while a task runs.
 - It checks the shell commands an agent wants to run against rules, and it asks you before changes that leave your machine, such as a push or a pull request.
-- Checks (for example `pnpm test`) have no full sandbox yet. They can do anything your user can do.
+- The commands an agent runs are inside the AI CLI's own sandbox. They can write only in the item's worktree, a few package caches and the temp folder, and they can reach only package registries (none in a local-only run). Well-known secret files such as `~/.ssh` are closed to them. A step whose sandbox cannot start fails; it never runs without it. The sandbox limits hosts by name only, so a registry can still carry data out.
+- The sandbox covers commands only. An agent with web turned on can also open any website with its web tools, and the file tools are limited by Tokama's rules, not by the sandbox.
+- Checks and setup commands that Tokama runs itself (for example `pnpm test`) are not sandboxed yet. They run as you and can do anything your user can do.
 
 Review templates and check commands before you run them, especially ones you did not write.
 
@@ -24,7 +25,8 @@ Review templates and check commands before you run them, especially ones you did
 - Node 22.18 or newer
 - pnpm, at the version in `packageManager` in `package.json`. Node 25 and later do not bundle corepack, so install it with the Node you use (`npm install -g corepack@latest`) and then run `corepack enable`. You can also install pnpm directly at that version.
 - git 2.44 or newer
-- Claude Code, installed and logged in, to run real agent steps
+- Claude Code 2.1.315 or newer, installed and logged in, to run real agent steps
+- Linux only: `bubblewrap` and `socat`, for steps that run commands (`sudo apt-get install bubblewrap socat`). On Ubuntu 24.04 an AppArmor rule can also stop bubblewrap; Claude Code's sandbox documentation has the profile, or run `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` until the next reboot.
 
 macOS and Linux are supported. Windows is not yet.
 
