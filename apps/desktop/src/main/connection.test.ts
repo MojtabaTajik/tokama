@@ -59,7 +59,7 @@ function watch(
     apiVersion: APP_API,
     ...(appVersion !== undefined && { appVersion }),
     replaceOlder: replace,
-    olderLock: () => ({ lockPath: "/run/tokama/engine.lock", pid: 4821, engineId: "e-old" }),
+    olderLock: () => ({ lockPath: "/run/tokama/engine.lock", pid: 4821, engineId: "e-lock" }),
     waitPollMs: 10,
   });
   return { watcher, states, events, readLogTail, replace };
@@ -125,7 +125,7 @@ describe("watchConnection", () => {
       const { watcher, states, replace } = watch(connect);
       await settle();
       await settle();
-      expect(replace).toHaveBeenCalledExactlyOnceWith("e-old");
+      expect(replace).toHaveBeenCalledExactlyOnceWith("e-lock");
       expect(states).toEqual([{ status: "starting", updating: true }, { status: "connected", engineId: "engine-new" }]);
       expect(watcher.state()).toEqual({ status: "connected", engineId: "engine-new" });
       expect(client.command).not.toHaveBeenCalled();
@@ -231,6 +231,21 @@ describe("watchConnection", () => {
       expect(old.close.mock.invocationCallOrder[0]).toBeLessThan(replace.mock.invocationCallOrder[0] ?? 0);
       expect(states).toEqual([{ status: "starting", updating: true }, { status: "connected", engineId: "engine-new" }]);
       expect(old.command).not.toHaveBeenCalled();
+    });
+
+    it("does nothing more when the watcher closes while the probe client is still closing", async () => {
+      const old = sameApi("e-old", "0.1.0", 0);
+      let finishClose: () => void = () => {};
+      old.close.mockImplementation(() => new Promise<void>((resolve) => (finishClose = resolve)));
+      const { watcher, states, replace } = watch(async () => ok(old), [], undefined, APP);
+      await settle();
+      expect(old.close).toHaveBeenCalledOnce();
+      const closing = watcher.close();
+      finishClose();
+      await closing;
+      await settle();
+      expect(replace).not.toHaveBeenCalled();
+      expect(states).toEqual([]);
     });
 
     it("asks when it runs items, and Restart now replaces it", async () => {

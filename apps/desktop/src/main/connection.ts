@@ -114,11 +114,14 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
   };
 
   /** An older engine runs: replace it when idle (or on request), otherwise ask. `reason` is the failure text if no replacer is set. */
-  const older = async (runningItems: number | undefined, mine: number, mode: Mode, replaced: boolean, reason: string): Promise<void> => {
+  const older = async (runningItems: number | undefined, mine: number, mode: Mode, replaced: boolean, reason: string, probedEngineId?: string): Promise<void> => {
     // Right after a replace, an older engine again is not replaced again without asking.
     // The lock as it is right after the refusal: only the engine it names may be stopped.
-    const { engineId, ...lock } = options.olderLock?.() ?? { lockPath: "" };
-    if (!replaced && (mode === "now" || runningItems === 0)) return replace(mine, () => options.replaceOlder?.(engineId) ?? Promise.resolve({ ok: false, reason }));
+    const { engineId: lockedEngineId, ...lock } = options.olderLock?.() ?? { lockPath: "" };
+    // An engine that was connected to is the one that was compared, so it is the one to stop,
+    // even if the lock names another by now.
+    const engineId = probedEngineId ?? lockedEngineId;
+    if (!replaced && (mode === "now" || runningItems === 0)) return replace(mine, () => options.replaceOlder?.(engineId) ??Promise.resolve({ ok: false, reason }));
     const waiting = mode === "wait" && runningItems !== undefined && !replaced;
     fail(OLDER, {
       ...lock,
@@ -148,7 +151,7 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
       // Closed first: a client left open would reconnect, and start an engine, while the old one stops.
       await connected.close();
       if (closed || mine !== attempt) return;
-      return older(connected.engine.runningItems, mine, mode, replaced, OLDER);
+      return older(connected.engine.runningItems, mine, mode, replaced, OLDER, connected.engineId);
     }
     client = connected;
     // events() is called in the same tick as the connect result, so no event is missed.
