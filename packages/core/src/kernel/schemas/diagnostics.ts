@@ -41,7 +41,7 @@ export const ErrorWhereSchema = z.enum([
   "startup",
   /** Restart recovery of the items that were running. */
   "recovery",
-  /** Item storage or the board index. */
+  /** Item storage or the usage database. */
   "storage",
   "shutdown",
 ]);
@@ -50,7 +50,7 @@ export const ErrorWhereSchema = z.enum([
 export const WarningCodeSchema = z.enum([
   /** An item's log did not load at start. */
   "item_not_loaded",
-  /** The board index was damaged and was rebuilt from the item logs. */
+  /** The usage database was damaged and was made anew. */
   "index_rebuilt",
   /** The renderer stopped answering for a while. */
   "renderer_unresponsive",

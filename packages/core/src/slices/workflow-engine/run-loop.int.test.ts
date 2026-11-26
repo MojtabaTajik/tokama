@@ -295,7 +295,7 @@ describe("run loop: done_when", () => {
       plan: { status: "allowed_warning", windows: [{ window: "five_hour", usedPercent: 81, resetsAt: BOOT + 3_600_000 }] },
     });
     expect(call!.endedAt).toBeGreaterThanOrEqual(call!.startedAt);
-    // The event is in the log itself, so the index can be rebuilt from it.
+    // The event is in the log itself, so usage can be read from it.
     const read = readLog(join(tokamaHome, "items", id, EVENTS_FILE));
     if (!read.ok) throw new Error(read.error.message);
     const logged = read.value.events.filter((event: ItemEvent) => event.type === "usage_recorded");

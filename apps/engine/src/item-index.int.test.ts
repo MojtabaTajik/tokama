@@ -19,6 +19,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { startEngine } from "./engine.js";
 import { ItemIndex } from "./item-index.js";
 import { tempEngineDir, waitFor } from "./testing/helpers.js";
+import { V4_SCHEMA } from "./testing/v4-schema.js";
 
 const T0 = Date.UTC(2026, 10, 24, 10, 0, 0);
 const BUILD = "build" as StepId;
@@ -157,40 +158,15 @@ const V3_SCHEMA = `
 `;
 
 describe("ItemIndex", () => {
-  it("holds one row per recorded call, follows new calls, and is rebuilt from the logs to the same rows", () => {
-    const store = openStore();
-    const live = openIndex();
-    const added: number[] = [];
-    store.subscribe((item) => added.push(live.put(item)));
-    const item = create(store, "Fix it");
-    spend(store, item, 1);
-    spend(store, item, 2);
-    expect(added).toEqual([0, 1, 1]);
-    const rows = live.usageRows(0);
-    expect(rows.map((row) => [row.itemId, row.title, row.templateId, row.repoId, row.call.tokens.input])).toEqual([
-      [item.id, "Fix it", REF, "orders-api", 1],
-      [item.id, "Fix it", REF, "orders-api", 2],
-    ]);
-    expect(live.usageRows(T0 + 2 * 60_000)).toHaveLength(1);
-
-    const rebuilt = openIndex(join(home, "rebuilt.db"));
-    rebuilt.rebuild(openStore().list());
-    expect(rebuilt.usageRows(0)).toEqual(rows);
-    rebuilt.rebuild(openStore().list());
-    expect(rebuilt.usageRows(0)).toEqual(rows);
-
-    // A deleted item takes its calls with it.
-    store.append(item.id, [{ type: "attempt_ended", stepId: BUILD, attempt: 1, result: "passed" }, { type: "step_ended", stepId: BUILD, result: "passed" }, { type: "item_ended", outcome: "done" }, { type: "tombstone" }]);
-    expect(live.usageRows(0)).toEqual([]);
-  });
-
-  it("keeps plan samples across a rebuild, one per CLI", () => {
+  it("keeps plan samples across closing and opening again, one per CLI", () => {
     const index = openIndex();
     index.savePlanSample("claude-code", { windows: [{ window: "five_hour", usedPercent: 36 }], asOf: T0 });
     index.savePlanSample("claude-code", { windows: [{ window: "five_hour", usedPercent: 37 }], asOf: T0 + 1 });
-    index.rebuild([]);
-    expect(index.planSample("claude-code")).toEqual({ windows: [{ window: "five_hour", usedPercent: 37 }], asOf: T0 + 1 });
-    expect(index.planSample("codex-cli")).toBeUndefined();
+    index.close();
+    cleanups.pop();
+    const again = openIndex();
+    expect(again.planSample("claude-code")).toEqual({ windows: [{ window: "five_hour", usedPercent: 37 }], asOf: T0 + 1 });
+    expect(again.planSample("codex-cli")).toBeUndefined();
   });
 
   it("creates the database file 0600 with a schema version, and recreates a database of another version", () => {
@@ -201,20 +177,24 @@ describe("ItemIndex", () => {
     expect(statSync(file).mode & 0o777).toBe(0o600);
 
     const raw = new DatabaseSync(file);
-    expect(raw.prepare("PRAGMA user_version").get()).toEqual({ user_version: 4 });
+    expect(raw.prepare("PRAGMA user_version").get()).toEqual({ user_version: 5 });
     raw.exec("PRAGMA user_version = 99");
     raw.close();
 
-    // Derived data: a database from another version is dropped and rebuilt from the logs.
+    // A database from another version is dropped and made anew.
     expect(openIndex(file).planSample("claude-code")).toBeUndefined();
   });
 
-  it("upgrades a v3 database: drops items, keeps plan and Claude usage data", () => {
+  it.each([
+    ["v3", 3, V3_SCHEMA],
+    ["v4", 4, V4_SCHEMA],
+  ])("upgrades a %s database: drops the tables derived from the logs, keeps plan and Claude usage data", (_name, version, schema) => {
     const file = join(home, "tokama.db");
     const raw = new DatabaseSync(file);
-    raw.exec(V3_SCHEMA);
-    raw.exec("PRAGMA user_version = 3");
-    raw.prepare("INSERT INTO items (id, schema_version, template_ref, state, updated_at, needs_you, last_seq) VALUES (?, 3, ?, 'done', ?, 0, 2)").run("item_0190a000-0000-7000-8000-000000000001", REF, T0);
+    raw.exec(schema);
+    raw.exec(`PRAGMA user_version = ${version}`);
+    if (version === 3) raw.prepare("INSERT INTO items (id, schema_version, template_ref, state, updated_at, needs_you, last_seq) VALUES (?, 3, ?, 'done', ?, 0, 2)").run("item_0190a000-0000-7000-8000-000000000001", REF, T0);
+    raw.prepare("INSERT INTO usage_calls (call_id, item_id, title, template_ref, repo_id, ended_at, record) VALUES ('call_1', 'item_1', 'Fix it', ?, 'orders-api', ?, '{}')").run(REF, T0);
     raw.prepare("INSERT INTO plan_samples (cli_id, as_of, record) VALUES (?, ?, ?)").run("claude-code", T0, JSON.stringify({ windows: [{ window: "five_hour", usedPercent: 36 }], asOf: T0 }));
     raw.prepare("INSERT INTO claude_local_messages (key, at, day, model, project, input, output, cache_read, cache_write) VALUES ('req_1', ?, '2026-11-24', 'claude-opus-5-5', 'p1', 10, 20, 30, 40)").run(T0);
     raw.prepare("INSERT INTO claude_local_files (file_key, ino, offset) VALUES ('f1', 7, 99)").run();
@@ -224,51 +204,42 @@ describe("ItemIndex", () => {
     const index = openIndex(file);
     const check = new DatabaseSync(file, { readOnly: true });
     cleanups.push(() => check.close());
-    expect(check.prepare("PRAGMA user_version").get()).toEqual({ user_version: 4 });
-    expect(check.prepare("SELECT name FROM sqlite_master WHERE name IN ('items', 'items_updated_at')").all()).toEqual([]);
+    expect(check.prepare("PRAGMA user_version").get()).toEqual({ user_version: 5 });
+    expect(check.prepare("SELECT name FROM sqlite_master WHERE name IN ('items', 'items_updated_at', 'usage_calls', 'usage_calls_ended_at')").all()).toEqual([]);
     expect(index.planSample("claude-code")).toEqual({ windows: [{ window: "five_hour", usedPercent: 36 }], asOf: T0 });
     expect(index.localMark("f1")).toEqual({ ino: 7, offset: 99 });
     expect(index.localCoveredFrom()).toBe(T0);
     expect(index.localDays(0)).toEqual([{ day: "2026-11-24", model: "claude-opus-5-5", project: "p1", repoId: "orders-api", tokens: { input: 10, output: 20, cacheRead: 30, cacheWrite: 40 }, messages: 1 }]);
 
-    // The upgraded database takes writes and rebuilds.
-    const store = openStore();
-    const item = create(store, "Fix it");
-    spend(store, item, 1);
-    index.rebuild(store.list());
-    expect(index.usageRows(0)).toHaveLength(1);
-    expect(index.put(store.get(item.id) as StoredItem)).toBe(0);
-    expect(index.planSample("claude-code")?.asOf).toBe(T0);
+    // The upgraded database takes writes.
+    index.savePlanSample("claude-code", { windows: [{ window: "five_hour", usedPercent: 37 }], asOf: T0 + 1 });
+    expect(index.planSample("claude-code")?.asOf).toBe(T0 + 1);
   });
 
   it("stores no absolute paths", () => {
     const index = openIndex();
-    const store = openStore();
-    const item = create(store, "Fix it");
-    spend(store, item, 1);
-    index.rebuild(store.list());
+    index.savePlanSample("claude-code", { windows: [{ window: "five_hour", usedPercent: 36 }], asOf: T0 });
+    index.saveLocalFile("f1", { ino: 1, offset: 10 }, [{ key: "req_1", at: T0, model: "claude-opus-5-5", project: "p1", tokens: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 } }]);
     index.close();
     cleanups.pop();
     // Closing checkpoints the WAL into the database file.
     const bytes = readFileSync(join(home, "tokama.db"), "latin1");
-    expect(bytes).toContain("builtin/quick-fix");
+    expect(bytes).toContain("claude-opus-5-5");
     expect(bytes).not.toContain(home);
     expect(bytes).not.toContain(tmpdir());
   });
 });
 
 describe("engine start with a home folder", () => {
-  it("rebuilds the index, records a run failure for a step that was running, and keeps the index current", async () => {
+  it("records a run failure for a step that was running, and opens the usage database without the tables derived from the logs", async () => {
     const store = openStore();
     const item = create(store, "Fix it");
     store.append(item.id, [
       { type: "step_started", stepId: BUILD },
       { type: "attempt_started", stepId: BUILD, attempt: 1 },
     ]);
-    // A stale index from before the crash.
-    const stale = ItemIndex.open(join(home, "tokama.db"));
-    stale.rebuild([]);
-    stale.close();
+    // A database from before the crash.
+    ItemIndex.open(join(home, "tokama.db")).close();
 
     const table: ProcessTable = { list: async () => [], bootTime: () => T0, signalGroup: () => {} };
     const dir = tempEngineDir(cleanups);
@@ -284,7 +255,7 @@ describe("engine start with a home folder", () => {
 
     const raw = new DatabaseSync(join(home, "tokama.db"), { readOnly: true });
     cleanups.push(() => raw.close());
-    expect(raw.prepare("SELECT name FROM sqlite_master WHERE name = 'items'").all()).toEqual([]);
+    expect(raw.prepare("SELECT name FROM sqlite_master WHERE name IN ('items', 'usage_calls')").all()).toEqual([]);
   });
 
   it("lists every item through the API when it starts on a v3 database", async () => {
@@ -307,7 +278,7 @@ describe("engine start with a home folder", () => {
     expect(readdirSync(home).filter((name) => name.includes(".damaged-"))).toEqual([]);
     const upgraded = new DatabaseSync(join(home, "tokama.db"), { readOnly: true });
     cleanups.push(() => upgraded.close());
-    expect(upgraded.prepare("PRAGMA user_version").get()).toEqual({ user_version: 4 });
+    expect(upgraded.prepare("PRAGMA user_version").get()).toEqual({ user_version: 5 });
     expect(upgraded.prepare("SELECT cli_id FROM plan_samples").all()).toEqual([{ cli_id: "claude-code" }]);
     const connected = await connect({ dir, startTimeoutMs: 2_000 });
     if (!connected.ok) throw new Error(connected.error.message);
@@ -433,15 +404,22 @@ describe("engine start with a home folder", () => {
     }
   });
 
-  it("moves a damaged database aside and rebuilds the index from the logs", async () => {
+  it("moves a damaged database aside, loads the items, and answers usage from the logs", async () => {
     const store = openStore();
     const item = create(store, "Fix it");
+    spend(store, item, 1, Date.now() - 60_000);
     writeFileSync(join(home, "tokama.db"), "this is not a database, just garbage bytes ".repeat(200));
     writeFileSync(join(home, "tokama.db-wal"), "garbage");
     const logs: string[] = [];
-    const started = await startEngine({ dir: tempEngineDir(cleanups), home, log: (line) => logs.push(line) });
+    const dir = tempEngineDir(cleanups);
+    const started = await startEngine({ dir, home, planSources: {}, log: (line) => logs.push(line) });
     if (!started.ok) throw new Error(started.error.message);
     cleanups.push(() => started.value.close());
+    const connected = await connect({ dir, startTimeoutMs: 2_000 });
+    if (!connected.ok) throw new Error(connected.error.message);
+    cleanups.push(() => connected.value.close());
+    const usage = await connected.value.query({ type: "usage", range: 14 });
+    expect(usage.ok && usage.data.items.map((row) => row.title)).toEqual(["Fix it"]);
 
     expect(logs.some((line) => line.includes("is damaged"))).toBe(true);
     const aside = readdirSync(home).filter((name) => name.includes(".damaged-") && !name.endsWith("-wal") && !name.endsWith("-shm"));
@@ -451,7 +429,7 @@ describe("engine start with a home folder", () => {
     if (existsSync(join(home, "tokama.db-wal"))) expect(readFileSync(join(home, "tokama.db-wal"), "utf8")).not.toBe("garbage");
     const raw = new DatabaseSync(join(home, "tokama.db"), { readOnly: true });
     cleanups.push(() => raw.close());
-    expect(raw.prepare("SELECT name FROM sqlite_master WHERE name = 'items'").all()).toEqual([]);
+    expect(raw.prepare("SELECT name FROM sqlite_master WHERE name IN ('items', 'usage_calls')").all()).toEqual([]);
     expect(started.value.items?.get(item.id)?.title).toBe("Fix it");
   });
 
@@ -488,10 +466,12 @@ describe("ItemIndex: Claude Code's usage from its logs", () => {
     expect(index.localMark("f3")).toBeUndefined();
   });
 
-  it("sums per local day, model and project, and keeps it across an item rebuild", () => {
+  it("sums per local day, model and project, and keeps it when the database is opened again", () => {
+    const first = openIndex();
+    first.saveLocalFile("f1", { ino: 1, offset: 1 }, [message("a", day1, 1), message("b", day2, 2), message("c", day2, 3, "claude-sonnet-5-5"), message("d", day2, 4, "claude-opus-5-5", "p2")]);
+    first.close();
+    cleanups.pop();
     const index = openIndex();
-    index.saveLocalFile("f1", { ino: 1, offset: 1 }, [message("a", day1, 1), message("b", day2, 2), message("c", day2, 3, "claude-sonnet-5-5"), message("d", day2, 4, "claude-opus-5-5", "p2")]);
-    index.rebuild([create(openStore(), "Fix it")]);
     expect(index.localDays(0).map((row) => [row.day, row.model, row.project, row.tokens.output, row.messages])).toEqual([
       ["2026-11-23", "claude-opus-5-5", "p1", 1, 1],
       ["2026-11-24", "claude-opus-5-5", "p1", 2, 1],
