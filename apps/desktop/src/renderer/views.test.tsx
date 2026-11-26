@@ -125,7 +125,7 @@ describe("status filter", () => {
     await mount();
     expect(counts()).toEqual(["Active5", "Needs you1", "Done2", "Failed1", "All"]);
     expect(segment("Active").getAttribute("aria-pressed")).toBe("true");
-    expect($(".range")).toBeNull();
+    expect(($(".range") as HTMLSelectElement).value).toBe("today");
   });
 
   it("shows Done with a time range picker, and widens with the range", async () => {

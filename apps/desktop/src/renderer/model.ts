@@ -67,11 +67,11 @@ export interface Filter {
 }
 export const DEFAULT_FILTER: Filter = { status: "active", range: "today" };
 
-/** Whether the status filter offers a range: Done, Failed and All (where it limits finished work only). */
-export const hasRange = (status: StatusFilter): boolean => status === "done" || status === "failed" || status === "all";
+/** Whether the status's list shows finished groups, which the range limits: Done, Failed and All. */
+export const listsFinished = (status: StatusFilter): boolean => status === "done" || status === "failed" || status === "all";
 
-/** The range that applies to the list: Done, Failed and All offer a choice, the other filters show today. */
-export const effectiveRange = (filter: Filter): Range => (hasRange(filter.status) ? filter.range : "today");
+/** The range that applies to the list: Done, Failed and All limit finished work by it, the other filters list none. */
+export const effectiveRange = (filter: Filter): Range => (listsFinished(filter.status) ? filter.range : "today");
 
 /** The first local day of a range, as the engine filters by; undefined for all time. */
 export const sinceOf = (range: Range, now: number): string | undefined => (range === "all" ? undefined : daysBefore(now, RANGE_DAYS[range]));
@@ -99,6 +99,25 @@ export function finishedIn(counts: readonly BoardCount[], range: Range, now: num
   }
   return { done, failed };
 }
+
+/**
+ * How many finished runs the range hides on a tab: Done counts done runs, Failed failed ones, and
+ * the other tabs both.
+ */
+export function hiddenByRange(counts: readonly BoardCount[], status: StatusFilter, range: Range, now: number): number {
+  if (range === "all") return 0;
+  const all = finishedIn(counts, "all", now);
+  const within = finishedIn(counts, range, now);
+  const done = all.done - within.done;
+  const failed = all.failed - within.failed;
+  return status === "done" ? done : status === "failed" ? failed : done + failed;
+}
+
+/**
+ * The change that shows every finished run. On Active and Needs you, which list none, it also
+ * moves to All; on the other tabs it only widens the range.
+ */
+export const showAllTime = (status: StatusFilter): Partial<Filter> => (listsFinished(status) ? { range: "all" } : { status: "all", range: "all" });
 
 /** Whether an item shows under a status filter. Live items always show; finished ones only within the range. */
 export function matches(item: Pick<ItemRecord, "state" | "createdAt">, status: StatusFilter, range: Range, now: number): boolean {

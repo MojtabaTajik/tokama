@@ -464,6 +464,12 @@
   font: inherit;
 }
 
+/* The finished runs the range hides, next to the picker. */
+.range-hidden {
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
 /* Search, at the right end of the status switch */
 
 /* 250 px when there is room; in a narrow list it gives way before the row wraps. */
@@ -636,6 +642,16 @@
   align-items: flex-start;
   gap: var(--space-6);
   padding: var(--space-40) var(--space-8) var(--space-40) var(--space-30);
+}
+
+/* The empty list when the range hides finished runs: left-aligned like the list's own lines. */
+.pl-hidden {
+  align-items: flex-start;
+  padding: var(--space-40) var(--space-8) var(--space-40) var(--space-30);
+}
+
+.pl-hidden-action {
+  margin-top: var(--space-6);
 }
 
 .pl-no-match-title {

@@ -529,4 +529,20 @@ describe("sample history", () => {
     const one = await client.query({ type: "item_list", group: "done", q: "(#12)", limit: 50 });
     expect(one.ok && one.data.items.map((item) => item.title)).toEqual([history[11]!.title]);
   });
+
+  it("serves only the history, with nothing open, when asked to leave out the sample's own items", async () => {
+    const dir = tempEngineDir(cleanups);
+    const started = await startEngine({ dir, sample: true, sampleHistory: 200, sampleHistoryOnly: true, clock: manualClock(NOW) });
+    if (!started.ok) throw new Error(started.error.message);
+    cleanups.push(() => started.value.close());
+    const connected = await connect({ dir, startTimeoutMs: 2_000 });
+    if (!connected.ok) throw new Error(connected.error.message);
+    cleanups.push(() => connected.value.close());
+
+    const reply = await connected.value.query({ type: "board" });
+    if (!reply.ok) throw new Error(reply.error.message);
+    expect(reply.data.items).toEqual([]);
+    const finished = reply.data.counts.reduce((sum, row) => sum + row.done + row.failed, 0);
+    expect(finished).toBe(200);
+  });
 });
