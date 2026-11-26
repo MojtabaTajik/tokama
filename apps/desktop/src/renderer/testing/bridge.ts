@@ -65,6 +65,7 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
     reportError: vi.fn(async () => undefined),
     countUsage: vi.fn(async () => undefined),
     saveNotifications: vi.fn(async () => undefined),
+    playSound: vi.fn(async () => undefined),
     setViewedItem: vi.fn(async () => undefined),
     onOpenItem: vi.fn((listener: (itemId: string) => void) => {
       openListener = listener;
@@ -100,10 +101,11 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
   const showDataFolder = bridge.showDataFolder as unknown as ReturnType<typeof vi.fn>;
   const saveLayout = bridge.saveLayout as unknown as ReturnType<typeof vi.fn>;
   const saveNotifications = bridge.saveNotifications as unknown as ReturnType<typeof vi.fn>;
+  const playSound = bridge.playSound as unknown as ReturnType<typeof vi.fn>;
   const setViewedItem = bridge.setViewedItem as unknown as ReturnType<typeof vi.fn>;
   /** A click on a notification: the main process asks the window to open the item. */
   const openItem = (itemId: string) => act(async () => openListener?.(itemId));
-  return { bridge, query, saveLayout, saveNotifications, setViewedItem, openItem, copyBuildInfo, showDataFolder, command, retryConnection, openTemplateFile, setConnection, pushItem, pushEvent, stops };
+  return { bridge, query, saveLayout, saveNotifications, playSound, setViewedItem, openItem, copyBuildInfo, showDataFolder, command, retryConnection, openTemplateFile, setConnection, pushItem, pushEvent, stops };
 }
 
 export interface ListQuery {

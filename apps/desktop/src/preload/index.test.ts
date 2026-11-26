@@ -21,7 +21,7 @@ const [, pushOpenItem] = electron.on.mock.calls.find(([channel]) => channel === 
 describe("preload bridge", () => {
   it("exposes window.tokama with only the bridge methods", () => {
     expect(exposed).toEqual([["tokama", bridge]]);
-    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "countUsage", "getAboutInfo", "getConnection", "getDesktopState", "getToolsPath", "onConnection", "onEvent", "onOpenItem", "openAttemptFile", "openTemplateFile", "pickFolder", "query", "reportError", "restartEngine", "retryConnection", "waitForEngine", "saveLayout", "saveNotifications", "setViewedItem", "showDataFolder", "loadDiagnostics", "sendDiagnostics", "saveDiagnostics", "stopCrashPrompt"].sort());
+    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "countUsage", "getAboutInfo", "getConnection", "getDesktopState", "getToolsPath", "onConnection", "onEvent", "onOpenItem", "openAttemptFile", "openTemplateFile", "pickFolder", "query", "reportError", "restartEngine", "retryConnection", "waitForEngine", "saveLayout", "saveNotifications", "playSound", "setViewedItem", "showDataFolder", "loadDiagnostics", "sendDiagnostics", "saveDiagnostics", "stopCrashPrompt"].sort());
   });
 
   it("query and command invoke their channels with the request only", async () => {
@@ -148,10 +148,17 @@ describe("preload bridge", () => {
 
   it("saveNotifications and setViewedItem use their own channels", async () => {
     electron.invoke.mockResolvedValue(undefined);
-    await bridge.saveNotifications({ sound: true });
+    await bridge.saveNotifications({ finished: "off" });
     await bridge.setViewedItem("item_1");
     await bridge.setViewedItem(undefined);
-    expect(electron.invoke.mock.calls).toEqual([[CHANNELS.saveNotifications, { sound: true }], [CHANNELS.viewedItem, "item_1"], [CHANNELS.viewedItem, undefined]]);
+    expect(electron.invoke.mock.calls).toEqual([[CHANNELS.saveNotifications, { finished: "off" }], [CHANNELS.viewedItem, "item_1"], [CHANNELS.viewedItem, undefined]]);
+  });
+
+  it("playSound sends only the two names, as strings", async () => {
+    electron.invoke.mockResolvedValue(undefined);
+    await bridge.playSound("tokayCall", "tokama");
+    await bridge.playSound({ evil: true } as never, 5 as never);
+    expect(electron.invoke.mock.calls).toEqual([[CHANNELS.playSound, "tokayCall", "tokama"], [CHANNELS.playSound, "[object Object]", "5"]]);
   });
 
   it("onOpenItem passes the item id without the IPC event, and keeps one that came before a listener", () => {

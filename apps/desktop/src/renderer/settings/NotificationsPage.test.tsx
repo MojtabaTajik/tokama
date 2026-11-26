@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, type Mock } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import type { TokamaBridge } from "../../shared/bridge.js";
 import { DEFAULT_DESKTOP_STATE, type DesktopState } from "../../shared/desktop-state.js";
 import { App } from "../App.js";
@@ -18,6 +18,7 @@ beforeEach(() => {
   root = createRoot(container);
 });
 afterEach(() => {
+  vi.useRealTimers();
   act(() => root.unmount());
   container.remove();
 });
@@ -33,75 +34,119 @@ async function openPage(bridge: TokamaBridge) {
   await click(railButton(/^Settings/));
   await click($$('nav[aria-label="Settings"] button').find((el) => el.textContent === "Notifications"));
 }
-const switches = () => $$('[role="switch"]');
-const states = () => switches().map((el) => [el.getAttribute("aria-checked"), el.textContent]);
+const groups = () => $$('[role="radiogroup"]');
+const checkedIn = (group: Element | undefined) => [...(group?.querySelectorAll('[role="radio"]') ?? [])].find((radio) => radio.getAttribute("aria-checked") === "true")?.textContent;
+const checks = () => groups().map(checkedIn);
+const option = (group: number, label: string) => [...groups()[group]!.querySelectorAll('[role="radio"]')].find((radio) => radio.textContent?.includes(label));
 const previews = () => $$(".notes-slot").map((el) => el.textContent);
+const playButton = (name: string) => $$("button").find((button) => button.getAttribute("aria-label") === `Play the ${name} sound`)!;
 
 describe("Settings > Notifications", () => {
-  it("is the first page under Personal, and shows the board's texts and the four switches with their defaults", async () => {
+  it("is the first page under Personal, and shows the board's texts, a mode per kind and the sound set, with the new defaults", async () => {
     await openPage(fakeBridge(CONNECTED).bridge);
     expect($('nav[aria-label="Settings"] [aria-current="page"]')?.textContent).toBe("Notifications");
     expect($("h1")?.textContent).toBe("Notifications");
     expect($(".notes-intro")?.textContent).toBe("macOS notifications about your items. Click one to open its item in Tokama.");
-    expect($$(".notes-name").map((el) => el.textContent)).toEqual(["⏸Needs you", "✓Finished", "✕Failed", "♪Sound"]);
+    expect($$(".notes-name").map((el) => el.textContent)).toEqual(["⏸Needs you", "✓Finished", "✕Failed", "♪Sounds"]);
     expect($$(".notes-help").map((el) => el.textContent)).toEqual([
       "An item waits for your decision, like approving a plan or a change.",
       "An item is done and ready to merge, open a PR or discard.",
       "An item stopped because a step failed.",
-      "Play the macOS notification sound with each one.",
+      "Used by Banner + sound and Sound only. The ▶ buttons play it too, whatever a row is set to.",
     ]);
-    expect(states()).toEqual([["true", "On"], ["true", "On"], ["true", "On"], ["false", "Off"]]);
-    expect(switches().map((el) => el.getAttribute("aria-labelledby"))).toEqual(["notes-needsYou", "notes-finished", "notes-failed", "notes-sound"]);
-    expect($(".notes-info")?.textContent).toBe("iNo notification while you are looking at that item: Tokama is in front and the item is open in the drawer or the full view.");
+    expect(groups().map((group) => group.getAttribute("aria-labelledby"))).toEqual(["notes-needsYou", "notes-finished", "notes-failed", "notes-sounds"]);
+    expect([...groups()[0]!.querySelectorAll('[role="radio"]')].map((radio) => radio.textContent?.replace("✓", ""))).toEqual(["Banner + sound", "Banner only", "Sound only", "Off"]);
+    expect([...groups()[3]!.querySelectorAll('[role="radio"]')].map((radio) => radio.textContent?.replace("✓", ""))).toEqual(["Tokama sounds", "macOS default"]);
+    expect(checks()).toEqual(["✓Banner + sound", "✓Sound only", "✓Banner + sound", "✓Tokama sounds"]);
+    expect($$(".notes-info-text span").map((el) => el.textContent)).toEqual([
+      "No notification while you are looking at that item: Tokama is in front and the item is open in the drawer or the full view.",
+      "Sound only: macOS cannot play a sound without a banner, so Tokama plays it itself while the app is running. Sound only plays even during Focus, but not while your Mac is locked. The ▶ buttons always play.",
+    ]);
     expect($(".notes-preview-hint")?.textContent).toBe("How each one looks in the top-right corner of the screen. Plain text, no formatting.");
   });
 
-  it("previews the three notifications, and the sound note", async () => {
+  it("previews a banner for the kinds that show one, a line for the sound-only kind, and the sound note", async () => {
     await openPage(fakeBridge(CONNECTED).bridge);
     expect(previews()).toEqual([
       "Needs you: Add order export endpointnowThe plan is ready. Approve it to start Build.Plan and build · orders-api",
-      "Finished: Fix the null check in cart totalsnowDone in 9 min. Ready to merge or open a PR.Quick fix · checkout-web",
+      "Finished is sound only: no banner, the Tokama sound plays.",
       "Failed: Upgrade the Postgres drivernowBuild failed 3 times: pnpm test, 4 failing.Plan and build · orders-api",
     ]);
-    expect($(".notes-sound-note")?.textContent).toBe("Silent. Sound is off.");
+    expect($(".notes-sound-note")?.textContent).toBe("♪ Plays the Tokama sound for 3 of 3 kinds.");
     expect($(".notes-card")?.getAttribute("aria-label")).toBe("Notification preview. Needs you: Add order export endpoint. The plan is ready. Approve it to start Build.");
     expect($(".notes-icon")?.getAttribute("src")).toBeTruthy();
   });
 
-  it("flips a switch, says On or Off in words, saves it, and turns a preview into its off line", async () => {
+  it("saves a mode, changes the preview line, and keeps the sound note in step", async () => {
     const fake = fakeBridge(CONNECTED);
     await openPage(fake.bridge);
-    await click(switches()[1]);
-    expect(states()[1]).toEqual(["false", "Off"]);
-    expect(fake.saveNotifications).toHaveBeenLastCalledWith({ finished: false });
+    await click(option(1, "Off"));
+    expect(fake.saveNotifications).toHaveBeenLastCalledWith({ finished: "off" });
+    expect(checkedIn(groups()[1])).toBe("✓Off");
     expect(previews()[1]).toBe("Finished is off, so this one never shows.");
-    expect($$(".notes-card")).toHaveLength(2);
-    await click(switches()[3]);
-    expect(fake.saveNotifications).toHaveBeenLastCalledWith({ sound: true });
-    expect($(".notes-sound-note")?.textContent).toBe("♪ Plays the macOS notification sound.");
-    await click(switches()[1]);
-    expect(fake.saveNotifications).toHaveBeenLastCalledWith({ finished: true });
+    expect($(".notes-sound-note")?.textContent).toBe("♪ Plays the Tokama sound for 2 of 3 kinds.");
+    await click(option(1, "Banner only"));
+    expect(fake.saveNotifications).toHaveBeenLastCalledWith({ finished: "banner" });
     expect(previews()[1]).toContain("Done in 9 min");
+    expect($(".notes-sound-note")?.textContent).toBe("♪ Plays the Tokama sound for 2 of 3 kinds.");
+    await click(option(0, "Off"));
+    await click(option(2, "Banner only"));
+    expect($(".notes-sound-note")?.textContent).toBe("Silent. No kind plays a sound.");
   });
 
-  it("shows the saved switches, not the defaults", async () => {
-    await openPage(fakeBridge(CONNECTED, { desktopState: withNotifications({ needsYou: false, sound: true }) }).bridge);
-    expect(states()).toEqual([["false", "Off"], ["true", "On"], ["true", "On"], ["true", "On"]]);
+  it("saves the sound set and names it in the lines and the note", async () => {
+    const fake = fakeBridge(CONNECTED);
+    await openPage(fake.bridge);
+    await click(option(3, "macOS default"));
+    expect(fake.saveNotifications).toHaveBeenLastCalledWith({ sounds: "macos" });
+    expect(previews()[1]).toBe("Finished is sound only: no banner, the macOS default sound plays.");
+    expect($(".notes-sound-note")?.textContent).toBe("♪ Plays the macOS default sound for 3 of 3 kinds.");
+  });
+
+  it("shows the saved choices, not the defaults", async () => {
+    await openPage(fakeBridge(CONNECTED, { desktopState: withNotifications({ needsYou: "off", sounds: "macos" }) }).bridge);
+    expect(checks()).toEqual(["✓Off", "✓Sound only", "✓Banner + sound", "✓macOS default"]);
     expect(previews()[0]).toBe("Needs you is off, so this one never shows.");
   });
 
-  it("keeps the switches working when saving fails or the saved state cannot be read", async () => {
+  it("plays a kind's sound with the chosen set, whatever its mode, and shows Playing for a moment", async () => {
+    vi.useFakeTimers();
+    const fake = fakeBridge(CONNECTED, { desktopState: withNotifications({ needsYou: "off" }) });
+    await openPage(fake.bridge);
+    expect(playButton("Needs you").getAttribute("title")).toBe("Play the Needs you sound");
+    await click(playButton("Needs you"));
+    expect(fake.playSound).toHaveBeenLastCalledWith("needsYou", "tokama");
+    // Three live regions are always in the page, and only the row that plays says the word.
+    expect($$(".notes-playing").map((el) => [el.getAttribute("aria-live"), el.textContent])).toEqual([["polite", "Playing"], ["polite", ""], ["polite", ""]]);
+    await act(async () => vi.advanceTimersByTime(1500));
+    expect($$(".notes-playing").map((el) => el.textContent)).toEqual(["", "", ""]);
+    await click(option(3, "macOS default"));
+    await click(playButton("Failed"));
+    expect(fake.playSound).toHaveBeenLastCalledWith("failed", "macos");
+  });
+
+  it("clears the Playing timer when the page goes away", async () => {
+    vi.useFakeTimers();
+    const fake = fakeBridge(CONNECTED);
+    await openPage(fake.bridge);
+    await click(playButton("Finished"));
+    await act(async () => root.unmount());
+    expect(vi.getTimerCount()).toBe(0);
+    root = createRoot(container);
+  });
+
+  it("keeps the choices working when saving fails or the saved state cannot be read", async () => {
     const fake = fakeBridge(CONNECTED);
     fake.saveNotifications.mockRejectedValue(new Error("disk full"));
     await openPage(fake.bridge);
-    await click(switches()[2]);
-    expect(states()[2]).toEqual(["false", "Off"]);
+    await click(option(2, "Off"));
+    expect(checkedIn(groups()[2])).toBe("✓Off");
     const broken = fakeBridge(CONNECTED);
     (broken.bridge.getDesktopState as unknown as Mock).mockRejectedValue(new Error("no"));
     await act(async () => root.unmount());
     root = createRoot(container);
     await openPage(broken.bridge);
-    expect(states()).toEqual([["true", "On"], ["true", "On"], ["true", "On"], ["false", "Off"]]);
+    expect(checks()).toEqual(["✓Banner + sound", "✓Sound only", "✓Banner + sound", "✓Tokama sounds"]);
   });
 });
 

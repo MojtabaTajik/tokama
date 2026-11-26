@@ -3,7 +3,8 @@
 import { Notification } from "electron";
 import type { Note } from "./notifier.js";
 
-export type ShowNote = (note: Note, onClick: () => void) => void;
+/** Shows the note; true when it was handed to the system, false when there is no notification service or it refused. */
+export type ShowNote = (note: Note, onClick: () => void) => boolean;
 
 /** A shown notification that has not been clicked or closed must stay referenced, or its click is lost. */
 const MAX_LIVE = 50;
@@ -12,8 +13,8 @@ export function systemShow(): ShowNote {
   const live: Notification[] = [];
   return (note, onClick) => {
     try {
-      if (!Notification.isSupported()) return;
-      const shown = new Notification({ title: note.title, body: note.body, silent: note.silent });
+      if (!Notification.isSupported()) return false;
+      const shown = new Notification({ title: note.title, body: note.body, silent: note.silent, ...(note.sound === undefined ? {} : { sound: note.sound }) });
       const forget = () => {
         const index = live.indexOf(shown);
         if (index !== -1) live.splice(index, 1);
@@ -27,8 +28,10 @@ export function systemShow(): ShowNote {
       live.push(shown);
       if (live.length > MAX_LIVE) live.shift();
       shown.show();
+      return true;
     } catch {
-      // No permission or no notification service: the switches still work and nothing else breaks.
+      // No permission or no notification service: the choices still work and nothing else breaks.
+      return false;
     }
   };
 }
@@ -44,5 +47,6 @@ export function recordingShow(): ShowNote {
   (globalThis as { __tokamaNotifications?: RecordedNote[] }).__tokamaNotifications = list;
   return (note, onClick) => {
     list.push({ ...note, click: onClick });
+    return true;
   };
 }

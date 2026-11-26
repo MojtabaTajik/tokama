@@ -294,6 +294,29 @@ describe("About", () => {
     expect($(".about-aka em")?.textContent).toBe("to-KA-ma");
   });
 
+  it("plays the call of the Tokay from the mark, shows Playing for a moment, and clears the timer on leaving", async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = await open();
+      const call = $('button[aria-label="Play the Tokay call"]');
+      expect(call?.getAttribute("title")).toBe("Play the Tokay call");
+      expect(call?.querySelector("img")?.getAttribute("alt")).toBe("");
+      expect(text(".about-calling")).toBe("");
+      await click(call);
+      expect(fake.playSound).toHaveBeenCalledWith("tokayCall", "tokama");
+      expect(text(".about-calling")).toBe("♪ Playing");
+      expect($(".about-calling")?.getAttribute("aria-live")).toBe("polite");
+      await act(async () => vi.advanceTimersByTime(1900));
+      expect(text(".about-calling")).toBe("");
+      await click(call);
+      await act(async () => root.unmount());
+      expect(vi.getTimerCount()).toBe(0);
+      root = createRoot(container);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("lists the build facts, with the engine's status from the connection", async () => {
     await open();
     expect(rows()).toEqual([

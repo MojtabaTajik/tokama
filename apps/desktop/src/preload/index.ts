@@ -50,6 +50,8 @@ export const bridge: TokamaBridge = {
   // Only the action's name crosses, as a string.
   countUsage: (action) => ipcRenderer.invoke(CHANNELS.countUsage, String(action)) as Promise<void>,
   saveNotifications: (patch) => ipcRenderer.invoke(CHANNELS.saveNotifications, patch) as Promise<void>,
+  // Only the two names cross, as strings.
+  playSound: (name, set) => ipcRenderer.invoke(CHANNELS.playSound, String(name), String(set)) as Promise<void>,
   setViewedItem: (itemId) => ipcRenderer.invoke(CHANNELS.viewedItem, itemId) as Promise<void>,
   onOpenItem: (listener) => {
     openListener = listener;

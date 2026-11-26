@@ -1,7 +1,8 @@
 import type { ItemRecord, Setup } from "@tokama/core";
 import { describe, expect, it } from "vitest";
-import type { NotificationSettings } from "../shared/desktop-state.js";
-import { createNotifier, createTracker, durationText, isSuppressed, type Note, type NotifierDeps, noteText, plainText } from "./notifier.js";
+import type { NoteKind, NotificationSettings, SoundSet } from "../shared/desktop-state.js";
+import { type BannerSound, createNotifier, createTracker, durationText, isSuppressed, type Note, type NotifierDeps, noteText, PLAY_WHEN_FOCUS_UNKNOWN, plainText } from "./notifier.js";
+import type { FocusState } from "./sound/focus.js";
 
 const MINUTE = 60_000;
 const NOW = Date.UTC(2025, 9, 20, 15, 0, 0);
@@ -176,12 +177,43 @@ describe("noteText", () => {
   });
 });
 
-function setupNotifier(options: { settings?: Partial<NotificationSettings>; focused?: boolean; board?: ItemRecord[] | undefined | Promise<ItemRecord[]>; setup?: Setup | undefined | Error; show?: () => void } = {}) {
+interface SetupOptions {
+  settings?: Partial<NotificationSettings>;
+  focused?: boolean;
+  board?: ItemRecord[] | undefined | Promise<ItemRecord[]>;
+  setup?: Setup | undefined | Error;
+  show?: () => void;
+  /** What `show` reports: false when the system did not show the banner. */
+  bannerShown?: boolean;
+  focus?: FocusState;
+  bannerSound?: BannerSound;
+  /** The hint counts as shown unless a test asks for it to be new. */
+  hintShown?: boolean;
+  packagedMac?: boolean;
+}
+
+/** A name like the one the app gives a bundled sound, for a packaged Mac with the Tokama sounds. */
+const bundled = (kind: NoteKind, set: SoundSet): string | undefined => (set === "tokama" ? `tokama-${kind}.wav` : undefined);
+
+function setupNotifier(options: SetupOptions = {}) {
   const shown: { note: Note; click: () => void }[] = [];
   const opened: string[] = [];
+  const played: [NoteKind, SoundSet][] = [];
+  const hint = { value: options.hintShown ?? true, marked: 0 };
   const deps: NotifierDeps = {
-    settings: () => ({ needsYou: true, finished: true, failed: true, sound: false, ...options.settings }),
+    settings: () => ({ needsYou: "banner", finished: "banner", failed: "banner", sounds: "tokama", ...options.settings }),
     windowFocused: () => options.focused ?? false,
+    play: (kind, set) => played.push([kind, set]),
+    bundledSound: (kind, set) => (options.packagedMac === false ? undefined : bundled(kind, set)),
+    focus: async () => options.focus ?? "unknown",
+    hint: {
+      shown: () => hint.value,
+      markShown: () => {
+        hint.value = true;
+        hint.marked += 1;
+      },
+    },
+    ...(options.bannerSound === undefined ? {} : { bannerSound: options.bannerSound }),
     board: async () => ("board" in options ? options.board : [item(), item({ id: "item_2" })]), // open items only
     setup: async () => {
       if (options.setup instanceof Error) throw options.setup;
@@ -190,31 +222,142 @@ function setupNotifier(options: { settings?: Partial<NotificationSettings>; focu
     show: (note, click) => {
       options.show?.();
       shown.push({ note, click });
+      return options.bannerShown ?? true;
     },
     open: (itemId) => opened.push(itemId),
     now: () => NOW,
     platform: "darwin",
   };
-  return { notifier: createNotifier(deps), shown, opened };
+  return { notifier: createNotifier(deps), shown, opened, played, hint };
 }
 const event = (record: ItemRecord) => ({ type: "item_updated" as const, item: record });
 const settle = () => new Promise((done) => setTimeout(done, 0));
 
+/** The three kinds of transition, as the item that causes each. */
+const CAUSE: Record<NoteKind, () => ItemRecord> = { needsYou: () => asking(), finished: () => done(), failed: () => failed() };
+
+/** Sends the transition of `kind` through a notifier set up with `options`. */
+async function transition(kind: NoteKind, options: SetupOptions) {
+  const run = setupNotifier(options);
+  await run.notifier.resync();
+  run.notifier.onEvent(event(CAUSE[kind]()));
+  await settle();
+  return run;
+}
+
 describe("createNotifier", () => {
-  it("shows one notification per transition, silent unless Sound is on, and a click opens that item", async () => {
+  it("shows one notification per transition and a click opens that item", async () => {
     const { notifier, shown, opened } = setupNotifier();
     await notifier.resync();
     notifier.onEvent(event(asking()));
     notifier.onEvent(event(done({ id: "item_2" })));
     await settle();
-    expect(shown.map(({ note }) => [note.title, note.silent])).toEqual([["Needs you: Add order export endpoint", true], ["Finished: Add order export endpoint", true]]);
+    expect(shown.map(({ note }) => note.title)).toEqual(["Needs you: Add order export endpoint", "Finished: Add order export endpoint"]);
     shown[1]!.click();
     expect(opened).toEqual(["item_2"]);
-    const loud = setupNotifier({ settings: { sound: true } });
-    await loud.notifier.resync();
-    loud.notifier.onEvent(event(failed()));
+  });
+
+  describe.each(["needsYou", "finished", "failed"] as const)("a %s transition", (kind) => {
+    it("Banner + sound shows a banner that is not silent and names the bundled sound, and plays nothing itself", async () => {
+      const { shown, played } = await transition(kind, { settings: { [kind]: "both" } });
+      expect(shown.map(({ note }) => [note.silent, note.sound])).toEqual([[false, `tokama-${kind}.wav`]]);
+      expect(played).toEqual([]);
+    });
+
+    it("Banner only shows a silent banner without a sound name", async () => {
+      const { shown, played } = await transition(kind, { settings: { [kind]: "banner" } });
+      expect(shown.map(({ note }) => [note.silent, note.sound])).toEqual([[true, undefined]]);
+      expect(played).toEqual([]);
+    });
+
+    it("Sound only shows no banner and plays the sound of the kind from the set", async () => {
+      const { shown, played } = await transition(kind, { settings: { [kind]: "sound", sounds: "macos" } });
+      expect(shown).toEqual([]);
+      expect(played).toEqual([[kind, "macos"]]);
+    });
+
+    it("Off shows and plays nothing", async () => {
+      const { shown, played } = await transition(kind, { settings: { [kind]: "off" } });
+      expect([shown, played]).toEqual([[], []]);
+    });
+  });
+
+  it("Banner + sound with the macOS default set, or where no bundled sound applies, leaves the sound to the system", async () => {
+    for (const options of [{ settings: { needsYou: "both", sounds: "macos" } }, { settings: { needsYou: "both" }, packagedMac: false }] as const) {
+      const { shown } = await transition("needsYou", options);
+      expect(shown.map(({ note }) => [note.silent, note.sound])).toEqual([[false, undefined]]);
+    }
+  });
+
+  it("with the player switch, Banner + sound shows a silent banner and the app plays the sound; Banner only plays nothing", async () => {
+    const both = await transition("failed", { settings: { failed: "both" }, bannerSound: "player" });
+    expect(both.shown.map(({ note }) => [note.silent, note.sound])).toEqual([[true, undefined]]);
+    expect(both.played).toEqual([["failed", "tokama"]]);
+    const banner = await transition("failed", { settings: { failed: "banner" }, bannerSound: "player" });
+    expect(banner.played).toEqual([]);
+  });
+
+  it("Sound only is quiet while the screen is locked or Focus is on, and plays when Focus is off", async () => {
+    for (const [focus, plays] of [["locked", 0], ["on", 0], ["off", 1], ["unknown", PLAY_WHEN_FOCUS_UNKNOWN ? 1 : 0]] as const) {
+      const { played } = await transition("finished", { settings: { finished: "sound" }, focus });
+      expect(played).toHaveLength(plays);
+    }
+  });
+
+  it("the focus check does not apply to banners", async () => {
+    const { shown } = await transition("needsYou", { settings: { needsYou: "both" }, focus: "locked" });
+    expect(shown).toHaveLength(1);
+  });
+
+  it("Sound only is also stopped by the item the focused window shows", async () => {
+    const { notifier, played } = setupNotifier({ settings: { needsYou: "sound" }, focused: true });
+    await notifier.resync();
+    notifier.setViewedItem("item_1");
+    notifier.onEvent(event(asking()));
     await settle();
-    expect(loud.shown.map(({ note }) => note.silent)).toEqual([false]);
+    expect(played).toEqual([]);
+  });
+
+  describe("the hint line", () => {
+    it("goes on the first banner only, and is marked shown once", async () => {
+      const run = setupNotifier({ hintShown: false });
+      await run.notifier.resync();
+      run.notifier.onEvent(event(asking()));
+      run.notifier.onEvent(event(done({ id: "item_2" })));
+      await settle();
+      expect(run.shown[0]?.note.body).toBe("The plan is ready. Approve it to start Build.\nPlan and build · orders-api\nChange how Tokama notifies you in Settings → Notifications");
+      expect(run.shown[1]?.note.body).not.toContain("Settings");
+      expect(run.hint.marked).toBe(1);
+    });
+
+    it("is not used up by a Sound only event, so the next banner carries it", async () => {
+      const run = setupNotifier({ hintShown: false, settings: { needsYou: "sound" } });
+      await run.notifier.resync();
+      run.notifier.onEvent(event(asking()));
+      await settle();
+      expect(run.hint.marked).toBe(0);
+      run.notifier.onEvent(event(done({ id: "item_2" })));
+      await settle();
+      expect(run.shown[0]?.note.body).toContain("Settings → Notifications");
+      expect(run.hint.marked).toBe(1);
+    });
+
+    it("is not used up by a banner that did not show, so the next banner carries it", async () => {
+      const failedShow = await transition("needsYou", { hintShown: false, bannerShown: false });
+      expect(failedShow.hint.marked).toBe(0);
+      expect(failedShow.shown[0]?.note.body).toContain("Settings → Notifications");
+      const throwing = setupNotifier({ hintShown: false, show: () => { throw new Error("no service"); } });
+      await throwing.notifier.resync();
+      throwing.notifier.onEvent(event(asking()));
+      await settle();
+      expect(throwing.hint.marked).toBe(0);
+    });
+
+    it("is not added when it was shown already", async () => {
+      const { shown, hint } = await transition("needsYou", { hintShown: true });
+      expect(shown[0]?.note.body).not.toContain("Settings");
+      expect(hint.marked).toBe(0);
+    });
   });
 
   it("shows nothing for an update that is not an item update", async () => {
@@ -226,12 +369,12 @@ describe("createNotifier", () => {
     expect(shown).toEqual([]);
   });
 
-  it("follows the switches, and a transition that was off never shows later", async () => {
-    const settings: { -readonly [K in keyof NotificationSettings]?: boolean } = { needsYou: false };
+  it("follows the modes, and a transition that was off never shows later", async () => {
+    const settings: { -readonly [K in keyof NotificationSettings]?: NotificationSettings[K] } = { needsYou: "off" };
     const { notifier, shown } = setupNotifier({ settings });
     await notifier.resync();
     notifier.onEvent(event(asking()));
-    settings.needsYou = true;
+    settings.needsYou = "banner";
     notifier.onEvent(event(asking()));
     await settle();
     expect(shown).toEqual([]);
@@ -298,7 +441,7 @@ describe("createNotifier", () => {
   it("a board that fails on a reconnect leaves the next update quiet", async () => {
     let board: ItemRecord[] | undefined = [item()];
     const shown: Note[] = [];
-    const notifier = createNotifier({ settings: () => ({ needsYou: true, finished: true, failed: true, sound: false }), windowFocused: () => false, board: async () => board, setup: async () => setup, show: (note) => shown.push(note), open: () => undefined, now: () => NOW, platform: "darwin" });
+    const notifier = createNotifier({ settings: () => ({ needsYou: "banner", finished: "banner", failed: "banner", sounds: "tokama" }), windowFocused: () => false, board: async () => board, setup: async () => setup, show: (note) => (shown.push(note), true), open: () => undefined, play: () => undefined, bundledSound: () => undefined, focus: async () => "unknown", hint: { shown: () => true, markShown: () => undefined }, now: () => NOW, platform: "darwin" });
     await notifier.resync();
     board = undefined;
     await notifier.resync();
