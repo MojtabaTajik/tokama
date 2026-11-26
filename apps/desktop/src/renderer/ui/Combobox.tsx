@@ -84,7 +84,8 @@ export function Combobox({ id, labelledBy, describedBy, value, valueTag, placeho
     if (refocus) trigger.current?.focus();
   };
   const show = () => {
-    setActive(Math.max(0, groups.flatMap((group) => group.options).findIndex((option) => option.value === value)));
+    // A value that is not listed (cut by the cap) starts with no active row, so Enter never replaces it.
+    setActive(groups.flatMap((group) => group.options).findIndex((option) => option.value === value));
     setOpen(true);
   };
 
@@ -118,7 +119,7 @@ export function Combobox({ id, labelledBy, describedBy, value, valueTag, placeho
       event.stopPropagation();
       close(true);
     } else if (event.key === "ArrowDown") move(index + 1);
-    else if (event.key === "ArrowUp") move(index - 1);
+    else if (event.key === "ArrowUp") move(index < 0 ? rows.length - 1 : index - 1);
     else if (event.key === "Home") move(0);
     else if (event.key === "End") move(rows.length - 1);
     else if (event.key === "Enter") {
@@ -165,7 +166,15 @@ export function Combobox({ id, labelledBy, describedBy, value, valueTag, placeho
         <span aria-hidden="true">{open ? "▴" : "▾"}</span>
       </button>
       {open && (
-        <div className="combobox-popup">
+        <div
+          className="combobox-popup"
+          // Keys from anywhere in the popup act as in the search field, so Escape never reaches a dialog around it.
+          onKeyDown={onSearchKeyDown}
+          // A click on a heading, hint or scroll bar keeps focus in the search field.
+          onMouseDown={(event) => {
+            if (event.target !== search.current) event.preventDefault();
+          }}
+        >
           <input
             ref={search}
             type="text"
@@ -184,7 +193,6 @@ export function Combobox({ id, labelledBy, describedBy, value, valueTag, placeho
               setQuery(event.target.value);
               setActive(0);
             }}
-            onKeyDown={onSearchKeyDown}
           />
           <div id={listId} role="listbox" aria-label={listLabel} className="combobox-list">
             {shown.map((group, groupIndex) => (

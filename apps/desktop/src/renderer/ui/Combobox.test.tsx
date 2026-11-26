@@ -34,8 +34,8 @@ const changes = vi.fn();
 const submits = vi.fn();
 const closes = vi.fn();
 
-function Harness({ freeText = true, inModal = false }: { freeText?: boolean; inModal?: boolean }) {
-  const [value, setValue] = useState("develop");
+function Harness({ freeText = true, inModal = false, startValue = "develop" }: { freeText?: boolean; inModal?: boolean; startValue?: string }) {
+  const [value, setValue] = useState(startValue);
   const field = (
     <form onSubmit={(event) => (event.preventDefault(), submits())}>
       <span id="label">Base branch</span>
@@ -196,6 +196,30 @@ describe("Combobox", () => {
     expect(closes).not.toHaveBeenCalled();
     press("Escape", trigger());
     expect(closes).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes on Escape pressed anywhere in the popup, and keeps focus in the search field on a click on a heading", () => {
+    mount({ inModal: true });
+    open();
+    const heading = container.querySelector(".combobox-heading")!;
+    const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+    act(() => {
+      heading.dispatchEvent(down);
+    });
+    expect(down.defaultPrevented).toBe(true);
+    press("Escape", heading);
+    expect(search()).toBeNull();
+    expect(closes).not.toHaveBeenCalled();
+  });
+
+  it("starts with no active row when the value is not listed, so Enter keeps it", () => {
+    mount({ startValue: "release/3.0" });
+    open();
+    expect(search()!.getAttribute("aria-activedescendant")).toBeNull();
+    press("Enter");
+    expect(changes).not.toHaveBeenCalled();
+    press("ArrowUp");
+    expect(activeText()).toBe("<b>x</b>");
   });
 
   it("closes when focus moves on with Tab, and keeps the value", () => {
