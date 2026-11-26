@@ -20,7 +20,8 @@ export function AgentDotMark({ dot }: { readonly dot: AgentDot }) {
 
 /**
  * The tool that runs an agent: its official icon, or its neutral monogram when it has none.
- * `named` gives the mark the tool's name for assistive tech; leave it off when the name stands next to it.
+ * `named` gives the mark the tool's name for assistive tech and as a hover title, because the icon then
+ * stands alone; leave it off when the name stands next to it.
  * `size` is in px and stays below the app's own mark (22px in the rail).
  */
 export function BackendMark({ cliId, named = false, size = 12 }: { readonly cliId: AiCliId; readonly named?: boolean; readonly size?: 12 | 16 | 20 }) {
@@ -29,10 +30,10 @@ export function BackendMark({ cliId, named = false, size = 12 }: { readonly cliI
     // A file with wide clear space is drawn in a larger box and pulled back with a negative margin, so the row keeps its height.
     const box = Math.round(size * iconScale);
     const style = box === size ? undefined : ({ "--bm-pad": `${(size - box) / 2}px` } as CSSProperties);
-    return <img className="backend-mark" src={iconUrl} alt={named ? name : ""} width={box} height={box} style={style} />;
+    return <img className="backend-mark" src={iconUrl} alt={named ? name : ""} title={named ? name : undefined} width={box} height={box} style={style} />;
   }
   return named ? (
-    <span className="backend-mono mono" role="img" aria-label={name}>
+    <span className="backend-mono mono" role="img" aria-label={name} title={name}>
       {monogram}
     </span>
   ) : (
@@ -48,17 +49,25 @@ export interface AgentChipProps {
   readonly className?: string | undefined;
   /** Cut a long name with an ellipsis instead of wrapping. */
   readonly ellipsis?: boolean;
-  /** What follows the name, such as the CLI's short name. */
+  /** Print the tool's short name after the name, for tables that have room; the icon then needs no name of its own. */
+  readonly showTool?: boolean;
+  /** What follows the name. */
   readonly children?: ReactNode;
 }
 
-/** The dot, the tool's icon when the agent's tool is known, and the name, then anything the screen adds. */
-export function AgentChip({ agent, className, ellipsis = false, children }: AgentChipProps) {
+/** The dot, the tool's icon when the agent's tool is known (its name on hover), and the name, then anything the screen adds. */
+export function AgentChip({ agent, className, ellipsis = false, showTool = false, children }: AgentChipProps) {
+  const written = showTool ? agent.cliId : undefined;
   return (
     <span className={["agent-chip", className].filter(Boolean).join(" ")}>
       <AgentDotMark dot={agent.dot} />
-      {agent.cliId !== undefined && <BackendMark cliId={agent.cliId} named />}
+      {agent.cliId !== undefined && written === undefined && <BackendMark cliId={agent.cliId} named />}
       {ellipsis ? <span className="ellipsis">{agent.name}</span> : agent.name}
+      {written !== undefined && (
+        <>
+          <BackendMark cliId={written} /> {backendOf(written).shortName}
+        </>
+      )}
       {children}
     </span>
   );

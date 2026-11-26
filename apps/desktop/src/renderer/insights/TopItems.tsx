@@ -80,7 +80,7 @@ export function TopItems({ report, setup, filter, note, onOpen }: TopItemsProps)
                       {item.agents.map((agent) => {
                         const known = stepAgent({ agentId: agent.agentId, data: "none" }, setup?.agents ?? []);
                         return (
-                          <AgentChip key={agent.agentId} agent={{ ...known, cliId: agent.cliId }} className="ins-agent" />
+                          <AgentChip key={agent.agentId} agent={{ ...known, cliId: agent.cliId }} className="ins-agent" showTool />
                         );
                       })}
                     </span>

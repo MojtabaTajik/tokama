@@ -63,6 +63,30 @@ describe("BackendMark", () => {
   });
 });
 
+describe("BackendMark hover name", () => {
+  it("titles an icon that stands alone with the tool's name, and a monogram too", () => {
+    act(() => root.render(<BackendMark cliId="claude-code" named />));
+    expect(container.querySelector("img.backend-mark")?.getAttribute("title")).toBe("Claude Code");
+    act(() => root.render(<BackendMark cliId="ollama" named />));
+    expect(container.querySelector(".backend-mono")?.getAttribute("title")).toBe("Ollama");
+  });
+
+  it("adds no title where the name is printed beside the icon", () => {
+    act(() => root.render(<BackendMark cliId="claude-code" />));
+    expect(container.querySelector("img.backend-mark")?.hasAttribute("title")).toBe(false);
+  });
+});
+
+describe("AgentChip with the tool written out", () => {
+  it("prints the short name after the name, with an icon that needs no name of its own", () => {
+    act(() => root.render(<AgentChip agent={{ name: "Reviewer", dot: 3, cliId: "codex-cli" }} showTool />));
+    expect(container.querySelector(".agent-chip")?.textContent).toBe("Reviewer Codex");
+    const img = container.querySelector("img.backend-mark")!;
+    expect(img.getAttribute("alt")).toBe("");
+    expect(img.hasAttribute("title")).toBe(false);
+  });
+});
+
 describe("AgentChip", () => {
   it("shows the tool's icon next to the agent's name when the tool is known", () => {
     act(() => root.render(<AgentChip agent={{ name: "Architect", dot: 1, cliId: "claude-code" }} />));

@@ -148,7 +148,7 @@ describe("Machine tab: Tokama processes", () => {
     expect(rows[1]).toEqual(["●Fix rounding in invoice totals· Quick fix · Run checks", "14.2%", "1.1 GB"]);
     expect(rows[2]).toEqual(["└Check", "Tokama", "5", "14.2%", "1.1 GB"]);
     expect(rows[3]![0]).toBe("●Stock sync drops <b>items</b>· Quick fix · Fix");
-    expect(rows[4]).toEqual(["└Agent", "Local builder", "3", "7.2%", "412 MB"]);
+    expect(rows[4]).toEqual(["└Agent", "Local builder Claude Code", "3", "7.2%", "412 MB"]);
     expect(rows[5]).toEqual(["└Check", "Tokama", "1", "1.0%", "36 MB"]);
     expect(rows[6]).toEqual(["Tokama in total · 2 items running · 10 processes", "10", "22.8%", "1.7 GB"]);
     expect($(".mc-table caption")?.textContent).toBe("Tokama processes now · CPU is a share of all 12 cores · memory is resident");

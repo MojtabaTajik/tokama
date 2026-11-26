@@ -16,7 +16,7 @@ describe("backendOf", () => {
   });
 
   it("keeps the neutral monogram for a CLI without an icon", () => {
-    expect(backendOf("ollama")).toEqual({ name: "Ollama", monogram: "OL", iconUrl: undefined, iconScale: 1 });
+    expect(backendOf("ollama")).toEqual({ name: "Ollama", shortName: "Ollama", monogram: "OL", iconUrl: undefined, iconScale: 1 });
   });
 
   it("lists every CLI once, so the names come from this one place", () => {

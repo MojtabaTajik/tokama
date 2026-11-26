@@ -10,6 +10,8 @@ import openaiUrl from "./openai.svg";
 
 export interface Backend {
   readonly name: string;
+  /** The name for tight spots. */
+  readonly shortName: string;
   /** Two letters shown where there is no icon. */
   readonly monogram: string;
   readonly iconUrl: string | undefined;
@@ -18,9 +20,9 @@ export interface Backend {
 }
 
 const BACKENDS: Readonly<Record<AiCliId, Backend>> = {
-  "claude-code": { name: "Claude Code", monogram: "CC", iconUrl: claudeCodeUrl, iconScale: 1 },
-  "codex-cli": { name: "Codex CLI", monogram: "CX", iconUrl: openaiUrl, iconScale: 1.5 },
-  ollama: { name: "Ollama", monogram: "OL", iconUrl: undefined, iconScale: 1 },
+  "claude-code": { name: "Claude Code", shortName: "Claude Code", monogram: "CC", iconUrl: claudeCodeUrl, iconScale: 1 },
+  "codex-cli": { name: "Codex CLI", shortName: "Codex", monogram: "CX", iconUrl: openaiUrl, iconScale: 1.5 },
+  ollama: { name: "Ollama", shortName: "Ollama", monogram: "OL", iconUrl: undefined, iconScale: 1 },
 };
 
 export const BACKEND_IDS = Object.keys(BACKENDS) as readonly AiCliId[];

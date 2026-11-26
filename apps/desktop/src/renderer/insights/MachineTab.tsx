@@ -286,7 +286,7 @@ function ItemRows({ group, item, setup, cpu, onSelectItem }: { readonly group: G
           </td>
           <td className="muted">
             {row.role === "agent" && agent !== undefined ? (
-              <AgentChip agent={agent} className="ins-agent" />
+              <AgentChip agent={agent} className="ins-agent" showTool />
             ) : (
               <span className="ins-agent">
                 <AgentDotMark dot="neutral" />

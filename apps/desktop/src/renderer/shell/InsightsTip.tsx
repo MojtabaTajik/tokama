@@ -35,7 +35,7 @@ const TEXT = {
   settings: "Settings",
 } as const;
 
-const CLAUDE = AI_CLIS[0]!;
+const CLAUDE = AI_CLIS.find((cli) => cli.id === "claude-code")!;
 /** Today's items the tooltip lists; the rest are counted. */
 const TODAY_ITEMS = 3;
 
@@ -54,7 +54,7 @@ export function InsightsTip({ usage, issues, health, setup, now, onSelectItem, o
   const claude = usage?.clis.find((plan) => plan.cliId === CLAUDE.id);
   const windows = liveWindows(claude, now);
   const age = claude?.asOf === undefined ? undefined : (ageText(claude.asOf, now) ?? `${TEXT.asOf} ${stamp(claude.asOf, now)}`);
-  const others = AI_CLIS.slice(1).flatMap((cli) => {
+  const others = AI_CLIS.filter((cli) => cli.id !== CLAUDE.id).flatMap((cli) => {
     const plan = usage?.clis.find((entry) => entry.cliId === cli.id);
     const issue = issues.find((entry) => entry.cliId === cli.id);
     const live = liveWindows(plan, now);
