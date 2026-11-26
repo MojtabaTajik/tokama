@@ -65,7 +65,7 @@ flow("opens a pull request for a done item from the row's menu, then removes its
 });
 
 /** The Diff tab's two header lines, spaces folded. */
-const diffHead = async (scope: Locator) => (await scope.locator(".dv-head").innerText()).split("\n").map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
+const diffHead = async (scope: Locator) => (await scope.locator(".dv-head > p").allInnerTexts()).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
 
 flow("shows the Diff tab of a done item before Merge (branch against base) and after it (the merged commit)", async ({ page, resize, screenshot }) => {
   await resize(1440, 900);
