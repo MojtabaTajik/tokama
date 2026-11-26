@@ -16,8 +16,8 @@ afterEach(async () => {
   cleanups = [];
 });
 
-async function client(dir: string): Promise<EngineClient> {
-  const connected = await connect({ dir, startTimeoutMs: 2_000 });
+async function client(dir: string, lockPath: string): Promise<EngineClient> {
+  const connected = await connect({ dir, lockPath, startTimeoutMs: 2_000 });
   if (!connected.ok) throw new Error(connected.error.message);
   cleanups.push(() => connected.value.close());
   return connected.value;
@@ -78,7 +78,7 @@ describe("usage query", () => {
     const started = await startEngine({ dir, sample: true });
     if (!started.ok) throw new Error(started.error.message);
     cleanups.push(() => started.value.close());
-    const engineClient = await client(dir);
+    const engineClient = await client(dir, started.value.endpoint.lockPath);
     const events = collect(engineClient);
     const reply = await engineClient.query({ type: "usage", range: 14 });
     if (!reply.ok) throw new Error(reply.error.message);
@@ -116,7 +116,7 @@ describe("usage query", () => {
     const started = await startEngine({ dir, home, planSources: {}, processTable: { list: async () => [], bootTime: () => 0, signalGroup: () => undefined } });
     if (!started.ok) throw new Error(started.error.message);
     cleanups.push(() => started.value.close());
-    const engineClient = await client(dir);
+    const engineClient = await client(dir, started.value.endpoint.lockPath);
     const events = collect(engineClient);
 
     const first = await engineClient.query({ type: "usage", range: 14 });
@@ -153,7 +153,7 @@ describe("usage query", () => {
     const started = await startEngine({ dir, home, planSources: {}, processTable: { list: async () => [], bootTime: () => 0, signalGroup: () => undefined } });
     if (!started.ok) throw new Error(started.error.message);
     cleanups.push(() => started.value.close());
-    const engineClient = await client(dir);
+    const engineClient = await client(dir, started.value.endpoint.lockPath);
     const events = collect(engineClient);
     // A reply comes after every event that was sent before it on the same connection; the pause lets the client read them.
     const settle = async () => void (await engineClient.query({ type: "board" }));

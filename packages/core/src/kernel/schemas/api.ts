@@ -477,6 +477,9 @@ const runningItems = z.int().nonnegative().optional();
 /** The engine's build version, as written in its package.json. Any text: only the client decides whether it can compare it. */
 const engineVersion = z.string().min(1).max(128).optional();
 
+const engineIdField = z.string().min(1).max(128).optional();
+const enginePid = z.int().positive().optional();
+
 /** The engine accepted the hello. `engineId` is new on each engine start: a new id means `seq` restarted. */
 export const WelcomeMessageSchema = z.object({
   kind: z.literal("welcome"),
@@ -484,12 +487,19 @@ export const WelcomeMessageSchema = z.object({
   engineId: z.string().min(1).max(128),
   engineVersion,
   runningItems,
+  /** The engine's process id; an engine older than the lock rewrite does not send it. */
+  pid: enginePid,
 });
 
-/** The engine accepted a shutdown request; it closes the connection and stops. */
+/**
+ * The engine accepted a shutdown request; it closes the connection and stops. `engineId` and
+ * `pid` say which engine it is, so a client signals only the process that answered.
+ */
 export const ShutdownAcceptedSchema = z.object({
   kind: z.literal("shutdown_accepted"),
   apiVersion: z.int(),
+  engineId: engineIdField,
+  pid: enginePid,
 });
 
 /**
@@ -500,6 +510,8 @@ export const ShutdownRefusedSchema = z.object({
   kind: z.literal("shutdown_refused"),
   apiVersion: z.int(),
   runningItems,
+  engineId: engineIdField,
+  pid: enginePid,
 });
 
 /** The codes this engine sends in a connection error. Clients accept any code. */

@@ -192,7 +192,7 @@ export async function startEngine(workspace: Workspace): Promise<RunningEngine> 
   try {
     for (const deadline = Date.now() + 20_000; client === undefined; await new Promise((done) => setTimeout(done, 100))) {
       if (child.exitCode !== null) throw new Error(`the engine exited with ${child.exitCode}: ${readFileSync(join(workspace.root, "engine.out"), "utf8")}`);
-      const connected = await connect({ dir: workspace.engineDir, startTimeoutMs: 1_000 });
+      const connected = await connect({ dir: workspace.engineDir, lockPath: join(workspace.tokamaHome, "engine.lock"), startTimeoutMs: 1_000 });
       if (connected.ok) client = connected.value;
       else if (Date.now() > deadline) throw new Error(`no connection to the engine: ${connected.error.message}`);
     }

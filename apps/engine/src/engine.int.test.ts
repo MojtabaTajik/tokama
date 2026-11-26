@@ -1,13 +1,19 @@
-import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
-import { Server } from "node:net";
 import { join } from "node:path";
-import { type ClientEvent, connect, type EngineClient, requestShutdown } from "@tokama/client";
-import { API_VERSION, err, manualClock, MAX_MESSAGE_BYTES } from "@tokama/core";
+import { type ClientEvent, connect, type EngineClient, requestShutdown, stopEngine } from "@tokama/client";
+import { API_VERSION, err, manualClock, MAX_MESSAGE_BYTES, probeSocket, readEngineLock } from "@tokama/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type EngineHandle, startEngine } from "./engine.js";
 import { rawConnect, sampleItem, tempEngineDir, waitFor } from "./testing/helpers.js";
+
+// linkSync passes through, unless a test makes it fail once.
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return { ...actual, linkSync: vi.fn(actual.linkSync) };
+});
 
 const ITEM_ID = "item_0b9f3c1e-6a2d-4f7b-9c1a-2e3d4f5a6b7c";
 
@@ -25,8 +31,26 @@ async function engine(dir: string, options: { helloTimeoutMs?: number; engineVer
   return started.value;
 }
 
+/** The lock of an engine started without a home: in its engine dir. */
+const lockIn = (dir: string) => join(dir, "engine.lock");
+
+/** A socket file and token that an engine left behind when it was killed: the file is there, and nobody listens on it. */
+async function deadSocket(dir: string, name: string): Promise<string> {
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const socketPath = join(dir, `${name}.sock`);
+  writeFileSync(join(dir, `${name}.token`), "stale");
+  const script = `require("net").createServer().listen(process.argv[1], () => console.log("ready")); setTimeout(() => {}, 60_000);`;
+  const child = spawn(process.execPath, ["-e", script, socketPath], { stdio: ["ignore", "pipe", "ignore"] });
+  cleanups.push(() => child.kill("SIGKILL"));
+  await new Promise<void>((resolve) => child.stdout.once("data", () => resolve()));
+  const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  child.kill("SIGKILL");
+  await exited;
+  return socketPath;
+}
+
 async function client(dir: string): Promise<EngineClient> {
-  const connected = await connect({ dir, startTimeoutMs: 2_000 });
+  const connected = await connect({ dir, lockPath: lockIn(dir), startTimeoutMs: 2_000 });
   if (!connected.ok) throw new Error(connected.error.message);
   cleanups.push(() => connected.value.close());
   return connected.value;
@@ -45,7 +69,7 @@ async function handshaken(handle: EngineHandle) {
   const raw = await rawConnect(handle.endpoint.socketPath);
   cleanups.push(() => raw.destroy());
   raw.send({ kind: "hello", apiVersion: API_VERSION, token: readFileSync(handle.endpoint.tokenPath, "utf8") });
-  expect(await raw.next()).toEqual({ kind: "welcome", apiVersion: API_VERSION, engineId: handle.engineId, engineVersion: "0.0.0", runningItems: 0 });
+  expect(await raw.next()).toEqual({ kind: "welcome", apiVersion: API_VERSION, engineId: handle.engineId, engineVersion: "0.0.0", pid: process.pid, runningItems: 0 });
   return raw;
 }
 
@@ -197,7 +221,11 @@ describe("engine service", () => {
     expect(statSync(socketPath).mode & 0o777).toBe(0o600);
     expect(statSync(tokenPath).mode & 0o777).toBe(0o600);
     expect(readFileSync(tokenPath, "utf8")).toMatch(/^[0-9a-f]{64}$/);
-    expect(readFileSync(lockPath, "utf8")).toBe(`${process.pid} ${handle.engineId}\n`);
+    expect(statSync(lockPath).mode & 0o777).toBe(0o600);
+    expect(socketPath).toMatch(/\/s-[0-9a-f]{8}\.sock$/);
+    expect(lockPath).toBe(lockIn(dir));
+    expect(readFileSync(lockPath, "utf8")).toBe(`${process.pid} ${handle.engineId} ${socketPath}\n`);
+    expect(readdirSync(dir).sort()).toEqual([lockPath, socketPath, tokenPath].map((path) => path.slice(dir.length + 1)).sort());
 
     await handle.close();
     expect([socketPath, tokenPath, lockPath].filter((path) => existsSync(path))).toEqual([]);
@@ -214,7 +242,7 @@ describe("engine service", () => {
 
     // The client reports it as a value, and does not retry.
     writeFileSync(handle.endpoint.tokenPath, "not-the-token");
-    expect(await connect({ dir })).toMatchObject({ ok: false, error: { code: "unauthorized" } });
+    expect(await connect({ dir, lockPath: lockIn(dir) })).toMatchObject({ ok: false, error: { code: "unauthorized" } });
   });
 
   it("answers a hello of another API version with unsupported_version", async () => {
@@ -279,7 +307,8 @@ describe("engine service", () => {
 
     const raw = await rawConnect(socketPath);
     raw.send({ kind: "shutdown", apiVersion: API_VERSION + 3, token: readFileSync(tokenPath, "utf8"), extra: true });
-    expect(await raw.next()).toEqual({ kind: "shutdown_accepted", apiVersion: API_VERSION });
+    // It says who it is, so a client signals only the process that answered.
+    expect(await raw.next()).toEqual({ kind: "shutdown_accepted", apiVersion: API_VERSION, engineId: handle.engineId, pid: process.pid });
     await raw.closed;
     await handle.closed;
     expect([socketPath, tokenPath, lockPath].filter((path) => existsSync(path))).toEqual([]);
@@ -296,24 +325,91 @@ describe("engine service", () => {
     await handshaken(handle);
   });
 
-  it("writes its lock, naming its own pid and engine id, before it listens on the socket", async () => {
-    // A client signals the pid in the lock only while the socket accepts; that is safe only if a
-    // listening socket always has its engine's lock already in place.
+  it("listens first and publishes its lock after: the socket the lock names accepts from the moment the lock exists", async () => {
+    // A client that finds a lock waits on its socket, so the socket must already accept then.
     const dir = tempEngineDir(cleanups);
-    const lockPath = join(dir, "engine.lock");
-    const seen: (string | undefined)[] = [];
-    const listen = Server.prototype.listen;
-    const spy = vi.spyOn(Server.prototype, "listen").mockImplementation(function (this: Server, ...args: Parameters<Server["listen"]>) {
-      seen.push(existsSync(lockPath) ? readFileSync(lockPath, "utf8").trim() : undefined);
-      return (listen as (...a: unknown[]) => Server).apply(this, args);
-    } as never);
-    let handle: EngineHandle;
-    try {
-      handle = await engine(dir);
-    } finally {
-      spy.mockRestore();
+    const lockPath = lockIn(dir);
+    const starting = startEngine({ dir });
+    let seen: { text: string; socket: Awaited<ReturnType<typeof probeSocket>> } | undefined;
+    while (seen === undefined) {
+      const lock = readEngineLock(lockPath);
+      if (lock !== undefined) seen = { text: lock.text, socket: await probeSocket(lock.socketPath) };
+      else await new Promise((resolve) => setImmediate(resolve));
     }
-    expect(seen).toEqual([`${process.pid} ${handle.engineId}`]);
+    const started = await starting;
+    if (!started.ok) throw new Error(started.error.message);
+    cleanups.push(() => started.value.close());
+    expect(seen.socket).toBe("alive");
+    expect(seen.text).toBe(`${process.pid} ${started.value.engineId} ${started.value.endpoint.socketPath}`);
+  });
+
+  it("answers a hello that came while the start was held after listening, once the start goes on", async () => {
+    const dir = tempEngineDir(cleanups);
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    cleanups.push(() => release());
+    let listening = () => {};
+    const heldAtListen = new Promise<void>((resolve) => (listening = resolve));
+    const starting = startEngine({
+      dir,
+      afterListen: async () => {
+        listening();
+        await gate;
+      },
+    });
+    await heldAtListen;
+    // No lock yet, but the socket is there and takes the connection; the hello waits.
+    expect(existsSync(lockIn(dir))).toBe(false);
+    const [name] = readdirSync(dir).filter((file) => file.endsWith(".sock"));
+    if (name === undefined) throw new Error("no socket");
+    const raw = await rawConnect(join(dir, name));
+    cleanups.push(() => raw.destroy());
+    raw.send({ kind: "hello", apiVersion: API_VERSION, token: readFileSync(join(dir, name.replace(/\.sock$/, ".token")), "utf8") });
+    const answered = raw.next();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    release();
+    const started = await starting;
+    if (!started.ok) throw new Error(started.error.message);
+    cleanups.push(() => started.value.close());
+    expect(await answered).toMatchObject({ kind: "welcome", engineId: started.value.engineId, pid: process.pid });
+  });
+
+  it("does not signal a process that took a dead engine's pid when a new engine listens but has not replaced the lock", async () => {
+    // Engine A (pid P, id X) was killed and left its lock. Another process took pid P. Engine B
+    // listens and has not published its lock yet. A stop meant for X must send no signal.
+    const dir = tempEngineDir(cleanups);
+    mkdirSync(dir, { mode: 0o700 });
+    const unrelated = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60_000)"], { stdio: "ignore" });
+    cleanups.push(() => unrelated.kill("SIGKILL"));
+    if (unrelated.pid === undefined) throw new Error("no pid");
+    const dead = await deadSocket(dir, "s-deadbeef");
+    writeFileSync(lockIn(dir), `${unrelated.pid} e-x ${dead}\n`, { mode: 0o600 });
+
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    cleanups.push(() => release());
+    let listening = () => {};
+    const heldAtListen = new Promise<void>((resolve) => (listening = resolve));
+    const starting = startEngine({
+      dir,
+      afterListen: async () => {
+        listening();
+        await gate;
+      },
+    });
+    await heldAtListen;
+
+    const signals: [number, string][] = [];
+    const result = await stopEngine({ lockPath: lockIn(dir), expectedEngineId: "e-x", ifIdle: false, force: true, signal: (pid, signal) => void signals.push([pid, signal]) });
+    expect(result).toEqual({ kind: "stopped", forced: false });
+    expect(signals).toEqual([]);
+    expect(unrelated.exitCode).toBeNull();
+
+    release();
+    const started = await starting;
+    if (!started.ok) throw new Error(started.error.message);
+    cleanups.push(() => started.value.close());
+    expect(readEngineLock(lockIn(dir))?.engineId).toBe(started.value.engineId);
   });
 
   describe("a shutdown request with ifIdle", () => {
@@ -334,7 +430,7 @@ describe("engine service", () => {
       putItem(handle, 3, "needs_you");
 
       const raw = await askIfIdle(handle);
-      expect(await raw.next()).toEqual({ kind: "shutdown_refused", apiVersion: API_VERSION, runningItems: 2 });
+      expect(await raw.next()).toEqual({ kind: "shutdown_refused", apiVersion: API_VERSION, engineId: handle.engineId, pid: process.pid, runningItems: 2 });
       await raw.closed;
 
       const welcomed = await rawConnect(handle.endpoint.socketPath);
@@ -351,7 +447,7 @@ describe("engine service", () => {
       const { socketPath, tokenPath, lockPath } = handle.endpoint;
 
       const raw = await askIfIdle(handle);
-      expect(await raw.next()).toEqual({ kind: "shutdown_accepted", apiVersion: API_VERSION });
+      expect(await raw.next()).toEqual({ kind: "shutdown_accepted", apiVersion: API_VERSION, engineId: handle.engineId, pid: process.pid });
       await raw.closed;
       await handle.closed;
       expect([socketPath, tokenPath, lockPath].filter((path) => existsSync(path))).toEqual([]);
@@ -364,7 +460,7 @@ describe("engine service", () => {
       const raw = await rawConnect(handle.endpoint.socketPath);
       cleanups.push(() => raw.destroy());
       raw.send({ kind: "shutdown", apiVersion: API_VERSION, token: readFileSync(handle.endpoint.tokenPath, "utf8") });
-      expect(await raw.next()).toEqual({ kind: "shutdown_accepted", apiVersion: API_VERSION });
+      expect(await raw.next()).toEqual({ kind: "shutdown_accepted", apiVersion: API_VERSION, engineId: handle.engineId, pid: process.pid });
       await handle.closed;
     });
 
@@ -375,7 +471,7 @@ describe("engine service", () => {
         throw new Error("unreadable");
       });
       const raw = await askIfIdle(handle);
-      expect(await raw.next()).toEqual({ kind: "shutdown_refused", apiVersion: API_VERSION });
+      expect(await raw.next()).toEqual({ kind: "shutdown_refused", apiVersion: API_VERSION, engineId: handle.engineId, pid: process.pid });
       spy.mockRestore();
     });
 
@@ -400,12 +496,12 @@ describe("engine service", () => {
       await arrived;
 
       const refused = await askIfIdle(started.value);
-      expect(await refused.next()).toEqual({ kind: "shutdown_refused", apiVersion: API_VERSION, runningItems: 1 });
+      expect(await refused.next()).toEqual({ kind: "shutdown_refused", apiVersion: API_VERSION, engineId: started.value.engineId, pid: process.pid, runningItems: 1 });
       release();
       expect(await command).toMatchObject({ ok: false });
 
       const accepted = await askIfIdle(started.value);
-      expect(await accepted.next()).toEqual({ kind: "shutdown_accepted", apiVersion: API_VERSION });
+      expect(await accepted.next()).toEqual({ kind: "shutdown_accepted", apiVersion: API_VERSION, engineId: started.value.engineId, pid: process.pid });
       await started.value.closed;
     });
 
@@ -425,7 +521,7 @@ describe("engine service", () => {
       const reading = connected.query({ type: "machine" });
 
       const raw = await askIfIdle(started.value);
-      expect(await raw.next()).toEqual({ kind: "shutdown_accepted", apiVersion: API_VERSION });
+      expect(await raw.next()).toEqual({ kind: "shutdown_accepted", apiVersion: API_VERSION, engineId: started.value.engineId, pid: process.pid });
       const late = await connected.command({ type: "stop_item", itemId: ITEM_ID });
       expect(late).toMatchObject({ ok: false, error: { code: "invalid_state", message: "The engine is shutting down." } });
       release();
@@ -437,9 +533,47 @@ describe("engine service", () => {
   it("is stopped by the client's requestShutdown, which an engine that does not know it refuses", async () => {
     const dir = tempEngineDir(cleanups);
     const handle = await engine(dir);
-    expect(await requestShutdown(dir)).toBe(true);
+    const { socketPath, tokenPath } = handle.endpoint;
+    expect(await requestShutdown({ socketPath, tokenPath })).toBe(true);
     await handle.closed;
-    expect(await requestShutdown(dir)).toBe(false);
+    expect(await requestShutdown({ socketPath, tokenPath })).toBe(false);
+  });
+
+  it("answers a shutdown request while it drains, with its id and pid, and closes any other connection", async () => {
+    const dir = tempEngineDir(cleanups);
+    const started = await startEngine({ dir, shutdownTimeoutMs: 5_000 });
+    if (!started.ok) throw new Error(started.error.message);
+    const handle = started.value;
+    cleanups.push(() => handle.close());
+    const { socketPath, tokenPath } = handle.endpoint;
+    const token = readFileSync(tokenPath, "utf8");
+    // A client that does not close when asked keeps the engine draining.
+    const stuck = await rawConnect(socketPath, { allowHalfOpen: true });
+    cleanups.push(() => stuck.destroy());
+    stuck.send({ kind: "hello", apiVersion: API_VERSION, token });
+    await stuck.next();
+    const closing = handle.close();
+
+    const asking = await rawConnect(socketPath);
+    cleanups.push(() => asking.destroy());
+    asking.send({ kind: "shutdown", apiVersion: API_VERSION, token, ifIdle: true });
+    expect(await asking.next()).toEqual({ kind: "shutdown_accepted", apiVersion: API_VERSION, engineId: handle.engineId, pid: process.pid });
+    await asking.closed;
+
+    // A hello, a wrong token, or silence gets no reply at all.
+    const hello = await rawConnect(socketPath);
+    hello.send({ kind: "hello", apiVersion: API_VERSION, token });
+    await hello.closed;
+    const wrong = await rawConnect(socketPath);
+    wrong.send({ kind: "shutdown", apiVersion: API_VERSION, token: "0".repeat(64) });
+    await wrong.closed;
+    const silent = await rawConnect(socketPath);
+    cleanups.push(() => silent.destroy());
+    expect(await probeSocket(socketPath)).toBe("alive");
+
+    stuck.destroy();
+    await closing;
+    await silent.closed;
   });
 
   it("closes a connection that does not start with a hello", async () => {
@@ -506,9 +640,6 @@ describe("engine service", () => {
     const started = await startEngine({ dir, shutdownTimeoutMs: 300 });
     if (!started.ok) throw new Error(started.error.message);
     const old = started.value;
-    // An engine that has run for a while: its lock is older than the starting grace.
-    const longAgo = new Date(Date.now() - 3_600_000);
-    utimesSync(old.endpoint.lockPath, longAgo, longAgo);
     // A client that does not close when asked keeps the old engine draining.
     const stuck = await rawConnect(old.endpoint.socketPath, { allowHalfOpen: true });
     cleanups.push(() => stuck.destroy());
@@ -524,66 +655,131 @@ describe("engine service", () => {
     expect(readFileSync(next.endpoint.lockPath, "utf8")).toContain(next.engineId);
   });
 
-  it("cleans up a stale lock and socket file left by a dead engine", async () => {
+  it("takes over the lock of a dead engine whose socket file is still there, and sweeps its files", async () => {
     const dir = tempEngineDir(cleanups);
-    mkdirSync(dir, { mode: 0o700 });
-    const deadPid = spawnSync(process.execPath, ["-e", ""]).pid;
-    writeFileSync(join(dir, "engine.lock"), `${deadPid}\n`, { mode: 0o600 });
-    writeFileSync(join(dir, "engine.sock"), "");
-    writeFileSync(join(dir, "engine.token"), "stale");
+    const dead = await deadSocket(dir, "s-deadbeef");
+    // A crashed engine's pid may belong to anything by now: this live test process stands in.
+    writeFileSync(lockIn(dir), `${process.pid} e-crashed ${dead}\n`, { mode: 0o600 });
 
     const handle = await engine(dir);
-    expect(statSync(handle.endpoint.socketPath).isSocket()).toBe(true);
+    expect(readFileSync(handle.endpoint.lockPath, "utf8")).toBe(`${process.pid} ${handle.engineId} ${handle.endpoint.socketPath}\n`);
     expect((await client(dir)).engineId).toBe(handle.engineId);
+    expect(existsSync(dead)).toBe(false);
+    expect(existsSync(dead.replace(/\.sock$/, ".token"))).toBe(false);
+    expect(readdirSync(dir).sort()).toEqual(["engine.lock", handle.endpoint.socketPath, handle.endpoint.tokenPath].map((path) => path.slice(path.lastIndexOf("/") + 1)).sort());
   });
 
-  it("keeps the lock of an engine that has been starting for longer than 10 s", async () => {
+  it("takes over the lock of an engine whose socket file is gone", async () => {
     const dir = tempEngineDir(cleanups);
     mkdirSync(dir, { mode: 0o700 });
-    // This process wrote the lock and has not listened yet; a minute passes.
-    writeFileSync(join(dir, "engine.lock"), `${process.pid} e-starting\n`, { mode: 0o600 });
-    const now = Date.now();
-    vi.spyOn(Date, "now").mockReturnValue(now + 60_000);
-    cleanups.push(() => vi.restoreAllMocks());
-
-    expect(await startEngine({ dir })).toMatchObject({ ok: false, error: { code: "already_running", message: expect.stringContaining(`pid ${process.pid}, still starting`) } });
-    expect(readFileSync(join(dir, "engine.lock"), "utf8")).toBe(`${process.pid} e-starting\n`);
-  });
-
-  it("takes over a lock whose pid now belongs to a process that started after the lock was written", async () => {
-    const dir = tempEngineDir(cleanups);
-    mkdirSync(dir, { mode: 0o700 });
-    const other = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60_000)"], { stdio: "ignore" });
-    cleanups.push(() => other.kill("SIGKILL"));
-    if (other.pid === undefined) throw new Error("no pid");
-    writeFileSync(join(dir, "engine.lock"), `${other.pid} e-crashed\n`, { mode: 0o600 });
-    const longAgo = new Date(Date.now() - 3_600_000);
-    utimesSync(join(dir, "engine.lock"), longAgo, longAgo);
+    writeFileSync(lockIn(dir), `${process.pid} e-crashed ${join(dir, "s-deadbeef.sock")}\n`, { mode: 0o600 });
 
     const handle = await engine(dir);
-    expect(readFileSync(handle.endpoint.lockPath, "utf8")).toBe(`${process.pid} ${handle.engineId}\n`);
-    expect(other.exitCode).toBeNull();
+    expect(readEngineLock(lockIn(dir))?.engineId).toBe(handle.engineId);
   });
 
-  it("still waits for a fresh lock that names no pid yet: another engine is still writing it", async () => {
+  it("keeps the lock of a live engine that does not answer yet, however long that takes", async () => {
     const dir = tempEngineDir(cleanups);
     mkdirSync(dir, { mode: 0o700 });
-    writeFileSync(join(dir, "engine.lock"), "", { mode: 0o600 });
+    // A plain server that accepts and says nothing, like an engine that is opening a large item log.
+    const socketPath = join(dir, "s-1a2b3c4d.sock");
+    const silent: Server = createServer((socket) => socket.on("error", () => {}));
+    await new Promise<void>((resolve) => silent.listen(socketPath, resolve));
+    cleanups.push(() => new Promise((resolve) => silent.close(resolve)));
+    const text = `${process.pid} e-starting ${socketPath}\n`;
+    writeFileSync(lockIn(dir), text, { mode: 0o600 });
 
-    expect(await startEngine({ dir })).toMatchObject({ ok: false, error: { code: "already_running" } });
-    expect(readFileSync(join(dir, "engine.lock"), "utf8")).toBe("");
+    expect(await startEngine({ dir })).toMatchObject({ ok: false, error: { code: "already_running", message: expect.stringContaining(socketPath) } });
+    expect(readFileSync(lockIn(dir), "utf8")).toBe(text);
+    // The loser leaves nothing behind but the files that were there.
+    expect(readdirSync(dir).sort()).toEqual(["engine.lock", "s-1a2b3c4d.sock"]);
+  });
+
+  it("replaces a lock that names no engine, without reading anything it points to", async () => {
+    const dir = tempEngineDir(cleanups);
+    mkdirSync(dir, { mode: 0o700 });
+    writeFileSync(lockIn(dir), "", { mode: 0o600 });
+    const handle = await engine(dir);
+    expect(readEngineLock(lockIn(dir))?.engineId).toBe(handle.engineId);
   });
 
   it("removes a symlink in place of the lock without reading or touching its target", async () => {
     const dir = tempEngineDir(cleanups);
     mkdirSync(dir, { mode: 0o700 });
     const target = join(dir, "elsewhere");
-    writeFileSync(target, `${process.pid} e-other\n`);
+    writeFileSync(target, `${process.pid} e-other ${join(dir, "s-1a2b3c4d.sock")}\n`);
     symlinkSync(target, join(dir, "engine.lock"));
 
     const handle = await engine(dir);
     expect(readFileSync(handle.endpoint.lockPath, "utf8")).toContain(handle.engineId);
-    expect(readFileSync(target, "utf8")).toBe(`${process.pid} e-other\n`);
+    expect(readFileSync(target, "utf8")).toBe(`${process.pid} e-other ${join(dir, "s-1a2b3c4d.sock")}\n`);
+  });
+
+  it("keeps the socket of a live engine that is not its own when it sweeps, and removes only dead ones", async () => {
+    const dir = tempEngineDir(cleanups);
+    mkdirSync(dir, { mode: 0o700 });
+    const livePath = join(dir, "s-0a0a0a0a.sock");
+    writeFileSync(join(dir, "s-0a0a0a0a.token"), "live");
+    const live: Server = createServer((socket) => socket.on("error", () => {}));
+    await new Promise<void>((resolve) => live.listen(livePath, resolve));
+    cleanups.push(() => new Promise((resolve) => live.close(resolve)));
+    const dead = await deadSocket(dir, "s-0b0b0b0b");
+
+    // This engine's lock is in a home of its own, so the live server's engine is no rival.
+    const home = mkdtempSync(join(tmpdir(), "tk-home-"));
+    cleanups.push(() => rmSync(home, { recursive: true, force: true }));
+    const started = await startEngine({ dir, home });
+    if (!started.ok) throw new Error(started.error.message);
+    cleanups.push(() => started.value.close());
+    expect(existsSync(livePath)).toBe(true);
+    expect(existsSync(join(dir, "s-0a0a0a0a.token"))).toBe(true);
+    expect(existsSync(dead)).toBe(false);
+    expect(existsSync(join(dir, "s-0b0b0b0b.token"))).toBe(false);
+  });
+
+  it("names the folder when the file system cannot link a lock", async () => {
+    const dir = tempEngineDir(cleanups);
+    vi.mocked(linkSync).mockImplementationOnce(() => {
+      throw Object.assign(new Error("operation not permitted"), { code: "EPERM" });
+    });
+    const started = await startEngine({ dir });
+    expect(started).toMatchObject({ ok: false, error: { code: "start_failed", message: expect.stringContaining(lockIn(dir)) } });
+    // Nothing is left behind.
+    expect(readdirSync(dir)).toEqual([]);
+  });
+
+  // Two engines start at once on one home; whichever links its lock first wins, whatever else happens.
+  describe.each([
+    ["on an empty home", false],
+    ["on a stale lock", true],
+  ])("two starters %s", (_label, stale) => {
+    it("end with one engine running, the loser's files gone and the lock naming the winner", async () => {
+      for (let round = 0; round < 20; round++) {
+        const root = mkdtempSync(join(tmpdir(), "tk-two-"));
+        cleanups.push(() => rmSync(root, { recursive: true, force: true }));
+        const dir = join(root, "run");
+        const home = join(root, "home");
+        mkdirSync(home, { mode: 0o700 });
+        if (stale) {
+          const dead = await deadSocket(dir, "s-deadbeef");
+          writeFileSync(join(home, "engine.lock"), `${process.pid} e-crashed ${dead}\n`, { mode: 0o600 });
+        }
+        const [first, second] = await Promise.all([startEngine({ dir, home }), startEngine({ dir, home })]);
+        const winners = [first, second].filter((result) => result.ok);
+        const losers = [first, second].filter((result) => !result.ok);
+        expect(winners, `round ${round}`).toHaveLength(1);
+        expect(losers, `round ${round}`).toHaveLength(1);
+        expect(losers[0]).toMatchObject({ ok: false, error: { code: "already_running" } });
+        const winner = winners[0];
+        if (winner === undefined || !winner.ok) throw new Error("no winner");
+        const lock = readEngineLock(join(home, "engine.lock"));
+        expect(lock?.engineId, `round ${round}`).toBe(winner.value.engineId);
+        expect(lock?.socketPath).toBe(winner.value.endpoint.socketPath);
+        expect(readdirSync(dir).sort(), `round ${round}`).toEqual([winner.value.endpoint.socketPath, winner.value.endpoint.tokenPath].map((path) => path.slice(path.lastIndexOf("/") + 1)).sort());
+        await winner.value.close();
+        expect(existsSync(join(home, "engine.lock"))).toBe(false);
+      }
+    }, 60_000);
   });
 
   it("refuses an engine dir that is a symlink", async () => {
@@ -629,23 +825,6 @@ describe("engine service", () => {
     // seq restarted with the new engine.
     await waitFor(() => events.length === 4, 5_000, "event from the new engine");
     expect(events.at(-1)).toMatchObject({ kind: "event", seq: 0 });
-  });
-
-  it("gives up after a bounded number of engine starts that never come up", { timeout: 30_000 }, async () => {
-    const dir = tempEngineDir(cleanups);
-    const handle = await engine(dir);
-    // An engine command that never serves: it exits at once with the "already running" code.
-    const connected = await connect({ dir, start: { command: process.execPath, args: ["-e", "process.exit(3)"] } });
-    if (!connected.ok) throw new Error(connected.error.message);
-    cleanups.push(() => connected.value.close());
-    const events = collect(connected.value);
-
-    await handle.close();
-    await waitFor(() => events.some((event) => event.kind === "failed"), 25_000, "failed");
-    expect(events).toEqual([
-      { kind: "disconnected" },
-      { kind: "failed", error: { code: "start_failed", message: expect.stringContaining("after 5 starts") } },
-    ]);
   });
 
   it("ends the client's event streams on close", async () => {

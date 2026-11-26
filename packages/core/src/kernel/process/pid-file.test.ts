@@ -18,7 +18,7 @@ describe("readPidFile", () => {
     const path = join(dir, "home.lock");
     writeFileSync(path, "48211 e-1 /run/engine.sock\n");
     utimesSync(path, 1_700_000_000, 1_700_000_000);
-    expect(readPidFile(path)).toEqual({ pid: 48211, fields: ["48211", "e-1", "/run/engine.sock"], writtenAt: 1_700_000_000_000 });
+    expect(readPidFile(path)).toMatchObject({ pid: 48211, fields: ["48211", "e-1", "/run/engine.sock"], writtenAt: 1_700_000_000_000, text: "48211 e-1 /run/engine.sock" });
   });
 
   it("reads a marker that holds only a pid", () => {

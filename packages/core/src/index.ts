@@ -22,6 +22,9 @@ export {
   defaultEngineDir,
   encodeLine,
   engineEndpoint,
+  engineLockPath,
+  newSocketPath,
+  tokenPathOf,
   LineDecoder,
   MAX_MESSAGE_BYTES,
   type DirProblem,
@@ -52,7 +55,7 @@ export {
 } from "./slices/items/index.js";
 export { posixProcessTable, type LeftoverOutcome, type ProcessInfo, type ProcessTable } from "./kernel/process/leftover.js";
 // The engine's lock and the per-OS process parts around it.
-export { lockWriterLive, posixEngineProcesses, readEngineLock, type EngineLock, type EngineProcesses } from "./kernel/process/own-engine.js";
+export { posixEngineProcesses, probeSocket, readEngineLock, type EngineLock, type EngineProcesses, type Liveness } from "./kernel/process/own-engine.js";
 // Config, templates and the cloud rule, for the engine service's real mode.
 export { BUILTIN_AGENT_IDS, loadAgents, type Agent, type BrokenAgent, type ConfigProblem, type LoadedAgents } from "./slices/config/index.js";
 export { loadBuiltins, lineWarning, loadTemplates, templateWarnings, type AgentLocation, type TemplateLoad, type TemplateProblem } from "./slices/templates/index.js";

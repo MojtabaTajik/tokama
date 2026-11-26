@@ -5,27 +5,27 @@ import { describe, expect, it } from "vitest";
 import { crashCount, expectedEngineCommands, installDirProblem, parseLock, parseSmokeArgs, reducedEnv } from "./smoke-installed.js";
 
 describe("parseLock", () => {
-  it("reads the pid and the engine id", () => {
-    expect(parseLock("4242 7b871639-c8f0-44eb-ba31-1e7d7a1d695f")).toEqual({ pid: 4242, engineId: "7b871639-c8f0-44eb-ba31-1e7d7a1d695f" });
-    expect(parseLock("4242 abc\n")).toEqual({ pid: 4242, engineId: "abc" });
+  it("reads the pid and the engine id of a lock that names a socket", () => {
+    expect(parseLock("4242 7b871639-c8f0-44eb-ba31-1e7d7a1d695f /tmp/tk/.tokama/run/s-1a2b3c4d.sock")).toEqual({ pid: 4242, engineId: "7b871639-c8f0-44eb-ba31-1e7d7a1d695f" });
+    expect(parseLock("4242 abc /tmp/My Folder/s-1a2b3c4d.sock\n")).toEqual({ pid: 4242, engineId: "abc" });
   });
 
-  it.each(["", "4242", "pid abc", "4242 a b", "-1 abc"])("refuses %j", (text) => expect(parseLock(text)).toBeUndefined());
+  it.each(["", "4242", "pid abc /x.sock", "4242 abc", "-1 abc /x.sock"])("refuses %j", (text) => expect(parseLock(text)).toBeUndefined());
 });
 
 describe("expectedEngineCommands", () => {
-  it("is the packaged engine's Node, its entry and the engine dir", () => {
-    expect(expectedEngineCommands("/Applications/Tokama.app", ["/tmp/tk-smoke-a/.tokama/run"])).toEqual([
-      "/Applications/Tokama.app/Contents/Resources/engine/tokama-engine /Applications/Tokama.app/Contents/Resources/engine/dist/main.js --dir /tmp/tk-smoke-a/.tokama/run",
+  it("is the packaged engine's Node, its entry, the engine dir and the home folder", () => {
+    expect(expectedEngineCommands("/Applications/Tokama.app", ["/tmp/tk-smoke-a/.tokama/run"], ["/tmp/tk-smoke-a/.tokama"])).toEqual([
+      "/Applications/Tokama.app/Contents/Resources/engine/tokama-engine /Applications/Tokama.app/Contents/Resources/engine/dist/main.js --dir /tmp/tk-smoke-a/.tokama/run --home /tmp/tk-smoke-a/.tokama",
     ]);
   });
 
   it("also names the dir as the system resolves it, where /tmp is /private/tmp", () => {
     const dir = mkdtempSync(join(tmpdir(), "tk-smoke-test-"));
     try {
-      const commands = expectedEngineCommands("/Applications/Tokama.app", [dir, realpathSync(dir)]);
+      const commands = expectedEngineCommands("/Applications/Tokama.app", [dir, realpathSync(dir)], [dir]);
       expect(commands).toHaveLength(2);
-      expect(commands[1]).toMatch(/--dir \S+$/);
+      expect(commands[1]).toMatch(/--dir \S+ --home \S+$/);
       expect(commands[1]).toContain(realpathSync(dir));
     } finally {
       rmSync(dir, { recursive: true, force: true });

@@ -115,7 +115,7 @@ async function engine(runtime: AgentRuntime, dir = tempEngineDir(cleanups), extr
   // No plan source: a usage query must not start the CLI on the test machine.
   const started = await startEngine({ dir, home, processTable: table, runtime: () => runtime, checks: healthy, recoveryGraceMs: 0, planSources: {}, ...extra });
   if (!started.ok) throw new Error(started.error.message);
-  const connected = await connect({ dir, startTimeoutMs: 2_000 });
+  const connected = await connect({ dir, lockPath: started.value.endpoint.lockPath, startTimeoutMs: 2_000 });
   if (!connected.ok) throw new Error(connected.error.message);
   const client = connected.value;
   const stop = async () => {
@@ -452,7 +452,7 @@ finish: [commit]
     const started = await startEngine({ dir, home, processTable: table, runtime: () => scripted([{ writes: {} }]), checks: oldGit });
     if (!started.ok) throw new Error(started.error.message);
     cleanups.push(() => started.value.close());
-    const connected = await connect({ dir, startTimeoutMs: 2_000 });
+    const connected = await connect({ dir, lockPath: started.value.endpoint.lockPath, startTimeoutMs: 2_000 });
     if (!connected.ok) throw new Error(connected.error.message);
     cleanups.push(() => connected.value.close());
     const reply = await connected.value.command({ type: "start_item", templateId: "builtin/quick-fix", repoIds: ["orders-api"], text: "Fix it" });

@@ -2,19 +2,13 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { checkEngineDir, defaultEngineDir, engineEndpoint } from "./endpoint.js";
+import { checkEngineDir, defaultEngineDir, engineEndpoint, engineLockPath, newSocketPath, tokenPathOf } from "./endpoint.js";
 
 describe("engineEndpoint", () => {
-  it("puts the socket, token and lock in the directory", () => {
+  it("names the directory and the log", () => {
     expect(engineEndpoint("/home/dev/.tokama/run", "linux")).toEqual({
       ok: true,
-      value: {
-        dir: "/home/dev/.tokama/run",
-        socketPath: "/home/dev/.tokama/run/engine.sock",
-        tokenPath: "/home/dev/.tokama/run/engine.token",
-        lockPath: "/home/dev/.tokama/run/engine.lock",
-        logPath: "/home/dev/.tokama/run/engine.log",
-      },
+      value: { dir: "/home/dev/.tokama/run", logPath: "/home/dev/.tokama/run/engine.log" },
     });
   });
 
@@ -22,10 +16,14 @@ describe("engineEndpoint", () => {
     expect(engineEndpoint("run", "darwin")).toMatchObject({ ok: false, error: { code: "invalid_dir" } });
   });
 
-  it("refuses a socket path longer than the platform allows", () => {
-    const dir = `/${"d".repeat(91)}`; // socket path: 92 + 12 = 104 bytes
-    expect(engineEndpoint(dir, "darwin")).toMatchObject({ ok: false, error: { code: "path_too_long" } });
-    expect(engineEndpoint(dir, "linux").ok).toBe(true);
+  it("refuses a directory too long for a socket with the name that engines use, naming the directory", () => {
+    // `/s-00000000.sock` is 16 bytes after the directory: 103 bytes is the longest path on macOS, 107 on Linux.
+    const overOnMac = `/${"d".repeat(87)}`; // 88 + 16 = 104
+    expect(engineEndpoint(overOnMac, "darwin")).toMatchObject({ ok: false, error: { code: "path_too_long", message: expect.stringContaining(overOnMac) } });
+    expect(engineEndpoint(overOnMac, "linux").ok).toBe(true);
+    expect(engineEndpoint(`/${"d".repeat(86)}`, "darwin").ok).toBe(true);
+    expect(engineEndpoint(`/${"d".repeat(91)}`, "linux")).toMatchObject({ ok: false, error: { code: "path_too_long" } });
+    expect(engineEndpoint(`/${"d".repeat(90)}`, "linux").ok).toBe(true);
   });
 
   it("is not implemented on Windows yet", () => {
@@ -33,18 +31,33 @@ describe("engineEndpoint", () => {
   });
 });
 
+describe("newSocketPath and tokenPathOf", () => {
+  it("makes a short unique name in the directory, and the token is next to it", () => {
+    const first = newSocketPath("/home/dev/.tokama/run");
+    expect(first).toMatch(/^\/home\/dev\/\.tokama\/run\/s-[0-9a-f]{8}\.sock$/);
+    expect(newSocketPath("/home/dev/.tokama/run")).not.toBe(first);
+    expect(tokenPathOf("/home/dev/.tokama/run/s-1a2b3c4d.sock")).toBe("/home/dev/.tokama/run/s-1a2b3c4d.token");
+    // The name an engine of an earlier build used.
+    expect(tokenPathOf("/run/user/1000/tokama/engine.sock")).toBe("/run/user/1000/tokama/engine.token");
+  });
+});
+
+describe("engineLockPath", () => {
+  it("is in the home for a real engine, and in the engine dir for the sample engine or without a home", () => {
+    expect(engineLockPath({ dir: "/home/dev/.tokama/run", home: "/home/dev/.tokama" })).toBe("/home/dev/.tokama/engine.lock");
+    expect(engineLockPath({ dir: "/tmp/e/sample", home: "/home/dev/.tokama", sample: true })).toBe("/tmp/e/sample/engine.lock");
+    expect(engineLockPath({ dir: "/tmp/e" })).toBe("/tmp/e/engine.lock");
+  });
+});
+
 describe("defaultEngineDir", () => {
   it("prefers TOKAMA_ENGINE_DIR", () => {
-    expect(defaultEngineDir({ TOKAMA_ENGINE_DIR: "/tmp/e", XDG_RUNTIME_DIR: "/run/user/1000" }, "/home/dev", "linux")).toBe("/tmp/e");
+    expect(defaultEngineDir({ TOKAMA_ENGINE_DIR: "/tmp/e", XDG_RUNTIME_DIR: "/run/user/1000" }, "/home/dev")).toBe("/tmp/e");
   });
 
-  it("uses XDG_RUNTIME_DIR on Linux", () => {
-    expect(defaultEngineDir({ XDG_RUNTIME_DIR: "/run/user/1000" }, "/home/dev", "linux")).toBe("/run/user/1000/tokama");
-  });
-
-  it("falls back to ~/.tokama/run", () => {
-    expect(defaultEngineDir({ XDG_RUNTIME_DIR: "/run/user/501" }, "/Users/dev", "darwin")).toBe("/Users/dev/.tokama/run");
-    expect(defaultEngineDir({ XDG_RUNTIME_DIR: "relative" }, "/home/dev", "linux")).toBe("/home/dev/.tokama/run");
+  it("uses ~/.tokama/run on Linux and macOS, even with XDG_RUNTIME_DIR", () => {
+    expect(defaultEngineDir({ XDG_RUNTIME_DIR: "/run/user/1000" }, "/home/dev")).toBe("/home/dev/.tokama/run");
+    expect(defaultEngineDir({}, "/Users/dev")).toBe("/Users/dev/.tokama/run");
   });
 });
 

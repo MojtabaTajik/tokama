@@ -4,9 +4,6 @@ import { runningNow, type RunningDeps } from "./running.js";
 const close = vi.fn(async () => undefined);
 function deps(over: Partial<RunningDeps> = {}): RunningDeps {
   return {
-    lockPath: () => "/h/engine.lock",
-    readLock: () => ({ pid: 10 }),
-    pidAlive: () => true,
     connect: async () => ({ ok: true, value: { engine: { runningItems: 0 }, close } }),
     ...over,
   };
@@ -19,16 +16,15 @@ describe("runningNow", () => {
     expect(close).toHaveBeenCalledOnce();
   });
 
-  it("is zero without a lock, or when its pid is gone, and names no engine", async () => {
-    expect(await runningNow(deps({ readLock: () => undefined }))).toEqual({ items: 0 });
-    expect(await runningNow(deps({ pidAlive: () => false }))).toEqual({ items: 0 });
+  it("is zero when no engine runs (no lock, or a lock whose socket is dead), and names no engine", async () => {
+    expect(await runningNow(deps({ connect: async () => ({ ok: false, error: { code: "not_running" } as never }) }))).toEqual({ items: 0 });
   });
 
   it("is unknown when a live engine does not say, or cannot be reached", async () => {
     expect(await runningNow(deps({ connect: async () => ({ ok: true, value: { engine: {}, close } }) }))).toEqual({ items: undefined });
-    expect(await runningNow(deps({ connect: async () => ({ ok: false, error: { code: "not_running" } as never }) }))).toEqual({ items: undefined });
+    expect(await runningNow(deps({ connect: async () => ({ ok: false, error: { code: "timeout" } as never }) }))).toEqual({ items: undefined });
+    expect(await runningNow(deps({ connect: async () => ({ ok: false, error: { code: "unauthorized" } as never }) }))).toEqual({ items: undefined });
     expect(await runningNow(deps({ connect: async () => { throw new Error("no"); } }))).toEqual({ items: undefined });
-    expect(await runningNow(deps({ lockPath: () => undefined }))).toEqual({ items: undefined });
   });
 
   it("uses the count and the API version an engine of another API version gives with its refusal", async () => {

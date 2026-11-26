@@ -106,6 +106,8 @@ export interface EngineCommandInput {
   readonly entry: string;
   /** Engine dir, passed as `--dir` so the engine and the client agree on it. */
   readonly dir: string;
+  /** Tokama's home folder, passed as `--home`: the real engine keeps its lock and items there. Absent for the sample engine. */
+  readonly home?: string;
   readonly env: Readonly<Record<string, string>>;
   /** Start the fake engine mode with sample data (`--sample`); dev only. Default false. */
   readonly sample?: boolean;
@@ -117,10 +119,11 @@ export function engineCommand(input: EngineCommandInput): Result<EngineCommand, 
     ["node binary", input.node],
     ["engine entry", input.entry],
     ["engine dir", input.dir],
+    ...(input.home === undefined ? [] : ([["home folder", input.home]] as const)),
   ] as const) {
     if (!isAbsolute(path)) return err(`cannot start the engine: the ${what} path is not absolute: ${path}`);
   }
-  const args = [input.entry, "--dir", input.dir, ...(input.sample === true ? ["--sample"] : [])];
+  const args = [input.entry, "--dir", input.dir, ...(input.home === undefined ? [] : ["--home", input.home]), ...(input.sample === true ? ["--sample"] : [])];
   return ok({ command: input.node, args, env: { ...input.env } });
 }
 

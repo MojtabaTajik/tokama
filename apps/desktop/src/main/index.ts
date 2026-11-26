@@ -3,7 +3,7 @@
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import { connect, type EngineInfo, stopEngine, type StopResult } from "@tokama/client";
-import { API_VERSION, createProcessRunner, defaultEngineDir, engineEndpoint, err, pidAlive, posixEngineProcesses, readEngineLock, resolveToolsPath, type ToolsPath } from "@tokama/core";
+import { API_VERSION, createProcessRunner, defaultEngineDir, engineEndpoint, engineLockPath, err, pidAlive, posixEngineProcesses, probeSocket, readEngineLock, resolveToolsPath, type ToolsPath } from "@tokama/core";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, screen, session, shell } from "electron";
 import { type BridgeEvent, CHANNELS } from "../shared/bridge.js";
 import { buildInfoText } from "../shared/build-info.js";
@@ -118,11 +118,13 @@ function userShell(): string | undefined {
   return process.env["SHELL"];
 }
 
-/** Where this app's engine lives: one dir for both sides, and its lock file. */
+const tokamaHome = join(homedir(), ".tokama");
+
+/** Where this app's engine lives: one dir for both sides, its lock file (in the home for the real engine), and its log. */
 function engineLocation() {
   const dir = engineDirFor(defaultEngineDir(process.env, homedir()), sample);
   const endpoint = engineEndpoint(dir);
-  return { dir, endpoint, lockPath: endpoint.ok ? endpoint.value.lockPath : join(dir, "engine.lock") };
+  return { dir, lockPath: engineLockPath({ dir, home: tokamaHome, sample }), logPath: endpoint.ok ? endpoint.value.logPath : join(dir, "engine.log") };
 }
 
 /**
@@ -132,7 +134,7 @@ function engineLocation() {
  */
 function stopAppEngine(request: { readonly engineId: string | undefined; readonly engine: EngineInfo | undefined; readonly ifIdle: boolean }): Promise<StopResult> {
   return stopEngine({
-    dir: engineLocation().dir,
+    lockPath: engineLocation().lockPath,
     ...(request.engineId !== undefined && { expectedEngineId: request.engineId }),
     ...(request.engine !== undefined && { engine: request.engine }),
     ifIdle: request.ifIdle,
@@ -143,20 +145,20 @@ function stopAppEngine(request: { readonly engineId: string | undefined; readonl
 
 function startWatch(onConnected: () => void, onItemEvent: (event: BridgeEvent["event"]) => void): ConnectionWatch {
   // One dir for both sides: the client gets it directly, the engine as `--dir`, since the
-  // engine's reduced env has no TOKAMA_ENGINE_DIR or XDG_RUNTIME_DIR to find it by itself.
-  const { dir, endpoint, lockPath } = engineLocation();
+  // engine's reduced env has no TOKAMA_ENGINE_DIR to find it by itself.
+  const { dir, lockPath, logPath } = engineLocation();
   // In development the engine is the checkout's built apps/engine/dist on the node found on PATH;
   // a packaged app runs the Node and the engine bundle it ships.
   const runtime = engineRuntime({ platform: process.platform, isPackaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath, path: process.env["PATH"] });
   // The shell is asked now, while the window loads; the first connect waits for the answer.
-  const start = toolsPath().then((tools) => engineCommand({ ...runtime, dir, env: engineEnv(process.env, tools, sample), sample }));
+  const start = toolsPath().then((tools) => engineCommand({ ...runtime, dir, ...(!sample && { home: tokamaHome }), env: engineEnv(process.env, tools, sample), sample }));
   return watchConnection({
     connect: async () => {
       const command = await start;
       if (!command.ok) return err({ code: "start_failed" as const, message: command.error });
       const lock = readEngineLock(lockPath);
-      attach.connecting(lock !== undefined && pidAlive(lock.pid));
-      return connect({ dir, start: command.value });
+      attach.connecting(lock !== undefined && (await probeSocket(lock.socketPath)) === "alive");
+      return connect({ dir, lockPath, start: command.value });
     },
     apiVersion: API_VERSION,
     // Only a packaged app compares builds; a dev build is 0.0.0 and never replaces an engine for it.
@@ -167,7 +169,7 @@ function startWatch(onConnected: () => void, onItemEvent: (event: BridgeEvent["e
       const lock = readEngineLock(lockPath);
       return { lockPath, ...(lock !== undefined && { pid: lock.pid, engineId: lock.engineId }) };
     },
-    logPath: endpoint.ok ? endpoint.value.logPath : join(dir, "engine.log"),
+    logPath,
     readLogTail: (path) => readLogTail(path),
     onState: (state) => {
       send(CHANNELS.connectionChanged, state);
@@ -234,14 +236,9 @@ app.on("second-instance", () => showMain?.());
 
 /** Unfinished items of the engine that runs in this engine dir: 0 when there is none, undefined when that could not be told. */
 function itemsRunningInApplications(): Promise<number | undefined> {
-  const dir = engineDirFor(defaultEngineDir(process.env, homedir()), sample);
-  return itemsRunningIn({
-    endpoint: () => engineEndpoint(dir),
-    readLock: readEngineLock,
-    pidAlive,
-    // No start: this only asks an engine that already runs.
-    connect: () => connect({ dir }),
-  });
+  const { dir, lockPath } = engineLocation();
+  // No start: this only asks an engine that already runs.
+  return itemsRunningIn({ connect: () => connect({ dir, lockPath }) });
 }
 
 /**
@@ -304,7 +301,6 @@ void app.whenReady().then(async () => {
   if (background) app.dock?.hide();
   if (icons.dock !== undefined) app.dock?.setIcon(icons.dock);
   hardenSession();
-  const tokamaHome = join(homedir(), ".tokama");
   const desktopFile = join(tokamaHome, "desktop.json");
   // Asked before the store reads the file: without a file this is a first install, not an update.
   const desktopExisted = pathExists(desktopFile);
@@ -422,14 +418,12 @@ void app.whenReady().then(async () => {
   const ownQuery = mainQuery(() => watch.client());
   handle(CHANNELS.openAttemptFile, (name) => openAttemptFile(name, { query: ownQuery, tokamaHome, openPath: (path) => shell.openPath(path) }));
   const about = () => {
-    const dir = engineDirFor(defaultEngineDir(process.env, homedir()), sample);
-    const endpoint = engineEndpoint(dir);
     return aboutInfo({
       version: app.getVersion(),
       build: __BUILD__,
       apiVersion: API_VERSION,
       tokamaHome,
-      lockPath: endpoint.ok ? endpoint.value.lockPath : join(dir, "engine.lock"),
+      lockPath: engineLocation().lockPath,
       platform: process.platform,
       arch: process.arch,
       versions: process.versions,
@@ -462,14 +456,11 @@ void app.whenReady().then(async () => {
         });
   const engineRunningNow = () =>
     runningNow({
-      lockPath: () => {
-        const { endpoint, lockPath } = engineLocation();
-        return endpoint.ok ? lockPath : undefined;
-      },
-      readLock: readEngineLock,
-      pidAlive,
       // No start: this only asks an engine that already runs.
-      connect: () => connect({ dir: engineLocation().dir }),
+      connect: () => {
+        const { dir, lockPath } = engineLocation();
+        return connect({ dir, lockPath });
+      },
     });
   const updateState = (): UpdateState => updates?.state() ?? { status: "unavailable", reason: updater.reason };
   handle(CHANNELS.getUpdate, updateState);

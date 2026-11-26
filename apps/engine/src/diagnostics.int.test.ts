@@ -53,7 +53,7 @@ async function engine(checks: HealthChecks = async () => ({ git: { ok: true }, c
   const dir = tempEngineDir(cleanups);
   const started = await startEngine({ dir, home, processTable: table, checks, recoveryGraceMs: 0, planSources: {}, userHome: USER_HOME, machineFacts: MACHINE, engineVersion: "0.4.2", ...extra });
   if (!started.ok) throw new Error(started.error.message);
-  const connected = await connect({ dir, startTimeoutMs: 2_000 });
+  const connected = await connect({ dir, lockPath: started.value.endpoint.lockPath, startTimeoutMs: 2_000 });
   if (!connected.ok) throw new Error(connected.error.message);
   const client = connected.value;
   let stopped = false;

@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { _electron, type ElectronApplication, type Locator, type Page } from "playwright-core";
 import { it } from "vitest";
 import type { ConnectionState, TokamaBridge } from "../src/shared/bridge.js";
@@ -171,7 +171,7 @@ export function flow(name: string, fn: (session: Session) => Promise<void>, mode
         closeHung = true;
       }
       trace(name, "stopping the engine");
-      await stopEngine(engineDir);
+      await stopEngine(engineDir, lockOf(engineDir, tmp));
       // The engine may still be writing into a repo folder as it stops: retry a busy folder.
       try {
         rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
@@ -237,8 +237,11 @@ async function launch(tmp: string, baseDir: string, output: string[], mode: Engi
 /** HOME of the app and its engine in a test. */
 const homeOf = (tmp: string): string => join(tmp, "h");
 
+/** The engine's lock: in the Tokama home of the test for a real engine, in the engine dir for the sample engine. */
+const lockOf = (engineDir: string, tmp: string): string => (basename(engineDir) === "sample" ? join(engineDir, "engine.lock") : join(homeOf(tmp), ".tokama", "engine.lock"));
+
 function sessionOf(app: ElectronApplication, page: Page, engineDir: string, tmp: string, restart: (whileClosed?: () => void) => Promise<Session>): Session {
-  const engine = () => readEngine(engineDir);
+  const engine = () => readEngine(lockOf(engineDir, tmp));
   return {
     app,
     page,
@@ -299,10 +302,10 @@ async function failed(session: Session): Promise<void> {
   }
 }
 
-/** The pid and engine id in `engine.lock` ("<pid> <engineId>"), when the file exists and the pid is alive. */
-function readEngine(engineDir: string): { engineId: string; pid: number } | undefined {
+/** The pid and engine id in the lock ("<pid> <engineId> <socket>"), when the file exists and the pid is alive. */
+function readEngine(lockPath: string): { engineId: string; pid: number } | undefined {
   try {
-    const [pidField, engineId] = readFileSync(join(engineDir, "engine.lock"), "utf8").trim().split(" ");
+    const [pidField, engineId] = readFileSync(lockPath, "utf8").trim().split(" ");
     const pid = Number.parseInt(pidField ?? "", 10);
     if (!Number.isInteger(pid) || pid <= 0 || engineId === undefined) return undefined;
     process.kill(pid, 0);
@@ -313,12 +316,12 @@ function readEngine(engineDir: string): { engineId: string; pid: number } | unde
 }
 
 /**
- * The pids of the engines of this test: the one in `engine.lock` and any started but not yet locked,
+ * The pids of the engines of this test: the one in the lock and any started but not yet locked,
  * found by their `--dir` argument (a test can fail between the app starting the engine and the lock).
  */
-function engineProcesses(engineDir: string): number[] {
+function engineProcesses(engineDir: string, lockPath: string): number[] {
   const pids = new Set<number>();
-  const locked = readEngine(engineDir);
+  const locked = readEngine(lockPath);
   if (locked !== undefined) pids.add(locked.pid);
   try {
     const found = execFileSync("pgrep", ["-f", "--", `--dir ${engineDir}`], { encoding: "utf8" });
@@ -331,10 +334,10 @@ function engineProcesses(engineDir: string): number[] {
 }
 
 /** Stops whichever engines the app started; the app is already closed, so none is started again. */
-async function stopEngine(engineDir: string): Promise<void> {
+async function stopEngine(engineDir: string, lockPath: string): Promise<void> {
   for (const signal of ["SIGTERM", "SIGKILL"] as const) {
     const deadline = Date.now() + 5_000;
-    for (let pids = engineProcesses(engineDir); pids.length > 0 && Date.now() < deadline; pids = engineProcesses(engineDir)) {
+    for (let pids = engineProcesses(engineDir, lockPath); pids.length > 0 && Date.now() < deadline; pids = engineProcesses(engineDir, lockPath)) {
       for (const pid of pids) {
         try {
           process.kill(pid, signal);
@@ -344,7 +347,7 @@ async function stopEngine(engineDir: string): Promise<void> {
       }
       await new Promise((done) => setTimeout(done, 100));
     }
-    if (engineProcesses(engineDir).length === 0) return;
+    if (engineProcesses(engineDir, lockPath).length === 0) return;
   }
 }
 

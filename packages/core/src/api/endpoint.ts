@@ -1,19 +1,14 @@
 // Where the engine service listens and keeps its session files. The engine and its clients
 // both resolve the endpoint here, so they always agree. OS-specific: Unix domain sockets on macOS
 // and Linux now; Windows (named pipes) later, behind the same function.
+import { randomBytes } from "node:crypto";
 import { lstatSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { err, ok, type Result } from "../kernel/result/index.js";
 
 export interface EngineEndpoint {
-  /** User-owned directory (mode 0700) that holds the files below. */
+  /** User-owned directory (mode 0700) that holds the engine's sockets and tokens. */
   readonly dir: string;
-  /** Unix domain socket the engine listens on (mode 0600). */
-  readonly socketPath: string;
-  /** Per-session token (mode 0600), new on each engine start; a client sends it in its hello. */
-  readonly tokenPath: string;
-  /** Single-instance lock (mode 0600) holding the engine's pid. */
-  readonly lockPath: string;
   /** Output of an engine a client started (mode 0600). */
   readonly logPath: string;
 }
@@ -32,26 +27,37 @@ export function engineEndpoint(dir: string, platform: NodeJS.Platform = process.
     return err({ code: "unsupported_platform", message: `the engine socket is not implemented on ${platform} yet` });
   }
   if (!isAbsolute(dir)) return err({ code: "invalid_dir", message: `engine directory must be absolute: ${dir}` });
-  const socketPath = join(dir, "engine.sock");
-  if (Buffer.byteLength(socketPath) > maxSocketPath) {
-    return err({ code: "path_too_long", message: `socket path is longer than ${maxSocketPath} bytes: ${socketPath}` });
+  // Every engine run names its own socket `s-<8 hex>.sock`; the dir must leave room for that.
+  const longest = join(dir, "s-00000000.sock");
+  if (Buffer.byteLength(longest) > maxSocketPath) {
+    return err({ code: "path_too_long", message: `the engine folder ${dir} is too long for a socket: socket paths are limited to ${maxSocketPath} bytes` });
   }
-  return ok({ dir, socketPath, tokenPath: join(dir, "engine.token"), lockPath: join(dir, "engine.lock"), logPath: join(dir, "engine.log") });
+  return ok({ dir, logPath: join(dir, "engine.log") });
+}
+
+/** A new socket path in `dir` for one engine run: `s-<8 hex>.sock`. Nothing else uses this name. */
+export function newSocketPath(dir: string): string {
+  return join(dir, `s-${randomBytes(4).toString("hex")}.sock`);
+}
+
+/** The token file next to a socket: the same path with `.sock` replaced by `.token`. */
+export function tokenPathOf(socketPath: string): string {
+  return socketPath.endsWith(".sock") ? `${socketPath.slice(0, -".sock".length)}.token` : `${socketPath}.token`;
 }
 
 /**
- * The engine directory: `TOKAMA_ENGINE_DIR` when set, else `$XDG_RUNTIME_DIR/tokama` on Linux
- * (a per-user tmpfs), else `~/.tokama/run`.
+ * The engine's lock file: `<home>/engine.lock` for a real engine, so one Tokama home has one
+ * engine whatever its engine dir. The sample engine, and an engine without a home, keep it in the
+ * engine dir.
  */
-export function defaultEngineDir(
-  env: Readonly<Record<string, string | undefined>>,
-  home: string,
-  platform: NodeJS.Platform = process.platform,
-): string {
+export function engineLockPath(where: { readonly dir: string; readonly home?: string | undefined; readonly sample?: boolean | undefined }): string {
+  return join(where.sample === true || where.home === undefined ? where.dir : where.home, "engine.lock");
+}
+
+/** The engine directory: `TOKAMA_ENGINE_DIR` when set, else `~/.tokama/run`, on macOS and Linux. */
+export function defaultEngineDir(env: Readonly<Record<string, string | undefined>>, home: string): string {
   const override = env["TOKAMA_ENGINE_DIR"];
   if (override) return override;
-  const runtimeDir = env["XDG_RUNTIME_DIR"];
-  if (platform === "linux" && runtimeDir && isAbsolute(runtimeDir)) return join(runtimeDir, "tokama");
   return join(home, ".tokama", "run");
 }
 

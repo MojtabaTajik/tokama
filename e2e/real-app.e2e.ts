@@ -104,7 +104,7 @@ it("adds the repo, runs Quick fix from New work and shows the commit in the draw
     await shot(page, "1-repo-added");
 
     // The app is attached to the engine started above, not to one of its own.
-    const lock = readFileSync(join(workspace.engineDir, "engine.lock"), "utf8").trim().split(" ");
+    const lock = readFileSync(join(workspace.tokamaHome, "engine.lock"), "utf8").trim().split(" ");
     expect(Number.parseInt(lock[0] ?? "", 10), "the app uses the running engine").toBe(engine.pid);
 
     // Start Quick fix from New work: pick it in the Template menu, then the repo in the Repos menu.
