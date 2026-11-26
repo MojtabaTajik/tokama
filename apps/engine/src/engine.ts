@@ -15,7 +15,7 @@
 // Threat model: local desktop, no network listener.
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { chmodSync, closeSync, mkdirSync, openSync, readFileSync, unlinkSync } from "node:fs";
-// eslint-disable-next-line no-restricted-imports -- the engine lock is created exclusively (O_EXCL), which is the lock itself; renameSync moves a damaged board index aside.
+// eslint-disable-next-line no-restricted-imports -- the engine lock is created exclusively (O_EXCL), which is the lock itself; renameSync moves a damaged usage index aside.
 import { renameSync, writeSync } from "node:fs";
 import { connect, createServer, type Server, type Socket } from "node:net";
 import { homedir } from "node:os";
@@ -138,7 +138,7 @@ export interface EngineOptions {
   /** With `sampleHistory`: serve only the history, without the sample's own items. */
   readonly sampleHistoryOnly?: boolean;
   /**
-   * Tokama's home folder (`~/.tokama`): item logs in `items/`, the board index in `tokama.db`, and
+   * Tokama's home folder (`~/.tokama`): item logs in `items/`, the usage index in `tokama.db`, and
    * `repos.yaml`. Without it nothing is stored; in sample mode only repos.yaml is.
    */
   readonly home?: string;
@@ -942,12 +942,12 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
 
 interface Storage {
   readonly items: ItemStore;
-  /** The board and usage index, rebuilt from the item logs. */
+  /** The usage index, rebuilt from the item logs. */
   readonly index: ItemIndex;
   close(): void;
 }
 
-/** Loads the item logs and rebuilds the board index from them. The index follows every change after that. */
+/** Loads the item logs and rebuilds the usage index from them. The index follows every change after that. */
 async function openStorage(home: string, clock: Clock, log: (message: string) => void, onUsage: () => void, diagnostics?: EngineDiagnostics): Promise<Result<Storage, StartError>> {
   let index: ItemIndex | undefined;
   try {
@@ -965,7 +965,7 @@ async function openStorage(home: string, clock: Clock, log: (message: string) =>
       try {
         if (opened.put(item) > 0) onUsage();
       } catch (error) {
-        log(`cannot update the board index for ${item.id}: ${String(error)}`);
+        log(`cannot update the usage index for ${item.id}: ${String(error)}`);
         diagnostics?.store.error("engine", "storage", error);
       }
     });
@@ -984,7 +984,7 @@ async function openStorage(home: string, clock: Clock, log: (message: string) =>
 }
 
 /**
- * Opens the board index and rebuilds it from the logs. A database that cannot be opened or
+ * Opens the usage index and rebuilds it from the logs. A database that cannot be opened or
  * rebuilt is moved aside with its -wal and -shm files (it holds only derived data) and made anew.
  */
 function openIndex(file: string, items: readonly StoredItem[], clock: Clock, log: (message: string) => void, onRebuild: () => void): ItemIndex {
@@ -999,7 +999,7 @@ function openIndex(file: string, items: readonly StoredItem[], clock: Clock, log
     }
   } catch (error) {
     const aside = `${file}.damaged-${clock.now()}`;
-    log(`the board index ${file} is damaged (${String(error)}); moving it to ${aside} and rebuilding it`);
+    log(`the usage index ${file} is damaged (${String(error)}); moving it to ${aside} and rebuilding it`);
     onRebuild();
     for (const suffix of ["", "-wal", "-shm"]) {
       try {

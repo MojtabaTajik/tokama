@@ -90,7 +90,7 @@ const START_TIME_SLACK_MS = 2_000;
 
 /**
  * True while the process that wrote a lock still runs, however long its engine takes to start
- * (a large item log, a board index rebuild, a slow disk). The writer is the process with the
+ * (a large item log, an index rebuild, a slow disk). The writer is the process with the
  * lock's pid that started no later than the lock was written; a process that started later took
  * the pid over after the engine died. When the start time cannot be read, the writer counts as
  * live: a refused start is safe, two engines on one home are not. A lock with no pid yet counts as
