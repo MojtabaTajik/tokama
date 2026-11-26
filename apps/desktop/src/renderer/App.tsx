@@ -2,7 +2,7 @@
 // item can fill the main area instead of the drawer (the full view); the sidebar stays.
 import type { BoardCount, FinishAction, UsageRange, UsageScope } from "@tokama/core";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { TokamaBridge } from "../shared/bridge.js";
+import type { ToolsPathInfo, TokamaBridge } from "../shared/bridge.js";
 import { DEFAULT_DESKTOP_STATE, type DesktopState, DRAWER_WIDTH, RAIL_WIDTH, SECTIONS, SIDEBAR_WIDTH } from "../shared/desktop-state.js";
 import { About } from "./about/About.js";
 import { SIDE_BY_SIDE_MIN_WIDTH } from "./ui/DiffView.js";
@@ -173,7 +173,13 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   const setup = data?.setup;
   // The engine's startup checks, unless a test gives the issues itself.
   const issues = useMemo(() => cliIssues ?? cliIssuesOf(setup?.health), [cliIssues, setup]);
-  const problems = useMemo(() => healthProblemsOf(setup?.health), [setup]);
+  // Read once the engine is up: the app's main process may still be reading the login shell's PATH before that.
+  const [toolsPath, setToolsPath] = useState<ToolsPathInfo | undefined>(undefined);
+  const connected = connection.status === "connected";
+  useEffect(() => {
+    if (connected) void bridge.getToolsPath().then(setToolsPath, () => undefined);
+  }, [bridge, connected]);
+  const problems = useMemo(() => healthProblemsOf(setup?.health, toolsPath), [setup, toolsPath]);
   const editedRepo = setup?.repos.find((repo) => repo.id === editingRepo);
   const views = useViewState((view) => view.kind === "all" || (view.kind === "workflow" ? setup?.templates : setup?.repos)?.some((entry) => entry.id === view.id) === true, {
     view: initial.lastView,

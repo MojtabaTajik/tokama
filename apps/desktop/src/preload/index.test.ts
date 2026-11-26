@@ -21,7 +21,7 @@ const [, pushOpenItem] = electron.on.mock.calls.find(([channel]) => channel === 
 describe("preload bridge", () => {
   it("exposes window.tokama with only the bridge methods", () => {
     expect(exposed).toEqual([["tokama", bridge]]);
-    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "countUsage", "getAboutInfo", "getConnection", "getDesktopState", "onConnection", "onEvent", "onOpenItem", "openAttemptFile", "openTemplateFile", "pickFolder", "query", "reportError", "restartEngine", "retryConnection", "waitForEngine", "saveLayout", "saveNotifications", "setViewedItem", "showDataFolder", "loadDiagnostics", "sendDiagnostics", "saveDiagnostics", "stopCrashPrompt"].sort());
+    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "countUsage", "getAboutInfo", "getConnection", "getDesktopState", "getToolsPath", "onConnection", "onEvent", "onOpenItem", "openAttemptFile", "openTemplateFile", "pickFolder", "query", "reportError", "restartEngine", "retryConnection", "waitForEngine", "saveLayout", "saveNotifications", "setViewedItem", "showDataFolder", "loadDiagnostics", "sendDiagnostics", "saveDiagnostics", "stopCrashPrompt"].sort());
   });
 
   it("query and command invoke their channels with the request only", async () => {
@@ -99,6 +99,12 @@ describe("preload bridge", () => {
     await bridge.copyBuildInfo();
     await bridge.showDataFolder();
     expect(electron.invoke.mock.calls).toEqual([[CHANNELS.getAboutInfo], [CHANNELS.copyBuildInfo], [CHANNELS.showDataFolder]]);
+  });
+
+  it("getToolsPath invokes its channel with no arguments", async () => {
+    electron.invoke.mockResolvedValue({ source: "inherited" });
+    await expect(bridge.getToolsPath()).resolves.toEqual({ source: "inherited" });
+    expect(electron.invoke).toHaveBeenLastCalledWith(CHANNELS.getToolsPath);
   });
 
   it("getDesktopState and saveLayout use their own channels, and saveLayout sends the patch as given", async () => {

@@ -384,6 +384,19 @@ describe("health from the setup", () => {
     expect(healthProblemsOf(slow as never)).toEqual([{ title: "Claude Code didn't answer", detail: "Claude Code didn't answer in time." }]);
   });
 
+  it("adds the PATH problem only when the login shell could not be read, first and without a setup too", () => {
+    const problem = "Your login shell (zsh) did not answer within 5 s.";
+    const listed = healthProblemsOf(slow as never, { source: "inherited", shell: "zsh", problem });
+    expect(listed[0]).toEqual({
+      title: "Your shell's PATH was not read",
+      detail: `${problem} Tokama uses the PATH it was started with, so tools in Homebrew or ~/.local/bin may not be found.`,
+    });
+    expect(listed).toHaveLength(2);
+    expect(healthProblemsOf(undefined, { source: "inherited", problem })).toHaveLength(1);
+    expect(healthProblemsOf(slow as never, { source: "login-shell", shell: "zsh" })).toHaveLength(1);
+    expect(healthProblemsOf(slow as never, { source: "inherited" })).toHaveLength(1);
+  });
+
   it("lists git and config problems in the engine's words", () => {
     expect(healthProblemsOf(health as never)).toEqual([
       { title: "git cannot be used", detail: "git 2.44 or newer is required; found: git version 2.39.0" },

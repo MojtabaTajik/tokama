@@ -2,6 +2,7 @@
 // and board columns. Pure functions that take the clock as an argument, so they are tested
 // without React or a real time.
 import type { AgentSummary, AiCliId, BoardCount, Health, ItemRecord, StepRecord, TemplateSummary } from "@tokama/core";
+import type { ToolsPathInfo } from "../shared/bridge.js";
 import { BACKEND_IDS, backendOf } from "./brand/backends/index.js";
 import { itemMark, stepAgent, type StepAgent, stepMark } from "./drawer/describe.js";
 import { itemTotal } from "./drawer/progress-view.js";
@@ -381,12 +382,19 @@ export function cliIssuesOf(health: Health | undefined): CliIssue[] {
   });
 }
 
-/** Git and config problems, each with the engine's own words. */
-export function healthProblemsOf(health: Health | undefined): HealthProblem[] {
-  if (health === undefined) return [];
+/**
+ * Git and config problems, each with the engine's own words, and the app's own: the login shell's
+ * PATH could not be read, which is why tools may be missing from the engine.
+ */
+export function healthProblemsOf(health: Health | undefined, toolsPath?: ToolsPathInfo): HealthProblem[] {
+  const path =
+    toolsPath?.problem === undefined
+      ? []
+      : [{ title: "Your shell's PATH was not read", detail: `${toolsPath.problem} Tokama uses the PATH it was started with, so tools in Homebrew or ~/.local/bin may not be found.` }];
+  if (health === undefined) return path;
   const git = health.git.ok ? [] : [{ title: "git cannot be used", detail: health.git.message ?? "git did not answer." }];
   const slow = health.clis.filter((cli) => cli.timedOut === true).map((cli) => ({ title: `${cliName(cli.cliId)} didn't answer`, detail: cli.message ?? "The check did not finish in time." }));
-  return [...git, ...slow, ...health.config.map((problem) => ({ title: `${problem.file} did not load`, detail: problem.message }))];
+  return [...path, ...git, ...slow, ...health.config.map((problem) => ({ title: `${problem.file} did not load`, detail: problem.message }))];
 }
 
 /** What to run in a terminal to sign in again, as each CLI's own help lists it. Tokama never runs it. */

@@ -42,6 +42,7 @@ function fakeBridge(start: ItemRecord[], activities = new Map<string, ItemActivi
     }),
     query,
     command,
+    getToolsPath: vi.fn(async () => ({ source: "inherited" as const })),
     saveLayout: vi.fn(async () => undefined),
     setViewedItem: vi.fn(async () => undefined),
     onOpenItem: vi.fn(() => () => undefined),
