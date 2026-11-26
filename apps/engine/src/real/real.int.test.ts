@@ -177,10 +177,12 @@ describe("real mode", () => {
     expect(commit?.branch).toMatch(/^tokama\//);
     expect(done.cardLine).toBe(`commit ${commit?.commit.slice(0, 7)} · ${commit?.branch}`);
     expect(git("show", `${commit?.commit}:greeting.txt`)).toBe("hello world");
-    // The step's role reached the call; the board lists the item.
+    // The step's role reached the call; the board counts the done item and item_list lists it.
     expect(runtime.requests[0]?.role).toContain("Builder");
     const board = await client.query({ type: "board" });
-    expect(board.ok && board.data.items.map((i) => i.id)).toEqual([id]);
+    expect(board.ok && board.data).toEqual({ items: [], counts: [{ day: expect.any(String), templateId: "builtin/quick-fix", repoIds: ["orders-api"], done: 1, failed: 0 }] });
+    const listed = await client.query({ type: "item_list", group: "done", limit: 50 });
+    expect(listed.ok && listed.data.items.map((i) => i.id)).toEqual([id]);
     // The call's usage is in the usage report, by the template's ref. "sonnet" is an alias the price
     // table never guesses, so the call is unpriced rather than estimated.
     const usage = await client.query({ type: "usage", range: 14 });

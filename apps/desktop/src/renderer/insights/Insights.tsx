@@ -71,7 +71,6 @@ export function Insights({ bridge, connection, onRetryConnection, usage, range, 
               onScope={onScope}
               onRefresh={usage.refresh}
               setup={setup}
-              items={items}
               issues={issues}
               now={now}
               onSelectItem={onSelectItem}

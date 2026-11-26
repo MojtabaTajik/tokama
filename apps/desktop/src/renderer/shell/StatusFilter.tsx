@@ -1,7 +1,7 @@
 // The status switch at the top of every view: Active, Needs you, Done, Failed, All, each with its
 // count, a Today / 7 days / 30 days / All time picker for Done, Failed and All, and at the right
 // end the search: its result count, the field, and a clear button (Esc clears too).
-import type { ItemRecord } from "@tokama/core";
+import type { BoardCount, ItemRecord } from "@tokama/core";
 import { type Filter, filterCounts, hasRange, type Range, RANGES, STATUS_FILTERS, type StatusFilter as Status } from "../model.js";
 import { SearchIcon } from "../ui/icons.js";
 import { Button, CloseButton } from "../ui/Button.js";
@@ -26,8 +26,10 @@ export interface SearchProps {
 }
 
 export interface StatusFilterProps {
-  /** The items of the current view. */
+  /** The open items of the current view. */
   readonly items: readonly ItemRecord[];
+  /** The finished items of the current view, counted. */
+  readonly finishedCounts: readonly BoardCount[];
   readonly filter: Filter;
   readonly now: number;
   readonly onChange: (patch: Partial<Filter>) => void;
@@ -35,8 +37,8 @@ export interface StatusFilterProps {
   readonly search?: SearchProps | undefined;
 }
 
-export function StatusFilter({ items, filter, now, onChange, search }: StatusFilterProps) {
-  const counts = filterCounts(items, filter, now);
+export function StatusFilter({ items, finishedCounts, filter, now, onChange, search }: StatusFilterProps) {
+  const counts = filterCounts(items, finishedCounts, filter, now);
   return (
     <div className="filter-bar">
       <div className="segments" role="group" aria-label={TEXT.group}>

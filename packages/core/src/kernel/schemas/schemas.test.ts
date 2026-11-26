@@ -409,12 +409,20 @@ describe("check command length", () => {
 
 describe("query results", () => {
   it("parses board and item data", () => {
-    expect(parseQueryResult("board", { items: [item()] })).toEqual({ ok: true, value: { items: [item()] } });
+    const counts = [
+      { day: "2026-11-24", templateId: "builtin/quick-fix", repoIds: ["orders-api"], done: 2, failed: 1 },
+      { day: null, templateId: "builtin/quick-fix", repoIds: [], done: 7, failed: 0 },
+    ];
+    expect(parseQueryResult("board", { items: [item()], counts })).toEqual({ ok: true, value: { items: [item()], counts } });
     expect(parseQueryResult("item", { item: item() })).toEqual({ ok: true, value: { item: item() } });
   });
 
   it("refuses data of the wrong shape", () => {
     expect(parseQueryResult("board", { item: item() }).ok).toBe(false);
+    // A board reply carries its counts; a count names a real day and is never negative.
+    expect(parseQueryResult("board", { items: [] }).ok).toBe(false);
+    expect(parseQueryResult("board", { items: [], counts: [{ day: "yesterday", templateId: "builtin/quick-fix", repoIds: [], done: 1, failed: 0 }] }).ok).toBe(false);
+    expect(parseQueryResult("board", { items: [], counts: [{ day: null, templateId: "builtin/quick-fix", repoIds: [], done: -1, failed: 0 }] }).ok).toBe(false);
     expect(parseQueryResult("item", { item: { ...item(), state: "lost" } }).ok).toBe(false);
   });
 });

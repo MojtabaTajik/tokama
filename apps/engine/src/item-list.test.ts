@@ -1,6 +1,6 @@
-import { type ItemRecord, type ItemState, parseItemRecord } from "@tokama/core";
+import { encodeLine, type ItemRecord, type ItemState, parseItemRecord } from "@tokama/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { groupOf, ItemList, likePattern, nameHits } from "./item-list.js";
+import { COUNTS_BUDGET, groupOf, ItemList, likePattern, nameHits } from "./item-list.js";
 
 /** Local time, so the local days below hold in any time zone. */
 const at = (day: number, hour = 12, minute = 0) => new Date(2026, 10, day, hour, minute).getTime();
@@ -120,6 +120,86 @@ describe("work list index", () => {
     expect(titles(list.page({ group: "done", q: "critic", limit: 50 }, nameHits(setup, "critic")).ids)).toEqual([3]);
     // The search combines with the other filters.
     expect(list.page({ group: "done", q: "cache", repo: "checkout-web", limit: 50 }).total).toBe(1);
+  });
+
+  it("counts done and failed items by start day, template and repos, older days together", () => {
+    list.put(item(1, { createdAt: at(24) }));
+    list.put(item(2, { createdAt: at(24, 9), state: "stopped" }));
+    list.put(item(3, { createdAt: at(24), state: "failed", repoIds: ["orders-api", "checkout-web"] }));
+    list.put(item(4, { createdAt: at(23), templateId: "builtin/plan-build" }));
+    list.put(item(5, { createdAt: at(10) }));
+    list.put(item(6, { createdAt: at(2), state: "failed" }));
+    list.put(item(7, { createdAt: at(24), state: "running" }));
+    list.put(item(8, { createdAt: at(24), state: "needs_you" }));
+
+    expect(list.counts("2026-11-10")).toEqual([
+      { day: "2026-11-24", templateId: "builtin/quick-fix", repoIds: ["orders-api"], done: 2, failed: 0 },
+      { day: "2026-11-24", templateId: "builtin/quick-fix", repoIds: ["orders-api", "checkout-web"], done: 0, failed: 1 },
+      { day: "2026-11-23", templateId: "builtin/plan-build", repoIds: ["orders-api"], done: 1, failed: 0 },
+      { day: "2026-11-10", templateId: "builtin/quick-fix", repoIds: ["orders-api"], done: 1, failed: 0 },
+      { day: null, templateId: "builtin/quick-fix", repoIds: ["orders-api"], done: 0, failed: 1 },
+    ]);
+    // An item that finishes moves into the counts.
+    list.put(item(7, { createdAt: at(24), state: "done" }));
+    expect(list.counts("2026-11-24")[0]).toMatchObject({ day: "2026-11-24", repoIds: ["orders-api"], done: 3 });
+  });
+
+  it("folds the oldest days into the null day when the counts pass the row cap", () => {
+    let n = 1;
+    for (const day of [20, 21, 22, 23, 24]) {
+      list.put(item(n++, { createdAt: at(day) }));
+      list.put(item(n++, { createdAt: at(day), templateId: "builtin/plan-build", state: "failed" }));
+    }
+    const all = list.counts("2026-11-01");
+    expect(all).toHaveLength(10);
+
+    const capped = list.counts("2026-11-01", { rows: 5, bytes: Infinity });
+    expect(capped.length).toBeLessThanOrEqual(5);
+    const sum = (rows: typeof all, key: "done" | "failed") => rows.reduce((total, row) => total + row[key], 0);
+    expect(sum(capped, "done")).toBe(5);
+    expect(sum(capped, "failed")).toBe(5);
+    // The newest day stays split by day; older days sit under the null day, one row for each workflow.
+    expect(capped.filter((row) => row.day === "2026-11-24")).toHaveLength(2);
+    const folded = capped.filter((row) => row.day === null);
+    expect(folded).toHaveLength(2);
+    expect(folded.find((row) => row.templateId === "builtin/quick-fix")).toMatchObject({ done: 4, failed: 0 });
+
+    // Even when the null-day rows alone pass the cap, the reply stays within it.
+    expect(list.counts("2026-11-01", { rows: 1, bytes: Infinity })).toHaveLength(1);
+  });
+
+  it("keeps long ids inside the message limit: the oldest days fold into the null day before the byte budget passes", () => {
+    const pad = (n: number) => String(n).padStart(3, "0");
+    const repos = ["a", "b", "c"].map((letter, index) => letter.repeat(60) + String(index));
+    let n = 1;
+    // 80 workflows with the longest ids, over 20 local days, with an item too that is older than the counted days.
+    for (let flow = 0; flow < 80; flow++) {
+      const templateId = `${"r".repeat(50)}${pad(flow)}/${"t".repeat(60)}`;
+      for (let day = 5; day < 25; day++) list.put(item(n++, { createdAt: at(day), templateId, repoIds: repos, state: day % 2 === 0 ? "failed" : "done" }));
+      list.put(item(n++, { createdAt: new Date(2026, 9, 1).getTime(), templateId, repoIds: repos }));
+    }
+    const total = n - 1;
+
+    // Without a budget these rows are too long for one reply.
+    const unlimited = list.counts("2026-11-01", { rows: Infinity, bytes: Infinity });
+    expect(Buffer.byteLength(JSON.stringify(unlimited))).toBeGreaterThan(COUNTS_BUDGET.bytes);
+
+    const counts = list.counts("2026-11-01");
+    const reply = encodeLine({ id: 1, result: { ok: true, data: { items: [], counts } } });
+    expect(reply.ok).toBe(true);
+    expect(counts.reduce((sum, row) => sum + Buffer.byteLength(JSON.stringify(row)) + 1, 0)).toBeLessThanOrEqual(COUNTS_BUDGET.bytes);
+    // Nothing is lost: only the day is.
+    expect(counts.reduce((sum, row) => sum + row.done + row.failed, 0)).toBe(total);
+    const days = counts.map((row) => row.day);
+    expect(days).toContain(null);
+    expect(days).toContain("2026-11-24");
+    expect(days).not.toContain("2026-11-05");
+
+    // When the null-day rows alone pass a small byte budget, the first rows that fit stay.
+    const tiny = list.counts("2026-11-01", { rows: Infinity, bytes: 2000 });
+    expect(tiny.length).toBeGreaterThan(0);
+    expect(tiny.length).toBeLessThan(80);
+    expect(tiny.reduce((sum, row) => sum + Buffer.byteLength(JSON.stringify(row)) + 1, 0)).toBeLessThanOrEqual(2000);
   });
 
   it("takes %, _ and \\ in a search as the characters themselves", () => {

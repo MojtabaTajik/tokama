@@ -8,6 +8,7 @@ import { App } from "../App.js";
 import { CONNECTED, fakeBridge, type Reply } from "../testing/bridge.js";
 import { ITEMS, NOW, setup as sampleSetup } from "../testing/sample.js";
 import { ReposPage } from "./ReposPage.js";
+import { REPO_ITEMS_DELAY_MS } from "./useRepoItems.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -110,6 +111,7 @@ describe("Settings entries", () => {
     expect(rows().map((el) => el.querySelector(".rp-row-id")?.textContent)).toContain("billing-api");
     expect(rowText("inventory-service").textContent).toContain("1 running");
     await fake.pushItem({ ...ITEMS.stock, state: "needs_you" });
+    await act(async () => new Promise((resolve) => setTimeout(resolve, REPO_ITEMS_DELAY_MS + 20)));
     expect(rowText("inventory-service").textContent).toContain("1 need");
     expect(rowText("inventory-service").textContent).not.toContain("running");
   });

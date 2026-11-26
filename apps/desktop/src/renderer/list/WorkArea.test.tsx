@@ -171,6 +171,19 @@ describe("long work list", () => {
     expect(groupNames()).toEqual(["Done all time"]);
   });
 
+  it("shows the newest finished cards in a workflow's kanban, and the whole count in the Done column", async () => {
+    // 120 done items, all from today (the default range), more than the two pages the kanban loads.
+    const today = history(120).map((item, index) => ({ ...item, createdAt: NOW - (index + 1) * 60_000 }) as ItemRecord);
+    await mount(fakeBridge(CONNECTED, { boardItems: [...items, ...today] }));
+    await click($$(".sb-main").find((el) => el.querySelector(".ellipsis")?.textContent === "Quick fix"));
+    await click($$('[aria-label="Layout"] button').find((el) => el.textContent?.includes("Board")));
+    await click(segment("Done"));
+    const done = $$(".column").find((el) => el.querySelector(".column-name")?.textContent === "Done")!;
+    // The first page of finished cards (50) is loaded; the number counts every finished item.
+    expect(done.querySelectorAll(".card")).toHaveLength(50);
+    expect(done.querySelector(".column-count")?.textContent).toBe("122"); // the 120 and the sample's own two
+  });
+
   it("adds an item that finished meanwhile at the top of Done", async () => {
     const fake = await mount(fakeBridge(CONNECTED));
     await click(segment("Done"));

@@ -27,6 +27,7 @@ import {
   type AgentsListResult,
   type AiClisResult,
   API_VERSION,
+  BOARD_COUNT_DAYS,
   type BoardResult,
   type ItemListResult,
   type ItemRecord,
@@ -102,7 +103,7 @@ import { EngineDiagnostics, isDiagnosticsCommand } from "./diagnostics.js";
 import { listAgents } from "./agents-list.js";
 import { aiClis } from "./ai-clis.js";
 import { ItemIndex } from "./item-index.js";
-import { ItemList, nameHits } from "./item-list.js";
+import { COUNTS_BUDGET, groupOf, ItemList, nameHits } from "./item-list.js";
 import { type HealthChecks, machineChecks } from "./real/health.js";
 import { runningGroups } from "./machine.js";
 import { RealEngine } from "./real/real.js";
@@ -199,6 +200,8 @@ const PROBE_TIMEOUT_MS = 1_000;
 const MAX_QUEUED_BYTES = 8 * MAX_MESSAGE_BYTES;
 /** The most bytes of item records one item_list reply holds, well under the message limit. */
 const LIST_REPLY_BUDGET = MAX_MESSAGE_BYTES / 2;
+/** Room kept in a board reply for the message envelope around its items and counts. */
+const REPLY_MARGIN_BYTES = 4096;
 // The folder that holds the engine and the packages it runs: the checkout in development. Stacks
 // keep the built files below it (`<app>/apps/engine/dist/engine.js`).
 const CODE_ROOT = resolve(import.meta.dirname, "..", "..", "..");
@@ -605,8 +608,16 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       case "setup":
         servedSetup = await setup();
         return { ok: true, data: servedSetup };
-      case "board":
-        return { ok: true, data: { items: store.list() } satisfies BoardResult };
+      case "board": {
+        // Finished items come as counts here and a page at a time from item_list.
+        const today = new Date(clock.now());
+        const firstDay = localDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() - (BOARD_COUNT_DAYS - 1)).getTime());
+        const items = store.list().filter((item) => groupOf(item.state) === "needs" || groupOf(item.state) === "running");
+        // The counts take what the open items leave of the message, up to their own budget.
+        const left = MAX_MESSAGE_BYTES - REPLY_MARGIN_BYTES - Buffer.byteLength(JSON.stringify(items));
+        const budget = { rows: COUNTS_BUDGET.rows, bytes: Math.max(0, Math.min(COUNTS_BUDGET.bytes, left)) };
+        return { ok: true, data: { items, counts: list.counts(firstDay, budget) } satisfies BoardResult };
+      }
       case "item_list": {
         const names = query.q === undefined || query.q.trim() === "" ? undefined : nameHits(servedSetup ?? (real === undefined ? await setup() : await real.setup()), query.q);
         const page = list.page(query, names);

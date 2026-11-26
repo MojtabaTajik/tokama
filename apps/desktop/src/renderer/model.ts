@@ -1,7 +1,7 @@
 // What the shell derives from engine records: views, status filters, groups, badges, pipelines
 // and board columns. Pure functions that take the clock as an argument, so they are tested
 // without React or a real time.
-import type { AgentSummary, AiCliId, Health, ItemRecord, StepRecord, TemplateSummary } from "@tokama/core";
+import type { AgentSummary, AiCliId, BoardCount, Health, ItemRecord, StepRecord, TemplateSummary } from "@tokama/core";
 import { itemMark, stepAgent, type StepAgent, stepMark } from "./drawer/describe.js";
 import { itemTotal } from "./drawer/progress-view.js";
 import { formatDuration } from "./format/duration.js";
@@ -19,6 +19,7 @@ export const viewKey = (view: View): string => (view.kind === "all" ? "all" : `$
 
 export const sameView = (a: View, b: View): boolean => viewKey(a) === viewKey(b);
 
+/** Takes an item or a count row of the board: both name their template and repos. */
 export const inView = (item: Pick<ItemRecord, "templateId" | "repoIds">, view: View): boolean =>
   view.kind === "all" || (view.kind === "workflow" ? item.templateId === view.id : (item.repoIds as readonly string[]).includes(view.id));
 
@@ -81,6 +82,22 @@ export function inRange(item: Pick<ItemRecord, "createdAt">, range: Range, now: 
   return item.createdAt >= from.getTime();
 }
 
+/** Whether an item waits for you, runs or waits to run: the board holds these in full. */
+export const isOpen = (item: Pick<ItemRecord, "state">): boolean => bucketOf(item) === "active" || bucketOf(item) === "needs";
+
+/** The done and failed items of the board's counts that started within the range. */
+export function finishedIn(counts: readonly BoardCount[], range: Range, now: number): { readonly done: number; readonly failed: number } {
+  const since = sinceOf(range, now);
+  let done = 0;
+  let failed = 0;
+  for (const row of counts) {
+    if (since !== undefined && (row.day === null || row.day < since)) continue;
+    done += row.done;
+    failed += row.failed;
+  }
+  return { done, failed };
+}
+
 /** Whether an item shows under a status filter. Live items always show; finished ones only within the range. */
 export function matches(item: Pick<ItemRecord, "state" | "createdAt">, status: StatusFilter, range: Range, now: number): boolean {
   const bucket = bucketOf(item);
@@ -99,16 +116,16 @@ export function matches(item: Pick<ItemRecord, "state" | "createdAt">, status: S
 }
 
 /** The counts on the status switch: how many items each filter opens, Done and Failed within the view's range. */
-export function filterCounts(items: readonly ItemRecord[], filter: Filter, now: number): Record<Exclude<StatusFilter, "all">, number> {
-  const count = (status: StatusFilter, range: Range) => items.filter((item) => matches(item, status, range, now)).length;
-  return { active: count("active", "today"), needs: count("needs", "today"), done: count("done", filter.range), failed: count("failed", filter.range) };
+export function filterCounts(items: readonly ItemRecord[], counts: readonly BoardCount[], filter: Filter, now: number): Record<Exclude<StatusFilter, "all">, number> {
+  const count = (status: StatusFilter) => items.filter((item) => matches(item, status, "today", now)).length;
+  const finished = finishedIn(counts, filter.range, now);
+  return { active: count("active"), needs: count("needs"), done: finished.done, failed: finished.failed };
 }
 
 /** The header's summary of a view: "5 live · 2 done today". */
-export function summaryOf(items: readonly ItemRecord[], now: number): string {
-  const live = items.filter((item) => bucketOf(item) === "active" || bucketOf(item) === "needs").length;
-  const done = items.filter((item) => bucketOf(item) === "done" && inRange(item, "today", now)).length;
-  return `${live} live · ${done} done today`;
+export function summaryOf(items: readonly ItemRecord[], counts: readonly BoardCount[], now: number): string {
+  const live = items.filter(isOpen).length;
+  return `${live} live · ${finishedIn(counts, "today", now).done} done today`;
 }
 
 export const visibleItems = (items: readonly ItemRecord[], filter: Filter, now: number): ItemRecord[] =>
@@ -184,12 +201,12 @@ export type Badge = StatusCount;
 export type BadgeKind = StatusCount["kind"];
 
 /**
- * The sidebar badges of a set of items: needs you, failed today, running. Only counts above zero
- * come back, in that order. Queued items count nowhere.
+ * The sidebar badges of a set of open items and the counts of the same scope: needs you, failed
+ * today, running. Only counts above zero come back, in that order. Queued items count nowhere.
  */
-export function badgesOf(items: readonly ItemRecord[], now: number): Badge[] {
+export function badgesOf(items: readonly ItemRecord[], counts: readonly BoardCount[], now: number): Badge[] {
   const needs = items.filter((item) => item.state === "needs_you").length;
-  const failed = items.filter((item) => item.state === "failed" && inRange(item, "today", now)).length;
+  const failed = finishedIn(counts, "today", now).failed;
   const running = items.filter((item) => item.state === "running").length;
   const badges: Badge[] = [
     { kind: "needs", symbol: markOf("needs_you").symbol, count: needs, word: needs === 1 ? "needs you" : "need you" },

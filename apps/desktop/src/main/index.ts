@@ -188,7 +188,7 @@ void app.whenReady().then(() => {
     const report = rendererUsageReport(input);
     if (report !== undefined && rendererUsage()) reporter.report(report);
   });
-  // Notifications: told about every item update, and it learns the board again on each connect.
+  // Notifications: told about every item update, and it learns the open items again on each connect.
   const notifier = createNotifier({
     settings: () => store.get().notifications,
     windowFocused: () => BrowserWindow.getAllWindows().some((window) => window.isFocused()),

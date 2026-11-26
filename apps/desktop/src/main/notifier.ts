@@ -21,7 +21,7 @@ const seenOf = (item: ItemRecord): Seen => ({
 });
 
 /**
- * Which transitions of an item are news. It is seeded from the board, and after that an update
+ * Which transitions of an item are news. It is seeded from the open items, and after that an update
  * is a transition only when it differs from what was seen: a new decision id, or an end state
  * reached now. An item seen for the first time is only recorded, and so is everything before the
  * first seed, so a restart, a reconnect or a refetch never repeats a notification.
@@ -30,7 +30,7 @@ export function createTracker() {
   const seen = new Map<string, Seen>();
   let seeded = false;
   return {
-    /** Replaces what is known with the board's items; none of them is news. */
+    /** Replaces what is known with the open items; none of them is news. */
     seed(items: readonly ItemRecord[]): void {
       seen.clear();
       for (const item of items) seen.set(item.id, seenOf(item));
@@ -115,7 +115,7 @@ export function noteText(kind: NoteKind, item: ItemRecord, context: { readonly s
 export interface NotifierDeps {
   readonly settings: () => NotificationSettings;
   readonly windowFocused: () => boolean;
-  /** Every item on the board, or undefined when the engine does not answer. */
+  /** The open items (needs you, running, queued), or undefined when the engine does not answer. A finished item is not among them and is first seen quietly. */
   readonly board: () => Promise<readonly ItemRecord[] | undefined>;
   /** The engine's setup, or undefined when the engine does not answer. */
   readonly setup: () => Promise<Setup | undefined>;
@@ -128,7 +128,7 @@ export interface NotifierDeps {
 }
 
 export interface Notifier {
-  /** Learns the board again; call it on every connect and reconnect. Updates that come meanwhile are replayed quietly after it. */
+  /** Learns the open items again; call it on every connect and reconnect. Updates that come meanwhile are replayed quietly after it. */
   resync(): Promise<void>;
   onEvent(event: BridgeEvent["event"]): void;
   /** The item the window shows now, or undefined. */
@@ -163,7 +163,7 @@ export function createNotifier(deps: NotifierDeps): Notifier {
       waiting = [];
       const items = await deps.board().catch(() => undefined);
       if (mine !== round) return;
-      // Without the board there is nothing to compare with: stay quiet rather than report what happened while away.
+      // Without the open items there is nothing to compare with: stay quiet rather than report what happened while away.
       if (items === undefined) tracker.reset();
       else tracker.seed(items);
       const replay = waiting;

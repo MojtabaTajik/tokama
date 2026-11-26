@@ -4,9 +4,22 @@
 // and pages newest start first, keyed on (start time, id) so a page boundary inside one
 // millisecond loses no row. Every value reaches SQL as a bound parameter; the search text is
 // escaped for LIKE, so `%`, `_` and `\` match themselves. A `%text%` search cannot use an index and
-// scans the rows of the group; the group, day and page order are index-backed.
+// scans the rows of the group; the group, day and page order are index-backed. It also counts
+// the done and failed items for the board query, which serves only the open items in full.
 import { DatabaseSync } from "node:sqlite";
-import { type ItemId, type ItemRecord, type ItemState, type ListGroup, localDate, type Setup } from "@tokama/core";
+import {
+  type BoardCount,
+  type ItemId,
+  type ItemRecord,
+  type ItemState,
+  type ListGroup,
+  localDate,
+  MAX_BOARD_COUNTS,
+  MAX_MESSAGE_BYTES,
+  type RepoId,
+  type Setup,
+  type TemplateRef,
+} from "@tokama/core";
 
 /** The work-list group of an item state. A stopped item counts as done. */
 export function groupOf(state: ItemState): ListGroup {
@@ -172,7 +185,79 @@ export class ItemList {
     };
   }
 
+  /**
+   * The done and failed items counted by start day, template and repos. Items that started before
+   * `firstDay` are counted together, under a null day. The rows stay within the budget: when they
+   * are too many or too long, the oldest days join the null-day rows, as many days as needed.
+   */
+  counts(firstDay: string, budget: CountsBudget = COUNTS_BUDGET): BoardCount[] {
+    const rows = this.db
+      .prepare(
+        `SELECT CASE WHEN day >= ? THEN day END AS d, template_ref, repos, sum(grp = 'done') AS done, sum(grp = 'failed') AS failed
+         FROM list_items WHERE grp IN ('done', 'failed') GROUP BY d, template_ref, repos ORDER BY d DESC, template_ref, repos`,
+      )
+      .all(firstDay) as unknown as { d: string | null; template_ref: string; repos: string; done: number; failed: number }[];
+    const all = rows.map((row) => ({
+      day: row.d,
+      templateId: row.template_ref as TemplateRef,
+      repoIds: row.repos.split("\n").filter((repo) => repo !== "") as RepoId[],
+      done: row.done,
+      failed: row.failed,
+    }));
+    return fits(all, budget) ? all : capCounts(all, budget);
+  }
+
   close(): void {
     this.db.close();
   }
+}
+
+/** The rows and bytes (as JSON) that the count rows of one board reply may take; it also holds the open items. */
+export interface CountsBudget {
+  readonly rows: number;
+  readonly bytes: number;
+}
+/** Half the message limit, as for an item_list page, and never more rows than the schema takes. */
+export const COUNTS_BUDGET: CountsBudget = { rows: MAX_BOARD_COUNTS, bytes: MAX_MESSAGE_BYTES / 2 };
+
+const rowBytes = (row: BoardCount): number => Buffer.byteLength(JSON.stringify(row)) + 1;
+const fits = (rows: readonly BoardCount[], budget: CountsBudget): boolean => rows.length <= budget.rows && rows.reduce((sum, row) => sum + rowBytes(row), 0) <= budget.bytes;
+
+/**
+ * Keeps the newest whole days that fit in the budget and adds the rest to the null-day rows, one
+ * row for each template and repo set. Rows come newest day first, null day last. If the null-day
+ * rows alone are too many, the first rows that fit stay.
+ */
+function capCounts(rows: BoardCount[], budget: CountsBudget): BoardCount[] {
+  const days = [...new Set(rows.flatMap((row) => (row.day === null ? [] : [row.day])))];
+  for (let keep = days.length; keep >= 0; keep--) {
+    const kept = new Set(days.slice(0, keep));
+    const shown = rows.filter((row) => row.day !== null && kept.has(row.day));
+    const folded = new Map<string, BoardCount>();
+    for (const row of rows) {
+      if (row.day !== null && kept.has(row.day)) continue;
+      const key = `${row.templateId}\n${row.repoIds.join("\n")}`;
+      const total = folded.get(key);
+      if (total === undefined) folded.set(key, { ...row, day: null });
+      else {
+        total.done += row.done;
+        total.failed += row.failed;
+      }
+    }
+    const capped = [...shown, ...folded.values()];
+    if (fits(capped, budget)) return capped;
+    if (keep === 0) return takeFitting(capped, budget);
+  }
+  return takeFitting(rows, budget);
+}
+
+function takeFitting(rows: readonly BoardCount[], budget: CountsBudget): BoardCount[] {
+  const taken: BoardCount[] = [];
+  let bytes = 0;
+  for (const row of rows) {
+    bytes += rowBytes(row);
+    if (taken.length >= budget.rows || bytes > budget.bytes) break;
+    taken.push(row);
+  }
+  return taken;
 }

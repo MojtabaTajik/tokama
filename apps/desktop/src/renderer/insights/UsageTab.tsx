@@ -4,7 +4,7 @@
 // and the top items. A workflow picked in the chart or legend filters the chart's totals and the
 // table. Costs are always marked as estimates with the price table's date. Engine text (titles,
 // names, notes) renders as React text only.
-import type { ItemRecord, Setup, UsageRange, UsageReport, UsageScope } from "@tokama/core";
+import type { Setup, UsageRange, UsageReport, UsageScope } from "@tokama/core";
 import type { CliIssue } from "../model.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { AccountCards } from "./AccountCards.js";
@@ -59,7 +59,6 @@ export interface UsageTabProps {
   readonly onScope: (scope: UsageScope) => void;
   readonly onRefresh: () => void;
   readonly setup: Setup | undefined;
-  readonly items: readonly ItemRecord[];
   readonly issues: readonly CliIssue[];
   readonly now: number;
   readonly onSelectItem: (itemId: string) => void;
@@ -70,7 +69,7 @@ export interface UsageTabProps {
   readonly onFilter: (templateId: string | undefined) => void;
 }
 
-export function UsageTab({ report, error, range, onRange, scope, onScope, onRefresh, setup, items, issues, now, onSelectItem, metric, onMetric: setMetric, filter, onFilter: setFilter }: UsageTabProps) {
+export function UsageTab({ report, error, range, onRange, scope, onScope, onRefresh, setup, issues, now, onSelectItem, metric, onMetric: setMetric, filter, onFilter: setFilter }: UsageTabProps) {
   // After a switch the last report stays until the new one comes: its scoped numbers are not shown under the new label.
   const current = (report.scope ?? "tokama") === scope;
   const scan = current && scope === "all" ? scanText(report.scan) : undefined;
@@ -134,7 +133,6 @@ export function UsageTab({ report, error, range, onRange, scope, onScope, onRefr
         setup={setup}
         filter={filter}
         note={TEXT.tableNote(filter === undefined ? undefined : workflowName(filter, setup), report.range)}
-        openable={new Set(items.map((item) => item.id))}
         onOpen={onSelectItem}
       />
       <p className="muted ins-estimate">{TEXT.estimate(report.pricesAsOf)}</p>

@@ -64,7 +64,7 @@ describe("engine process", () => {
       for await (const event of engineClient.events()) events.push(event);
     })();
 
-    expect(await engineClient.query({ type: "board" })).toEqual({ ok: true, data: { items: [] } });
+    expect(await engineClient.query({ type: "board" })).toEqual({ ok: true, data: { items: [], counts: [] } });
     expect(await engineClient.query({ type: "diagnostics_settings" })).toMatchObject({ ok: true, data: { crashWaiting: false } });
     // Item storage is open in the home folder.
     for (const file of ["host.json", "items", "tokama.db"]) expect(existsSync(join(homeOf(dir), file))).toBe(true);
@@ -79,7 +79,7 @@ describe("engine process", () => {
 
     expect(engineClient.engineId).not.toBe(firstEngine);
     expect(lockPid(dir)).not.toBe(firstPid);
-    expect(await engineClient.query({ type: "board" })).toEqual({ ok: true, data: { items: [] } });
+    expect(await engineClient.query({ type: "board" })).toEqual({ ok: true, data: { items: [], counts: [] } });
   });
 
   it("records a crash after it was killed, and flags it on the next start", { timeout: 40_000 }, async () => {
