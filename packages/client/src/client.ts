@@ -91,14 +91,20 @@ export type ConnectErrorCode =
   | "unsupported_version"
   | "protocol_error";
 
+/** What the engine said about itself in its handshake reply. */
+export interface EngineInfo {
+  readonly apiVersion: number;
+  /** Its build version; absent from an engine too old to say. */
+  readonly engineVersion?: string;
+  /** How many items it ran at that moment; absent from an engine too old to say. */
+  readonly runningItems?: number;
+}
+
 export interface ConnectError {
   readonly code: ConnectErrorCode;
   readonly message: string;
-  /**
-   * With `unsupported_version`: the running engine's API version, and how many items it runs
-   * (absent from an engine too old to say).
-   */
-  readonly engine?: { readonly apiVersion: number; readonly runningItems?: number };
+  /** With `unsupported_version`: what the running engine said about itself (its API version, build version and running items). */
+  readonly engine?: EngineInfo;
 }
 
 /** A reply's result: `data` on success, or an error code such as `not_found`, `not_implemented`, `disconnected`, `timeout`. */
@@ -126,6 +132,8 @@ export interface RequestOptions {
 export interface EngineClient {
   /** The engine this client is connected to, or was connected to last. */
   readonly engineId: string;
+  /** The handshake of the connection it has now, or had last. */
+  readonly engine: EngineInfo;
   query<Q extends QueryInput>(query: Q, options?: RequestOptions): Promise<QueryReply<Q["type"]>>;
   command<C extends CommandInput>(command: C, options?: RequestOptions): Promise<CommandReply<C["type"]>>;
   /** Events from the time of this call on. The iteration ends when the client closes or fails. */
@@ -167,6 +175,7 @@ interface SessionHandlers {
 interface Session {
   readonly socket: Socket;
   readonly engineId: string;
+  readonly engine: EngineInfo;
 }
 
 interface Subscriber {
@@ -176,6 +185,7 @@ interface Subscriber {
 
 class Client implements EngineClient {
   engineId = "";
+  engine: EngineInfo = { apiVersion: API_VERSION };
   private socket: Socket | undefined;
   private readonly pending = new Map<string, (result: RequestResult) => void>();
   private readonly subscribers = new Set<Subscriber>();
@@ -323,6 +333,7 @@ class Client implements EngineClient {
       }
       this.socket = session.value.socket;
       this.engineId = session.value.engineId;
+      this.engine = session.value.engine;
       this.starts = 0;
       this.child = undefined;
       this.waiting = undefined;
@@ -530,7 +541,11 @@ function openSession(endpoint: EngineEndpoint, timeoutMs: number, handlers: Sess
         const json = parseJsonLine(line);
         const reply = parseHandshakeReply(json.ok ? json.value : undefined);
         if (!reply.ok) return settle(err({ code: "protocol_error", message: "the engine did not answer the hello" }));
-        const engine = { apiVersion: reply.value.apiVersion, ...(reply.value.runningItems !== undefined && { runningItems: reply.value.runningItems }) };
+        const engine: EngineInfo = {
+          apiVersion: reply.value.apiVersion,
+          ...(reply.value.engineVersion !== undefined && { engineVersion: reply.value.engineVersion }),
+          ...(reply.value.runningItems !== undefined && { runningItems: reply.value.runningItems }),
+        };
         if (reply.value.kind === "connection_error") {
           const code = handshakeCode(reply.value.code);
           return settle(err({ code, message: reply.value.message, ...(code === "unsupported_version" && { engine }) }));
@@ -538,7 +553,7 @@ function openSession(endpoint: EngineEndpoint, timeoutMs: number, handlers: Sess
         if (reply.value.apiVersion !== API_VERSION) {
           return settle(err({ code: "unsupported_version", message: `engine speaks API version ${reply.value.apiVersion}`, engine }));
         }
-        session = { socket, engineId: reply.value.engineId };
+        session = { socket, engineId: reply.value.engineId, engine };
         settle(ok(session));
       }
     });

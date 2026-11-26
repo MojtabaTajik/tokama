@@ -1,8 +1,9 @@
 // The desktop app's engine connection state. No Electron here, so it is tested with a fake client.
 //
-// An engine of an older API version that still runs after an update is replaced: at once when
-// it runs nothing, otherwise only after the user picks Restart now, or Wait (the app checks again
-// every few seconds and restarts it once nothing runs). A newer engine is never stopped.
+// An engine of an older API version that still runs after an update is replaced, and so is one of
+// the same API version but a lower build when this app is packaged: at once when it runs nothing,
+// otherwise only after the user picks Restart now, or Wait (the app checks again every few seconds
+// and restarts it once nothing runs). A newer engine (API or build) is never stopped.
 import type { ConnectError, EngineClient } from "@tokama/client";
 import type { Result } from "@tokama/core";
 import type { BridgeEvent, ConnectionState, OlderEngine } from "../shared/bridge.js";
@@ -27,6 +28,31 @@ export interface WatchOptions {
   readonly olderLock?: () => Pick<OlderEngine, "lockPath" | "pid"> & { readonly engineId?: string };
   /** How often Wait checks again. Default 5 s. */
   readonly waitPollMs?: number;
+  /**
+   * This app's build version; only a packaged app gives it. An engine of the same API version
+   * whose build is lower is replaced like an engine of an older API version.
+   */
+  readonly appVersion?: string;
+}
+
+/** The numbers of a plain `x.y.z` release; undefined for anything else, and for `0.0.0` (a dev build). */
+function release(version: string | undefined): readonly [number, number, number] | undefined {
+  const match = version === undefined ? null : /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  if (match === null) return undefined;
+  const parts = [Number(match[1]), Number(match[2]), Number(match[3])] as const;
+  return parts.every((part) => part === 0) ? undefined : parts;
+}
+
+/** True when both are plain `x.y.z` releases (not `0.0.0`) and the engine's is lower. */
+export function olderBuild(engineVersion: string | undefined, appVersion: string | undefined): boolean {
+  const engine = release(engineVersion);
+  const app = release(appVersion);
+  if (engine === undefined || app === undefined) return false;
+  for (const [index, part] of engine.entries()) {
+    const other = app[index] ?? 0;
+    if (part !== other) return part < other;
+  }
+  return false;
 }
 
 export interface ConnectionWatch {
@@ -84,11 +110,15 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
     if (error.code !== "unsupported_version" || engine === undefined || options.replaceOlder === undefined) return fail(error.message);
     if (engine.apiVersion > options.apiVersion) return fail(NEWER);
     if (engine.apiVersion === options.apiVersion) return fail(error.message);
+    return older(engine.runningItems, mine, mode, replaced, error.message);
+  };
+
+  /** An older engine runs: replace it when idle (or on request), otherwise ask. `reason` is the failure text if no replacer is set. */
+  const older = async (runningItems: number | undefined, mine: number, mode: Mode, replaced: boolean, reason: string): Promise<void> => {
     // Right after a replace, an older engine again is not replaced again without asking.
     // The lock as it is right after the refusal: only the engine it names may be stopped.
     const { engineId, ...lock } = options.olderLock?.() ?? { lockPath: "" };
-    if (!replaced && (mode === "now" || engine.runningItems === 0)) return replace(mine, () => options.replaceOlder?.(engineId) ?? Promise.resolve({ ok: false, reason: error.message }));
-    const { runningItems } = engine;
+    if (!replaced && (mode === "now" || runningItems === 0)) return replace(mine, () => options.replaceOlder?.(engineId) ?? Promise.resolve({ ok: false, reason }));
     const waiting = mode === "wait" && runningItems !== undefined && !replaced;
     fail(OLDER, {
       ...lock,
@@ -113,7 +143,14 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
       return;
     }
     if (!result.ok) return refused(result.error, mine, mode, replaced);
-    client = result.value;
+    const connected = result.value;
+    if (options.replaceOlder !== undefined && olderBuild(connected.engine.engineVersion, options.appVersion)) {
+      // Closed first: a client left open would reconnect, and start an engine, while the old one stops.
+      await connected.close();
+      if (closed || mine !== attempt) return;
+      return older(connected.engine.runningItems, mine, mode, replaced, OLDER);
+    }
+    client = connected;
     // events() is called in the same tick as the connect result, so no event is missed.
     const events = client.events();
     // A killed engine left its crash marker; that stop was this app's, not a crash.

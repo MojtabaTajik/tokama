@@ -411,11 +411,15 @@ export const OpeningMessageSchema = z.discriminatedUnion("kind", [HelloMessageSc
 /** How many items run now (`state` running, or a Finish action in progress); restarting the engine pauses them. */
 const runningItems = z.int().nonnegative().optional();
 
+/** The engine's build version, as written in its package.json. Any text: only the client decides whether it can compare it. */
+const engineVersion = z.string().min(1).max(128).optional();
+
 /** The engine accepted the hello. `engineId` is new on each engine start: a new id means `seq` restarted. */
 export const WelcomeMessageSchema = z.object({
   kind: z.literal("welcome"),
   apiVersion: z.int(),
   engineId: z.string().min(1).max(128),
+  engineVersion,
   runningItems,
 });
 
@@ -445,6 +449,8 @@ export const ConnectionErrorMessageSchema = z.object({
   message: z.string().max(1000),
   /** With `unsupported_version`, so a client can tell whether replacing the engine pauses work. */
   runningItems,
+  /** With `unsupported_version`, like `runningItems`. */
+  engineVersion,
 });
 
 /** What the engine answers to a hello. */

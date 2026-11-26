@@ -127,6 +127,30 @@ describe("@tokama/client", () => {
     expect(await connect({ dir })).toEqual({ ok: false, error: { code: "unsupported_version", message: "engine speaks 7", engine: { apiVersion: 7, runningItems: 2 } } });
   });
 
+  it("reports the engine's build version and running items from its welcome", async () => {
+    const dir = tempDir();
+    await fakeEngine(dir, `${JSON.stringify({ kind: "welcome", apiVersion: API_VERSION, engineId: "e1", engineVersion: "0.3.1", runningItems: 2 })}\n`);
+    const connected = await connect({ dir });
+    if (!connected.ok) throw new Error(connected.error.message);
+    cleanups.push(() => connected.value.close());
+    expect(connected.value.engine).toEqual({ apiVersion: API_VERSION, engineVersion: "0.3.1", runningItems: 2 });
+  });
+
+  it("reports only the API version from a welcome that says no more", async () => {
+    const dir = tempDir();
+    await fakeEngine(dir, `${JSON.stringify({ kind: "welcome", apiVersion: API_VERSION, engineId: "e1" })}\n`);
+    const connected = await connect({ dir });
+    if (!connected.ok) throw new Error(connected.error.message);
+    cleanups.push(() => connected.value.close());
+    expect(connected.value.engine).toEqual({ apiVersion: API_VERSION });
+  });
+
+  it("reports the build version of a refusing engine", async () => {
+    const dir = tempDir();
+    await fakeEngine(dir, `${JSON.stringify({ kind: "connection_error", apiVersion: 7, code: "unsupported_version", message: "engine speaks 7", engineVersion: "0.1.0" })}\n`);
+    expect(await connect({ dir })).toMatchObject({ ok: false, error: { engine: { apiVersion: 7, engineVersion: "0.1.0" } } });
+  });
+
   it("reports an older engine's refusal without runningItems as not known", async () => {
     const dir = tempDir();
     await fakeEngine(dir, `${JSON.stringify({ kind: "connection_error", apiVersion: 2, code: "unsupported_version", message: "engine speaks 2" })}\n`);

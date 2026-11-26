@@ -17,7 +17,7 @@ afterEach(async () => {
   cleanups = [];
 });
 
-async function engine(dir: string, options: { helloTimeoutMs?: number } = {}): Promise<EngineHandle> {
+async function engine(dir: string, options: { helloTimeoutMs?: number; engineVersion?: string } = {}): Promise<EngineHandle> {
   const started = await startEngine({ dir, ...options });
   if (!started.ok) throw new Error(started.error.message);
   cleanups.push(() => started.value.close());
@@ -44,7 +44,7 @@ async function handshaken(handle: EngineHandle) {
   const raw = await rawConnect(handle.endpoint.socketPath);
   cleanups.push(() => raw.destroy());
   raw.send({ kind: "hello", apiVersion: API_VERSION, token: readFileSync(handle.endpoint.tokenPath, "utf8") });
-  expect(await raw.next()).toEqual({ kind: "welcome", apiVersion: API_VERSION, engineId: handle.engineId, runningItems: 0 });
+  expect(await raw.next()).toEqual({ kind: "welcome", apiVersion: API_VERSION, engineId: handle.engineId, engineVersion: "0.0.0", runningItems: 0 });
   return raw;
 }
 
@@ -234,6 +234,22 @@ describe("engine service", () => {
     raw.send({ kind: "hello", apiVersion: API_VERSION - 1, token: readFileSync(handle.endpoint.tokenPath, "utf8") });
     expect(await raw.next()).toMatchObject({ kind: "connection_error", apiVersion: API_VERSION, code: "unsupported_version" });
     await raw.closed;
+  });
+
+  it("says its build version, in the welcome and in the version refusal", async () => {
+    const dir = tempEngineDir(cleanups);
+    const handle = await engine(dir, { engineVersion: "1.2.3" });
+    const token = readFileSync(handle.endpoint.tokenPath, "utf8");
+
+    const welcomed = await rawConnect(handle.endpoint.socketPath);
+    cleanups.push(() => welcomed.destroy());
+    welcomed.send({ kind: "hello", apiVersion: API_VERSION, token });
+    expect(await welcomed.next()).toMatchObject({ kind: "welcome", engineVersion: "1.2.3" });
+
+    const refused = await rawConnect(handle.endpoint.socketPath);
+    refused.send({ kind: "hello", apiVersion: API_VERSION + 1, token });
+    expect(await refused.next()).toMatchObject({ kind: "connection_error", code: "unsupported_version", engineVersion: "1.2.3" });
+    await refused.closed;
   });
 
   it("says how many items run, in the welcome and in the version refusal", async () => {

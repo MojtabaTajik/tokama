@@ -1,17 +1,18 @@
-import type { ClientEvent, ConnectError, EngineClient } from "@tokama/client";
+import type { ClientEvent, ConnectError, EngineClient, EngineInfo } from "@tokama/client";
 import { err, ok, type Result } from "@tokama/core";
 import { describe, expect, it, vi } from "vitest";
 import type { BridgeEvent, ConnectionState } from "../shared/bridge.js";
-import { watchConnection } from "./connection.js";
+import { olderBuild, watchConnection } from "./connection.js";
 import type { ReplaceResult } from "./replace.js";
 
 /** A client whose events the test pushes by hand. */
-function fakeClient(engineId = "engine-1") {
+function fakeClient(engineId = "engine-1", engine: EngineInfo = { apiVersion: APP_API }) {
   const queue: ClientEvent[] = [];
   let wake: (() => void) | undefined;
   let ended = false;
   const client = {
     engineId,
+    engine,
     query: vi.fn(),
     command: vi.fn(),
     close: vi.fn(async () => {
@@ -43,6 +44,7 @@ function watch(
   connect: () => Promise<Result<EngineClient, ConnectError>>,
   logTail: string[] = [],
   replaceOlder: () => Promise<ReplaceResult> = async () => ({ ok: true, forced: false }),
+  appVersion?: string,
 ) {
   const states: ConnectionState[] = [];
   const events: BridgeEvent[] = [];
@@ -55,6 +57,7 @@ function watch(
     onState: (s) => states.push(s),
     onEvent: (e) => events.push(e),
     apiVersion: APP_API,
+    ...(appVersion !== undefined && { appVersion }),
     replaceOlder: replace,
     olderLock: () => ({ lockPath: "/run/tokama/engine.lock", pid: 4821, engineId: "e-old" }),
     waitPollMs: 10,
@@ -72,6 +75,25 @@ const versionRefusal = (apiVersion: number, runningItems?: number): ConnectError
 type Connect = () => Promise<Result<EngineClient, ConnectError>>;
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe("olderBuild", () => {
+  it.each([
+    ["0.1.0", "0.2.0", true],
+    ["0.9.0", "0.10.0", true],
+    ["0.2.0", "0.2.0", false],
+    ["0.3.0", "0.2.0", false],
+    ["0.10.0", "0.9.9", false],
+    [undefined, "0.2.0", false],
+    ["0.0.0", "0.2.0", false],
+    ["0.1.0", "0.0.0", false],
+    ["0.1.0", undefined, false],
+    ["0.1.0-beta", "0.2.0", false],
+    ["dev", "0.2.0", false],
+    ["0.1", "0.2.0", false],
+  ])("engine %s against app %s is %s", (engine, app, expected) => {
+    expect(olderBuild(engine, app)).toBe(expected);
+  });
+});
 
 describe("watchConnection", () => {
   it("starts in 'starting' and becomes 'connected' with the engine id", async () => {
@@ -190,6 +212,106 @@ describe("watchConnection", () => {
       await settle();
       expect(replace).toHaveBeenCalledOnce();
       expect(watcher.state()).toMatchObject({ status: "failed", older: { runningItems: 0, waiting: false } });
+    });
+  });
+
+  describe("a same-API engine of an older build (packaged app 0.2.0)", () => {
+    const APP = "0.2.0";
+    /** A client of an engine of the same API version, with `engineVersion` and `runningItems` as given. */
+    const sameApi = (engineId: string, engineVersion?: string, runningItems?: number) =>
+      fakeClient(engineId, { apiVersion: APP_API, ...(engineVersion !== undefined && { engineVersion }), ...(runningItems !== undefined && { runningItems }) }).client;
+
+    it("is replaced at once when it runs nothing: the old client closes first, then updating, then connected", async () => {
+      const old = sameApi("e-old", "0.1.0", 0);
+      const fresh = sameApi("engine-new", "0.2.0", 0);
+      const connect = vi.fn<Connect>().mockResolvedValueOnce(ok(old)).mockResolvedValueOnce(ok(fresh));
+      const { watcher, states, replace } = watch(connect, [], undefined, APP);
+      await vi.waitFor(() => expect(watcher.state()).toEqual({ status: "connected", engineId: "engine-new" }));
+      expect(replace).toHaveBeenCalledExactlyOnceWith("e-old");
+      expect(old.close.mock.invocationCallOrder[0]).toBeLessThan(replace.mock.invocationCallOrder[0] ?? 0);
+      expect(states).toEqual([{ status: "starting", updating: true }, { status: "connected", engineId: "engine-new" }]);
+      expect(old.command).not.toHaveBeenCalled();
+    });
+
+    it("asks when it runs items, and Restart now replaces it", async () => {
+      const busy = () => sameApi("e-old", "0.1.0", 3);
+      const connect = vi.fn<Connect>().mockResolvedValueOnce(ok(busy())).mockResolvedValueOnce(ok(busy())).mockResolvedValueOnce(ok(sameApi("engine-new", "0.2.0", 0)));
+      const { watcher, replace } = watch(connect, [], undefined, APP);
+      await settle();
+      expect(replace).not.toHaveBeenCalled();
+      expect(watcher.state()).toMatchObject({
+        status: "failed",
+        reason: "An older Tokama engine is still running. Restart it?",
+        older: { runningItems: 3, waiting: false, lockPath: "/run/tokama/engine.lock", pid: 4821 },
+      });
+      watcher.restartEngine();
+      await vi.waitFor(() => expect(watcher.state()).toEqual({ status: "connected", engineId: "engine-new" }));
+      expect(replace).toHaveBeenCalledExactlyOnceWith("e-old");
+    });
+
+    it("on Wait, checks again until nothing runs, then replaces it", async () => {
+      const connect = vi
+        .fn<Connect>()
+        .mockResolvedValueOnce(ok(sameApi("e-old", "0.1.0", 2)))
+        .mockResolvedValueOnce(ok(sameApi("e-old", "0.1.0", 0)))
+        .mockResolvedValueOnce(ok(sameApi("engine-new", "0.2.0", 0)));
+      const { watcher, replace } = watch(connect, [], undefined, APP);
+      await settle();
+      watcher.waitForEngine();
+      expect(watcher.state()).toMatchObject({ status: "failed", older: { runningItems: 2, waiting: true } });
+      await vi.waitFor(() => expect(watcher.state()).toEqual({ status: "connected", engineId: "engine-new" }));
+      expect(connect).toHaveBeenCalledTimes(3);
+      expect(replace).toHaveBeenCalledOnce();
+    });
+
+    it("asks when it is too old to say whether it runs items", async () => {
+      const { watcher, replace } = watch(async () => ok(sameApi("e-old", "0.1.0")), [], undefined, APP);
+      await settle();
+      expect(watcher.state()).toMatchObject({ status: "failed", older: { waiting: false } });
+      expect(watcher.state()).not.toHaveProperty("older.runningItems");
+      expect(replace).not.toHaveBeenCalled();
+    });
+
+    it("asks rather than replacing again when an older build still answers right after a replace", async () => {
+      const connect = vi.fn<Connect>().mockImplementation(async () => ok(sameApi("e-old", "0.1.0", 0)));
+      const { watcher, replace } = watch(connect, [], undefined, APP);
+      await settle();
+      await settle();
+      expect(replace).toHaveBeenCalledOnce();
+      expect(watcher.state()).toMatchObject({ status: "failed", older: { runningItems: 0, waiting: false } });
+    });
+
+    it.each([
+      ["a newer build", "0.3.0", APP],
+      ["an equal build", "0.2.0", APP],
+      ["an engine that sends no version", undefined, APP],
+      ["a dev engine", "0.0.0", APP],
+      ["an engine with an odd label", "0.1.0-beta", APP],
+      ["an unpackaged app", "0.1.0", undefined],
+      ["a dev app", "0.1.0", "0.0.0"],
+    ])("leaves %s alone", async (_label, engineVersion, appVersion) => {
+      const client = sameApi("engine-1", engineVersion, 0);
+      const { watcher, replace } = watch(async () => ok(client), [], undefined, appVersion);
+      await settle();
+      expect(watcher.state()).toEqual({ status: "connected", engineId: "engine-1" });
+      expect(replace).not.toHaveBeenCalled();
+      expect(client.close).not.toHaveBeenCalled();
+    });
+
+    it("leaves it alone without a replacer", async () => {
+      const client = sameApi("engine-1", "0.1.0", 0);
+      const states: ConnectionState[] = [];
+      watchConnection({
+        connect: async () => ok(client),
+        logPath: "/run/tokama/engine.log",
+        readLogTail: () => [],
+        onState: (s) => states.push(s),
+        onEvent: () => {},
+        apiVersion: APP_API,
+        appVersion: APP,
+      });
+      await settle();
+      expect(states).toEqual([{ status: "connected", engineId: "engine-1" }]);
     });
   });
 
