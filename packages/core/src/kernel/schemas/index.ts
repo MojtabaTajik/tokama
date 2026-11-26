@@ -41,6 +41,7 @@ import {
 } from "./ids.js";
 import { type ItemRecord, ItemRecordSchema } from "./item.js";
 import { type TemplateRecord, TemplateRecordSchema } from "./template.js";
+import { migrateTemplateRecord, type TemplateRecordError } from "./template-migrate.js";
 import { type ItemEvent, ItemEventSchema } from "./item-log.js";
 import { type ParseError, parseWith } from "./parse.js";
 
@@ -59,6 +60,7 @@ export * from "./machine.js";
 export * from "./setup.js";
 export * from "./template.js";
 export * from "./template-files.js";
+export * from "./template-migrate.js";
 export { parseWith, type ParseError, type ParseIssue } from "./parse.js";
 
 export const parseClientMessage = (input: unknown): Result<ClientMessage, ParseError> => parseWith(ClientMessageSchema, input);
@@ -83,8 +85,11 @@ export function parseCommandResult<T extends CommandType>(type: T, data: unknown
   return parseWith(CommandResultSchemas[type], data) as Result<CommandResult<T>, ParseError>;
 }
 export const parseItemRecord = (input: unknown): Result<ItemRecord, ParseError> => parseWith(ItemRecordSchema, input);
-export const parseTemplateRecord = (input: unknown): Result<TemplateRecord, ParseError> =>
-  parseWith(TemplateRecordSchema, input);
+/** Parses a stored template record, upgrading an older schema version first. */
+export const parseTemplateRecord = (input: unknown): Result<TemplateRecord, TemplateRecordError> => {
+  const migrated = migrateTemplateRecord(input);
+  return migrated.ok ? parseWith(TemplateRecordSchema, migrated.value) : migrated;
+};
 /** Parses one line of an item's event log, already decoded from JSON. */
 export const parseItemEvent = (input: unknown): Result<ItemEvent, ParseError> => parseWith(ItemEventSchema, input);
 

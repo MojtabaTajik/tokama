@@ -64,7 +64,7 @@ describe("the reviewer rule on the built-in Plan and build", () => {
 
   it("refuses a Review step that has no step to review", async () => {
     const [head, , , review] = text.split(/^ {2}- id: /m);
-    const result = await validate(`${head}  - id: ${review}`.replace("    if_changes_requested:\n      back: build\n", "").replace("    sees: [plan]\n", ""));
+    const result = await validate(`${head}  - id: ${review}`.replace("    if_changes_requested:\n      back: build\n", "").replace("    sees: [plan]\n", "").replaceAll("{{ plan.summary }}", "the plan"));
     if (result.ok) throw new Error("expected problems");
     expect(result.error.map((problem) => problem.message)).toEqual([expect.stringContaining("no earlier step for it to review")]);
   });

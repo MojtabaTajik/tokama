@@ -6,6 +6,7 @@ import { isAbsolute } from "node:path";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import {
   connectionDerivedSteps,
+  TEMPLATE_REFERENCE,
   type AgentId,
   type AiCliId,
   type DataRule,
@@ -141,8 +142,6 @@ export function runsInCloud(cliId: AiCliId): boolean {
   }
 }
 
-/** `{{ ... }}` with no braces inside: a nested `{{ {{ x }} }}` only ever matches its inner part. */
-const REFERENCE = /\{\{([^{}]*)\}\}/g;
 const STEP_FIELD = /^\s*([a-z0-9][a-z0-9-]*)\.([A-Za-z0-9_-]{1,64})\s*$/;
 /** Control, format, separator and unassigned characters: not allowed in a block name. */
 const NOT_PRINTABLE = /[\p{C}\p{Zl}\p{Zp}]/u;
@@ -230,7 +229,7 @@ function build(input: PromptInput): BuiltPrompt {
   // repeat points to its block.
   const warnings: string[] = [];
   const visible = new Set<string>(step.sees);
-  const occurrences = [...step.instructions.text.matchAll(REFERENCE)].map((match) => match[1]!);
+  const occurrences = [...step.instructions.text.matchAll(TEMPLATE_REFERENCE)].map((match) => match[1]!);
   if (occurrences.length > PROMPT_LIMITS.references) {
     refuse("too-large", `${name} has ${occurrences.length} references in its instructions, over the limit of ${PROMPT_LIMITS.references}.`);
   }
@@ -281,7 +280,7 @@ function build(input: PromptInput): BuiltPrompt {
   // are (no `$&` patterns), and inserted text is never scanned for references again.
   const rendered = new Set<Block>();
   let next = 0;
-  const instructions = step.instructions.text.replace(REFERENCE, () => {
+  const instructions = step.instructions.text.replace(TEMPLATE_REFERENCE, () => {
     const block = resolved[next++];
     if (!block) return "";
     if (rendered.has(block)) return `(data block ${JSON.stringify(block.name)} above)`;

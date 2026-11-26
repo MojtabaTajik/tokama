@@ -28,6 +28,7 @@ import {
   MAX_NOTE_CHARS,
   MAX_STEP_OUTPUT_BYTES,
   newId,
+  newerTemplateRecordMessage,
   REQUEST_CHANGES_ID,
   parseTemplateRecord,
   type AttemptChecksResult,
@@ -391,7 +392,10 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
   /** The item's template (from its snapshot) and repo; a decision when either is missing. */
   const contextOf = (item: StoredItem): Context | Next => {
     const template = parseTemplateRecord(item.template.record);
-    if (!template.ok) return { kind: "end", outcome: "failed", detail: "The item's template snapshot is not a valid template." };
+    if (!template.ok) {
+      const { newerVersion } = template.error;
+      return { kind: "end", outcome: "failed", detail: newerVersion === undefined ? "The item's template snapshot is not a valid template." : newerTemplateRecordMessage(newerVersion) };
+    }
     const repoId = item.repoIds[0];
     const repo = repoId === undefined ? undefined : deps.repo(repoId);
     if (repo === undefined) return askRunFailure(item, `Repo ${repoId ?? "(none)"} is not set up on this machine. Add it, then retry.`);

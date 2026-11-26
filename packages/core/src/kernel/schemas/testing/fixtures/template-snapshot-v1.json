@@ -1,0 +1,64 @@
+{
+  "sha256": "30b7cb19d9a2583fcc56e3f84249f39978a45671817f5ef298d21ee5ed783972",
+  "record": {
+    "color": "teal",
+    "finish": ["commit"],
+    "icon": "list-check",
+    "id": "plan-and-build",
+    "name": "Plan and build",
+    "ref": "builtin/plan-and-build",
+    "schemaVersion": 1,
+    "source": { "kind": "builtin" },
+    "start": { "askBeforeCloud": false, "needs": ["text", "repo"], "notify": false },
+    "steps": [
+      {
+        "agentId": "architect",
+        "commands": [],
+        "connections": [],
+        "data": "repo-and-diff",
+        "doneWhen": "you approve",
+        "id": "plan",
+        "ifFailed": { "action": "ask" },
+        "instructions": {
+          "text": "Read the task and the code around it, then write a short plan: the files to change,\nthe tests to add and the risks. Do not change any file.\n"
+        },
+        "maxAttempts": 3,
+        "name": "Plan",
+        "sees": []
+      },
+      {
+        "agentId": "builder",
+        "checks": { "from": "repo" },
+        "commands": [],
+        "connections": [],
+        "data": "repo-and-diff",
+        "doneWhen": "checks pass",
+        "id": "build",
+        "ifFailed": { "action": "retry" },
+        "instructions": {
+          "text": "Make the change the approved plan describes, keeping the diff small.\nRun the project's tests before you finish, and fix what they report.\n\nThe approved plan:\n{{ plan.summary }}\n"
+        },
+        "maxAttempts": 3,
+        "name": "Build",
+        "sees": ["plan"]
+      },
+      {
+        "agentId": "reviewer",
+        "commands": [],
+        "connections": [],
+        "data": "repo-and-diff",
+        "doneWhen": "reviewer approves",
+        "id": "review",
+        "ifChangesRequested": { "action": "back", "stepId": "build" },
+        "ifFailed": { "action": "ask" },
+        "instructions": {
+          "text": "Review the change in this worktree against the approved plan. Judge the diff and the\ncheck output, not the builder's account. Say what must change, with a file and line each.\n\nThe approved plan:\n{{ plan.summary }}\n"
+        },
+        "maxAttempts": 1,
+        "name": "Review",
+        "sees": ["plan"]
+      }
+    ],
+    "uses": { "commands": [], "connections": [], "repos": { "named": [], "picked": "edit" } }
+  }
+}

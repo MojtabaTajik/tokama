@@ -4,7 +4,7 @@ import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { manualClock } from "../../kernel/clock/index.js";
-import { HostIdSchema, ItemIdSchema, type ItemId, type RepoId, type StoredItem } from "../../kernel/schemas/index.js";
+import { HostIdSchema, ItemIdSchema, parseTemplateRecord, type ItemId, type RepoId, type StoredItem } from "../../kernel/schemas/index.js";
 import { readLog, type LogFs } from "./log.js";
 import { EVENTS_FILE, ItemStore, loadHostId, templateSnapshot } from "./store.js";
 import { BUILD, HOST, OTHER_HOST, T0, TEMPLATE } from "./testing/events.js";
@@ -43,6 +43,13 @@ describe("ItemStore", () => {
     expect(statSync(logFile(item.id)).mode & 0o777).toBe(0o600);
     expect(item.template).toEqual(templateSnapshot(TEMPLATE));
     expect(store.itemDir(item.id)).toBe(join(home, "items", item.id));
+  });
+
+  it("keeps a stored version 1 template record byte for byte through the migration and the parse", () => {
+    const fixture = JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "kernel", "schemas", "testing", "fixtures", "template-snapshot-v1.json"), "utf8")) as { sha256: string; record: unknown };
+    const parsed = parseTemplateRecord(fixture.record);
+    if (!parsed.ok) throw new Error(JSON.stringify(parsed.error));
+    expect(templateSnapshot(parsed.value).sha256).toBe(fixture.sha256);
   });
 
   it("appends events without rewriting earlier lines, and reloads the same item from the log", () => {

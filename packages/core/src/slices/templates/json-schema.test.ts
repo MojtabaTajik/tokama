@@ -4,9 +4,9 @@ import { Ajv } from "ajv";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { BUILTIN_TEMPLATES } from "./builtin.js";
-import { templateJsonSchema, templateJsonSchemaText } from "./json-schema.js";
+import { TEMPLATE_SCHEMA_FILES, templateJsonSchema, templateJsonSchemaText } from "./json-schema.js";
 
-const FILE = join(import.meta.dirname, "..", "..", "..", "schema", "template.schema.json");
+const DIR = join(import.meta.dirname, "..", "..", "..", "schema");
 const validate = new Ajv({ allErrors: true, strict: false }).compile(templateJsonSchema());
 
 const QUICK = `format: 1
@@ -20,8 +20,8 @@ finish: [findings]
 `;
 
 describe("the template JSON schema", () => {
-  it("matches the checked-in file (run `pnpm build && pnpm --filter @tokama/core schema` after changing the format)", () => {
-    expect(readFileSync(FILE, "utf8")).toBe(templateJsonSchemaText());
+  it.each(TEMPLATE_SCHEMA_FILES)("matches the checked-in %s (run `pnpm build && pnpm --filter @tokama/core schema` after changing the format)", (name) => {
+    expect(readFileSync(join(DIR, name), "utf8")).toBe(templateJsonSchemaText());
   });
 
   it("is a draft 7 schema", () => {

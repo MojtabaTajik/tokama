@@ -67,3 +67,30 @@ flow(
   },
   "real",
 );
+
+flow(
+  "shows the reserved step id, unknown reference root and newer format messages on a real repo's template",
+  async ({ page, tmp, home }) => {
+    const repo = join(tmp, "billing-api");
+    mkdirSync(join(repo, ".tokama", "templates"), { recursive: true });
+    execFileSync("git", ["init", "-q", "-b", "main"], { cwd: repo });
+    const dir = join(repo, ".tokama", "templates");
+    writeFileSync(join(dir, "reserved.yaml"), "format: 1\nname: Reserved\nsteps:\n  - id: inputs\n    name: Fix\n    agent: builder\n    instructions: Fix {{ item.title }}.\nfinish: [findings]\n");
+    writeFileSync(join(dir, "newer.yaml"), "format: 2\nname: Newer\n");
+    writeFileSync(join(home, ".tokama", "repos.yaml"), `format: 1\nrepos:\n  - id: billing-api\n    path: ${realpathSync(repo)}\n    base_branch: main\n    checks: []\n`);
+
+    await page.getByRole("button", { name: /^Settings(?: · \d+\+? diagnostics waiting)?$/ }).click();
+    await page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Templates" }).click();
+    const list = page.getByRole("list", { name: "Template files" });
+    const detail = page.locator("main.tp-detail");
+    await list.getByRole("button", { name: /reserved\.yaml/ }).click();
+    await detail.getByRole("heading", { name: /^✕ \d+ problems?$/ }).waitFor();
+    const problems = await detail.locator(".tp-problems").textContent();
+    expect(problems).toContain('"inputs" is a reserved name; pick another step id.');
+    expect(problems).toContain('Step "inputs" uses {{ item... }} in its instructions, but "item" is not a step in this template.');
+    await list.getByRole("button", { name: /newer\.yaml/ }).click();
+    await detail.getByRole("heading", { name: "✕ 1 problem" }).waitFor();
+    expect(await detail.locator(".tp-problems").textContent()).toContain("This template needs a newer Tokama (format 2). Update Tokama to use it.");
+  },
+  "real",
+);

@@ -123,6 +123,35 @@ flow(
 );
 
 flow(
+  "refuses the reserved ids builtin and personal in the Add repo dialog, with the reason",
+  async ({ app, page, tmp, home }) => {
+    const folder = join(tmp, "billing-api");
+    mkdirSync(folder);
+    execFileSync("git", ["init", "-q", "-b", "main"], { cwd: folder });
+    execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "first"], { cwd: folder });
+    await app.evaluate(({ dialog }, path) => {
+      (dialog as { showOpenDialog: unknown }).showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
+    }, folder);
+
+    await page.getByRole("button", { name: "+ Add repo" }).click();
+    const add = page.getByRole("dialog", { name: "Add repo" });
+    const id = add.getByLabel("Id", { exact: true });
+    await expect.poll(() => id.inputValue(), { message: "the suggested id" }).toBe("billing-api");
+    for (const reserved of ["builtin", "personal"]) {
+      await id.fill(reserved);
+      await add.getByRole("button", { name: "Add repo" }).click();
+      await add.getByText(`The id '${reserved}' is reserved: template names start with builtin/ and personal/. Pick another id.`).waitFor();
+    }
+    expect(existsSync(join(home, ".tokama", "repos.yaml"))).toBe(false);
+    await id.fill("billing");
+    await add.getByRole("button", { name: "Add repo" }).click();
+    await add.waitFor({ state: "detached" });
+    await sidebarRow(page, "billing").waitFor();
+  },
+  "real",
+);
+
+flow(
   "takes screenshots of every repo dialog state",
   async ({ app, page, tmp, home }) => {
     const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", ...args], { cwd });

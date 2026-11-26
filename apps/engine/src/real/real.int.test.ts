@@ -470,6 +470,19 @@ finish: [commit]
     expect(reply).toMatchObject({ ok: false, error: { code: "not_found" } });
   });
 
+  it("keeps a repo named builtin that repos.yaml already holds, reports it, and loads none of its templates", SLOW, async () => {
+    writeFileSync(join(home, "repos.yaml"), `format: 1\nrepos:\n  - id: builtin\n    path: ${repoPath}\n    base_branch: main\n    checks: []\n`);
+    const { client } = await engine(scripted([{ writes: {} }]));
+    const setup = await client.query({ type: "setup" });
+    if (!setup.ok) throw new Error(setup.error.message);
+    expect(setup.data.repos.map((repo) => repo.id)).toEqual(["builtin"]);
+    expect(setup.data.health.config).toContainEqual({
+      file: "repos.yaml",
+      message: 'The repo id "builtin" is reserved: template names start with builtin/ and personal/, so this repo\'s templates are not loaded. Rename the repo in repos.yaml.',
+    });
+    expect(setup.data.templates.map((t) => t.id)).toEqual(["builtin/quick-fix", "builtin/quick-change", "builtin/plan-and-build", "builtin/review-only"]);
+  });
+
   it("refuses what D0 cannot run, with a reason, and starts nothing", SLOW, async () => {
     const { client } = await engine(scripted([{ writes: {} }]));
     const refused = async (command: Partial<Extract<CommandInput, { type: "start_item" }>>) => {

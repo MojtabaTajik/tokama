@@ -18,6 +18,7 @@ import {
   loadTemplates,
   type Repo,
   type RepoId,
+  RESERVED_REPO_IDS,
   runsInCloud,
   type Setup,
   type TemplateLoad,
@@ -62,6 +63,11 @@ export async function loadConfig(tokamaHome: string): Promise<Config> {
     const agents = await loadAgents({ tokamaHome, repo });
     for (const problem of agents.problems) report(problem.file, formatProblem(problem));
     repoAgents.set(repo.id, agents);
+    if (RESERVED_REPO_IDS.includes(repo.id)) {
+      // Its template refs would clash with Tokama's own; the repo and its agents keep working.
+      report("repos.yaml", `The repo id "${repo.id}" is reserved: template names start with builtin/ and personal/, so this repo's templates are not loaded. Rename the repo in repos.yaml.`);
+      continue;
+    }
     // One repo at a time, so its templates are checked against its own agents.
     for (const load of await loadTemplates({ repos: [repo], agents: locations(agents) })) {
       if (load.ok ? load.template.source.kind === "repo" : load.origin !== "builtin") templates.push(load);

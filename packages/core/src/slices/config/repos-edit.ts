@@ -14,7 +14,7 @@ import { Document, isMap, isScalar, isSeq, parseDocument } from "yaml";
 import { readJsonFile, replaceTextSync } from "../../kernel/fs-safe/index.js";
 import type { Git, GitError } from "../../kernel/git/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
-import { MAX_CHECK_CHARS, type RepoId, RepoIdSchema } from "../../kernel/schemas/index.js";
+import { MAX_CHECK_CHARS, RESERVED_REPO_IDS, type RepoId, RepoIdSchema } from "../../kernel/schemas/index.js";
 import { displayPath } from "../../kernel/text/index.js";
 import { DEFAULT_GITIGNORE, type FirstCommitPreview, GITIGNORE_FILE, previewFirstCommit } from "./first-commit.js";
 import { MAX_CONFIG_BYTES } from "./read.js";
@@ -121,6 +121,7 @@ export async function addRepo(options: RepoEditOptions, input: AddRepoInput): Pr
   const id = input.id?.trim() || suggestId(folder.value.path, takenIds(options, repos));
   if (id === undefined) return invalid("Give the repo an id: lowercase letters, digits and hyphens.");
   if (!RepoIdSchema.safeParse(id).success) return invalid(`The id ${quote(id)} must be lowercase letters, digits and hyphens (at most 64).`);
+  if (RESERVED_REPO_IDS.includes(id)) return invalid(`The id ${quote(id)} is reserved: template names start with builtin/ and personal/. Pick another id.`);
   if (repos.some((repo) => repo.id === id)) return refused("already_exists", `A repo with the id ${quote(id)} is already added.`);
   if (options.reservedIds?.includes(id)) return refused("already_exists", `The id ${quote(id)} is taken by a sample repo. Pick another id.`);
   const added = await addedAs(repos, folder.value.path);
@@ -398,7 +399,7 @@ async function realpathOr(path: string): Promise<string> {
 }
 
 /** The folder name as an id (`Orders_API` gives `orders-api`), made unique with `-2`, `-3`, ... */
-const takenIds = (options: RepoEditOptions, repos: readonly Repo[]): Set<string> => new Set([...repos.map((repo) => repo.id), ...(options.reservedIds ?? [])]);
+const takenIds = (options: RepoEditOptions, repos: readonly Repo[]): Set<string> => new Set([...repos.map((repo) => repo.id), ...RESERVED_REPO_IDS, ...(options.reservedIds ?? [])]);
 
 function suggestId(path: string, taken: ReadonlySet<string>): RepoId | undefined {
   const base = basename(path).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);

@@ -8,6 +8,10 @@ import { posixSh, type SyntaxRefusalReason } from "../../kernel/command-policy/i
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import {
   connectionDerivedSteps,
+  ConnectionAccessSchema,
+  RESERVED_STEP_IDS,
+  TEMPLATE_REFERENCE,
+  TEMPLATE_SCHEMA_VERSION,
   TemplateRecordSchema,
   type AgentId,
   type ConnectionId,
@@ -18,7 +22,7 @@ import {
   type TemplateRef,
   type TemplateStepDef,
 } from "../../kernel/schemas/index.js";
-import { DURATION, FIELD_WORDS, knownFields, TemplateFileSchema, type StepFile, type TemplateFile } from "./format.js";
+import { DURATION, FIELD_WORDS, knownFields, TEMPLATE_FORMAT, TemplateFileSchema, type StepFile, type TemplateFile } from "./format.js";
 import { clean, quote } from "./quote.js";
 import { didYouMean } from "./suggest.js";
 
@@ -73,6 +77,11 @@ export async function validateTemplate(text: string, ctx: ValidateContext): Prom
   }
 
   const lineOf = (path: Path, key?: string) => findLine(doc, path, key, lineAt);
+  // A newer file would also show a pile of unknown-field problems; the one that matters is its version.
+  const format = (data as { format?: unknown } | null)?.format;
+  if (typeof format === "number" && Number.isSafeInteger(format) && format > TEMPLATE_FORMAT) {
+    return err([{ line: lineOf(["format"]), message: `This template needs a newer Tokama (format ${format}). Update Tokama to use it.` }]);
+  }
   const parsed = TemplateFileSchema.safeParse(data);
   if (!parsed.success) {
     // A value of the wrong kind also fails the size checks of the right kind; report only the kind.
@@ -142,8 +151,16 @@ function issueProblems(issue: Issue, prefix: Path, data: unknown, lineOf: (path:
       if (fits) return fits.flatMap((inner) => issueProblems(inner, path, data, lineOf));
       return [{ line: lineOf(path), message: prefixed(subject, `${name} ${wordsMessage(field, value)}`) }];
     }
-    case "invalid_value":
+    case "invalid_value": {
+      // Here the field is a connection id, which must not pick up the word list of a field of the same name.
+      if (path.at(-2) === "connections") {
+        return [{ line: lineOf(path), message: prefixed(subject, `connection ${name} ${wordsMessage("", value, ConnectionAccessSchema.options)}`) }];
+      }
+      if (field === "finish" && value === "update-tickets") {
+        return [{ line: lineOf(path), message: `${name} no longer takes update-tickets; it is now called outside-changes.` }];
+      }
       return [{ line: lineOf(path), message: prefixed(subject, `${name} ${wordsMessage(field, value, issue.values.map(String))}`) }];
+    }
     case "invalid_type":
       return [{ line: lineOf(path), message: prefixed(subject, `${name} must be ${kindName(issue.expected)}.`) }];
     case "invalid_key": {
@@ -216,6 +233,7 @@ async function buildRecord(file: TemplateFile, ctx: ValidateContext, report: Rep
   const stepIds = file.steps.map((step) => step.id);
   const indexOf = new Map<string, number>();
   file.steps.forEach((step, i) => {
+    if (RESERVED_STEP_IDS.includes(step.id)) report(["steps", i, "id"], `${quote(step.id)} is a reserved name; pick another step id.`);
     if (indexOf.has(step.id)) report(["steps", i, "id"], `Two steps have the id ${quote(step.id)}; step ids must be different.`);
     else indexOf.set(step.id, i);
   });
@@ -265,9 +283,10 @@ async function buildRecord(file: TemplateFile, ctx: ValidateContext, report: Rep
   const steps: TemplateStepDef[] = [];
   for (const [i, step] of file.steps.entries()) steps.push(await buildStep(step, i, scope));
   checkCloudData(file, steps, scope);
+  checkReferences(steps, scope);
 
   const record: TemplateRecord = {
-    schemaVersion: 1,
+    schemaVersion: TEMPLATE_SCHEMA_VERSION,
     ref: ctx.ref,
     id: ctx.ref.split("/")[1] as TemplateId,
     source: ctx.source,
@@ -464,6 +483,27 @@ function checkCloudData(file: TemplateFile, steps: readonly TemplateStepDef[], s
       if (scope.indexOf.has(id) && !step.sees.includes(id as StepId)) {
         scope.report(["steps", i, "instructions"], `${name} uses {{ ${clean(id)}... }} in its instructions, but does not list ${quote(id)} in sees.`);
       }
+    }
+  }
+}
+
+/**
+ * Every `{{ root.field }}` in a step's instructions must start with the id of a step of this
+ * template. A reference with no `root.` shape is left to the prompt builder's own warning. A
+ * reserved root such as `inputs` is allowed here once the feature behind it exists.
+ */
+function checkReferences(steps: readonly TemplateStepDef[], scope: StepScope): void {
+  for (const [i, step] of steps.entries()) {
+    const roots = new Set<string>();
+    for (const match of step.instructions.text.matchAll(TEMPLATE_REFERENCE)) {
+      const root = /^\s*([^\s.{}]+)\./.exec(match[1]!)?.[1];
+      if (root !== undefined && !scope.indexOf.has(root)) roots.add(root);
+    }
+    for (const root of roots) {
+      scope.report(
+        ["steps", i, "instructions"],
+        `Step ${quote(step.id)} uses {{ ${clean(root)}... }} in its instructions, but ${quote(root)} is not a step in this template. Only {{ <step id>.<field> }} references are allowed.${didYouMean(root, scope.stepIds)}`,
+      );
     }
   }
 }

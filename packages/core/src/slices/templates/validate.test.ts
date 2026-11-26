@@ -109,13 +109,13 @@ describe("validateTemplate: a valid template", () => {
     const template = await record(`format: 1
 name: Investigate
 uses:
-  connections: { app-insights: query }
+  connections: { app-insights: read }
 steps:
   - id: query
     name: Query
     agent: local-investigator
     instructions: Look at the errors.
-    uses: { connections: { app-insights: query } }
+    uses: { connections: { app-insights: read } }
   - id: dig
     name: Dig
     agent: local-investigator
@@ -136,7 +136,7 @@ budget: { time: 1h30m }
 `);
     expect(template.steps.map((step) => step.sees)).toEqual([[], ["query"], ["dig"], []]);
     expect(template.steps[0]?.data).toBe("none");
-    expect(template.steps[0]?.connections).toEqual([{ connectionId: "app-insights", access: "query" }]);
+    expect(template.steps[0]?.connections).toEqual([{ connectionId: "app-insights", access: "read" }]);
     expect(template.uses.repos).toEqual({ named: [] });
     expect(template.start.needs).toEqual(["text"]);
     expect(template.budget).toEqual({ timeMinutes: 90 });
@@ -160,7 +160,7 @@ steps:
     instructions: Refine the ticket.
     icon: pen
     color: plum
-finish: [document, update-tickets]
+finish: [document, outside-changes]
 `);
     expect(template).toMatchObject({
       icon: "list-check",
@@ -168,7 +168,7 @@ finish: [document, update-tickets]
       setup: "pnpm install",
       uses: { repos: { named: [{ repoId: "orders-api", access: "read" }] }, commands: ["az boards"] },
       start: { askBeforeCloud: true, notify: true },
-      finish: ["document", "update-tickets"],
+      finish: ["document", "outside-changes"],
     });
     expect(template.steps[0]).toMatchObject({ icon: "pen", color: "plum" });
   });
@@ -273,7 +273,7 @@ finish: [findings]
   });
 
   it("refuses a cloud step with connections, and connections the template does not list", async () => {
-    const text = edit("    data: repo-and-diff\n  - id: review", "    data: repo-and-diff\n    uses: { connections: { app-insigts: query } }\n  - id: review");
+    const text = edit("    data: repo-and-diff\n  - id: review", "    data: repo-and-diff\n    uses: { connections: { app-insigts: read } }\n  - id: review");
     expect(await problems(text)).toEqual([
       { line: 16, message: 'Step "build" runs on "builder", a cloud agent, and cloud steps cannot use connections. Remove them or use a local agent.' },
       { line: 16, message: 'Step "build" uses connection "app-insigts", which the template does not list in uses.connections.' },
@@ -345,7 +345,13 @@ describe("validateTemplate: shape problems in plain words", () => {
       { line: 14, message: 'Step "build": "if_failed" must be retry, ask, stop or back: <step id>. Did you mean "retry"?' },
     ]);
     expect(await problems(edit("finish: [commit]", "finish: [comit]"))).toEqual([
-      { line: 24, message: '"finish" must be commit, pull-request, findings, document or update-tickets. Did you mean "commit"?' },
+      { line: 24, message: '"finish" must be commit, pull-request, findings, document or outside-changes. Did you mean "commit"?' },
+    ]);
+  });
+
+  it("says the old finish word is now called outside-changes", async () => {
+    expect(await problems(edit("finish: [commit]", "finish: [update-tickets]"))).toEqual([
+      { line: 24, message: '"finish" no longer takes update-tickets; it is now called outside-changes.' },
     ]);
   });
 
@@ -385,7 +391,7 @@ describe("validateTemplate: every message is plain words", () => {
     ["a bad budget", `${BASE}budget: { time: 90 min }\n`, '"time" must be a time such as 90m, 2h or 1h30m.'],
     ["a list given as a word", edit("needs: [text, repo]", "needs: text"), '"needs" must be a list, such as [a, b].'],
     ["a step list given as a number", "format: 1\nname: X\nsteps: 3\nfinish: [commit]\n", '"steps" must be a list, such as [a, b].'],
-    ["a wrong format", edit("format: 1", "format: 2"), '"format" must be 1.'],
+    ["a wrong format", edit("format: 1", "format: 0"), '"format" must be 1.'],
     ["a number for if_failed", edit("if_failed: retry", "if_failed: 3"), 'Step "build": "if_failed" must be retry, ask, stop or back: <step id>.'],
     ["a wrong word in a repo map", edit("repos: edit", "repos: { orders-api: wrte }"), '"orders-api" must be read or edit.'],
   ])("for %s", async (_, text, message) => {
@@ -406,7 +412,7 @@ describe("validateTemplate: every message is plain words", () => {
   });
 
   it("refuses more connections than a record can hold, instead of returning a record items cannot store", async () => {
-    const many = Array.from({ length: 21 }, (_, i) => `c${i}: query`).join(", ");
+    const many = Array.from({ length: 21 }, (_, i) => `c${i}: read`).join(", ");
     expect(await problems(edit("  repos: edit\n", `  repos: edit\n  connections: { ${many} }\n`))).toEqual([
       { line: 5, message: '"connections" has more than 20 entries.' },
     ]);
@@ -555,7 +561,7 @@ describe("cloud steps that send the repo", () => {
 name: Investigate
 uses:
   repos: edit
-  connections: { app-insights: query }
+  connections: { app-insights: read }
   commands: [gh, az boards]
 start:
   needs: [text, repo]
@@ -564,7 +570,7 @@ steps:
     name: Query
     agent: local
     instructions: Look at the errors.
-    uses: { connections: { app-insights: query } }
+    uses: { connections: { app-insights: read } }
   - id: dig
     name: Dig
     agent: local
@@ -616,6 +622,78 @@ ${cloud}finish: [commit]
     expect(await teamProblems(investigate(cloudStep("repo-and-diff", "    uses: { commands: [ghh] }\n")))).toEqual([
       'Step "fix" uses command "ghh", which the template does not list in uses.commands. Did you mean "gh"?',
     ]);
+  });
+});
+
+describe("reserved step ids", () => {
+  it.each(["inputs", "item", "repo", "steps"])("refuses %s as a step id", async (id) => {
+    const text = BASE.replace("id: build", `id: ${id}`).replace("{ back: build }", `{ back: ${id} }`);
+    expect(await problems(text)).toEqual([{ line: 8, message: `"${id}" is a reserved name; pick another step id.` }]);
+  });
+});
+
+describe("reference roots", () => {
+  const MISSING_ROOT = (root: string, step = "review") =>
+    `Step "${step}" uses {{ ${root}... }} in its instructions, but "${root}" is not a step in this template. Only {{ <step id>.<field> }} references are allowed.`;
+
+  it("refuses a reference whose first word is not a step of the template", async () => {
+    expect(await problems(edit("instructions: Review the diff.", "instructions: Check {{ inputs.ticket }}."))).toEqual([
+      { line: 19, message: MISSING_ROOT("inputs") },
+    ]);
+  });
+
+  it("suggests the step a misspelt root is close to", async () => {
+    expect(await problems(edit("instructions: Review the diff.", "instructions: Check {{ biuld.summary }}."))).toEqual([
+      { line: 19, message: `${MISSING_ROOT("biuld")} Did you mean "build"?` },
+    ]);
+  });
+
+  it("accepts a reference to a step of the template", async () => {
+    await record(edit("instructions: Review the diff.\n", "instructions: Check {{ build.summary }}.\n    sees: [build]\n"));
+  });
+
+  it("reports an unknown root once per step, however often it is used", async () => {
+    expect(await problems(edit("instructions: Review the diff.", "instructions: Check {{ inputs.a }} and {{ inputs.b }}."))).toEqual([
+      { line: 19, message: MISSING_ROOT("inputs") },
+    ]);
+  });
+
+  it("checks the text of an instructions file too", async () => {
+    files["refs.md"] = "See {{ item.title }}.\n";
+    expect(await problems(edit("instructions: fix.md", "instructions: refs.md"))).toEqual([{ line: 11, message: MISSING_ROOT("item", "build") }]);
+  });
+
+  it("leaves braces with no root.field shape to the prompt's own warning", async () => {
+    await record(edit("instructions: Review the diff.", "instructions: Check {{ nothing }} and {{ }}."));
+  });
+});
+
+describe("connection access", () => {
+  const withConnection = (access: string) => edit("  repos: edit\n", `  repos: edit\n  connections: { app-insights: ${access} }\n`);
+
+  it("refuses a word other than read or write in the template's connections", async () => {
+    expect(await problems(withConnection("query"))).toEqual([{ line: 5, message: 'Connection "app-insights" must be read or write.' }]);
+  });
+
+  it("refuses it in a step's connections, and suggests the close word", async () => {
+    const text = steps(step("build", "local", "    uses: { connections: { data: wrte } }\n")).replace("  repos: edit", "  repos: edit\n  connections: { data: read }");
+    expect(await teamProblems(text)).toEqual(['Step "build": connection "data" must be read or write. Did you mean "write"?']);
+  });
+
+  it.each(["read", "write"])("accepts %s and keeps it in the record", async (access) => {
+    expect((await record(withConnection(access))).uses.connections).toEqual([{ connectionId: "app-insights", access }]);
+  });
+});
+
+describe("a newer template format", () => {
+  it("tells the engineer to update Tokama, and nothing else", async () => {
+    const message = "This template needs a newer Tokama (format 2). Update Tokama to use it.";
+    expect(await problems(edit("format: 1", "format: 2"))).toEqual([{ line: 1, message }]);
+    expect(await problems(`${edit("format: 1", "format: 2")}colour: sky\n`)).toEqual([{ line: 1, message }]);
+  });
+
+  it.each(["1.5", "-1", "0"])("keeps the plain format message for format: %s", async (value) => {
+    expect((await problems(edit("format: 1", `format: ${value}`))).map((p) => p.message)).toEqual(['"format" must be 1.']);
   });
 });
 

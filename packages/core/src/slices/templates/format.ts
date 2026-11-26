@@ -4,6 +4,7 @@
 import { z } from "zod";
 import {
   AgentIdSchema,
+  ConnectionAccessSchema,
   ConnectionIdSchema,
   DataRuleSchema,
   DoneWhenSchema,
@@ -22,7 +23,7 @@ export const DURATION = /^(?:(\d{1,2})h)?(?:(\d{1,4})m)?$/;
 const MAX_ENTRIES = 20;
 const fewEntries = (value: object) => Object.keys(value).length <= MAX_ENTRIES;
 const tooMany = `has more than ${MAX_ENTRIES} entries`;
-const connections = z.record(ConnectionIdSchema, z.string().min(1).max(100)).refine(fewEntries, tooMany);
+const connections = z.record(ConnectionIdSchema, ConnectionAccessSchema).refine(fewEntries, tooMany);
 const back = z.strictObject({ back: StepIdSchema });
 
 export const StepFileSchema = z.strictObject({

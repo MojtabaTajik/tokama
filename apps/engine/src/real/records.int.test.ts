@@ -1,5 +1,5 @@
 // Stored items to API item records, on logs written by the real item store.
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type DecisionId, ItemStore, loadHostId, manualClock, parseItemRecord, parseTemplateRecord, type StepId, type StoredItem, type TemplateRecord } from "@tokama/core";
@@ -130,6 +130,23 @@ describe("toItemRecord", () => {
       { name: "Fix", stage: "working", state: "pending", agentId: "builder", data: "repo-and-diff", runs: 0, maxAttempts: 3 },
       { name: "Review", stage: "review", state: "pending", agentId: "reviewer", data: "none", runs: 0, maxAttempts: 3 },
     ]);
+  });
+
+  it("reads a stored version 1 snapshot: step names and agents come from it", () => {
+    const fixture = JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "..", "..", "packages", "core", "src", "kernel", "schemas", "testing", "fixtures", "template-snapshot-v1.json"), "utf8")) as { record: unknown };
+    const parsed = parseTemplateRecord(fixture.record);
+    if (!parsed.ok) throw new Error(JSON.stringify(parsed.error));
+    const made = store.create({ template: parsed.value, title: "Fix the greeting", text: "Fix the greeting", repoIds: ["orders-api" as never] });
+    if (!made.ok) throw new Error(made.error.message);
+    expect(toItemRecord(made.value)!.steps.map((step) => [step.name, step.agentId])).toEqual([["Plan", "architect"], ["Build", "builder"], ["Review", "reviewer"]]);
+  });
+
+  it("does not throw on a snapshot a newer Tokama wrote: step names fall back to the ids", () => {
+    const made = store.create({ template: { ...template(), schemaVersion: 99 } as never, title: "Fix the greeting", text: "Fix the greeting", repoIds: ["orders-api" as never] });
+    if (!made.ok) throw new Error(made.error.message);
+    const record = toItemRecord(made.value)!;
+    expect(record.steps.map((step) => step.name)).toEqual(["fix", "review"]);
+    expect(record.steps.every((step) => step.agentId === undefined)).toBe(true);
   });
 
   it("shows a checks step as verifying while its checks run, with the attempt and its count", () => {

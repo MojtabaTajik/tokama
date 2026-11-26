@@ -166,6 +166,21 @@ repos:
     expect(readFileSync(reposFile(), "utf8")).toBe(before);
   });
 
+  it.each(["builtin", "personal"])("refuses %s as an id, since template names start with it", async (id) => {
+    const path = repo("orders-api");
+    expect(await addRepo(options(), { path, id })).toEqual({
+      ok: false,
+      error: { code: "invalid_request", message: `The id '${id}' is reserved: template names start with builtin/ and personal/. Pick another id.` },
+    });
+    expect(existsSync(reposFile())).toBe(false);
+  });
+
+  it("suggests another id for a folder named personal", async () => {
+    const path = repo("personal");
+    expect(await suggestRepo(options(), path)).toMatchObject({ ok: true, value: { id: "personal-2" } });
+    expect(await addRepo(options(), { path })).toMatchObject({ ok: true, value: { id: "personal-2" } });
+  });
+
   it("refuses a folder that isn't a git repo, is missing, or isn't a full path", async () => {
     mkdirSync(join(root, "plain"));
     writeFileSync(join(root, "file.txt"), "x");
