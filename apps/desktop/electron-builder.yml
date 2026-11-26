@@ -19,6 +19,16 @@ electronDist: node_modules/electron/dist
 extraResources:
   - from: package-stage/engine
     to: engine
+  # The sounds sit at the top of Resources: macOS looks a notification's sound up by file name in the
+  # app bundle, and the app's own player reads the same files.
+  - from: src/renderer/brand/sounds/needs-you.wav
+    to: tokama-needs-you.wav
+  - from: src/renderer/brand/sounds/finished.wav
+    to: tokama-finished.wav
+  - from: src/renderer/brand/sounds/failed.wav
+    to: tokama-failed.wav
+  - from: src/renderer/brand/sounds/tokay-call.wav
+    to: tokama-tokay-call.wav
   # Electron's and Chromium's licence texts sit beside Electron.app, not in it.
   - from: node_modules/electron/dist/LICENSE
     to: LICENSE-electron

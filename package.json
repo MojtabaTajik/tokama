@@ -19,6 +19,7 @@
     "removal-test": "tsc --project tooling/removal-test && node tooling/removal-test/removal-test.ts",
     "package": "pnpm build && pnpm --filter @tokama/desktop package",
     "package:dmg": "pnpm build && pnpm --filter @tokama/desktop package:dmg",
+    "sound-check": "pnpm --filter @tokama/desktop sound-check",
     "e2e:real": "pnpm build && pnpm --filter @tokama/e2e real"
   },
   "devDependencies": {

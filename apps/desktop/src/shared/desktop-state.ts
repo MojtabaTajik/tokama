@@ -30,14 +30,25 @@ export interface WindowBounds {
   readonly height: number;
 }
 
-/** Which desktop notifications the app shows, and whether they play the system sound. */
+/** How one kind of notification reaches the user: a banner with a sound, a banner alone, a sound alone, or nothing. */
+export const NOTE_MODES = ["both", "banner", "sound", "off"] as const;
+export type NoteMode = (typeof NOTE_MODES)[number];
+/** Which sounds play: the ones Tokama ships, or the system's default. */
+export const SOUND_SETS = ["tokama", "macos"] as const;
+export type SoundSet = (typeof SOUND_SETS)[number];
+export const NOTE_KINDS = ["needsYou", "finished", "failed"] as const;
+export type NoteKind = (typeof NOTE_KINDS)[number];
+/** The sounds the app can play: one per kind of notification, and the call of the Tokay in About. */
+export const SOUND_NAMES = ["needsYou", "finished", "failed", "tokayCall"] as const;
+export type SoundName = (typeof SOUND_NAMES)[number];
+
+/** How each kind of desktop notification reaches the user, and which sounds play. */
 export interface NotificationSettings {
-  readonly needsYou: boolean;
-  readonly finished: boolean;
-  readonly failed: boolean;
-  readonly sound: boolean;
+  readonly needsYou: NoteMode;
+  readonly finished: NoteMode;
+  readonly failed: NoteMode;
+  readonly sounds: SoundSet;
 }
-export const NOTIFICATION_KEYS = ["needsYou", "finished", "failed", "sound"] as const;
 
 export interface DesktopState {
   readonly window: {
@@ -55,6 +66,8 @@ export interface DesktopState {
   /** The repo folder chosen last in the Add repo picker. */
   readonly lastRepoFolder?: string;
   readonly notifications: NotificationSettings;
+  /** True once a banner has told the user where to change how Tokama notifies them; the main process sets it. */
+  readonly notificationHintShown: boolean;
   /** After a crash, the next start asks to send a report; false after "Don't ask again". */
   readonly askAfterCrash: boolean;
 }
@@ -69,7 +82,8 @@ export const DEFAULT_DESKTOP_STATE: DesktopState = {
   collapsedSections: [],
   lastView: { kind: "all" },
   lastFilter: { status: "active", range: "today" },
-  notifications: { needsYou: true, finished: true, failed: true, sound: false },
+  notifications: { needsYou: "both", finished: "sound", failed: "both", sounds: "tokama" },
+  notificationHintShown: false,
   askAfterCrash: true,
 };
 
@@ -111,11 +125,27 @@ function lastFilter(value: unknown): LastFilter {
   };
 }
 
+/**
+ * The notification settings in `value`. A kind saved as a mode is kept. A kind saved by an older
+ * version as on or off becomes a mode: on with the one Sound switch on is Banner + sound, on
+ * without it is Banner only, off is Off. Anything else falls back to the default of that field.
+ */
 function notifications(value: unknown): NotificationSettings {
   const record = isRecord(value) ? value : {};
   const defaults = DEFAULT_DESKTOP_STATE.notifications;
-  const pick = (key: keyof NotificationSettings): boolean => (typeof record[key] === "boolean" ? record[key] : defaults[key]);
-  return { needsYou: pick("needsYou"), finished: pick("finished"), failed: pick("failed"), sound: pick("sound") };
+  const mode = (kind: NoteKind): NoteMode => {
+    const saved = record[kind];
+    if (typeof saved === "boolean") return !saved ? "off" : record["sound"] === true ? "both" : "banner";
+    return oneOf(NOTE_MODES, saved) ?? defaults[kind];
+  };
+  return { needsYou: mode("needsYou"), finished: mode("finished"), failed: mode("failed"), sounds: oneOf(SOUND_SETS, record["sounds"]) ?? defaults.sounds };
+}
+
+/** Whether the notification hint counts as seen: as saved, or true for a file an older version wrote (a user who has used the app). */
+function hintShown(root: Record<string, unknown>): boolean {
+  if (typeof root["notificationHintShown"] === "boolean") return root["notificationHintShown"];
+  const old = root["notifications"];
+  return isRecord(old) && NOTE_KINDS.some((kind) => typeof old[kind] === "boolean");
 }
 
 /** The state in `input` (a parsed file or a renderer message), with every invalid field replaced by its default. */
@@ -135,6 +165,7 @@ export function parseDesktopState(input: unknown): DesktopState {
     lastView: lastView(root["lastView"]),
     lastFilter: lastFilter(root["lastFilter"]),
     notifications: notifications(root["notifications"]),
+    notificationHintShown: hintShown(root),
     ...(typeof folder === "string" && folder !== "" && folder.length <= MAX_TEXT ? { lastRepoFolder: folder } : {}),
     askAfterCrash: root["askAfterCrash"] !== false,
   };
@@ -147,8 +178,10 @@ export function applyLayoutPatch(state: DesktopState, patch: unknown): DesktopSt
   return { ...state, sidebar: merged.sidebar, drawer: merged.drawer, collapsedSections: merged.collapsedSections, lastView: merged.lastView, lastFilter: merged.lastFilter };
 }
 
-/** `state` with the switches of `patch` that are true or false; any other field or value is ignored. */
+/** `state` with the modes and sound set of `patch` that are valid; any other field or value is ignored. */
 export function applyNotificationsPatch(state: DesktopState, patch: unknown): DesktopState {
   if (!isRecord(patch)) return state;
-  return { ...state, notifications: notifications({ ...state.notifications, ...Object.fromEntries(NOTIFICATION_KEYS.filter((key) => typeof patch[key] === "boolean").map((key) => [key, patch[key]])) }) };
+  const modes = NOTE_KINDS.filter((kind) => oneOf(NOTE_MODES, patch[kind]) !== undefined).map((kind) => [kind, patch[kind]]);
+  const sounds = oneOf(SOUND_SETS, patch["sounds"]) === undefined ? [] : [["sounds", patch["sounds"]]];
+  return { ...state, notifications: notifications({ ...state.notifications, ...Object.fromEntries([...modes, ...sounds]) }) };
 }

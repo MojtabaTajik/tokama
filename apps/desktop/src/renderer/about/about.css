@@ -49,6 +49,31 @@
   width: auto;
 }
 
+/* The mark is a button that plays the call of the Tokay; the padding and the negative margin keep the logo where it was. */
+.about-call {
+  flex: none;
+  display: inline-flex;
+  padding: var(--space-4);
+  margin: calc(-1 * var(--space-4));
+  border-radius: var(--radius-lg);
+}
+
+.about-call[data-playing] {
+  background: var(--raised);
+}
+
+.about-call:focus-visible {
+  outline: var(--focus-ring-wide);
+  outline-offset: 2px;
+}
+
+.about-calling {
+  min-width: 9ch;
+  text-align: left;
+  font-size: var(--text-md);
+  color: var(--text-2);
+}
+
 .about-id .about-aka {
   display: flex;
   flex-direction: column;

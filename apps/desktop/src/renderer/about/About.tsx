@@ -1,7 +1,7 @@
 // The About view: what this build is, the product site, the build facts and the licences. All
 // text renders as text. The only link that opens is the product site; the window sends it to the
 // system browser and follows no other.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AboutInfo, ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { buildRows } from "../../shared/build-info.js";
 import { brand } from "../brand/index.js";
@@ -11,6 +11,10 @@ import { CopyButton } from "../ui/CopyButton.js";
 
 /** The product site. The window opens this one address in the system browser; no other link is followed. */
 export const WEBSITE_URL = "https://tokama.dev";
+
+const CALL_LABEL = "Play the Tokay call";
+/** How long "Playing" stays beside the wordmark. */
+const CALL_MS = 1_800;
 
 export interface AboutProps {
   readonly bridge: TokamaBridge;
@@ -30,6 +34,17 @@ export function About({ bridge, connection, onClose }: AboutProps) {
       live = false;
     };
   }, [bridge]);
+
+  // The mark plays the call of the Tokay when pressed, whatever the notification settings say.
+  const [calling, setCalling] = useState(false);
+  const callTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(callTimer.current), []);
+  const callTokay = () => {
+    void bridge.playSound("tokayCall", "tokama").catch(() => undefined);
+    setCalling(true);
+    clearTimeout(callTimer.current);
+    callTimer.current = setTimeout(() => setCalling(false), CALL_MS);
+  };
 
   const notices = noticesFor(info?.runtime.electron ?? "unknown");
   const toggle = (id: string) => setOpen((now) => {
@@ -54,8 +69,13 @@ export function About({ bridge, connection, onClose }: AboutProps) {
         <div className="about-column">
           <section className="about-id" aria-label={brand.name}>
             <div className="about-logo">
-              <img src={brand.markUrl} alt="" width={56} height={56} />
+              <Button variant="plain" className="about-call" aria-label={CALL_LABEL} title={CALL_LABEL} data-playing={calling || undefined} onClick={callTokay}>
+                <img src={brand.markUrl} alt="" width={56} height={56} />
+              </Button>
               <img className="about-wordmark" src={brand.wordmarkUrl} alt={brand.name} height={28} />
+              <span className="about-calling" aria-live="polite">
+                {calling ? "♪ Playing" : ""}
+              </span>
             </div>
             <p className="about-aka">
               <span>

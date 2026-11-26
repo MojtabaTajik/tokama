@@ -13,7 +13,7 @@ export function systemShow(): ShowNote {
   return (note, onClick) => {
     try {
       if (!Notification.isSupported()) return;
-      const shown = new Notification({ title: note.title, body: note.body, silent: note.silent });
+      const shown = new Notification({ title: note.title, body: note.body, silent: note.silent, ...(note.sound === undefined ? {} : { sound: note.sound }) });
       const forget = () => {
         const index = live.indexOf(shown);
         if (index !== -1) live.splice(index, 1);

@@ -47,7 +47,7 @@ function blip(dst: Float64Array, start: number, dur: number, f0: number, f1: num
     const f = f0 * Math.pow(f1 / f0, t);
     ph += (2 * Math.PI * f) / RATE;
     const env = Math.sin(Math.PI * t) ** 2;
-    dst[s0 + i] += amp * env * (Math.sin(ph) + harm * Math.sin(2 * ph) + 0.1 * Math.sin(3 * ph));
+    dst[s0 + i] = (dst[s0 + i] ?? 0) + amp * env * (Math.sin(ph) + harm * Math.sin(2 * ph) + 0.1 * Math.sin(3 * ph));
   }
 }
 
@@ -57,7 +57,7 @@ function click(dst: Float64Array, start: number, f: number, amp = 1, decay = 0.0
   const n = Math.round(0.03 * RATE);
   for (let i = 0; i < n && s0 + i < dst.length; i++) {
     const t = i / RATE;
-    dst[s0 + i] += amp * Math.exp(-t / decay) * Math.sin(2 * Math.PI * f * t) * Math.min(1, i / 20);
+    dst[s0 + i] = (dst[s0 + i] ?? 0) + amp * Math.exp(-t / decay) * Math.sin(2 * Math.PI * f * t) * Math.min(1, i / 20);
   }
 }
 

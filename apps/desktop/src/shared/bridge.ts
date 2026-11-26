@@ -2,7 +2,7 @@
 // constants only: the renderer and the sandboxed preload import nothing else from outside.
 import type { ClientEvent, CommandReply, QueryReply } from "@tokama/client";
 import type { CommandInput, DiagnosticEntry, PostFailure, QueryInput, UsageAction } from "@tokama/core";
-import type { DesktopState, LayoutPatch, NotificationSettings } from "./desktop-state.js";
+import type { DesktopState, LayoutPatch, NotificationSettings, SoundName, SoundSet } from "./desktop-state.js";
 
 /** The desktop app's view of its engine connection. */
 export type ConnectionState =
@@ -70,6 +70,7 @@ export const CHANNELS = {
   reportError: "tokama:diagnostics:report-error",
   countUsage: "tokama:diagnostics:count-usage",
   saveNotifications: "tokama:notifications:save",
+  playSound: "tokama:sounds:play",
   viewedItem: "tokama:notifications:viewed",
   openItem: "tokama:notifications:open-item",
   loadDiagnostics: "tokama:diagnostics:load",
@@ -217,8 +218,10 @@ export interface TokamaBridge {
    * process ignores anything else.
    */
   countUsage(action: RendererUsageAction): Promise<void>;
-  /** Remembers the notification switches in `patch`. The main process validates them and ignores any other field. */
+  /** Remembers the notification choices in `patch`: a mode per kind and the sound set. The main process validates them and ignores any other field. */
   saveNotifications(patch: Partial<NotificationSettings>): Promise<void>;
+  /** Plays a sound now, from `set`, whatever the mode of its kind and whatever Focus says: the user asked for it. The main process ignores a name or set it does not know. */
+  playSound(name: SoundName, set: SoundSet): Promise<void>;
   /**
    * Tells the main process which item the window shows in the drawer or the full view now (none:
    * undefined), so it shows no notification for that item while the window is in front.

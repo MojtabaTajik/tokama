@@ -1,0 +1,38 @@
+/* Segmented (ui/Segmented.tsx): options in one hairline frame; the chosen one raised, with a ✓. */
+.segmented {
+  display: inline-flex;
+  flex: none;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.segmented-option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  min-height: var(--control);
+  padding: 0 var(--space-12);
+  border-left: 1px solid var(--hairline);
+  color: var(--muted);
+  font-size: var(--text-base);
+  white-space: nowrap;
+}
+
+.segmented-option:first-child {
+  border-left: 0;
+}
+
+.segmented-option:hover {
+  color: var(--text-2);
+}
+
+.segmented-option[aria-checked="true"] {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.segmented-option:focus-visible {
+  outline: var(--focus-ring-wide);
+  outline-offset: -2px;
+}

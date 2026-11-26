@@ -3,11 +3,11 @@
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import { connect, requestShutdown } from "@tokama/client";
-import { API_VERSION, defaultEngineDir, engineEndpoint, err, pidAlive, posixEngineProcesses, readEngineLock, resolveToolsPath, type ToolsPath } from "@tokama/core";
-import { app, BrowserWindow, clipboard, dialog, ipcMain, screen, session, shell } from "electron";
+import { API_VERSION, createProcessRunner, defaultEngineDir, engineEndpoint, err, pidAlive, posixEngineProcesses, readEngineLock, resolveToolsPath, type ToolsPath } from "@tokama/core";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, powerMonitor, screen, session, shell } from "electron";
 import { type BridgeEvent, CHANNELS } from "../shared/bridge.js";
 import { buildInfoText } from "../shared/build-info.js";
-import { applyLayoutPatch, applyNotificationsPatch } from "../shared/desktop-state.js";
+import { applyLayoutPatch, applyNotificationsPatch, type NoteKind, SOUND_NAMES, SOUND_SETS } from "../shared/desktop-state.js";
 import { aboutInfo } from "./about.js";
 import { engineApi, mainQuery } from "./api.js";
 import { openAttemptFile } from "./attempt-file.js";
@@ -21,6 +21,10 @@ import { itemsRunningIn, offerMove, shouldOfferMove } from "./move-to-applicatio
 import { replaceOlderEngine } from "./replace.js";
 import { pickRepoFolder } from "./folder.js";
 import { createNotifier } from "./notifier.js";
+import { runSoundCheck } from "./sound-check.js";
+import { createFocusProbe } from "./sound/focus.js";
+import { soundFileName, soundsDir } from "./sound/files.js";
+import { playerFor, recordingPlayer, type SoundPlayer } from "./sound/player.js";
 import { appIcons } from "./icon.js";
 import { recordingShow, systemShow } from "./system-notification.js";
 import { openTemplateFile } from "./template-file.js";
@@ -189,7 +193,9 @@ function showWindow(window: BrowserWindow): void {
 }
 
 // One app process per user when packaged, so two windows never run two updaters. Development and the UI tests start many.
-const primary = !app.isPackaged || app.requestSingleInstanceLock();
+// A sound check starts no engine and takes no lock, so it runs beside an app that is already open.
+const soundCheck = app.isPackaged && process.argv.includes("--sound-check");
+const primary = !app.isPackaged || soundCheck || app.requestSingleInstanceLock();
 if (!primary) app.quit();
 // Set once the app is ready: shows the main window, making it again when it was closed.
 let showMain: (() => void) | undefined;
@@ -207,8 +213,31 @@ function itemsRunningInApplications(): Promise<number | undefined> {
   });
 }
 
+/** The folder of the sound files and the player that plays them; the player is silent off macOS. */
+function soundPlayer(): SoundPlayer {
+  const packaged = app.isPackaged;
+  const soundsFolder = soundsDir({ packaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() });
+  return playerFor(process.platform, { runner: createProcessRunner(), soundsDir: soundsFolder, packaged, beep: () => shell.beep() });
+}
+
+/** The name of the bundled sound file of a kind, for a packaged Mac; the system plays it from the app bundle. */
+const bundledSoundName = (kind: NoteKind): string => soundFileName(kind, true);
+
 void app.whenReady().then(async () => {
   if (!primary) return;
+  if (soundCheck) {
+    app.dock?.hide();
+    const player = soundPlayer();
+    await runSoundCheck({
+      show: systemShow(),
+      play: (kind) => player.play(kind, "tokama"),
+      bundledName: bundledSoundName,
+      wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      log: (line) => console.log(line),
+    });
+    app.exit(0);
+    return;
+  }
   // Before anything starts an engine: a packaged app outside Applications asks to move there, and quits either way.
   if (shouldOfferMove({ platform: process.platform, isPackaged: app.isPackaged, inApplications: () => app.isInApplicationsFolder() })) {
     await offerMove({
@@ -254,8 +283,22 @@ void app.whenReady().then(async () => {
     const report = rendererUsageReport(input);
     if (report !== undefined && rendererUsage()) reporter.report(report);
   });
+  // Sounds: a test run records what it would play, and never makes a sound.
+  const player = recordNotifications ? recordingPlayer() : soundPlayer();
+  const focusProbe = createFocusProbe({ idleState: () => powerMonitor.getSystemIdleState(1) });
+  const playRequests = rateLimit(20, 10_000);
+  handle(CHANNELS.playSound, (name, set) => {
+    const sound = SOUND_NAMES.find((candidate) => candidate === name);
+    const soundSet = SOUND_SETS.find((candidate) => candidate === set);
+    if (sound !== undefined && soundSet !== undefined && playRequests()) player.play(sound, soundSet);
+  });
   // Notifications: told about every item update, and it learns the open items again on each connect.
   const notifier = createNotifier({
+    play: (kind, set) => player.play(kind, set),
+    bundledSound: (kind, set) => (app.isPackaged && process.platform === "darwin" && set === "tokama" ? bundledSoundName(kind) : undefined),
+    // A test run has no screen to lock, and the real probe would make its result depend on the machine.
+    focus: recordNotifications ? async () => "unknown" : () => focusProbe.state(),
+    hint: { shown: () => store.get().notificationHintShown, markShown: () => store.update((state) => ({ ...state, notificationHintShown: true })) },
     settings: () => store.get().notifications,
     windowFocused: () => BrowserWindow.getAllWindows().some((window) => window.isFocused()),
     board: async () => {

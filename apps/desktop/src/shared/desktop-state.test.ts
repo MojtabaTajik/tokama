@@ -21,7 +21,8 @@ describe("parseDesktopState", () => {
       lastView: { kind: "workflow", id: "plan-and-build" },
       lastFilter: { status: "done", range: "7d" },
       lastRepoFolder: "/code/orders-api",
-      notifications: { needsYou: false, finished: true, failed: false, sound: true },
+      notifications: { needsYou: "off", finished: "banner", failed: "sound", sounds: "macos" },
+      notificationHintShown: true,
       askAfterCrash: false,
     };
     expect(parseDesktopState(full)).toEqual(full);
@@ -72,33 +73,61 @@ describe("applyLayoutPatch", () => {
 });
 
 describe("notifications", () => {
-  it("default to the three notifications on and Sound off", () => {
-    expect(DEFAULT_DESKTOP_STATE.notifications).toEqual({ needsYou: true, finished: true, failed: true, sound: false });
+  it("default, for a new user, to Banner + sound, Sound only, Banner + sound and the Tokama sounds", () => {
+    expect(DEFAULT_DESKTOP_STATE.notifications).toEqual({ needsYou: "both", finished: "sound", failed: "both", sounds: "tokama" });
     expect(parseDesktopState({ window: {} }).notifications).toEqual(DEFAULT_DESKTOP_STATE.notifications);
   });
 
-  it("keep a switch that is a boolean and default each one that is not", () => {
-    expect(parseDesktopState({ notifications: { needsYou: false, finished: "no", failed: 0, sound: true } }).notifications).toEqual({ needsYou: false, finished: true, failed: true, sound: true });
-    for (const bad of [null, 5, "x", [], { sound: null }]) expect(parseDesktopState({ notifications: bad }).notifications).toEqual(DEFAULT_DESKTOP_STATE.notifications);
+  it("migrate a kind saved as on or off: on with Sound on is Banner + sound, on alone is Banner only, off is Off", () => {
+    const old = (needsYou: boolean, finished: boolean, sound: boolean) => parseDesktopState({ notifications: { needsYou, finished, failed: true, sound } }).notifications;
+    expect(old(true, true, true)).toEqual({ needsYou: "both", finished: "both", failed: "both", sounds: "tokama" });
+    expect(old(true, true, false)).toEqual({ needsYou: "banner", finished: "banner", failed: "banner", sounds: "tokama" });
+    expect(old(false, true, true)).toEqual({ needsYou: "off", finished: "both", failed: "both", sounds: "tokama" });
+    expect(old(true, false, false)).toEqual({ needsYou: "banner", finished: "off", failed: "banner", sounds: "tokama" });
+  });
+
+  it("an existing user who never changed a switch (all on, sound off) gets Banner only on all three, not the new defaults", () => {
+    const state = parseDesktopState({ notifications: { needsYou: true, finished: true, failed: true, sound: false } });
+    expect(state.notifications).toEqual({ needsYou: "banner", finished: "banner", failed: "banner", sounds: "tokama" });
+  });
+
+  it("read each kind on its own: a mode is kept next to an old boolean, and junk falls back to that kind's default", () => {
+    expect(parseDesktopState({ notifications: { needsYou: "off", finished: false, failed: "loud", sounds: "macos", sound: true } }).notifications).toEqual({ needsYou: "off", finished: "off", failed: "both", sounds: "macos" });
+    expect(parseDesktopState({ notifications: { needsYou: 3, finished: null, failed: [], sounds: "other" } }).notifications).toEqual(DEFAULT_DESKTOP_STATE.notifications);
+    for (const bad of [null, 5, "x", [], {}]) expect(parseDesktopState({ notifications: bad }).notifications).toEqual(DEFAULT_DESKTOP_STATE.notifications);
+  });
+
+  it("drop the old sound key", () => {
+    expect(Object.keys(parseDesktopState({ notifications: { needsYou: true, sound: true } }).notifications).sort()).toEqual(["failed", "finished", "needsYou", "sounds"]);
+  });
+
+  it("count the hint as shown for a file an older version wrote, keep an explicit value, and show it to a new user", () => {
+    expect(parseDesktopState({}).notificationHintShown).toBe(false);
+    expect(parseDesktopState({ notifications: { needsYou: "both" } }).notificationHintShown).toBe(false);
+    expect(parseDesktopState({ notifications: { needsYou: true, finished: true, failed: true, sound: false } }).notificationHintShown).toBe(true);
+    expect(parseDesktopState({ notifications: { needsYou: true }, notificationHintShown: false }).notificationHintShown).toBe(false);
+    expect(parseDesktopState({ notificationHintShown: true }).notificationHintShown).toBe(true);
+    expect(parseDesktopState({ notificationHintShown: "yes" }).notificationHintShown).toBe(false);
   });
 });
 
 describe("applyNotificationsPatch", () => {
-  const base = parseDesktopState({ drawer: { width: 500 }, notifications: { failed: false } });
+  const base = parseDesktopState({ drawer: { width: 500 }, notifications: { failed: "off" } });
 
-  it("changes the switches named and leaves everything else alone", () => {
-    const next = applyNotificationsPatch(base, { sound: true, needsYou: false, drawer: { width: 340 }, extra: true });
-    expect(next.notifications).toEqual({ needsYou: false, finished: true, failed: false, sound: true });
+  it("changes the modes and sound set named and leaves everything else alone", () => {
+    const next = applyNotificationsPatch(base, { sounds: "macos", needsYou: "banner", drawer: { width: 340 }, extra: true });
+    expect(next.notifications).toEqual({ needsYou: "banner", finished: "sound", failed: "off", sounds: "macos" });
     expect(next.drawer).toEqual({ width: 500 });
   });
 
-  it("ignores a value that is not a boolean, and a patch that is not an object", () => {
-    expect(applyNotificationsPatch(base, { sound: "yes", finished: 1 }).notifications).toEqual(base.notifications);
+  it("ignores an invalid value, a boolean, the hint flag and a patch that is not an object", () => {
+    expect(applyNotificationsPatch(base, { sounds: "loud", finished: true, needsYou: 1 }).notifications).toEqual(base.notifications);
+    expect(applyNotificationsPatch(base, { notificationHintShown: true }).notificationHintShown).toBe(false);
     expect(applyNotificationsPatch(base, "x")).toBe(base);
     expect(applyNotificationsPatch(base, null)).toBe(base);
   });
 
-  it("the layout patch leaves the switches alone", () => {
-    expect(applyLayoutPatch(base, { notifications: { sound: true }, drawer: { width: 400 } }).notifications).toEqual(base.notifications);
+  it("the layout patch leaves the notifications alone", () => {
+    expect(applyLayoutPatch(base, { notifications: { needsYou: "off" }, drawer: { width: 400 } }).notifications).toEqual(base.notifications);
   });
 });
