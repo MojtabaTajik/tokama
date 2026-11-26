@@ -73,9 +73,13 @@ describe("applyLayoutPatch", () => {
 });
 
 describe("notifications", () => {
-  it("default, for a new user, to Banner + sound, Sound only, Banner + sound and the Tokama sounds", () => {
-    expect(DEFAULT_DESKTOP_STATE.notifications).toEqual({ needsYou: "both", finished: "sound", failed: "both", sounds: "tokama" });
+  it("default, for a new user, to Banner + sound, Banner only, Banner + sound and the Tokama sounds", () => {
+    expect(DEFAULT_DESKTOP_STATE.notifications).toEqual({ needsYou: "both", finished: "banner", failed: "both", sounds: "tokama" });
     expect(parseDesktopState({ window: {} }).notifications).toEqual(DEFAULT_DESKTOP_STATE.notifications);
+  });
+
+  it("keep a saved Sound only for Finished, so the new default reaches new users only", () => {
+    expect(parseDesktopState({ notifications: { needsYou: "both", finished: "sound", failed: "both", sounds: "tokama" } }).notifications.finished).toBe("sound");
   });
 
   it("migrate a kind saved as on or off: on with Sound on is Banner + sound, on alone is Banner only, off is Off", () => {
@@ -116,7 +120,7 @@ describe("applyNotificationsPatch", () => {
 
   it("changes the modes and sound set named and leaves everything else alone", () => {
     const next = applyNotificationsPatch(base, { sounds: "macos", needsYou: "banner", drawer: { width: 340 }, extra: true });
-    expect(next.notifications).toEqual({ needsYou: "banner", finished: "sound", failed: "off", sounds: "macos" });
+    expect(next.notifications).toEqual({ needsYou: "banner", finished: "banner", failed: "off", sounds: "macos" });
     expect(next.drawer).toEqual({ width: 500 });
   });
 

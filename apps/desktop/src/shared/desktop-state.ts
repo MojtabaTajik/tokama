@@ -82,7 +82,7 @@ export const DEFAULT_DESKTOP_STATE: DesktopState = {
   collapsedSections: [],
   lastView: { kind: "all" },
   lastFilter: { status: "active", range: "today" },
-  notifications: { needsYou: "both", finished: "sound", failed: "both", sounds: "tokama" },
+  notifications: { needsYou: "both", finished: "banner", failed: "both", sounds: "tokama" },
   notificationHintShown: false,
   askAfterCrash: true,
 };
