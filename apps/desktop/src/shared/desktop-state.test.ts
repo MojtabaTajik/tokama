@@ -20,6 +20,7 @@ describe("parseDesktopState", () => {
       collapsedSections: ["workflows", "repos"],
       lastView: { kind: "workflow", id: "plan-and-build" },
       lastFilter: { status: "done", range: "7d" },
+      getStarted: { done: true, lineClosed: false, firstItemId: "item_1" },
       lastRepoFolder: "/code/orders-api",
       notifications: { needsYou: "off", finished: "banner", failed: "sound", sounds: "macos" },
       notificationHintShown: true,
@@ -86,6 +87,29 @@ describe("applyLayoutPatch", () => {
   it("ignores a patch that is not an object", () => {
     expect(applyLayoutPatch(base, "x")).toBe(base);
     expect(applyLayoutPatch(base, null)).toBe(base);
+  });
+});
+
+describe("getStarted", () => {
+  it("is not done in a file an older version wrote, and for a new user", () => {
+    expect(parseDesktopState({}).getStarted).toEqual({ done: false, lineClosed: false });
+    expect(parseDesktopState({ getStarted: "yes" }).getStarted).toEqual({ done: false, lineClosed: false });
+  });
+
+  it("keeps what the file says and drops what is not valid, field by field", () => {
+    expect(parseDesktopState({ getStarted: { done: true, lineClosed: "yes", firstItemId: "item_1" } }).getStarted).toEqual({ done: true, lineClosed: false, firstItemId: "item_1" });
+    expect(parseDesktopState({ getStarted: { done: 1, lineClosed: true, firstItemId: "" } }).getStarted).toEqual({ done: false, lineClosed: true });
+    expect(parseDesktopState({ getStarted: { firstItemId: "x".repeat(513) } }).getStarted).toEqual({ done: false, lineClosed: false });
+  });
+
+  it("changes through a layout patch, validated, and leaves the rest alone", () => {
+    const base = parseDesktopState({ drawer: { width: 500 } });
+    const next = applyLayoutPatch(base, { getStarted: { done: true, lineClosed: false, firstItemId: "item_1", extra: 1 } });
+    expect(next.getStarted).toEqual({ done: true, lineClosed: false, firstItemId: "item_1" });
+    expect(next.drawer).toEqual({ width: 500 });
+    expect(applyLayoutPatch(next, { getStarted: 5 }).getStarted).toEqual({ done: false, lineClosed: false });
+    expect(applyLayoutPatch(next, { sidebar: { width: 300, collapsed: false } }).getStarted).toEqual(next.getStarted);
+    expect(applyNotificationsPatch(next, { getStarted: { done: false } }).getStarted).toEqual(next.getStarted);
   });
 });
 

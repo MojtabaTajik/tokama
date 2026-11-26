@@ -57,6 +57,16 @@ export interface WhatsNewDue {
   readonly chip?: string;
 }
 
+/** Where the "Get started" checklist stands on this machine. */
+export interface GetStartedState {
+  /** The first item has started (or the user had items already): the checklist no longer takes the place of the empty board. */
+  readonly done: boolean;
+  /** The "Setup done" line was closed (or never shows, for a user who had items already). */
+  readonly lineClosed: boolean;
+  /** The first item the user started; the line stays until it ends, and its text shows in step 4. */
+  readonly firstItemId?: string;
+}
+
 export interface DesktopState {
   readonly window: {
     /** The window's normal (not maximized) bounds; absent until the window has been placed once. */
@@ -70,6 +80,7 @@ export interface DesktopState {
   readonly lastView: LastView;
   /** The status filter and range of `lastView`. */
   readonly lastFilter: LastFilter;
+  readonly getStarted: GetStartedState;
   /** The repo folder chosen last in the Add repo picker. */
   readonly lastRepoFolder?: string;
   readonly notifications: NotificationSettings;
@@ -84,7 +95,9 @@ export interface DesktopState {
 }
 
 /** What the renderer may change; the window, the repo folder, the crash prompt and the release notes shown belong to the main process. */
-export type LayoutPatch = Partial<Pick<DesktopState, "sidebar" | "drawer" | "collapsedSections" | "lastView" | "lastFilter">>;
+export type LayoutPatch = Partial<Pick<DesktopState, "sidebar" | "drawer" | "collapsedSections" | "lastView" | "lastFilter" | "getStarted">>;
+/** The keys of a layout patch the main process accepts. */
+const LAYOUT_KEYS = ["sidebar", "drawer", "collapsedSections", "lastView", "lastFilter", "getStarted"] as const;
 
 export const DEFAULT_DESKTOP_STATE: DesktopState = {
   window: { maximized: false, fullscreen: false },
@@ -93,6 +106,7 @@ export const DEFAULT_DESKTOP_STATE: DesktopState = {
   collapsedSections: [],
   lastView: { kind: "all" },
   lastFilter: { status: "active", range: "today" },
+  getStarted: { done: false, lineClosed: false },
   notifications: { needsYou: "both", finished: "banner", failed: "both", sounds: "tokama" },
   notificationHintShown: false,
   askAfterCrash: true,
@@ -133,6 +147,16 @@ function lastFilter(value: unknown): LastFilter {
   return {
     status: oneOf(STATUS_FILTERS, record["status"]) ?? DEFAULT_DESKTOP_STATE.lastFilter.status,
     range: oneOf(RANGES, record["range"]) ?? DEFAULT_DESKTOP_STATE.lastFilter.range,
+  };
+}
+
+function getStarted(value: unknown): GetStartedState {
+  const record = isRecord(value) ? value : {};
+  const first = record["firstItemId"];
+  return {
+    done: record["done"] === true,
+    lineClosed: record["lineClosed"] === true,
+    ...(typeof first === "string" && first !== "" && first.length <= MAX_TEXT ? { firstItemId: first } : {}),
   };
 }
 
@@ -185,6 +209,7 @@ export function parseDesktopState(input: unknown): DesktopState {
     collapsedSections: SECTIONS.filter((name) => sections.includes(name)),
     lastView: lastView(root["lastView"]),
     lastFilter: lastFilter(root["lastFilter"]),
+    getStarted: getStarted(root["getStarted"]),
     notifications: notifications(root["notifications"]),
     notificationHintShown: hintShown(root),
     ...(typeof folder === "string" && folder !== "" && folder.length <= MAX_TEXT ? { lastRepoFolder: folder } : {}),
@@ -197,8 +222,8 @@ export function parseDesktopState(input: unknown): DesktopState {
 /** `state` with the parts of `patch` that are valid; anything else in the patch is ignored. */
 export function applyLayoutPatch(state: DesktopState, patch: unknown): DesktopState {
   if (!isRecord(patch)) return state;
-  const merged = parseDesktopState({ ...state, ...Object.fromEntries(["sidebar", "drawer", "collapsedSections", "lastView", "lastFilter"].filter((key) => key in patch).map((key) => [key, patch[key]])) });
-  return { ...state, sidebar: merged.sidebar, drawer: merged.drawer, collapsedSections: merged.collapsedSections, lastView: merged.lastView, lastFilter: merged.lastFilter };
+  const merged = parseDesktopState({ ...state, ...Object.fromEntries(LAYOUT_KEYS.filter((key) => key in patch).map((key) => [key, patch[key]])) });
+  return { ...state, sidebar: merged.sidebar, drawer: merged.drawer, collapsedSections: merged.collapsedSections, lastView: merged.lastView, lastFilter: merged.lastFilter, getStarted: merged.getStarted };
 }
 
 /** `state` with the modes and sound set of `patch` that are valid; any other field or value is ignored. */

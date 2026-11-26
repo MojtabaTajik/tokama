@@ -92,6 +92,13 @@ describe("readDesktopState", () => {
     expect(readDesktopState(path)).toEqual({ ...DEFAULT_DESKTOP_STATE, sidebar: { width: 264, collapsed: true }, drawer: { width: 500 } });
   });
 
+  it("reads a file from before the checklist as not done, and keeps a saved checklist state", () => {
+    writeRaw(JSON.stringify({ drawer: { width: 500 } }));
+    expect(readDesktopState(path).getStarted).toEqual({ done: false, lineClosed: false });
+    writeRaw(JSON.stringify({ getStarted: { done: true, lineClosed: true, firstItemId: "item_9" } }));
+    expect(readDesktopState(path).getStarted).toEqual({ done: true, lineClosed: true, firstItemId: "item_9" });
+  });
+
   it("clamps widths that are outside the limits, and drops unknown fields", () => {
     writeRaw(JSON.stringify({ sidebar: { width: 9999 }, drawer: { width: 10 }, extra: { evil: true } }));
     const state = readDesktopState(path);
