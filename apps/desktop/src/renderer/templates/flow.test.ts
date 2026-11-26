@@ -73,6 +73,12 @@ describe("flowOf", () => {
     expect(same.description).toContain("tries again when its checks fail, up to 3 attempts");
   });
 
+  it("draws a review step's changes back to its own step as a retry", () => {
+    const same = flowOf(withSteps({ ...review, id: build.id, ifChangesRequested: { action: "back", stepId: build.id }, maxAttempts: 2 } as TemplateStepView), setup.agents);
+    expect(same.loops.map((loop) => [loop.kind, loop.from, loop.to, loop.label])).toEqual([["self", 1, 1, "changes · retry, up to 2"]]);
+    expect(same.description).toContain("Review tries again when it asks for changes, up to 2 attempts");
+  });
+
   it("says 1 attempt, not 1 attempts", () => {
     const once = flowOf(withSteps({ ...build, ifFailed: { action: "retry" }, maxAttempts: 1 } as TemplateStepView), setup.agents);
     expect(once.description).toContain("up to 1 attempt.");
