@@ -7,7 +7,7 @@ import { API_VERSION, createProcessRunner, defaultEngineDir, engineEndpoint, err
 import { app, BrowserWindow, clipboard, dialog, ipcMain, powerMonitor, screen, session, shell } from "electron";
 import { type BridgeEvent, CHANNELS } from "../shared/bridge.js";
 import { buildInfoText } from "../shared/build-info.js";
-import { applyLayoutPatch, applyNotificationsPatch, type NoteKind, SOUND_NAMES, SOUND_SETS } from "../shared/desktop-state.js";
+import { applyLayoutPatch, applyNotificationsPatch, type NoteKind } from "../shared/desktop-state.js";
 import { aboutInfo } from "./about.js";
 import { engineApi, mainQuery } from "./api.js";
 import { openAttemptFile } from "./attempt-file.js";
@@ -24,6 +24,7 @@ import { createNotifier } from "./notifier.js";
 import { runSoundCheck } from "./sound-check.js";
 import { createFocusProbe } from "./sound/focus.js";
 import { soundFileName, soundsDir } from "./sound/files.js";
+import { playRequestHandler } from "./sound/play-request.js";
 import { playerFor, recordingPlayer, type SoundPlayer } from "./sound/player.js";
 import { appIcons } from "./icon.js";
 import { recordingShow, systemShow } from "./system-notification.js";
@@ -217,7 +218,7 @@ function itemsRunningInApplications(): Promise<number | undefined> {
 function soundPlayer(): SoundPlayer {
   const packaged = app.isPackaged;
   const soundsFolder = soundsDir({ packaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() });
-  return playerFor(process.platform, { runner: createProcessRunner(), soundsDir: soundsFolder, packaged, beep: () => shell.beep() });
+  return playerFor(process.platform, { makeRunner: () => createProcessRunner(), soundsDir: soundsFolder, packaged, beep: () => shell.beep() });
 }
 
 /** The name of the bundled sound file of a kind, for a packaged Mac; the system plays it from the app bundle. */
@@ -286,12 +287,7 @@ void app.whenReady().then(async () => {
   // Sounds: a test run records what it would play, and never makes a sound.
   const player = recordNotifications ? recordingPlayer() : soundPlayer();
   const focusProbe = createFocusProbe({ idleState: () => powerMonitor.getSystemIdleState(1) });
-  const playRequests = rateLimit(20, 10_000);
-  handle(CHANNELS.playSound, (name, set) => {
-    const sound = SOUND_NAMES.find((candidate) => candidate === name);
-    const soundSet = SOUND_SETS.find((candidate) => candidate === set);
-    if (sound !== undefined && soundSet !== undefined && playRequests()) player.play(sound, soundSet);
-  });
+  handle(CHANNELS.playSound, playRequestHandler(player, rateLimit(20, 10_000)));
   // Notifications: told about every item update, and it learns the open items again on each connect.
   const notifier = createNotifier({
     play: (kind, set) => player.play(kind, set),

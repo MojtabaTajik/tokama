@@ -183,6 +183,8 @@ interface SetupOptions {
   board?: ItemRecord[] | undefined | Promise<ItemRecord[]>;
   setup?: Setup | undefined | Error;
   show?: () => void;
+  /** What `show` reports: false when the system did not show the banner. */
+  bannerShown?: boolean;
   focus?: FocusState;
   bannerSound?: BannerSound;
   /** The hint counts as shown unless a test asks for it to be new. */
@@ -220,6 +222,7 @@ function setupNotifier(options: SetupOptions = {}) {
     show: (note, click) => {
       options.show?.();
       shown.push({ note, click });
+      return options.bannerShown ?? true;
     },
     open: (itemId) => opened.push(itemId),
     now: () => NOW,
@@ -339,6 +342,17 @@ describe("createNotifier", () => {
       expect(run.hint.marked).toBe(1);
     });
 
+    it("is not used up by a banner that did not show, so the next banner carries it", async () => {
+      const failedShow = await transition("needsYou", { hintShown: false, bannerShown: false });
+      expect(failedShow.hint.marked).toBe(0);
+      expect(failedShow.shown[0]?.note.body).toContain("Settings → Notifications");
+      const throwing = setupNotifier({ hintShown: false, show: () => { throw new Error("no service"); } });
+      await throwing.notifier.resync();
+      throwing.notifier.onEvent(event(asking()));
+      await settle();
+      expect(throwing.hint.marked).toBe(0);
+    });
+
     it("is not added when it was shown already", async () => {
       const { shown, hint } = await transition("needsYou", { hintShown: true });
       expect(shown[0]?.note.body).not.toContain("Settings");
@@ -427,7 +441,7 @@ describe("createNotifier", () => {
   it("a board that fails on a reconnect leaves the next update quiet", async () => {
     let board: ItemRecord[] | undefined = [item()];
     const shown: Note[] = [];
-    const notifier = createNotifier({ settings: () => ({ needsYou: "banner", finished: "banner", failed: "banner", sounds: "tokama" }), windowFocused: () => false, board: async () => board, setup: async () => setup, show: (note) => shown.push(note), open: () => undefined, play: () => undefined, bundledSound: () => undefined, focus: async () => "unknown", hint: { shown: () => true, markShown: () => undefined }, now: () => NOW, platform: "darwin" });
+    const notifier = createNotifier({ settings: () => ({ needsYou: "banner", finished: "banner", failed: "banner", sounds: "tokama" }), windowFocused: () => false, board: async () => board, setup: async () => setup, show: (note) => (shown.push(note), true), open: () => undefined, play: () => undefined, bundledSound: () => undefined, focus: async () => "unknown", hint: { shown: () => true, markShown: () => undefined }, now: () => NOW, platform: "darwin" });
     await notifier.resync();
     board = undefined;
     await notifier.resync();

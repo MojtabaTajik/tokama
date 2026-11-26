@@ -117,8 +117,11 @@ export function NotificationsPage({ bridge }: NotificationsPageProps) {
                   <Segmented options={MODES} value={values[row.key]} onChange={(mode) => choose({ [row.key]: mode })} labelledBy={`notes-${row.key}`} />
                   <Button variant="secondary" className="notes-play" aria-label={`Play the ${row.name} sound`} title={`Play the ${row.name} sound`} data-playing={playing === row.key || undefined} onClick={() => play(row.key)}>
                     <span aria-hidden="true">▶</span>
-                    {playing === row.key ? <span className="notes-playing">{TEXT.playing}</span> : null}
                   </Button>
+                  {/* Always in the page, so a screen reader announces the word when it appears. */}
+                  <span className="notes-playing" aria-live="polite">
+                    {playing === row.key ? TEXT.playing : ""}
+                  </span>
                 </div>
               </div>
             ))}

@@ -116,10 +116,10 @@ describe("Settings > Notifications", () => {
     expect(playButton("Needs you").getAttribute("title")).toBe("Play the Needs you sound");
     await click(playButton("Needs you"));
     expect(fake.playSound).toHaveBeenLastCalledWith("needsYou", "tokama");
-    expect(playButton("Needs you").textContent).toBe("▶Playing");
-    expect($$(".notes-playing")).toHaveLength(1);
+    // Three live regions are always in the page, and only the row that plays says the word.
+    expect($$(".notes-playing").map((el) => [el.getAttribute("aria-live"), el.textContent])).toEqual([["polite", "Playing"], ["polite", ""], ["polite", ""]]);
     await act(async () => vi.advanceTimersByTime(1500));
-    expect($$(".notes-playing")).toHaveLength(0);
+    expect($$(".notes-playing").map((el) => el.textContent)).toEqual(["", "", ""]);
     await click(option(3, "macOS default"));
     await click(playButton("Failed"));
     expect(fake.playSound).toHaveBeenLastCalledWith("failed", "macos");

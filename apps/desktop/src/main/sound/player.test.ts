@@ -16,8 +16,9 @@ function setup(options: { packaged?: boolean; result?: () => Promise<RunResult> 
       return new Promise<RunResult>((resolve) => release.push(() => resolve(FINISHED)));
     },
   };
-  const deps = { runner, soundsDir: "/res", packaged: options.packaged ?? true, beep };
-  return { requests, release, beep, deps };
+  const makeRunner = vi.fn(() => runner);
+  const deps = { makeRunner, soundsDir: "/res", packaged: options.packaged ?? true, beep };
+  return { requests, release, beep, deps, makeRunner };
 }
 
 describe("the macOS player", () => {
@@ -72,9 +73,10 @@ describe("the macOS player", () => {
 });
 
 describe("the player of other platforms", () => {
-  it("does nothing", () => {
-    const { deps, requests, beep } = setup();
+  it("does nothing, and never makes a process runner (it cannot be made on Windows)", () => {
+    const { deps, requests, beep, makeRunner } = setup();
     for (const platform of ["linux", "win32"] as const) playerFor(platform, deps).play("needsYou", "macos");
+    expect(makeRunner).not.toHaveBeenCalled();
     expect(requests).toEqual([]);
     expect(beep).not.toHaveBeenCalled();
   });

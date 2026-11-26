@@ -13,7 +13,8 @@ export interface SoundPlayer {
 }
 
 export interface PlayerDeps {
-  readonly runner: Pick<ProcessRunner, "run">;
+  /** Makes the process runner. Only the macOS player calls it: the runner cannot be made on every platform. */
+  readonly makeRunner: () => Pick<ProcessRunner, "run">;
   readonly soundsDir: string;
   readonly packaged: boolean;
   /** Electron's `shell.beep`. */
@@ -24,6 +25,7 @@ const AFPLAY = "/usr/bin/afplay";
 const PLAY_TIMEOUT_MS = 5_000;
 
 function macPlayer(deps: PlayerDeps): SoundPlayer {
+  const runner = deps.makeRunner();
   let playing = false;
   return {
     play(name, set) {
@@ -35,7 +37,7 @@ function macPlayer(deps: PlayerDeps): SoundPlayer {
       if (playing) return;
       playing = true;
       const file = join(deps.soundsDir, soundFileName(name, deps.packaged));
-      deps.runner
+      runner
         .run({ command: { argv: [AFPLAY, file] }, cwd: deps.soundsDir, timeoutMs: PLAY_TIMEOUT_MS })
         .catch(() => undefined)
         .finally(() => {

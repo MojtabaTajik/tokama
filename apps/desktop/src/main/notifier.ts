@@ -136,8 +136,8 @@ export interface NotifierDeps {
   readonly board: () => Promise<readonly ItemRecord[] | undefined>;
   /** The engine's setup, or undefined when the engine does not answer. */
   readonly setup: () => Promise<Setup | undefined>;
-  /** Shows a notification; `onClick` is called when the engineer clicks it. Must not throw. */
-  readonly show: (note: Note, onClick: () => void) => void;
+  /** Shows a notification; `onClick` is called when the engineer clicks it. Returns whether it was shown. Must not throw. */
+  readonly show: (note: Note, onClick: () => void) => boolean;
   /** Brings the window to the front and opens the item in it. */
   readonly open: (itemId: string) => void;
   /** Plays the sound of a kind now, from the set; Sound only and "player" banners use it. Must not throw. */
@@ -177,10 +177,11 @@ export function createNotifier(deps: NotifierDeps): Notifier {
     const setup = await deps.setup().catch(() => undefined);
     const text = noteText(kind, item, { ...(setup === undefined ? {} : { setup }), now: deps.now(), platform: deps.platform });
     const hinted = !deps.hint.shown();
-    if (hinted) deps.hint.markShown();
     const body = hinted ? `${text.body}\n${plainText(HINT_LINE, BODY_MAX, deps.platform)}` : text.body;
     const sound = withSound && bannerSound === "bundled" ? deps.bundledSound(kind, set) : undefined;
-    deps.show({ title: text.title, body, silent: !withSound || bannerSound === "player", ...(sound === undefined ? {} : { sound }) }, () => deps.open(item.id));
+    const shown = deps.show({ title: text.title, body, silent: !withSound || bannerSound === "player", ...(sound === undefined ? {} : { sound }) }, () => deps.open(item.id));
+    // The hint is used up only by a banner that appeared; the next one carries it otherwise.
+    if (hinted && shown) deps.hint.markShown();
     if (withSound && bannerSound === "player") deps.play(kind, set);
   };
   // Sound only: no banner, so the app plays the sound itself unless Focus or a locked screen asks for quiet.

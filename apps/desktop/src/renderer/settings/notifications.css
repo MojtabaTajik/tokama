@@ -101,6 +101,12 @@
   background: var(--raised);
 }
 
+.notes-playing {
+  min-width: 8ch;
+  font-size: var(--text-md);
+  color: var(--text-2);
+}
+
 .notes-info-text {
   display: flex;
   flex-direction: column;
