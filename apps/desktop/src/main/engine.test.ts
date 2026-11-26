@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { engineCommand, engineCommandEnd, engineDirFor, findExecutable, readLogTail } from "./engine.js";
+import { engineCommand, engineCommandEnd, engineDirFor, engineRuntime, findExecutable, readLogTail } from "./engine.js";
 
 let dir: string;
 beforeEach(() => {
@@ -83,6 +83,43 @@ describe("readLogTail", () => {
     writeFileSync(join(dir, "real.log"), "secret\n");
     symlinkSync(join(dir, "real.log"), join(dir, "link.log"));
     expect(readLogTail(join(dir, "link.log"))).toEqual([]);
+  });
+});
+
+describe("engineRuntime", () => {
+  const resourcesPath = "/Applications/Tokama.app/Contents/Resources";
+  const appPath = `${resourcesPath}/app.asar`;
+  const withNodeOnPath = () => {
+    mkdirSync(join(dir, "bin"));
+    writeFileSync(join(dir, "bin", "node"), "#!/bin/sh\n");
+    chmodSync(join(dir, "bin", "node"), 0o755);
+    return join(dir, "bin");
+  };
+
+  it("in development: the node on PATH and the built engine of the checkout", () => {
+    const path = withNodeOnPath();
+    expect(engineRuntime({ platform: "darwin", isPackaged: false, appPath: "/src/tokama/apps/desktop", resourcesPath, path })).toEqual({ node: join(path, "node"), entry: "/src/tokama/apps/engine/dist/main.js" });
+  });
+
+  it("in development: no node when none is on PATH", () => {
+    expect(engineRuntime({ platform: "darwin", isPackaged: false, appPath: "/src/tokama/apps/desktop", resourcesPath, path: dir }).node).toBeUndefined();
+  });
+
+  it("packaged: the app's own Node and engine bundle, whatever PATH holds", () => {
+    const path = withNodeOnPath();
+    expect(engineRuntime({ platform: "darwin", isPackaged: true, appPath, resourcesPath, path })).toEqual({ node: `${resourcesPath}/engine/tokama-engine`, entry: `${resourcesPath}/engine/dist/main.js` });
+    expect(engineRuntime({ platform: "darwin", isPackaged: true, appPath, resourcesPath, path: undefined }).node).toBe(`${resourcesPath}/engine/tokama-engine`);
+  });
+
+  it("packaged on Windows: the Node binary is an .exe", () => {
+    expect(engineRuntime({ platform: "win32", isPackaged: true, appPath, resourcesPath, path: undefined }).node).toBe(join(resourcesPath, "engine", "tokama-engine.exe"));
+  });
+
+  it("packaged: the engine command ends the way engineCommandEnd says, so the app finds its own engine", () => {
+    const { node, entry } = engineRuntime({ platform: "darwin", isPackaged: true, appPath, resourcesPath, path: undefined });
+    const command = engineCommand({ node, entry, dir: "/home/dev/.tokama/run", env: {} });
+    if (!command.ok) throw new Error(command.error);
+    expect([command.value.command, ...command.value.args].join(" ").endsWith(engineCommandEnd("/home/dev/.tokama/run"))).toBe(true);
   });
 });
 

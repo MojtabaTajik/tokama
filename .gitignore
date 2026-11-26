@@ -11,4 +11,7 @@ node_modules/
 .DS_Store
 CLAUDE.local.md
 /apps/desktop/e2e-output/
+/apps/desktop/release/
+/apps/desktop/package-stage/
+/apps/desktop/package-cache/
 /e2e/e2e-output/

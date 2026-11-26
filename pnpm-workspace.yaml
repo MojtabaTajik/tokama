@@ -9,4 +9,5 @@ minimumReleaseAge: 1440
 strictDepBuilds: true
 blockExoticSubdeps: true
 # No dependency may run install scripts. Add `<name>: true` only after review.
-allowBuilds: {}
+allowBuilds:
+  electron-winstaller: false

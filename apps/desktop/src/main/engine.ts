@@ -1,7 +1,7 @@
 // How the desktop app starts the engine service: absolute node and entry paths and an explicit
 // engine dir. Its reduced environment comes from core's buildEnv.
 import { accessSync, closeSync, constants, fstatSync, openSync, readSync, statSync } from "node:fs";
-import { delimiter, isAbsolute, join } from "node:path";
+import { delimiter, isAbsolute, join, resolve } from "node:path";
 import type { EngineCommand } from "@tokama/client";
 import { err, ok, type Result } from "@tokama/core";
 
@@ -18,6 +18,32 @@ export function findExecutable(name: string, path: string | undefined): string |
     }
   }
   return undefined;
+}
+
+export interface EngineRuntimeInput {
+  readonly platform: NodeJS.Platform;
+  readonly isPackaged: boolean;
+  /** `app.getAppPath()`: `apps/desktop` in development, `<resources>/app.asar` when packaged. */
+  readonly appPath: string;
+  /** `process.resourcesPath`. */
+  readonly resourcesPath: string;
+  /** The PATH of this process; searched for node in development only. */
+  readonly path: string | undefined;
+}
+
+export interface EngineRuntime {
+  readonly node: string | undefined;
+  readonly entry: string;
+}
+
+/**
+ * The node binary and the engine entry to start: the checkout's built engine on the node found on
+ * PATH in development; the app's own Node and engine bundle when packaged, where PATH is never searched.
+ */
+export function engineRuntime(input: EngineRuntimeInput): EngineRuntime {
+  if (!input.isPackaged) return { node: findExecutable("node", input.path), entry: resolve(input.appPath, "..", "engine", "dist", "main.js") };
+  const engine = join(input.resourcesPath, "engine");
+  return { node: join(engine, input.platform === "win32" ? "tokama-engine.exe" : "tokama-engine"), entry: join(engine, "dist", "main.js") };
 }
 
 /**

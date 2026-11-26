@@ -5,11 +5,12 @@
 // SIGINT and SIGTERM abort one root controller, which shuts the engine down gracefully;
 // a second signal ends the process at once (default handling).
 // Exit codes: 0 stopped (also when stopped while starting), 1 failed to start, 2 usage error, 3 an engine is already running.
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { defaultEngineDir } from "@tokama/core";
+import { engineCodeRoots } from "./code-roots.js";
 import type { EngineDiagnostics } from "./diagnostics.js";
 import { startEngine } from "./engine.js";
 
@@ -53,7 +54,8 @@ async function main(): Promise<number> {
   const claudeLogs = sample ? undefined : join(homedir(), ".claude", "projects");
   // Fake engine mode only: TOKAMA_SAMPLE_HISTORY=200 adds a long history of finished items.
   const history = sample ? Math.min(1500, Math.max(0, Number.parseInt(process.env["TOKAMA_SAMPLE_HISTORY"] ?? "0", 10) || 0)) : 0;
-  const started = await startEngine({ dir, home, signal: root.signal, log, sample, sampleHistory: history, engineVersion: engineVersion(), onDiagnostics: (opened) => (diagnostics = opened), ...(claudeLogs !== undefined && { claudeLogs }) });
+  const codeRoots = engineCodeRoots(import.meta.dirname, (path) => statSync(path, { throwIfNoEntry: false })?.isFile() === true);
+  const started = await startEngine({ dir, home, signal: root.signal, log, sample, sampleHistory: history, engineVersion: engineVersion(), codeRoots, onDiagnostics: (opened) => (diagnostics = opened), ...(claudeLogs !== undefined && { claudeLogs }) });
   if (!started.ok) {
     log(started.error.message);
     if (started.error.code === "stopped") return 0;

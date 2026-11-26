@@ -22,6 +22,10 @@ Both skip with a message when `claude` is not installed or not logged in (the en
 `setup` health check decides). The agent is a personal Builder on `haiku`, written into the temp
 Tokama home, and every item has a 240 s limit; on timeout the item is stopped and the engine ended.
 
+To run the engine of a packaged app instead of the built one, set `TOKAMA_REAL_ENGINE_DIR` to the
+absolute path of its engine folder (`…/Tokama.app/Contents/Resources/engine`); the test then starts
+that folder's own Node and bundle. A relative path is refused.
+
 Tokama's home is `<temp>/h/.tokama`, never `~/.tokama`. The engine process keeps your real `HOME`
 on purpose: Claude Code finds its login there (on macOS in the login keychain), so a temp `HOME`
 would always read as logged out. Claude Code writes its usual session files under `~/.claude`.

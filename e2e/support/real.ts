@@ -9,7 +9,7 @@
 import { type ChildProcess, execFileSync, spawn, spawnSync } from "node:child_process";
 import { closeSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { connect, type EngineClient } from "@tokama/client";
 import type { ItemRecord } from "@tokama/core";
 import { expect } from "vitest";
@@ -156,12 +156,24 @@ function killAgentGroups(workspace: Workspace): void {
   }
 }
 
+/**
+ * What starts the engine: the built engine on this node, or, when TOKAMA_REAL_ENGINE_DIR names the
+ * engine folder of a packaged app, that folder's own Node and bundle.
+ */
+function engineLaunch(): { node: string; entry: string } {
+  const packaged = process.env["TOKAMA_REAL_ENGINE_DIR"];
+  if (packaged === undefined || packaged === "") return { node: process.execPath, entry: ENGINE_ENTRY };
+  if (!isAbsolute(packaged)) throw new Error(`TOKAMA_REAL_ENGINE_DIR must be an absolute path, not ${packaged}`);
+  return { node: join(packaged, "tokama-engine"), entry: join(packaged, "dist", "main.js") };
+}
+
 /** Starts the built engine in real mode on the workspace and connects to it. */
 export async function startEngine(workspace: Workspace): Promise<RunningEngine> {
   const out = openSync(join(workspace.root, "engine.out"), "a");
   let child: ChildProcess;
   try {
-    child = spawn(process.execPath, [ENGINE_ENTRY, "--dir", workspace.engineDir, "--home", workspace.tokamaHome], { env: engineEnv(), stdio: ["ignore", out, out] });
+    const launch = engineLaunch();
+    child = spawn(launch.node, [launch.entry, "--dir", workspace.engineDir, "--home", workspace.tokamaHome], { env: engineEnv(), stdio: ["ignore", out, out] });
   } finally {
     closeSync(out);
   }

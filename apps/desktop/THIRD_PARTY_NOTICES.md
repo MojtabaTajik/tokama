@@ -22,8 +22,22 @@ and others); the full list ships with the app as `LICENSES.chromium.html`. Copyr
 
 ## Node.js
 
-Node.js runs the Tokama engine as a background service (MIT, Copyright Node.js contributors).
+The packaged app ships the official Node.js 26.13.1 binary for macOS (arm64), unchanged except for its
+file name and code signature, as `Contents/Resources/engine/tokama-engine`. It runs the Tokama engine as a
+background service (MIT, Copyright Node.js contributors). Node's licence file, which also lists the licences
+of the parts Node bundles (V8, OpenSSL, libuv and others), ships beside it as `LICENSE-node`. In development
+the engine runs on the Node found on PATH.
 
 ## React and React DOM
 
 React draws every screen in the app (MIT, Copyright Meta Platforms, Inc. and affiliates).
+
+## yaml
+
+yaml 2.9.1 reads and writes the YAML files of templates, agents and repos (ISC, Copyright Eemeli Aro). It is
+built into the engine bundle and into the app's main process.
+
+## Zod
+
+Zod 4.6.7 checks stored and incoming data (MIT, Copyright Colin McDonnell). It is built into the engine bundle
+and into the app's main process.
