@@ -2,7 +2,7 @@
 // up the same way on every start (a seeded generator, days in local time), and plan readings that
 // show every state the Insights page draws: a CLI well inside its limits, one near its weekly
 // limit, and a local model host without a plan.
-import { type AgentCallUsage, type CliPlan, type ItemId, type ItemRecord, localDate, type PlanReading, pricedEntry, type Setup, type UsageEntry, type UsageRow } from "@tokama/core";
+import { type AgentCallUsage, type CliPlan, type ItemId, type ItemRecord, localDate, type PlanReading, pricedEntry, type Setup, type UsageEntry, type UsageReport, type UsageRow } from "@tokama/core";
 
 const MINUTE = 60_000;
 const DAYS = 90;
@@ -102,6 +102,14 @@ export function sampleUsageRows(setup: Setup, items: readonly ItemRecord[], now:
     }
   }
   return rows;
+}
+
+/**
+ * Tokama's sample helper calls: the "Tokama helpers" row of the usage report. Not part of the
+ * report's totals, which count the sample items' calls.
+ */
+export function sampleHelperUsage(): NonNullable<UsageReport["helpers"]> {
+  return [{ helperId: "suggest-checks", tokens: { input: 37_200, output: 1_080, cacheRead: 0, cacheWrite: 0 }, costUsd: 0.04, calls: 6 }];
 }
 
 /** Claude Code's sample answer to a usage request: inside its limits, one of them for one model, read two minutes ago. */

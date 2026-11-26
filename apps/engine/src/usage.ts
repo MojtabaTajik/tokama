@@ -46,6 +46,8 @@ export interface UsageDeps {
   readonly clock: Clock;
   readonly onChange: () => void;
   readonly log?: (message: string) => void;
+  /** Tokama's helper calls over the range, for the report's `helpers` block. Absent: the block is left out. */
+  readonly helpers?: (range: UsageRange) => NonNullable<UsageReport["helpers"]>;
   /** Default: 5 minutes. */
   readonly requestEveryMs?: number;
   /** The other AI CLIs' plans. Default: each says it has no source yet. */
@@ -102,11 +104,13 @@ export class UsageService {
     const rows = this.deps.rows(since);
     const claude = choosePlan("claude-code", await this.claudeCandidates(rows, now), now, this.version);
     const clis = [claude, ...(this.deps.otherClis?.(now) ?? NOT_YET)];
-    if (scope === "tokama") return summarizeUsage({ rows, range, now, clis, scope });
+    const helpers = this.deps.helpers?.(range);
+    const withHelpers = (report: UsageReport): UsageReport => (helpers === undefined ? report : { ...report, helpers: [...helpers] });
+    if (scope === "tokama") return withHelpers(summarizeUsage({ rows, range, now, clis, scope }));
     const logs = this.deps.logs;
     logs?.refresh();
     const logsFrom = logs?.coveredFrom();
-    return summarizeUsage({
+    return withHelpers(summarizeUsage({
       rows,
       range,
       now,
@@ -115,7 +119,7 @@ export class UsageService {
       logs: logs?.entries(rangeStart(now, range)) ?? [],
       ...(logsFrom !== undefined && { logsFrom }),
       scan: logs?.status() ?? NO_LOGS,
-    });
+    }));
   }
 
   /** Waits for a usage request in flight; for tests and shutdown. */

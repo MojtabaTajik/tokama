@@ -18,6 +18,7 @@ import {
   currentStepIndex,
   type DecisionId,
   type DecisionDiffResult,
+  type EngineEvent,
   type ItemDiffResult,
   err,
   finishActions,
@@ -40,7 +41,9 @@ import {
   summarizeOutput,
 } from "@tokama/core";
 import type { ActivityFeed } from "../activity-feed.js";
+import type { HelperCommand } from "../helpers.js";
 import type { MemoryItemStore } from "../store.js";
+import { SampleHelpers } from "./helpers.js";
 import { checksReply, logReply, sampleChecks, sampleLogs } from "./attempts.js";
 import { DIFF_DECISION_ID, failedDiff, finishedDiff, ITEM_IDS, sampleDiff, sampleHistory, sampleItems, sampleOutputs, sampleSetup } from "./data.js";
 
@@ -85,6 +88,8 @@ const INVESTIGATION_WORDS = ["alert", "500", "5xx", "error", "errors", "latency"
 
 export class SampleEngine {
   readonly setup: Setup;
+  /** The canned helper runs and Try checks trials. */
+  readonly helpers: SampleHelpers;
   /** The items the tick moves: the looping sample item and the items started or approved since. */
   private readonly live = new Set<string>([ITEM_IDS.working]);
   /** Started items that wait for approval before a step that sends data to a cloud agent. */
@@ -101,7 +106,10 @@ export class SampleEngine {
     history = 0,
     /** With a history, leave out the sample's own items: only the history's finished ones. */
     historyOnly = false,
+    /** Where helper and Try checks updates go: the engine's event stream. */
+    emit?: (event: EngineEvent) => void,
   ) {
+    this.helpers = new SampleHelpers(clock, emit);
     const setup = parseQueryResult("setup", sampleSetup);
     if (!setup.ok) throw new Error(`invalid sample setup: ${JSON.stringify(setup.error.issues)}`);
     this.setup = setup.value;
@@ -138,8 +146,8 @@ export class SampleEngine {
     this.activity.update(item.id, { itemId: item.id, stepIndex, attempt, by: step.agentId === undefined ? "tokama" : "agent", ...state });
   }
 
-  /** Item commands; repo and diagnostics commands are the engine's own. */
-  command(command: Exclude<Command, { type: "add_repo" | "init_repo" | "first_commit" | "update_repo" | "remove_repo" | "diagnostics_delete" | "diagnostics_settings" | "report_diagnostic" }>): Result<CommandResult<Command["type"]>, CommandError> {
+  /** Item commands; repo, diagnostics and helper commands are answered elsewhere. */
+  command(command: Exclude<Command, { type: "add_repo" | "init_repo" | "first_commit" | "update_repo" | "remove_repo" | "diagnostics_delete" | "diagnostics_settings" | "report_diagnostic" | HelperCommand["type"] }>): Result<CommandResult<Command["type"]>, CommandError> {
     switch (command.type) {
       case "start_item":
         return this.startItem(command);
@@ -239,6 +247,7 @@ export class SampleEngine {
     schedule();
     scheduleActions();
     return () => {
+      this.helpers.close();
       if (timer !== undefined) this.clock.clearTimeout(timer);
       if (actions !== undefined) this.clock.clearTimeout(actions);
       timer = undefined;

@@ -2,7 +2,7 @@
 // usage report the engine serves: plan windows per AI CLI, and tokens and estimated cost per day,
 // workflow and item.
 import { z } from "zod";
-import { AgentIdSchema, AiCliIdSchema, CallIdSchema, EpochMsSchema, ItemIdSchema, RepoIdSchema, StepIdSchema } from "./ids.js";
+import { AgentIdSchema, AiCliIdSchema, CallIdSchema, EpochMsSchema, HelperIdSchema, ItemIdSchema, RepoIdSchema, StepIdSchema } from "./ids.js";
 
 const count = z.int().nonnegative();
 
@@ -335,6 +335,8 @@ export const UsageReportSchema = z.strictObject({
   repos: z.array(z.strictObject({ repoId: RepoIdSchema.nullable(), tokens, costUsd: cost })).max(100).optional(),
   /** Present in the `all` scope. */
   scan: LogScanSchema.optional(),
+  /** Tokama's own helper calls over the range, most tokens first, whatever the scope. Absent from older engines. */
+  helpers: z.array(z.strictObject({ helperId: HelperIdSchema, tokens: TokenUsageSchema, costUsd: cost, calls: z.int().nonnegative() })).max(20).optional(),
 });
 
 export type TokenUsage = z.output<typeof TokenUsageSchema>;

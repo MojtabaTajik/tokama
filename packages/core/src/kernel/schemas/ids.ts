@@ -42,6 +42,16 @@ export const InstallIdSchema = generated("install").brand<"InstallId">();
 /** One run of the engine, from its start to its stop. */
 export const SessionIdSchema = generated("session").brand<"SessionId">();
 
+/** The small AI tasks Tokama runs for itself, by id. Clients map the id to a label. */
+export const HelperIdSchema = z.enum(["suggest-checks"]);
+/** One run of a helper. */
+export const HelperRunIdSchema = generated("hrun").brand<"HelperRunId">();
+/** One Try checks run. */
+export const CheckTrialIdSchema = generated("trial").brand<"CheckTrialId">();
+
+export type HelperId = z.output<typeof HelperIdSchema>;
+export type HelperRunId = z.output<typeof HelperRunIdSchema>;
+export type CheckTrialId = z.output<typeof CheckTrialIdSchema>;
 export type TemplateId = z.output<typeof TemplateIdSchema>;
 export type AgentId = z.output<typeof AgentIdSchema>;
 export type RepoId = z.output<typeof RepoIdSchema>;
