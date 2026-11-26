@@ -1,7 +1,8 @@
 // The change a step made, as the engine serves it for a decision the engineer answers, and what an
-// ended item changed: the files that differ between two trees, with their line counts and hunks. Repo content: clients show it as text only. The reply stays far below the
-// API's message size: hunk text and file entries each have a byte budget, and what does not fit
-// is marked, never dropped without a word.
+// ended item changed: the files that differ between two trees, with their line counts and hunks.
+// Repo content: clients show it as text only. The reply stays far below the API's message size:
+// hunk text and file entries each have a byte budget, and what does not fit is marked, never
+// dropped without a word.
 import { z } from "zod";
 import { RepoIdSchema } from "./ids.js";
 import { RepoDirSchema } from "./item-log.js";

@@ -1,6 +1,7 @@
 import { copyFile, mkdtemp, open, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
+import { hasCode } from "../errno/index.js";
 import { err, ok, type Result } from "../result/index.js";
 import type { ProcessRunner } from "../process/index.js";
 
@@ -476,8 +477,8 @@ export function createGit(options: GitOptions): Git {
       try {
         const env = { GIT_INDEX_FILE: join(dir, "index") };
         // Without the copy git would hash every file again; a repo with no index yet starts empty.
-        await copyFile(index.value.trim(), env.GIT_INDEX_FILE).catch((cause: NodeJS.ErrnoException) => {
-          if (cause.code !== "ENOENT") throw cause;
+        await copyFile(index.value.trim(), env.GIT_INDEX_FILE).catch((cause: unknown) => {
+          if (!hasCode(cause, "ENOENT")) throw cause;
         });
         const added = await git(repo, ["add", "-A"], env);
         if (!added.ok) return added;

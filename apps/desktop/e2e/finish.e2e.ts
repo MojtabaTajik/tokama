@@ -20,7 +20,7 @@ import {
 } from "@tokama/core";
 import type { Locator } from "playwright-core";
 import { expect } from "vitest";
-import { drawer, openRow, flow, row, segment } from "./harness.js";
+import { drawer, flow, openRow, row, segment } from "./harness.js";
 
 const SAMPLE_DONE = "Fix the null check in cart totals";
 
@@ -71,7 +71,7 @@ flow("shows the Diff tab of a done item before Merge (branch against base) and a
   await resize(1440, 900);
   await segment(page, "Done").click();
   await page.locator(".range").selectOption("30d");
-  await row(page, SAMPLE_DONE).click();
+  await openRow(page, SAMPLE_DONE);
   const panel = drawer(page);
   const diffTab = panel.getByRole("tab", { name: "Diff" });
   await diffTab.waitFor();
@@ -206,7 +206,7 @@ flow(
     await drawer(page).getByRole("button", { name: "Close" }).click();
 
     // Before Merge, Diff shows the branch against the commit the item started from.
-    await row(page, MERGE_TITLE).click();
+    await openRow(page, MERGE_TITLE);
     await drawer(page).getByRole("tab", { name: "Diff" }).click();
     const base = git(repoPath, "rev-parse", "--short=7", "main");
     await expect.poll(() => diffHead(drawer(page)).catch(() => []), { message: "the not-merged header", timeout: 20_000 }).toEqual([

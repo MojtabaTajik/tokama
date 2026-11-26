@@ -37,6 +37,7 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
     if (q.type === "setup") return { ok: true, data: setup };
     if (q.type === "board") return { ok: true, data: board([...listed.values()]) };
     if (q.type === "item_list") return { ok: true, data: itemList([...listed.values()], q as unknown as ListQuery) };
+    if (q.type === "item_diff") return { ok: true, data: { kind: "none" } };
     const item = q.type === "item" ? boardItems.find((candidate) => candidate.id === q.itemId) : undefined;
     if (item) return { ok: true, data: { item } };
     return { ok: false, error: { code: "not_implemented", message: q.type } };

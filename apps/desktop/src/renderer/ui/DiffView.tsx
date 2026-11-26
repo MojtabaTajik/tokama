@@ -225,30 +225,30 @@ export function DiffTab({ state, baseBranch, layout = "drawer", onExpand, by, he
   return (
     <div className="dv" data-layout={layout}>
       {header ?? (
-      <p className="dv-summary">
-        <span>
-          <span className="mono dv-strong">{diff.files.length + diff.moreFiles}</span> {diff.files.length + diff.moreFiles === 1 ? "file" : "files"}
-        </span>
-        <span className="mono">
-          <span className="dv-added">+{count(sum.added)}</span> <span className="dv-removed">−{count(sum.removed)}</span>
-        </span>
-        <span className="dv-muted" aria-hidden="true">
-          ·
-        </span>
-        {diff.worktree !== undefined && (
-          <>
-            <span className="mono dv-branch">{diff.worktree.branch}</span>
-            <span className="dv-muted">
-              {TEXT.from(baseBranch ?? "the base")} <span className="mono">{diff.worktree.baseCommit.slice(0, 7)}</span>
-            </span>
-          </>
-        )}
-        {by !== undefined && (
-          <span className="dv-by">
-            {TEXT.by} {by}
+        <p className="dv-summary">
+          <span>
+            <span className="mono dv-strong">{diff.files.length + diff.moreFiles}</span> {diff.files.length + diff.moreFiles === 1 ? "file" : "files"}
           </span>
-        )}
-      </p>
+          <span className="mono">
+            <span className="dv-added">+{count(sum.added)}</span> <span className="dv-removed">−{count(sum.removed)}</span>
+          </span>
+          <span className="dv-muted" aria-hidden="true">
+            ·
+          </span>
+          {diff.worktree !== undefined && (
+            <>
+              <span className="mono dv-branch">{diff.worktree.branch}</span>
+              <span className="dv-muted">
+                {TEXT.from(baseBranch ?? "the base")} <span className="mono">{diff.worktree.baseCommit.slice(0, 7)}</span>
+              </span>
+            </>
+          )}
+          {by !== undefined && (
+            <span className="dv-by">
+              {TEXT.by} {by}
+            </span>
+          )}
+        </p>
       )}
       <ul className="dv-files" aria-label={TEXT.changedFiles}>
         {diff.files.map((candidate, index) => {
