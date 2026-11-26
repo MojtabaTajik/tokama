@@ -102,7 +102,7 @@ const seed = (running: number | undefined) => async (_home: string, tmp: string)
   fake = await startFakeEngine(engineDir(tmp), running);
 };
 
-const QUESTION = "An older Tokama engine is still running. Restart it?";
+const QUESTION = "An older engine is still running";
 
 flow(
   "replaces an idle older engine by itself with a shutdown request, and connects to the new one",
@@ -124,11 +124,13 @@ flow(
     await failure.getByText(QUESTION).waitFor();
     expect(await failure.getByRole("button").allInnerTexts()).toEqual(["Restart engine now", "Try again"]);
     expect(await failure.locator(".log").innerText()).toContain(`pid   ${fake?.child.pid}`);
+    await failure.getByText("it is running 3 items. This version can’t use it.").waitFor();
     await screenshot("103-older-engine-busy");
 
-    // Still busy: the question stays, and nothing was sent to stop it.
+    // Still busy: the question stays, says when it checked, and nothing was sent to stop it.
     await failure.getByRole("button", { name: "Try again" }).click();
     await failure.getByText(QUESTION).waitFor();
+    await failure.getByText(/^Checked at \d\d:\d\d\. Not finished yet\.$/).waitFor();
     expect(fake?.messages).not.toContain("shutdown");
 
     if (fake !== undefined) fake.running = 0;

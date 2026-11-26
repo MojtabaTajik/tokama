@@ -149,7 +149,9 @@ describe("watchConnection", () => {
       watcher.retry();
       await settle();
       expect(stop).not.toHaveBeenCalled();
-      expect(watcher.state()).toMatchObject({ status: "failed", reason: OLDER_TEXT, older: { runningItems: 1 } });
+      // Only the check the user asked for says when it was made.
+      expect(watcher.state()).toMatchObject({ status: "failed", reason: OLDER_TEXT, older: { runningItems: 1, checkedAt: expect.any(Number) } });
+      expect(states.find((s) => s.status === "failed")).not.toHaveProperty("older.checkedAt");
       watcher.retry();
       await settle();
       await settle();
@@ -182,7 +184,7 @@ describe("watchConnection", () => {
       await settle();
       expect(watcher.state()).toEqual({
         status: "failed",
-        reason: "The older Tokama engine (pid 4821) did not stop. Lock: /run/tokama/engine.lock. Press Retry to try again.",
+        reason: "The older Tokama engine (pid 4821) did not stop. Press Try again.",
         logPath: "/run/tokama/engine.log",
         logTail: [],
       });

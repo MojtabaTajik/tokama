@@ -9,7 +9,7 @@ import { WorkArea } from "../list/WorkArea.js";
 import { ALL_WORK, finishedIn, inView, summaryOf } from "../model.js";
 import type { AgentTarget } from "../settings/describe.js";
 import type { Layout, ViewState } from "../useViewState.js";
-import { ConnectionFailure, startingWords } from "./ConnectionStatus.js";
+import { ConnectionFailure, EngineChip, startingWords, UpdatingEngine } from "./ConnectionStatus.js";
 import { FirstLaunch, NoWork } from "./EmptyStates.js";
 import { RepoIcon } from "../ui/icons.js";
 import { TemplateIcon } from "./TemplateIcon.js";
@@ -86,6 +86,7 @@ export function MainArea(props: MainAreaProps) {
             </ol>
           </nav>
         )}
+        <EngineChip state={props.connection} restartable={props.onRestartEngine !== undefined} />
         {setup !== undefined && <span className="summary mono">{summaryOf(props.items.filter((item) => inView(item, view)), props.counts.filter((row) => inView(row, view)), props.now)}</span>}
         {template !== undefined && <LayoutSwitch layout={views.layout} onChange={views.setLayout} />}
       </header>
@@ -120,6 +121,7 @@ function Body(props: MainAreaProps & { readonly template: Setup["templates"][num
       />
     );
   }
+  if (connection.status === "starting" && connection.updating === true) return <UpdatingEngine />;
   const scoped = items.filter((item) => inView(item, views.view));
   const scopedCounts = counts.filter((row) => inView(row, views.view));
   const finished = finishedIn(scopedCounts, "all", now);

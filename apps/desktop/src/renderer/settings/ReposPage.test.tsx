@@ -204,7 +204,7 @@ describe("Repos page", () => {
     const fake = await mount({ connection: failed });
     expect(text(".rp-state")).toContain("The engine stopped.");
     expect(rows()).toHaveLength(0);
-    await click(buttonByText("Retry"));
+    await click(buttonByText("Try again"));
     expect(fake.retryConnection).toHaveBeenCalledTimes(1);
   });
 });

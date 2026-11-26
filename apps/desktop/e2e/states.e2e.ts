@@ -26,7 +26,7 @@ flow(
 );
 
 flow(
-  "an engine that cannot start shows the reason, the log path and Retry",
+  "an engine that cannot start shows the reason, the log path and Try again",
   async ({ page, connection, screenshot }) => {
     const failure = page.locator(".board .failure");
     await failure.waitFor();
@@ -43,7 +43,7 @@ flow(
       (globalThis as unknown as { seen: string[] }).seen = [];
       bridge.onConnection((next) => (globalThis as unknown as { seen: string[] }).seen.push(next.status));
     });
-    await failure.getByRole("button", { name: "Retry" }).click();
+    await failure.getByRole("button", { name: "Try again" }).click();
     await expect.poll(() => page.evaluate(() => (globalThis as unknown as { seen: string[] }).seen)).toEqual(["starting", "failed"]);
     await failure.waitFor();
     expect(await failure.innerText()).toContain("node was not found on PATH");

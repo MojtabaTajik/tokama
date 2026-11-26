@@ -16,6 +16,49 @@
   color: var(--fail);
 }
 
+.failure.updating .failure-title .symbol {
+  color: var(--live);
+}
+
+/* The state in one line above a screen's title: a symbol and a word, in the state's colour. */
+.failure-kicker {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--fail);
+}
+
+.failure-kicker[data-tone="warn"] {
+  color: var(--warn);
+}
+
+.older-actions {
+  display: flex;
+  gap: var(--space-8);
+  margin-top: var(--space-12);
+}
+
+.older-checked {
+  margin-top: var(--space-8);
+  color: var(--muted);
+}
+
+/* The main header's engine chip: an older engine waits for the user, or the engine is updating. */
+.engine-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.engine-chip[data-tone="warn"] {
+  color: var(--warn);
+}
+
+.engine-chip[data-tone="live"] .symbol {
+  color: var(--live);
+}
+
 /* A one-line failure inside a panel, without Retry: ✕ and what went wrong. */
 .inline-error {
   margin-bottom: var(--space-4);

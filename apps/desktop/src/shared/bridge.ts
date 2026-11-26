@@ -26,6 +26,8 @@ export type ConnectionState =
 export interface OlderEngine {
   /** Items it runs now; absent when it is too old to say. */
   readonly runningItems?: number;
+  /** When the user pressed Try again and the engine was found busy still, epoch ms. */
+  readonly checkedAt?: number;
   readonly lockPath: string;
   /** The pid in its lock, when it could be read. */
   readonly pid?: number;

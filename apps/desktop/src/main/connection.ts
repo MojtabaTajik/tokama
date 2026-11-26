@@ -69,7 +69,7 @@ type Mode = "ask" | "now";
 
 const OLDER = "An older Tokama engine is still running. Restart it?";
 const NEWER =
-  "A newer Tokama engine is running, and this app is older. Tokama never stops a newer engine. Update the app, or quit that engine yourself, then press Retry.";
+  "A newer Tokama engine is running, and this app is older. Tokama never stops a newer engine. Update the app, or quit that engine yourself, then press Try again.";
 
 /**
  * Connects, then follows the client's events: a lost connection is "reconnecting" until the
@@ -82,6 +82,8 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
   let suspended = false;
   // Each attempt has its own number; a follower of an earlier attempt's client stops hearing events.
   let attempt = 0;
+  // The attempt the user started with Try again: only that one says when it checked.
+  let checkedAttempt: number | undefined;
 
   const set = (next: ConnectionState) => {
     state = next;
@@ -109,7 +111,11 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
     const engineId = probedEngineId ?? lockedEngineId;
     // Right after a replace, an older engine again is not replaced again without asking.
     if (!replaced && (mode === "now" || engine.runningItems === 0)) return replace(stopEngine, mine, { engineId, engine, ifIdle: mode !== "now" });
-    fail(OLDER, { ...lock, ...(engine.runningItems !== undefined && { runningItems: engine.runningItems }) });
+    fail(OLDER, {
+      ...lock,
+      ...(engine.runningItems !== undefined && { runningItems: engine.runningItems }),
+      ...(checkedAttempt === mine && { checkedAt: Date.now() }),
+    });
   };
 
   const replace = async (stopEngine: NonNullable<WatchOptions["stopEngine"]>, mine: number, request: StopRequest): Promise<void> => {
@@ -124,7 +130,7 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
       case "refused":
         return run(mine, "ask", true);
       case "still_running":
-        return fail(`The older Tokama engine${outcome.pid === undefined ? "" : ` (pid ${outcome.pid})`} did not stop. Lock: ${options.olderLock?.().lockPath ?? "unknown"}. Press Retry to try again.`);
+        return fail(`The older Tokama engine${outcome.pid === undefined ? "" : ` (pid ${outcome.pid})`} did not stop. Press Try again.`);
     }
   };
 
@@ -178,6 +184,8 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
     client: () => (state.status === "connected" || state.status === "reconnecting" ? client : undefined),
     retry: () => {
       if (closed || state.status !== "failed") return;
+      // The attempt this starts: the screen then says when it was checked.
+      checkedAttempt = attempt + 1;
       again("ask");
     },
     restartEngine: () => {
