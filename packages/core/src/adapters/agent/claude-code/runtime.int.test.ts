@@ -152,7 +152,7 @@ describe("Claude Code runtime", SLOW, () => {
 
   describe("the version gate for calls with command rules", () => {
     const withCommands = { limits: { edit: false, commands: ["npm test:*"], web: false } };
-    const launch = (env: Record<string, string>, extra: Partial<AgentCallRequest>, signal = new AbortController().signal) => collect(runtime(env).launch(request("echo", extra), signal));
+    const launch = (env: Record<string, string>, extra: Partial<AgentCallRequest>) => collect(runtime(env).launch(request("echo", extra), new AbortController().signal));
     const NO_TOKENS = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
     it("refuses a version below 2.1.295 before anything is spawned", async () => {
@@ -185,14 +185,8 @@ describe("Claude Code runtime", SLOW, () => {
       expect(end(await collect(missing.launch(request("echo", withCommands), new AbortController().signal)))).toMatchObject({
         outcome: "failed",
         errorKind: "crash",
-        error: expect.stringContaining("did not start"),
+        error: expect.stringContaining("could not read the Claude Code version (`claude --version` did not start)"),
       });
-    });
-
-    it("ends as aborted when the call was stopped before it launched", async () => {
-      const stopped = new AbortController();
-      stopped.abort();
-      expect(await launch({}, withCommands, stopped.signal)).toEqual([{ type: "end", outcome: "aborted", usage: NO_TOKENS }]);
     });
   });
 

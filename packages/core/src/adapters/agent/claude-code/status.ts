@@ -51,7 +51,7 @@ export async function claudeCodeStatus(options: ClaudeCodeStatusOptions = {}): P
     const ready = { ...withVersion, installed: true, loggedIn: true };
     const parsed = parseVersion(version.out);
     if (commandRulesProblem(parsed) === undefined) return ready;
-    return { ...ready, message: parsed === undefined ? UNREADABLE_VERSION : `Claude Code ${shown} is older than ${COMMAND_RULES_FROM}. Steps that run commands will fail until you update it (for example with \`claude update\`).` };
+    return { ...ready, message: parsed === undefined ? UNREADABLE_VERSION : `Claude Code ${parsed} is older than ${COMMAND_RULES_FROM}. Steps that run commands will fail until you update it (for example with \`claude update\`).` };
   }
   return { ...withVersion, installed: true, loggedIn: false, message: `Claude Code is not logged in. ${LOGIN_HINT}` };
 }
