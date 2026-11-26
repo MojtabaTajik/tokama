@@ -10,7 +10,7 @@ import { execFile } from "node:child_process";
 import { sleep, systemClock, type Clock } from "../clock/index.js";
 import { hasCode } from "../errno/index.js";
 import { LSTART, parseLstart } from "./leftover.js";
-import { readPidFile } from "./pid-file.js";
+import { pidAlive, readPidFile, type PidFile } from "./pid-file.js";
 
 /** The engine dir's lock: `<pid> <engineId>`. */
 export interface EngineLock {
@@ -80,6 +80,29 @@ export function readEngineLock(lockPath: string): EngineLock | undefined {
   if (read?.pid === undefined || read.fields.length !== 2) return undefined;
   const engineId = read.fields[1] ?? "";
   return engineId.length > 128 ? undefined : { pid: read.pid, engineId, writtenAt: read.writtenAt };
+}
+
+// A lock that names no pid yet is still being written, unless it is older than this (its writer
+// then died between creating and writing it).
+const LOCK_WRITE_GRACE_MS = 10_000;
+// `ps` gives start times to the second, and on Linux they can be off by about a second more.
+const START_TIME_SLACK_MS = 2_000;
+
+/**
+ * True while the process that wrote a lock still runs, however long its engine takes to start
+ * (a large item log, a board index rebuild, a slow disk). The writer is the process with the
+ * lock's pid that started no later than the lock was written; a process that started later took
+ * the pid over after the engine died. When the start time cannot be read, the writer counts as
+ * live: a refused start is safe, two engines on one home are not. A lock with no pid yet counts as
+ * live for a short grace. An engine refuses to start while this is true, so a client waits.
+ */
+export async function lockWriterLive(lock: PidFile, processes: EngineProcesses, now = Date.now()): Promise<boolean> {
+  if (lock.pid === undefined) return now - lock.writtenAt < LOCK_WRITE_GRACE_MS;
+  if (!pidAlive(lock.pid)) return false;
+  const info = await processes.describe(lock.pid).catch(() => "unknown" as const);
+  // Nothing read: the process has exited since, or ps printed something unexpected.
+  if (info === undefined) return pidAlive(lock.pid);
+  return info === "unknown" || info.startedAt <= lock.writtenAt + START_TIME_SLACK_MS;
 }
 
 export async function verifyOwnEngine(engine: OwnEngine, processes: EngineProcesses, selfPid = process.pid): Promise<VerifyOutcome> {

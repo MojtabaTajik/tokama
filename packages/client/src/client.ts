@@ -9,10 +9,13 @@
 // because commands are not idempotent.
 //
 // Starts are bounded: after MAX_STARTS starts in a row without a connection (with a growing delay
-// between them) the client gives up with `start_failed`. No engine is started while the one started
-// last is still running and booting (up to a grace period). A started engine's output goes to
-// `engine.log` in the engine dir; if it exits before a connection (other than with code 3, "an
-// engine already runs"), the client gives up at once and names the exit code and the log.
+// between them) the client gives up with `start_failed`. No engine is started while an engine that
+// is still starting holds the engine dir's lock (another one would only exit with code 3, "an
+// engine already runs"): the client waits for it, past the start timeout, up to `startingLimitMs`,
+// then gives up and names its pid. Nor is one started while the one started last is still running
+// and has not taken the lock yet (up to a grace period). A started engine's output goes to
+// `engine.log` in the engine dir; if it exits before a connection (other than with code 3), the
+// client gives up at once and names the exit code and the log.
 import { mkdirSync, readFileSync } from "node:fs";
 import { connect as connectSocket, type Socket } from "node:net";
 import { homedir } from "node:os";
@@ -41,6 +44,11 @@ import {
   parseServerMessage,
   spawnDetached,
   parseShutdownReply,
+  pidAlive,
+  type PidFile,
+  posixEngineProcesses,
+  readPidFile,
+  lockWriterLive,
   type QueryInput,
   type QueryResult,
   type QueryType,
@@ -60,8 +68,13 @@ export interface ConnectOptions {
   readonly dir?: string;
   /** How to start the engine when it is not running. Without it, the client never starts one. */
   readonly start?: EngineCommand;
-  /** How long connect() waits for a started engine. Default 10 s. */
+  /** How long connect() waits for a started engine. Default 10 s; longer while an engine is still starting (see `startingLimitMs`). */
   readonly startTimeoutMs?: number;
+  /**
+   * How long the client waits for an engine that holds the engine dir's lock but does not answer
+   * yet (it is still starting) before it gives up with `start_failed`. Default 2 min.
+   */
+  readonly startingLimitMs?: number;
   /** Default timeout of one request. Default 30 s. */
   readonly requestTimeoutMs?: number;
   /** Reconnect after a lost connection. Default true. */
@@ -132,8 +145,9 @@ const ATTEMPT_TIMEOUT_MS = 2_000;
 const MAX_STARTS = 5;
 /** Delay before the second start; it doubles for each further start (200 ms ... 3.2 s). */
 const START_BACKOFF_MS = 200;
-/** How long an engine that is still running may take to serve before it counts as hung and another is started. */
+/** How long an engine this client started may run without taking the lock before another is started. */
 const STARTING_GRACE_MS = 10_000;
+const STARTING_LIMIT_MS = 120_000;
 /** Exit code of an engine that found another engine running: not a failure. */
 const EXIT_ALREADY_RUNNING = 3;
 
@@ -173,6 +187,10 @@ class Client implements EngineClient {
   /** The engine this client started and has not connected to yet. */
   private child: ChildProcess | undefined;
   private startError: string | undefined;
+  /** The lock of an engine that is still starting, and since when the client has waited for it. */
+  private waiting: { readonly lock: PidFile; readonly since: number } | undefined;
+  /** The last lock whose writer's start time was read, and whether that writer was live. */
+  private checked: { readonly lock: PidFile; readonly live: boolean } | undefined;
   private readonly wakeups = new Set<() => void>();
 
   constructor(
@@ -182,11 +200,14 @@ class Client implements EngineClient {
 
   /** First connection: start the engine if needed and wait for it. */
   async open(): Promise<Result<void, ConnectError>> {
-    const deadline = Date.now() + (this.options.startTimeoutMs ?? 10_000);
+    const timeoutMs = this.options.startTimeoutMs ?? 10_000;
+    let deadline = Date.now() + timeoutMs;
     for (;;) {
       const attempt = await this.attempt();
       if (attempt.ok || TERMINAL.has(attempt.error.code)) return attempt;
       if (!this.options.start) return attempt;
+      // While an engine is still starting the timeout does not run; once it is gone, a full one starts.
+      if (attempt.error.code === "not_running" && this.waiting !== undefined) deadline = Date.now() + timeoutMs;
       if (Date.now() >= deadline) return err({ code: "timeout", message: `the engine did not start: ${attempt.error.message}` });
       await this.sleep(50);
     }
@@ -304,13 +325,26 @@ class Client implements EngineClient {
       this.engineId = session.value.engineId;
       this.starts = 0;
       this.child = undefined;
+      this.waiting = undefined;
       return ok(undefined);
     }
     const start = this.options.start;
     if (session.error.code !== "not_running" || !start) return session;
-    // The engine started last is still running, so it is still booting: on a loaded machine that takes
-    // seconds. Another engine started meanwhile boots as slowly and can take the dir over once the
-    // first one stops. Another engine is started only when this one has not served within STARTING_GRACE_MS.
+    // An engine that holds the lock is still starting (a large item log, a slow disk): another one
+    // would only exit with code 3, so the client waits, without counting a start.
+    if (await this.engineStarting()) {
+      const limitMs = this.options.startingLimitMs ?? STARTING_LIMIT_MS;
+      const waiting = this.waiting;
+      // At the limit the start time is read again: the pid may belong to another process by now.
+      if (waiting !== undefined && Date.now() - waiting.since >= limitMs && (await this.engineStarting(true))) {
+        const pid = waiting.lock.pid ?? "unknown";
+        return err({ code: "start_failed", message: `the engine (pid ${pid}) has been starting for ${Math.round(limitMs / 1000)} s and does not answer; see ${this.endpoint.logPath}` });
+      }
+      if (this.waiting !== undefined) return session;
+    }
+    // The engine started last is still running but has not taken the lock yet: on a loaded machine
+    // that takes seconds. Another engine started meanwhile could take the dir over once the first
+    // one stops. Another engine is started only when this one has not taken it within STARTING_GRACE_MS.
     if (this.child !== undefined && this.child.exitCode === null && this.child.signalCode === null && Date.now() - this.lastStart < STARTING_GRACE_MS) return session;
     // The first start is immediate; each further one waits twice as long as the one before.
     const delay = this.starts === 0 ? 0 : START_BACKOFF_MS * 2 ** (this.starts - 1);
@@ -322,6 +356,26 @@ class Client implements EngineClient {
     this.starts++;
     const started = this.startEngine(start);
     return started.ok ? session : started;
+  }
+
+  /** True while an engine that is still starting holds the engine dir's lock; tracks how long the client has waited for it. */
+  private async engineStarting(recheck = false): Promise<boolean> {
+    const lock = readPidFile(this.endpoint.lockPath);
+    const sameLock = (other: PidFile | undefined) => lock !== undefined && other !== undefined && other.pid === lock.pid && other.writtenAt === lock.writtenAt;
+    const checked = this.checked;
+    let live = false;
+    if (lock !== undefined) {
+      // The start time is read once per lock (`ps` is slow, and this runs every 50 ms); after that a
+      // live pid is enough. A lock with no pid yet needs no `ps`.
+      if (!recheck && lock.pid !== undefined && checked !== undefined && sameLock(checked.lock)) live = checked.live && pidAlive(lock.pid);
+      else {
+        live = await lockWriterLive(lock, posixEngineProcesses);
+        this.checked = { lock, live };
+      }
+    }
+    if (!live) this.waiting = undefined;
+    else if (!sameLock(this.waiting?.lock) && lock !== undefined) this.waiting = { lock, since: Date.now() };
+    return live;
   }
 
   private startEngine(start: EngineCommand): Result<void, ConnectError> {

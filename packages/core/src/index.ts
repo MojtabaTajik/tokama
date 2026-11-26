@@ -51,6 +51,7 @@ export {
 export { posixProcessTable, type LeftoverOutcome, type ProcessInfo, type ProcessTable } from "./kernel/process/leftover.js";
 // Stopping this app's own older engine, for the desktop app after an update.
 export {
+  lockWriterLive,
   posixEngineProcesses,
   readEngineLock,
   stopOwnEngine,

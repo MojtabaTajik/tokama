@@ -1,7 +1,7 @@
 // Client behavior against fake engines. The full client-engine tests live in apps/engine.
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
-import { createServer, type Server } from "node:net";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -209,6 +209,99 @@ describe("@tokama/client", () => {
     const start = { command: process.execPath, args: ["-e", engine], env: { ...process.env, STARTS: starts, DIR: dir } };
     expect(await connect({ dir, start, startTimeoutMs: 10_000 })).toMatchObject({ ok: false, error: { code: "unsupported_version" } });
     expect(readFileSync(starts, "utf8")).toBe("start\n");
+  });
+
+  // An engine that behaves like the real one around its lock: it exits 3 while the lock names a live
+  // pid, and otherwise takes the lock and only listens after DELAY ms (a slow start).
+  function slowEngine(dir: string, delayMs: number) {
+    const starts = join(tempDir(), "starts");
+    const pids = join(tempDir(), "pids");
+    const engine = `const fs = require("fs"), net = require("net"), path = require("path");
+      const dir = process.env.DIR, lock = path.join(dir, "engine.lock");
+      fs.appendFileSync(process.env.PIDS, process.pid + "\\n");
+      const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+      try {
+        fs.writeFileSync(lock, process.pid + " e-slow\\n", { flag: "wx", mode: 0o600 });
+      } catch {
+        const pid = Number(fs.readFileSync(lock, "utf8").split(" ")[0]);
+        if (alive(pid)) { fs.appendFileSync(process.env.STARTS, "refused\\n"); process.exit(3); }
+        fs.writeFileSync(lock, process.pid + " e-slow\\n", { mode: 0o600 });
+      }
+      fs.appendFileSync(process.env.STARTS, "start\\n");
+      setTimeout(() => process.exit(0), 90_000);
+      setTimeout(() => {
+        fs.writeFileSync(path.join(dir, "engine.token"), "t0k");
+        const welcome = JSON.stringify({ kind: "welcome", apiVersion: Number(process.env.API), engineId: "e-slow" }) + "\\n";
+        net.createServer((socket) => { socket.once("data", () => socket.write(welcome)); socket.on("error", () => {}); }).listen(path.join(dir, "engine.sock"));
+      }, Number(process.env.DELAY));`;
+    // Only the fake engines' own pids, each while it still runs: it ends itself after 90 s.
+    cleanups.push(() => {
+      for (const pid of readFileSync(pids, { encoding: "utf8", flag: "a+" }).split("\n").filter(Boolean).map(Number)) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // Already gone.
+        }
+      }
+    });
+    const start = { command: process.execPath, args: ["-e", engine], env: { ...process.env, STARTS: starts, PIDS: pids, DIR: dir, DELAY: String(delayMs), API: String(API_VERSION) } };
+    return { start, starts: () => readFileSync(starts, { encoding: "utf8", flag: "a+" }) };
+  }
+
+  // Bug #204: the client started more engines once its own had not served within 10 s. They exited 3
+  // against the engine that was still starting, and the client gave up with start_failed.
+  it("waits for an engine that holds the lock and starts for 30 s, and starts no other", { timeout: 60_000 }, async () => {
+    const dir = `${tempDir()}/run`;
+    const engine = slowEngine(dir, 30_000);
+    const connected = await connect({ dir, start: engine.start, startTimeoutMs: 10_000 });
+    if (!connected.ok) throw new Error(connected.error.message);
+    cleanups.push(() => connected.value.close());
+    expect(connected.value.engineId).toBe("e-slow");
+    expect(engine.starts()).toBe("start\n");
+  });
+
+  it("on reconnect, waits for an engine that is still starting instead of failing", { timeout: 60_000 }, async () => {
+    const dir = `${tempDir()}/run`;
+    mkdirSync(dir, { mode: 0o700 });
+    writeFileSync(join(dir, "engine.token"), "t0k");
+    const sockets = new Set<Socket>();
+    const first = createServer((socket) => {
+      sockets.add(socket);
+      socket.once("data", () => socket.write(`${JSON.stringify({ kind: "welcome", apiVersion: API_VERSION, engineId: "e-first" })}\n`));
+      socket.on("error", () => {});
+    });
+    await new Promise<void>((resolve) => first.listen(join(dir, "engine.sock"), resolve));
+    const engine = slowEngine(dir, 15_000);
+    const connected = await connect({ dir, start: engine.start });
+    if (!connected.ok) throw new Error(connected.error.message);
+    cleanups.push(() => connected.value.close());
+    const events: string[] = [];
+    const done = (async () => {
+      for await (const event of connected.value.events()) {
+        events.push(event.kind);
+        if (event.kind === "reconnected" || event.kind === "failed") return event;
+      }
+      return undefined;
+    })();
+
+    await new Promise<void>((resolve) => {
+      first.close(() => resolve());
+      for (const socket of sockets) socket.destroy();
+    });
+    expect(await done).toEqual({ kind: "reconnected", engineId: "e-slow" });
+    expect(events).toEqual(["disconnected", "reconnected"]);
+    expect(engine.starts()).toBe("start\n");
+  });
+
+  it("gives up on an engine that holds the lock and never answers, naming its pid, and starts none", async () => {
+    const dir = `${tempDir()}/run`;
+    mkdirSync(dir, { mode: 0o700 });
+    // This process wrote the lock and never listens.
+    writeFileSync(join(dir, "engine.lock"), `${process.pid} e-hung\n`, { mode: 0o600 });
+    const engine = slowEngine(dir, 0);
+    const connected = await connect({ dir, start: engine.start, startTimeoutMs: 500, startingLimitMs: 1_000 });
+    expect(connected).toMatchObject({ ok: false, error: { code: "start_failed", message: expect.stringContaining(`pid ${process.pid}`) } });
+    expect(engine.starts()).toBe("");
   });
 
   // Bug #75: Electron on Linux leaves pipes open in its children; an engine that kept them held the

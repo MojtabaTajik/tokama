@@ -1,8 +1,9 @@
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { parseDescribe, readEngineLock, stopOwnEngine, verifyOwnEngine, type EngineProcesses, type OwnEngine } from "./own-engine.js";
+import { lockWriterLive, parseDescribe, readEngineLock, stopOwnEngine, verifyOwnEngine, type EngineProcesses, type OwnEngine } from "./own-engine.js";
 
 const DIR = "/home/dev/.tokama/run";
 const END = `/engine/dist/main.js --dir ${DIR}`;
@@ -63,6 +64,35 @@ describe("readEngineLock", () => {
     expect(readEngineLock(engine.lockPath)).toBeUndefined();
     writeLock(engine.lockPath, `-5 e-1\n`);
     expect(readEngineLock(engine.lockPath)).toBeUndefined();
+  });
+});
+
+describe("lockWriterLive", () => {
+  // pidAlive is real: this process stands in for a live writer.
+  const lock = (pid: number | undefined, writtenAt = LOCK_WRITTEN) => ({ pid, fields: pid === undefined ? [] : [String(pid)], writtenAt });
+  const startedAt = (at: number) => fakeProcesses({ [process.pid]: { startedAt: at, command: ENGINE_LINE } }).table;
+
+  it("is live for a writer that started before the lock was written, however long ago that was", async () => {
+    expect(await lockWriterLive(lock(process.pid), startedAt(STARTED), LOCK_WRITTEN + 3_600_000)).toBe(true);
+    // ps rounds start times to the second.
+    expect(await lockWriterLive(lock(process.pid), startedAt(LOCK_WRITTEN + 2_000), LOCK_WRITTEN)).toBe(true);
+  });
+
+  it("is not live for a pid that started after the lock was written (reused), or a dead pid", async () => {
+    expect(await lockWriterLive(lock(process.pid), startedAt(LOCK_WRITTEN + 5_000), LOCK_WRITTEN)).toBe(false);
+    const child = spawnSync(process.execPath, ["-e", ""]);
+    expect(await lockWriterLive(lock(child.pid), startedAt(STARTED), LOCK_WRITTEN)).toBe(false);
+  });
+
+  it("is live when the start time cannot be read", async () => {
+    const unreadable: EngineProcesses = { describe: () => Promise.reject(new Error("ps failed")), signal: () => {} };
+    expect(await lockWriterLive(lock(process.pid), unreadable, LOCK_WRITTEN)).toBe(true);
+  });
+
+  it("is live for a lock with no pid yet only for a short grace", async () => {
+    const { table } = fakeProcesses({});
+    expect(await lockWriterLive(lock(undefined), table, LOCK_WRITTEN + 5_000)).toBe(true);
+    expect(await lockWriterLive(lock(undefined), table, LOCK_WRITTEN + 10_000)).toBe(false);
   });
 });
 
