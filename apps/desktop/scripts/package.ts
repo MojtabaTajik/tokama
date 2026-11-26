@@ -1,15 +1,33 @@
-// Builds Tokama.app for this Mac, ad-hoc signed: `node scripts/package.ts [--dmg]`, run from
-// apps/desktop after `pnpm build` (the root `pnpm package` does both). It stages the engine
-// folder (the bundled engine, the pinned Node and a package.json with the app's version), packs
-// the app with electron-builder, and then checks the result; any failed check ends the script
-// with a message that names it.
+// Builds Tokama.app for this Mac, ad-hoc signed: `node scripts/package.ts [--dmg] [--feed-url <url>]`,
+// run from apps/desktop after `pnpm build` (the root `pnpm package` does both). It stages the
+// engine folder (the bundled engine, the pinned Node and a package.json with the app's version),
+// packs the app with electron-builder, and then checks the result: the ad-hoc signature here, and
+// everything else through verify-package.ts. Any failed check ends the script with a message that
+// names it.
 import { execFileSync, spawnSync } from "node:child_process";
-import { accessSync, constants, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { parseArgs } from "node:util";
+import type { AfterPackContext } from "electron-builder";
 
 const appDir = resolve(import.meta.dirname, "..");
 const repoDir = resolve(appDir, "..", "..");
+
+/** The update feed of the packaged app, as electron-builder.yml has it. */
+export const DEFAULT_FEED_URL = "https://updates.tokama.dev/mac/";
+
+/** Why `url` cannot be the update feed, or undefined when it can: https, a plain host and plain path segments, and a trailing slash. */
+export function feedUrlProblem(url: string): string | undefined {
+  const plain = /^https:\/\/([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*)((?:\/[A-Za-z0-9._~-]+)*)\/$/.exec(url);
+  const dotSegment = (plain?.[2] ?? "").split("/").some((segment) => segment === "." || segment === "..");
+  return plain !== null && !dotSegment ? undefined : `the feed URL must be https, with a plain host and path and a trailing slash, not ${JSON.stringify(url)}`;
+}
+
+/** electron-builder's `afterPack` hook: Electron's own demo app archive is never opened (only the app's archive loads), so it does not ship. */
+export function removeDefaultApp(context: AfterPackContext): void {
+  rmSync(join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`, "Contents", "Resources", "default_app.asar"), { force: true });
+}
 
 /** The app's version: the one source of every version the build writes. It must be plain `x.y.z`, the only form the engine reads back. */
 export function appVersion(dir: string): string {
@@ -35,7 +53,8 @@ function fail(check: string, detail: string): never {
   process.exit(1);
 }
 
-function run(command: string, args: string[], input?: string): { status: number | null; stdout: string; stderr: string } {
+/** Runs a command to the end and returns what it printed; it never throws on a failed exit. */
+export function run(command: string, args: string[], input?: string): { status: number | null; stdout: string; stderr: string } {
   const result = spawnSync(command, args, { encoding: "utf8", ...(input !== undefined && { input }) });
   return { status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 }
@@ -43,7 +62,13 @@ function run(command: string, args: string[], input?: string): { status: number 
 const mb = (path: string) => `${(statSync(path).size / 1024 / 1024).toFixed(0)} MB`;
 
 async function main(): Promise<void> {
-  const dmg = process.argv.includes("--dmg");
+  const { values } = parseArgs({ options: { dmg: { type: "boolean" }, "feed-url": { type: "string" } } });
+  const dmg = values.dmg === true;
+  const feedUrl = values["feed-url"];
+  if (feedUrl !== undefined) {
+    const problem = feedUrlProblem(feedUrl);
+    if (problem !== undefined) fail("feed URL", problem);
+  }
   if (process.platform !== "darwin" || process.arch !== "arm64") {
     process.stderr.write("package: only Apple silicon (macOS arm64) packaging exists so far.\n");
     process.exit(1);
@@ -52,7 +77,7 @@ async function main(): Promise<void> {
   const stage = join(appDir, "package-stage", "engine");
   rmSync(stage, { recursive: true, force: true });
   mkdirSync(stage, { recursive: true });
-  // Child processes rather than imports: a Node-run TypeScript import would need `.ts` specifiers.
+  // Child processes rather than imports: they keep each step's output and exit code apart.
   execFileSync(process.execPath, [join(repoDir, "apps", "engine", "scripts", "bundle.ts"), "--out", join(stage, "dist")], { stdio: "inherit" });
   execFileSync(process.execPath, [join(appDir, "scripts", "fetch-node.ts"), "--out", stage], { stdio: "inherit" });
   writeFileSync(join(stage, "package.json"), engineManifest(appVersion(appDir)));
@@ -67,6 +92,8 @@ async function main(): Promise<void> {
   execFileSync("security", ["create-keychain", "-p", "", keychain], { stdio: "ignore" });
   process.env["CSC_KEYCHAIN"] = keychain;
   process.env["CSC_IDENTITY_AUTO_DISCOVERY"] = "false";
+  // On a pull request run electron-builder skips signing altogether, which would leave Node's own signature on the engine. The signing here is ad-hoc with no certificate, so it is safe to force.
+  process.env["CSC_FOR_PULL_REQUEST"] = "true";
   try {
     const { build, Arch, Platform } = await import("electron-builder");
     await build({
@@ -77,6 +104,8 @@ async function main(): Promise<void> {
         // Ad-hoc on purpose; hardened runtime is off because an ad-hoc signature cannot pass library validation.
         mac: { identity: "-", hardenedRuntime: false, notarize: false },
         dmg: { sign: false },
+        afterPack: removeDefaultApp,
+        ...(feedUrl !== undefined && { publish: { provider: "generic", url: feedUrl } }),
       },
     });
   } finally {
@@ -84,41 +113,12 @@ async function main(): Promise<void> {
     rmSync(keychainDir, { recursive: true, force: true });
   }
 
-  await check(join(appDir, "release", "mac-arm64", "Tokama.app"));
+  check(join(appDir, "release"), dmg, feedUrl ?? DEFAULT_FEED_URL);
 }
 
-async function check(app: string): Promise<void> {
-  const engine = join(app, "Contents", "Resources", "engine");
-  const node = join(engine, "tokama-engine");
-
-  const present = (path: string) => {
-    try {
-      statSync(path);
-    } catch {
-      fail("layout", `${path} is missing`);
-    }
-  };
-  for (const file of ["tokama-engine", "LICENSE-node", "package.json", "dist/main.js", "dist/hook.js"]) present(join(engine, file));
-  for (const file of ["LICENSE-electron", "LICENSES.chromium.html"]) present(join(app, "Contents", "Resources", file));
-  const dist = readdirSync(join(engine, "dist")).sort().join(",");
-  if (dist !== "hook.js,main.js") fail("layout", `engine/dist holds ${dist}`);
-  try {
-    accessSync(node, constants.X_OK);
-  } catch {
-    fail("layout", "tokama-engine is not executable");
-  }
-
-  const nodeVersion = (JSON.parse(readFileSync(join(appDir, "packaging", "node-runtime.json"), "utf8")) as { version: string }).version;
-  const reported = run(node, ["--version"]).stdout.trim();
-  if (reported !== `v${nodeVersion}`) fail("node version", `tokama-engine reports ${reported}, not v${nodeVersion}`);
-
-  const plistVersion = run("plutil", ["-extract", "CFBundleShortVersionString", "raw", "-o", "-", join(app, "Contents", "Info.plist")]).stdout.trim();
-  if (plistVersion !== appVersion(appDir)) fail("version", `the app's Info.plist says ${plistVersion}, package.json ${appVersion(appDir)}`);
-  try {
-    checkEngineVersion(appDir, engine);
-  } catch (error) {
-    fail("version", String(error));
-  }
+function check(release: string, dmg: boolean, feedUrl: string): void {
+  const app = join(release, "mac-arm64", "Tokama.app");
+  const node = join(app, "Contents", "Resources", "engine", "tokama-engine");
 
   // Guard against the keychain's certificate: the app and the Node binary must both be ad-hoc.
   for (const path of [app, node]) {
@@ -130,34 +130,13 @@ async function check(app: string): Promise<void> {
   const verify = run("codesign", ["--verify", "--deep", "--strict", app]);
   if (verify.status !== 0) fail("signature", `codesign --verify: ${verify.stderr}`);
 
-  const { FuseV1Options, getCurrentFuseWire } = await import("@electron/fuses");
-  const wire = await getCurrentFuseWire(join(app, "Contents", "MacOS", "Tokama"));
-  // The wire holds the characters "0" and "1": 48 is off and 49 is on.
-  const ON = 49;
-  const OFF = 48;
-  const expected = [
-    ["RunAsNode", FuseV1Options.RunAsNode, OFF],
-    ["EnableNodeOptionsEnvironmentVariable", FuseV1Options.EnableNodeOptionsEnvironmentVariable, OFF],
-    ["EnableNodeCliInspectArguments", FuseV1Options.EnableNodeCliInspectArguments, OFF],
-    ["EnableEmbeddedAsarIntegrityValidation", FuseV1Options.EnableEmbeddedAsarIntegrityValidation, ON],
-    ["OnlyLoadAppFromAsar", FuseV1Options.OnlyLoadAppFromAsar, ON],
-  ] as const;
-  for (const [name, option, state] of expected) {
-    const actual = wire[option];
-    process.stdout.write(`fuse ${name}: ${actual === ON ? "on" : actual === OFF ? "off" : String(actual)}\n`);
-    if (actual !== state) fail("fuses", `${name} is ${String(actual)}, expected ${state}`);
-  }
-
-  // The hook the bundled Node runs: a command no rule allows is denied.
-  const scratch = mkdtempSync(join(tmpdir(), "tk-package-"));
-  try {
-    const rules = join(scratch, "rules.json");
-    writeFileSync(rules, JSON.stringify({ commands: [] }));
-    const hook = run(node, [join(engine, "dist", "hook.js"), rules], JSON.stringify({ tool_name: "Bash", tool_input: { command: "rm -rf /tmp/x" } }));
-    if (hook.status !== 0 || !hook.stdout.includes('"permissionDecision":"deny"')) fail("hook", `unexpected reply: ${hook.stdout}${hook.stderr}`);
-  } finally {
-    rmSync(scratch, { recursive: true, force: true });
-  }
+  const version = appVersion(appDir);
+  // A build of the app folder alone gets no update feed from electron-builder.
+  const files = dmg
+    ? ["--zip", join(release, `Tokama-${version}-arm64-mac.zip`), "--dmg", join(release, `Tokama-${version}-arm64.dmg`), "--latest", join(release, "latest-mac.yml")]
+    : ["--dir-build"];
+  const verified = spawnSync(process.execPath, [join(appDir, "scripts", "verify-package.ts"), "--unsigned", "--app", app, "--version", version, "--feed-url", feedUrl, ...files], { stdio: "inherit" });
+  if (verified.status !== 0) fail("verify", "verify-package.ts reported failed checks, above");
 
   process.stdout.write(`app: ${app} (${run("du", ["-sh", app]).stdout.split("\t")[0]})\nnode: ${mb(node)}\n`);
 }

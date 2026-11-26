@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { appVersion, checkEngineVersion, engineManifest } from "./package.js";
+import { appVersion, checkEngineVersion, engineManifest, feedUrlProblem } from "./package.js";
 
 let root: string;
 beforeEach(() => void (root = mkdtempSync(join(tmpdir(), "tk-package-test-"))));
@@ -14,6 +14,33 @@ function folder(name: string, version: string): string {
   writeFileSync(join(dir, "package.json"), JSON.stringify({ version }));
   return dir;
 }
+
+describe("feedUrlProblem", () => {
+  it.each(["https://updates.tokama.dev/mac/", "https://example.test/", "https://example.test/a/b-c_d.e~f/", "https://localhost/mac/"])("accepts %s", (url) => {
+    expect(feedUrlProblem(url)).toBeUndefined();
+  });
+
+  it.each([
+    "http://example.test/mac/",
+    "https://example.test/mac",
+    "https://example.test",
+    "https://../",
+    "https://.example.test/",
+    "https://example..test/",
+    "https://example.test/../",
+    "https://example.test/./mac/",
+    "https://example.test/mac//",
+    "https://example.test/mac/?x=1",
+    "https://example.test/mac/#x",
+    "https://user@example.test/mac/",
+    "https://example.test:8443/mac/",
+    "https://exa mple.test/",
+    "https://example.test/mac/\n",
+    "",
+  ])("refuses %j", (url) => {
+    expect(feedUrlProblem(url)).toMatch(/feed URL must be https/);
+  });
+});
 
 describe("engineManifest", () => {
   it("holds the app's version and marks the bundle's files as ES modules", () => {

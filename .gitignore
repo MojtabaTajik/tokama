@@ -14,4 +14,5 @@ CLAUDE.local.md
 /apps/desktop/release/
 /apps/desktop/package-stage/
 /apps/desktop/package-cache/
+/apps/desktop/smoke-output/
 /e2e/e2e-output/

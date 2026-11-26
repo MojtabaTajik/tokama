@@ -25,7 +25,11 @@ extraResources:
   - from: node_modules/electron/dist/LICENSES.chromium.html
     to: LICENSES.chromium.html
 artifactName: ${productName}-${version}-${arch}.${ext}
-publish: null
+# The update feed baked into the app (app-update.yml) and named in latest-mac.yml. Builds run with
+# --publish never, so nothing is uploaded; scripts/package.ts --feed-url replaces the URL.
+publish:
+  provider: generic
+  url: https://updates.tokama.dev/mac/
 # Written into the asar's package.json, so the packaged app's name is "Tokama" (its data folder and
 # single-instance lock); development keeps @tokama/desktop.
 extraMetadata:
@@ -44,9 +48,17 @@ mac:
     - target: zip
       arch: [arm64]
   category: public.app-category.developer-tools
+  # The zip is what the updater downloads; its name carries "-mac" so it differs from the dmg's.
+  artifactName: ${productName}-${version}-${arch}-mac.${ext}
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  # The engine's Node binary is not inside a bundle, so it is named to be signed with the app.
+  binaries:
+    - Contents/Resources/engine/tokama-engine
   notarize: false
 dmg:
   sign: true
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  # latest-mac.yml lists the zip only; the dmg is stapled after the build, so its hash must not appear there.
+  writeUpdateInfo: false
