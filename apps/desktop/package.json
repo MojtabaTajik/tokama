@@ -11,7 +11,9 @@
     "e2e": "install-electron && vitest run --config e2e/vitest.config.ts",
     "icons": "node scripts/make-icons.ts",
     "package": "install-electron && node scripts/package.ts",
-    "package:dmg": "install-electron && node scripts/package.ts --dmg"
+    "package:dmg": "install-electron && node scripts/package.ts --dmg",
+    "verify": "node scripts/verify-package.ts",
+    "smoke": "node scripts/smoke-installed.ts"
   },
   "devDependencies": {
     "@electron/fuses": "1.8.0",

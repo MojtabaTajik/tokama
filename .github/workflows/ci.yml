@@ -85,7 +85,8 @@ jobs:
         # when the run starts: add it, then push (or run the workflow by hand on the branch).
         os: ${{ fromJSON(github.event_name == 'schedule' && '["macos-latest"]' || github.event_name == 'workflow_dispatch' && '["ubuntu-latest", "macos-latest"]' || contains(github.event.pull_request.labels.*.name, 'ci:macos') && '["ubuntu-latest", "macos-latest"]' || '["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    # The macOS job also packages the app and runs it installed.
+    timeout-minutes: ${{ matrix.os == 'macos-latest' && 40 || 20 }}
     steps:
       - name: Docs-only change, nothing to run
         if: needs.plan.outputs.docs_only == 'true'
@@ -140,6 +141,27 @@ jobs:
           else
             pnpm --filter @tokama/desktop e2e
           fi
+      # The packaged app, installed as a user installs it: unsigned (ad-hoc) on CI. The package
+      # step runs the layout, fuse, feed and hook checks on the build and its zip; the smoke test
+      # then installs the dmg and runs the app.
+      - if: runner.os == 'macOS' && needs.plan.outputs.docs_only != 'true'
+        name: Package the app and smoke-test the installed copy
+        env:
+          electron_config_cache: ${{ runner.temp }}/electron-cache
+        run: |
+          pnpm --filter @tokama/desktop package:dmg
+          version=$(node -p "require('./apps/desktop/package.json').version")
+          node apps/desktop/scripts/verify-package.ts --unsigned --app apps/desktop/release/mac-arm64/Tokama.app \
+            --zip "apps/desktop/release/Tokama-$version-arm64-mac.zip" --latest apps/desktop/release/latest-mac.yml \
+            --version "$version" --feed-url https://updates.tokama.dev/mac/
+          node apps/desktop/scripts/smoke-installed.ts --dmg "apps/desktop/release/Tokama-$version-arm64.dmg"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure() && runner.os == 'macOS' && needs.plan.outputs.docs_only != 'true'
+        with:
+          name: smoke-output
+          path: apps/desktop/smoke-output
+          if-no-files-found: ignore
+          retention-days: 14
       # Screenshots of the main screens, and of any failed flow, to check a change without running the app.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && needs.plan.outputs.docs_only != 'true'
