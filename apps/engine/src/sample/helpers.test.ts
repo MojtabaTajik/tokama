@@ -9,7 +9,7 @@ const start = (helpers: SampleHelpers, folder: string, cloud = true) => {
 };
 
 const startTrial = (helpers: SampleHelpers, checks: string[]) => {
-  const reply = helpers.command({ type: "try_checks", path: "/work/orders-api", checks });
+  const reply = helpers.command({ type: "try_checks", path: "/work/orders-api", checks: checks.map((command) => ({ command })) });
   if (!reply.ok) throw new Error(reply.error.message);
   return (reply.value as { trialId: string }).trialId;
 };

@@ -68,8 +68,8 @@ async function advanceTrial(fixture: Fixture, trialId: string, ms: number, updat
   return trialUpdates(fixture.events, trialId);
 }
 
-async function startTrial(client: EngineClient, checks: string[]): Promise<string> {
-  const reply = await client.command({ type: "try_checks", path: "/work/orders-api", checks });
+async function startTrial(client: EngineClient, checks: string[], setup?: string): Promise<string> {
+  const reply = await client.command({ type: "try_checks", path: "/work/orders-api", checks: checks.map((command) => ({ command, minutes: 3 })), ...(setup !== undefined && { setup }) });
   if (!reply.ok) throw new Error(reply.error.message);
   return reply.data.trialId;
 }
@@ -214,11 +214,20 @@ describe("sample helpers", () => {
     expect(JSON.stringify(updates)).not.toMatch(/[<>]/);
   });
 
-  it("has a sample usage row for Tokama helpers", async () => {
+  it("counts the sample helper calls in the usage totals and days, and lists them by helper", async () => {
     const { client } = await sampleEngine();
-    const reply = await client.query({ type: "usage", range: 14 });
+    const reply = await client.query({ type: "usage", range: 14, scope: "tokama" });
     if (!reply.ok) throw new Error(reply.error.message);
-    expect(reply.data.helpers).toEqual([{ helperId: "suggest-checks", tokens: { input: 37_200, output: 1_080, cacheRead: 0, cacheWrite: 0 }, costUsd: 0.04, calls: 6 }]);
+    const report = reply.data;
+    expect(report.helpers).toEqual([{ helperId: "suggest-checks", tokens: { input: 37_200, output: 1_080, cacheRead: 0, cacheWrite: 0 }, costUsd: expect.any(Number), calls: 6 }]);
+    // The list is part of the totals, and the totals, the days, the models and the token summary agree.
+    const sum = (t: { input: number; output: number; cacheRead: number; cacheWrite: number }) => t.input + t.output + t.cacheRead + t.cacheWrite;
+    const total = sum(report.totals.tokens);
+    expect(report.days.reduce((n, day) => n + (day.tokens ?? 0), 0)).toBe(total);
+    expect(report.tokenSummary?.processed).toBe(total);
+    expect(report.models?.reduce((n, model) => n + model.tokens, 0)).toBe(total);
+    // The workflows list only workflows: the totals are their tokens plus the helpers'.
+    expect(total).toBe(report.workflows.reduce((n, workflow) => n + workflow.tokens, 0) + 37_200 + 1_080);
   });
 });
 
@@ -248,13 +257,24 @@ describe("sample Try checks", () => {
     expect(await fixture.client.query({ type: "check_trial", trialId })).toEqual({ ok: true, data: { trial: last } });
   });
 
+  it("shows the setup command it was given on the trial, and has none without one", async () => {
+    const fixture = await sampleEngine();
+    const withSetup = await startTrial(fixture.client, ["pnpm test"], "pnpm install");
+    expect(await fixture.client.query({ type: "check_trial", trialId: withSetup })).toMatchObject({ ok: true, data: { trial: { setup: "pnpm install" } } });
+    await advanceTrial(fixture, withSetup, 300 + 1_200, 3);
+    expect(trialUpdates(fixture.events, withSetup).every((trial) => trial.setup === "pnpm install")).toBe(true);
+    const without = await startTrial(fixture.client, ["pnpm test"]);
+    const trial = await fixture.client.query({ type: "check_trial", trialId: without });
+    expect(trial.ok && trial.data.trial.setup).toBeUndefined();
+  });
+
   it("refuses a second trial while one runs, and takes one after it ends", async () => {
     const fixture = await sampleEngine();
     const trialId = await startTrial(fixture.client, ["pnpm test"]);
-    const second = await fixture.client.command({ type: "try_checks", path: "/work/orders-api", checks: ["pnpm test"] });
+    const second = await fixture.client.command({ type: "try_checks", path: "/work/orders-api", checks: [{ command: "pnpm test" }] });
     expect(second).toEqual({ ok: false, error: { code: "busy", message: "Checks are already being tried. Wait for them to end, or cancel them." } });
     await advanceTrial(fixture, trialId, 300 + 1_200, 3);
-    expect(await fixture.client.command({ type: "try_checks", path: "/work/orders-api", checks: ["pnpm test"] })).toMatchObject({ ok: true });
+    expect(await fixture.client.command({ type: "try_checks", path: "/work/orders-api", checks: [{ command: "pnpm test" }] })).toMatchObject({ ok: true });
   });
 
   it("cancels a trial: the running and waiting checks are skipped", async () => {

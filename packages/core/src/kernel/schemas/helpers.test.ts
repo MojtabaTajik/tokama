@@ -184,6 +184,11 @@ describe("check trial record", () => {
     expect(parse(withOutput("x".repeat(2001)))).toBe(false);
   });
 
+  it("takes the setup command it was given", () => {
+    expect(parse(trial({ setup: "pnpm install" }))).toBe(true);
+    expect(parse(trial({ setup: "x".repeat(MAX_CHECK_CHARS + 1) }))).toBe(false);
+  });
+
   it("takes a short commit and a trial error", () => {
     expect(parse(trial({ commit: "4f9c2ab" }))).toBe(true);
     expect(parse(trial({ commit: "HEAD" }))).toBe(false);
@@ -208,7 +213,7 @@ describe("API messages", () => {
     const commands = [
       { type: "run_helper", run: { helperId: "suggest-checks", input: { path: "/work/orders-api" } }, cloud: "accepted" },
       { type: "cancel_helper", runId: RUN_ID },
-      { type: "try_checks", path: "/work/orders-api", baseBranch: "main", checks: ["pnpm test", "pnpm lint"] },
+      { type: "try_checks", path: "/work/orders-api", baseBranch: "main", setup: "pnpm install", checks: [{ command: "pnpm test", minutes: 3 }, { command: "pnpm lint" }] },
       { type: "cancel_check_trial", trialId: TRIAL_ID },
     ];
     for (const command of commands) expect(parseClientMessage(message({ kind: "command", command }))).toMatchObject({ ok: true, value: { command } });
@@ -217,12 +222,32 @@ describe("API messages", () => {
   });
 
   it("refuses try_checks with no checks, more than 20, an empty command or a long one", () => {
-    const parse = (checks: unknown) => CommandSchema.safeParse({ type: "try_checks", path: "/work/orders-api", checks }).success;
+    const parse = (checks: unknown, more: Record<string, unknown> = {}) => CommandSchema.safeParse({ type: "try_checks", path: "/work/orders-api", checks, ...more }).success;
+    const one = (command: string, more: Record<string, unknown> = {}) => [{ command, ...more }];
     expect(parse([])).toBe(false);
-    expect(parse(Array.from({ length: 21 }, () => "pnpm test"))).toBe(false);
-    expect(parse([""])).toBe(false);
-    expect(parse(["x".repeat(MAX_CHECK_CHARS + 1)])).toBe(false);
-    expect(parse(["pnpm test"])).toBe(true);
+    expect(parse(Array.from({ length: 21 }, () => ({ command: "pnpm test" })))).toBe(false);
+    expect(parse(one(""))).toBe(false);
+    expect(parse(one("x".repeat(MAX_CHECK_CHARS + 1)))).toBe(false);
+    expect(parse(one("pnpm test"))).toBe(true);
+    expect(parse(["pnpm test"])).toBe(false);
+    expect(parse(one("pnpm test", { extra: 1 }))).toBe(false);
+  });
+
+  it("takes the minutes of each check, 1 to 120, whole", () => {
+    const parse = (minutes: unknown) => CommandSchema.safeParse({ type: "try_checks", path: "/work/orders-api", checks: [{ command: "pnpm test", minutes }] }).success;
+    expect(parse(1)).toBe(true);
+    expect(parse(120)).toBe(true);
+    expect(parse(0)).toBe(false);
+    expect(parse(121)).toBe(false);
+    expect(parse(2.5)).toBe(false);
+  });
+
+  it("takes one setup command, not empty and not longer than a check", () => {
+    const parse = (setup: unknown) => CommandSchema.safeParse({ type: "try_checks", path: "/work/orders-api", checks: [{ command: "pnpm test" }], setup }).success;
+    expect(parse("pnpm install")).toBe(true);
+    expect(parse("")).toBe(false);
+    expect(parse("x".repeat(MAX_CHECK_CHARS + 1))).toBe(false);
+    expect(parse(["pnpm install"])).toBe(false);
   });
 
   it("parses each new reply", () => {

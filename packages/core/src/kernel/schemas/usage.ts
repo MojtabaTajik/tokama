@@ -337,8 +337,10 @@ export const UsageReportSchema = z.strictObject({
   scan: LogScanSchema.optional(),
   /**
    * Tokama's own helper calls over the range, most tokens first, whatever the scope. Absent from
-   * older engines. A separate list: whether `totals` also count these calls is up to the engine,
-   * so a client must not add the two.
+   * older engines and when there were none. `totals`, `days[].tokens` and `days[].costUsd`, the
+   * token summary, `models`, `repos` and `today.tokens` already include these calls, so this list
+   * is a breakdown of part of them: never add it on top. `workflows`, `items` and
+   * `days[].workflows` list workflows and their items only.
    */
   helpers: z.array(z.strictObject({ helperId: HelperIdSchema, tokens: TokenUsageSchema, costUsd: cost, calls: z.int().nonnegative() })).max(20).optional(),
 });

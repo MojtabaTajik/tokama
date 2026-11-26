@@ -143,7 +143,7 @@ export class SampleHelpers {
       case "cancel_helper":
         return this.cancelRun(command.runId);
       case "try_checks":
-        return this.tryChecks(command.checks);
+        return this.tryChecks(command.checks.map((check) => check.command), command.setup);
       case "cancel_check_trial":
         return this.cancelTrial(command.trialId);
     }
@@ -209,7 +209,8 @@ export class SampleHelpers {
     this.emit({ type: "helper_run_updated", run: parsed.data });
   }
 
-  private tryChecks(commands: readonly string[]): Result<{ trialId: CheckTrial["trialId"] }, CommandError> {
+  /** `setup` is shown on the trial and not run, like every command here. */
+  private tryChecks(commands: readonly string[], setup?: string): Result<{ trialId: CheckTrial["trialId"] }, CommandError> {
     if (this.trials.running() > 0) return err({ code: "busy", message: "Checks are already being tried. Wait for them to end, or cancel them." });
     const trialId = `trial_${randomUUID()}` as CheckTrial["trialId"];
     const entry = this.trials.add(trialId, {
@@ -217,6 +218,7 @@ export class SampleHelpers {
       state: "running",
       startedAt: this.clock.now(),
       commit: "4f9c2ab",
+      ...(setup !== undefined && { setup }),
       checks: commands.map((command) => ({ command, state: "waiting" })),
     });
     // Each check runs for CHECK_MS (a `slow` one for SAMPLE_SLOW_MS), one after the other.

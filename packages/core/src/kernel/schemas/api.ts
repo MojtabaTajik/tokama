@@ -121,12 +121,16 @@ export const CommandSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("run_helper"), run: HelperRunRequestSchema, cloud: z.literal("accepted").optional() }),
   z.strictObject({ type: z.literal("cancel_helper"), runId: HelperRunIdSchema }),
   // Runs the commands once in a temporary worktree at the base branch. No AI. Replies at once with
-  // the trial id; progress comes in check_trial_updated.
+  // the trial id; progress comes in check_trial_updated. `minutes` is the time the command is
+  // expected to take (a suggestion has it): each command's time limit is three times it, at least
+  // 2 and at most 20 minutes; a command without it gets the usual check limit. `setup` is one
+  // command that runs once before the checks (installing dependencies, say).
   z.strictObject({
     type: z.literal("try_checks"),
     path: folderPath,
     baseBranch: z.string().min(1).max(255).optional(),
-    checks: z.array(checkCommand.min(1)).min(1).max(MAX_TRIAL_CHECKS),
+    checks: z.array(z.strictObject({ command: checkCommand.min(1), minutes: z.int().min(1).max(120).optional() })).min(1).max(MAX_TRIAL_CHECKS),
+    setup: checkCommand.min(1).optional(),
   }),
   z.strictObject({ type: z.literal("cancel_check_trial"), trialId: CheckTrialIdSchema }),
 ]);

@@ -44,7 +44,7 @@ describe("real engine, helpers and Try checks", () => {
     const notImplemented = { ok: false, error: { code: "not_implemented" } };
     expect(await client.command({ type: "run_helper", run: { helperId: "suggest-checks", input: { path: "/work/orders-api" } }, cloud: "accepted" })).toMatchObject(notImplemented);
     expect(await client.command({ type: "cancel_helper", runId: RUN_ID })).toMatchObject(notImplemented);
-    expect(await client.command({ type: "try_checks", path: "/work/orders-api", checks: ["pnpm test"] })).toMatchObject(notImplemented);
+    expect(await client.command({ type: "try_checks", path: "/work/orders-api", checks: [{ command: "pnpm test" }] })).toMatchObject(notImplemented);
     expect(await client.command({ type: "cancel_check_trial", trialId: TRIAL_ID })).toMatchObject(notImplemented);
   });
 

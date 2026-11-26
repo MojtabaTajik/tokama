@@ -119,7 +119,7 @@ import { agentsFor, loadConfig, startProblem, stepProblems } from "./real/config
 import { sampleTemplateLoads } from "./sample/templates.js";
 import { openSampleDiagnostics } from "./sample/diagnostics.js";
 import { sampleMachineReport } from "./sample/machine.js";
-import { sampleClaudePlan, sampleHelperUsage, sampleLogEntries, sampleOtherPlans, sampleUsageRows } from "./sample/usage.js";
+import { sampleClaudePlan, sampleHelperCalls, sampleLogEntries, sampleOtherPlans, sampleUsageRows } from "./sample/usage.js";
 import { ClaudeLogs } from "./claude-logs.js";
 import { claudePlanSources, type PlanSources, UsageService } from "./usage.js";
 import { MemoryItemStore } from "./store.js";
@@ -398,7 +398,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
           rows: () => sampleUsageRows(sample.setup, store.list(), clock.now()),
           sources: { request: async () => ({ ok: true, value: sampleClaudePlan(clock.now()) }) },
           otherClis: sampleOtherPlans,
-          helpers: sampleHelperUsage,
+          helperCalls: () => sampleHelperCalls(clock.now()),
           logs: {
             refresh: () => {},
             status: () => ({ state: "ready", filesDone: 412, filesTotal: 412, asOf: clock.now() - 40_000 }),

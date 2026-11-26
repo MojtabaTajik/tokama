@@ -137,6 +137,8 @@ export const CheckTrialSchema = z
     endedAt: EpochMsSchema.optional(),
     /** The base commit the worktree was made at, short form; absent until the worktree exists. */
     commit: z.string().regex(/^[0-9a-f]{7,64}$/).optional(),
+    /** The setup command the trial was asked to run before its checks, as given. */
+    setup: checkCommand.optional(),
     checks: z
       .array(
         z.strictObject({

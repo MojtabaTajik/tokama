@@ -104,6 +104,7 @@ export {
   summarizeUsage,
   totalTokens,
   type PlanCandidate,
+  type HelperCallRow,
   type PlanReading,
   type UsageEntry,
   type UsageRow,
