@@ -90,6 +90,23 @@
   overflow-y: auto;
 }
 
+/* The foot of the sidebar: the chip slot, with a card above it. It sits at the bottom when the list is short and over the lower part of a long one. */
+.sb-foot {
+  position: sticky;
+  bottom: var(--space-12);
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-8);
+  margin-top: auto;
+  padding-top: var(--space-12);
+}
+
+.sb-foot:empty {
+  padding-top: 0;
+}
+
 .new-work {
   display: flex;
   align-items: center;

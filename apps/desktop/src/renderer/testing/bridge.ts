@@ -5,7 +5,7 @@
 import type { BoardCount, ItemRecord } from "@tokama/core";
 import { act } from "react";
 import { vi } from "vitest";
-import type { AboutInfo, BridgeEvent, ConnectionState, DiagnosticsLoad, DiagnosticsSaveResult, DiagnosticsSendResult, OpenResult, ToolsPathInfo, TokamaBridge } from "../../shared/bridge.js";
+import type { AboutInfo, BridgeEvent, ConnectionState, DiagnosticsLoad, DiagnosticsSaveResult, DiagnosticsSendResult, OpenResult, ToolsPathInfo, TokamaBridge, WhatsNewInfo } from "../../shared/bridge.js";
 import { DEFAULT_DESKTOP_STATE, type DesktopState } from "../../shared/desktop-state.js";
 import { localDay } from "../format/time.js";
 import { bucketOf, isOpen } from "../model.js";
@@ -21,9 +21,12 @@ export const ABOUT_INFO: AboutInfo = {
   platform: "macOS · arm64",
 };
 
+/** No release notes at all: what an app with an empty notes folder reports. */
+export const NO_NOTES: WhatsNewInfo = { appVersion: ABOUT_INFO.app.version, notes: [] };
+
 export const CONNECTED: ConnectionState = { status: "connected", engineId: "e-1" };
 
-export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | Promise<Reply> | undefined; commandReply?: (command: { type: string }) => Reply; pickFolder?: () => Promise<string | null>; openTemplateFile?: () => Promise<OpenResult>; openAttemptFile?: () => Promise<OpenResult>; about?: AboutInfo; toolsPath?: ToolsPathInfo; copyBuildInfo?: () => Promise<void>; showDataFolder?: () => Promise<OpenResult>; desktopState?: DesktopState; loadDiagnostics?: () => Promise<DiagnosticsLoad>; sendDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSendResult>; saveDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSaveResult> } = {}) {
+export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | Promise<Reply> | undefined; commandReply?: (command: { type: string }) => Reply; pickFolder?: () => Promise<string | null>; openTemplateFile?: () => Promise<OpenResult>; openAttemptFile?: () => Promise<OpenResult>; about?: AboutInfo; toolsPath?: ToolsPathInfo; copyBuildInfo?: () => Promise<void>; showDataFolder?: () => Promise<OpenResult>; desktopState?: DesktopState; loadDiagnostics?: () => Promise<DiagnosticsLoad>; sendDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSendResult>; saveDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSaveResult>; whatsNew?: WhatsNewInfo | (() => Promise<WhatsNewInfo>) } = {}) {
   let connectionListener: ((state: ConnectionState) => void) | undefined;
   let openListener: ((itemId: string) => void) | undefined;
   // Every subscriber hears every event: the app and the open drawer both listen.
@@ -77,6 +80,8 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
     sendDiagnostics: vi.fn(options.sendDiagnostics ?? (async (): Promise<DiagnosticsSendResult> => ({ ok: false, reason: "nothing", count: 0 }))),
     saveDiagnostics: vi.fn(options.saveDiagnostics ?? (async (): Promise<DiagnosticsSaveResult> => ({ ok: false, reason: "cancelled" }))),
     stopCrashPrompt: vi.fn(async () => undefined),
+    getWhatsNew: vi.fn(async () => (typeof options.whatsNew === "function" ? options.whatsNew() : (options.whatsNew ?? NO_NOTES))),
+    closeWhatsNew: vi.fn(async () => undefined),
     onEvent: vi.fn((listener: (event: BridgeEvent) => void) => {
       eventListeners.add(listener);
       return () => {
@@ -103,9 +108,11 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
   const saveNotifications = bridge.saveNotifications as unknown as ReturnType<typeof vi.fn>;
   const playSound = bridge.playSound as unknown as ReturnType<typeof vi.fn>;
   const setViewedItem = bridge.setViewedItem as unknown as ReturnType<typeof vi.fn>;
+  const getWhatsNew = bridge.getWhatsNew as unknown as ReturnType<typeof vi.fn>;
+  const closeWhatsNew = bridge.closeWhatsNew as unknown as ReturnType<typeof vi.fn>;
   /** A click on a notification: the main process asks the window to open the item. */
   const openItem = (itemId: string) => act(async () => openListener?.(itemId));
-  return { bridge, query, saveLayout, saveNotifications, playSound, setViewedItem, openItem, copyBuildInfo, showDataFolder, command, retryConnection, openTemplateFile, setConnection, pushItem, pushEvent, stops };
+  return { bridge, query, saveLayout, saveNotifications, playSound, setViewedItem, getWhatsNew, closeWhatsNew, openItem, copyBuildInfo, showDataFolder, command, retryConnection, openTemplateFile, setConnection, pushItem, pushEvent, stops };
 }
 
 export interface ListQuery {

@@ -29,6 +29,11 @@ extraResources:
     to: tokama-failed.wav
   - from: src/renderer/brand/sounds/tokay-call.wav
     to: tokama-tokay-call.wav
+  # The release notes ship with the app, so About lists them without a network.
+  - from: ../../whats-new
+    to: whats-new
+    filter:
+      - "[0-9]*.[0-9]*.[0-9]*.md"
   # Electron's and Chromium's licence texts sit beside Electron.app, not in it.
   - from: node_modules/electron/dist/LICENSE
     to: LICENSE-electron

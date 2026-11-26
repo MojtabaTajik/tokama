@@ -10,6 +10,7 @@ export { resolveToolsPath, type ToolsPath, type ToolsPathSource } from "./kernel
 export { spawnDetached, type ChildProcess, type DetachedService } from "./kernel/process/detached.js";
 // Pid files, the pid-alive check and atomic file replacement, for the engine service and the desktop app.
 export { pidAlive, readPidFile, type PidFile } from "./kernel/process/pid-file.js";
+export { readTextFile, type ReadFailure, type ReadTextOptions } from "./kernel/fs-safe/read.js";
 export { replaceTextSync, type WriteFailure, type WriteFailureReason } from "./kernel/fs-safe/write.js";
 export { manualClock, sleep, systemClock, withDeadline, type Clock, type ManualClock, type TimerHandle } from "./kernel/clock/index.js";
 // Small helpers the apps share with core.

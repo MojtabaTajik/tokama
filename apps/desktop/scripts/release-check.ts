@@ -1,13 +1,15 @@
 // The first checks of the release workflow, on a runner with Node and nothing installed:
 //   node scripts/release-check.ts --ref <github.ref> --notes-out <file> [--github-output <file>]
 // The ref must be a v<x.y.z> tag, the tag must name the version in apps/desktop/package.json, and
-// CHANGELOG.md must hold a section for it. The section becomes the release notes. With
+// the release must have notes: `whats-new/<version>.md` when that file exists (it must parse, and
+// becomes the notes), else the CHANGELOG.md section for the version. With
 // --github-output the version and the feed URL are appended there as `version=` and `feed_url=`.
 // The feed URL is the default, or on a manual run the one in FEED_URL_INPUT; GITHUB_EVENT_NAME
 // tells the two apart. Any problem ends the script with a message that names it.
-import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, lstatSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { MAX_NOTE_BYTES, parseNote, releaseNotes } from "../src/shared/whats-new.ts";
 import { DEFAULT_FEED_URL, appVersion, feedUrlProblem } from "./package.ts";
 
 const appDir = resolve(import.meta.dirname, "..");
@@ -33,6 +35,30 @@ export function changelogSection(changelog: string, version: string): string {
   return body;
 }
 
+/**
+ * The release notes of `version` in the checkout at `repoDir`: the note `whats-new/<version>.md`
+ * when there is one, else the CHANGELOG.md section. A note that is not a plain file of at most
+ * 8 KiB, or does not parse, throws with every problem named; it never falls back to the changelog.
+ */
+export function releaseNotesFor(repoDir: string, version: string): { readonly notes: string; readonly source: string } {
+  const name = `${version}.md`;
+  const path = join(repoDir, "whats-new", name);
+  const source = `whats-new/${name}`;
+  let size: number | undefined;
+  try {
+    const stat = lstatSync(path);
+    if (!stat.isFile()) throw new Error(`${source} is not a plain file`);
+    size = stat.size;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  if (size === undefined) return { notes: changelogSection(readFileSync(join(repoDir, "CHANGELOG.md"), "utf8"), version), source: "CHANGELOG.md" };
+  if (size > MAX_NOTE_BYTES) throw new Error(`${source}: the file is ${size} bytes, at most ${MAX_NOTE_BYTES}`);
+  const parsed = parseNote(readFileSync(path, "utf8"), name);
+  if (!parsed.ok) throw new Error(`${source}: ${parsed.problems.join("; ")}`);
+  return { notes: releaseNotes(parsed.note), source };
+}
+
 /** The feed URL baked into the app: the default for a tag push, the input (when given) for a manual run. Throws when the input is not a valid feed URL. */
 export function feedUrlFor(event: string | undefined, input: string | undefined): string {
   if (event !== "workflow_dispatch" || input === undefined || input === "") return DEFAULT_FEED_URL;
@@ -48,11 +74,11 @@ function main(): void {
   const version = tagVersion(ref);
   const packaged = appVersion(appDir);
   if (version !== packaged) throw new Error(`the tag names ${version}, apps/desktop/package.json says ${packaged}`);
-  const notes = changelogSection(readFileSync(join(repoDir, "CHANGELOG.md"), "utf8"), version);
+  const { notes, source } = releaseNotesFor(repoDir, version);
   const feedUrl = feedUrlFor(process.env["GITHUB_EVENT_NAME"], process.env["FEED_URL_INPUT"]);
   writeFileSync(notesOut, `${notes}\n`);
   if (githubOutput !== undefined) appendFileSync(githubOutput, `version=${version}\nfeed_url=${feedUrl}\n`);
-  process.stdout.write(`release-check: ${version}, feed ${feedUrl}, ${notes.split("\n").length} lines of notes\n`);
+  process.stdout.write(`release-check: ${version}, feed ${feedUrl}, ${notes.split("\n").length} lines of notes from ${source}\n`);
 }
 
 if (import.meta.main) {

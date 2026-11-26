@@ -24,8 +24,25 @@ describe("parseDesktopState", () => {
       notifications: { needsYou: "off", finished: "banner", failed: "sound", sounds: "macos" },
       notificationHintShown: true,
       askAfterCrash: false,
+      lastRunVersion: "0.2.0",
+      whatsNewDue: { card: "0.2.0", chip: "0.2.0" },
     };
     expect(parseDesktopState(full)).toEqual(full);
+  });
+
+  it("keeps the last run version and the due notes only when they are valid versions", () => {
+    expect(parseDesktopState({ lastRunVersion: "0.2.1" }).lastRunVersion).toBe("0.2.1");
+    for (const lastRunVersion of ["0.2", "01.2.3", "v1.0.0", 5, null, ""]) expect(parseDesktopState({ lastRunVersion })).not.toHaveProperty("lastRunVersion");
+    expect(parseDesktopState({ whatsNewDue: { card: "0.2.1" } }).whatsNewDue).toEqual({ card: "0.2.1" });
+    expect(parseDesktopState({ whatsNewDue: { chip: "0.2.1", card: "bad" } }).whatsNewDue).toEqual({ chip: "0.2.1" });
+    for (const whatsNewDue of [{ card: "bad", chip: 3 }, {}, [], "0.2.1", null]) expect(parseDesktopState({ whatsNewDue })).not.toHaveProperty("whatsNewDue");
+  });
+
+  it("does not let the renderer set the release notes state", () => {
+    const state = { ...DEFAULT_DESKTOP_STATE, lastRunVersion: "0.2.0", whatsNewDue: { card: "0.2.0" } };
+    const patched = applyLayoutPatch(state, { lastRunVersion: "9.9.9", whatsNewDue: { chip: "9.9.9" }, sidebar: { width: 300, collapsed: false } });
+    expect(patched).toEqual({ ...state, sidebar: { width: 300, collapsed: false } });
+    expect(applyNotificationsPatch(state, { lastRunVersion: "9.9.9", whatsNewDue: {} })).toEqual(state);
   });
 
   it("asks after a crash unless the file says false", () => {
