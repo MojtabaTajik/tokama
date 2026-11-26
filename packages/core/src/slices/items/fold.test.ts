@@ -1,12 +1,50 @@
 import { describe, expect, it } from "vitest";
-import { StoredItemSchema, type DecisionId, type ItemEventBody, type StoredItem } from "../../kernel/schemas/index.js";
-import { countedAttempts, foldItem, openAttempt, openDecisions } from "./fold.js";
+import { err, ok, type Result } from "../../kernel/result/index.js";
+import { ItemEventSchema, StoredItemSchema, type DecisionId, type ItemEvent, type ItemEventBody, type StoredItem } from "../../kernel/schemas/index.js";
+import { applyEvent, countedAttempts, foldItem, openAttempt, openDecisions, type FoldError } from "./fold.js";
 import { BUILD, created, DECISION, events, HOST, ITEM, REVIEW, T0, TEMPLATE_REF } from "./testing/events.js";
 
 const decisionId = DECISION as DecisionId;
 
+/** Freezes a value and everything under it, so a write to it throws (test files are strict). */
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value)) deepFreeze(child);
+  }
+  return value;
+}
+
+/** The reference fold: one `applyEvent` per event, each on its own copy of the item. */
+function stepwise(log: readonly ItemEvent[]): Result<StoredItem, FoldError> {
+  let item: StoredItem | undefined;
+  for (const event of log) {
+    const next = applyEvent(item, event);
+    if (!next.ok) return next;
+    item = next.value;
+  }
+  return item ? ok(item) : err({ seq: 0, message: "the log is empty" });
+}
+
+/** Event types that folded in this file; the last test checks that none of the schema's is missing. */
+const foldedTypes = new Set<string>();
+
+/**
+ * Folds with `foldItem` on events that are deep-frozen (a write into an event, or into a part the
+ * result shares with one, throws) and checks the result against the reference fold.
+ */
+function foldChecked(bodies: readonly ItemEventBody[]): Result<StoredItem, FoldError> {
+  const log = deepFreeze(events(bodies));
+  const before = structuredClone(log);
+  const folded = foldItem(log);
+  expect(folded).toStrictEqual(stepwise(log));
+  expect(log).toStrictEqual(before);
+  if (folded.ok) for (const event of log) foldedTypes.add(event.type);
+  return folded;
+}
+
 function fold(bodies: readonly ItemEventBody[]): StoredItem {
-  const folded = foldItem(events(bodies));
+  const folded = foldChecked(bodies);
   if (!folded.ok) throw new Error(`fold failed at seq ${folded.error.seq}: ${folded.error.message}`);
   // The fold's output is always a valid stored record.
   expect(StoredItemSchema.safeParse(folded.value).success).toBe(true);
@@ -14,7 +52,7 @@ function fold(bodies: readonly ItemEventBody[]): StoredItem {
 }
 
 function foldError(bodies: readonly ItemEventBody[]): string {
-  const folded = foldItem(events(bodies));
+  const folded = foldChecked(bodies);
   if (folded.ok) throw new Error("expected the fold to fail");
   return folded.error.message;
 }
@@ -387,5 +425,22 @@ describe("finish events", () => {
     expect(foldError([...done, start("pull_request"), { type: "pr_opened", repoId: "orders-api" as never, url: "https://github.com/acme/orders-api/pull/7" }, start("merge")])).toMatch(/pull request/);
     expect(foldError([...done, start("discard"), { type: "tombstone" }])).toMatch(/still running/);
     expect(foldError([...done, { type: "step_started", stepId: BUILD }])).toMatch(/has ended/);
+  });
+});
+
+describe("folding a whole log on one working copy", () => {
+  it("is exercised by every event type of the schema", () => {
+    // Relies on the cases above having run in this file.
+    const all = ItemEventSchema.options.map((option) => option.shape.type.value);
+    expect(all.filter((type) => !foldedTypes.has(type))).toEqual([]);
+  });
+
+  it("hands out an item that a later event does not change: that event works on a copy", () => {
+    const item = deepFreeze(fold([...startBuild, { type: "check_result", stepId: BUILD, attempt: 1, command: "pnpm test", exitCode: 0, passed: true }]));
+    const before = structuredClone(item);
+    const next = applyEvent(item, events([...startBuild, { type: "check_result", stepId: BUILD, attempt: 1, command: "pnpm test", exitCode: 0, passed: true }, { type: "attempt_ended", stepId: BUILD, attempt: 1, result: "passed" }]).at(-1)!);
+    expect(next.ok).toBe(true);
+    expect(item).toStrictEqual(before);
+    if (next.ok) expect(next.value.steps[0]?.attempts[0]?.result).toBe("passed");
   });
 });

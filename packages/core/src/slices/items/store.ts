@@ -23,7 +23,7 @@ import {
   type TemplateRecord,
   type TemplateSnapshot,
 } from "../../kernel/schemas/index.js";
-import { applyEvent } from "./fold.js";
+import { applyEvent, foldItem } from "./fold.js";
 import { appendEvents, fsyncDir, readLog, type LogFs } from "./log.js";
 
 export const EVENTS_FILE = "events.jsonl";
@@ -203,8 +203,8 @@ export class ItemStore {
   private load(itemId: ItemId): Result<StoredItem, string> {
     const log = readLog(join(this.itemsDir, itemId, EVENTS_FILE), this.fs);
     if (!log.ok) return err(log.error.message);
-    const folded = foldOnto(undefined, log.value.events);
-    if (!folded.ok) return err(folded.error.message);
+    const folded = foldItem(log.value.events);
+    if (!folded.ok) return err(`seq ${folded.error.seq}: ${folded.error.message}`);
     if (folded.value.id !== itemId) return err(`the log in ${itemId} belongs to ${folded.value.id}`);
     return ok(folded.value);
   }
