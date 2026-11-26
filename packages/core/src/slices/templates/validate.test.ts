@@ -779,6 +779,14 @@ describe("validateTemplate: warnings", () => {
     ]);
   });
 
+  it("lets an ignored if_failed change no step's default max_attempts", async () => {
+    const attempts = async (text: string) => (await record(text)).steps.map((step) => step.maxAttempts);
+    const plain = await attempts(BASE);
+    expect(await attempts(REVIEWER_IF_FAILED)).toEqual(plain);
+    expect(await attempts(REVIEWER_IF_FAILED.replace("if_failed: { back: build }", "if_failed: retry"))).toEqual(plain);
+    expect(await attempts(REVIEWER_IF_FAILED.replace("if_failed: { back: build }", "if_failed: { back: review }"))).toEqual(plain);
+  });
+
   it("validates with no onWarning given", async () => {
     expect((await validate(REVIEWER_IF_FAILED)).ok).toBe(true);
   });

@@ -273,8 +273,11 @@ async function buildRecord(file: TemplateFile, ctx: ValidateContext, report: Rep
     budget = { timeMinutes: total };
   }
 
+  // The engine never reads `if_failed` of a reviewer step, so it sends no work back.
   const backTargets = new Set(
-    file.steps.flatMap((step) => [step.if_failed, step.if_changes_requested].flatMap((rule) => (typeof rule === "object" ? [rule.back] : []))),
+    file.steps.flatMap((step) =>
+      [step.done_when === "reviewer approves" ? undefined : step.if_failed, step.if_changes_requested].flatMap((rule) => (typeof rule === "object" ? [rule.back] : [])),
+    ),
   );
   const scope: StepScope = {
     file,
@@ -399,7 +402,7 @@ async function buildStep(step: StepFile, i: number, scope: StepScope): Promise<T
     typeof step.if_failed === "object" ? { action: "back", stepId: step.if_failed.back } : { action: step.if_failed ?? "ask" };
   // A step that is retried, sent back to, or that you approve (Request changes runs it again) must
   // be able to run more than once.
-  const loops = ifFailed.action === "retry" || scope.backTargets.has(step.id) || doneWhen === "you approve";
+  const loops = (ifFailed.action === "retry" && doneWhen !== "reviewer approves") || scope.backTargets.has(step.id) || doneWhen === "you approve";
   const def: TemplateStepDef = {
     id: step.id,
     name: step.name,

@@ -72,7 +72,7 @@ describe("flowOf", () => {
   });
 
   it("draws no failure loop for a reviewer step, only its changes loop", () => {
-    const onlyFailed = flowOf(withSteps(plan, { ...review, ifFailed: { action: "back", stepId: "plan" }, ifChangesRequested: undefined } as TemplateStepView), setup.agents);
+    const onlyFailed = flowOf(withSteps(plan, { ...review, ifFailed: { action: "back", stepId: "plan" }, ifChangesRequested: { action: "ask" } } as TemplateStepView), setup.agents);
     expect(onlyFailed.loops).toEqual([]);
     expect(onlyFailed.description).not.toContain("when it fails");
     const both = flowOf(withSteps(plan, build, { ...review, ifFailed: { action: "back", stepId: "plan" }, ifChangesRequested: { action: "back", stepId: "build" } } as TemplateStepView), setup.agents);

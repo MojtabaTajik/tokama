@@ -40,7 +40,7 @@ describe("stepSentence", () => {
   });
 
   it("says only the changes-requested rule of a reviewer step, never its failure rule", () => {
-    const onlyFailed = sentenceOf({ doneWhen: "reviewer approves", ifFailed: { action: "back", stepId: "plan" }, ifChangesRequested: undefined } as Partial<TemplateStepView>);
+    const onlyFailed = sentenceOf({ doneWhen: "reviewer approves", ifFailed: { action: "back", stepId: "plan" }, ifChangesRequested: { action: "ask" } } as Partial<TemplateStepView>);
     expect(onlyFailed).toContain("if it asks for changes, ask you.");
     expect(onlyFailed).not.toContain("if it fails");
     expect(onlyFailed).not.toContain("send the work back");
