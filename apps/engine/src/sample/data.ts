@@ -213,17 +213,13 @@ function steps(template: { steps: readonly object[] }, states: readonly StepStat
 }
 
 const MINUTE = 60_000;
-const OLDEST_SAMPLE_MINUTES = 180;
-
 /**
- * The time `minutes` before `now`, but never before the start of today (local time). The app lists
- * finished items of today by default, so shortly after midnight the sample ages shrink to fit
- * into the day, in the same order, rather than slipping into yesterday.
+ * The time `minutes` before `now`: a fixed offset, at any hour. Just after midnight the older sample
+ * items fall into yesterday, as they would for real work; the sample never bends its ages to the
+ * day, so it holds the same shape whenever the app starts.
  */
 export function ago(now: number, minutes: number): number {
-  const startOfDay = new Date(now).setHours(0, 0, 0, 0);
-  const fit = Math.min(1, (now - startOfDay) / (OLDEST_SAMPLE_MINUTES * MINUTE));
-  return now - Math.floor(minutes * MINUTE * fit);
+  return now - minutes * MINUTE;
 }
 
 /** How long each sample attempt worked, by step and attempt: a few minutes each. */
@@ -253,7 +249,7 @@ interface RawItem {
 /**
  * The item with attempt times as the engine derives them from the log: each attempt one after the
  * other from shortly after the item was created, a running attempt started a few minutes ago, and
- * the working time of ended steps and of the ended item. Squeezed to fit before `now` near midnight.
+ * the working time of ended steps and of the ended item. Squeezed to fit before `now` when an item is too young for its attempts.
  */
 function withTimes(item: RawItem, now: number, waits: Readonly<Record<number, number>> = {}): RawItem {
   const ended = item.state === "done" || item.state === "failed";

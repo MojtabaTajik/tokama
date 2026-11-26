@@ -76,8 +76,10 @@ const filterFits = (page: Page) =>
 flow("the whole status filter and its range picker stay visible next to the drawer, at its default and widest width", async ({ page, resize, screenshot }) => {
   await row(page, "Fix rounding in invoice totals").waitFor();
   await resize(1500, 700);
-  // Done shows the range picker too.
+  // Done shows the range picker too. The week, not today: in the first hours after midnight the
+  // sample's finished items ended yesterday.
   await segment(page, "Done").click();
+  await page.locator(".range").selectOption("7d");
 
   const fits = () => expect.poll(() => filterFits(page)).toEqual({ count: 5, ranges: 1, barInMain: true, clipped: false, problems: [], rangeProblems: 0 });
   const floating = (expected: boolean) => expect.poll(async () => (await page.locator(".shell").getAttribute("data-drawer-floating")) === "true").toBe(expected);
