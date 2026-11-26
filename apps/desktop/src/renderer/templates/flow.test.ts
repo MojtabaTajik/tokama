@@ -58,17 +58,17 @@ describe("flowOf", () => {
     expect(twoBacks.description).toContain("Build sends the work back to Plan when its checks fail and runs again after it, up to 3 round trips, then asks you");
   });
 
-  it("puts a shorter back line above a longer one from the same step, so they do not cross", () => {
-    const build2 = { ...build, id: "build-again", name: "Build again", ifFailed: { action: "back", stepId: "plan" } } as TemplateStepView;
-    const review2 = { ...review, ifChangesRequested: { action: "back", stepId: "plan" } } as TemplateStepView;
-    const crossing = flowOf(withSteps(plan, build, build2, review2), setup.agents);
+  it("puts a shorter back line nearer the row than a longer one that comes first, so they do not cross", () => {
+    const again = { ...build, id: "build-again", name: "Build again", ifFailed: { action: "back", stepId: "plan" } } as TemplateStepView;
+    const last = { ...review, ifChangesRequested: { action: "back", stepId: "build-again" } } as TemplateStepView;
+    const crossing = flowOf(withSteps(plan, build, again, last), setup.agents);
     const backs = crossing.loops.filter((loop) => loop.kind === "back");
-    // Build → Plan (span 1) and Review → Plan (span 3) end on the same step.
+    // In step order the longer line comes first: Build again → Plan (span 2), then Review → Build again (span 1).
     expect(backs.map((loop) => [loop.from, loop.to])).toEqual([
       [3, 1],
-      [4, 1],
+      [4, 3],
     ]);
-    expect(backs[0]!.labelY).toBeLessThan(backs[1]!.labelY);
+    expect(backs[1]!.labelY).toBeLessThan(backs[0]!.labelY);
   });
 
   it("draws no failure loop for a reviewer step, only its changes loop", () => {

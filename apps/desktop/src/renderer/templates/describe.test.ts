@@ -44,6 +44,9 @@ describe("stepSentence", () => {
     expect(onlyFailed).toContain("if it asks for changes, ask you.");
     expect(onlyFailed).not.toContain("if it fails");
     expect(onlyFailed).not.toContain("send the work back");
+    // A record with no changes rule at all still says what happens.
+    const none = sentenceOf({ doneWhen: "reviewer approves", ifChangesRequested: undefined } as Partial<TemplateStepView>);
+    expect(none).toContain("if it asks for changes, ask you.");
     const both = sentenceOf({ doneWhen: "reviewer approves", ifFailed: { action: "stop" }, ifChangesRequested: { action: "back", stepId: "plan" } } as Partial<TemplateStepView>);
     expect(both).toContain("if it asks for changes, send the work back to Plan");
     expect(both).not.toContain("stop");
