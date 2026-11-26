@@ -32,7 +32,8 @@ describe.skipIf(!enabled)("Claude Code runtime against the real CLI", () => {
           ...request,
           stdout: {
             onLine: (line) => {
-              raw.push(line);
+              // The version probe before the call prints text, not stream-json.
+              if (!("argv" in request.command && request.command.argv.includes("--version"))) raw.push(line);
               request.stdout?.onLine?.(line);
             },
           },
