@@ -27,6 +27,7 @@ import {
   type AgentsListResult,
   type AiClisResult,
   API_VERSION,
+  BOARD_COUNT_DAYS,
   type BoardResult,
   type ItemListResult,
   type ItemRecord,
@@ -102,7 +103,7 @@ import { EngineDiagnostics, isDiagnosticsCommand } from "./diagnostics.js";
 import { listAgents } from "./agents-list.js";
 import { aiClis } from "./ai-clis.js";
 import { ItemIndex } from "./item-index.js";
-import { ItemList, nameHits } from "./item-list.js";
+import { groupOf, ItemList, nameHits } from "./item-list.js";
 import { type HealthChecks, machineChecks } from "./real/health.js";
 import { runningGroups } from "./machine.js";
 import { RealEngine } from "./real/real.js";
@@ -605,8 +606,13 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       case "setup":
         servedSetup = await setup();
         return { ok: true, data: servedSetup };
-      case "board":
-        return { ok: true, data: { items: store.list() } satisfies BoardResult };
+      case "board": {
+        // Finished items come as counts here and a page at a time from item_list.
+        const today = new Date(clock.now());
+        const firstDay = localDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() - (BOARD_COUNT_DAYS - 1)).getTime());
+        const items = store.list().filter((item) => groupOf(item.state) === "needs" || groupOf(item.state) === "running");
+        return { ok: true, data: { items, counts: list.counts(firstDay) } satisfies BoardResult };
+      }
       case "item_list": {
         const names = query.q === undefined || query.q.trim() === "" ? undefined : nameHits(servedSetup ?? (real === undefined ? await setup() : await real.setup()), query.q);
         const page = list.page(query, names);

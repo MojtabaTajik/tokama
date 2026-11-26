@@ -25,7 +25,7 @@ import { MachineReportSchema } from "./machine.js";
 import { RepoSummarySchema, SetupSchema } from "./setup.js";
 import { MAX_TEMPLATE_ENTRIES, TemplateDetailSchema, TemplateEntrySchema, TemplateFileKeySchema } from "./template-files.js";
 
-export const API_VERSION = 8;
+export const API_VERSION = 9;
 
 const apiVersion = z.literal(API_VERSION);
 const requestId = z.string().min(1).max(128);
@@ -129,10 +129,26 @@ export const ListCursorSchema = z.string().max(200).regex(/^\d{1,16}:item_[0-9a-
 export const MAX_LIST_PAGE = 1000;
 /** The longest search text the work list takes. */
 export const MAX_LIST_SEARCH = 200;
+/** The local days, today included, that the board counts finished items by day; older ones are counted together. */
+export const BOARD_COUNT_DAYS = 31;
+/** The most count rows one board reply holds. */
+export const MAX_BOARD_COUNTS = 10_000;
+/**
+ * Finished items of one start day, workflow and set of repos: `day` is null for the days before
+ * the last `BOARD_COUNT_DAYS`. Stopped items count as done.
+ */
+export const BoardCountSchema = z.strictObject({
+  day: LocalDaySchema.nullable(),
+  templateId: TemplateRefSchema,
+  repoIds: z.array(RepoIdSchema),
+  done: z.int().nonnegative(),
+  failed: z.int().nonnegative(),
+});
 
 export const QuerySchema = z.discriminatedUnion("type", [
   /** What is set up on this machine: repos, connections, agents and templates. */
   z.strictObject({ type: z.literal("setup") }),
+  /** The open items (needs you, running, queued) in board order, and the finished ones as counts; item_list pages the finished rows. */
   z.strictObject({ type: z.literal("board") }),
   /**
    * One page of one group of the work list, newest start first, scoped like the sidebar view
@@ -275,7 +291,7 @@ export const StepOutputSchema = z.strictObject({
 /** The data of a successful reply, per query type. */
 export const QueryResultSchemas = {
   setup: SetupSchema,
-  board: z.strictObject({ items: z.array(ItemRecordSchema) }),
+  board: z.strictObject({ items: z.array(ItemRecordSchema), counts: z.array(BoardCountSchema).max(MAX_BOARD_COUNTS) }),
   item_list: z.strictObject({
     items: z.array(ItemRecordSchema).max(MAX_LIST_PAGE),
     /** Null on the last page. */
@@ -488,6 +504,7 @@ export type ShutdownReply = z.output<typeof ShutdownReplySchema>;
 export type QueryType = keyof typeof QueryResultSchemas;
 export type QueryResult<T extends QueryType> = z.output<(typeof QueryResultSchemas)[T]>;
 export type BoardResult = QueryResult<"board">;
+export type BoardCount = z.output<typeof BoardCountSchema>;
 export type ItemListResult = QueryResult<"item_list">;
 export type ListGroup = z.output<typeof ListGroupSchema>;
 export type ItemResult = QueryResult<"item">;

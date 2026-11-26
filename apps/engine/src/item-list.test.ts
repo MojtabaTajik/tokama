@@ -122,6 +122,28 @@ describe("work list index", () => {
     expect(list.page({ group: "done", q: "cache", repo: "checkout-web", limit: 50 }).total).toBe(1);
   });
 
+  it("counts done and failed items by start day, template and repos, older days together", () => {
+    list.put(item(1, { createdAt: at(24) }));
+    list.put(item(2, { createdAt: at(24, 9), state: "stopped" }));
+    list.put(item(3, { createdAt: at(24), state: "failed", repoIds: ["orders-api", "checkout-web"] }));
+    list.put(item(4, { createdAt: at(23), templateId: "builtin/plan-build" }));
+    list.put(item(5, { createdAt: at(10) }));
+    list.put(item(6, { createdAt: at(2), state: "failed" }));
+    list.put(item(7, { createdAt: at(24), state: "running" }));
+    list.put(item(8, { createdAt: at(24), state: "needs_you" }));
+
+    expect(list.counts("2026-11-10")).toEqual([
+      { day: "2026-11-24", templateId: "builtin/quick-fix", repoIds: ["orders-api"], done: 2, failed: 0 },
+      { day: "2026-11-24", templateId: "builtin/quick-fix", repoIds: ["orders-api", "checkout-web"], done: 0, failed: 1 },
+      { day: "2026-11-23", templateId: "builtin/plan-build", repoIds: ["orders-api"], done: 1, failed: 0 },
+      { day: "2026-11-10", templateId: "builtin/quick-fix", repoIds: ["orders-api"], done: 1, failed: 0 },
+      { day: null, templateId: "builtin/quick-fix", repoIds: ["orders-api"], done: 0, failed: 1 },
+    ]);
+    // An item that finishes moves into the counts.
+    list.put(item(7, { createdAt: at(24), state: "done" }));
+    expect(list.counts("2026-11-24")[0]).toMatchObject({ day: "2026-11-24", repoIds: ["orders-api"], done: 3 });
+  });
+
   it("takes %, _ and \\ in a search as the characters themselves", () => {
     list.put(item(1, { title: "Raise the limit to 100%" }));
     list.put(item(2, { title: "Rename user_id" }));

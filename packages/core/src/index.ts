@@ -172,6 +172,8 @@ export {
   type UpdateRepoResult,
   type AgentCallOutcome,
   type BoardResult,
+  type BoardCount,
+  BOARD_COUNT_DAYS,
   type ItemListResult,
   type ListGroup,
   MAX_LIST_PAGE,

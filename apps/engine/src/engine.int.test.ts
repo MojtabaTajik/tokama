@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, sym
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ClientEvent, connect, type EngineClient, requestShutdown } from "@tokama/client";
-import { API_VERSION, MAX_MESSAGE_BYTES } from "@tokama/core";
+import { API_VERSION, manualClock, MAX_MESSAGE_BYTES } from "@tokama/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type EngineHandle, startEngine } from "./engine.js";
 import { rawConnect, sampleItem, tempEngineDir, waitFor } from "./testing/helpers.js";
@@ -55,7 +55,7 @@ describe("engine service", () => {
     const engineClient = await client(dir);
 
     expect(engineClient.engineId).toBe(handle.engineId);
-    expect(await engineClient.query({ type: "board" })).toEqual({ ok: true, data: { items: [] } });
+    expect(await engineClient.query({ type: "board" })).toEqual({ ok: true, data: { items: [], counts: [] } });
     expect(await engineClient.query({ type: "item", itemId: ITEM_ID })).toMatchObject({ ok: false, error: { code: "not_found" } });
     expect(await engineClient.query({ type: "setup" })).toEqual({ ok: true, data: { repos: [], connections: [], agents: [], templates: [], health: { git: { ok: true }, clis: [], config: [] } } });
     expect(await engineClient.command({ type: "stop_item", itemId: ITEM_ID })).toMatchObject({
@@ -125,6 +125,49 @@ describe("engine service", () => {
     } while (before !== undefined && pages < 10);
     expect(pages).toBeGreaterThan(1);
     expect(seen.size).toBe(600);
+  });
+
+  it("answers the board with the open items and counts of the finished ones, also with 5,000 items", async () => {
+    const dir = tempEngineDir(cleanups);
+    // Local noon, so the days below hold in any time zone.
+    const now = new Date(2026, 10, 26, 12).getTime();
+    const started = await startEngine({ dir, clock: manualClock(now) });
+    if (!started.ok) throw new Error(started.error.message);
+    cleanups.push(() => started.value.close());
+    const handle = started.value;
+    const engineClient = await client(dir);
+    // 30 open items, then 4,970 finished ones over the last 100 days in two workflows and two sets of repos.
+    const states = ["needs_you", "running", "queued"] as const;
+    for (let n = 1; n <= 5000; n++) {
+      const open = n <= 30;
+      handle.store.put({
+        ...sampleItem(`Item ${n}`),
+        id: `item_00000000-0000-4000-8000-${String(n).padStart(12, "0")}`,
+        state: open ? states[n % 3]! : n % 5 === 0 ? "failed" : n % 7 === 0 ? "stopped" : "done",
+        templateId: n % 2 === 0 ? "builtin/quick-fix" : "builtin/emergency-investigator",
+        repoIds: n % 3 === 0 ? ["orders-api", "checkout-web"] : ["orders-api"],
+        createdAt: now - (n % 100) * 86_400_000,
+      } as never);
+    }
+
+    const before = performance.now();
+    const board = await engineClient.query({ type: "board" });
+    const ms = performance.now() - before;
+    if (!board.ok) throw new Error(board.error.message);
+    expect(board.data.items).toHaveLength(30);
+    expect(board.data.items.every((item) => item.state === "needs_you" || item.state === "running" || item.state === "queued")).toBe(true);
+    const sum = (key: "done" | "failed") => board.data.counts.reduce((total, row) => total + row[key], 0);
+    expect(sum("done") + sum("failed")).toBe(4970);
+    expect(sum("failed")).toBe(994);
+    // One row per day of the last 31, and one for everything older, per workflow and set of repos.
+    expect(board.data.counts.length).toBeLessThanOrEqual(32 * 4);
+    expect(new Set(board.data.counts.map((row) => row.day)).size).toBe(32);
+    // Days 31 to 99 before today: 69 of every 100 items, less the open ones among them.
+    expect(board.data.counts.filter((row) => row.day === null).reduce((total, row) => total + row.done + row.failed, 0)).toBe(69 * 50);
+    expect(board.data.counts[0]).toMatchObject({ day: "2026-11-26" });
+    // Small and quick: well under the message limit, and a generous time bound for slow CI machines.
+    expect(Buffer.byteLength(JSON.stringify(board.data))).toBeLessThan(64 * 1024);
+    expect(ms).toBeLessThan(1_000);
   });
 
   it("pushes an item_updated event only when the store changes", async () => {
@@ -285,7 +328,7 @@ describe("engine service", () => {
     expect(await raw.next()).toMatchObject({ kind: "reply", requestId: "r1", result: { ok: false, error: { code: "invalid_message" } } });
 
     raw.send({ apiVersion: API_VERSION, kind: "query", requestId: "r2", query: { type: "board" } });
-    expect(await raw.next()).toEqual({ apiVersion: API_VERSION, kind: "reply", requestId: "r2", result: { ok: true, data: { items: [] } } });
+    expect(await raw.next()).toEqual({ apiVersion: API_VERSION, kind: "reply", requestId: "r2", result: { ok: true, data: { items: [], counts: [] } } });
 
     raw.write("not json\n");
     expect(await raw.next()).toMatchObject({ kind: "connection_error", code: "bad_message" });
@@ -426,7 +469,7 @@ describe("engine service", () => {
     expect(second.engineId).not.toBe(first.engineId);
     expect(engineClient.engineId).toBe(second.engineId);
 
-    expect(await engineClient.query({ type: "board" })).toEqual({ ok: true, data: { items: [] } });
+    expect(await engineClient.query({ type: "board" })).toEqual({ ok: true, data: { items: [], counts: [] } });
     second.store.put(sampleItem());
     // seq restarted with the new engine.
     await waitFor(() => events.length === 4, 5_000, "event from the new engine");

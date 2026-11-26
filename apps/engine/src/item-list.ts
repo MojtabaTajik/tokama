@@ -4,9 +4,10 @@
 // and pages newest start first, keyed on (start time, id) so a page boundary inside one
 // millisecond loses no row. Every value reaches SQL as a bound parameter; the search text is
 // escaped for LIKE, so `%`, `_` and `\` match themselves. A `%text%` search cannot use an index and
-// scans the rows of the group; the group, day and page order are index-backed.
+// scans the rows of the group; the group, day and page order are index-backed. It also counts
+// the done and failed items for the board query, which serves only the open items in full.
 import { DatabaseSync } from "node:sqlite";
-import { type ItemId, type ItemRecord, type ItemState, type ListGroup, localDate, type Setup } from "@tokama/core";
+import { type BoardCount, type ItemId, type ItemRecord, type ItemState, type ListGroup, localDate, type RepoId, type Setup, type TemplateRef } from "@tokama/core";
 
 /** The work-list group of an item state. A stopped item counts as done. */
 export function groupOf(state: ItemState): ListGroup {
@@ -170,6 +171,26 @@ export class ItemList {
       total,
       days,
     };
+  }
+
+  /**
+   * The done and failed items counted by start day, template and repos. Items that started before
+   * `firstDay` are counted together, under a null day.
+   */
+  counts(firstDay: string): BoardCount[] {
+    const rows = this.db
+      .prepare(
+        `SELECT CASE WHEN day >= ? THEN day END AS d, template_ref, repos, sum(grp = 'done') AS done, sum(grp = 'failed') AS failed
+         FROM list_items WHERE grp IN ('done', 'failed') GROUP BY d, template_ref, repos ORDER BY d DESC, template_ref, repos`,
+      )
+      .all(firstDay) as unknown as { d: string | null; template_ref: string; repos: string; done: number; failed: number }[];
+    return rows.map((row) => ({
+      day: row.d,
+      templateId: row.template_ref as TemplateRef,
+      repoIds: row.repos.split("\n").filter((repo) => repo !== "") as RepoId[],
+      done: row.done,
+      failed: row.failed,
+    }));
   }
 
   close(): void {

@@ -60,10 +60,17 @@ function itemUpdate(event: ClientEvent): { seq: number; item: ItemRecord } | und
   return engineEvent.type === "item_updated" ? { seq: event.seq, item: engineEvent.item } : undefined;
 }
 
+/** Every item: the board's open ones, then the done and failed ones from item_list. */
 async function board(client: EngineClient): Promise<ItemRecord[]> {
   const reply = await client.query({ type: "board" });
   if (!reply.ok) throw new Error(reply.error.message);
-  return reply.data.items;
+  const finished: ItemRecord[] = [];
+  for (const group of ["done", "failed"] as const) {
+    const page = await client.query({ type: "item_list", group, limit: 1000 });
+    if (!page.ok) throw new Error(page.error.message);
+    finished.push(...page.data.items);
+  }
+  return [...reply.data.items, ...finished];
 }
 
 async function item(client: EngineClient, itemId: string): Promise<ItemRecord> {
