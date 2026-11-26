@@ -64,8 +64,10 @@ flow(
 
     await hint.click();
     expect(await range.inputValue()).toBe("all");
-    expect(await segment(page, "Active").getAttribute("aria-pressed")).toBe("true");
+    // Like Show all time on the empty list, it moves to All, where the finished runs are listed.
+    expect(await segment(page, "All").getAttribute("aria-pressed")).toBe("true");
     expect(await hint.count()).toBe(0);
+    expect(await range.evaluate((el) => el === document.activeElement)).toBe(true);
   },
   "history",
 );

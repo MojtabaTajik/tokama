@@ -9,7 +9,7 @@
 // hidden, and with no hit at all one message takes their place. Rows show the board's record of
 // an item when it has one, so a row follows the item's events before its page loads again.
 import type { BoardCount, FinishAction, ItemRecord, Setup } from "@tokama/core";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
 import { Board } from "../board/Board.js";
 import {
@@ -63,11 +63,10 @@ const TEXT = {
   searchAllTime: "Search all time",
   emptyTitle: {
     active: "No active runs.",
-    needs: "Nothing needs you.",
     done: "No done runs in this range.",
     failed: "No failed runs in this range.",
     all: "No runs in this range.",
-  } satisfies Record<Status, string>,
+  } satisfies Record<Exclude<Status, "needs">, string>,
   hiddenLine: (count: number, kind: string, range: string) =>
     `${count} ${kind} ${count === 1 ? "run from earlier is" : "runs from earlier are"} hidden by the range ‘${range}’.`,
 } as const;
@@ -101,6 +100,7 @@ export function WorkArea(props: WorkAreaProps) {
   const { bridge, connected, setup, scoped, counts, items, view, filter, onFilter, layout, template, now } = props;
   const [text, setText] = useState("");
   const [q, setQ] = useState("");
+  const rangeRef = useRef<HTMLSelectElement>(null);
   useEffect(() => {
     const timer = setTimeout(() => setQ(text.trim()), SEARCH_DELAY_MS);
     return () => clearTimeout(timer);
@@ -201,8 +201,15 @@ export function WorkArea(props: WorkAreaProps) {
   // The range hides finished runs, and everything the tab lists is known to be empty. A finished
   // group that has not loaded yet is not known, so it shows no message.
   const hidden = hiddenByRange(counts, filter.status, filter.range, now);
-  const hiddenAll = !board && !searching && hidden > 0 && groups.every((group) => (finished(group.key) ? group.count === 0 : group.items.length === 0));
-  const hiddenKind = filter.status === "done" ? "done" : filter.status === "failed" ? "failed" : "finished";
+  // Needs you never lists finished runs, so the range is not why it is empty.
+  const emptyTitle = filter.status === "needs" ? undefined : TEXT.emptyTitle[filter.status];
+  const hiddenAll = !board && !searching && emptyTitle !== undefined && hidden > 0 && groups.every((group) => (finished(group.key) ? group.count === 0 : group.items.length === 0));
+  // The button or hint that was pressed goes away with the hidden runs: the picker takes the focus.
+  const showAll = () => {
+    onFilter(showAllTime(filter.status));
+    rangeRef.current?.focus();
+  };
+  const hiddenKind =filter.status === "done" ? "done" : filter.status === "failed" ? "failed" : "finished";
   return (
     <>
       <StatusFilter
@@ -212,18 +219,19 @@ export function WorkArea(props: WorkAreaProps) {
         now={now}
         onChange={onFilter}
         search={board ? undefined : { text, onText: setText, onClear: clear, results: searching ? results : undefined }}
-        hidden={searching || hiddenAll ? undefined : { count: hidden, onShow: () => onFilter({ range: "all" }) }}
+        rangeRef={rangeRef}
+        hidden={searching || hiddenAll ? undefined : { count: hidden, onShow: showAll }}
       />
       {board ? (
         <Board items={boardItems} notLoaded={notLoaded} agents={setup.agents} template={template} selectedItemId={props.selectedItemId} onSelect={props.onSelectItem} now={now} />
-      ) : hiddenAll ? (
+      ) : hiddenAll && emptyTitle !== undefined ? (
         <div role="status">
           <EmptyState
             className="pl-hidden"
-            title={TEXT.emptyTitle[filter.status]}
+            title={emptyTitle}
             text={TEXT.hiddenLine(hidden, hiddenKind, rangeLabel)}
             action={
-              <Button variant="secondary" className="pl-hidden-action" onClick={() => onFilter(showAllTime(filter.status))}>
+              <Button variant="secondary" className="pl-hidden-action" onClick={showAll}>
                 {TEXT.showAllTime}
               </Button>
             }

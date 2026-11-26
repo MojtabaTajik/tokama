@@ -466,7 +466,6 @@
 
 /* The finished runs the range hides, next to the picker. */
 .range-hidden {
-  font-size: var(--text-sm);
   white-space: nowrap;
 }
 

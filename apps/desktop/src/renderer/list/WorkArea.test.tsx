@@ -121,7 +121,7 @@ describe("range hides finished runs", () => {
     expect($$(".pl-row")).toHaveLength(8);
   });
 
-  it("counts hidden runs in a hint next to the picker while rows show, and the hint widens only the range", async () => {
+  it("counts hidden runs in a hint next to the picker while rows show, and the hint does what Show all time does", async () => {
     await mount(fakeBridge(CONNECTED, { boardItems: [...items, ...yesterday(8)] }));
     expect($(".pl-hidden")).toBeNull();
     // The sample's own earlier runs (3 and 20 days ago) count with the 8 from yesterday.
@@ -129,10 +129,55 @@ describe("range hides finished runs", () => {
     expect(hint.textContent).toBe("10 hidden");
     expect(hint.getAttribute("title")).toBe("The range ‘Today’ hides 10 finished runs. Show all time.");
     expect(hint.getAttribute("aria-label")).toBe("10 hidden. The range ‘Today’ hides 10 finished runs. Show all time.");
+    // Active lists no finished runs, so, as on the empty list, the tab moves to All.
+    hint.focus();
     await click(hint);
     expect(($(".range") as HTMLSelectElement).value).toBe("all");
-    expect(segment("Active").getAttribute("aria-pressed")).toBe("true");
+    expect(segment("All").getAttribute("aria-pressed")).toBe("true");
     expect($(".range-hidden")).toBeNull();
+    expect(document.activeElement).toBe($(".range"));
+  });
+
+  it("moves the focus to the picker when Show all time goes away with the empty list", async () => {
+    await mount(fakeBridge(CONNECTED, { boardItems: yesterday(8) }));
+    const show = button("Show all time")!;
+    show.focus();
+    expect(document.activeElement).toBe(show);
+    await click(show);
+    expect(document.activeElement).toBe($(".range"));
+  });
+
+  it("keeps the hint's click on the tab of Done, widening only the range", async () => {
+    await mount(fakeBridge(CONNECTED, { boardItems: [...items, ...yesterday(8)] }));
+    await click(segment("Done"));
+    await click($(".range-hidden"));
+    expect(segment("Done").getAttribute("aria-pressed")).toBe("true");
+    expect(($(".range") as HTMLSelectElement).value).toBe("all");
+  });
+
+  it("names the hidden runs on an empty All tab and an empty Failed tab", async () => {
+    await mount(fakeBridge(CONNECTED, { boardItems: yesterday(8) }));
+    await click(segment("All"));
+    expect($(".pl-hidden .empty-state-title")?.textContent).toBe("No runs in this range.");
+    expect($(".pl-hidden .empty-state-text")?.textContent).toBe("8 finished runs from earlier are hidden by the range ‘Today’.");
+    await click(segment("Failed"));
+    // The 8 runs are done ones, so none is hidden from Failed.
+    expect($(".pl-hidden")).toBeNull();
+  });
+
+  it("counts only failed runs on the Failed tab", async () => {
+    const failed = yesterday(3).map((item) => ({ ...item, id: item.id.replace("-8000-", "-8001-"), state: "failed" }) as ItemRecord);
+    await mount(fakeBridge(CONNECTED, { boardItems: failed }));
+    await click(segment("Failed"));
+    expect($(".pl-hidden .empty-state-title")?.textContent).toBe("No failed runs in this range.");
+    expect($(".pl-hidden .empty-state-text")?.textContent).toBe("3 failed runs from earlier are hidden by the range ‘Today’.");
+  });
+
+  it("does not blame the range on an empty Needs you tab", async () => {
+    await mount(fakeBridge(CONNECTED, { boardItems: yesterday(8) }));
+    await click(segment("Needs you"));
+    expect($(".pl-hidden")).toBeNull();
+    expect($$(".pl-empty").map((el) => el.textContent)).toEqual(["Nothing waiting"]);
   });
 
   it("shows no hint while a search is typed", async () => {
