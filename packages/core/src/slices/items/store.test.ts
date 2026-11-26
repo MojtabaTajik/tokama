@@ -254,6 +254,15 @@ describe("ItemStore robustness", () => {
     expect(nodeFs.existsSync(join(dir, "notes.md"))).toBe(true);
   });
 
+  it("reports an empty log that has another file beside it as an empty log", () => {
+    const dir = join(home, "items", "item_0190a000-0000-7000-8000-0000000000e4");
+    nodeFs.mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, EVENTS_FILE), "");
+    writeFileSync(join(dir, ".DS_Store"), "x");
+    const { problems } = openStore();
+    expect(problems).toEqual([{ itemId: "item_0190a000-0000-7000-8000-0000000000e4", message: "the log is empty" }]);
+  });
+
   it("reports a log that throws while it is parsed (deeply nested JSON) as a problem, and loads the others", () => {
     const { store } = openStore();
     const good = createItem(store);

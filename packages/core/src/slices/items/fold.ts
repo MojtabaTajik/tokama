@@ -1,6 +1,12 @@
 // The item record is a pure fold over its events. `applyEvent` also guards the log: a writer
 // folds each new event before appending it, so an event that does not fit the item's history
 // (an attempt for a step the item is not in, a second answer to a decision) is never written.
+//
+// Two ways to fold. `applyEvent` copies the item first and never changes its argument; the writer
+// uses it. `foldItem` builds one working copy and changes it in place for every later event, so a
+// whole log costs no copy per event. The result may share nested values with its events
+// (`template`, `repoIds`, `choices`, `usage`, `tree`, `commits`, ...): a case replaces such a value
+// and never writes into it.
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import {
   STORED_ITEM_SCHEMA_VERSION,
@@ -17,13 +23,22 @@ export interface FoldError {
   readonly message: string;
 }
 
-/** Folds a whole log. An empty log, or one that does not start with `item_created`, is an error. */
+/**
+ * Folds a whole log on one working copy. An empty log, or one that does not start with
+ * `item_created`, is an error. The events are not changed; the item is handed out only after the
+ * last event, so nobody sees it half folded.
+ */
 export function foldItem(events: readonly ItemEvent[]): Result<StoredItem, FoldError> {
   let item: StoredItem | undefined;
   for (const event of events) {
-    const next = applyEvent(item, event);
-    if (!next.ok) return next;
-    item = next.value;
+    if (item === undefined) {
+      const first = applyEvent(undefined, event);
+      if (!first.ok) return first;
+      item = first.value;
+      continue;
+    }
+    const failed = applyTo(item, event);
+    if (failed !== undefined) return err(failed);
   }
   return item ? ok(item) : err({ seq: 0, message: "the log is empty" });
 }
@@ -56,18 +71,25 @@ export function applyEvent(item: StoredItem | undefined, event: ItemEvent): Resu
     });
   }
 
-  if (event.itemId !== item.id) return fail(`event for ${event.itemId} in the log of ${item.id}`);
-  if (event.seq !== item.lastSeq + 1) return fail(`expected seq ${item.lastSeq + 1}, got ${event.seq}`);
-  if (item.deleted) return fail("nothing may follow a tombstone");
+  const next = structuredClone(item);
+  const failed = applyTo(next, event);
+  return failed === undefined ? ok(next) : err(failed);
+}
+
+/** Applies one more event to `next` in place. A failure leaves `next` partly changed: drop it. */
+function applyTo(next: StoredItem, event: ItemEvent): FoldError | undefined {
+  const fail = (message: string): FoldError => ({ seq: event.seq, message });
+  if (event.itemId !== next.id) return fail(`event for ${event.itemId} in the log of ${next.id}`);
+  if (event.seq !== next.lastSeq + 1) return fail(`expected seq ${next.lastSeq + 1}, got ${event.seq}`);
+  if (next.deleted) return fail("nothing may follow a tombstone");
   // A call that a stop ended reports its usage after the item ended; finish actions follow a done item.
   const finishEvent = FINISH_EVENTS.has(event.type);
-  if (item.outcome !== undefined && event.type !== "tombstone" && event.type !== "usage_recorded" && !finishEvent) return fail(`the item has ended; ${event.type} is not allowed`);
-  if (finishEvent && item.outcome?.kind !== "done") return fail(`${event.type} is allowed only once the item is done`);
+  if (next.outcome !== undefined && event.type !== "tombstone" && event.type !== "usage_recorded" && !finishEvent) return fail(`the item has ended; ${event.type} is not allowed`);
+  if (finishEvent && next.outcome?.kind !== "done") return fail(`${event.type} is allowed only once the item is done`);
 
-  const next = structuredClone(item);
   next.lastSeq = event.seq;
   // Usage is accounting, not a change of the item's state: the board order stays.
-  if (event.type !== "usage_recorded") next.updatedAt = Math.max(item.updatedAt, event.at);
+  if (event.type !== "usage_recorded") next.updatedAt = Math.max(next.updatedAt, event.at);
   const step = "stepId" in event && event.stepId !== undefined ? next.steps.find((s) => s.id === event.stepId) : undefined;
   if ("stepId" in event && event.stepId !== undefined && step === undefined) return fail(`no step ${event.stepId}`);
 
@@ -219,7 +241,7 @@ export function applyEvent(item: StoredItem | undefined, event: ItemEvent): Resu
       if (next.calls?.some((call) => call.callId === usage.callId)) return fail(`call ${usage.callId} is already recorded`);
       next.calls = [...(next.calls ?? []), usage];
       // The state is the item's own; usage does not change it.
-      return ok(next);
+      return undefined;
     }
 
     case "finish_started": {
@@ -285,7 +307,7 @@ export function applyEvent(item: StoredItem | undefined, event: ItemEvent): Resu
   }
 
   next.state = itemState(next);
-  return ok(next);
+  return undefined;
 }
 
 const FINISH_EVENTS: ReadonlySet<string> = new Set(["finish_started", "merged", "pr_opened", "discarded", "finish_failed", "git_changes_accepted"]);
