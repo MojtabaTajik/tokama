@@ -1,6 +1,6 @@
 // Checks a packaged Tokama.app (and its zip, dmg and update feed file) and prints one line per check:
 //   node scripts/verify-package.ts --app <Tokama.app> [--zip <zip>] [--dmg <dmg>] [--latest <latest-mac.yml>]
-//     --version <x.y.z> --feed-url <url> (--unsigned | --signed --team <TEAMID>) [--dir-build]
+//     --version <x.y.z> --feed-url <url> (--unsigned | --signed --team <TEAMID>) [--dir-build] [--allow-gatekeeper-off]
 // The mode is always named, never guessed from the app: a signed build must not pass for lack of
 // signing checks. Every check runs; the script exits 1 and names each failure if any failed.
 import { statSync } from "node:fs";
@@ -23,6 +23,7 @@ export function parseVerifyArgs(argv: readonly string[]): VerifyOptions {
       signed: { type: "boolean" },
       team: { type: "string" },
       "dir-build": { type: "boolean" },
+      "allow-gatekeeper-off": { type: "boolean" },
     },
   });
   if (values["dir-build"] === true && (values.zip !== undefined || values.dmg !== undefined || values.latest !== undefined)) throw new Error("--dir-build means no zip, dmg or latest-mac.yml");
@@ -46,6 +47,7 @@ export function parseVerifyArgs(argv: readonly string[]): VerifyOptions {
     ...(values.dmg !== undefined && { dmg: values.dmg }),
     ...(values.latest !== undefined && { latest: values.latest }),
     ...(values["dir-build"] === true && { dirBuild: true }),
+    ...(values["allow-gatekeeper-off"] === true && { allowGatekeeperOff: true }),
   };
 }
 

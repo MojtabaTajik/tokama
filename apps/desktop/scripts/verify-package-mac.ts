@@ -17,6 +17,8 @@ export interface VerifyOptions {
   readonly latest?: string;
   /** A build of the app folder alone (no dmg, no zip), to which electron-builder gives no update feed. */
   readonly dirBuild?: boolean;
+  /** Signed mode on a machine whose Gatekeeper is off: skip the spctl assessment and rely on stapler validate. */
+  readonly allowGatekeeperOff?: boolean;
   readonly version: string;
   readonly feedUrl: string;
   readonly mode: Mode;
@@ -309,13 +311,15 @@ function assessmentsDisabled(): boolean {
   return /assessments disabled/i.test(status.stdout + status.stderr);
 }
 
-async function checkNotarized(report: Report, target: string, kind: "app" | "dmg", label: string): Promise<void> {
+async function checkNotarized(report: Report, target: string, kind: "app" | "dmg", label: string, allowGatekeeperOff: boolean): Promise<void> {
   await report.check(`${label} stapler validate`, () => {
     const result = run("xcrun", ["stapler", "validate", target]);
     return result.status === 0 ? undefined : `${result.stdout}${result.stderr}`.trim();
   });
   if (assessmentsDisabled()) {
-    report.skip(`${label} spctl assessment`, "Gatekeeper is off on this machine");
+    // A signed build is assessed, unless the caller accepted that this machine cannot.
+    if (allowGatekeeperOff) report.skip(`${label} spctl assessment`, "Gatekeeper is off on this machine, accepted by --allow-gatekeeper-off");
+    else await report.check(`${label} spctl assessment`, () => "Gatekeeper is off on this machine; turn it on, or pass --allow-gatekeeper-off to rely on stapler validate");
     return;
   }
   await report.check(`${label} spctl assessment is Notarized Developer ID`, () => {
@@ -338,7 +342,7 @@ export async function checkApp(report: Report, app: string, options: VerifyOptio
   await report.check(`${label} bundled hook denies a command`, () => hookProblem(app));
   if (options.mode.kind === "signed") {
     await checkSignatures(report, app, options.mode.team, label);
-    await checkNotarized(report, app, "app", label);
+    await checkNotarized(report, app, "app", label, options.allowGatekeeperOff === true);
   } else {
     for (const name of ["codesign deep and strict", "signatures, runtime and entitlements", "stapler validate", "spctl assessment"]) report.skip(`${label} ${name}`, "unsigned build");
   }
@@ -380,5 +384,5 @@ export async function checkDmg(report: Report, options: VerifyOptions, dmg: stri
     const result = run("codesign", ["--verify", "--strict", dmg]);
     return result.status !== 0 ? result.stderr.trim() : signatureProblem(run("codesign", ["-dv", "--verbose=4", dmg]).stderr, team, false);
   });
-  await checkNotarized(report, dmg, "dmg", "dmg");
+  await checkNotarized(report, dmg, "dmg", "dmg", options.allowGatekeeperOff === true);
 }

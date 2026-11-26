@@ -8,8 +8,8 @@
 // `--home` runs against a folder that is kept, so a second run can read what the first left.
 // Logs go to --out (default apps/desktop/smoke-output). Exit 1 names the failed step.
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { accessSync, closeSync, constants, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { accessSync, closeSync, constants, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, rmdirSync, statSync, writeFileSync } from "node:fs";
+import { homedir, userInfo } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { parseArgs } from "node:util";
@@ -133,8 +133,23 @@ async function main(): Promise<void> {
     process.stderr.write(`smoke: ${error instanceof Error ? error.message : String(error)}\n`);
     process.exit(2);
   }
+  if (args.home !== undefined) {
+    // The engine of a kept home is stopped at the end; the real one may be running items.
+    const real = [homedir(), userInfo().homedir].map((dir) => realpathSync(dir));
+    if (existsSync(args.home) && real.includes(realpathSync(args.home))) {
+      process.stderr.write("smoke: --home must not be the real home folder\n");
+      process.exit(2);
+    }
+  }
   mkdirSync(args.out, { recursive: true });
   const state: Run = { args, version: appVersion(appDir), installed: undefined, home: undefined, app: undefined, appExit: undefined };
+  // The app runs detached, so Ctrl-C or a cancelled job would leave it, its engine and the installed copy behind.
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    process.once(signal, () => {
+      cleanUp(state);
+      process.exit(130);
+    });
+  }
   let step = 0;
   const steps: [string, () => Promise<void>][] = [
     ["install from the dmg", () => install(state)],
@@ -195,14 +210,21 @@ async function install(state: Run): Promise<void> {
     const attach = run("hdiutil", ["attach", "-nobrowse", "-readonly", "-mountpoint", mount, state.args.dmg]);
     if (attach.status !== 0) throw new Error(`hdiutil attach: ${attach.stderr.trim()}`);
     try {
-      const copy = run("ditto", [join(mount, "Tokama.app"), target]);
+      // A plain mkdir claims the target and fails if anything appeared there since the check above, so the cleanup never removes a folder this run did not make.
+      mkdirSync(target);
       state.installed = target;
+      const copy = run("ditto", [join(mount, "Tokama.app"), target]);
       if (copy.status !== 0) throw new Error(`ditto: ${copy.stderr.trim()}`);
     } finally {
       if (run("hdiutil", ["detach", mount]).status !== 0) run("hdiutil", ["detach", "-force", mount]);
     }
   } finally {
-    rmSync(mount, { recursive: true, force: true });
+    // Only an empty folder: a mount that did not detach must not be emptied.
+    try {
+      rmdirSync(mount);
+    } catch {
+      // Left for the system's temp cleanup.
+    }
   }
   process.stdout.write(`installed ${target}\n`);
 }
@@ -347,7 +369,8 @@ function cleanUp(state: Run): void {
   }
   // Only processes this run started: the app it spawned, and the engine whose command is the installed one.
   const appPid = state.app?.pid;
-  if (appPid !== undefined && alive(appPid)) process.kill(appPid, "SIGKILL");
+  // Not after the app has exited: its pid may belong to another process by now.
+  if (appPid !== undefined && state.appExit === undefined && alive(appPid)) process.kill(appPid, "SIGKILL");
   if (home !== undefined && installed !== undefined) {
     try {
       const lock = parseLock(readFileSync(join(engineDir(home), "engine.lock"), "utf8"));

@@ -19,7 +19,9 @@ export const DEFAULT_FEED_URL = "https://updates.tokama.dev/mac/";
 
 /** Why `url` cannot be the update feed, or undefined when it can: https, a plain host and plain path segments, and a trailing slash. */
 export function feedUrlProblem(url: string): string | undefined {
-  return /^https:\/\/[A-Za-z0-9.-]+(\/[A-Za-z0-9._~-]+)*\/$/.test(url) ? undefined : `the feed URL must be https, with a plain host and path and a trailing slash, not ${JSON.stringify(url)}`;
+  const plain = /^https:\/\/([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*)((?:\/[A-Za-z0-9._~-]+)*)\/$/.exec(url);
+  const dotSegment = (plain?.[2] ?? "").split("/").some((segment) => segment === "." || segment === "..");
+  return plain !== null && !dotSegment ? undefined : `the feed URL must be https, with a plain host and path and a trailing slash, not ${JSON.stringify(url)}`;
 }
 
 /** electron-builder's `afterPack` hook: Electron's own demo app archive is never opened (only the app's archive loads), so it does not ship. */
