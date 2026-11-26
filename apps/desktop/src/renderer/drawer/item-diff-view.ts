@@ -60,7 +60,7 @@ export function diffHeader(item: Pick<ItemRecord, "state" | "finish">, state: Ex
         mark: markOf("unknown", "gone"),
         head: ["Commit ", { code: short(change.commit) }, " is no longer in the repo"],
         details: [],
-        sub: "History was rewritten after the merge, so there is nothing to compare.",
+        sub: item.finish?.merged === undefined ? "The branch was deleted and git removed the commit, so there is nothing to compare." : "History was rewritten after the merge, so there is nothing to compare.",
       };
     case "merged":
       return {

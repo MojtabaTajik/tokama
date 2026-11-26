@@ -1465,12 +1465,15 @@ describe("the Diff tab of an item not merged", () => {
       return ++asked === 1 ? { ok: true, data: { kind: "worktree", ...tree, worktree } } : second.promise;
     });
     await act(async () => root.render(<ItemDrawer bridge={fake.bridge} itemId={finishable.id} setup={setup} onClose={vi.fn()} />));
-    await click($$('[role="tab"]').find((el) => el.textContent === "Diff"));
-    const merged = { ...finishable, finish: { worktreeRemoved: true, merged: { baseBranch: "main", commit: sha } } } as ItemRecord;
+    const diffTab = $$('[role="tab"]').find((el) => el.textContent === "Diff") as HTMLElement;
+    await click(diffTab);
+    await act(async () => diffTab.focus());
+    const merged ={ ...finishable, finish: { worktreeRemoved: true, merged: { baseBranch: "main", commit: sha } } } as ItemRecord;
     await fake.push(merged);
     expect(asked).toBe(2);
     expect($$('[role="tab"]').map((el) => el.textContent)).toContain("Diff");
     expect(text('[role="tab"][aria-selected="true"]')).toBe("Diff");
+    expect(document.activeElement).toBe(diffTab);
     expect($(".dv-head-line")?.textContent).toContain("Not merged yet");
     await act(async () => second.resolve({ ok: true, data: { kind: "merged", ...tree, repoId: "orders-api", baseBranch: "main", commit: sha, parent: worktree.baseCommit } }));
     expect($(".dv-head-line")?.textContent).toContain("Merged as abc1234");

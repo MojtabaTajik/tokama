@@ -1296,13 +1296,18 @@ describe("run loop: item diff", () => {
     expect(log(id)).toHaveLength(events);
   });
 
-  it("a done item whose worktree folder is gone still shows its commit", SLOW, async () => {
+  it("a done item whose worktree folder is gone still shows its commit; a repo that does not read is an error, not a gone commit", SLOW, async () => {
     const loop = engine(fakeRuntime([edits(FIXED)]));
     const id = await start(loop, template([{ id: "build" }]));
     rmSync(worktreeDir(id), { recursive: true, force: true });
     const diff = await loop.itemDiff(id);
     if (!diff.ok || diff.value.kind !== "worktree") throw new Error(JSON.stringify(diff));
     expect(shown(diff.value.files)).toEqual([["app.txt", "modified", 1, 1]]);
+
+    rmSync(join(repo.path, ".git"), { recursive: true, force: true });
+    const broken = await loop.itemDiff(id);
+    expect(broken).toMatchObject({ ok: false, error: { code: "invalid_state", message: expect.stringContaining("Cannot read repo orders-api") } });
+    expect(JSON.stringify(broken)).not.toContain(root);
   });
 
   it("a merged item: the merged commit against the base branch before it; a merge commit against its first parent", SLOW, async () => {

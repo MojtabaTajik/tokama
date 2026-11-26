@@ -1310,6 +1310,9 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       const recorded = item.worktrees[0];
       const own = item.state === "done" ? item.outcome.commits?.find((made) => made.repoId === repo.id)?.commit : undefined;
       if (own !== undefined && recorded?.baseCommit !== undefined && recorded.branch !== undefined) {
+        // Only a repo that reads, with the commit missing, says the commit is gone.
+        const top = await git.topLevel(repo.path);
+        if (!top.ok) return cannot(`Cannot read repo ${repo.id}`, top.error.message);
         const found = await git.revParse(repo.path, `${own}^{commit}`);
         if (!found.ok) return ok({ kind: "gone", repoId: repo.id, commit: own });
         const diff = await treeDiff(git, repo.path, recorded.baseCommit, own);

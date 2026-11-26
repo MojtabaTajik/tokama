@@ -46,6 +46,11 @@ describe("diffHeader", () => {
     expect(header?.columns).toBeUndefined();
   });
 
+  it("a commit that is gone from an item that was not merged does not speak of a merge", () => {
+    const header = diffHeader(finishable, loaded({ kind: "gone", repoId: REPO, commit: MERGED }), "main");
+    expect(lines(header)).toEqual(["– Commit abc1234 is no longer in the repo", "The branch was deleted and git removed the commit, so there is nothing to compare."]);
+  });
+
   it("stopped and failed with their worktree left", () => {
     const one = { ...worktree, files: [file("src/db/pool.ts", 40, 6)], moreFiles: 0 } as ItemChange;
     expect(lines(diffHeader(withState("stopped"), loaded(one), "main"))).toEqual(["■ Not merged · stopped · worktree tokama/receipt-tax · 1 file, +40 −6", "Compared with main at 85a75e3, where the item started."]);
