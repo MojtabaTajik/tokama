@@ -31,7 +31,7 @@
 // Threat model: local desktop, no network listener.
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { chmodSync, closeSync, constants, mkdirSync, openSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
-// eslint-disable-next-line no-restricted-imports -- the engine lock is created exclusively (O_EXCL); renameSync moves a damaged usage database aside.
+// eslint-disable-next-line no-restricted-imports -- the lock's temp file is created exclusively (O_EXCL); renameSync moves a stale lock or a damaged usage database aside.
 import { renameSync, writeSync } from "node:fs";
 // eslint-disable-next-line no-restricted-imports -- link(2) publishes the lock whole and fails if one exists: that is the lock itself.
 import { linkSync } from "node:fs";
@@ -1142,18 +1142,33 @@ async function publishLock(lockPath: string, content: string, engineId: string, 
         }
       }
       const existing = readEngineLock(lockPath);
-      if (existing === undefined) {
-        log(`removing an unusable lock at ${lockPath}`);
-        unlinkIfPresent(lockPath);
-        continue;
+      if (existing === undefined) log(`removing an unusable lock at ${lockPath}`);
+      else {
+        if ((await probeSocket(existing.socketPath, PROBE_TIMEOUT_MS)) !== "dead") {
+          return err({ code: "already_running", message: `an engine is already running on ${existing.socketPath}` });
+        }
+        log(`taking over the lock of an engine that is gone (pid ${existing.pid})`);
       }
-      if ((await probeSocket(existing.socketPath, PROBE_TIMEOUT_MS)) !== "dead") {
-        return err({ code: "already_running", message: `an engine is already running on ${existing.socketPath}` });
+      // Moved aside in one step, so a lock another engine published meanwhile is never deleted
+      // unseen: if what was moved is not the lock read above, it goes back and this engine yields.
+      const aside = `${lockPath}.${engineId}.stale`;
+      try {
+        renameSync(lockPath, aside);
+      } catch (error) {
+        if (hasCode(error, "ENOENT")) continue;
+        throw error;
       }
-      // Taken over only if it is still the lock we read: another engine may have replaced it meanwhile.
-      if (readEngineLock(lockPath)?.text !== existing.text) continue;
-      log(`taking over the lock of an engine that is gone (pid ${existing.pid})`);
-      unlinkIfPresent(lockPath);
+      const moved = readEngineLock(aside);
+      if (moved !== undefined && moved.text !== existing?.text) {
+        try {
+          linkSync(aside, lockPath);
+        } catch {
+          // Another lock is there already: that engine holds it.
+        }
+        unlinkIfPresent(aside);
+        return err({ code: "already_running", message: `another engine is starting in ${folder}` });
+      }
+      unlinkIfPresent(aside);
     }
     return err({ code: "already_running", message: `another engine is starting in ${folder}` });
   } catch (error) {

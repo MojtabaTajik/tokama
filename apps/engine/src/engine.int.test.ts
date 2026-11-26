@@ -365,8 +365,10 @@ describe("engine service", () => {
     const raw = await rawConnect(join(dir, name));
     cleanups.push(() => raw.destroy());
     raw.send({ kind: "hello", apiVersion: API_VERSION, token: readFileSync(join(dir, name.replace(/\.sock$/, ".token")), "utf8") });
-    const answered = raw.next();
+    let early = false;
+    const answered = raw.next().then((message) => ((early = true), message));
     await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(early).toBe(false);
     release();
     const started = await starting;
     if (!started.ok) throw new Error(started.error.message);

@@ -46,6 +46,7 @@ import {
   parseServerMessage,
   spawnDetached,
   parseShutdownReply,
+  probeSocket,
   readEngineLock,
   tokenPathOf,
   type QueryInput,
@@ -352,6 +353,12 @@ class Client implements EngineClient {
     }
     const { reason, ...error } = session.error;
     if (reason === "dead") return { kind: "dead", error };
+    if (reason === "no_token") {
+      // The token is written before the socket listens, but an engine of an earlier build writes it
+      // after its lock. With a socket that accepts, an engine lives (or is starting): never start one beside it.
+      if ((await probeSocket(lock.socketPath)) === "dead") return { kind: "dead", error };
+      return { kind: "done", result: err({ code: "timeout", message: error.message }) };
+    }
     if (reason === "closed") {
       // The engine took the connection and closed it without a welcome: it is stopping. Never start one beside it.
       await this.sleep(this.drainDelayMs);
@@ -475,7 +482,7 @@ export interface SocketFiles {
  * stopping), `silent` (it accepted and did not answer in time).
  */
 interface SessionFailure extends ConnectError {
-  readonly reason?: "dead" | "closed" | "silent";
+  readonly reason?: "dead" | "closed" | "silent" | "no_token";
 }
 
 /**
@@ -489,7 +496,7 @@ function readToken(files: SocketFiles): Result<string, SessionFailure> {
     // Read on every attempt: the token changes each time the engine starts.
     return ok(readFileSync(files.tokenPath, "utf8").trim());
   } catch {
-    return err({ code: "not_running", message: `no engine token at ${files.tokenPath}`, reason: "dead" });
+    return err({ code: "not_running", message: `no engine token at ${files.tokenPath}`, reason: "no_token" });
   }
 }
 

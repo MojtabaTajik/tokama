@@ -311,6 +311,14 @@ describe("@tokama/client", () => {
     expect(recorder.started()).toBe(false);
   });
 
+  it("does not start an engine beside a live socket whose token file is missing", async () => {
+    const fake = await fakeEngine(() => {});
+    rmSync(tokenPathOf(fake.socketPath));
+    const recorder = recordingStart();
+    expect(await open(fake, { start: recorder.start, startTimeoutMs: 400 })).toMatchObject({ ok: false, error: { code: "timeout" } });
+    expect(recorder.started()).toBe(false);
+  });
+
   it("does not start an engine beside one that closes the connection without a welcome", async () => {
     const fake = await fakeEngine((socket) => socket.once("data", () => socket.end()));
     const recorder = recordingStart();

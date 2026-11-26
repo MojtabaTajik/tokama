@@ -1,8 +1,8 @@
 // The engine as a real background process, started on demand by the client. Runs the built
 // entry (dist/main.js): Node cannot run the TypeScript sources directly, because they import
 // `./x.js`. `pnpm build` runs before `pnpm test` in CI.
-import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type ClientEvent, connect, type EngineClient } from "@tokama/client";
@@ -151,6 +151,39 @@ describe("engine process", () => {
     expect(second.stderr).toContain("already running");
     expect(readFileSync(tokenPathOf(lock.socketPath), "utf8")).toBe(token);
     expect(readEngineLock(lockOf(dir))?.text).toBe(lock.text);
+  });
+
+  it("lets only one of two engine processes that start at once on a stale lock run", { timeout: 60_000 }, async () => {
+    for (let round = 0; round < 5; round++) {
+      const dir = tempEngineDir(cleanups);
+      killEngineAfter(dir);
+      // A crashed engine's lock names a socket nobody listens on.
+      mkdirSync(homeOf(dir), { recursive: true, mode: 0o700 });
+      writeFileSync(lockOf(dir), `${process.pid} e-crashed ${join(dir, "s-deadbeef.sock")}\n`, { mode: 0o600 });
+      const exited: boolean[] = [];
+      const run = () =>
+        new Promise<{ code: number | null; child: ChildProcess }>((resolve) => {
+          const index = exited.push(false) - 1;
+          const child = spawn(process.execPath, command(dir).args, { stdio: "ignore" });
+          cleanups.push(() => child.kill("SIGKILL"));
+          child.once("exit", (code) => {
+            exited[index] = true;
+            resolve({ code, child });
+          });
+        });
+      const runs = [run(), run()];
+      // Settled: at least one has exited with 3 (an engine that yields exits at once).
+      const early = await Promise.race([...runs, new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 10_000))]);
+      expect(early?.code, `round ${round}`).toBe(3);
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      // Never two engines at once. (Two starters that cross each other may both yield; the next start takes the lock.)
+      const running = runs.length - runs.filter((_, index) => exited[index]).length;
+      expect(running, `round ${round}`).toBeLessThanOrEqual(1);
+      const lock = readEngineLock(lockOf(dir));
+      if (running === 1 && lock !== undefined) process.kill(lock.pid, "SIGTERM");
+      const done = await Promise.all(runs);
+      expect(done.every((result) => result.code === 3 || result.code === 0), `round ${round}`).toBe(true);
+    }
   });
 
   it("serves the sample data set with --sample", { timeout: 30_000 }, async () => {

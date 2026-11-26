@@ -44,7 +44,7 @@ const alive = (pid: number | undefined): boolean => {
 
 /**
  * An engine of the previous API version in the app's engine dir: a 0700 dir, a token, a socket and
- * a lock `<pid> <id>`. Like an engine from before `ifIdle`, it answers a hello with an
+ * a lock `<pid> <id> <socket>`. Like an engine from before `ifIdle`, it answers a hello with an
  * unsupported_version refusal that says how many items it runs, and a shutdown request by
  * accepting it and going away.
  */
