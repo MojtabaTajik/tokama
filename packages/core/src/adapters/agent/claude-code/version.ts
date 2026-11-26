@@ -1,4 +1,3 @@
-import { tmpdir } from "node:os";
 import type { ProcessRunner } from "../../../kernel/process/index.js";
 
 /**
@@ -43,6 +42,8 @@ export type VersionRead = { readonly kind: "version"; readonly version: string }
 export interface ReadVersionOptions {
   readonly command: readonly [string, ...string[]];
   readonly runner: ProcessRunner;
+  /** The folder the call runs in: a version manager's shim picks the CLI by it. */
+  readonly cwd: string;
   readonly env?: Readonly<Record<string, string>>;
   readonly signal: AbortSignal;
   readonly timeoutMs?: number;
@@ -54,7 +55,7 @@ export async function readClaudeVersion(options: ReadVersionOptions): Promise<Ve
   const lines: string[] = [];
   const result = await options.runner.run({
     command: { argv: [...options.command, "--version"] },
-    cwd: tmpdir(),
+    cwd: options.cwd,
     timeoutMs,
     signal: options.signal,
     ...(options.env !== undefined && { env: options.env }),

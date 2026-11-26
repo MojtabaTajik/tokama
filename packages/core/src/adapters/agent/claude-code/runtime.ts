@@ -55,7 +55,7 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): AgentR
       // let a command run unchecked. Calls without the shell have no hook and need no check. The
       // version is read on every call: the runtime outlives updates and downgrades of the CLI.
       if (usesShell(request)) {
-        const read = await readClaudeVersion({ command, runner, signal, ...(options.env !== undefined && { env: options.env }) });
+        const read = await readClaudeVersion({ command, runner, signal, cwd: request.cwd, ...(options.env !== undefined && { env: options.env }) });
         if (read.kind === "aborted") {
           yield { type: "end", outcome: "aborted", usage: NO_TOKENS };
           return;

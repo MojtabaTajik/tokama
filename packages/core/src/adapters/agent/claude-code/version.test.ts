@@ -1,5 +1,44 @@
 import { describe, expect, it } from "vitest";
-import { commandRulesProblem, compareVersions, parseVersion } from "./version.js";
+import type { ProcessRunner, RunRequest, RunResult } from "../../../kernel/process/index.js";
+import { commandRulesProblem, compareVersions, parseVersion, readClaudeVersion } from "./version.js";
+
+const finished = (extra: Partial<Extract<RunResult, { kind: "finished" }>> = {}): RunResult => ({
+  kind: "finished", pid: 2, exitCode: 0, signal: null, timedOut: false, aborted: false, startedAt: 0, endedAt: 0, durationMs: 0, ...extra,
+});
+
+/** A runner that records its requests and answers each with `result` after printing `out`. */
+function recordingRunner(result: RunResult, out = "") {
+  const requests: RunRequest[] = [];
+  const runner: ProcessRunner = {
+    run: async (request) => {
+      requests.push(request);
+      if (out !== "") request.stdout?.onLine?.(out);
+      return result;
+    },
+  };
+  return { runner, requests };
+}
+
+describe("readClaudeVersion", () => {
+  const options = (runner: ProcessRunner) => ({ command: ["claude"] as const, runner, cwd: "/repo/x", signal: new AbortController().signal });
+
+  it("runs `claude --version` in the folder the call runs in", async () => {
+    const { runner, requests } = recordingRunner(finished(), "2.1.332 (Claude Code)");
+    expect(await readClaudeVersion(options(runner))).toEqual({ kind: "version", version: "2.1.332" });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ command: { argv: ["claude", "--version"] }, cwd: "/repo/x" });
+  });
+
+  it("reports a CLI that does not answer in time", async () => {
+    const { runner } = recordingRunner(finished({ exitCode: null, signal: "SIGTERM", timedOut: true }));
+    expect(await readClaudeVersion({ ...options(runner), timeoutMs: 10_000 })).toEqual({ kind: "unknown", why: "it did not answer within 10 s" });
+  });
+
+  it("reports a stop, whether the process started or not", async () => {
+    expect(await readClaudeVersion(options(recordingRunner({ kind: "not-started", reason: "aborted", message: "aborted before start" }).runner))).toEqual({ kind: "aborted" });
+    expect(await readClaudeVersion(options(recordingRunner(finished({ aborted: true })).runner))).toEqual({ kind: "aborted" });
+  });
+});
 
 describe("compareVersions", () => {
   it("orders versions by number, not by text", () => {

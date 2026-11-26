@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { manualClock } from "../../../kernel/clock/index.js";
-import { createProcessRunner } from "../../../kernel/process/index.js";
+import { createProcessRunner, type ProcessRunner } from "../../../kernel/process/index.js";
 import type { AgentCallRequest, AgentRuntime } from "../../../kernel/ports/index.js";
 import { describeAgentRuntimeContract } from "../../../kernel/ports/testing/contracts.js";
 import type { AgentCallEvent } from "../../../kernel/schemas/index.js";
@@ -182,11 +182,29 @@ describe("Claude Code runtime", SLOW, () => {
 
     it("fails closed when the CLI does not start", async () => {
       const missing = createClaudeCodeRuntime({ command: [join(dir, "no-such-claude")] });
-      expect(end(await collect(missing.launch(request("echo", withCommands), new AbortController().signal)))).toMatchObject({
+      const events = await collect(missing.launch(request("echo", withCommands), new AbortController().signal));
+      expect(events).toHaveLength(1);
+      expect(end(events)).toMatchObject({
         outcome: "failed",
         errorKind: "crash",
         error: expect.stringContaining("could not read the Claude Code version (`claude --version` did not start)"),
       });
+    });
+
+    it("probes in the folder of the call, and starts nothing else when the call was cancelled before it started", async () => {
+      const base = createProcessRunner({ killGraceMs: 200, drainMs: 500 });
+      const seen: Array<{ argv: readonly string[]; cwd: string }> = [];
+      const runner: ProcessRunner = {
+        run: (run) => {
+          seen.push({ argv: "argv" in run.command ? run.command.argv : [], cwd: run.cwd });
+          return base.run(run);
+        },
+      };
+      const probed = createClaudeCodeRuntime({ command: [process.execPath, FAKE], runner });
+      const stopped = new AbortController();
+      stopped.abort();
+      expect(await collect(probed.launch(request("echo", withCommands), stopped.signal))).toEqual([{ type: "end", outcome: "aborted", usage: NO_TOKENS }]);
+      expect(seen).toEqual([{ argv: [process.execPath, FAKE, "--version"], cwd: dir }]);
     });
   });
 
