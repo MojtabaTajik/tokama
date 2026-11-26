@@ -4,8 +4,9 @@
 //
 // Two ways to fold. `applyEvent` copies the item first and never changes its argument; the writer
 // uses it. `foldItem` builds one working copy and changes it in place for every later event, so a
-// whole log costs no copy per event. The result may share read-only parts with its events
-// (`template`, `choices`, `usage`, `tree`): no case writes into those, it only replaces them.
+// whole log costs no copy per event. The result may share nested values with its events
+// (`template`, `repoIds`, `choices`, `usage`, `tree`, `commits`, ...): a case replaces such a value
+// and never writes into it.
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import {
   STORED_ITEM_SCHEMA_VERSION,

@@ -26,9 +26,6 @@ function stepwise(log: readonly ItemEvent[]): Result<StoredItem, FoldError> {
   return item ? ok(item) : err({ seq: 0, message: "the log is empty" });
 }
 
-/** Event types that folded in this file; the last test checks that none of the schema's is missing. */
-const foldedTypes = new Set<string>();
-
 /**
  * Folds with `foldItem` on events that are deep-frozen (a write into an event, or into a part the
  * result shares with one, throws) and checks the result against the reference fold.
@@ -39,7 +36,6 @@ function foldChecked(bodies: readonly ItemEventBody[]): Result<StoredItem, FoldE
   const folded = foldItem(log);
   expect(folded).toStrictEqual(stepwise(log));
   expect(log).toStrictEqual(before);
-  if (folded.ok) for (const event of log) foldedTypes.add(event.type);
   return folded;
 }
 
@@ -430,9 +426,32 @@ describe("finish events", () => {
 
 describe("folding a whole log on one working copy", () => {
   it("is exercised by every event type of the schema", () => {
-    // Relies on the cases above having run in this file.
+    const COMMIT = "a".repeat(40);
+    const repoId = "orders-api" as never;
+    const call1 = call(1);
+    const ran: ItemEventBody[] = [
+      created(),
+      { type: "worktree_added", repoId, branch: "tokama/0000000a", dir: ".tokama/wt/0000000a" },
+      { type: "baseline_recorded", repoId, protectedDigest: "1".repeat(64) },
+      { type: "step_started", stepId: BUILD },
+      { type: "attempt_started", stepId: BUILD, attempt: 1 },
+      { type: "process_started", stepId: BUILD, attempt: 1, role: "agent", pid: 4242, bootTime: T0 },
+      { type: "check_result", stepId: BUILD, attempt: 1, command: "pnpm test", exitCode: 0, passed: true },
+      { type: "decision_opened", decisionId, kind: "run_failure", stepId: BUILD, choices: [{ id: "stop", label: "Stop" }] },
+      { type: "decision_resolved", decisionId, choice: "stop" },
+      { type: "attempt_ended", stepId: BUILD, attempt: 1, result: "passed" },
+      { type: "usage_recorded", usage: call1 },
+      { type: "step_ended", stepId: BUILD, result: "passed" },
+      { type: "item_ended", outcome: "done", commits: [{ repoId, commit: COMMIT }] },
+    ];
+    const refused: ItemEventBody[] = [...ran, { type: "finish_started", action: "merge" }, { type: "finish_failed", action: "merge", reason: "steering_changed", detail: "changed", gitDigest: "2".repeat(64) }, { type: "git_changes_accepted", repoId, protectedDigest: "2".repeat(64) }];
+    const opened: ItemEventBody[] = [...refused, { type: "finish_started", action: "pull_request" }, { type: "pr_opened", repoId, url: "https://github.com/acme/orders-api/pull/7" }, { type: "finish_started", action: "discard" }, { type: "discarded", repoId }, { type: "tombstone" }];
+    const merged: ItemEventBody[] = [...ran, { type: "finish_started", action: "merge" }, { type: "merged", repoId, baseBranch: "main", commit: COMMIT, worktreeRemoved: false }];
+    fold(opened);
+    fold(merged);
+    const used = new Set([...opened, ...merged].map((body) => body.type));
     const all = ItemEventSchema.options.map((option) => option.shape.type.value);
-    expect(all.filter((type) => !foldedTypes.has(type))).toEqual([]);
+    expect(all.filter((type) => !used.has(type))).toEqual([]);
   });
 
   it("hands out an item that a later event does not change: that event works on a copy", () => {

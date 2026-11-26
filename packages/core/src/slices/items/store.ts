@@ -203,6 +203,7 @@ export class ItemStore {
   private load(itemId: ItemId): Result<StoredItem, string> {
     const log = readLog(join(this.itemsDir, itemId, EVENTS_FILE), this.fs);
     if (!log.ok) return err(log.error.message);
+    if (log.value.events.length === 0) return err("the log is empty");
     const folded = foldItem(log.value.events);
     if (!folded.ok) return err(`seq ${folded.error.seq}: ${folded.error.message}`);
     if (folded.value.id !== itemId) return err(`the log in ${itemId} belongs to ${folded.value.id}`);
