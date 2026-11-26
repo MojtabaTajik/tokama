@@ -1,12 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
-import { conflictAnswer, type ConflictType, type MoveDeps, offerMove, shouldOfferMove } from "./move-to-applications.js";
+import { conflictAnswer, type ConflictType, type MoveDeps, offerMove, runsFromCopy, shouldOfferMove } from "./move-to-applications.js";
 
 function deps(overrides: Partial<MoveDeps> = {}) {
   const moveToApplicationsFolder = vi.fn<MoveDeps["moveToApplicationsFolder"]>(() => true);
   const showErrorBox = vi.fn<MoveDeps["showErrorBox"]>();
-  const all: MoveDeps = { ask: async () => 0, askSync: () => 0, moveToApplicationsFolder, showErrorBox, ...overrides };
+  const all: MoveDeps = { ask: async () => 0, askSync: () => 0, moveToApplicationsFolder, showErrorBox, itemsRunningInApplications: async () => 0, ...overrides };
   return { all, moveToApplicationsFolder, showErrorBox };
 }
+
+describe("runsFromCopy", () => {
+  it("is true for a command inside the copy in Applications, and only for that", () => {
+    expect(runsFromCopy("/Applications/Tokama.app/Contents/Resources/engine/tokama-engine /Applications/Tokama.app/Contents/Resources/engine/dist/main.js --dir /x")).toBe(true);
+    expect(runsFromCopy("/Applications/Tokama.app.old/Contents/Resources/engine/tokama-engine")).toBe(false);
+    expect(runsFromCopy("/usr/local/bin/node /src/apps/engine/dist/main.js --dir /x")).toBe(false);
+  });
+});
 
 describe("shouldOfferMove", () => {
   const base = { platform: "darwin" as const, isPackaged: true, inApplications: () => false };
@@ -44,6 +52,22 @@ describe("offerMove", () => {
     await offerMove(all);
     expect(moveToApplicationsFolder).toHaveBeenCalledOnce();
     expect(showErrorBox).not.toHaveBeenCalled();
+  });
+
+  it("refuses to replace the copy in Applications while its engine runs items, and says how many", async () => {
+    const { all, moveToApplicationsFolder, showErrorBox } = deps({ itemsRunningInApplications: async () => 2 });
+    await offerMove(all);
+    expect(moveToApplicationsFolder).not.toHaveBeenCalled();
+    expect(showErrorBox).toHaveBeenCalledWith("Could not replace Tokama", expect.stringContaining("still has 2 unfinished items"));
+  });
+
+  it("refuses when it cannot tell whether the copy in Applications runs items", async () => {
+    for (const itemsRunningInApplications of [async () => undefined, async () => Promise.reject(new Error("no engine answer"))]) {
+      const { all, moveToApplicationsFolder, showErrorBox } = deps({ itemsRunningInApplications });
+      await offerMove(all);
+      expect(moveToApplicationsFolder).not.toHaveBeenCalled();
+      expect(showErrorBox).toHaveBeenCalledWith("Could not replace Tokama", expect.stringContaining("could not check"));
+    }
   });
 
   it("shows the error when the move throws, and returns so the app quits", async () => {

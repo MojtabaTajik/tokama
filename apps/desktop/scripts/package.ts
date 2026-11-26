@@ -11,10 +11,10 @@ import { join, resolve } from "node:path";
 const appDir = resolve(import.meta.dirname, "..");
 const repoDir = resolve(appDir, "..", "..");
 
-/** The app's version: the one source of every version the build writes. */
+/** The app's version: the one source of every version the build writes. It must be plain `x.y.z`, the only form the engine reads back. */
 export function appVersion(dir: string): string {
   const { version } = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as { version?: unknown };
-  if (typeof version !== "string" || version === "") throw new Error(`${dir}/package.json has no version`);
+  if (typeof version !== "string" || !/^\d+\.\d+\.\d+$/.test(version)) throw new Error(`${dir}/package.json: the version must be plain x.y.z, not ${JSON.stringify(version)}`);
   return version;
 }
 
@@ -58,20 +58,31 @@ async function main(): Promise<void> {
   writeFileSync(join(stage, "package.json"), engineManifest(appVersion(appDir)));
   checkEngineVersion(appDir, stage);
 
-  // The ad-hoc identity and the keychain: never discover a real certificate.
+  // electron-builder looks for an identity whose name contains the qualifier "-" in the keychain it
+  // is given, and ad-hoc signs only when it finds none. It is given a new, empty keychain, so it
+  // can find none and a real certificate is never used. The signature check below stays as the
+  // second guard.
+  const keychainDir = mkdtempSync(join(tmpdir(), "tk-package-keychain-"));
+  const keychain = join(keychainDir, "empty.keychain-db");
+  execFileSync("security", ["create-keychain", "-p", "", keychain], { stdio: "ignore" });
+  process.env["CSC_KEYCHAIN"] = keychain;
   process.env["CSC_IDENTITY_AUTO_DISCOVERY"] = "false";
-  const { build, Arch, Platform } = await import("electron-builder");
-  await build({
-    projectDir: appDir,
-    targets: Platform.MAC.createTarget(dmg ? ["dmg", "zip"] : ["dir"], Arch.arm64),
-    publish: "never",
-    config: {
-      // Ad-hoc on purpose, so the keychain's real certificate is never picked; hardened runtime is off
-      // because an ad-hoc signature cannot pass library validation.
-      mac: { identity: "-", hardenedRuntime: false, notarize: false },
-      dmg: { sign: false },
-    },
-  });
+  try {
+    const { build, Arch, Platform } = await import("electron-builder");
+    await build({
+      projectDir: appDir,
+      targets: Platform.MAC.createTarget(dmg ? ["dmg", "zip"] : ["dir"], Arch.arm64),
+      publish: "never",
+      config: {
+        // Ad-hoc on purpose; hardened runtime is off because an ad-hoc signature cannot pass library validation.
+        mac: { identity: "-", hardenedRuntime: false, notarize: false },
+        dmg: { sign: false },
+      },
+    });
+  } finally {
+    spawnSync("security", ["delete-keychain", keychain], { stdio: "ignore" });
+    rmSync(keychainDir, { recursive: true, force: true });
+  }
 
   await check(join(appDir, "release", "mac-arm64", "Tokama.app"));
 }

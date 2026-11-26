@@ -35,7 +35,7 @@ describe("command-policy hook decision", () => {
 
   it("quotes the hook command for the shell", () => {
     expect(hookSettings(["/usr/bin/node", "/a b/it's/hook.js", "/r.json"])).toEqual({
-      hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: `'/usr/bin/node' '/a b/it'\\''s/hook.js' '/r.json'` }] }] },
+      hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: `'/usr/bin/node' '/a b/it'\\''s/hook.js' '/r.json'`, onFailure: "block" }] }] },
     });
   });
 });

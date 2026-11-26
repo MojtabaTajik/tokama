@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -5,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { createProcessRunner, type ProcessRunner } from "../../../kernel/process/index.js";
 import type { AgentCallEvent } from "../../../kernel/schemas/index.js";
 import { createClaudeCodeRuntime } from "./index.js";
+import { hookSettings } from "./permission-hook.js";
 
 // One call to the real `claude` CLI, on the user's own login. Opt in with TOKAMA_REAL_CLAUDE=1;
 // it costs a few cents and never runs in CI. It checks the permissions for real: an edit inside
@@ -92,6 +94,27 @@ describe.skipIf(!enabled)("Claude Code runtime against the real CLI", () => {
       expect(failedCommand("cat ../secret.txt")).toBe(true);
       expect(JSON.stringify(events)).not.toContain("agama");
       expect(events).toContainEqual(expect.objectContaining({ type: "tool_call", name: "Write", kind: "edit", input: expect.objectContaining({ file_path: "inside.txt" }) }));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("blocks a command when the hook script is missing, and runs it when the hook has no onFailure", { timeout: 240_000 }, () => {
+    const root = mkdtempSync(join(tmpdir(), "tokama-real-claude-hook-"));
+    try {
+      const run = (name: string, settings: unknown) => {
+        const dir = join(root, name);
+        mkdirSync(dir);
+        writeFileSync(join(dir, "settings.json"), JSON.stringify(settings));
+        spawnSync("claude", ["-p", "--model", "haiku", "--settings", "settings.json", "--allowedTools", "Bash", "--permission-mode", "dontAsk", "Run exactly this bash command and nothing else: echo HOOKTEST > marker.txt"], { cwd: dir, encoding: "utf8", timeout: 100_000 });
+        return existsSync(join(dir, "marker.txt"));
+      };
+      const missing = ["/nonexistent/tokama-engine", "/nonexistent/hook.js", "/nonexistent/rules.json"];
+      expect(run("guarded", hookSettings(missing))).toBe(false);
+      // The same hook without onFailure fails open: this is the behaviour onFailure exists to prevent.
+      const open = hookSettings(missing) as { hooks: { PreToolUse: Array<{ hooks: Array<Record<string, unknown>> }> } };
+      delete open.hooks.PreToolUse[0]?.hooks[0]?.["onFailure"];
+      expect(run("open", open)).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

@@ -19,6 +19,13 @@ describe("notices", () => {
     expect(list.find((notice) => notice.id === "react")?.version).toBe(reactVersion);
   });
 
+  it("names the yaml and zod versions that core depends on", () => {
+    const core = JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "..", "..", "..", "packages", "core", "package.json"), "utf8")) as { dependencies: Record<string, string> };
+    const list = notices("45.4.1");
+    expect(list.find((notice) => notice.id === "yaml")?.version).toBe(core.dependencies["yaml"]);
+    expect(list.find((notice) => notice.id === "zod")?.version).toBe(core.dependencies["zod"]);
+  });
+
   it("names the Node.js version the packaged app ships", () => {
     const pinned: unknown = JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "..", "packaging", "node-runtime.json"), "utf8"));
     expect(notices("45.4.1").find((notice) => notice.id === "node")?.version).toBe((pinned as { version: string }).version);

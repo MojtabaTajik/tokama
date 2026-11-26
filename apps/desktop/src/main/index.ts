@@ -16,7 +16,7 @@ import { type DesktopStore, desktopStore } from "./desktop-store.js";
 import { DIAGNOSTICS_URL, diagnosticsService, saveToFile } from "./diagnostics-send.js";
 import { createReporter, mainErrorReport, rateLimit, rendererErrorReport, rendererGoneKind, rendererUsageReport, type Reporter, runMarker } from "./diagnostics.js";
 import { engineCommand, engineCommandEnd, engineDirFor, engineRuntime, readLogTail } from "./engine.js";
-import { offerMove, shouldOfferMove } from "./move-to-applications.js";
+import { offerMove, runsFromCopy, shouldOfferMove } from "./move-to-applications.js";
 import { replaceOlderEngine } from "./replace.js";
 import { pickRepoFolder } from "./folder.js";
 import { createNotifier } from "./notifier.js";
@@ -168,10 +168,33 @@ function showWindow(window: BrowserWindow): void {
 // One app process per user when packaged, so two windows never run two updaters. Development and the UI tests start many.
 const primary = !app.isPackaged || app.requestSingleInstanceLock();
 if (!primary) app.quit();
-app.on("second-instance", () => {
-  const window = BrowserWindow.getAllWindows()[0];
-  if (window !== undefined) showWindow(window);
-});
+// Set once the app is ready: shows the main window, making it again when it was closed.
+let showMain: (() => void) | undefined;
+app.on("second-instance", () => showMain?.());
+
+/** Unfinished items of an engine that runs from the copy of the app in Applications: 0 when there is none, undefined when that could not be told. */
+async function itemsRunningInApplications(): Promise<number | undefined> {
+  const dir = engineDirFor(defaultEngineDir(process.env, homedir()), sample);
+  const endpoint = engineEndpoint(dir);
+  if (!endpoint.ok) return undefined;
+  const lock = readEngineLock(endpoint.value.lockPath);
+  if (lock === undefined) return 0;
+  const described = await posixEngineProcesses.describe(lock.pid).then(
+    (found) => ({ found }),
+    () => undefined,
+  );
+  if (described === undefined) return undefined;
+  if (described.found === undefined || !runsFromCopy(described.found.command)) return 0;
+  // No start: this only asks an engine that already runs.
+  const connected = await connect({ dir });
+  if (!connected.ok) return undefined;
+  try {
+    const reply = await connected.value.query({ type: "board" });
+    return reply.ok ? reply.data.items.filter((item) => item.state === "queued" || item.state === "running" || item.state === "needs_you").length : undefined;
+  } finally {
+    await connected.value.close().catch(() => undefined);
+  }
+}
 
 void app.whenReady().then(async () => {
   if (!primary) return;
@@ -182,6 +205,7 @@ void app.whenReady().then(async () => {
       askSync: (question) => dialog.showMessageBoxSync({ type: "question", ...question, defaultId: 0, cancelId: 1 }),
       moveToApplicationsFolder: (options) => app.moveToApplicationsFolder(options),
       showErrorBox: (title, content) => dialog.showErrorBox(title, content),
+      itemsRunningInApplications,
     });
     app.quit();
     return;
@@ -310,6 +334,10 @@ void app.whenReady().then(async () => {
     void watch.close();
   });
   createWindow(store, reporter);
+  showMain = () => {
+    const window = BrowserWindow.getAllWindows()[0] ?? createWindow(store, reporter);
+    showWindow(window);
+  };
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(store, reporter);
   });

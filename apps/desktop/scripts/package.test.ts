@@ -22,6 +22,16 @@ describe("engineManifest", () => {
   });
 });
 
+describe("appVersion", () => {
+  it("accepts a plain x.y.z", () => {
+    expect(appVersion(folder("plain", "0.1.0"))).toBe("0.1.0");
+  });
+
+  it.each(["0.1.0-alpha.1", "1.0", "v1.0.0", "1.0.0+build", ""])("refuses %j, which the engine would read back as 0.0.0", (version) => {
+    expect(() => appVersion(folder(`bad-${version || "empty"}`, version))).toThrow(/plain x\.y\.z/);
+  });
+});
+
 describe("checkEngineVersion", () => {
   it("passes when the engine folder has the app's version, as the manifest writes it", () => {
     const engine = join(root, "engine");
