@@ -741,6 +741,57 @@ describe("untrusted text in messages", () => {
   });
 });
 
+describe("validateTemplate: warnings", () => {
+  const REVIEWER_IF_FAILED = edit("    if_changes_requested: { back: build }\n", "    if_changes_requested: { back: build }\n    if_failed: { back: build }\n");
+  const collect = async (text: string) => {
+    const warnings: TemplateProblem[] = [];
+    const result = await validateTemplate(text, {
+      ref: "orders-api/sample" as TemplateRef,
+      source: { kind: "repo", repoId: "orders-api" as never, file: ".tokama/templates/sample.yaml" },
+      agents: AGENTS,
+      readInstructions,
+      onWarning: (warning) => warnings.push(warning),
+    });
+    return { result, warnings };
+  };
+
+  it("warns, with the line of the field, on a reviewer step with if_failed", async () => {
+    const { result, warnings } = await collect(REVIEWER_IF_FAILED);
+    expect(result.ok).toBe(true);
+    expect(warnings).toEqual([{ line: 22, message: 'Step "review": "if_failed" has no effect on a reviewer step; use "if_changes_requested".' }]);
+  });
+
+  it("does not warn on a checks step with if_failed", async () => {
+    const { result, warnings } = await collect(BASE);
+    expect(result.ok).toBe(true);
+    expect(warnings).toEqual([]);
+  });
+
+  it("tells no warning of a file that is refused", async () => {
+    const { result, warnings } = await collect(REVIEWER_IF_FAILED.replace("agent: reviewer", "agent: nobody"));
+    expect(result.ok).toBe(false);
+    expect(warnings).toEqual([]);
+  });
+
+  it("still checks that the back of an ignored if_failed goes to a step", async () => {
+    expect(await problems(REVIEWER_IF_FAILED.replace("if_failed: { back: build }", "if_failed: { back: nowhere }"))).toEqual([
+      expect.objectContaining({ message: expect.stringContaining('"if_failed" goes back to "nowhere"') }),
+    ]);
+  });
+
+  it("lets an ignored if_failed change no step's default max_attempts", async () => {
+    const attempts = async (text: string) => (await record(text)).steps.map((step) => step.maxAttempts);
+    const plain = await attempts(BASE);
+    expect(await attempts(REVIEWER_IF_FAILED)).toEqual(plain);
+    expect(await attempts(REVIEWER_IF_FAILED.replace("if_failed: { back: build }", "if_failed: retry"))).toEqual(plain);
+    expect(await attempts(REVIEWER_IF_FAILED.replace("if_failed: { back: build }", "if_failed: { back: review }"))).toEqual(plain);
+  });
+
+  it("validates with no onWarning given", async () => {
+    expect((await validate(REVIEWER_IF_FAILED)).ok).toBe(true);
+  });
+});
+
 describe("closest", () => {
   it("suggests only near misses", () => {
     expect(closest("buidler", ["builder", "reviewer"])).toBe("builder");

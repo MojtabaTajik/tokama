@@ -47,6 +47,8 @@ export interface ValidateContext {
    * a plain-word reason. Absent for built-ins, which keep their instructions inline.
    */
   readonly readInstructions?: (file: string) => Promise<Result<string, string>>;
+  /** Told each warning of a template that loads: something it says that has no effect. */
+  readonly onWarning?: (warning: TemplateProblem) => void;
 }
 
 type Path = readonly PropertyKey[];
@@ -92,13 +94,17 @@ export async function validateTemplate(text: string, ctx: ValidateContext): Prom
 
   const problems: TemplateProblem[] = [];
   const report: Report = (path, message) => problems.push({ line: lineOf(path), message });
-  const record = await buildRecord(parsed.data, ctx, report);
+  const warnings: TemplateProblem[] = [];
+  const warn: Report = (path, message) => warnings.push({ line: lineOf(path), message });
+  const record = await buildRecord(parsed.data, ctx, report, warn);
   problems.sort((a, b) => a.line - b.line);
   if (problems.length > 0) return err(problems);
   // The file schema's limits match the record's, so this only fails on a bug here; it keeps a
   // record that items could not store from ever being returned.
   const checked = TemplateRecordSchema.safeParse(record);
   if (!checked.success) return err([{ line: 1, message: `The template cannot be stored: ${clean(checked.error.issues[0]?.message ?? "invalid")}.` }]);
+  warnings.sort((a, b) => a.line - b.line);
+  for (const warning of warnings) ctx.onWarning?.(warning);
   return ok(record);
 }
 
@@ -229,7 +235,7 @@ function commandProblem(command: string): string | undefined {
 
 // ---- Rules that need the whole file and the agents
 
-async function buildRecord(file: TemplateFile, ctx: ValidateContext, report: Report): Promise<TemplateRecord> {
+async function buildRecord(file: TemplateFile, ctx: ValidateContext, report: Report, warn: Report): Promise<TemplateRecord> {
   const stepIds = file.steps.map((step) => step.id);
   const indexOf = new Map<string, number>();
   file.steps.forEach((step, i) => {
@@ -267,8 +273,11 @@ async function buildRecord(file: TemplateFile, ctx: ValidateContext, report: Rep
     budget = { timeMinutes: total };
   }
 
+  // The engine never reads `if_failed` of a reviewer step, so it sends no work back.
   const backTargets = new Set(
-    file.steps.flatMap((step) => [step.if_failed, step.if_changes_requested].flatMap((rule) => (typeof rule === "object" ? [rule.back] : []))),
+    file.steps.flatMap((step) =>
+      [step.done_when === "reviewer approves" ? undefined : step.if_failed, step.if_changes_requested].flatMap((rule) => (typeof rule === "object" ? [rule.back] : [])),
+    ),
   );
   const scope: StepScope = {
     file,
@@ -279,6 +288,7 @@ async function buildRecord(file: TemplateFile, ctx: ValidateContext, report: Rep
     templateConnections: new Map(Object.entries(file.uses?.connections ?? {})),
     templateCommands: file.uses?.commands ?? [],
     report,
+    warn,
   };
   const steps: TemplateStepDef[] = [];
   for (const [i, step] of file.steps.entries()) steps.push(await buildStep(step, i, scope));
@@ -316,6 +326,7 @@ interface StepScope {
   readonly templateConnections: ReadonlyMap<string, string>;
   readonly templateCommands: readonly string[];
   readonly report: Report;
+  readonly warn: Report;
 }
 
 const isCloud = (scope: StepScope, step: StepFile) => scope.ctx.agents.get(step.agent)?.cloud ?? false;
@@ -351,6 +362,9 @@ async function buildStep(step: StepFile, i: number, scope: StepScope): Promise<T
     report(at("if_changes_requested"), `${name}: "if_changes_requested" applies only with done_when: reviewer approves.`);
   }
   if (doneWhen === "reviewer approves") checkReviewer(step, i, scope, name);
+  if (doneWhen === "reviewer approves" && step.if_failed !== undefined) {
+    scope.warn(at("if_failed"), `${name}: "if_failed" has no effect on a reviewer step; use "if_changes_requested".`);
+  }
 
   const checks = buildChecks(step, doneWhen, name, at, report);
 
@@ -388,7 +402,7 @@ async function buildStep(step: StepFile, i: number, scope: StepScope): Promise<T
     typeof step.if_failed === "object" ? { action: "back", stepId: step.if_failed.back } : { action: step.if_failed ?? "ask" };
   // A step that is retried, sent back to, or that you approve (Request changes runs it again) must
   // be able to run more than once.
-  const loops = ifFailed.action === "retry" || scope.backTargets.has(step.id) || doneWhen === "you approve";
+  const loops = (ifFailed.action === "retry" && doneWhen !== "reviewer approves") || scope.backTargets.has(step.id) || doneWhen === "you approve";
   const def: TemplateStepDef = {
     id: step.id,
     name: step.name,

@@ -21,7 +21,7 @@ describe("stepSentence", () => {
     expect(planAndBuild.steps.map((step) => stepSentence(step, planAndBuild, agents))).toEqual([
       "Architect (Claude Code, cloud) works in the item’s worktree; sends the repo and diff to the cloud; done when you approve; if it fails, ask you.",
       "Local builder (Claude Code, this machine) works in the item’s worktree; done when the repo’s checks pass; if checks fail, try again, up to 3 attempts.",
-      "Reviewer (Codex CLI, cloud) reviews the work; sends the repo and diff to the cloud; done when it approves; if it fails, ask you; if it asks for changes, send the work back to Build and check again after each fix, up to 3 round trips, then ask you.",
+      "Reviewer (Codex CLI, cloud) reviews the work; sends the repo and diff to the cloud; done when it approves; if it asks for changes, send the work back to Build and check again after each fix, up to 3 round trips, then ask you.",
     ]);
   });
 
@@ -37,6 +37,19 @@ describe("stepSentence", () => {
     [{ doneWhen: "reviewer approves", ifChangesRequested: { action: "back", stepId: "plan" } }, "if it asks for changes, send the work back to Plan and check again after each fix, up to 3 round trips, then ask you."],
   ] as const)("says %j as …%s", (fields, ending) => {
     expect(sentenceOf(fields as Partial<TemplateStepView>)).toContain(ending);
+  });
+
+  it("says only the changes-requested rule of a reviewer step, never its failure rule", () => {
+    const onlyFailed = sentenceOf({ doneWhen: "reviewer approves", ifFailed: { action: "back", stepId: "plan" }, ifChangesRequested: { action: "ask" } } as Partial<TemplateStepView>);
+    expect(onlyFailed).toContain("if it asks for changes, ask you.");
+    expect(onlyFailed).not.toContain("if it fails");
+    expect(onlyFailed).not.toContain("send the work back");
+    // A record with no changes rule at all still says what happens.
+    const none = sentenceOf({ doneWhen: "reviewer approves", ifChangesRequested: undefined } as Partial<TemplateStepView>);
+    expect(none).toContain("if it asks for changes, ask you.");
+    const both = sentenceOf({ doneWhen: "reviewer approves", ifFailed: { action: "stop" }, ifChangesRequested: { action: "back", stepId: "plan" } } as Partial<TemplateStepView>);
+    expect(both).toContain("if it asks for changes, send the work back to Plan");
+    expect(both).not.toContain("stop");
   });
 
   it("does not tie the round trips to max_attempts", () => {

@@ -69,16 +69,19 @@ function loopsOf(steps: readonly TemplateStepView[]): LoopSpec[] {
     const failing = step.doneWhen === "checks pass" ? "checks fail" : "fails";
     const whenFailing = step.doneWhen === "checks pass" ? "when its checks fail" : "when it fails";
     const failedRetry = (): LoopSpec => ({ kind: "self", from: at, to: at, label: `${failing} · retry, up to ${step.maxAttempts}`, words: `${step.name} tries again ${whenFailing}, up to ${attempts(step.maxAttempts)}` });
-    if (step.ifFailed.action === "retry") {
-      loops.push(failedRetry());
-    } else if (step.ifFailed.action === "back") {
-      const to = index(step.ifFailed.stepId);
-      const target = steps[to - 1]?.name ?? step.ifFailed.stepId;
-      loops.push(
-        to === at
-          ? failedRetry()
-          : { kind: "back", from: at, to, label: `${failing} · back to ${target}`, words: `${step.name} sends the work back to ${target} ${whenFailing} and runs again after it, up to ${ROUND_TRIPS} round trips, then asks you` },
-      );
+    // A reviewer step is decided only by its changes-requested rule; its failure rule is never drawn.
+    if (step.doneWhen !== "reviewer approves") {
+      if (step.ifFailed.action === "retry") {
+        loops.push(failedRetry());
+      } else if (step.ifFailed.action === "back") {
+        const to = index(step.ifFailed.stepId);
+        const target = steps[to - 1]?.name ?? step.ifFailed.stepId;
+        loops.push(
+          to === at
+            ? failedRetry()
+            : { kind: "back", from: at, to, label: `${failing} · back to ${target}`, words: `${step.name} sends the work back to ${target} ${whenFailing} and runs again after it, up to ${ROUND_TRIPS} round trips, then asks you` },
+        );
+      }
     }
     if (step.ifChangesRequested?.action === "back") {
       const to = index(step.ifChangesRequested.stepId);

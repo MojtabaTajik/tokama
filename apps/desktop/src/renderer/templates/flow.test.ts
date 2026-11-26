@@ -58,13 +58,25 @@ describe("flowOf", () => {
     expect(twoBacks.description).toContain("Build sends the work back to Plan when its checks fail and runs again after it, up to 3 round trips, then asks you");
   });
 
-  it("puts a shorter back line above a longer one from the same step, so they do not cross", () => {
-    const review3 = { ...review, ifFailed: { action: "back", stepId: "plan" }, ifChangesRequested: { action: "back", stepId: "build" } } as TemplateStepView;
-    const crossing = flowOf(withSteps(plan, build, review3), setup.agents);
-    const [toPlan, toBuild] = crossing.loops.filter((loop) => loop.kind === "back");
-    expect([toPlan!.to, toBuild!.to]).toEqual([1, 2]);
-    // Review → Build (span 1) runs nearer the row than Review → Plan (span 2).
-    expect(toBuild!.labelY).toBeLessThan(toPlan!.labelY);
+  it("puts a shorter back line nearer the row than a longer one that comes first, so they do not cross", () => {
+    const again = { ...build, id: "build-again", name: "Build again", ifFailed: { action: "back", stepId: "plan" } } as TemplateStepView;
+    const last = { ...review, ifChangesRequested: { action: "back", stepId: "build-again" } } as TemplateStepView;
+    const crossing = flowOf(withSteps(plan, build, again, last), setup.agents);
+    const backs = crossing.loops.filter((loop) => loop.kind === "back");
+    // In step order the longer line comes first: Build again → Plan (span 2), then Review → Build again (span 1).
+    expect(backs.map((loop) => [loop.from, loop.to])).toEqual([
+      [3, 1],
+      [4, 3],
+    ]);
+    expect(backs[1]!.labelY).toBeLessThan(backs[0]!.labelY);
+  });
+
+  it("draws no failure loop for a reviewer step, only its changes loop", () => {
+    const onlyFailed = flowOf(withSteps(plan, { ...review, ifFailed: { action: "back", stepId: "plan" }, ifChangesRequested: { action: "ask" } } as TemplateStepView), setup.agents);
+    expect(onlyFailed.loops).toEqual([]);
+    expect(onlyFailed.description).not.toContain("when it fails");
+    const both = flowOf(withSteps(plan, build, { ...review, ifFailed: { action: "back", stepId: "plan" }, ifChangesRequested: { action: "back", stepId: "build" } } as TemplateStepView), setup.agents);
+    expect(both.loops.filter((loop) => loop.from === 3).map((loop) => loop.label)).toEqual(["changes · back to Build"]);
   });
 
   it("draws a back: to the same step as a self loop", () => {

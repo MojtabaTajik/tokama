@@ -78,6 +78,8 @@ function donePhrase(step: TemplateStepView): string {
 }
 
 function failedPhrase(step: TemplateStepView, template: Pick<TemplateView, "steps">): string {
+  // The engine decides a reviewer step only by its changes-requested rule, so its failure rule is never said.
+  if (step.doneWhen === "reviewer approves") return "";
   const when = step.doneWhen === "checks pass" ? "if checks fail" : "if it fails";
   switch (step.ifFailed.action) {
     case "retry":
@@ -95,7 +97,7 @@ function failedPhrase(step: TemplateStepView, template: Pick<TemplateView, "step
 }
 
 function changesPhrase(step: TemplateStepView, template: Pick<TemplateView, "steps">): string {
-  if (step.ifChangesRequested === undefined) return "";
+  if (step.ifChangesRequested === undefined) return step.doneWhen === "reviewer approves" ? "if it asks for changes, ask you" : "";
   if (step.ifChangesRequested.action !== "back") return "if it asks for changes, ask you";
   const { stepId } = step.ifChangesRequested;
   return stepId === step.id

@@ -8,7 +8,7 @@ import { err, ok, type Result } from "../../kernel/result/index.js";
 import { MAX_TEMPLATE_FILE_BYTES, RepoIdSchema, RESERVED_REPO_IDS, TemplateIdSchema, type RepoId, type TemplateRecord, type TemplateRef } from "../../kernel/schemas/index.js";
 import { BUILTIN_TEMPLATES } from "./builtin.js";
 import { quote } from "./quote.js";
-import { templateWarnings } from "./warnings.js";
+import { lineWarning, templateWarnings } from "./warnings.js";
 import { validateTemplate, type AgentLocation, type TemplateProblem, type ValidateContext } from "./validate.js";
 
 /** The folder inside a repo that holds its templates. */
@@ -62,7 +62,9 @@ export async function loadBuiltins(agents: ReadonlyMap<string, AgentLocation>): 
   const loads: TemplateLoad[] = [];
   for (const [id, text] of BUILTIN_TEMPLATES) {
     const ref = `${BUILTIN}/${id}` as TemplateRef;
-    loads.push(toLoad(await validateTemplate(text, { ref, source: { kind: "builtin" }, agents }), BUILTIN, ref, ref, text));
+    const notes: TemplateProblem[] = [];
+    const result = await validateTemplate(text, { ref, source: { kind: "builtin" }, agents, onWarning: (warning) => notes.push(warning) });
+    loads.push(toLoad(result, notes, BUILTIN, ref, ref, text));
   }
   return loads;
 }
@@ -114,13 +116,15 @@ async function loadRepo(repo: RepoLocation, agents: ReadonlyMap<string, AgentLoc
       loads.push({ ok: false, ref, origin: repoId, file, problems: [{ line: 1, message }] });
       continue;
     }
+    const notes: TemplateProblem[] = [];
     const ctx: ValidateContext = {
       ref,
       source: { kind: "repo", repoId, file },
       agents,
       readInstructions: (relative) => readInstructions(dir, relative),
+      onWarning: (warning) => notes.push(warning),
     };
-    loads.push(toLoad(await validateTemplate(text.value, ctx), repoId, file, ref, text.value));
+    loads.push(toLoad(await validateTemplate(text.value, ctx), notes, repoId, file, ref, text.value));
   }
   return loads;
 }
@@ -167,6 +171,15 @@ async function firstLink(base: string, relative: string): Promise<string | undef
   return undefined;
 }
 
-function toLoad(result: Result<TemplateRecord, TemplateProblem[]>, origin: string, file: string, ref: TemplateRef, text: string): TemplateLoad {
-  return result.ok ? { ok: true, template: result.value, warnings: templateWarnings(result.value), text } : { ok: false, ref, origin, file, problems: result.error, text };
+function toLoad(
+  result: Result<TemplateRecord, TemplateProblem[]>,
+  notes: readonly TemplateProblem[],
+  origin: string,
+  file: string,
+  ref: TemplateRef,
+  text: string,
+): TemplateLoad {
+  return result.ok
+    ? { ok: true, template: result.value, warnings: [...notes.map(lineWarning), ...templateWarnings(result.value)], text }
+    :{ ok: false, ref, origin, file, problems: result.error, text };
 }
