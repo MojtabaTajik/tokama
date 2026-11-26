@@ -14,3 +14,5 @@ export {
   type RequestOptions,
   type RequestResult,
 } from "./client.js";
+export { stopEngine, type Liveness, type StopOptions, type StopResult } from "./stop.js";
+export { engineAction, olderBuild, type EngineAction } from "./version.js";
