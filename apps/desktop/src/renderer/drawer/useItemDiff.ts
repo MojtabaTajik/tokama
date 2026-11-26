@@ -12,10 +12,11 @@ const LOADING: ItemDiffState = { kind: "loading" };
 /**
  * The change of an ended item that changes a repo, asked for again when a finish action changes
  * where the work is. A discarded item is not asked about: its line says so when it had a commit.
- * An answer is kept with what it is for, so a merged item never shows the diff from before the merge.
+ * An answer is kept with the item it is for and shown until the new one arrives, so the tab stays
+ * in place; another item never shows it.
  */
 export function useItemDiff(bridge: TokamaBridge, item: ItemRecord | undefined): ItemDiffState | undefined {
-  const [answer, setAnswer] = useState<{ readonly for: string; readonly state: ItemDiffState } | undefined>(undefined);
+  const [answer, setAnswer] = useState<{ readonly for: string; readonly itemId: string; readonly state: ItemDiffState } | undefined>(undefined);
   const ended = item !== undefined && changesRepo(item) && hasEnded(item);
   const discarded = ended && isDiscarded(item);
   const itemId = item?.id;
@@ -26,10 +27,10 @@ export function useItemDiff(bridge: TokamaBridge, item: ItemRecord | undefined):
     void bridge
       .query({ type: "item_diff", itemId })
       .then((reply) => {
-        if (current) setAnswer({ for: key, state: reply.ok ? { kind: "loaded", change: reply.data } : { kind: "failed", message: reply.error.message } });
+        if (current) setAnswer({ for: key, itemId, state: reply.ok ? { kind: "loaded", change: reply.data } : { kind: "failed", message: reply.error.message } });
       })
       .catch((cause: unknown) => {
-        if (current) setAnswer({ for: key, state: { kind: "failed", message: String(cause) } });
+        if (current) setAnswer({ for: key, itemId, state: { kind: "failed", message: String(cause) } });
       });
     return () => {
       current = false;
@@ -37,5 +38,7 @@ export function useItemDiff(bridge: TokamaBridge, item: ItemRecord | undefined):
   }, [bridge, itemId, key]);
   if (discarded) return (item.outcome?.commits?.length ?? 0) > 0 ? { kind: "discarded" } : undefined;
   if (key === undefined) return undefined;
-  return answer?.for === key ? answer.state : LOADING;
+  // While the same item's change is asked for again, its last answer stays: the tab does not
+  // vanish and come back, which would drop the engineer's place in the drawer.
+  return answer !== undefined && (answer.for === key || answer.itemId === itemId) ? answer.state : LOADING;
 }

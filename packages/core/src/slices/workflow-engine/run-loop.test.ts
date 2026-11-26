@@ -1277,7 +1277,7 @@ describe("run loop: review fixes", () => {
 describe("run loop: item diff", () => {
   const shown = (files: readonly { path: string; status: string; added: number | null; removed: number | null }[]) => files.map((f) => [f.path, f.status, f.added, f.removed]);
 
-  it("a done item not merged: its worktree against the base commit, uncommitted files included; the worktree's index is untouched", SLOW, async () => {
+  it("a done item not merged: its commit against the base commit; files left in the worktree after Done are not in it", SLOW, async () => {
     const loop = engine(fakeRuntime([edits(FIXED)]));
     const id = await start(loop, template([{ id: "build" }]));
     expect(item(id)).toMatchObject({ state: "done", outcome: { kind: "done" } });
@@ -1286,10 +1286,7 @@ describe("run loop: item diff", () => {
     writeFileSync(join(worktreeDir(id), "later.txt"), "left after Done\n");
     const diff = await loop.itemDiff(id);
     if (!diff.ok || diff.value.kind !== "worktree") throw new Error(JSON.stringify(diff));
-    expect(shown(diff.value.files)).toEqual([
-      ["app.txt", "modified", 1, 1],
-      ["later.txt", "added", 1, 0],
-    ]);
+    expect(shown(diff.value.files)).toEqual([["app.txt", "modified", 1, 1]]);
     const { dir, branch, baseCommit } = item(id).worktrees[0]!;
     expect(diff.value.worktree).toEqual({ repoId: "orders-api", dir, branch, baseCommit });
     expect(await plain(worktreeDir(id), "status", "--porcelain")).toBe("?? later.txt");
@@ -1297,6 +1294,15 @@ describe("run loop: item diff", () => {
     const events = log(id).length;
     await loop.itemDiff(id);
     expect(log(id)).toHaveLength(events);
+  });
+
+  it("a done item whose worktree folder is gone still shows its commit", SLOW, async () => {
+    const loop = engine(fakeRuntime([edits(FIXED)]));
+    const id = await start(loop, template([{ id: "build" }]));
+    rmSync(worktreeDir(id), { recursive: true, force: true });
+    const diff = await loop.itemDiff(id);
+    if (!diff.ok || diff.value.kind !== "worktree") throw new Error(JSON.stringify(diff));
+    expect(shown(diff.value.files)).toEqual([["app.txt", "modified", 1, 1]]);
   });
 
   it("a merged item: the merged commit against the base branch before it; a merge commit against its first parent", SLOW, async () => {

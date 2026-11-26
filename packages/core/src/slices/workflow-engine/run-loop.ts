@@ -1305,6 +1305,17 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
         return ok({ kind: "merged", ...diff.value, repoId: repo.id, baseBranch: merged.baseBranch, commit, parent: parent.value });
       }
       if (item.finish?.worktreeRemoved === true) return ok({ kind: "none" });
+      // A done item has one commit, and that is all Merge and Open PR deliver: it is read in the
+      // repo, so files left in the worktree after Done, or a worktree folder that is gone, change nothing.
+      const recorded = item.worktrees[0];
+      const own = item.state === "done" ? item.outcome.commits?.find((made) => made.repoId === repo.id)?.commit : undefined;
+      if (own !== undefined && recorded?.baseCommit !== undefined && recorded.branch !== undefined) {
+        const found = await git.revParse(repo.path, `${own}^{commit}`);
+        if (!found.ok) return ok({ kind: "gone", repoId: repo.id, commit: own });
+        const diff = await treeDiff(git, repo.path, recorded.baseCommit, own);
+        if (!diff.ok) return cannot("Cannot read the change", diff.error.message);
+        return ok({ kind: "worktree", ...diff.value, worktree: { repoId: repo.id, dir: recorded.dir, branch: recorded.branch, baseCommit: recorded.baseCommit } });
+      }
       const worktree = worktreeOf({ item, repo });
       if (worktree === undefined || !existsSync(worktree.path)) return ok({ kind: "none" });
       // As in the loop, git runs in the worktree only while the files that steer it are as they
