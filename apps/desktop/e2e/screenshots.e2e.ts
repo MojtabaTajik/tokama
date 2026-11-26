@@ -16,7 +16,7 @@ flow("takes screenshots of the list, workflow board, drawer, New work and an emp
 
   await sidebarRow(page, "All work").click();
   await segment(page, "Needs you").click();
-  await row(page, "Orders API returns 500 after deploy").click();
+  await openRow(page, "Orders API returns 500 after deploy");
   await drawer(page).locator(".needs-you").waitFor();
   await screenshot("3-drawer");
   // The macOS CI screen: the list is narrower there and drops more of its columns.
