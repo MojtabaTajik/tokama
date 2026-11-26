@@ -20,6 +20,10 @@
   --motion-rise: 200ms;
   --motion-rise-ease: ease-out;
   --motion-rise-distance: 8px;
+  /* One pulse of the attention ring. */
+  --motion-ring: 1.6s;
+  /* The colour of that ring; the element that pulses names its own. */
+  --ring: var(--link);
 }
 
 @keyframes tk-breathe {
@@ -35,6 +39,23 @@
 /* A mark of something working now, on any element that says so with data-breathe. */
 [data-breathe="true"] {
   animation: tk-breathe var(--motion-breathe) var(--motion-breathe-ease) infinite;
+}
+
+/* A soft ring around something new that asks for a click, in the colour its --ring names: it pulses three times, then rests. */
+@keyframes tk-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ring) 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 7px color-mix(in srgb, var(--ring) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ring) 0%, transparent);
+  }
+}
+
+[data-ring] {
+  animation: tk-ring var(--motion-ring) ease-out 300ms 3;
 }
 
 @keyframes tk-shimmer {
@@ -71,11 +92,20 @@
   animation: tk-rise var(--motion-rise) var(--motion-rise-ease) both;
 }
 
+/* A chip that comes into view and asks for a click: it rises, then its ring pulses. */
+.rise-in[data-ring] {
+  animation:
+    tk-rise var(--motion-rise) var(--motion-rise-ease) both,
+    tk-ring var(--motion-ring) ease-out 300ms 3;
+}
+
 /* Nothing moves: marks and dots stay solid; lights become a still dashed blue line, so "working now" still reads. */
 @media (prefers-reduced-motion: reduce) {
   .track-mark[data-live="true"],
   .live-dot,
   .rise-in,
+  .rise-in[data-ring],
+  [data-ring],
   [data-breathe="true"] {
     animation: none;
   }

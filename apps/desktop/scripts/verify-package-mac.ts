@@ -21,6 +21,8 @@ export interface VerifyOptions {
   readonly allowGatekeeperOff?: boolean;
   readonly version: string;
   readonly feedUrl: string;
+  /** The lowest safe version the build was asked to name; latest-mac.yml must then carry it as `vendor.tokama.minSafeVersion`, and otherwise carry no `vendor` key. */
+  readonly minSafeVersion?: string;
   readonly mode: Mode;
 }
 
@@ -153,6 +155,32 @@ export function parseLatestMac(text: string): LatestMac {
   return { version: top.get("version"), path: top.get("path"), sha512: top.get("sha512"), files };
 }
 
+/** The `vendor: tokama: minSafeVersion` entry of latest-mac.yml: whether a top-level `vendor` key exists, and the version under `vendor.tokama` if there is one. */
+export function parseVendorMinSafe(text: string): { readonly hasVendor: boolean; readonly minSafeVersion: string | undefined } {
+  const lines = text.split("\n");
+  const start = lines.findIndex((line) => /^vendor:/.test(line));
+  if (start < 0) return { hasVendor: false, minSafeVersion: undefined };
+  let inTokama = false;
+  for (const line of lines.slice(start + 1)) {
+    if (/^\S/.test(line)) break;
+    if (/^ {2}\S/.test(line)) {
+      inTokama = /^ {2}tokama:\s*$/.test(line);
+      continue;
+    }
+    const field = /^ {4}minSafeVersion:\s*(.+?)\s*$/.exec(line);
+    if (inTokama && field?.[1] !== undefined) return { hasVendor: true, minSafeVersion: unquote(field[1]) };
+  }
+  return { hasVendor: true, minSafeVersion: undefined };
+}
+
+/** Why latest-mac.yml does not name the lowest safe version exactly as asked, or undefined. `minSafe` is the version the build was asked to name, or undefined for none, which means no `vendor` key at all. */
+export function minSafeProblem(text: string, minSafe: string | undefined): string | undefined {
+  const { hasVendor, minSafeVersion } = parseVendorMinSafe(text);
+  if (minSafe === undefined) return hasVendor ? "it carries a vendor key, but no lowest safe version was asked for" : undefined;
+  if (minSafeVersion === undefined) return `it has no vendor.tokama.minSafeVersion, but ${minSafe} was asked for`;
+  return minSafeVersion === minSafe ? undefined : `vendor.tokama.minSafeVersion is ${minSafeVersion}, not ${minSafe}`;
+}
+
 /** The zip's name for a version, as the update feed lists it. */
 export const zipName = (version: string) => `Tokama-${version}-arm64-mac.zip`;
 
@@ -254,7 +282,7 @@ function hookProblem(app: string): string | undefined {
     const rules = join(scratch, "rules.json");
     writeFileSync(rules, JSON.stringify({ commands: [] }));
     const hook = run(join(engine, "tokama-engine"), [join(engine, "dist", "hook.js"), rules], JSON.stringify({ tool_name: "Bash", tool_input: { command: "rm -rf /tmp/x" } }));
-    return hook.status === 0 && hook.stdout.includes('"permissionDecision":"deny"') ? undefined : `unexpected reply: ${hook.stdout}${hook.stderr}`;
+    return hook.status === 42 && hook.stdout.includes('"permissionDecision":"deny"') ? undefined : `unexpected reply: ${hook.stdout}${hook.stderr}`;
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
@@ -362,6 +390,7 @@ export async function checkZip(report: Report, options: VerifyOptions, zip: stri
   if (options.latest !== undefined) {
     const latest = options.latest;
     await report.check("latest-mac.yml describes the zip", () => latestProblem(parseLatestMac(readFileSync(latest, "utf8")), options.version, { name: basename(zip), sha512: sha512Base64(zip), size: statSync(zip).size }));
+    await report.check("latest-mac.yml names the lowest safe version exactly when asked", () => minSafeProblem(readFileSync(latest, "utf8"), options.minSafeVersion));
   }
   const scratch = mkdtempSync(join(tmpdir(), "tk-verify-zip-"));
   try {

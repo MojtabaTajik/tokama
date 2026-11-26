@@ -54,6 +54,12 @@ export const WarningCodeSchema = z.enum([
   "index_rebuilt",
   /** The renderer stopped answering for a while. */
   "renderer_unresponsive",
+  /** The check for a new app version failed. */
+  "update_check_failed",
+  /** The download of a new app version failed. */
+  "update_download_failed",
+  /** Installing a new app version failed; the app kept its version. */
+  "update_install_failed",
 ]);
 
 /** The actions usage counts, each a fixed name. No content, no ids. */

@@ -4,6 +4,7 @@ name: release
 # the owner reads the draft and publishes it. A manual run is a dry run on a tag: the same build
 # and checks, no release. Start one with
 #   gh workflow run release.yml --ref v0.1.0 [-f feed_url=https://example.test/mac/]
+# A dry run may also name a local feed, http://127.0.0.1:<port>/, to try an update on one machine.
 on:
   push:
     tags: ["v*.*.*"]
@@ -36,6 +37,7 @@ jobs:
     outputs:
       version: ${{ steps.check.outputs.version }}
       feed_url: ${{ steps.check.outputs.feed_url }}
+      min_safe_version: ${{ steps.check.outputs.min_safe_version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -144,7 +146,8 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           FEED_URL: ${{ needs.check.outputs.feed_url }}
-        run: pnpm exec install-electron && node scripts/package.ts --dmg --signed --feed-url "$FEED_URL"
+          MIN_SAFE_VERSION: ${{ needs.check.outputs.min_safe_version }}
+        run: pnpm exec install-electron && node scripts/package.ts --dmg --signed --feed-url "$FEED_URL" --min-safe-version "$MIN_SAFE_VERSION"
       # Before the smoke test: running the installed app needs neither the keychain nor the key.
       - name: Remove the keychain and the key
         if: always()

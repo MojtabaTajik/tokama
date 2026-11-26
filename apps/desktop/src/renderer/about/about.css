@@ -173,6 +173,73 @@
   color: var(--muted);
 }
 
+.about-update {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-10);
+  min-height: 44px;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.about-update-mark {
+  font-size: var(--text-md);
+  text-align: center;
+}
+
+.about-update-mark[data-tone="pass"] {
+  color: var(--pass);
+}
+
+.about-update-mark[data-tone="live"] {
+  color: var(--live);
+}
+
+.about-update-mark[data-tone="link"] {
+  color: var(--link);
+}
+
+.about-update-mark[data-tone="fail"] {
+  color: var(--fail);
+}
+
+.about-update-mark[data-tone="muted"] {
+  color: var(--muted);
+}
+
+.about-update-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-6) 0;
+}
+
+.about-update-main {
+  font-size: var(--text-body);
+  color: var(--text);
+}
+
+.about-update-sub {
+  font-size: var(--text-md);
+  color: var(--text-2);
+}
+
+.about-update-bar {
+  display: block;
+  height: 4px;
+  border-radius: var(--radius-sm);
+  background: var(--hairline);
+}
+
+.about-update-fill {
+  display: block;
+  height: 4px;
+  border-radius: var(--radius-sm);
+  background: var(--live);
+}
+
 .about-rows {
   margin: 0;
   display: flex;

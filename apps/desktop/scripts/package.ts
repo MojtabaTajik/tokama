@@ -1,4 +1,4 @@
-// Builds Tokama.app for this Mac, ad-hoc signed: `node scripts/package.ts [--dmg] [--feed-url <url>]`
+// Builds Tokama.app for this Mac, ad-hoc signed: `node scripts/package.ts [--dmg] [--feed-url <url>] [--min-safe-version <x.y.z>]`
 // (`--dmg --signed` is the release build, which signs with the Developer ID certificate from the
 // environment, notarizes and staples; see buildSigned),
 // run from apps/desktop after `pnpm build` (the root `pnpm package` does both). It stages the
@@ -20,11 +20,48 @@ const repoDir = resolve(appDir, "..", "..");
 /** The update feed of the packaged app, as electron-builder.yml has it. */
 export const DEFAULT_FEED_URL = "https://updates.tokama.dev/mac/";
 
-/** Why `url` cannot be the update feed, or undefined when it can: https, a plain host and plain path segments, and a trailing slash. */
-export function feedUrlProblem(url: string): string | undefined {
+/** True for exactly `http://127.0.0.1:<port>/` with a port from 1024 to 65535 and no leading zero: the local server of a rehearsal. */
+function isLoopbackFeed(url: string): boolean {
+  const port = /^http:\/\/127\.0\.0\.1:(\d{2,5})\/$/.exec(url)?.[1];
+  return port !== undefined && String(Number(port)) === port && Number(port) >= 1024 && Number(port) <= 65535;
+}
+
+/**
+ * Why `url` cannot be the update feed, or undefined when it can: https, a plain host and plain path
+ * segments, and a trailing slash. With `allowLoopback`, `http://127.0.0.1:<port>/` also can, for a
+ * build that is tried on this machine; no other http address ever can.
+ */
+export function feedUrlProblem(url: string, allowLoopback = false): string | undefined {
+  if (allowLoopback && isLoopbackFeed(url)) return undefined;
   const plain = /^https:\/\/([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*)((?:\/[A-Za-z0-9._~-]+)*)\/$/.exec(url);
   const dotSegment = (plain?.[2] ?? "").split("/").some((segment) => segment === "." || segment === "..");
   return plain !== null && !dotSegment ? undefined : `the feed URL must be https, with a plain host and path and a trailing slash, not ${JSON.stringify(url)}`;
+}
+
+/** Compares two plain `x.y.z` versions by number: negative when `a` is lower, 0 when equal, positive when higher. */
+export function compareVersions(a: string, b: string): number {
+  const left = a.split(".").map(Number);
+  const right = b.split(".").map(Number);
+  for (const [index, part] of left.entries()) {
+    const other = right[index] ?? 0;
+    if (part !== other) return part - other;
+  }
+  return 0;
+}
+
+/** Why `minSafe` cannot be the lowest safe version of the build of `version`, or undefined: plain `x.y.z`, and not above the build's own version. */
+export function minSafeVersionProblem(minSafe: string, version: string): string | undefined {
+  if (!/^\d+\.\d+\.\d+$/.test(minSafe)) return `the lowest safe version must be plain x.y.z, not ${JSON.stringify(minSafe)}`;
+  return compareVersions(minSafe, version) <= 0 ? undefined : `the lowest safe version ${minSafe} is above this build's version ${version}`;
+}
+
+/**
+ * The electron-builder `releaseInfo` that names the lowest safe version, or none. electron-builder
+ * rejects unknown keys in `releaseInfo` but spreads `vendor`, an open object, into latest-mac.yml,
+ * so the version lands there as `vendor.tokama.minSafeVersion`.
+ */
+export function releaseInfoFor(minSafeVersion: string | undefined): { releaseInfo?: { vendor: { tokama: { minSafeVersion: string } } } } {
+  return minSafeVersion === undefined ? {} : { releaseInfo: { vendor: { tokama: { minSafeVersion } } } };
 }
 
 /** electron-builder's `afterPack` hook: Electron's own demo app archive is never opened (only the app's archive loads), so it does not ship. */
@@ -65,12 +102,19 @@ export function run(command: string, args: string[], input?: string): { status: 
 const mb = (path: string) => `${(statSync(path).size / 1024 / 1024).toFixed(0)} MB`;
 
 async function main(): Promise<void> {
-  const { values } = parseArgs({ options: { dmg: { type: "boolean" }, "feed-url": { type: "string" }, signed: { type: "boolean" } } });
+  const { values } = parseArgs({ options: { dmg: { type: "boolean" }, "feed-url": { type: "string" }, signed: { type: "boolean" }, "min-safe-version": { type: "string" } } });
   const dmg = values.dmg === true;
   const feedUrl = values["feed-url"];
   if (feedUrl !== undefined) {
-    const problem = feedUrlProblem(feedUrl);
+    // A loopback feed is for a build that is tried on one machine; the release workflow only passes one on a manual run.
+    const problem = feedUrlProblem(feedUrl, true);
     if (problem !== undefined) fail("feed URL", problem);
+  }
+  // An empty value means no lowest safe version; the workflow always passes the flag.
+  const minSafeVersion = values["min-safe-version"] === "" ? undefined : values["min-safe-version"];
+  if (minSafeVersion !== undefined) {
+    const problem = minSafeVersionProblem(minSafeVersion, appVersion(appDir));
+    if (problem !== undefined) fail("lowest safe version", problem);
   }
   // A signed build takes everything it needs from the environment and checks it before any work starts.
   let signing: SignedEnv | undefined;
@@ -95,7 +139,7 @@ async function main(): Promise<void> {
   checkEngineVersion(appDir, stage);
 
   if (signing !== undefined) {
-    await buildSigned(signing, feedUrl ?? DEFAULT_FEED_URL);
+    await buildSigned(signing, feedUrl ?? DEFAULT_FEED_URL, minSafeVersion);
     return;
   }
 
@@ -122,6 +166,7 @@ async function main(): Promise<void> {
         dmg: { sign: false },
         afterPack: removeDefaultApp,
         ...(feedUrl !== undefined && { publish: { provider: "generic", url: feedUrl } }),
+        ...releaseInfoFor(minSafeVersion),
       },
     });
   } finally {
@@ -129,7 +174,7 @@ async function main(): Promise<void> {
     rmSync(keychainDir, { recursive: true, force: true });
   }
 
-  check(join(appDir, "release"), dmg, feedUrl ?? DEFAULT_FEED_URL);
+  check(join(appDir, "release"), dmg, feedUrl ?? DEFAULT_FEED_URL, minSafeVersion);
 }
 
 /**
@@ -139,7 +184,7 @@ async function main(): Promise<void> {
  * feed config inside `config` (what app-update.yml and latest-mac.yml hold) are two different
  * settings; merging them would drop the feed.
  */
-async function buildSigned(env: SignedEnv, feedUrl: string): Promise<void> {
+async function buildSigned(env: SignedEnv, feedUrl: string, minSafeVersion: string | undefined): Promise<void> {
   const release = join(appDir, "release");
   process.env["CSC_IDENTITY_AUTO_DISCOVERY"] = "false";
   const { build, Arch, Platform } = await import("electron-builder");
@@ -153,6 +198,7 @@ async function buildSigned(env: SignedEnv, feedUrl: string): Promise<void> {
       dmg: { sign: true },
       publish: { provider: "generic", url: feedUrl },
       afterPack: removeDefaultApp,
+      ...releaseInfoFor(minSafeVersion),
     },
   });
   const version = appVersion(appDir);
@@ -181,13 +227,14 @@ async function buildSigned(env: SignedEnv, feedUrl: string): Promise<void> {
       version,
       "--feed-url",
       feedUrl,
+      ...(minSafeVersion !== undefined ? ["--min-safe-version", minSafeVersion] : []),
     ],
     { stdio: "inherit" },
   );
   if (verified.status !== 0) fail("verify", "verify-package.ts reported failed checks, above");
 }
 
-function check(release: string, dmg: boolean, feedUrl: string): void {
+function check(release: string, dmg: boolean, feedUrl: string, minSafeVersion: string | undefined): void {
   const app = join(release, "mac-arm64", "Tokama.app");
   const node = join(app, "Contents", "Resources", "engine", "tokama-engine");
 
@@ -206,7 +253,7 @@ function check(release: string, dmg: boolean, feedUrl: string): void {
   const files = dmg
     ? ["--zip", join(release, `Tokama-${version}-arm64-mac.zip`), "--dmg", join(release, `Tokama-${version}-arm64.dmg`), "--latest", join(release, "latest-mac.yml")]
     : ["--dir-build"];
-  const verified = spawnSync(process.execPath, [join(appDir, "scripts", "verify-package.ts"), "--unsigned", "--app", app, "--version", version, "--feed-url", feedUrl, ...files], { stdio: "inherit" });
+  const verified = spawnSync(process.execPath, [join(appDir, "scripts", "verify-package.ts"), "--unsigned", "--app", app, "--version", version, "--feed-url", feedUrl, ...(minSafeVersion !== undefined ? ["--min-safe-version", minSafeVersion] : []), ...files], { stdio: "inherit" });
   if (verified.status !== 0) fail("verify", "verify-package.ts reported failed checks, above");
 
   process.stdout.write(`app: ${app} (${run("du", ["-sh", app]).stdout.split("\t")[0]})\nnode: ${mb(node)}\n`);

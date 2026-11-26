@@ -8,7 +8,9 @@ import { brand } from "../brand/index.js";
 import { notices as noticesFor } from "./notices.js";
 import { Button } from "../ui/Button.js";
 import { CopyButton } from "../ui/CopyButton.js";
+import { useUpdate } from "../update/useUpdate.js";
 import { WhatsNewHistory } from "../whatsnew/WhatsNewHistory.js";
+import { Updates } from "./Updates.js";
 
 /** The product site. The window opens this one address in the system browser; no other link is followed. */
 export const WEBSITE_URL = "https://tokama.dev";
@@ -25,9 +27,14 @@ export interface AboutProps {
   readonly whatsNew?: WhatsNewInfo | "failed" | undefined;
   /** The release note whose row starts open, when About was opened from the card or the chip. */
   readonly openVersion?: string | undefined;
+  /** Items running now: they keep Restart now off. */
+  readonly running?: number;
+  /** A fixed time for tests; otherwise the clock. */
+  readonly now?: number;
 }
 
-export function About({ bridge, connection, onClose, whatsNew, openVersion }: AboutProps) {
+export function About({ bridge, connection, onClose, whatsNew, openVersion, running = 0, now = Date.now() }: AboutProps) {
+  const update = useUpdate(bridge);
   const [info, setInfo] = useState<AboutInfo | undefined>(undefined);
   const [failed, setFailed] = useState(false);
   const [folderError, setFolderError] = useState<string | undefined>(undefined);
@@ -107,6 +114,8 @@ export function About({ bridge, connection, onClose, whatsNew, openVersion }: Ab
               </span>
             </p>
           </section>
+
+          <Updates bridge={bridge} state={update} version={info?.app.version} running={running} now={now} />
 
           <WhatsNewHistory info={whatsNew} openVersion={openVersion} siteUrl={WEBSITE_URL} />
 

@@ -133,6 +133,16 @@ describe("DiagnosticsStore", () => {
     expect(store.list({ limit: 2 })).toMatchObject({ truncated: true, entries: [{ type: "crash" }, { type: "warning" }] });
   });
 
+  it("records the update warnings a client reports, with no text beyond the code", async () => {
+    const store = await open();
+    for (const code of ["update_check_failed", "update_download_failed", "update_install_failed"] as const) {
+      store.report({ type: "warning", source: "desktop", code });
+    }
+    const warnings = store.list({ types: ["warning"] }).entries;
+    expect(warnings.map((entry) => (entry.type === "warning" ? entry.code : undefined)).sort()).toEqual(["update_check_failed", "update_download_failed", "update_install_failed"]);
+    for (const entry of warnings) expect(DiagnosticEntrySchema.safeParse(entry).success).toBe(true);
+  });
+
   it("deletes by ids and all, on disk too", async () => {
     const store = await open();
     store.warning("engine", "item_not_loaded");

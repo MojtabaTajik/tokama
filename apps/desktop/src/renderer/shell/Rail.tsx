@@ -1,14 +1,16 @@
 // The icon rail: panel toggle, Board, Needs you, Insights, Settings, Attention, then the user.
 // Insights is the one usage entry: hovering or focusing it lists each AI CLI's plan limits, and
 // clicking opens the Insights page. A CLI that is logged out or at its limit puts a ✕ on the icon,
-// one near its limit a !. Settings counts the diagnostics entries waiting to be sent. Attention
+// one near its limit a !. A ready update shows above the user button while the sidebar is closed. Settings counts the diagnostics entries waiting to be sent. Attention
 // opens a popup with the issues and how to fix them. The user
 // button opens About. Needs you opens its page, Settings opens Settings.
 import type { Setup, UsageReport } from "@tokama/core";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { brand } from "../brand/index.js";
 import { cliAlert, railBadge } from "../insights/usage-model.js";
+import type { UpdateChipView } from "../../shared/update.js";
 import { AI_CLIS, type CliIssue, type HealthProblem } from "../model.js";
+import { UpdateRailIcon } from "../update/UpdateChip.js";
 import { AttentionPopup } from "./Attention.js";
 import { InsightsTip } from "./InsightsTip.js";
 import { useTip } from "../ui/useTip.js";
@@ -67,6 +69,8 @@ export interface RailProps {
   readonly onCliSettings?: () => void;
   /** Diagnostics entries waiting to be sent; they count on Settings. */
   readonly diagnosticsWaiting?: number;
+  /** A ready update, shown above the user button while the sidebar is closed (its chip shows there when it is open). */
+  readonly update?: { readonly view: UpdateChipView; readonly onActivate: () => void; readonly onOpenNotes: () => void };
 }
 
 export { TIP_CLOSE_MS, TIP_OPEN_MS } from "../ui/useTip.js";
@@ -74,7 +78,7 @@ export { TIP_CLOSE_MS, TIP_OPEN_MS } from "../ui/useTip.js";
 /** "Needs you · 2", or just "Needs you" when there are none. */
 const withCount = (label: string, count: number) => (count > 0 ? `${label} · ${count}` : label);
 
-export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, problems = [], onAttention, usage, now = Date.now(), insightsOpen = false, onInsights, onInsightsTip, aboutOpen, needsYouOpen, onBoard, onNeedsYou, onAbout, onSettings, setup, onSelectItem, onCliSettings, diagnosticsWaiting = 0 }: RailProps) {
+export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, problems = [], onAttention, usage, now = Date.now(), insightsOpen = false, onInsights, onInsightsTip, aboutOpen, needsYouOpen, onBoard, onNeedsYou, onAbout, onSettings, setup, onSelectItem, onCliSettings, diagnosticsWaiting = 0, update }: RailProps) {
   const tipId = useId();
   const popupId = useId();
   const attention = issues.length + problems.length;
@@ -206,6 +210,7 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
         {popupOpen && <AttentionPopup id={popupId} issues={issues} problems={problems} />}
       </div>
       <div className="rail-spacer" />
+      {update !== undefined && <UpdateRailIcon view={update.view} onActivate={update.onActivate} onOpenNotes={update.onOpenNotes} />}
       <Button variant="plain" className="rail-user" aria-label={TEXT.about} title={TEXT.about} aria-current={aboutOpen ? "page" : undefined} onClick={onAbout}>
         <UserIcon />
       </Button>

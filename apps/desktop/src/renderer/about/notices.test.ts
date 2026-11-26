@@ -26,6 +26,11 @@ describe("notices", () => {
     expect(list.find((notice) => notice.id === "zod")?.version).toBe(core.dependencies["zod"]);
   });
 
+  it("names the electron-updater version the app is built with", () => {
+    const desktop = JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "..", "package.json"), "utf8")) as { devDependencies: Record<string, string> };
+    expect(notices("45.4.1").find((notice) => notice.id === "electron-updater")?.version).toBe(desktop.devDependencies["electron-updater"]);
+  });
+
   it("names the Node.js version the packaged app ships", () => {
     const pinned: unknown = JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "..", "packaging", "node-runtime.json"), "utf8"));
     expect(notices("45.4.1").find((notice) => notice.id === "node")?.version).toBe((pinned as { version: string }).version);
