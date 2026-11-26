@@ -12,12 +12,14 @@ import { flow, sidebarRow } from "./harness.js";
 const { version } = JSON.parse(readFileSync(join(import.meta.dirname, "..", "package.json"), "utf8")) as { version: string };
 
 flow(
-  "first launch with no repos shows how to add them",
+  "first launch with no repos shows the Get started list, with no file to edit",
   async ({ page, screenshot }) => {
-    const state = page.locator(".board .state");
-    await state.getByRole("heading", { name: "Add your first repos" }).waitFor();
-    expect(await state.innerText()).toContain("~/.tokama/repos.yaml");
-    expect(await state.locator("pre").innerText()).toContain("base_branch: main");
+    const list = page.getByRole("region", { name: "Get started" });
+    await list.getByRole("heading", { name: "Get started" }).waitFor();
+    // The AI CLI row depends on this machine; the other three do not.
+    expect(await list.locator(".gs-row-title").allInnerTexts()).toEqual(["Set up an AI CLI", "Install git 2.38 or newer", "Add your first repo", "Start a Quick fix"]);
+    expect(await list.locator('[data-row="repo"] .gs-word').innerText()).toBe("To do");
+    expect(await list.innerText()).not.toContain("repos.yaml");
     expect(await page.locator(".new-work").isDisabled()).toBe(true);
     expect(await page.locator(".np-text").count()).toBe(0);
     await screenshot("6-first-launch");

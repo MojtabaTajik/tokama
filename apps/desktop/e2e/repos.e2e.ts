@@ -11,8 +11,10 @@ import { flow, outDir, sidebarRow } from "./harness.js";
 flow(
   "adds a repo from a folder and removes it again",
   async ({ app, page, tmp, home }) => {
-    const firstLaunch = page.locator(".board .state").getByRole("heading", { name: "Add your first repos" });
+    const firstLaunch = page.getByRole("region", { name: "Get started" });
     await firstLaunch.waitFor();
+    const repoWord = firstLaunch.locator('[data-row="repo"] .gs-word');
+    expect(await repoWord.innerText()).toBe("To do");
     const folder = join(tmp, "billing-api");
     mkdirSync(folder);
     execFileSync("git", ["init", "-q", "-b", "main"], { cwd: folder });
@@ -31,7 +33,8 @@ flow(
     await add.getByRole("button", { name: "Add repo" }).click();
     await add.waitFor({ state: "detached" });
     await sidebarRow(page, "billing-api").waitFor();
-    await firstLaunch.waitFor({ state: "detached" });
+    // The list is still there until the first item starts, with the repo ticked off.
+    await expect.poll(() => repoWord.innerText(), { message: "the list ticks the repo" }).toBe("Added");
 
     const file = join(home, ".tokama", "repos.yaml");
     const written = readFileSync(file, "utf8");
@@ -67,7 +70,7 @@ flow(
     await sidebarRow(page, "billing-api").waitFor({ state: "detached" });
     expect(readFileSync(file, "utf8")).not.toContain("billing-api");
     expect(existsSync(join(folder, "package.json")), "the folder itself is untouched").toBe(true);
-    await firstLaunch.waitFor();
+    await expect.poll(() => repoWord.innerText(), { message: "the list takes the repo off again" }).toBe("To do");
   },
   "real",
 );
