@@ -3,7 +3,8 @@
 import { accessSync, closeSync, constants, fstatSync, openSync, readSync, statSync } from "node:fs";
 import { delimiter, isAbsolute, join, resolve } from "node:path";
 import type { EngineCommand } from "@tokama/client";
-import { err, ok, type Result } from "@tokama/core";
+import { buildEnv, err, ok, type Result, type ToolsPath } from "@tokama/core";
+import type { ToolsPathInfo } from "../shared/bridge.js";
 
 /** The first executable file `name` in the absolute entries of `path`. POSIX only for now. */
 export function findExecutable(name: string, path: string | undefined): string | undefined {
@@ -52,6 +53,48 @@ export function engineRuntime(input: EngineRuntimeInput): EngineRuntime {
  */
 export function engineDirFor(baseDir: string, sample: boolean): string {
   return sample ? join(baseDir, "sample") : baseDir;
+}
+
+/**
+ * The environment the engine starts with: the allowlisted variables of `parent`, with the PATH of
+ * `toolsPath` when there is one. The SSH agent socket reaches the engine for Open PR's push to an
+ * SSH remote; the engine's process runner drops it again for every agent, check and other git call.
+ * In sample mode, TOKAMA_SAMPLE_HISTORY reaches the engine too (a long history for trying the work list).
+ */
+export function engineEnv(parent: Readonly<Record<string, string | undefined>>, toolsPath: ToolsPath | undefined, sample: boolean): Record<string, string> {
+  return buildEnv(parent, {
+    ...(toolsPath?.path !== undefined && { PATH: toolsPath.path }),
+    ...(parent["SSH_AUTH_SOCK"] !== undefined && { SSH_AUTH_SOCK: parent["SSH_AUTH_SOCK"] }),
+    ...(sample && parent["TOKAMA_SAMPLE_HISTORY"] !== undefined && { TOKAMA_SAMPLE_HISTORY: parent["TOKAMA_SAMPLE_HISTORY"] }),
+  });
+}
+
+/**
+ * Whether the engine this app run is connected to was already running when the app came, and so
+ * has a PATH the app did not give it. Told at each connect whether a live engine holds the lock:
+ * once this run has had to start an engine (none was alive, as after an older one was replaced
+ * or a crashed one went), a live engine is its own.
+ */
+export function attachTracker(): { connecting(engineAlive: boolean): void; attached(): boolean } {
+  let started = false;
+  let attached = false;
+  return {
+    connecting(engineAlive) {
+      if (!engineAlive) started = true;
+      attached = engineAlive && !started;
+    },
+    attached: () => attached,
+  };
+}
+
+/**
+ * What the window may know about the tools PATH: where it came from, never the PATH itself. An
+ * engine that was already running when the app attached keeps the PATH it started with, so what
+ * this app run read says nothing about it.
+ */
+export function toolsPathInfo(toolsPath: ToolsPath, attached = false): ToolsPathInfo {
+  if (attached) return { source: "engine-running" };
+  return { source: toolsPath.source, ...(toolsPath.shell !== undefined && { shell: toolsPath.shell }), ...(toolsPath.problem !== undefined && { problem: toolsPath.problem }), ...(toolsPath.slow === true && { slow: true as const }) };
 }
 
 export interface EngineCommandInput {

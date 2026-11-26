@@ -1,9 +1,9 @@
 // Electron main process: one hardened window, and the connection to the engine service through
 // @tokama/client. The engine runs detached and keeps running when the app quits.
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import { connect, requestShutdown } from "@tokama/client";
-import { API_VERSION, buildEnv, defaultEngineDir, engineEndpoint, err, pidAlive, posixEngineProcesses, readEngineLock } from "@tokama/core";
+import { API_VERSION, defaultEngineDir, engineEndpoint, err, pidAlive, posixEngineProcesses, readEngineLock, resolveToolsPath, type ToolsPath } from "@tokama/core";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, screen, session, shell } from "electron";
 import { type BridgeEvent, CHANNELS } from "../shared/bridge.js";
 import { buildInfoText } from "../shared/build-info.js";
@@ -15,7 +15,7 @@ import { type ConnectionWatch, watchConnection } from "./connection.js";
 import { type DesktopStore, desktopStore } from "./desktop-store.js";
 import { DIAGNOSTICS_URL, diagnosticsService, saveToFile } from "./diagnostics-send.js";
 import { createReporter, mainErrorReport, rateLimit, rendererErrorReport, rendererGoneKind, rendererUsageReport, type Reporter, runMarker } from "./diagnostics.js";
-import { engineCommand, engineCommandEnd, engineDirFor, engineRuntime, readLogTail } from "./engine.js";
+import { attachTracker, engineCommand, engineCommandEnd, engineDirFor, engineEnv, engineRuntime, readLogTail, toolsPathInfo } from "./engine.js";
 import { showMainWindow } from "./main-window.js";
 import { itemsRunningIn, offerMove, shouldOfferMove } from "./move-to-applications.js";
 import { replaceOlderEngine } from "./replace.js";
@@ -69,6 +69,34 @@ function send(channel: string, message: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, message);
 }
 
+// The PATH the engine starts with, read once per app run. A packaged app started from the Finder
+// has only the system folders on its PATH, so it asks the user's login shell; development keeps
+// the PATH it was started with, and starts no shell.
+let toolsPathRead: Promise<ToolsPath> | undefined;
+// The answer once it is in, for callers that must not wait for it.
+let toolsPathValue: ToolsPath | undefined;
+function toolsPath(): Promise<ToolsPath> {
+  toolsPathRead ??= (
+    app.isPackaged
+      ? resolveToolsPath({ platform: process.platform, shell: userShell(), inheritedPath: process.env["PATH"], home: homedir() })
+      : Promise.resolve<ToolsPath>({ path: process.env["PATH"], source: "inherited" })
+  ).then((read) => (toolsPathValue = read));
+  return toolsPathRead;
+}
+// Whether the connected engine was already running, which then has its own PATH; told at every connect.
+const attach = attachTracker();
+
+/** The login shell of this account; `os.userInfo` throws on some systems, then $SHELL is used. */
+function userShell(): string | undefined {
+  try {
+    const shell = userInfo().shell;
+    if (shell) return shell;
+  } catch {
+    // Fall through to $SHELL.
+  }
+  return process.env["SHELL"];
+}
+
 function startWatch(onConnected: () => void, onItemEvent: (event: BridgeEvent["event"]) => void): ConnectionWatch {
   // One dir for both sides: the client gets it directly, the engine as `--dir`, since the
   // engine's reduced env has no TOKAMA_ENGINE_DIR or XDG_RUNTIME_DIR to find it by itself.
@@ -76,23 +104,17 @@ function startWatch(onConnected: () => void, onItemEvent: (event: BridgeEvent["e
   const endpoint = engineEndpoint(dir);
   // In development the engine is the checkout's built apps/engine/dist on the node found on PATH;
   // a packaged app runs the Node and the engine bundle it ships.
-  const start = engineCommand({
-    ...engineRuntime({ platform: process.platform, isPackaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath, path: process.env["PATH"] }),
-    dir,
-    // The SSH agent socket reaches the engine for Open PR's push to an SSH remote; the engine's
-    // process runner drops it again for every agent, check and other git call.
-    // In sample mode, TOKAMA_SAMPLE_HISTORY reaches the engine too (a long history for trying the work list).
-    env: buildEnv(process.env, {
-      ...(process.env["SSH_AUTH_SOCK"] !== undefined && { SSH_AUTH_SOCK: process.env["SSH_AUTH_SOCK"] }),
-      ...(sample && process.env["TOKAMA_SAMPLE_HISTORY"] !== undefined && { TOKAMA_SAMPLE_HISTORY: process.env["TOKAMA_SAMPLE_HISTORY"] }),
-    }),
-    sample,
-  });
+  const runtime = engineRuntime({ platform: process.platform, isPackaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath, path: process.env["PATH"] });
+  // The shell is asked now, while the window loads; the first connect waits for the answer.
+  const start = toolsPath().then((tools) => engineCommand({ ...runtime, dir, env: engineEnv(process.env, tools, sample), sample }));
   const lockPath = endpoint.ok ? endpoint.value.lockPath : join(dir, "engine.lock");
   return watchConnection({
-    connect: () => {
-      if (!start.ok) return Promise.resolve(err({ code: "start_failed" as const, message: start.error }));
-      return connect({ dir, start: start.value });
+    connect: async () => {
+      const command = await start;
+      if (!command.ok) return err({ code: "start_failed" as const, message: command.error });
+      const lock = readEngineLock(lockPath);
+      attach.connecting(lock !== undefined && pidAlive(lock.pid));
+      return connect({ dir, start: command.value });
     },
     apiVersion: API_VERSION,
     // Only a packaged app compares builds; a dev build is 0.0.0 and never replaces an engine for it.
@@ -312,7 +334,9 @@ void app.whenReady().then(async () => {
     });
   };
   handle(CHANNELS.getAboutInfo, about);
-  handle(CHANNELS.copyBuildInfo, () => clipboard.writeText(buildInfoText(about(), watch.state().status)));
+  handle(CHANNELS.getToolsPath, async () => toolsPathInfo(await toolsPath(), attach.attached()));
+  // Without the Tools PATH line while the shell is still being read: the copy does not wait for it.
+  handle(CHANNELS.copyBuildInfo, () => clipboard.writeText(buildInfoText(about(), watch.state().status, toolsPathValue === undefined ? undefined : toolsPathInfo(toolsPathValue, attach.attached()))));
   handle(CHANNELS.showDataFolder, async () => {
     const message = await shell.openPath(tokamaHome);
     return message === "" ? { ok: true } : { ok: false, message };

@@ -1,9 +1,11 @@
 // kernel/process: spawn agents and checks, stream their output to disk as it arrives, kill the
 // whole process tree on stop or timeout, pass only allowlisted environment variables, kill
-// an agent tree left over from before a restart, and read the pid files that name a process.
+// an agent tree left over from before a restart, read the pid files that name a process, and
+// read the login shell's PATH for a client that starts the engine.
 // spawnDetached (detached.ts) is exported from core's public entry only: it is for clients that
 // start the engine, not for slices or adapters.
 export { ENV_ALLOWLIST, buildEnv } from "./env.js";
+export { resolveToolsPath, type LoginPathDeps, type ToolsPath, type ToolsPathSource } from "./login-path.js";
 export { pidAlive, readPidFile, type PidFile } from "./pid-file.js";
 export { findOnPath } from "./which.js";
 export { posixTree } from "./posix.js";

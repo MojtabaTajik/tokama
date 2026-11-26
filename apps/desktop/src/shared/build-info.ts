@@ -1,6 +1,6 @@
 // The Build rows of About, and the clipboard text made from them. Pure, so the window and the
 // main process show and copy the same words.
-import type { AboutInfo } from "./bridge.js";
+import type { AboutInfo, ToolsPathInfo } from "./bridge.js";
 
 /**
  * The rows under Build, as label and value. `status` is the engine connection's status. The engine's
@@ -17,7 +17,15 @@ export function buildRows(info: AboutInfo, status: string): ReadonlyArray<readon
   ];
 }
 
-/** One `Label: value` line per row, then the platform. */
-export function buildInfoText(info: AboutInfo, status: string): string {
-  return [...buildRows(info, status), ["Platform", info.platform] as const].map(([label, value]) => `${label}: ${value}`).join("\n");
+/** How the engine got its PATH, in one phrase. It never holds the PATH itself. */
+export function toolsPathText(toolsPath: ToolsPathInfo): string {
+  if (toolsPath.source === "engine-running") return "not read (the engine was already running)";
+  if (toolsPath.source === "login-shell") return (toolsPath.shell === undefined ? "login shell" : `login shell (${toolsPath.shell})`) + (toolsPath.slow === true ? ", slow to start" : "");
+  return toolsPath.problem === undefined ? "inherited" : `inherited (login shell failed: ${toolsPath.problem})`;
+}
+
+/** One `Label: value` line per row, then the platform, then where the engine's PATH came from when that is known. */
+export function buildInfoText(info: AboutInfo, status: string, toolsPath?: ToolsPathInfo): string {
+  const rows = [...buildRows(info, status), ["Platform", info.platform] as const, ...(toolsPath === undefined ? [] : [["Tools PATH", toolsPathText(toolsPath)] as const])];
+  return rows.map(([label, value]) => `${label}: ${value}`).join("\n");
 }

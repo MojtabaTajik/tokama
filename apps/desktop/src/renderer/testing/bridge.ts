@@ -5,7 +5,7 @@
 import type { BoardCount, ItemRecord } from "@tokama/core";
 import { act } from "react";
 import { vi } from "vitest";
-import type { AboutInfo, BridgeEvent, ConnectionState, DiagnosticsLoad, DiagnosticsSaveResult, DiagnosticsSendResult, OpenResult, TokamaBridge } from "../../shared/bridge.js";
+import type { AboutInfo, BridgeEvent, ConnectionState, DiagnosticsLoad, DiagnosticsSaveResult, DiagnosticsSendResult, OpenResult, ToolsPathInfo, TokamaBridge } from "../../shared/bridge.js";
 import { DEFAULT_DESKTOP_STATE, type DesktopState } from "../../shared/desktop-state.js";
 import { localDay } from "../format/time.js";
 import { bucketOf, isOpen } from "../model.js";
@@ -23,7 +23,7 @@ export const ABOUT_INFO: AboutInfo = {
 
 export const CONNECTED: ConnectionState = { status: "connected", engineId: "e-1" };
 
-export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | Promise<Reply> | undefined; commandReply?: (command: { type: string }) => Reply; pickFolder?: () => Promise<string | null>; openTemplateFile?: () => Promise<OpenResult>; openAttemptFile?: () => Promise<OpenResult>; about?: AboutInfo; copyBuildInfo?: () => Promise<void>; showDataFolder?: () => Promise<OpenResult>; desktopState?: DesktopState; loadDiagnostics?: () => Promise<DiagnosticsLoad>; sendDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSendResult>; saveDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSaveResult> } = {}) {
+export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | Promise<Reply> | undefined; commandReply?: (command: { type: string }) => Reply; pickFolder?: () => Promise<string | null>; openTemplateFile?: () => Promise<OpenResult>; openAttemptFile?: () => Promise<OpenResult>; about?: AboutInfo; toolsPath?: ToolsPathInfo; copyBuildInfo?: () => Promise<void>; showDataFolder?: () => Promise<OpenResult>; desktopState?: DesktopState; loadDiagnostics?: () => Promise<DiagnosticsLoad>; sendDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSendResult>; saveDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSaveResult> } = {}) {
   let connectionListener: ((state: ConnectionState) => void) | undefined;
   let openListener: ((itemId: string) => void) | undefined;
   // Every subscriber hears every event: the app and the open drawer both listen.
@@ -55,6 +55,7 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
     pickFolder: vi.fn(options.pickFolder ?? (async () => null)),
     openTemplateFile: vi.fn(options.openTemplateFile ?? (async (): Promise<OpenResult> => ({ ok: true }))),
     openAttemptFile: vi.fn(options.openAttemptFile ?? (async (): Promise<OpenResult> => ({ ok: true }))),
+    getToolsPath: vi.fn(async (): Promise<ToolsPathInfo> => options.toolsPath ?? { source: "inherited" }),
     getAboutInfo: vi.fn(async () => options.about ?? ABOUT_INFO),
     copyBuildInfo: vi.fn(options.copyBuildInfo ?? (async () => undefined)),
     showDataFolder: vi.fn(options.showDataFolder ?? (async (): Promise<OpenResult> => ({ ok: true }))),

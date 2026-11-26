@@ -2,7 +2,7 @@
 // `electron`. It exposes `window.tokama` (TokamaBridge) and nothing else: no ipcRenderer, no
 // channel names, no Node.
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
-import { type AboutInfo, type BridgeEvent, CHANNELS, type ConnectionState, type DiagnosticsLoad, type DiagnosticsSaveResult, type DiagnosticsSendResult, type OpenResult, type TokamaBridge } from "../shared/bridge.js";
+import { type AboutInfo, type BridgeEvent, CHANNELS, type ConnectionState, type DiagnosticsLoad, type DiagnosticsSaveResult, type DiagnosticsSendResult, type OpenResult, type ToolsPathInfo, type TokamaBridge } from "../shared/bridge.js";
 import type { DesktopState } from "../shared/desktop-state.js";
 
 /** Subscribes to a pushed channel. Wrapped, so the renderer never receives the IPC event object (it carries `sender`). */
@@ -39,6 +39,7 @@ export const bridge: TokamaBridge = {
   openTemplateFile: ({ origin, file }) => ipcRenderer.invoke(CHANNELS.openTemplateFile, { origin, file }) as Promise<OpenResult>,
   // Only the four names cross, whatever else the renderer passes.
   openAttemptFile: ({ itemId, stepIndex, attempt, file }) => ipcRenderer.invoke(CHANNELS.openAttemptFile, { itemId, stepIndex, attempt, file }) as Promise<OpenResult>,
+  getToolsPath: () => ipcRenderer.invoke(CHANNELS.getToolsPath) as Promise<ToolsPathInfo>,
   getAboutInfo: () => ipcRenderer.invoke(CHANNELS.getAboutInfo) as Promise<AboutInfo>,
   copyBuildInfo: () => ipcRenderer.invoke(CHANNELS.copyBuildInfo) as Promise<void>,
   showDataFolder: () => ipcRenderer.invoke(CHANNELS.showDataFolder) as Promise<OpenResult>,

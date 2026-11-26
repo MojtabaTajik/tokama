@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { engineCommand, engineCommandEnd, engineDirFor, engineRuntime, findExecutable, readLogTail } from "./engine.js";
+import { attachTracker, engineCommand, engineCommandEnd, engineDirFor, engineEnv, engineRuntime, findExecutable, readLogTail, toolsPathInfo } from "./engine.js";
 
 let dir: string;
 beforeEach(() => {
@@ -28,6 +28,72 @@ describe("findExecutable", () => {
     mkdirSync(join(dir, "node"));
     expect(findExecutable("node", [".", "bin", dir].join(delimiter))).toBeUndefined();
     expect(findExecutable("node", undefined)).toBeUndefined();
+  });
+});
+
+describe("engineEnv", () => {
+  const parent = { PATH: "/usr/bin:/bin", HOME: "/Users/a", SSH_AUTH_SOCK: "/tmp/agent", ANTHROPIC_API_KEY: "sk-secret", TOKAMA_SAMPLE_HISTORY: "200", ELECTRON_RUN_AS_NODE: "1" };
+  const login = { path: "/opt/homebrew/bin:/Users/a/.local/bin:/usr/bin", source: "login-shell" as const, shell: "zsh" };
+
+  it("gives the engine the tools PATH in place of the inherited one", () => {
+    expect(engineEnv(parent, login, false)).toEqual({ PATH: login.path, HOME: "/Users/a", SSH_AUTH_SOCK: "/tmp/agent" });
+  });
+
+  it("keeps the inherited PATH without a tools PATH, or when it has none", () => {
+    const today = { PATH: "/usr/bin:/bin", HOME: "/Users/a", SSH_AUTH_SOCK: "/tmp/agent" };
+    expect(engineEnv(parent, undefined, false)).toEqual(today);
+    expect(engineEnv(parent, { path: undefined, source: "inherited" }, false)).toEqual(today);
+  });
+
+  it("still drops relative entries and tool folders from the tools PATH", () => {
+    const env = engineEnv(parent, { path: "/opt/bin:bin:.:/repo/node_modules/.bin:/usr/bin", source: "login-shell" }, false);
+    expect(env["PATH"]).toBe("/opt/bin:/usr/bin");
+  });
+
+  it("adds the sample history only in sample mode, and no other variable", () => {
+    expect(engineEnv(parent, login, true)["TOKAMA_SAMPLE_HISTORY"]).toBe("200");
+    expect(Object.keys(engineEnv(parent, login, true)).sort()).toEqual(["HOME", "PATH", "SSH_AUTH_SOCK", "TOKAMA_SAMPLE_HISTORY"]);
+  });
+});
+
+describe("attachTracker", () => {
+  it("is attached when a live engine was there at the first connect", () => {
+    const tracker = attachTracker();
+    tracker.connecting(true);
+    expect(tracker.attached()).toBe(true);
+  });
+
+  it("is not attached when this run starts the engine, also when it is found alive at a later connect", () => {
+    const tracker = attachTracker();
+    tracker.connecting(false);
+    expect(tracker.attached()).toBe(false);
+    tracker.connecting(true);
+    expect(tracker.attached()).toBe(false);
+  });
+
+  it("is not attached after an older engine was replaced: the new one is this run's", () => {
+    const tracker = attachTracker();
+    tracker.connecting(true);
+    tracker.connecting(false);
+    tracker.connecting(true);
+    expect(tracker.attached()).toBe(false);
+  });
+});
+
+describe("toolsPathInfo", () => {
+  it("keeps the source, shell and problem, and drops the PATH", () => {
+    expect(toolsPathInfo({ path: "/Users/a/.local/bin:/usr/bin", source: "login-shell", shell: "zsh" })).toEqual({ source: "login-shell", shell: "zsh" });
+    expect(toolsPathInfo({ path: "/Users/a/bin", source: "inherited", shell: "zsh", problem: "Your login shell (zsh) did not report a PATH." })).toEqual({
+      source: "inherited",
+      shell: "zsh",
+      problem: "Your login shell (zsh) did not report a PATH.",
+    });
+    expect(toolsPathInfo({ path: undefined, source: "inherited" })).toEqual({ source: "inherited" });
+    expect(toolsPathInfo({ path: "/x", source: "login-shell", shell: "zsh", slow: true })).toEqual({ source: "login-shell", shell: "zsh", slow: true });
+  });
+
+  it("says only that the engine was already running when the app attached to one", () => {
+    expect(toolsPathInfo({ path: "/x", source: "inherited", shell: "zsh", problem: "Your login shell (zsh) did not report a PATH." }, true)).toEqual({ source: "engine-running" });
   });
 });
 

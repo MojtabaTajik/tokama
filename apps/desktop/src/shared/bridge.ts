@@ -61,6 +61,7 @@ export const CHANNELS = {
   pickFolder: "tokama:dialog:pick-folder",
   openTemplateFile: "tokama:template:open",
   openAttemptFile: "tokama:attempt:open",
+  getToolsPath: "tokama:engine:tools-path",
   getAboutInfo: "tokama:about:info",
   copyBuildInfo: "tokama:about:copy",
   showDataFolder: "tokama:about:show-folder",
@@ -91,6 +92,21 @@ export interface AboutInfo {
   readonly runtime: { readonly electron: string; readonly node: string };
   /** The system and CPU, for example "macOS · arm64". */
   readonly platform: string;
+}
+
+/**
+ * Where the PATH the engine started with came from. It never carries the PATH itself, which holds
+ * the user's folder names. `problem` is one plain sentence, set when the login shell could not be read.
+ * `engine-running`: this app run attached to an engine that was already running, so it does not
+ * know that engine's PATH.
+ */
+export interface ToolsPathInfo {
+  readonly source: "login-shell" | "inherited" | "engine-running";
+  /** The login shell's file name, when one was run. */
+  readonly shell?: string;
+  readonly problem?: string;
+  /** The login shell answered, but only after the 5 s timeout. */
+  readonly slow?: true;
 }
 
 /** Where the engine found a template file: a repo id and the repo-relative path. */
@@ -178,6 +194,8 @@ export interface TokamaBridge {
    * asks the engine where the file is and opens only `.log` and `.txt` files in that item's folder.
    */
   openAttemptFile(name: AttemptFileName): Promise<OpenResult>;
+  /** Where the engine's PATH came from: the login shell, or the PATH the app was started with. */
+  getToolsPath(): Promise<ToolsPathInfo>;
   /** What About shows about this build. */
   getAboutInfo(): Promise<AboutInfo>;
   /** Puts the build info as text on the clipboard. The main process writes it; the renderer sends no text. */

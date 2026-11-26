@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AboutInfo } from "./bridge.js";
+import type { AboutInfo, ToolsPathInfo } from "./bridge.js";
 import { buildInfoText, buildRows } from "./build-info.js";
 
 const info: AboutInfo = {
@@ -23,6 +23,18 @@ describe("build info", () => {
   it("shows no pid for a connected engine without a lock file", () => {
     const engine = { version: info.engine.version, apiVersion: info.engine.apiVersion };
     expect(buildRows({ ...info, engine }, "connected")[1]).toEqual(["Engine", "0.1.0 · running"]);
+  });
+
+  it("adds a Tools PATH line for each source, never the PATH itself", () => {
+    const line = (toolsPath: ToolsPathInfo) => buildInfoText(info, "connected", toolsPath).split("\n").at(-1);
+    expect(line({ source: "login-shell", shell: "zsh" })).toBe("Tools PATH: login shell (zsh)");
+    expect(line({ source: "login-shell", shell: "zsh", slow: true })).toBe("Tools PATH: login shell (zsh), slow to start");
+    expect(line({ source: "inherited" })).toBe("Tools PATH: inherited");
+    expect(line({ source: "engine-running" })).toBe("Tools PATH: not read (the engine was already running)");
+    expect(line({ source: "inherited", shell: "zsh", problem: "Your login shell (zsh) did not answer within 5 s." })).toBe(
+      "Tools PATH: inherited (login shell failed: Your login shell (zsh) did not answer within 5 s.)",
+    );
+    expect(buildInfoText(info, "connected")).not.toContain("Tools PATH");
   });
 
   it("copies one Label: value line per row, then the platform", () => {
