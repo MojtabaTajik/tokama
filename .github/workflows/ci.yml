@@ -141,6 +141,13 @@ jobs:
           else
             pnpm --filter @tokama/desktop e2e
           fi
+      - if: runner.os == 'macOS' && needs.plan.outputs.docs_only != 'true'
+        name: Gatekeeper probe (temporary)
+        run: |
+          spctl --status || true
+          spctl -a -vv /System/Applications/Calculator.app || true
+          ls -ld /Applications ~/Applications || true
+          id
       # The packaged app, installed as a user installs it: unsigned (ad-hoc) on CI. The package
       # step runs the layout, fuse, feed and hook checks on the build and its zip; the smoke test
       # then installs the dmg and runs the app.
