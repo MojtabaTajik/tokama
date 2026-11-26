@@ -1325,6 +1325,24 @@ describe("run loop: item diff", () => {
     expect(shown(viaMerge.value.files)).toEqual([["notes.txt", "added", 1, 0]]);
   });
 
+  it("an item merged by hand before Merge was clicked shows its own commit, not the tip of the base branch", SLOW, async () => {
+    const loop = engine(fakeRuntime([edits(FIXED)]));
+    const id = await start(loop, template([{ id: "build" }]));
+    const { branch, baseCommit } = item(id).worktrees[0]!;
+    const own = await plain(repo.path, "rev-parse", branch!);
+    await plain(repo.path, "merge", "-q", "--ff-only", branch!);
+    writeFileSync(join(repo.path, "later.txt"), "unrelated\n");
+    await plain(repo.path, "add", "later.txt");
+    await plain(repo.path, "commit", "-q", "-m", "unrelated work");
+    expect((await loop.finishItem(id, "merge")).ok).toBe(true);
+    await loop.settled(id);
+    expect(item(id).finish?.merged?.commit).not.toBe(own);
+    const diff = await loop.itemDiff(id);
+    if (!diff.ok || diff.value.kind !== "merged") throw new Error(JSON.stringify(diff));
+    expect(diff.value).toMatchObject({ commit: own, parent: baseCommit });
+    expect(shown(diff.value.files)).toEqual([["app.txt", "modified", 1, 1]]);
+  });
+
   it("a merged commit that is no longer in the repo is gone, not an error; a repo that does not read is an error", SLOW, async () => {
     const loop = engine(fakeRuntime([edits(FIXED)]));
     const id = await start(loop, template([{ id: "build" }]));

@@ -1285,12 +1285,24 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
         if (!top.ok) return cannot(`Cannot read repo ${repo.id}`, top.error.message);
         const found = await git.revParse(repo.path, `${merged.commit}^{commit}`);
         if (!found.ok) return ok({ kind: "gone", repoId: repo.id, commit: merged.commit });
+        // The recorded commit is the tip the merge left. When the item's commit was already in the
+        // base branch (merged by hand), that tip is some later commit: the item's own commit is shown.
+        let commit = merged.commit;
+        const own = item.outcome.commits?.find((made) => made.repoId === repo.id)?.commit;
+        if (own !== undefined && own !== merged.commit) {
+          const second = await git.revParse(repo.path, `${merged.commit}^2`);
+          if (!second.ok || second.value !== own) {
+            const ownFound = await git.revParse(repo.path, `${own}^{commit}`);
+            if (!ownFound.ok) return ok({ kind: "gone", repoId: repo.id, commit: own });
+            commit = own;
+          }
+        }
         // The first parent is the base branch before the merge, for a fast-forward and a merge commit alike.
-        const parent = await git.revParse(repo.path, `${merged.commit}^1`);
+        const parent = await git.revParse(repo.path, `${commit}^1`);
         if (!parent.ok) return cannot("Cannot find the commit before the merge", parent.error.message);
-        const diff = await treeDiff(git, repo.path, parent.value, merged.commit);
+        const diff = await treeDiff(git, repo.path, parent.value, commit);
         if (!diff.ok) return cannot("Cannot read the change", diff.error.message);
-        return ok({ kind: "merged", ...diff.value, repoId: repo.id, baseBranch: merged.baseBranch, commit: merged.commit, parent: parent.value });
+        return ok({ kind: "merged", ...diff.value, repoId: repo.id, baseBranch: merged.baseBranch, commit, parent: parent.value });
       }
       if (item.finish?.worktreeRemoved === true) return ok({ kind: "none" });
       const worktree = worktreeOf({ item, repo });
