@@ -1,4 +1,6 @@
-// Builds Tokama.app for this Mac, ad-hoc signed: `node scripts/package.ts [--dmg] [--feed-url <url>]`,
+// Builds Tokama.app for this Mac, ad-hoc signed: `node scripts/package.ts [--dmg] [--feed-url <url>]`
+// (`--dmg --signed` is the release build, which signs with the Developer ID certificate from the
+// environment, notarizes and staples; see buildSigned),
 // run from apps/desktop after `pnpm build` (the root `pnpm package` does both). It stages the
 // engine folder (the bundled engine, the pinned Node and a package.json with the app's version),
 // packs the app with electron-builder, and then checks the result: the ad-hoc signature here, and
@@ -10,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { AfterPackContext } from "electron-builder";
+import { type SignedEnv, isFile, signNotarizeDmg, signedEnv, writeSums } from "./package-signed.ts";
 
 const appDir = resolve(import.meta.dirname, "..");
 const repoDir = resolve(appDir, "..", "..");
@@ -62,12 +65,20 @@ export function run(command: string, args: string[], input?: string): { status: 
 const mb = (path: string) => `${(statSync(path).size / 1024 / 1024).toFixed(0)} MB`;
 
 async function main(): Promise<void> {
-  const { values } = parseArgs({ options: { dmg: { type: "boolean" }, "feed-url": { type: "string" } } });
+  const { values } = parseArgs({ options: { dmg: { type: "boolean" }, "feed-url": { type: "string" }, signed: { type: "boolean" } } });
   const dmg = values.dmg === true;
   const feedUrl = values["feed-url"];
   if (feedUrl !== undefined) {
     const problem = feedUrlProblem(feedUrl);
     if (problem !== undefined) fail("feed URL", problem);
+  }
+  // A signed build takes everything it needs from the environment and checks it before any work starts.
+  let signing: SignedEnv | undefined;
+  if (values.signed === true) {
+    if (!dmg) fail("arguments", "--signed builds the dmg and the zip, so it needs --dmg");
+    const needs = signedEnv(process.env, isFile);
+    if (needs.value === undefined) fail("environment", needs.problems.join("; "));
+    signing = needs.value;
   }
   if (process.platform !== "darwin" || process.arch !== "arm64") {
     process.stderr.write("package: only Apple silicon (macOS arm64) packaging exists so far.\n");
@@ -82,6 +93,11 @@ async function main(): Promise<void> {
   execFileSync(process.execPath, [join(appDir, "scripts", "fetch-node.ts"), "--out", stage], { stdio: "inherit" });
   writeFileSync(join(stage, "package.json"), engineManifest(appVersion(appDir)));
   checkEngineVersion(appDir, stage);
+
+  if (signing !== undefined) {
+    await buildSigned(signing, feedUrl ?? DEFAULT_FEED_URL);
+    return;
+  }
 
   // electron-builder looks for an identity whose name contains the qualifier "-" in the keychain it
   // is given, and ad-hoc signs only when it finds none. It is given a new, empty keychain, so it
@@ -114,6 +130,61 @@ async function main(): Promise<void> {
   }
 
   check(join(appDir, "release"), dmg, feedUrl ?? DEFAULT_FEED_URL);
+}
+
+/**
+ * Developer ID build: electron-builder signs every file with hardened runtime and notarizes and
+ * staples the app; then the dmg is signed, notarized and stapled, the checksums are written, and
+ * the verify script runs in signed mode. The publish policy ("never": nothing is uploaded) and the
+ * feed config inside `config` (what app-update.yml and latest-mac.yml hold) are two different
+ * settings; merging them would drop the feed.
+ */
+async function buildSigned(env: SignedEnv, feedUrl: string): Promise<void> {
+  const release = join(appDir, "release");
+  process.env["CSC_IDENTITY_AUTO_DISCOVERY"] = "false";
+  const { build, Arch, Platform } = await import("electron-builder");
+  await build({
+    projectDir: appDir,
+    targets: Platform.MAC.createTarget(["dmg", "zip"], Arch.arm64),
+    publish: "never",
+    config: {
+      forceCodeSigning: true,
+      mac: { identity: env.team, hardenedRuntime: true, notarize: true },
+      dmg: { sign: true },
+      publish: { provider: "generic", url: feedUrl },
+      afterPack: removeDefaultApp,
+    },
+  });
+  const version = appVersion(appDir);
+  try {
+    signNotarizeDmg(release, join(release, `Tokama-${version}-arm64.dmg`), env);
+    writeSums(release, version);
+  } catch (error) {
+    fail("notarize", error instanceof Error ? error.message : String(error));
+  }
+  const verified = spawnSync(
+    process.execPath,
+    [
+      join(appDir, "scripts", "verify-package.ts"),
+      "--signed",
+      "--team",
+      env.team,
+      "--app",
+      join(release, "mac-arm64", "Tokama.app"),
+      "--zip",
+      join(release, `Tokama-${version}-arm64-mac.zip`),
+      "--dmg",
+      join(release, `Tokama-${version}-arm64.dmg`),
+      "--latest",
+      join(release, "latest-mac.yml"),
+      "--version",
+      version,
+      "--feed-url",
+      feedUrl,
+    ],
+    { stdio: "inherit" },
+  );
+  if (verified.status !== 0) fail("verify", "verify-package.ts reported failed checks, above");
 }
 
 function check(release: string, dmg: boolean, feedUrl: string): void {
