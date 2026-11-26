@@ -194,6 +194,12 @@ describe("work list index", () => {
     expect(days).toContain(null);
     expect(days).toContain("2026-11-24");
     expect(days).not.toContain("2026-11-05");
+
+    // When the null-day rows alone pass a small byte budget, the first rows that fit stay.
+    const tiny = list.counts("2026-11-01", { rows: Infinity, bytes: 2000 });
+    expect(tiny.length).toBeGreaterThan(0);
+    expect(tiny.length).toBeLessThan(80);
+    expect(tiny.reduce((sum, row) => sum + Buffer.byteLength(JSON.stringify(row)) + 1, 0)).toBeLessThanOrEqual(2000);
   });
 
   it("takes %, _ and \\ in a search as the characters themselves", () => {
