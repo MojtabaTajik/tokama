@@ -25,6 +25,14 @@ ipcRenderer.on(CHANNELS.openItem, (_event: IpcRendererEvent, itemId: unknown) =>
   else openListener(itemId);
 });
 
+// The same for Help > Get started: it can come before the renderer listens.
+let getStartedListener: (() => void) | undefined;
+let getStartedWaiting = false;
+ipcRenderer.on(CHANNELS.openGetStarted, () => {
+  if (getStartedListener === undefined) getStartedWaiting = true;
+  else getStartedListener();
+});
+
 export const bridge: TokamaBridge = {
   getConnection: () => ipcRenderer.invoke(CHANNELS.getConnection) as Promise<ConnectionState>,
   retryConnection: () => ipcRenderer.invoke(CHANNELS.retryConnection) as Promise<void>,
@@ -62,6 +70,16 @@ export const bridge: TokamaBridge = {
     }
     return () => {
       if (openListener === listener) openListener = undefined;
+    };
+  },
+  onOpenGetStarted: (listener) => {
+    getStartedListener = listener;
+    if (getStartedWaiting) {
+      getStartedWaiting = false;
+      listener();
+    }
+    return () => {
+      if (getStartedListener === listener) getStartedListener = undefined;
     };
   },
   loadDiagnostics: () => ipcRenderer.invoke(CHANNELS.loadDiagnostics) as Promise<DiagnosticsLoad>,

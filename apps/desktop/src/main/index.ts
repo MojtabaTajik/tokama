@@ -4,7 +4,7 @@ import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import { connect, type EngineInfo, stopEngine, type StopResult } from "@tokama/client";
 import { API_VERSION, createProcessRunner, defaultEngineDir, engineEndpoint, err, pidAlive, posixEngineProcesses, readEngineLock, resolveToolsPath, type ToolsPath } from "@tokama/core";
-import { app, BrowserWindow, clipboard, dialog, ipcMain, powerMonitor, screen, session, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, screen, session, shell } from "electron";
 import { type BridgeEvent, CHANNELS } from "../shared/bridge.js";
 import { buildInfoText } from "../shared/build-info.js";
 import { applyLayoutPatch, applyNotificationsPatch, type NoteKind } from "../shared/desktop-state.js";
@@ -17,6 +17,7 @@ import { DIAGNOSTICS_URL, diagnosticsService, saveToFile } from "./diagnostics-s
 import { createReporter, mainErrorReport, rateLimit, rendererErrorReport, rendererGoneKind, rendererUsageReport, type Reporter, runMarker } from "./diagnostics.js";
 import { attachTracker, engineCommand, engineDirFor, engineEnv, engineRuntime, readLogTail, toolsPathInfo } from "./engine.js";
 import { showMainWindow } from "./main-window.js";
+import { menuTemplate } from "./menu.js";
 import { itemsRunningIn, offerMove, shouldOfferMove } from "./move-to-applications.js";
 import { fakeUpdateEngine, fakeUpdateMode } from "./testing/update.js";
 import { createUpdateController } from "./update/controller.js";
@@ -41,7 +42,7 @@ import { recordingShow, systemShow } from "./system-notification.js";
 import { openTemplateFile } from "./template-file.js";
 import { notesDir, pathExists, whatsNewService } from "./whats-new.js";
 import { fitBounds, trackWindow } from "./window-state.js";
-import { backgroundModeEnabled, devServerUrl, diagnosticsUrl, e2eEnabled, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, sampleEngineEnabled, secureWebPreferences } from "./policy.js";
+import { backgroundModeEnabled, DOCS_URL, devServerUrl, diagnosticsUrl, e2eEnabled, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, sampleEngineEnabled, secureWebPreferences } from "./policy.js";
 import type { UpdateState } from "../shared/update.js";
 
 const rendererDir = join(import.meta.dirname, "..", "renderer");
@@ -69,7 +70,7 @@ app.on("web-contents-created", (_event, contents) => {
   contents.on("will-navigate", (event) => event.preventDefault());
   contents.on("will-redirect", (event) => event.preventDefault());
   contents.on("will-attach-webview", (event) => event.preventDefault());
-  // No window opens. The one link in the app, to the product site, goes to the system browser.
+  // No window opens. A link to the product site or one of its docs pages goes to the system browser.
   contents.setWindowOpenHandler(({ url }) => {
     if (isWebsiteUrl(url)) void shell.openExternal(url);
     return { action: "deny" };
@@ -371,17 +372,18 @@ void app.whenReady().then(async () => {
     now: () => Date.now(),
     platform: process.platform,
   });
-  // A click on a notification: the window comes to the front (made again if it was closed, as on
-  // macOS) and opens the item. The renderer is told once its page has loaded.
-  const openItem = (itemId: string) => {
+  // A click on a notification or on Help > Get started: the window comes to the front (made again
+  // if it was closed, as on macOS) and is told what to open. The renderer is told once its page has loaded.
+  const tellWindow = (channel: string, ...message: unknown[]) => {
     const existing = BrowserWindow.getAllWindows()[0];
     const window = existing ?? createWindow(store, reporter);
     showWindow(window);
-    const tell = () => window.webContents.send(CHANNELS.openItem, itemId);
+    const tell = () => window.webContents.send(channel, ...message);
     // A window made just now is told once its page has loaded, whatever its loading state says yet.
     if (existing === undefined || window.webContents.isLoading()) window.webContents.once("did-finish-load", tell);
     else tell();
   };
+  const openItem = (itemId: string) => tellWindow(CHANNELS.openItem, itemId);
   handle(CHANNELS.saveNotifications, (patch) => store.update((state) => applyNotificationsPatch(state, patch)));
   handle(CHANNELS.viewedItem, (itemId) => notifier.setViewedItem(typeof itemId === "string" && itemId.length <= 200 ? itemId : undefined));
   const watch = startWatch(() => {
@@ -513,8 +515,9 @@ void app.whenReady().then(async () => {
     },
   });
   app.on("before-quit", (event) => onBeforeQuit(event));
+  Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate(process.platform, { openGetStarted: () => tellWindow(CHANNELS.openGetStarted), openDocs: () => void shell.openExternal(DOCS_URL) })));
   createWindow(store, reporter);
-  showMain = () => showMainWindow({ windows: () => BrowserWindow.getAllWindows(), create: () => createWindow(store, reporter), show: showWindow });
+  showMain =() => showMainWindow({ windows: () => BrowserWindow.getAllWindows(), create: () => createWindow(store, reporter), show: showWindow });
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(store, reporter);
   });

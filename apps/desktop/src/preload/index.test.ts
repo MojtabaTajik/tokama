@@ -17,11 +17,12 @@ const { bridge } = await import("./index.js");
 // Vitest clears mock calls before each test, so the call made at import time is kept here.
 const exposed = [...electron.exposeInMainWorld.mock.calls];
 const [, pushOpenItem] = electron.on.mock.calls.find(([channel]) => channel === CHANNELS.openItem) as [string, (event: unknown, itemId: unknown) => void];
+const [, pushOpenGetStarted] = electron.on.mock.calls.find(([channel]) => channel === CHANNELS.openGetStarted) as [string, (event: unknown) => void];
 
 describe("preload bridge", () => {
   it("exposes window.tokama with only the bridge methods", () => {
     expect(exposed).toEqual([["tokama", bridge]]);
-    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "countUsage", "getAboutInfo", "getConnection", "getDesktopState", "getToolsPath", "onConnection", "onEvent", "onOpenItem", "openAttemptFile", "openTemplateFile", "pickFolder", "query", "reportError", "restartEngine", "retryConnection", "saveLayout", "saveNotifications", "playSound", "setViewedItem", "showDataFolder", "loadDiagnostics", "sendDiagnostics", "saveDiagnostics", "stopCrashPrompt", "getWhatsNew", "closeWhatsNew", "getUpdate", "onUpdate", "checkForUpdates", "installUpdate", "openUpdateNotes"].sort());
+    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "countUsage", "getAboutInfo", "getConnection", "getDesktopState", "getToolsPath", "onConnection", "onEvent", "onOpenGetStarted", "onOpenItem", "openAttemptFile", "openTemplateFile", "pickFolder", "query", "reportError", "restartEngine", "retryConnection", "saveLayout", "saveNotifications", "playSound", "setViewedItem", "showDataFolder", "loadDiagnostics", "sendDiagnostics", "saveDiagnostics", "stopCrashPrompt", "getWhatsNew", "closeWhatsNew", "getUpdate", "onUpdate", "checkForUpdates", "installUpdate", "openUpdateNotes"].sort());
   });
 
   it("the release notes calls: one without arguments, and a close that sends only two strings", async () => {
@@ -193,5 +194,23 @@ describe("preload bridge", () => {
     const next = vi.fn();
     bridge.onOpenItem(next)();
     expect(next.mock.calls).toEqual([["item_late"]]);
+  });
+
+  it("onOpenGetStarted keeps a request that came before a listener, calls the listener for the next ones, and unsubscribes", () => {
+    pushOpenGetStarted({ sender: "ipc" });
+    pushOpenGetStarted({ sender: "ipc" });
+    const listener = vi.fn();
+    const stop = bridge.onOpenGetStarted(listener);
+    // Two early requests are one: the list opens once.
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenLastCalledWith();
+    pushOpenGetStarted({ sender: "ipc" });
+    expect(listener).toHaveBeenCalledTimes(2);
+    stop();
+    pushOpenGetStarted({ sender: "ipc" });
+    expect(listener).toHaveBeenCalledTimes(2);
+    const next = vi.fn();
+    bridge.onOpenGetStarted(next)();
+    expect(next).toHaveBeenCalledTimes(1);
   });
 });
