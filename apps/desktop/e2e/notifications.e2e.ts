@@ -61,7 +61,7 @@ flow("the page shows a mode per kind and the sound set, and a restart finds the 
   // The size of the design board, so the screenshot sits next to it.
   await resize(1440, 1080);
   await openPage(page);
-  expect(await choices(page)).toEqual([["notes-needsYou", "✓Banner + sound"], ["notes-finished", "✓Sound only"], ["notes-failed", "✓Banner + sound"], ["notes-sounds", "✓Tokama sounds"]]);
+  expect(await choices(page)).toEqual([["notes-needsYou", "✓Banner + sound"], ["notes-finished", "✓Banner only"], ["notes-failed", "✓Banner + sound"], ["notes-sounds", "✓Tokama sounds"]]);
   await screenshot("notifications-default");
 
   await choose(page, "notes-finished", "Off");

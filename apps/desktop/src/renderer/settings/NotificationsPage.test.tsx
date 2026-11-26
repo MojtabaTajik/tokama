@@ -57,7 +57,7 @@ describe("Settings > Notifications", () => {
     expect(groups().map((group) => group.getAttribute("aria-labelledby"))).toEqual(["notes-needsYou", "notes-finished", "notes-failed", "notes-sounds"]);
     expect([...groups()[0]!.querySelectorAll('[role="radio"]')].map((radio) => radio.textContent?.replace("✓", ""))).toEqual(["Banner + sound", "Banner only", "Sound only", "Off"]);
     expect([...groups()[3]!.querySelectorAll('[role="radio"]')].map((radio) => radio.textContent?.replace("✓", ""))).toEqual(["Tokama sounds", "macOS default"]);
-    expect(checks()).toEqual(["✓Banner + sound", "✓Sound only", "✓Banner + sound", "✓Tokama sounds"]);
+    expect(checks()).toEqual(["✓Banner + sound", "✓Banner only", "✓Banner + sound", "✓Tokama sounds"]);
     expect($$(".notes-info-text span").map((el) => el.textContent)).toEqual([
       "No notification while you are looking at that item: Tokama is in front and the item is open in the drawer or the full view.",
       "Sound only: macOS cannot play a sound without a banner, so Tokama plays it itself while the app is running. Sound only plays even during Focus, but not while your Mac is locked. The ▶ buttons always play.",
@@ -66,7 +66,7 @@ describe("Settings > Notifications", () => {
   });
 
   it("previews a banner for the kinds that show one, a line for the sound-only kind, and the sound note", async () => {
-    await openPage(fakeBridge(CONNECTED).bridge);
+    await openPage(fakeBridge(CONNECTED, { desktopState: withNotifications({ finished: "sound" }) }).bridge);
     expect(previews()).toEqual([
       "Needs you: Add order export endpointnowThe plan is ready. Approve it to start Build.Plan and build · orders-api",
       "Finished is sound only: no banner, the Tokama sound plays.",
@@ -95,7 +95,7 @@ describe("Settings > Notifications", () => {
   });
 
   it("saves the sound set and names it in the lines and the note", async () => {
-    const fake = fakeBridge(CONNECTED);
+    const fake = fakeBridge(CONNECTED, { desktopState: withNotifications({ finished: "sound" }) });
     await openPage(fake.bridge);
     await click(option(3, "macOS default"));
     expect(fake.saveNotifications).toHaveBeenLastCalledWith({ sounds: "macos" });
@@ -104,7 +104,7 @@ describe("Settings > Notifications", () => {
   });
 
   it("shows the saved choices, not the defaults", async () => {
-    await openPage(fakeBridge(CONNECTED, { desktopState: withNotifications({ needsYou: "off", sounds: "macos" }) }).bridge);
+    await openPage(fakeBridge(CONNECTED, { desktopState: withNotifications({ needsYou: "off", finished: "sound", sounds: "macos" }) }).bridge);
     expect(checks()).toEqual(["✓Off", "✓Sound only", "✓Banner + sound", "✓macOS default"]);
     expect(previews()[0]).toBe("Needs you is off, so this one never shows.");
   });
@@ -146,7 +146,7 @@ describe("Settings > Notifications", () => {
     await act(async () => root.unmount());
     root = createRoot(container);
     await openPage(broken.bridge);
-    expect(checks()).toEqual(["✓Banner + sound", "✓Sound only", "✓Banner + sound", "✓Tokama sounds"]);
+    expect(checks()).toEqual(["✓Banner + sound", "✓Banner only", "✓Banner + sound", "✓Tokama sounds"]);
   });
 });
 
