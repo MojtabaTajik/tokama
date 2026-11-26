@@ -212,6 +212,80 @@ export class ItemList {
   }
 }
 
+/** Whether the lowercase search text is in the item's title, repo ids or agent ids, or the names match. */
+function matchesSearch(item: ItemRecord, text: string, names: NameHits): boolean {
+  const agents = [...new Set(item.steps.flatMap((step) => (step.agentId === undefined ? [] : [step.agentId])))];
+  if ([item.title, ...item.repoIds, ...agents].join("\n").toLowerCase().includes(text)) return true;
+  return names.templates.includes(item.templateId) || agents.some((agent) => names.agents.includes(agent));
+}
+
+/** One page of the query over the items. A cursor that is not one `listPage` made reads as no cursor. */
+export function listPage(items: readonly ItemRecord[], query: ListQuery, names: NameHits = NO_NAME_HITS): ListPage {
+  const finished = query.group === "done" || query.group === "failed";
+  const text = searchText(query.q);
+  const matching = items.filter(
+    (item) =>
+      groupOf(item.state) === query.group &&
+      !(finished && query.since !== undefined && localDate(item.createdAt) < query.since) &&
+      (query.repo === undefined || (item.repoIds as readonly string[]).includes(query.repo)) &&
+      (query.template === undefined || item.templateId === query.template) &&
+      (text === "" || matchesSearch(item, text, names)),
+  );
+  matching.sort((a, b) => b.createdAt - a.createdAt || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+
+  const cursor = CURSOR.exec(query.before ?? "");
+  const rest = cursor === null ? matching : matching.filter((item) => item.createdAt < Number(cursor[1]) || (item.createdAt === Number(cursor[1]) && item.id < cursor[2]!));
+  const more = rest.length > query.limit;
+  const shown = rest.slice(0, query.limit);
+  const last = shown.at(-1);
+
+  let days: { day: string; count: number }[] = [];
+  if (shown.length > 0 && finished) {
+    const onPage = new Set(shown.map((item) => localDate(item.createdAt)));
+    const counted = new Map<string, number>();
+    for (const item of matching) {
+      const day = localDate(item.createdAt);
+      if (onPage.has(day)) counted.set(day, (counted.get(day) ?? 0) + 1);
+    }
+    days = [...counted].map(([day, count]) => ({ day, count })).sort((a, b) => (a.day < b.day ? 1 : -1));
+  }
+  return {
+    ids: shown.map((item) => item.id),
+    nextCursor: more && last !== undefined ? `${last.createdAt}:${last.id}` : null,
+    total: matching.length,
+    days,
+  };
+}
+
+/**
+ * The done and failed items counted by start day, template and repos. Items that started before
+ * `firstDay` are counted together, under a null day. The rows stay within the budget: when they
+ * are too many or too long, the oldest days join the null-day rows, as many days as needed.
+ */
+export function boardCounts(items: readonly ItemRecord[], firstDay: string, budget: CountsBudget = COUNTS_BUDGET): BoardCount[] {
+  const rows = new Map<string, BoardCount>();
+  for (const item of items) {
+    const group = groupOf(item.state);
+    if (group !== "done" && group !== "failed") continue;
+    const started = localDate(item.createdAt);
+    const day = started >= firstDay ? started : null;
+    const key = `${day ?? ""}\t${item.templateId}\t${item.repoIds.join("\n")}`;
+    let row = rows.get(key);
+    if (row === undefined) {
+      row = { day, templateId: item.templateId, repoIds: [...item.repoIds], done: 0, failed: 0 };
+      rows.set(key, row);
+    }
+    row[group]++;
+  }
+  const all = [...rows.values()].sort(
+    (a, b) =>
+      (a.day === b.day ? 0 : a.day === null ? 1 : b.day === null ? -1 : a.day < b.day ? 1 : -1) ||
+      (a.templateId < b.templateId ? -1 : a.templateId > b.templateId ? 1 : 0) ||
+      (a.repoIds.join("\n") < b.repoIds.join("\n") ? -1 : a.repoIds.join("\n") > b.repoIds.join("\n") ? 1 : 0),
+  );
+  return fits(all, budget) ? all : capCounts(all, budget);
+}
+
 /** The rows and bytes (as JSON) that the count rows of one board reply may take; it also holds the open items. */
 export interface CountsBudget {
   readonly rows: number;
