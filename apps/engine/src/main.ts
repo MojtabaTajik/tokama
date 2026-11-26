@@ -15,11 +15,11 @@ import { startEngine } from "./engine.js";
 
 const log = (message: string) => process.stderr.write(`tokama-engine: ${message}\n`);
 
-/** This engine's version, from its package.json; "0.0.0" when it cannot be read. */
+/** This engine's version, from its package.json; "0.0.0" when it cannot be read or is not a plain x.y.z. */
 function engineVersion(): string {
   try {
     const parsed: unknown = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-    return typeof parsed === "object" && parsed !== null && "version" in parsed && typeof parsed.version === "string" ? parsed.version : "0.0.0";
+    return typeof parsed === "object" && parsed !== null && "version" in parsed && typeof parsed.version === "string" && /^\d+\.\d+\.\d+$/.test(parsed.version) ? parsed.version : "0.0.0";
   } catch {
     return "0.0.0";
   }

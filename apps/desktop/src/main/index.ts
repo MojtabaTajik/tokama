@@ -94,6 +94,8 @@ function startWatch(onConnected: () => void, onItemEvent: (event: BridgeEvent["e
       return connect({ dir, start: start.value });
     },
     apiVersion: API_VERSION,
+    // Only a packaged app compares builds; a dev build is 0.0.0 and never replaces an engine for it.
+    ...(app.isPackaged && { appVersion: app.getVersion() }),
     // Only this app's own engine for this dir is stopped; the home lock is the real engine's.
     replaceOlder: (expectedEngineId) =>
       replaceOlderEngine({

@@ -159,7 +159,7 @@ export interface EngineOptions {
   readonly ghCommand?: readonly [string, ...string[]];
   /** Default: the system clock. */
   readonly clock?: Clock;
-  /** The version diagnostics entries carry. Default "0.0.0". */
+  /** The build version diagnostics entries and the handshake carry. Default "0.0.0". */
   readonly engineVersion?: string;
   /** The user's home folder, cleaned from diagnostics as a path. Default: this process's home. */
   readonly userHome?: string;
@@ -215,6 +215,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   const dir = ensurePrivateDir(endpoint.value.dir);
   if (!dir.ok) return dir;
   const engineId = randomUUID();
+  const version = options.engineVersion ?? "0.0.0";
   // Unique per engine instance (two engines in one process share the pid).
   const lockContent = `${process.pid} ${engineId}\n`;
   const lock = await acquireLock(endpoint.value, lockContent, log);
@@ -247,7 +248,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
         home,
         userHome: options.userHome ?? homedir(),
         codeRoots: [CODE_ROOT],
-        engineVersion: options.engineVersion ?? "0.0.0",
+        engineVersion: version,
         ...(options.machineFacts !== undefined && { machine: options.machineFacts }),
         clock: options.clock ?? systemClock,
         onChange: () => diagnosticsChanged(),
@@ -278,7 +279,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       dir: endpoint.value.dir,
       userHome: options.userHome ?? homedir(),
       codeRoots: [CODE_ROOT],
-      engineVersion: options.engineVersion ?? "0.0.0",
+      engineVersion: version,
       ...(options.machineFacts !== undefined && { machine: options.machineFacts }),
       clock: options.clock ?? systemClock,
       onChange: () => diagnosticsChanged(),
@@ -435,7 +436,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   };
 
   /** Sends a connection-level error, then closes the connection. */
-  const fail = (socket: Socket, code: ConnectionErrorCode, message: string, extra: { runningItems?: number } = {}) => {
+  const fail = (socket: Socket, code: ConnectionErrorCode, message: string, extra: { runningItems?: number; engineVersion?: string } = {}) => {
     ready.delete(socket);
     const line = encodeLine({ kind: "connection_error", apiVersion: API_VERSION, code, message, ...extra });
     if (line.ok) write(socket, line.value);
@@ -739,10 +740,10 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       return false;
     }
     if (hello.value.apiVersion !== API_VERSION) {
-      fail(socket, "unsupported_version", `engine speaks API version ${API_VERSION}, client sent ${hello.value.apiVersion}`, runningItems());
+      fail(socket, "unsupported_version", `engine speaks API version ${API_VERSION}, client sent ${hello.value.apiVersion}`, { ...runningItems(), engineVersion: version });
       return false;
     }
-    const welcome = encodeLine({ kind: "welcome", apiVersion: API_VERSION, engineId, ...runningItems() });
+    const welcome = encodeLine({ kind: "welcome", apiVersion: API_VERSION, engineId, engineVersion: version, ...runningItems() });
     if (welcome.ok) write(socket, welcome.value);
     ready.add(socket);
     return true;

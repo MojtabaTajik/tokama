@@ -8,6 +8,7 @@ export {
   type ConnectErrorCode,
   type ConnectOptions,
   type EngineClient,
+  type EngineInfo,
   type EngineCommand,
   type QueryReply,
   type RequestOptions,

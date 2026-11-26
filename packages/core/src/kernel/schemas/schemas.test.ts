@@ -376,6 +376,16 @@ describe("handshake messages", () => {
     expect(parseHandshakeReply({ kind: "welcome", apiVersion: 1, engineId: "e1", runningItems: -1 }).ok).toBe(false);
   });
 
+  it("reads engineVersion in a welcome and a version refusal, and refuses an empty or oversized one", () => {
+    expect(parseHandshakeReply({ kind: "welcome", apiVersion: 1, engineId: "e1", engineVersion: "0.3.1" })).toMatchObject({ ok: true, value: { engineVersion: "0.3.1" } });
+    expect(parseHandshakeReply({ kind: "connection_error", apiVersion: 1, code: "unsupported_version", message: "m", engineVersion: "0.3.1" })).toMatchObject({ ok: true, value: { engineVersion: "0.3.1" } });
+    expect(parseHandshakeReply({ kind: "welcome", apiVersion: 1, engineId: "e1" })).toEqual({ ok: true, value: { kind: "welcome", apiVersion: 1, engineId: "e1" } });
+    // Any label passes the handshake; only the client decides whether it can compare it.
+    expect(parseHandshakeReply({ kind: "welcome", apiVersion: 1, engineId: "e1", engineVersion: "1.0.0-beta+exp.sha.5114f85" }).ok).toBe(true);
+    expect(parseHandshakeReply({ kind: "welcome", apiVersion: 1, engineId: "e1", engineVersion: "" }).ok).toBe(false);
+    expect(parseHandshakeReply({ kind: "welcome", apiVersion: 1, engineId: "e1", engineVersion: "1".repeat(129) }).ok).toBe(false);
+  });
+
   it("accepts a shutdown request of any version as an opening message, and needs its token", () => {
     expect(parseOpeningMessage({ kind: "shutdown", apiVersion: API_VERSION + 4, token: "t0k", extra: 1 })).toMatchObject({ ok: true, value: { kind: "shutdown" } });
     expect(parseOpeningMessage({ kind: "hello", apiVersion: 1, token: "t0k" })).toMatchObject({ ok: true, value: { kind: "hello" } });
