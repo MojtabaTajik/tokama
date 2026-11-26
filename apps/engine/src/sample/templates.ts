@@ -2,7 +2,7 @@
 // repos, loaded through the real validator against the sample agents. One loads; the other has
 // the mistakes a first draft often has, so the Templates page shows problems with line numbers.
 // The sample repos are not on disk, so these files cannot be opened in an editor.
-import { type AgentLocation, type RepoId, type TemplateLoad, type TemplateRef, templateWarnings, validateTemplate } from "@tokama/core";
+import { type AgentLocation, type RepoId, type TemplateLoad, type TemplateRef, lineWarning, templateWarnings, validateTemplate, type TemplateProblem } from "@tokama/core";
 import { sampleSetup } from "./data.js";
 
 const TEMPLATES_DIR = ".tokama/templates";
@@ -93,13 +93,15 @@ export async function sampleTemplateLoads(): Promise<TemplateLoad[]> {
   for (const { repoId, id, text } of FILES) {
     const ref = `${repoId}/${id}` as TemplateRef;
     const file = `${TEMPLATES_DIR}/${id}.yaml`;
+    const notes: TemplateProblem[] = [];
     const result = await validateTemplate(text, {
       ref,
       source: { kind: "repo", repoId: repoId as RepoId, file },
       agents,
       readInstructions: async (name) => (name in INSTRUCTIONS ? { ok: true, value: INSTRUCTIONS[name]! } : { ok: false, error: "does not exist" }),
+      onWarning: (warning) => notes.push(warning),
     });
-    loads.push(result.ok ? { ok: true, template: result.value, warnings: templateWarnings(result.value), text } : { ok: false, ref, origin: repoId, file, problems: result.error, text });
+    loads.push(result.ok ? { ok: true, template: result.value, warnings: [...notes.map(lineWarning), ...templateWarnings(result.value)], text } : { ok: false, ref, origin: repoId, file, problems: result.error, text });
   }
   return loads;
 }

@@ -65,7 +65,7 @@ export {
 } from "./kernel/process/own-engine.js";
 // Config, templates and the cloud rule, for the engine service's real mode.
 export { BUILTIN_AGENT_IDS, loadAgents, type Agent, type BrokenAgent, type ConfigProblem, type LoadedAgents } from "./slices/config/index.js";
-export { loadBuiltins, loadTemplates, templateWarnings, type AgentLocation, type TemplateLoad, type TemplateProblem } from "./slices/templates/index.js";
+export { loadBuiltins, lineWarning, loadTemplates, templateWarnings, type AgentLocation, type TemplateLoad, type TemplateProblem } from "./slices/templates/index.js";
 export { runsInCloud } from "./slices/prompting/index.js";
 // Git and child processes, for the engine service's run loop and its startup checks.
 export { MIN_GIT_VERSION } from "./kernel/git/index.js";

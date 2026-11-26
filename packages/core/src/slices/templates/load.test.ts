@@ -68,6 +68,24 @@ describe("loadTemplates", () => {
     ]);
   });
 
+  it("loads a reviewer step with if_failed and warns with the line of the field", async () => {
+    const text = `${template("Review it").replace("finish: [findings]\n", "")}  - id: review
+    name: Review
+    agent: reviewer
+    instructions: Review the diff.
+    done_when: reviewer approves
+    if_failed: { back: work }
+    data: repo-and-diff
+finish: [findings]
+`;
+    const orders = repo("orders-api", { "a.yaml": text });
+    const [first] = await loadTemplates({ repos: [orders], agents: AGENTS });
+    expect(first).toMatchObject({
+      ok: true,
+      warnings: ['Line 14: Step "review": "if_failed" has no effect on a reviewer step; use "if_changes_requested".'],
+    });
+  });
+
   it("keeps machine paths out of the records", async () => {
     const orders = repo("orders-api", { "a.yaml": template("A", "instructions/a.md"), "instructions/a.md": "Steps.\n" });
     const loads = await loadTemplates({ repos: [orders], agents: AGENTS });

@@ -59,12 +59,24 @@ describe("flowOf", () => {
   });
 
   it("puts a shorter back line above a longer one from the same step, so they do not cross", () => {
-    const review3 = { ...review, ifFailed: { action: "back", stepId: "plan" }, ifChangesRequested: { action: "back", stepId: "build" } } as TemplateStepView;
-    const crossing = flowOf(withSteps(plan, build, review3), setup.agents);
-    const [toPlan, toBuild] = crossing.loops.filter((loop) => loop.kind === "back");
-    expect([toPlan!.to, toBuild!.to]).toEqual([1, 2]);
-    // Review → Build (span 1) runs nearer the row than Review → Plan (span 2).
-    expect(toBuild!.labelY).toBeLessThan(toPlan!.labelY);
+    const build2 = { ...build, id: "build-again", name: "Build again", ifFailed: { action: "back", stepId: "plan" } } as TemplateStepView;
+    const review2 = { ...review, ifChangesRequested: { action: "back", stepId: "plan" } } as TemplateStepView;
+    const crossing = flowOf(withSteps(plan, build, build2, review2), setup.agents);
+    const backs = crossing.loops.filter((loop) => loop.kind === "back");
+    // Build → Plan (span 1) and Review → Plan (span 3) end on the same step.
+    expect(backs.map((loop) => [loop.from, loop.to])).toEqual([
+      [3, 1],
+      [4, 1],
+    ]);
+    expect(backs[0]!.labelY).toBeLessThan(backs[1]!.labelY);
+  });
+
+  it("draws no failure loop for a reviewer step, only its changes loop", () => {
+    const onlyFailed = flowOf(withSteps(plan, { ...review, ifFailed: { action: "back", stepId: "plan" }, ifChangesRequested: undefined } as TemplateStepView), setup.agents);
+    expect(onlyFailed.loops).toEqual([]);
+    expect(onlyFailed.description).not.toContain("when it fails");
+    const both = flowOf(withSteps(plan, build, { ...review, ifFailed: { action: "back", stepId: "plan" }, ifChangesRequested: { action: "back", stepId: "build" } } as TemplateStepView), setup.agents);
+    expect(both.loops.filter((loop) => loop.from === 3).map((loop) => loop.label)).toEqual(["changes · back to Build"]);
   });
 
   it("draws a back: to the same step as a self loop", () => {

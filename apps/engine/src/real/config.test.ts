@@ -1,5 +1,16 @@
+import { loadBuiltins } from "@tokama/core";
 import { describe, expect, it } from "vitest";
-import { roleLine } from "./config.js";
+import { roleLine, templateSummary } from "./config.js";
+
+describe("templateSummary", () => {
+  it("passes the warnings of the template's load on, after the problems found here", async () => {
+    const load = (await loadBuiltins(new Map([["builder", { cloud: false }]]))).find((candidate) => candidate.ok);
+    if (!load?.ok) throw new Error("no built-in template loaded");
+    const note = 'Line 14: Step "review": "if_failed" has no effect on a reviewer step; use "if_changes_requested".';
+    const summary = templateSummary(load.template, { agents: [], broken: [], problems: [] }, [note]);
+    expect(summary.warnings.at(-1)).toBe(note);
+  });
+});
 
 describe("roleLine", () => {
   it("is the first line with text, trimmed", () => {

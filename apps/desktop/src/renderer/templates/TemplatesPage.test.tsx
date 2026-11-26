@@ -70,7 +70,7 @@ describe("TemplatesPage", () => {
     expect($$(".tp-steps li").map((li) => li.textContent)).toEqual([
       "1Plan: Architect (Claude Code, cloud) works in the item’s worktree; sends the repo and diff to the cloud; done when you approve; if it fails, ask you.",
       "2Build: Local builder (Claude Code, this machine) works in the item’s worktree; done when the repo’s checks pass; if checks fail, try again, up to 3 attempts.",
-      "3Review: Reviewer (Codex CLI, cloud) reviews the work; sends the repo and diff to the cloud; done when it approves; if it fails, ask you; if it asks for changes, send the work back to Build and check again after each fix, up to 3 round trips, then ask you.",
+      "3Review: Reviewer (Codex CLI, cloud) reviews the work; sends the repo and diff to the cloud; done when it approves; if it asks for changes, send the work back to Build and check again after each fix, up to 3 round trips, then ask you.",
     ]);
     expect(section("You get at the end")).toBe("You get at the end✓Commit · on the item’s branch✓Pull request · opened from the item’s branch");
     expect($(".tp-head")?.textContent).toContain("budget 1 h 30 m");
@@ -93,6 +93,12 @@ describe("TemplatesPage", () => {
     expect(lines.filter((line) => line.hasAttribute("data-problem")).map((line) => line.textContent)).toEqual(["3✕    agent: reviewr", "5✕      back: buld"]);
     expect($('.tp-file-line[data-mark] .tp-file-n')?.textContent).toBe("5");
     expect(button("Hide file")?.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("shows a warning of a template that loads, with its line, under Worth knowing", async () => {
+    const warning = 'Line 14: Step "review": "if_failed" has no effect on a reviewer step; use "if_changes_requested".';
+    await render(bridgeWith({ detail: () => ({ ok: true, data: { ...planDetail, warnings: [warning] } }) }));
+    expect($('section[aria-label="Worth knowing"]')?.textContent).toContain(warning);
   });
 
   it("toggles the file with Show file", async () => {

@@ -1,5 +1,9 @@
 // Warnings: a template that loads and runs, but does something the engineer may not expect.
 import type { TemplateRecord } from "../../kernel/schemas/index.js";
+import type { TemplateProblem } from "./validate.js";
+
+/** A warning with its line, as the screens show it: "Line 14: ...". */
+export const lineWarning = (warning: TemplateProblem): string => `Line ${warning.line}: ${warning.message}`;
 
 /**
  * A step after the last `checks pass` step can change files nothing checks. The item commits only

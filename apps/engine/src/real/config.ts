@@ -24,7 +24,6 @@ import {
   type TemplateLoad,
   type TemplateRecord,
   type TemplateSummary,
-  templateWarnings,
 } from "@tokama/core";
 import { kindOf, stageOf } from "./records.js";
 
@@ -160,7 +159,8 @@ export function roleLine(role: string): string | undefined {
   return cutText(line, 200);
 }
 
-export function templateSummary(template: TemplateRecord, agents: LoadedAgents): TemplateSummary {
+/** `warnings` are the template load's own (a line note, the last-checks note); the problems found against this machine's agents are added here. */
+export function templateSummary(template: TemplateRecord, agents: LoadedAgents, warnings: readonly string[]): TemplateSummary {
   const start = startProblem(template);
   return {
     id: template.ref,
@@ -180,7 +180,7 @@ export function templateSummary(template: TemplateRecord, agents: LoadedAgents):
     })),
     start: { needs: [...template.start.needs], askBeforeCloud: template.start.askBeforeCloud },
     ...(template.setup !== undefined && { setup: template.setup }),
-    warnings: [...(start === undefined ? [] : [start]), ...stepProblems(template, agents), ...templateWarnings(template)].map((w) => w.slice(0, 1000)).slice(0, 50),
+    warnings: [...(start === undefined ? [] : [start]), ...stepProblems(template, agents), ...warnings].map((w) => w.slice(0, 1000)).slice(0, 50),
   };
 }
 
@@ -197,8 +197,8 @@ export function toSetup(config: Config, health: Health): Setup {
 
   const templates = config.templates.flatMap((load) => {
     if (!load.ok) return [];
-    const { template } = load;
-    return [templateSummary(template, agentsFor(config, template))];
+    const { template, warnings } = load;
+    return [templateSummary(template, agentsFor(config, template), warnings)];
   });
   return {
     repos: config.repos.map((repo) => ({ id: repo.id, baseBranch: repo.baseBranch, checks: repo.checks.filter((check) => check.length <= 500).slice(0, 20), path: displayPath(repo.path) })),
