@@ -1,6 +1,6 @@
 import { manualClock, type ItemId, type PlanReading, type UsageRow } from "@tokama/core";
 import { describe, expect, it } from "vitest";
-import { type PlanSource, UsageService, type UsageDeps } from "./usage.js";
+import { type PlanSource, UsageService, type UsageDeps, usageRowsOf } from "./usage.js";
 
 const NOW = new Date(2025, 9, 20, 15, 0).getTime();
 const MINUTE = 60_000;
@@ -110,5 +110,42 @@ describe("UsageService", () => {
       ["codex-cli", 0, true],
       ["ollama", 0, true],
     ]);
+  });
+});
+
+describe("usageRowsOf", () => {
+  const call = (n: number, endedAt: number): UsageRow["call"] => ({ ...runRow(10, endedAt).call, callId: `call_0190a000-0000-7000-8000-${String(n).padStart(12, "0")}` as never });
+  type Fields = Parameters<typeof usageRowsOf>[0][number];
+  const item = (n: number, fields: Partial<Fields>): Fields => ({
+    id: `item_0190a000-0000-7000-8000-${String(n).padStart(12, "0")}` as ItemId,
+    title: `Item ${n}`,
+    templateRef: "orders-api/quick-fix" as never,
+    repoIds: [],
+    deleted: false,
+    ...fields,
+  });
+
+  it("gives one row per call that ended since the time, oldest first and by call id when they end together", () => {
+    const rows = usageRowsOf(
+      [
+        item(1, { repoIds: ["orders-api", "checkout-web"] as never, calls: [call(5, NOW), call(2, NOW - MINUTE)] }),
+        item(2, { calls: [call(3, NOW), call(1, NOW - 2 * MINUTE)] }),
+        item(3, {}),
+      ],
+      NOW - MINUTE,
+    );
+    expect(rows.map((row) => [row.itemId.slice(-1), row.call.callId.slice(-1)])).toEqual([["1", "2"], ["2", "3"], ["1", "5"]]);
+    expect(usageRowsOf([item(2, { calls: [call(1, NOW)] })], NOW + 1)).toEqual([]);
+    expect(usageRowsOf([item(2, { calls: [call(1, NOW)] })], NOW)).toHaveLength(1);
+  });
+
+  it("carries the title, the workflow and the first repo, and leaves the repo key out when the item has none", () => {
+    const [withRepo, without] = usageRowsOf([item(1, { repoIds: ["orders-api", "checkout-web"] as never, calls: [call(1, NOW)] }), item(2, { calls: [call(2, NOW)] })], 0);
+    expect(withRepo).toStrictEqual({ itemId: ITEM.replace(/a$/, "1"), title: "Item 1", templateId: "orders-api/quick-fix", repoId: "orders-api", call: call(1, NOW) });
+    expect(without).toStrictEqual({ itemId: ITEM.replace(/a$/, "2"), title: "Item 2", templateId: "orders-api/quick-fix", call: call(2, NOW) });
+  });
+
+  it("leaves out the calls of a deleted item", () => {
+    expect(usageRowsOf([item(1, { deleted: true, calls: [call(1, NOW)] }), item(2, { calls: [call(2, NOW)] })], 0).map((row) => row.title)).toEqual(["Item 2"]);
   });
 });

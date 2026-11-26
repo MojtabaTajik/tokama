@@ -17,6 +17,7 @@ import {
   type PlanReading,
   rangeStart,
   type Result,
+  type StoredItem,
   summarizeUsage,
   type UsageEntry,
   type UsageRange,
@@ -24,6 +25,22 @@ import {
   type UsageRow,
   type UsageScope,
 } from "@tokama/core";
+
+/**
+ * One row per call that ended at or after `since`, oldest first (equal times by call id). The
+ * calls are the ones the item logs hold; a deleted item has none.
+ */
+export function usageRowsOf(items: readonly Pick<StoredItem, "id" | "title" | "templateRef" | "repoIds" | "calls" | "deleted">[], since: number): UsageRow[] {
+  const rows: UsageRow[] = [];
+  for (const item of items) {
+    if (item.deleted) continue;
+    const repoId = item.repoIds[0];
+    for (const call of item.calls ?? []) {
+      if (call.endedAt >= since) rows.push({ itemId: item.id, title: item.title, templateId: item.templateRef, ...(repoId !== undefined && { repoId }), call });
+    }
+  }
+  return rows.sort((a, b) => a.call.endedAt - b.call.endedAt || (a.call.callId < b.call.callId ? -1 : a.call.callId > b.call.callId ? 1 : 0));
+}
 
 /** One source of Claude Code's plan windows. */
 export type PlanSource = () => Promise<Result<PlanReading & { readonly version?: string }, string>>;
