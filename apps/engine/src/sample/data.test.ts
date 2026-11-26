@@ -36,6 +36,7 @@ describe("sample items", () => {
 
   it.each(ZONES.flatMap((zoneName) => NOWS.map(([label, hour, minute]) => [zoneName, label, hour, minute] as const)))("in %s at %s: valid, with the same ages as at noon", (zoneName, _label, hour, minute) => {
     process.env["TZ"] = zoneName;
+    expect(new Date(2026, 10, 25).getTimezoneOffset()).toBe(zoneName === "UTC" ? 0 : -60);
     // The local wall-clock time of the zone, on a day without a clock change.
     const now = new Date(2026, 10, 25, hour, minute, 0).getTime();
     const items = sampleItems(now);

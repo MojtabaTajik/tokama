@@ -18,10 +18,9 @@ flow(
     // The sample's own finished items are hours old, so right after midnight they too are on Yesterday
     // and there is no Today header; the history starts at yesterday.
     const weekday = /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{1,2} [A-Z][a-z]{2}\d+$/;
-    expect(headers[0]).toMatch(/^(Today|Yesterday)\d+$/);
-    expect(headers.filter((header) => /^Yesterday\d+$/.test(header))).toHaveLength(1);
-    expect(headers.at(-1)).toMatch(weekday);
-    expect(headers.slice(headers.findIndex((header) => /^Yesterday\d+$/.test(header)) + 1)[0]).toMatch(weekday);
+    const yesterday = /^Today\d+$/.test(headers[0]!) ? 1 : 0;
+    expect(headers[yesterday]).toMatch(/^Yesterday\d+$/);
+    expect(headers[yesterday + 1]).toMatch(weekday);
     expect(await done.locator(".pl-row").count()).toBe(50);
     const showing = (await done.locator(".pl-more").textContent()) ?? "";
     expect(showing).toMatch(/^Load olderShowing 50 of \d+$/);
