@@ -59,7 +59,7 @@ flow("approves a plan from the expanded view: the plan reads as a document and A
   expect(await doc.locator(".ot-link").allInnerTexts()).toEqual(["Plan: reserve stock when an order is placed", "Changes", "Tests", "Risks"]);
   // The agent chips carry the app's own tool icons, which are files of the app itself, never engine text.
   expect(await doc.locator("a, script, img:not(.backend-mark)").count()).toBe(0);
-  for (const src of await doc.locator("img.backend-mark").evaluateAll((imgs) => imgs.map((img) => img.getAttribute("src") ?? ""))) expect(src).toMatch(/^\.?\/?assets\/[\w.-]+\.svg$/);
+  for (const src of await doc.locator("img.backend-mark").evaluateAll((imgs) => imgs.map((img) => img.getAttribute("src") ?? ""))) expect(src).toMatch(/^file:\/\/\/.*\/renderer\/assets\/[\w.-]+\.svg$/);
   // About 75 characters a line.
   const width = await doc.locator(".ot-doc").evaluate((el) => el.getBoundingClientRect().width);
   expect(width).toBeLessThanOrEqual(820);
