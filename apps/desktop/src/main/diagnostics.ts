@@ -4,7 +4,8 @@
 //
 // The renderer is untrusted input: it may send a message and a stack, two strings, and nothing
 // else, at a bounded rate. It never names the source, the kind or any other field.
-import { unlinkSync } from "node:fs";
+import { mkdirSync, unlinkSync } from "node:fs";
+import { dirname } from "node:path";
 import { type CrashKind, type DiagnosticReportInput, type ErrorWhere, MAX_REPORTED_STACK_CHARS, readPidFile, replaceTextSync } from "@tokama/core";
 import { RENDERER_USAGE_ACTIONS, type RendererUsageAction } from "../shared/bridge.js";
 
@@ -109,13 +110,19 @@ export function createReporter(send: (report: DiagnosticReportInput) => Promise<
 }
 
 /**
- * The app's running marker: written at start with the app's pid, removed on a clean quit. Found
+ * The app's running marker: written at start (creating its folder when missing) with the app's pid, removed on a clean quit. Found
  * at start with the pid of a process that is gone, it means the last run crashed. A live pid is
  * another copy of the app still running, not a crash.
  */
 export function runMarker(path: string, pid: number, alive: (pid: number) => boolean): { readonly crashedBefore: boolean; clear(): void } {
   const previous = readPidFile(path)?.pid;
   const crashedBefore = previous !== undefined && previous !== pid && !alive(previous);
+  try {
+    // A first start comes before the engine has made the folder.
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  } catch {
+    // The write below fails too, and the app goes on without a marker.
+  }
   // Without a marker a crash goes unnoticed; the app works the same.
   replaceTextSync(path, `${pid}\n`, 0o600);
   return {

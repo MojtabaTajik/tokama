@@ -2,7 +2,7 @@
 // type. Send all goes to a local test server that this file runs (a development build may point
 // the app at a loopback server; a packaged app never reads the variable). The save dialog is
 // replaced in the main process. The crash prompt is reached by killing the sample engine.
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createServer, type IncomingHttpHeaders } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
@@ -232,4 +232,4 @@ flow("a normal stop of the app (SIGTERM) removes its running marker", async ({ a
   process.kill(child.pid ?? 0, "SIGTERM");
   await exited;
   expect(existsSync(marker), "marker after SIGTERM").toBe(false);
-}, "sample", (home) => void mkdirSync(join(home, ".tokama"), { recursive: true }));
+});
