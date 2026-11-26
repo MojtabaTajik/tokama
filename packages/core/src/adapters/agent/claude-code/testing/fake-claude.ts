@@ -53,6 +53,22 @@ function run(prompt: string): void {
       process.stderr.write("Error: something broke\n");
       process.exitCode = 3;
       return;
+    case "sandbox-stopped":
+      // A command's tool result once the sandbox stopped working mid-session, then the agent goes on.
+      init();
+      emit({
+        type: "user",
+        message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_sandbox", is_error: true, content: [{ type: "text", text: "Sandbox is required (sandbox.failIfUnavailable) and stopped being available in this session: bwrap went away\nmore detail" }] }] },
+        session_id: SESSION,
+      });
+      text("I could not run it");
+      hang();
+      return;
+    case "sandbox-start":
+      // `failIfUnavailable` makes the CLI exit at startup, before any result.
+      process.stderr.write("Error: sandbox.failIfUnavailable is set, but Ubuntu's AppArmor restriction on user namespaces stops bubblewrap here\n");
+      process.exitCode = 1;
+      return;
     case "hang":
       init();
       hang();

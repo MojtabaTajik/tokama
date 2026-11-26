@@ -6,6 +6,7 @@
 // - Every call takes an AbortSignal and returns promptly once it fires.
 // - Everything returned is plain JSON data.
 import type { Result } from "../result/index.js";
+import type { SandboxSpec } from "../sandbox/index.js";
 import type { AgentCallEvent } from "../schemas/index.js";
 
 export interface PortError {
@@ -44,6 +45,8 @@ export interface AgentCallRequest {
   readonly limits?: ToolLimits;
   /** The call is stopped and fails once it runs this long. */
   readonly timeoutMs?: number;
+  /** Required when `limits.commands` is not empty: a runtime refuses a call that runs commands without one. */
+  readonly sandbox?: SandboxSpec;
 }
 
 /** Drives one AI CLI (Claude Code, Codex CLI, ...) headless. */

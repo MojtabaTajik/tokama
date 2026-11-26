@@ -5,8 +5,8 @@ import { err, ok, type Result } from "../../../kernel/result/index.js";
 const READ_TOOLS = ["Read", "Glob", "Grep"];
 const EDIT_TOOLS = ["Edit", "Write"];
 const WEB_TOOLS = ["WebFetch", "WebSearch"];
-// Tokama's own data (settings, item logs, the database). Agents never read or edit it.
-const TOKAMA_HOME = "~/.tokama";
+/** Tokama's own data (settings, item logs, the database). Agents never read or edit it. */
+export const DEFAULT_TOKAMA_HOME = "~/.tokama";
 // A rule word that could end the permission rule early or split the flag's list.
 const UNSAFE_WORD = /[(),]/;
 
@@ -26,8 +26,8 @@ const UNSAFE_WORD = /[(),]/;
  *   rules do not allow, read-only ones included (see hook.ts). `--restricted` still applies it.
  * - Single-value flags use `--flag=value`, so a value that starts with `-` is never read as a flag.
  */
-export function buildArgs(request: AgentCallRequest, settingsPath?: string): Result<string[], string> {
-  const groups = argGroups(request, settingsPath);
+export function buildArgs(request: AgentCallRequest, settingsPath?: string, tokamaHome?: string): Result<string[], string> {
+  const groups = argGroups(request, settingsPath, tokamaHome);
   if (!groups.ok) return groups;
   const { headless, model, permission, instructions } = groups.value;
   return ok([...headless, ...model, ...permission, ...instructions]);
@@ -44,7 +44,10 @@ export interface ArgGroups {
   readonly instructions: string[];
 }
 
-export function argGroups(request: AgentCallRequest, settingsPath?: string): Result<ArgGroups, string> {
+/**
+ * `tokamaHome` is Tokama's folder, `~/.tokama` or an absolute path; the file tools may not touch it.
+ */
+export function argGroups(request: AgentCallRequest, settingsPath?: string, tokamaHome: string = DEFAULT_TOKAMA_HOME): Result<ArgGroups, string> {
   const limits = request.limits ?? READ_ONLY;
   if (request.model === "" || request.model.startsWith("-")) return err(`not a model name: "${request.model}"`);
   const prefixes = rulePrefixes(limits.commands);
@@ -61,7 +64,8 @@ export function argGroups(request: AgentCallRequest, settingsPath?: string): Res
     ...(limits.web ? WEB_TOOLS : []),
   ];
   const allow = [...(limits.edit ? ["Edit(./**)"] : []), ...commands, ...(limits.web ? WEB_TOOLS : [])];
-  const deny = [`Read(${TOKAMA_HOME}/**)`, `Edit(${TOKAMA_HOME}/**)`, ...(limits.web ? [] : WEB_TOOLS)];
+  const home = permissionPath(tokamaHome);
+  const deny = [`Read(${home}/**)`, `Edit(${home}/**)`, ...(limits.web ? [] : WEB_TOOLS)];
 
   const permission = ["--restricted", "--permission-mode=dontAsk", "--strict-mcp-config", `--tools=${tools.join(",")}`];
   // The list flags take every following word up to the next flag.
@@ -75,6 +79,9 @@ export function argGroups(request: AgentCallRequest, settingsPath?: string): Res
     instructions: request.role !== undefined && request.role !== "" ? [`--append-system-prompt=${request.role}`] : [],
   });
 }
+
+/** A path as a Read/Edit permission rule writes it: `~/x` stays, an absolute path takes the `//` prefix (a single `/` means project-relative). */
+export const permissionPath = (path: string): string => (path.startsWith("/") ? `/${path}` : path);
 
 /** True when the step allows any shell command, so the session has the Bash tool. */
 export const usesShell = (request: AgentCallRequest): boolean => rulePrefixes(request.limits?.commands ?? []).length > 0;

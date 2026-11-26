@@ -1,17 +1,19 @@
-import { chmodSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { chmodSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { delimiter, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { systemClock, type Clock, type TimerHandle } from "../../../kernel/clock/index.js";
 import { replaceTextSync } from "../../../kernel/fs-safe/index.js";
-import { createProcessRunner, type ProcessRunner, type RunResult } from "../../../kernel/process/index.js";
+import { buildEnv, createProcessRunner, type ProcessRunner, type RunResult } from "../../../kernel/process/index.js";
 import type { AgentCallRequest, AgentRuntime } from "../../../kernel/ports/index.js";
+import { checkSandboxSpec, createSandboxSupport, toolCacheDirs, usableCacheDirs, type SandboxSpec, type SandboxSupport } from "../../../kernel/sandbox/index.js";
 import type { AgentCallErrorKind, AgentCallEvent, TokenUsage } from "../../../kernel/schemas/index.js";
-import { buildArgs, userMessage, usesShell } from "./args.js";
+import { buildArgs, DEFAULT_TOKAMA_HOME, userMessage, usesShell } from "./args.js";
 import { hookSettings } from "./permission-hook.js";
+import { mentionsSandbox, sandboxSettings, sandboxStartProblem } from "./sandbox.js";
 import { classifyFailure, createStreamParser, type StreamParser, type StreamState } from "./stream.js";
 import { CLAUDE_CODE_COMMAND } from "./command.js";
-import { commandRulesProblem, readClaudeVersion } from "./version.js";
+import { readClaudeVersion, shellCallsProblem } from "./version.js";
 
 export interface ClaudeCodeOptions {
   /** argv that starts the CLI. Default: `[CLAUDE_CODE_COMMAND]`, found on the allowlisted PATH. */
@@ -25,6 +27,12 @@ export interface ClaudeCodeOptions {
   readonly resultGraceMs?: number;
   /** argv of the command-policy hook, before the rules file. Default: this Node running hook.js. */
   readonly hookCommand?: readonly [string, ...string[]];
+  /** Tokama's own folder, absolute: closed to the agent's commands and file tools. Default: `~/.tokama`. */
+  readonly tokamaHome?: string;
+  /** Other absolute folders closed to the agent's commands, e.g. the engine's socket and token folder. */
+  readonly closedDirs?: readonly string[];
+  /** Whether this machine can run Claude Code's sandbox. Default: checked for this OS through `runner`. */
+  readonly sandboxSupport?: SandboxSupport;
 }
 
 const NO_TOKENS: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
@@ -43,6 +51,16 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): AgentR
   const clock = options.clock ?? systemClock;
   const resultGraceMs = options.resultGraceMs ?? RESULT_GRACE_MS;
   const hookCommand = options.hookCommand ?? [process.execPath, fileURLToPath(new URL("./hook.js", import.meta.url))];
+  const sandboxSupport = options.sandboxSupport ?? createSandboxSupport(runner, process.platform, options.env);
+  // The PATH and home the CLI will start with: no cache folder may hold a PATH folder.
+  const childEnv = buildEnv(process.env, options.env);
+  const pathDirs = (childEnv["PATH"] ?? "").split(delimiter);
+  const home = childEnv["HOME"] ?? homedir();
+  // A relative path in a permission rule or sandbox list would mean the call's folder.
+  const customHome = options.tokamaHome === undefined ? undefined : resolve(options.tokamaHome);
+  const tokamaHomeDir = customHome ?? join(home, ".tokama");
+  const closedDirs = (options.closedDirs ?? []).map((dir) => resolve(dir));
+  const refused = (error: string): EndEvent => ({ type: "end", outcome: "failed", usage: NO_TOKENS, error, errorKind: "crash" });
 
   return {
     async *launch(request, signal) {
@@ -51,29 +69,51 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): AgentR
         return;
       }
       const timeoutMs = request.timeoutMs;
-      // Older versions ignore or reject the hook's `onFailure`, so a hook that cannot start would
-      // let a command run unchecked. Calls without the shell have no hook and need no check. The
-      // version is read on every call: the runtime outlives updates and downgrades of the CLI.
+      // A call that runs commands runs them inside Claude Code's sandbox, or not at all. Calls
+      // without the shell have no hook and no sandbox, and need none of these checks.
+      let sandbox: SandboxPlan | undefined;
       if (usesShell(request)) {
+        if (request.sandbox === undefined) {
+          yield refused("Tokama did not give this call a sandbox, so it will not run commands. This is a Tokama bug; please report it.");
+          return;
+        }
+        const checked = checkSandboxSpec(request.sandbox, { cwd: request.cwd, tokamaHome: tokamaHomeDir });
+        if (!checked.ok) {
+          yield refused(`The sandbox for this step is not valid: ${checked.error}.`);
+          return;
+        }
+        // The version is read on every call: the runtime outlives updates and downgrades of the CLI.
+        // An older one ignores or rejects the hook's `onFailure`, so a hook that cannot start would
+        // let a command run unchecked, and it lacks the sandbox settings used below.
         const read = await readClaudeVersion({ command, runner, signal, cwd: request.cwd, ...(options.env !== undefined && { env: options.env }) });
         if (read.kind === "aborted") {
           yield { type: "end", outcome: "aborted", usage: NO_TOKENS };
           return;
         }
-        const problem = commandRulesProblem(read.kind === "version" ? read.version : undefined, read.kind === "unknown" ? read.why : undefined);
+        const problem = shellCallsProblem(read.kind === "version" ? read.version : undefined, read.kind === "unknown" ? read.why : undefined);
         if (problem !== undefined) {
-          yield { type: "end", outcome: "failed", usage: NO_TOKENS, error: problem, errorKind: "crash" };
+          yield refused(problem);
           return;
         }
+        const support = await sandboxSupport.check(signal);
+        if (signal.aborted) {
+          yield { type: "end", outcome: "aborted", usage: NO_TOKENS };
+          return;
+        }
+        if (!support.ok) {
+          yield refused([support.problem, support.fix, support.fix === undefined ? undefined : "Then retry the step."].filter((part) => part !== undefined).join(" "));
+          return;
+        }
+        sandbox = { spec: checked.value, tokamaHome: customHome ?? DEFAULT_TOKAMA_HOME, closedDirs, cacheDirs: usableCacheDirs(toolCacheDirs(), pathDirs, home) };
       }
       let callDir: string | undefined;
       try {
-        callDir = usesShell(request) ? writeHookFiles(request, hookCommand) : undefined;
+        callDir = sandbox === undefined ? undefined : writeHookFiles(request, hookCommand, sandbox);
       } catch (error) {
-        yield { type: "end", outcome: "failed", usage: NO_TOKENS, error: `could not write the call's settings: ${String(error)}`, errorKind: "crash" };
+        yield refused(`could not write the call's settings: ${String(error)}`);
         return;
       }
-      const args = buildArgs(request, callDir === undefined ? undefined : join(callDir, "settings.json"));
+      const args = buildArgs(request, callDir === undefined ? undefined : join(callDir, "settings.json"), customHome);
       if (!args.ok) {
         if (callDir !== undefined) rmSync(callDir, { recursive: true, force: true });
         yield { type: "end", outcome: "failed", usage: NO_TOKENS, error: args.error, errorKind: "crash" };
@@ -86,9 +126,16 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): AgentR
       const events = eventQueue();
       const parser = createStreamParser(request.cwd);
       const stderr: string[] = [];
+      let sandboxStopped = false;
       const onLine = (line: string) => {
         parser.line(line).forEach(events.push);
-        if (grace === undefined && parser.state().result !== undefined) grace = clock.setTimeout(() => stop.abort(), resultGraceMs);
+        const state = parser.state();
+        if (grace === undefined && state.result !== undefined) grace = clock.setTimeout(() => stop.abort(), resultGraceMs);
+        // Once the sandbox has stopped working every command is refused: the step cannot go on.
+        if (!sandboxStopped && state.sandboxFailure !== undefined) {
+          sandboxStopped = true;
+          stop.abort();
+        }
       };
       const run = runner
         .run({
@@ -108,7 +155,7 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): AgentR
           },
         })
         .then(
-          (result) => endEvent(result, parser, stderr.join("\n"), signal, timeoutMs),
+          (result) => endEvent(result, parser, stderr.join("\n"), signal, timeoutMs, callDir !== undefined),
           (error: unknown) => failed(parser.state(), `the call failed: ${String(error)}`, "crash"),
         )
         .then((end) => {
@@ -127,33 +174,59 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): AgentR
   };
 }
 
+/** What the sandbox part of a call's settings is made from, once the call is allowed to run commands. */
+interface SandboxPlan {
+  readonly spec: SandboxSpec;
+  readonly tokamaHome: string;
+  readonly closedDirs: readonly string[];
+  readonly cacheDirs: readonly string[];
+}
+
 /**
- * Writes the hook's settings and the step's command rules to a new folder outside the worktree,
- * readable by the user only, so the agent cannot change them. Returns the folder.
+ * Writes the hook's settings with the sandbox settings, and the step's command rules, to a new
+ * folder outside the worktree, readable by the user only, so the agent cannot change them. The
+ * folder is also closed to the sandboxed commands (under its real path too: the temp folder may
+ * be reached through a link). Returns the folder.
  */
-function writeHookFiles(request: AgentCallRequest, hookCommand: readonly string[]): string {
+function writeHookFiles(request: AgentCallRequest, hookCommand: readonly string[], sandbox: SandboxPlan): string {
   const dir = mkdtempSync(join(tmpdir(), "tokama-claude-call-"));
   chmodSync(dir, 0o700);
   const rules = join(dir, "rules.json");
-  for (const [path, text] of [
-    [rules, JSON.stringify({ commands: request.limits?.commands ?? [] })],
-    [join(dir, "settings.json"), JSON.stringify(hookSettings([...hookCommand, rules]))],
-  ] as const) {
-    const written = replaceTextSync(path, text, 0o600);
-    if (!written.ok) throw new Error(written.error.message);
+  try {
+    const { permissions, sandbox: sandboxPart } = sandboxSettings(sandbox.spec, {
+      callDirs: [...new Set([dir, realpathSync(dir)])],
+      tokamaHome: sandbox.tokamaHome,
+      closedDirs: sandbox.closedDirs,
+      cacheDirs: sandbox.cacheDirs,
+    });
+    const settings = { ...(hookSettings([...hookCommand, rules]) as object), permissions, sandbox: sandboxPart };
+    for (const [path, text] of [
+      [rules, JSON.stringify({ commands: request.limits?.commands ?? [] })],
+      [join(dir, "settings.json"), JSON.stringify(settings)],
+    ] as const) {
+      const written = replaceTextSync(path, text, 0o600);
+      if (!written.ok) throw new Error(written.error.message);
+    }
+  } catch (error) {
+    rmSync(dir, { recursive: true, force: true });
+    throw error;
   }
   return dir;
 }
 
 type EndEvent = Extract<AgentCallEvent, { type: "end" }>;
 
-function endEvent(result: RunResult, parser: StreamParser, stderr: string, signal: AbortSignal, timeoutMs: number): EndEvent {
+function endEvent(result: RunResult, parser: StreamParser, stderr: string, signal: AbortSignal, timeoutMs: number, sandboxed: boolean): EndEvent {
   const state = parser.state();
   if (result.kind === "not-started") {
     if (result.reason === "aborted") return { type: "end", outcome: "aborted", usage: NO_TOKENS };
     return failed(state, `Claude Code did not start: ${parser.scrub(result.message)}`, "crash");
   }
   const { durationMs } = result;
+  // Commands were refused: the step did not do its work, whatever the agent said after that.
+  if (state.sandboxFailure !== undefined) {
+    return failed(state, `Claude Code's sandbox stopped working during the step: ${parser.scrub(state.sandboxFailure)}. Fix that, then retry the step.`, "crash", durationMs);
+  }
   // A result that arrived first wins over a stop or timeout that came after it.
   if (state.result !== undefined) {
     if (!state.result.isError) return { type: "end", outcome: "completed", ...ending(state), durationMs };
@@ -164,6 +237,8 @@ function endEvent(result: RunResult, parser: StreamParser, stderr: string, signa
   }
   if (result.aborted || signal.aborted) return { type: "end", outcome: "aborted", ...ending(state), durationMs };
   if (result.timedOut) return failed(state, `timed out after ${timeoutMs} ms`, "timeout", durationMs);
+  // With `failIfUnavailable` the CLI exits at startup, before any result, when the sandbox cannot start.
+  if (sandboxed && mentionsSandbox(stderr)) return failed(state, sandboxStartProblem(parser.scrub(stderr), process.platform), "crash", durationMs);
   const exit = result.exitCode !== null ? `exit code ${result.exitCode}` : `signal ${result.signal ?? "unknown"}`;
   const said = state.assistantError?.text || stderr.trim() || `Claude Code ended without a result (${exit})`;
   return failed(state, parser.scrub(said), classifyFailure(state, stderr), durationMs);

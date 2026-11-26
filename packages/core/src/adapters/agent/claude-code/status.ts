@@ -2,9 +2,10 @@
 // `claude auth status --json`. Only `loggedIn` is read from the status; the rest is account data.
 import { tmpdir } from "node:os";
 import { createProcessRunner, type ProcessRunner } from "../../../kernel/process/index.js";
+import { createSandboxSupport, type SandboxSupport } from "../../../kernel/sandbox/index.js";
 import type { CliHealth } from "../../../kernel/schemas/index.js";
 import { CLAUDE_CODE_COMMAND } from "./command.js";
-import { COMMAND_RULES_FROM, commandRulesProblem, parseVersion } from "./version.js";
+import { parseVersion, SHELL_CALLS_FROM, shellCallsProblem } from "./version.js";
 
 export interface ClaudeCodeStatusOptions {
   /** argv that starts the CLI. Default: `[CLAUDE_CODE_COMMAND]`, found on the allowlisted PATH. */
@@ -12,6 +13,8 @@ export interface ClaudeCodeStatusOptions {
   readonly runner?: ProcessRunner;
   /** Per command. Default: 8 s. */
   readonly timeoutMs?: number;
+  /** Whether this machine can run Claude Code's sandbox. Default: checked for this OS through `runner`. */
+  readonly sandboxSupport?: SandboxSupport;
 }
 
 /** What a person types to sign in. */
@@ -23,6 +26,7 @@ export async function claudeCodeStatus(options: ClaudeCodeStatusOptions = {}): P
   const command = options.command ?? [CLAUDE_CODE_COMMAND];
   const runner = options.runner ?? createProcessRunner();
   const timeoutMs = options.timeoutMs ?? 8_000;
+  const sandboxSupport = options.sandboxSupport ?? createSandboxSupport(runner);
   const run = async (args: readonly string[]): Promise<{ started: boolean; timedOut: boolean; exitCode: number | null; out: string }> => {
     const lines: string[] = [];
     const result = await runner.run({
@@ -50,8 +54,13 @@ export async function claudeCodeStatus(options: ClaudeCodeStatusOptions = {}): P
   if (loggedIn(status.out)) {
     const ready = { ...withVersion, installed: true, loggedIn: true };
     const parsed = parseVersion(version.out);
-    if (commandRulesProblem(parsed) === undefined) return ready;
-    return { ...ready, message: parsed === undefined ? UNREADABLE_VERSION : `Claude Code ${parsed} is older than ${COMMAND_RULES_FROM}. Steps that run commands will fail until you update it (for example with \`claude update\`).` };
+    if (shellCallsProblem(parsed) !== undefined) {
+      return { ...ready, message: parsed === undefined ? UNREADABLE_VERSION : `Claude Code ${parsed} is older than ${SHELL_CALLS_FROM}. Steps that run commands will fail until you update it (for example with \`claude update\`).` };
+    }
+    // Only checked once the CLI itself is fine: one problem at a time on the screen.
+    const support = await sandboxSupport.check(new AbortController().signal);
+    if (support.ok) return ready;
+    return { ...ready, message: [support.problem, support.fix, support.fix === undefined ? undefined : "Then check again."].filter((part) => part !== undefined).join(" ") };
   }
   return { ...withVersion, installed: true, loggedIn: false, message: `Claude Code is not logged in. ${LOGIN_HINT}` };
 }

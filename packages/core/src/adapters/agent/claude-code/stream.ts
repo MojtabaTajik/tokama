@@ -8,6 +8,7 @@ import { sha256Hex } from "../../../kernel/hash/index.js";
 import { parseJsonLine } from "../../../kernel/json-line/index.js";
 import type { AgentCallErrorKind, AgentCallEvent, RateLimitWindow, TokenUsage } from "../../../kernel/schemas/index.js";
 import { scrubPaths } from "../../../kernel/text/index.js";
+import { SANDBOX_REQUIRED } from "./sandbox.js";
 
 // A count the CLI reports. A missing or odd value counts as absent rather than dropping the line.
 const count = z.int().nonnegative().optional().catch(undefined);
@@ -61,7 +62,9 @@ const UserLine = z.looseObject({
   parent_tool_use_id: z.string().nullable().optional().catch(undefined),
   message: z.looseObject({
     // A prompt is a plain string; tool results come as a list of blocks.
-    content: z.array(z.looseObject({ type: z.string(), tool_use_id: z.string().min(1).optional().catch(undefined) })).catch([]),
+    content: z
+      .array(z.looseObject({ type: z.string(), tool_use_id: z.string().min(1).optional().catch(undefined), content: z.unknown().optional(), is_error: z.boolean().optional().catch(undefined) }))
+      .catch([]),
   }),
 });
 
@@ -107,6 +110,14 @@ const CHANGE_FIELDS: Record<string, readonly string[]> = {
 type ToolInput = Record<string, string | number | boolean>;
 const hash = (value: string) => sha256Hex(value, 16);
 const NO_TOKENS: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+const SANDBOX_LINE_CHARS = 300;
+
+/** A tool result's text: a plain string, or the text blocks of a list. */
+function resultText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.map((block: unknown) => (typeof block === "object" && block !== null && "text" in block && typeof block.text === "string" ? block.text : "")).join("\n");
+}
 
 export interface CallResult {
   readonly isError: boolean;
@@ -128,6 +139,8 @@ export interface StreamState {
   readonly assistantError?: { readonly code: string; readonly text: string };
   /** A rate-limit event said the plan's limit is reached. */
   readonly limitRejected: boolean;
+  /** The first line of a tool result saying the sandbox is required but not working: commands were refused. */
+  readonly sandboxFailure?: string;
 }
 
 export interface StreamParser {
@@ -148,6 +161,7 @@ export function createStreamParser(cwd: string, home: string = homedir()): Strea
   let costUsd: number | undefined;
   let assistantError: StreamState["assistantError"];
   let limitRejected = false;
+  let sandboxFailure: string | undefined;
   // One API message arrives as one line per content block, each with the same id and usage.
   const messageUsage = new Map<string, TokenUsage>();
   const seenMessages = new Set<string>();
@@ -231,6 +245,13 @@ export function createStreamParser(cwd: string, home: string = homedir()): Strea
         return newTurn ? [{ type: "turn" }, ...events] : events;
       }
       case "user": {
+        // A sandbox that stopped working refuses every command, a subagent's included.
+        for (const block of line.message.content) {
+          // Only a refused command: a command's own output may say anything, a file's first line included.
+          if (block.type !== "tool_result" || block.is_error !== true || sandboxFailure !== undefined) continue;
+          const first = resultText(block.content).trimStart().split("\n", 1)[0] ?? "";
+          if (SANDBOX_REQUIRED.test(first)) sandboxFailure = first.slice(0, SANDBOX_LINE_CHARS);
+        }
         // A subagent's tool results are not the parent's, as its tool calls are not.
         if (typeof line.parent_tool_use_id === "string") return [{ type: "subagent" }];
         return line.message.content.flatMap((block): AgentCallEvent[] => {
@@ -277,6 +298,7 @@ export function createStreamParser(cwd: string, home: string = homedir()): Strea
         ...(resultUsage?.modelUsage !== undefined && { modelUsage: resultUsage.modelUsage }),
         ...(costUsd !== undefined && { costUsd }),
         ...(assistantError !== undefined && { assistantError }),
+        ...(sandboxFailure !== undefined && { sandboxFailure }),
         limitRejected,
       };
     },

@@ -1,0 +1,6 @@
+Exit code 56
+curl: (56) CONNECT tunnel failed, response 403
+
+<sandbox_violations>
+deny network-outbound example.com:443 (host is not on the allow list)
+</sandbox_violations>

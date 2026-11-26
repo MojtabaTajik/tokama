@@ -237,6 +237,12 @@ describe("run loop: done_when", () => {
     expect(runtime.calls[0]?.request).toMatchObject({ cwd: worktreeDir(id), model: "qwen3-coder", timeoutMs: 60_000 });
     expect(runtime.calls[0]?.request.prompt).toContain("Fix the app");
     expect(runtime.calls[0]?.request.role).toContain("You are builder.");
+    // Its commands write only the worktree and reach only the package registries.
+    expect(runtime.calls[0]?.request.sandbox).toEqual({
+      writableRoot: worktreeDir(id),
+      readOnlyRoots: [],
+      network: { allow: expect.arrayContaining(["registry.npmjs.org"]), unlisted: "deny" },
+    });
   });
 
   it("reports what the item does now: the agent's actions, then Tokama running each command, and nothing once each ends", SLOW, async () => {

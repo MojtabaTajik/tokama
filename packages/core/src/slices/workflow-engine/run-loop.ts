@@ -67,6 +67,7 @@ import { commitItem, createWorktree, findItemWorktree, originPushUrl, stageItem,
 import { attemptChecks, attemptLog, toolLine } from "./attempt-files.js";
 import { minutes } from "./explain.js";
 import { createFinisher, GIT_SETTINGS_FILE } from "./finish.js";
+import { sandboxFor } from "./sandbox.js";
 import { attemptLimit, budgetAllowedMs, budgetUsedMs, CONTINUE_ID, ONE_MORE_ID, ONE_MORE_ROUND_ID, roundTripLimit, sameFailureTwice } from "./counters.js";
 import {
   APPROVE_ID,
@@ -764,7 +765,15 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     };
     const call = await runGuardedCall(
       runtime,
-      { model: agent.model, prompt: prompt.value.user, role: prompt.value.system, cwd: worktree.path, limits, timeoutMs: guard.timeoutMs },
+      {
+        model: agent.model,
+        prompt: prompt.value.user,
+        role: prompt.value.system,
+        cwd: worktree.path,
+        limits,
+        timeoutMs: guard.timeoutMs,
+        sandbox: sandboxFor(worktree.path),
+      },
       signal,
       {
         clock,
