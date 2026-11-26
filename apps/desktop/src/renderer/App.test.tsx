@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ConnectionState, TokamaBridge } from "../shared/bridge.js";
 import { App } from "./App.js";
+import { BACKEND_IDS, backendOf } from "./brand/backends/index.js";
 import { brand } from "./brand/index.js";
 import { TIP_OPEN_MS } from "./shell/Rail.js";
 import { board, CONNECTED, fakeBridge } from "./testing/bridge.js";
@@ -409,6 +410,8 @@ describe("App engine health under New work", () => {
   });
 });
 
+const ownIcons = BACKEND_IDS.map((id) => backendOf(id).iconUrl);
+
 describe("App engine failure", () => {
   const failed: ConnectionState = {
     status: "failed",
@@ -425,7 +428,9 @@ describe("App engine failure", () => {
     expect(board.textContent).toContain(failed.reason);
     expect(board.textContent).toContain(failed.logPath);
     expect(board.querySelector("pre")?.textContent).toBe("Error: Cannot find module\n  at main.js:1");
-    expect($$("img")).toHaveLength(1);
+    expect($$("img:not(.backend-mark)")).toHaveLength(1);
+    // The rail's Insights button shows the Claude Code mark; it is not in the board area.
+    for (const mark of $$("img.backend-mark")) expect(ownIcons).toContain(mark.getAttribute("src"));
   });
 
   it("leaves out the log block when the tail is empty", async () => {

@@ -57,7 +57,7 @@ flow("approves a plan from the expanded view: the plan reads as a document and A
   await expect.poll(() => doc.locator(".step-output-text").innerText(), { message: "the plan in the full view" }).toContain("Release the reservation in OrderService.cancel");
   expect(await full.getByRole("tab", { name: "Output" }).getAttribute("aria-selected")).toBe("true");
   expect(await doc.locator(".ot-link").allInnerTexts()).toEqual(["Plan: reserve stock when an order is placed", "Changes", "Tests", "Risks"]);
-  expect(await doc.locator("a, script, img").count()).toBe(0);
+  expect(await doc.locator("a, script, img:not(.backend-mark)").count()).toBe(0);
   // About 75 characters a line.
   const width = await doc.locator(".ot-doc").evaluate((el) => el.getBoundingClientRect().width);
   expect(width).toBeLessThanOrEqual(820);

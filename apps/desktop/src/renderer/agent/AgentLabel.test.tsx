@@ -2,6 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { BACKEND_IDS, backendOf } from "../brand/backends/index.js";
 import { TIP_CLOSE_MS, TIP_OPEN_MS } from "../ui/useTip.js";
 import type { AgentInfo } from "./agent-info.js";
 import { AgentLabel, type AgentLabelProps } from "./AgentLabel.js";
@@ -119,7 +120,7 @@ describe("AgentLabel", () => {
     render(BUILTIN);
     act(() => $(".al-button")!.focus());
     expect(words($(".al-head"))).toBe("Builder built-in");
-    expect(words($(".al-run"))).toBe("CC sonnet");
+    expect(words($(".al-run"))).toBe("Claude Code sonnet");
     expect(words($(".al-may"))).toBe("May edits files · runs: pnpm test · web: off");
     expect(words($(".al-role"))).toBe("“You make the change the plan describes, in the worktree.”");
   });
@@ -158,13 +159,14 @@ describe("AgentLabel", () => {
   it("shows only what it knows when the engine could not resolve the agent for the step", () => {
     render({ ...BUILTIN, access: undefined });
     act(() => $(".al-button")!.focus());
-    expect(words(tip())).toBe("Builder CC sonnet");
+    expect(words(tip())).toBe("Builder Claude Code sonnet");
   });
 
   it("renders engine text as text, never as markup", () => {
     render({ ...BUILTIN, name: "<b>Builder</b>", access: { ...BUILTIN.access!, role: "<img src=x onerror=alert(1)>", commands: ["<i>x</i>"] } });
     act(() => $(".al-button")!.focus());
-    expect(container.querySelector("b:not(.al-name), img, i")).toBeNull();
+    expect(container.querySelector("b:not(.al-name), img:not(.backend-mark), i")).toBeNull();
+    for (const mark of container.querySelectorAll(".backend-mark")) expect(BACKEND_IDS.map((id) => backendOf(id).iconUrl)).toContain(mark.getAttribute("src"));
     expect(words($(".al-role"))).toBe("“<img src=x onerror=alert(1)>”");
   });
 

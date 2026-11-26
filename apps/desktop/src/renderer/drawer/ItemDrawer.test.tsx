@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BridgeEvent, ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { App } from "../App.js";
+import { BACKEND_IDS, backendOf } from "../brand/backends/index.js";
 import { board, itemList, type ListQuery } from "../testing/bridge.js";
 import { approved, committed, DECISION_ID, finishable, needsYou, setup, stoppedReview, task } from "../testing/drawer.js";
 import { cardOffersStop } from "./DecisionChoices.js";
@@ -213,7 +214,8 @@ describe("ItemDrawer engine text", () => {
     expect($(".cloud-summary-text")?.children.length).toBe(0);
     expect(text(".drawer h2")).toBe("<em>title</em>");
     expect(text(".needs-you-question")).toContain("<i>Send?</i>");
-    expect($$(".drawer img, .drawer b, .drawer script, .drawer em, .drawer i")).toEqual([]);
+    expect($$(".drawer img:not(.backend-mark), .drawer b, .drawer script, .drawer em, .drawer i")).toEqual([]);
+    for (const mark of $$(".drawer img.backend-mark")) expect(BACKEND_IDS.map((id) => backendOf(id).iconUrl)).toContain(mark.getAttribute("src"));
   });
 });
 

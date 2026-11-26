@@ -94,7 +94,7 @@ describe("agent label on a list row", () => {
     await focus(wrapOf(CHECKOUT).querySelector(".al-button"));
     const tip = $('[role="tooltip"]')!;
     expect(tip.querySelector(".al-owner")?.textContent).toBe("repo orders-api");
-    expect(tip.querySelector(".al-run")?.textContent).toBe("CCqwen3-coder:30b");
+    expect(tip.querySelector(".al-run")?.textContent).toBe(" Claude Codeqwen3-coder:30b");
     expect([...tip.querySelectorAll(".al-can")].map((el) => [el.textContent, el.hasAttribute("data-extra")])).toEqual([
       ["edits files", false],
       ["runs: pnpm test, docker compose up", true],

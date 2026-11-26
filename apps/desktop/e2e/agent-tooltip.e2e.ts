@@ -40,7 +40,7 @@ flow("shows the model and the step line on a row, and opens the agent tooltip on
   const tip = page.locator('[role="tooltip"]');
   await tip.waitFor({ state: "visible" });
   await expect.poll(() => flat(tip.locator(".al-owner").innerText())).toBe("repo orders-api");
-  await expect.poll(() => flat(tip.locator(".al-run").innerText())).toBe("CC qwen3-coder:30b");
+  await expect.poll(() => flat(tip.locator(".al-run").innerText())).toBe("Claude Code qwen3-coder:30b");
   await expect.poll(() => tip.locator(".al-role").innerText()).toBe("“You change orders-api and keep its migrations reversible.”");
   // Extra commands and web access of a repo agent: amber, with the icon and the words.
   const amber = tip.locator(".al-can[data-extra]");
@@ -254,8 +254,27 @@ flow(
     const tip = page.locator('[role="tooltip"]');
     await tip.waitFor({ state: "visible" });
     // The model that the label dropped is in the tooltip.
-    await expect.poll(() => flat(tip.locator(".al-run").innerText())).toBe("CC qwen3-coder:30b");
+    await expect.poll(() => flat(tip.locator(".al-run").innerText())).toBe("Claude Code qwen3-coder:30b");
   },
   "sample",
   seedNarrow,
 );
+
+flow("shows the tool's official icon beside the agent's name, loaded from the built app", async ({ page, screenshot }) => {
+  const wrap = page.locator(".pl-row-wrap", { has: page.locator(".pl-title", { hasText: TITLE }) });
+  await wrap.waitFor();
+  const icon = wrap.getByRole("img", { name: "Claude Code" });
+  await icon.waitFor();
+  // A blocked or missing file would leave a broken image with no width.
+  await expect.poll(() => icon.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  expect(await wrap.locator(".pl-agent").innerText()).toContain("Orders builder");
+  await screenshot("12-agent-row-icon");
+
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "AI CLIs" }).click();
+  const codex = page.locator(".ai-clis-list .ai-cli-row", { hasText: "Codex" });
+  // The row prints the name, so its mark carries no name of its own.
+  const mark = codex.locator("img.backend-mark");
+  await mark.waitFor();
+  await expect.poll(() => mark.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+});

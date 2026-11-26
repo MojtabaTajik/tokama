@@ -61,21 +61,22 @@ const open = async (fake: { bridge: TokamaBridge }) => {
 const back = () => click($$("nav button").find((el) => el.textContent === "← Back"));
 
 describe("Settings > Agents", () => {
-  it("opens from the rail in place of the rail and the sidebar, with Agents as the current page and a text monogram per agent", async () => {
+  it("opens from the rail in place of the rail and the sidebar, with Agents as the current page and the tool's icon per agent", async () => {
     const fake = withAgents();
     await open(fake);
     expect($("nav.rail")).toBeNull();
     expect($('nav[aria-label="Settings"] [aria-current="page"]')?.textContent).toBe("Agents");
     expect(rowNames()).toEqual(["Architect", "Builder", "Reviewer", "Local investigator", "✕ brokenscribe"]);
-    expect($$(".agent-row-line").map((el) => el.textContent)).toEqual([
-      "CC · opus · cloud",
-      "CC · sonnet · cloud",
-      "CX · gpt-5 · cloud · replaces built-in",
-      "OL · qwen3-coder:30b · this machine · via CC",
+    expect($$(".agent-row-line").map((el) => el.textContent?.trim())).toEqual([
+      "opus · cloud",
+      "sonnet · cloud",
+      "gpt-5 · cloud · replaces built-in",
+      "OL qwen3-coder:30b · this machine · via Claude Code",
       "agents/scribe.md",
     ]);
+    expect($$(".agent-row-line img.backend-mark").map((el) => el.getAttribute("alt"))).toEqual(["Claude Code", "Claude Code", "Codex CLI"]);
     expect(fake.query).toHaveBeenCalledWith({ type: "agents_list" });
-    expect($(".agents img, .agents svg image")).toBeNull();
+    expect($(".agents img:not(.backend-mark), .agents svg image")).toBeNull();
   });
 
   it("lists only the pages that work, by group, with no disabled entries", async () => {
@@ -115,7 +116,7 @@ describe("Settings > Agents", () => {
     await click(row("Reviewer"));
     expect($$(".agent-row").find((el) => el.getAttribute("aria-pressed") === "true")?.textContent).toContain("Reviewer");
     expect($(".agent-head-text h2")?.textContent).toBe("Reviewer");
-    expect($(".monogram")?.textContent).toBe("CX");
+    expect($(".agent-head img.backend-mark")?.getAttribute("alt")).toBe("Codex CLI");
     expect(detail()).toContain("Codex CLI");
     expect(detail()).toContain("gpt-5");
     expect(detail()).toContain("May run: git diff");

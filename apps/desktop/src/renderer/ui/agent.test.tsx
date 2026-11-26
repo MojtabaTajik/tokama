@@ -2,7 +2,8 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AgentChip, agentDot } from "./agent.js";
+import { backendOf } from "../brand/backends/index.js";
+import { AgentChip, agentDot, BackendMark } from "./agent.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -29,7 +30,46 @@ describe("agentDot", () => {
   });
 });
 
+describe("BackendMark", () => {
+  it("shows the tool's icon with its name for assistive tech when named", () => {
+    act(() => root.render(<BackendMark cliId="claude-code" named />));
+    const img = container.querySelector("img.backend-mark")!;
+    expect(img.getAttribute("alt")).toBe("Claude Code");
+    expect(img.getAttribute("src")).toBe(backendOf("claude-code").iconUrl);
+    expect(img.getAttribute("width")).toBe("12");
+  });
+
+  it("hides the icon from assistive tech when the name stands next to it", () => {
+    act(() => root.render(<BackendMark cliId="claude-code" />));
+    expect(container.querySelector("img.backend-mark")?.getAttribute("alt")).toBe("");
+  });
+
+  it("draws an icon with wide clear space in a larger box that does not grow the row", () => {
+    act(() => root.render(<BackendMark cliId="codex-cli" size={16} />));
+    const img = container.querySelector<HTMLImageElement>("img.backend-mark")!;
+    expect(img.getAttribute("width")).toBe("24");
+    expect(img.style.getPropertyValue("--bm-pad")).toBe("-4px");
+  });
+
+  it("falls back to the monogram, named for assistive tech, for a tool without an icon", () => {
+    act(() => root.render(<BackendMark cliId="ollama" named />));
+    expect(container.querySelector("img")).toBeNull();
+    const mono = container.querySelector(".backend-mono")!;
+    expect(mono.textContent).toBe("OL");
+    expect(mono.getAttribute("role")).toBe("img");
+    expect(mono.getAttribute("aria-label")).toBe("Ollama");
+    act(() => root.render(<BackendMark cliId="ollama" />));
+    expect(container.querySelector(".backend-mono")?.getAttribute("aria-hidden")).toBe("true");
+  });
+});
+
 describe("AgentChip", () => {
+  it("shows the tool's icon next to the agent's name when the tool is known", () => {
+    act(() => root.render(<AgentChip agent={{ name: "Architect", dot: 1, cliId: "claude-code" }} />));
+    expect(container.querySelector("img.backend-mark")?.getAttribute("alt")).toBe("Claude Code");
+    expect(container.querySelector(".agent-chip")?.textContent).toBe("Architect");
+  });
+
   it("shows a decorative dot, the name and what the screen adds, with the screen's class", () => {
     act(() =>
       root.render(

@@ -1,16 +1,26 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { backendOf } from "./index.js";
+import { BACKEND_IDS, backendOf } from "./index.js";
 
 describe("backendOf", () => {
+  // The bundler inlines the SVGs in tests, so only the URL being a distinct, non-empty string is checked.
   it("gives Claude Code and Codex an icon and a name", () => {
-    expect(backendOf("claude-code")).toMatchObject({ name: "Claude Code", iconUrl: expect.stringContaining("claude-code") });
-    expect(backendOf("codex-cli")).toMatchObject({ name: "Codex CLI", iconUrl: expect.stringContaining("openai") });
+    const claude = backendOf("claude-code");
+    const codex = backendOf("codex-cli");
+    expect(claude.name).toBe("Claude Code");
+    expect(codex.name).toBe("Codex CLI");
+    expect(typeof claude.iconUrl === "string" && claude.iconUrl.length > 0).toBe(true);
+    expect(typeof codex.iconUrl === "string" && codex.iconUrl.length > 0).toBe(true);
+    expect(claude.iconUrl).not.toBe(codex.iconUrl);
   });
 
   it("keeps the neutral monogram for a CLI without an icon", () => {
-    expect(backendOf("ollama")).toEqual({ name: "Ollama", monogram: "OL", iconUrl: undefined });
+    expect(backendOf("ollama")).toEqual({ name: "Ollama", monogram: "OL", iconUrl: undefined, iconScale: 1 });
+  });
+
+  it("lists every CLI once, so the names come from this one place", () => {
+    expect([...BACKEND_IDS].sort()).toEqual(["claude-code", "codex-cli", "ollama"]);
   });
 });
 

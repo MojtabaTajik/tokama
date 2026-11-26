@@ -342,8 +342,8 @@ describe("Insights: top items", () => {
     render();
     const cells = $$(".ins-table tbody tr").map((row) => [...row.querySelectorAll("td")].map((td) => td.textContent));
     expect(cells).toEqual([
-      ["Fix rounding in invoice totals", "Plan and build", "ArchitectCCReviewerCX", "163k", "29 m", "≈ $3.10"],
-      ["Orders API returns 500 after deploy", "Emergency investigator", "Local builderOL", "118k", "41 m", "local · $0"],
+      ["Fix rounding in invoice totals", "Plan and build", "ArchitectReviewer", "163k", "29 m", "≈ $3.10"],
+      ["Orders API returns 500 after deploy", "Emergency investigator", "OLLocal builder", "118k", "41 m", "local · $0"],
     ]);
   });
 

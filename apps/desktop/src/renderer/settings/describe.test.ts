@@ -23,8 +23,8 @@ const brokenEntry = (over: Record<string, unknown> = {}): BrokenAgentDetail =>
 
 describe("agent words", () => {
   it("sums an agent up in one line", () => {
-    expect(summaryLine(agent())).toBe("CC · sonnet · cloud");
-    expect(summaryLine(agent({ cliId: "ollama", drivenBy: "claude-code", model: "qwen3-coder:30b", runsOn: "local" }))).toBe("OL · qwen3-coder:30b · this machine · via CC");
+    expect(summaryLine(agent())).toBe("sonnet · cloud");
+    expect(summaryLine(agent({ cliId: "ollama", drivenBy: "claude-code", model: "qwen3-coder:30b", runsOn: "local" }))).toBe("qwen3-coder:30b · this machine · via Claude Code");
   });
 
   it("names what an agent runs on", () => {
@@ -46,8 +46,8 @@ describe("agent words", () => {
     expect(ownerLabel({ kind: "personal" }, true)).toBe("Personal, replaces the built-in");
     expect(ownerLabel({ kind: "builtin" })).toBe("Built-in");
     const [loaded, broken] = agentRows([agent({ replacesBuiltin: true })], [brokenEntry({ replacesBuiltin: true })]);
-    expect([rowLine(loaded!), rowLine(broken!)]).toEqual(["CC · sonnet · cloud · replaces built-in", "agents/scribe.md · replaces built-in"]);
-    expect(rowLine(agentRows([agent()], [])[0]!)).toBe("CC · sonnet · cloud");
+    expect([rowLine(loaded!), rowLine(broken!)]).toEqual(["sonnet · cloud · replaces built-in", "agents/scribe.md · replaces built-in"]);
+    expect(rowLine(agentRows([agent()], [])[0]!)).toBe("sonnet · cloud");
   });
 
   it("names the owner", () => {
@@ -68,13 +68,14 @@ describe("agent rows", () => {
     ]);
   });
 
-  it("filters by every word, over name, id, model, source and monogram, ignoring case", () => {
+  it("filters by every word, over name, id, model, source, tool name and monogram, ignoring case", () => {
     const rows = agentRows([agent(), agent({ id: "reviewer", name: "Reviewer", model: "opus", source: "builtin/reviewer.md", cliId: "codex-cli" })], [brokenEntry()]);
     const names = (query: string) => filterRows(rows, query).map(rowName);
     expect(names("")).toEqual(["Builder", "Reviewer", "scribe"]);
     expect(names("OPUS")).toEqual(["Reviewer"]);
     expect(names("cx opus")).toEqual(["Reviewer"]);
     expect(names("cx sonnet")).toEqual([]);
+    expect(names("codex")).toEqual(["Reviewer"]);
     expect(names("agents/scribe")).toEqual(["scribe"]);
     expect(names("  builtin  ")).toEqual(["Builder", "Reviewer"]);
   });
