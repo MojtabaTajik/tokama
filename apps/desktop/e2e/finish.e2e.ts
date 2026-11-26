@@ -19,7 +19,7 @@ import {
   systemClock,
 } from "@tokama/core";
 import { expect } from "vitest";
-import { drawer, flow, row, segment } from "./harness.js";
+import { drawer, openRow, flow, row, segment } from "./harness.js";
 
 const SAMPLE_DONE = "Fix the null check in cart totals";
 
@@ -37,7 +37,7 @@ flow("opens a pull request for a done item from the row's menu, then removes its
   await page.keyboard.press("Escape");
   await menu.waitFor({ state: "detached" });
 
-  await row(page, SAMPLE_DONE).click();
+  await openRow(page, SAMPLE_DONE);
   const finish = drawer(page).locator(".finish");
   await finish.waitFor();
   expect((await finish.locator(".finish-head").innerText()).replace(/\s+/g, " ")).toBe("FINISH tokama/00000011 · 1 commit ahead of main");
@@ -157,7 +157,7 @@ flow(
 
     // A checkout on another branch: Merge is refused in place, and nothing moves.
     git(repoPath, "switch", "-q", "-c", "feature/login");
-    await row(page, MERGE_TITLE).click();
+    await openRow(page, MERGE_TITLE);
     const offer = drawer(page).locator(".finish");
     await offer.getByRole("button", { name: "Merge into main" }).click();
     await expect.poll(() => offer.locator(".finish-notice").innerText().catch(() => ""), { message: "the refusal", timeout: 20_000 }).toContain("Your checkout is on another branch.");
@@ -177,11 +177,11 @@ flow(
     // Only the other item's worktree and branch are left.
     expect(git(repoPath, "worktree", "list").split("\n").filter((entry) => entry.includes(".tokama/wt"))).toHaveLength(1);
     expect(git(repoPath, "branch", "--list", "tokama/*").split("\n").filter(Boolean)).toHaveLength(1);
-    await row(page, MERGE_TITLE).click();
+    await openRow(page, MERGE_TITLE);
     await expect.poll(() => drawer(page).locator(".finish-ended").innerText(), { message: "the merged end" }).toMatch(/Merged into main · [0-9a-f]{7} · \d\d:\d\d\s+Worktree and branch removed/);
     await screenshot("finish-5-merged");
 
-    await row(page, DISCARD_TITLE).click();
+    await openRow(page, DISCARD_TITLE);
     await drawer(page).getByRole("heading", { name: DISCARD_TITLE }).waitFor();
     const finish = drawer(page).locator(".finish");
     // The merge moved main on; this branch still starts from the old main and is thrown away.

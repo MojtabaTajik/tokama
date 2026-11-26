@@ -2,7 +2,7 @@
 // (after `pnpm build`). The sample data is in apps/engine/src/sample/data.ts. The sample tick only
 // moves "Checkout latency spike" and items started in the test, so the others keep their state.
 import { expect } from "vitest";
-import { drawer, flow, group, row, segment, sidebarRow, titles } from "./harness.js";
+import { drawer, openRow, flow, group, row, segment, sidebarRow, titles } from "./harness.js";
 
 const NEEDS_YOU = "Orders API returns 500 after deploy";
 const VERIFYING = "Fix rounding in invoice totals";
@@ -32,7 +32,7 @@ flow("connects to the sample engine and selects list rows with Enter and Space",
 
 flow("opens an item and approves its decision", async ({ page }) => {
   await segment(page, "Needs you").click();
-  await row(page, NEEDS_YOU).click();
+  await openRow(page, NEEDS_YOU);
   const note = drawer(page).locator(".needs-you");
   await drawer(page).getByRole("heading", { name: NEEDS_YOU }).waitFor();
   await expect.poll(() => note.innerText(), { message: "the drawer shows the decision" }).toContain("Send the redacted findings summary");
@@ -109,7 +109,7 @@ flow("a plan approval shows the plan: a preview on Needs you, the whole plan as 
 });
 
 flow("keeps list rows readable and apart with the drawer open", async ({ page, resize }) => {
-  await row(page, VERIFYING).click();
+  await openRow(page, VERIFYING);
   await drawer(page).getByRole("heading", { name: VERIFYING }).waitFor();
   // 1200 is the default window, 1024 the macOS CI screen; the others are narrower than any title needs.
   for (const [width, readable] of [[1200, true], [1024, true], [900, false], [720, false]] as const) {
@@ -154,7 +154,7 @@ flow("keeps list rows readable and apart with the drawer open", async ({ page, r
 });
 
 flow("stops an item after its confirmation", async ({ page }) => {
-  await row(page, VERIFYING).click();
+  await openRow(page, VERIFYING);
   const panel = drawer(page);
   await panel.getByRole("heading", { name: VERIFYING }).waitFor();
 
@@ -243,7 +243,7 @@ flow("reconnects after the engine restarts and loads its state again", async ({ 
 
   // Change something the restart undoes: the sample engine keeps nothing across runs.
   await segment(page, "Needs you").click();
-  await row(page, NEEDS_YOU).click();
+  await openRow(page, NEEDS_YOU);
   await drawer(page).getByRole("button", { name: "Approve and send" }).click();
   await row(page, NEEDS_YOU).waitFor({ state: "detached" });
 

@@ -5,7 +5,7 @@ import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Page } from "playwright-core";
 import { expect } from "vitest";
-import { drawer, flow, row, segment } from "./harness.js";
+import { drawer, flow, openRow, segment } from "./harness.js";
 
 const DONE = "Slow query on order_items";
 
@@ -19,7 +19,7 @@ flow("resizing the sidebar and the drawer, a restart finds the same widths and v
   await resize(1200, 900);
   await page.getByRole("button", { name: "Done" }).click();
   await page.locator(".range").selectOption("30d");
-  await row(page, DONE).click();
+  await openRow(page, DONE);
   await drawer(page).getByRole("heading", { name: DONE }).waitFor();
 
   // Keyboard: the sidebar's edge moves by 16 px, the drawer's the other way round.
@@ -56,7 +56,7 @@ flow("resizing the sidebar and the drawer, a restart finds the same widths and v
   expect(await widthOf(next.page, ".panel")).toBe(232);
   expect(await next.page.getByRole("button", { name: "Expand repos" }).count()).toBe(1);
   expect(await next.page.locator(".range").inputValue()).toBe("30d");
-  await row(next.page, DONE).click();
+  await openRow(next.page, DONE);
   await drawer(next.page).getByRole("heading", { name: DONE }).waitFor();
   expect(await widthOf(next.page, ".drawer")).toBe(476);
   expect(await edge(next.page, "drawer").getAttribute("aria-valuenow")).toBe("476");
@@ -98,7 +98,7 @@ flow("a narrow window makes the drawer give way and then float over the main are
   await resize(1500, 900);
   await page.getByRole("button", { name: "Done" }).click();
   await page.locator(".range").selectOption("30d");
-  await row(page, DONE).click();
+  await openRow(page, DONE);
   await drawer(page).getByRole("heading", { name: DONE }).waitFor();
 
   // The edge shows its line and grip when the pointer is over it.
@@ -123,7 +123,7 @@ flow("a narrow window makes the drawer give way and then float over the main are
   await drawer(page).waitFor({ state: "detached" });
 
   await resize(1500, 900);
-  await row(page, DONE).click();
+  await openRow(page, DONE);
   await expect.poll(() => widthOf(page, ".drawer")).toBe(420);
 });
 
@@ -131,7 +131,7 @@ flow("the drawer's content has the same gap to its right edge as to its left, at
   await resize(1200, 600);
   await segment(page, "Done").click();
   await page.locator(".range").selectOption("30d");
-  await row(page, "Fix the null check in cart totals").click();
+  await openRow(page, "Fix the null check in cart totals");
   await drawer(page).getByRole("heading", { name: "Fix the null check in cart totals" }).waitFor();
   await drawer(page).locator(".finish").waitFor();
 
@@ -190,7 +190,7 @@ flow("a list row's time sits on its title line and the agent labels share one ri
   // Wide: the columns. Narrow: the open drawer squeezes the list into the stacked layout.
   for (const narrow of [false, true]) {
     if (narrow) {
-      await row(page, DONE).click();
+      await openRow(page, DONE);
       await drawer(page).getByRole("heading", { name: DONE }).waitFor();
       await page.mouse.move(600, 400);
     }

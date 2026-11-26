@@ -1,7 +1,7 @@
 // The expanded item view in the real app: ⤢ opens the drawer's item in the whole main area, ⤡ or
 // Esc brings the drawer back on the same item. Window sizes match the design's frames.
 import { expect } from "vitest";
-import { drawer, flow, row, segment } from "./harness.js";
+import { drawer, flow, openRow, segment } from "./harness.js";
 
 const PLAN_APPROVAL = "Reserve stock when an order is placed";
 const QUICK_CHANGE = "Log the warehouse id on sync failures";
@@ -10,7 +10,7 @@ const SAMPLE_DONE = "Fix the null check in cart totals";
 flow("expands an item from the drawer header, and Esc brings back the list with the drawer on the same item and tab", async ({ page, resize, screenshot }) => {
   await resize(1440, 900);
   await segment(page, "Needs you").click();
-  await row(page, PLAN_APPROVAL).click();
+  await openRow(page, PLAN_APPROVAL);
   await drawer(page).getByRole("heading", { name: PLAN_APPROVAL }).waitFor();
   // The open drawer narrows the list, which can move a row's agent label under the pointer left on the
   // row; its tooltip would then cover the drawer's tabs. The pointer moves into the drawer first.
@@ -46,7 +46,7 @@ flow("expands an item from the drawer header, and Esc brings back the list with 
 flow("approves a plan from the expanded view: the plan reads as a document and Approve stays in view while it scrolls", async ({ page, resize, screenshot }) => {
   await resize(1440, 1240);
   await segment(page, "Needs you").click();
-  await row(page, PLAN_APPROVAL).click();
+  await openRow(page, PLAN_APPROVAL);
   const plan = drawer(page).getByRole("region", { name: "Plan · what Architect wrote" });
   await expect.poll(() => plan.innerText(), { message: "the plan in the drawer" }).toContain("Release the reservation");
   // One expand button, in the drawer header; the card and the Output tab have none.
@@ -83,7 +83,7 @@ flow("approves a plan from the expanded view: the plan reads as a document and A
 flow("shows a change approval side by side in a wide window and unified at 1100 wide", async ({ page, resize, screenshot }) => {
   await resize(1440, 860);
   await segment(page, "Needs you").click();
-  await row(page, QUICK_CHANGE).click();
+  await openRow(page, QUICK_CHANGE);
   await drawer(page).getByRole("table", { name: "Unified diff of src/sync/worker.ts" }).waitFor();
   await drawer(page).getByRole("button", { name: "Open diff in full view" }).click();
 
@@ -115,7 +115,7 @@ flow("shows a done item with Finish and its steps' outputs folded", async ({ pag
   await resize(1440, 760);
   await segment(page, "Done").click();
   await page.locator(".range").selectOption("30d");
-  await row(page, SAMPLE_DONE).click();
+  await openRow(page, SAMPLE_DONE);
   await drawer(page).getByRole("button", { name: "Open full view" }).click();
   const full = page.locator(".expanded");
   await full.getByRole("region", { name: "Finish" }).waitFor();
