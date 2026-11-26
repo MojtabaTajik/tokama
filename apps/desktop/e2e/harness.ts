@@ -97,11 +97,22 @@ export type EngineMode = "sample" | "real" | "unavailable" | "older" | "history"
 /** The finished items the `history` mode adds to the sample. */
 export const HISTORY_ITEMS = 200;
 
+/** A folder of release note fixtures in `e2e/fixtures/whats-new`: `none` is empty, `highlights` and `fixes` hold notes for the app's version. */
+export const whatsNewFixture = (name: "none" | "highlights" | "fixes"): string => join(appDir, "e2e", "fixtures", "whats-new", name);
+
+/** What a flow may set besides its engine mode. */
+export interface FlowOptions {
+  /** Added to the app's environment at every start of the flow, a restart included. */
+  readonly env?: Readonly<Record<string, string>>;
+}
+
 /**
  * Runs `fn` against a fresh app; on failure, prints the app and engine output and saves a screenshot.
  * `seed` runs before the app starts, with the test's HOME and temp dir, e.g. to write a Tokama home.
+ * The app reads its release notes from an empty fixture folder unless `options.env` names another
+ * with TOKAMA_E2E_WHATS_NEW_DIR, so a card never covers the flows that seed their own desktop.json.
  */
-export function flow(name: string, fn: (session: Session) => Promise<void>, mode: EngineMode = "sample", seed?: (home: string, tmp: string) => void | Promise<void>): void {
+export function flow(name: string, fn: (session: Session) => Promise<void>, mode: EngineMode = "sample", seed?: (home: string, tmp: string) => void | Promise<void>, options: FlowOptions = {}): void {
   it(name, async () => {
     const tmp = mkdtempSync(join(tmpdir(), "tk-"));
     const output: string[] = [];
@@ -117,7 +128,7 @@ export function flow(name: string, fn: (session: Session) => Promise<void>, mode
         await seed(homeOf(tmp), tmp);
       }
       trace(name, "launching");
-      app = await launch(tmp, baseDir, output, mode);
+      app = await launch(tmp, baseDir, output, mode, options.env);
       trace(name, "launched");
       page = await app.firstWindow({ timeout: START_TIMEOUT_MS });
       page.setDefaultTimeout(ACTION_TIMEOUT_MS);
@@ -126,7 +137,7 @@ export function flow(name: string, fn: (session: Session) => Promise<void>, mode
         const closed = await within((app?.close() ?? Promise.resolve()).catch(() => undefined).then(() => true), CLOSE_TIMEOUT_MS);
         if (closed === undefined) app?.process().kill("SIGKILL");
         whileClosed?.();
-        app = await launch(tmp, baseDir, output, mode);
+        app = await launch(tmp, baseDir, output, mode, options.env);
         page = await app.firstWindow({ timeout: START_TIMEOUT_MS });
         page.setDefaultTimeout(ACTION_TIMEOUT_MS);
         await page.waitForLoadState("load");
@@ -172,12 +183,15 @@ export function flow(name: string, fn: (session: Session) => Promise<void>, mode
   });
 }
 
-async function launch(tmp: string, baseDir: string, output: string[], mode: EngineMode): Promise<ElectronApplication> {
+async function launch(tmp: string, baseDir: string, output: string[], mode: EngineMode, extraEnv: FlowOptions["env"]): Promise<ElectronApplication> {
   const env: Record<string, string> = {};
   for (const [name, value] of Object.entries(process.env)) if (value !== undefined) env[name] = value;
   env["TOKAMA_ENGINE_DIR"] = baseDir;
   // No Dock icon, no focus: the app stays in the background while the developer works.
   env["TOKAMA_E2E"] = "1";
+  // No release notes unless the flow names a folder of them.
+  env["TOKAMA_E2E_WHATS_NEW_DIR"] = whatsNewFixture("none");
+  Object.assign(env, extraEnv);
   // The engine keeps its items, its lock and repos.yaml in `~/.tokama`: that is a folder of this test.
   env["HOME"] = homeOf(tmp);
   mkdirSync(env["HOME"], { recursive: true });
