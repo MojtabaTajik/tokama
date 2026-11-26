@@ -42,7 +42,7 @@ describe("flowOf", () => {
 
   it("says the whole flow in words", () => {
     expect(flow.description).toBe(
-      "Start → Plan → Build → Review → Finish. Loops: Build tries again when its checks fail, up to 3 attempts; Review goes back to Build when it asks for changes, up to 2 times.",
+      "Start → Plan → Build → Review → Finish. Loops: Build tries again when its checks fail, up to 3 attempts; Review sends the work back to Build when it asks for changes and checks again after each fix, up to 3 round trips, then asks you.",
     );
   });
 
@@ -55,6 +55,7 @@ describe("flowOf", () => {
     expect(twoBacks.loops[1]!.labelY).toBeGreaterThan(twoBacks.loops[0]!.labelY);
     // No self loop: the row starts near the top.
     expect(twoBacks.top).toBeLessThan(flow.top);
+    expect(twoBacks.description).toContain("Build sends the work back to Plan when its checks fail and runs again after it, up to 3 round trips, then asks you");
   });
 
   it("puts a shorter back line above a longer one from the same step, so they do not cross", () => {
@@ -68,7 +69,19 @@ describe("flowOf", () => {
 
   it("draws a back: to the same step as a self loop", () => {
     const same = flowOf(withSteps({ ...build, ifFailed: { action: "back", stepId: "build" } } as TemplateStepView), setup.agents);
-    expect(same.loops.map((loop) => loop.kind)).toEqual(["self"]);
+    expect(same.loops.map((loop) => [loop.kind, loop.label])).toEqual([["self", "checks fail · retry, up to 3"]]);
+    expect(same.description).toContain("tries again when its checks fail, up to 3 attempts");
+  });
+
+  it("draws a review step's changes back to its own step as a retry", () => {
+    const same = flowOf(withSteps({ ...review, id: build.id, ifChangesRequested: { action: "back", stepId: build.id }, maxAttempts: 2 } as TemplateStepView), setup.agents);
+    expect(same.loops.map((loop) => [loop.kind, loop.from, loop.to, loop.label])).toEqual([["self", 1, 1, "changes · retry, up to 2"]]);
+    expect(same.description).toContain("Review tries again when it asks for changes, up to 2 attempts");
+  });
+
+  it("says 1 attempt, not 1 attempts", () => {
+    const once = flowOf(withSteps({ ...build, ifFailed: { action: "retry" }, maxAttempts: 1 } as TemplateStepView), setup.agents);
+    expect(once.description).toContain("up to 1 attempt.");
   });
 
   it("has no loops for a straight template", () => {
