@@ -1,10 +1,23 @@
 # Tokama
 
-Tokama is a desktop engineering companion. It runs AI agents (Claude Code, Codex CLI or local models) on code tasks and investigations, following templates you write. Every step of a template names the agent that runs it and says when the step is done: checks pass, a reviewer approves, or you approve.
+Agent workbench for engineers. Your steps. Its checks. Your OK.
+
+Tokama runs AI coding agents (Claude Code and Codex CLI) one step at a time, following templates you write. Each step names the agent that runs it and says when the step is done: the checks pass, a reviewer approves, or you approve. Tokama is a desktop app with its own local engine.
 
 ## Status
 
-Early and pre-release. There are no installers yet: you build and run it from source. Expect rough edges and changes between commits.
+Early and pre-release. The first alpha download is planned for 6 December 2026 (macOS, Apple silicon). Until then, build it from source as described below. Expect rough edges and changes between commits.
+
+## Safety
+
+Read this before you run a template.
+
+- Agents and checks run as you, with your user rights on your Mac. Tokama is not a sandbox.
+- Tokama does its work in git worktrees, so your main checkout stays untouched while a task runs.
+- It checks the shell commands an agent wants to run against rules, and it asks you before changes that leave your machine, such as a push or a pull request.
+- Checks (for example `pnpm test`) have no full sandbox yet. They can do anything your user can do.
+
+Review templates and check commands before you run them, especially ones you did not write.
 
 ## Requirements
 
