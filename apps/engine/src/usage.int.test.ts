@@ -35,7 +35,7 @@ const usageChanged = (events: readonly ClientEvent[]) => events.filter((event) =
 
 const template = (() => {
   const parsed = parseTemplateRecord({
-    schemaVersion: 1,
+    schemaVersion: 2,
     ref: "orders-api/quick-fix",
     id: "quick-fix",
     source: { kind: "builtin" },

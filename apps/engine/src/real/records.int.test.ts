@@ -32,7 +32,7 @@ function template(): TemplateRecord {
     ...extra,
   });
   const parsed = parseTemplateRecord({
-    schemaVersion: 1,
+    schemaVersion: 2,
     ref: "orders-api/careful-fix",
     id: "careful-fix",
     source: { kind: "repo", repoId: "orders-api", file: ".tokama/templates/careful-fix.yaml" },

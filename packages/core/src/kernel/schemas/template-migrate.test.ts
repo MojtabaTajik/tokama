@@ -22,12 +22,26 @@ function deepFreeze<T>(value: T): T {
 }
 
 describe("a stored version 1 record", () => {
-  it("passes the migration as it is and still parses", () => {
-    const migrated = migrateTemplateRecord(fixture.record);
-    expect(migrated).toEqual({ ok: true, value: fixture.record });
-    expect(migrated.ok && migrated.value).toBe(fixture.record);
-    const parsed = parseTemplateRecord(fixture.record);
-    expect(parsed.ok && parsed.value).toEqual(fixture.record);
+  it("becomes version 2 with nothing else changed, and parses", () => {
+    const stored = deepFreeze(structuredClone(fixture.record));
+    const expected = { ...fixture.record, schemaVersion: 2 };
+    expect(migrateTemplateRecord(stored)).toEqual({ ok: true, value: expected });
+    const parsed = parseTemplateRecord(stored);
+    expect(parsed.ok && parsed.value).toEqual(expected);
+    expect(stored).toEqual(fixture.record);
+  });
+
+  it("gets the finish word update-tickets as outside-changes", () => {
+    const old = { ...fixture.record, finish: ["commit", "update-tickets"] };
+    const parsed = parseTemplateRecord(old);
+    expect(parsed.ok && parsed.value.finish).toEqual(["commit", "outside-changes"]);
+    expect(old.finish).toEqual(["commit", "update-tickets"]);
+  });
+
+  it("is current already at version 2: nothing runs and the same object comes back", () => {
+    const current = { ...fixture.record, schemaVersion: 2 };
+    const migrated = migrateTemplateRecord(current);
+    expect(migrated.ok && migrated.value).toBe(current);
   });
 });
 

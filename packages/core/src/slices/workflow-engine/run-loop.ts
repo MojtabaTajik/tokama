@@ -393,8 +393,10 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
   const contextOf = (item: StoredItem): Context | Next => {
     const template = parseTemplateRecord(item.template.record);
     if (!template.ok) {
+      // A newer Tokama's item is not ended: after an update the engineer can retry it.
       const { newerVersion } = template.error;
-      return { kind: "end", outcome: "failed", detail: newerVersion === undefined ? "The item's template snapshot is not a valid template." : newerTemplateRecordMessage(newerVersion) };
+      if (newerVersion !== undefined) return askRunFailure(item, newerTemplateRecordMessage(newerVersion));
+      return { kind: "end", outcome: "failed", detail: "The item's template snapshot is not a valid template." };
     }
     const repoId = item.repoIds[0];
     const repo = repoId === undefined ? undefined : deps.repo(repoId);

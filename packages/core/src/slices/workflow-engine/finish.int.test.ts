@@ -30,7 +30,7 @@ let git: Git;
 let store: ItemStore;
 
 const TEMPLATE = TemplateRecordSchema.parse({
-  schemaVersion: 1,
+  schemaVersion: 2,
   ref: "orders-api/quick-fix",
   id: "quick-fix",
   source: { kind: "repo", repoId: "orders-api", file: ".tokama/templates/quick-fix.yaml" },

@@ -26,7 +26,7 @@ async function client(dir: string): Promise<EngineClient> {
 
 const template = (() => {
   const parsed = parseTemplateRecord({
-    schemaVersion: 1,
+    schemaVersion: 2,
     ref: "orders-api/quick-fix",
     id: "quick-fix",
     source: { kind: "builtin" },

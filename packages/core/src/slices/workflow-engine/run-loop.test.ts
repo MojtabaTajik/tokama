@@ -64,7 +64,7 @@ const AGENTS: Record<string, Agent> = { builder: agent("builder"), reviewer: age
 type StepInput = { id: string } & Record<string, unknown>;
 function template(steps: readonly StepInput[], extra: Record<string, unknown> = {}): TemplateRecord {
   return TemplateRecordSchema.parse({
-    schemaVersion: 1,
+    schemaVersion: 2,
     ref: "orders-api/quick-fix",
     id: "quick-fix",
     source: { kind: "builtin" },
@@ -579,14 +579,16 @@ describe("run loop: the template snapshot of an item", () => {
     expect(openDecision(id)).toMatchObject({ kind: "plan_approval", stepId: "plan" });
   });
 
-  it("ends an item whose snapshot a newer Tokama wrote, and says so", SLOW, async () => {
+  it("waits with Retry step / Stop for an item whose snapshot a newer Tokama wrote, and does not end it", SLOW, async () => {
     const newer = { ...template([BUILD_CHECKED]), schemaVersion: 99 } as unknown as TemplateRecord;
     const id = await start(engine(fakeRuntime([edits(FIXED)])), newer);
-    const ended = log(id).find((event) => event.type === "item_ended");
-    expect(ended).toMatchObject({
-      outcome: "failed",
+    expect(item(id).state).toBe("needs_you");
+    expect(item(id).outcome).toBeUndefined();
+    expect(openDecision(id)).toMatchObject({
+      kind: "run_failure",
       detail: "This item was started by a newer Tokama (template record version 99). Update Tokama to open it.",
     });
+    expect(openDecision(id)?.choices.map((c) => c.id)).toEqual(["retry_step", "stop"]);
   });
 });
 

@@ -66,7 +66,7 @@ export const TemplateStepDefSchema = z.strictObject({
   color: TagColorSchema.optional(),
 });
 
-export const TEMPLATE_SCHEMA_VERSION = 1;
+export const TEMPLATE_SCHEMA_VERSION = 2;
 
 export const TemplateRecordSchema = z.strictObject({
   schemaVersion: z.literal(TEMPLATE_SCHEMA_VERSION),

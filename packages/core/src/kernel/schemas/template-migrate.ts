@@ -18,9 +18,16 @@ export type TemplateRecordStep = (record: Readonly<Record<string, unknown>>) => 
 
 /**
  * The steps by the version they upgrade from: `{ 1: v1ToV2 }`. Every change to TemplateRecord bumps
- * TEMPLATE_SCHEMA_VERSION and adds one tested step here. Empty while the version is 1.
+ * TEMPLATE_SCHEMA_VERSION and adds one tested step here.
  */
-export const TEMPLATE_RECORD_STEPS: Readonly<Record<number, TemplateRecordStep>> = {};
+export const TEMPLATE_RECORD_STEPS: Readonly<Record<number, TemplateRecordStep>> = { 1: v1ToV2 };
+
+/** Version 2 renamed the finish word `update-tickets` to `outside-changes`. */
+function v1ToV2(record: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  const { finish } = record;
+  if (!Array.isArray(finish)) return { ...record };
+  return { ...record, finish: finish.map((word) => (word === "update-tickets" ? "outside-changes" : word)) };
+}
 
 export const newerTemplateRecordMessage = (version: number): string =>
   `This item was started by a newer Tokama (template record version ${version}). Update Tokama to open it.`;

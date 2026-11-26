@@ -71,7 +71,7 @@ describe("validateTemplate: a valid template", () => {
   it("fills the defaults and reads instruction files", async () => {
     const template = await record(BASE);
     expect(template).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       ref: "orders-api/sample",
       id: "sample",
       uses: { repos: { picked: "edit", named: [] }, connections: [], commands: [] },
