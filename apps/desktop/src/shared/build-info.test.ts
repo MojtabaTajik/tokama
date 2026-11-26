@@ -28,6 +28,7 @@ describe("build info", () => {
   it("adds a Tools PATH line for each source, never the PATH itself", () => {
     const line = (toolsPath: ToolsPathInfo) => buildInfoText(info, "connected", toolsPath).split("\n").at(-1);
     expect(line({ source: "login-shell", shell: "zsh" })).toBe("Tools PATH: login shell (zsh)");
+    expect(line({ source: "login-shell", shell: "zsh", slow: true })).toBe("Tools PATH: login shell (zsh), slow to start");
     expect(line({ source: "inherited" })).toBe("Tools PATH: inherited");
     expect(line({ source: "engine-running" })).toBe("Tools PATH: not read (the engine was already running)");
     expect(line({ source: "inherited", shell: "zsh", problem: "Your login shell (zsh) did not answer within 5 s." })).toBe(

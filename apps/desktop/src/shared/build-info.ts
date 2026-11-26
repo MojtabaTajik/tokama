@@ -20,7 +20,7 @@ export function buildRows(info: AboutInfo, status: string): ReadonlyArray<readon
 /** How the engine got its PATH, in one phrase. It never holds the PATH itself. */
 export function toolsPathText(toolsPath: ToolsPathInfo): string {
   if (toolsPath.source === "engine-running") return "not read (the engine was already running)";
-  if (toolsPath.source === "login-shell") return toolsPath.shell === undefined ? "login shell" : `login shell (${toolsPath.shell})`;
+  if (toolsPath.source === "login-shell") return (toolsPath.shell === undefined ? "login shell" : `login shell (${toolsPath.shell})`) + (toolsPath.slow === true ? ", slow to start" : "");
   return toolsPath.problem === undefined ? "inherited" : `inherited (login shell failed: ${toolsPath.problem})`;
 }
 

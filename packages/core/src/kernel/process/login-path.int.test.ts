@@ -94,6 +94,18 @@ describe.skipIf(process.platform === "win32")("resolveToolsPath with a real runn
     },
   );
 
+  it(
+    "reports a slow shell that ignores SIGTERM: the stuck command dies, the shell still answers",
+    SLOW,
+    async () => {
+      // Like an interactive zsh: the timeout's SIGTERM ends the foreground command only (a handler,
+      // not an ignored signal, which a child would inherit).
+      const shell = fakeShell("zsh", `trap : TERM\n/bin/sleep 20\n/bin/sh -c "$4"`);
+      const found = await resolveToolsPath({ platform: process.platform, shell, inheritedPath: "/usr/bin:/bin", home: dir, parentEnv: { HOME: dir }, timeoutMs: 400 });
+      expect(found).toMatchObject({ source: "login-shell", shell: "zsh", slow: true });
+    },
+  );
+
   it.skipIf(!existsSync("/bin/zsh"))(
     "runs the real zsh against an empty home",
     SLOW,

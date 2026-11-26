@@ -65,6 +65,7 @@ describe("toolsPathInfo", () => {
       problem: "Your login shell (zsh) did not report a PATH.",
     });
     expect(toolsPathInfo({ path: undefined, source: "inherited" })).toEqual({ source: "inherited" });
+    expect(toolsPathInfo({ path: "/x", source: "login-shell", shell: "zsh", slow: true })).toEqual({ source: "login-shell", shell: "zsh", slow: true });
   });
 
   it("says only that the engine was already running when the app attached to one", () => {

@@ -76,7 +76,7 @@ export function engineEnv(parent: Readonly<Record<string, string | undefined>>, 
  */
 export function toolsPathInfo(toolsPath: ToolsPath, attached = false): ToolsPathInfo {
   if (attached) return { source: "engine-running" };
-  return { source: toolsPath.source, ...(toolsPath.shell !== undefined && { shell: toolsPath.shell }), ...(toolsPath.problem !== undefined && { problem: toolsPath.problem }) };
+  return { source: toolsPath.source, ...(toolsPath.shell !== undefined && { shell: toolsPath.shell }), ...(toolsPath.problem !== undefined && { problem: toolsPath.problem }), ...(toolsPath.slow === true && { slow: true as const }) };
 }
 
 export interface EngineCommandInput {

@@ -387,10 +387,13 @@ export function cliIssuesOf(health: Health | undefined): CliIssue[] {
  * PATH could not be read, which is why tools may be missing from the engine.
  */
 export function healthProblemsOf(health: Health | undefined, toolsPath?: ToolsPathInfo): HealthProblem[] {
-  const path =
+  const path: HealthProblem[] =
     toolsPath?.problem === undefined
       ? []
       : [{ title: "Your shell's PATH was not read", detail: `${toolsPath.problem} Tokama uses the PATH it was started with, so tools in Homebrew or ~/.local/bin may not be found.` }];
+  if (toolsPath?.slow === true) {
+    path.push({ title: "Your shell is slow to start", detail: "Reading your shell setup took over 5 seconds; Tokama starts slower. Check your ~/.zshrc for slow commands." });
+  }
   if (health === undefined) return path;
   const git = health.git.ok ? [] : [{ title: "git cannot be used", detail: health.git.message ?? "git did not answer." }];
   const slow = health.clis.filter((cli) => cli.timedOut === true).map((cli) => ({ title: `${cliName(cli.cliId)} didn't answer`, detail: cli.message ?? "The check did not finish in time." }));

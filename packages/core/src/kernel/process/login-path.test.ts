@@ -81,6 +81,14 @@ describe("resolveToolsPath", () => {
     expect(await resolveToolsPath(deps({ runner }))).toMatchObject({ source: "login-shell", path: "/opt/homebrew/bin:/usr/bin:/bin" });
   });
 
+  it("marks a shell as slow when its run reached the timeout, even though it answered", async () => {
+    const lines = [M, "/opt/homebrew/bin", M];
+    const slowRun = await resolveToolsPath(deps({ runner: fakeRunner(lines, { ...FINISHED, durationMs: 5_000 }).runner }));
+    expect(slowRun).toMatchObject({ source: "login-shell", slow: true });
+    const quick = await resolveToolsPath(deps({ runner: fakeRunner(lines, { ...FINISHED, durationMs: 4_999 }).runner }));
+    expect(quick).not.toHaveProperty("slow");
+  });
+
   it("starts csh and tcsh with -c alone, which is the only form they take with -l", async () => {
     for (const name of ["csh", "tcsh"]) {
       const { runner, requests } = fakeRunner([M, "/usr/bin", M]);

@@ -105,6 +105,8 @@ export interface ToolsPathInfo {
   /** The login shell's file name, when one was run. */
   readonly shell?: string;
   readonly problem?: string;
+  /** The login shell answered, but only after the 5 s timeout. */
+  readonly slow?: true;
 }
 
 /** Where the engine found a template file: a repo id and the repo-relative path. */

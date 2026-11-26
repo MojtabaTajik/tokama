@@ -397,6 +397,12 @@ describe("health from the setup", () => {
     expect(healthProblemsOf(slow as never, { source: "inherited" })).toHaveLength(1);
   });
 
+  it("adds a slow-shell problem when the login shell answered only after the timeout", () => {
+    const listed = healthProblemsOf(slow as never, { source: "login-shell", shell: "zsh", slow: true });
+    expect(listed[0]).toEqual({ title: "Your shell is slow to start", detail: "Reading your shell setup took over 5 seconds; Tokama starts slower. Check your ~/.zshrc for slow commands." });
+    expect(listed).toHaveLength(2);
+  });
+
   it("lists git and config problems in the engine's words", () => {
     expect(healthProblemsOf(health as never)).toEqual([
       { title: "git cannot be used", detail: "git 2.44 or newer is required; found: git version 2.39.0" },

@@ -14,6 +14,8 @@ export interface ToolsPath {
   readonly shell?: string;
   /** One plain sentence: why the login shell's PATH could not be read. Set only when a try failed. */
   readonly problem?: string;
+  /** The shell answered, but only after the timeout: its startup files are slow, and every launch waits for them. */
+  readonly slow?: true;
 }
 
 export interface LoginPathDeps {
@@ -82,7 +84,10 @@ export async function resolveToolsPath(deps: LoginPathDeps): Promise<ToolsPath> 
   const merged = shellPath === undefined ? "" : mergePaths(shellPath, deps.inheritedPath, deps.isDirectory ?? isDirectory);
   if (merged === "" && result.timedOut) return fallback(`Your login shell (${name}) did not answer within ${Math.round(timeoutMs / 1000)} s.`);
   if (merged === "") return fallback(`Your login shell (${name}) did not report a PATH.`, name);
-  return { path: merged, source: "login-shell", shell: name };
+  // An interactive shell ignores the timeout's SIGTERM: a slow startup file loses only its command,
+  // and the shell still answers, so the time the run took is what shows the shell is slow.
+  const slow = result.timedOut || result.durationMs >= timeoutMs;
+  return { path: merged, source: "login-shell", shell: name, ...(slow && { slow: true as const }) };
 }
 
 /**
