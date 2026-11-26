@@ -15,6 +15,7 @@ import {
   type ListGroup,
   localDate,
   MAX_BOARD_COUNTS,
+  MAX_MESSAGE_BYTES,
   type RepoId,
   type Setup,
   type TemplateRef,
@@ -186,10 +187,10 @@ export class ItemList {
 
   /**
    * The done and failed items counted by start day, template and repos. Items that started before
-   * `firstDay` are counted together, under a null day. A reply never holds more than `max` rows: when
-   * there are more, the oldest days join the null-day rows, as many days as needed.
+   * `firstDay` are counted together, under a null day. The rows stay within the budget: when they
+   * are too many or too long, the oldest days join the null-day rows, as many days as needed.
    */
-  counts(firstDay: string, max: number = MAX_BOARD_COUNTS): BoardCount[] {
+  counts(firstDay: string, budget: CountsBudget = COUNTS_BUDGET): BoardCount[] {
     const rows = this.db
       .prepare(
         `SELECT CASE WHEN day >= ? THEN day END AS d, template_ref, repos, sum(grp = 'done') AS done, sum(grp = 'failed') AS failed
@@ -203,7 +204,7 @@ export class ItemList {
       done: row.done,
       failed: row.failed,
     }));
-    return all.length <= max ? all : capCounts(all, max);
+    return fits(all, budget) ? all : capCounts(all, budget);
   }
 
   close(): void {
@@ -211,12 +212,23 @@ export class ItemList {
   }
 }
 
+/** The rows and bytes (as JSON) that the count rows of one board reply may take; it also holds the open items. */
+export interface CountsBudget {
+  readonly rows: number;
+  readonly bytes: number;
+}
+/** Half the message limit, as for an item_list page, and never more rows than the schema takes. */
+export const COUNTS_BUDGET: CountsBudget = { rows: MAX_BOARD_COUNTS, bytes: MAX_MESSAGE_BYTES / 2 };
+
+const rowBytes = (row: BoardCount): number => Buffer.byteLength(JSON.stringify(row)) + 1;
+const fits = (rows: readonly BoardCount[], budget: CountsBudget): boolean => rows.length <= budget.rows && rows.reduce((sum, row) => sum + rowBytes(row), 0) <= budget.bytes;
+
 /**
- * Keeps the newest whole days that fit in `max` rows and adds the rest to the null-day rows, one
+ * Keeps the newest whole days that fit in the budget and adds the rest to the null-day rows, one
  * row for each template and repo set. Rows come newest day first, null day last. If the null-day
- * rows alone are too many, the first `max` stay.
+ * rows alone are too many, the first rows that fit stay.
  */
-function capCounts(rows: BoardCount[], max: number): BoardCount[] {
+function capCounts(rows: BoardCount[], budget: CountsBudget): BoardCount[] {
   const days = [...new Set(rows.flatMap((row) => (row.day === null ? [] : [row.day])))];
   for (let keep = days.length; keep >= 0; keep--) {
     const kept = new Set(days.slice(0, keep));
@@ -232,7 +244,20 @@ function capCounts(rows: BoardCount[], max: number): BoardCount[] {
         total.failed += row.failed;
       }
     }
-    if (shown.length + folded.size <= max || keep === 0) return [...shown, ...folded.values()].slice(0, max);
+    const capped = [...shown, ...folded.values()];
+    if (fits(capped, budget)) return capped;
+    if (keep === 0) return takeFitting(capped, budget);
   }
-  return rows.slice(0, max);
+  return takeFitting(rows, budget);
+}
+
+function takeFitting(rows: readonly BoardCount[], budget: CountsBudget): BoardCount[] {
+  const taken: BoardCount[] = [];
+  let bytes = 0;
+  for (const row of rows) {
+    bytes += rowBytes(row);
+    if (taken.length >= budget.rows || bytes > budget.bytes) break;
+    taken.push(row);
+  }
+  return taken;
 }

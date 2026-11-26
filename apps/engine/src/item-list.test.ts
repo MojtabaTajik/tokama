@@ -1,6 +1,6 @@
-import { type ItemRecord, type ItemState, parseItemRecord } from "@tokama/core";
+import { encodeLine, type ItemRecord, type ItemState, parseItemRecord } from "@tokama/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { groupOf, ItemList, likePattern, nameHits } from "./item-list.js";
+import { COUNTS_BUDGET, groupOf, ItemList, likePattern, nameHits } from "./item-list.js";
 
 /** Local time, so the local days below hold in any time zone. */
 const at = (day: number, hour = 12, minute = 0) => new Date(2026, 10, day, hour, minute).getTime();
@@ -153,7 +153,7 @@ describe("work list index", () => {
     const all = list.counts("2026-11-01");
     expect(all).toHaveLength(10);
 
-    const capped = list.counts("2026-11-01", 5);
+    const capped = list.counts("2026-11-01", { rows: 5, bytes: Infinity });
     expect(capped.length).toBeLessThanOrEqual(5);
     const sum = (rows: typeof all, key: "done" | "failed") => rows.reduce((total, row) => total + row[key], 0);
     expect(sum(capped, "done")).toBe(5);
@@ -165,7 +165,35 @@ describe("work list index", () => {
     expect(folded.find((row) => row.templateId === "builtin/quick-fix")).toMatchObject({ done: 4, failed: 0 });
 
     // Even when the null-day rows alone pass the cap, the reply stays within it.
-    expect(list.counts("2026-11-01", 1)).toHaveLength(1);
+    expect(list.counts("2026-11-01", { rows: 1, bytes: Infinity })).toHaveLength(1);
+  });
+
+  it("keeps long ids inside the message limit: the oldest days fold into the null day before the byte budget passes", () => {
+    const pad = (n: number) => String(n).padStart(3, "0");
+    const repos = ["a", "b", "c"].map((letter, index) => letter.repeat(60) + String(index));
+    let n = 1;
+    // 80 workflows with the longest ids, over 20 local days, with an item too that is older than the counted days.
+    for (let flow = 0; flow < 80; flow++) {
+      const templateId = `${"r".repeat(50)}${pad(flow)}/${"t".repeat(60)}`;
+      for (let day = 5; day < 25; day++) list.put(item(n++, { createdAt: at(day), templateId, repoIds: repos, state: day % 2 === 0 ? "failed" : "done" }));
+      list.put(item(n++, { createdAt: new Date(2026, 9, 1).getTime(), templateId, repoIds: repos }));
+    }
+    const total = n - 1;
+
+    // Without a budget these rows are too long for one reply.
+    const unlimited = list.counts("2026-11-01", { rows: Infinity, bytes: Infinity });
+    expect(Buffer.byteLength(JSON.stringify(unlimited))).toBeGreaterThan(COUNTS_BUDGET.bytes);
+
+    const counts = list.counts("2026-11-01");
+    const reply = encodeLine({ id: 1, result: { ok: true, data: { items: [], counts } } });
+    expect(reply.ok).toBe(true);
+    expect(counts.reduce((sum, row) => sum + Buffer.byteLength(JSON.stringify(row)) + 1, 0)).toBeLessThanOrEqual(COUNTS_BUDGET.bytes);
+    // Nothing is lost: only the day is.
+    expect(counts.reduce((sum, row) => sum + row.done + row.failed, 0)).toBe(total);
+    const days = counts.map((row) => row.day);
+    expect(days).toContain(null);
+    expect(days).toContain("2026-11-24");
+    expect(days).not.toContain("2026-11-05");
   });
 
   it("takes %, _ and \\ in a search as the characters themselves", () => {
