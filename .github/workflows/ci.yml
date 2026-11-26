@@ -112,7 +112,10 @@ jobs:
         run: pnpm lint
       - if: needs.plan.outputs.docs_only != 'true'
         run: pnpm test:all
-      - if: needs.plan.outputs.docs_only != 'true'
+      # On pull requests test:all runs the removal test's fixture cases; the run on the real tree
+      # waits for the push to main, the nightly run and manual runs.
+      - name: Adapter removal test (real tree)
+        if: needs.plan.outputs.docs_only != 'true' && github.event_name != 'pull_request'
         run: pnpm removal-test
       # Desktop UI flow tests: the built app on a sample engine. install-electron downloads the
       # Electron binary into this cache and checks it against electron's checksums.json, on a
@@ -172,11 +175,12 @@ jobs:
           retention-days: 14
 
   # The lowest Node that package.json allows: node:sqlite runs there without a flag (with an
-  # ExperimentalWarning on stderr). Not a required check.
+  # ExperimentalWarning on stderr). Not a required check. Nightly and manual runs only; the
+  # packaged app ships its own pinned Node.
   node-min:
     name: node 22.18 (ubuntu-latest)
     needs: plan
-    if: ${{ !cancelled() && github.event_name != 'schedule' && needs.plan.outputs.docs_only != 'true' }}
+    if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.plan.outputs.skip_nightly != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
