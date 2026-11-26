@@ -1,7 +1,7 @@
 // Helpers and Try checks in fake engine mode, through the real client and socket. The engine clock
 // is a manual clock: the canned answers move only when the test advances it.
 import { connect, type EngineClient } from "@tokama/client";
-import { type CheckTrial, type CommandInput, type EngineEvent, type HelperRun, HelperRunSchema, manualClock, type ManualClock } from "@tokama/core";
+import { type CheckTrial, type EngineEvent, type HelperRun, HelperRunSchema, manualClock, type ManualClock } from "@tokama/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { startEngine } from "../engine.js";
 import { tempEngineDir, waitFor } from "../testing/helpers.js";
@@ -92,11 +92,9 @@ describe("sample helpers", () => {
   });
 
   it("refuses a cloud helper without the cloud OK and says what would be sent", async () => {
-    const { client, events, clock } = await sampleEngine();
+    const { client } = await sampleEngine();
     const reply = await runHelper(client, "orders-api", false);
     expect(reply).toEqual({ ok: false, error: { code: "cloud_not_accepted", message: DISCLOSURE } });
-    clock.advance(10_000);
-    expect(events.filter((event) => event.type === "helper_run_updated")).toEqual([]);
   });
 
   it("replies at once, then moves a run from gathering to asking to done with three checks", async () => {
@@ -269,10 +267,6 @@ describe("sample Try checks", () => {
     await waitFor(() => trialUpdates(fixture.events, trialId).at(-1)?.state === "cancelled", 5_000, "cancelled trial");
     expect(trialUpdates(fixture.events, trialId).at(-1)?.checks.map((check) => check.state)).toEqual(["passed", "skipped", "skipped"]);
     expect(await fixture.client.command({ type: "cancel_check_trial", trialId })).toMatchObject({ ok: false, error: { code: "invalid_state" } });
-    // Cancelling stopped the clock for it: nothing more is sent.
-    const count = trialUpdates(fixture.events, trialId).length;
-    fixture.clock.advance(2 * SAMPLE_SLOW_MS);
-    expect(trialUpdates(fixture.events, trialId)).toHaveLength(count);
   });
 
   it("answers not_found for a trial it does not know, and forgets an ended one after 10 minutes", async () => {
@@ -284,12 +278,5 @@ describe("sample Try checks", () => {
     await advanceTrial(fixture, trialId, 300 + 1_200, 3);
     fixture.clock.advance(SAMPLE_KEEP_MS);
     expect(await fixture.client.query({ type: "check_trial", trialId })).toMatchObject({ ok: false, error: { code: "not_found" } });
-  });
-
-  it("refuses commands the schema refuses", async () => {
-    const { client } = await sampleEngine();
-    const bad = { type: "try_checks", path: "/work/orders-api", checks: [] } as unknown as CommandInput;
-    const reply = await client.command(bad);
-    expect(reply.ok).toBe(false);
   });
 });

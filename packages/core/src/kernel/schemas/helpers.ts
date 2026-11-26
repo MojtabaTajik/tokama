@@ -21,8 +21,8 @@ export const HelperRunRequestSchema = z.discriminatedUnion("helperId", [
   z.strictObject({ helperId: z.literal("suggest-checks"), input: HelperInputSchemas["suggest-checks"] }),
 ]);
 
-/** One line of plain text: no control characters (line breaks and tabs included), no format characters, no line or paragraph separators. */
-const oneLine = (max: number) => z.string().min(1).max(max).regex(/^[^\p{Cc}\p{Cf}\p{Zl}\p{Zp}]*$/u, "must be one line of plain text");
+/** One line of plain text: no control characters (line breaks and tabs included), no format, private-use or lone surrogate characters, no line or paragraph separators. */
+const oneLine = (max: number) => z.string().min(1).max(max).regex(/^[^\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Zl}\p{Zp}]*$/u, "must be one line of plain text");
 
 /** The most checks suggest-checks proposes. */
 export const MAX_SUGGESTED_CHECKS = 4;
@@ -80,6 +80,12 @@ export const HELPER_RUN_ERROR_CODES = ["bad_answer", "timeout", "quota", "rate_l
 
 const runError = z.strictObject({ code: z.string().min(1).max(64), message: z.string().max(1000) });
 
+/** What is wrong with the end time of a run or trial that is not running; undefined when nothing. */
+function endProblem(record: { readonly startedAt: number; readonly endedAt?: number | undefined }): string | undefined {
+  if (record.endedAt === undefined) return "an ended record has an end time";
+  return record.endedAt < record.startedAt ? "endedAt is before startedAt" : undefined;
+}
+
 export const HelperRunSchema = z
   .strictObject({
     runId: HelperRunIdSchema,
@@ -102,8 +108,11 @@ export const HelperRunSchema = z
     if (run.state === "running") {
       if (run.phase === undefined) problem("a running run has a phase", "phase");
       if (run.endedAt !== undefined) problem("a running run has not ended", "endedAt");
-    } else if (run.endedAt === undefined) problem("an ended run has an end time", "endedAt");
-    else if (run.endedAt < run.startedAt) problem("endedAt is before startedAt", "endedAt");
+    } else {
+      if (run.phase !== undefined) problem("an ended run has no phase", "phase");
+      const timeProblem = endProblem(run);
+      if (timeProblem !== undefined) problem(timeProblem, "endedAt");
+    }
     if ((run.state === "done") !== (run.result !== undefined)) problem("result is set exactly when the run is done", "result");
     if (run.result !== undefined && run.result.helperId !== run.helperId) problem("the result is of another helper", "result");
     if ((run.state === "failed") !== (run.error !== undefined)) problem("error is set exactly when the run failed", "error");
@@ -119,29 +128,41 @@ export const MAX_TRIAL_CHECKS = 20;
  * One Try checks run: the commands once, in a temporary worktree at the base branch. `done` means
  * every check ran (some may have failed); `failed` means the trial itself could not run.
  */
-export const CheckTrialSchema = z.strictObject({
-  trialId: CheckTrialIdSchema,
-  state: HelperRunStateSchema,
-  startedAt: EpochMsSchema,
-  endedAt: EpochMsSchema.optional(),
-  /** The base commit the worktree was made at, short form; absent until the worktree exists. */
-  commit: z.string().regex(/^[0-9a-f]{7,64}$/).optional(),
-  checks: z
-    .array(
-      z.strictObject({
-        command: checkCommand,
-        state: CheckTrialCheckStateSchema,
-        durationMs: z.int().nonnegative().optional(),
-        exitCode: z.int().optional(),
-        /** The last characters of the output, as text. */
-        outputTail: z.string().max(MAX_TRIAL_OUTPUT_CHARS).optional(),
-      }),
-    )
-    .min(1)
-    .max(MAX_TRIAL_CHECKS),
-  /** Why the trial could not run (the worktree failed, the repo was not found). */
-  error: runError.optional(),
-});
+export const CheckTrialSchema = z
+  .strictObject({
+    trialId: CheckTrialIdSchema,
+    state: HelperRunStateSchema,
+    startedAt: EpochMsSchema,
+    /** Set exactly when the trial is not running. */
+    endedAt: EpochMsSchema.optional(),
+    /** The base commit the worktree was made at, short form; absent until the worktree exists. */
+    commit: z.string().regex(/^[0-9a-f]{7,64}$/).optional(),
+    checks: z
+      .array(
+        z.strictObject({
+          command: checkCommand,
+          state: CheckTrialCheckStateSchema,
+          durationMs: z.int().nonnegative().optional(),
+          exitCode: z.int().optional(),
+          /** The last characters of the output, as text. */
+          outputTail: z.string().max(MAX_TRIAL_OUTPUT_CHARS).optional(),
+        }),
+      )
+      .min(1)
+      .max(MAX_TRIAL_CHECKS),
+    /** Why the trial could not run (the worktree failed, the repo was not found). Set exactly when failed. */
+    error: runError.optional(),
+  })
+  .superRefine((trial, context) => {
+    const problem = (message: string, path: string) => context.addIssue({ code: "custom", message, path: [path] });
+    if (trial.state === "running") {
+      if (trial.endedAt !== undefined) problem("a running trial has not ended", "endedAt");
+    } else {
+      const timeProblem = endProblem(trial);
+      if (timeProblem !== undefined) problem(timeProblem, "endedAt");
+    }
+    if ((trial.state === "failed") !== (trial.error !== undefined)) problem("error is set exactly when the trial failed", "error");
+  });
 
 export type HelperInput<T extends HelperId = HelperId> = z.output<(typeof HelperInputSchemas)[T]>;
 export type HelperRunRequest = z.output<typeof HelperRunRequestSchema>;

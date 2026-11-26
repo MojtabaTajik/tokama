@@ -56,6 +56,8 @@ describe("suggest-checks result", () => {
     expect(parse({ checks: [{ ...check(), command: "pnpm test\npnpm lint" }] })).toBe(false);
     expect(parse({ checks: [{ ...check(), command: "pnpm test\u0007" }] })).toBe(false);
     expect(parse({ checks: [{ ...check(), command: `pnpm test${LINE_SEPARATOR}` }] })).toBe(false);
+    expect(parse({ checks: [{ ...check(), command: `pnpm test${String.fromCharCode(0xe000)}` }] })).toBe(false);
+    expect(parse({ checks: [{ ...check(), command: `pnpm test${String.fromCharCode(0xd800)}` }] })).toBe(false);
     expect(parse({ checks: [{ ...check(), command: "x".repeat(MAX_CHECK_CHARS) }] })).toBe(true);
     expect(parse({ checks: [{ ...check(), command: "x".repeat(MAX_CHECK_CHARS + 1) }] })).toBe(false);
     expect(parse({ checks: [{ ...check(), command: "" }] })).toBe(false);
@@ -116,9 +118,14 @@ describe("helper run record", () => {
     expect(parse(run({ error: { code: "crash", message: "x" } }))).toBe(false);
   });
 
-  it("refuses a done run without a result, or with the result of another helper", () => {
+  it("refuses a done run without a result, and an unknown helper id", () => {
     expect(parse(ended({ state: "done", endedAt: 2000 }))).toBe(false);
     expect(parse(ended({ ...done(), helperId: "other" }))).toBe(false);
+  });
+
+  it("refuses a phase on a run that has ended", () => {
+    expect(parse(ended({ ...done(), phase: "asking" }))).toBe(false);
+    expect(parse(ended({ state: "cancelled", endedAt: 2000, phase: "asking" }))).toBe(false);
   });
 
   it("refuses a failed run without an error, or a run with an error that did not fail", () => {
@@ -181,6 +188,16 @@ describe("check trial record", () => {
     expect(parse(trial({ commit: "4f9c2ab" }))).toBe(true);
     expect(parse(trial({ commit: "HEAD" }))).toBe(false);
     expect(parse(trial({ state: "failed", endedAt: 2000, error: { code: "worktree_failed", message: "No worktree." } }))).toBe(true);
+  });
+
+  it("follows the same state rules as a run: an end time exactly when not running, an error exactly when failed", () => {
+    expect(parse(trial({ state: "done", endedAt: 2000 }))).toBe(true);
+    expect(parse(trial({ state: "cancelled", endedAt: 1000 }))).toBe(true);
+    expect(parse(trial({ endedAt: 2000 }))).toBe(false);
+    expect(parse(trial({ state: "done" }))).toBe(false);
+    expect(parse(trial({ state: "done", endedAt: 999 }))).toBe(false);
+    expect(parse(trial({ state: "failed", endedAt: 2000 }))).toBe(false);
+    expect(parse(trial({ state: "done", endedAt: 2000, error: { code: "worktree_failed", message: "No worktree." } }))).toBe(false);
   });
 });
 

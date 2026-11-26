@@ -335,7 +335,11 @@ export const UsageReportSchema = z.strictObject({
   repos: z.array(z.strictObject({ repoId: RepoIdSchema.nullable(), tokens, costUsd: cost })).max(100).optional(),
   /** Present in the `all` scope. */
   scan: LogScanSchema.optional(),
-  /** Tokama's own helper calls over the range, most tokens first, whatever the scope. Absent from older engines. */
+  /**
+   * Tokama's own helper calls over the range, most tokens first, whatever the scope. Absent from
+   * older engines. A separate list: whether `totals` also count these calls is up to the engine,
+   * so a client must not add the two.
+   */
   helpers: z.array(z.strictObject({ helperId: HelperIdSchema, tokens: TokenUsageSchema, costUsd: cost, calls: z.int().nonnegative() })).max(20).optional(),
 });
 
