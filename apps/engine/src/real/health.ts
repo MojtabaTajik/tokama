@@ -20,7 +20,10 @@ export function machineChecks(runner: ProcessRunner, ghCommand?: readonly [strin
       ghStatus({ runner, timeoutMs: 8_000, ...(ghCommand !== undefined && { command: ghCommand }) }),
     ]);
     return {
-      git: version.ok ? { ok: true, version: version.value.slice(0, 100) } : { ok: false, message: version.error.message.slice(0, 1000) },
+      // A git that is too old still reports the version it printed; a git that is missing has none.
+      git: version.ok
+        ? { ok: true, version: version.value.slice(0, 100) }
+        : { ok: false, ...(version.error.found !== undefined && version.error.found !== "" && { version: version.error.found.slice(0, 100) }), message: version.error.message.slice(0, 1000) },
       clis: claude === undefined ? [] : [claude],
       gh: { installed: gh.installed, loggedIn: gh.loggedIn, ...(gh.message !== undefined && { message: gh.message }) },
     };
@@ -33,7 +36,11 @@ export function cachedChecks(checks: HealthChecks, now: () => number, maxAgeMs =
   return {
     get() {
       if (last === undefined || now() - last.at > maxAgeMs) {
-        const result = checks().catch((error: unknown) => ({ git: { ok: false, message: `The checks failed: ${String(error)}`.slice(0, 1000) }, clis: [] }));
+        // Checks that throw leave Claude Code unknown, not missing: the window then offers Check again.
+        const result = checks().catch((error: unknown): Omit<Health, "config"> => {
+          const message = `The checks failed: ${String(error)}`.slice(0, 1000);
+          return { git: { ok: false, message }, clis: [{ cliId: "claude-code", installed: false, loggedIn: false, timedOut: true, message }] };
+        });
         last = { at: now(), result };
       }
       return last.result;

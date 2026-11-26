@@ -2,6 +2,8 @@
 export { createClaudeCodeRuntime, type ClaudeCodeOptions } from "./runtime.js";
 // Installed and logged in, read-only.
 export { claudeCodeStatus, type ClaudeCodeStatusOptions } from "./status.js";
+// The oldest Claude Code that runs commands inside its sandbox; the window shows it in its checklist.
+export { SHELL_CALLS_FROM } from "./version.js";
 // Plan windows: Claude Code's own usage answer, then its cached copy.
 export { readClaudePlanCache, requestClaudePlan, type ClaudePlan, type ClaudePlanOptions } from "./plan-usage.js";
 // Usage on this machine from Claude Code's session logs: usage fields only, never message content.

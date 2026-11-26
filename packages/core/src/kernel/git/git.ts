@@ -99,6 +99,8 @@ export interface GitError {
   readonly message: string;
   /** git's stdout (capped), when git ran and failed: some commands report their result there. */
   readonly stdout?: string;
+  /** For `unsupported-version`: what `git --version` printed, e.g. "git version 2.37.1". */
+  readonly found?: string;
 }
 
 export type GitResult<T> = Result<T, GitError>;
@@ -677,6 +679,7 @@ export function createGit(options: GitOptions): Git {
           args,
           exitCode: 0,
           message: `git ${MIN_GIT_VERSION.major}.${MIN_GIT_VERSION.minor} or newer is required; found: ${out.value.trim()}`,
+          found: out.value.trim(),
         });
       }
       return ok(out.value.trim());
