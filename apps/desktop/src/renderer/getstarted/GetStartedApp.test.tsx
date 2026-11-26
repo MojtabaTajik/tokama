@@ -191,6 +191,19 @@ describe("a user who had work before", () => {
     expect(fake.saveLayout).toHaveBeenCalledWith({ getStarted: { done: true, lineClosed: true } });
   });
 
+  it("is set up for good by work that appears later (started from the CLI), so the list never comes back when that work is gone", async () => {
+    const { fake } = launch(healthy());
+    await mount(fake);
+    expect($(".gs")).not.toBeNull();
+    await fake.pushItem(ITEMS.queued);
+    expect($(".gs")).toBeNull();
+    expect(fake.saveLayout).toHaveBeenCalledWith({ getStarted: { done: true, lineClosed: false } });
+    // The item ends and nothing is left on the board: the list stays away.
+    await fake.pushItem({ ...ITEMS.queued, state: "done" } as ItemRecord);
+    expect($(".gs")).toBeNull();
+    expect($(".gs-line-done")).toBeNull();
+  });
+
   it("never gets the checklist back by itself, even when the AI CLI logs out", async () => {
     const { fake } = launch(healthy({ clis: [claude({ loggedIn: false })] }));
     await mount(fake, { initial: SETUP_DONE });

@@ -2,7 +2,7 @@ import { adapters, type CliHealth, type Health, MIN_GIT_VERSION, type RepoSummar
 import { describe, expect, it } from "vitest";
 import { isWebsiteUrl } from "../../main/policy.js";
 import { aiCliBlock, aiCliState, atLeast, type Checklist, checklist, type ChecklistInput, numberIn, QUICK_FIX_ID, type Row } from "./checklist.js";
-import { CLAUDE_CODE_MIN, GIT_MIN, LINKS, SAMPLE_TASK } from "./words.js";
+import { CLAUDE_CODE_MIN, COMMANDS, GIT_MIN, LINKS, SAMPLE_TASK } from "./words.js";
 
 const claude = (overrides: Partial<CliHealth> = {}): CliHealth => ({ cliId: "claude-code", installed: true, loggedIn: true, version: "2.1.332", ...overrides });
 const health = (parts: { git?: Health["git"]; cli?: CliHealth | undefined } = {}): Health => ({
@@ -43,6 +43,11 @@ describe("the pinned numbers", () => {
   it("match the engine's: git minimum and the Claude Code minimum", () => {
     expect(GIT_MIN).toBe(`${MIN_GIT_VERSION.major}.${MIN_GIT_VERSION.minor}`);
     expect(CLAUDE_CODE_MIN).toBe((adapters as Record<string, unknown>)["SHELL_CALLS_FROM"]);
+  });
+
+  it("the commands to sign in and to update are the engine's", () => {
+    expect(COMMANDS.login).toBe((adapters as Record<string, unknown>)["LOGIN_COMMAND"]);
+    expect(COMMANDS.update).toBe((adapters as Record<string, unknown>)["UPDATE_COMMAND"]);
   });
 
   it("only link to pages the main process may open", () => {
@@ -121,7 +126,16 @@ describe("step 1: the AI CLI", () => {
     expect([row.mark.symbol, row.word, row.done, textOf(row)]).toEqual(["◌", "Checking…", false, "Looking for an AI CLI on this computer."]);
   });
 
-  it("could not be checked when the setup failed, the CLI did not answer in time (never stuck on Checking…), or the engine named no AI CLI: warns with ! and offers Check again", () => {
+  it("shows a slow Claude Code with the engine's own words, not as a dead engine, and offers Check again", () => {
+    const message = "Claude Code didn't answer in time. Tokama checks again when you come back to the window.";
+    const row = first({ health: health({ cli: claude({ loggedIn: false, timedOut: true, message }) }) });
+    expect([row.mark.symbol, row.word, row.done]).toEqual(["!", "Could not check", false]);
+    expect(row.engineText).toBe(message);
+    expect(textOf(row)).toBe("");
+    expect(row.action).toEqual({ kind: "check-again", label: "Check again" });
+  });
+
+  it("could not be checked when the setup failed, the engine's checks failed as a whole (never stuck on Checking…), or the engine named no AI CLI: warns with ! and offers Check again", () => {
     const silent = health({ cli: claude({ installed: false, loggedIn: false, timedOut: true }) });
     for (const input of [{ checkFailed: true }, { health: silent }, { health: health({ cli: undefined }) }, { health: undefined }]) {
       const row = first(input);
@@ -183,6 +197,11 @@ describe("step 2: git", () => {
 
   it("says it could not read a version it found but cannot parse", () => {
     expect(textOf(second({ health: health({ git: { ok: false, version: "git version unknown", message: "x" } }) }))).toMatch(/^Tokama could not read the version of the git it found\. Tokama needs 2\.38 or newer/);
+  });
+
+  it("is still called missing when git is missing and only Claude Code is slow", () => {
+    const row = second({ health: health({ git: { ok: false, message: "git did not start" }, cli: claude({ loggedIn: false, timedOut: true, message: "slow" }) }) });
+    expect([row.word, row.command]).toEqual(["Not found", "brew install git"]);
   });
 
   it("is not called missing when the checks did not finish: the engine's checks threw", () => {

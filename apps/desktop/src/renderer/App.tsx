@@ -234,16 +234,18 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   };
   const hasWork = items.length > 0 || counts.some((row) => row.done + row.failed > 0);
   const setupDone = started.done || hasWork;
-  // A user who had work before this version: setup is done on the first load, and no "Setup done" line shows.
+  // Work that exists marks setup done for good, so the list never comes back when the work is gone
+  // from the board (the counts reach back 31 days). A user who had work before this version gets
+  // it on the first load, with no "Setup done" line; work that appears later (started from the CLI)
+  // leaves the line to the first item the window starts itself.
   const firstLoadSeen = useRef(false);
   useEffect(() => {
-    if (setup === undefined || stale || firstLoadSeen.current) return;
+    if (setup === undefined || stale) return;
+    const first = !firstLoadSeen.current;
     firstLoadSeen.current = true;
-    if (!started.done && hasWork) {
-      setStarted({ done: true, lineClosed: true });
-      void bridge.saveLayout({ getStarted: { done: true, lineClosed: true } }).catch(() => undefined);
-    }
-  }, [bridge, setup, stale, started.done, hasWork]);
+    if (!started.done && hasWork) saveStarted({ done: true, lineClosed: first });
+    // `saveStarted` only sets state and saves: it need not re-run this.
+  }, [setup, stale, started.done, hasWork]);
   // Opened again from Help > Get started, over the list of work.
   const [helpOpen, setHelpOpen] = useState(false);
   const openHelp = useRef<() => void>(() => undefined);
@@ -408,7 +410,8 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
       repoId={page === "board" && views.view.kind === "repo" ? views.view.id : undefined}
       onStarted={(itemId, begun) => {
         // The first item ends the checklist; the "Setup done" line follows it until it ends.
-        if (!started.done && started.firstItemId === undefined) {
+        // (The item's own event may have marked setup done already, without a line.)
+        if (started.firstItemId === undefined && !started.lineClosed) {
           lineWatch.current = { itemId, seen: false };
           saveStarted({ done: true, lineClosed: false, firstItemId: itemId });
         }

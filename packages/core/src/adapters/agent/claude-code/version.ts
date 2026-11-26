@@ -8,6 +8,9 @@ import type { ProcessRunner } from "../../../kernel/process/index.js";
  */
 export const SHELL_CALLS_FROM = "2.1.315";
 
+/** What a person types to update Claude Code. */
+export const UPDATE_COMMAND = "claude update";
+
 const VERSION_TIMEOUT_MS = 10_000;
 const VERSION_LINES = 20;
 
@@ -36,7 +39,7 @@ export function shellCallsProblem(version: string | undefined, why = "it printed
     return `Tokama could not read the Claude Code version (${why}), and steps that run commands need Claude Code ${SHELL_CALLS_FROM} or newer. Check that \`claude --version\` works, then retry the step.`;
   }
   if (compareVersions(version, SHELL_CALLS_FROM) >= 0) return undefined;
-  return `Claude Code ${SHELL_CALLS_FROM} or newer is needed to run commands inside its sandbox; this is Claude Code ${version}. Update Claude Code (for example with \`claude update\`), then retry the step.`;
+  return `Claude Code ${SHELL_CALLS_FROM} or newer is needed to run commands inside its sandbox; this is Claude Code ${version}. Update Claude Code (for example with \`${UPDATE_COMMAND}\`), then retry the step.`;
 }
 
 export type VersionRead = { readonly kind: "version"; readonly version: string } | { readonly kind: "aborted" } | { readonly kind: "unknown"; readonly why: string };

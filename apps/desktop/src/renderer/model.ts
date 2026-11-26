@@ -415,7 +415,8 @@ export function healthProblemsOf(health: Health | undefined, toolsPath?: ToolsPa
   }
   if (health === undefined) return path;
   const git = health.git.ok ? [] : [{ title: "git cannot be used", detail: health.git.message ?? "git did not answer." }];
-  const slow = health.clis.filter((cli) => cli.timedOut === true).map((cli) => ({ title: `${cliName(cli.cliId)} didn't answer`, detail: cli.message ?? "The check did not finish in time." }));
+  // A timeout with no CLI there is the engine's checks failing as a whole: the git problem already says so.
+  const slow = health.clis.filter((cli) => cli.timedOut === true && cli.installed).map((cli) => ({ title: `${cliName(cli.cliId)} didn't answer`, detail: cli.message ?? "The check did not finish in time." }));
   return [...path, ...git, ...slow, ...health.config.map((problem) => ({ title: `${problem.file} did not load`, detail: problem.message }))];
 }
 

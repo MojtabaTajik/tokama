@@ -42,7 +42,7 @@ import { recordingShow, systemShow } from "./system-notification.js";
 import { openTemplateFile } from "./template-file.js";
 import { notesDir, pathExists, whatsNewService } from "./whats-new.js";
 import { fitBounds, trackWindow } from "./window-state.js";
-import { backgroundModeEnabled, DOCS_URL, devServerUrl, diagnosticsUrl, e2eEnabled, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, sampleEngineEnabled, secureWebPreferences } from "./policy.js";
+import { backgroundModeEnabled, DOCS_URL, devServerUrl, diagnosticsUrl, e2eEnabled, guardedHandler, isAppUrl, isDevToolsUrl, sampleEngineEnabled, secureWebPreferences, websiteHref } from "./policy.js";
 import type { UpdateState } from "../shared/update.js";
 
 const rendererDir = join(import.meta.dirname, "..", "renderer");
@@ -72,7 +72,8 @@ app.on("web-contents-created", (_event, contents) => {
   contents.on("will-attach-webview", (event) => event.preventDefault());
   // No window opens. A link to the product site or one of its docs pages goes to the system browser.
   contents.setWindowOpenHandler(({ url }) => {
-    if (isWebsiteUrl(url)) void shell.openExternal(url);
+    const href = websiteHref(url);
+    if (href !== undefined) void shell.openExternal(href);
     return { action: "deny" };
   });
 });

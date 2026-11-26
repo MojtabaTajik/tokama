@@ -90,14 +90,16 @@ export type AiCliState =
   | { readonly kind: "logged_out"; readonly version: string | undefined }
   | { readonly kind: "too_old"; readonly version: string }
   | { readonly kind: "needs_fix"; readonly version: string | undefined; readonly message: string }
+  /** Claude Code is there but did not answer in time: the engine's own words say so. */
+  | { readonly kind: "slow"; readonly message: string | undefined }
   | { readonly kind: "could_not_check" };
 
 /** Where the AI CLI stands, from the engine's health of Claude Code (the one AI CLI Tokama runs for now). */
 export function aiCliState(health: Health | undefined): AiCliState {
   const cli: CliHealth | undefined = health?.clis.find((entry) => entry.cliId === "claude-code");
   if (cli === undefined) return { kind: "could_not_check" };
-  // A CLI that did not answer in time is not known, and stays so until a check gets an answer: say so, and offer Check again.
-  if (cli.timedOut === true) return { kind: "could_not_check" };
+  // A timeout with the CLI there is a slow CLI. One without it is the engine's checks failing as a whole (the engine reports them that way). Neither is known until a check gets an answer.
+  if (cli.timedOut === true) return cli.installed ? { kind: "slow", message: cli.message } : { kind: "could_not_check" };
   if (!cli.installed) return { kind: "not_installed" };
   const version = numberIn(cli.version);
   if (!cli.loggedIn) return { kind: "logged_out", version };
@@ -147,6 +149,8 @@ function aiCliRow(input: ChecklistInput): Row {
   switch (state.kind) {
     case "could_not_check":
       return row("ai-cli", title, markOf("warning"), WORDS.couldNotCheck, { detail: [TEXT.cliCouldNot], action: recheck });
+    case "slow":
+      return row("ai-cli", title, markOf("warning"), WORDS.couldNotCheck, { detail: [], ...(state.message !== undefined && { engineText: state.message }), action: recheck });
     case "not_installed":
       return row("ai-cli", title, FAILED, WORDS.notInstalled, { detail: [TEXT.cliNone], action: { kind: "link", label: TEXT.cliInstall, href: LINKS.installClaudeCode } });
     case "logged_out":
@@ -166,8 +170,8 @@ function aiCliRow(input: ChecklistInput): Row {
 function gitRow(input: ChecklistInput): Row {
   const title = TITLES.git;
   const { health, mac } = input;
-  // Checks that did not finish (the engine marks Claude Code as not answering) say nothing about git either.
-  const unfinished = !health?.git.ok && health?.git.version === undefined && health?.clis.some((cli) => cli.timedOut === true) === true;
+  // The engine's checks failed as a whole (it reports Claude Code as not answering and not there): that says nothing about git. A slow Claude Code does not.
+  const unfinished = !health?.git.ok && health?.git.version === undefined && health?.clis.some((cli) => cli.timedOut === true && !cli.installed) === true;
   if (input.checkFailed || health === undefined || unfinished) {
     return row("git", title, markOf("warning"), WORDS.couldNotCheck, { detail: [TEXT.gitCouldNot], action: { kind: "check-again", label: TEXT.checkAgain } });
   }

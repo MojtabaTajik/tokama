@@ -137,11 +137,19 @@ export const WEBSITE_URLS: ReadonlySet<string> = new Set([
 /** The docs start page, which Help > Tokama docs opens. */
 export const DOCS_URL = "https://tokama.dev/docs/";
 
-/** Whether `url` is exactly one of the pages in `WEBSITE_URLS` (no other host, path, query, fragment or credentials). */
-export function isWebsiteUrl(url: string): boolean {
+/**
+ * The checked, parsed address of `url` when it is exactly one of the pages in `WEBSITE_URLS` (no
+ * other host, path, query, fragment or credentials); undefined otherwise. Open this string, not
+ * the one that was given: it is the one that was checked.
+ */
+export function websiteHref(url: string): string | undefined {
   try {
-    return WEBSITE_URLS.has(new URL(url).href);
+    const { href } = new URL(url);
+    return WEBSITE_URLS.has(href) ? href : undefined;
   } catch {
-    return false;
+    return undefined;
   }
 }
+
+/** Whether `url` is exactly one of the pages in `WEBSITE_URLS`. */
+export const isWebsiteUrl = (url: string): boolean => websiteHref(url) !== undefined;
