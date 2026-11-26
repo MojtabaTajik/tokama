@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { connect, type EngineClient } from "@tokama/client";
 import { manualClock, type UsageRange, type UsageScope } from "@tokama/core";
 import { afterEach, describe, expect, it } from "vitest";
@@ -66,5 +67,13 @@ describe("usage from the item logs", () => {
     let text = JSON.stringify(reports, null, 2);
     [...items].sort((a, b) => a.title.localeCompare(b.title)).forEach((item, n) => (text = text.replaceAll(item.id, `item-${n}`)));
     await expect(`${text}\n`).toMatchFileSnapshot("./usage-from-logs.golden.json");
+
+    // The database is upgraded in place: the call rows are gone, the data that is not in the logs stays.
+    const raw = new DatabaseSync(join(home, "tokama.db"), { readOnly: true });
+    cleanups.push(() => raw.close());
+    expect(raw.prepare("PRAGMA user_version").get()).toEqual({ user_version: 5 });
+    expect(raw.prepare("SELECT name FROM sqlite_master WHERE name = 'usage_calls'").all()).toEqual([]);
+    expect(raw.prepare("SELECT cli_id FROM plan_samples").all()).toEqual([{ cli_id: "claude-code" }]);
+    expect(raw.prepare("SELECT key FROM claude_local_messages ORDER BY key").all()).toEqual([{ key: "req_1" }, { key: "req_2" }]);
   });
 });

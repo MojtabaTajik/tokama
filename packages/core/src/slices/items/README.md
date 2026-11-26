@@ -9,4 +9,4 @@ Item storage: each item's append-only event log (`<home>/items/<id>/events.jsonl
 - Events carry the host id and the UTC time. Records hold no absolute paths or user names.
 - On start, a step that was running becomes a run failure (not counted) with a Retry step / Stop decision. Its leftover processes are killed through the kernel's `killLeftoverTree`, which checks the boot time and the start time first.
 
-The usage index (SQLite) lives in the engine app. It is derived from these logs and can be rebuilt from them.
+Usage per call is read from these logs. The engine app's SQLite database holds only what is not in them: plan samples and Claude Code's own usage.

@@ -15,7 +15,7 @@
 // Threat model: local desktop, no network listener.
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { chmodSync, closeSync, mkdirSync, openSync, readFileSync, unlinkSync } from "node:fs";
-// eslint-disable-next-line no-restricted-imports -- the engine lock is created exclusively (O_EXCL), which is the lock itself; renameSync moves a damaged usage index aside.
+// eslint-disable-next-line no-restricted-imports -- the engine lock is created exclusively (O_EXCL), which is the lock itself; renameSync moves a damaged usage database aside.
 import { renameSync, writeSync } from "node:fs";
 import { connect, createServer, type Server, type Socket } from "node:net";
 import { homedir } from "node:os";
@@ -98,7 +98,7 @@ import {
   loadHostId,
   posixProcessTable,
   type ProcessTable,
-  type StoredItem,
+  type ItemId,
   type Agent,
   type AgentRuntime,
   type ProcessRunner,
@@ -121,7 +121,7 @@ import { openSampleDiagnostics } from "./sample/diagnostics.js";
 import { sampleMachineReport } from "./sample/machine.js";
 import { sampleClaudePlan, sampleHelperCalls, sampleLogEntries, sampleOtherPlans, sampleUsageRows } from "./sample/usage.js";
 import { ClaudeLogs } from "./claude-logs.js";
-import { claudePlanSources, type PlanSources, UsageService } from "./usage.js";
+import { claudePlanSources, type PlanSources, UsageService, usageRowsOf } from "./usage.js";
 import { MemoryItemStore } from "./store.js";
 import { templateDetail, templateEntries, type TemplateFiles } from "./templates.js";
 
@@ -138,7 +138,7 @@ export interface EngineOptions {
   /** With `sampleHistory`: serve only the history, without the sample's own items. */
   readonly sampleHistoryOnly?: boolean;
   /**
-   * Tokama's home folder (`~/.tokama`): item logs in `items/`, the usage index in `tokama.db`, and
+   * Tokama's home folder (`~/.tokama`): item logs in `items/`, the usage database in `tokama.db`, and
    * `repos.yaml`. Without it nothing is stored; in sample mode only repos.yaml is.
    */
   readonly home?: string;
@@ -232,7 +232,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   // different engine dirs can share a home, so the engine dir's lock does not cover it.
   let storage: Storage | undefined;
   let diagnostics: EngineDiagnostics | undefined;
-  // Set once events can go out; the index calls it when it records new agent calls.
+  // Set once events can go out; the storage calls it when an item records new agent calls.
   let usageRecorded = () => {};
   // Set once events can go out; diagnostics call it when a crash is recorded or the settings change.
   let diagnosticsChanged = () => {};
@@ -393,7 +393,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
           onChange: usageChanged,
         }
       : {
-          rows: (since) => index?.usageRows(since) ?? [],
+          rows: (since) => (storage === undefined ? [] : usageRowsOf(storage.items.list(), since)),
           ...(index !== undefined && { samples: { get: (cliId) => index.planSample(cliId), save: (cliId, reading) => index.savePlanSample(cliId, reading) } }),
           sources: options.planSources ?? claudePlanSources(usageAbort.signal),
           ...(claudeLogs !== undefined && { logs: claudeLogs }),
@@ -925,14 +925,13 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
 
 interface Storage {
   readonly items: ItemStore;
-  /** The usage index, rebuilt from the item logs. */
+  /** The usage database: plan samples and Claude Code's usage. The recorded calls are in `items`. */
   readonly index: ItemIndex;
   close(): void;
 }
 
-/** Loads the item logs and rebuilds the usage index from them. The index follows every change after that. */
+/** Loads the item logs and opens the usage database. Tells `onUsage` when an item records a new call. */
 async function openStorage(home: string, clock: Clock, log: (message: string) => void, onUsage: () => void, diagnostics?: EngineDiagnostics): Promise<Result<Storage, StartError>> {
-  let index: ItemIndex | undefined;
   try {
     const hostId = loadHostId(home, clock);
     if (!hostId.ok) return err({ code: "start_failed", message: hostId.error });
@@ -941,48 +940,38 @@ async function openStorage(home: string, clock: Clock, log: (message: string) =>
       log(`item ${problem.itemId} is not loaded: ${problem.message}`);
       diagnostics?.store.warning("engine", "item_not_loaded");
     }
-    index = openIndex(join(home, "tokama.db"), items.list(), clock, log, () => diagnostics?.store.warning("engine", "index_rebuilt"));
-    const opened = index;
+    const index = openIndex(join(home, "tokama.db"), clock, log, () => diagnostics?.store.warning("engine", "index_rebuilt"));
+    // Calls recorded per item, counted at open so that loading tells nobody.
+    const calls = new Map<ItemId, number>(items.list().map((item) => [item.id, item.calls?.length ?? 0]));
     const unsubscribe = items.subscribe((item) => {
-      // The event is on disk already; a failed index write must not fail the append.
-      try {
-        if (opened.put(item) > 0) onUsage();
-      } catch (error) {
-        log(`cannot update the usage index for ${item.id}: ${String(error)}`);
-        diagnostics?.store.error("engine", "storage", error);
-      }
+      const now = item.calls?.length ?? 0;
+      const before = calls.get(item.id) ?? 0;
+      calls.set(item.id, now);
+      if (now > before) onUsage();
     });
     return ok({
       items,
-      index: opened,
+      index,
       close: () => {
         unsubscribe();
-        opened.close();
+        index.close();
       },
     });
   } catch (error) {
-    index?.close();
     return err({ code: "start_failed", message: `cannot open item storage in ${home}: ${String(error)}` });
   }
 }
 
 /**
- * Opens the usage index and rebuilds it from the logs. A database that cannot be opened or
- * rebuilt is moved aside with its -wal and -shm files (it holds only derived data) and made anew.
+ * Opens the usage database. One that cannot be opened is moved aside with its -wal and -shm
+ * files and made anew: plan samples are read from the CLI again, Claude Code's usage from its logs.
  */
-function openIndex(file: string, items: readonly StoredItem[], clock: Clock, log: (message: string) => void, onRebuild: () => void): ItemIndex {
+function openIndex(file: string, clock: Clock, log: (message: string) => void, onRebuild: () => void): ItemIndex {
   try {
-    const index = ItemIndex.open(file);
-    try {
-      index.rebuild(items);
-      return index;
-    } catch (error) {
-      index.close();
-      throw error;
-    }
+    return ItemIndex.open(file);
   } catch (error) {
     const aside = `${file}.damaged-${clock.now()}`;
-    log(`the usage index ${file} is damaged (${String(error)}); moving it to ${aside} and rebuilding it`);
+    log(`the usage database ${file} is damaged (${String(error)}); moving it to ${aside} and making a new one`);
     onRebuild();
     for (const suffix of ["", "-wal", "-shm"]) {
       try {
@@ -991,9 +980,7 @@ function openIndex(file: string, items: readonly StoredItem[], clock: Clock, log
         if (!hasCode(moveError, "ENOENT")) throw moveError;
       }
     }
-    const index = ItemIndex.open(file);
-    index.rebuild(items);
-    return index;
+    return ItemIndex.open(file);
   }
 }
 

@@ -39,7 +39,7 @@ const WHERE_WORD = {
 } as const;
 const WARNING_WORD = {
   item_not_loaded: "An item's log did not load",
-  index_rebuilt: "The board index was rebuilt",
+  index_rebuilt: "The usage database was rebuilt",
   renderer_unresponsive: "The window stopped answering for a while",
   update_check_failed: "The check for an update failed",
   update_download_failed: "The download of an update failed",

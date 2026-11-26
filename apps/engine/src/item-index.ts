@@ -1,30 +1,17 @@
-// The usage index in `<home>/tokama.db`, SQLite through Node's built-in node:sqlite: one row per
-// recorded agent call. Only the engine writes it. The call rows are derived from the item logs, so
-// the engine rebuilds them from the logs on every start, and a database of another schema version
-// is simply recreated (version 3 only drops its old `items` table and keeps the rest). Plan
-// samples (the windows an AI CLI reported on request) are kept only here: they are the CLI's data,
-// read again when lost.
-// Claude Code's usage from its session logs is a separate source (`claude_local_*`): numbers per
-// message and where each log was read up to, never text or paths. The call rebuild leaves it
-// alone; it is rebuilt by reading the logs again.
+// The usage database in `<home>/tokama.db`, SQLite through Node's built-in node:sqlite. It holds
+// only what the item logs do not: plan samples (the windows an AI CLI reported on request, the
+// CLI's data, read again when lost) and Claude Code's usage from its session logs (`claude_local_*`:
+// numbers per message and where each log was read up to, never text or paths; rebuilt by reading
+// the logs again). Only the engine writes it. A database of another schema version is recreated;
+// version 3 and 4 only drop the tables that were derived from the item logs and keep the rest.
 // Extension loading stays off (the default).
 import { closeSync, constants, openSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import {
-  type AgentCallUsage,
-  type AiCliId,
-  localDate,
-  type ItemId,
-  type PlanReading,
-  type RepoId,
-  type StoredItem,
-  type TokenUsage,
-  type UsageRow,
-} from "@tokama/core";
+import { type AiCliId, localDate, type PlanReading, type RepoId, type TokenUsage } from "@tokama/core";
 
-export const INDEX_SCHEMA_VERSION = 4;
+export const INDEX_SCHEMA_VERSION = 5;
 
-// "items" stays so a database of version 1 or 2 loses that table too.
+// "items" and "usage_calls" stay so a database of an older version loses those tables too.
 
 const TABLES = ["items", "usage_calls", "plan_samples", "claude_local_messages", "claude_local_files", "claude_local_projects"];
 
@@ -51,16 +38,6 @@ export interface LocalDayRow {
 }
 
 const CREATE = `
-  CREATE TABLE usage_calls (
-    call_id TEXT PRIMARY KEY,
-    item_id TEXT NOT NULL,
-    title TEXT NOT NULL,
-    template_ref TEXT NOT NULL,
-    repo_id TEXT,
-    ended_at INTEGER NOT NULL,
-    record TEXT NOT NULL
-  ) STRICT;
-  CREATE INDEX usage_calls_ended_at ON usage_calls (ended_at);
   CREATE TABLE plan_samples (
     cli_id TEXT PRIMARY KEY,
     as_of INTEGER NOT NULL,
@@ -99,10 +76,11 @@ export class ItemIndex {
     try {
       db.exec("PRAGMA journal_mode = WAL");
       const version = (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
-      if (version === 3) {
-        // Only the items table is unused now; the plan samples and Claude Code usage stay.
+      if (version === 3 || version === 4) {
+        // Only the tables derived from the item logs go; the plan samples and Claude Code usage stay.
         db.exec("BEGIN");
         db.exec("DROP TABLE IF EXISTS items");
+        db.exec("DROP TABLE IF EXISTS usage_calls");
         db.exec(`PRAGMA user_version = ${INDEX_SCHEMA_VERSION}`);
         db.exec("COMMIT");
       } else if (version !== INDEX_SCHEMA_VERSION) {
@@ -117,32 +95,6 @@ export class ItemIndex {
       throw error;
     }
     return new ItemIndex(db);
-  }
-
-  /** Replaces every call row with rows for these items, in one transaction. */
-  rebuild(items: readonly StoredItem[]): void {
-    this.transaction(() => {
-      this.db.exec("DELETE FROM usage_calls");
-      for (const item of items) this.put(item);
-    });
-  }
-
-  /** The recorded calls that ended at or after `since`, oldest first. */
-  usageRows(since: number): UsageRow[] {
-    const rows = this.db.prepare("SELECT item_id, title, template_ref, repo_id, record FROM usage_calls WHERE ended_at >= ? ORDER BY ended_at, call_id").all(since) as unknown as {
-      item_id: string;
-      title: string;
-      template_ref: string;
-      repo_id: string | null;
-      record: string;
-    }[];
-    return rows.map((row) => ({
-      itemId: row.item_id as ItemId,
-      title: row.title,
-      templateId: row.template_ref,
-      ...(row.repo_id !== null && { repoId: row.repo_id as RepoId }),
-      call: JSON.parse(row.record) as AgentCallUsage,
-    }));
   }
 
   /** Where the last read of a Claude Code log ended. */
@@ -226,22 +178,6 @@ export class ItemIndex {
 
   close(): void {
     this.db.close();
-  }
-
-  /**
-   * Writes the item's new call rows, or removes them once the item is deleted.
-   * Returns how many calls were new.
-   */
-  put(item: StoredItem): number {
-    if (item.deleted) {
-      this.db.prepare("DELETE FROM usage_calls WHERE item_id = ?").run(item.id);
-      return 0;
-    }
-    let added = 0;
-    const insert = this.db.prepare("INSERT OR IGNORE INTO usage_calls (call_id, item_id, title, template_ref, repo_id, ended_at, record) VALUES (?, ?, ?, ?, ?, ?, ?)");
-    const repoId = item.repoIds[0] ?? null;
-    for (const call of item.calls ?? []) added += Number(insert.run(call.callId, item.id, item.title, item.templateRef, repoId, call.endedAt, JSON.stringify(call)).changes);
-    return added;
   }
 
   private transaction(work: () => void): void {
