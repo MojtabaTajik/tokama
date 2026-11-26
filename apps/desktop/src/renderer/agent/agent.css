@@ -125,14 +125,8 @@
 .al-cli {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 20px;
-  border-radius: var(--radius-sm);
-  background: var(--raised);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: 600;
+  gap: var(--space-6);
+  white-space: nowrap;
   color: var(--text-2);
 }
 

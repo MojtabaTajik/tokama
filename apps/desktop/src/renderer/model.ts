@@ -2,6 +2,7 @@
 // and board columns. Pure functions that take the clock as an argument, so they are tested
 // without React or a real time.
 import type { AgentSummary, AiCliId, BoardCount, Health, ItemRecord, StepRecord, TemplateSummary } from "@tokama/core";
+import { BACKEND_IDS, backendOf } from "./brand/backends/index.js";
 import { itemMark, stepAgent, type StepAgent, stepMark } from "./drawer/describe.js";
 import { itemTotal } from "./drawer/progress-view.js";
 import { formatDuration } from "./format/duration.js";
@@ -395,10 +396,6 @@ export const LOGIN_COMMANDS: Readonly<Record<LoginCliId, string>> = {
 };
 
 /** The AI CLIs the rail's Insights tooltip lists, with their names. */
-export const AI_CLIS: readonly { readonly id: AiCliId; readonly name: string }[] = [
-  { id: "claude-code", name: "Claude Code" },
-  { id: "codex-cli", name: "Codex CLI" },
-  { id: "ollama", name: "Ollama" },
-];
+export const AI_CLIS: readonly { readonly id: AiCliId; readonly name: string }[] = BACKEND_IDS.map((id) => ({ id, name: backendOf(id).name }));
 
 export const cliName = (id: AiCliId): string => AI_CLIS.find((cli) => cli.id === id)?.name ?? id;

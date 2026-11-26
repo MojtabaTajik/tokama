@@ -164,7 +164,7 @@ describe("Rail: Insights tooltip", () => {
     const health = { ...setup.health, clis: [{ cliId: "claude-code" as const, installed: true, loggedIn: true, version: "2.1.331" }] };
     render({ setup: { ...setup, health }, onSelectItem, onCliSettings });
     const tip = container.querySelector(".insights-tip")!;
-    expect(tip.querySelector(".it-status")?.textContent).toBe("CCClaude Code✓ logged in · version 2.1.331");
+    expect(tip.querySelector(".it-status")?.textContent).toBe("Claude Code✓ logged in · version 2.1.331");
     const today = tip.querySelector('[aria-label="Today"]');
     expect([...(today?.querySelectorAll(".it-item") ?? [])].map((row) => [...row.children].map((cell) => cell.textContent))).toEqual([
       [ITEMS.verifying.title, "141k", "26 m", "Architect · Reviewer"],

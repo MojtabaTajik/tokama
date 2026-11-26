@@ -1,4 +1,4 @@
-// Accounts and limits: one card per AI CLI with its monogram, plan badge (the plan's name only),
+// Accounts and limits: one card per AI CLI with its icon, plan badge (the plan's name only),
 // login state and version, a meter per limit with a countdown to its reset, the CLI's note, and
 // where the numbers came from. A meter's fill takes its level's colour, with a symbol or a word
 // beside it, never colour alone. The key under the cards says what each colour means.
@@ -7,7 +7,8 @@ import { AI_CLIS, type CliIssue } from "../model.js";
 import { Meter, MeterKey } from "./Meter.js";
 import { formatDuration } from "../format/duration.js";
 import { stamp } from "../format/time.js";
-import { ageText, ALERT_TEXT, cardLabel, CLI_MONOGRAMS, liveWindows, resetWhen, shareText, SOURCE_TEXT } from "./usage-model.js";
+import { ageText, ALERT_TEXT, cardLabel, liveWindows, resetWhen, shareText, SOURCE_TEXT } from "./usage-model.js";
+import { BackendMark } from "../ui/agent.js";
 import { Button } from "../ui/Button.js";
 import { Pill } from "../ui/Pill.js";
 
@@ -81,7 +82,7 @@ function AccountCard({ name, plan, setup, issue, now }: AccountCardProps) {
     <article className="ins-card" aria-label={name}>
       <header className="ins-card-head">
         <span className="monogram" aria-hidden="true">
-          {CLI_MONOGRAMS[plan.cliId]}
+          <BackendMark cliId={plan.cliId} size={16} />
         </span>
         <span className="ins-card-name">
           <span className="ins-card-title">

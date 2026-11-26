@@ -1,18 +1,12 @@
-// The words the Agents page uses for an agent: its CLI monogram, its one-line summary, its tool
-// limits and its owner. Backends show as text monograms, never as logos.
+// The words the Agents page uses for an agent: its one-line summary, its tool limits and its owner.
 import type { AgentDetail, AgentOwner, BrokenAgentDetail } from "@tokama/core";
+import { backendOf } from "../brand/backends/index.js";
 import { cliName } from "../model.js";
 
-type CliId = AgentDetail["cliId"];
-
-const MONOGRAMS: Readonly<Record<CliId, string>> = { "claude-code": "CC", "codex-cli": "CX", ollama: "OL" };
-
-export const monogram = (cliId: CliId): string => MONOGRAMS[cliId];
-
-/** "CC · opus · cloud", or "OL · qwen3-coder:30b · this machine · via CC" for a local model. */
+/** "opus · cloud", or "qwen3-coder:30b · this machine · via Claude Code" for a local model. The screen puts the CLI's mark before it. */
 export function summaryLine(agent: AgentDetail): string {
-  const parts = [monogram(agent.cliId), agent.model, agent.runsOn === "local" ? "this machine" : "cloud"];
-  if (agent.drivenBy !== undefined) parts.push(`via ${monogram(agent.drivenBy)}`);
+  const parts = [agent.model, agent.runsOn === "local" ? "this machine" : "cloud"];
+  if (agent.drivenBy !== undefined) parts.push(`via ${cliName(agent.drivenBy)}`);
   return parts.join(" · ");
 }
 
@@ -72,7 +66,7 @@ export function filterRows(rows: readonly AgentRow[], query: string): AgentRow[]
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (words.length === 0) return [...rows];
   return rows.filter((row) => {
-    const haystack = (row.broken ? [row.entry.id, row.entry.source] : [row.agent.name, row.agent.id, row.agent.model, row.agent.source, monogram(row.agent.cliId)]).join(" ").toLowerCase();
+    const haystack = (row.broken ? [row.entry.id, row.entry.source] : [row.agent.name, row.agent.id, row.agent.model, row.agent.source, backendOf(row.agent.cliId).name, backendOf(row.agent.cliId).monogram]).join(" ").toLowerCase();
     return words.every((word) => haystack.includes(word));
   });
 }

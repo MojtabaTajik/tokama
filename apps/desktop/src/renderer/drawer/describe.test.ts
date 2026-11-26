@@ -49,9 +49,9 @@ describe("stepPosition", () => {
 
 describe("stepAgent", () => {
   it("gives the first three agents their join-order dot, later ones the neutral dot", () => {
-    expect(stepAgent({ agentId: "architect" as never, data: "none" }, agents)).toEqual({ name: "Architect", dot: 1, runsOn: "cloud" });
+    expect(stepAgent({ agentId: "architect" as never, data: "none" }, agents)).toEqual({ name: "Architect", dot: 1, runsOn: "cloud", cliId: "claude-code" });
     expect(stepAgent({ agentId: "reviewer" as never, data: "none" }, agents).dot).toBe(3);
-    expect(stepAgent({ agentId: "local-builder" as never, data: "none" }, agents)).toEqual({ name: "Local builder", dot: "neutral", runsOn: "local" });
+    expect(stepAgent({ agentId: "local-builder" as never, data: "none" }, agents)).toEqual({ name: "Local builder", dot: "neutral", runsOn: "local", cliId: "claude-code" });
   });
 
   it("names Tokama for a step without an agent", () => {
