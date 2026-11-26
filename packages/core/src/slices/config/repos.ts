@@ -29,6 +29,8 @@ export const DEFAULT_WORKTREE_FOLDER = ".tokama/wt";
 
 // Branch names and remotes reach git as arguments: nothing that reads as an option or a range.
 export const BRANCH = /^(?![-+/.])(?!.*\.\.)(?!.*\/\/)(?!.*@\{)(?!(?:@|HEAD)$)[A-Za-z0-9._/@+-]+(?<![/.])(?<!\.lock)$/;
+/** The most characters a base branch name may have: the setup query's summary carries it. */
+export const MAX_BRANCH = 100;
 // No whitespace and no control characters (NUL included).
 const REMOTE = /^(?!-)[^\s\p{Cc}]+$/u;
 

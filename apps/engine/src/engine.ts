@@ -74,6 +74,8 @@ import {
   readPidFile,
   replaceTextSync,
   removeRepo,
+  repoBranches,
+  type RepoBranchesResult,
   type RepoEditError,
   type Result,
   suggestRepo,
@@ -684,8 +686,20 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
         if (options.home === undefined) return { ok: false, error: { code: "not_implemented", message: "this engine has no Tokama home folder for repos.yaml" } };
         const suggested = await suggestRepo(repoOptions(options.home), query.path);
         if (!suggested.ok) return { ok: false, error: suggested.error };
-        const { path, displayPath, gitRepo, hasCommits, branch, id, checks, checksFrom, branches, fallbackCheck, fallbackFromPackage, firstCommit, problem } = suggested.value;
-        return { ok: true, data: { path, displayPath, gitRepo, hasCommits, branch: branch ?? null, id: id ?? null, checks: [...checks], checksFrom: [...checksFrom], branches: [...branches], fallbackCheck: fallbackCheck ?? null, fallbackFromPackage, firstCommit: firstCommit === undefined ? null : { files: firstCommit.files, bytes: firstCommit.bytes, sample: firstCommit.sample.map((file) => ({ ...file })), more: [...firstCommit.more], addsGitignore: firstCommit.addsGitignore, leftOut: firstCommit.leftOut.map((entry) => ({ ...entry })), refusal: firstCommit.refusal ?? null }, problem: problem ?? null } satisfies SuggestRepoResult };
+        const { path, displayPath, gitRepo, hasCommits, branch, id, checks, checksFrom, defaultBranch, branches, moreBranches, fallbackCheck, fallbackFromPackage, firstCommit, problem } = suggested.value;
+        return { ok: true, data: { path, displayPath, gitRepo, hasCommits, branch: branch ?? null, id: id ?? null, checks: [...checks], checksFrom: [...checksFrom], defaultBranch: defaultBranch ?? null, branches: branches.map((entry) => ({ ...entry })), moreBranches, fallbackCheck: fallbackCheck ?? null, fallbackFromPackage, firstCommit: firstCommit === undefined ? null : { files: firstCommit.files, bytes: firstCommit.bytes, sample: firstCommit.sample.map((file) => ({ ...file })), more: [...firstCommit.more], addsGitignore: firstCommit.addsGitignore, leftOut: firstCommit.leftOut.map((entry) => ({ ...entry })), refusal: firstCommit.refusal ?? null }, problem: problem ?? null } satisfies SuggestRepoResult };
+      }
+      case "repo_branches": {
+        // A sample repo has no folder: its base branch is the only choice.
+        const sampleRepo = sample?.setup.repos.find((repo) => repo.id === query.repoId);
+        if (sampleRepo !== undefined) {
+          return { ok: true, data: { defaultBranch: sampleRepo.baseBranch, branches: [{ name: sampleRepo.baseBranch, group: "default" }], moreBranches: 0 } satisfies RepoBranchesResult };
+        }
+        if (options.home === undefined) return { ok: false, error: { code: "not_implemented", message: "this engine has no Tokama home folder for repos.yaml" } };
+        const found = await repoBranches(repoOptions(options.home), query.repoId);
+        if (!found.ok) return { ok: false, error: found.error };
+        const { defaultBranch, branches, more } = found.value;
+        return { ok: true, data: { defaultBranch: defaultBranch ?? null, branches: branches.map((entry) => ({ ...entry })), moreBranches: more } satisfies RepoBranchesResult };
       }
       case "agents_list":
         if (options.home === undefined) return { ok: false, error: { code: "not_implemented", message: "this engine has no Tokama home folder for agents" } };

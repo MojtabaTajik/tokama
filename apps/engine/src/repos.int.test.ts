@@ -59,10 +59,13 @@ describe("repo commands", () => {
 
     expect(await client.query({ type: "suggest_repo", path })).toEqual({
       ok: true,
-      data: { path, displayPath: path, gitRepo: true, hasCommits: true, branch: "main", id: "billing-api", checks: ["pnpm test"], checksFrom: ["test"], branches: ["main"], fallbackCheck: null, fallbackFromPackage: false, firstCommit: null, problem: null },
+      data: { path, displayPath: path, gitRepo: true, hasCommits: true, branch: "main", id: "billing-api", checks: ["pnpm test"], checksFrom: ["test"], defaultBranch: "main", branches: [{ name: "main", group: "default" }], moreBranches: 0, fallbackCheck: null, fallbackFromPackage: false, firstCommit: null, problem: null },
     });
     expect(await client.command({ type: "add_repo", path, checks: ["pnpm test"] })).toEqual({ ok: true, data: { repo: { id: "billing-api", baseBranch: "main", checks: ["pnpm test"] } } });
     await waitFor(() => events.some((event) => event.kind === "event" && event.event.type === "setup_changed"), 5_000, "setup_changed");
+    expect(await client.query({ type: "repo_branches", repoId: "billing-api" })).toEqual({ ok: true, data: { defaultBranch: "main", branches: [{ name: "main", group: "default" }], moreBranches: 0 } });
+    expect(await client.query({ type: "repo_branches", repoId: "inventory-service" })).toEqual({ ok: true, data: { defaultBranch: "develop", branches: [{ name: "develop", group: "default" }], moreBranches: 0 } });
+    expect(await client.query({ type: "repo_branches", repoId: "nope" })).toMatchObject({ ok: false, error: { code: "not_found" } });
     // The sample repos first, then the repos of repos.yaml.
     expect(await repoIds(client)).toEqual(["orders-api", "checkout-web", "inventory-service", "billing-api"]);
     expect(readFileSync(join(home, "repos.yaml"), "utf8")).toContain(`path: ${path}`);

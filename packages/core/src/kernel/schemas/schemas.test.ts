@@ -411,12 +411,33 @@ describe("check command length", () => {
     expect(parseCommand({ type: "add_repo", path: "/a", checks: [check(501)] }).ok).toBe(false);
     expect(parseCommand({ type: "update_repo", repoId: "a", baseBranch: "main", checks: [check(500)] }).ok).toBe(true);
     expect(parseCommand({ type: "update_repo", repoId: "a", baseBranch: "main", checks: [check(501)] }).ok).toBe(false);
-    const suggestion = { path: "/a", displayPath: "/a", gitRepo: true, hasCommits: true, branch: "main", id: "a", checksFrom: [], branches: ["main"], fallbackCheck: null, fallbackFromPackage: false, firstCommit: null, problem: null };
+    const suggestion = { path: "/a", displayPath: "/a", gitRepo: true, hasCommits: true, branch: "main", id: "a", checksFrom: [], defaultBranch: "main", branches: [{ name: "main", group: "default" }], moreBranches: 0, fallbackCheck: null, fallbackFromPackage: false, firstCommit: null, problem: null };
     expect(parseQueryResult("suggest_repo", { ...suggestion, checks: [check(500)] }).ok).toBe(true);
     expect(parseQueryResult("suggest_repo", { ...suggestion, checks: [check(501)] }).ok).toBe(false);
     expect(parseCommand({ type: "init_repo", path: "/a", baseBranch: "main" }).ok).toBe(true);
     expect(parseCommand({ type: "first_commit", path: "/a" }).ok).toBe(true);
     expect(parseQueryResult("suggest_repo", { ...suggestion, checks: [], firstCommit: { files: 2, bytes: 3, sample: [{ path: "a", bytes: 1 }, { path: "b", bytes: 2 }], more: [], addsGitignore: true, leftOut: [{ name: "node_modules/", files: null }], refusal: null } }).ok).toBe(true);
+  });
+});
+
+describe("base branch choices", () => {
+  const list = (count: number) => Array.from({ length: count }, (_, index) => ({ name: `feature/receipt-tax-${index}`, group: "other" }));
+  const reply = (patch: object) => ({ defaultBranch: "main", branches: [{ name: "main", group: "default" }], moreBranches: 0, ...patch });
+
+  it("parses the repo_branches query and its reply", () => {
+    expect(parseQuery({ type: "repo_branches", repoId: "orders-api" }).ok).toBe(true);
+    expect(parseQuery({ type: "repo_branches", repoId: "Not An Id" }).ok).toBe(false);
+    expect(parseQueryResult("repo_branches", reply({})).ok).toBe(true);
+    expect(parseQueryResult("repo_branches", reply({ defaultBranch: null, branches: [] })).ok).toBe(true);
+  });
+
+  it("carries at most 200 branches of at most 100 characters, with a known group", () => {
+    expect(parseQueryResult("repo_branches", reply({ branches: list(200), moreBranches: 54 })).ok).toBe(true);
+    expect(parseQueryResult("repo_branches", reply({ branches: list(201) })).ok).toBe(false);
+    expect(parseQueryResult("repo_branches", reply({ branches: [{ name: "x".repeat(100), group: "other" }] })).ok).toBe(true);
+    expect(parseQueryResult("repo_branches", reply({ branches: [{ name: "x".repeat(101), group: "other" }] })).ok).toBe(false);
+    expect(parseQueryResult("repo_branches", reply({ branches: [{ name: "main", group: "remote" }] })).ok).toBe(false);
+    expect(parseQueryResult("repo_branches", reply({ moreBranches: -1 })).ok).toBe(false);
   });
 });
 

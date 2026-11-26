@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { join } from "node:path";
 import type { Page } from "playwright-core";
 import { expect } from "vitest";
+import { chooseBranch } from "./base-branch.js";
 import { flow } from "./harness.js";
 
 const openRepos = async (page: Page) => {
@@ -50,7 +51,7 @@ flow(
     await detail.getByRole("button", { name: "Edit…" }).click();
     const edit = page.getByRole("dialog", { name: "Edit repo" });
     await edit.getByRole("textbox", { name: /^Checks/ }).fill("pnpm test\npnpm lint");
-    await edit.getByLabel("Base branch", { exact: true }).fill("develop");
+    await chooseBranch(edit, "develop");
     await edit.getByRole("button", { name: "Save" }).click();
     await edit.waitFor({ state: "detached" });
     await expect.poll(() => detail.locator(".rp-checks li").allInnerTexts(), { message: "the page shows the new checks" }).toEqual(["1\npnpm test", "2\npnpm lint"]);

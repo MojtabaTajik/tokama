@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { expect } from "vitest";
+import { baseBranchButton, branchSearch, chooseBranch } from "./base-branch.js";
 import { flow, outDir, sidebarRow } from "./harness.js";
 
 flow(
@@ -25,7 +26,7 @@ flow(
     await page.getByRole("button", { name: "+ Add repo" }).click();
     const add = page.getByRole("dialog", { name: "Add repo" });
     await expect.poll(() => add.getByLabel("Id", { exact: true }).inputValue(), { message: "the suggested id" }).toBe("billing-api");
-    expect(await add.getByLabel("Base branch", { exact: true }).inputValue()).toBe("main");
+    await expect.poll(() => baseBranchButton(add).textContent(), { message: "the default branch is preselected" }).toContain("main default");
     expect(await add.getByRole("textbox", { name: /^Checks/ }).inputValue()).toBe("pnpm test");
     await add.getByRole("button", { name: "Add repo" }).click();
     await add.waitFor({ state: "detached" });
@@ -46,7 +47,8 @@ flow(
     expect(await edit.getByRole("textbox", { name: /^Id/ }).isEditable(), "the id is read-only").toBe(false);
     expect(await edit.getByRole("textbox", { name: /^Checks/ }).inputValue()).toBe("pnpm test");
     await edit.getByRole("textbox", { name: /^Checks/ }).fill("pnpm test\npnpm lint");
-    await edit.getByLabel("Base branch", { exact: true }).fill("develop");
+    // The repo has no develop branch: typed text is used.
+    await chooseBranch(edit, "develop");
     await edit.getByRole("button", { name: "Save" }).click();
     await edit.waitFor({ state: "detached" });
     await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("aria-label")), { message: "focus returns to the row menu button" }).toBe("Actions for billing-api");
@@ -66,6 +68,75 @@ flow(
     expect(readFileSync(file, "utf8")).not.toContain("billing-api");
     expect(existsSync(join(folder, "package.json")), "the folder itself is untouched").toBe(true);
     await firstLaunch.waitFor();
+  },
+  "real",
+);
+
+flow(
+  "a repo with many branches shows one tidy dropdown with the default chosen",
+  async ({ app, page, tmp, home, screenshot }) => {
+    const folder = join(tmp, "orders-api");
+    mkdirSync(folder);
+    const git = (...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", ...args], { cwd: folder, encoding: "utf8" }).trim();
+    git("init", "-q", "-b", "develop");
+    git("commit", "-q", "--allow-empty", "-m", "first");
+    const head = git("rev-parse", "HEAD");
+    // The refs come from one update-ref call, as a clone with many branches would have them. No fetch.
+    const refs = [
+      "refs/heads/main",
+      ...Array.from({ length: 250 }, (_, index) => `refs/heads/feature/receipt-tax-${String(index + 1).padStart(3, "0")}`),
+      "refs/heads/fix/login-timeout",
+      "refs/remotes/origin/main",
+      "refs/remotes/origin/release",
+    ];
+    execFileSync("git", ["update-ref", "--stdin"], { cwd: folder, input: refs.map((ref) => `create ${ref} ${head}\n`).join("") });
+    git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+    await app.evaluate(({ dialog }, path) => {
+      (dialog as { showOpenDialog: unknown }).showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
+    }, folder);
+
+    await page.getByRole("button", { name: "+ Add repo" }).click();
+    const add = page.getByRole("dialog", { name: "Add repo" });
+    // origin's HEAD wins over the current branch (develop).
+    await expect.poll(() => baseBranchButton(add).textContent(), { message: "the default branch is preselected" }).toContain("main default");
+    expect(await add.textContent()).not.toContain("Found:");
+
+    await baseBranchButton(add).click();
+    const options = add.getByRole("option");
+    expect(await options.count()).toBe(200);
+    const texts = await options.allTextContents();
+    expect(texts[0]).toMatch(/main.*default/);
+    expect(texts[1]).toBe("develop");
+    expect(await add.locator(".combobox-heading").allTextContents()).toEqual(["Other branches"]);
+    expect(texts[2]).toBe("feature/receipt-tax-001");
+    expect(texts[199]).toBe("feature/receipt-tax-198");
+    // The cap cuts the tail; remote-tracking names are not offered.
+    expect(texts).not.toContain("feature/receipt-tax-199");
+    expect(texts).not.toContain("fix/login-timeout");
+    expect(texts.filter((text) => text.includes("origin/"))).toEqual([]);
+    expect(await add.textContent()).toContain("Showing the first 200 of 253 branches.");
+    await screenshot("repo-branch-dropdown");
+
+    // A name the cap cut can still be used.
+    await branchSearch(add).fill("feature/receipt-tax-250");
+    expect(await options.allTextContents()).toEqual(["Use ‘feature/receipt-tax-250’"]);
+
+    // Enter alone picks the match, not the "Use" row.
+    await branchSearch(add).fill("tax-012");
+    expect(await options.allTextContents()).toEqual(["feature/receipt-tax-012", "Use ‘tax-012’"]);
+    await branchSearch(add).press("Enter");
+    await expect.poll(() => baseBranchButton(add).textContent()).toContain("feature/receipt-tax-012");
+
+    // Escape closes the list and leaves the dialog open.
+    await baseBranchButton(add).click();
+    await branchSearch(add).press("Escape");
+    await branchSearch(add).waitFor({ state: "detached" });
+    expect(await add.isVisible()).toBe(true);
+
+    await add.getByRole("button", { name: "Add repo" }).click();
+    await add.waitFor({ state: "detached" });
+    await sidebarRow(page, "orders-api").waitFor();
+    expect(readFileSync(join(home, ".tokama", "repos.yaml"), "utf8")).toContain("base_branch: feature/receipt-tax-012");
   },
   "real",
 );

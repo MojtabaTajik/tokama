@@ -18,7 +18,8 @@ import { MAX_CHECK_CHARS, RESERVED_REPO_IDS, type RepoId, RepoIdSchema } from ".
 import { displayPath } from "../../kernel/text/index.js";
 import { DEFAULT_GITIGNORE, type FirstCommitPreview, GITIGNORE_FILE, previewFirstCommit } from "./first-commit.js";
 import { MAX_CONFIG_BYTES } from "./read.js";
-import { BRANCH, checkProblem, DEFAULT_WORKTREE_FOLDER, type LoadReposOptions, type Repo, readReposFile, REPOS_FILE, type ReposFile, ReposFileSchema } from "./repos.js";
+import { type BranchChoice, type BranchChoices, NO_BRANCH_CHOICES, readBranchChoices } from "./branches.js";
+import { BRANCH, MAX_BRANCH, checkProblem, DEFAULT_WORKTREE_FOLDER, type LoadReposOptions, type Repo, readReposFile, REPOS_FILE, type ReposFile, ReposFileSchema } from "./repos.js";
 import { clean, CONFIG_FORMAT, formatProblem, parseYaml, quote, type ConfigProblem } from "./yaml-file.js";
 import { errnoCode } from "../../kernel/errno/index.js";
 
@@ -30,7 +31,7 @@ export interface RepoEditError {
 
 export interface RepoEditOptions extends LoadReposOptions {
   /** Tells whether a folder is a git repo's top folder, and its branch. */
-  readonly git: Pick<Git, "worktreeList" | "revParse" | "topLevel" | "branches" | "init" | "addAll" | "diffCachedNumstat" | "commit">;
+  readonly git: Pick<Git, "worktreeList" | "revParse" | "topLevel" | "branches" | "remoteHead" | "currentRef" | "init" | "addAll" | "diffCachedNumstat" | "commit">;
   /** Ids a new repo can't take though repos.yaml doesn't hold them, such as the sample engine's repos. */
   readonly reservedIds?: readonly string[];
 }
@@ -52,8 +53,12 @@ export interface RepoSuggestion {
   readonly checks: readonly string[];
   /** The package.json scripts the checks come from, such as `test` and `lint`. */
   readonly checksFrom: readonly string[];
-  /** Local branch names, the current one first; empty when the folder isn't a repo or has none. */
-  readonly branches: readonly string[];
+  /** The default base branch: see `branchChoices`. Undefined when the folder isn't a repo or has none. */
+  readonly defaultBranch: string | undefined;
+  /** The branches to offer as the base branch, capped; empty when the folder isn't a repo or has none. */
+  readonly branches: readonly BranchChoice[];
+  /** Branches the cap left out of `branches`. */
+  readonly moreBranches: number;
   /** With no checks: `node --check` on the package.json `main` file, or on an entry file of a JS project with no package.json. */
   readonly fallbackCheck: string | undefined;
   /** The fallback file is the `main` of package.json. */
@@ -68,14 +73,12 @@ export interface AddRepoInput {
   readonly path: string;
   /** Default: the suggested id. */
   readonly id?: string;
-  /** Default: the current branch. */
+  /** Default: the repo's default branch (`branchChoices`), else the current one. */
   readonly baseBranch?: string;
   /** Default: none. */
   readonly checks?: readonly string[];
 }
 
-/** The setup query's summary allows this many characters in a branch name. */
-const MAX_BRANCH = 100;
 // The placeholder `npm init` writes; it only fails.
 const NPM_PLACEHOLDER_TEST = "no test specified";
 const NOT_A_REPO = "This folder isn't a git repo yet.";
@@ -91,7 +94,7 @@ export async function suggestRepo(options: RepoEditOptions, path: string): Promi
   const added = await addedAs(repos, folder.value.path);
   const checks = await suggestChecks(folder.value.path);
   const fallback = checks.commands.length === 0 ? await suggestFallbackCheck(folder.value.path, checks) : undefined;
-  const listed = folder.value.gitProblem === undefined ? await options.git.branches(folder.value.path) : undefined;
+  const choices = folder.value.gitProblem === undefined ? await readBranchChoices(options.git, folder.value.path, folder.value.branch) : NO_BRANCH_CHOICES;
   return ok({
     path: folder.value.path,
     displayPath: await realDisplayPath(folder.value.path, options.home),
@@ -102,7 +105,9 @@ export async function suggestRepo(options: RepoEditOptions, path: string): Promi
     checks: checks.commands,
     firstCommit: folder.value.canSetUp ? await previewFirstCommit(folder.value.path, options.home) : undefined,
     checksFrom: checks.from,
-    branches: listed?.ok === true ? [...listed.value].sort((a, b) => Number(b === folder.value.branch) - Number(a === folder.value.branch)).slice(0, 20) : [],
+    defaultBranch: choices.defaultBranch,
+    branches: choices.branches,
+    moreBranches: choices.more,
     fallbackCheck: fallback?.command,
     fallbackFromPackage: fallback?.fromPackage === true,
     problem: folder.value.gitProblem ?? (folder.value.hasCommits ? undefined : NO_COMMITS) ?? (added === undefined ? undefined : `This folder is already added as ${quote(added)}.`),
@@ -127,7 +132,7 @@ export async function addRepo(options: RepoEditOptions, input: AddRepoInput): Pr
   const added = await addedAs(repos, folder.value.path);
   if (added !== undefined) return refused("already_exists", `This folder is already added as ${quote(added)}.`);
 
-  const baseBranch = input.baseBranch?.trim() || folder.value.branch;
+  const baseBranch = input.baseBranch?.trim() || (await readBranchChoices(options.git, folder.value.path, folder.value.branch)).defaultBranch;
   if (baseBranch === undefined) return invalid("The repo has no current branch (its HEAD is detached). Give a base branch, such as main.");
   const settings = checkSettings(baseBranch, input.checks ?? []);
   if (!settings.ok) return settings;
@@ -179,6 +184,20 @@ export async function updateRepo(options: LoadReposOptions, input: UpdateRepoInp
   }
   const written = await write(file.value.path, doc);
   return written.ok ? ok({ ...current, baseBranch, checks }) : written;
+}
+
+/**
+ * The branches to offer for an added repo's base branch. A folder that is gone or no longer a
+ * repo gives an empty list, so the base branch can still be typed.
+ */
+export async function repoBranches(options: RepoEditOptions, repoId: string): Promise<Result<BranchChoices, RepoEditError>> {
+  const file = await readCurrent(options);
+  if (!file.ok) return file;
+  const repo = file.value.repos.find((entry) => entry.id === repoId);
+  if (repo === undefined) return refused("not_found", `No repo has the id ${quote(repoId)}.`);
+  const head = await options.git.currentRef(repo.path);
+  const current = head.ok ? head.value?.replace(/^refs\/heads\//, "") : undefined;
+  return ok(await readBranchChoices(options.git, repo.path, current));
 }
 
 /** What `initRepo` did, so a client can say it: git init ran, and the .gitignore it wrote has this many rules. */

@@ -25,7 +25,10 @@ import { MachineReportSchema } from "./machine.js";
 import { RepoSummarySchema, SetupSchema } from "./setup.js";
 import { MAX_TEMPLATE_ENTRIES, TemplateDetailSchema, TemplateEntrySchema, TemplateFileKeySchema } from "./template-files.js";
 
-export const API_VERSION = 12;
+export const API_VERSION = 13;
+
+/** The most branches the engine lists for a base branch choice; `moreBranches` counts the rest. */
+export const MAX_BRANCH_CHOICES = 200;
 
 const apiVersion = z.literal(API_VERSION);
 const requestId = z.string().min(1).max(128);
@@ -189,6 +192,8 @@ export const QuerySchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("suggest_template"), text: z.string().max(4000) }),
   /** What the engine proposes for a folder before add_repo: id, base branch and checks. */
   z.strictObject({ type: z.literal("suggest_repo"), path: folderPath }),
+  /** The branches to offer as the base branch of an added repo, as suggest_repo lists them for a folder. */
+  z.strictObject({ type: z.literal("repo_branches"), repoId: RepoIdSchema }),
   /** Every agent: personal, each repo's shared ones and the built-ins, with the files that do not load. */
   z.strictObject({ type: z.literal("agents_list") }),
   /** Each AI CLI: whether it is found and logged in, and what Tokama runs, read-only. */
@@ -237,6 +242,17 @@ export const EventSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("diagnostics_changed") }),
 ]);
 
+const BranchListShape = {
+  /** The repo's default branch, also first in `branches`; null when none is known. */
+  defaultBranch: z.string().min(1).max(100).nullable(),
+  /** The default first, then the usual base names, then the others A to Z. */
+  branches: z
+    .array(z.strictObject({ name: z.string().min(1).max(100), group: z.enum(["default", "usual", "other"]) }))
+    .max(MAX_BRANCH_CHOICES),
+  /** Branches left out of `branches` because of the cap. */
+  moreBranches: z.int().min(0),
+};
+
 export const RepoSuggestionSchema = z.strictObject({
   /** The folder's real path. */
   path: folderPath,
@@ -267,8 +283,7 @@ export const RepoSuggestionSchema = z.strictObject({
     .nullable(),
   /** The package.json scripts the checks come from, such as test and lint. */
   checksFrom: z.array(z.string().max(100)).max(4),
-  /** Local branch names, the current one first. */
-  branches: z.array(z.string().max(255)).max(20),
+  ...BranchListShape,
   /** A check to offer when `checks` is empty: `node --check` on the package.json main file or a plain JS project's entry file; null when none fits. */
   fallbackCheck: checkCommand.nullable(),
   /** The fallback file is the `main` of package.json. */
@@ -313,6 +328,7 @@ export const QueryResultSchemas = {
   attempt_file: z.strictObject({ path: z.string().min(1).max(4096) }),
   suggest_template: z.strictObject({ templateId: TemplateRefSchema.nullable() }),
   suggest_repo: RepoSuggestionSchema,
+  repo_branches: z.strictObject(BranchListShape),
   agents_list: AgentsListSchema,
   ai_clis: AiCliListSchema,
   templates: z.strictObject({ templates: z.array(TemplateEntrySchema).max(MAX_TEMPLATE_ENTRIES) }),
@@ -527,6 +543,7 @@ export type AttemptFileResult = QueryResult<"attempt_file">;
 export type SetupResult = QueryResult<"setup">;
 export type SuggestTemplateResult = QueryResult<"suggest_template">;
 export type SuggestRepoResult = QueryResult<"suggest_repo">;
+export type RepoBranchesResult = QueryResult<"repo_branches">;
 export type AgentsListResult = QueryResult<"agents_list">;
 export type AiClisResult = QueryResult<"ai_clis">;
 export type TemplatesResult = QueryResult<"templates">;

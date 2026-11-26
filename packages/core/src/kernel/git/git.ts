@@ -140,8 +140,13 @@ export interface WorktreeEntry {
 export interface Git {
   /** `status --porcelain -z --untracked-files=all`. */
   status(repo: string): Promise<GitResult<StatusEntry[]>>;
-  /** `for-each-ref refs/heads`: the local branch names. */
+  /** `for-each-ref refs/heads`: the local branch names, without `refs/heads/` (so a tag named `main` does not turn `main` into `heads/main`). */
   branches(repo: string): Promise<GitResult<string[]>>;
+  /**
+   * `symbolic-ref -q refs/remotes/<remote>/HEAD`: the branch the remote's HEAD points at as last
+   * recorded in this repo (e.g. `main`); undefined when it is not set. Nothing is fetched.
+   */
+  remoteHead(repo: string, remote: string): Promise<GitResult<string | undefined>>;
   /** `rev-parse --show-toplevel`: the folder git treats as the work tree of `repo`. */
   topLevel(repo: string): Promise<GitResult<string>>;
   /** `init -q -b <branch>`: a new repo in `repo`, which must exist. */
@@ -420,7 +425,25 @@ export function createGit(options: GitOptions): Git {
 
   return {
     status: (repo) => map(git(repo, ["status", "--porcelain", "-z", "--untracked-files=all"]), parseStatus),
-    branches: (repo) => map(git(repo, ["for-each-ref", "--format=%(refname:short)", "refs/heads"]), (out) => out.split("\n").filter((name) => name !== "")),
+    branches: (repo) =>
+      map(git(repo, ["for-each-ref", "--format=%(refname)", "refs/heads"]), (out) =>
+        out
+          .split("\n")
+          .filter((ref) => ref.startsWith("refs/heads/"))
+          .map((ref) => ref.slice("refs/heads/".length)),
+      ),
+    async remoteHead(repo, remote) {
+      const args = ["symbolic-ref", "-q", `refs/remotes/${remote}/HEAD`];
+      const refused = refuseOption(args, remote);
+      if (refused !== undefined) return refused;
+      const out = await git(repo, args);
+      // Exit 1: not set, or not a symbolic ref.
+      if (!out.ok && out.error.reason === "failed") return ok(undefined);
+      if (!out.ok) return out;
+      const prefix = `refs/remotes/${remote}/`;
+      const target = out.value.trim();
+      return ok(target.startsWith(prefix) ? target.slice(prefix.length) : undefined);
+    },
     topLevel: (repo) => map(git(repo, ["rev-parse", "--show-toplevel"]), trimmed),
     async init(repo, branch) {
       const args = ["init", "-q", "-b", branch];
