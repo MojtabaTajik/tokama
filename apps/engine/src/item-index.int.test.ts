@@ -296,12 +296,19 @@ describe("engine start with a home folder", () => {
     raw.exec(V3_SCHEMA);
     raw.exec("PRAGMA user_version = 3");
     raw.prepare("INSERT INTO items (id, schema_version, template_ref, state, updated_at, needs_you, last_seq) VALUES (?, 3, ?, 'done', ?, 0, 0)").run(first.id, REF, T0);
+    raw.prepare("INSERT INTO plan_samples (cli_id, as_of, record) VALUES ('claude-code', ?, ?)").run(T0, JSON.stringify({ windows: [{ window: "five_hour", usedPercent: 36 }], asOf: T0 }));
     raw.close();
 
     const dir = tempEngineDir(cleanups);
     const started = await startEngine({ dir, home });
     if (!started.ok) throw new Error(started.error.message);
     cleanups.push(() => started.value.close());
+    // The upgrade ran in place: no database was moved aside, and the plan sample is still there.
+    expect(readdirSync(home).filter((name) => name.includes(".damaged-"))).toEqual([]);
+    const upgraded = new DatabaseSync(join(home, "tokama.db"), { readOnly: true });
+    cleanups.push(() => upgraded.close());
+    expect(upgraded.prepare("PRAGMA user_version").get()).toEqual({ user_version: 4 });
+    expect(upgraded.prepare("SELECT cli_id FROM plan_samples").all()).toEqual([{ cli_id: "claude-code" }]);
     const connected = await connect({ dir, startTimeoutMs: 2_000 });
     if (!connected.ok) throw new Error(connected.error.message);
     cleanups.push(() => connected.value.close());
