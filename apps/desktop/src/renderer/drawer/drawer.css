@@ -154,7 +154,7 @@
 .stopped-fact {
   display: flex;
   flex-direction: column;
-  gap: 3px; /* px: off-scale */
+  gap: var(--space-2);
   min-width: 0;
   font-size: var(--text-base);
 }
@@ -169,7 +169,7 @@
 .stopped-fact dd {
   display: flex;
   flex-direction: column;
-  gap: 3px; /* px: off-scale */
+  gap: var(--space-2);
   margin: 0;
   min-width: 0;
   color: var(--text);
@@ -465,7 +465,7 @@
 .decision-note {
   display: flex;
   flex-direction: column;
-  gap: 5px; /* px: off-scale */
+  gap: var(--space-4);
   font-size: var(--text-base);
   color: var(--text-2);
 }
@@ -870,7 +870,7 @@
 }
 
 .ex-collapse kbd {
-  padding: 0 5px; /* px: off-scale */
+  padding: 0 var(--space-4);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
   font-family: var(--font-mono);
@@ -1018,8 +1018,8 @@
 .ck-attempt {
   display: flex;
   flex-direction: column;
-  gap: 3px; /* px: off-scale */
-  padding: 9px 0; /* px: off-scale */
+  gap: var(--space-2);
+  padding: var(--space-8) 0;
   border-bottom: 1px solid var(--hairline);
 }
 
@@ -1063,7 +1063,7 @@
     ". result exit sum sum";
   gap: 0 var(--space-8);
   align-items: baseline;
-  padding: 3px 0; /* px: off-scale */
+  padding: var(--space-2) 0;
   font-size: var(--text-md);
   line-height: var(--leading-text);
   list-style: none;
@@ -1206,7 +1206,7 @@ summary.ck-row:focus-visible {
 }
 
 .ck-none p {
-  padding: 3px 0 0 var(--space-22); /* px: off-scale */
+  padding: var(--space-2) 0 0 var(--space-22);
   overflow-wrap: anywhere;
 }
 
@@ -1214,7 +1214,7 @@ summary.ck-row:focus-visible {
   min-height: 26px;
   padding: 0 var(--space-8);
   border: 1px solid var(--hairline);
-  border-radius: 5px; /* px: off-scale */
+  border-radius: var(--radius);
   color: var(--text-2);
   font-size: var(--text-md);
 }
@@ -1283,7 +1283,7 @@ summary.ck-row:focus-visible {
 
 .ck[data-full] .ck-row {
   grid-template-areas: "chev result cmd exit dur sum";
-  padding: 9px 0; /* px: off-scale */
+  padding: var(--space-8) 0;
   font-size: var(--text-body);
 }
 

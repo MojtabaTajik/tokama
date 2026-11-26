@@ -213,7 +213,7 @@
   flex: none;
   width: 36px;
   height: 36px;
-  border-radius: 9px; /* px: off-scale */
+  border-radius: var(--radius-md);
 }
 
 .notes-card-text {
