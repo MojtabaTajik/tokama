@@ -11,6 +11,7 @@ import {
   parseNumstat,
   parseStatus,
   parseWorktreeList,
+  supportsNoLazyFetch,
   type Git,
 } from "./git.js";
 
@@ -725,6 +726,53 @@ describe("API on a real repo", () => {
     expect(value(await git.checkGitVersion())).toMatch(/^git version /);
   });
 
+  it("partialClone is false for a plain repo and true for a filtered clone", SLOW, async () => {
+    expect(value(await git.partialClone(repo))).toBe(false);
+    await plain(repo, "config", "uploadpack.allowFilter", "true");
+    const clone = join(root, "clone");
+    await plain(root, "clone", "-q", "--filter=blob:none", "--no-checkout", `file://${repo}`, clone);
+    // The clone records its promisor remote in its config.
+    expect(await plain(clone, "config", "--get", "remote.origin.promisor")).toBe("true\n");
+    expect(value(await git.partialClone(clone))).toBe(true);
+  });
+
+  it("partialClone reads the promisor settings the way git does", SLOW, async () => {
+    await plain(repo, "config", "remote.origin.url", "https://example.com/orders-api.git");
+    expect(value(await git.partialClone(repo))).toBe(false);
+    for (const [setting, expected] of [
+      ["false", false],
+      ["no", false],
+      ["0", false],
+      ["", false],
+      ["true", true],
+      ["Yes", true],
+      ["on", true],
+      ["1", true],
+    ] as const) {
+      await plain(repo, "config", "remote.origin.promisor", setting);
+      expect(value(await git.partialClone(repo)), `promisor=${JSON.stringify(setting)}`).toBe(expected);
+    }
+    // A key with no value is true, as for git itself.
+    await plain(repo, "config", "--unset", "remote.origin.promisor");
+    write(join(repo, ".git", "config"), `${readFileSync(join(repo, ".git", "config"), "utf8")}[remote "origin"]\n\tpromisor\n`);
+    expect(value(await git.partialClone(repo))).toBe(true);
+  });
+
+  it("partialClone counts extensions.partialclone whatever its value, and reads included config", SLOW, async () => {
+    await plain(repo, "config", "extensions.partialclone", "origin");
+    expect(value(await git.partialClone(repo))).toBe(true);
+    await plain(repo, "config", "--unset", "extensions.partialclone");
+    expect(value(await git.partialClone(repo))).toBe(false);
+    write(join(root, "extra.config"), '[remote "upstream"]\n\tpromisor = true\n');
+    await plain(repo, "config", "include.path", join(root, "extra.config"));
+    expect(value(await git.partialClone(repo))).toBe(true);
+  });
+
+  it("partialClone reports a repo git cannot read", SLOW, async () => {
+    write(join(repo, ".git", "config"), "[broken\n");
+    expect(await git.partialClone(repo)).toMatchObject({ ok: false });
+  });
+
   it("refuses arguments git would read as options", SLOW, async () => {
     expect(await git.revParse(repo, "--output=x")).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
     expect(await git.worktreeAdd(repo, "--force", "b", "main")).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
@@ -816,16 +864,40 @@ describe("how git is called", () => {
     expect(requests.every((request) => !("SSH_AUTH_SOCK" in (request.env ?? {})))).toBe(true);
   });
 
-  it("checkGitVersion refuses git older than 2.44", async () => {
+  /** A runner whose git answers every call with `version`. */
+  const versionRunner = (version: string): ProcessRunner => ({
+    run: (request) => {
+      if (request.stdout?.file !== undefined) writeFileSync(request.stdout.file, `${version}\n`);
+      return Promise.resolve({ kind: "finished", pid: 1, exitCode: 0, signal: null, timedOut: false, aborted: false, startedAt: 0, endedAt: 0, durationMs: 0 });
+    },
+  });
+
+  it("checkGitVersion accepts git 2.38 and newer, 2.43 included", async () => {
+    for (const version of ["git version 2.38.0", "git version 2.43.0", "git version 2.54.0 (Apple Git-157)", "git version 3.0.0"]) {
+      expect(await createGit({ runner: versionRunner(version) }).checkGitVersion()).toEqual({ ok: true, value: version });
+    }
+  });
+
+  it("checkGitVersion refuses git older than 2.38, naming the minimum", async () => {
+    for (const version of ["git version 2.37.9", "git version 1.9.0", "git version unknown"]) {
+      const result = await createGit({ runner: versionRunner(version) }).checkGitVersion();
+      expect(result).toMatchObject({ ok: false, error: { reason: "unsupported-version" } });
+      if (!result.ok) expect(result.error.message).toBe(`git 2.38 or newer is required; found: ${version}`);
+    }
+  });
+
+  it("diffPatch sets the a/ and b/ prefixes itself", async () => {
+    const requests: RunRequest[] = [];
     const runner: ProcessRunner = {
       run: (request) => {
-        if (request.stdout?.file !== undefined) writeFileSync(request.stdout.file, "git version 2.43.0\n");
-        return Promise.resolve({ kind: "finished", pid: 1, exitCode: 0, signal: null, timedOut: false, aborted: false, startedAt: 0, endedAt: 0, durationMs: 0 });
+        requests.push(request);
+        return versionRunner("").run(request);
       },
     };
-    const result = await createGit({ runner }).checkGitVersion();
-    expect(result).toMatchObject({ ok: false, error: { reason: "unsupported-version" } });
-    if (!result.ok) expect(result.error.message).toMatch(/2\.44 or newer.*2\.43\.0/);
+    await createGit({ runner }).diffPatch("/repo", "a".repeat(40), "b".repeat(40), 1000);
+    const diff = requests.map(argvOf).find((argv) => argv.includes("--patch"));
+    expect(diff).toEqual(expect.arrayContaining(["--src-prefix=a/", "--dst-prefix=b/"]));
+    expect(diff).not.toContain("--default-prefix");
   });
 
   it("maps a timeout to an error value", async () => {
@@ -860,6 +932,17 @@ describe("parsers", () => {
     expect(parseGitVersion("git version 2.43.0.windows.1")).toEqual({ major: 2, minor: 43 });
     expect(parseGitVersion("git version 3.0.0-rc1")).toEqual({ major: 3, minor: 0 });
     expect(parseGitVersion("not git")).toBeUndefined();
+  });
+
+  it("supportsNoLazyFetch is true from git 2.44 and false for older or unreadable versions", () => {
+    expect(supportsNoLazyFetch("git version 2.43.0")).toBe(false);
+    expect(supportsNoLazyFetch("git version 2.43.99")).toBe(false);
+    expect(supportsNoLazyFetch("git version 2.44.0")).toBe(true);
+    expect(supportsNoLazyFetch("git version 2.54.0 (Apple Git-157)\n")).toBe(true);
+    expect(supportsNoLazyFetch("git version 3.0.0-rc1")).toBe(true);
+    expect(supportsNoLazyFetch("git version 1.99.0")).toBe(false);
+    expect(supportsNoLazyFetch("")).toBe(false);
+    expect(supportsNoLazyFetch("not git")).toBe(false);
   });
 
   it("parseWorktreeList reads bare, detached and branch entries", () => {

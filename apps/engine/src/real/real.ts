@@ -24,6 +24,7 @@ import {
   createGit,
   createRunLoop,
   err,
+  type Git,
   ItemStore,
   ok,
   type ProcessRunner,
@@ -37,6 +38,7 @@ import {
   type StoredItem,
   parseTemplateRecord,
   summarizeOutput,
+  supportsNoLazyFetch,
 } from "@tokama/core";
 import type { MemoryItemStore } from "../store.js";
 import { agentsFor, type Config, findTemplate, loadConfig, resolveAgent, startProblem, stepProblems, toSetup } from "./config.js";
@@ -77,6 +79,7 @@ export class RealEngine {
   /** Settles once restart recovery is done. */
   readonly ready: Promise<readonly RecoveredItem[]>;
   private readonly loop: RunLoop;
+  private readonly git: Git;
   private readonly health: ReturnType<typeof cachedChecks>;
   private readonly unsubscribe: () => void;
 
@@ -100,9 +103,10 @@ export class RealEngine {
 
     const runtime = options.runtime ?? defaultRuntime(options.runner, options.home, options.engineDir);
     const sshAuthSock = "sshAuthSock" in options ? options.sshAuthSock : process.env["SSH_AUTH_SOCK"];
+    this.git = createGit({ runner: options.runner });
     this.loop = createRunLoop({
       store: items,
-      git: createGit({ runner: options.runner }),
+      git: this.git,
       runner: options.runner,
       clock: options.clock,
       processes: options.processes,
@@ -224,7 +228,14 @@ export class RealEngine {
     if (template.source.kind === "repo" && template.source.repoId !== repoId) {
       return fail("invalid_request", `${template.ref} belongs to repo ${template.source.repoId} and runs only there.`);
     }
-    if (!config.repos.some((repo) => repo.id === repoId)) return fail("not_found", `No repo ${repoId}.`);
+    const repo = config.repos.find((candidate) => candidate.id === repoId);
+    if (repo === undefined) return fail("not_found", `No repo ${repoId}.`);
+    // Older git ignores GIT_NO_LAZY_FETCH, so a partial clone could fetch through its own config.
+    // A repo that cannot be read counts as one.
+    if (!supportsNoLazyFetch(health.git.version ?? "")) {
+      const partial = await this.git.partialClone(repo.path);
+      if (!partial.ok || partial.value) return fail("invalid_request", "This repo is a partial clone. Update git to 2.44 or newer to use it.");
+    }
     const steps = stepProblems(template, agentsFor(config, template));
     if (steps.length > 0) return fail("invalid_request", steps.join(" "));
     const started = await this.loop.startItem({ template, repoId, text: command.text });

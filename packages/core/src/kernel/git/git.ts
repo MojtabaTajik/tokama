@@ -28,16 +28,23 @@ export const GIT_SAFE_CONFIG: readonly string[] = [
 export const DIFF_SAFE: readonly string[] = ["--no-ext-diff", "--no-textconv", "--no-color", "--submodule=short"];
 
 /**
- * The oldest git the wrapper supports: GIT_NO_LAZY_FETCH needs 2.44 (`worktree list -z` needs
- * 2.36). Older git ignores the variable, so a partial clone could fetch through repo config.
- */
-/**
  * Rename detection on, whatever the repo config says, in git's own file order (no orderFile) and
  * over the whole tree (no diff.relative), so every diff form lists the same files in the same order.
  */
 const RENAMES: readonly string[] = ["--find-renames", "-O/dev/null", "--no-relative"];
 
-export const MIN_GIT_VERSION = { major: 2, minor: 44 } as const;
+/**
+ * The oldest git the wrapper supports. `merge-tree --write-tree --name-only --no-messages -z`
+ * needs 2.38; no other call needs more (`worktree list -z` needs 2.36, `rev-parse --path-format`
+ * 2.31).
+ */
+export const MIN_GIT_VERSION = { major: 2, minor: 38 } as const;
+
+/**
+ * GIT_NO_LAZY_FETCH needs 2.44. Older git ignores it, so in a partial clone a local call could
+ * fetch a missing object through the repo's remote config. See `partialClone`.
+ */
+export const NO_LAZY_FETCH_GIT_VERSION = { major: 2, minor: 44 } as const;
 
 /**
  * Variables added to the process runner's allowlisted environment. Git never prompts; editor and
@@ -260,6 +267,11 @@ export interface Git {
   configList(file: string): Promise<GitResult<string[]>>;
   /** `git --version`, refused below MIN_GIT_VERSION. The engine calls it once at startup. */
   checkGitVersion(): Promise<GitResult<string>>;
+  /**
+   * Whether the repo is a partial clone: `extensions.partialclone` is set, or a remote is marked
+   * `promisor`. Only such a repo can fetch objects by itself.
+   */
+  partialClone(repo: string): Promise<GitResult<boolean>>;
 }
 
 export type MergeTreeResult = { readonly clean: true; readonly tree: string } | { readonly clean: false; readonly conflicts: readonly string[] };
@@ -473,7 +485,7 @@ export function createGit(options: GitOptions): Git {
       );
     },
     async diffPatch(repo, from, to, maxBytes) {
-      const args = ["-c", "core.quotePath=true", "diff", "--patch", "--default-prefix", ...RENAMES, ...DIFF_SAFE, from, to, "--"];
+      const args = ["-c", "core.quotePath=true", "diff", "--patch", "--src-prefix=a/", "--dst-prefix=b/", ...RENAMES, ...DIFF_SAFE, from, to, "--"];
       return refuseOption(args, from, to) ?? gitCapped(repo, args, maxBytes);
     },
     async diffTrees(repo, from, to) {
@@ -648,12 +660,7 @@ export function createGit(options: GitOptions): Git {
       const args = ["--version"];
       const out = await raw(tmpdir(), args);
       if (!out.ok) return out;
-      const version = parseGitVersion(out.value);
-      const supported =
-        version !== undefined &&
-        (version.major > MIN_GIT_VERSION.major ||
-          (version.major === MIN_GIT_VERSION.major && version.minor >= MIN_GIT_VERSION.minor));
-      if (!supported) {
+      if (!atLeast(out.value, MIN_GIT_VERSION)) {
         return err({
           reason: "unsupported-version",
           args,
@@ -663,7 +670,29 @@ export function createGit(options: GitOptions): Git {
       }
       return ok(out.value.trim());
     },
+    async partialClone(repo) {
+      const out = await git(repo, ["config", "-z", "--get-regexp", "^(extensions\\.partialclone|remote\\..*\\.promisor)$"]);
+      // Exit 1: neither is set.
+      if (!out.ok) return out.error.reason === "failed" && out.error.exitCode === 1 ? ok(false) : out;
+      return ok(
+        out.value
+          .split("\0")
+          .filter((record) => record !== "")
+          .some((record) => {
+            const [key = "", ...rest] = record.split("\n");
+            // Any extensions.partialclone value names the promisor remote; a promisor flag is a git boolean.
+            return key.startsWith("extensions.") || gitTrue(rest.length === 0 ? undefined : rest.join("\n"));
+          }),
+      );
+    },
   };
+}
+
+/** A git boolean: a key with no value is true; "true", "yes", "on" and a non-zero number are true. */
+function gitTrue(value: string | undefined): boolean {
+  if (value === undefined) return true;
+  const text = value.trim().toLowerCase();
+  return text === "true" || text === "yes" || text === "on" || (/^[+-]?\d+$/.test(text) && Number(text) !== 0);
 }
 
 /** The first `maxBytes` of a file as UTF-8, and whether the file has more. */
@@ -683,6 +712,20 @@ async function readPrefix(path: string, maxBytes: number): Promise<{ text: strin
 export function parseGitVersion(out: string): { major: number; minor: number } | undefined {
   const match = /^git version (\d+)\.(\d+)/.exec(out.trim());
   return match === null ? undefined : { major: Number(match[1]), minor: Number(match[2]) };
+}
+
+/** Whether `git --version` output names a version of at least `min`. Output that cannot be read is not. */
+function atLeast(versionText: string, min: { major: number; minor: number }): boolean {
+  const version = parseGitVersion(versionText);
+  return version !== undefined && (version.major > min.major || (version.major === min.major && version.minor >= min.minor));
+}
+
+/**
+ * Whether this git honours GIT_NO_LAZY_FETCH (2.44 or newer). False when the version cannot be
+ * read.
+ */
+export function supportsNoLazyFetch(versionText: string): boolean {
+  return atLeast(versionText, NO_LAZY_FETCH_GIT_VERSION);
 }
 
 /** Parses `status --porcelain -z` (v1): "XY path\0", plus "orig\0" after a rename or copy in either column. */

@@ -69,7 +69,7 @@ export { BUILTIN_AGENT_IDS, loadAgents, type Agent, type BrokenAgent, type Confi
 export { loadBuiltins, lineWarning, loadTemplates, templateWarnings, type AgentLocation, type TemplateLoad, type TemplateProblem } from "./slices/templates/index.js";
 export { runsInCloud } from "./slices/prompting/index.js";
 // Git and child processes, for the engine service's run loop and its startup checks.
-export { MIN_GIT_VERSION } from "./kernel/git/index.js";
+export { MIN_GIT_VERSION, supportsNoLazyFetch } from "./kernel/git/index.js";
 export type { RunRequest, RunResult } from "./kernel/process/index.js";
 export type { AgentCallRequest, AgentRuntime, ToolLimits } from "./kernel/ports/index.js";
 // Adapters by name: an adapter can be removed, so callers look its factories up at run time.

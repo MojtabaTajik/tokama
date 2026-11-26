@@ -401,7 +401,7 @@ describe("AI_CLIS", () => {
 
 describe("health from the setup", () => {
   const health = {
-    git: { ok: false, message: "git 2.44 or newer is required; found: git version 2.39.0" },
+    git: { ok: false, message: "git 2.38 or newer is required; found: git version 2.37.0" },
     clis: [
       { cliId: "claude-code", installed: true, loggedIn: false },
       { cliId: "codex-cli", installed: false, loggedIn: false },
@@ -449,7 +449,7 @@ describe("health from the setup", () => {
 
   it("lists git and config problems in the engine's words", () => {
     expect(healthProblemsOf(health as never)).toEqual([
-      { title: "git cannot be used", detail: "git 2.44 or newer is required; found: git version 2.39.0" },
+      { title: "git cannot be used", detail: "git 2.38 or newer is required; found: git version 2.37.0" },
       { title: "repos.yaml did not load", detail: "repos.yaml line 3: base_branch is missing" },
     ]);
   });
