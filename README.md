@@ -52,7 +52,7 @@ On Linux the end-to-end tests need a display: run them under `xvfb-run --auto-se
 ## Platform notes
 
 - macOS: nothing else to install.
-- Linux, Node: use a Node version manager that reads `.node-version`, for example fnm with `--use-on-cd`. Check that `which node` points to it and not to the distro Node. With the distro Node, `corepack enable` and a global `npm install` fail with `EACCES` on `/usr/bin`.
+- Linux, Node: use a Node version manager that reads `.node-version`, for example fnm with `--use-on-cd`. Check that `which node` points to it and not to the distro Node. With the distro Node, `corepack enable` and a global `npm install` fail with `EACCES` (permission denied on system folders).
 - Linux, git: Ubuntu 22.04 and 24.04 ship a git older than 2.44. The git-core PPA has a newer one.
 - Linux: Electron needs the usual desktop libraries (GTK 3, NSS, ALSA). On Ubuntu 24.04 the Chromium sandbox needs unprivileged user namespaces; if the app will not start, see the Electron documentation on `kernel.apparmor_restrict_unprivileged_userns`.
 
