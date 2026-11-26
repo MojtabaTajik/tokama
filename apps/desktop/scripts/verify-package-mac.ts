@@ -186,7 +186,7 @@ function repoNotes(): string[] {
 function layoutProblem(app: string, feed: boolean): string | undefined {
   const resources = join(app, "Contents", "Resources");
   const engine = join(resources, "engine");
-  const files = [...repoNotes().map((name) => join(resources, "whats-new", name)),join(engine, "tokama-engine"), join(engine, "LICENSE-node"), join(engine, "package.json"), join(engine, "dist", "main.js"), join(engine, "dist", "hook.js"), join(resources, "LICENSE-electron"), join(resources, "LICENSES.chromium.html"), join(resources, "app.asar"), ...["needs-you", "finished", "failed", "tokay-call"].map((name) => join(resources, `tokama-${name}.wav`))];
+  const files = [...repoNotes().map((name) => join(resources, "whats-new", name)), join(engine, "tokama-engine"), join(engine, "LICENSE-node"), join(engine, "package.json"), join(engine, "dist", "main.js"), join(engine, "dist", "hook.js"), join(resources, "LICENSE-electron"), join(resources, "LICENSES.chromium.html"), join(resources, "app.asar"), ...["needs-you", "finished", "failed", "tokay-call"].map((name) => join(resources, `tokama-${name}.wav`))];
   for (const file of feed ? [...files, join(resources, "app-update.yml")] : files) {
     try {
       statSync(file);

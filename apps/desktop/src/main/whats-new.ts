@@ -73,8 +73,10 @@ export async function loadNotes(dir: string, appVersion: string, log: (message: 
 
 /**
  * What is due after this start. `fileExisted`: desktop.json was there before this run (without it
- * this is a first install, not an update). The same version as last time changes nothing, so a card
- * not yet closed stays due. An older version than last time shows nothing. Otherwise only the note of
+ * this is a first install, not an update). `lastRunVersion` is the newest version that ever ran. The
+ * same version as last time changes nothing, so a card not yet closed stays due. An older version
+ * shows nothing (its notes are not loaded past the app's version) and keeps what is due, so going
+ * back up never shows a note twice. Otherwise only the note of
  * the version just installed counts, also across skipped versions and for a file with no recorded
  * version: highlights make a card, fixes or security make a chip, no note makes nothing.
  */
@@ -82,7 +84,8 @@ export function dueAfterStart(options: { readonly fileExisted: boolean; readonly
   const { fileExisted, lastRunVersion, appVersion, notes, pending } = options;
   if (lastRunVersion === appVersion) return pending;
   if (!fileExisted || !isVersion(appVersion)) return undefined;
-  if (lastRunVersion !== undefined && compareVersions(appVersion, lastRunVersion) < 0) return undefined;
+  // Older than the newest version that ran: nothing new to show, and a card still due stays for the return to that version.
+  if (lastRunVersion !== undefined && compareVersions(appVersion, lastRunVersion) < 0) return pending;
   const note = notes.find((candidate) => candidate.version === appVersion);
   if (note === undefined) return undefined;
   return noteKind(note) === "highlights" ? { card: appVersion } : { chip: appVersion };
@@ -124,7 +127,9 @@ export function whatsNewService(deps: WhatsNewDeps): WhatsNewService {
       const notes = await loadNotes(dir, appVersion, log);
       const { lastRunVersion, whatsNewDue } = store.get();
       const due = dueAfterStart({ fileExisted, lastRunVersion, appVersion, notes, pending: whatsNewDue });
-      store.update((state) => ({ ...withDue(state, due), ...(isVersion(appVersion) ? { lastRunVersion: appVersion } : {}) }));
+      // The newest version that ran: a downgrade does not lower it.
+      const newest = lastRunVersion !== undefined && isVersion(appVersion) && compareVersions(lastRunVersion, appVersion) > 0 ? lastRunVersion : appVersion;
+      store.update((state) => ({ ...withDue(state, due), ...(isVersion(newest) ? { lastRunVersion: newest } : {}) }));
       return notes;
     } catch (error) {
       log(`could not read the release notes: ${String(error)}`);

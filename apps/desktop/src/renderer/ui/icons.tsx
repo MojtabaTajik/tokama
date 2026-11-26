@@ -136,6 +136,7 @@ export const SearchIcon = ({ size = 13 }: { readonly size?: number }) => (
   </Icon>
 );
 
+// The three icons below are the ones a sidebar chip (ui/Chip.tsx) shows; chip icons are 13 px.
 export const CheckIcon = ({ size = 13 }: { readonly size?: number }) => (
   <Icon size={size}>
     <path d="M20 6 9 17l-5-5" />
@@ -143,7 +144,7 @@ export const CheckIcon = ({ size = 13 }: { readonly size?: number }) => (
 );
 
 /** A shield with a tick: a fix for a security problem. */
-export const ShieldIcon = ({ size = 14 }: { readonly size?: number }) => (
+export const ShieldIcon = ({ size = 13 }: { readonly size?: number }) => (
   <Icon size={size}>
     <path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z" />
     <path d="m9 12 2 2 4-4" />

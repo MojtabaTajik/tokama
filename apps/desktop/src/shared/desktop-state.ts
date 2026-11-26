@@ -77,7 +77,7 @@ export interface DesktopState {
   readonly notificationHintShown: boolean;
   /** After a crash, the next start asks to send a report; false after "Don't ask again". */
   readonly askAfterCrash: boolean;
-  /** The version of the app that ran last; the main process sets it at each start. Absent in a file an older version wrote. */
+  /** The newest version of the app that has run; the main process sets it at each start. Absent in a file an older version wrote. */
   readonly lastRunVersion?: string;
   /** The release notes not yet shown; the main process owns it. */
   readonly whatsNewDue?: WhatsNewDue;

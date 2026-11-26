@@ -3,7 +3,7 @@
 // appears on hover or focus. Items are never listed here: they appear in the main area. The
 // engine's health sits under "+ New work". Engine text (names) is rendered as React text only.
 import type { BoardCount, ItemRecord, Setup } from "@tokama/core";
-import { type ReactNode, useEffect, useRef } from "react";
+import { Fragment, type ReactNode, useEffect, useRef } from "react";
 import type { ConnectionState } from "../../shared/bridge.js";
 import { RepoMenu } from "../repos/RepoMenu.js";
 import { ALL_WORK, type Badge, badgesOf, inView, needsYouCount, sameView, type View, viewKey } from "../model.js";
@@ -76,6 +76,7 @@ export function Sidebar(props: SidebarProps) {
     lastRepoCount.current = repoCount;
     if (shrank && (document.activeElement === null || document.activeElement === document.body)) addRepo.current?.focus();
   }, [repoCount]);
+  const chip = pickChip(chips);
   const badges = (inScope: (entry: Pick<ItemRecord, "templateId" | "repoIds">) => boolean) => badgesOf(items.filter(inScope), counts.filter(inScope), now);
   const row = (entry: { readonly view: View; readonly name: string }, icon: ReactNode, startLabel: string, mono = false, menu?: ReactNode) => (
     <Row
@@ -130,7 +131,7 @@ export function Sidebar(props: SidebarProps) {
       {/* Last in the panel, so Tab reaches it after the rest; a polite live region, so the card or chip is announced once it comes. */}
       <div className="sb-foot" aria-live="polite">
         {foot}
-        {pickChip(chips)?.node}
+        {chip !== undefined && <Fragment key={chip.id}>{chip.node}</Fragment>}
       </div>
     </aside>
   );

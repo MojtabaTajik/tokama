@@ -139,9 +139,9 @@ describe("dueAfterStart", () => {
     expect(run({ lastRunVersion: "0.2.0", pending: { card: "0.2.0" } })).toEqual({ card: "0.2.0" });
   });
 
-  it("shows nothing after a downgrade", () => {
+  it("shows nothing after a downgrade, and keeps what is still due for the return", () => {
     expect(run({ lastRunVersion: "0.3.0" })).toBeUndefined();
-    expect(run({ lastRunVersion: "0.3.0", pending: { card: "0.2.0" } })).toBeUndefined();
+    expect(run({ lastRunVersion: "0.3.0", pending: { card: "0.3.0" } })).toEqual({ card: "0.3.0" });
   });
 
   it("counts only the note of the version just installed, over skipped versions", () => {
@@ -155,8 +155,7 @@ describe("dueAfterStart", () => {
     expect(run({ notes: [] })).toBeUndefined();
   });
 
-  it("drops a card not yet closed when a newer version starts", () => {
-    expect(run({ appVersion: "0.2.5", notes: [highlights], pending: { card: "0.2.0" }, lastRunVersion: "0.2.0" })).toBeUndefined();
+  it("drops a card not yet closed when a newer version starts", () => {    expect(run({ appVersion: "0.2.5", notes: [highlights], pending: { card: "0.2.0" }, lastRunVersion: "0.2.0" })).toBeUndefined();
   });
 });
 
@@ -232,6 +231,27 @@ describe("whatsNewService", () => {
     expect((await service(store).info()).due).toBeUndefined();
     put("0.2.0.md", note("0.2.0", "fixes"));
     expect((await service(store).info()).due).toEqual({ chip: { version: "0.2.0", kind: "fixes" } });
+  });
+
+  it("a downgrade and an update again never show a closed card twice, and still show one never seen", async () => {
+    put("0.2.0.md", note("0.2.0"));
+    put("0.3.0.md", note("0.3.0"));
+    // 0.2.0 -> 0.3.0: the card shows and is closed.
+    const store = fakeStore({ lastRunVersion: "0.2.0" });
+    const first = service(store, { appVersion: "0.3.0" });
+    expect((await first.info()).due).toEqual({ card: "0.3.0" });
+    first.close("0.3.0", "card");
+    // 0.3.0 -> 0.2.0: nothing shows, and the newest version stays 0.3.0.
+    expect((await service(store, { appVersion: "0.2.0" }).info()).due).toBeUndefined();
+    expect(store.get().lastRunVersion).toBe("0.3.0");
+    // 0.2.0 -> 0.3.0 again: the card does not come back.
+    expect((await service(store, { appVersion: "0.3.0" }).info()).due).toBeUndefined();
+
+    // A card never closed survives the same trip.
+    const other = fakeStore({ lastRunVersion: "0.2.0" });
+    await service(other, { appVersion: "0.3.0" }).info();
+    expect((await service(other, { appVersion: "0.2.0" }).info()).due).toBeUndefined();
+    expect((await service(other, { appVersion: "0.3.0" }).info()).due).toEqual({ card: "0.3.0" });
   });
 
   it("a missing folder is no failure: no notes, and the version is recorded", async () => {

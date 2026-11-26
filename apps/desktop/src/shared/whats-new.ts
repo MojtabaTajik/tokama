@@ -24,8 +24,9 @@
 // lines: up to 3 highlights, each a `## ` title (1-60 characters), one sentence (1-200) and
 // optionally a `Where:` line (1-80), then optionally one last `+ N smaller fixes` line. A note
 // says something: a highlight, `security: true` or a fix count. There is no other markup: no
-// links, lists, HTML or inline formatting: the characters < > [ ] ` * @ are not allowed, and a
-// line does not start with # > + - or a number and a dot. A file is at most
+// links, lists, HTML or code: the characters < > [ ] ` * @ are not allowed, a text does not start
+// with # > + - = _ ~ | or a number and . or ), and none starts or ends with a space. Plain
+// punctuation, a bare web address or "#12" stay as typed. A file is at most
 // 8 KiB of UTF-8, with LF or CRLF line ends and no tabs or other control characters.
 //
 // The release check runs this file on a runner where nothing is installed, with Node's type
@@ -152,8 +153,10 @@ export function parseNote(text: string, fileName?: string): ParseResult {
   const checkText = (line: number, what: string, value: string, max: number): void => {
     const size = length(value);
     if (size < 1 || size > max) problems.push(`line ${line}: ${what} is ${size} characters, ${size < 1 ? "at least 1" : `at most ${max}`}`);
-    // The same text is the GitHub release body, which reads Markdown: nothing that could become markup.
-    if (/[<>[\]`*@]/.test(value) || /^(?:[#>+-]|\d+\.)/.test(value)) problems.push(`line ${line}: markup characters (< > [ ] \` * @, or a leading # > + - or number) are not allowed in ${what}`);
+    // Nothing is trimmed: the app and the release body must show the text exactly as written.
+    if (value !== value.trim()) problems.push(`line ${line}: ${what} starts or ends with a space`);
+    // The same text is the GitHub release body, which reads Markdown: nothing that can start a block or become a link, a mention or code.
+    if (/[<>[\]`*@]/.test(value) || /^(?:[#>+\-=_~|]|\d+[.)])/.test(value)) problems.push(`line ${line}: markup characters (< > [ ] \` * @, or a leading # > + - = _ ~ | or number and . or )) are not allowed in ${what}`);
   };
   const startsBlock = (block: Block | undefined): boolean => block !== undefined && /^(## |Where:|\+)/.test(block.lines[0] ?? "");
 
@@ -173,7 +176,7 @@ export function parseNote(text: string, fileName?: string): ParseResult {
       else fixes = count;
       if (index < blocks.length) problems.push(`line ${block.line}: the fixes line must be the last block`);
     } else if (first.startsWith("## ")) {
-      const title = first.slice(3).trim();
+      const title = first.slice(3);
       checkText(block.line, "a highlight's title", title, MAX_TITLE);
       if (block.lines.length > 1) problems.push(`line ${block.line}: put a blank line after the title`);
       if (highlights.length >= MAX_HIGHLIGHTS) problems.push(`line ${block.line}: at most ${MAX_HIGHLIGHTS} highlights`);
@@ -190,7 +193,9 @@ export function parseNote(text: string, fileName?: string): ParseResult {
       let where: string | undefined;
       const place = blocks[index];
       if (place?.lines[0]?.startsWith("Where:") === true) {
-        where = (place.lines[0] ?? "").slice("Where:".length).trim();
+        const written = place.lines[0] ?? "";
+        if (!written.startsWith("Where: ")) problems.push(`line ${place.line}: write "Where: " and then the place`);
+        where = written.slice(written.startsWith("Where: ") ? "Where: ".length : "Where:".length);
         if (place.lines.length > 1) problems.push(`line ${place.line}: the "Where:" line stands alone`);
         checkText(place.line, "a highlight's Where line", where, MAX_WHERE);
         index++;

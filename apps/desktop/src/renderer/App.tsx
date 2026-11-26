@@ -264,8 +264,8 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
       ? []
       : [
           {
-            key: "updated",
-            priority: CHIP_PRIORITY.updated,
+            id: "updated-to",
+            priority: CHIP_PRIORITY.updatedTo,
             node: <UpdatedChip key={chip.note.version} version={chip.note.version} kind={chip.kind} onShown={whatsNew.chipShown} onGone={whatsNew.chipGone} onOpen={() => openNotes(chip.note.version)} />,
           },
         ];

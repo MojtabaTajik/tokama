@@ -150,14 +150,31 @@ describe("parseNote", () => {
     });
 
     it("refuses < and > in a title, a sentence and a Where line", () => {
-      const markup = (line: number, what: string) => `line ${line}: markup characters (< > [ ] \` * @, or a leading # > + - or number) are not allowed in ${what}`;
+      const markup = (line: number, what: string) => `line ${line}: markup characters (< > [ ] \` * @, or a leading # > + - = _ ~ | or number and . or )) are not allowed in ${what}`;
       expect(problemsOf(body(highlight("<b>x</b>")))).toEqual([markup(6, "a highlight's title")]);
       expect(problemsOf(body(highlight("T", "Press <b>x</b>.")))).toEqual([markup(8, "a highlight's sentence")]);
       expect(problemsOf(body(`${highlight()}\n\nWhere: a > b`))).toEqual([markup(10, "a highlight's Where line")]);
     });
 
-    it.each(["a [link](https://x.test)", "**bold**", "`code`", "ping @someone", "### heading", "- item", "> quote", "1. first"])("refuses Markdown in a sentence: %j", (sentence) => {
-      expect(problemsOf(body(highlight("T", sentence)))).toHaveLength(1);
+    it.each(["a [link](https://x.test)", "**bold**", "`code`", "ping @someone", "### heading", "- item", "> quote", "1. first", "1) ordered", "~~~ x", "~~~", "=== x", "___", "| a | b |", "```js"])("refuses Markdown in a sentence: %j", (sentence) => {
+      expect(problemsOf(body(highlight("T", sentence))).length).toBeGreaterThan(0);
+    });
+
+    it.each(["   - list item", "   1. x", "   # heading", "    code block", "    - deep", " ---", "ends with a space ", " x"])("refuses a space around a sentence: %j", (sentence) => {
+      expect(problemsOf(body(highlight("T", sentence))).join("\n")).toMatch(/starts or ends with a space|markup characters/);
+    });
+
+    it("refuses a space around a title and a Where line, and names the line", () => {
+      expect(problemsOf(body("##  Two spaces\n\nOne."))).toEqual(["line 6: a highlight's title starts or ends with a space"]);
+      expect(problemsOf(body("## Trailing \n\nOne."))).toEqual(["line 6: a highlight's title starts or ends with a space"]);
+      expect(problemsOf(body(`${highlight()}\n\nWhere:  two spaces`))).toEqual(["line 10: a highlight's Where line starts or ends with a space"]);
+      expect(problemsOf(body(`${highlight()}\n\nWhere: trailing `))).toEqual(["line 10: a highlight's Where line starts or ends with a space"]);
+      expect(problemsOf(body(`${highlight()}\n\nWhere:none`))).toContain('line 10: write "Where: " and then the place');
+      expect(problemsOf(body("## T\n\nOne. "))).toEqual(["line 8: a highlight's sentence starts or ends with a space"]);
+    });
+
+    it("keeps inline marks that are not markup characters, as typed", () => {
+      expect(noteOf(body(highlight("T", "See #240 at https://tokama.dev, a_b and a~b."))).highlights[0]?.text).toBe("See #240 at https://tokama.dev, a_b and a~b.");
     });
 
     it("keeps ordinary punctuation", () => {

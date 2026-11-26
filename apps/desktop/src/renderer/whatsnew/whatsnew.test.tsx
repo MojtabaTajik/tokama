@@ -251,6 +251,25 @@ describe("Chip", () => {
     await click(chipButton);
     expect(onClick).toHaveBeenCalledOnce();
   });
+
+  it("passes ref, className, style, aria-* and data-* to the button, so one chip serves a tooltip anchor or a popup trigger", async () => {
+    const ref = { current: null as HTMLButtonElement | null };
+    await act(async () =>
+      root.render(
+        <Chip ref={ref} icon={<svg />} className="mine" style={{ anchorName: "--a" } as never} aria-haspopup="dialog" aria-expanded={false} aria-describedby="tip" data-ring="true" onClick={() => undefined}>
+          Update
+        </Chip>,
+      ),
+    );
+    const chipButton = $("button.chip");
+    expect(ref.current).toBe(chipButton);
+    expect(chipButton?.className).toBe("chip rise-in mine");
+    expect(chipButton?.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(chipButton?.getAttribute("aria-expanded")).toBe("false");
+    expect(chipButton?.getAttribute("aria-describedby")).toBe("tip");
+    expect(chipButton?.getAttribute("data-ring")).toBe("true");
+    expect(chipButton?.getAttribute("type")).toBe("button");
+  });
 });
 
 describe("About's What's new", () => {

@@ -38,7 +38,7 @@ export function UpdatedChip({ version, kind, onShown, onGone, onOpen, ms = CHIP_
   return (
     <Chip
       tone="done"
-      icon={security ? <ShieldIcon size={13} /> : <CheckIcon />}
+      icon={security ? <ShieldIcon /> : <CheckIcon />}
       {...(security && { title: TEXT.securityLine })}
       onClick={() => {
         onGone();

@@ -11,7 +11,7 @@ export function NoteBody({ note }: { readonly note: Note }) {
       {note.security && (
         <p className="wn-security">
           <span className="wn-security-icon">
-            <ShieldIcon />
+            <ShieldIcon size={14} />
           </span>
           <span>
             <span className="wn-security-word">{TEXT.security} · </span>
