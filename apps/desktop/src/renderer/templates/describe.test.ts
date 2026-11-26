@@ -2,7 +2,7 @@ import { parseQueryResult, ROUND_TRIPS as ENGINE_ROUND_TRIPS, type TemplateStepV
 import { describe, expect, it } from "vitest";
 import { setup } from "../testing/sample.js";
 import { builtinEntry, flakyDetail, flakyEntry, planAndBuild, planDetail } from "../testing/templates.js";
-import { agentPhrase, andList, budgetText, placeOf, startSentence, statusOf, stepSentence, titleOf, usesOf } from "./describe.js";
+import { agentPhrase, andList, budgetText, FINISH, placeOf, startSentence, statusOf, stepSentence, titleOf, usesOf } from "./describe.js";
 import { ROUND_TRIPS } from "./limits.js";
 
 const agents = setup.agents;
@@ -115,6 +115,12 @@ describe("the list row", () => {
     expect(placeOf(builtinEntry)).toBe("built-in");
     expect(titleOf(flakyEntry)).toBe("flaky-test-fix.yaml");
     expect(titleOf(builtinEntry)).toBe("Quick fix");
+  });
+});
+
+describe("the finish words", () => {
+  it("names the outside-changes finish", () => {
+    expect(FINISH["outside-changes"]).toEqual({ name: "Outside changes", text: "made outside the repo, such as tickets" });
   });
 });
 

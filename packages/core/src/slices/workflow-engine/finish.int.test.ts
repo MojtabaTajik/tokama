@@ -30,7 +30,7 @@ let git: Git;
 let store: ItemStore;
 
 const TEMPLATE = TemplateRecordSchema.parse({
-  schemaVersion: 1,
+  schemaVersion: 2,
   ref: "orders-api/quick-fix",
   id: "quick-fix",
   source: { kind: "repo", repoId: "orders-api", file: ".tokama/templates/quick-fix.yaml" },
@@ -502,6 +502,15 @@ describe("Open PR", () => {
     expect(finisher().start(local.id, "pull_request")).toMatchObject({ ok: false, error: { code: "invalid_request", message: expect.stringMatching(/^This item is local only/) } });
     expect(store.get(local.id)?.finish).toBeUndefined();
     expect(finisher().start(local.id, "merge").ok).toBe(true);
+  });
+
+  it("refuses Open PR for an item a newer Tokama started, and says to update", SLOW, async () => {
+    const newer = await doneItem(undefined, { ...TEMPLATE, schemaVersion: 99 } as never);
+    expect(finisher().start(newer.id, "pull_request")).toMatchObject({
+      ok: false,
+      error: { code: "invalid_request", message: "This item was started by a newer Tokama (template record version 99). Update Tokama to open it." },
+    });
+    expect(store.get(newer.id)?.finish).toBeUndefined();
   });
 
   it("refuses without a recorded origin, and in local-only mode", SLOW, async () => {

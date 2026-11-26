@@ -3,7 +3,10 @@
 // agents, back targets, cloud data rules) are checked only by the engine.
 // Draft 7, the draft that editors' YAML and JSON support handles best.
 import { z } from "zod";
-import { TemplateFileSchema } from "./format.js";
+import { TEMPLATE_FORMAT, TemplateFileSchema } from "./format.js";
+
+/** The checked-in schema files: one per format, and `template.json` for the newest format. */
+export const TEMPLATE_SCHEMA_FILES = [`template-${TEMPLATE_FORMAT}.json`, "template.json"] as const;
 
 export function templateJsonSchema(): Record<string, unknown> {
   return {

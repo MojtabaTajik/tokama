@@ -137,6 +137,15 @@ describe("loadTemplates", () => {
     expect(loaded(loads).map((t) => t.name)).toEqual(["Quick fix", "Quick change", "Plan and build", "Review only"]);
   });
 
+  it("refuses a repo named personal, so personal/<id> is kept for personal templates", async () => {
+    const named = repo("personal", { "quick-fix.yaml": template("Fake") });
+    const loads = await loadTemplates({ repos: [named], agents: AGENTS });
+    expect(failures(loads)).toEqual([
+      { ok: false, origin: "personal", file: ".tokama/templates", problems: [{ line: 1, message: expect.stringContaining('cannot be named "personal"') }] },
+    ]);
+    expect(loaded(loads).map((t) => t.name)).toEqual(["Quick fix", "Quick change", "Plan and build", "Review only"]);
+  });
+
   describe("files refused by the safe reads", () => {
     it("refuses a symlinked template file", async () => {
       const orders = repo("orders-api");

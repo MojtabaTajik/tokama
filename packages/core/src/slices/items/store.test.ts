@@ -4,7 +4,7 @@ import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { manualClock } from "../../kernel/clock/index.js";
-import { HostIdSchema, ItemIdSchema, type ItemId, type RepoId, type StoredItem } from "../../kernel/schemas/index.js";
+import { HostIdSchema, ItemIdSchema, parseTemplateRecord, type ItemId, type RepoId, type StoredItem } from "../../kernel/schemas/index.js";
 import { readLog, type LogFs } from "./log.js";
 import { EVENTS_FILE, ItemStore, loadHostId, templateSnapshot } from "./store.js";
 import { BUILD, HOST, OTHER_HOST, T0, TEMPLATE } from "./testing/events.js";
@@ -43,6 +43,16 @@ describe("ItemStore", () => {
     expect(statSync(logFile(item.id)).mode & 0o777).toBe(0o600);
     expect(item.template).toEqual(templateSnapshot(TEMPLATE));
     expect(store.itemDir(item.id)).toBe(join(home, "items", item.id));
+  });
+
+  it("reads a stored version 1 template record as version 2 and leaves the stored copy and its hash alone", () => {
+    const fixture = JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "kernel", "schemas", "testing", "fixtures", "template-snapshot-v1.json"), "utf8")) as { sha256: string; record: Record<string, unknown> };
+    const parsed = parseTemplateRecord(fixture.record);
+    if (!parsed.ok) throw new Error(JSON.stringify(parsed.error));
+    expect(parsed.value).toEqual({ ...fixture.record, schemaVersion: 2 });
+    // The log keeps the JSON as it was written: its hash is the one the item recorded.
+    expect(templateSnapshot(fixture.record as never).sha256).toBe(fixture.sha256);
+    expect(fixture.record["schemaVersion"]).toBe(1);
   });
 
   it("appends events without rewriting earlier lines, and reloads the same item from the log", () => {

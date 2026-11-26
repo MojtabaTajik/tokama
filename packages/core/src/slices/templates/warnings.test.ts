@@ -18,7 +18,7 @@ const step = (id: string, doneWhen: string) => ({
 });
 const template = (...steps: Array<[string, string]>): TemplateRecord =>
   TemplateRecordSchema.parse({
-    schemaVersion: 1,
+    schemaVersion: 2,
     ref: "builtin/t",
     id: "t",
     source: { kind: "builtin" },

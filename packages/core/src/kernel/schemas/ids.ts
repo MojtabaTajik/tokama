@@ -13,6 +13,8 @@ export const AiCliIdSchema = z.enum(["claude-code", "codex-cli", "ollama"]);
 export const TemplateIdSchema = name.brand<"TemplateId">();
 export const AgentIdSchema = name.brand<"AgentId">();
 export const RepoIdSchema = name.brand<"RepoId">();
+/** Template refs are <repo>/<id>; these first words are Tokama's own (built-in and personal templates), so no repo may take them. */
+export const RESERVED_REPO_IDS: readonly string[] = ["builtin", "personal"];
 export const ConnectionIdSchema = name.brand<"ConnectionId">();
 /** A step's id inside its template (`build`); `back: <id>` and references use it. */
 export const StepIdSchema = name.brand<"StepId">();

@@ -9,6 +9,7 @@ import { createProcessRunner, type ProcessRunner } from "../../kernel/process/in
 import type { ProcessTable } from "../../kernel/process/leftover.js";
 import {
   HostIdSchema,
+  parseTemplateRecord,
   TemplateRecordSchema,
   type AgentId,
   type ItemActivity,
@@ -63,7 +64,7 @@ const AGENTS: Record<string, Agent> = { builder: agent("builder"), reviewer: age
 type StepInput = { id: string } & Record<string, unknown>;
 function template(steps: readonly StepInput[], extra: Record<string, unknown> = {}): TemplateRecord {
   return TemplateRecordSchema.parse({
-    schemaVersion: 1,
+    schemaVersion: 2,
     ref: "orders-api/quick-fix",
     id: "quick-fix",
     source: { kind: "builtin" },
@@ -564,6 +565,30 @@ describe("run loop: done_when", () => {
     expect(parseVerdict("verdict: approve")).toBeUndefined();
     expect(parseVerdict("VERDICT: approve\nThanks")).toBeUndefined();
     expect(parseVerdict("ok\nVERDICT: changes  \n\n")).toBe("changes");
+  });
+});
+
+describe("run loop: the template snapshot of an item", () => {
+  it("runs an item whose snapshot is a stored version 1 record", SLOW, async () => {
+    const fixture = JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "kernel", "schemas", "testing", "fixtures", "template-snapshot-v1.json"), "utf8")) as { record: unknown };
+    const parsed = parseTemplateRecord(fixture.record);
+    if (!parsed.ok) throw new Error(JSON.stringify(parsed.error));
+    const loop = engine(fakeRuntime([says("A plan.")]), { agent: (_repo, id) => AGENTS[id] ?? agent(id) });
+    const id = await start(loop, parsed.value);
+    expect(item(id).state).toBe("needs_you");
+    expect(openDecision(id)).toMatchObject({ kind: "plan_approval", stepId: "plan" });
+  });
+
+  it("waits with Retry step / Stop for an item whose snapshot a newer Tokama wrote, and does not end it", SLOW, async () => {
+    const newer = { ...template([BUILD_CHECKED]), schemaVersion: 99 } as unknown as TemplateRecord;
+    const id = await start(engine(fakeRuntime([edits(FIXED)])), newer);
+    expect(item(id).state).toBe("needs_you");
+    expect(item(id).outcome).toBeUndefined();
+    expect(openDecision(id)).toMatchObject({
+      kind: "run_failure",
+      detail: "This item was started by a newer Tokama (template record version 99). Update Tokama to open it.",
+    });
+    expect(openDecision(id)?.choices.map((c) => c.id)).toEqual(["retry_step", "stop"]);
   });
 });
 

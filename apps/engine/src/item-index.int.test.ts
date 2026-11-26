@@ -41,7 +41,7 @@ function openStore(): ItemStore {
 }
 
 const parsedTemplate = parseTemplateRecord({
-  schemaVersion: 1,
+  schemaVersion: 2,
   ref: REF,
   id: "quick-fix",
   source: { kind: "builtin" },

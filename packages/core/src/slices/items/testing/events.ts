@@ -37,7 +37,7 @@ const step = (id: string, agentId: string) => ({
 });
 /** A valid template with the steps `build` and `review`. */
 export const TEMPLATE: TemplateRecord = TemplateRecordSchema.parse({
-  schemaVersion: 1,
+  schemaVersion: 2,
   ref: TEMPLATE_REF,
   id: "quick-fix",
   source: { kind: "repo", repoId: "orders-api", file: ".tokama/templates/quick-fix.yaml" },

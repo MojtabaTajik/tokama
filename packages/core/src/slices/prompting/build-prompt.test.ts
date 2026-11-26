@@ -27,7 +27,7 @@ interface StepSpec {
 
 function template(steps: StepSpec[]): TemplateRecord {
   return TemplateRecordSchema.parse({
-    schemaVersion: 1,
+    schemaVersion: 2,
     ref: "orders-api/incident-fix",
     id: "incident-fix",
     source: { kind: "repo", repoId: "orders-api", file: ".tokama/templates/incident-fix.yaml" },

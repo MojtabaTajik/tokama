@@ -51,7 +51,7 @@ describe.skipIf(!enabled || createRuntime === undefined)("run loop against the r
         owner: { kind: "builtin" },
       };
       const template = parseTemplateRecord({
-        schemaVersion: 1,
+        schemaVersion: 2,
         ref: "builtin/quick-fix",
         id: "quick-fix",
         source: { kind: "builtin" },

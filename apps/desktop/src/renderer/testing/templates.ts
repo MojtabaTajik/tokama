@@ -7,7 +7,7 @@ const step = (fields: { readonly id: string; readonly name: string; readonly age
   ({ doneWhen: "agent finishes", ifFailed: { action: "ask" }, maxAttempts: 1, data: "none", sees: [], connections: [], commands: [], ...fields }) as unknown as TemplateStepView;
 
 export const planAndBuild = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   ref: "orders-api/plan-and-build",
   id: "plan-and-build",
   source: { kind: "repo", repoId: "orders-api", file: ".tokama/templates/plan-and-build.yaml" },

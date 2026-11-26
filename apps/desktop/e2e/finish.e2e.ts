@@ -74,7 +74,7 @@ function git(cwd: string, ...args: string[]): string {
 
 const template = (file: string) =>
   parseTemplateRecord({
-    schemaVersion: 1,
+    schemaVersion: 2,
     ref: "builtin/quick-fix",
     id: "quick-fix",
     source: { kind: "builtin" },

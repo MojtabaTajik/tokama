@@ -14,7 +14,7 @@ export const FINISH: Record<Finish, { readonly name: string; readonly text: stri
   "pull-request": { name: "Pull request", text: "opened from the item’s branch" },
   findings: { name: "Findings", text: "on the item" },
   document: { name: "Document", text: "on the item" },
-  "update-tickets": { name: "Update tickets", text: "written back to the tickets" },
+  "outside-changes": { name: "Outside changes", text: "made outside the repo, such as tickets" },
 };
 
 /** "a, b and c". */

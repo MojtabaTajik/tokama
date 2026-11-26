@@ -14,9 +14,16 @@ export const RepoAccessSchema = z.enum(["read", "edit"]);
 export const DoneWhenSchema = z.enum(["agent finishes", "checks pass", "reviewer approves", "you approve"]);
 /** What the New work input asks for: the text, exactly one repo, or one or more repos. */
 export const StartNeedSchema = z.enum(["text", "repo", "repos"]);
-export const FinishSchema = z.enum(["commit", "pull-request", "findings", "document", "update-tickets"]);
+export const FinishSchema = z.enum(["commit", "pull-request", "findings", "document", "outside-changes"]);
+/** What a template file may ask of a connection. */
+export const ConnectionAccessSchema = z.enum(["read", "write"]);
 
-/** A connection a template or step may use, with the access it asks for ("query", "write"). */
+/** Names kept for later reference roots such as {{ inputs.ticket }}; no step may take them. */
+export const RESERVED_STEP_IDS: readonly string[] = ["inputs", "item", "repo", "steps"];
+/** `{{ ... }}` with no braces inside: a nested `{{ {{ x }} }}` only ever matches its inner part. */
+export const TEMPLATE_REFERENCE = /\{\{([^{}]*)\}\}/g;
+
+/** A connection a template or step may use, with the access it asks for. The file allows read or write; the record keeps text so older records still read. */
 export const ConnectionUseSchema = z.strictObject({ connectionId: ConnectionIdSchema, access: z.string().min(1).max(100) });
 
 const back = z.strictObject({ action: z.literal("back"), stepId: StepIdSchema });
@@ -59,7 +66,7 @@ export const TemplateStepDefSchema = z.strictObject({
   color: TagColorSchema.optional(),
 });
 
-export const TEMPLATE_SCHEMA_VERSION = 1;
+export const TEMPLATE_SCHEMA_VERSION = 2;
 
 export const TemplateRecordSchema = z.strictObject({
   schemaVersion: z.literal(TEMPLATE_SCHEMA_VERSION),
@@ -101,6 +108,7 @@ export type RepoAccess = z.output<typeof RepoAccessSchema>;
 export type DoneWhen = z.output<typeof DoneWhenSchema>;
 export type StartNeed = z.output<typeof StartNeedSchema>;
 export type Finish = z.output<typeof FinishSchema>;
+export type ConnectionAccess = z.output<typeof ConnectionAccessSchema>;
 export type ConnectionUse = z.output<typeof ConnectionUseSchema>;
 export type IfFailed = z.output<typeof IfFailedSchema>;
 export type IfChangesRequested = z.output<typeof IfChangesRequestedSchema>;

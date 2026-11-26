@@ -64,8 +64,10 @@
           },
           "additionalProperties": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 100
+            "enum": [
+              "read",
+              "write"
+            ]
           }
         },
         "commands": {
@@ -251,8 +253,10 @@
                 },
                 "additionalProperties": {
                   "type": "string",
-                  "minLength": 1,
-                  "maxLength": 100
+                  "enum": [
+                    "read",
+                    "write"
+                  ]
                 }
               },
               "commands": {
@@ -305,7 +309,7 @@
           "pull-request",
           "findings",
           "document",
-          "update-tickets"
+          "outside-changes"
         ]
       }
     }

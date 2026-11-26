@@ -13,7 +13,7 @@ import { readTextFile, replaceTextSync } from "../../kernel/fs-safe/index.js";
 import type { Git } from "../../kernel/git/index.js";
 import type { ProcessRunner } from "../../kernel/process/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
-import { parseTemplateRecord, type CommandErrorCode, type FinishAction, type FinishRefusal, type GitChange, type ItemEventBody, type ItemId, type RepoId, type StoredItem } from "../../kernel/schemas/index.js";
+import { newerTemplateRecordMessage, parseTemplateRecord, type CommandErrorCode, type FinishAction, type FinishRefusal, type GitChange, type ItemEventBody, type ItemId, type RepoId, type StoredItem } from "../../kernel/schemas/index.js";
 import { cutText, scrubPaths } from "../../kernel/text/index.js";
 import type { Repo } from "../config/index.js";
 import { sharedGitHashes, sharedGitSettings, type GitSetting, type TamperChange } from "../integrity/index.js";
@@ -169,6 +169,7 @@ export function createFinisher(deps: FinishDeps): Finisher {
       // The item's own template, as it started: a template whose steps send nothing out makes a
       // local-only item, and its work stays here too. An unreadable snapshot counts as local only.
       const template = parseTemplateRecord(item.template.record);
+      if (!template.ok && template.error.newerVersion !== undefined) return fail("invalid_request", newerTemplateRecordMessage(template.error.newerVersion));
       if (!template.ok || template.value.steps.every((step) => step.data === "none")) {
         return fail("invalid_request", "This item is local only: its template lets nothing leave this machine, so Tokama does not push its work.");
       }

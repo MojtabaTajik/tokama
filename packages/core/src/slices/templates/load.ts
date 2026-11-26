@@ -5,7 +5,7 @@ import { lstat } from "node:fs/promises";
 import { join } from "node:path";
 import { listFiles, readTextFileInside, type ReadFailure } from "../../kernel/fs-safe/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
-import { MAX_TEMPLATE_FILE_BYTES, RepoIdSchema, TemplateIdSchema, type RepoId, type TemplateRecord, type TemplateRef } from "../../kernel/schemas/index.js";
+import { MAX_TEMPLATE_FILE_BYTES, RepoIdSchema, RESERVED_REPO_IDS, TemplateIdSchema, type RepoId, type TemplateRecord, type TemplateRef } from "../../kernel/schemas/index.js";
 import { BUILTIN_TEMPLATES } from "./builtin.js";
 import { quote } from "./quote.js";
 import { templateWarnings } from "./warnings.js";
@@ -69,7 +69,7 @@ export async function loadBuiltins(agents: ReadonlyMap<string, AgentLocation>): 
 
 async function loadRepo(repo: RepoLocation, agents: ReadonlyMap<string, AgentLocation>): Promise<TemplateLoad[]> {
   const fail = (message: string): TemplateLoad[] => [{ ok: false, origin: repo.id, file: TEMPLATES_DIR, problems: [{ line: 1, message }] }];
-  if (repo.id === BUILTIN) return fail(`A repo cannot be named "${BUILTIN}": that name is kept for the templates that ship with Tokama.`);
+  if (RESERVED_REPO_IDS.includes(repo.id)) return fail(`A repo cannot be named ${quote(repo.id)}: that name is reserved for Tokama's own templates.`);
   if (!RepoIdSchema.safeParse(repo.id).success) return fail(`${quote(repo.id)} is not a valid repo id.`);
   const repoId = repo.id as RepoId;
 
