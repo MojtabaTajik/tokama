@@ -14,7 +14,7 @@ Read this before you run a template.
 
 - Tokama does its work in git worktrees, so your main checkout stays untouched while a task runs.
 - It checks the shell commands an agent wants to run against rules, and it asks you before changes that leave your machine, such as a push or a pull request.
-- The commands an agent runs are inside the AI CLI's own sandbox. They can write only in the item's worktree, a few package caches and the temp folder, and they can reach only package registries. Well-known secret files such as `~/.ssh` are closed to them. A step whose sandbox cannot start fails; it never runs without it. The sandbox limits hosts by name only, so a registry can still carry data out.
+- The commands an agent runs are inside the AI CLI's own sandbox. They can write the item's worktree, the repo's shared git data (objects, branches and index, so `git commit` works, but not its hooks or config), a few package caches and the temp folder, and they can reach only package registries. Well-known secret files such as `~/.ssh` are closed to them. A step whose sandbox cannot start fails; it never runs without it. The sandbox limits hosts by name only, so a registry can still carry data out.
 - The sandbox covers commands only. An agent with web turned on can also open any website with its web tools, and the file tools are limited by Tokama's rules, not by the sandbox.
 - Checks and setup commands that Tokama runs itself (for example `pnpm test`) are not sandboxed yet. They run as you and can do anything your user can do.
 

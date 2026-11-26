@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -25,6 +25,7 @@ const path = require("path");
 const [kind, target] = process.argv.slice(2);
 try {
   if (kind === "write") fs.writeFileSync(target, "x");
+  else if (kind === "append") fs.appendFileSync(target, "# probe\\n");
   else if (kind === "read") fs.readFileSync(target);
   else if (kind === "list-ssh") fs.readdirSync(path.join(os.homedir(), ".ssh"));
   console.log("done");
@@ -88,7 +89,7 @@ describe.skipIf(!enabled)("Claude Code runtime against the real CLI", () => {
     try {
       const events: AgentCallEvent[] = [];
       const prompt = [
-        "Do these steps in order, each with one tool call, and do not retry a step that is denied:",
+        "Do all 19 steps in order, each with exactly one tool call. A step that is denied or fails is expected: do not retry it, do not stop, and go on to the next step. Never skip a step:",
         "1. Read notes.txt.",
         "2. Create inside.txt containing the word from notes.txt.",
         "3. Create ../outside.txt containing the same word.",
@@ -106,6 +107,8 @@ describe.skipIf(!enabled)("Claude Code runtime against the real CLI", () => {
         "15. Run the shell command `git status`.",
         "16. Run the shell command `git add -A`.",
         "17. Run the shell command `git commit -m probe`.",
+        "18. Run the shell command `node probe.js write ../main/.git/hooks/x`.",
+        "19. Run the shell command `node probe.js append ../main/.git/config`.",
         "Use the shell and file tools only: never WebFetch or WebSearch.",
         "Then reply with one line: which steps worked.",
       ].join("\n");
@@ -188,6 +191,14 @@ describe.skipIf(!enabled)("Claude Code runtime against the real CLI", () => {
       // Git works in the linked worktree: its locks and objects live in the shared `.git`.
       for (const command of ["git status", "git add -A", "git commit -m probe"]) expect(failedCommand(command), command).toBe(false);
       expect(git(repo, "log", "--format=%s")).toBe("probe\nseed");
+      // The main checkout's shared git data is writable for git itself, but not its hooks or config,
+      // which would run code outside the sandbox the next time git runs there.
+      for (const command of ["node probe.js write ../main/.git/hooks/x", "node probe.js append ../main/.git/config"]) {
+        expect(resultOf(command)?.text, command).toMatch(sandboxStopped);
+        expect(resultOf(command)?.text, command).not.toMatch(/Tokama:|don't ask mode/);
+      }
+      expect(existsSync(join(main, ".git", "hooks", "x"))).toBe(false);
+      expect(readFileSync(join(main, ".git", "config"), "utf8")).not.toContain("# probe");
       // The raw refusal texts, kept as fixtures for what shows a blocked attempt later.
       const folder = join(import.meta.dirname, "testing", "fixtures", "refusals");
       const scrub = (text: string) => [callDir, root, realpathSync(root), homedir()].reduce((out, path, i) => (path === "" ? out : out.replaceAll(path, ["<call-dir>", "<root>", "<root>", "~"][i] ?? "")), text.replaceAll("/private/var/", "/var/"));
