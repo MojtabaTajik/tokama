@@ -148,6 +148,11 @@ describe("helper summary", () => {
     expect(parse(summary({ available: false }))).toBe(false);
   });
 
+  it("refuses a field the agent does not have", () => {
+    expect(parse(summary({ agent: { ...agent(), extra: 1 } }))).toBe(false);
+    expect(parse(run({ agent: { ...agent(), extra: 1 } }))).toBe(false);
+  });
+
   it("may have no agent when the agent file is broken", () => {
     const record: Record<string, unknown> = summary({ available: false, problem: "The helper agent file is broken." });
     delete record["agent"];
