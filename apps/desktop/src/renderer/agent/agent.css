@@ -26,7 +26,7 @@
   overflow: hidden;
   padding: 0 var(--space-6);
   border: 0;
-  border-radius: 5px; /* px: off-scale */
+  border-radius: var(--radius);
   background: transparent;
   font-size: var(--text-md);
   color: inherit;
@@ -104,7 +104,7 @@
 }
 
 .al-owner {
-  gap: 5px; /* px: off-scale */
+  gap: var(--space-6);
   min-height: 20px;
   margin-left: auto;
   font-size: var(--text-sm);
@@ -138,7 +138,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-4) 7px; /* px: off-scale */
+  gap: var(--space-4) var(--space-8);
   padding-top: var(--space-10);
   border-top: 1px solid var(--hairline);
   font-size: var(--text-md);
@@ -155,7 +155,7 @@
 .al-can {
   display: inline-flex;
   align-items: center;
-  gap: 5px; /* px: off-scale */
+  gap: var(--space-6);
   color: var(--muted);
 }
 

@@ -104,7 +104,7 @@
 .about-link {
   display: inline-flex;
   align-items: center;
-  gap: 5px; /* px: off-scale */
+  gap: var(--space-6);
 }
 
 .about-soft {
@@ -154,7 +154,7 @@
   grid-template-columns: 132px minmax(0, 1fr) auto;
   align-items: baseline;
   gap: var(--space-12);
-  padding: 7px 0; /* px: off-scale */
+  padding: var(--space-6) 0;
   border-bottom: 1px solid var(--hairline);
 }
 

@@ -222,7 +222,7 @@
 .crumb-here {
   display: flex;
   align-items: center;
-  gap: 7px; /* px: off-scale */
+  gap: var(--space-8);
   min-width: 0;
   color: var(--muted);
 }
@@ -421,9 +421,9 @@
 .segment {
   display: inline-flex;
   align-items: center;
-  gap: 7px; /* px: off-scale */
+  gap: var(--space-6);
   min-height: 28px;
-  padding: 0 11px; /* px: off-scale */
+  padding: 0 var(--space-10);
   border-left: 1px solid var(--hairline);
   color: var(--muted);
 }
@@ -521,8 +521,7 @@
 
 .search-clear {
   position: absolute;
-  right: 3px;
-  /* px: off-scale */;
+  right: var(--space-2);
   min-width: var(--control-xs);
   min-height: var(--control-xs);
   color: var(--text-2);
@@ -596,7 +595,7 @@
   align-items: baseline;
   gap: var(--space-8);
   margin: 0;
-  padding: var(--space-12) var(--space-8) 5px var(--space-30); /* px: off-scale */
+  padding: var(--space-12) var(--space-8) var(--space-4) var(--space-30);
   border-bottom: 1px solid var(--hairline);
   font-size: var(--text-md);
   font-weight: 500;
@@ -643,7 +642,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-10);
-  margin-left: -25px; /* px: off-scale */
+  margin-left: calc(-1 * var(--space-24));
   color: var(--text);
   font-weight: 500;
   overflow-wrap: anywhere;
@@ -672,7 +671,7 @@
   grid-template-columns: 22px minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 170px) 132px;
   align-items: center;
   gap: var(--space-4) var(--space-14);
-  padding: 9px var(--space-8); /* px: off-scale */
+  padding: var(--space-8);
   border-top: 1px solid var(--hairline);
 }
 
@@ -908,7 +907,7 @@
 .pl-step-name {
   flex: 0 100 auto;
   min-width: 1.5em;
-  margin-left: 5px; /* px: off-scale */
+  margin-left: var(--space-4);
   color: var(--text-2);
 }
 
@@ -916,7 +915,7 @@
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
-  margin-left: 5px; /* px: off-scale */
+  margin-left: var(--space-4);
   color: var(--muted);
   white-space: nowrap;
 }
@@ -1091,8 +1090,8 @@
 .card {
   display: flex;
   flex-direction: column;
-  gap: 5px; /* px: off-scale */
-  padding: var(--space-10) 11px; /* px: off-scale */
+  gap: var(--space-4);
+  padding: var(--space-10);
   border: 1px solid var(--hairline);
   border-radius: var(--radius);
   background: var(--panel);

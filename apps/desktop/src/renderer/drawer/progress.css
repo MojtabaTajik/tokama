@@ -21,7 +21,7 @@
   display: inline-flex;
   flex: 0 1 auto;
   align-items: center;
-  gap: 5px; /* px: off-scale */
+  gap: var(--space-6);
   min-width: 0;
 }
 
@@ -64,7 +64,7 @@
   min-width: 10px;
   max-width: 44px;
   height: 2px;
-  margin: 0 7px; /* px: off-scale */
+  margin: 0 var(--space-6);
   border-radius: 1px;
   background: var(--hairline);
 }

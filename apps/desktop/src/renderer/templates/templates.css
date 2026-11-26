@@ -362,7 +362,7 @@
 
 .tp-node[data-kind="start"],
 .tp-node[data-kind="finish"] {
-  border-radius: 24px; /* px: off-scale */
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--text-2);
 }

@@ -42,8 +42,8 @@
 }
 
 .st-code {
-  padding: 0 3px; /* px: off-scale */
-  border-radius: 3px; /* px: off-scale */
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
   background: var(--panel);
   color: var(--text);
   font-family: var(--font-mono);
@@ -91,7 +91,7 @@
 }
 
 .ot[data-full] .st-code {
-  padding: 1px 5px; /* px: off-scale */
+  padding: 1px var(--space-4);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
   font-size: var(--text-base);

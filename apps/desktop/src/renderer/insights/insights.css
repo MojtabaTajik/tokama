@@ -122,7 +122,6 @@
 .ins-card-head .monogram {
   width: 30px;
   height: 30px;
-  border-radius: 7px; /* px: off-scale */
 }
 
 .ins-card-name {
@@ -326,7 +325,7 @@
 .ins-repo-bar {
   display: block;
   height: 6px;
-  border-radius: 3px; /* px: off-scale */
+  border-radius: var(--radius-pill);
   background: var(--panel);
   overflow: hidden;
 }
@@ -334,7 +333,7 @@
 .ins-repo-fill {
   display: block;
   height: 100%;
-  border-radius: 3px; /* px: off-scale */
+  border-radius: var(--radius-pill);
   background: var(--tag-slate);
 }
 
@@ -356,7 +355,7 @@
 .ins-window {
   display: flex;
   flex-direction: column;
-  gap: 5px; /* px: off-scale */
+  gap: var(--space-4);
 }
 
 .ins-window-head {
@@ -441,7 +440,7 @@
 .ins-filter {
   display: inline-flex;
   align-items: center;
-  gap: 7px; /* px: off-scale */
+  gap: var(--space-6);
   padding: var(--space-2) var(--space-4) var(--space-2) var(--space-10);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-pill);
@@ -471,8 +470,8 @@
 .ins-legend-entry {
   display: inline-flex;
   align-items: center;
-  gap: 7px; /* px: off-scale */
-  padding: 3px 9px; /* px: off-scale */
+  gap: var(--space-6);
+  padding: var(--space-2) var(--space-8);
   border: 1px solid transparent;
   border-radius: var(--radius);
   color: var(--text-2);
