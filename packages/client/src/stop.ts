@@ -117,7 +117,8 @@ export async function stopEngine(options: StopOptions): Promise<StopResult> {
   const signalGuarded = async (signal: "SIGTERM" | "SIGKILL"): Promise<"sent" | StopResult> => {
     const lock = named();
     if (lock === undefined) return (await probe(socketPath)) === "dead" ? { kind: "stopped", forced: false } : stillRunning();
-    if (expected !== undefined && lock.engineId !== expected) return { kind: "replaced" };
+    // Only the engine the caller meant: a newer engine that took the dir meanwhile is never signalled.
+    if (!meant(lock)) return { kind: "replaced" };
     // The pid is trusted only in a folder that is ours and private, and is never this process.
     if (!checkEngineDir(options.dir).ok || lock.pid === process.pid) return stillRunning();
     const state = await probe(socketPath);
@@ -138,7 +139,8 @@ export async function stopEngine(options: StopOptions): Promise<StopResult> {
 
   // Signals: only for a caller that may force, and only an engine that is known to be idle, or one
   // the user chose to stop.
-  const knownIdle = answer.kind === "accepted" || info?.runningItems === 0;
+  // An engine that knows ifIdle proves it by accepting; an older count is trusted only for one that cannot.
+  const knownIdle = answer.kind === "accepted" || (info?.runningItems === 0 && info.apiVersion < SHUTDOWN_IF_IDLE_SINCE);
   if (!options.force || (options.ifIdle && !knownIdle)) return stillRunning();
   for (const [signal, forced] of [["SIGTERM", false], ["SIGKILL", true]] as const) {
     const sent = await signalGuarded(signal);

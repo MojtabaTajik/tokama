@@ -244,8 +244,30 @@ describe("stopEngine", () => {
         void engine.stop();
       },
     });
-    expect(await stop({ expectedEngineId: ID, engine: { apiVersion: API_VERSION, runningItems: 0 } })).toEqual({ kind: "stopped", forced: false });
+    expect(await stop({ expectedEngineId: ID, engine: { apiVersion: API_VERSION - 1, runningItems: 0 } })).toEqual({ kind: "stopped", forced: false });
     expect(signals).toEqual([[PID, "SIGTERM"]]);
+  });
+
+  it("does not trust an old count of an engine that knows ifIdle and stays silent", async () => {
+    writeLock(PID, ID);
+    await fakeEngine((_message, socket) => bad(socket));
+    const { stop, signals } = setup();
+    expect(await stop({ expectedEngineId: ID, engine: { apiVersion: API_VERSION, runningItems: 0 } })).toEqual({ kind: "still_running", pid: PID });
+    expect(signals).toEqual([]);
+  });
+
+  it("never signals a newer engine that took the dir meanwhile, even when no engine id was given", async () => {
+    writeLock(PID, ID);
+    await fakeEngine((_message, socket) => accept(socket));
+    let probes = 0;
+    // The old engine accepted but stays; a lock for another engine appears before the signal.
+    const probe = async (): Promise<Liveness> => {
+      if (++probes === 3) writeLock(5000, "e-2");
+      return "alive";
+    };
+    const { stop, signals } = setup({ probe, stepMs: 100 });
+    expect(await stop({})).toEqual({ kind: "replaced" });
+    expect(signals).toEqual([]);
   });
 
   it("signals nothing when nothing listens, even though the lock names this test's own pid", async () => {
