@@ -754,9 +754,11 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
 
   // What a stop that waits for idle must not interrupt: the items counted above, and queued ones,
   // which the run loop starts while the engine drains. undefined: the store could not list.
+  // A command still being handled may be about to start an item, so it counts too.
+  let commandsInFlight = 0;
   const busyItems = (): number | undefined => {
     try {
-      return store.list().filter((item) => item.state === "running" || item.state === "queued" || item.finish?.running !== undefined).length;
+      return commandsInFlight + store.list().filter((item) => item.state === "running" || item.state === "queued" || item.finish?.running !== undefined).length;
     } catch {
       return undefined;
     }
@@ -823,6 +825,10 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       })
       .then((result) => reply(socket, parsed.value.requestId, result));
     inFlight.add(work);
+    if (parsed.value.kind === "command") {
+      commandsInFlight++;
+      void work.finally(() => commandsInFlight--);
+    }
     void work.finally(() => inFlight.delete(work));
   };
 
