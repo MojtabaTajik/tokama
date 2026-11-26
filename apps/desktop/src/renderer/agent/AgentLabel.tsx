@@ -66,7 +66,7 @@ export function AgentLabel({ info, onOpen }: AgentLabelProps) {
       <Button variant="plain" ref={button} className="al-button" data-open={open || undefined} aria-describedby={open ? tipId : undefined} style={{ anchorName: anchor } as CSSProperties}>
         <span className="al-who">
           <AgentDotMark dot={info.dot} />
-          {info.cliId !== undefined && <BackendMark cliId={info.cliId} named />}
+          {info.cliId !== undefined && <BackendMark cliId={info.cliId} named hoverName={false} />}
           <span className="ellipsis">{info.name}</span>
         </span>{" "}
         {info.model !== undefined && <span className="al-model">· {info.model}</span>}

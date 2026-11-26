@@ -61,6 +61,13 @@ describe("AgentLabel", () => {
     expect(tip()).toBeNull();
   });
 
+  it("names its tool icon for assistive tech without a hover title that would pop over the tooltip", () => {
+    render(BUILTIN);
+    const mark = $(".al img.backend-mark")!;
+    expect(mark.getAttribute("alt")).toBe("Claude Code");
+    expect(mark.hasAttribute("title")).toBe(false);
+  });
+
   it("leaves the model out when it is not known", () => {
     render({ ...BUILTIN, model: undefined, cliId: undefined, access: undefined });
     expect(words($(".al-button"))).toBe("Builder");

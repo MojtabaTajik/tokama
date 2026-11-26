@@ -190,7 +190,7 @@ function Row({ row, index, bridge, selected, onSelect, onReviewDiff, onRefresh }
       <p className="nr-where">
         {row.stepLine !== undefined && <span className="mono">{row.stepLine}</span>}
         {row.agent !== undefined && (
-          <AgentChip agent={row.agent} className="nr-agent">
+          <AgentChip agent={row.agent} className="nr-agent" markNamed={row.cli === undefined}>
             {row.cli !== undefined && <span className="mono nr-cli">{row.cli}</span>}
           </AgentChip>
         )}

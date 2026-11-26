@@ -86,6 +86,10 @@ describe("the Needs you page", () => {
     expect(plan?.querySelector(".nr-where")?.textContent).toBe("step 1 of 2 · PlanArchitectClaude Code");
     expect(plan?.querySelector(".nr-time")?.textContent).toBe("started 1 h 10 m ago");
     expect(plan?.querySelector(".nr-question")?.textContent).toBe("Approve the plan?");
+    // The tool's name is printed beside the icon, so the icon adds no name of its own and no hover title.
+    const mark = plan?.querySelector(".nr-agent img.backend-mark");
+    expect(mark?.getAttribute("alt")).toBe("");
+    expect(mark?.hasAttribute("title")).toBe(false);
     expect(choiceButtons(plan!).map((button) => button.textContent)).toEqual(["Yes", "No"]);
     expect(choiceButtons(plan!)[0]?.className).toBe("btn btn-primary");
     expect(cloudRow?.querySelector(".nr-kind")?.textContent).toBe("⏸ Cloud-step approval");
