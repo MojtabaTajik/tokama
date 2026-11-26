@@ -54,6 +54,12 @@ describe("engineEnv", () => {
     expect(engineEnv(parent, login, true)["TOKAMA_SAMPLE_HISTORY"]).toBe("200");
     expect(Object.keys(engineEnv(parent, login, true)).sort()).toEqual(["HOME", "PATH", "SSH_AUTH_SOCK", "TOKAMA_SAMPLE_HISTORY"]);
   });
+
+  it("passes the history-only switch in sample mode only", () => {
+    const only = { ...parent, TOKAMA_SAMPLE_ONLY_HISTORY: "1" };
+    expect(engineEnv(only, login, true)["TOKAMA_SAMPLE_ONLY_HISTORY"]).toBe("1");
+    expect(engineEnv(only, login, false)["TOKAMA_SAMPLE_ONLY_HISTORY"]).toBeUndefined();
+  });
 });
 
 describe("attachTracker", () => {

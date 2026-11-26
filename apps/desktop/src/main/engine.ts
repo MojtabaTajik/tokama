@@ -59,13 +59,15 @@ export function engineDirFor(baseDir: string, sample: boolean): string {
  * The environment the engine starts with: the allowlisted variables of `parent`, with the PATH of
  * `toolsPath` when there is one. The SSH agent socket reaches the engine for Open PR's push to an
  * SSH remote; the engine's process runner drops it again for every agent, check and other git call.
- * In sample mode, TOKAMA_SAMPLE_HISTORY reaches the engine too (a long history for trying the work list).
+ * In sample mode, TOKAMA_SAMPLE_HISTORY reaches the engine too (a long history for trying the work
+ * list), and so does TOKAMA_SAMPLE_ONLY_HISTORY (the history without the sample's own items).
  */
 export function engineEnv(parent: Readonly<Record<string, string | undefined>>, toolsPath: ToolsPath | undefined, sample: boolean): Record<string, string> {
   return buildEnv(parent, {
     ...(toolsPath?.path !== undefined && { PATH: toolsPath.path }),
     ...(parent["SSH_AUTH_SOCK"] !== undefined && { SSH_AUTH_SOCK: parent["SSH_AUTH_SOCK"] }),
     ...(sample && parent["TOKAMA_SAMPLE_HISTORY"] !== undefined && { TOKAMA_SAMPLE_HISTORY: parent["TOKAMA_SAMPLE_HISTORY"] }),
+    ...(sample && parent["TOKAMA_SAMPLE_ONLY_HISTORY"] !== undefined && { TOKAMA_SAMPLE_ONLY_HISTORY: parent["TOKAMA_SAMPLE_ONLY_HISTORY"] }),
   });
 }
 

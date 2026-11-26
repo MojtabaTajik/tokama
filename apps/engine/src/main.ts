@@ -56,7 +56,7 @@ async function main(): Promise<number> {
   const history = sample ? Math.min(1500, Math.max(0, Number.parseInt(process.env["TOKAMA_SAMPLE_HISTORY"] ?? "0", 10) || 0)) : 0;
   // With it, TOKAMA_SAMPLE_ONLY_HISTORY=1 leaves out the sample's own items, so nothing is open.
   const historyOnly = sample && process.env["TOKAMA_SAMPLE_ONLY_HISTORY"] === "1";
-  const codeRoots =engineCodeRoots(import.meta.dirname, (path) => statSync(path, { throwIfNoEntry: false })?.isFile() === true);
+  const codeRoots = engineCodeRoots(import.meta.dirname, (path) => statSync(path, { throwIfNoEntry: false })?.isFile() === true);
   const started = await startEngine({ dir, home, signal: root.signal, log, sample, sampleHistory: history, sampleHistoryOnly: historyOnly, engineVersion: engineVersion(), codeRoots, onDiagnostics: (opened) => (diagnostics = opened), ...(claudeLogs !== undefined && { claudeLogs }) });
   if (!started.ok) {
     log(started.error.message);

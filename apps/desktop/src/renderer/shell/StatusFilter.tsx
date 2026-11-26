@@ -70,7 +70,8 @@ export function StatusFilter({ items, finishedCounts, filter, now, onChange, sea
         ))}
       </select>
       {hidden !== undefined && hidden.count > 0 && (
-        <Button variant="quiet" className="range-hidden" aria-label={hiddenTitle} title={hiddenTitle} onClick={hidden.onShow}>
+        // The name starts with the visible words, so a voice command that says them finds the button.
+        <Button variant="quiet" className="range-hidden" aria-label={`${TEXT.hidden(hidden.count)}. ${hiddenTitle}`} title={hiddenTitle} onClick={hidden.onShow}>
           <span className="mono">{TEXT.hidden(hidden.count)}</span>
         </Button>
       )}

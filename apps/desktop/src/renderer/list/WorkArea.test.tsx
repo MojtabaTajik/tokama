@@ -128,7 +128,7 @@ describe("range hides finished runs", () => {
     const hint = $(".range-hidden") as HTMLElement;
     expect(hint.textContent).toBe("10 hidden");
     expect(hint.getAttribute("title")).toBe("The range ‘Today’ hides 10 finished runs. Show all time.");
-    expect(hint.getAttribute("aria-label")).toBe(hint.getAttribute("title"));
+    expect(hint.getAttribute("aria-label")).toBe("10 hidden. The range ‘Today’ hides 10 finished runs. Show all time.");
     await click(hint);
     expect(($(".range") as HTMLSelectElement).value).toBe("all");
     expect(segment("Active").getAttribute("aria-pressed")).toBe("true");
