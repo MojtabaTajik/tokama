@@ -510,6 +510,12 @@ finish: [commit]
       expect(await startIn(client, "inventory-api")).toBe(PARTIAL);
     });
 
+    it("says so, with git's reason, when it cannot tell whether a repo is a partial clone", SLOW, async () => {
+      writeFileSync(join(repoPath, ".git", "config"), "[broken\n");
+      const { client } = await engine(scripted([{ writes: {} }]), undefined, { checks: gitAs("git version 2.43.0") });
+      expect(await startIn(client, "orders-api")).toMatch(/^Tokama could not check whether orders-api is a partial clone: /);
+    });
+
     it("starts a partial clone on git 2.44", SLOW, async () => {
       const { client } = await engine(scripted([{ writes: { "greeting.txt": "hello world\n" } }]), undefined, { checks: gitAs("git version 2.44.0") });
       expect(await startIn(client, "inventory-api")).toBe("done");

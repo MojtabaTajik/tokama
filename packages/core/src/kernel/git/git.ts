@@ -21,6 +21,13 @@ export const GIT_SAFE_CONFIG: readonly string[] = [
 ];
 
 /**
+ * Added to every call except `push`: no network or remote-helper transport. Local calls never need
+ * one, and on git older than 2.44 (which may ignore GIT_NO_LAZY_FETCH) a missing object in a
+ * partial clone would otherwise be fetched through the repo's own remote config (uploadpack,
+ * sshCommand, credential helper).
+ */
+const NO_TRANSPORT = "protocol.allow=never";
+/**
  * On every diff form: no external diff driver (diff.<driver>.command), no textconv, no color, and
  * a nested repo shown as a commit range only (`diff.submodule=diff` would run a diff inside it,
  * with that repo's own drivers).
@@ -50,7 +57,8 @@ export const NO_LAZY_FETCH_GIT_VERSION = { major: 2, minor: 44 } as const;
  * Variables added to the process runner's allowlisted environment. Git never prompts; editor and
  * askpass variables are not in the allowlist, so they never reach git. No lazy fetch: in a partial
  * clone, a missing object would otherwise make a local call (diff, worktree add) fetch it through
- * the repo's remote config (uploadpack, sshCommand, credential helper). Such a call fails instead.
+ * the repo's remote config (uploadpack, sshCommand, credential helper). Such a call fails instead
+ * (git 2.44 or newer; older git is refused on a partial clone, and NO_TRANSPORT backs this up).
  *
  * Known gap (#25): a repo nested in the worktree (an embedded repo or submodule) has its own config.
  * git runs `status` inside it as a child process, which gets the settings above but not that
@@ -315,7 +323,7 @@ export function createGit(options: GitOptions): Git {
       const stderr: string[] = [];
       let stderrLength = 0;
       const result = await options.runner.run({
-        command: { argv: [gitPath, "--no-pager", ...safe(GIT_SAFE_CONFIG), ...safe(extraConfig), ...args] },
+        command: { argv: [gitPath, "--no-pager", ...safe(GIT_SAFE_CONFIG), ...safe(args[0] === "push" ? [] : [NO_TRANSPORT]), ...safe(extraConfig), ...args] },
         cwd: repo,
         env: { ...GIT_ENV, ...extraEnv },
         timeoutMs,
@@ -671,7 +679,8 @@ export function createGit(options: GitOptions): Git {
       return ok(out.value.trim());
     },
     async partialClone(repo) {
-      const out = await git(repo, ["config", "-z", "--get-regexp", "^(extensions\\.partialclone|remote\\..*\\.promisor)$"]);
+      // A remote with a partial-clone filter is a promisor remote to git even without `promisor`.
+      const out = await git(repo, ["config", "-z", "--get-regexp", "^(extensions\\.partialclone|remote\\..*\\.(promisor|partialclonefilter))$"]);
       // Exit 1: neither is set.
       if (!out.ok) return out.error.reason === "failed" && out.error.exitCode === 1 ? ok(false) : out;
       return ok(
@@ -680,19 +689,22 @@ export function createGit(options: GitOptions): Git {
           .filter((record) => record !== "")
           .some((record) => {
             const [key = "", ...rest] = record.split("\n");
-            // Any extensions.partialclone value names the promisor remote; a promisor flag is a git boolean.
-            return key.startsWith("extensions.") || gitTrue(rest.length === 0 ? undefined : rest.join("\n"));
+            // Any extensions.partialclone or partialclonefilter value counts; a promisor flag is a git boolean.
+            return !key.endsWith(".promisor") || gitTrue(rest.length === 0 ? undefined : rest.join("\n"));
           }),
       );
     },
   };
 }
 
-/** A git boolean: a key with no value is true; "true", "yes", "on" and a non-zero number are true. */
+/**
+ * A git boolean, read to fail closed: a key with no value is true; only "false", "no", "off", an
+ * empty value and a zero (git also reads 0x0 and 0k) are false. Any other text counts as true.
+ */
 function gitTrue(value: string | undefined): boolean {
   if (value === undefined) return true;
   const text = value.trim().toLowerCase();
-  return text === "true" || text === "yes" || text === "on" || (/^[+-]?\d+$/.test(text) && Number(text) !== 0);
+  return !(text === "" || text === "false" || text === "no" || text === "off" || /^[+-]?(0x)?0+[kmg]?$/.test(text));
 }
 
 /** The first `maxBytes` of a file as UTF-8, and whether the file has more. */

@@ -231,10 +231,11 @@ export class RealEngine {
     const repo = config.repos.find((candidate) => candidate.id === repoId);
     if (repo === undefined) return fail("not_found", `No repo ${repoId}.`);
     // Older git ignores GIT_NO_LAZY_FETCH, so a partial clone could fetch through its own config.
-    // A repo that cannot be read counts as one.
+    // A repo that cannot be read is refused too, with git's reason.
     if (!supportsNoLazyFetch(health.git.version ?? "")) {
       const partial = await this.git.partialClone(repo.path);
-      if (!partial.ok || partial.value) return fail("invalid_request", "This repo is a partial clone. Update git to 2.44 or newer to use it.");
+      if (!partial.ok) return fail("invalid_request", `Tokama could not check whether ${repo.id} is a partial clone: ${partial.error.message}`);
+      if (partial.value) return fail("invalid_request", "This repo is a partial clone. Update git to 2.44 or newer to use it.");
     }
     const steps = stepProblems(template, agentsFor(config, template));
     if (steps.length > 0) return fail("invalid_request", steps.join(" "));

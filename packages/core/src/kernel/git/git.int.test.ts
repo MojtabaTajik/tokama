@@ -386,6 +386,24 @@ describe("repo config, hooks and attributes never run code", () => {
     expect(result).toMatchObject({ ok: false, error: { reason: "failed" } });
   });
 
+  it("no lazy fetch in a partial clone even when git ignores GIT_NO_LAZY_FETCH (git older than 2.44)", SLOW, async () => {
+    await plain(repo, "config", "uploadpack.allowFilter", "true");
+    const clone = join(root, "clone");
+    await plain(root, "clone", "-q", "--filter=blob:none", "--no-checkout", `file://${repo}`, clone);
+    write(join(markers, "fetch.sh"), `#!/bin/sh\ntouch '${join(markers, "fetch")}'\nexit 1\n`, 0o755);
+    await plain(clone, "config", "remote.origin.uploadpack", join(markers, "fetch.sh"));
+    // A runner that drops the variable, as old git behaves.
+    const base = createProcessRunner({ parentEnv: { PATH: process.env["PATH"], HOME: home } });
+    const old = createGit({ runner: { run: (request) => base.run({ ...request, env: Object.fromEntries(Object.entries(request.env ?? {}).filter(([name]) => name !== "GIT_NO_LAZY_FETCH")) }) } });
+    let result: unknown;
+    await provesBlocked(
+      "fetch",
+      () => plainMayFail(clone, "worktree", "add", "-q", "-b", "control", join(root, "wt-control"), "main"),
+      async () => (result = await old.worktreeAdd(clone, join(root, "wt"), "hardened", "main")),
+    );
+    expect(result).toMatchObject({ ok: false, error: { reason: "failed" } });
+  });
+
   // These tools run only on a terminal (pager), on network calls (ssh, credentials, askpass) or
   // for an interactive message (editor). None of the wrapper's calls on a full local repo should
   // reach them (a partial clone is the case above), so there is no control run: this checks that
@@ -743,11 +761,14 @@ describe("API on a real repo", () => {
       ["false", false],
       ["no", false],
       ["0", false],
+      ["0x0", false],
       ["", false],
       ["true", true],
       ["Yes", true],
       ["on", true],
       ["1", true],
+      ["0x1", true],
+      ["1k", true],
     ] as const) {
       await plain(repo, "config", "remote.origin.promisor", setting);
       expect(value(await git.partialClone(repo)), `promisor=${JSON.stringify(setting)}`).toBe(expected);
@@ -765,6 +786,11 @@ describe("API on a real repo", () => {
     expect(value(await git.partialClone(repo))).toBe(false);
     write(join(root, "extra.config"), '[remote "upstream"]\n\tpromisor = true\n');
     await plain(repo, "config", "include.path", join(root, "extra.config"));
+    expect(value(await git.partialClone(repo))).toBe(true);
+    await plain(repo, "config", "--unset", "include.path");
+    // A partial-clone filter alone makes a promisor remote, so a switched-off promisor flag is not enough.
+    await plain(repo, "config", "remote.origin.promisor", "false");
+    await plain(repo, "config", "remote.origin.partialclonefilter", "blob:none");
     expect(value(await git.partialClone(repo))).toBe(true);
   });
 
@@ -829,11 +855,12 @@ describe("how git is called", () => {
       const argv = argvOf(request);
       expect(argv.slice(0, 2)).toEqual(["git", "--no-pager"]);
       expect(argv.slice(2, 2 + GIT_SAFE_CONFIG.length * 2)).toEqual(GIT_SAFE_CONFIG.flatMap((s) => ["-c", s]));
+      expect(argv.slice(2 + GIT_SAFE_CONFIG.length * 2, 4 + GIT_SAFE_CONFIG.length * 2)).toEqual(["-c", "protocol.allow=never"]);
       expect(request.env).toEqual({ GIT_TERMINAL_PROMPT: "0", GIT_NO_LAZY_FETCH: "1", GIT_OPTIONAL_LOCKS: "0" });
       expect(request.timeoutMs).toBe(5_000);
       expect(request.cwd).toBe("/repo");
     }
-    const commands = requests.map((request) => argvOf(request).slice(2 + GIT_SAFE_CONFIG.length * 2));
+    const commands = requests.map((request) => argvOf(request).slice(4 + GIT_SAFE_CONFIG.length * 2));
     // Each call first lists the repo's filter drivers.
     expect(commands.filter((args) => args[0] === "config")).toHaveLength(3);
     expect(commands).toContainEqual(["diff", "--cached", ...DIFF_SAFE]);
@@ -859,6 +886,9 @@ describe("how git is called", () => {
     expect(argvOf(push).slice(-5)).toEqual(["push", "--no-verify", "--porcelain", "origin", `${"a".repeat(40)}:refs/heads/tokama/0000000a`]);
     // The filter lookup before it, and any push not asked to, never get the socket.
     expect(requests.filter((request) => request !== push).every((request) => !("SSH_AUTH_SOCK" in (request.env ?? {})))).toBe(true);
+    // The push is the one call that may use a transport.
+    expect(argvOf(push)).not.toContain("protocol.allow=never");
+    expect(requests.filter((request) => request !== push).every((request) => argvOf(request).includes("protocol.allow=never"))).toBe(true);
     requests.length = 0;
     await stub.push("/repo", "origin", "a".repeat(40), "tokama/0000000a");
     expect(requests.every((request) => !("SSH_AUTH_SOCK" in (request.env ?? {})))).toBe(true);
