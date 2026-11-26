@@ -90,14 +90,14 @@ export type AiCliState =
   | { readonly kind: "logged_out"; readonly version: string | undefined }
   | { readonly kind: "too_old"; readonly version: string }
   | { readonly kind: "needs_fix"; readonly version: string | undefined; readonly message: string }
-  | { readonly kind: "checking" }
   | { readonly kind: "could_not_check" };
 
 /** Where the AI CLI stands, from the engine's health of Claude Code (the one AI CLI Tokama runs for now). */
 export function aiCliState(health: Health | undefined): AiCliState {
   const cli: CliHealth | undefined = health?.clis.find((entry) => entry.cliId === "claude-code");
   if (cli === undefined) return { kind: "could_not_check" };
-  if (cli.timedOut === true) return { kind: "checking" };
+  // A CLI that did not answer in time is not known, and stays so until a check gets an answer: say so, and offer Check again.
+  if (cli.timedOut === true) return { kind: "could_not_check" };
   if (!cli.installed) return { kind: "not_installed" };
   const version = numberIn(cli.version);
   if (!cli.loggedIn) return { kind: "logged_out", version };
@@ -106,7 +106,11 @@ export function aiCliState(health: Health | undefined): AiCliState {
   return { kind: "ready", version };
 }
 
-/** The word of an AI CLI problem that stops new work, or undefined when work may start (or Tokama cannot tell yet, and the engine then answers for itself). */
+/**
+ * The word of an AI CLI problem that stops all new work, or undefined when work may start. A CLI
+ * that is too old or cannot run its sandbox still runs work that uses no commands (a review), so
+ * only its row says so; nor does Tokama stop work it cannot tell about, the engine answers for itself.
+ */
 export function aiCliBlock(health: Health | undefined): string | undefined {
   const state = aiCliState(health);
   switch (state.kind) {
@@ -114,10 +118,6 @@ export function aiCliBlock(health: Health | undefined): string | undefined {
       return WORDS.notInstalled;
     case "logged_out":
       return WORDS.loggedOut;
-    case "too_old":
-      return WORDS.tooOld;
-    case "needs_fix":
-      return WORDS.needsFix;
     default:
       return undefined;
   }
@@ -147,8 +147,6 @@ function aiCliRow(input: ChecklistInput): Row {
   switch (state.kind) {
     case "could_not_check":
       return row("ai-cli", title, markOf("warning"), WORDS.couldNotCheck, { detail: [TEXT.cliCouldNot], action: recheck });
-    case "checking":
-      return row("ai-cli", title, markOf("queued"), WORDS.checking, { detail: [TEXT.cliChecking] });
     case "not_installed":
       return row("ai-cli", title, FAILED, WORDS.notInstalled, { detail: [TEXT.cliNone], action: { kind: "link", label: TEXT.cliInstall, href: LINKS.installClaudeCode } });
     case "logged_out":
@@ -168,7 +166,9 @@ function aiCliRow(input: ChecklistInput): Row {
 function gitRow(input: ChecklistInput): Row {
   const title = TITLES.git;
   const { health, mac } = input;
-  if (input.checkFailed || health === undefined) {
+  // Checks that did not finish (the engine marks Claude Code as not answering) say nothing about git either.
+  const unfinished = !health?.git.ok && health?.git.version === undefined && health?.clis.some((cli) => cli.timedOut === true) === true;
+  if (input.checkFailed || health === undefined || unfinished) {
     return row("git", title, markOf("warning"), WORDS.couldNotCheck, { detail: [TEXT.gitCouldNot], action: { kind: "check-again", label: TEXT.checkAgain } });
   }
   const version = numberIn(health.git.version);

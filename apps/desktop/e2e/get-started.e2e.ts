@@ -147,10 +147,16 @@ flow(
     expect(await row(page, "ai-cli").locator(".command-copy-text").innerText()).toBe("claude update");
     expect(await row(page, "ai-cli").innerText()).toContain("Claude Code 2.1.290 is too old. Tokama needs 2.1.315 or newer.");
     await screenshot("20-gs-6-too-old", row(page, "ai-cli"));
+    // A review needs no commands, so work is not stopped for an old CLI: only the row says so.
+    expect(await page.locator(".new-work").getAttribute("aria-disabled")).toBeNull();
+
+    // Logged out stops all work, and the sidebar says why.
+    setClaude(tmp, "logged-out");
+    await expect.poll(() => words(page).then((all) => all[0]), { message: "logged out", timeout: CHECK_TIMEOUT_MS }).toBe("Logged out");
     expect(await page.locator(".new-work").getAttribute("aria-disabled")).toBe("true");
     await page.locator(".new-work").focus();
     await page.getByRole("tooltip").waitFor();
-    expect(await page.getByRole("tooltip").innerText()).toBe("Set up an AI CLI first: too old");
+    expect(await page.getByRole("tooltip").innerText()).toBe("Set up an AI CLI first: logged out");
   },
   "real",
   (home, tmp) => {

@@ -43,8 +43,8 @@ const TEXT = { allWork: "All work", needsYou: "Needs you" } as const;
 /** How often the times in the list move on. */
 const CLOCK_TICK_MS = 30_000;
 const NO_COUNTS: readonly BoardCount[] = [];
-/** How often the Get started list asks the engine for fresh checks while it is on screen (the engine keeps its answer for 5 s). */
-const CHECK_POLL_MS = 5_000;
+/** How often the Get started list asks the engine for fresh checks while it is on screen. Longer than the engine's 5 s answer cache, so each ask runs the checks once, not more. */
+const CHECK_POLL_MS = 10_000;
 /** Check again shows "Checking…" at least this long, so the click is seen. */
 const CHECKING_MIN_MS = 600;
 

@@ -112,8 +112,8 @@ describe("the checklist on a first launch", () => {
     await act(async () => vi.advanceTimersByTimeAsync(700));
     expect(row("ai-cli").querySelector(".gs-word")?.textContent).toBe("Ready");
     expect(setupAsks(fake)).toBe(before + 1);
-    // The poll asks again every 5 s without showing Checking….
-    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    // The poll asks again every 10 s without showing Checking….
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
     expect(setupAsks(fake)).toBe(before + 2);
     expect(row("ai-cli").querySelector(".gs-word")?.textContent).toBe("Ready");
   });

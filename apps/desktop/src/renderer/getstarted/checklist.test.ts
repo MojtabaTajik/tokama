@@ -116,15 +116,14 @@ describe("step 1: the AI CLI", () => {
     expect(textOf(row)).toBe("Claude Code is installed and logged in, but Tokama cannot run it yet.");
   });
 
-  it("is checking while Check again runs, and when the engine says the CLI did not answer in time", () => {
-    for (const input of [{ checking: true }, { health: health({ cli: claude({ installed: false, loggedIn: false, timedOut: true }) }) }]) {
-      const row = first(input);
-      expect([row.mark.symbol, row.word, row.done, textOf(row)]).toEqual(["◌", "Checking…", false, "Looking for an AI CLI on this computer."]);
-    }
+  it("is checking while Check again runs", () => {
+    const row = first({ checking: true });
+    expect([row.mark.symbol, row.word, row.done, textOf(row)]).toEqual(["◌", "Checking…", false, "Looking for an AI CLI on this computer."]);
   });
 
-  it("could not be checked when the setup failed, or the engine named no AI CLI: warns with ! and offers Check again", () => {
-    for (const input of [{ checkFailed: true }, { health: health({ cli: undefined }) }, { health: undefined }]) {
+  it("could not be checked when the setup failed, the CLI did not answer in time (never stuck on Checking…), or the engine named no AI CLI: warns with ! and offers Check again", () => {
+    const silent = health({ cli: claude({ installed: false, loggedIn: false, timedOut: true }) });
+    for (const input of [{ checkFailed: true }, { health: silent }, { health: health({ cli: undefined }) }, { health: undefined }]) {
       const row = first(input);
       expect([row.mark.symbol, row.word]).toEqual(["!", "Could not check"]);
       expect(textOf(row)).toBe("Tokama could not look for an AI CLI, because its engine did not answer. Check again. If this stays, quit Tokama and open it again.");
@@ -136,8 +135,9 @@ describe("step 1: the AI CLI", () => {
     expect(aiCliBlock(health())).toBeUndefined();
     expect(aiCliBlock(health({ cli: claude({ installed: false, loggedIn: false }) }))).toBe("Not installed");
     expect(aiCliBlock(health({ cli: claude({ loggedIn: false }) }))).toBe("Logged out");
-    expect(aiCliBlock(health({ cli: claude({ version: "2.1.1" }) }))).toBe("Too old");
-    expect(aiCliBlock(health({ cli: claude({ message: "x" }) }))).toBe("Needs a fix");
+    // Too old, or a sandbox that cannot run: work that runs no commands (a review) still runs, so only the row says so.
+    expect(aiCliBlock(health({ cli: claude({ version: "2.1.1" }) }))).toBeUndefined();
+    expect(aiCliBlock(health({ cli: claude({ message: "x" }) }))).toBeUndefined();
     // Not known yet: the engine answers a start for itself.
     expect(aiCliBlock(health({ cli: claude({ timedOut: true }) }))).toBeUndefined();
     expect(aiCliBlock(undefined)).toBeUndefined();
@@ -183,6 +183,11 @@ describe("step 2: git", () => {
 
   it("says it could not read a version it found but cannot parse", () => {
     expect(textOf(second({ health: health({ git: { ok: false, version: "git version unknown", message: "x" } }) }))).toMatch(/^Tokama could not read the version of the git it found\. Tokama needs 2\.38 or newer/);
+  });
+
+  it("is not called missing when the checks did not finish: the engine's checks threw", () => {
+    const row = second({ health: health({ git: { ok: false, message: "The checks failed" }, cli: claude({ installed: false, loggedIn: false, timedOut: true }) }) });
+    expect([row.word, row.command, row.action?.kind]).toEqual(["Could not check", undefined, "check-again"]);
   });
 
   it("could not be checked when the setup failed or has not come", () => {
