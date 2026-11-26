@@ -6,6 +6,9 @@
 // `quota`, `rate-limited` and `execution-error` are constructed from those and from the error
 // values the CLI uses, since a real quota or rate-limit failure cannot be produced on demand.
 //
+// `--version` prints FAKE_CLAUDE_VERSION (default "2.1.332 (Claude Code)"), or exits 3 with no
+// output when it is `exit-3`.
+//
 // Run with `node fake-claude.ts <claude args...>`; Node runs the TypeScript as is.
 import { spawn } from "node:child_process";
 import { readFileSync, realpathSync, statSync } from "node:fs";
@@ -84,6 +87,13 @@ function run(prompt: string): void {
       process.stderr.write(`fake-claude: unknown scenario "${prompt}"\n`);
       process.exitCode = 2;
   }
+}
+
+if (process.argv.includes("--version")) {
+  const version = process.env["FAKE_CLAUDE_VERSION"] ?? "2.1.332 (Claude Code)";
+  if (version === "exit-3") process.exit(3);
+  process.stdout.write(`${version}\n`);
+  process.exit(0);
 }
 
 let input = "";

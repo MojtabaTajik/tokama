@@ -35,7 +35,7 @@ describe("command-policy hook decision", () => {
 
   it("quotes the hook command for the shell", () => {
     expect(hookSettings(["/usr/bin/node", "/a b/it's/hook.js", "/r.json"])).toEqual({
-      hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: `'/usr/bin/node' '/a b/it'\\''s/hook.js' '/r.json'`, onFailure: "block" }] }] },
+      hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: `'/usr/bin/node' '/a b/it'\\''s/hook.js' '/r.json' || exit 2`, onFailure: "block" }] }] },
     });
   });
 });
@@ -63,5 +63,32 @@ describe("command-policy hook process", { timeout: 20_000 }, () => {
     const broken = runHook(bash("npm test"), join(dir, "missing.json"));
     expect([broken.status, broken.stdout]).toEqual([2, ""]);
     expect(broken.stderr).toContain("Tokama denied the command");
+  });
+
+  describe("as Claude Code starts it, through sh -c", () => {
+    const hook = [process.execPath, "--import", join(import.meta.dirname, "testing", "resolve-ts.ts"), join(import.meta.dirname, "hook.ts")];
+    /** Runs the command of `hookSettings(argv)` the way Claude Code does when `args` is absent. */
+    const runShell = (argv: string[], input: string) => {
+      const settings = hookSettings(argv) as { hooks: { PreToolUse: Array<{ hooks: Array<{ command: string }> }> } };
+      const command = settings.hooks.PreToolUse[0]?.hooks[0]?.command ?? "";
+      return spawnSync("sh", ["-c", command], { input, encoding: "utf8" });
+    };
+
+    it("exits 2 when the node binary or the hook script cannot start", () => {
+      const rules = join(dir, "rules.json");
+      writeFileSync(rules, JSON.stringify(RULES));
+      expect(runShell(["/nonexistent/node", "/nonexistent/hook.js", rules], bash("npm test")).status).toBe(2);
+      expect(runShell([process.execPath, "/nonexistent/hook.js", rules], bash("npm test")).status).toBe(2);
+    });
+
+    it("still denies, allows and blocks on a missing rules file as before", () => {
+      const rules = join(dir, "rules.json");
+      writeFileSync(rules, JSON.stringify(RULES));
+      const denied = runShell([...hook, rules], bash("whoami"));
+      expect([denied.status, decision(denied.stdout)]).toEqual([0, "deny"]);
+      const allowed = runShell([...hook, rules], bash("npm test"));
+      expect([allowed.status, allowed.stdout]).toEqual([0, ""]);
+      expect(runShell([...hook, join(dir, "missing.json")], bash("npm test")).status).toBe(2);
+    });
   });
 });

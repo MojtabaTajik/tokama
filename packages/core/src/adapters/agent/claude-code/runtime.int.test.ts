@@ -150,6 +150,52 @@ describe("Claude Code runtime", SLOW, () => {
     });
   });
 
+  describe("the version gate for calls with command rules", () => {
+    const withCommands = { limits: { edit: false, commands: ["npm test:*"], web: false } };
+    const launch = (env: Record<string, string>, extra: Partial<AgentCallRequest>, signal = new AbortController().signal) => collect(runtime(env).launch(request("echo", extra), signal));
+    const NO_TOKENS = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+
+    it("refuses a version below 2.1.295 before anything is spawned", async () => {
+      const events = await launch({ FAKE_CLAUDE_VERSION: "2.1.294 (Claude Code)" }, withCommands);
+      expect(events).toEqual([{ type: "end", outcome: "failed", usage: NO_TOKENS, errorKind: "crash", error: expect.stringMatching(/2\.1\.295.*2\.1\.294/) }]);
+    });
+
+    it("runs 2.1.295, with the hook settings", async () => {
+      const events = await launch({ FAKE_CLAUDE_VERSION: "2.1.295" }, withCommands);
+      expect(end(events).outcome).toBe("completed");
+      expect(events.find((event) => event.type === "text")).toMatchObject({ text: expect.stringContaining("--settings=") });
+    });
+
+    it("does not gate a call without command rules", async () => {
+      const events = await launch({ FAKE_CLAUDE_VERSION: "2.1.294" }, { limits: { edit: false, commands: [], web: false } });
+      expect(end(events).outcome).toBe("completed");
+    });
+
+    it.each([
+      ["garbage", "printed no version"],
+      ["exit-3", "exited with code 3"],
+    ])("fails closed when `claude --version` says %s", async (version, why) => {
+      const events = await launch({ FAKE_CLAUDE_VERSION: version }, withCommands);
+      expect(end(events)).toMatchObject({ outcome: "failed", errorKind: "crash", error: expect.stringContaining(why) });
+      expect(events).toHaveLength(1);
+    });
+
+    it("fails closed when the CLI does not start", async () => {
+      const missing = createClaudeCodeRuntime({ command: [join(dir, "no-such-claude")] });
+      expect(end(await collect(missing.launch(request("echo", withCommands), new AbortController().signal)))).toMatchObject({
+        outcome: "failed",
+        errorKind: "crash",
+        error: expect.stringContaining("did not start"),
+      });
+    });
+
+    it("ends as aborted when the call was stopped before it launched", async () => {
+      const stopped = new AbortController();
+      stopped.abort();
+      expect(await launch({}, withCommands, stopped.signal)).toEqual([{ type: "end", outcome: "aborted", usage: NO_TOKENS }]);
+    });
+  });
+
   it("refuses limits it cannot pass safely without starting the CLI", async () => {
     const events = await collect(runtime().launch(request("success", { limits: { edit: false, commands: ["-x"], web: false } }), new AbortController().signal));
     expect(events).toEqual([{ type: "end", outcome: "failed", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, error: expect.any(String), errorKind: "crash" }]);

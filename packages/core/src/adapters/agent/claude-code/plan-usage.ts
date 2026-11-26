@@ -18,6 +18,7 @@ import { createProcessRunner, type ProcessRunner } from "../../../kernel/process
 import { err, ok, type Result } from "../../../kernel/result/index.js";
 import type { PlanWindow } from "../../../kernel/schemas/index.js";
 import { CLAUDE_CODE_COMMAND } from "./command.js";
+import { compareVersions, parseVersion } from "./version.js";
 
 /** The first Claude Code version `get_usage` was checked on. */
 export const GET_USAGE_FROM = "2.1.331";
@@ -131,7 +132,7 @@ export async function requestClaudePlan(options: ClaudePlanOptions = {}): Promis
   const shown = await run(["--version"]);
   const notShown = failure(shown, "report its version");
   if (notShown !== undefined) return err(notShown);
-  const version = /^\d+\.\d+\.\d+/.exec(shown.lines.join("\n").trim())?.[0];
+  const version = parseVersion(shown.lines.join("\n"));
   if (version === undefined) return err("Claude Code did not report its version.");
   if (compareVersions(version, GET_USAGE_FROM) < 0) return err(`Claude Code ${version} is older than ${GET_USAGE_FROM}, the first version Tokama asks for usage.`);
 
@@ -240,17 +241,6 @@ const percent = (value: number): number => Math.min(1000, Math.round(value * 100
 function resetTime(resetsAt: string | null | undefined): { resetsAt?: number } {
   const at = resetsAt ? Date.parse(resetsAt) : Number.NaN;
   return Number.isFinite(at) && at >= 0 ? { resetsAt: at } : {};
-}
-
-/** Negative when `a` is older than `b`; versions are `major.minor.patch`. */
-export function compareVersions(a: string, b: string): number {
-  const parts = (version: string) => version.split(".").map((part) => Number.parseInt(part, 10) || 0);
-  const [x, y] = [parts(a), parts(b)];
-  for (let i = 0; i < 3; i++) {
-    const diff = (x[i] ?? 0) - (y[i] ?? 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
 }
 
 function parseJson(text: string): unknown {

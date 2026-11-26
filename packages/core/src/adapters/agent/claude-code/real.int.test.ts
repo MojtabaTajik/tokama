@@ -99,7 +99,7 @@ describe.skipIf(!enabled)("Claude Code runtime against the real CLI", () => {
     }
   });
 
-  it("blocks a command when the hook script is missing, and runs it when the hook has no onFailure", { timeout: 240_000 }, () => {
+  it("blocks a command when the hook script is missing, with either guard alone, and runs it with neither", { timeout: 360_000 }, () => {
     const root = mkdtempSync(join(tmpdir(), "tokama-real-claude-hook-"));
     try {
       const run = (name: string, settings: unknown) => {
@@ -110,10 +110,19 @@ describe.skipIf(!enabled)("Claude Code runtime against the real CLI", () => {
         return existsSync(join(dir, "marker.txt"));
       };
       const missing = ["/nonexistent/tokama-engine", "/nonexistent/hook.js", "/nonexistent/rules.json"];
+      type Settings = { hooks: { PreToolUse: Array<{ hooks: Array<Record<string, unknown>> }> } };
+      const hookOf = (settings: Settings) => settings.hooks.PreToolUse[0]?.hooks[0] ?? {};
       expect(run("guarded", hookSettings(missing))).toBe(false);
-      // The same hook without onFailure fails open: this is the behaviour onFailure exists to prevent.
-      const open = hookSettings(missing) as { hooks: { PreToolUse: Array<{ hooks: Array<Record<string, unknown>> }> } };
-      delete open.hooks.PreToolUse[0]?.hooks[0]?.["onFailure"];
+      // Without onFailure, `|| exit 2` alone blocks: this is what a Claude Code that ignores onFailure gets.
+      const shellOnly = hookSettings(missing) as Settings;
+      delete hookOf(shellOnly)["onFailure"];
+      expect(run("shell-only", shellOnly)).toBe(false);
+      // The control: with neither guard the hook fails open, so a missing marker above is the guards' work.
+      const open = hookSettings(missing) as Settings;
+      delete hookOf(open)["onFailure"];
+      const command = String(hookOf(open)["command"]);
+      expect(command.endsWith(" || exit 2")).toBe(true);
+      hookOf(open)["command"] = command.slice(0, -" || exit 2".length);
       expect(run("open", open)).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });

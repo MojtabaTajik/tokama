@@ -32,6 +32,24 @@ describe("claudeCodeStatus", () => {
     expect(runner.argvs).toEqual(["claude --version", "claude auth status --json"]);
   });
 
+  it("says a logged-in CLI older than 2.1.295 cannot run steps that run commands", async () => {
+    const loggedInOn = (out: string) => fakeRunner({ "claude --version": { exitCode: 0, out }, "claude auth status --json": { exitCode: 0, out: JSON.stringify({ loggedIn: true }) } });
+    expect(await claudeCodeStatus({ runner: loggedInOn("2.1.294 (Claude Code)") })).toEqual({
+      cliId: "claude-code",
+      installed: true,
+      loggedIn: true,
+      version: "2.1.294",
+      message: expect.stringContaining("older than 2.1.295"),
+    });
+    expect(await claudeCodeStatus({ runner: loggedInOn("2.1.295") })).toEqual({ cliId: "claude-code", installed: true, loggedIn: true, version: "2.1.295" });
+    expect(await claudeCodeStatus({ runner: loggedInOn("weird") })).toMatchObject({ installed: true, loggedIn: true, message: expect.stringMatching(/could not read the Claude Code version/) });
+  });
+
+  it("keeps the login message for a logged-out CLI that is also too old", async () => {
+    const runner = fakeRunner({ "claude --version": { exitCode: 0, out: "2.1.294" }, "claude auth status --json": { exitCode: 1, out: JSON.stringify({ loggedIn: false }) } });
+    expect(await claudeCodeStatus({ runner })).toMatchObject({ loggedIn: false, message: expect.stringMatching(/claude auth login/) });
+  });
+
   it("reports a CLI that is not logged in, with the command to log in", async () => {
     const runner = fakeRunner({
       "claude --version": { exitCode: 0, out: "2.1.331 (Claude Code)" },

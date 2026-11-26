@@ -11,6 +11,7 @@ import { buildArgs, userMessage, usesShell } from "./args.js";
 import { hookSettings } from "./permission-hook.js";
 import { classifyFailure, createStreamParser, type StreamParser, type StreamState } from "./stream.js";
 import { CLAUDE_CODE_COMMAND } from "./command.js";
+import { commandRulesProblem, readClaudeVersion } from "./version.js";
 
 export interface ClaudeCodeOptions {
   /** argv that starts the CLI. Default: `[CLAUDE_CODE_COMMAND]`, found on the allowlisted PATH. */
@@ -50,6 +51,21 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): AgentR
         return;
       }
       const timeoutMs = request.timeoutMs;
+      // Older versions ignore or reject the hook's `onFailure`, so a hook that cannot start would
+      // let a command run unchecked. Calls without the shell have no hook and need no check. The
+      // version is read on every call: the runtime outlives updates and downgrades of the CLI.
+      if (usesShell(request)) {
+        const read = await readClaudeVersion({ command, runner, signal, ...(options.env !== undefined && { env: options.env }) });
+        if (read.kind === "aborted") {
+          yield { type: "end", outcome: "aborted", usage: NO_TOKENS };
+          return;
+        }
+        const problem = commandRulesProblem(read.kind === "version" ? read.version : undefined, read.kind === "unknown" ? read.why : undefined);
+        if (problem !== undefined) {
+          yield { type: "end", outcome: "failed", usage: NO_TOKENS, error: problem, errorKind: "crash" };
+          return;
+        }
+      }
       let callDir: string | undefined;
       try {
         callDir = usesShell(request) ? writeHookFiles(request, hookCommand) : undefined;

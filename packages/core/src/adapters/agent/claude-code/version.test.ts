@@ -1,0 +1,41 @@
+import { describe, expect, it } from "vitest";
+import { commandRulesProblem, compareVersions, parseVersion } from "./version.js";
+
+describe("compareVersions", () => {
+  it("orders versions by number, not by text", () => {
+    expect(compareVersions("2.1.331", "2.1.331")).toBe(0);
+    expect(compareVersions("2.1.40", "2.1.331")).toBeLessThan(0);
+    expect(compareVersions("2.10.0", "2.9.9")).toBeGreaterThan(0);
+  });
+});
+
+describe("parseVersion", () => {
+  it("reads the leading version of `claude --version`", () => {
+    expect(parseVersion("2.1.332 (Claude Code)")).toBe("2.1.332");
+    expect(parseVersion("2.1.295")).toBe("2.1.295");
+    expect(parseVersion(" 2.1.295\n")).toBe("2.1.295");
+  });
+
+  it("gives nothing for output without a version", () => {
+    expect(parseVersion("garbage")).toBeUndefined();
+    expect(parseVersion("")).toBeUndefined();
+  });
+});
+
+describe("commandRulesProblem", () => {
+  it("names the needed version and the installed one when it is older", () => {
+    for (const version of ["2.1.294", "2.0.999"]) {
+      expect(commandRulesProblem(version)).toContain("Claude Code 2.1.295 or newer is needed");
+      expect(commandRulesProblem(version)).toContain(`this is Claude Code ${version}`);
+    }
+  });
+
+  it("has no problem from 2.1.295 on", () => {
+    for (const version of ["2.1.295", "2.1.296", "2.2.0", "3.0.0"]) expect(commandRulesProblem(version)).toBeUndefined();
+  });
+
+  it("fails closed on an unknown version", () => {
+    expect(commandRulesProblem(undefined)).toMatch(/could not read the Claude Code version \(it printed no version\).*2\.1\.295/);
+    expect(commandRulesProblem(undefined, "it exited with code 3")).toContain("(it exited with code 3)");
+  });
+});

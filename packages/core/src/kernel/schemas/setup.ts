@@ -101,7 +101,7 @@ export const CliHealthSchema = z.strictObject({
   /** The check did not finish in time, so `installed` and `loggedIn` are not known. */
   timedOut: z.literal(true).optional(),
   version: label.optional(),
-  /** What is wrong, in plain words, when the CLI cannot run agents. */
+  /** What is wrong, in plain words: why the CLI cannot run agents, or which steps it cannot run. */
   message: z.string().min(1).max(1000).optional(),
 });
 

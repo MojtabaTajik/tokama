@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ProcessRunner, RunRequest, RunResult } from "../../../kernel/process/index.js";
-import { compareVersions, GET_USAGE_FROM, parseGetUsageReply, parseUsageCache, readClaudePlanCache, requestClaudePlan } from "./plan-usage.js";
+import { GET_USAGE_FROM, parseGetUsageReply, parseUsageCache, readClaudePlanCache, requestClaudePlan } from "./plan-usage.js";
 
 // The fixtures keep the real shapes Claude Code 2.1.332 wrote (codenamed buckets, microsecond
 // reset times, 0 to 100 utilization, the `limits` list with a model-scoped weekly limit and its
@@ -253,13 +253,5 @@ describe("requestClaudePlan", () => {
     expect(await requestClaudePlan({ runner: fakeRunner({ version: { out: ["claude"] } }), clock })).toMatchObject({ ok: false, error: expect.stringMatching(/version/) });
     const silent = fakeRunner({ version: { out: ["2.1.331"] }, usage: { out: ['{"type":"system"}'], exitCode: 1 } });
     expect(await requestClaudePlan({ runner: silent, clock })).toMatchObject({ ok: false, error: expect.stringMatching(/did not answer/) });
-  });
-});
-
-describe("compareVersions", () => {
-  it("orders versions by number, not by text", () => {
-    expect(compareVersions("2.1.331", "2.1.331")).toBe(0);
-    expect(compareVersions("2.1.40", "2.1.331")).toBeLessThan(0);
-    expect(compareVersions("2.10.0", "2.9.9")).toBeGreaterThan(0);
   });
 });
