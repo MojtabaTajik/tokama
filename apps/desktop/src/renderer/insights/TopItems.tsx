@@ -9,7 +9,6 @@ import { formatCost, formatTokens, templateFor, totalOf, workflowName } from "./
 import { Button } from "../ui/Button.js";
 import { AgentChip } from "../ui/agent.js";
 
-
 const TEXT = {
   title: "Top items",
   empty: "No agent calls in this range.",

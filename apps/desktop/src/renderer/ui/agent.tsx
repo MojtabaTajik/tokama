@@ -2,7 +2,7 @@
 // (the first three agents get a colour, later ones and Tokama itself are neutral) and its name.
 // The dot is decorative; the name always comes with it.
 import type { AiCliId } from "@tokama/core";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { backendOf } from "../brand/backends/index.js";
 
 /** 1, 2 or 3 for the first three agents; "neutral" for later ones, unknown ones and Tokama. */
@@ -24,8 +24,13 @@ export function AgentDotMark({ dot }: { readonly dot: AgentDot }) {
  * `size` is in px and stays below the app's own mark (22px in the rail).
  */
 export function BackendMark({ cliId, named = false, size = 12 }: { readonly cliId: AiCliId; readonly named?: boolean; readonly size?: 12 | 16 | 20 }) {
-  const { name, monogram, iconUrl } = backendOf(cliId);
-  if (iconUrl !== undefined) return <img className="backend-mark" src={iconUrl} alt={named ? name : ""} width={size} height={size} />;
+  const { name, monogram, iconUrl, iconScale } = backendOf(cliId);
+  if (iconUrl !== undefined) {
+    // A file with wide clear space is drawn in a larger box and pulled back with a negative margin, so the row keeps its height.
+    const box = Math.round(size * iconScale);
+    const style = box === size ? undefined : ({ "--bm-pad": `${(size - box) / 2}px` } as CSSProperties);
+    return <img className="backend-mark" src={iconUrl} alt={named ? name : ""} width={box} height={box} style={style} />;
+  }
   return named ? (
     <span className="backend-mono mono" role="img" aria-label={name}>
       {monogram}

@@ -30,6 +30,7 @@
 .backend-mark {
   flex: none;
   vertical-align: text-bottom;
+  margin: var(--bm-pad, 0);
 }
 
 .backend-mono {

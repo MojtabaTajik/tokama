@@ -17,7 +17,6 @@ import { AgentChip, AgentDotMark } from "../ui/agent.js";
 import { Placeholder } from "../ui/EmptyState.js";
 import { markOf } from "../ui/status.js";
 
-
 const TEXT = {
   panel: "Machine",
   loading: "Reading this machine",

@@ -74,7 +74,12 @@ export function AgentsPage({ bridge, connection, setup, initialAgent }: AgentsPa
                   <Button variant="plain" className="agent-row" aria-pressed={row.key === selected?.key} data-broken={row.broken || undefined} onClick={() => setSelectedKey(row.key)}>
                     <span className="agent-row-name ellipsis">{row.broken ? <span className="agent-row-flag">{TEXT.broken}</span> : null}{rowName(row)}</span>
                     <span className="agent-row-line mono ellipsis">
-                      {!row.broken && <BackendMark cliId={row.agent.cliId} named />} {rowLine(row)}
+                      {!row.broken && (
+                        <>
+                          <BackendMark cliId={row.agent.cliId} named />{" "}
+                        </>
+                      )}
+                      {rowLine(row)}
                     </span>
                   </Button>
                 </li>

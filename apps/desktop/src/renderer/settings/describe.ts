@@ -66,7 +66,7 @@ export function filterRows(rows: readonly AgentRow[], query: string): AgentRow[]
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (words.length === 0) return [...rows];
   return rows.filter((row) => {
-    const haystack = (row.broken ? [row.entry.id, row.entry.source] : [row.agent.name, row.agent.id, row.agent.model, row.agent.source, backendOf(row.agent.cliId).monogram]).join(" ").toLowerCase();
+    const haystack = (row.broken ? [row.entry.id, row.entry.source] : [row.agent.name, row.agent.id, row.agent.model, row.agent.source, backendOf(row.agent.cliId).name, backendOf(row.agent.cliId).monogram]).join(" ").toLowerCase();
     return words.every((word) => haystack.includes(word));
   });
 }
