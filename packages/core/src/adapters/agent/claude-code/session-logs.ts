@@ -6,10 +6,11 @@
 //
 // Read-only through fs-safe: real folders only (a link is skipped, never followed), no link as a
 // file, a size cap per file and per line. Reads resume where the last read of a file ended.
-import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join, posix } from "node:path";
 import { listFiles, listFolders, readLinesFrom } from "../../../kernel/fs-safe/index.js";
+import { sha256Hex } from "../../../kernel/hash/index.js";
+import { parseJsonLine } from "../../../kernel/json-line/index.js";
 import type { TokenUsage } from "../../../kernel/schemas/index.js";
 
 /** One assistant message's usage. */
@@ -74,7 +75,7 @@ const MAX_DEPTH = 3;
 const MAX_TOKENS = 1_000_000_000;
 const MAX_ID = 200;
 
-const hash = (text: string): string => createHash("sha256").update(text).digest("hex").slice(0, 32);
+const hash = (text: string): string => sha256Hex(text, 32);
 
 /** The hash a project folder is known by; the same for the same folder name. */
 export const projectKey = (folder: string): string => hash(`project:${folder}`);
@@ -121,12 +122,9 @@ const id = (value: unknown): string | undefined => (typeof value === "string" &&
 export function parseLogLine(line: string, project: string): { usage?: LoggedUsage; bad?: true } {
   // Cheap checks first: most lines are user turns, tool output and bookkeeping.
   if (!line.includes('"type":"assistant"') || !line.includes('"usage"')) return {};
-  let value: unknown;
-  try {
-    value = JSON.parse(line);
-  } catch {
-    return { bad: true };
-  }
+  const json = parseJsonLine(line);
+  if (!json.ok) return { bad: true };
+  const value = json.value;
   if (typeof value !== "object" || value === null) return { bad: true };
   const entry = value as { type?: unknown; timestamp?: unknown; requestId?: unknown; message?: unknown };
   if (entry.type !== "assistant") return {};

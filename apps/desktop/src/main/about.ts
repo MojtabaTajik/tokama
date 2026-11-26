@@ -1,7 +1,6 @@
 // What About shows about this build, and the text "Copy build info" puts on the clipboard. The
 // renderer never sends text to the clipboard: the main process composes it from its own facts.
-import { homedir } from "node:os";
-import { readPidFile } from "@tokama/core";
+import { displayPath, readPidFile } from "@tokama/core";
 import type { AboutInfo } from "../shared/bridge.js";
 
 export interface BuildStamp {
@@ -29,18 +28,13 @@ export function readEnginePid(lockPath: string): number | undefined {
   return readPidFile(lockPath)?.pid;
 }
 
-/** `path` with the user's home folder written as `~`. */
-export function tildePath(path: string, userHome: string = homedir()): string {
-  return path === userHome ? "~" : path.startsWith(`${userHome}/`) ? `~${path.slice(userHome.length)}` : path;
-}
-
 export function aboutInfo(deps: AboutDeps): AboutInfo {
   const pid = readEnginePid(deps.lockPath);
   return {
     app: { version: deps.version, built: deps.build.built, commit: deps.build.commit },
     // The engine ships in the same build as the app.
     engine: { version: deps.version, apiVersion: deps.apiVersion, ...(pid === undefined ? {} : { pid }) },
-    dataFolder: tildePath(deps.tokamaHome, deps.userHome),
+    dataFolder: displayPath(deps.tokamaHome, deps.userHome === undefined ? {} : { home: deps.userHome }),
     runtime: { electron: deps.versions.electron ?? "unknown", node: deps.versions.node ?? "unknown" },
     platform: `${SYSTEMS[deps.platform] ?? deps.platform} · ${deps.arch}`,
   };

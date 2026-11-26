@@ -2,6 +2,7 @@
 // with the items of its "Must change" list, or the first lines as written. Agent output is free
 // text, so the reading is tolerant: an unknown shape gives the first lines, never an error.
 import { MAX_SUMMARY_ITEMS, MAX_SUMMARY_LINE_CHARS, type OutputSummary } from "../../kernel/schemas/index.js";
+import { cutText } from "../../kernel/text/index.js";
 import { parseVerdict } from "./verdict.js";
 
 /** First lines shown for a step without a verdict format; a verdict step that broke it shows more. */
@@ -114,5 +115,5 @@ const clean = (text: string): string =>
     .replace(/:$/, "")
     .trim();
 
-const cut = (text: string): string => (text.length > MAX_SUMMARY_LINE_CHARS ? `${text.slice(0, MAX_SUMMARY_LINE_CHARS - 1)}…` : text);
-const cutRef = (ref: string): string => (ref.length > 200 ? `${ref.slice(0, 199)}…` : ref);
+const cut = (text: string): string => cutText(text, MAX_SUMMARY_LINE_CHARS);
+const cutRef = (ref: string): string => cutText(ref, 200);

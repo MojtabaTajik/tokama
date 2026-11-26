@@ -21,7 +21,7 @@ describe("activity words", () => {
     const search = (pattern: string) => actionOf({ name: "Grep", kind: "other", input: { pattern } }).label;
     expect(search("groundY|lift|0\\.0\\d")).toBe('searching "groundY|lift|0\\.0\\d"');
     expect(search("x".repeat(40))).toBe(`searching "${"x".repeat(40)}"`);
-    expect(search("x".repeat(41))).toBe(`searching "${"x".repeat(40)}…"`);
+    expect(search("x".repeat(41))).toBe(`searching "${"x".repeat(39)}…"`);
     expect(search("src/**/*.ts")).toBe('searching "src/**/*.ts"');
   });
 

@@ -31,6 +31,10 @@ import {
   type ItemListResult,
   type ItemRecord,
   checkEngineDir,
+  displayPath,
+  hasCode,
+  parseJsonLine,
+  withDeadline,
   type Clock,
   type CommandErrorCode,
   type ConnectionErrorCode,
@@ -103,7 +107,7 @@ import { type HealthChecks, machineChecks } from "./real/health.js";
 import { runningGroups } from "./machine.js";
 import { RealEngine } from "./real/real.js";
 import { SampleEngine } from "./sample/sample.js";
-import { agentsFor, displayPath, loadConfig, startProblem, stepProblems } from "./real/config.js";
+import { agentsFor, loadConfig, startProblem, stepProblems } from "./real/config.js";
 import { sampleTemplateLoads } from "./sample/templates.js";
 import { openSampleDiagnostics } from "./sample/diagnostics.js";
 import { sampleMachineReport } from "./sample/machine.js";
@@ -709,7 +713,8 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   };
 
   const handleHello = (socket: Socket, line: string): boolean => {
-    const hello = parseOpeningMessage(parseJson(line));
+    const opening = parseJsonLine(line);
+    const hello = parseOpeningMessage(opening.ok ? opening.value : undefined);
     if (!hello.ok) {
       fail(socket, "bad_message", "the first message must be a hello");
       return false;
@@ -738,7 +743,8 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   };
 
   const handleMessage = (socket: Socket, line: string) => {
-    const json = parseJson(line);
+    const parsedLine = parseJsonLine(line);
+    const json = parsedLine.ok ? parsedLine.value : undefined;
     const parsed = parseClientMessage(json);
     if (!parsed.ok) {
       const requestId = requestIdOf(json);
@@ -822,13 +828,13 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     diagnosticsChanged = () => {};
     entriesChanged = () => {};
     usageAbort.abort();
-    await withDeadline(Promise.allSettled([...inFlight, usage.settled(), machine?.close(), claudeLogs?.settled()]), shutdownTimeoutMs);
+    await withDeadline(clock, Promise.allSettled([...inFlight, usage.settled(), machine?.close(), claudeLogs?.settled()]), shutdownTimeoutMs);
     const allClosed = new Promise<void>((resolve) => {
       onAllClosed = resolve;
       if (connections.size === 0) resolve();
     });
     for (const socket of connections) socket.end();
-    await withDeadline(allClosed, shutdownTimeoutMs);
+    await withDeadline(clock, allClosed, shutdownTimeoutMs);
     for (const socket of connections) socket.destroy();
     // The run loop writes to the item logs; it must be done before another engine may open them.
     await (await realEngine)?.close().catch((error: unknown) => {
@@ -1076,14 +1082,6 @@ function sameToken(expected: Buffer, given: string): boolean {
   return candidate.length === expected.length && timingSafeEqual(candidate, expected);
 }
 
-function parseJson(line: string): unknown {
-  try {
-    return JSON.parse(line);
-  } catch {
-    return undefined;
-  }
-}
-
 function requestIdOf(json: unknown): string | undefined {
   if (typeof json !== "object" || json === null || !("requestId" in json)) return undefined;
   const { requestId } = json;
@@ -1104,18 +1102,4 @@ function unlinkIfPresent(path: string): void {
   } catch (error) {
     if (!hasCode(error, "ENOENT")) throw error;
   }
-}
-
-function hasCode(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
-}
-
-function withDeadline(work: Promise<unknown>, ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    void work.finally(() => {
-      clearTimeout(timer);
-      resolve();
-    });
-  });
 }

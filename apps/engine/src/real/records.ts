@@ -2,6 +2,7 @@
 // header and its Steps tab show. A pure function of the stored item: step names, stages and data
 // rules come from the template snapshot the item started with, never from today's templates.
 import {
+  cutText,
   type AttemptRecord,
   type AttemptSummary,
   type Decision,
@@ -44,7 +45,7 @@ export const QUESTIONS: Readonly<Record<DecisionKind, string>> = {
 const cut = (text: string | undefined, max: number): string | undefined => {
   const line = text?.replace(/\s+/g, " ").trim();
   if (line === undefined || line === "") return undefined;
-  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+  return cutText(line, max);
 };
 
 /** A template edits a repo when Start picks one to edit; anything else only reads. */

@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createGit, type Git } from "../../kernel/git/index.js";
 import { createProcessRunner } from "../../kernel/process/index.js";
-import { protectedSet, type ProtectedSet, tamperChanges } from "./index.js";
+import { protectedSet, type ProtectedSet, sharedGitHashes, tamperChanges } from "./index.js";
 
 // Ported from ai-pipeline tests/test_loop_stub.py (an fsmonitor written into .git/config during a
 // step is a tamper event) and tests/test_sampler_and_run.py (file_hashes over a file, a hooks
@@ -386,6 +386,23 @@ describe("protectedSet", () => {
     const after = await limited.hash();
     expect(after).toMatchObject({ ok: false });
     if (!after.ok) expect(after.error.message).toMatch(/too large or too deep/);
+  });
+
+  // Known vector: a regular file is `sha256:` and the SHA-256 hex of its bytes. Recorded baselines
+  // carry it, so the format must not change.
+  it("hashes a regular file as sha256:<SHA-256 hex of its bytes>", SLOW, async () => {
+    write(join(repo, ".git", "hooks", "pre-commit"), "export const total = 1;\n");
+    expect(value(await set.hash()).get("git:hooks/pre-commit")?.hash).toBe("sha256:0739219ff1302eacd47db855b5c2e4a0db33ec756c3945074284df2d0b89361f");
+  });
+
+  // Known vector: git config is `config:` and the SHA-256 hex of the JSON of its counted records
+  // and the SHA-256 hex of each file it includes. Recorded baselines carry it, so the format must
+  // not change.
+  it("hashes git config as config:<SHA-256 hex of its records and included hashes>", SLOW, async () => {
+    writeFileSync(join(repo, ".git", "config"), "[core]\n\trepositoryformatversion = 0\n\tbare = false\n[include]\n\tpath = extra.inc\n");
+    writeFileSync(join(repo, ".git", "extra.inc"), "[alias]\n\tst = status\n");
+    const hashes = value(await sharedGitHashes(git, repo));
+    expect(hashes.get("git:config")?.hash).toBe("config:6627db89a4ab5b4578c4d337f245d4e128738f3093f5512234ec76d7a04abe69");
   });
 
   it("names files by area and relative path, never an absolute path", SLOW, async () => {

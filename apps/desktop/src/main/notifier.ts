@@ -3,7 +3,7 @@
 // system's notification, the window and the clock come in through `NotifierDeps`, so it is tested
 // with fakes. Text is plain: control characters are removed, and on Linux, where a notification
 // server may read markup, `&`, `<` and `>` are escaped.
-import { finishActions, type ItemRecord, type Setup } from "@tokama/core";
+import { cutText, finishActions, type ItemRecord, type Setup } from "@tokama/core";
 import type { BridgeEvent } from "../shared/bridge.js";
 import type { NotificationSettings } from "../shared/desktop-state.js";
 
@@ -63,7 +63,9 @@ const BODY_MAX = 200;
 /** One line of plain text: no control or invisible formatting characters, cut to `max`, escaped for Linux. */
 export function plainText(text: string, max: number, platform: NodeJS.Platform): string {
   const line = text.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, " ").replace(/\s+/g, " ").trim();
-  const cut = line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
+  const short = cutText(line, max);
+  // No space before the mark.
+  const cut = short === line ? line : short.replace(/\s+(?=…$)/, "");
   return platform === "linux" ? cut.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;") : cut;
 }
 

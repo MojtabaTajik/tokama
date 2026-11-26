@@ -6,7 +6,7 @@
 // eslint-disable-next-line no-restricted-imports -- Save as file writes where the user chose in the save dialog, as a plain write, like any app.
 import { writeFile } from "node:fs/promises";
 import type { EngineClient } from "@tokama/client";
-import { type Clock, type DiagnosticEntry, type DiagnosticId, DiagnosticIdSchema, diagnosticsBody, entryText, MAX_DIAGNOSTICS_BYTES, type PostFailure, postGzipJson } from "@tokama/core";
+import { type Clock, type DiagnosticEntry, type DiagnosticId, DiagnosticIdSchema, diagnosticsBody, entryText, MAX_DIAGNOSTICS_BYTES, type PostFailure, postGzipJson, utcDay } from "@tokama/core";
 import type { SaveDialogOptions, SaveDialogReturnValue } from "electron";
 import type { DiagnosticsLoad, DiagnosticsSaveResult, DiagnosticsSendFailure, DiagnosticsSendResult } from "../shared/bridge.js";
 
@@ -173,7 +173,7 @@ export async function saveToFile(
   today: Date,
   write: (path: string, text: string) => Promise<void> = (path, data) => writeFile(path, data, { mode: 0o600 }),
 ): Promise<"saved" | "cancelled" | "failed"> {
-  const day = today.toISOString().slice(0, 10);
+  const day = utcDay(today.getTime());
   const result = await show({ title: "Save diagnostics", defaultPath: `tokama-diagnostics-${day}.json`, filters: [{ name: "JSON", extensions: ["json"] }] });
   if (result.canceled || result.filePath === undefined || result.filePath === "") return "cancelled";
   try {

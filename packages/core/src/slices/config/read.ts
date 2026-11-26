@@ -4,6 +4,7 @@ import { lstat, realpath } from "node:fs/promises";
 import { readTextFile, type ReadFailure } from "../../kernel/fs-safe/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import type { ConfigProblem } from "./yaml-file.js";
+import { errnoCode } from "../../kernel/errno/index.js";
 
 /** Config files are hand-written settings: far below this. */
 export const MAX_CONFIG_BYTES = 64 * 1024;
@@ -22,7 +23,7 @@ export async function resolveHomePath(path: string, file: string): Promise<Resul
   try {
     return ok(await realpath(path));
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
+    const code = errnoCode(error);
     if (code !== "ENOENT") return err({ file, message: `can't be read (${code ?? "unknown error"})` });
   }
   try {

@@ -2,6 +2,7 @@ import { constants, type promises } from "node:fs";
 import { lstat, open, readdir, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { err, ok, type Result } from "../result/index.js";
+import { errnoCode } from "../errno/index.js";
 
 export type ReadFailureReason =
   | "not_found"
@@ -40,7 +41,7 @@ const failure = (path: string, reason: ReadFailureReason, message: string, code?
   err(code === undefined ? { reason, path, message } : { reason, path, message, code });
 
 function openFailure(path: string, error: unknown): Result<never, ReadFailure> {
-  const code = (error as NodeJS.ErrnoException).code ?? "UNKNOWN";
+  const code = errnoCode(error) ?? "UNKNOWN";
   if (code === "ENOENT" || code === "ENOTDIR") return failure(path, "not_found", "file does not exist");
   if (code === "ELOOP" || code === "EMLINK") return failure(path, "symlink", "path is a symlink");
   return failure(path, "io_error", `cannot open: ${code}`, code);
@@ -129,7 +130,7 @@ export async function readTextTail(
     if (size <= options.countLinesUpTo) totalLines = start === 0 && !cut ? lines.length : await countFileLines(handle, size);
     return ok({ text, truncated: cut, totalBytes: size, totalLines });
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code ?? "UNKNOWN";
+    const code = errnoCode(error) ?? "UNKNOWN";
     return failure(path, "io_error", `cannot read: ${code}`, code);
   } finally {
     await handle.close().catch(() => undefined);
@@ -188,7 +189,7 @@ async function readUpTo(path: string, maxBytes: number, refuseLarger: boolean): 
     const bytes = Buffer.concat(chunks, total);
     return ok(total > maxBytes ? { bytes: bytes.subarray(0, maxBytes), more: true } : { bytes, more: false });
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code ?? "UNKNOWN";
+    const code = errnoCode(error) ?? "UNKNOWN";
     return failure(path, "io_error", `cannot read: ${code}`, code);
   } finally {
     await handle.close().catch(() => undefined);
@@ -274,7 +275,7 @@ export async function listFiles(root: string, rel: string, options: { readonly m
     const entries = await readdir(dir, { withFileTypes: true });
     names = entries.filter((entry) => !entry.isDirectory()).map((entry) => entry.name);
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code ?? "UNKNOWN";
+    const code = errnoCode(error) ?? "UNKNOWN";
     if (code === "ENOENT") return failure(dir, "not_found", "folder does not exist");
     if (code === "ENOTDIR") return failure(dir, "not_regular_file", "not a folder");
     return failure(dir, "io_error", `cannot list: ${code}`, code);
@@ -306,7 +307,7 @@ export async function listFolders(root: string, rel: string, options: { readonly
     const entries = await readdir(dir, { withFileTypes: true });
     names = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code ?? "UNKNOWN";
+    const code = errnoCode(error) ?? "UNKNOWN";
     if (code === "ENOENT") return failure(dir, "not_found", "folder does not exist");
     if (code === "ENOTDIR") return failure(dir, "not_regular_file", "not a folder");
     return failure(dir, "io_error", `cannot list: ${code}`, code);
@@ -361,7 +362,7 @@ export async function readLinesFrom(path: string, options: ReadLinesOptions, onL
     try {
       info = await handle.stat();
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code ?? "UNKNOWN";
+      const code = errnoCode(error) ?? "UNKNOWN";
       return failure(path, "io_error", `cannot read: ${code}`, code);
     }
     if (!info.isFile()) return failure(path, "not_regular_file", "not a regular file");
@@ -383,7 +384,7 @@ export async function readLinesFrom(path: string, options: ReadLinesOptions, onL
       try {
         ({ bytesRead } = await handle.read(chunk, 0, Math.min(CHUNK_BYTES, stop - position), position));
       } catch (error) {
-        const code = (error as NodeJS.ErrnoException).code ?? "UNKNOWN";
+        const code = errnoCode(error) ?? "UNKNOWN";
         return failure(path, "io_error", `cannot read: ${code}`, code);
       }
       if (bytesRead === 0) break;

@@ -9,6 +9,7 @@ import { join, posix } from "node:path";
 import type { Git, GitError, WorktreeEntry } from "../../kernel/git/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import type { ItemId } from "../../kernel/schemas/index.js";
+import { hasCode } from "../../kernel/errno/index.js";
 
 /** The repo settings a worktree needs; the config slice's `Repo` fits. */
 export interface WorktreeRepo {
@@ -62,8 +63,8 @@ async function excludeFolder(git: Git, repo: WorktreeRepo): Promise<Result<void,
   const infoDir = join(dirs.value.commonDir, "info");
   const file = join(infoDir, "exclude");
   try {
-    const current = await readFile(file, "utf8").catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return "";
+    const current = await readFile(file, "utf8").catch((error: unknown) => {
+      if (hasCode(error, "ENOENT")) return "";
       throw error;
     });
     if (current.split(/\r?\n/).some((existing) => existing.trim() === line)) return ok(undefined);

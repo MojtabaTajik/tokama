@@ -14,6 +14,7 @@ import type { Git } from "../../kernel/git/index.js";
 import type { ProcessRunner } from "../../kernel/process/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import { parseTemplateRecord, type CommandErrorCode, type FinishAction, type FinishRefusal, type GitChange, type ItemEventBody, type ItemId, type RepoId, type StoredItem } from "../../kernel/schemas/index.js";
+import { cutText, scrubPaths } from "../../kernel/text/index.js";
 import type { Repo } from "../config/index.js";
 import { sharedGitHashes, sharedGitSettings, type GitSetting, type TamperChange } from "../integrity/index.js";
 import type { ItemStore } from "../items/index.js";
@@ -80,7 +81,7 @@ async function readJson<T>(path: string): Promise<T | undefined> {
 /** A value on one line, cut to fit. */
 const oneLine = (text: string): string => {
   const line = text.replace(/\s+/g, " ").trim();
-  return line.length > VALUE_MAX ? `${line.slice(0, VALUE_MAX - 1)}…` : line;
+  return cutText(line, VALUE_MAX);
 };
 
 /**
@@ -140,9 +141,9 @@ export function createFinisher(deps: FinishDeps): Finisher {
 
   const scrub = (text: string, repo: Repo | undefined): string => {
     const roots: [string, string][] = [...(repo === undefined ? [] : [[repo.path, `<repo ${repo.id}>`] as [string, string]]), [tmpdir(), "<tmp>"], [homedir(), "~"]];
-    const out = roots.filter(([path]) => path.length > 1).reduce((acc, [path, name]) => acc.split(path).join(name), withoutUserInfo(text));
+    const out = scrubPaths(withoutUserInfo(text), { roots });
     const line = out.replace(/\s+/g, " ").trim() || "(no detail)";
-    return line.length > DETAIL_MAX ? `${line.slice(0, DETAIL_MAX - 1)}…` : line;
+    return cutText(line, DETAIL_MAX);
   };
 
   const append = (itemId: ItemId, events: readonly ItemEventBody[]) => {

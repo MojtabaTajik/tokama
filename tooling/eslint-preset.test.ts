@@ -378,3 +378,27 @@ describe("eslint preset: writes, renames, signals and child processes only throu
     expect(await errorRules(path, code)).toEqual([]);
   });
 });
+
+describe("eslint preset: SHA-256 only through the kernel's sha256Hex", () => {
+  const sources = [`${core}/slices/items/virtual.ts`, `${core}/adapters/agent/fake/virtual.ts`, "packages/client/src/virtual.ts", "apps/desktop/src/main/virtual.ts", "apps/engine/src/virtual.ts"];
+
+  it.each(sources.flatMap((path) => [
+      'import { createHash } from "node:crypto";\nexport { createHash };',
+      'import { createHash } from "crypto";\nexport { createHash };',
+      'import { hash } from "node:crypto";\nexport { hash };',
+      'import crypto from "node:crypto";\nexport { crypto };',
+    ].map((code) => [path, code])))(
+    "refuses createHash in %s: %s",
+    async (path, code) => {
+      expect(await errorRules(path, code)).toEqual([KERNEL_ONLY]);
+    },
+  );
+
+  it.each(sources)("allows the other crypto functions in %s", async (path) => {
+    expect(await errorRules(path, 'export { randomUUID, timingSafeEqual } from "node:crypto";')).toEqual([]);
+  });
+
+  it.each([`${core}/kernel/hash/virtual.ts`, `${core}/slices/items/virtual.test.ts`, "apps/engine/src/virtual.test.ts"])("allows createHash in %s", async (path) => {
+    expect(await errorRules(path, 'import { createHash } from "node:crypto";\nexport { createHash };')).toEqual([]);
+  });
+});

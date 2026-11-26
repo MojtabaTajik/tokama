@@ -9,6 +9,7 @@ import { lstatSync, mkdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { type Clock, systemClock } from "../../kernel/clock/index.js";
 import { appendTextSync, readJsonFile, readTextFile, replaceTextSync } from "../../kernel/fs-safe/index.js";
+import { parseJsonLine } from "../../kernel/json-line/index.js";
 import {
   type ClientSource,
   type CrashKind,
@@ -410,12 +411,10 @@ function safeName(name: string, context: RedactionContext): string {
 }
 
 function parseLine(line: string): DiagnosticEntry | undefined {
-  try {
-    const parsed = DiagnosticEntrySchema.safeParse(JSON.parse(line));
-    return parsed.success ? parsed.data : undefined;
-  } catch {
-    return undefined;
-  }
+  const json = parseJsonLine(line);
+  if (!json.ok) return undefined;
+  const parsed = DiagnosticEntrySchema.safeParse(json.value);
+  return parsed.success ? parsed.data : undefined;
 }
 
 function exists(path: string): boolean {

@@ -6,6 +6,7 @@
 // worktree, a path outside it is only a hash, and commands have the worktree and home folder
 // replaced. Paths a command still names outside the worktree are left out here.
 import { type ActivityKind, type ItemActivity, MAX_ACTIVITY_LABEL_CHARS, type AgentCallEvent } from "../../kernel/schemas/index.js";
+import { cutText } from "../../kernel/text/index.js";
 
 type ToolCall = Extract<AgentCallEvent, { type: "tool_call" }>;
 
@@ -51,16 +52,16 @@ export function redactPaths(command: string): string {
 /** One line, no control characters, at most `MAX_ACTIVITY_LABEL_CHARS`: the end stays, since it names the file. */
 export function labelText(text: string): string {
   const line = text.replace(/[\p{Cc}\p{Cf}\s]+/gu, " ").trim();
-  return line.length > MAX_ACTIVITY_LABEL_CHARS ? `…${line.slice(line.length - MAX_ACTIVITY_LABEL_CHARS + 1)}` : line;
+  return cutText(line, MAX_ACTIVITY_LABEL_CHARS, { keep: "tail" });
 }
 
-/** Longest pattern a search label quotes in full: a long one is cut after this many characters. */
+/** Longest pattern a search label quotes: a longer one is cut to this many characters, the `…` included. */
 const MAX_PATTERN_CHARS = 40;
 
 /** A search pattern quoted, so it reads as a pattern: `"groundY|lift"`, or `"groundY|lift|0\.0\d|spawn…"` when long. */
 function quotePattern(pattern: string): string {
   const line = pattern.replace(/[\p{Cc}\p{Cf}\s]+/gu, " ").trim();
-  return line.length > MAX_PATTERN_CHARS ? `"${line.slice(0, MAX_PATTERN_CHARS)}…"` : `"${line}"`;
+  return `"${cutText(line, MAX_PATTERN_CHARS)}"`;
 }
 
 /** A tool call in words, as the activity line shows it. */

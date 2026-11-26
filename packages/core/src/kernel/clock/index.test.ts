@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { manualClock, systemClock } from "./index.js";
+import { manualClock, sleep, systemClock, withDeadline } from "./index.js";
 
 describe("clock", () => {
   it("systemClock reads real time", () => {
@@ -75,5 +75,48 @@ describe("clock", () => {
     expect(fired).toEqual([]);
     clock.advance(0);
     expect(fired).toEqual([0, -5, Number.NaN]);
+  });
+});
+
+describe("sleep", () => {
+  it("resolves only once the clock reaches the time", async () => {
+    const clock = manualClock();
+    let done = false;
+    const slept = sleep(clock, 100).then(() => (done = true));
+    clock.advance(99);
+    await Promise.resolve();
+    expect(done).toBe(false);
+    clock.advance(1);
+    await slept;
+    expect(done).toBe(true);
+  });
+});
+
+describe("withDeadline", () => {
+  it("resolves when the work settles, and clears its timer", async () => {
+    const clock = manualClock();
+    let finish = () => {};
+    const work = new Promise<void>((resolve) => (finish = resolve));
+    let done = false;
+    const waited = withDeadline(clock, work, 1_000).then(() => (done = true));
+    finish();
+    await waited;
+    expect(done).toBe(true);
+  });
+
+  it("resolves at the deadline when the work never settles", async () => {
+    const clock = manualClock();
+    let done = false;
+    const waited = withDeadline(clock, new Promise(() => {}), 1_000).then(() => (done = true));
+    clock.advance(999);
+    await Promise.resolve();
+    expect(done).toBe(false);
+    clock.advance(1);
+    await waited;
+    expect(done).toBe(true);
+  });
+
+  it("does not reject when the work rejects", async () => {
+    await expect(withDeadline(manualClock(), Promise.reject(new Error("boom")), 1_000)).resolves.toBeUndefined();
   });
 });

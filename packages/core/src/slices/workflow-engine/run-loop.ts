@@ -54,6 +54,7 @@ import {
   type TemplateStepDef,
   type RunFailure,
 } from "../../kernel/schemas/index.js";
+import { cutText, scrubPaths } from "../../kernel/text/index.js";
 import type { Agent, Repo } from "../config/index.js";
 import { type ActivityState, callUsage, claudeCodeGuardDefaults, labelText, redactPaths, runGuardedCall, type LoopGuardSettings } from "../execution/index.js";
 import { protectedSet, sharedGitSettings, type ProtectedSet } from "../integrity/index.js";
@@ -223,13 +224,13 @@ interface Live {
 /** Text cut to fit an event's `detail`. */
 function cut(text: string): string {
   const oneLine = text.trim() === "" ? "(no detail)" : text.trim();
-  return oneLine.length > DETAIL_MAX ? `${oneLine.slice(0, DETAIL_MAX - 1)}…` : oneLine;
+  return cutText(oneLine, DETAIL_MAX);
 }
 
 /** The first line of the text, on one line, as the item's title. */
 export function titleFrom(text: string): string {
   const line = text.split(/\r?\n/).find((l) => l.trim() !== "")?.replace(/[\s\p{Cc}]+/gu, " ").trim() ?? "Untitled";
-  return line.length > TITLE_MAX ? `${line.slice(0, TITLE_MAX - 1)}…` : line;
+  return cutText(line, TITLE_MAX);
 }
 
 /** The steps a reviewer step reviews, as template validation draws them: from the back target, or after the previous reviewer. */
@@ -267,11 +268,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     if (map === undefined) roots.set(itemId, (map = new Map([[store.itemDir(itemId), "<item folder>"], [dirname(store.itemDir(itemId)), "<items folder>"]])));
     return map;
   };
-  const scrub = (text: string) =>
-    [[homedir(), "~"] as const, ...[...roots.values()].flatMap((map) => [...map])]
-      .filter(([path]) => path.length > 1)
-      .sort((a, b) => b[0].length - a[0].length)
-      .reduce((out, [path, name]) => out.split(path).join(name), text);
+  const scrub = (text: string) => scrubPaths(text, { roots: [[homedir(), "~"], ...[...roots.values()].flatMap((map) => [...map])] });
   const detail = (text: string) => cut(scrub(text));
 
   const reportActivity = (item: StoredItem, stepId: StepId, attempt: number, by: ItemActivity["by"], state: ActivityState | undefined) => {

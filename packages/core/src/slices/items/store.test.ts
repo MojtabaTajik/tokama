@@ -281,3 +281,12 @@ it("ignores entries in the items folder that are not item folders", () => {
   expect(reopened.list()).toHaveLength(1);
   expect(ItemIdSchema.safeParse(reopened.list()[0]?.id).success).toBe(true);
 });
+
+describe("templateSnapshot", () => {
+  // Known vector: the full SHA-256 hex of the canonical JSON (keys sorted, undefined left out).
+  // Stored items carry it, so the format must not change.
+  it("is the SHA-256 hex of the record's canonical JSON", () => {
+    const record = { steps: [{ id: "s1" }], name: "Fix", id: "t1", gone: undefined } as unknown as Parameters<typeof templateSnapshot>[0];
+    expect(templateSnapshot(record).sha256).toBe("b424242a8e77a9e2ba7f5c96043af1ec603ff596bf9bfde6534934189df73f1d");
+  });
+});

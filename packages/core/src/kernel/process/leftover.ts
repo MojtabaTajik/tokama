@@ -7,7 +7,7 @@
 // the root's group alone would leave those running, reparented to pid 1.
 import { execFile } from "node:child_process";
 import { uptime } from "node:os";
-import { systemClock, type Clock } from "../clock/index.js";
+import { sleep, systemClock, type Clock } from "../clock/index.js";
 import { posixTree } from "./posix.js";
 import type { TreeSignal } from "./runner.js";
 
@@ -73,7 +73,7 @@ export async function killLeftoverTree(record: LeftoverRecord, options: KillLeft
   const members = new Set(tree.map(identity));
 
   for (const pgid of groups) table.signalGroup(pgid, "SIGTERM");
-  await new Promise<void>((resolve) => clock.setTimeout(resolve, options.graceMs ?? 2_000));
+  await sleep(clock, options.graceMs ?? 2_000);
 
   // Only groups that still hold a process of the tree (same pid and start time) get SIGKILL, so
   // a group id reused meanwhile is left alone.

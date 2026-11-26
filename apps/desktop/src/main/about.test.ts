@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { aboutInfo, readEnginePid, tildePath } from "./about.js";
+import { aboutInfo, readEnginePid } from "./about.js";
 
 let dir: string;
 beforeEach(() => {
@@ -28,14 +28,6 @@ describe("readEnginePid", () => {
     writeFileSync(join(dir, "elsewhere"), "48211 e-1\n");
     symlinkSync(join(dir, "elsewhere"), join(dir, "engine.lock"));
     expect(readEnginePid(join(dir, "engine.lock"))).toBeUndefined();
-  });
-});
-
-describe("tildePath", () => {
-  it("writes the user's home folder as ~, only at a folder boundary", () => {
-    expect(tildePath("/Users/dev/.tokama", "/Users/dev")).toBe("~/.tokama");
-    expect(tildePath("/Users/dev", "/Users/dev")).toBe("~");
-    expect(tildePath("/Users/developer/.tokama", "/Users/dev")).toBe("/Users/developer/.tokama");
   });
 });
 

@@ -1,4 +1,5 @@
 import type { ProcessTree } from "./runner.js";
+import { errnoCode } from "../errno/index.js";
 
 /**
  * macOS and Linux: the child leads a new process group (`detached: true`), so a signal to
@@ -15,7 +16,7 @@ export const posixTree: ProcessTree = {
       process.kill(-pid, signal);
     } catch (error) {
       // ESRCH: the group is gone. EPERM: macOS reports it for a group of zombies only.
-      const code = (error as NodeJS.ErrnoException).code;
+      const code = errnoCode(error);
       if (code !== "ESRCH" && code !== "EPERM") throw error;
     }
   },

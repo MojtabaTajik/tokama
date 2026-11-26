@@ -1,11 +1,13 @@
 // Parses Claude Code's stream-json output (one JSON object per line) into agent call events, and
 // keeps what the end event needs: usage, session id, the result, and the error signals.
 // The stream is outside input: every line is validated, and a line that does not fit is skipped.
-import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { isAbsolute, normalize, relative, sep } from "node:path";
 import { z } from "zod";
+import { sha256Hex } from "../../../kernel/hash/index.js";
+import { parseJsonLine } from "../../../kernel/json-line/index.js";
 import type { AgentCallErrorKind, AgentCallEvent, RateLimitWindow, TokenUsage } from "../../../kernel/schemas/index.js";
+import { scrubPaths } from "../../../kernel/text/index.js";
 
 // A count the CLI reports. A missing or odd value counts as absent rather than dropping the line.
 const count = z.int().nonnegative().optional().catch(undefined);
@@ -103,7 +105,7 @@ const CHANGE_FIELDS: Record<string, readonly string[]> = {
   NotebookEdit: ["cell_id", "new_source", "edit_mode"],
 };
 type ToolInput = Record<string, string | number | boolean>;
-const hash = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 16);
+const hash = (value: string) => sha256Hex(value, 16);
 const NO_TOKENS: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 export interface CallResult {
@@ -164,15 +166,8 @@ export function createStreamParser(cwd: string, home: string = homedir()): Strea
     return undefined;
   };
 
-  const scrub = (text: string): string => {
-    let out = text;
-    // Longest first, so the cwd is replaced before the home folder that may hold it.
-    const replacements: Array<[string, string]> = [...roots.map((root): [string, string] => [root, "."]), [home, "~"]];
-    for (const [from, to] of replacements.filter(([from]) => from.length > 1).sort((a, b) => b[0].length - a[0].length)) {
-      out = out.split(from).join(to);
-    }
-    return out;
-  };
+  // Longest first, so the cwd is replaced before the home folder that may hold it.
+  const scrub = (text: string): string => scrubPaths(text, { roots: [...roots.map((root): [string, string] => [root, "."]), [home, "~"]] });
 
   /**
    * The fields that make two tool calls the same call. A path is relative to the working
@@ -209,13 +204,9 @@ export function createStreamParser(cwd: string, home: string = homedir()): Strea
 
   const parseLine = (text: string): AgentCallEvent[] => {
     if (!text.startsWith("{")) return [];
-    let json: unknown;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      return [];
-    }
-    const parsed = Line.safeParse(json);
+    const json = parseJsonLine(text);
+    if (!json.ok) return [];
+    const parsed = Line.safeParse(json.value);
     if (!parsed.success) return [];
     const line = parsed.data;
     switch (line.type) {

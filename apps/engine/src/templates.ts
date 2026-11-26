@@ -1,7 +1,7 @@
 // The templates and template_detail queries: every template file the engine loaded, as list
 // entries, and one file in full. The caller loads the files; this only shapes the replies.
 import { join } from "node:path";
-import { MAX_MESSAGE_BYTES, MAX_TEMPLATE_ENTRIES, type TemplateDetail, type TemplateEntry, type TemplateFileKey, type TemplateLoad, type TemplateView } from "@tokama/core";
+import { cutText, MAX_MESSAGE_BYTES, MAX_TEMPLATE_ENTRIES, type TemplateDetail, type TemplateEntry, type TemplateFileKey, type TemplateLoad, type TemplateView } from "@tokama/core";
 
 const MAX_PROBLEMS = 100;
 const MAX_WARNINGS = 50;
@@ -71,4 +71,4 @@ function viewOf(template: Extract<TemplateLoad, { ok: true }>["template"]): Temp
 }
 
 const sameKey = (a: TemplateFileKey, b: TemplateFileKey): boolean => a.origin === b.origin && a.file === b.file;
-const cap = (message: string): string => (message.length > MAX_MESSAGE ? `${message.slice(0, MAX_MESSAGE - 1)}…` : message);
+const cap = (message: string): string => cutText(message, MAX_MESSAGE);
