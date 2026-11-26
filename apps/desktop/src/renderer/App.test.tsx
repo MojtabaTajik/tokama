@@ -7,7 +7,7 @@ import type { ConnectionState, TokamaBridge } from "../shared/bridge.js";
 import { App } from "./App.js";
 import { brand } from "./brand/index.js";
 import { TIP_OPEN_MS } from "./shell/Rail.js";
-import { CONNECTED, fakeBridge } from "./testing/bridge.js";
+import { board, CONNECTED, fakeBridge } from "./testing/bridge.js";
 import { ITEMS, items, NOW, setup } from "./testing/sample.js";
 import { machineReport } from "./testing/machine.js";
 import { usageReport } from "./testing/usage.js";
@@ -343,7 +343,7 @@ describe("App live updates", () => {
     expect(rowTitles()).toContain("Orders API returns 500 after deploy");
     const answer = fake.query.getMockImplementation()!;
     const current = items.filter((item) => item.id !== ITEMS.needsYou.id).map((item) => (item.id === ITEMS.working.id ? { ...item, state: "needs_you" } : item));
-    fake.query.mockImplementation(async (q) => (q.type === "board" ? { ok: true, data: { items: current } } : answer(q)));
+    fake.query.mockImplementation(async (q) => (q.type === "board" ? { ok: true, data: board(current as typeof items) } : answer(q)));
     await fake.setConnection({ status: "reconnecting" });
     expect(text('.health[data-status="reconnecting"]')).toContain("reconnecting");
     await fake.setConnection({ status: "connected", engineId: "e-2" });

@@ -347,16 +347,18 @@ describe("Insights: top items", () => {
     ]);
   });
 
-  it("opens an item the board has, and renders engine text as text", async () => {
+  it("opens every item, also a finished one the board does not hold, and renders engine text as text", async () => {
     const onSelectItem = vi.fn<(id: string) => void>();
     const report = { ...usageReport, items: [{ ...usageReport.items[0]!, title: "<b>bold</b> title" }, { ...usageReport.items[1]!, itemId: "item_00000000-0000-4000-8000-0000000000ff" }] } as UsageReport;
-    render({ onSelectItem }, report);
+    render({ onSelectItem, items: [] }, report);
     expect($(".ins-table b")).toBeNull();
     expect(tableRows()[0]).toBe("<b>bold</b> title");
     await click($(".ins-table .btn"));
     expect(onSelectItem).toHaveBeenCalledWith(usageReport.items[0]!.itemId);
-    // An item the board no longer has is plain text.
-    expect($$(".ins-table .btn")).toHaveLength(1);
+    // The second item is not among the board's items, and still opens.
+    expect($$(".ins-table .btn")).toHaveLength(2);
+    await click($$(".ins-table .btn")[1]!);
+    expect(onSelectItem).toHaveBeenLastCalledWith("item_00000000-0000-4000-8000-0000000000ff");
   });
 
   it("says when it is loading, when the load failed, and when the range has no calls", () => {

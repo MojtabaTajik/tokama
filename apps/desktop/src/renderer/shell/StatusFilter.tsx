@@ -29,7 +29,7 @@ export interface StatusFilterProps {
   /** The open items of the current view. */
   readonly items: readonly ItemRecord[];
   /** The finished items of the current view, counted. */
-  readonly counts: readonly BoardCount[];
+  readonly finishedCounts: readonly BoardCount[];
   readonly filter: Filter;
   readonly now: number;
   readonly onChange: (patch: Partial<Filter>) => void;
@@ -37,8 +37,8 @@ export interface StatusFilterProps {
   readonly search?: SearchProps | undefined;
 }
 
-export function StatusFilter({ items, counts: finished, filter, now, onChange, search }: StatusFilterProps) {
-  const counts = filterCounts(items, finished, filter, now);
+export function StatusFilter({ items, finishedCounts, filter, now, onChange, search }: StatusFilterProps) {
+  const counts = filterCounts(items, finishedCounts, filter, now);
   return (
     <div className="filter-bar">
       <div className="segments" role="group" aria-label={TEXT.group}>

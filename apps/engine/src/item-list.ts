@@ -7,7 +7,18 @@
 // scans the rows of the group; the group, day and page order are index-backed. It also counts
 // the done and failed items for the board query, which serves only the open items in full.
 import { DatabaseSync } from "node:sqlite";
-import { type BoardCount, type ItemId, type ItemRecord, type ItemState, type ListGroup, localDate, type RepoId, type Setup, type TemplateRef } from "@tokama/core";
+import {
+  type BoardCount,
+  type ItemId,
+  type ItemRecord,
+  type ItemState,
+  type ListGroup,
+  localDate,
+  MAX_BOARD_COUNTS,
+  type RepoId,
+  type Setup,
+  type TemplateRef,
+} from "@tokama/core";
 
 /** The work-list group of an item state. A stopped item counts as done. */
 export function groupOf(state: ItemState): ListGroup {
@@ -175,25 +186,53 @@ export class ItemList {
 
   /**
    * The done and failed items counted by start day, template and repos. Items that started before
-   * `firstDay` are counted together, under a null day.
+   * `firstDay` are counted together, under a null day. A reply never holds more than `max` rows: when
+   * there are more, the oldest days join the null-day rows, as many days as needed.
    */
-  counts(firstDay: string): BoardCount[] {
+  counts(firstDay: string, max: number = MAX_BOARD_COUNTS): BoardCount[] {
     const rows = this.db
       .prepare(
         `SELECT CASE WHEN day >= ? THEN day END AS d, template_ref, repos, sum(grp = 'done') AS done, sum(grp = 'failed') AS failed
          FROM list_items WHERE grp IN ('done', 'failed') GROUP BY d, template_ref, repos ORDER BY d DESC, template_ref, repos`,
       )
       .all(firstDay) as unknown as { d: string | null; template_ref: string; repos: string; done: number; failed: number }[];
-    return rows.map((row) => ({
+    const all = rows.map((row) => ({
       day: row.d,
       templateId: row.template_ref as TemplateRef,
       repoIds: row.repos.split("\n").filter((repo) => repo !== "") as RepoId[],
       done: row.done,
       failed: row.failed,
     }));
+    return all.length <= max ? all : capCounts(all, max);
   }
 
   close(): void {
     this.db.close();
   }
+}
+
+/**
+ * Keeps the newest whole days that fit in `max` rows and adds the rest to the null-day rows, one
+ * row for each template and repo set. Rows come newest day first, null day last. If the null-day
+ * rows alone are too many, the first `max` stay.
+ */
+function capCounts(rows: BoardCount[], max: number): BoardCount[] {
+  const days = [...new Set(rows.flatMap((row) => (row.day === null ? [] : [row.day])))];
+  for (let keep = days.length; keep >= 0; keep--) {
+    const kept = new Set(days.slice(0, keep));
+    const shown = rows.filter((row) => row.day !== null && kept.has(row.day));
+    const folded = new Map<string, BoardCount>();
+    for (const row of rows) {
+      if (row.day !== null && kept.has(row.day)) continue;
+      const key = `${row.templateId}\n${row.repoIds.join("\n")}`;
+      const total = folded.get(key);
+      if (total === undefined) folded.set(key, { ...row, day: null });
+      else {
+        total.done += row.done;
+        total.failed += row.failed;
+      }
+    }
+    if (shown.length + folded.size <= max || keep === 0) return [...shown, ...folded.values()].slice(0, max);
+  }
+  return rows.slice(0, max);
 }

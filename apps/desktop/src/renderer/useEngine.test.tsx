@@ -63,6 +63,16 @@ describe("useEngine", () => {
     expect(view?.data?.items.size).toBe(open);
   });
 
+  it("with 5,000 items on the engine, holds only the open ones and counts the rest, from one board query", async () => {
+    const template = items.find((item) => item.state === "queued")!;
+    const seeded = Array.from({ length: 5000 }, (_, index) => ({ ...template, id: id(index + 1), title: `Item ${index + 1}`, state: index < 30 ? "running" : index % 4 === 0 ? "failed" : "done" }) as ItemRecord);
+    const fake = fakeBridge(CONNECTED, { boardItems: seeded });
+    await act(async () => root.render(<Probe bridge={fake.bridge} />));
+    expect(view?.data?.items.size).toBe(30);
+    expect(finished()).toBe(4970);
+    expect(boardQueries(fake)).toBe(1);
+  });
+
   it("keeps an item that finishes while the board loads out of the items", async () => {
     const fake = fakeBridge(CONNECTED);
     let release: (() => void) | undefined;

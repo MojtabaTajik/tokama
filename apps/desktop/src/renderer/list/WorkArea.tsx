@@ -2,10 +2,10 @@
 // Needs you and Running come from the board's items, in full and without day headers. Done and
 // Failed come from the engine a page at a time (Load older adds the next), under day headers when
 // the range is longer than today; the kanban's Done column shows their first pages and counts them
-// all. The switch counts finished work from the board's counts. While a search is typed, the engine decides the hits of every
-// group, 200 ms after the last key; groups without a hit are hidden, and with no hit at all one
-// message takes their place. Rows show the board's record of an item when it has one, so a row
-// follows the item's events before its page loads again.
+// all. The switch counts finished work from the board's counts. While a search is typed, the
+// engine decides the hits of every group, 200 ms after the last key; groups without a hit are
+// hidden, and with no hit at all one message takes their place. Rows show the board's record of
+// an item when it has one, so a row follows the item's events before its page loads again.
 import type { BoardCount, FinishAction, ItemRecord, Setup } from "@tokama/core";
 import { type ReactNode, useEffect, useState } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
@@ -183,7 +183,7 @@ export function WorkArea(props: WorkAreaProps) {
   const where = `${STATUS_FILTERS.find((status) => status.id === filter.status)?.label ?? filter.status}${hasRange(filter.status) ? ` · ${RANGES.find((r) => r.id === filter.range)?.label ?? filter.range}` : ""}`;
   return (
     <>
-      <StatusFilter items={scoped} counts={counts} filter={filter} now={now} onChange={onFilter} search={board ? undefined : { text, onText: setText, onClear: clear, results: searching ? results : undefined }} />
+      <StatusFilter items={scoped} finishedCounts={counts} filter={filter} now={now} onChange={onFilter} search={board ? undefined : { text, onText: setText, onClear: clear, results: searching ? results : undefined }} />
       {board ? (
         <Board items={boardItems} notLoaded={notLoaded} agents={setup.agents} template={template} selectedItemId={props.selectedItemId} onSelect={props.onSelectItem} now={now} />
       ) : searching && results === 0 ? (

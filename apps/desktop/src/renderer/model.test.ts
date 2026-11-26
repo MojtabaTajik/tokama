@@ -1,4 +1,4 @@
-import { parseItemRecord, parseQueryResult, type ItemRecord } from "@tokama/core";
+import { BOARD_COUNT_DAYS, parseItemRecord, parseQueryResult, type ItemRecord } from "@tokama/core";
 import { describe, expect, it } from "vitest";
 import {
   AI_CLIS,
@@ -26,6 +26,7 @@ import {
   timeOf,
   viewKey,
 } from "./model.js";
+import { daysBefore } from "./format/time.js";
 import { board } from "./testing/bridge.js";
 import { ITEMS, items, NOW, setup } from "./testing/sample.js";
 import { allReport, usageReport } from "./testing/usage.js";
@@ -95,6 +96,11 @@ describe("finishedIn", () => {
     expect(finishedIn(rows, "30d", NOW)).toEqual({ done: 8, failed: 1 });
     expect(finishedIn(rows, "all", NOW)).toEqual({ done: 18, failed: 4 });
     expect(finishedIn([], "all", NOW)).toEqual({ done: 0, failed: 0 });
+  });
+
+  it("keeps every finite range inside the days the board counts one by one", () => {
+    const firstCounted = daysBefore(NOW, BOARD_COUNT_DAYS - 1);
+    for (const range of ["today", "7d", "30d"] as const) expect(sinceOf(range, NOW)! >= firstCounted).toBe(true);
   });
 });
 

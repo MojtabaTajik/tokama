@@ -182,7 +182,7 @@ function setupNotifier(options: { settings?: Partial<NotificationSettings>; focu
   const deps: NotifierDeps = {
     settings: () => ({ needsYou: true, finished: true, failed: true, sound: false, ...options.settings }),
     windowFocused: () => options.focused ?? false,
-    board: async () => ("board" in options ? options.board : [item(), item({ id: "item_2" })]),
+    board: async () => ("board" in options ? options.board : [item(), item({ id: "item_2" })]), // open items only
     setup: async () => {
       if (options.setup instanceof Error) throw options.setup;
       return "setup" in options ? options.setup : setup;
@@ -246,6 +246,26 @@ describe("createNotifier", () => {
       await settle();
       expect(shown).toHaveLength(count);
     }
+  });
+
+  it("stays quiet about a finished item that was not among the open items", async () => {
+    const seed = [item({ id: "item_open" })];
+    const { notifier, shown } = setupNotifier({ board: seed });
+    await notifier.resync();
+    // Finished before the seed, so it is not on the board: its updates only record it.
+    notifier.onEvent(event(done({ id: "item_old" })));
+    notifier.onEvent(event(done({ id: "item_old", outcome: { kind: "done", commits: [] } })));
+    await settle();
+    expect(shown).toEqual([]);
+    // An open item that finishes is news.
+    notifier.onEvent(event(done({ id: "item_open" })));
+    await settle();
+    expect(shown.map(({ note }) => note.title)).toEqual(["Finished: Add order export endpoint"]);
+    // An item that started after the seed is first seen as running, and its end is news.
+    notifier.onEvent(event(item({ id: "item_new" })));
+    notifier.onEvent(event(done({ id: "item_new" })));
+    await settle();
+    expect(shown).toHaveLength(2);
   });
 
   it("does not repeat anything after a resync, and shows a new decision", async () => {

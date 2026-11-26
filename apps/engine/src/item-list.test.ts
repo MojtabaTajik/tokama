@@ -144,6 +144,30 @@ describe("work list index", () => {
     expect(list.counts("2026-11-24")[0]).toMatchObject({ day: "2026-11-24", repoIds: ["orders-api"], done: 3 });
   });
 
+  it("folds the oldest days into the null day when the counts pass the row cap", () => {
+    let n = 1;
+    for (const day of [20, 21, 22, 23, 24]) {
+      list.put(item(n++, { createdAt: at(day) }));
+      list.put(item(n++, { createdAt: at(day), templateId: "builtin/plan-build", state: "failed" }));
+    }
+    const all = list.counts("2026-11-01");
+    expect(all).toHaveLength(10);
+
+    const capped = list.counts("2026-11-01", 5);
+    expect(capped.length).toBeLessThanOrEqual(5);
+    const sum = (rows: typeof all, key: "done" | "failed") => rows.reduce((total, row) => total + row[key], 0);
+    expect(sum(capped, "done")).toBe(5);
+    expect(sum(capped, "failed")).toBe(5);
+    // The newest day stays split by day; older days sit under the null day, one row for each workflow.
+    expect(capped.filter((row) => row.day === "2026-11-24")).toHaveLength(2);
+    const folded = capped.filter((row) => row.day === null);
+    expect(folded).toHaveLength(2);
+    expect(folded.find((row) => row.templateId === "builtin/quick-fix")).toMatchObject({ done: 4, failed: 0 });
+
+    // Even when the null-day rows alone pass the cap, the reply stays within it.
+    expect(list.counts("2026-11-01", 1)).toHaveLength(1);
+  });
+
   it("takes %, _ and \\ in a search as the characters themselves", () => {
     list.put(item(1, { title: "Raise the limit to 100%" }));
     list.put(item(2, { title: "Rename user_id" }));

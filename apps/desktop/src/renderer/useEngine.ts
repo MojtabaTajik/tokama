@@ -140,7 +140,8 @@ export function useEngine(bridge: TokamaBridge, retryDelayMs = RETRY_DELAY_MS): 
     };
   }, [bridge, connection, reloads, retryDelayMs]);
 
-  // An item finished: the board alone loads again for its counts. A failure keeps the counts there are.
+  // An item finished: the board alone loads again for its counts. A failure keeps the counts there are. A new
+  // finish while the timer waits starts the wait again; one while the query runs makes this reply stale, and the newer one wins.
   useEffect(() => {
     if (countReloads === 0 || connection.status !== "connected") return;
     let live = true;

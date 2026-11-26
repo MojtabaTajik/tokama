@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BridgeEvent, ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { App } from "../App.js";
-import { itemList, type ListQuery } from "../testing/bridge.js";
+import { board, itemList, type ListQuery } from "../testing/bridge.js";
 import { approved, committed, DECISION_ID, finishable, needsYou, setup, stoppedReview, task } from "../testing/drawer.js";
 import { ItemDrawer } from "./ItemDrawer.js";
 
@@ -24,7 +24,7 @@ function fakeBridge(start: ItemRecord[], activities = new Map<string, ItemActivi
   let commandReply: (command: { type: string }) => Promise<Reply> = async () => ({ ok: true, data: null });
   const query = vi.fn(async (q: { type: string; itemId?: string }): Promise<Reply> => {
     if (q.type === "setup") return { ok: true, data: setup };
-    if (q.type === "board") return { ok: true, data: { items: [...store.values()] } };
+    if (q.type === "board") return { ok: true, data: board([...store.values()]) };
     if (q.type === "item_list") return { ok: true, data: itemList([...store.values()], q as unknown as ListQuery) };
     const item = q.itemId === undefined ? undefined : store.get(q.itemId);
     if (q.type === "item" && item) return { ok: true, data: { item } };

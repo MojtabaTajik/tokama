@@ -1,6 +1,6 @@
 // The items with the most tokens in the range: workflow, agents (identity dot, name and CLI),
-// tokens, agent time and estimated cost. Filtered with the chart. A title opens the item drawer
-// when the board still has the item.
+// tokens, agent time and estimated cost. Filtered with the chart. A title opens the item drawer, which says so when the
+// item is gone.
 import type { Setup, UsageReport } from "@tokama/core";
 import { stepAgent } from "../drawer/describe.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
@@ -28,12 +28,10 @@ export interface TopItemsProps {
   readonly setup: Setup | undefined;
   readonly filter: string | undefined;
   readonly note: string;
-  /** Ids of items the board has, which the drawer can open. */
-  readonly openable: ReadonlySet<string>;
   readonly onOpen: (itemId: string) => void;
 }
 
-export function TopItems({ report, setup, filter, note, openable, onOpen }: TopItemsProps) {
+export function TopItems({ report, setup, filter, note, onOpen }: TopItemsProps) {
   const rows = report.items.filter((item) => filter === undefined || item.templateId === filter).slice(0, 20);
   return (
     <section className="ins-section" aria-labelledby="ins-items-title">
@@ -69,13 +67,9 @@ export function TopItems({ report, setup, filter, note, openable, onOpen }: TopI
               return (
                 <tr key={item.itemId}>
                   <td className="ins-item">
-                    {openable.has(item.itemId) ? (
-                      <Button variant="quiet" onClick={() => onOpen(item.itemId)}>
-                        {item.title}
-                      </Button>
-                    ) : (
-                      item.title
-                    )}
+                    <Button variant="quiet" onClick={() => onOpen(item.itemId)}>
+                      {item.title}
+                    </Button>
                   </td>
                   <td>
                     <span className="ins-wf">

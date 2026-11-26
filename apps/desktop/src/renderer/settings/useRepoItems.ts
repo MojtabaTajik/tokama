@@ -1,7 +1,8 @@
 // The board for the Repos page's badges and items line: its open items and the counts of the
 // finished ones. Loaded when the page opens and after a setup change, and loaded again shortly
-// after item updates (the board is small, so a burst of events loads it once). A failed load
-// leaves the last board (empty at first): the badges are extra, the list does not depend on them.
+// after any item update, not only a finish (the board is small, so a burst of events loads it
+// once). A failed load leaves the last board (empty at first): the badges are extra, the list does
+// not depend on them.
 import type { BoardResult, Setup } from "@tokama/core";
 import { useEffect, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";

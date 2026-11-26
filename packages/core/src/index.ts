@@ -174,6 +174,7 @@ export {
   type BoardResult,
   type BoardCount,
   BOARD_COUNT_DAYS,
+  MAX_BOARD_COUNTS,
   type ItemListResult,
   type ListGroup,
   MAX_LIST_PAGE,
