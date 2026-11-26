@@ -130,6 +130,8 @@ export function useEngine(bridge: TokamaBridge, retryDelayMs = RETRY_DELAY_MS): 
           }
           setLoadError(undefined);
           setData({ setup: result.setup, items: openItems(result.board.items, during.values()), counts: result.board.counts });
+          // The board was read before the finish that came meanwhile, so its counts are one short: count again.
+          if ([...during.values()].some((item) => !isOpen(item))) setCountReloads((count) => count + 1);
         });
     };
     run(0);

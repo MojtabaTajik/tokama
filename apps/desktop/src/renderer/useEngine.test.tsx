@@ -88,7 +88,12 @@ describe("useEngine", () => {
     const running = items.find((item) => item.state === "running")!;
     await fake.pushItem({ ...running, state: "done" } as ItemRecord);
     gated = false;
+    // The count reload answers first, with no data to put it in; the slow first reply still has the old counts.
+    await wait(COUNTS_DELAY_MS + 20);
     await act(async () => release?.());
     expect(view?.data?.items.has(running.id)).toBe(false);
+    // So the board loads once more and counts the finish.
+    await wait(COUNTS_DELAY_MS + 20);
+    expect(finished()).toBe(items.filter((item) => !isOpen(item)).length + 1);
   });
 });
