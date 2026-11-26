@@ -40,8 +40,9 @@ flow(
 
     await card(page).getByRole("button", { name: "Got it" }).click();
     await card(page).waitFor({ state: "detached" });
+    // The seeded file has no due card either: wait for the app's own write first (it is saved a moment after the last change).
+    await expect.poll(() => saved(home).lastRunVersion, { message: "the version is recorded" }).toBe(FIXTURE_VERSION);
     await expect.poll(() => saved(home).whatsNewDue, { message: "desktop.json no longer holds a due card" }).toBeUndefined();
-    expect(saved(home).lastRunVersion).toBe(FIXTURE_VERSION);
 
     const next = await session.restart();
     await next.page.locator(".panel").waitFor();
