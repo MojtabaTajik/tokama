@@ -24,7 +24,7 @@ Review templates and check commands before you run them, especially ones you did
 
 - Node 22.18 or newer
 - pnpm, at the version in `packageManager` in `package.json`. Node 25 and later do not bundle corepack, so install it with the Node you use (`npm install -g corepack@latest`) and then run `corepack enable`. You can also install pnpm directly at that version.
-- git 2.44 or newer
+- git 2.38 or newer (a repo that is a partial clone needs git 2.44 or newer)
 - Claude Code 2.1.315 or newer, installed and logged in, to run real agent steps
 - Linux only: `bubblewrap` and `socat`, for steps that run commands (`sudo apt-get install bubblewrap socat`). On Ubuntu 24.04 an AppArmor rule can also stop bubblewrap; Claude Code's sandbox documentation has the profile, or run `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` until the next reboot.
 
@@ -68,7 +68,7 @@ On Linux the end-to-end tests need a display: run them under `xvfb-run --auto-se
 
 - macOS: nothing else to install.
 - Linux, Node: use a Node version manager that reads `.node-version`, for example fnm with `--use-on-cd`. Check that `which node` points to it and not to the distro Node. With the distro Node, `corepack enable` and a global `npm install` fail with `EACCES` (permission denied on system folders).
-- Linux, git: Ubuntu 22.04 and 24.04 ship a git older than 2.44. The git-core PPA has a newer one.
+- Linux, git: Ubuntu 24.04 ships git 2.43, which works except for partial clones. Ubuntu 22.04 ships git 2.34, which is too old. The git-core PPA has a newer one.
 - Linux: Electron needs the usual desktop libraries (GTK 3, NSS, ALSA). On Ubuntu 24.04 the Chromium sandbox needs unprivileged user namespaces; if the app will not start, see the Electron documentation on `kernel.apparmor_restrict_unprivileged_userns`.
 
 ## Licence

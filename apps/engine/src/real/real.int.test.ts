@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { connect, type EngineClient } from "@tokama/client";
-import type { AgentCallRequest, AgentRuntime, CommandInput, ItemRecord, ProcessTable } from "@tokama/core";
+import { type AgentCallRequest, type AgentRuntime, type CommandInput, createGit, createProcessRunner, type ItemRecord, type ProcessTable } from "@tokama/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { startEngine } from "../engine.js";
 import { tempEngineDir } from "../testing/helpers.js";
@@ -111,9 +111,9 @@ afterEach(async () => {
   cleanups = [];
 });
 
-async function engine(runtime: AgentRuntime, dir = tempEngineDir(cleanups)) {
+async function engine(runtime: AgentRuntime, dir = tempEngineDir(cleanups), extra: Partial<Parameters<typeof startEngine>[0]> = {}) {
   // No plan source: a usage query must not start the CLI on the test machine.
-  const started = await startEngine({ dir, home, processTable: table, runtime: () => runtime, checks: healthy, recoveryGraceMs: 0, planSources: {} });
+  const started = await startEngine({ dir, home, processTable: table, runtime: () => runtime, checks: healthy, recoveryGraceMs: 0, planSources: {}, ...extra });
   if (!started.ok) throw new Error(started.error.message);
   const connected = await connect({ dir, startTimeoutMs: 2_000 });
   if (!connected.ok) throw new Error(connected.error.message);
@@ -448,7 +448,7 @@ finish: [commit]
 
   it("refuses to start while git cannot be used, and says why in the setup", SLOW, async () => {
     const dir = tempEngineDir(cleanups);
-    const oldGit: HealthChecks = async () => ({ git: { ok: false, message: "git 2.44 or newer is required; found: git version 2.39.0" }, clis: [] });
+    const oldGit: HealthChecks = async () => ({ git: { ok: false, message: "git 2.38 or newer is required; found: git version 2.37.0" }, clis: [] });
     const started = await startEngine({ dir, home, processTable: table, runtime: () => scripted([{ writes: {} }]), checks: oldGit });
     if (!started.ok) throw new Error(started.error.message);
     cleanups.push(() => started.value.close());
@@ -456,9 +456,87 @@ finish: [commit]
     if (!connected.ok) throw new Error(connected.error.message);
     cleanups.push(() => connected.value.close());
     const reply = await connected.value.command({ type: "start_item", templateId: "builtin/quick-fix", repoIds: ["orders-api"], text: "Fix it" });
-    expect(reply).toEqual({ ok: false, error: { code: "invalid_request", message: "git 2.44 or newer is required; found: git version 2.39.0" } });
+    expect(reply).toEqual({ ok: false, error: { code: "invalid_request", message: "git 2.38 or newer is required; found: git version 2.37.0" } });
     const setup = await connected.value.query({ type: "setup" });
-    expect(setup.ok && setup.data.health.git).toEqual({ ok: false, message: "git 2.44 or newer is required; found: git version 2.39.0" });
+    expect(setup.ok && setup.data.health.git).toEqual({ ok: false, message: "git 2.38 or newer is required; found: git version 2.37.0" });
+  });
+
+  describe("git older than 2.44", () => {
+    const PARTIAL = "This repo is a partial clone. Update git to 2.44 or newer to use it.";
+    const gitAs = (version: string): HealthChecks => async () => ({ git: { ok: true, version }, clis: [{ cliId: "claude-code", installed: true, loggedIn: true }] });
+    let partialPath: string;
+
+    /** orders-api plus inventory-api, a filtered clone of it with every file already fetched. */
+    beforeEach(() => {
+      git("config", "uploadpack.allowFilter", "true");
+      partialPath = join(root, "inventory-api");
+      git("clone", "-q", "--filter=blob:none", "--no-checkout", `file://${repoPath}`, partialPath);
+      // Checks the files out, which fetches their blobs: the item then needs no lazy fetch.
+      const inClone = (...args: string[]) => {
+        const run = spawnSync("git", args, { cwd: partialPath, encoding: "utf8", env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" } });
+        if (run.status !== 0) throw new Error(`git ${args.join(" ")}: ${run.stderr}`);
+      };
+      inClone("checkout", "-q", "main");
+      // Tokama commits with the repo's identity; a CI runner has no global one.
+      inClone("config", "user.name", "Test");
+      inClone("config", "user.email", "test@example.com");
+      writeFileSync(
+        join(home, "repos.yaml"),
+        `format: 1\nrepos:\n  - id: orders-api\n    path: ${repoPath}\n    base_branch: main\n    checks: ["sh check.sh"]\n  - id: inventory-api\n    path: ${partialPath}\n    base_branch: main\n    checks: ["sh check.sh"]\n`,
+      );
+    });
+
+    /** Starts Quick fix in `repoId`; the reply is an error message, or the item's final state. */
+    async function startIn(client: EngineClient, repoId: string): Promise<string> {
+      const reply = await client.command({ type: "start_item", templateId: "builtin/quick-fix", repoIds: [repoId], text: "Fix the greeting typo" });
+      if (!reply.ok) return reply.error.message;
+      return (await waitItem(client, reply.data.itemId, (i) => i.state === "done", "done")).state;
+    }
+
+    it("starts a repo that is not a partial clone and refuses one that is, naming git 2.44", SLOW, async () => {
+      const { client } = await engine(scripted([{ writes: { "greeting.txt": "hello world\n" } }]), undefined, { checks: gitAs("git version 2.43.0") });
+      expect(await startIn(client, "orders-api")).toBe("done");
+      expect(await startIn(client, "inventory-api")).toBe(PARTIAL);
+    });
+
+    it("refuses a repo marked as a partial clone only by a promisor remote", SLOW, async () => {
+      git("config", "remote.origin.promisor", "true");
+      const { client } = await engine(scripted([{ writes: {} }]), undefined, { checks: gitAs("git version 2.43.0") });
+      expect(await startIn(client, "orders-api")).toBe(PARTIAL);
+    });
+
+    it("refuses a partial clone when the version cannot be read", SLOW, async () => {
+      const { client } = await engine(scripted([{ writes: {} }]), undefined, { checks: gitAs("git") });
+      expect(await startIn(client, "inventory-api")).toBe(PARTIAL);
+    });
+
+    it("says so, with git's reason, when it cannot tell whether a repo is a partial clone", SLOW, async () => {
+      writeFileSync(join(repoPath, ".git", "config"), "[broken\n");
+      const { client } = await engine(scripted([{ writes: {} }]), undefined, { checks: gitAs("git version 2.43.0") });
+      expect(await startIn(client, "orders-api")).toMatch(/^Tokama could not check whether orders-api is a partial clone: /);
+    });
+
+    it("starts a partial clone on git 2.44", SLOW, async () => {
+      const { client } = await engine(scripted([{ writes: { "greeting.txt": "hello world\n" } }]), undefined, { checks: gitAs("git version 2.44.0") });
+      expect(await startIn(client, "inventory-api")).toBe("done");
+    });
+
+    it("works end to end with a git that reports 2.43.0", SLOW, async () => {
+      const real = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
+      const shims = join(root, "shims");
+      mkdirSync(shims);
+      writeFileSync(join(shims, "git"), `#!/bin/sh\nfor arg in "$@"; do\n  if [ "$arg" = "--version" ]; then echo "git version 2.43.0"; exit 0; fi\ndone\nexec '${real}' "$@"\n`, { mode: 0o755 });
+      const runner = createProcessRunner({ parentEnv: { ...process.env, PATH: `${shims}:${process.env["PATH"]}` } });
+      const checks: HealthChecks = async () => {
+        const version = await createGit({ runner }).checkGitVersion();
+        return { git: version.ok ? { ok: true, version: version.value } : { ok: false, message: version.error.message }, clis: [{ cliId: "claude-code", installed: true, loggedIn: true }] };
+      };
+      const { client } = await engine(scripted([{ writes: { "greeting.txt": "hello world\n" } }]), undefined, { runner, checks });
+      const setup = await client.query({ type: "setup" });
+      expect(setup.ok && setup.data.health.git).toEqual({ ok: true, version: "git version 2.43.0" });
+      expect(await startIn(client, "orders-api")).toBe("done");
+      expect(await startIn(client, "inventory-api")).toBe(PARTIAL);
+    });
   });
 
   it("reads repos.yaml again after remove_repo, so a start in that repo is refused at once", SLOW, async () => {
