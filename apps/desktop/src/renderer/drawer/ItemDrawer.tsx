@@ -20,7 +20,7 @@ import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { changesRepo } from "./attempt-view.js";
 import { ChecksTab } from "./ChecksTab.js";
 import { attemptLine, decisionKind, hasEnded, nextRunLine, runLine, itemMark, KIND, outcomeLine, PRIVACY, stepAgent, stepMark, stepPosition, templateOf, whereLine } from "./describe.js";
-import { DecisionChoices, inTextField } from "./DecisionChoices.js";
+import { cardOffersStop, DecisionChoices, inTextField } from "./DecisionChoices.js";
 import { DiffTab, type DiffState } from "../ui/DiffView.js";
 import { useDecisionDiff } from "./useDecisionDiff.js";
 import { Finish } from "./Finish.js";
@@ -215,11 +215,12 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
     refocusStop.current = true;
     setConfirmingStop(false);
   };
-  // The Stop link is back once the confirmation is gone: a cancel returns focus to it.
+  // The Stop link is back once the confirmation is gone: a cancel returns focus to it, or to the drawer when a
+  // card's own Stop has replaced it.
   useEffect(() => {
     if (confirmingStop || !refocusStop.current) return;
     refocusStop.current = false;
-    stopLink.current?.focus();
+    (stopLink.current ?? drawer.current)?.focus();
   }, [confirmingStop]);
   // A button that had focus can go with an update (a decision answered, the item stopped): focus
   // then stays in the drawer instead of falling back to the page.
@@ -290,6 +291,8 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
     showTab(to)();
   };
   const stoppedDecision = item?.state === "needs_you" && item.decision?.stopped !== undefined ? { ...item.decision, stopped: item.decision.stopped } : undefined;
+  // The card of a question that offers Stop has its own Stop button; the action row's would be a second one.
+  const cardHasStop = item?.state === "needs_you" && item.decision !== undefined && cardOffersStop(item.decision);
   const changedFiles = diff?.kind === "loaded" && diff.diff.files.length + diff.diff.moreFiles > 0;
 
   const template = item && templateOf(item, setup);
@@ -427,7 +430,8 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
           {confirmingStop ? (
             <ConfirmStop busy={busy} onStop={stop} onCancel={cancelStop} />
           ) : (
-            !hasEnded(item) && (
+            !hasEnded(item) &&
+            !cardHasStop && (
               <div className="drawer-actions" role="group" aria-label={TEXT.actions}>
                 <Button variant="danger" ref={stopLink} disabled={busy} onClick={() => setConfirmingStop(true)}>
                   {TEXT.stop}

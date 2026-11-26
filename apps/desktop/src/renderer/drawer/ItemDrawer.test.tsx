@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import type { ItemActivity, ItemRecord, Setup } from "@tokama/core";
+import type { Decision, ItemActivity, ItemRecord, Setup } from "@tokama/core";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,6 +7,7 @@ import type { BridgeEvent, ConnectionState, TokamaBridge } from "../../shared/br
 import { App } from "../App.js";
 import { itemList, type ListQuery } from "../testing/bridge.js";
 import { approved, committed, DECISION_ID, finishable, needsYou, setup, stoppedReview, task } from "../testing/drawer.js";
+import { cardOffersStop } from "./DecisionChoices.js";
 import { ItemDrawer } from "./ItemDrawer.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -170,13 +171,22 @@ describe("ItemDrawer sections", () => {
   });
 
   it("shows only the actions that work: Stop while the item runs, no actions once it has ended", async () => {
-    const { bridge, push } = fakeBridge([needsYou]);
-    await renderDrawer(bridge, needsYou.id);
+    const { bridge, push } = fakeBridge([task]);
+    await renderDrawer(bridge, task.id);
     expect($$(".drawer-actions button").map((el) => el.textContent)).toEqual(["Stop"]);
     expect(document.body.textContent).not.toMatch(/Open worktree|Add a hint/);
-    await push({ ...approved, state: "done" } as ItemRecord);
+    await push({ ...task, state: "done" } as ItemRecord);
     expect($(".drawer-actions")).toBeNull();
     expect(text(".drawer-state")).toBe("✓done");
+  });
+
+  it("hides the row's Stop while the card offers its own, and shows it again once that card is gone", async () => {
+    const { bridge, push } = fakeBridge([needsYou]);
+    await renderDrawer(bridge, needsYou.id);
+    expect($(".drawer-actions")).toBeNull();
+    expect($$(".drawer button").filter((el) => el.textContent === "Stop")).toHaveLength(1);
+    await push({ ...needsYou, state: "running", decision: undefined } as ItemRecord);
+    expect($$(".drawer-actions button").map((el) => el.textContent)).toEqual(["Stop"]);
   });
 
   it("says when the item does not exist", async () => {
@@ -260,6 +270,13 @@ describe("ItemDrawer change to approve", () => {
     expect(text(".needs-you-question")).toBe("⏸Approve this change and commit it?");
     expect($$(".needs-you .choices .btn").map((el) => el.textContent)).toEqual(["Approve and commit", "Request changes"]);
     expect(text(".dv-summary")).toBe("6 files+1,221 −314·tokama/abcfrom main 85a75e3");
+  });
+
+  it("keeps the row's Stop, because the change approval's card does not show one", async () => {
+    const { bridge } = withDiff({ ok: true, data: diff });
+    await renderDrawer(bridge, waiting.id);
+    expect($$(".needs-you .choices .btn").map((el) => el.textContent)).toEqual(["Approve and commit", "Request changes"]);
+    expect($$(".drawer-actions button").map((el) => el.textContent)).toEqual(["Stop"]);
   });
 
   it("lists the files with status, counts or why they are not drawn, and shows the first file with line numbers, as text", async () => {
@@ -689,6 +706,16 @@ describe("ItemDrawer stop", () => {
     expect(command).not.toHaveBeenCalled();
   });
 
+  it("moves focus to the drawer when Cancel finds the Stop link gone because a card's own Stop arrived", async () => {
+    const { bridge, push } = fakeBridge([task]);
+    await renderDrawer(bridge, task.id);
+    await click(button("Stop"));
+    await push({ ...needsYou, id: task.id } as ItemRecord);
+    await click(button("Cancel"));
+    expect($(".drawer-confirm")).toBeNull();
+    expect(document.activeElement).toBe($(".drawer"));
+  });
+
   it("keeps focus in the drawer after a failed stop", async () => {
     const { bridge, replyWith } = fakeBridge([task]);
     replyWith(async () => ({ ok: false, error: { code: "internal", message: "boom" } }));
@@ -829,6 +856,7 @@ describe("item drawer with real-mode records", () => {
     await renderDrawer(fake.bridge, asked.id);
     expect(text(".needs-you-kind")).toBe("Run failed");
     expect($$(".needs-you .choices .btn").map((el) => el.textContent)).toEqual(["Retry step", "Stop"]);
+    expect($(".drawer-actions")).toBeNull();
     await act(async () => ($$(".needs-you .choices .btn")[0] as HTMLButtonElement).click());
     expect(fake.command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: asked.id, decisionId: DECISION_ID, choice: "retry_step" });
   });
@@ -1532,5 +1560,19 @@ describe("ItemDrawer live progress", () => {
     await renderDrawer(bridge, done.id);
     expect($$(".step")[0]?.querySelector(".step-detail")?.textContent).toMatch(/ · 4 m 12 s · waited 6 m for you$/);
     expect($$(".step")[0]?.querySelector(".step-attempt .mono")?.textContent).toBe("✓attempt 1 · passed · 4 m 12 s");
+  });
+});
+
+describe("cardOffersStop", () => {
+  const choice = (id: string) => ({ id, label: id });
+  const decision = (extra: Record<string, unknown>) => ({ ...needsYou.decision!, ...extra }) as unknown as Decision;
+  it("is false for a change approval, whose card drops Stop", () => {
+    expect(cardOffersStop(decision({ hasDiff: true, choices: [choice("approve"), choice("request_changes"), choice("stop")] }))).toBe(false);
+  });
+  it("is true when the card lists Stop", () => {
+    expect(cardOffersStop(decision({ choices: [choice("retry_step"), choice("stop")] }))).toBe(true);
+  });
+  it("is false when no choice is Stop", () => {
+    expect(cardOffersStop(decision({ choices: [choice("approve"), choice("request_changes")] }))).toBe(false);
   });
 });

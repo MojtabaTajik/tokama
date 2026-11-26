@@ -21,6 +21,8 @@ flow("a step that stopped at its limit explains itself: what the reviewer said, 
   expect(await fact("Why it stopped").innerText()).toBe("Review may run once per round, so it has not checked the fix.");
   expect(await card.locator(".choices .btn").allInnerTexts()).toEqual(["Run Review again", "End: no action needed", "Stop"]);
   expect(await card.locator("a, script, img").count()).toBe(0);
+  // The card has its own Stop, so the drawer's action row does not show a second one.
+  expect(await drawer(page).getByRole("button", { name: "Stop", exact: true }).count()).toBe(1);
   await screenshot("70-stopped-card-drawer");
 
   await card.getByRole("button", { name: "See Reviewer’s notes →" }).click();
@@ -31,6 +33,7 @@ flow("a step that stopped at its limit explains itself: what the reviewer said, 
   await drawer(page).getByRole("button", { name: "Open full view" }).click();
   const bar = page.locator(".expanded .ex-decision.stopped");
   await bar.waitFor();
+  expect(await page.locator(".expanded").getByRole("button", { name: "Stop", exact: true }).count()).toBe(1);
   await expect.poll(() => bar.locator(".stopped-fact dd").first().innerText(), { message: "the verdict in the full view" }).toContain("Asked for changes · 1 must fix");
   const labels = await bar.locator(".stopped-fact dt").first().boundingBox();
   const buttons = await bar.locator(".stopped-actions").boundingBox();
