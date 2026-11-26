@@ -52,6 +52,7 @@ export * from "./attempt-files.js";
 export * from "./api.js";
 export * from "./diagnostics.js";
 export * from "./diff.js";
+export * from "./helpers.js";
 export * from "./ids.js";
 export * from "./item.js";
 export * from "./item-log.js";

@@ -46,6 +46,9 @@ import {
   type AttemptFileResult,
   type AttemptLogResult,
   type ClientMessage,
+  type CheckTrialResult,
+  type HelperRunQueryResult,
+  type HelpersResult,
   type Command,
   createGit,
   createMachineSource,
@@ -103,6 +106,7 @@ import {
 } from "@tokama/core";
 import { ActivityFeed } from "./activity-feed.js";
 import { EngineDiagnostics, isDiagnosticsCommand } from "./diagnostics.js";
+import { isHelperCommand } from "./helpers.js";
 import { listAgents } from "./agents-list.js";
 import { aiClis } from "./ai-clis.js";
 import { ItemIndex } from "./item-index.js";
@@ -115,7 +119,7 @@ import { agentsFor, loadConfig, startProblem, stepProblems } from "./real/config
 import { sampleTemplateLoads } from "./sample/templates.js";
 import { openSampleDiagnostics } from "./sample/diagnostics.js";
 import { sampleMachineReport } from "./sample/machine.js";
-import { sampleClaudePlan, sampleLogEntries, sampleOtherPlans, sampleUsageRows } from "./sample/usage.js";
+import { sampleClaudePlan, sampleHelperCalls, sampleLogEntries, sampleOtherPlans, sampleUsageRows } from "./sample/usage.js";
 import { ClaudeLogs } from "./claude-logs.js";
 import { claudePlanSources, type PlanSources, UsageService } from "./usage.js";
 import { MemoryItemStore } from "./store.js";
@@ -339,7 +343,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   // event stream below exists (the sample items have their activity from the start).
   let pushActivity: (latest: ItemActivity) => void = () => {};
   const activity = new ActivityFeed(options.clock ?? systemClock, (latest) => pushActivity(latest));
-  const sample = options.sample ? new SampleEngine(store, options.clock ?? systemClock, activity, options.sampleHistory, options.sampleHistoryOnly) : undefined;
+  const sample = options.sample ? new SampleEngine(store, options.clock ?? systemClock, activity, options.sampleHistory, options.sampleHistoryOnly, (event) => broadcast(event)) : undefined;
   const runner = options.runner ?? createProcessRunner();
   // Real mode: the engine stores items. Its run loop starts restart recovery at once. If it cannot
   // start, the engine still answers, and its setup says why nothing can run.
@@ -394,6 +398,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
           rows: () => sampleUsageRows(sample.setup, store.list(), clock.now()),
           sources: { request: async () => ({ ok: true, value: sampleClaudePlan(clock.now()) }) },
           otherClis: sampleOtherPlans,
+          helperCalls: () => sampleHelperCalls(clock.now()),
           logs: {
             refresh: () => {},
             status: () => ({ state: "ready", filesDone: 412, filesTotal: 412, asOf: clock.now() - 40_000 }),
@@ -515,6 +520,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     return { ok: true, data: command.type === "add_repo" ? ({ repo } satisfies AddRepoResult) : ({ repo } satisfies UpdateRepoResult) };
   };
 
+  const noHelpers: ReplyResult = { ok: false, error: { code: "not_implemented" satisfies CommandErrorCode, message: "helpers are not built into this engine yet" } };
   const noDiagnostics: ReplyResult = { ok: false, error: { code: "not_implemented" satisfies CommandErrorCode, message: "this engine keeps no diagnostics" } };
 
   /** The crash flag for the setup's health, when the engine keeps diagnostics. */
@@ -566,7 +572,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     if (real !== undefined) {
       if (message.kind === "command") {
         const { command } = message;
-        if (!isRepoCommand(command) && !isDiagnosticsCommand(command)) {
+        if (!isRepoCommand(command) && !isDiagnosticsCommand(command) && !isHelperCommand(command)) {
           const result = await real.command(command);
           return result.ok ? { ok: true, data: result.value } : { ok: false, error: result.error };
         }
@@ -603,6 +609,11 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       const command = message.command;
       if (isRepoCommand(command)) return repoCommand(command);
       if (isDiagnosticsCommand(command)) return diagnostics?.command(command) ?? noDiagnostics;
+      if (isHelperCommand(command)) {
+        if (sample === undefined) return noHelpers;
+        const result = sample.helpers.command(command);
+        return result.ok ? { ok: true, data: result.value } : { ok: false, error: result.error };
+      }
       if (!sample) {
         const code: CommandErrorCode = "not_implemented";
         return { ok: false, error: { code, message: `command "${message.command.type}" is not implemented yet` } };
@@ -723,6 +734,18 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       case "diagnostics_list":
       case "diagnostics_settings":
         return diagnostics?.query(query) ?? noDiagnostics;
+      case "helpers":
+        return sample === undefined ? noHelpers : { ok: true, data: sample.helpers.helpers() satisfies HelpersResult };
+      case "helper_run": {
+        if (sample === undefined) return noHelpers;
+        const run = sample.helpers.helperRun(query.runId);
+        return run.ok ? { ok: true, data: { run: run.value } satisfies HelperRunQueryResult } : { ok: false, error: run.error };
+      }
+      case "check_trial": {
+        if (sample === undefined) return noHelpers;
+        const trial = sample.helpers.checkTrial(query.trialId);
+        return trial.ok ? { ok: true, data: { trial: trial.value } satisfies CheckTrialResult } : { ok: false, error: trial.error };
+      }
       case "machine": {
         if (sample !== undefined) return { ok: true, data: sampleMachineReport(store.list(), clock.now()) satisfies MachineResult };
         if (machine === undefined) return { ok: false, error: { code: "not_implemented", message: "this engine cannot read the machine on this operating system" } };

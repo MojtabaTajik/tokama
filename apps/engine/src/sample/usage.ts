@@ -2,7 +2,7 @@
 // up the same way on every start (a seeded generator, days in local time), and plan readings that
 // show every state the Insights page draws: a CLI well inside its limits, one near its weekly
 // limit, and a local model host without a plan.
-import { type AgentCallUsage, type CliPlan, type ItemId, type ItemRecord, localDate, type PlanReading, pricedEntry, type Setup, type UsageEntry, type UsageRow } from "@tokama/core";
+import { type AgentCallUsage, type CliPlan, type ItemId, type ItemRecord, localDate, type PlanReading, pricedEntry, type Setup, type HelperCallRow, type UsageEntry, type UsageRow } from "@tokama/core";
 
 const MINUTE = 60_000;
 const DAYS = 90;
@@ -102,6 +102,45 @@ export function sampleUsageRows(setup: Setup, items: readonly ItemRecord[], now:
     }
   }
   return rows;
+}
+
+/**
+ * Tokama's sample helper calls, six suggest-checks calls on Claude Code haiku over the last ten
+ * days, two of them today (as early as the day allows). The report counts them in its totals and
+ * per-day figures and lists them in its `helpers` block.
+ */
+export function sampleHelperCalls(now: number): HelperCallRow[] {
+  const midnight = new Date(now).setHours(0, 0, 0, 0);
+  const DAY = 24 * 60 * MINUTE;
+  // Minutes after the start of each call's day; today's two are squeezed into the time that has passed.
+  const spots: readonly { readonly daysAgo: number; readonly at: number }[] = [
+    { daysAgo: 0, at: 0.2 },
+    { daysAgo: 0, at: 0.6 },
+    { daysAgo: 1, at: 11 * 60 },
+    { daysAgo: 3, at: 14 * 60 },
+    { daysAgo: 6, at: 10 * 60 },
+    { daysAgo: 10, at: 16 * 60 },
+  ];
+  return spots.map(({ daysAgo, at }, n) => {
+    const endedAt = daysAgo === 0 ? Math.round(midnight + (now - midnight) * at) : midnight - daysAgo * DAY + at * MINUTE;
+    const tokens = { input: 6_200, output: 180, cacheRead: 0, cacheWrite: 0 };
+    return {
+      helperId: "suggest-checks",
+      call: {
+        callId: `call_5a3e1000-${hex(daysAgo, 4)}-7000-8000-${hex(n, 12)}` as AgentCallUsage["callId"],
+        stepId: "suggest-checks" as AgentCallUsage["stepId"],
+        attempt: 1,
+        agentId: "helper" as AgentCallUsage["agentId"],
+        cliId: "claude-code",
+        model: "claude-haiku-5-5",
+        outcome: "completed",
+        startedAt: endedAt - 4_000,
+        endedAt,
+        tokens,
+        models: { "claude-haiku-5-5": tokens },
+      },
+    };
+  });
 }
 
 /** Claude Code's sample answer to a usage request: inside its limits, one of them for one model, read two minutes ago. */

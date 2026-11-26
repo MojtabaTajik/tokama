@@ -51,7 +51,7 @@ export function pricedEntry(entry: Omit<UsageEntry, "costUsd">): UsageEntry {
  * call's cost (the CLI's figure when it gave one) is shared out in proportion to the table price
  * of each model's tokens; when the call has no cost, each model has its table price or none.
  */
-export function callEntries(row: UsageRow, day: string): UsageEntry[] {
+export function callEntries(row: Pick<UsageRow, "call" | "repoId">, day: string): UsageEntry[] {
   const { call } = row;
   const repoId = row.repoId ?? null;
   const models = Object.entries(call.models ?? {});

@@ -4,7 +4,9 @@
 // `*Input` types are what a sender builds (ids as plain strings); the other types are what a
 // parser returns (ids branded).
 import { z } from "zod";
-import { DecisionIdSchema, DiagnosticIdSchema, EpochMsSchema, ItemIdSchema, RepoIdSchema, TemplateRefSchema } from "./ids.js";
+import { checkCommand, folderPath, MAX_CHECK_CHARS } from "./common.js";
+import { CheckTrialIdSchema, DecisionIdSchema, DiagnosticIdSchema, EpochMsSchema, HelperRunIdSchema, ItemIdSchema, RepoIdSchema, TemplateRefSchema } from "./ids.js";
+import { CheckTrialSchema, HelperRunRequestSchema, HelperRunSchema, HelperSummarySchema, MAX_TRIAL_CHECKS } from "./helpers.js";
 import {
   DiagnosticReportSchema,
   DiagnosticsListSchema,
@@ -25,18 +27,14 @@ import { MachineReportSchema } from "./machine.js";
 import { RepoSummarySchema, SetupSchema } from "./setup.js";
 import { MAX_TEMPLATE_ENTRIES, TemplateDetailSchema, TemplateEntrySchema, TemplateFileKeySchema } from "./template-files.js";
 
-export const API_VERSION = 13;
+export const API_VERSION = 14;
 
 /** The most branches the engine lists for a base branch choice; `moreBranches` counts the rest. */
 export const MAX_BRANCH_CHOICES = 200;
 
 const apiVersion = z.literal(API_VERSION);
 const requestId = z.string().min(1).max(128);
-/** A folder on the engine's machine. The engine checks it: a full path to a git repo's top folder. */
-const folderPath = z.string().min(1).max(4096);
-/** The longest check command a repo may have, in repos.yaml and in every message that carries one. */
-export const MAX_CHECK_CHARS = 500;
-const checkCommand = z.string().max(MAX_CHECK_CHARS);
+export { MAX_CHECK_CHARS };
 
 // Every change a command makes also goes out as events. Reply data per command: CommandResultSchemas.
 export const CommandSchema = z.discriminatedUnion("type", [
@@ -117,6 +115,24 @@ export const CommandSchema = z.discriminatedUnion("type", [
   // An error, warning, usage count or crash a client saw. The engine cleans and records it when
   // collecting is on, and does nothing when it is off. `appVersion` is the client app's version.
   z.strictObject({ type: z.literal("report_diagnostic"), report: DiagnosticReportSchema, appVersion: VersionLabelSchema.optional() }),
+  // Starts a helper. Replies at once with the run id; the result comes in helper_run_updated.
+  // `cloud: "accepted"` is the user's OK to send the helper's inputs to a cloud agent; without it a
+  // cloud helper is refused.
+  z.strictObject({ type: z.literal("run_helper"), run: HelperRunRequestSchema, cloud: z.literal("accepted").optional() }),
+  z.strictObject({ type: z.literal("cancel_helper"), runId: HelperRunIdSchema }),
+  // Runs the commands once in a temporary worktree at the base branch. No AI. Replies at once with
+  // the trial id; progress comes in check_trial_updated. `minutes` is the time the command is
+  // expected to take (a suggestion has it): each command's time limit is three times it, at least
+  // 2 and at most 20 minutes; a command without it gets the usual check limit. `setup` is one
+  // command that runs once before the checks (installing dependencies, say).
+  z.strictObject({
+    type: z.literal("try_checks"),
+    path: folderPath,
+    baseBranch: z.string().min(1).max(255).optional(),
+    checks: z.array(z.strictObject({ command: checkCommand.min(1), minutes: z.int().min(1).max(120).optional() })).min(1).max(MAX_TRIAL_CHECKS),
+    setup: checkCommand.min(1).optional(),
+  }),
+  z.strictObject({ type: z.literal("cancel_check_trial"), trialId: CheckTrialIdSchema }),
 ]);
 
 /** One attempt of one step: the step by index, as the item record lists steps. */
@@ -225,6 +241,12 @@ export const QuerySchema = z.discriminatedUnion("type", [
   }),
   /** Whether diagnostics are collected, the install id, and whether a crash report waits. */
   z.strictObject({ type: z.literal("diagnostics_settings") }),
+  /** The helpers, whether each can run now and why not, and what a run sends to which agent. */
+  z.strictObject({ type: z.literal("helpers") }),
+  /** One helper run, running or ended. Ended runs are kept in memory for a short while only. */
+  z.strictObject({ type: z.literal("helper_run"), runId: HelperRunIdSchema }),
+  /** One Try checks run, running or ended. Ended runs are kept in memory for a short while only. */
+  z.strictObject({ type: z.literal("check_trial"), trialId: CheckTrialIdSchema }),
 ]);
 
 export const EventSchema = z.discriminatedUnion("type", [
@@ -240,6 +262,10 @@ export const EventSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("setup_changed") }),
   /** Diagnostics entries were recorded or deleted: run the diagnostics queries again. */
   z.strictObject({ type: z.literal("diagnostics_changed") }),
+  /** A helper run started, moved to a new phase or ended. */
+  z.strictObject({ type: z.literal("helper_run_updated"), run: HelperRunSchema }),
+  /** A check trial started a check, finished one, or ended. */
+  z.strictObject({ type: z.literal("check_trial_updated"), trial: CheckTrialSchema }),
 ]);
 
 const BranchListShape = {
@@ -337,6 +363,9 @@ export const QueryResultSchemas = {
   machine: MachineReportSchema,
   diagnostics_list: DiagnosticsListSchema,
   diagnostics_settings: DiagnosticsSettingsSchema,
+  helpers: z.strictObject({ helpers: z.array(HelperSummarySchema).max(20) }),
+  helper_run: z.strictObject({ run: HelperRunSchema }),
+  check_trial: z.strictObject({ trial: CheckTrialSchema }),
 } as const satisfies Record<z.output<typeof QuerySchema>["type"], z.ZodType>;
 
 /** The data of a successful reply, per command type. */
@@ -354,6 +383,10 @@ export const CommandResultSchemas = {
   diagnostics_delete: z.strictObject({ deleted: z.int().min(0) }),
   diagnostics_settings: DiagnosticsSettingsSchema,
   report_diagnostic: z.null(),
+  run_helper: z.strictObject({ runId: HelperRunIdSchema }),
+  cancel_helper: z.null(),
+  try_checks: z.strictObject({ trialId: CheckTrialIdSchema }),
+  cancel_check_trial: z.null(),
 } as const satisfies Record<z.output<typeof CommandSchema>["type"], z.ZodType>;
 
 /** The codes this engine sends in a command's error reply. Clients accept any code. */
@@ -368,6 +401,12 @@ export const COMMAND_ERROR_CODES = [
   /** repos.yaml (or another config file) has problems the engineer must fix first. */
   "invalid_config",
   "write_failed",
+  /** No agent can run this helper now; the message says why. */
+  "helper_unavailable",
+  /** The helper's agent is a cloud agent and the command did not carry `cloud: "accepted"`; the message says what would be sent where. */
+  "cloud_not_accepted",
+  /** Too many helper runs, or a check trial, already run. */
+  "busy",
 ] as const;
 
 export const CommandMessageSchema = z.strictObject({
@@ -552,9 +591,14 @@ export type UsageResult = QueryResult<"usage">;
 export type MachineResult = QueryResult<"machine">;
 export type DiagnosticsListResult = QueryResult<"diagnostics_list">;
 export type DiagnosticsSettingsResult = QueryResult<"diagnostics_settings">;
+export type HelpersResult = QueryResult<"helpers">;
+export type HelperRunQueryResult = QueryResult<"helper_run">;
+export type CheckTrialResult = QueryResult<"check_trial">;
 export type CommandType = keyof typeof CommandResultSchemas;
 export type CommandResult<T extends CommandType> = z.output<(typeof CommandResultSchemas)[T]>;
 export type StartItemResult = CommandResult<"start_item">;
 export type AddRepoResult = CommandResult<"add_repo">;
 export type UpdateRepoResult = CommandResult<"update_repo">;
+export type RunHelperResult = CommandResult<"run_helper">;
+export type TryChecksResult = CommandResult<"try_checks">;
 export type CommandErrorCode = (typeof COMMAND_ERROR_CODES)[number];

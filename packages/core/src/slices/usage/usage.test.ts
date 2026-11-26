@@ -159,6 +159,48 @@ describe("summarizeUsage", () => {
   });
 });
 
+describe("summarizeUsage with helper calls", () => {
+  const helperCall = (endedAt: number, fields: Partial<AgentCallUsage> = {}) => ({
+    helperId: "suggest-checks" as const,
+    call: call({ endedAt, stepId: "suggest-checks" as AgentCallUsage["stepId"], agentId: "helper" as AgentCallUsage["agentId"], model: "claude-haiku-5-5", tokens: MILLION, ...fields }),
+  });
+  const rows = [row(ITEM_A, "builtin/plan-and-build", call({ endedAt: at(1, 10), tokens: MILLION }))];
+
+  it("counts them in the totals, today and the days, and lists them by helper, but in no workflow or item", () => {
+    const report = summarizeUsage({ rows, helperCalls: [helperCall(at(0, 9)), helperCall(at(2, 9))], range: 14, now: NOW, clis: [], scope: "tokama" });
+    expect(report.totals).toEqual({ tokens: { input: 3_000_000, output: 0, cacheRead: 0, cacheWrite: 0 }, costUsd: 4 + 0.1 + 0.1, calls: 3, unpricedCalls: 0 });
+    expect(report.helpers).toEqual([{ helperId: "suggest-checks", tokens: { input: 2_000_000, output: 0, cacheRead: 0, cacheWrite: 0 }, costUsd: 0.2, calls: 2 }]);
+    expect(report.workflows.map((w) => w.templateId)).toEqual(["builtin/plan-and-build"]);
+    expect(report.items).toHaveLength(1);
+    expect(report.days.reduce((n, day) => n + (day.tokens ?? 0), 0)).toBe(3_000_000);
+    expect(report.days.at(-1)?.tokens).toBe(1_000_000);
+    expect(report.today?.tokens.input).toBe(1_000_000);
+    expect(report.tokenSummary?.processed).toBe(3_000_000);
+    // Most expensive first.
+    expect(report.models?.map((m) => [m.model, m.tokens])).toEqual([["claude-opus-5-5", 1_000_000], ["claude-haiku-5-5", 2_000_000]]);
+    expect(UsageReportSchema.safeParse(report).success).toBe(true);
+  });
+
+  it("counts them in the totals of a report without a scope, and leaves out calls outside the range", () => {
+    const report = summarizeUsage({ rows, helperCalls: [helperCall(at(0, 9)), helperCall(at(30, 9))], range: 14, now: NOW, clis: [] });
+    expect(report.totals.calls).toBe(2);
+    expect(report.helpers?.map((h) => h.calls)).toEqual([1]);
+  });
+
+  it("has no helpers block when there were no helper calls", () => {
+    expect(summarizeUsage({ rows, range: 14, now: NOW, clis: [] }).helpers).toBeUndefined();
+  });
+
+  it("does not count a Claude Code helper call twice in the all scope: the logs hold it from logsFrom on", () => {
+    const logsFrom = at(1, 0);
+    const report = summarizeUsage({ rows: [], helperCalls: [helperCall(at(0, 9)), helperCall(at(5, 9))], range: 14, now: NOW, clis: [], scope: "all", logs: [], logsFrom });
+    // Only the call from before the logs begin is counted; both are listed by helper.
+    expect(report.totals.calls).toBe(1);
+    expect(report.totals.tokens.input).toBe(1_000_000);
+    expect(report.helpers?.[0]?.calls).toBe(2);
+  });
+});
+
 describe("local days in a zone with a DST change", () => {
   // The days are local: a call late in the evening in New York is already the next day in UTC.
   // Run in a fixed zone, so the test fails if the code counts UTC days, whatever the machine's zone.
