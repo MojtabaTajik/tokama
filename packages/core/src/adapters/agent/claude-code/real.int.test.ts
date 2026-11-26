@@ -114,7 +114,7 @@ describe.skipIf(!enabled)("Claude Code runtime against the real CLI", () => {
       type Settings = { hooks: { PreToolUse: Array<{ hooks: Array<Record<string, unknown>> }> } };
       const hookOf = (settings: Settings) => settings.hooks.PreToolUse[0]?.hooks[0] ?? {};
       expect(run("guarded", hookSettings(missing))).toBe(false);
-      // Without onFailure, `|| exit 2` alone blocks: this is what a Claude Code that ignores onFailure gets.
+      // Without onFailure, the shell's exit 2 alone blocks: this is what a Claude Code that ignores onFailure gets.
       const shellOnly = hookSettings(missing) as Settings;
       delete hookOf(shellOnly)["onFailure"];
       expect(run("shell-only", shellOnly)).toBe(false);
@@ -122,8 +122,9 @@ describe.skipIf(!enabled)("Claude Code runtime against the real CLI", () => {
       const open = hookSettings(missing) as Settings;
       delete hookOf(open)["onFailure"];
       const command = String(hookOf(open)["command"]);
-      expect(command.endsWith(" || exit 2")).toBe(true);
-      hookOf(open)["command"] = command.slice(0, -" || exit 2".length);
+      const guard = "; [ $? -eq 42 ] || exit 2";
+      expect(command.endsWith(guard)).toBe(true);
+      hookOf(open)["command"] = command.slice(0, -guard.length);
       expect(run("open", open)).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });

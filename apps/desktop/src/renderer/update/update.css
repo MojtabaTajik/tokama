@@ -1,0 +1,201 @@
+/* The update chip, its tooltip and panel, and the collapsed rail's icon. Colours come from theme.css tokens only. */
+
+.up {
+  position: relative;
+}
+
+/* The chip itself is ui/Chip; this only names the colour of its attention ring. */
+.up-chip {
+  --ring: var(--link);
+  color: var(--text);
+}
+
+.up-chip[data-critical] {
+  --ring: var(--warn);
+}
+
+/* The status line while the restart is under way: the chip's look, but no button. */
+.up-status {
+  color: var(--text-2);
+  cursor: default;
+}
+
+.up-status:hover {
+  background: var(--panel);
+  color: var(--text-2);
+}
+
+/* The notice that the installer did not answer: one short text and a button, in the chip's place. */
+.up-stalled {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-8);
+  padding: var(--space-10) var(--space-12);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  color: var(--text);
+  font-size: var(--text-base);
+}
+
+.up-status-dot {
+  color: var(--live);
+}
+
+/* Tooltip: above the chip, or to the right of the rail icon. */
+.up-tip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 264px;
+  max-width: calc(100vw - 16px);
+  padding: var(--space-10) var(--space-12);
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.tooltip.up-tip-above {
+  top: auto;
+  bottom: calc(anchor(top) + 8px);
+  left: anchor(left);
+}
+
+.tooltip.up-tip-right {
+  top: anchor(top);
+  bottom: auto;
+  left: calc(anchor(right) + 8px);
+}
+
+/* Bridges the gap to the button, so the pointer can move onto the tooltip. */
+.up-tip-above::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: 10px;
+}
+
+.up-tip-right::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 100%;
+  width: 10px;
+}
+
+.up-tip-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  font-weight: 500;
+  color: var(--text);
+}
+
+.up-tip-title[data-critical] {
+  color: var(--warn);
+}
+
+.up-tip-reason {
+  color: var(--text);
+}
+
+.up-tip-action {
+  color: var(--text-2);
+}
+
+.up-tip-link {
+  align-self: flex-start;
+  font-size: var(--text-md);
+}
+
+/* The panel that opens with items running. */
+.up-panel {
+  position: fixed;
+  inset: auto;
+  bottom: calc(anchor(top) + 8px);
+  left: anchor(left);
+  margin: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+  width: 300px;
+  max-width: calc(100vw - 16px);
+  padding: var(--space-14) var(--space-14) var(--space-12);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-popup);
+  color: var(--text-2);
+  font-size: var(--text-base);
+  overflow: visible;
+}
+
+.up-panel-text {
+  font-size: var(--text-body);
+  color: var(--text);
+}
+
+.up-panel-items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.up-panel-items li {
+  display: flex;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.up-panel-mark {
+  color: var(--live);
+}
+
+.up-panel-template {
+  color: var(--muted);
+}
+
+.up-panel-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-8);
+}
+
+.up-panel-why {
+  font-size: var(--text-md);
+  color: var(--muted);
+}
+
+/* The collapsed rail's icon. */
+.up-rail {
+  flex: none;
+}
+
+.up-rail-button {
+  --ring: var(--link);
+  color: var(--link);
+}
+
+.up-rail-button[data-critical] {
+  --ring: var(--warn);
+  color: var(--warn);
+}
+
+.up-dot {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--link);
+  box-shadow: 0 0 0 2px var(--ground);
+}

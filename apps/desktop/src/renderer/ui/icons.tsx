@@ -129,6 +129,14 @@ export const TerminalIcon = ({ size = 16 }: { readonly size?: number }) => (
   </Icon>
 );
 
+/** A triangle with an exclamation mark: important. */
+export const WarningIcon = ({ size = 18 }: { readonly size?: number }) => (
+  <Icon size={size}>
+    <path d="M12 3 2 20h20z" />
+    <path d="M12 10v4M12 17h.01" />
+  </Icon>
+);
+
 export const SearchIcon = ({ size = 13 }: { readonly size?: number }) => (
   <Icon size={size}>
     <circle cx="11" cy="11" r="7" />

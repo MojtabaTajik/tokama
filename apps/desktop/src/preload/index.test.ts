@@ -21,7 +21,7 @@ const [, pushOpenItem] = electron.on.mock.calls.find(([channel]) => channel === 
 describe("preload bridge", () => {
   it("exposes window.tokama with only the bridge methods", () => {
     expect(exposed).toEqual([["tokama", bridge]]);
-    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "countUsage", "getAboutInfo", "getConnection", "getDesktopState", "getToolsPath", "onConnection", "onEvent", "onOpenItem", "openAttemptFile", "openTemplateFile", "pickFolder", "query", "reportError", "restartEngine", "retryConnection", "waitForEngine", "saveLayout", "saveNotifications", "playSound", "setViewedItem", "showDataFolder", "loadDiagnostics", "sendDiagnostics", "saveDiagnostics", "stopCrashPrompt", "getWhatsNew", "closeWhatsNew"].sort());
+    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "countUsage", "getAboutInfo", "getConnection", "getDesktopState", "getToolsPath", "onConnection", "onEvent", "onOpenItem", "openAttemptFile", "openTemplateFile", "pickFolder", "query", "reportError", "restartEngine", "retryConnection", "waitForEngine", "saveLayout", "saveNotifications", "playSound", "setViewedItem", "showDataFolder", "loadDiagnostics", "sendDiagnostics", "saveDiagnostics", "stopCrashPrompt", "getWhatsNew", "closeWhatsNew", "getUpdate", "onUpdate", "checkForUpdates", "installUpdate", "openUpdateNotes"].sort());
   });
 
   it("the release notes calls: one without arguments, and a close that sends only two strings", async () => {
@@ -95,6 +95,17 @@ describe("preload bridge", () => {
     expect(electron.invoke).toHaveBeenLastCalledWith(CHANNELS.loadDiagnostics);
     await bridge.stopCrashPrompt();
     expect(electron.invoke).toHaveBeenLastCalledWith(CHANNELS.stopCrashPrompt);
+  });
+
+  it("the update calls send no argument, and onUpdate follows the pushed channel", async () => {
+    await bridge.getUpdate();
+    expect(electron.invoke).toHaveBeenLastCalledWith(CHANNELS.getUpdate);
+    await bridge.checkForUpdates();
+    expect(electron.invoke).toHaveBeenLastCalledWith(CHANNELS.checkForUpdates);
+    await bridge.installUpdate();
+    expect(electron.invoke).toHaveBeenLastCalledWith(CHANNELS.installUpdate);
+    await bridge.openUpdateNotes();
+    expect(electron.invoke).toHaveBeenLastCalledWith(CHANNELS.openUpdateNotes);
   });
 
   it("pickFolder invokes its channel with no arguments", async () => {

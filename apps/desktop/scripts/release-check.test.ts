@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { changelogSection, feedUrlFor, releaseNotesFor, tagVersion } from "./release-check.js";
+import { changelogSection, feedUrlFor, minSafeVersionFor, releaseNotesFor, tagVersion } from "./release-check.js";
 
 describe("tagVersion", () => {
   it("reads the version of a v<x.y.z> tag", () => {
@@ -88,8 +88,67 @@ describe("feedUrlFor", () => {
     expect(feedUrlFor("workflow_dispatch", "https://example.test/updates/mac/")).toBe("https://example.test/updates/mac/");
   });
 
+  it("takes a local feed on a manual run only", () => {
+    expect(feedUrlFor("workflow_dispatch", "http://127.0.0.1:8765/")).toBe("http://127.0.0.1:8765/");
+    expect(feedUrlFor("push", "http://127.0.0.1:8765/")).toBe(DEFAULT);
+  });
+
+  it.each(["http://localhost/", "http://127.0.0.1/", "http://127.0.0.2:8000/", "http://127.0.0.1:80/"])("refuses the local feed %j", (input) => {
+    expect(() => feedUrlFor("workflow_dispatch", input)).toThrow(/feed URL/);
+  });
+
   it.each(["http://example.test/mac/", "https://example.test/mac", "https://exa mple.test/", "https://example.test/mac/\nx=y/", "file:///etc/", "https://example.test/mac/?a=b"])("refuses the input %j", (input) => {
     expect(() => feedUrlFor("workflow_dispatch", input)).toThrow(/feed URL/);
+  });
+});
+
+describe("minSafeVersionFor", () => {
+  const note = (version: string, security: boolean) => `---\nversion: ${version}\ndate: 2026-12-03\n${security ? "security: true\n" : ""}---\n\n## Sounds\n\nA soft chirp.\n`;
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+  const checkout = (files: Record<string, string> | undefined): string => {
+    const dir = mkdtempSync(join(tmpdir(), "tk-minsafe-227-"));
+    dirs.push(dir);
+    if (files === undefined) return dir;
+    mkdirSync(join(dir, "whats-new"));
+    for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, "whats-new", name), text);
+    return dir;
+  };
+
+  it("is undefined without notes, without a whats-new folder, and when no note says security", () => {
+    expect(minSafeVersionFor(checkout(undefined), "0.2.0")).toBeUndefined();
+    expect(minSafeVersionFor(checkout({}), "0.2.0")).toBeUndefined();
+    expect(minSafeVersionFor(checkout({ "0.1.0.md": note("0.1.0", false), "0.2.0.md": note("0.2.0", false) }), "0.2.0")).toBeUndefined();
+  });
+
+  it("is the version of the newest security note at or below the release, so a normal release after it carries it forward", () => {
+    const dir = checkout({ "0.0.2.md": note("0.0.2", true), "0.0.3.md": note("0.0.3", false), "0.0.9.md": note("0.0.9", true), "0.0.10.md": note("0.0.10", false) });
+    expect(minSafeVersionFor(dir, "0.0.10")).toBe("0.0.9");
+    expect(minSafeVersionFor(dir, "0.0.9")).toBe("0.0.9");
+    expect(minSafeVersionFor(dir, "0.0.8")).toBe("0.0.2");
+    expect(minSafeVersionFor(dir, "0.0.3")).toBe("0.0.2");
+    expect(minSafeVersionFor(dir, "0.0.1")).toBeUndefined();
+  });
+
+  it("ignores a security note of a later version", () => {
+    expect(minSafeVersionFor(checkout({ "0.1.0.md": note("0.1.0", false), "0.2.0.md": note("0.2.0", true) }), "0.1.0")).toBeUndefined();
+  });
+
+  it("ignores files that are not notes", () => {
+    expect(minSafeVersionFor(checkout({ ".gitkeep": "", "README.md": "security: true", "0.2.0.txt": "x" }), "0.2.0")).toBeUndefined();
+  });
+
+  it("fails on a note that does not parse, so a broken note cannot hide a security release", () => {
+    expect(() => minSafeVersionFor(checkout({ "0.1.0.md": note("0.1.0", true).replace("2026-12-03", "2026-02-30") }), "0.2.0")).toThrow(/^whats-new\/0\.1\.0\.md: /);
+  });
+
+  it("fails on a note that is over 8 KiB or not a plain file", () => {
+    expect(() => minSafeVersionFor(checkout({ "0.1.0.md": `${note("0.1.0", true)}${" ".repeat(9000)}` }), "0.2.0")).toThrow(/at most 8192/);
+    const dir = checkout({ "real.md": note("0.1.0", true) });
+    symlinkSync(join(dir, "whats-new", "real.md"), join(dir, "whats-new", "0.1.0.md"));
+    expect(() => minSafeVersionFor(dir, "0.2.0")).toThrow(/is not a plain file/);
   });
 });
 

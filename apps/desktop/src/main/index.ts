@@ -18,7 +18,18 @@ import { createReporter, mainErrorReport, rateLimit, rendererErrorReport, render
 import { attachTracker, engineCommand, engineCommandEnd, engineDirFor, engineEnv, engineRuntime, readLogTail, toolsPathInfo } from "./engine.js";
 import { showMainWindow } from "./main-window.js";
 import { itemsRunningIn, offerMove, shouldOfferMove } from "./move-to-applications.js";
-import { replaceOlderEngine } from "./replace.js";
+import { replaceOlderEngine, type ReplaceResult } from "./replace.js";
+import { fakeUpdateEngine, fakeUpdateMode } from "./testing/update.js";
+import { createUpdateController } from "./update/controller.js";
+import { macUpdateEngine } from "./update/electron-updater.js";
+import { checksEnabled } from "./update/gate.js";
+import { createInstaller } from "./update/install.js";
+import { updateNotesUrl } from "./update/notes.js";
+import type { UpdateEngine } from "./update/port.js";
+import { createQuitHandler } from "./update/quit.js";
+import { runningNow } from "./update/running.js";
+import { realTimers, startSchedule } from "./update/schedule.js";
+import { bakedFeedUrl, lockDownUpdaterSession } from "./update/session.js";
 import { pickRepoFolder } from "./folder.js";
 import { createNotifier } from "./notifier.js";
 import { runSoundCheck } from "./sound-check.js";
@@ -32,6 +43,7 @@ import { openTemplateFile } from "./template-file.js";
 import { notesDir, pathExists, whatsNewService } from "./whats-new.js";
 import { fitBounds, trackWindow } from "./window-state.js";
 import { backgroundModeEnabled, devServerUrl, diagnosticsUrl, e2eEnabled, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, sampleEngineEnabled, secureWebPreferences } from "./policy.js";
+import type { UpdateState } from "../shared/update.js";
 
 const rendererDir = join(import.meta.dirname, "..", "renderer");
 const preloadPath = join(import.meta.dirname, "..", "preload", "index.cjs");
@@ -44,6 +56,8 @@ const sample = sampleEngineEnabled(process.env["TOKAMA_SAMPLE"], app.isPackaged)
 const background = backgroundModeEnabled(process.env["TOKAMA_E2E"], app.isPackaged, process.platform);
 // UI tests, on every platform: notifications go to a list the test reads, never to the system.
 const recordNotifications = e2eEnabled(process.env["TOKAMA_E2E"], app.isPackaged);
+// UI tests only: a stand-in for the updater, so a test can walk through an update without a feed.
+const fakeUpdate = e2eEnabled(process.env["TOKAMA_E2E"], app.isPackaged) ? fakeUpdateMode(process.env["TOKAMA_E2E_UPDATE"]) : undefined;
 
 /** Registers a bridge channel; it answers app pages only. */
 function handle(channel: string, fn: (...args: unknown[]) => unknown): void {
@@ -103,17 +117,34 @@ function userShell(): string | undefined {
   return process.env["SHELL"];
 }
 
+/** Where this app's engine lives: one dir for both sides, and its lock file. */
+function engineLocation() {
+  const dir = engineDirFor(defaultEngineDir(process.env, homedir()), sample);
+  const endpoint = engineEndpoint(dir);
+  return { dir, endpoint, lockPath: endpoint.ok ? endpoint.value.lockPath : join(dir, "engine.lock") };
+}
+
+/** Stops this app's own engine (the older one found, or the one an update replaces); the engine of another home is left alone. */
+function stopOwnEngine(expectedEngineId: string | undefined): Promise<ReplaceResult> {
+  const { dir, lockPath } = engineLocation();
+  return replaceOlderEngine({
+    ...(expectedEngineId !== undefined && { expectedEngineId }),
+    dir,
+    engine: { lockPath, commandEnd: engineCommandEnd(dir, sample), otherLocks: [join(homedir(), ".tokama", "engine.lock")] },
+    processes: posixEngineProcesses,
+    requestShutdown: (engineDir) => requestShutdown(engineDir),
+  });
+}
+
 function startWatch(onConnected: () => void, onItemEvent: (event: BridgeEvent["event"]) => void): ConnectionWatch {
   // One dir for both sides: the client gets it directly, the engine as `--dir`, since the
   // engine's reduced env has no TOKAMA_ENGINE_DIR or XDG_RUNTIME_DIR to find it by itself.
-  const dir = engineDirFor(defaultEngineDir(process.env, homedir()), sample);
-  const endpoint = engineEndpoint(dir);
+  const { dir, endpoint, lockPath } = engineLocation();
   // In development the engine is the checkout's built apps/engine/dist on the node found on PATH;
   // a packaged app runs the Node and the engine bundle it ships.
   const runtime = engineRuntime({ platform: process.platform, isPackaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath, path: process.env["PATH"] });
   // The shell is asked now, while the window loads; the first connect waits for the answer.
   const start = toolsPath().then((tools) => engineCommand({ ...runtime, dir, env: engineEnv(process.env, tools, sample), sample }));
-  const lockPath = endpoint.ok ? endpoint.value.lockPath : join(dir, "engine.lock");
   return watchConnection({
     connect: async () => {
       const command = await start;
@@ -126,14 +157,7 @@ function startWatch(onConnected: () => void, onItemEvent: (event: BridgeEvent["e
     // Only a packaged app compares builds; a dev build is 0.0.0 and never replaces an engine for it.
     ...(app.isPackaged && { appVersion: app.getVersion() }),
     // Only this app's own engine for this dir is stopped; the home lock is the real engine's.
-    replaceOlder: (expectedEngineId) =>
-      replaceOlderEngine({
-        ...(expectedEngineId !== undefined && { expectedEngineId }),
-        dir,
-        engine: { lockPath, commandEnd: engineCommandEnd(dir, sample), otherLocks: [join(homedir(), ".tokama", "engine.lock")] },
-        processes: posixEngineProcesses,
-        requestShutdown: (engineDir) => requestShutdown(engineDir),
-      }),
+    replaceOlder: stopOwnEngine,
     olderLock: () => {
       const lock = readEngineLock(lockPath);
       return { lockPath, ...(lock !== undefined && { pid: lock.pid, engineId: lock.engineId }) };
@@ -213,6 +237,26 @@ function itemsRunningInApplications(): Promise<number | undefined> {
     // No start: this only asks an engine that already runs.
     connect: () => connect({ dir }),
   });
+}
+
+/**
+ * The updater this run uses: a test's stand-in when a UI test asks, the real one for a packaged
+ * Mac in Applications, none otherwise (`reason` then says why, for About). The real one gets its
+ * network session locked down before anything is asked of it.
+ */
+function updateSetup(): { readonly engine?: UpdateEngine; readonly reason: Extract<UpdateState, { status: "unavailable" }>["reason"] } {
+  if (fakeUpdate !== undefined) return { engine: fakeUpdateEngine(fakeUpdate, { outDir: app.getPath("userData"), quit: () => app.quit() }), reason: "development" };
+  const gate = checksEnabled({ platform: process.platform, isPackaged: app.isPackaged, inApplications: () => app.isInApplicationsFolder() });
+  if (!gate.ok) return { reason: gate.reason };
+  try {
+    const mac = macUpdateEngine();
+    lockDownUpdaterSession(mac.session(), bakedFeedUrl(join(process.resourcesPath, "app-update.yml")));
+    return { engine: mac.engine, reason: "development" };
+  } catch (error) {
+    // An updater that cannot start must not take the app with it.
+    console.error("updates are off:", error);
+    return { reason: "development" };
+  }
 }
 
 /** The folder of the sound files and the player that plays them; the player is silent off macOS. */
@@ -394,11 +438,78 @@ void app.whenReady().then(async () => {
     const message = await shell.openPath(tokamaHome);
     return message === "" ? { ok: true } : { ok: false, message };
   });
-  app.on("before-quit", () => {
-    store.flush();
-    marker.clear();
-    void watch.close();
+  // Updates. The engine of the updater is the real one when this run may check, a test's stand-in
+  // when a UI test asks, and none otherwise. Nothing installs by itself: the install runs on a
+  // click on Restart now, or when the user quits and nothing runs.
+  const updater = updateSetup();
+  const updateEngine = updater.engine;
+  const updates =
+    updateEngine === undefined
+      ? undefined
+      : createUpdateController({
+          engine: updateEngine,
+          initial: { status: "idle" },
+          now: () => Date.now(),
+          // A test's stand-in pretends to be an older release, so it can be told to be below the minimum.
+          appVersion: fakeUpdate === undefined ? app.getVersion() : "0.1.0",
+          onChange: (state) => send(CHANNELS.updateChanged, state),
+          report: (code) => reporter.report({ type: "warning", source: "desktop", code }),
+        });
+  const engineRunningNow = () =>
+    runningNow({
+      lockPath: () => {
+        const { endpoint, lockPath } = engineLocation();
+        return endpoint.ok ? lockPath : undefined;
+      },
+      readLock: readEngineLock,
+      pidAlive,
+      // No start: this only asks an engine that already runs.
+      connect: () => connect({ dir: engineLocation().dir }),
+    });
+  const updateState = (): UpdateState => updates?.state() ?? { status: "unavailable", reason: updater.reason };
+  handle(CHANNELS.getUpdate, updateState);
+  handle(CHANNELS.checkForUpdates, () => updates?.check());
+  // The address is built from the update's own version; the window sends nothing.
+  handle(CHANNELS.openUpdateNotes, async () => {
+    const url = updateNotesUrl(updateState());
+    if (url !== undefined) await shell.openExternal(url);
   });
+  const installUpdate =
+    updates === undefined || updateEngine === undefined
+      ? undefined
+      : createInstaller({
+          state: updates.state,
+          dispatch: updates.dispatch,
+          runningNow: engineRunningNow,
+          suspendWatch: () => watch.suspend(),
+          resumeWatch: () => watch.resume(),
+          stopEngine: stopOwnEngine,
+          quitAndInstall: (relaunch) => updateEngine.quitAndInstall(relaunch),
+          quitApp: () => app.quit(),
+          watchInstallError: updates.watchInstallError,
+          reportFailure: () => updates.warn("update_install_failed"),
+          now: () => Date.now(),
+          after: realTimers.after,
+        });
+  handle(CHANNELS.installUpdate, () => installUpdate?.({ relaunch: true }) ?? { ok: false, reason: "not_ready" });
+  let stopSchedule: () => void = () => undefined;
+  if (updates !== undefined) {
+    // A test's stand-in has no feed to wait for: it checks at once.
+    if (fakeUpdate === undefined) stopSchedule = startSchedule(() => updates.check());
+    else setTimeout(() => void updates.check(), 0);
+  }
+  const onBeforeQuit = createQuitHandler({
+    state: updateState,
+    install: (options) => installUpdate?.(options) ?? Promise.resolve({ ok: false, reason: "not_ready" }),
+    quit: () => app.quit(),
+    teardown: () => {
+      stopSchedule();
+      store.flush();
+      marker.clear();
+      void watch.close();
+    },
+  });
+  app.on("before-quit", (event) => onBeforeQuit(event));
   createWindow(store, reporter);
   showMain = () => showMainWindow({ windows: () => BrowserWindow.getAllWindows(), create: () => createWindow(store, reporter), show: showWindow });
   app.on("activate", () => {

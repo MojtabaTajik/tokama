@@ -4,6 +4,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import { type AboutInfo, type BridgeEvent, CHANNELS, type ConnectionState, type DiagnosticsLoad, type DiagnosticsSaveResult, type DiagnosticsSendResult, type OpenResult, type ToolsPathInfo, type TokamaBridge, type WhatsNewInfo } from "../shared/bridge.js";
 import type { DesktopState } from "../shared/desktop-state.js";
+import type { InstallResult, UpdateState } from "../shared/update.js";
 
 /** Subscribes to a pushed channel. Wrapped, so the renderer never receives the IPC event object (it carries `sender`). */
 function subscribe<T>(channel: string, listener: (message: T) => void): () => void {
@@ -72,6 +73,12 @@ export const bridge: TokamaBridge = {
   getWhatsNew: () => ipcRenderer.invoke(CHANNELS.getWhatsNew) as Promise<WhatsNewInfo>,
   // Only the two values cross, as strings.
   closeWhatsNew: (version, what) => ipcRenderer.invoke(CHANNELS.closeWhatsNew, String(version), String(what)) as Promise<void>,
+  getUpdate: () => ipcRenderer.invoke(CHANNELS.getUpdate) as Promise<UpdateState>,
+  onUpdate: (listener) => subscribe<UpdateState>(CHANNELS.updateChanged, listener),
+  // No argument crosses: main decides everything from its own state.
+  checkForUpdates: () => ipcRenderer.invoke(CHANNELS.checkForUpdates) as Promise<void>,
+  installUpdate: () => ipcRenderer.invoke(CHANNELS.installUpdate) as Promise<InstallResult>,
+  openUpdateNotes: () => ipcRenderer.invoke(CHANNELS.openUpdateNotes) as Promise<void>,
 };
 
 contextBridge.exposeInMainWorld("tokama", bridge);

@@ -188,6 +188,8 @@ export function flow(name: string, fn: (session: Session) => Promise<void>, mode
 async function launch(tmp: string, baseDir: string, output: string[], mode: EngineMode, extraEnv: FlowOptions["env"]): Promise<ElectronApplication> {
   const env: Record<string, string> = {};
   for (const [name, value] of Object.entries(process.env)) if (value !== undefined) env[name] = value;
+  // Never inherited from the developer's shell: a test asks for it.
+  delete env["TOKAMA_E2E_UPDATE"];
   env["TOKAMA_ENGINE_DIR"] = baseDir;
   // No Dock icon, no focus: the app stays in the background while the developer works.
   env["TOKAMA_E2E"] = "1";

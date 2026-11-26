@@ -2,6 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { updateChip } from "../../shared/update.js";
 import { ITEMS, NOW, setup } from "../testing/sample.js";
 import { limitsReport, usageReport } from "../testing/usage.js";
 import { Rail, TIP_CLOSE_MS, TIP_OPEN_MS } from "./Rail.js";
@@ -209,6 +210,32 @@ describe("Rail: Insights tooltip", () => {
     expect(tip.querySelector('[aria-label="Today"] .it-note')?.textContent).toBe("today's usage unknown: the engine is older than this app");
   });
 
+});
+
+describe("Rail: update icon", () => {
+  const icon = () => container.querySelector<HTMLButtonElement>(".up-rail-button");
+
+  it("shows no update icon without a ready update", () => {
+    render();
+    expect(icon()).toBeNull();
+  });
+
+  it("shows the icon above the user button and calls back on a click", () => {
+    const onActivate = vi.fn();
+    render({ update: { view: updateChip({ status: "ready", version: "0.2.0" }, 0)!, onActivate, onOpenNotes: noop } });
+    expect(icon()?.getAttribute("aria-label")).toBe("Update: Tokama 0.2.0 is ready. Click to update, then confirm the restart.");
+    const children = [...container.querySelector(".rail")!.children];
+    expect(children.at(-1)?.classList.contains("rail-user")).toBe(true);
+    expect(children.at(-2)?.classList.contains("up-rail")).toBe(true);
+    act(() => icon()!.click());
+    expect(onActivate).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks an important update with the ! badge", () => {
+    render({ update: { view: updateChip({ status: "ready", version: "0.2.2", critical: { reason: "This update fixes a security problem." } }, 0)!, onActivate: noop, onOpenNotes: noop } });
+    expect(icon()?.getAttribute("aria-label")).toMatch(/^Important update: Tokama 0\.2\.2\./);
+    expect(icon()?.querySelector(".badge")?.textContent).toBe("!");
+  });
 });
 
 describe("Rail: diagnostics badge", () => {

@@ -337,7 +337,7 @@ async function hook(state: Run): Promise<void> {
     encoding: "utf8",
     timeout: 20_000,
   });
-  if (reply.status !== 0 || !reply.stdout.includes('"permissionDecision":"deny"')) throw new Error(`unexpected reply (exit ${String(reply.status)}): ${`${reply.stdout}${reply.stderr}`.slice(0, 500)}`);
+  if (reply.status !== 42 || !reply.stdout.includes('"permissionDecision":"deny"')) throw new Error(`unexpected reply (exit ${String(reply.status)}): ${`${reply.stdout}${reply.stderr}`.slice(0, 500)}`);
 }
 
 async function quit(state: Run): Promise<void> {

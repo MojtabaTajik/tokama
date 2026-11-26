@@ -37,6 +37,9 @@ function fakeBridge(start: ItemRecord[], activities = new Map<string, ItemActivi
   const command = vi.fn((c: { type: string }) => commandReply(c));
   const bridge = {
     getConnection: vi.fn(async (): Promise<ConnectionState> => ({ status: "connected", engineId: "e-1" })),
+    getUpdate: vi.fn(async () => ({ status: "idle" as const })),
+    onUpdate: vi.fn(() => () => undefined),
+    openUpdateNotes: vi.fn(async () => undefined),
     onConnection: vi.fn((listener: (state: ConnectionState) => void) => {
       connectionListeners.add(listener);
       return () => connectionListeners.delete(listener);

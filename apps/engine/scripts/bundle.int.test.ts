@@ -34,13 +34,13 @@ describe("engine bundle", () => {
 
   it("denies a command the rules do not allow", () => {
     const run = runHook({ commands: [] }, bash("rm -rf /tmp/x"));
-    expect(run.status).toBe(0);
+    expect(run.status).toBe(42);
     expect(run.stdout).toContain('"permissionDecision":"deny"');
   });
 
   it("prints nothing for a command the rules allow", () => {
     const run = runHook({ commands: ["git status"] }, bash("git status"));
-    expect(run.status).toBe(0);
+    expect(run.status).toBe(42);
     expect(run.stdout).toBe("");
   });
 

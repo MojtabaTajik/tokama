@@ -26,13 +26,19 @@ export function hookReply(input: string, rules: unknown): string | undefined {
   return deny(`Tokama: this step does not allow "${decision.part}" (${decision.reason}).`);
 }
 
+/** The exit code `hook.ts` ends with after it wrote its reply, or nothing. It is the only code the wrapper turns into success. */
+export const HOOK_DONE = 42;
+
 /**
- * Claude Code settings that run `hookArgv` before every Bash call. The shell turns a hook that
- * cannot start (exit 127 for a missing binary, Node's exit 1 for a missing script) into exit 2,
- * which blocks the call on every Claude Code version; `hook.ts` itself exits only 0 or 2.
+ * Claude Code settings that run `hookArgv` before every Bash call. The shell lets the hook's own
+ * stdout through and turns its exit code into 0 only when it is HOOK_DONE; any other code becomes
+ * 2, which blocks the call on every Claude Code version. That covers a hook that cannot start
+ * (127 for a missing binary, Node's 1 for a missing or broken script) and a script that is empty
+ * or cut short, which would exit 0 and print nothing, the same as an allowed command. An old
+ * wrapper with a new hook, or a new wrapper with an old hook, blocks every call.
  * `onFailure: "block"` also blocks on a timeout; without it Claude Code lets the call run unchecked.
  */
 export function hookSettings(hookArgv: readonly string[]): unknown {
-  const command = `${hookArgv.map((arg) => `'${arg.replaceAll("'", `'\\''`)}'`).join(" ")} || exit 2`;
+  const command = `${hookArgv.map((arg) => `'${arg.replaceAll("'", `'\\''`)}'`).join(" ")}; [ $? -eq ${HOOK_DONE} ] || exit 2`;
   return { hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command, onFailure: "block" }] }] } };
 }

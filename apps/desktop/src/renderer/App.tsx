@@ -23,6 +23,10 @@ import { NeedsYou } from "./needsyou/NeedsYou.js";
 import { CrashPrompt, useCrashPrompt } from "./shell/CrashPrompt.js";
 import { MainArea } from "./shell/MainArea.js";
 import { Rail } from "./shell/Rail.js";
+import { runningItems } from "./update/running.js";
+import { UpdateChip } from "./update/UpdateChip.js";
+import { useUpdate } from "./update/useUpdate.js";
+import { updateChip } from "../shared/update.js";
 import { Sidebar } from "./shell/Sidebar.js";
 import { CHIP_PRIORITY, type SidebarChipCandidate } from "./shell/sidebar-chip.js";
 import { UpdatedChip } from "./whatsnew/UpdatedChip.js";
@@ -211,6 +215,56 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   }, [bridge, setup, views.view, views.filter, views.collapsed]);
   const save = (patch: Parameters<TokamaBridge["saveLayout"]>[0]) => void bridge.saveLayout(patch).catch(() => undefined);
 
+  // A ready update: a chip at the sidebar's foot, or an icon in the rail while the sidebar is closed.
+  // Running items block the restart, so the chip's panel lists them.
+  const update = useUpdate(bridge);
+  const runningNow = useMemo(() => runningItems(items, setup?.templates), [items, setup]);
+  const updateView = update === undefined ? undefined : updateChip(update, runningNow.length);
+  const [updatePanel, setUpdatePanel] = useState(false);
+  const updateReady = updateView?.kind === "ready";
+  useEffect(() => {
+    if (!updateReady) setUpdatePanel(false);
+  }, [updateReady]);
+  // The refusal belongs to the open panel: closing it lets the next click ask again.
+  useEffect(() => {
+    if (!updatePanel) setUpdateBusy(undefined);
+  }, [updatePanel]);
+  const openSidebar = () => {
+    if (panelOpen) return;
+    setPanelOpen(true);
+    save({ sidebar: { width: chosen.sidebar, collapsed: false } });
+  };
+  // Restart now asks the main process, which counts the running items itself. When it finds
+  // something running that the window did not list (or cannot tell), the panel says so.
+  const [updateBusy, setUpdateBusy] = useState<{ readonly running?: number } | undefined>(undefined);
+  const restartForUpdate = async () => {
+    const result = await bridge.installUpdate().catch(() => ({ ok: false as const, reason: "failed" as const }));
+    if (!result.ok && result.reason === "busy") {
+      setUpdateBusy(result.running === undefined ? {} : { running: result.running });
+      openSidebar();
+      setUpdatePanel(true);
+    }
+  };
+  const activateUpdate = () => {
+    // A click on the chip or the rail icon only opens something; restarting is a second, clear button.
+    // The installer did not answer: the notice in the sidebar has Restart Tokama, which quits the app.
+    openSidebar();
+    if (updateView?.kind === "stalled") return;
+    setUpdatePanel((open) => (panelOpen ? !open : true));
+  };
+  const openUpdateNotes = () => void bridge.openUpdateNotes().catch(() => undefined);
+  const closeUpdatePanel = useCallback(() => setUpdatePanel(false), []);
+  const updateChips: readonly SidebarChipCandidate[] =
+    updateView === undefined
+      ? []
+      : [
+          {
+            id: "update",
+            priority: CHIP_PRIORITY.update,
+            node: <UpdateChip view={updateView} running={runningNow} busy={updateBusy} panelOpen={updatePanel} onActivate={activateUpdate} onRestartNow={() => void restartForUpdate()} onClosePanel={closeUpdatePanel} onOpenNotes={openUpdateNotes} />,
+          },
+        ];
+
   // Cmd (macOS) or Ctrl (elsewhere) and N open New work from anywhere; the sidebar may be closed, so this lives here.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -259,8 +313,9 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
 
   // The card and the chip show only inside the sidebar: with it closed, or on the Settings page, nothing shows and nothing is marked as seen.
   const { card, chip } = whatsNew;
-  const chips: readonly SidebarChipCandidate[] =
-    chip === undefined
+  const chips: readonly SidebarChipCandidate[] = [
+    ...updateChips,
+    ...(chip === undefined
       ? []
       : [
           {
@@ -268,7 +323,8 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
             priority: CHIP_PRIORITY.updatedTo,
             node: <UpdatedChip key={chip.note.version} version={chip.note.version} kind={chip.kind} onShown={whatsNew.chipShown} onGone={whatsNew.chipGone} onOpen={() => openNotes(chip.note.version)} />,
           },
-        ];
+        ]),
+  ];
   // The drawer belongs to the work views. Insights and About hide it; the item stays selected, so
   // going back reopens it. On the page it was opened on, the full view takes the drawer's place.
   const drawerOpen = itemShown && !full;
@@ -318,6 +374,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
           setPage("settings");
         }}
         diagnosticsWaiting={diagnosticsWaiting}
+        {...(!panelOpen && (updateView?.kind === "ready" || updateView?.kind === "stalled") && { update: { view: updateView, onActivate: activateUpdate, onOpenNotes: openUpdateNotes } })}
       />
       {panelOpen && (
         <Sidebar
@@ -357,7 +414,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
         />
       )}
       {full ? null : aboutOpen ? (
-        <About bridge={bridge} connection={connection.status} onClose={() => setPage("board")} whatsNew={whatsNew.info} openVersion={aboutVersion} />
+        <About bridge={bridge} connection={connection.status} running={runningNow.length} now={now} onClose={() => setPage("board")} whatsNew={whatsNew.info} openVersion={aboutVersion} />
       ) : page === "insights" ? (
         <Insights
           bridge={bridge}

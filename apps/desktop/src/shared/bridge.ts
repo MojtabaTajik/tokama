@@ -3,6 +3,7 @@
 import type { ClientEvent, CommandReply, QueryReply } from "@tokama/client";
 import type { CommandInput, DiagnosticEntry, PostFailure, QueryInput, UsageAction } from "@tokama/core";
 import type { DesktopState, LayoutPatch, NotificationSettings, SoundName, SoundSet } from "./desktop-state.js";
+import type { InstallResult, UpdateState } from "./update.js";
 import type { Note } from "./whats-new.js";
 
 /** The desktop app's view of its engine connection. */
@@ -80,6 +81,11 @@ export const CHANNELS = {
   stopCrashPrompt: "tokama:diagnostics:stop-crash-prompt",
   getWhatsNew: "tokama:whats-new:get",
   closeWhatsNew: "tokama:whats-new:close",
+  getUpdate: "tokama:update:get",
+  updateChanged: "tokama:update:changed",
+  checkForUpdates: "tokama:update:check",
+  installUpdate: "tokama:update:install",
+  openUpdateNotes: "tokama:update:notes",
 } as const;
 
 /** The usage actions only the window sees. The main process counts no other name from the window. */
@@ -263,4 +269,20 @@ export interface TokamaBridge {
   getWhatsNew(): Promise<WhatsNewInfo>;
   /** The card or the chip of this version was shown or closed: it never shows again. The main process ignores any version that is not the one due. */
   closeWhatsNew(version: string, what: "card" | "chip"): Promise<void>;
+  /** Where updating stands now. */
+  getUpdate(): Promise<UpdateState>;
+  /** Calls `listener` on every change of the update state; returns a function that stops it. */
+  onUpdate(listener: (state: UpdateState) => void): () => void;
+  /** Checks for an update now. Does nothing while one is being checked or downloaded, or is ready. */
+  checkForUpdates(): Promise<void>;
+  /**
+   * Restarts into the ready update. The main process asks the engine itself whether anything runs
+   * and refuses (`busy`) if it does or cannot tell; nothing stops running work.
+   */
+  installUpdate(): Promise<InstallResult>;
+  /**
+   * Opens the release page of the update that is downloading or ready in the system browser. No
+   * address comes from the window: the main process builds it from the update's own version.
+   */
+  openUpdateNotes(): Promise<void>;
 }

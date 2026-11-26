@@ -27,6 +27,7 @@
     "@types/react-dom": "19.3.0",
     "electron": "45.4.1",
     "electron-builder": "26.18.1",
+    "electron-updater": "6.8.12",
     "electron-vite": "6.0.0",
     "playwright-core": "1.65.1",
     "react": "19.3.1",

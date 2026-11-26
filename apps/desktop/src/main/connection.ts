@@ -66,6 +66,14 @@ export interface ConnectionWatch {
   restartEngine(): void;
   /** With an older engine that reports running items: replace it once none runs. Does nothing in any other state. */
   waitForEngine(): void;
+  /**
+   * Lets go of the engine without ever connecting again until `resume`: the client is closed (a
+   * client left open would reconnect, and start an engine) and the state is "starting". Returns the
+   * id of the engine it was connected to, if any. Used while that engine is stopped for an update.
+   */
+  suspend(): Promise<{ readonly engineId?: string }>;
+  /** Connects again, and starts an engine if none runs. Does nothing unless suspended. */
+  resume(): void;
   /** Closes the client. The engine keeps running. */
   close(): Promise<void>;
 }
@@ -85,6 +93,7 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
   let state: ConnectionState = { status: "starting" };
   let client: EngineClient | undefined;
   let closed = false;
+  let suspended = false;
   // Each attempt has its own number; a follower of an earlier attempt's client stops hearing events.
   let attempt = 0;
   let waitTimer: ReturnType<typeof setTimeout> | undefined;
@@ -199,6 +208,25 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
       if (closed || state.status !== "failed" || state.older?.runningItems === undefined || state.older.waiting) return;
       set({ ...state, older: { ...state.older, waiting: true } });
       waitAgain(attempt);
+    },
+    suspend: async () => {
+      if (closed) return {};
+      suspended = true;
+      const previous = client;
+      const engineId = previous?.engineId;
+      client = undefined;
+      // A new attempt number: the follower of the closed client stops hearing events.
+      attempt += 1;
+      clearTimeout(waitTimer);
+      set({ status: "starting", updating: true });
+      await previous?.close().catch(() => undefined);
+      return engineId === undefined ? {} : { engineId };
+    },
+    resume: () => {
+      if (closed || !suspended) return;
+      suspended = false;
+      set({ status: "starting" });
+      start("ask");
     },
     close: async () => {
       closed = true;

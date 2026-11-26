@@ -478,4 +478,68 @@ describe("watchConnection", () => {
       expect(connect).toHaveBeenCalledOnce();
     });
   });
+
+  describe("suspend and resume", () => {
+    it("closes the client, names its engine and does not connect again while suspended", async () => {
+      const first = fakeClient("engine-1");
+      const second = fakeClient("engine-2");
+      const connect = vi.fn<Connect>().mockResolvedValueOnce(ok(first.client)).mockResolvedValueOnce(ok(second.client));
+      const { watcher, states } = watch(connect);
+      await settle();
+      expect(await watcher.suspend()).toEqual({ engineId: "engine-1" });
+      expect(first.client.close).toHaveBeenCalledOnce();
+      expect(watcher.state()).toEqual({ status: "starting", updating: true });
+      expect(watcher.client()).toBeUndefined();
+      // The closed client's late events change nothing, and nothing reconnects.
+      first.push({ kind: "disconnected" });
+      first.push({ kind: "failed", error: { code: "unauthorized", message: "late" } });
+      await settle();
+      expect(connect).toHaveBeenCalledOnce();
+      expect(states.map((s) => s.status)).toEqual(["connected", "starting"]);
+      watcher.retry();
+      watcher.restartEngine();
+      await settle();
+      expect(connect).toHaveBeenCalledOnce();
+    });
+
+    it("connects again on resume, once", async () => {
+      const first = fakeClient("engine-1");
+      const second = fakeClient("engine-2");
+      const connect = vi.fn<Connect>().mockResolvedValueOnce(ok(first.client)).mockResolvedValueOnce(ok(second.client));
+      const { watcher } = watch(connect);
+      await settle();
+      await watcher.suspend();
+      watcher.resume();
+      watcher.resume();
+      await settle();
+      expect(connect).toHaveBeenCalledTimes(2);
+      expect(watcher.state()).toEqual({ status: "connected", engineId: "engine-2" });
+    });
+
+    it("lets a connect that was under way finish into nothing", async () => {
+      const late = fakeClient("engine-9");
+      let finish: (result: Result<EngineClient, ConnectError>) => void = () => undefined;
+      const connect = vi.fn<Connect>(() => new Promise((resolve) => (finish = resolve)));
+      const { watcher } = watch(connect);
+      await settle();
+      expect(await watcher.suspend()).toEqual({});
+      finish(ok(late.client));
+      await settle();
+      expect(late.client.close).toHaveBeenCalledOnce();
+      expect(watcher.state()).toEqual({ status: "starting", updating: true });
+    });
+
+    it("does nothing on resume without a suspend, and nothing after close", async () => {
+      const connect = vi.fn<Connect>().mockResolvedValue(ok(fakeClient().client));
+      const { watcher } = watch(connect);
+      await settle();
+      watcher.resume();
+      await settle();
+      expect(connect).toHaveBeenCalledOnce();
+      await watcher.close();
+      expect(await watcher.suspend()).toEqual({});
+      watcher.resume();
+      expect(connect).toHaveBeenCalledOnce();
+    });
+  });
 });

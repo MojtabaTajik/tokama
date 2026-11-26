@@ -32,6 +32,18 @@ the engine runs on the Node found on PATH.
 
 React draws every screen in the app (MIT, Copyright Meta Platforms, Inc. and affiliates).
 
+## electron-updater and its dependencies
+
+electron-updater 6.8.12 checks the update feed, downloads a new version and hands it to macOS to install
+(MIT, Copyright Loopline Systems and the authors of the packages listed). It is built into the app's main
+process with the packages it needs:
+
+- MIT: builder-util-runtime, debug, ms, fs-extra, jsonfile, universalify, js-yaml, lazy-val,
+  lodash.escaperegexp, lodash.isequal, tiny-typed-emitter.
+- ISC: semver.
+- BlueOak-1.0.0: graceful-fs, sax.
+- Python-2.0: argparse.
+
 ## yaml
 
 yaml 2.9.1 reads and writes the YAML files of templates, agents and repos (ISC, Copyright Eemeli Aro). It is

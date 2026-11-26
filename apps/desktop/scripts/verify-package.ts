@@ -1,11 +1,11 @@
 // Checks a packaged Tokama.app (and its zip, dmg and update feed file) and prints one line per check:
 //   node scripts/verify-package.ts --app <Tokama.app> [--zip <zip>] [--dmg <dmg>] [--latest <latest-mac.yml>]
-//     --version <x.y.z> --feed-url <url> (--unsigned | --signed --team <TEAMID>) [--dir-build] [--allow-gatekeeper-off]
+//     --version <x.y.z> --feed-url <url> [--min-safe-version <x.y.z>] (--unsigned | --signed --team <TEAMID>) [--dir-build] [--allow-gatekeeper-off]
 // The mode is always named, never guessed from the app: a signed build must not pass for lack of
 // signing checks. Every check runs; the script exits 1 and names each failure if any failed.
 import { statSync } from "node:fs";
 import { parseArgs } from "node:util";
-import { feedUrlProblem } from "./package.ts";
+import { feedUrlProblem, minSafeVersionProblem } from "./package.ts";
 import { Report, checkApp, checkDmg, checkZip, type VerifyOptions } from "./verify-package-mac.ts";
 
 /** Reads and checks the command line; throws an Error that names the problem. */
@@ -19,6 +19,7 @@ export function parseVerifyArgs(argv: readonly string[]): VerifyOptions {
       latest: { type: "string" },
       version: { type: "string" },
       "feed-url": { type: "string" },
+      "min-safe-version": { type: "string" },
       unsigned: { type: "boolean" },
       signed: { type: "boolean" },
       team: { type: "string" },
@@ -35,13 +36,20 @@ export function parseVerifyArgs(argv: readonly string[]): VerifyOptions {
   if (app === undefined) throw new Error("--app is required");
   if (version === undefined || !/^\d+\.\d+\.\d+$/.test(version)) throw new Error("--version is required, as x.y.z");
   if (feedUrl === undefined) throw new Error("--feed-url is required");
-  const problem = feedUrlProblem(feedUrl);
+  // The URL the build used: a loopback one is only ever built for a trial on one machine.
+  const problem = feedUrlProblem(feedUrl, true);
   if (problem !== undefined) throw new Error(problem);
+  const minSafeVersion = values["min-safe-version"];
+  if (minSafeVersion !== undefined) {
+    const safeProblem = minSafeVersionProblem(minSafeVersion, version);
+    if (safeProblem !== undefined) throw new Error(safeProblem);
+  }
   if (values.latest !== undefined && values.zip === undefined) throw new Error("--latest needs --zip, whose digest it must hold");
   return {
     app,
     version,
     feedUrl,
+    ...(minSafeVersion !== undefined && { minSafeVersion }),
     mode: values.signed === true && team !== undefined ? { kind: "signed", team } : { kind: "unsigned" },
     ...(values.zip !== undefined && { zip: values.zip }),
     ...(values.dmg !== undefined && { dmg: values.dmg }),

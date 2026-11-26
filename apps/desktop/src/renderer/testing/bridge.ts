@@ -7,6 +7,7 @@ import { act } from "react";
 import { vi } from "vitest";
 import type { AboutInfo, BridgeEvent, ConnectionState, DiagnosticsLoad, DiagnosticsSaveResult, DiagnosticsSendResult, OpenResult, ToolsPathInfo, TokamaBridge, WhatsNewInfo } from "../../shared/bridge.js";
 import { DEFAULT_DESKTOP_STATE, type DesktopState } from "../../shared/desktop-state.js";
+import type { InstallResult, UpdateState } from "../../shared/update.js";
 import { localDay } from "../format/time.js";
 import { bucketOf, isOpen } from "../model.js";
 import { items, setup } from "./sample.js";
@@ -26,9 +27,12 @@ export const NO_NOTES: WhatsNewInfo = { appVersion: ABOUT_INFO.app.version, note
 
 export const CONNECTED: ConnectionState = { status: "connected", engineId: "e-1" };
 
-export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | Promise<Reply> | undefined; commandReply?: (command: { type: string }) => Reply; pickFolder?: () => Promise<string | null>; openTemplateFile?: () => Promise<OpenResult>; openAttemptFile?: () => Promise<OpenResult>; about?: AboutInfo; toolsPath?: ToolsPathInfo; copyBuildInfo?: () => Promise<void>; showDataFolder?: () => Promise<OpenResult>; desktopState?: DesktopState; loadDiagnostics?: () => Promise<DiagnosticsLoad>; sendDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSendResult>; saveDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSaveResult>; whatsNew?: WhatsNewInfo | (() => Promise<WhatsNewInfo>) } = {}) {
+export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | Promise<Reply> | undefined; commandReply?: (command: { type: string }) => Reply; pickFolder?: () => Promise<string | null>; openTemplateFile?: () => Promise<OpenResult>; openAttemptFile?: () => Promise<OpenResult>; about?: AboutInfo; toolsPath?: ToolsPathInfo; copyBuildInfo?: () => Promise<void>; showDataFolder?: () => Promise<OpenResult>; desktopState?: DesktopState; loadDiagnostics?: () => Promise<DiagnosticsLoad>; sendDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSendResult>; saveDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSaveResult>; whatsNew?: WhatsNewInfo | (() => Promise<WhatsNewInfo>); update?: UpdateState; installUpdate?: () => Promise<InstallResult> } = {}) {
   let connectionListener: ((state: ConnectionState) => void) | undefined;
   let openListener: ((itemId: string) => void) | undefined;
+  // The update state the main process would hold; `setUpdate` changes it and tells the listeners.
+  let updateState: UpdateState = options.update ?? { status: "idle" };
+  const updateListeners = new Set<(state: UpdateState) => void>();
   // Every subscriber hears every event: the app and the open drawer both listen.
   const eventListeners = new Set<(event: BridgeEvent) => void>();
   const stops = { connection: vi.fn(), event: vi.fn() };
@@ -82,6 +86,14 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
     stopCrashPrompt: vi.fn(async () => undefined),
     getWhatsNew: vi.fn(async () => (typeof options.whatsNew === "function" ? options.whatsNew() : (options.whatsNew ?? NO_NOTES))),
     closeWhatsNew: vi.fn(async () => undefined),
+    getUpdate: vi.fn(async () => updateState),
+    onUpdate: vi.fn((listener: (state: UpdateState) => void) => {
+      updateListeners.add(listener);
+      return () => void updateListeners.delete(listener);
+    }),
+    checkForUpdates: vi.fn(async () => undefined),
+    openUpdateNotes: vi.fn(async () => undefined),
+    installUpdate: vi.fn(options.installUpdate ?? (async (): Promise<InstallResult> => ({ ok: true }))),
     onEvent: vi.fn((listener: (event: BridgeEvent) => void) => {
       eventListeners.add(listener);
       return () => {
@@ -110,9 +122,18 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
   const setViewedItem = bridge.setViewedItem as unknown as ReturnType<typeof vi.fn>;
   const getWhatsNew = bridge.getWhatsNew as unknown as ReturnType<typeof vi.fn>;
   const closeWhatsNew = bridge.closeWhatsNew as unknown as ReturnType<typeof vi.fn>;
+  const installUpdate = bridge.installUpdate as unknown as ReturnType<typeof vi.fn>;
+  const checkForUpdates = bridge.checkForUpdates as unknown as ReturnType<typeof vi.fn>;
+  const openUpdateNotes = bridge.openUpdateNotes as unknown as ReturnType<typeof vi.fn>;
+  /** The main process moves to a new update state and tells the window. */
+  const setUpdate = (state: UpdateState) =>
+    act(async () => {
+      updateState = state;
+      for (const listener of updateListeners) listener(state);
+    });
   /** A click on a notification: the main process asks the window to open the item. */
   const openItem = (itemId: string) => act(async () => openListener?.(itemId));
-  return { bridge, query, saveLayout, saveNotifications, playSound, setViewedItem, getWhatsNew, closeWhatsNew, openItem, copyBuildInfo, showDataFolder, command, retryConnection, openTemplateFile, setConnection, pushItem, pushEvent, stops };
+  return { bridge, query, saveLayout, saveNotifications, playSound, setViewedItem, getWhatsNew, closeWhatsNew, openItem, copyBuildInfo, showDataFolder, command, retryConnection, openTemplateFile, setConnection, pushItem, pushEvent, stops, installUpdate, checkForUpdates, openUpdateNotes, setUpdate };
 }
 
 export interface ListQuery {

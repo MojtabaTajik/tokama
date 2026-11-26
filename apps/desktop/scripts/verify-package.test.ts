@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { entitlementProblem, isMachO, latestProblem, machOFiles, parseLatestMac, parseSignature, parseYamlScalars, signatureProblem, zipName } from "./verify-package-mac.js";
+import { entitlementProblem, isMachO, latestProblem, machOFiles, parseLatestMac, parseSignature, parseYamlScalars, minSafeProblem, signatureProblem, zipName } from "./verify-package-mac.js";
 import { parseVerifyArgs } from "./verify-package.js";
 
 let root: string;
@@ -179,6 +179,29 @@ releaseDate: '2026-11-26T08:37:12.137Z'
   });
 });
 
+describe("minSafeProblem", () => {
+  const feed = (extra: string) => `version: 0.1.0\nfiles:\n  - url: a.zip\n    sha512: x\n    size: 1\npath: a.zip\nsha512: x\n${extra}releaseDate: '2026-12-01T10:00:00.000Z'\n`;
+
+  const vendor = (version: string) => feed(`vendor:\n  tokama:\n    minSafeVersion: ${version}\n`);
+
+  it("wants no vendor key when none was asked for, and refuses one", () => {
+    expect(minSafeProblem(feed(""), undefined)).toBeUndefined();
+    expect(minSafeProblem(vendor("0.0.9"), undefined)).toMatch(/no lowest safe version was asked for/);
+  });
+
+  it("wants exactly the asked version under vendor.tokama", () => {
+    expect(minSafeProblem(vendor("0.0.9"), "0.0.9")).toBeUndefined();
+    expect(minSafeProblem(vendor("'0.0.9'"), "0.0.9")).toBeUndefined();
+    expect(minSafeProblem(feed(""), "0.0.9")).toMatch(/no vendor\.tokama\.minSafeVersion/);
+    expect(minSafeProblem(vendor("0.0.8"), "0.0.9")).toMatch(/is 0\.0\.8, not 0\.0\.9/);
+  });
+
+  it("does not take a top-level key or another vendor entry for it", () => {
+    expect(minSafeProblem(feed("minSafeVersion: 0.0.9\n"), "0.0.9")).toMatch(/no vendor\.tokama\.minSafeVersion/);
+    expect(minSafeProblem(feed("vendor:\n  other:\n    minSafeVersion: 0.0.9\n"), "0.0.9")).toMatch(/no vendor\.tokama\.minSafeVersion/);
+  });
+});
+
 describe("parseVerifyArgs", () => {
   const base = ["--app", "Tokama.app", "--version", "0.1.0", "--feed-url", "https://updates.example.test/mac/"];
 
@@ -197,6 +220,18 @@ describe("parseVerifyArgs", () => {
 
   it("reads a dir build, which has no update feed", () => {
     expect(parseVerifyArgs([...base, "--unsigned", "--dir-build"])).toMatchObject({ dirBuild: true });
+  });
+
+  it("reads the lowest safe version, and the local feed of a trial build", () => {
+    expect(parseVerifyArgs([...base, "--unsigned", "--min-safe-version", "0.0.9"])).toMatchObject({ minSafeVersion: "0.0.9" });
+    expect(parseVerifyArgs(["--app", "a", "--version", "0.1.0", "--feed-url", "http://127.0.0.1:8765/", "--unsigned"])).toMatchObject({ feedUrl: "http://127.0.0.1:8765/" });
+    expect(parseVerifyArgs([...base, "--unsigned"])).not.toHaveProperty("minSafeVersion");
+  });
+
+  it("refuses another http feed, a lowest safe version that is not x.y.z, and one above the build's", () => {
+    expect(() => parseVerifyArgs(["--app", "a", "--version", "0.1.0", "--feed-url", "http://localhost:8765/", "--unsigned"])).toThrow(/feed URL/);
+    expect(() => parseVerifyArgs([...base, "--unsigned", "--min-safe-version", "0.1"])).toThrow(/plain x\.y\.z/);
+    expect(() => parseVerifyArgs([...base, "--unsigned", "--min-safe-version", "0.1.1"])).toThrow(/above this build/);
   });
 
   it.each([
