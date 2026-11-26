@@ -196,7 +196,7 @@ describe("Claude Code stream parser", () => {
 
   it("records the first line of a tool result that says the sandbox is required but not working, in either text shape", () => {
     const required = "Sandbox is required (sandbox.failIfUnavailable) and stopped being available in this session: bwrap went away";
-    const result = (content: unknown, extra: object = {}) => line({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", content }] }, ...extra });
+    const result = (content: unknown, extra: object = {}) => line({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", is_error: true, content }] }, ...extra });
     expect(parse([result(`${required}\nmore`)]).state.sandboxFailure).toBe(required);
     expect(parse([result([{ type: "text", text: `${required}\nmore` }])]).state.sandboxFailure).toBe(required);
     expect(parse([result("Sandbox is required but failed to initialize: socat not found")]).state.sandboxFailure).toBe("Sandbox is required but failed to initialize: socat not found");
@@ -209,6 +209,9 @@ describe("Claude Code stream parser", () => {
     const result = (content: unknown) => line({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", content }] } });
     expect(parse([result("Read-only file system"), result("echo: Sandbox is required"), result(["no text here"]), result(undefined)]).state.sandboxFailure).toBeUndefined();
     expect(parse(fixture("success")).state.sandboxFailure).toBeUndefined();
+    // A command that succeeded and printed the words, such as `cat NOTES.md`, is not a refusal.
+    const printed = line({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_2", content: "Sandbox is required for the build\nmore" }] } });
+    expect(parse([printed]).state.sandboxFailure).toBeUndefined();
   });
 
   it("skips lines that are not JSON, not objects, or not in the expected shape", () => {

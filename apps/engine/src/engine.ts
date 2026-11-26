@@ -349,6 +349,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       ? Promise.resolve(undefined)
       : RealEngine.create({
           home: options.home,
+          engineDir: options.dir,
           items: storage.items,
           store,
           clock: options.clock ?? systemClock,

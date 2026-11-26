@@ -55,7 +55,7 @@ describe("checkSandboxSpec", () => {
   });
 
   it("refuses hosts that are not plain host names", () => {
-    for (const host of ["*", "http://x.example.com", "x", "1.2.3.4", "*.1.2.3.4", "a.example.com/path", "a b.example.com", "*.com:99999x"]) {
+    for (const host of ["*", "http://x.example.com", "x", "1.2.3.4", "*.1.2.3.4", "a.example.com/path", "a b.example.com", "*.com:99999x", "127.1", "0x7f.1", "0x7f.0.0.1", "a.example.com:0", "a.example.com:99999", "*.com"]) {
       expect(checkSandboxSpec(spec({ network: net(host) }), context(worktree)).ok, host).toBe(false);
     }
   });

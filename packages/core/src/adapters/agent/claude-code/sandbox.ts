@@ -10,6 +10,8 @@ export interface SandboxSettingsOptions {
   readonly callDirs: readonly string[];
   /** Tokama's folder, `~/.tokama` or absolute: closed to commands. */
   readonly tokamaHome: string;
+  /** More folders closed to commands: the engine's socket and token folder. */
+  readonly closedDirs?: readonly string[];
   /** Tool caches commands may write (`~/`-relative), already without any that is on the PATH. */
   readonly cacheDirs: readonly string[];
 }
@@ -26,7 +28,7 @@ export interface SandboxSettingsOptions {
  * - `autoAllowBashIfSandboxed: false`: Tokama's rules and hook still decide each command.
  */
 export function sandboxSettings(spec: SandboxSpec, options: SandboxSettingsOptions): { permissions: unknown; sandbox: unknown } {
-  const closed = [options.tokamaHome, ...options.callDirs];
+  const closed = [...new Set([options.tokamaHome, ...(options.closedDirs ?? []), ...options.callDirs])];
   return {
     permissions: {
       deny: ["Bash(dangerouslyDisableSandbox:true)", ...spec.readOnlyRoots.map((root) => `Edit(${permissionPath(root)}/**)`)],

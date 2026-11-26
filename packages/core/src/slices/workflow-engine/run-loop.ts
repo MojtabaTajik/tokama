@@ -772,7 +772,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
         cwd: worktree.path,
         limits,
         timeoutMs: guard.timeoutMs,
-        sandbox: sandboxFor({ worktreePath: worktree.path, localOnly: deps.localOnly === true }),
+        sandbox: sandboxFor(worktree.path),
       },
       signal,
       {

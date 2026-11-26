@@ -63,7 +63,7 @@ const UserLine = z.looseObject({
   message: z.looseObject({
     // A prompt is a plain string; tool results come as a list of blocks.
     content: z
-      .array(z.looseObject({ type: z.string(), tool_use_id: z.string().min(1).optional().catch(undefined), content: z.unknown().optional() }))
+      .array(z.looseObject({ type: z.string(), tool_use_id: z.string().min(1).optional().catch(undefined), content: z.unknown().optional(), is_error: z.boolean().optional().catch(undefined) }))
       .catch([]),
   }),
 });
@@ -247,7 +247,8 @@ export function createStreamParser(cwd: string, home: string = homedir()): Strea
       case "user": {
         // A sandbox that stopped working refuses every command, a subagent's included.
         for (const block of line.message.content) {
-          if (block.type !== "tool_result" || sandboxFailure !== undefined) continue;
+          // Only a refused command: a command's own output may say anything, a file's first line included.
+          if (block.type !== "tool_result" || block.is_error !== true || sandboxFailure !== undefined) continue;
           const first = resultText(block.content).trimStart().split("\n", 1)[0] ?? "";
           if (SANDBOX_REQUIRED.test(first)) sandboxFailure = first.slice(0, SANDBOX_LINE_CHARS);
         }

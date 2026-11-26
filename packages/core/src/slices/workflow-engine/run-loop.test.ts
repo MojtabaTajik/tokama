@@ -245,13 +245,6 @@ describe("run loop: done_when", () => {
     });
   });
 
-  it("gives a local-only run's commands no host to reach", SLOW, async () => {
-    const runtime = fakeRuntime([edits(FIXED)]);
-    const loop = engine(runtime, { localOnly: true });
-    await start(loop, template([BUILD_CHECKED]));
-    expect(runtime.calls[0]?.request.sandbox?.network).toEqual({ allow: [], unlisted: "deny" });
-  });
-
   it("reports what the item does now: the agent's actions, then Tokama running each command, and nothing once each ends", SLOW, async () => {
     const seen: Array<ItemActivity | undefined> = [];
     const loop = engine(fakeRuntime([edits(FIXED)]), { onActivity: (_id, activity) => seen.push(activity) });

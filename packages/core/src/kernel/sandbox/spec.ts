@@ -57,10 +57,17 @@ export const CREDENTIAL_PATHS: readonly string[] = [
   "~/.pypirc",
   "~/.cargo/credentials.toml",
   "~/.gem/credentials",
+  "~/.git-credentials",
+  "~/.config/git/credentials",
+  "~/.vault-token",
+  "~/.terraform.d/credentials.tfrc.json",
+  "~/.claude/.credentials.json",
+  "~/.claude.json",
 ];
 
 const HOST = /^(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(:\d{1,5})?$/;
-const IP_LITERAL = /^(\*\.)?\d+(\.\d+){3}(:\d+)?$/;
+// An address, not a name: dotted numbers of any length, or a hex or octal form (`127.1`, `0x7f.1`).
+const IP_LITERAL = /^(\*\.)?(0x[0-9a-f]*|\d+)(\.(0x[0-9a-f]*|\d+))*(:\d+)?$/;
 
 /** True when `path` is `root` or inside it. Both absolute. */
 export function isWithin(path: string, root: string): boolean {
@@ -95,7 +102,8 @@ export function checkSandboxSpec(spec: SandboxSpec, context: SandboxContext): Re
   }
   const allow: string[] = [];
   for (const host of spec.network.allow.map((name) => name.toLowerCase())) {
-    if (!HOST.test(host) || IP_LITERAL.test(host)) return err(`"${host}" is not a host name this sandbox can allow`);
+    const port = Number(host.split(":")[1] ?? 1);
+    if (!HOST.test(host) || IP_LITERAL.test(host) || port < 1 || port > 65_535) return err(`"${host}" is not a host name this sandbox can allow`);
     allow.push(host);
   }
   return ok({ writableRoot, readOnlyRoots, network: { allow, unlisted: spec.network.unlisted } });

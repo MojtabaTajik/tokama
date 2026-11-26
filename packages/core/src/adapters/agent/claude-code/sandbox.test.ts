@@ -59,6 +59,14 @@ describe("sandboxSettings", () => {
     });
   });
 
+  it("closes the engine's own folder, which holds its socket and token, to reads and writes", () => {
+    const { sandbox } = sandboxSettings(worktreeSpec, { callDirs: [callDir], tokamaHome: "~/.tokama", closedDirs: ["/run/user/1000/tokama"], cacheDirs: [] }) as {
+      sandbox: { filesystem: { denyRead: string[]; denyWrite: string[] } };
+    };
+    expect(sandbox.filesystem.denyRead).toContain("/run/user/1000/tokama");
+    expect(sandbox.filesystem.denyWrite).toContain("/run/user/1000/tokama");
+  });
+
   it("keeps the network closed, and still strict, with no hosts", () => {
     const { sandbox } = sandboxSettings({ ...worktreeSpec, network: net() }, { callDirs: [callDir], tokamaHome: "~/.tokama", cacheDirs: [] }) as { sandbox: { network: unknown } };
     expect(sandbox.network).toEqual({ allowedDomains: [], strictAllowlist: true, allowLocalBinding: false, allowAllUnixSockets: false });

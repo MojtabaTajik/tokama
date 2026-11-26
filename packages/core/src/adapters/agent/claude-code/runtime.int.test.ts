@@ -300,6 +300,15 @@ describe("Claude Code runtime", SLOW, () => {
       expect(existsSync(folder)).toBe(false);
     });
 
+    it("closes the folders it is told to close, such as the engine's", async () => {
+      const said = (await launch({ closedDirs: ["/run/user/1000/tokama"] }, request("echo", withCommands))).find((event) => event.type === "text");
+      if (said?.type !== "text") throw new Error("no text event");
+      const echo = JSON.parse(said.text) as { settings: { text: string } };
+      const { filesystem } = (JSON.parse(echo.settings.text) as { sandbox: { filesystem: { denyRead: string[]; denyWrite: string[] } } }).sandbox;
+      expect(filesystem.denyRead).toContain("/run/user/1000/tokama");
+      expect(filesystem.denyWrite).toContain("/run/user/1000/tokama");
+    });
+
     it("keeps `~/.tokama` for the default home", async () => {
       const said = (await launch({}, request("echo", withCommands))).find((event) => event.type === "text");
       if (said?.type !== "text") throw new Error("no text event");
@@ -313,9 +322,15 @@ describe("Claude Code runtime", SLOW, () => {
       expect(end(events)).toMatchObject({
         outcome: "failed",
         errorKind: "crash",
-        error: expect.stringMatching(/^Claude Code's sandbox stopped working during the step: Sandbox is required \(sandbox\.failIfUnavailable\) and stopped being available in this session: bwrap went away\. Restart Tokama/),
+        error: expect.stringMatching(/^Claude Code's sandbox stopped working during the step: Sandbox is required \(sandbox\.failIfUnavailable\) and stopped being available in this session: bwrap went away\. Fix that, then retry the step\.$/),
       });
       expect(end(events).error).not.toContain("more detail");
+    });
+
+    it("does not blame a sandbox for the stderr of a call that has none", async () => {
+      const result = end(await launch({}, request("sandbox-start", { limits: { edit: false, commands: [], web: false } })));
+      expect(result.outcome).toBe("failed");
+      expect(result.error).not.toContain("could not start its sandbox");
     });
 
     it("explains a CLI that exits at startup because its sandbox cannot start", async () => {
