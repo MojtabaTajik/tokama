@@ -63,8 +63,9 @@ jobs:
               docs_only=true
             fi
             # The real-tree removal test only matters when a change can break it: adapters, the
-            # composition file, the apps and the removal test itself. An empty list (failed query) runs it.
-            if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -Eq '^(packages/core/src/adapters/|packages/core/src/composition\.ts$|apps/|tooling/removal-test/)'; then
+            # composition file, core's exports, the apps, the removal test itself and the build
+            # files (tsconfig, package.json, lockfile). An empty list (failed query) runs it.
+            if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -Eq '^(packages/core/src/adapters/|packages/core/src/composition\.ts$|packages/core/src/index\.ts$|apps/|tooling/removal-test/|pnpm-lock\.yaml$)|(^|/)(tsconfig[^/]*\.json|package\.json)$'; then
               removal_test=false
             fi
           elif [ "$EVENT" = schedule ]; then
