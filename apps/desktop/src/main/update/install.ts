@@ -47,7 +47,13 @@ export const INSTALLER_MS = 3 * 60_000;
 export function createInstaller(deps: InstallDeps): (options: InstallOptions) => Promise<InstallResult> {
   let running = false;
   return async (options) => {
-    if (running || deps.state().status !== "ready") return { ok: false, reason: "not_ready" };
+    if (running) return { ok: false, reason: "not_ready" };
+    // The installer did not answer before: the engine is stopped already, so it is only asked again.
+    if (deps.state().status === "stalled") {
+      deps.dispatch({ type: "install_started" });
+      return handOver(deps, options);
+    }
+    if (deps.state().status !== "ready") return { ok: false, reason: "not_ready" };
     running = true;
     try {
       const count = await deps.runningNow();
@@ -100,10 +106,13 @@ function handOver(deps: InstallDeps, options: InstallOptions): InstallResult {
   stopWatching = deps.watchInstallError(failedLater);
   // Silence is not a refusal: the installer may still be checking a large signature and may swap
   // the app whenever it is done. So nothing is put back (a late swap would then land under a
-  // running engine); the engine stays stopped and the state stays "installing". Only the quit
-  // path hears of it, so the user's quit does not wait for ever.
+  // running engine); the engine stays stopped and the state becomes "stalled", which the window
+  // shows with a Restart Tokama button that asks the installer again. The quit path also hears
+  // of it, so the user's quit does not wait for ever.
   cancelTimer = deps.after(deps.installerMs ?? INSTALLER_MS, () => {
-    if (!over) options.onSilent?.();
+    if (over) return;
+    deps.dispatch({ type: "install_stalled" });
+    options.onSilent?.();
   });
   try {
     deps.quitAndInstall(options.relaunch);

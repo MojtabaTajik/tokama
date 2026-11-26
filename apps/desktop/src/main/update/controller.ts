@@ -65,7 +65,7 @@ export function createUpdateController(deps: ControllerDeps): UpdateController {
   deps.engine.onProgress((progress) => dispatch({ type: "progress", ...progress }));
   deps.engine.onDownloaded((info) => dispatch({ type: "downloaded", version: info.version, ...optionalCritical(info.minSafeVersion) }));
   deps.engine.onError(() => {
-    if (state.status === "installing") installError?.();
+    if (state.status === "installing" || state.status === "stalled") installError?.();
     else failed();
   });
 

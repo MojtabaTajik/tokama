@@ -93,6 +93,16 @@ describe("App: ready update", () => {
     expect(installUpdate).toHaveBeenCalledTimes(2);
   });
 
+  it("says the update did not install when the installer is silent, and Restart Tokama asks it again, with items running too", async () => {
+    const { setUpdate, installUpdate } = await start();
+    await setUpdate({ status: "stalled", version: "0.2.0" });
+    const notice = $('.sb-foot [role="status"]')!;
+    expect(notice.textContent).toContain("Update didn't install. Tokama will try again when you quit.");
+    await click([...notice.querySelectorAll("button")].find((button) => button.textContent === "Restart Tokama")!);
+    expect(installUpdate).toHaveBeenCalledTimes(1);
+    expect($('[role="dialog"]')).toBeNull();
+  });
+
   it("becomes the status line while it restarts", async () => {
     const { setUpdate } = await start({ boardItems: idle });
     await setUpdate({ status: "installing", version: "0.2.0" });

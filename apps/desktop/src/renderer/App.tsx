@@ -246,7 +246,8 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
     }
   };
   const activateUpdate = () => {
-    if (runningNow.length === 0) return void restartForUpdate();
+    // The installer did not answer: the click asks it again; nothing runs, the engine is stopped.
+    if (updateView?.kind === "stalled" || runningNow.length === 0) return void restartForUpdate();
     openSidebar();
     setUpdatePanel((open) => (panelOpen ? !open : true));
   };
@@ -372,7 +373,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
           setPage("settings");
         }}
         diagnosticsWaiting={diagnosticsWaiting}
-        {...(!panelOpen && updateView?.kind === "ready" && { update: { view: updateView, onActivate: activateUpdate, onOpenNotes: openUpdateNotes } })}
+        {...(!panelOpen && (updateView?.kind === "ready" || updateView?.kind === "stalled") && { update: { view: updateView, onActivate: activateUpdate, onOpenNotes: openUpdateNotes } })}
       />
       {panelOpen && (
         <Sidebar

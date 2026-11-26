@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { AfterPackContext } from "electron-builder";
+import { compareVersions } from "../src/shared/whats-new.ts";
 import { type SignedEnv, isFile, signNotarizeDmg, signedEnv, writeSums } from "./package-signed.ts";
 
 const appDir = resolve(import.meta.dirname, "..");
@@ -36,17 +37,6 @@ export function feedUrlProblem(url: string, allowLoopback = false): string | und
   const plain = /^https:\/\/([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*)((?:\/[A-Za-z0-9._~-]+)*)\/$/.exec(url);
   const dotSegment = (plain?.[2] ?? "").split("/").some((segment) => segment === "." || segment === "..");
   return plain !== null && !dotSegment ? undefined : `the feed URL must be https, with a plain host and path and a trailing slash, not ${JSON.stringify(url)}`;
-}
-
-/** Compares two plain `x.y.z` versions by number: negative when `a` is lower, 0 when equal, positive when higher. */
-export function compareVersions(a: string, b: string): number {
-  const left = a.split(".").map(Number);
-  const right = b.split(".").map(Number);
-  for (const [index, part] of left.entries()) {
-    const other = right[index] ?? 0;
-    if (part !== other) return part - other;
-  }
-  return 0;
 }
 
 /** Why `minSafe` cannot be the lowest safe version of the build of `version`, or undefined: plain `x.y.z`, and not above the build's own version. */

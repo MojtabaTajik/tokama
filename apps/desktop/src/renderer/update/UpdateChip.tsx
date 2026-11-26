@@ -5,7 +5,7 @@
 // by itself. While the restart is under way the chip is a status line. Release text (the reason) is
 // rendered as React text only.
 import { type CSSProperties, useEffect, useId, useLayoutEffect, useRef } from "react";
-import { CANT_TELL, RESTARTING, RESTART_NOW_BLOCKED, type UpdateChipView, updatePanelText } from "../../shared/update.js";
+import { CANT_TELL, RESTARTING, RESTART_NOW_BLOCKED, RESTART_TOKAMA, STALLED, STALLED_ACTION, type UpdateChipView, updatePanelText } from "../../shared/update.js";
 import { Badge } from "../ui/Badge.js";
 import { Button } from "../ui/Button.js";
 import { Chip } from "../ui/Chip.js";
@@ -107,6 +107,19 @@ export function UpdateChip({ view, running, busy, panelOpen, onActivate, onResta
     };
   }, [showPanel, onClosePanel, tip.button, tip.wrapper]);
 
+  if (view.kind === "stalled") {
+    // The installer did not answer: say so, and let the user ask it again.
+    return (
+      <div role="status" className="up-stalled">
+        <span className="up-stalled-text">
+          {STALLED}. {STALLED_ACTION}
+        </span>
+        <Button variant="secondary" onClick={onActivate}>
+          {RESTART_TOKAMA}
+        </Button>
+      </div>
+    );
+  }
   if (view.kind === "installing") {
     return (
       <span role="status" className="chip up-status">
@@ -200,13 +213,15 @@ export function UpdateRailIcon({ view, onActivate, onOpenNotes }: UpdateRailIcon
   const anchor = "--update-rail";
   const tip = useUpdateTip(false);
   if (view.kind === "installing") return null;
+  // An update that did not install asks for a look as much as an important one does.
+  const alert = view.critical || view.kind === "stalled";
   return (
     <div ref={tip.wrapper} className="up-rail" {...tip.triggers}>
       <Button
         variant="plain"
         ref={tip.button}
         className="rail-button up-rail-button"
-        data-critical={view.critical || undefined}
+        data-critical={alert || undefined}
         data-ring=""
         aria-label={view.accessibleName}
         aria-describedby={tip.open ? tipId : undefined}
@@ -216,8 +231,8 @@ export function UpdateRailIcon({ view, onActivate, onOpenNotes }: UpdateRailIcon
           onActivate();
         }}
       >
-        {view.critical ? <WarningIcon /> : <DownloadIcon size={18} />}
-        {view.critical ? <Badge count={1} tone="warn" symbol="!" /> : <span aria-hidden="true" className="up-dot" />}
+        {alert ? <WarningIcon /> : <DownloadIcon size={18} />}
+        {alert ? <Badge count={1} tone="warn" symbol="!" /> : <span aria-hidden="true" className="up-dot" />}
       </Button>
       {tip.open && <UpdateTip id={tipId} anchor={anchor} view={view} placement="right" onOpenNotes={onOpenNotes} />}
     </div>

@@ -25,6 +25,20 @@
   color: var(--text-2);
 }
 
+/* The notice that the installer did not answer: one short text and a button, in the chip's place. */
+.up-stalled {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-8);
+  padding: var(--space-10) var(--space-12);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  color: var(--text);
+  font-size: var(--text-base);
+}
+
 .up-status-dot {
   color: var(--live);
 }

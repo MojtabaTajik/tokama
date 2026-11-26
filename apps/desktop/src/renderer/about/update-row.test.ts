@@ -56,6 +56,14 @@ describe("updatesRow", () => {
     expect(row({ status: "ready", version: "0.2.0" }, 1)?.sub).toBe("1 item is running. Restart once it finishes. Tokama never restarts by itself.");
   });
 
+  it("says the update did not install, and offers Restart Tokama", () => {
+    expect(row({ status: "stalled", version: "0.2.0" })).toMatchObject({
+      main: "Update didn't install",
+      sub: "Tokama will try again when you quit.",
+      action: { label: "Restart Tokama", kind: "restart", disabled: false },
+    });
+  });
+
   it("says it cannot tell what runs, with Restart now off, when the engine refused without a count", () => {
     const refused = updatesRow({ status: "ready", version: "0.2.0" }, "0.1.0", 0, NOW, {});
     expect(refused?.sub).toBe("Tokama can't tell what's running right now. Try again in a moment. Tokama never restarts by itself.");

@@ -142,8 +142,28 @@ describe("the install", () => {
     expect(onSilent).toHaveBeenCalledOnce();
     expect(onFailed).not.toHaveBeenCalled();
     expect(calls).not.toContain("resume");
-    expect(state().status).toBe("installing");
+    expect(state()).toEqual({ status: "stalled", version: "0.2.0" });
     expect(reported).toEqual([]);
+  });
+
+  it("asks the installer again from the stalled state, without counting or stopping anything", async () => {
+    const { deps, calls, state, timeOut } = setup();
+    const install = createInstaller(deps);
+    await install({ relaunch: true });
+    timeOut();
+    expect(state().status).toBe("stalled");
+    const before = calls.length;
+    expect(await install({ relaunch: true })).toEqual({ ok: true });
+    expect(calls.slice(before)).toEqual(["state:installing", "quitAndInstall:true"]);
+  });
+
+  it("still recovers when the installer refuses while stalled", async () => {
+    const { deps, calls, state, timeOut, failInstaller } = setup();
+    await createInstaller(deps)({ relaunch: true });
+    timeOut();
+    failInstaller();
+    expect(calls.slice(-2)).toEqual(["resume", "state:error"]);
+    expect(state()).toMatchObject({ status: "error", stage: "install" });
   });
 
   it("still recovers from a refusal that comes after the silence", async () => {

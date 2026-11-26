@@ -1,6 +1,6 @@
 // What the Updates row of About says for each update state: a mark, one main line, a sub line, an
 // optional progress bar and one button. Pure, so every state is tested without React.
-import { CANT_TELL, RESTARTING, type UpdateState } from "../../shared/update.js";
+import { CANT_TELL, RESTART_TOKAMA, RESTARTING, STALLED, STALLED_ACTION, type UpdateState } from "../../shared/update.js";
 import { clock, sameDay, shortDate } from "../format/time.js";
 import { markOf } from "../ui/status.js";
 
@@ -79,6 +79,8 @@ export function updatesRow(state: UpdateState, version: string, running: number,
         action: { label: "Restart now", kind: "restart", primary: true, disabled: running > 0 },
       };
     }
+    case "stalled":
+      return { mark: "!", tone: "fail", main: STALLED, sub: STALLED_ACTION, action: { label: RESTART_TOKAMA, kind: "restart", primary: true, disabled: false } };
     case "installing":
       return { mark: BUSY, tone: "live", main: RESTARTING, sub: `Version ${version}` };
     case "error": {

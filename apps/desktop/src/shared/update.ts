@@ -15,6 +15,12 @@ export type UpdateState =
   | { readonly status: "downloading"; readonly version: string; readonly percent: number; readonly transferred: number; readonly total: number; readonly critical?: Critical }
   | { readonly status: "ready"; readonly version: string; readonly critical?: Critical }
   | { readonly status: "installing"; readonly version: string; readonly critical?: Critical }
+  /**
+   * The installer has not answered after Restart now: the engine is stopped and nothing was put
+   * back, because the installer may still swap the app. Restart Tokama asks it again; a quit lets
+   * it finish.
+   */
+  | { readonly status: "stalled"; readonly version: string }
   /** `at` is when it failed (ms since the epoch). `version` and `critical` are set once an update was found. */
   | { readonly status: "error"; readonly stage: "check" | "download" | "install"; readonly at: number; readonly version?: string; readonly critical?: Critical };
 
@@ -23,8 +29,8 @@ export type InstallResult = { readonly ok: true } | { readonly ok: false; readon
 
 /** The chip (and the collapsed rail icon) for an update. Undefined when no chip shows. */
 export interface UpdateChipView {
-  /** `installing` is the status line "Restarting to update…". */
-  readonly kind: "ready" | "installing";
+  /** `installing` is the status line "Restarting to update…"; `stalled` the notice that the installer did not answer. */
+  readonly kind: "ready" | "installing" | "stalled";
   readonly version: string;
   readonly critical: boolean;
   /** The one short visible word: "Update", "Important update", or the status line. */
@@ -56,12 +62,18 @@ export function updatePanelText(running: number): string {
 export const RESTART_NOW_BLOCKED = "Restart now works once nothing runs. Tokama never stops running work to update and never restarts by itself.";
 /** What the update says when the engine would not say how many items run: nothing is installed then. */
 export const CANT_TELL = "Tokama can't tell what's running right now";
-export const RESTARTING ="Restarting to update…";
+export const RESTARTING = "Restarting to update…";
+export const STALLED = "Update didn't install";
+export const STALLED_ACTION = "Tokama will try again when you quit.";
+export const RESTART_TOKAMA = "Restart Tokama";
 
 const withoutEnd = (text: string) => text.replace(/[.!\s]+$/, "");
 
 /** The chip for `state` with `running` items running. A chip shows only for a ready update, and as a status line while it installs. */
 export function updateChip(state: UpdateState, running: number): UpdateChipView | undefined {
+  if (state.status === "stalled") {
+    return { kind: "stalled", version: state.version, critical: false, label: STALLED, title: STALLED, action: STALLED_ACTION, accessibleName: `${STALLED}. ${STALLED_ACTION}`, running };
+  }
   if (state.status === "installing") {
     return { kind: "installing", version: state.version, critical: false, label: RESTARTING, title: RESTARTING, action: "", accessibleName: RESTARTING, running };
   }

@@ -44,6 +44,14 @@ describe("updateChip", () => {
     });
   });
 
+  it("says the update did not install when the installer is silent", () => {
+    expect(updateChip({ status: "stalled", version: "0.2.0" }, 0)).toMatchObject({
+      kind: "stalled",
+      label: "Update didn't install",
+      accessibleName: "Update didn't install. Tokama will try again when you quit.",
+    });
+  });
+
   it("shows the status line while it installs", () => {
     expect(updateChip({ status: "installing", version: "0.2.0" }, 0)).toMatchObject({ kind: "installing", label: "Restarting to update…", accessibleName: "Restarting to update…" });
   });
