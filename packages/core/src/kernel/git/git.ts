@@ -24,9 +24,12 @@ export const GIT_SAFE_CONFIG: readonly string[] = [
  * Added to every call except `push`: no network or remote-helper transport. Local calls never need
  * one, and on git older than 2.44 (which may ignore GIT_NO_LAZY_FETCH) a missing object in a
  * partial clone would otherwise be fetched through the repo's own remote config (uploadpack,
- * sshCommand, credential helper).
+ * sshCommand, credential helper). The environment variable is the one that holds: git reads
+ * `protocol.<name>.allow` before `protocol.allow`, so a repo's own config (`protocol.file.allow=always`)
+ * overrides the setting, but not GIT_ALLOW_PROTOCOL.
  */
 const NO_TRANSPORT = "protocol.allow=never";
+const NO_TRANSPORT_ENV: Readonly<Record<string, string>> = { GIT_ALLOW_PROTOCOL: "none" };
 /**
  * On every diff form: no external diff driver (diff.<driver>.command), no textconv, no color, and
  * a nested repo shown as a commit range only (`diff.submodule=diff` would run a diff inside it,
@@ -325,7 +328,7 @@ export function createGit(options: GitOptions): Git {
       const result = await options.runner.run({
         command: { argv: [gitPath, "--no-pager", ...safe(GIT_SAFE_CONFIG), ...safe(args[0] === "push" ? [] : [NO_TRANSPORT]), ...safe(extraConfig), ...args] },
         cwd: repo,
-        env: { ...GIT_ENV, ...extraEnv },
+        env: { ...GIT_ENV, ...(args[0] === "push" ? {} : NO_TRANSPORT_ENV), ...extraEnv },
         timeoutMs,
         stdout: { file: stdoutFile },
         stderr: {

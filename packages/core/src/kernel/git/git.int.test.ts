@@ -392,6 +392,8 @@ describe("repo config, hooks and attributes never run code", () => {
     await plain(root, "clone", "-q", "--filter=blob:none", "--no-checkout", `file://${repo}`, clone);
     write(join(markers, "fetch.sh"), `#!/bin/sh\ntouch '${join(markers, "fetch")}'\nexit 1\n`, 0o755);
     await plain(clone, "config", "remote.origin.uploadpack", join(markers, "fetch.sh"));
+    // A repo can switch a transport back on for itself; only the environment overrides that.
+    await plain(clone, "config", "protocol.file.allow", "always");
     // A runner that drops the variable, as old git behaves.
     const base = createProcessRunner({ parentEnv: { PATH: process.env["PATH"], HOME: home } });
     const old = createGit({ runner: { run: (request) => base.run({ ...request, env: Object.fromEntries(Object.entries(request.env ?? {}).filter(([name]) => name !== "GIT_NO_LAZY_FETCH")) }) } });
@@ -856,7 +858,7 @@ describe("how git is called", () => {
       expect(argv.slice(0, 2)).toEqual(["git", "--no-pager"]);
       expect(argv.slice(2, 2 + GIT_SAFE_CONFIG.length * 2)).toEqual(GIT_SAFE_CONFIG.flatMap((s) => ["-c", s]));
       expect(argv.slice(2 + GIT_SAFE_CONFIG.length * 2, 4 + GIT_SAFE_CONFIG.length * 2)).toEqual(["-c", "protocol.allow=never"]);
-      expect(request.env).toEqual({ GIT_TERMINAL_PROMPT: "0", GIT_NO_LAZY_FETCH: "1", GIT_OPTIONAL_LOCKS: "0" });
+      expect(request.env).toEqual({ GIT_TERMINAL_PROMPT: "0", GIT_NO_LAZY_FETCH: "1", GIT_OPTIONAL_LOCKS: "0", GIT_ALLOW_PROTOCOL: "none" });
       expect(request.timeoutMs).toBe(5_000);
       expect(request.cwd).toBe("/repo");
     }
@@ -888,6 +890,8 @@ describe("how git is called", () => {
     expect(requests.filter((request) => request !== push).every((request) => !("SSH_AUTH_SOCK" in (request.env ?? {})))).toBe(true);
     // The push is the one call that may use a transport.
     expect(argvOf(push)).not.toContain("protocol.allow=never");
+    expect(push?.env).not.toHaveProperty("GIT_ALLOW_PROTOCOL");
+    expect(requests.filter((request) => request !== push).every((request) => request.env?.["GIT_ALLOW_PROTOCOL"] === "none")).toBe(true);
     expect(requests.filter((request) => request !== push).every((request) => argvOf(request).includes("protocol.allow=never"))).toBe(true);
     requests.length = 0;
     await stub.push("/repo", "origin", "a".repeat(40), "tokama/0000000a");
