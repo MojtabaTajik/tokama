@@ -70,6 +70,24 @@ export function engineEnv(parent: Readonly<Record<string, string | undefined>>, 
 }
 
 /**
+ * Whether the engine this app run is connected to was already running when the app came, and so
+ * has a PATH the app did not give it. Told at each connect whether a live engine holds the lock:
+ * once this run has had to start an engine (none was alive, as after an older one was replaced
+ * or a crashed one went), a live engine is its own.
+ */
+export function attachTracker(): { connecting(engineAlive: boolean): void; attached(): boolean } {
+  let started = false;
+  let attached = false;
+  return {
+    connecting(engineAlive) {
+      if (!engineAlive) started = true;
+      attached = engineAlive && !started;
+    },
+    attached: () => attached,
+  };
+}
+
+/**
  * What the window may know about the tools PATH: where it came from, never the PATH itself. An
  * engine that was already running when the app attached keeps the PATH it started with, so what
  * this app run read says nothing about it.

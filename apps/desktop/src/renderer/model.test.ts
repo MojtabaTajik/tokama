@@ -399,7 +399,7 @@ describe("health from the setup", () => {
 
   it("adds a slow-shell problem when the login shell answered only after the timeout", () => {
     const listed = healthProblemsOf(slow as never, { source: "login-shell", shell: "zsh", slow: true });
-    expect(listed[0]).toEqual({ title: "Your shell is slow to start", detail: "Reading your shell setup took over 5 seconds; Tokama starts slower. Check your ~/.zshrc for slow commands." });
+    expect(listed[0]).toEqual({ title: "Your shell is slow to start", detail: "Reading your shell setup took over 5 seconds; Tokama starts slower. Check your shell's startup files for slow commands." });
     expect(listed).toHaveLength(2);
   });
 

@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { engineCommand, engineCommandEnd, engineDirFor, engineEnv, engineRuntime, findExecutable, readLogTail, toolsPathInfo } from "./engine.js";
+import { attachTracker, engineCommand, engineCommandEnd, engineDirFor, engineEnv, engineRuntime, findExecutable, readLogTail, toolsPathInfo } from "./engine.js";
 
 let dir: string;
 beforeEach(() => {
@@ -53,6 +53,30 @@ describe("engineEnv", () => {
   it("adds the sample history only in sample mode, and no other variable", () => {
     expect(engineEnv(parent, login, true)["TOKAMA_SAMPLE_HISTORY"]).toBe("200");
     expect(Object.keys(engineEnv(parent, login, true)).sort()).toEqual(["HOME", "PATH", "SSH_AUTH_SOCK", "TOKAMA_SAMPLE_HISTORY"]);
+  });
+});
+
+describe("attachTracker", () => {
+  it("is attached when a live engine was there at the first connect", () => {
+    const tracker = attachTracker();
+    tracker.connecting(true);
+    expect(tracker.attached()).toBe(true);
+  });
+
+  it("is not attached when this run starts the engine, also when it is found alive at a later connect", () => {
+    const tracker = attachTracker();
+    tracker.connecting(false);
+    expect(tracker.attached()).toBe(false);
+    tracker.connecting(true);
+    expect(tracker.attached()).toBe(false);
+  });
+
+  it("is not attached after an older engine was replaced: the new one is this run's", () => {
+    const tracker = attachTracker();
+    tracker.connecting(true);
+    tracker.connecting(false);
+    tracker.connecting(true);
+    expect(tracker.attached()).toBe(false);
   });
 });
 

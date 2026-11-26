@@ -392,7 +392,7 @@ export function healthProblemsOf(health: Health | undefined, toolsPath?: ToolsPa
       ? []
       : [{ title: "Your shell's PATH was not read", detail: `${toolsPath.problem} Tokama uses the PATH it was started with, so tools in Homebrew or ~/.local/bin may not be found.` }];
   if (toolsPath?.slow === true) {
-    path.push({ title: "Your shell is slow to start", detail: "Reading your shell setup took over 5 seconds; Tokama starts slower. Check your ~/.zshrc for slow commands." });
+    path.push({ title: "Your shell is slow to start", detail: "Reading your shell setup took over 5 seconds; Tokama starts slower. Check your shell's startup files for slow commands." });
   }
   if (health === undefined) return path;
   const git = health.git.ok ? [] : [{ title: "git cannot be used", detail: health.git.message ?? "git did not answer." }];

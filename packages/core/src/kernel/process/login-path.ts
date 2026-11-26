@@ -68,7 +68,7 @@ export async function resolveToolsPath(deps: LoginPathDeps): Promise<ToolsPath> 
     const runner = deps.runner ?? createProcessRunner({ parentEnv: deps.parentEnv ?? process.env, drainMs: 200 });
     const script = `echo ${marker}; /usr/bin/printenv PATH; echo ${marker}`;
     result = await runner.run({
-      // csh and tcsh accept -l only as the sole flag; they read their startup files for -c anyway.
+      // csh and tcsh accept -l only as the sole flag; they read .cshrc or .tcshrc for -c, but not .login.
       command: { argv: name === "csh" || name === "tcsh" ? [shell, "-c", script] : [shell, "-i", "-l", "-c", script] },
       cwd: deps.home,
       env: { PATH: SYSTEM_PATH },

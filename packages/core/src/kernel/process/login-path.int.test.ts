@@ -81,6 +81,10 @@ describe.skipIf(process.platform === "win32")("resolveToolsPath with a real runn
       expect(Date.now() - started).toBeLessThan(8_000);
       expect(found.source).toBe("inherited");
       expect(found.problem).toContain("did not answer within");
+      const pid = Number(readFileSync(pidFile, "utf8").trim());
+      const deadline = Date.now() + 5_000;
+      while (alive(pid) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(alive(pid)).toBe(false);
     },
   );
 
