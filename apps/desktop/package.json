@@ -10,6 +10,7 @@
     "build": "electron-vite build && node -e \"for (const f of ['dist/main/index.js', 'dist/preload/index.cjs', 'dist/renderer/index.html']) require('fs').accessSync(f)\"",
     "e2e": "install-electron && vitest run --config e2e/vitest.config.ts",
     "icons": "node scripts/make-icons.ts",
+    "sounds": "node scripts/make-sounds.ts",
     "package": "install-electron && node scripts/package.ts",
     "package:dmg": "install-electron && node scripts/package.ts --dmg",
     "verify": "node scripts/verify-package.ts",
