@@ -72,12 +72,14 @@ export function sha256Sums(entries: readonly { readonly name: string; readonly s
   return entries.map((entry) => `${entry.sha256}  ${entry.name}\n`).join("");
 }
 
-function tool(command: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
-  const result = spawnSync(command, args, { encoding: "utf8" });
+function tool(command: string, args: string[], timeoutMs?: number): { status: number | null; stdout: string; stderr: string } {
+  const result = spawnSync(command, args, { encoding: "utf8", ...(timeoutMs !== undefined && { timeout: timeoutMs }) });
   return { status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 }
 
-const credentials = (env: SignedEnv) => ["--key", env.apiKey, "--key-id", env.keyId, "--issuer", env.issuer];
+const NOTARY_LIMIT_MS = 40 * 60_000;
+
+const credentials =(env: SignedEnv) => ["--key", env.apiKey, "--key-id", env.keyId, "--issuer", env.issuer];
 
 /** Signs the dmg with a secure timestamp, notarizes it (the log goes to release/notary-dmg.json when it is not accepted), and staples the ticket. Throws with the reason. */
 export function signNotarizeDmg(release: string, dmg: string, env: SignedEnv): void {
@@ -88,7 +90,8 @@ export function signNotarizeDmg(release: string, dmg: string, env: SignedEnv): v
   if (signed.status !== 0) throw new Error(`codesign of the dmg: ${signed.stderr.trim()}`);
 
   process.stdout.write(`notarizing ${basename(dmg)}\n`);
-  const submitted = tool("xcrun", ["notarytool", "submit", dmg, ...credentials(env), "--wait", "--output-format", "json"]);
+  // --wait ends when the service decides; the limit keeps a stuck queue inside the job's own timeout.
+  const submitted = tool("xcrun", ["notarytool", "submit", dmg, ...credentials(env), "--wait", "--output-format", "json"], NOTARY_LIMIT_MS);
   const outcome = notaryOutcome(submitted.stdout);
   process.stdout.write(`notary: status ${outcome.status ?? "unknown"}, submission ${outcome.id ?? "unknown"}\n`);
   if (outcome.status !== "Accepted") {

@@ -67,9 +67,12 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # The only job with secrets (the `release` environment accepts v* tags only). They are set on
-  # single steps, so install, build, tests and the smoke test never see them. No cache is restored
-  # here: nothing from a pull request or from main reaches the signing job.
+  # The only job with secrets (the `release` environment accepts v* tags only). They are in the
+  # env of the signing steps only, but this is not a wall: dependency code from the install and
+  # build runs on the same VM and could read the key file or use the open keychain. The controls
+  # that matter are the frozen lockfile, the release-age and build-script rules in
+  # pnpm-workspace.yaml and exact pins. No cache is restored here: nothing from a pull request
+  # or from main reaches the signing job.
   build-mac:
     name: build (${{ matrix.os }})
     needs: check
