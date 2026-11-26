@@ -6,8 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConnectionState } from "../shared/bridge.js";
 import { App, type AppProps } from "./App.js";
 import { brand } from "./brand/index.js";
-import { REPOS_EXAMPLE, REPOS_FILE } from "./shell/EmptyStates.js";
-import { ABOUT_INFO, CONNECTED, fakeBridge } from "./testing/bridge.js";
+import { ABOUT_INFO, CONNECTED, fakeBridge, SETUP_DONE } from "./testing/bridge.js";
 import { ITEMS, NOW, setup } from "./testing/sample.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -36,29 +35,22 @@ const press = (key: string) => act(async () => document.dispatchEvent(new Keyboa
 const sidebarRow = (name: string) => $$(".sb-main").find((el) => el.querySelector(".ellipsis")?.textContent === name)!;
 const segment = (label: string) => $$(".filter-bar .segment").find((el) => el.querySelector("span")?.textContent === label)!;
 
-const noRepos = fakeBridgeWith({ repos: [] });
+// A first launch: no repos, no work yet (the test data's git is fine, and it names no AI CLI).
+const noRepos = fakeBridgeWith({ repos: [] }, { boardItems: [] });
 function fakeBridgeWith(patch: Partial<typeof setup>, options: Parameters<typeof fakeBridge>[1] = {}) {
   return (connection: ConnectionState = CONNECTED) => fakeBridge(connection, { ...options, reply: (q) => (q.type === "setup" ? { ok: true, data: { ...setup, ...patch } } : options.reply?.(q)) });
 }
 
 describe("first launch: no repos yet", () => {
-  it("explains where the repos file is and shows an example, in place of the list", async () => {
+  it("shows the Get started checklist in place of the list, with no repos file to edit", async () => {
     await mount(noRepos());
-    expect(text(".board .empty-state-title")).toBe("Add your first repos");
-    expect(text(".board .empty-state-text")).toContain(REPOS_FILE);
-    expect(REPOS_FILE).toBe("~/.tokama/repos.yaml");
-    expect(text(".board .state-code")).toBe(REPOS_EXAMPLE);
+    expect(text(".board .gs-title")).toBe("Get started");
+    expect(text(".board .gs-count")).toBe("1 of 4 done");
+    expect($$(".board .gs-row-title").map((el) => el.textContent)).toEqual(["Set up an AI CLI", "Install git 2.38 or newer", "Add your first repo", "Start a Quick fix"]);
+    expect($(".board .state-code")).toBeNull();
+    expect(text(".board")).not.toContain("repos.yaml");
     expect($(".filter-bar")).toBeNull();
     expect($(".pipeline-list")).toBeNull();
-  });
-
-  it("describes each field of an entry", async () => {
-    await mount(noRepos());
-    expect($$(".state-fields dt").map((el) => el.textContent)).toEqual(["id", "path", "base_branch"]);
-  });
-
-  it("has an example with the keys the engine reads for a repo: format, id, path and base_branch", () => {
-    expect(REPOS_EXAMPLE.split("\n")).toEqual(["format: 1", "repos:", "  - id: orders-api", "    path: ~/code/orders-api", "    base_branch: main", ""]);
   });
 
   it("disables New work and leaves out the input, and says so in the sidebar", async () => {
@@ -70,7 +62,7 @@ describe("first launch: no repos yet", () => {
 
   it("is gone once a repo exists", async () => {
     await mount(fakeBridge(CONNECTED));
-    expect($(".state")).toBeNull();
+    expect($(".gs")).toBeNull();
     expect(($(".new-work") as HTMLButtonElement).disabled).toBe(false);
     expect($(".sb-empty")).toBeNull();
   });
@@ -205,7 +197,7 @@ describe("no live items", () => {
 
 describe("a view with no work at all", () => {
   it("shows No work yet and points at the New work input", async () => {
-    await mount(fakeBridge(CONNECTED, { boardItems: [] }));
+    await mount(fakeBridge(CONNECTED, { boardItems: [] }), { initial: SETUP_DONE });
     expect(text(".board .empty-state-title")).toBe("No work yet");
     expect(text(".board .empty-state-text")).toBe("Describe a task or paste an alert below. It starts in the template you pick.");
     expect($(".filter-bar")).toBeNull();
@@ -356,7 +348,7 @@ describe("About", () => {
     const fake = await open();
     await click($(".about-copy"));
     expect(fake.copyBuildInfo).toHaveBeenCalledOnce();
-    expect(text(".about-copy")).toBe("Copied");
+    expect(text(".about-copy")).toBe("✓ Copied");
     await click(($$(".about-row button")[0] ?? null));
     expect(fake.showDataFolder).toHaveBeenCalledOnce();
     expect(text(".about-row button")).toBe("Show in Finder");

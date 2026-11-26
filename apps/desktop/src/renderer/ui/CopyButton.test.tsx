@@ -22,14 +22,23 @@ afterEach(() => {
 const button = () => container.querySelector("button")!;
 
 describe("CopyButton", () => {
-  it("says Copied, then its label again after a moment", async () => {
+  it("says ✓ Copied, then its label again after a moment", async () => {
     vi.useFakeTimers();
     act(() => root.render(<CopyButton label="Copy build info" copy={() => Promise.resolve()} />));
     expect(button().textContent).toBe("Copy build info");
     await act(async () => button().click());
-    expect(button().textContent).toBe("Copied");
+    expect(button().textContent).toBe("✓ Copied");
+    expect(button().querySelector("span")?.getAttribute("aria-hidden")).toBe("true");
     act(() => vi.advanceTimersByTime(COPIED_FOR_MS));
     expect(button().textContent).toBe("Copy build info");
+  });
+
+  it("is named by its aria-label while idle, and by its words once it has copied", async () => {
+    act(() => root.render(<CopyButton ariaLabel="Copy brew install git" icon={<svg />} copy={() => Promise.resolve()} />));
+    expect(button().getAttribute("aria-label")).toBe("Copy brew install git");
+    expect(button().querySelector("svg")).not.toBeNull();
+    await act(async () => button().click());
+    expect(button().hasAttribute("aria-label")).toBe(false);
   });
 
   it("says Could not copy when the copy fails", async () => {

@@ -52,7 +52,6 @@ export const TEXT = {
   list: "Steps",
   copy: "Copy",
   copyLabel: (command: string) => `Copy ${command}`,
-  external: "↗",
 
   cliNone: "Tokama works through an AI CLI, such as Claude Code. None was found on this computer. Install it, log in, then come back: this row updates by itself.",
   cliInstall: "Install Claude Code",

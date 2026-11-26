@@ -27,6 +27,9 @@ export const NO_NOTES: WhatsNewInfo = { appVersion: ABOUT_INFO.app.version, note
 
 export const CONNECTED: ConnectionState = { status: "connected", engineId: "e-1" };
 
+/** What an app remembers once setup is done: the Get started list neither shows nor leaves a line. */
+export const SETUP_DONE: DesktopState = { ...DEFAULT_DESKTOP_STATE, getStarted: { done: true, lineClosed: true } };
+
 export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | Promise<Reply> | undefined; commandReply?: (command: { type: string }) => Reply; pickFolder?: () => Promise<string | null>; openTemplateFile?: () => Promise<OpenResult>; openAttemptFile?: () => Promise<OpenResult>; about?: AboutInfo; toolsPath?: ToolsPathInfo; copyBuildInfo?: () => Promise<void>; showDataFolder?: () => Promise<OpenResult>; desktopState?: DesktopState; loadDiagnostics?: () => Promise<DiagnosticsLoad>; sendDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSendResult>; saveDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSaveResult>; whatsNew?: WhatsNewInfo | (() => Promise<WhatsNewInfo>); update?: UpdateState; installUpdate?: () => Promise<InstallResult> } = {}) {
   let connectionListener: ((state: ConnectionState) => void) | undefined;
   let openListener: ((itemId: string) => void) | undefined;

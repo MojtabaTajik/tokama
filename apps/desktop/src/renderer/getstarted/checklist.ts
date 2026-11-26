@@ -5,7 +5,7 @@
 import type { CliHealth, Health, RepoSummary, TemplateSummary } from "@tokama/core";
 import { noChecks, QUICK_CHANGE_ID } from "../newwork/needs.js";
 import { type Mark, markOf } from "../ui/status.js";
-import { CLAUDE_CODE_MIN, COMMANDS, GIT_MIN, LINKS, SAMPLE_TASK, TEXT, TITLES, WORDS } from "./words.js";
+import { CLAUDE_CODE_MIN, COMMANDS, LINKS, SAMPLE_TASK, TEXT, TITLES, WORDS } from "./words.js";
 
 export const QUICK_FIX_ID = "builtin/quick-fix";
 

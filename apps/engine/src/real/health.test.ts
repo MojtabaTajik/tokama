@@ -30,7 +30,7 @@ describe("machineChecks: git", () => {
   /** A runner whose git prints `output` (nothing when it is undefined: git is missing) and whose other tools are missing. */
   const runnerWithGit = (output: string | undefined): ProcessRunner => ({
     run: async (request) => {
-      const [command = ""] = request.command.argv;
+      const [command = ""] = "argv" in request.command ? request.command.argv : [];
       if (command !== "git" || output === undefined) return { kind: "not-started", reason: "spawn-error", message: "not found", code: "ENOENT" };
       if (request.stdout?.file !== undefined) writeFileSync(request.stdout.file, `${output}\n`);
       return { kind: "finished", pid: 1, exitCode: 0, signal: null, timedOut: false, aborted: false, startedAt: 0, endedAt: 0, durationMs: 0 };

@@ -10,7 +10,8 @@ const health = (parts: { git?: Health["git"]; cli?: CliHealth | undefined } = {}
   clis: "cli" in parts ? (parts.cli === undefined ? [] : [parts.cli]) : [claude()],
   config: [],
 });
-const repo = (overrides: Partial<RepoSummary> = {}): RepoSummary => ({ id: "orders-api", baseBranch: "main", checks: ["npm test", "npm run lint"], path: "~/code/orders-api", ...overrides });
+const repoId = (id: string) => id as RepoSummary["id"];
+const repo = (overrides: Partial<RepoSummary> = {}): RepoSummary => ({ id: repoId("orders-api"), baseBranch: "main", checks: ["npm test", "npm run lint"], path: "~/code/orders-api", ...overrides });
 const step = { name: "Fix", stage: "working" as const, data: "local" as const };
 const template = (id: string, name: string, checksFromRepo: boolean): TemplateSummary =>
   ({
@@ -206,7 +207,7 @@ describe("step 3: the first repo", () => {
   });
 
   it("says when the repo has no checks, and how many more repos there are", () => {
-    expect(textOf(rowOf(checklist(ready({ repos: [repo({ checks: [], path: undefined }), repo({ id: "b" }), repo({ id: "c" })] })), "repo"))).toBe("orders-api · no checks · 2 more repos");
+    expect(textOf(rowOf(checklist(ready({ repos: [repo({ checks: [], path: undefined }), repo({ id: repoId("b") }), repo({ id: repoId("c") })] })), "repo"))).toBe("orders-api · no checks · 2 more repos");
     expect(textOf(rowOf(checklist(ready({ repos: [repo({ checks: ["make"] })] })), "repo"))).toBe("orders-api · ~/code/orders-api · 1 check: make");
   });
 });

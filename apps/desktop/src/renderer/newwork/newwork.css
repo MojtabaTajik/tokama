@@ -27,6 +27,20 @@
   gap: var(--space-10);
 }
 
+.np-field {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* Says the text in the box is a sample the app filled in, while it is unchanged. */
+.np-sample-label {
+  font-size: var(--text-md);
+  color: var(--text-2);
+}
+
 .np-text {
   flex: 1 1 auto;
   min-width: 0;

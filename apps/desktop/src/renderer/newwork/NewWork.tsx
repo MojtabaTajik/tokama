@@ -3,7 +3,7 @@
 // on one line, the commands it runs on this machine, its warnings and Start (Cmd or Ctrl and Enter). Start sends `start_item` and
 // hands the new item's id up. Engine text (names, error messages) renders as React text only.
 import type { ItemRecord, Setup } from "@tokama/core";
-import { type FormEvent, type KeyboardEvent, type Ref, useId, useImperativeHandle, useRef, useState } from "react";
+import { type FormEvent, type KeyboardEvent, type Ref, useEffect, useId, useImperativeHandle, useRef, useState } from "react";
 import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
 import { agentLines, commandsOf, KIND_GROUPS, missing, needsRepo, noChecks, reposFor, stepsLine, usesOf } from "./needs.js";
 import { Picker } from "./Picker.js";
@@ -15,6 +15,8 @@ import { Pill } from "../ui/Pill.js";
 const TEXT = {
   form: "New work",
   describe: "Describe a task or paste an alert",
+  sampleLabel: "What should change? This is a sample: keep it or type your own.",
+  sampleHint: "Runs on its own branch. Nothing is merged until you say so.",
   placeholder: "Describe a task or paste an alert…",
   collapse: "Collapse",
   template: "Template",
@@ -44,8 +46,17 @@ export const isMac = (): boolean => typeof navigator !== "undefined" && /mac/i.t
 const MAX_TEXT = 4000;
 
 export interface NewWorkHandle {
-  /** Expands the input, focuses it, and fills the template or the repo when given. */
-  open(prefill?: { readonly templateId?: string; readonly repoId?: string }): void;
+  /**
+   * Expands the input, focuses it, and fills the template, the repo and the text when given. A
+   * given text comes selected, so typing replaces it. Nothing starts until the user presses Start.
+   */
+  open(prefill?: NewWorkPrefill): void;
+}
+
+export interface NewWorkPrefill {
+  readonly templateId?: string;
+  readonly repoId?: string;
+  readonly text?: string;
 }
 
 export interface NewWorkProps {
@@ -61,6 +72,10 @@ export interface NewWorkProps {
 export function NewWork({ bridge, setup, ref, repoId, onStarted }: NewWorkProps) {
   const [expanded, setExpanded] = useState(false);
   const [text, setText] = useState("");
+  // Counts the opens that came with a text: each one selects it.
+  const [selectAsked, setSelectAsked] = useState(0);
+  // The text a screen filled in for the user: while the box still holds it, the label says it is a sample.
+  const [sample, setSample] = useState<string | undefined>(undefined);
   const [picked, setPicked] = useState<string | undefined>(undefined);
   // Undefined until the user picks repos: then the open repo list's repo, if any, is the choice.
   const [picks, setPicks] = useState<readonly string[] | undefined>(undefined);
@@ -83,6 +98,7 @@ export function NewWork({ bridge, setup, ref, repoId, onStarted }: NewWorkProps)
   const chosenRepos = repos.filter((repo) => repoIds.includes(repo.id)).map((repo) => repo.id);
   const blocked = noChecks(shown, setup.repos, chosenRepos, setup.templates);
   const reason = missing({ template, text, repoIds: chosenRepos }) ?? blocked?.reason;
+  const sampleShown = sample !== undefined && text === sample;
 
   useImperativeHandle(ref, () => ({
     open(prefill) {
@@ -90,10 +106,19 @@ export function NewWork({ bridge, setup, ref, repoId, onStarted }: NewWorkProps)
       if (active instanceof HTMLElement && active !== input.current) origin.current = active;
       if (prefill?.templateId !== undefined) setPicked(prefill.templateId);
       if (prefill?.repoId !== undefined) setPicks([prefill.repoId]);
+      if (prefill?.text !== undefined) {
+        setText(prefill.text);
+        setSample(prefill.text);
+        setSelectAsked((count) => count + 1);
+      }
       setExpanded(true);
       input.current?.focus();
     },
   }));
+  // Selected once the new text is in the box, not before: selecting in `open` would select the old text.
+  useEffect(() => {
+    if (selectAsked > 0) input.current?.select();
+  }, [selectAsked]);
 
   const collapse = () => {
     setExpanded(false);
@@ -146,23 +171,25 @@ export function NewWork({ bridge, setup, ref, repoId, onStarted }: NewWorkProps)
     <div className="np">
       <form className="np-form" aria-label={TEXT.form} data-expanded={expanded || undefined} onKeyDown={onKeyDown} onSubmit={onSubmit}>
         <div className="np-top">
-          <label htmlFor={`${reasonId}-text`} className="visually-hidden">
-            {TEXT.describe}
-          </label>
-          <textarea
-            id={`${reasonId}-text`}
-            ref={input}
-            className="np-text"
-            rows={expanded ? 3 : 1}
-            maxLength={MAX_TEXT}
-            placeholder={TEXT.placeholder}
-            value={text}
-            onFocus={(event) => {
-              if (!expanded && event.relatedTarget instanceof HTMLElement) origin.current = event.relatedTarget;
-              setExpanded(true);
-            }}
-            onChange={(event) => setText(event.target.value)}
-          />
+          <div className="np-field">
+            <label htmlFor={`${reasonId}-text`} className={sampleShown ? "np-sample-label" : "visually-hidden"}>
+              {sampleShown ? TEXT.sampleLabel : TEXT.describe}
+            </label>
+            <textarea
+              id={`${reasonId}-text`}
+              ref={input}
+              className="np-text"
+              rows={expanded ? 3 : 1}
+              maxLength={MAX_TEXT}
+              placeholder={TEXT.placeholder}
+              value={text}
+              onFocus={(event) => {
+                if (!expanded && event.relatedTarget instanceof HTMLElement) origin.current = event.relatedTarget;
+                setExpanded(true);
+              }}
+              onChange={(event) => setText(event.target.value)}
+            />
+          </div>
           {expanded && (
             <Button variant="plain" className="np-collapse" aria-label={TEXT.collapse} onClick={collapse}>
               ⌄
@@ -243,7 +270,7 @@ export function NewWork({ bridge, setup, ref, repoId, onStarted }: NewWorkProps)
             )}
             <div className="np-row np-foot">
               <span id={reasonId} className="np-reason">
-                {reason}
+                {reason ?? (sampleShown ? TEXT.sampleHint : undefined)}
               </span>
               <Button variant="primary" type="submit" className="np-start" disabled={reason !== undefined || busy} aria-describedby={reason !== undefined ? reasonId : undefined}>
                 {busy ? TEXT.starting : TEXT.start} <span className="mono np-keys">{isMac() ? "⌘↵" : "Ctrl+↵"}</span>
