@@ -172,9 +172,9 @@ export const QuerySchema = z.discriminatedUnion("type", [
   /**
    * One page of one group of the work list, newest start first, scoped like the sidebar view
    * (`repo` or `template`). `since` (a local day) limits done and failed items to those started
-   * on or after it; live groups ignore it. `q` matches the title, a repo id, the template's ref or
-   * name, and the id or name of any step's agent, ignoring case. `before` is the `nextCursor` of
-   * the page before.
+   * on or after it; live groups ignore it. `q` matches the title, a repo id, the template's name,
+   * and the id or name of any step's agent, ignoring case. `before` is the `nextCursor` of the
+   * page before.
    */
   z.strictObject({
     type: z.literal("item_list"),

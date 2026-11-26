@@ -110,7 +110,7 @@ import { isHelperCommand } from "./helpers.js";
 import { listAgents } from "./agents-list.js";
 import { aiClis } from "./ai-clis.js";
 import { ItemIndex } from "./item-index.js";
-import { COUNTS_BUDGET, groupOf, ItemList, nameHits } from "./item-list.js";
+import { boardCounts, COUNTS_BUDGET, groupOf, listPage, nameHits } from "./item-list.js";
 import { type HealthChecks, machineChecks } from "./real/health.js";
 import { runningGroups } from "./machine.js";
 import { RealEngine } from "./real/real.js";
@@ -320,23 +320,6 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   }
 
   const store = options.store ?? new MemoryItemStore();
-  // The work list's index follows the store from here on, so the sample's and real mode's items reach it.
-  const list = ItemList.open();
-  const putInList = (item: ItemRecord) => {
-    try {
-      list.put(item);
-    } catch (error) {
-      log(`cannot update the work list for ${item.id}: ${String(error)}`);
-      diagnostics?.store.error("engine", "storage", error);
-    }
-  };
-  // A store passed in may already hold items; one that cannot list leaves the list to its later puts.
-  try {
-    for (const item of store.list()) putInList(item);
-  } catch (error) {
-    log(`cannot fill the work list: ${String(error)}`);
-  }
-  const unfollowList = store.subscribe(putInList);
   // The last setup served: the work-list search matches template and agent names from it.
   let servedSetup: SetupResult | undefined;
   // What running items do now: pushed to every client, at most once a second per item, once the
@@ -631,15 +614,16 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
         // Finished items come as counts here and a page at a time from item_list.
         const today = new Date(clock.now());
         const firstDay = localDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() - (BOARD_COUNT_DAYS - 1)).getTime());
-        const items = store.list().filter((item) => groupOf(item.state) === "needs" || groupOf(item.state) === "running");
+        const all = store.list();
+        const items = all.filter((item) => groupOf(item.state) === "needs" || groupOf(item.state) === "running");
         // The counts take what the open items leave of the message, up to their own budget.
         const left = MAX_MESSAGE_BYTES - REPLY_MARGIN_BYTES - Buffer.byteLength(JSON.stringify(items));
         const budget = { rows: COUNTS_BUDGET.rows, bytes: Math.max(0, Math.min(COUNTS_BUDGET.bytes, left)) };
-        return { ok: true, data: { items, counts: list.counts(firstDay, budget) } satisfies BoardResult };
+        return { ok: true, data: { items, counts: boardCounts(all, firstDay, budget) } satisfies BoardResult };
       }
       case "item_list": {
         const names = query.q === undefined || query.q.trim() === "" ? undefined : nameHits(servedSetup ?? (real === undefined ? await setup() : await real.setup()), query.q);
-        const page = list.page(query, names);
+        const page = listPage(store.list(), query, names);
         // A page ends early at half the message limit; its cursor then goes on from its last row.
         const items: ItemRecord[] = [];
         let bytes = 0;
@@ -898,8 +882,6 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     // Closing the server removes the socket file. Only then may another engine take over.
     await new Promise<void>((resolve) => server.close(() => resolve()));
     releaseStorage();
-    unfollowList();
-    list.close();
     if (ownsLock(lockPath, lockContent)) {
       unlinkIfPresent(socketPath);
       unlinkIfPresent(tokenPath);
