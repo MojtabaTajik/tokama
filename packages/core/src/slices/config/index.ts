@@ -16,6 +16,7 @@ export {
   removeRepo,
   initRepo,
   makeFirstCommit,
+  repoBranches,
   suggestRepo,
   updateRepo,
   type AddRepoInput,

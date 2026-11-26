@@ -4,12 +4,13 @@
 // Edit: from a repo row's menu, the repo's base branch and checks, with its id fixed, then Save.
 // The engine checks every field again and answers a refusal in plain words, shown here. Engine
 // text is rendered as React text only.
-import type { CommandInput, InitRepoResult, RepoSummary, SuggestRepoResult } from "@tokama/core";
+import type { CommandInput, InitRepoResult, RepoBranchesResult, RepoSummary, SuggestRepoResult } from "@tokama/core";
 import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
 import { DialogFrame, Modal } from "../ui/Modal.js";
 import { Problem } from "./Problem.js";
 import { Button } from "../ui/Button.js";
+import { Combobox, type ComboboxGroup } from "../ui/Combobox.js";
 import { markOf, StatusMark } from "../ui/status.js";
 
 const TEXT = {
@@ -23,8 +24,18 @@ const TEXT = {
   idFixed: "Items and worktrees use the id. To rename, remove the repo and add it again.",
   readOnly: "read-only",
   baseBranch: "Base branch",
-  baseBranchHint: "Work branches start from it.",
+  baseBranchHint: "Work branches start from it. Preselected: the repo's default branch. Pick another or type a name.",
+  baseBranchOnlyHint: "The only branch here, so it is the default.",
   baseBranchEditHint: "New work branches start from it. Running items keep their branch.",
+  branches: "Branches",
+  searchBranches: "Search branches or type a name",
+  searchBranchesPlaceholder: "Search branches",
+  otherBranches: "Other branches",
+  defaultTag: "default",
+  useBranch: (text: string) => `Use ‘${text}’`,
+  branchesCut: (shown: number, all: number) => `Showing the first ${shown} of ${all} branches.`,
+  typeBranch: "Type a branch name to use one that isn't listed.",
+  branchKeys: "↑ ↓ move · Enter choose · Esc close",
   checks: "Checks",
   checksHint: "One command per line, run in the repo after each change. No &&, | or redirects.",
   checksFound: (scripts: string) => `Found in package.json scripts: ${scripts}.`,
@@ -109,6 +120,23 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
   const [phase, setPhase] = useState<Phase | undefined>(undefined);
   const [failure, setFailure] = useState<Failure | undefined>(undefined);
   const [initResult, setInitResult] = useState<InitRepoResult | undefined>(undefined);
+  // Edit: the repo's branches, once the engine answers. Until then, or when it cannot, the field takes typed text only.
+  const [editBranches, setEditBranches] = useState<RepoBranchesResult | undefined>(undefined);
+  const repoId = repo?.id;
+
+  useEffect(() => {
+    if (repoId === undefined) return;
+    let live = true;
+    void bridge
+      .query({ type: "repo_branches", repoId })
+      .catch(bridgeFailure)
+      .then((reply) => {
+        if (live && reply.ok) setEditBranches(reply.data);
+      });
+    return () => {
+      live = false;
+    };
+  }, [bridge, repoId]);
 
   useEffect(() => {
     if (path === undefined) return;
@@ -121,7 +149,7 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
         if (!reply.ok) return setLoaded({ ok: false, message: reply.error.message });
         setLoaded({ ok: true, suggestion: reply.data });
         setId(reply.data.id ?? "");
-        setBaseBranch(reply.data.branch ?? (reply.data.firstCommit === null ? "" : "main"));
+        setBaseBranch(reply.data.defaultBranch ?? reply.data.branch ?? (reply.data.firstCommit === null ? "" : "main"));
         setChecks(reply.data.checks.join("\n"));
       });
     return () => {
@@ -279,8 +307,14 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
   }
 
   const checksHint = hadChecks && suggestion !== undefined ? `${TEXT.checksFound(suggestion.checksFrom.join(", "))} ${TEXT.checksHint}` : TEXT.checksHint;
-  const found = suggestion?.branches ?? [];
-  const foundHint = found.length === 0 ? "" : ` Found: ${found.map((name, index) => (index === 0 && name === suggestion?.branch ? `${name} (current)` : name)).join(", ")}.`;
+  const choices = editing ? editBranches : suggestion;
+  const listed = choices?.branches ?? [];
+  const toOption = (entry: (typeof listed)[number]) => ({ value: entry.name, tag: entry.group === "default" ? TEXT.defaultTag : undefined });
+  const upper = listed.filter((entry) => entry.group !== "other").map(toOption);
+  const lower = listed.filter((entry) => entry.group === "other").map(toOption);
+  const branchGroups: ComboboxGroup[] = [{ options: upper }, { heading: upper.length > 0 ? TEXT.otherBranches : undefined, options: lower }];
+  const moreBranches = choices?.moreBranches ?? 0;
+  const branchFooter = [...(moreBranches > 0 ? [TEXT.branchesCut(listed.length, listed.length + moreBranches)] : []), TEXT.typeBranch, TEXT.branchKeys];
   const shortHints = !editing && lines.length === 0;
   const idField = (
     <Field label={TEXT.id} hint={editing ? TEXT.idFixed : shortHints ? TEXT.idFromFolder : `${TEXT.idHint} ${TEXT.idFromFolder}`}>
@@ -297,8 +331,26 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
     </Field>
   );
   const branchField = (
-    <Field label={TEXT.baseBranch} hint={editing ? TEXT.baseBranchEditHint : shortHints ? foundHint.trim() : `${TEXT.baseBranchHint}${foundHint}`}>
-      {(props) => <input {...props} className="mono" value={baseBranch} placeholder="main" onChange={(event) => setBaseBranch(event.target.value)} autoFocus={editing} spellCheck={false} autoComplete="off" />}
+    <Field label={TEXT.baseBranch} hint={editing ? TEXT.baseBranchEditHint : listed.length === 1 ? TEXT.baseBranchOnlyHint : TEXT.baseBranchHint}>
+      {(props, labelId) => (
+        <Combobox
+          id={props.id}
+          labelledBy={labelId}
+          describedBy={props["aria-describedby"]}
+          value={baseBranch}
+          valueTag={baseBranch !== "" && baseBranch === choices?.defaultBranch ? TEXT.defaultTag : undefined}
+          placeholder="main"
+          groups={branchGroups}
+          listLabel={TEXT.branches}
+          searchLabel={TEXT.searchBranches}
+          searchPlaceholder={TEXT.searchBranchesPlaceholder}
+          freeText={{ label: TEXT.useBranch }}
+          footer={branchFooter}
+          mono
+          autoFocus={editing}
+          onChange={setBaseBranch}
+        />
+      )}
     </Field>
   );
   const checksField = (
@@ -492,18 +544,19 @@ interface FieldProps {
   readonly hint: string;
   /** Next to the label, such as "✓ suggested". */
   readonly tag?: ReactNode | undefined;
-  readonly children: (props: { id: string; "aria-describedby": string }) => ReactNode;
+  /** Gets the props of the control, and the id of the label, for a control that names itself from it. */
+  readonly children: (props: { id: string; "aria-describedby": string }, labelId: string) => ReactNode;
 }
 
 function Field({ label, hint, tag, children }: FieldProps) {
   const id = useId();
   return (
     <div className="repo-field">
-      <label htmlFor={id}>
+      <label id={`${id}-label`} htmlFor={id}>
         {label}
         {tag !== undefined && <span className="rd-tag">{tag}</span>}
       </label>
-      {children({ id, "aria-describedby": `${id}-hint` })}
+      {children({ id, "aria-describedby": `${id}-hint` }, `${id}-label`)}
       {hint !== "" && (
         <span id={`${id}-hint`} className="repo-hint">
           {hint}

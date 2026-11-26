@@ -652,6 +652,25 @@ describe("API on a real repo", () => {
     expect(await git.mergeFastForward(repo, ahead)).toMatchObject({ ok: false, error: { reason: "failed" } });
   });
 
+  it("branches lists local branches by plain name, even when a tag shares a name, and no remote-tracking ones", SLOW, async () => {
+    const head = value(await git.revParse(repo, "HEAD"));
+    const current = value(await git.currentRef(repo))?.replace("refs/heads/", "") ?? "";
+    for (const ref of ["refs/heads/develop", "refs/heads/feature/receipt-tax", "refs/remotes/origin/release/2.4", "refs/tags/develop"]) {
+      await plain(repo, "update-ref", ref, head);
+    }
+    expect([...value(await git.branches(repo))].sort()).toEqual([current, "develop", "feature/receipt-tax"].sort());
+  });
+
+  it("remoteHead gives the branch the remote's HEAD points at, and undefined when none is recorded", SLOW, async () => {
+    expect(value(await git.remoteHead(repo, "origin"))).toBeUndefined();
+    const head = value(await git.revParse(repo, "HEAD"));
+    await plain(repo, "update-ref", "refs/remotes/origin/develop", head);
+    expect(value(await git.remoteHead(repo, "origin"))).toBeUndefined();
+    await plain(repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/develop");
+    expect(value(await git.remoteHead(repo, "origin"))).toBe("develop");
+    expect(await git.remoteHead(repo, "--upload-pack=x")).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
+  });
+
   it("remotePushUrl reads the configured URL before insteadOf; push sends a commit to a branch, with no hook", SLOW, async () => {
     expect(value(await git.remotePushUrls(repo, "origin"))).toEqual([]);
     const bare = join(root, "remote.git");

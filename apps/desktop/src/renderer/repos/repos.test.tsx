@@ -31,17 +31,31 @@ const SUGGESTION = {
   id: "billing-api",
   checks: ["pnpm test", "pnpm lint"],
   checksFrom: ["test", "lint"],
-  branches: ["main", "develop"],
+  defaultBranch: "main",
+  branches: [
+    { name: "main", group: "default" },
+    { name: "develop", group: "usual" },
+    { name: "feature/receipt-tax", group: "other" },
+    { name: "fix/login-timeout", group: "other" },
+  ],
+  moreBranches: 0,
   fallbackCheck: null,
   fallbackFromPackage: false,
   firstCommit: null,
   problem: null,
 };
 
-async function mountWith(options: { suggestion?: Reply; picked?: string | null; commandReply?: (command: { type: string }) => Reply; setup?: () => Reply | undefined } = {}) {
+async function mountWith(options: { suggestion?: Reply; repoBranches?: Reply; picked?: string | null; commandReply?: (command: { type: string }) => Reply; setup?: () => Reply | undefined } = {}) {
   const fake = fakeBridge(CONNECTED, {
     pickFolder: async () => (options.picked === undefined ? FOLDER : options.picked),
-    reply: (query) => (query.type === "suggest_repo" ? (options.suggestion ?? { ok: true, data: SUGGESTION }) : query.type === "setup" ? options.setup?.() : undefined),
+    reply: (query) =>
+      query.type === "suggest_repo"
+        ? (options.suggestion ?? { ok: true, data: SUGGESTION })
+        : query.type === "repo_branches"
+          ? options.repoBranches
+          : query.type === "setup"
+            ? options.setup?.()
+            : undefined,
     commandReply: options.commandReply ?? (() => ({ ok: true, data: null })),
   });
   await act(async () => root.render(<App bridge={fake.bridge} retryDelayMs={10} now={NOW} />));
@@ -61,6 +75,16 @@ const type = (el: HTMLInputElement | HTMLTextAreaElement, value: string) =>
     setter.call(el, value);
     el.dispatchEvent(new Event("input", { bubbles: true }));
   });
+const branchButton = () => field("Base branch") as unknown as HTMLButtonElement;
+const branchSearch = () => $('[role="combobox"]') as HTMLInputElement;
+const branchOptions = () => [...document.querySelectorAll('[role="option"]')].map((el) => el.textContent);
+const branchHeadings = () => [...document.querySelectorAll(".combobox-heading")].map((el) => el.textContent);
+/** Opens the base branch list, types, and presses Enter on the active row. */
+const chooseBranch = async (text: string) => {
+  await click(branchButton());
+  await type(branchSearch(), text);
+  await key(branchSearch(), "Enter");
+};
 const menuItem = (name: string) => [...document.querySelectorAll('[role="menuitem"]')].find((el) => el.textContent?.startsWith(name));
 const key = (el: Element | null, name: string) => act(async () => void el?.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true })));
 
@@ -75,13 +99,13 @@ describe("+ Add repo", () => {
     expect(field("Id").value).toBe("billing-api");
     expect(field("Id").placeholder).toBe("orders-api");
     expect(document.activeElement).toBe(field("Id"));
-    expect(field("Base branch").value).toBe("main");
-    expect(field("Base branch").placeholder).toBe("main");
+    expect(branchButton().textContent).toBe("main default▾");
     expect(field("Checks").value).toBe("pnpm test\npnpm lint");
     expect(field("Checks").placeholder).toBe("npm test\nnode --check src/main.js");
     const text = $("dialog.modal")?.textContent ?? "";
     expect(text).toContain("From the folder name.");
-    expect(text).toContain("Found: main (current), develop.");
+    expect(text).toContain("Preselected: the repo's default branch. Pick another or type a name.");
+    expect(text).not.toContain("Found:");
     expect(text).toContain("✓ suggested");
     expect(text).toContain("Found in package.json scripts: test, lint.");
 
@@ -90,6 +114,60 @@ describe("+ Add repo", () => {
     await click(buttonByText("Add repo"));
     expect(fake.command).toHaveBeenCalledWith({ type: "add_repo", path: FOLDER, id: "billing", baseBranch: "main", checks: ["pnpm test"] });
     expect($("dialog.modal")).toBeNull();
+  });
+
+  it("preselects the repo's default branch, not the current one", async () => {
+    await mountWith({ suggestion: { ok: true, data: { ...SUGGESTION, branch: "feature/receipt-tax", defaultBranch: "develop" } } });
+    await click(buttonByText("+ Add repo"));
+    expect(branchButton().textContent).toBe("develop default▾");
+    expect(branchButton().getAttribute("aria-labelledby")?.split(" ").map((id) => document.getElementById(id)?.textContent).join(" ")).toBe("Base branch develop default");
+  });
+
+  it("lists the default and usual branches first, the others under a heading, and filters as the user types", async () => {
+    await mountWith();
+    await click(buttonByText("+ Add repo"));
+    await click(branchButton());
+    expect(branchOptions()).toEqual(["✓main· default", "develop", "feature/receipt-tax", "fix/login-timeout"]);
+    expect(branchHeadings()).toEqual(["Other branches"]);
+    expect($("dialog.modal")?.textContent).toContain("Type a branch name to use one that isn't listed.");
+    expect($("dialog.modal")?.textContent).toContain("↑ ↓ move · Enter choose · Esc close");
+    expect($("dialog.modal")?.textContent).not.toContain("Showing the first");
+    await type(branchSearch(), "fix");
+    expect(branchOptions()).toEqual(["fix/login-timeout", "Use ‘fix’"]);
+  });
+
+  it("picks a listed branch with the keyboard", async () => {
+    const fake = await mountWith();
+    await click(buttonByText("+ Add repo"));
+    await chooseBranch("receipt");
+    expect(branchButton().textContent).toBe("feature/receipt-tax▾");
+    await click(buttonByText("Add repo"));
+    expect(fake.command).toHaveBeenCalledWith(expect.objectContaining({ type: "add_repo", baseBranch: "feature/receipt-tax" }));
+  });
+
+  it("uses a typed branch name that is not listed", async () => {
+    const fake = await mountWith();
+    await click(buttonByText("+ Add repo"));
+    await chooseBranch("release/3.0");
+    expect($("dialog.modal")).not.toBeNull();
+    expect(branchButton().textContent).toBe("release/3.0▾");
+    await click(buttonByText("Add repo"));
+    expect(fake.command).toHaveBeenCalledWith(expect.objectContaining({ type: "add_repo", baseBranch: "release/3.0" }));
+  });
+
+  it("says when the list was cut", async () => {
+    await mountWith({ suggestion: { ok: true, data: { ...SUGGESTION, moreBranches: 54 } } });
+    await click(buttonByText("+ Add repo"));
+    await click(branchButton());
+    expect($(".combobox-foot p")?.textContent).toBe("Showing the first 4 of 58 branches.");
+  });
+
+  it("explains a repo with one branch only", async () => {
+    await mountWith({ suggestion: { ok: true, data: { ...SUGGESTION, branches: [{ name: "main", group: "default" }] } } });
+    await click(buttonByText("+ Add repo"));
+    expect($("dialog.modal")?.textContent).toContain("The only branch here, so it is the default.");
+    await click(branchButton());
+    expect(branchHeadings()).toEqual([]);
   });
 
   it("loads the setup again when the engine says it changed", async () => {
@@ -125,10 +203,13 @@ describe("+ Add repo", () => {
   });
 
   it("renders engine text as text, never as markup", async () => {
-    await mountWith({ suggestion: { ok: true, data: { ...SUGGESTION, displayPath: "/x/<img src=x onerror=alert(1)>", branches: ["<b>main</b>"] } } });
+    await mountWith({ suggestion: { ok: true, data: { ...SUGGESTION, displayPath: "/x/<img src=x onerror=alert(1)>", defaultBranch: "<b>main</b>", branches: [{ name: "<b>main</b>", group: "default" }, { name: "<i>x</i>", group: "other" }] } } });
     await click(buttonByText("+ Add repo"));
     expect($(".dlg-sub")?.textContent).toBe("/x/<img src=x onerror=alert(1)>");
-    expect($("dialog img, dialog b")).toBeNull();
+    expect(branchButton().textContent).toBe("<b>main</b> default▾");
+    await click(branchButton());
+    expect(branchOptions()).toEqual(["✓<b>main</b>· default", "<i>x</i>"]);
+    expect($("dialog img, dialog b, dialog i")).toBeNull();
   });
 
   it("closes with Escape, with the ✕ and with Cancel", async () => {
@@ -146,7 +227,7 @@ describe("+ Add repo", () => {
 });
 
 describe("Add repo warnings", () => {
-  const NONE = { ...SUGGESTION, checks: [], checksFrom: [], branches: ["main"] };
+  const NONE = { ...SUGGESTION, checks: [], checksFrom: [], branches: [{ name: "main", group: "default" }] };
 
   it("explains checks when none are found, and offers the fallback that fills them in", async () => {
     const fake = await mountWith({ suggestion: { ok: true, data: { ...NONE, fallbackCheck: "node --check src/main.js", fallbackFromPackage: true } } });
@@ -156,7 +237,6 @@ describe("Add repo warnings", () => {
     expect($(".repo-note")?.textContent).toContain("No checks found in this folder.");
     expect($(".repo-note")?.textContent).toContain("Tokama runs these after each change. Quick fix needs at least one. Templates where you approve the change, like Quick change, work without checks.");
     expect($(".repo-note")?.textContent).toContain('src/main.js is the "main" in package.json');
-    expect(text).toContain("Found: main (current).");
     await click(buttonByText("Use node --check src/main.js"));
     expect(field("Checks").value).toBe("node --check src/main.js");
     expect($(".repo-note")).toBeNull();
@@ -197,7 +277,7 @@ describe("Set up git", () => {
     ],
     refusal: null,
   };
-  const NOT_REPO = { ...SUGGESTION, gitRepo: false, hasCommits: false, branch: null, checks: [], checksFrom: [], branches: [], problem: "This folder isn't a git repo yet.", firstCommit: preview };
+  const NOT_REPO = { ...SUGGESTION, gitRepo: false, hasCommits: false, branch: null, checks: [], checksFrom: [], defaultBranch: null, branches: [], problem: "This folder isn't a git repo yet.", firstCommit: preview };
   const COMMIT_REPLY = (command: { type: string }): Reply =>
     command.type === "init_repo" ? { ok: true, data: { gitInit: true, ignoreRules: 5 } } : command.type === "first_commit" ? { ok: true, data: { commit: "3f9c2e1", files: 14 } } : { ok: true, data: null };
 
@@ -358,20 +438,55 @@ describe("Edit repo", () => {
     expect($('[role="menu"]')).toBeNull();
     expect($("dialog.modal h2")?.textContent).toBe("Edit repo");
     expect(fake.query).not.toHaveBeenCalledWith(expect.objectContaining({ type: "suggest_repo" }));
+    expect(fake.query).toHaveBeenCalledWith({ type: "repo_branches", repoId: "orders-api" });
     expect(($(".rd-fixed") as HTMLInputElement).value).toBe("orders-api");
     expect(($(".rd-fixed") as HTMLInputElement).readOnly).toBe(true);
     expect($("dialog.modal")?.textContent).toContain("read-only");
     expect($("dialog.modal")?.textContent).toContain("Items and worktrees use the id. To rename, remove the repo and add it again.");
     expect($("dialog.modal")?.textContent).toContain("New work branches start from it. Running items keep their branch.");
-    expect(field("Base branch").value).toBe(orders.baseBranch);
+    expect(branchButton().textContent).toBe(`${orders.baseBranch}▾`);
     expect(field("Checks").value).toBe(orders.checks.join("\n"));
-    expect(document.activeElement).toBe(field("Base branch"));
+    expect(document.activeElement).toBe(branchButton());
 
-    await type(field("Base branch"), " develop ");
+    // The reply failed (the fake bridge has no answer): typed text still works.
+    await chooseBranch(" develop ");
     await type(field("Checks"), "pnpm test\n\npnpm lint");
     await click(buttonByText("Save"));
     expect(fake.command).toHaveBeenCalledWith({ type: "update_repo", repoId: "orders-api", baseBranch: "develop", checks: ["pnpm test", "pnpm lint"] });
     expect($("dialog.modal")).toBeNull();
+  });
+
+  it("offers the repo's branches, and keeps its base branch even when the default differs", async () => {
+    const fake = await mountWith({
+      repoBranches: { ok: true, data: { defaultBranch: "develop", branches: [{ name: "develop", group: "default" }, { name: "main", group: "usual" }, { name: "fix/login-timeout", group: "other" }], moreBranches: 0 } },
+    });
+    await openEdit();
+    expect(branchButton().textContent).toBe(`${orders.baseBranch}▾`);
+    await click(branchButton());
+    expect(branchOptions()).toEqual(["develop· default", "✓main", "fix/login-timeout"]);
+    expect(branchHeadings()).toEqual(["Other branches"]);
+    await key(branchSearch(), "Escape");
+    expect($("dialog.modal")).not.toBeNull();
+    await chooseBranch("develop");
+    expect(branchButton().textContent).toBe("develop default▾");
+    await click(buttonByText("Save"));
+    expect(fake.command).toHaveBeenCalledWith(expect.objectContaining({ type: "update_repo", baseBranch: "develop" }));
+    expect(fake.query).not.toHaveBeenCalledWith(expect.objectContaining({ type: "suggest_repo" }));
+  });
+
+  it("tags the base branch as default only when it is the repo's default", async () => {
+    await mountWith({ repoBranches: { ok: true, data: { defaultBranch: orders.baseBranch, branches: [{ name: orders.baseBranch, group: "default" }], moreBranches: 0 } } });
+    await openEdit();
+    expect(branchButton().textContent).toBe(`${orders.baseBranch} default▾`);
+  });
+
+  it("works with typed text when the engine cannot list the branches", async () => {
+    const fake = await mountWith({ repoBranches: { ok: false, error: { code: "not_found", message: "No repo has the id 'orders-api'." } } });
+    await openEdit();
+    expect($('[role="alert"]')).toBeNull();
+    await chooseBranch("release/2.4");
+    await click(buttonByText("Save"));
+    expect(fake.command).toHaveBeenCalledWith(expect.objectContaining({ type: "update_repo", baseBranch: "release/2.4" }));
   });
 
   it("keeps the dialog open with the engine's words when it refuses", async () => {

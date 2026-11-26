@@ -72,8 +72,10 @@ async function mount(options: Options = {}) {
     pickFolder: async () => (options.picked === undefined ? "/home/dev/code/billing-api" : options.picked),
     reply: (query) =>
       query.type === "suggest_repo"
-        ? { ok: true, data: { path: "/home/dev/code/billing-api", displayPath: "~/code/billing-api", gitRepo: true, hasCommits: true, branch: "main", id: "billing-api", checks: ["pnpm test"], checksFrom: ["test"], branches: ["main"], fallbackCheck: null, fallbackFromPackage: false, firstCommit: null, problem: null } }
-        : undefined,
+        ? { ok: true, data: { path: "/home/dev/code/billing-api", displayPath: "~/code/billing-api", gitRepo: true, hasCommits: true, branch: "main", id: "billing-api", checks: ["pnpm test"], checksFrom: ["test"], defaultBranch: "main", branches: [{ name: "main", group: "default" }], moreBranches: 0, fallbackCheck: null, fallbackFromPackage: false, firstCommit: null, problem: null } }
+        : query.type === "repo_branches"
+          ? { ok: true, data: { defaultBranch: "main", branches: [{ name: "main", group: "default" }, { name: "develop", group: "usual" }], moreBranches: 0 } }
+          : undefined,
     commandReply: options.commandReply ?? (() => ({ ok: true, data: null })),
   });
   const connection = options.connection ?? CONNECTED;

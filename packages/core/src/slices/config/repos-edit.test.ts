@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Git, GitError, WorktreeEntry } from "../../kernel/git/index.js";
 import { err, ok } from "../../kernel/result/index.js";
 import { previewFirstCommit } from "./first-commit.js";
-import { addRepo, initRepo, loadRepos, makeFirstCommit, removeRepo, suggestRepo, updateRepo, type RepoEditOptions } from "./index.js";
+import { addRepo, initRepo, loadRepos, makeFirstCommit, removeRepo, repoBranches, suggestRepo, updateRepo, type RepoEditOptions } from "./index.js";
 
 let root: string;
 let home: string;
@@ -19,6 +19,8 @@ let unborn: Set<string>;
 let calls: string[];
 /** The local branches the fake git lists; empty: just the folder's own. */
 let extraBranches: string[];
+/** The branch the fake remote's HEAD names; undefined: none recorded. */
+let originHead: string | undefined;
 /** The paths the fake `git diff --cached` lists; undefined: what the preview names. */
 let stagedPaths: string[] | undefined;
 /** Where the fake git says a folder's work tree is, when not the folder itself. */
@@ -32,6 +34,7 @@ beforeEach(() => {
   unborn = new Set();
   calls = [];
   extraBranches = [];
+  originHead = undefined;
   stagedPaths = undefined;
   topLevels = new Map();
   commitError = undefined;
@@ -39,8 +42,13 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-const git: Pick<Git, "worktreeList" | "revParse" | "topLevel" | "branches" | "init" | "addAll" | "diffCachedNumstat" | "commit"> = {
-  branches: async (repo) => ok(extraBranches.length > 0 ? extraBranches : [worktrees.get(repo) ?? "main"]),
+const git: Pick<Git, "worktreeList" | "revParse" | "topLevel" | "branches" | "remoteHead" | "currentRef" | "init" | "addAll" | "diffCachedNumstat" | "commit"> = {
+  branches: async (repo) => (worktrees.has(repo) ? ok(extraBranches.length > 0 ? extraBranches : [worktrees.get(repo)].filter((branch) => branch !== undefined)) : err(gitError)),
+  remoteHead: async () => ok(originHead),
+  currentRef: async (repo) => {
+    const branch = worktrees.get(repo);
+    return ok(branch === undefined ? undefined : `refs/heads/${branch}`);
+  },
   diffCachedNumstat: async (repo) => ok((stagedPaths ?? [...(await previewFirstCommit(repo, root)).paths]).map((path) => ({ path, added: 1, removed: 0 }))),
   topLevel: async (repo) => ok(topLevels.get(repo) ?? repo),
   init: async (repo, branch) => {
@@ -245,6 +253,19 @@ repos:
       error: { code: "already_exists", message: "The id 'orders-api' is taken by a sample repo. Pick another id." },
     });
     expect(await addRepo(reserved, { path })).toMatchObject({ ok: true, value: { id: "orders-api-2" } });
+  });
+
+  it("takes the repo's default branch as the base branch, not the current one; an explicit branch wins", async () => {
+    extraBranches = ["develop", "main", "feature/receipt-tax"];
+    originHead = "main";
+    const path = repo("orders-api", {}, "develop");
+    expect(await addRepo(options(), { path })).toMatchObject({ ok: true, value: { baseBranch: "main" } });
+    expect(await addRepo(options(), { path: repo("billing-api", {}, "develop"), baseBranch: "feature/receipt-tax" })).toMatchObject({ ok: true, value: { baseBranch: "feature/receipt-tax" } });
+  });
+
+  it("takes a usual branch as the base branch when HEAD is detached and one exists", async () => {
+    extraBranches = ["feature/receipt-tax", "master"];
+    expect(await addRepo(options(), { path: repo("a", {}, null) })).toMatchObject({ ok: true, value: { baseBranch: "master" } });
   });
 
   it("needs a base branch when HEAD is detached", async () => {
@@ -531,12 +552,32 @@ describe("removeRepo", () => {
   });
 });
 
+describe("repoBranches", () => {
+  it("lists the choices of an added repo, with its default first", async () => {
+    extraBranches = ["develop", "main", "feature/receipt-tax"];
+    originHead = "main";
+    await addRepo(options(), { path: repo("orders-api", {}, "develop") });
+    expect(await repoBranches(options(), "orders-api")).toEqual({
+      ok: true,
+      value: { defaultBranch: "main", branches: [{ name: "main", group: "default" }, { name: "develop", group: "usual" }, { name: "feature/receipt-tax", group: "other" }], more: 0 },
+    });
+  });
+
+  it("gives an empty list when the folder is no repo any more, and not_found for an unknown id", async () => {
+    const path = repo("orders-api");
+    await addRepo(options(), { path });
+    worktrees.delete(path);
+    expect(await repoBranches(options(), "orders-api")).toEqual({ ok: true, value: { defaultBranch: undefined, branches: [], more: 0 } });
+    expect(await repoBranches(options(), "nope")).toMatchObject({ ok: false, error: { code: "not_found" } });
+  });
+});
+
 describe("suggestRepo", () => {
   it("suggests pnpm checks from package.json scripts and the pnpm lockfile", async () => {
     const path = repo("Orders_API", { "package.json": JSON.stringify({ scripts: { test: "vitest run", lint: "eslint .", build: "tsc" } }), "pnpm-lock.yaml": "" }, "develop");
     expect(await suggestRepo(options(), path)).toEqual({
       ok: true,
-      value: { path, displayPath: path.replace(root, "~"), gitRepo: true, hasCommits: true, branch: "develop", id: "orders-api", checks: ["pnpm test", "pnpm lint"], checksFrom: ["test", "lint"], branches: ["develop"], firstCommit: undefined, fallbackCheck: undefined, fallbackFromPackage: false, problem: undefined },
+      value: { path, displayPath: path.replace(root, "~"), gitRepo: true, hasCommits: true, branch: "develop", id: "orders-api", checks: ["pnpm test", "pnpm lint"], checksFrom: ["test", "lint"], defaultBranch: "develop", branches: [{ name: "develop", group: "default" }], moreBranches: 0, firstCommit: undefined, fallbackCheck: undefined, fallbackFromPackage: false, problem: undefined },
     });
   });
 
@@ -575,7 +616,7 @@ describe("suggestRepo", () => {
   it("offers node --check on the main file of package.json when it has no checks, and lists the branches", async () => {
     extraBranches = ["zeta", "develop", "main"];
     const path = repo("lib", { "package.json": JSON.stringify({ main: "src/main.js", scripts: { build: "tsc" } }), "src/main.js": "1" });
-    expect(await suggestRepo(options(), path)).toMatchObject({ ok: true, value: { checks: [], fallbackCheck: "node --check src/main.js", fallbackFromPackage: true, branches: ["main", "zeta", "develop"] } });
+    expect(await suggestRepo(options(), path)).toMatchObject({ ok: true, value: { checks: [], fallbackCheck: "node --check src/main.js", fallbackFromPackage: true, defaultBranch: "main", branches: [{ name: "main", group: "default" }, { name: "develop", group: "usual" }, { name: "zeta", group: "other" }] } });
     const hostile = repo("hostile", { "package.json": JSON.stringify({ main: "../x.js; rm -rf /" }) });
     expect(await suggestRepo(options(), hostile)).toMatchObject({ value: { fallbackCheck: undefined } });
   });
