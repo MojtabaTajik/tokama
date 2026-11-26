@@ -111,6 +111,12 @@
   color: var(--text-2);
 }
 
+/* An inline quiet button reads as a button at rest: muted text with a dotted underline. */
+.btn-quiet[data-inline] {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
 .btn-quiet:hover:not(:disabled) {
   color: var(--text);
 }

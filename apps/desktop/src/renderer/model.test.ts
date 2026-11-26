@@ -16,12 +16,16 @@ import {
   flagOf,
   cardStatus,
   groupItems,
+  hiddenByRange,
   inRange,
   inView,
+  listsFinished,
   needsYouCount,
   pipelineOf,
   rowAgent,
   rowMark,
+  showAllTime,
+  type StatusFilter,
   summaryOf,
   timeOf,
   viewKey,
@@ -82,6 +86,46 @@ describe("inRange", () => {
 const open = board(items).items;
 const counts = board(items).counts;
 const badgesOver = (list: readonly ItemRecord[]) => badgesOf(board(list).items, board(list).counts, NOW);
+
+describe("hiddenByRange", () => {
+  const rows = [
+    { day: "2025-10-20", templateId: "builtin/quick-fix", repoIds: [], done: 2, failed: 1 },
+    { day: "2025-10-17", templateId: "builtin/quick-fix", repoIds: [], done: 1, failed: 0 },
+    { day: "2025-09-30", templateId: "builtin/quick-fix", repoIds: [], done: 5, failed: 2 },
+    { day: null, templateId: "builtin/quick-fix", repoIds: [], done: 10, failed: 3 },
+  ] as unknown as Parameters<typeof hiddenByRange>[0];
+
+  it("counts what each range leaves out: done on Done, failed on Failed, both elsewhere", () => {
+    // Today leaves out 3 days ago (1), 20 days ago (5 + 2) and older (10 + 3): done 16, failed 5.
+    expect(hiddenByRange(rows, "done", "today", NOW)).toBe(16);
+    expect(hiddenByRange(rows, "failed", "today", NOW)).toBe(5);
+    for (const status of ["active", "needs", "all"] as const) expect(hiddenByRange(rows, status, "today", NOW)).toBe(21);
+    // 7 days keeps the 17th; 30 days keeps the 30th of September too, and only the older ones stay out.
+    expect(hiddenByRange(rows, "all", "7d", NOW)).toBe(20);
+    expect(hiddenByRange(rows, "all", "30d", NOW)).toBe(13);
+    expect(hiddenByRange(rows, "done", "30d", NOW)).toBe(10);
+    expect(hiddenByRange(rows, "failed", "30d", NOW)).toBe(3);
+  });
+
+  it("hides nothing in all time, or without counts", () => {
+    expect(hiddenByRange(rows, "all", "all", NOW)).toBe(0);
+    expect(hiddenByRange([], "active", "today", NOW)).toBe(0);
+  });
+});
+
+describe("showAllTime", () => {
+  it("moves Active and Needs you to All, and only widens the range on the other tabs", () => {
+    expect(showAllTime("active")).toEqual({ status: "all", range: "all" });
+    expect(showAllTime("needs")).toEqual({ status: "all", range: "all" });
+    for (const status of ["done", "failed", "all"] as const) expect(showAllTime(status)).toEqual({ range: "all" });
+  });
+});
+
+describe("listsFinished", () => {
+  it("is true for Done, Failed and All", () => {
+    expect(["active", "needs", "done", "failed", "all"].map((status) => listsFinished(status as StatusFilter))).toEqual([false, false, true, true, true]);
+  });
+});
 
 describe("finishedIn", () => {
   it("adds up the done and failed counts of the days in the range; older days count for all time only", () => {

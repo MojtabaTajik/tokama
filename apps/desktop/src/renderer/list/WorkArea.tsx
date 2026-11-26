@@ -1,4 +1,6 @@
 // The status switch with the search, and below it the pipeline list or the workflow's kanban.
+// The range picker is on every tab; when the range hides finished runs, an empty list names them
+// and a quiet hint next to the picker counts them.
 // Needs you and Running come from the board's items, in full and without day headers. Done and
 // Failed come from the engine a page at a time (Load older adds the next), under day headers when
 // the range is longer than today; the kanban's Done column shows their first pages and counts them
@@ -7,7 +9,7 @@
 // hidden, and with no hit at all one message takes their place. Rows show the board's record of
 // an item when it has one, so a row follows the item's events before its page loads again.
 import type { BoardCount, FinishAction, ItemRecord, Setup } from "@tokama/core";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
 import { Board } from "../board/Board.js";
 import {
@@ -16,12 +18,15 @@ import {
   type GroupKey,
   GROUPS_OF,
   groupItems,
-  hasRange,
+  hiddenByRange,
   type ItemGroup,
+  listsFinished,
   RANGES,
   rangeWords,
+  showAllTime,
   sinceOf,
   STATUS_FILTERS,
+  type StatusFilter as Status,
   type View,
   visibleItems,
 } from "../model.js";
@@ -32,6 +37,7 @@ import type { Layout } from "../useViewState.js";
 import { ItemList } from "./ItemList.js";
 import { type GroupPage, type ListRequest, PAGE_SIZE, useWorkList } from "./useWorkList.js";
 import { Button } from "../ui/Button.js";
+import { EmptyState } from "../ui/EmptyState.js";
 import { markOf } from "../ui/status.js";
 
 /** Wait after the last key before the search goes to the engine. */
@@ -55,6 +61,14 @@ const TEXT = {
   searched: (scope: string) => `Searched titles, repos, templates and agents in ${scope}.`,
   clearSearch: "Clear search",
   searchAllTime: "Search all time",
+  emptyTitle: {
+    active: "No active runs.",
+    done: "No done runs in this range.",
+    failed: "No failed runs in this range.",
+    all: "No runs in this range.",
+  } satisfies Record<Exclude<Status, "needs">, string>,
+  hiddenLine: (count: number, kind: string, range: string) =>
+    `${count} ${kind} ${count === 1 ? "run from earlier is" : "runs from earlier are"} hidden by the range ‘${range}’.`,
 } as const;
 
 export interface WorkAreaProps {
@@ -86,6 +100,7 @@ export function WorkArea(props: WorkAreaProps) {
   const { bridge, connected, setup, scoped, counts, items, view, filter, onFilter, layout, template, now } = props;
   const [text, setText] = useState("");
   const [q, setQ] = useState("");
+  const rangeRef = useRef<HTMLSelectElement>(null);
   useEffect(() => {
     const timer = setTimeout(() => setQ(text.trim()), SEARCH_DELAY_MS);
     return () => clearTimeout(timer);
@@ -180,12 +195,48 @@ export function WorkArea(props: WorkAreaProps) {
   const boardItems = [...visibleItems(scoped, filter, now), ...finishedPages.flatMap((page) => page.items.map(fresh))];
   const notLoaded = finishedPages.reduce((sum, page) => sum + Math.max(0, (page.total ?? 0) - page.items.length), 0);
 
-  const where = `${STATUS_FILTERS.find((status) => status.id === filter.status)?.label ?? filter.status}${hasRange(filter.status) ? ` · ${RANGES.find((r) => r.id === filter.range)?.label ?? filter.range}` : ""}`;
+  const rangeLabel = RANGES.find((r) => r.id === filter.range)?.label ?? filter.range;
+  const where = `${STATUS_FILTERS.find((status) => status.id === filter.status)?.label ?? filter.status}${listsFinished(filter.status) ? ` · ${rangeLabel}` : ""}`;
+
+  // The range hides finished runs, and everything the tab lists is known to be empty. A finished
+  // group that has not loaded yet is not known, so it shows no message.
+  const hidden = hiddenByRange(counts, filter.status, filter.range, now);
+  // Needs you never lists finished runs, so the range is not why it is empty.
+  const emptyTitle = filter.status === "needs" ? undefined : TEXT.emptyTitle[filter.status];
+  const hiddenAll = !board && !searching && emptyTitle !== undefined && hidden > 0 && groups.every((group) => (finished(group.key) ? group.count === 0 : group.items.length === 0));
+  // The button or hint that was pressed goes away with the hidden runs: the picker takes the focus.
+  const showAll = () => {
+    onFilter(showAllTime(filter.status));
+    rangeRef.current?.focus();
+  };
+  const hiddenKind =filter.status === "done" ? "done" : filter.status === "failed" ? "failed" : "finished";
   return (
     <>
-      <StatusFilter items={scoped} finishedCounts={counts} filter={filter} now={now} onChange={onFilter} search={board ? undefined : { text, onText: setText, onClear: clear, results: searching ? results : undefined }} />
+      <StatusFilter
+        items={scoped}
+        finishedCounts={counts}
+        filter={filter}
+        now={now}
+        onChange={onFilter}
+        search={board ? undefined : { text, onText: setText, onClear: clear, results: searching ? results : undefined }}
+        rangeRef={rangeRef}
+        hidden={searching || hiddenAll ? undefined : { count: hidden, onShow: showAll }}
+      />
       {board ? (
         <Board items={boardItems} notLoaded={notLoaded} agents={setup.agents} template={template} selectedItemId={props.selectedItemId} onSelect={props.onSelectItem} now={now} />
+      ) : hiddenAll && emptyTitle !== undefined ? (
+        <div role="status">
+          <EmptyState
+            className="pl-hidden"
+            title={emptyTitle}
+            text={TEXT.hiddenLine(hidden, hiddenKind, rangeLabel)}
+            action={
+              <Button variant="secondary" className="pl-hidden-action" onClick={showAll}>
+                {TEXT.showAllTime}
+              </Button>
+            }
+          />
+        </div>
       ) : searching && results === 0 ? (
         <div className="pl-no-match" role="status">
           <span className="pl-no-match-title">
@@ -197,7 +248,7 @@ export function WorkArea(props: WorkAreaProps) {
             <Button variant="secondary" onClick={clear}>
               {TEXT.clearSearch}
             </Button>
-            {hasRange(filter.status) && filter.range !== "all" && (
+            {listsFinished(filter.status) && filter.range !== "all" && (
               <Button variant="secondary" onClick={() => onFilter({ range: "all" })}>
                 {TEXT.searchAllTime}
               </Button>

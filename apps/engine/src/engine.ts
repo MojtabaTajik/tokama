@@ -129,6 +129,8 @@ export interface EngineOptions {
   readonly sample?: boolean;
   /** Fake engine mode only: this many generated finished items over the last two months, for trying long lists. */
   readonly sampleHistory?: number;
+  /** With `sampleHistory`: serve only the history, without the sample's own items. */
+  readonly sampleHistoryOnly?: boolean;
   /**
    * Tokama's home folder (`~/.tokama`): item logs in `items/`, the board index in `tokama.db`, and
    * `repos.yaml`. Without it nothing is stored; in sample mode only repos.yaml is.
@@ -335,7 +337,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   // event stream below exists (the sample items have their activity from the start).
   let pushActivity: (latest: ItemActivity) => void = () => {};
   const activity = new ActivityFeed(options.clock ?? systemClock, (latest) => pushActivity(latest));
-  const sample = options.sample ? new SampleEngine(store, options.clock ?? systemClock, activity, options.sampleHistory) : undefined;
+  const sample = options.sample ? new SampleEngine(store, options.clock ?? systemClock, activity, options.sampleHistory, options.sampleHistoryOnly) : undefined;
   const runner = options.runner ?? createProcessRunner();
   // Real mode: the engine stores items. Its run loop starts restart recovery at once. If it cannot
   // start, the engine still answers, and its setup says why nothing can run.

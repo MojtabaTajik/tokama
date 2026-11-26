@@ -99,11 +99,13 @@ export class SampleEngine {
     private readonly clock: Clock,
     private readonly activity?: ActivityFeed,
     history = 0,
+    /** With a history, leave out the sample's own items: only the history's finished ones. */
+    historyOnly = false,
   ) {
     const setup = parseQueryResult("setup", sampleSetup);
     if (!setup.ok) throw new Error(`invalid sample setup: ${JSON.stringify(setup.error.issues)}`);
     this.setup = setup.value;
-    for (const raw of [...sampleItems(clock.now()), ...sampleHistory(clock.now(), history)]) {
+    for (const raw of [...(historyOnly && history > 0 ? [] : sampleItems(clock.now())), ...sampleHistory(clock.now(), history)]) {
       const item = parseItemRecord(raw);
       if (!item.ok) throw new Error(`invalid sample item ${raw.id}: ${JSON.stringify(item.error.issues)}`);
       store.put(item.value);

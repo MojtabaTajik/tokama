@@ -12,7 +12,7 @@ export type ButtonSize = "sm" | "md" | "lg" | "icon" | "icon-sm";
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   readonly variant?: ButtonVariant;
   readonly size?: ButtonSize | undefined;
-  /** A link inside running text: always underlined, so colour is not its only signal. */
+  /** A link inside running text, or a quiet button next to a control: always underlined (dotted when quiet), so colour is not its only signal. */
   readonly inline?: boolean;
   readonly ref?: Ref<HTMLButtonElement>;
 }

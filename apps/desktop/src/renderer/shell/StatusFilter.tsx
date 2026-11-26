@@ -1,8 +1,10 @@
 // The status switch at the top of every view: Active, Needs you, Done, Failed, All, each with its
-// count, a Today / 7 days / 30 days / All time picker for Done, Failed and All, and at the right
-// end the search: its result count, the field, and a clear button (Esc clears too).
+// count, a Today / 7 days / 30 days / All time picker on every tab (the Done and Failed counts
+// follow it) with a quiet "N hidden" hint when it hides finished runs, and at the right end the
+// search: its result count, the field, and a clear button (Esc clears too).
 import type { BoardCount, ItemRecord } from "@tokama/core";
-import { type Filter, filterCounts, hasRange, type Range, RANGES, STATUS_FILTERS, type StatusFilter as Status } from "../model.js";
+import { type Filter, filterCounts, type Range, RANGES, STATUS_FILTERS, type StatusFilter as Status } from "../model.js";
+import type { Ref } from "react";
 import { SearchIcon } from "../ui/icons.js";
 import { Button, CloseButton } from "../ui/Button.js";
 
@@ -13,6 +15,8 @@ const TEXT = {
   searchField: "Search work by title, repo, template or agent",
   placeholder: "Search all work",
   clear: "Clear search (Esc)",
+  hidden: (count: number) => `${count} hidden`,
+  hiddenTitle: (range: string, count: number) => `The range ‘${range}’ hides ${count} finished ${count === 1 ? "run" : "runs"}. Show all time.`,
   results: (n: number) => (n === 1 ? "result" : "results"),
 } as const;
 
@@ -35,10 +39,15 @@ export interface StatusFilterProps {
   readonly onChange: (patch: Partial<Filter>) => void;
   /** The search field; without it there is none (the Board layout). */
   readonly search?: SearchProps | undefined;
+  /** The finished runs the range hides, and how to show them; the hint shows only when there are some. */
+  readonly hidden?: { readonly count: number; readonly onShow: () => void } | undefined;
+  /** The range picker, so the list can give it focus when the control that changed it goes away. */
+  readonly rangeRef?: Ref<HTMLSelectElement> | undefined;
 }
 
-export function StatusFilter({ items, finishedCounts, filter, now, onChange, search }: StatusFilterProps) {
+export function StatusFilter({ items, finishedCounts, filter, now, onChange, search, hidden, rangeRef }: StatusFilterProps) {
   const counts = filterCounts(items, finishedCounts, filter, now);
+  const hiddenTitle = hidden === undefined ? "" : TEXT.hiddenTitle(RANGES.find((range) => range.id === filter.range)?.label ?? filter.range, hidden.count);
   return (
     <div className="filter-bar">
       <div className="segments" role="group" aria-label={TEXT.group}>
@@ -56,14 +65,18 @@ export function StatusFilter({ items, finishedCounts, filter, now, onChange, sea
           );
         })}
       </div>
-      {hasRange(filter.status) && (
-        <select className="range" aria-label={TEXT.range} value={filter.range} onChange={(event) => onChange({ range: event.target.value as Range })}>
-          {RANGES.map(({ id, label }) => (
-            <option key={id} value={id}>
-              {label}
-            </option>
-          ))}
-        </select>
+      <select ref={rangeRef} className="range" aria-label={TEXT.range} value={filter.range} onChange={(event) => onChange({ range: event.target.value as Range })}>
+        {RANGES.map(({ id, label }) => (
+          <option key={id} value={id}>
+            {label}
+          </option>
+        ))}
+      </select>
+      {hidden !== undefined && hidden.count > 0 && (
+        // The name starts with the visible words, so a voice command that says them finds the button.
+        <Button variant="quiet" inline className="range-hidden" aria-label={`${TEXT.hidden(hidden.count)}. ${hiddenTitle}`} title={hiddenTitle} onClick={hidden.onShow}>
+          <span className="mono">{TEXT.hidden(hidden.count)}</span>
+        </Button>
       )}
       {search !== undefined && <Search {...search} />}
     </div>
