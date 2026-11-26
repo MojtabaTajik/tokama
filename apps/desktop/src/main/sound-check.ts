@@ -1,5 +1,5 @@
 // `Tokama --sound-check` in a packaged app: shows one notification per kind and per way of getting
-// a sound, each labelled in its body, so a person can listen to what their Mac plays. It reads and
+// a sound, each labelled in its title, so a person can listen to what their Mac plays. It reads and
 // writes no settings and starts no engine or window. Electron comes in through `deps`.
 import { NOTE_KINDS, type NoteKind } from "../shared/desktop-state.js";
 import type { Note } from "./notifier.js";
