@@ -28,6 +28,30 @@ describe("diffHeader", () => {
     expect(header?.columns).toEqual({ before: "Before · main 85a75e3", after: "After · tokama/receipt-tax" });
   });
 
+  it("merging: while Merge runs, and while the merged item's change is still the one from before", () => {
+    const first = "● Merging into main… · branch tokama/receipt-tax · 5 files, +1,244 −316";
+    const sub = "Compared with main at 85a75e3, where the item started.";
+    const running = diffHeader(withState("done", { worktreeRemoved: false, running: "merge" }), loaded(worktree), "main");
+    expect(lines(running)).toEqual([first, sub]);
+    expect(running?.mark.tone).not.toBe("pass");
+    expect(running?.mark.tone).not.toBe("fail");
+    expect(running?.columns).toEqual({ before: "Before · main 85a75e3", after: "After · tokama/receipt-tax" });
+    const done = withState("done", { worktreeRemoved: true, merged: { baseBranch: "main", commit: MERGED } });
+    expect(lines(diffHeader(done, loaded(worktree), "main"))).toEqual([first, sub]);
+    const refused = withState("done", { worktreeRemoved: false, failed: { action: "merge", reason: "conflict", detail: "src/a.ts" } } as ItemRecord["finish"]);
+    expect(lines(diffHeader(refused, loaded(worktree), "main"))[0]).toBe("○ Not merged yet · branch tokama/receipt-tax · 5 files, +1,244 −316");
+  });
+
+  it("done with nothing committed: says so, and marks the edits as uncommitted", () => {
+    const expected = ["○ Nothing was committed · worktree tokama/receipt-tax · 5 files, +1,244 −316", "Uncommitted changes left in the worktree, compared with main at 85a75e3."];
+    for (const outcome of [{ kind: "done" }, { kind: "done", commits: [] }]) {
+      const header = diffHeader({ ...finishable, outcome } as ItemRecord, loaded(worktree), "main");
+      expect(lines(header)).toEqual(expected);
+      expect(header?.columns).toEqual({ before: "Before · main 85a75e3", after: "After · worktree" });
+      expect(showsChange({ ...finishable, outcome } as ItemRecord, loaded(worktree))).toBe(true);
+    }
+  });
+
   it("PR open: the pull request, with the same diff", () => {
     const pr = withState("done", { worktreeRemoved: false, pullRequest: { url: "https://github.com/northwind/orders-api/pull/12" } });
     expect(lines(diffHeader(pr, loaded(worktree), "main"))).toEqual(["↗ PR #12 open · branch tokama/receipt-tax · 5 files, +1,244 −316", "Compared with main at 85a75e3, where the item started."]);

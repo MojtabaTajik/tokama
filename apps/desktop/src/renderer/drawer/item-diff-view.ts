@@ -49,7 +49,7 @@ export function showsChange(item: Pick<ItemRecord, "outcome" | "finish">, state:
 }
 
 /** The header lines of an ended item's Diff tab; `baseBranch` is the repo's, for a change not merged. */
-export function diffHeader(item: Pick<ItemRecord, "state" | "finish">, state: Extract<ItemDiffState, { kind: "discarded" | "loaded" }>, baseBranch: string | undefined): DiffHeader | undefined {
+export function diffHeader(item: Pick<ItemRecord, "state" | "finish" | "outcome">, state: Extract<ItemDiffState, { kind: "discarded" | "loaded" }>, baseBranch: string | undefined): DiffHeader | undefined {
   if (state.kind === "discarded") return { mark: markOf("discarded"), head: ["Discarded"], details: [["the branch and its changes were deleted"]] };
   const { change } = state;
   switch (change.kind) {
@@ -74,20 +74,29 @@ export function diffHeader(item: Pick<ItemRecord, "state" | "finish">, state: Ex
       const base = baseBranch ?? "the base branch";
       const { branch, baseCommit } = change.worktree;
       const pullRequest = item.finish?.pullRequest;
-      const [mark, head, where]: [Mark, string, string] =
-        item.state === "stopped"
-          ? [markOf("stopped"), "Not merged · stopped", "worktree "]
-          : item.state === "failed"
-            ? [markOf("failed"), "Not merged · failed", "worktree "]
-            : pullRequest !== undefined
-              ? [markOf("pull_request"), `${prName(pullRequest.url)} open`, "branch "]
-              : [markOf("pending", "not merged"), "Not merged yet", "branch "];
+      const sinceStart = `Compared with ${base} at ${short(baseCommit)}, where the item started.`;
+      const sinceStartColumns = { before: `Before · ${base} ${short(baseCommit)}`, after: `After · ${branch}` };
+      let line: { mark: Mark; head: string; where: string; sub: string; columns: { before: string; after: string } };
+      if (item.state === "stopped") line = { mark: markOf("stopped"), head: "Not merged · stopped", where: "worktree ", sub: sinceStart, columns: sinceStartColumns };
+      else if (item.state === "failed") line = { mark: markOf("failed"), head: "Not merged · failed", where: "worktree ", sub: sinceStart, columns: sinceStartColumns };
+      // A merged item never gets a worktree answer, so one shown next to a merge is the answer from before it.
+      else if (item.finish?.running === "merge" || item.finish?.merged !== undefined) line = { mark: markOf("running", "merging"), head: `Merging into ${base}…`, where: "branch ", sub: sinceStart, columns: sinceStartColumns };
+      else if (pullRequest !== undefined) line = { mark: markOf("pull_request"), head: `${prName(pullRequest.url)} open`, where: "branch ", sub: sinceStart, columns: sinceStartColumns };
+      else if ((item.outcome?.commits?.length ?? 0) === 0)
+        line = {
+          mark: markOf("pending", "not committed"),
+          head: "Nothing was committed",
+          where: "worktree ",
+          sub: `Uncommitted changes left in the worktree, compared with ${base} at ${short(baseCommit)}.`,
+          columns: { before: `Before · ${base} ${short(baseCommit)}`, after: "After · worktree" },
+        };
+      else line = { mark: markOf("pending", "not merged"), head: "Not merged yet", where: "branch ", sub: sinceStart, columns: sinceStartColumns };
       return {
-        mark,
-        head: [head],
-        details: [[where, { code: branch }], [counts(change)]],
-        sub: `Compared with ${base} at ${short(baseCommit)}, where the item started.`,
-        columns: { before: `Before · ${base} ${short(baseCommit)}`, after: `After · ${branch}` },
+        mark: line.mark,
+        head: [line.head],
+        details: [[line.where, { code: branch }], [counts(change)]],
+        sub: line.sub,
+        columns: line.columns,
       };
     }
   }

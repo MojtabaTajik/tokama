@@ -33,7 +33,7 @@ function Header({ header }: { readonly header: DiffHeader }) {
 }
 
 export interface ItemDiffTabProps {
-  readonly item: Pick<ItemRecord, "state" | "finish">;
+  readonly item: Pick<ItemRecord, "state" | "finish" | "outcome">;
   readonly state: ItemDiffState;
   /** The repo's base branch, for a change not merged yet. */
   readonly baseBranch: string | undefined;

@@ -1452,6 +1452,41 @@ describe("the Diff tab of an item not merged", () => {
     expect($$(".dv button").filter((el) => /merge/i.test(el.textContent ?? ""))).toEqual([]);
   });
 
+  const oneFile = {
+    kind: "worktree",
+    files: [{ path: "src/a.ts", status: "modified", added: 3, removed: 1, binary: false, cut: false, hunks: [] }],
+    moreFiles: 0,
+    cut: false,
+    worktree: { repoId: "orders-api", dir: ".tokama/wt/a", branch: "tokama/0b9f3c1e", baseCommit: "85a75e3c0ffee0000000000000000000000000ab" },
+  };
+  const openDiff = async (item: ItemRecord) => {
+    const fake = fakeBridge([item]);
+    const base = fake.query.getMockImplementation()!;
+    fake.query.mockImplementation(async (q: { type: string; itemId?: string }) => (q.type === "item_diff" ? { ok: true, data: oneFile } : base(q)));
+    await act(async () => root.render(<ItemDrawer bridge={fake.bridge} itemId={item.id} setup={setup} onClose={vi.fn()} />));
+    const diffTab = $$('[role="tab"]').find((el) => el.textContent === "Diff");
+    if (diffTab !== undefined) await click(diffTab);
+    return fake;
+  };
+  const headLines = () => $$(".dv-head-line, .dv-head-sub").map((el) => el.textContent);
+
+  it("says Merging while Merge runs, without asking for the change again, and goes back when the merge is refused", async () => {
+    const fake = await openDiff(finishable);
+    expect($(".dv-head-line")?.textContent).toContain("Not merged yet");
+    const asked = () => fake.query.mock.calls.filter(([q]) => (q as { type: string }).type === "item_diff").length;
+    const before = asked();
+    await fake.push({ ...finishable, finish: { ...finishable.finish!, running: "merge" } } as ItemRecord);
+    expect(headLines()).toEqual(["●Merging into main…·branch tokama/0b9f3c1e·1 file, +3 −1", "Compared with main at 85a75e3, where the item started."]);
+    expect(asked()).toBe(before);
+    await fake.push({ ...finishable, finish: { ...finishable.finish!, failed: { action: "merge", reason: "conflict", detail: "src/a.ts" } } } as ItemRecord);
+    expect($(".dv-head-line")?.textContent).toContain("Not merged yet");
+  });
+
+  it("says Nothing was committed for a done item with no commit", async () => {
+    await openDiff({ ...finishable, outcome: { kind: "done" } } as ItemRecord);
+    expect(headLines()).toEqual(["○Nothing was committed·worktree tokama/0b9f3c1e·1 file, +3 −1", "Uncommitted changes left in the worktree, compared with main at 85a75e3."]);
+  });
+
   it("keeps the Diff tab and its last answer while the change is asked for again after a merge", async () => {
     const worktree = { repoId: "orders-api", dir: ".tokama/wt/a", branch: "tokama/0b9f3c1e", baseCommit: "85a75e3c0ffee0000000000000000000000000ab" };
     const tree = { files: [{ path: "src/a.ts", status: "modified", added: 3, removed: 1, binary: false, cut: false, hunks: [] }], moreFiles: 0, cut: false };
@@ -1474,7 +1509,7 @@ describe("the Diff tab of an item not merged", () => {
     expect($$('[role="tab"]').map((el) => el.textContent)).toContain("Diff");
     expect(text('[role="tab"][aria-selected="true"]')).toBe("Diff");
     expect(document.activeElement).toBe(diffTab);
-    expect($(".dv-head-line")?.textContent).toContain("Not merged yet");
+    expect($(".dv-head-line")?.textContent).toContain("Merging into main…");
     await act(async () => second.resolve({ ok: true, data: { kind: "merged", ...tree, repoId: "orders-api", baseBranch: "main", commit: sha, parent: worktree.baseCommit } }));
     expect($(".dv-head-line")?.textContent).toContain("Merged as abc1234");
   });
