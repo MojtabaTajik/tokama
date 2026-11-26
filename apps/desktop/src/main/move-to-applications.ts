@@ -21,30 +21,21 @@ export interface MoveDeps {
   readonly moveToApplicationsFolder: (options: { conflictHandler: (type: ConflictType) => boolean }) => boolean;
   readonly showErrorBox: (title: string, content: string) => void;
   /**
-   * How many items (queued, running or waiting for the user) an engine that runs from the copy in Applications has: 0 when there is
-   * no such engine, undefined when that could not be told. The engine keeps running after its
-   * app quits, and a replace would remove the files it runs from.
+   * How many items (queued, running or waiting for the user) the engine of this Tokama home has: 0
+   * when none runs, undefined when that could not be told. This copy has started no engine yet, so
+   * a running one belongs to another copy. It keeps running after its app quits, and a replace
+   * would remove the files it runs from.
    */
   readonly itemsRunningInApplications: () => Promise<number | undefined>;
-}
-
-/** The copy of the app that the move replaces. */
-export const APPLICATIONS_COPY = "/Applications/Tokama.app";
-
-/** True when `command`, the command line of a process, runs a file of the app copy `app`. */
-export function runsFromCopy(command: string, app = APPLICATIONS_COPY): boolean {
-  return command.startsWith(`${app}/Contents/`);
 }
 
 /** Where `itemsRunningIn` looks for an engine, and how it asks it. */
 export interface CopyEngineDeps {
   readonly endpoint: () => { ok: true; value: { lockPath: string } } | { ok: false };
   readonly readLock: (lockPath: string) => { pid: number } | undefined;
-  readonly describe: (pid: number) => Promise<{ command: string } | undefined>;
+  readonly pidAlive: (pid: number) => boolean;
   /** Connects to a running engine without starting one. */
   readonly connect: () => Promise<ConnectResult>;
-  /** The app copy whose engine counts. Default: the copy in Applications. */
-  readonly app?: string;
 }
 
 export type ConnectResult =
@@ -58,21 +49,16 @@ export type ConnectResult =
   | { ok: false; error: Pick<ConnectError, "code" | "engine"> };
 
 /**
- * Unfinished items of an engine that runs from the app copy: 0 when there is none, undefined when
- * that could not be told. An engine of another API version cannot answer a board query; its
- * handshake count is used, which has only running and finishing items, not queued or waiting ones.
+ * Unfinished items of the engine that runs now: 0 when there is none (no lock, or a lock whose pid
+ * is gone), undefined when that could not be told. An engine of another API version cannot answer
+ * a board query; its handshake count is used, which has only running and finishing items, not
+ * queued or waiting ones.
  */
 export async function itemsRunningIn(deps: CopyEngineDeps): Promise<number | undefined> {
   const endpoint = deps.endpoint();
   if (!endpoint.ok) return undefined;
   const lock = deps.readLock(endpoint.value.lockPath);
-  if (lock === undefined) return 0;
-  const described = await deps.describe(lock.pid).then(
-    (found) => ({ found }),
-    () => undefined,
-  );
-  if (described === undefined) return undefined;
-  if (described.found === undefined || !runsFromCopy(described.found.command, deps.app)) return 0;
+  if (lock === undefined || !deps.pidAlive(lock.pid)) return 0;
   const connected = await deps.connect();
   if (!connected.ok) return connected.error.code === "unsupported_version" ? connected.error.engine?.runningItems : undefined;
   try {
@@ -116,8 +102,8 @@ export async function offerMove(deps: MoveDeps): Promise<void> {
     deps.showErrorBox(
       "Could not replace Tokama",
       running === undefined
-        ? "Tokama could not check whether the copy in Applications is running items. Open the copy in Applications, let its items finish or stop them, quit it, then open this copy again."
-        : `The copy of Tokama in Applications still has ${running} unfinished ${running === 1 ? "item" : "items"}. Let ${running === 1 ? "it" : "them"} finish or stop ${running === 1 ? "it" : "them"}, then open this copy again.`,
+        ? "Tokama could not check whether a running Tokama engine has unfinished items. Open Tokama from Applications, let its items finish or stop them, quit it, then open this copy again."
+        : `A running Tokama engine still has ${running} unfinished ${running === 1 ? "item" : "items"}. Let ${running === 1 ? "it" : "them"} finish or stop ${running === 1 ? "it" : "them"}, then open this copy again.`,
     );
     return;
   }

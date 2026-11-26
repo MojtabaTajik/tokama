@@ -26,8 +26,6 @@ export type ConnectionState =
 export interface OlderEngine {
   /** Items it runs now; absent when it is too old to say. */
   readonly runningItems?: number;
-  /** The user chose Wait: the app restarts it once nothing runs. */
-  readonly waiting: boolean;
   readonly lockPath: string;
   /** The pid in its lock, when it could be read. */
   readonly pid?: number;
@@ -56,7 +54,6 @@ export const CHANNELS = {
   connectionChanged: "tokama:connection:changed",
   retryConnection: "tokama:connection:retry",
   restartEngine: "tokama:connection:restart-engine",
-  waitForEngine: "tokama:connection:wait-engine",
   query: "tokama:engine:query",
   command: "tokama:engine:command",
   event: "tokama:engine:event",
@@ -194,8 +191,6 @@ export interface TokamaBridge {
   retryConnection(): Promise<void>;
   /** With an older engine on screen: stop it now and start this version's. Does nothing in any other state. */
   restartEngine(): Promise<void>;
-  /** With an older busy engine on screen: restart it once nothing runs. Does nothing in any other state. */
-  waitForEngine(): Promise<void>;
   /** Calls `listener` on every change; returns a function that stops it. */
   onConnection(listener: (state: ConnectionState) => void): () => void;
   /** Any engine API query. The main process validates it before it reaches the engine. */

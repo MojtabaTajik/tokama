@@ -20,13 +20,9 @@ const TEXT = {
   hint: "Tokama stops only its own older engine, after checking it is one. It never touches other processes.",
   lock: "lock",
   pid: "pid",
-  restart: "Restart engine",
-  restartNow: "Restart now",
-  wait: "Wait",
-  busyBefore: (count: number) => `It is running ${tasks(count)}. `,
-  busyMiddle: " (they pause and ask Retry or Stop) or ",
-  busyAfter: " until they finish.",
-  waiting: (count: number) => `Waiting for ${tasks(count)} to finish; then Tokama restarts the engine.`,
+  restartNow: "Restart engine now",
+  tryAgain: "Try again",
+  busy: (count: number) => `It is running ${tasks(count)}. Restarting now pauses them: they wait at Retry step or Stop.`,
   updating: "Updating engine…",
 } as const;
 
@@ -62,15 +58,13 @@ export function EngineHealth({ state }: { readonly state: ConnectionState }) {
 
 export interface FailureActions {
   readonly onRetry: () => void;
-  /** With an older engine: stop it and start this version's. */
+  /** With an older engine: stop it, whatever it runs, and start this version's. */
   readonly onRestart?: () => void;
-  /** With an older busy engine: restart it once nothing runs. */
-  readonly onWait?: () => void;
 }
 
-export function ConnectionFailure({ state, onRetry, onRestart, onWait }: { readonly state: Extract<ConnectionState, { status: "failed" }> } & FailureActions) {
+export function ConnectionFailure({ state, onRetry, onRestart }: { readonly state: Extract<ConnectionState, { status: "failed" }> } & FailureActions) {
   const older = state.older;
-  if (older !== undefined && onRestart !== undefined) return <OlderEngine state={state} older={older} onRestart={onRestart} {...(onWait !== undefined && { onWait })} />;
+  if (older !== undefined && onRestart !== undefined) return <OlderEngine state={state} older={older} onRestart={onRestart} onRetry={onRetry} />;
   return (
     <section className="failure" aria-label={TEXT.failed}>
       <p className="failure-title">
@@ -93,17 +87,17 @@ export function ConnectionFailure({ state, onRetry, onRestart, onWait }: { reado
   );
 }
 
-/** An older engine of this app still runs: restart it, or (when busy) wait until it is idle. */
+/** An older engine of this app still runs and is busy, or did not say: restart it now, or check again later. */
 function OlderEngine({
   state,
   older,
   onRestart,
-  onWait,
+  onRetry,
 }: {
   readonly state: Extract<ConnectionState, { status: "failed" }>;
   readonly older: NonNullable<Extract<ConnectionState, { status: "failed" }>["older"]>;
   readonly onRestart: () => void;
-  readonly onWait?: () => void;
+  readonly onRetry: () => void;
 }) {
   const busy = older.runningItems !== undefined && older.runningItems > 0 ? older.runningItems : undefined;
   return (
@@ -123,32 +117,11 @@ function OlderEngine({
         <span className="label">{TEXT.log} </span>
         <span className="mono">{state.logPath}</span>
       </p>
+      {busy !== undefined && <p className="detail hint">{TEXT.busy(busy)}</p>}
       <Button variant="primary" className="retry" onClick={onRestart}>
-        {TEXT.restart}
+        {TEXT.restartNow}
       </Button>
-      {busy !== undefined && (
-        <p className="detail hint">
-          {older.waiting ? (
-            TEXT.waiting(busy)
-          ) : (
-            <>
-              {TEXT.busyBefore(busy)}
-              <Button variant="link" inline onClick={onRestart}>
-                {TEXT.restartNow}
-              </Button>
-              {TEXT.busyMiddle}
-              {onWait === undefined ? (
-                TEXT.wait.toLowerCase()
-              ) : (
-                <Button variant="link" inline onClick={onWait}>
-                  {TEXT.wait}
-                </Button>
-              )}
-              {TEXT.busyAfter}
-            </>
-          )}
-        </p>
-      )}
+      <Button onClick={onRetry}>{TEXT.tryAgain}</Button>
     </section>
   );
 }

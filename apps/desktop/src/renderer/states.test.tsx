@@ -112,38 +112,30 @@ describe("engine not running", () => {
 });
 
 describe("an older engine still running", () => {
-  const older = (runningItems: number | undefined, waiting = false): ConnectionState => ({
+  const older = (runningItems: number | undefined): ConnectionState => ({
     status: "failed",
     reason: "An older Tokama engine is still running. Restart it?",
     logPath: "/home/a/.tokama/run/engine.log",
     logTail: [],
-    older: { lockPath: "/home/a/.tokama/run/engine.lock", pid: 48211, waiting, ...(runningItems !== undefined && { runningItems }) },
+    older: { lockPath: "/home/a/.tokama/run/engine.lock", pid: 48211, ...(runningItems !== undefined && { runningItems }) },
   });
 
-  it("asks to restart it, with the lock, the pid and the log, and Restart engine restarts it", async () => {
+  it("asks to restart it, with the lock, the pid and the log; Restart engine now restarts it and Try again checks again", async () => {
     const fake = await mount(fakeBridge(older(undefined)));
     expect(text(".board .failure")).toContain("An older Tokama engine is still running. Restart it?");
     expect(text(".board .failure .log")).toBe("lock  /home/a/.tokama/run/engine.lock\npid   48211");
     expect(text(".board .failure")).toContain("/home/a/.tokama/run/engine.log");
-    expect($$(".board .failure button").map((el) => el.textContent)).toEqual(["Restart engine"]);
+    expect($$(".board .failure button").map((el) => el.textContent)).toEqual(["Restart engine now", "Try again"]);
     await click($(".board .failure .retry"));
     expect(fake.bridge.restartEngine).toHaveBeenCalledOnce();
+    await click($$(".board .failure button")[1]!);
+    expect(fake.bridge.retryConnection).toHaveBeenCalledOnce();
   });
 
-  it("when busy, offers Restart now or Wait", async () => {
-    const fake = await mount(fakeBridge(older(3)));
-    expect(text(".board .failure .hint")).toBe("It is running 3 tasks. Restart now (they pause and ask Retry or Stop) or Wait until they finish.");
-    expect($$(".board .failure button").map((el) => el.textContent)).toEqual(["Restart engine", "Restart now", "Wait"]);
-    await click($$(".board .failure .btn-link")[1]!);
-    expect(fake.bridge.waitForEngine).toHaveBeenCalledOnce();
-    await click($$(".board .failure .btn-link")[0]!);
-    expect(fake.bridge.restartEngine).toHaveBeenCalledOnce();
-  });
-
-  it("while waiting, says so and still offers Restart engine", async () => {
-    await mount(fakeBridge(older(1, true)));
-    expect(text(".board .failure .hint")).toBe("Waiting for 1 task to finish; then Tokama restarts the engine.");
-    expect($$(".board .failure button").map((el) => el.textContent)).toEqual(["Restart engine"]);
+  it("when busy, says how many tasks run, and offers no Wait", async () => {
+    await mount(fakeBridge(older(3)));
+    expect(text(".board .failure .hint")).toBe("It is running 3 tasks. Restarting now pauses them: they wait at Retry step or Stop.");
+    expect($$(".board .failure button").map((el) => el.textContent)).toEqual(["Restart engine now", "Try again"]);
   });
 
   it("says Updating engine while it replaces it", async () => {

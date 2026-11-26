@@ -1,3 +1,4 @@
+import type { StopResult } from "@tokama/client";
 import { describe, expect, it, vi } from "vitest";
 import type { UpdateState } from "../../shared/update.js";
 import { createUpdateController } from "./controller.js";
@@ -7,9 +8,8 @@ import { createQuitHandler } from "./quit.js";
 import { next } from "./state.js";
 
 /** The install's collaborators, as fakes that write their calls into one list. */
-function setup(options: { state?: UpdateState; running?: number | undefined; second?: number | undefined; stopOk?: boolean; quitThrows?: boolean; engineId?: string | undefined } = {}) {
+function setup(options: { state?: UpdateState; running?: number | undefined; stop?: StopResult | "throws"; quitThrows?: boolean; engineId?: string | undefined } = {}) {
   const calls: string[] = [];
-  let counted = 0;
   let state: UpdateState = options.state ?? { status: "ready", version: "0.2.0" };
   let installError: (() => void) | undefined;
   let timer: (() => void) | undefined;
@@ -23,18 +23,17 @@ function setup(options: { state?: UpdateState; running?: number | undefined; sec
     },
     runningNow: async () => {
       calls.push("running");
-      counted += 1;
-      if (counted > 1 && "second" in options) return options.second;
       return "running" in options ? options.running : 0;
     },
     suspendWatch: async () => {
       calls.push("suspend");
-      return options.engineId === undefined && "engineId" in options ? {} : { engineId: options.engineId ?? "engine-1" };
+      return options.engineId === undefined && "engineId" in options ? {} : { engineId: options.engineId ?? "engine-1", engine: { apiVersion: 15, runningItems: 0 } };
     },
     resumeWatch: () => calls.push("resume"),
-    stopEngine: async (engineId) => {
-      calls.push(`stop:${engineId ?? "-"}`);
-      return { ok: options.stopOk ?? true };
+    stopEngine: async ({ engineId, engine }) => {
+      calls.push(`stop:${engineId ?? "-"}:${engine?.apiVersion ?? "-"}`);
+      if (options.stop === "throws") throw new Error("no");
+      return options.stop ?? { kind: "stopped", forced: false };
     },
     quitAndInstall: (relaunch) => {
       calls.push(`quitAndInstall:${relaunch}`);
@@ -81,8 +80,16 @@ describe("the install", () => {
   it("stops the engine it was connected to, then hands over, in that order", async () => {
     const { deps, calls, state } = setup();
     expect(await createInstaller(deps)({ relaunch: true })).toEqual({ ok: true });
-    expect(calls).toEqual(["running", "state:installing", "suspend", "running", "stop:engine-1", "quitAndInstall:true"]);
+    expect(calls).toEqual(["running", "state:installing", "suspend", "stop:engine-1:15", "quitAndInstall:true"]);
     expect(state().status).toBe("installing");
+  });
+
+  it("hands over after an engine that another app replaced, or that was killed", async () => {
+    for (const stop of [{ kind: "replaced" }, { kind: "stopped", forced: true }] as const) {
+      const { deps, calls } = setup({ stop });
+      expect(await createInstaller(deps)({ relaunch: true })).toEqual({ ok: true });
+      expect(calls.at(-1)).toBe("quitAndInstall:true");
+    }
   });
 
   it("passes relaunch false on to the installer", async () => {
@@ -91,11 +98,11 @@ describe("the install", () => {
     expect(calls.at(-1)).toBe("quitAndInstall:false");
   });
 
-  it("counts again once the watch let go, and puts everything back when an item started meanwhile", async () => {
-    for (const second of [1, undefined]) {
-      const { deps, calls, state } = setup({ running: 0, second });
-      expect(await createInstaller(deps)({ relaunch: true })).toEqual({ ok: false, reason: "busy", ...(second !== undefined && { running: second }) });
-      expect(calls).toEqual(["running", "state:installing", "suspend", "running", "resume", "state:ready"]);
+  it("puts everything back and hands nothing over when the engine refuses because an item started meanwhile", async () => {
+    for (const refused of [{ kind: "refused", runningItems: 1 }, { kind: "refused" }] as const) {
+      const { deps, calls, state } = setup({ running: 0, stop: refused });
+      expect(await createInstaller(deps)({ relaunch: true })).toEqual({ ok: false, reason: "busy", ...("runningItems" in refused && { running: refused.runningItems }) });
+      expect(calls).toEqual(["running", "state:installing", "suspend", "stop:engine-1:15", "resume", "state:ready"]);
       expect(state()).toEqual({ status: "ready", version: "0.2.0" });
     }
   });
@@ -103,16 +110,18 @@ describe("the install", () => {
   it("stops without an engine id when the connection had none", async () => {
     const { deps, calls } = setup({ engineId: undefined });
     await createInstaller(deps)({ relaunch: true });
-    expect(calls).toContain("stop:-");
+    expect(calls).toContain("stop:-:-");
   });
 
   it("puts the engine back and shows the error when it cannot stop it", async () => {
-    const { deps, calls, state, reported } = setup({ stopOk: false });
-    expect(await createInstaller(deps)({ relaunch: true })).toEqual({ ok: false, reason: "failed" });
-    expect(calls).toEqual(["running", "state:installing", "suspend", "running", "stop:engine-1", "resume", "state:error"]);
-    expect(calls).not.toContain("quitAndInstall:true");
-    expect(state()).toEqual({ status: "error", stage: "install", at: 7, version: "0.2.0" });
-    expect(reported).toEqual(["update_install_failed"]);
+    for (const stop of [{ kind: "still_running", pid: 4821 }, "throws"] as const) {
+      const { deps, calls, state, reported } = setup({ stop });
+      expect(await createInstaller(deps)({ relaunch: true })).toEqual({ ok: false, reason: "failed" });
+      expect(calls).toEqual(["running", "state:installing", "suspend", "stop:engine-1:15", "resume", "state:error"]);
+      expect(calls).not.toContain("quitAndInstall:true");
+      expect(state()).toEqual({ status: "error", stage: "install", at: 7, version: "0.2.0" });
+      expect(reported).toEqual(["update_install_failed"]);
+    }
   });
 
   it("stalls, and puts nothing back, when the installer throws at once: it may be armed already", async () => {
@@ -226,7 +235,7 @@ describe("the quit", () => {
   });
 
   it("quits without installing when the engine cannot be stopped", async () => {
-    const { press, events, calls } = quitSetup({ stopOk: false });
+    const { press, events, calls } = quitSetup({ stop: { kind: "still_running" } });
     press();
     await flush();
     expect(calls).toContain("resume");

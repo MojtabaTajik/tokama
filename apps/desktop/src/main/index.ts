@@ -2,7 +2,7 @@
 // @tokama/client. The engine runs detached and keeps running when the app quits.
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
-import { connect, requestShutdown } from "@tokama/client";
+import { connect, type EngineInfo, stopEngine, type StopResult } from "@tokama/client";
 import { API_VERSION, createProcessRunner, defaultEngineDir, engineEndpoint, err, pidAlive, posixEngineProcesses, readEngineLock, resolveToolsPath, type ToolsPath } from "@tokama/core";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, powerMonitor, screen, session, shell } from "electron";
 import { type BridgeEvent, CHANNELS } from "../shared/bridge.js";
@@ -15,10 +15,9 @@ import { type ConnectionWatch, watchConnection } from "./connection.js";
 import { type DesktopStore, desktopStore } from "./desktop-store.js";
 import { DIAGNOSTICS_URL, diagnosticsService, saveToFile } from "./diagnostics-send.js";
 import { createReporter, mainErrorReport, rateLimit, rendererErrorReport, rendererGoneKind, rendererUsageReport, type Reporter, runMarker } from "./diagnostics.js";
-import { attachTracker, engineCommand, engineCommandEnd, engineDirFor, engineEnv, engineRuntime, readLogTail, toolsPathInfo } from "./engine.js";
+import { attachTracker, engineCommand, engineDirFor, engineEnv, engineRuntime, readLogTail, toolsPathInfo } from "./engine.js";
 import { showMainWindow } from "./main-window.js";
 import { itemsRunningIn, offerMove, shouldOfferMove } from "./move-to-applications.js";
-import { replaceOlderEngine, type ReplaceResult } from "./replace.js";
 import { fakeUpdateEngine, fakeUpdateMode } from "./testing/update.js";
 import { createUpdateController } from "./update/controller.js";
 import { macUpdateEngine } from "./update/electron-updater.js";
@@ -124,15 +123,19 @@ function engineLocation() {
   return { dir, endpoint, lockPath: endpoint.ok ? endpoint.value.lockPath : join(dir, "engine.lock") };
 }
 
-/** Stops this app's own engine (the older one found, or the one an update replaces); the engine of another home is left alone. */
-function stopOwnEngine(expectedEngineId: string | undefined): Promise<ReplaceResult> {
-  const { dir, lockPath } = engineLocation();
-  return replaceOlderEngine({
-    ...(expectedEngineId !== undefined && { expectedEngineId }),
-    dir,
-    engine: { lockPath, commandEnd: engineCommandEnd(dir, sample), otherLocks: [join(homedir(), ".tokama", "engine.lock")] },
-    processes: posixEngineProcesses,
-    requestShutdown: (engineDir) => requestShutdown(engineDir),
+/**
+ * Stops this app's own engine (the older one found, or the one an update replaces); the engine of
+ * another home is left alone. Always allowed to signal it after it was asked: `ifIdle` decides
+ * whether that may interrupt running items.
+ */
+function stopAppEngine(request: { readonly engineId: string | undefined; readonly engine: EngineInfo | undefined; readonly ifIdle: boolean }): Promise<StopResult> {
+  return stopEngine({
+    dir: engineLocation().dir,
+    ...(request.engineId !== undefined && { expectedEngineId: request.engineId }),
+    ...(request.engine !== undefined && { engine: request.engine }),
+    ifIdle: request.ifIdle,
+    force: true,
+    signal: posixEngineProcesses.signal,
   });
 }
 
@@ -156,8 +159,8 @@ function startWatch(onConnected: () => void, onItemEvent: (event: BridgeEvent["e
     apiVersion: API_VERSION,
     // Only a packaged app compares builds; a dev build is 0.0.0 and never replaces an engine for it.
     ...(app.isPackaged && { appVersion: app.getVersion() }),
-    // Only this app's own engine for this dir is stopped; the home lock is the real engine's.
-    replaceOlder: stopOwnEngine,
+    // Only this app's own engine for this dir is stopped.
+    stopEngine: stopAppEngine,
     olderLock: () => {
       const lock = readEngineLock(lockPath);
       return { lockPath, ...(lock !== undefined && { pid: lock.pid, engineId: lock.engineId }) };
@@ -227,13 +230,13 @@ if (!primary) app.quit();
 let showMain: (() => void) | undefined;
 app.on("second-instance", () => showMain?.());
 
-/** Unfinished items of an engine that runs from the copy of the app in Applications: 0 when there is none, undefined when that could not be told. */
+/** Unfinished items of the engine that runs in this engine dir: 0 when there is none, undefined when that could not be told. */
 function itemsRunningInApplications(): Promise<number | undefined> {
   const dir = engineDirFor(defaultEngineDir(process.env, homedir()), sample);
   return itemsRunningIn({
     endpoint: () => engineEndpoint(dir),
     readLock: readEngineLock,
-    describe: (pid) => posixEngineProcesses.describe(pid),
+    pidAlive,
     // No start: this only asks an engine that already runs.
     connect: () => connect({ dir }),
   });
@@ -389,7 +392,6 @@ void app.whenReady().then(async () => {
   handle(CHANNELS.getConnection, () => watch.state());
   handle(CHANNELS.retryConnection, () => watch.retry());
   handle(CHANNELS.restartEngine, () => watch.restartEngine());
-  handle(CHANNELS.waitForEngine, () => watch.waitForEngine());
   const api = engineApi(() => watch.client());
   handle(CHANNELS.query, (query) => api.query(query));
   handle(CHANNELS.command, (command) => api.command(command));
@@ -483,7 +485,8 @@ void app.whenReady().then(async () => {
           runningNow: engineRunningNow,
           suspendWatch: () => watch.suspend(),
           resumeWatch: () => watch.resume(),
-          stopEngine: stopOwnEngine,
+          // Only an idle engine is stopped: it refuses if an item started since the count.
+          stopEngine: (request) => stopAppEngine({ ...request, ifIdle: true }),
           quitAndInstall: (relaunch) => updateEngine.quitAndInstall(relaunch),
           quitApp: () => app.quit(),
           watchInstallError: updates.watchInstallError,

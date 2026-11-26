@@ -39,8 +39,6 @@ export interface MainAreaProps {
   readonly onRetryConnection: () => void;
   /** With an older engine still running: replace it now. */
   readonly onRestartEngine?: () => void;
-  /** With an older busy engine: replace it once nothing runs. */
-  readonly onWaitForEngine?: () => void;
   /** Undefined until the first load. */
   readonly setup: Setup | undefined;
   /** The open items. */
@@ -119,7 +117,6 @@ function Body(props: MainAreaProps & { readonly template: Setup["templates"][num
         state={connection}
         onRetry={onRetryConnection}
         {...(props.onRestartEngine !== undefined && { onRestart: props.onRestartEngine })}
-        {...(props.onWaitForEngine !== undefined && { onWait: props.onWaitForEngine })}
       />
     );
   }

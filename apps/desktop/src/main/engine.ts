@@ -149,14 +149,3 @@ export function readLogTail(path: string, maxLines = 8, maxBytes = 4096): string
 function absoluteEntries(path: string): string[] {
   return path.split(delimiter).filter((entry) => isAbsolute(entry));
 }
-
-/**
- * How the command line of this app's engine for `dir` ends, from the entry file on, as
- * engineCommand builds it. The entry is matched by its last path segments, so an engine started
- * from another checkout of the app, for the same engine dir, counts as this app's own too.
- */
-export function engineCommandEnd(dir: string, sample = false): string {
-  return `${ENTRY_END} --dir ${dir}${sample ? " --sample" : ""}`;
-}
-
-const ENTRY_END = "/engine/dist/main.js";

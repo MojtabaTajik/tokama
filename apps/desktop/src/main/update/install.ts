@@ -4,10 +4,13 @@
 // The order, each step only after the one before it succeeded: the update is ready; the engine
 // itself says that nothing runs; the state is "installing"; the connection watch lets go of the
 // engine (a watch left open would start a new engine from the old app while the old one stops);
-// the app's own engine is stopped; the installer takes over, checks that the new app is signed by
-// the same team, swaps it and (on a click) starts it. A failure to stop the engine puts it back
-// from the old app, shows the error and keeps the old version. After the hand-over nothing is put
-// back and the installer is never asked again (see handOver).
+// the app's own engine is stopped, and only if it is still idle (the engine itself checks, so an
+// item that started since the count is never stopped: the install is called off and the engine
+// stays); the installer takes over, checks that the new app is signed by the same team, swaps it
+// and (on a click) starts it. A failure to stop the engine puts it back from the old app, shows
+// the error and keeps the old version. After the hand-over nothing is put back and the installer
+// is never asked again (see handOver).
+import type { EngineInfo, StopResult } from "@tokama/client";
 import type { InstallResult, UpdateState } from "../../shared/update.js";
 import type { UpdateEvent } from "./state.js";
 
@@ -16,11 +19,14 @@ export interface InstallDeps {
   dispatch(event: UpdateEvent): void;
   /** Items the engine runs now: 0 when there is no engine, undefined when that could not be told. */
   runningNow(): Promise<number | undefined>;
-  /** Closes the engine connection for good until `resumeWatch`; gives the id of the engine it was connected to. */
-  suspendWatch(): Promise<{ readonly engineId?: string }>;
+  /** Closes the engine connection for good until `resumeWatch`; gives the id and handshake of the engine it was connected to. */
+  suspendWatch(): Promise<{ readonly engineId?: string; readonly engine?: EngineInfo }>;
   resumeWatch(): void;
-  /** Stops the app's own engine; `engineId` is the one the connection had, so another engine's lock is left alone. */
-  stopEngine(engineId: string | undefined): Promise<{ readonly ok: boolean }>;
+  /**
+   * Stops the app's own engine only while it is idle (`ifIdle`); `engineId` is the one the
+   * connection had, so another engine's lock is left alone.
+   */
+  stopEngine(request: { readonly engineId: string | undefined; readonly engine: EngineInfo | undefined }): Promise<StopResult>;
   /** Hands over to the installer, which quits the app. Called at most once per app run. */
   quitAndInstall(relaunch: boolean): void;
   /** Quits the app. */
@@ -66,16 +72,15 @@ export function createInstaller(deps: InstallDeps): (options: InstallOptions) =>
       // The state may have changed while the engine was asked.
       if (deps.state().status !== "ready") return { ok: false, reason: "not_ready" };
       deps.dispatch({ type: "install_started" });
-      const { engineId } = await deps.suspendWatch();
-      // Counted again with the watch let go: an item started since the first count must not be stopped.
-      const again = await deps.runningNow();
-      if (again === undefined || again > 0) {
+      const { engineId, engine } = await deps.suspendWatch();
+      // An item that started since the count is not stopped: the engine refuses while one runs.
+      const stopped = await deps.stopEngine({ engineId, engine }).catch((): StopResult => ({ kind: "still_running" }));
+      if (stopped.kind === "refused") {
         deps.resumeWatch();
         deps.dispatch({ type: "install_aborted" });
-        return { ok: false, reason: "busy", ...(again !== undefined && { running: again }) };
+        return { ok: false, reason: "busy", ...(stopped.runningItems !== undefined && { running: stopped.runningItems }) };
       }
-      const stopped = await deps.stopEngine(engineId).catch(() => ({ ok: false }));
-      if (!stopped.ok) return recover(deps, "failed");
+      if (stopped.kind === "still_running") return recover(deps, "failed");
       return handOver(deps, options);
     } finally {
       running = false;
