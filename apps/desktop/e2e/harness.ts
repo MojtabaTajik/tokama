@@ -357,5 +357,18 @@ export const row = (page: Page, title: string): Locator =>
 export const group = (page: Page, name: string): Locator => page.locator(`section.pl-group[aria-label="${name}"]`);
 export const sidebarRow = (page: Page, name: string): Locator => page.locator(".sb-main", { has: page.getByText(name, { exact: true }) });
 export const drawer = (page: Page): Locator => page.locator(".drawer");
+/**
+ * Opens the item's drawer by a click on its row and takes the pointer off the list. The open drawer
+ * narrows the list and makes its rows taller, which puts another row's agent label under the pointer
+ * left on the clicked row; that label's tooltip then opens, stays open while the pointer is on it,
+ * covers the labels a test hovers next, and takes the first Escape instead of the drawer. The pointer
+ * leaves before the list moves, and no tooltip is left open when this returns.
+ */
+export async function openRow(page: Page, title: string): Promise<void> {
+  await row(page, title).click();
+  await page.mouse.move(0, 0);
+  await drawer(page).getByRole("heading", { name: title }).waitFor();
+  await page.locator('[role="tooltip"]').waitFor({ state: "detached" });
+}
 /** The titles of all rows on screen, in order. */
 export const titles = (page: Page): Promise<string[]> => page.locator(".pl-title").allTextContents();
