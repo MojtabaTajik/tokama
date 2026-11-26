@@ -1,29 +1,62 @@
-import { describe, expect, it } from "vitest";
+import { parseItemRecord } from "@tokama/core";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ago, sampleItems } from "./data.js";
 
-const startOfDay = (now: number): number => new Date(now).setHours(0, 0, 0, 0);
+const MINUTE = 60_000;
 
-describe("sample item times", () => {
-  it("are minutes before now in the middle of the day", () => {
+describe("ago", () => {
+  it("is a fixed offset before now", () => {
     const now = new Date(2026, 10, 25, 14, 0, 0).getTime();
-    expect(ago(now, 30)).toBe(now - 30 * 60_000);
-    expect(ago(now, 180)).toBe(now - 180 * 60_000);
+    expect(ago(now, 30)).toBe(now - 30 * MINUTE);
+    expect(ago(now, 180)).toBe(now - 180 * MINUTE);
+  });
+});
+
+describe("sample items", () => {
+  let zone: string | undefined;
+  beforeEach(() => {
+    zone = process.env["TZ"];
+  });
+  afterEach(() => {
+    if (zone === undefined) delete process.env["TZ"];
+    else process.env["TZ"] = zone;
   });
 
-  // Just after midnight a plain "180 minutes ago" falls into yesterday, and the app's default
-  // range (today) would hide the finished sample items.
-  it.each([[0, 0, 0], [0, 1, 0], [0, 58, 0], [1, 30, 0], [2, 59, 59], [3, 0, 0]])("stay within today at %i:%i:%i", (hour, minute, second) => {
-    const now = new Date(2026, 10, 25, hour, minute, second).getTime();
-    const times = sampleItems(now).map((item) => item.createdAt);
-    for (const time of times) {
-      expect(time).toBeGreaterThanOrEqual(startOfDay(now));
-      expect(time).toBeLessThanOrEqual(now);
+  // The same shape at any hour and in any zone, also in the first hours after midnight, where the
+  // oldest items fall into yesterday. Just after 00:00 the items once came out with no time at all.
+  const NOWS = [
+    ["00:00", 0, 0],
+    ["00:05", 0, 5],
+    ["01:30", 1, 30],
+    ["12:00", 12, 0],
+  ] as const;
+  const ZONES = ["UTC", "Europe/Amsterdam"] as const;
+  const BASE_NOW = Date.UTC(2026, 10, 25, 12, 0, 0);
+  const BASE_AGES = sampleItems(BASE_NOW).map((item) => BASE_NOW - item.createdAt);
+
+  it.each(ZONES.flatMap((zoneName) => NOWS.map(([label, hour, minute]) => [zoneName, label, hour, minute] as const)))("in %s at %s: valid, with the same ages as at noon", (zoneName, _label, hour, minute) => {
+    process.env["TZ"] = zoneName;
+    expect(new Date(2026, 10, 25).getTimezoneOffset()).toBe(zoneName === "UTC" ? 0 : -60);
+    // The local wall-clock time of the zone, on a day without a clock change.
+    const now = new Date(2026, 10, 25, hour, minute, 0).getTime();
+    const items = sampleItems(now);
+    expect(items.map((item) => now - item.createdAt)).toEqual(BASE_AGES);
+    for (const item of items) {
+      const parsed = parseItemRecord(item);
+      expect(parsed.ok, `${item.id}: ${JSON.stringify(parsed.ok ? [] : parsed.error.issues)}`).toBe(true);
+      expect(item.createdAt).toBeLessThan(now);
     }
+    // The finished item's first step waited for approval, and said so.
+    const waited = items.flatMap((item) => item.steps.map((step) => step["waitedMs"])).filter((ms): ms is number => typeof ms === "number");
+    expect(waited.length).toBeGreaterThan(0);
+    for (const ms of waited) expect(ms).toBeGreaterThan(0);
   });
 
-  it("keep their order close to midnight", () => {
-    const now = new Date(2026, 10, 25, 0, 58, 0).getTime();
+  it("keep their order and their offsets", () => {
+    const now = new Date(2026, 10, 25, 0, 5, 0).getTime();
     expect(ago(now, 6)).toBeGreaterThan(ago(now, 41));
     expect(ago(now, 41)).toBeGreaterThan(ago(now, 180));
+    expect(BASE_AGES).toContain(180 * MINUTE);
+    expect(BASE_AGES).toContain(2 * MINUTE);
   });
 });

@@ -15,9 +15,12 @@ flow(
 
     // Day headers in local time, each with a count; the first page holds 50 rows.
     const headers = await done.locator(".pl-day").allTextContents();
-    expect(headers[0]).toMatch(/^Today\d+$/);
-    expect(headers[1]).toMatch(/^Yesterday\d+$/);
-    expect(headers[2]).toMatch(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{1,2} [A-Z][a-z]{2}\d+$/);
+    // The sample's own finished items are hours old, so right after midnight they too are on Yesterday
+    // and there is no Today header; the history starts at yesterday.
+    const weekday = /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{1,2} [A-Z][a-z]{2}\d+$/;
+    const yesterday = /^Today\d+$/.test(headers[0]!) ? 1 : 0;
+    expect(headers[yesterday]).toMatch(/^Yesterday\d+$/);
+    expect(headers[yesterday + 1]).toMatch(weekday);
     expect(await done.locator(".pl-row").count()).toBe(50);
     const showing = (await done.locator(".pl-more").textContent()) ?? "";
     expect(showing).toMatch(/^Load olderShowing 50 of \d+$/);

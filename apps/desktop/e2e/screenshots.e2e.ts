@@ -3,7 +3,7 @@
 // fonts and anti-aliasing differ between systems.
 import type { Page } from "playwright-core";
 import { expect } from "vitest";
-import { drawer, flow, row, segment, sidebarRow } from "./harness.js";
+import { drawer, flow, openRow, row, segment, sidebarRow } from "./harness.js";
 
 flow("takes screenshots of the list, workflow board, drawer, New work and an empty state", async ({ page, resize, screenshot }) => {
   await row(page, "Fix rounding in invoice totals").waitFor();
@@ -76,15 +76,16 @@ const filterFits = (page: Page) =>
 flow("the whole status filter and its range picker stay visible next to the drawer, at its default and widest width", async ({ page, resize, screenshot }) => {
   await row(page, "Fix rounding in invoice totals").waitFor();
   await resize(1500, 700);
-  // Done shows the range picker too.
+  // Done shows the range picker too. The week, not today: in the first hours after midnight the
+  // sample's finished items ended yesterday.
   await segment(page, "Done").click();
+  await page.locator(".range").selectOption("7d");
 
   const fits = () => expect.poll(() => filterFits(page)).toEqual({ count: 5, ranges: 1, barInMain: true, clipped: false, problems: [], rangeProblems: 0 });
   const floating = (expected: boolean) => expect.poll(async () => (await page.locator(".shell").getAttribute("data-drawer-floating")) === "true").toBe(expected);
   for (const [label, key] of [["default", undefined], ["widest", "End"]] as const) {
     await resize(1500, 700);
-    await row(page, "Slow query on order_items").click();
-    await drawer(page).waitFor();
+    await openRow(page, "Slow query on order_items");
     await page.getByRole("separator", { name: "Resize drawer" }).focus();
     if (key !== undefined) await page.keyboard.press(key);
 
@@ -107,8 +108,7 @@ flow("the whole status filter and its range picker stay visible next to the draw
 
   // Three-digit counts, with the widest drawer docked.
   await resize(1500, 700);
-  await row(page, "Slow query on order_items").click();
-  await drawer(page).waitFor();
+  await openRow(page, "Slow query on order_items");
   await page.getByRole("separator", { name: "Resize drawer" }).focus();
   await page.keyboard.press("End");
   await resize(1024, 700);
