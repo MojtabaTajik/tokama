@@ -1,18 +1,23 @@
-// The renderer's engine state: the connection, the setup and the items. The setup and
-// the board load in parallel on every return to "connected" (events may have been missed while
-// away) and on a `setup_changed` event, and `item_updated` events keep the items current in between.
+// The renderer's engine state: the connection, the setup, the open items and the counts of the
+// finished ones. The setup and the board load in parallel on every return to "connected" (events
+// may have been missed while away) and on a `setup_changed` event, and `item_updated` events keep
+// the open items current in between. An item that finishes leaves the items, and the board alone
+// loads again shortly after for its counts; the finished rows come from item_list pages.
 // The setup alone loads again when the window gets focus or on refreshSetup(), so the engine's
 // health checks (a CLI logged in meanwhile) show without a restart. A failed load is retried once after a short delay;
 // after that the last data stays, marked stale, until a retry succeeds. A failed connection
 // drops the data.
-import type { ItemRecord, Setup } from "@tokama/core";
+import type { BoardCount, BoardResult, ItemRecord, Setup } from "@tokama/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../shared/bridge.js";
+import { isOpen } from "./model.js";
 
 export interface EngineData {
   readonly setup: Setup;
-  /** Every item by id, in board order, with items started later at the end. */
+  /** The open items by id, in board order, with items started later at the end. */
   readonly items: ReadonlyMap<string, ItemRecord>;
+  /** The done and failed items, counted by start day, workflow and repos. */
+  readonly counts: readonly BoardCount[];
 }
 
 export interface EngineView {
@@ -31,15 +36,28 @@ export interface EngineView {
 
 /** Delay before the one automatic retry of a failed load. */
 export const RETRY_DELAY_MS = 2_000;
+/** Wait after an item finishes before the board loads again, so a burst of events loads once. */
+export const COUNTS_DELAY_MS = 150;
 
-type Loaded = { readonly ok: true; readonly data: EngineData } | { readonly ok: false; readonly error: string };
+type Loaded = { readonly ok: true; readonly setup: Setup; readonly board: BoardResult } | { readonly ok: false; readonly error: string };
 
 /** The setup, then the board. */
 async function load(bridge: TokamaBridge): Promise<Loaded> {
   const [setup, board] = await Promise.all([bridge.query({ type: "setup" }), bridge.query({ type: "board" })]);
   if (!setup.ok) return { ok: false, error: setup.error.message };
   if (!board.ok) return { ok: false, error: board.error.message };
-  return { ok: true, data: { setup: setup.data, items: new Map(board.data.items.map((item) => [item.id, item])) } };
+  return { ok: true, setup: setup.data, board: board.data };
+}
+
+/** The open items with the given updates, which are newer: an item that finished leaves. */
+function openItems(items: Iterable<ItemRecord>, updates: Iterable<ItemRecord>): Map<string, ItemRecord> {
+  const open = new Map<string, ItemRecord>();
+  for (const item of items) open.set(item.id, item);
+  for (const item of updates) {
+    if (isOpen(item)) open.set(item.id, item);
+    else open.delete(item.id);
+  }
+  return open;
 }
 
 export function useEngine(bridge: TokamaBridge, retryDelayMs = RETRY_DELAY_MS): EngineView {
@@ -48,8 +66,10 @@ export function useEngine(bridge: TokamaBridge, retryDelayMs = RETRY_DELAY_MS): 
   const [loadError, setLoadError] = useState<string | undefined>(undefined);
   // Bumped by retry(), which re-runs the load effect.
   const [reloads, setReloads] = useState(0);
-  // Items updated by events while a load is in flight: newer than what the load returns.
-  const updatedDuringLoad = useRef<Map<string, ItemRecord> | undefined>(undefined);
+  // Bumped when an item finishes, which loads the board again.
+  const [countReloads, setCountReloads] = useState(0);
+  // Items updated by events while a load is in flight, one map per load: newer than what it returns.
+  const updatedDuringLoad = useRef(new Set<Map<string, ItemRecord>>());
 
   useEffect(() => {
     let live = true;
@@ -75,8 +95,13 @@ export function useEngine(bridge: TokamaBridge, retryDelayMs = RETRY_DELAY_MS): 
       if (event.type === "setup_changed") return setReloads((count) => count + 1);
       if (event.type !== "item_updated") return;
       const item = event.item;
-      updatedDuringLoad.current?.set(item.id, item);
-      setData((current) => (current === undefined ? current : { ...current, items: new Map(current.items).set(item.id, item) }));
+      for (const updated of updatedDuringLoad.current) updated.set(item.id, item);
+      setData((current) => {
+        // A finished item the board does not hold changes nothing here.
+        if (current === undefined || (!isOpen(item) && !current.items.has(item.id))) return current;
+        return { ...current, items: openItems(current.items.values(), [item]) };
+      });
+      if (!isOpen(item)) setCountReloads((count) => count + 1);
     });
     return () => {
       live = false;
@@ -88,32 +113,55 @@ export function useEngine(bridge: TokamaBridge, retryDelayMs = RETRY_DELAY_MS): 
     if (connection.status !== "connected") return;
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let updated: Map<string, ItemRecord> | undefined;
     const run = (attempt: number) => {
-      const updated = new Map<string, ItemRecord>();
-      updatedDuringLoad.current = updated;
+      updated = new Map<string, ItemRecord>();
+      const during = updated;
+      updatedDuringLoad.current.add(during);
       void load(bridge)
         .catch((error: unknown): Loaded => ({ ok: false, error: String(error) }))
         .then((result) => {
+          updatedDuringLoad.current.delete(during);
           if (!live) return;
-          updatedDuringLoad.current = undefined;
           if (!result.ok) {
             setLoadError(result.error);
             if (attempt === 0) timer = setTimeout(() => run(1), retryDelayMs);
             return;
           }
-          const items = new Map(result.data.items);
-          for (const [id, item] of updated) items.set(id, item);
           setLoadError(undefined);
-          setData({ setup: result.data.setup, items });
+          setData({ setup: result.setup, items: openItems(result.board.items, during.values()), counts: result.board.counts });
         });
     };
     run(0);
     return () => {
       live = false;
       clearTimeout(timer);
-      updatedDuringLoad.current = undefined;
+      if (updated !== undefined) updatedDuringLoad.current.delete(updated);
     };
   }, [bridge, connection, reloads, retryDelayMs]);
+
+  // An item finished: the board alone loads again for its counts. A failure keeps the counts there are.
+  useEffect(() => {
+    if (countReloads === 0 || connection.status !== "connected") return;
+    let live = true;
+    const during = new Map<string, ItemRecord>();
+    const timer = setTimeout(() => {
+      updatedDuringLoad.current.add(during);
+      void bridge
+        .query({ type: "board" })
+        .catch(() => undefined)
+        .then((reply) => {
+          updatedDuringLoad.current.delete(during);
+          if (!live || reply === undefined || !reply.ok) return;
+          setData((current) => (current === undefined ? current : { ...current, items: openItems(reply.data.items, during.values()), counts: reply.data.counts }));
+        });
+    }, COUNTS_DELAY_MS);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+      updatedDuringLoad.current.delete(during);
+    };
+  }, [bridge, connection, countReloads]);
 
   const connected = connection.status === "connected";
   const refreshSetup = useCallback(() => {

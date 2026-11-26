@@ -10,6 +10,7 @@ import {
   healthProblemsOf,
   DEFAULT_FILTER,
   filterCounts,
+  finishedIn,
   listEntries,
   sinceOf,
   flagOf,
@@ -25,6 +26,7 @@ import {
   timeOf,
   viewKey,
 } from "./model.js";
+import { board } from "./testing/bridge.js";
 import { ITEMS, items, NOW, setup } from "./testing/sample.js";
 import { allReport, usageReport } from "./testing/usage.js";
 
@@ -75,16 +77,37 @@ describe("inRange", () => {
   });
 });
 
+/** The board's answer over the items: the open ones and the counts of the finished ones. */
+const open = board(items).items;
+const counts = board(items).counts;
+const badgesOver = (list: readonly ItemRecord[]) => badgesOf(board(list).items, board(list).counts, NOW);
+
+describe("finishedIn", () => {
+  it("adds up the done and failed counts of the days in the range; older days count for all time only", () => {
+    const rows = [
+      { day: "2025-10-20", templateId: "builtin/quick-fix", repoIds: [], done: 2, failed: 1 },
+      { day: "2025-10-14", templateId: "builtin/quick-fix", repoIds: [], done: 1, failed: 0 },
+      { day: "2025-10-13", templateId: "builtin/quick-fix", repoIds: [], done: 5, failed: 0 },
+      { day: null, templateId: "builtin/quick-fix", repoIds: [], done: 10, failed: 3 },
+    ] as unknown as Parameters<typeof finishedIn>[0];
+    expect(finishedIn(rows, "today", NOW)).toEqual({ done: 2, failed: 1 });
+    expect(finishedIn(rows, "7d", NOW)).toEqual({ done: 3, failed: 1 });
+    expect(finishedIn(rows, "30d", NOW)).toEqual({ done: 8, failed: 1 });
+    expect(finishedIn(rows, "all", NOW)).toEqual({ done: 18, failed: 4 });
+    expect(finishedIn([], "all", NOW)).toEqual({ done: 0, failed: 0 });
+  });
+});
+
 describe("filterCounts", () => {
   it("counts each status for today by default: live items always, finished ones within the range", () => {
-    expect(filterCounts(items, DEFAULT_FILTER, NOW)).toEqual({ active: 5, needs: 1, done: 2, failed: 1 });
+    expect(filterCounts(open, counts, DEFAULT_FILTER, NOW)).toEqual({ active: 5, needs: 1, done: 2, failed: 1 });
   });
 
   it("counts Done and Failed within the view's range whichever filter is selected, so each number matches the list it opens", () => {
-    expect(filterCounts(items, { status: "done", range: "7d" }, NOW)).toEqual({ active: 5, needs: 1, done: 3, failed: 1 });
-    expect(filterCounts(items, { status: "failed", range: "30d" }, NOW)).toEqual({ active: 5, needs: 1, done: 3, failed: 2 });
-    expect(filterCounts(items, { status: "needs", range: "30d" }, NOW)).toEqual({ active: 5, needs: 1, done: 3, failed: 2 });
-    expect(filterCounts(items, { status: "active", range: "7d" }, NOW).done).toBe(3);
+    expect(filterCounts(open, counts, { status: "done", range: "7d" }, NOW)).toEqual({ active: 5, needs: 1, done: 3, failed: 1 });
+    expect(filterCounts(open, counts, { status: "failed", range: "30d" }, NOW)).toEqual({ active: 5, needs: 1, done: 3, failed: 2 });
+    expect(filterCounts(open, counts, { status: "needs", range: "30d" }, NOW)).toEqual({ active: 5, needs: 1, done: 3, failed: 2 });
+    expect(filterCounts(open, counts, { status: "active", range: "7d" }, NOW).done).toBe(3);
   });
 });
 
@@ -117,24 +140,24 @@ describe("groupItems", () => {
 
 describe("badgesOf", () => {
   it("counts needs you, failed today and running, in that order; queued items count nowhere", () => {
-    expect(badgesOf(items, NOW).map(({ symbol, count, word }) => `${symbol} ${count} ${word}`)).toEqual(["⏸ 1 needs you", "✕ 1 failed", "● 3 running"]);
+    expect(badgesOver(items).map(({ symbol, count, word }) => `${symbol} ${count} ${word}`)).toEqual(["⏸ 1 needs you", "✕ 1 failed", "● 3 running"]);
   });
 
   it("leaves out zero counts", () => {
-    expect(badgesOf([ITEMS.queued, ITEMS.done], NOW)).toEqual([]);
-    expect(badgesOf([ITEMS.failedLastMonth], NOW)).toEqual([]);
-    expect(badgesOf([ITEMS.working], NOW).map((badge) => badge.kind)).toEqual(["running"]);
+    expect(badgesOver([ITEMS.queued, ITEMS.done])).toEqual([]);
+    expect(badgesOver([ITEMS.failedLastMonth])).toEqual([]);
+    expect(badgesOver([ITEMS.working]).map((badge) => badge.kind)).toEqual(["running"]);
   });
 
   it("says need for several", () => {
-    expect(badgesOf([ITEMS.needsYou, { ...ITEMS.working, state: "needs_you" } as ItemRecord], NOW)[0]).toMatchObject({ count: 2, word: "need you" });
+    expect(badgesOver([ITEMS.needsYou, { ...ITEMS.working, state: "needs_you" } as ItemRecord])[0]).toMatchObject({ count: 2, word: "need you" });
   });
 });
 
 describe("summaryOf", () => {
   it("counts live items and items done today", () => {
-    expect(summaryOf(items, NOW)).toBe("5 live · 2 done today");
-    expect(summaryOf([], NOW)).toBe("0 live · 0 done today");
+    expect(summaryOf(open, counts, NOW)).toBe("5 live · 2 done today");
+    expect(summaryOf([], [], NOW)).toBe("0 live · 0 done today");
   });
 });
 

@@ -2,11 +2,11 @@
 // "All work › Plan and build", with a List | Board switch for workflows), the status switch, and
 // the pipeline list or the workflow's kanban. When the engine is not available, its failure
 // details take the place of the list; a failed load shows its reason and a Retry action there.
-import type { FinishAction, ItemRecord, Setup } from "@tokama/core";
+import type { BoardCount, FinishAction, ItemRecord, Setup } from "@tokama/core";
 import type { ReactNode } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { WorkArea } from "../list/WorkArea.js";
-import { ALL_WORK, inView, summaryOf } from "../model.js";
+import { ALL_WORK, finishedIn, inView, summaryOf } from "../model.js";
 import type { AgentTarget } from "../settings/describe.js";
 import type { Layout, ViewState } from "../useViewState.js";
 import { ConnectionFailure, startingWords } from "./ConnectionStatus.js";
@@ -43,7 +43,10 @@ export interface MainAreaProps {
   readonly onWaitForEngine?: () => void;
   /** Undefined until the first load. */
   readonly setup: Setup | undefined;
+  /** The open items. */
   readonly items: readonly ItemRecord[];
+  /** The finished items, counted. */
+  readonly counts: readonly BoardCount[];
   readonly now: number;
   readonly views: ViewState;
   readonly selectedItemId: string | undefined;
@@ -85,7 +88,7 @@ export function MainArea(props: MainAreaProps) {
             </ol>
           </nav>
         )}
-        {setup !== undefined && <span className="summary mono">{summaryOf(props.items.filter((item) => inView(item, view)), props.now)}</span>}
+        {setup !== undefined && <span className="summary mono">{summaryOf(props.items.filter((item) => inView(item, view)), props.counts.filter((row) => inView(row, view)), props.now)}</span>}
         {template !== undefined && <LayoutSwitch layout={views.layout} onChange={views.setLayout} />}
       </header>
       <section className="board" aria-label={TEXT.board}>
@@ -109,7 +112,7 @@ function LayoutSwitch({ layout, onChange }: { readonly layout: Layout; readonly 
 }
 
 function Body(props: MainAreaProps & { readonly template: Setup["templates"][number] | undefined }) {
-  const { connection, loadError, onRetry, onRetryConnection, setup, items, now, views, selectedItemId, onSelectItem, template } = props;
+  const { connection, loadError, onRetry, onRetryConnection, setup, items, counts, now, views, selectedItemId, onSelectItem, template } = props;
   if (connection.status === "failed") {
     return (
       <ConnectionFailure
@@ -121,6 +124,8 @@ function Body(props: MainAreaProps & { readonly template: Setup["templates"][num
     );
   }
   const scoped = items.filter((item) => inView(item, views.view));
+  const scopedCounts = counts.filter((row) => inView(row, views.view));
+  const finished = finishedIn(scopedCounts, "all", now);
   return (
     <>
       {loadError !== undefined && <ErrorRetry title={TEXT.loadFailed} detail={loadError} onRetry={onRetry} />}
@@ -128,7 +133,7 @@ function Body(props: MainAreaProps & { readonly template: Setup["templates"][num
         loadError === undefined && <Placeholder>{waiting(connection)}</Placeholder>
       ) : setup.repos.length === 0 ? (
         <FirstLaunch />
-      ) : scoped.length === 0 ? (
+      ) : scoped.length === 0 && finished.done + finished.failed === 0 ? (
         <NoWork />
       ) : (
         <WorkArea
@@ -136,6 +141,7 @@ function Body(props: MainAreaProps & { readonly template: Setup["templates"][num
           connected={connection.status === "connected"}
           setup={setup}
           scoped={scoped}
+          counts={scopedCounts}
           items={new Map(items.map((item) => [item.id, item]))}
           view={views.view}
           filter={views.filter}

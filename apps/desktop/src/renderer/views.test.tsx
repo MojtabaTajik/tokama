@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { App } from "./App.js";
 import { CONNECTED, fakeBridge } from "./testing/bridge.js";
+import { COUNTS_DELAY_MS } from "./useEngine.js";
 import { ITEMS, NOW } from "./testing/sample.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -507,6 +508,8 @@ describe("live updates", () => {
     const fake = await mount();
     await fake.pushItem({ ...ITEMS.verifying, state: "done" } as ItemRecord);
     expect(titlesIn("Running")).not.toContain("Fix rounding in invoice totals");
+    // The board loads again for its counts shortly after an item finishes.
+    await act(async () => new Promise((resolve) => setTimeout(resolve, COUNTS_DELAY_MS + 20)));
     expect(counts()).toEqual(["Active4", "Needs you1", "Done3", "Failed1", "All"]);
     await fake.pushItem({ ...ITEMS.queued, id: "item_1a2b3c4d-0099-4a1b-8c1d-000000000099", title: "New investigation" } as ItemRecord);
     expect(titlesIn("Running")?.at(-1)).toBe("New investigation");

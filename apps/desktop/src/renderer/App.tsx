@@ -1,6 +1,6 @@
 // The app shell: icon rail, sidebar, main area, and the item drawer when an item is open. An open
 // item can fill the main area instead of the drawer (the full view); the sidebar stays.
-import type { FinishAction, UsageRange, UsageScope } from "@tokama/core";
+import type { BoardCount, FinishAction, UsageRange, UsageScope } from "@tokama/core";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TokamaBridge } from "../shared/bridge.js";
 import { DEFAULT_DESKTOP_STATE, type DesktopState, DRAWER_WIDTH, RAIL_WIDTH, SECTIONS, SIDEBAR_WIDTH } from "../shared/desktop-state.js";
@@ -31,6 +31,7 @@ const PANEL_ID = "sidebar";
 const TEXT = { allWork: "All work", needsYou: "Needs you" } as const;
 /** How often the times in the list move on. */
 const CLOCK_TICK_MS = 30_000;
+const NO_COUNTS: readonly BoardCount[] = [];
 
 export interface AppProps {
   readonly bridge: TokamaBridge;
@@ -168,6 +169,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   if (expanded !== undefined && expanded.itemId !== selectedItemId) setExpanded(undefined);
 
   const items = useMemo(() => [...(data?.items.values() ?? [])], [data]);
+  const counts = data?.counts ?? NO_COUNTS;
   const setup = data?.setup;
   // The engine's startup checks, unless a test gives the issues itself.
   const issues = useMemo(() => cliIssues ?? cliIssuesOf(setup?.health), [cliIssues, setup]);
@@ -293,6 +295,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
           connection={connection}
           setup={setup}
           items={items}
+          counts={counts}
           stale={stale}
           now={now}
           view={views.view}
@@ -362,6 +365,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
           onWaitForEngine={() => void bridge.waitForEngine()}
           setup={setup}
           items={items}
+          counts={counts}
           now={now}
           views={views}
           selectedItemId={selectedItemId}

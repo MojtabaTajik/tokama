@@ -1,11 +1,12 @@
 // The status switch with the search, and below it the pipeline list or the workflow's kanban.
 // Needs you and Running come from the board's items, in full and without day headers. Done and
 // Failed come from the engine a page at a time (Load older adds the next), under day headers when
-// the range is longer than today. While a search is typed, the engine decides the hits of every
+// the range is longer than today; the kanban's Done column shows their first pages and counts them
+// all. The switch counts finished work from the board's counts. While a search is typed, the engine decides the hits of every
 // group, 200 ms after the last key; groups without a hit are hidden, and with no hit at all one
 // message takes their place. Rows show the board's record of an item when it has one, so a row
 // follows the item's events before its page loads again.
-import type { FinishAction, ItemRecord, Setup } from "@tokama/core";
+import type { BoardCount, FinishAction, ItemRecord, Setup } from "@tokama/core";
 import { type ReactNode, useEffect, useState } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
 import { Board } from "../board/Board.js";
@@ -60,9 +61,11 @@ export interface WorkAreaProps {
   readonly bridge: TokamaBridge;
   readonly connected: boolean;
   readonly setup: Setup;
-  /** The items of the view, from the board. */
+  /** The open items of the view, from the board. */
   readonly scoped: readonly ItemRecord[];
-  /** Every item of the board by id: the freshest record of a row. */
+  /** The finished items of the view, counted, from the board. */
+  readonly counts: readonly BoardCount[];
+  /** Every open item of the board by id: the freshest record of a row. */
   readonly items: ReadonlyMap<string, ItemRecord>;
   readonly view: View;
   readonly filter: Filter;
@@ -80,7 +83,7 @@ export interface WorkAreaProps {
 const finished = (group: GroupKey) => group === "done" || group === "failed";
 
 export function WorkArea(props: WorkAreaProps) {
-  const { bridge, connected, setup, scoped, items, view, filter, onFilter, layout, template, now } = props;
+  const { bridge, connected, setup, scoped, counts, items, view, filter, onFilter, layout, template, now } = props;
   const [text, setText] = useState("");
   const [q, setQ] = useState("");
   useEffect(() => {
@@ -98,9 +101,7 @@ export function WorkArea(props: WorkAreaProps) {
   const since = sinceOf(range, now);
   const scope = view.kind === "repo" ? { repo: view.id } : view.kind === "workflow" ? { template: view.id } : {};
   const keys = GROUPS_OF[filter.status];
-  const requests: ListRequest[] = board
-    ? []
-    : keys.filter((group) => finished(group) || searching).map((group) => ({ group, ...scope, ...(finished(group) && { since }), ...(searching && { q }) }));
+  const requests: ListRequest[] = keys.filter((group) => finished(group) || searching).map((group) => ({ group, ...scope, ...(finished(group) && { since }), ...(searching && { q }) }));
   const list = useWorkList(bridge, connected, requests);
 
   const fresh = (item: ItemRecord) => items.get(item.id) ?? item;
@@ -174,13 +175,17 @@ export function WorkArea(props: WorkAreaProps) {
     );
   };
   const footers = Object.fromEntries(keys.map((group) => [group, footer(group, list.pages.get(group))]));
+  // The kanban: the open items, then the first pages of Done and Failed, which count in full.
+  const finishedPages = keys.filter(finished).flatMap((group) => list.pages.get(group) ?? []);
+  const boardItems = [...visibleItems(scoped, filter, now), ...finishedPages.flatMap((page) => page.items.map(fresh))];
+  const notLoaded = finishedPages.reduce((sum, page) => sum + Math.max(0, (page.total ?? 0) - page.items.length), 0);
 
   const where = `${STATUS_FILTERS.find((status) => status.id === filter.status)?.label ?? filter.status}${hasRange(filter.status) ? ` · ${RANGES.find((r) => r.id === filter.range)?.label ?? filter.range}` : ""}`;
   return (
     <>
-      <StatusFilter items={scoped} filter={filter} now={now} onChange={onFilter} search={board ? undefined : { text, onText: setText, onClear: clear, results: searching ? results : undefined }} />
+      <StatusFilter items={scoped} counts={counts} filter={filter} now={now} onChange={onFilter} search={board ? undefined : { text, onText: setText, onClear: clear, results: searching ? results : undefined }} />
       {board ? (
-        <Board items={visibleItems(scoped, filter, now)} agents={setup.agents} template={template} selectedItemId={props.selectedItemId} onSelect={props.onSelectItem} now={now} />
+        <Board items={boardItems} notLoaded={notLoaded} agents={setup.agents} template={template} selectedItemId={props.selectedItemId} onSelect={props.onSelectItem} now={now} />
       ) : searching && results === 0 ? (
         <div className="pl-no-match" role="status">
           <span className="pl-no-match-title">

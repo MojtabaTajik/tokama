@@ -1,14 +1,14 @@
-// A bridge over the test data for renderer tests: `setup`, `board` and `item` answer from it, and
-// `item_list` from it plus the items pushed since (a simple stand-in for the engine's index: group,
+// A bridge over the test data for renderer tests: `setup` and `item` answer from it, and `board`
+// (open items and counts) and `item_list` from it plus the items pushed since (a simple stand-in for the engine's index: group,
 // start day, repo, template and a title search). Connection changes and events are pushed by hand
 // inside React's act().
-import type { ItemRecord } from "@tokama/core";
+import type { BoardCount, ItemRecord } from "@tokama/core";
 import { act } from "react";
 import { vi } from "vitest";
 import type { AboutInfo, BridgeEvent, ConnectionState, DiagnosticsLoad, DiagnosticsSaveResult, DiagnosticsSendResult, OpenResult, TokamaBridge } from "../../shared/bridge.js";
 import { DEFAULT_DESKTOP_STATE, type DesktopState } from "../../shared/desktop-state.js";
 import { localDay } from "../format/time.js";
-import { bucketOf } from "../model.js";
+import { bucketOf, isOpen } from "../model.js";
 import { items, setup } from "./sample.js";
 
 export type Reply = { ok: true; data: unknown } | { ok: false; error: { code: string; message: string } };
@@ -35,7 +35,7 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
     const custom = options.reply?.(q);
     if (custom) return custom;
     if (q.type === "setup") return { ok: true, data: setup };
-    if (q.type === "board") return { ok: true, data: { items: boardItems } };
+    if (q.type === "board") return { ok: true, data: board([...listed.values()]) };
     if (q.type === "item_list") return { ok: true, data: itemList([...listed.values()], q as unknown as ListQuery) };
     const item = q.type === "item" ? boardItems.find((candidate) => candidate.id === q.itemId) : undefined;
     if (item) return { ok: true, data: { item } };
@@ -112,6 +112,20 @@ export interface ListQuery {
   readonly q?: string;
   readonly before?: string;
   readonly limit: number;
+}
+
+/** The engine's board answer over these items: the open ones, and the finished ones counted by day, template and repos. */
+export function board(all: readonly ItemRecord[]): { items: ItemRecord[]; counts: BoardCount[] } {
+  const counts = new Map<string, BoardCount>();
+  for (const item of all) {
+    const bucket = bucketOf(item);
+    if (bucket !== "done" && bucket !== "failed") continue;
+    const day = localDay(item.createdAt);
+    const key = JSON.stringify([day, item.templateId, item.repoIds]);
+    const row = counts.get(key) ?? { day, templateId: item.templateId, repoIds: item.repoIds, done: 0, failed: 0 };
+    counts.set(key, { ...row, [bucket]: row[bucket] + 1 });
+  }
+  return { items: all.filter(isOpen), counts: [...counts.values()] };
 }
 
 /** The engine's item_list answer over these items. */

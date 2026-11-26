@@ -2,10 +2,10 @@
 // the left (with the sidebar's badges), the selected repo on the right. Add, Edit and Remove use
 // the sidebar's dialogs and the engine's repo commands. Engine text (ids, paths, commands) is
 // rendered as React text only, never as HTML.
-import type { ItemRecord, RepoSummary, Setup } from "@tokama/core";
+import type { BoardCount, ItemRecord, RepoSummary, Setup } from "@tokama/core";
 import { useEffect, useRef, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
-import { badgesOf, bucketOf, inRange, inView, needsYouCount } from "../model.js";
+import { badgesOf, finishedIn, inView, needsYouCount } from "../model.js";
 import { RemoveRepoDialog } from "../repos/RemoveRepoDialog.js";
 import { RepoDialog } from "../repos/RepoDialog.js";
 import { ConnectionFailure } from "../shell/ConnectionStatus.js";
@@ -41,9 +41,9 @@ const TEXT = {
 const checksLabel = (count: number) => (count === 0 ? TEXT.noChecks : count === 1 ? "1 check" : `${count} checks`);
 
 /** "2 need you · 2 running · 6 done this week": the badges' counts, then what finished in the last 7 days. */
-function itemsLine(items: readonly ItemRecord[], now: number): string {
-  const parts = badgesOf(items, now).map((badge) => `${badge.count} ${badge.word}`);
-  const done = items.filter((item) => bucketOf(item) === "done" && inRange(item, "7d", now)).length;
+function itemsLine(items: readonly ItemRecord[], counts: readonly BoardCount[], now: number): string {
+  const parts = badgesOf(items, counts, now).map((badge) => `${badge.count} ${badge.word}`);
+  const done = finishedIn(counts, "7d", now).done;
   if (done > 0) parts.push(TEXT.doneThisWeek(done));
   return parts.join(" · ");
 }
@@ -57,7 +57,7 @@ export interface ReposPageProps {
 }
 
 export function ReposPage({ bridge, connection, setup, now: fixedNow }: ReposPageProps) {
-  const items = useRepoItems(bridge, connection, setup);
+  const { items, counts } = useRepoItems(bridge, connection, setup);
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   // The folder the picker returned, while the Add repo dialog is open.
   const [adding, setAdding] = useState<string | undefined>(undefined);
@@ -104,6 +104,7 @@ export function ReposPage({ bridge, connection, setup, now: fixedNow }: ReposPag
   const index = repos.findIndex((repo) => repo.id === selectedId);
   const selected = repos[Math.max(index, 0)];
   const itemsOf = (repo: RepoSummary) => items.filter((item) => inView(item, { kind: "repo", id: repo.id }));
+  const countsOf = (repo: RepoSummary) => counts.filter((row) => inView(row, { kind: "repo", id: repo.id }));
   const pickFolder = async () => {
     const path = await bridge.pickFolder().catch(() => null);
     if (path !== null) setAdding(path);
@@ -132,7 +133,7 @@ export function ReposPage({ bridge, connection, setup, now: fixedNow }: ReposPag
                   <span className="rp-row-id mono ellipsis" title={repo.id}>
                     {repo.id}
                   </span>
-                  <StatusCounts counts={badgesOf(itemsOf(repo), now)} />
+                  <StatusCounts counts={badgesOf(itemsOf(repo), countsOf(repo), now)} />
                 </span>
                 {repo.path !== undefined && (
                   <span className="rp-row-path mono ellipsis" title={repo.path}>
@@ -164,7 +165,7 @@ export function ReposPage({ bridge, connection, setup, now: fixedNow }: ReposPag
             }
           />
         ) : (
-          <Detail repo={selected} line={itemsLine(itemsOf(selected), now)} onEdit={() => setEditing(true)} onRemove={() => setRemoving(true)} />
+          <Detail repo={selected} line={itemsLine(itemsOf(selected), countsOf(selected), now)} onEdit={() => setEditing(true)} onRemove={() => setRemoving(true)} />
         )}
       </div>
       {adding !== undefined && (

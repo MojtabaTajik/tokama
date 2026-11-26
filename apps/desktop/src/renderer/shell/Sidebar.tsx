@@ -2,7 +2,7 @@
 // carries badges (needs you, failed today, running) that show only above zero, and a "+" that
 // appears on hover or focus. Items are never listed here: they appear in the main area. The
 // engine's health sits under "+ New work". Engine text (names) is rendered as React text only.
-import type { ItemRecord, Setup } from "@tokama/core";
+import type { BoardCount, ItemRecord, Setup } from "@tokama/core";
 import { type ReactNode, useEffect, useRef } from "react";
 import type { ConnectionState } from "../../shared/bridge.js";
 import { RepoMenu } from "../repos/RepoMenu.js";
@@ -35,7 +35,10 @@ export interface SidebarProps {
   readonly connection: ConnectionState;
   /** Undefined until the first load. */
   readonly setup: Setup | undefined;
+  /** The open items. */
   readonly items: readonly ItemRecord[];
+  /** The finished items, counted. */
+  readonly counts: readonly BoardCount[];
   /** The items are from an earlier load: the last one failed. */
   readonly stale: boolean;
   readonly now: number;
@@ -56,7 +59,7 @@ export interface SidebarProps {
 }
 
 export function Sidebar(props: SidebarProps) {
-  const { id, connection, setup, items, stale, now, view, onSelectView, collapsed, onToggleSection, onNewWork, onStartIn, onAddRepo, onEditRepo, onRemoveRepo } = props;
+  const { id, connection, setup, items, counts, stale, now, view, onSelectView, collapsed, onToggleSection, onNewWork, onStartIn, onAddRepo, onEditRepo, onRemoveRepo } = props;
   const workflows = (setup?.templates ?? []).map((template) => ({ view: { kind: "workflow", id: template.id } as const, name: template.name, icon: <TemplateIcon icon={template.icon} color={template.color} /> }));
   const repos = (setup?.repos ?? []).map((repo) => ({ view: { kind: "repo", id: repo.id } as const, name: repo.id, removable: repo.sample !== true }));
   // A removed repo's row takes the focus with it: "+ Add repo" gets it instead of the page.
@@ -68,13 +71,14 @@ export function Sidebar(props: SidebarProps) {
     lastRepoCount.current = repoCount;
     if (shrank && (document.activeElement === null || document.activeElement === document.body)) addRepo.current?.focus();
   }, [repoCount]);
+  const badges = (inScope: (entry: Pick<ItemRecord, "templateId" | "repoIds">) => boolean) => badgesOf(items.filter(inScope), counts.filter(inScope), now);
   const row = (entry: { readonly view: View; readonly name: string }, icon: ReactNode, startLabel: string, mono = false, menu?: ReactNode) => (
     <Row
       key={viewKey(entry.view)}
       name={entry.name}
       icon={icon}
       mono={mono}
-      badges={badgesOf(items.filter((item) => inView(item, entry.view)), now)}
+      badges={badges((item) => inView(item, entry.view))}
       selected={sameView(view, entry.view)}
       startLabel={startLabel}
       onStart={() => onStartIn(entry.view)}
@@ -102,13 +106,13 @@ export function Sidebar(props: SidebarProps) {
       <Row
         name={TEXT.allWork}
         icon={<AllWorkIcon />}
-        badges={badgesOf(items, now)}
+        badges={badges(() => true)}
         selected={sameView(view, ALL_WORK)}
         onSelect={() => onSelectView(ALL_WORK)}
       />
-      <SectionHeading section="workflows" title={TEXT.workflows} collapsed={collapsed} onToggle={onToggleSection} summary={badgesOf(items.filter((item) => workflows.some((w) => inView(item, w.view))), now)} />
+      <SectionHeading section="workflows" title={TEXT.workflows} collapsed={collapsed} onToggle={onToggleSection} summary={badges((item) => workflows.some((w) => inView(item, w.view)))} />
       {!collapsed.has("workflows") && workflows.map((entry) => row(entry, entry.icon, TEXT.start(entry.name)))}
-      <SectionHeading section="repos" title={TEXT.repos} collapsed={collapsed} onToggle={onToggleSection} summary={badgesOf(items.filter((item) => repos.some((r) => inView(item, r.view))), now)} />
+      <SectionHeading section="repos" title={TEXT.repos} collapsed={collapsed} onToggle={onToggleSection} summary={badges((item) => repos.some((r) => inView(item, r.view)))} />
       {!collapsed.has("repos") && (
         <>
           {repos.map((entry) => row(entry, <RepoIcon />, TEXT.quickTask(entry.name), true, entry.removable && <RepoMenu name={entry.name} waiting={needsYouCount(items.filter((item) => inView(item, entry.view)))} onEdit={() => onEditRepo(entry.view.id)} onRemove={() => onRemoveRepo(entry.view.id)} />))}
