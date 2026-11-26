@@ -215,11 +215,12 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
     refocusStop.current = true;
     setConfirmingStop(false);
   };
-  // The Stop link is back once the confirmation is gone: a cancel returns focus to it.
+  // The Stop link is back once the confirmation is gone: a cancel returns focus to it, or to the drawer when a
+  // card's own Stop has replaced it.
   useEffect(() => {
     if (confirmingStop || !refocusStop.current) return;
     refocusStop.current = false;
-    stopLink.current?.focus();
+    (stopLink.current ?? drawer.current)?.focus();
   }, [confirmingStop]);
   // A button that had focus can go with an update (a decision answered, the item stopped): focus
   // then stays in the drawer instead of falling back to the page.

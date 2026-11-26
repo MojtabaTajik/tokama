@@ -2,7 +2,7 @@
 // is the primary one, and every button is disabled while an answer is on its way. Request changes
 // opens a note in place of the buttons: what the step's next run should change. The note is
 // optional; Escape closes it, except while you type in it. A change approval shows its two answers
-// only; its Stop stays in the drawer's actions, while any card that has Stop hides that one.
+// only, so the drawer's own Stop stays; a card that shows Stop hides the drawer's.
 import type { Decision } from "@tokama/core";
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { Button } from "../ui/Button.js";

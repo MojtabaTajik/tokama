@@ -33,6 +33,7 @@ flow("a step that stopped at its limit explains itself: what the reviewer said, 
   await drawer(page).getByRole("button", { name: "Open full view" }).click();
   const bar = page.locator(".expanded .ex-decision.stopped");
   await bar.waitFor();
+  expect(await page.locator(".expanded").getByRole("button", { name: "Stop", exact: true }).count()).toBe(1);
   await expect.poll(() => bar.locator(".stopped-fact dd").first().innerText(), { message: "the verdict in the full view" }).toContain("Asked for changes · 1 must fix");
   const labels = await bar.locator(".stopped-fact dt").first().boundingBox();
   const buttons = await bar.locator(".stopped-actions").boundingBox();
