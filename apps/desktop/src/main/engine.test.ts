@@ -66,6 +66,10 @@ describe("toolsPathInfo", () => {
     });
     expect(toolsPathInfo({ path: undefined, source: "inherited" })).toEqual({ source: "inherited" });
   });
+
+  it("says only that the engine was already running when the app attached to one", () => {
+    expect(toolsPathInfo({ path: "/x", source: "inherited", shell: "zsh", problem: "Your login shell (zsh) did not report a PATH." }, true)).toEqual({ source: "engine-running" });
+  });
 });
 
 describe("engineCommand", () => {

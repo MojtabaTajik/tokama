@@ -13,10 +13,10 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-function shellFile(mode: number): string {
+function shellFile(mode: number, name = "zsh"): string {
   const dir = mkdtempSync(join(tmpdir(), "tk-login-"));
   dirs.push(dir);
-  const file = join(dir, "zsh");
+  const file = join(dir, name);
   writeFileSync(file, "#!/bin/sh\n");
   chmodSync(file, mode);
   return file;
@@ -74,6 +74,21 @@ describe("resolveToolsPath", () => {
     expect(request.env).toEqual({ PATH: "/usr/bin:/bin:/usr/sbin:/sbin" });
     expect(request.cwd).toBe("/Users/a");
     expect(request.timeoutMs).toBe(5_000);
+  });
+
+  it("keeps the PATH of a shell that printed it and then hung until the timeout", async () => {
+    const { runner } = fakeRunner([M, "/opt/homebrew/bin", M], { ...FINISHED, timedOut: true, exitCode: null, signal: "SIGKILL" });
+    expect(await resolveToolsPath(deps({ runner }))).toMatchObject({ source: "login-shell", path: "/opt/homebrew/bin:/usr/bin:/bin" });
+  });
+
+  it("starts csh and tcsh with -c alone, which is the only form they take with -l", async () => {
+    for (const name of ["csh", "tcsh"]) {
+      const { runner, requests } = fakeRunner([M, "/usr/bin", M]);
+      const shell = shellFile(0o755, name);
+      await resolveToolsPath(deps({ runner, shell }));
+      const command = requests[0]!.command;
+      expect("argv" in command ? command.argv.slice(0, 2) : []).toEqual([shell, "-c"]);
+    }
   });
 
   it("uses a new marker for each run by default", async () => {

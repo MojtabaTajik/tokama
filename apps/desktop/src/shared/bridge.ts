@@ -97,9 +97,11 @@ export interface AboutInfo {
 /**
  * Where the PATH the engine started with came from. It never carries the PATH itself, which holds
  * the user's folder names. `problem` is one plain sentence, set when the login shell could not be read.
+ * `engine-running`: this app run attached to an engine that was already running, so it does not
+ * know that engine's PATH.
  */
 export interface ToolsPathInfo {
-  readonly source: "login-shell" | "inherited";
+  readonly source: "login-shell" | "inherited" | "engine-running";
   /** The login shell's file name, when one was run. */
   readonly shell?: string;
   readonly problem?: string;

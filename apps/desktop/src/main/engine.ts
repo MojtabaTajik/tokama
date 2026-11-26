@@ -69,8 +69,13 @@ export function engineEnv(parent: Readonly<Record<string, string | undefined>>, 
   });
 }
 
-/** What the window may know about the tools PATH: where it came from, never the PATH itself. */
-export function toolsPathInfo(toolsPath: ToolsPath): ToolsPathInfo {
+/**
+ * What the window may know about the tools PATH: where it came from, never the PATH itself. An
+ * engine that was already running when the app attached keeps the PATH it started with, so what
+ * this app run read says nothing about it.
+ */
+export function toolsPathInfo(toolsPath: ToolsPath, attached = false): ToolsPathInfo {
+  if (attached) return { source: "engine-running" };
   return { source: toolsPath.source, ...(toolsPath.shell !== undefined && { shell: toolsPath.shell }), ...(toolsPath.problem !== undefined && { problem: toolsPath.problem }) };
 }
 

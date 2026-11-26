@@ -3,7 +3,7 @@ import type { ItemRecord } from "@tokama/core";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { ConnectionState, TokamaBridge } from "../shared/bridge.js";
+import type { ConnectionState, ToolsPathInfo, TokamaBridge } from "../shared/bridge.js";
 import { App } from "./App.js";
 import { BACKEND_IDS, backendOf } from "./brand/backends/index.js";
 import { brand } from "./brand/index.js";
@@ -549,5 +549,30 @@ describe("health from the engine", () => {
     await click(attention());
     await wait(0);
     expect(setupQueries()).toBe(before + 2);
+  });
+
+  describe("the login shell's PATH", () => {
+    const healthy = { ...setup, health: { git: { ok: true }, clis: [], config: [] } };
+    const attention = () => $$('nav[aria-label="App"] button').find((el) => el.getAttribute("aria-label")?.startsWith("Attention"))!;
+    const open = async (toolsPath: ToolsPathInfo) => {
+      const fake = fakeBridge(CONNECTED, { toolsPath, reply: (q) => (q.type === "setup" ? { ok: true, data: healthy } : undefined) });
+      await render(fake.bridge);
+      await wait(0);
+      return fake;
+    };
+
+    it("lists a login shell that could not be read, in words, under Attention", async () => {
+      const fake = await open({ source: "inherited", shell: "zsh", problem: "Your login shell (zsh) did not answer within 5 s." });
+      expect(fake.bridge.getToolsPath).toHaveBeenCalledTimes(1);
+      expect(attention().getAttribute("aria-label")).toBe("Attention · 1");
+      await click(attention());
+      expect(text(".attention-what")).toBe("Your shell's PATH was not read");
+      expect(text(".attention-item .mono")).toContain("Your login shell (zsh) did not answer within 5 s.");
+    });
+
+    it("shows nothing when the login shell was read", async () => {
+      await open({ source: "login-shell", shell: "zsh" });
+      expect(attention().getAttribute("aria-label")).toBe("Attention");
+    });
   });
 });

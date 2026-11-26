@@ -73,12 +73,18 @@ function send(channel: string, message: unknown): void {
 // has only the system folders on its PATH, so it asks the user's login shell; development keeps
 // the PATH it was started with, and starts no shell.
 let toolsPathRead: Promise<ToolsPath> | undefined;
+// The answer once it is in, for callers that must not wait for it.
+let toolsPathValue: ToolsPath | undefined;
 function toolsPath(): Promise<ToolsPath> {
-  toolsPathRead ??= app.isPackaged
-    ? resolveToolsPath({ platform: process.platform, shell: userShell(), inheritedPath: process.env["PATH"], home: homedir() })
-    : Promise.resolve({ path: process.env["PATH"], source: "inherited" });
+  toolsPathRead ??= (
+    app.isPackaged
+      ? resolveToolsPath({ platform: process.platform, shell: userShell(), inheritedPath: process.env["PATH"], home: homedir() })
+      : Promise.resolve<ToolsPath>({ path: process.env["PATH"], source: "inherited" })
+  ).then((read) => (toolsPathValue = read));
   return toolsPathRead;
 }
+// Set at the first connect: whether an engine was already running, which then has its own PATH.
+let attachedToRunningEngine: boolean | undefined;
 
 /** The login shell of this account; `os.userInfo` throws on some systems, then $SHELL is used. */
 function userShell(): string | undefined {
@@ -106,6 +112,8 @@ function startWatch(onConnected: () => void, onItemEvent: (event: BridgeEvent["e
     connect: async () => {
       const command = await start;
       if (!command.ok) return err({ code: "start_failed" as const, message: command.error });
+      const lock = readEngineLock(lockPath);
+      attachedToRunningEngine ??= lock !== undefined && pidAlive(lock.pid);
       return connect({ dir, start: command.value });
     },
     apiVersion: API_VERSION,
@@ -326,8 +334,9 @@ void app.whenReady().then(async () => {
     });
   };
   handle(CHANNELS.getAboutInfo, about);
-  handle(CHANNELS.getToolsPath, async () => toolsPathInfo(await toolsPath()));
-  handle(CHANNELS.copyBuildInfo, async () => clipboard.writeText(buildInfoText(about(), watch.state().status, toolsPathInfo(await toolsPath()))));
+  handle(CHANNELS.getToolsPath, async () => toolsPathInfo(await toolsPath(), attachedToRunningEngine));
+  // Without the Tools PATH line while the shell is still being read: the copy does not wait for it.
+  handle(CHANNELS.copyBuildInfo, () => clipboard.writeText(buildInfoText(about(), watch.state().status, toolsPathValue === undefined ? undefined : toolsPathInfo(toolsPathValue, attachedToRunningEngine))));
   handle(CHANNELS.showDataFolder, async () => {
     const message = await shell.openPath(tokamaHome);
     return message === "" ? { ok: true } : { ok: false, message };

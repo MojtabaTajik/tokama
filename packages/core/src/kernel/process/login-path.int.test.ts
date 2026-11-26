@@ -70,10 +70,36 @@ describe.skipIf(process.platform === "win32")("resolveToolsPath with a real runn
     },
   );
 
+  it(
+    "kills a shell that ignores SIGTERM, as an interactive shell does, and still gives up",
+    SLOW,
+    async () => {
+      const pidFile = join(dir, "sleep.pid");
+      const shell = fakeShell("zsh", `trap '' TERM\n/bin/sleep 60 &\necho $! > "${pidFile}"\nwhile :; do /bin/sleep 1; done`);
+      const started = Date.now();
+      const found = await resolveToolsPath({ platform: process.platform, shell, inheritedPath: "/usr/bin:/bin", home: dir, parentEnv: { HOME: dir }, timeoutMs: 300 });
+      expect(Date.now() - started).toBeLessThan(8_000);
+      expect(found.source).toBe("inherited");
+      expect(found.problem).toContain("did not answer within");
+    },
+  );
+
+  it(
+    "keeps the PATH of a shell that answered and then hung",
+    SLOW,
+    async () => {
+      const shell = fakeShell("zsh", `/bin/sh -c "$4"\ntrap '' TERM\nwhile :; do /bin/sleep 1; done`);
+      const found = await resolveToolsPath({ platform: process.platform, shell, inheritedPath: "/usr/bin:/bin", home: dir, parentEnv: { HOME: dir }, timeoutMs: 1_000 });
+      expect(found.source).toBe("login-shell");
+    },
+  );
+
   it.skipIf(!existsSync("/bin/zsh"))(
     "runs the real zsh against an empty home",
     SLOW,
     async () => {
+      // An empty startup file keeps zsh's first-run setup from starting.
+      writeFileSync(join(dir, ".zshrc"), "");
       const found = await resolveToolsPath({ platform: process.platform, shell: "/bin/zsh", inheritedPath: undefined, home: dir, parentEnv: { HOME: dir } });
       expect(found.source).toBe("login-shell");
       expect(found.path?.split(":")).toContain("/usr/bin");

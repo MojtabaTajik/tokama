@@ -47,7 +47,8 @@ const MAX_PATH_BYTES = 32 * 1024;
  * the system folders) finds the same tools as a terminal does. The shell runs interactive and login
  * (`-i -l`) because many users set PATH in a file only an interactive shell reads; it gets the
  * allowlisted variables and a system PATH, never the inherited PATH. Only the PATH is read back.
- * Never throws: on any failure the result is the inherited PATH and says why.
+ * At worst the wait is the timeout, plus the runner's 2 s kill grace for a shell that ignores
+ * SIGTERM (an interactive one does), plus a short drain. Never throws: on any failure the result is the inherited PATH and says why.
  */
 export async function resolveToolsPath(deps: LoginPathDeps): Promise<ToolsPath> {
   const inherited: ToolsPath = { path: deps.inheritedPath, source: "inherited" };
@@ -61,9 +62,12 @@ export async function resolveToolsPath(deps: LoginPathDeps): Promise<ToolsPath> 
   const tail = rollingTail();
   let result;
   try {
-    const runner = deps.runner ?? createProcessRunner({ parentEnv: deps.parentEnv ?? process.env });
+    // The answer comes before the exit, so a descendant that keeps the pipes open need not be waited for long.
+    const runner = deps.runner ?? createProcessRunner({ parentEnv: deps.parentEnv ?? process.env, drainMs: 200 });
+    const script = `echo ${marker}; /usr/bin/printenv PATH; echo ${marker}`;
     result = await runner.run({
-      command: { argv: [shell, "-i", "-l", "-c", `echo ${marker}; /usr/bin/printenv PATH; echo ${marker}`] },
+      // csh and tcsh accept -l only as the sole flag; they read their startup files for -c anyway.
+      command: { argv: name === "csh" || name === "tcsh" ? [shell, "-c", script] : [shell, "-i", "-l", "-c", script] },
       cwd: deps.home,
       env: { PATH: SYSTEM_PATH },
       timeoutMs,
@@ -73,9 +77,10 @@ export async function resolveToolsPath(deps: LoginPathDeps): Promise<ToolsPath> 
     return fallback(`Tokama could not start your login shell (${name}).`);
   }
   if (result.kind === "not-started") return fallback(`Tokama could not start your login shell (${name}).`);
-  if (result.timedOut) return fallback(`Your login shell (${name}) did not answer within ${Math.round(timeoutMs / 1000)} s.`);
+  // A shell that printed its answer and then hung (a slow logout file) still gave the PATH.
   const shellPath = parseMarkedPath(tail.lines(), marker);
   const merged = shellPath === undefined ? "" : mergePaths(shellPath, deps.inheritedPath, deps.isDirectory ?? isDirectory);
+  if (merged === "" && result.timedOut) return fallback(`Your login shell (${name}) did not answer within ${Math.round(timeoutMs / 1000)} s.`);
   if (merged === "") return fallback(`Your login shell (${name}) did not report a PATH.`, name);
   return { path: merged, source: "login-shell", shell: name };
 }
