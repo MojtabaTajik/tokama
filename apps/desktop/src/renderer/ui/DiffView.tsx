@@ -152,7 +152,8 @@ export function totals(diff: Pick<ItemDiff, "files">): { readonly added: number;
   return diff.files.reduce((sum, file) => ({ added: sum.added + (file.added ?? 0), removed: sum.removed + (file.removed ?? 0) }), { added: 0, removed: 0 });
 }
 
-const count = (value: number) => value.toLocaleString("en");
+/** A count as the diff shows it: "1,244". */
+export const count = (value: number) => value.toLocaleString("en");
 
 /** A diff to draw: an open decision's (with its worktree), or an ended item's. */
 export type ShownDiff = TreeDiff & { readonly worktree?: ItemDiff["worktree"] };

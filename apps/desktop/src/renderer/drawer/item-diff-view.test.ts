@@ -1,14 +1,15 @@
-import type { ItemChange, ItemRecord } from "@tokama/core";
+import type { ItemChange, ItemRecord, RepoId } from "@tokama/core";
 import { describe, expect, it } from "vitest";
 import { committed, finishable } from "../testing/drawer.js";
 import { diffHeader, type DiffHeader, showsChange } from "./item-diff-view.js";
 
+const REPO = "orders-api" as RepoId;
 const BASE = "85a75e3c0ffee0000000000000000000000000ab";
 const MERGED = "abc1234def5678900000000000000000000000ff";
 const file = (path: string, added: number | null, removed: number | null) => ({ path, status: "modified" as const, added, removed, binary: added === null, cut: added === null, hunks: [] });
 const FILES = [file("src/receipt/format.js", 1230, 300), file("README.md", 14, 16), file("assets/logo.png", null, null)];
-const worktree: ItemChange = { kind: "worktree", files: FILES, moreFiles: 2, cut: true, worktree: { repoId: "orders-api", dir: ".tokama/wt/receipt", branch: "tokama/receipt-tax", baseCommit: BASE } };
-const merged: ItemChange = { kind: "merged", files: FILES, moreFiles: 2, cut: true, repoId: "orders-api", baseBranch: "main", commit: MERGED, parent: BASE };
+const worktree: ItemChange = { kind: "worktree", files: FILES, moreFiles: 2, cut: true, worktree: { repoId: REPO, dir: ".tokama/wt/receipt", branch: "tokama/receipt-tax", baseCommit: BASE } };
+const merged: ItemChange = { kind: "merged", files: FILES, moreFiles: 2, cut: true, repoId: REPO, baseBranch: "main", commit: MERGED, parent: BASE };
 
 const flat = (parts: readonly (string | { code: string })[]) => parts.map((part) => (typeof part === "string" ? part : part.code)).join("");
 /** The header as the screen reads it: the symbol, the first line, the second line. */
@@ -39,7 +40,7 @@ describe("diffHeader", () => {
   });
 
   it("a merged commit that is gone: says so without an error tone, and has no columns", () => {
-    const header = diffHeader(withState("done", { worktreeRemoved: true, merged: { baseBranch: "main", commit: MERGED } }), loaded({ kind: "gone", repoId: "orders-api", commit: MERGED }), "main");
+    const header = diffHeader(withState("done", { worktreeRemoved: true, merged: { baseBranch: "main", commit: MERGED } }), loaded({ kind: "gone", repoId: REPO, commit: MERGED }), "main");
     expect(lines(header)).toEqual(["– Commit abc1234 is no longer in the repo", "History was rewritten after the merge, so there is nothing to compare."]);
     expect(header?.mark.tone).toBe("muted");
     expect(header?.columns).toBeUndefined();
@@ -62,7 +63,7 @@ describe("showsChange", () => {
   it("shows for files, a merge, a gone commit and a discard; never while loading or for an item that changed nothing", () => {
     expect(showsChange(finishable, loaded(worktree))).toBe(true);
     expect(showsChange(finishable, loaded(merged))).toBe(true);
-    expect(showsChange(finishable, loaded({ kind: "gone", repoId: "orders-api", commit: MERGED }))).toBe(true);
+    expect(showsChange(finishable, loaded({ kind: "gone", repoId: REPO, commit: MERGED }))).toBe(true);
     expect(showsChange(finishable, { kind: "discarded" })).toBe(true);
     expect(showsChange(finishable, { kind: "loading" })).toBe(false);
     expect(showsChange(finishable, undefined)).toBe(false);

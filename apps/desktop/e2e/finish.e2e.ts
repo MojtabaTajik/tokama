@@ -18,6 +18,7 @@ import {
   type RepoId,
   systemClock,
 } from "@tokama/core";
+import type { Locator } from "playwright-core";
 import { expect } from "vitest";
 import { drawer, openRow, flow, row, segment } from "./harness.js";
 
@@ -61,6 +62,43 @@ flow("opens a pull request for a done item from the row's menu, then removes its
   await ended.getByRole("button", { name: "Remove worktree" }).click();
   await ended.getByRole("group", { name: "Discard this work?" }).getByRole("button", { name: "Discard" }).click();
   await expect.poll(() => ended.innerText(), { message: "the worktree removed" }).toContain("Worktree and branch removed");
+});
+
+/** The Diff tab's two header lines, spaces folded. */
+const diffHead = async (scope: Locator) => (await scope.locator(".dv-head").innerText()).split("\n").map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
+
+flow("shows the Diff tab of a done item before Merge (branch against base) and after it (the merged commit)", async ({ page, resize, screenshot }) => {
+  await resize(1440, 900);
+  await segment(page, "Done").click();
+  await page.locator(".range").selectOption("30d");
+  await row(page, SAMPLE_DONE).click();
+  const panel = drawer(page);
+  const diffTab = panel.getByRole("tab", { name: "Diff" });
+  await diffTab.waitFor();
+  await diffTab.click();
+  await expect.poll(() => diffHead(panel), { message: "the not-merged header" }).toEqual([
+    "○ Not merged yet · branch tokama/00000011 · 2 files, +8 −1",
+    "Compared with main at a41c9e2, where the item started.",
+  ]);
+  expect(await panel.getByRole("list", { name: "Changed files" }).getByRole("listitem").count()).toBe(2);
+  // Merge stays in the Finish bar; the Diff tab has no Merge of its own.
+  expect(await panel.locator(".finish").getByRole("button", { name: "Merge into main" }).count()).toBe(1);
+  expect(await panel.locator(".dv").getByRole("button", { name: /Merge/ }).count()).toBe(0);
+  await screenshot("finish-8-diff-not-merged");
+
+  await panel.locator(".finish").getByRole("button", { name: "Merge into main" }).click();
+  await expect.poll(() => diffHead(panel).catch(() => []), { message: "the merged header" }).toEqual([
+    expect.stringMatching(/^✓ Merged as [0-9a-f]{7} into main · 2 files, \+8 −1$/),
+    "The merged commit compared with main before it.",
+  ]);
+  const commit = /Merged as ([0-9a-f]{7})/.exec((await diffHead(panel))[0]!)![1]!;
+
+  await panel.getByRole("button", { name: "Open diff in full view" }).click();
+  const full = page.locator(".expanded");
+  const split = full.getByRole("table", { name: "Side-by-side diff of src/cart/totals.ts" });
+  await split.waitFor();
+  expect(await split.getByRole("columnheader").allInnerTexts()).toEqual(["BEFORE · MAIN A41C9E2", `AFTER · ${commit.toUpperCase()}`]);
+  await screenshot("finish-9-diff-merged-side-by-side");
 });
 
 /** Plain git in the fixture repo, without the developer's config. */
@@ -167,6 +205,16 @@ flow(
     git(repoPath, "switch", "-q", "main");
     await drawer(page).getByRole("button", { name: "Close" }).click();
 
+    // Before Merge, Diff shows the branch against the commit the item started from.
+    await row(page, MERGE_TITLE).click();
+    await drawer(page).getByRole("tab", { name: "Diff" }).click();
+    const base = git(repoPath, "rev-parse", "--short=7", "main");
+    await expect.poll(() => diffHead(drawer(page)).catch(() => []), { message: "the not-merged header", timeout: 20_000 }).toEqual([
+      expect.stringMatching(/^○ Not merged yet · branch tokama\/[0-9a-f]{8} · 1 file, \+1 −1$/),
+      `Compared with main at ${base}, where the item started.`,
+    ]);
+    await drawer(page).getByRole("button", { name: "Close" }).click();
+
     // Merge from the Done row's split button.
     const line = row(page, MERGE_TITLE).locator("xpath=..");
     await line.hover();
@@ -180,6 +228,14 @@ flow(
     await openRow(page, MERGE_TITLE);
     await expect.poll(() => drawer(page).locator(".finish-ended").innerText(), { message: "the merged end" }).toMatch(/Merged into main · [0-9a-f]{7} · \d\d:\d\d\s+Worktree and branch removed/);
     await screenshot("finish-5-merged");
+    // After it, Diff shows the merged commit against main before it.
+    await drawer(page).getByRole("tab", { name: "Diff" }).click();
+    const merged = git(repoPath, "rev-parse", "--short=7", "main");
+    await expect.poll(() => diffHead(drawer(page)).catch(() => []), { message: "the merged header", timeout: 20_000 }).toEqual([
+      `✓ Merged as ${merged} into main · 1 file, +1 −1`,
+      "The merged commit compared with main before it.",
+    ]);
+    expect(await drawer(page).locator(".dv-file").innerText()).toContain("greeting.txt");
 
     await openRow(page, DISCARD_TITLE);
     await drawer(page).getByRole("heading", { name: DISCARD_TITLE }).waitFor();

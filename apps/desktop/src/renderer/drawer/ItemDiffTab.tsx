@@ -5,24 +5,10 @@ import type { ItemRecord } from "@tokama/core";
 import { Fragment } from "react";
 import { DiffTab, type DiffLayout } from "../ui/DiffView.js";
 import { StatusMark } from "../ui/status.js";
-import type { Rich } from "./finish-view.js";
+import { Text } from "./Finish.js";
 import { diffHeader, type DiffHeader, type ItemDiffState } from "./item-diff-view.js";
 
-function Text({ parts }: { readonly parts: Rich }) {
-  return (
-    <>
-      {parts.map((part, index) =>
-        typeof part === "string" ? (
-          <Fragment key={index}>{part}</Fragment>
-        ) : (
-          <span key={index} className="mono dv-branch dv-strong">
-            {part.code}
-          </span>
-        ),
-      )}
-    </>
-  );
-}
+const CODE = "mono dv-branch dv-strong";
 
 function Header({ header }: { readonly header: DiffHeader }) {
   return (
@@ -30,13 +16,13 @@ function Header({ header }: { readonly header: DiffHeader }) {
       <p className="dv-head-line">
         <StatusMark status={header.mark} />
         <span className="dv-strong">
-          <Text parts={header.head} />
+          <Text parts={header.head} codeClass={CODE} />
         </span>
         {header.details.map((detail, index) => (
           <Fragment key={index}>
             <span aria-hidden="true">·</span>
             <span>
-              <Text parts={detail} />
+              <Text parts={detail} codeClass={CODE} />
             </span>
           </Fragment>
         ))}

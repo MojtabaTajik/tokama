@@ -40,14 +40,15 @@ export interface FinishProps {
   readonly askDiscard?: number | undefined;
 }
 
-function Text({ parts }: { readonly parts: Rich }) {
+/** Text with code parts (branches, commits) in mono; `codeClass` styles the code parts. */
+export function Text({ parts, codeClass = "mono" }: { readonly parts: Rich; readonly codeClass?: string }) {
   return (
     <>
       {parts.map((part, index) =>
         typeof part === "string" ? (
           part
         ) : (
-          <code key={index} className="mono">
+          <code key={index} className={codeClass}>
             {part.code}
           </code>
         ),

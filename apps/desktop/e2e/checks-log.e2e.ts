@@ -14,7 +14,8 @@ flow("shows the Checks and Log tabs in the drawer: commands per attempt, a faile
   await openRow(page, FAILED);
   const panel = drawer(page);
   await panel.getByRole("heading", { name: FAILED }).waitFor();
-  expect(await panel.getByRole("tab").allInnerTexts()).toEqual(["Steps", "Output", "Checks", "Log"]);
+  // The failed item left its worktree: Diff shows what it changed.
+  await expect.poll(() => panel.getByRole("tab").allInnerTexts(), { message: "the drawer's tabs" }).toEqual(["Steps", "Output", "Diff", "Checks", "Log"]);
 
   await panel.getByRole("tab", { name: "Checks" }).click();
   const attempts = panel.locator(".ck-attempt");
@@ -54,7 +55,7 @@ flow("shows the Checks and Log tabs in the expanded view, and no Checks tab on a
   await drawer(page).getByRole("button", { name: "Open full view" }).click();
   const full = page.locator(".expanded");
   await full.getByRole("heading", { name: FAILED, level: 1 }).waitFor();
-  expect(await full.getByRole("tab").allInnerTexts()).toEqual(["Steps", "Output", "Checks", "Log"]);
+  await expect.poll(() => full.getByRole("tab").allInnerTexts(), { message: "the full view's tabs" }).toEqual(["Steps", "Output", "Diff", "Checks", "Log"]);
 
   await full.getByRole("tab", { name: "Checks" }).click();
   await full.locator(".ck-lines").first().waitFor();

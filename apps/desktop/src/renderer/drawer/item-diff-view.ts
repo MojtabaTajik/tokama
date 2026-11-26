@@ -3,7 +3,7 @@
 // column heads. Pure functions, tested without React. Every line starts with a symbol and a word,
 // so colour is never the only signal.
 import type { ItemChange, ItemRecord } from "@tokama/core";
-import { totals } from "../ui/DiffView.js";
+import { count, totals } from "../ui/DiffView.js";
 import { type Mark, markOf } from "../ui/status.js";
 import { prName, type Rich } from "./finish-view.js";
 
@@ -26,7 +26,6 @@ export interface DiffHeader {
 }
 
 const short = (commit: string) => commit.slice(0, 7);
-const count = (value: number) => value.toLocaleString("en");
 
 /** "5 files, +1,244 −316": every file that differs, and the lines of the listed ones. */
 function counts(change: Extract<ItemChange, { kind: "worktree" | "merged" }>): string {
