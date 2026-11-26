@@ -424,7 +424,9 @@ describe("App engine failure", () => {
     await render(fakeBridge(failed).bridge);
     expect(text(".engine-line .health-word")).toBe("not available");
     const board = $(".board")!;
-    expect(board.querySelector(".failure-title")?.textContent).toBe("✕The engine is not available");
+    expect(board.querySelector(".failure-kicker")?.textContent).toBe("✕ Engine not running");
+    expect(board.querySelector(".failure-title")?.textContent).toBe("The engine is not available");
+    expect($$(".board button").map((button) => button.textContent)).toEqual(["Try again"]);
     expect(board.textContent).toContain(failed.reason);
     expect(board.textContent).toContain(failed.logPath);
     expect(board.querySelector("pre")?.textContent).toBe("Error: Cannot find module\n  at main.js:1");
@@ -447,7 +449,7 @@ describe("App engine failure", () => {
     expect($$(".pl-row")).toHaveLength(0);
     expect($(".badge")).toBeNull();
     expect(text(".main-header h1")).toBe("All work");
-    expect(text(".board .failure-title")).toBe("✕The engine is not available");
+    expect(text(".board .failure-title")).toBe("The engine is not available");
   });
 });
 

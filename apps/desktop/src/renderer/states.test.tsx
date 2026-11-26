@@ -79,15 +79,16 @@ describe("first launch: no repos yet", () => {
 describe("engine not running", () => {
   const failed: ConnectionState = { status: "failed", reason: "cannot start the engine: node was not found on PATH", logPath: "/home/a/.tokama/run/engine.log", logTail: [] };
 
-  it("shows the reason, the log path and a Retry button", async () => {
+  it("shows the reason, the log path and a Try again button", async () => {
     await mount(fakeBridge(failed));
-    expect(text(".board .failure-title")).toBe("✕The engine is not available");
+    expect(text(".board .failure-kicker")).toBe("✕ Engine not running");
+    expect(text(".board .failure-title")).toBe("The engine is not available");
     expect(text(".board .failure")).toContain(failed.reason);
-    expect(text(".board .failure")).toContain(failed.logPath);
-    expect($$(".board .failure button").map((el) => el.textContent)).toEqual(["Retry"]);
+    expect(text(".board .failure")).toContain(`Log ${failed.logPath}`);
+    expect($$(".board .failure button").map((el) => el.textContent)).toEqual(["Try again"]);
   });
 
-  it("asks the main process to connect again when Retry is pressed, and shows the engine starting", async () => {
+  it("asks the main process to connect again when Try again is pressed, and shows the engine starting", async () => {
     const fake = await mount(fakeBridge(failed));
     await click($(".board .failure .retry"));
     expect(fake.retryConnection).toHaveBeenCalledOnce();
@@ -112,43 +113,66 @@ describe("engine not running", () => {
 });
 
 describe("an older engine still running", () => {
-  const older = (runningItems: number | undefined, waiting = false): ConnectionState => ({
+  const older = (runningItems: number | undefined): ConnectionState => ({
     status: "failed",
     reason: "An older Tokama engine is still running. Restart it?",
     logPath: "/home/a/.tokama/run/engine.log",
     logTail: [],
-    older: { lockPath: "/home/a/.tokama/run/engine.lock", pid: 48211, waiting, ...(runningItems !== undefined && { runningItems }) },
+    older: { lockPath: "/home/a/.tokama/run/engine.lock", pid: 48211, ...(runningItems !== undefined && { runningItems }) },
   });
 
-  it("asks to restart it, with the lock, the pid and the log, and Restart engine restarts it", async () => {
+  const paragraphs = () => $$(".board .failure p").map((el) => el.textContent);
+  const HINT = "Tokama stops only its own engine, the one shown above. It never touches other processes.";
+
+  it("when it did not say, asks to restart it, with the lock and the pid; Restart engine now restarts it and Try again checks again", async () => {
     const fake = await mount(fakeBridge(older(undefined)));
-    expect(text(".board .failure")).toContain("An older Tokama engine is still running. Restart it?");
+    expect(paragraphs()).toEqual([
+      "⏸ Needs you",
+      "An older engine is still running",
+      "It is from the Tokama version before the update. It did not say whether it is running items. This version can’t use it.",
+      "Restart engine now stops any items it is running. Each one then waits in Needs you, where you choose Retry step or Stop.",
+      "Try again checks the engine again.",
+      HINT,
+    ]);
     expect(text(".board .failure .log")).toBe("lock  /home/a/.tokama/run/engine.lock\npid   48211");
-    expect(text(".board .failure")).toContain("/home/a/.tokama/run/engine.log");
-    expect($$(".board .failure button").map((el) => el.textContent)).toEqual(["Restart engine"]);
+    expect(text(".board .failure")).not.toContain("engine.log");
+    expect($$(".board .failure button").map((el) => el.textContent)).toEqual(["Restart engine now", "Try again"]);
     await click($(".board .failure .retry"));
     expect(fake.bridge.restartEngine).toHaveBeenCalledOnce();
+    await click($$(".board .failure button")[1]!);
+    expect(fake.bridge.retryConnection).toHaveBeenCalledOnce();
   });
 
-  it("when busy, offers Restart now or Wait", async () => {
-    const fake = await mount(fakeBridge(older(3)));
-    expect(text(".board .failure .hint")).toBe("It is running 3 tasks. Restart now (they pause and ask Retry or Stop) or Wait until they finish.");
-    expect($$(".board .failure button").map((el) => el.textContent)).toEqual(["Restart engine", "Restart now", "Wait"]);
-    await click($$(".board .failure .btn-link")[1]!);
-    expect(fake.bridge.waitForEngine).toHaveBeenCalledOnce();
-    await click($$(".board .failure .btn-link")[0]!);
-    expect(fake.bridge.restartEngine).toHaveBeenCalledOnce();
+  it("when busy, says how many items run, and offers no Wait", async () => {
+    await mount(fakeBridge(older(3)));
+    expect(paragraphs()).toEqual([
+      "⏸ Needs you",
+      "An older engine is still running",
+      "It is from the Tokama version before the update, and it is running 3 items. This version can’t use it.",
+      "Restart engine now stops these items. Each one then waits in Needs you, where you choose Retry step or Stop.",
+      "Try again checks whether they have finished. Once nothing is running, Tokama updates the engine by itself.",
+      HINT,
+    ]);
+    expect($$(".board .failure button").map((el) => el.textContent)).toEqual(["Restart engine now", "Try again"]);
   });
 
-  it("while waiting, says so and still offers Restart engine", async () => {
-    await mount(fakeBridge(older(1, true)));
-    expect(text(".board .failure .hint")).toBe("Waiting for 1 task to finish; then Tokama restarts the engine.");
-    expect($$(".board .failure button").map((el) => el.textContent)).toEqual(["Restart engine"]);
+  it("says 1 item for one, and when it checked after Try again found it still busy", async () => {
+    const state = older(1);
+    await mount(fakeBridge({ ...state, older: { ...(state as { older: object }).older, checkedAt: new Date(2026, 10, 26, 9, 5).getTime() } } as ConnectionState));
+    expect(text(".board .failure .detail")).toBe("It is from the Tokama version before the update, and it is running 1 item. This version can’t use it.");
+    expect(text(".board .older-checked")).toBe("Checked at 09:05. Not finished yet.");
+  });
+
+  it("shows the older engine in the header chip", async () => {
+    await mount(fakeBridge(older(3)));
+    expect(text(".main-header .engine-chip")).toBe("⏸Older engine running");
   });
 
   it("says Updating engine while it replaces it", async () => {
     await mount(fakeBridge({ status: "starting", updating: true }));
-    expect(text(".board .placeholder")).toBe("Updating engine…");
+    expect($$(".board .failure p").map((el) => el.textContent)).toEqual(["● Updating engine…", "Stopping the older engine and starting the new one. This takes a few seconds."]);
+    expect($$(".board button")).toHaveLength(0);
+    expect(text(".main-header .engine-chip")).toBe("●Updating engine…");
     expect(text(".health-word")).toBe("updating engine");
   });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_CHECK_CHARS,
   API_VERSION,
+  SHUTDOWN_IF_IDLE_SINCE,
   AgentCallEventSchema,
   COMMAND_ERROR_CODES,
   parseCommandResult,
@@ -395,6 +396,21 @@ describe("handshake messages", () => {
     expect(parseOpeningMessage({ kind: "shutdown", apiVersion: 1 }).ok).toBe(false);
     expect(parseShutdownReply({ kind: "shutdown_accepted", apiVersion: 1 }).ok).toBe(true);
     expect(parseShutdownReply({ kind: "connection_error", apiVersion: 1, code: "bad_message", message: "m" }).ok).toBe(true);
+  });
+
+  it("reads ifIdle in a shutdown request, and shutdown_refused with its count as a reply", () => {
+    expect(parseOpeningMessage({ kind: "shutdown", apiVersion: API_VERSION, token: "t0k", ifIdle: true })).toMatchObject({ ok: true, value: { ifIdle: true } });
+    expect(parseOpeningMessage({ kind: "shutdown", apiVersion: API_VERSION, token: "t0k" })).toEqual({ ok: true, value: { kind: "shutdown", apiVersion: API_VERSION, token: "t0k" } });
+    expect(parseOpeningMessage({ kind: "shutdown", apiVersion: API_VERSION, token: "t0k", ifIdle: "yes" }).ok).toBe(false);
+    expect(parseShutdownReply({ kind: "shutdown_refused", apiVersion: API_VERSION, runningItems: 3 })).toMatchObject({ ok: true, value: { kind: "shutdown_refused", runningItems: 3 } });
+    expect(parseShutdownReply({ kind: "shutdown_refused", apiVersion: API_VERSION, runningItems: -1 }).ok).toBe(false);
+    // An engine that could not count its items says no number.
+    expect(parseShutdownReply({ kind: "shutdown_refused", apiVersion: API_VERSION }).ok).toBe(true);
+  });
+
+  it("starts ifIdle at the API version that added it", () => {
+    expect(SHUTDOWN_IF_IDLE_SINCE).toBe(15);
+    expect(API_VERSION).toBeGreaterThanOrEqual(SHUTDOWN_IF_IDLE_SINCE);
   });
 
   it("keeps handshake messages out of the normal message parsers", () => {

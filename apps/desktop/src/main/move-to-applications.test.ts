@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ConnectError } from "@tokama/client";
-import { APPLICATIONS_COPY, conflictAnswer, type ConflictType, type ConnectResult, type CopyEngineDeps, itemsRunningIn, type MoveDeps, offerMove, runsFromCopy, shouldOfferMove } from "./move-to-applications.js";
+import { conflictAnswer, type ConflictType, type ConnectResult, type CopyEngineDeps, itemsRunningIn, type MoveDeps, offerMove, shouldOfferMove } from "./move-to-applications.js";
 
 function deps(overrides: Partial<MoveDeps> = {}) {
   const moveToApplicationsFolder = vi.fn<MoveDeps["moveToApplicationsFolder"]>(() => true);
@@ -8,14 +8,6 @@ function deps(overrides: Partial<MoveDeps> = {}) {
   const all: MoveDeps = { ask: async () => 0, askSync: () => 0, moveToApplicationsFolder, showErrorBox, itemsRunningInApplications: async () => 0, ...overrides };
   return { all, moveToApplicationsFolder, showErrorBox };
 }
-
-describe("runsFromCopy", () => {
-  it("is true for a command inside the copy in Applications, and only for that", () => {
-    expect(runsFromCopy("/Applications/Tokama.app/Contents/Resources/engine/tokama-engine /Applications/Tokama.app/Contents/Resources/engine/dist/main.js --dir /x")).toBe(true);
-    expect(runsFromCopy("/Applications/Tokama.app.old/Contents/Resources/engine/tokama-engine")).toBe(false);
-    expect(runsFromCopy("/usr/local/bin/node /src/apps/engine/dist/main.js --dir /x")).toBe(false);
-  });
-});
 
 describe("shouldOfferMove", () => {
   const base = { platform: "darwin" as const, isPackaged: true, inApplications: () => false };
@@ -55,19 +47,19 @@ describe("offerMove", () => {
     expect(showErrorBox).not.toHaveBeenCalled();
   });
 
-  it("refuses to replace the copy in Applications while its engine runs items, and says how many", async () => {
+  it("refuses to replace the copy in Applications while a running engine has items, and says how many", async () => {
     const { all, moveToApplicationsFolder, showErrorBox } = deps({ itemsRunningInApplications: async () => 2 });
     await offerMove(all);
     expect(moveToApplicationsFolder).not.toHaveBeenCalled();
     expect(showErrorBox).toHaveBeenCalledWith("Could not replace Tokama", expect.stringContaining("still has 2 unfinished items"));
   });
 
-  it("refuses when it cannot tell whether the copy in Applications runs items", async () => {
+  it("refuses when it cannot tell whether a running engine has items", async () => {
     for (const itemsRunningInApplications of [async () => undefined, async () => Promise.reject(new Error("no engine answer"))]) {
       const { all, moveToApplicationsFolder, showErrorBox } = deps({ itemsRunningInApplications });
       await offerMove(all);
       expect(moveToApplicationsFolder).not.toHaveBeenCalled();
-      expect(showErrorBox).toHaveBeenCalledWith("Could not replace Tokama", expect.stringContaining("Open the copy in Applications"));
+      expect(showErrorBox).toHaveBeenCalledWith("Could not replace Tokama", expect.stringContaining("Open Tokama from Applications"));
     }
   });
 
@@ -93,17 +85,15 @@ describe("offerMove", () => {
 
 describe("itemsRunningIn", () => {
   const LOCK = { pid: 42 };
-  const OURS = { command: `${APPLICATIONS_COPY}/Contents/Resources/engine/tokama-engine` };
   const board = (...states: string[]) => ({ ok: true as const, data: { items: states.map((state) => ({ state })) } });
 
-  /** Deps for an engine of the copy in Applications that answers `reply`; each can be overridden. */
+  /** Deps for a live engine that answers `reply`; each can be overridden. */
   function copyDeps(overrides: Partial<CopyEngineDeps> = {}, reply: () => Promise<ReturnType<typeof board> | { ok: false }> = async () => board()) {
     const close = vi.fn(async () => {});
     const query = vi.fn(reply);
     const connect = vi.fn(async (): Promise<ConnectResult> => ({ ok: true, value: { query, close } }));
-    const describe = vi.fn(async () => OURS as { command: string } | undefined);
-    const all: CopyEngineDeps = { endpoint: () => ({ ok: true, value: { lockPath: "/x/engine.lock" } }), readLock: () => LOCK, describe, connect, ...overrides };
-    return { all, close, query, connect, describe };
+    const all: CopyEngineDeps = { endpoint: () => ({ ok: true, value: { lockPath: "/x/engine.lock" } }), readLock: () => LOCK, pidAlive: () => true, connect, ...overrides };
+    return { all, close, query, connect };
   }
   const refused = (code: ConnectError["code"], engine?: ConnectError["engine"]): CopyEngineDeps["connect"] => async () => ({ ok: false, error: { code, ...(engine !== undefined && { engine }) } });
 
@@ -112,19 +102,13 @@ describe("itemsRunningIn", () => {
   });
 
   it("is 0 without a lock, and asks nothing more", async () => {
-    const { all, describe, connect } = copyDeps({ readLock: () => undefined });
+    const { all, connect } = copyDeps({ readLock: () => undefined });
     expect(await itemsRunningIn(all)).toBe(0);
-    expect(describe).not.toHaveBeenCalled();
     expect(connect).not.toHaveBeenCalled();
   });
 
-  it("is undefined when the process cannot be described, and 0 when it is gone", async () => {
-    expect(await itemsRunningIn(copyDeps({ describe: async () => Promise.reject(new Error("ps failed")) }).all)).toBeUndefined();
-    expect(await itemsRunningIn(copyDeps({ describe: async () => undefined }).all)).toBe(0);
-  });
-
-  it("is 0 for an engine that does not run from the copy, without connecting", async () => {
-    const { all, connect } = copyDeps({ describe: async () => ({ command: "/usr/local/bin/node /src/apps/engine/dist/main.js" }) });
+  it("is 0 when the lock names a pid that is gone, without connecting", async () => {
+    const { all, connect } = copyDeps({ pidAlive: () => false });
     expect(await itemsRunningIn(all)).toBe(0);
     expect(connect).not.toHaveBeenCalled();
   });

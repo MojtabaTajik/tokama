@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { attachTracker, engineCommand, engineCommandEnd, engineDirFor, engineEnv, engineRuntime, findExecutable, readLogTail, toolsPathInfo } from "./engine.js";
+import { attachTracker, engineCommand, engineDirFor, engineEnv, engineRuntime, findExecutable, readLogTail, toolsPathInfo } from "./engine.js";
 
 let dir: string;
 beforeEach(() => {
@@ -185,30 +185,5 @@ describe("engineRuntime", () => {
 
   it("packaged on Windows: the Node binary is an .exe", () => {
     expect(engineRuntime({ platform: "win32", isPackaged: true, appPath, resourcesPath, path: undefined }).node).toBe(join(resourcesPath, "engine", "tokama-engine.exe"));
-  });
-
-  it("packaged: the engine command ends the way engineCommandEnd says, so the app finds its own engine", () => {
-    const { node, entry } = engineRuntime({ platform: "darwin", isPackaged: true, appPath, resourcesPath, path: undefined });
-    const command = engineCommand({ node, entry, dir: "/home/dev/.tokama/run", env: {} });
-    if (!command.ok) throw new Error(command.error);
-    expect([command.value.command, ...command.value.args].join(" ").endsWith(engineCommandEnd("/home/dev/.tokama/run"))).toBe(true);
-  });
-});
-
-describe("engineCommandEnd", () => {
-  it("is how the command line of the engine engineCommand builds ends, for the real and the sample engine", () => {
-    for (const sample of [false, true]) {
-      const command = engineCommand({ node: "/usr/bin/node", entry: "/src/tokama/apps/engine/dist/main.js", dir: "/home/dev/.tokama/run", env: {}, sample });
-      if (!command.ok) throw new Error(command.error);
-      expect([command.value.command, ...command.value.args].join(" ").endsWith(engineCommandEnd("/home/dev/.tokama/run", sample))).toBe(true);
-    }
-  });
-
-  it("does not match the sample engine's dir for the real engine, or the other way round", () => {
-    const sampleLine = "/usr/bin/node /src/apps/engine/dist/main.js --dir /home/dev/.tokama/run/sample --sample";
-    const realLine = "/usr/bin/node /src/apps/engine/dist/main.js --dir /home/dev/.tokama/run";
-    expect(sampleLine.endsWith(engineCommandEnd("/home/dev/.tokama/run"))).toBe(false);
-    expect(realLine.endsWith(engineCommandEnd("/home/dev/.tokama/run/sample", true))).toBe(false);
-    expect(realLine.endsWith(engineCommandEnd("/dev/.tokama/run"))).toBe(false);
   });
 });

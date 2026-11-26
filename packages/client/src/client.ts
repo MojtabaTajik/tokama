@@ -561,52 +561,74 @@ function openSession(endpoint: EngineEndpoint, timeoutMs: number, handlers: Sess
 }
 
 /**
- * Asks the engine in `dir` to stop, with its token, in place of a hello; every engine from the
- * version that added the request accepts it, whatever its API version. True when the engine
- * accepted; false when it refused (an engine older than the request), did not answer within
- * `timeoutMs`, or is not there.
+ * The engine's answer to a shutdown request: it accepted and stops, it refused because items run
+ * (`ifIdle` only; `runningItems` is absent when it could not count them), or there was no usable
+ * answer (an engine older than the request, a wrong token, silence, no engine).
  */
-export function requestShutdown(dir: string, timeoutMs = 2_000): Promise<boolean> {
+export type ShutdownAnswer =
+  | { readonly kind: "accepted" }
+  | { readonly kind: "refused"; readonly runningItems?: number }
+  | { readonly kind: "none" };
+
+/**
+ * Asks the engine in `dir` to stop, with its token, in place of a hello. Every engine from the
+ * version that added the request accepts it, whatever its API version. `ifIdle` is understood
+ * only from API version SHUTDOWN_IF_IDLE_SINCE on: an older engine ignores it and stops at once.
+ */
+export function sendShutdown(dir: string, options: { readonly ifIdle?: boolean; readonly timeoutMs?: number } = {}): Promise<ShutdownAnswer> {
+  const timeoutMs = options.timeoutMs ?? 2_000;
+  const none: ShutdownAnswer = { kind: "none" };
   const endpoint = engineEndpoint(dir);
-  if (!endpoint.ok) return Promise.resolve(false);
+  if (!endpoint.ok) return Promise.resolve(none);
   const { tokenPath, socketPath } = endpoint.value;
   return new Promise((resolve) => {
     // The token goes only into a directory that is ours and private, as for a hello.
-    if (!checkEngineDir(endpoint.value.dir).ok) return resolve(false);
+    if (!checkEngineDir(endpoint.value.dir).ok) return resolve(none);
     let token: string;
     try {
       token = readFileSync(tokenPath, "utf8").trim();
     } catch {
-      return resolve(false);
+      return resolve(none);
     }
     const socket = connectSocket(socketPath);
     const decoder = new LineDecoder();
     let settled = false;
-    const settle = (accepted: boolean) => {
+    const settle = (answer: ShutdownAnswer) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       socket.destroy();
-      resolve(accepted);
+      resolve(answer);
     };
-    const timer = setTimeout(() => settle(false), timeoutMs);
+    const timer = setTimeout(() => settle(none), timeoutMs);
     socket.once("connect", () => {
-      const request = encodeLine({ kind: "shutdown", apiVersion: API_VERSION, token });
+      const request = encodeLine({ kind: "shutdown", apiVersion: API_VERSION, token, ...(options.ifIdle === true && { ifIdle: true }) });
       if (request.ok) socket.write(request.value);
-      else settle(false);
+      else settle(none);
     });
-    socket.on("error", () => settle(false));
-    socket.on("close", () => settle(false));
+    socket.on("error", () => settle(none));
+    socket.on("close", () => settle(none));
     socket.on("data", (chunk: Buffer) => {
       const lines = decoder.push(chunk);
-      if (!lines.ok) return settle(false);
+      if (!lines.ok) return settle(none);
       const first = lines.value[0];
       if (first === undefined) return;
       const json = parseJsonLine(first);
       const reply = parseShutdownReply(json.ok ? json.value : undefined);
-      settle(reply.ok && reply.value.kind === "shutdown_accepted");
+      if (!reply.ok) return settle(none);
+      if (reply.value.kind === "shutdown_accepted") return settle({ kind: "accepted" });
+      if (reply.value.kind === "shutdown_refused") return settle({ kind: "refused", ...(reply.value.runningItems !== undefined && { runningItems: reply.value.runningItems }) });
+      settle(none);
     });
   });
+}
+
+/**
+ * Asks the engine in `dir` to stop. True when the engine accepted; false when it refused (an
+ * engine older than the request), did not answer within `timeoutMs`, or is not there.
+ */
+export async function requestShutdown(dir: string, timeoutMs = 2_000): Promise<boolean> {
+  return (await sendShutdown(dir, { timeoutMs })).kind === "accepted";
 }
 
 function handshakeCode(code: string): ConnectErrorCode {

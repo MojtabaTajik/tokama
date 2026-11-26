@@ -21,7 +21,7 @@ const [, pushOpenItem] = electron.on.mock.calls.find(([channel]) => channel === 
 describe("preload bridge", () => {
   it("exposes window.tokama with only the bridge methods", () => {
     expect(exposed).toEqual([["tokama", bridge]]);
-    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "countUsage", "getAboutInfo", "getConnection", "getDesktopState", "getToolsPath", "onConnection", "onEvent", "onOpenItem", "openAttemptFile", "openTemplateFile", "pickFolder", "query", "reportError", "restartEngine", "retryConnection", "waitForEngine", "saveLayout", "saveNotifications", "playSound", "setViewedItem", "showDataFolder", "loadDiagnostics", "sendDiagnostics", "saveDiagnostics", "stopCrashPrompt", "getWhatsNew", "closeWhatsNew", "getUpdate", "onUpdate", "checkForUpdates", "installUpdate", "openUpdateNotes"].sort());
+    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "countUsage", "getAboutInfo", "getConnection", "getDesktopState", "getToolsPath", "onConnection", "onEvent", "onOpenItem", "openAttemptFile", "openTemplateFile", "pickFolder", "query", "reportError", "restartEngine", "retryConnection", "saveLayout", "saveNotifications", "playSound", "setViewedItem", "showDataFolder", "loadDiagnostics", "sendDiagnostics", "saveDiagnostics", "stopCrashPrompt", "getWhatsNew", "closeWhatsNew", "getUpdate", "onUpdate", "checkForUpdates", "installUpdate", "openUpdateNotes"].sort());
   });
 
   it("the release notes calls: one without arguments, and a close that sends only two strings", async () => {
@@ -147,12 +147,10 @@ describe("preload bridge", () => {
     expect(electron.invoke).toHaveBeenCalledWith(CHANNELS.retryConnection);
   });
 
-  it("restartEngine and waitForEngine invoke their channels with no argument", async () => {
+  it("restartEngine invokes its channel with no argument", async () => {
     electron.invoke.mockResolvedValue(undefined);
     await bridge.restartEngine();
     expect(electron.invoke).toHaveBeenCalledWith(CHANNELS.restartEngine);
-    await bridge.waitForEngine();
-    expect(electron.invoke).toHaveBeenCalledWith(CHANNELS.waitForEngine);
   });
 
   it("onConnection passes the state without the IPC event, and unsubscribes", () => {

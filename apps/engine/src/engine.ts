@@ -6,7 +6,9 @@
 // and queries (one JSON message per line) and receives replies and events.
 //
 // A connection may start with a shutdown request (with the token) in place of the hello: a newer
-// app sends it to replace this engine, whatever its API version.
+// app sends it to replace this engine, whatever its API version. With `ifIdle`, the engine stops
+// only when no item is running, queued or finishing; otherwise it answers `shutdown_refused` with
+// the count and keeps running. Once it drains, commands get `invalid_state`.
 //
 // Shutdown, when the signal aborts, close() is called or a client asks for it: refuse new connections, wait for
 // in-flight requests (bounded), close the connections, stop listening, then remove the socket,
@@ -159,6 +161,8 @@ export interface EngineOptions {
   readonly planSources?: PlanSources;
   /** Where the machine query reads memory and processes. Default: this OS's source, none on an OS without one. */
   readonly machineSource?: MachineSource;
+  /** Tests only: awaited before each command is handled, so a test can hold a command in flight. */
+  readonly beforeCommand?: (command: Command) => Promise<void>;
   /**
    * Real mode: Claude Code's projects folder (`~/.claude/projects`), whose session logs the `all`
    * usage scope reads. Absent: the logs are never read.
@@ -545,6 +549,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   };
 
   const dispatch = async (message: ClientMessage): Promise<ReplyResult> => {
+    if (message.kind === "command") await options.beforeCommand?.(message.command);
     const result = await answer(message);
     if (result.ok && message.kind === "command") diagnostics?.countCommand(message.command, (id) => store.list().find((item) => item.id === id), result.data);
     return result;
@@ -750,6 +755,18 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     }
   };
 
+  // What a stop that waits for idle must not interrupt: the items counted above, and queued ones,
+  // which the run loop starts while the engine drains. undefined: the store could not list.
+  // A command still being handled may be about to start an item, so it counts too.
+  let commandsInFlight = 0;
+  const busyItems = (): number | undefined => {
+    try {
+      return commandsInFlight + store.list().filter((item) => item.state === "running" || item.state === "queued" || item.finish?.running !== undefined).length;
+    } catch {
+      return undefined;
+    }
+  };
+
   const handleHello = (socket: Socket, line: string): boolean => {
     const opening = parseJsonLine(line);
     const hello = parseOpeningMessage(opening.ok ? opening.value : undefined);
@@ -763,6 +780,15 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     }
     // A shutdown request is accepted from any version: a newer app replaces this engine with it.
     if (hello.value.kind === "shutdown") {
+      // The count and the start of the drain happen in the same tick, so no item can start in between.
+      const busy = hello.value.ifIdle === true ? busyItems() : 0;
+      if (busy === undefined || busy > 0) {
+        log(`a client with API version ${hello.value.apiVersion} asked the engine to stop when idle; ${busy === undefined ? "it could not count its items" : `${busy} still run`}, so it keeps running`);
+        const refused = encodeLine({ kind: "shutdown_refused", apiVersion: API_VERSION, ...(busy !== undefined && { runningItems: busy }) });
+        if (refused.ok) write(socket, refused.value);
+        socket.end();
+        return false;
+      }
       log(`a client with API version ${hello.value.apiVersion} asked the engine to stop`);
       const accepted = encodeLine({ kind: "shutdown_accepted", apiVersion: API_VERSION });
       if (accepted.ok) write(socket, accepted.value);
@@ -790,6 +816,10 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       if (requestId === undefined) return fail(socket, "bad_message", message);
       return reply(socket, requestId, { ok: false, error: { code: "invalid_message", message } });
     }
+    // Once the engine drains, no command may start work that the stop would then cut off.
+    if (shuttingDown && parsed.value.kind === "command") {
+      return reply(socket, parsed.value.requestId, { ok: false, error: { code: "invalid_state" satisfies CommandErrorCode, message: "The engine is shutting down." } });
+    }
     const work = dispatch(parsed.value)
       .catch((error: unknown): ReplyResult => {
         log(`request failed: ${String(error)}`);
@@ -798,6 +828,10 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       })
       .then((result) => reply(socket, parsed.value.requestId, result));
     inFlight.add(work);
+    if (parsed.value.kind === "command") {
+      commandsInFlight++;
+      void work.finally(() => commandsInFlight--);
+    }
     void work.finally(() => inFlight.delete(work));
   };
 
