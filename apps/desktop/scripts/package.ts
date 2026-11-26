@@ -92,6 +92,8 @@ async function main(): Promise<void> {
   execFileSync("security", ["create-keychain", "-p", "", keychain], { stdio: "ignore" });
   process.env["CSC_KEYCHAIN"] = keychain;
   process.env["CSC_IDENTITY_AUTO_DISCOVERY"] = "false";
+  // On a pull request run electron-builder skips signing altogether, which would leave Node's own signature on the engine. The signing here is ad-hoc with no certificate, so it is safe to force.
+  process.env["CSC_FOR_PULL_REQUEST"] = "true";
   try {
     const { build, Arch, Platform } = await import("electron-builder");
     await build({
