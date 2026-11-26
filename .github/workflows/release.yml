@@ -1,0 +1,202 @@
+name: release
+
+# A v<x.y.z> tag builds, signs, notarizes and verifies the macOS app and ends in a draft release;
+# the owner reads the draft and publishes it. A manual run is a dry run on a tag: the same build
+# and checks, no release. Start one with
+#   gh workflow run release.yml --ref v0.1.0 [-f feed_url=https://example.test/mac/]
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      feed_url:
+        description: Update feed URL baked into the app (default https://updates.tokama.dev/mac/)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+# Two runs for one tag never race on the draft, and a started release is never cancelled.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Read-only, on Linux, before any secret is in reach: the ref is a version tag that names the
+  # package version, the changelog has its section, the tagged commit is on main and CI passed on it.
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      checks: read
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      feed_url: ${{ steps.check.outputs.feed_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+          FEED_URL_INPUT: ${{ inputs.feed_url }}
+        run: |
+          set -euo pipefail
+          node apps/desktop/scripts/release-check.ts --ref "$REF" --notes-out "$RUNNER_TEMP/notes.md" --github-output "$GITHUB_OUTPUT"
+          # ahead_by counts the commits of the tagged commit that main does not have: 0 means it is on main.
+          ahead=$(gh api "repos/$REPO/compare/main...$SHA" --jq .ahead_by)
+          [ "$ahead" = 0 ] || { echo "the tagged commit is not on main"; exit 1; }
+          ok=$(gh api "repos/$REPO/commits/$SHA/check-runs?check_name=ci%20(ubuntu-latest)" --jq '[.check_runs[] | select(.conclusion == "success")] | length')
+          [ "$ok" -ge 1 ] || { echo "no successful 'ci (ubuntu-latest)' on $SHA"; exit 1; }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-notes
+          path: ${{ runner.temp }}/notes.md
+          if-no-files-found: error
+          retention-days: 7
+
+  # The only job with secrets (the `release` environment accepts v* tags only). They are set on
+  # single steps, so install, build, tests and the smoke test never see them. No cache is restored
+  # here: nothing from a pull request or from main reaches the signing job.
+  build-mac:
+    name: build (${{ matrix.os }})
+    needs: check
+    strategy:
+      matrix:
+        os: [macos-latest]
+    runs-on: ${{ matrix.os }}
+    environment: release
+    timeout-minutes: 75
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test
+      - name: Temporary signing keychain
+        env:
+          P12_BASE64: ${{ secrets.MAC_CERT_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          umask 077
+          kc="$RUNNER_TEMP/release.keychain-db"
+          kc_pass=$(openssl rand -base64 32)
+          echo "::add-mask::$kc_pass"
+          p12="$RUNNER_TEMP/cert.p12"
+          printf '%s' "$P12_BASE64" | base64 --decode > "$p12"
+          # Apple's Developer ID intermediate certificate, by a pinned hash: the signature chain needs it, and the p12 may not hold it.
+          curl -fsSL -o "$RUNNER_TEMP/g2.cer" https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer
+          echo "f16cd3c54c7f83cea4bf1a3e6a0819c8aaa8e4a1528fd144715f350643d2df3a  $RUNNER_TEMP/g2.cer" | shasum -a 256 -c -
+          security create-keychain -p "$kc_pass" "$kc"
+          security set-keychain-settings -lut 7200 "$kc"
+          security unlock-keychain -p "$kc_pass" "$kc"
+          security import "$RUNNER_TEMP/g2.cer" -k "$kc" -T /usr/bin/codesign
+          security import "$p12" -k "$kc" -P "$P12_PASSWORD" -f pkcs12 -T /usr/bin/codesign
+          rm -f "$p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$kc_pass" "$kc" > /dev/null
+          existing=$(security list-keychains -d user | tr -d '"')
+          # shellcheck disable=SC2086
+          security list-keychains -d user -s "$kc" $existing
+          security find-identity -v -p codesigning "$kc" | grep -q "Developer ID Application: .*($APPLE_TEAM_ID)"
+          echo "CSC_KEYCHAIN=$kc" >> "$GITHUB_ENV"
+      - name: App Store Connect API key file
+        env:
+          KEY: ${{ secrets.APPLE_API_KEY_P8 }}
+          KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+        run: |
+          set -euo pipefail
+          umask 077
+          f="$RUNNER_TEMP/AuthKey_${KEY_ID}.p8"
+          case "$KEY" in
+            -----BEGIN*) printf '%s\n' "$KEY" > "$f" ;;
+            *) printf '%s' "$KEY" | base64 --decode > "$f" ;;
+          esac
+          echo "APPLE_API_KEY=$f" >> "$GITHUB_ENV"
+      - name: Package, sign, notarize, staple and verify
+        working-directory: apps/desktop
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          FEED_URL: ${{ needs.check.outputs.feed_url }}
+        run: pnpm exec install-electron && node scripts/package.ts --dmg --signed --feed-url "$FEED_URL"
+      - name: Installed-app smoke test (signed)
+        working-directory: apps/desktop
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          FEED_URL: ${{ needs.check.outputs.feed_url }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: node scripts/smoke-installed.ts --dmg "release/Tokama-$VERSION-arm64.dmg" --signed --team "$APPLE_TEAM_ID" --feed-url "$FEED_URL"
+      - name: Remove the keychain and the key
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/release.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP"/AuthKey_*.p8 "$RUNNER_TEMP/cert.p12" "$RUNNER_TEMP/g2.cer"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tokama-mac-${{ needs.check.outputs.version }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            apps/desktop/release/Tokama-${{ needs.check.outputs.version }}-arm64.dmg
+            apps/desktop/release/Tokama-${{ needs.check.outputs.version }}-arm64-mac.zip
+            apps/desktop/release/Tokama-${{ needs.check.outputs.version }}-arm64-mac.zip.blockmap
+            apps/desktop/release/latest-mac.yml
+            apps/desktop/release/SHA256SUMS.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: release-failure-logs
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            apps/desktop/smoke-output
+            apps/desktop/release/notary-*.json
+
+  # Writes the draft from the files build-mac made: no checkout, no install, no secrets.
+  # A manual run stops before this job, so it never creates a release.
+  publish:
+    name: draft release
+    needs: [check, build-mac]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tokama-mac-${{ needs.check.outputs.version }}
+          path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-notes
+          path: notes
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          set -euo pipefail
+          (cd dist && shasum -a 256 -c SHA256SUMS.txt)
+          [ "$(find dist -mindepth 1 | wc -l)" -eq 5 ]
+          # --verify-tag: the workflow never creates or moves a tag. The draft is the owner's to publish.
+          gh release create "v$VERSION" --repo "$REPO" --draft --verify-tag --title "Tokama $VERSION" --notes-file notes/notes.md dist/*
