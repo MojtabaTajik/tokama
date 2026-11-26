@@ -11,3 +11,8 @@ blockExoticSubdeps: true
 # No dependency may run install scripts. Add `<name>: true` only after review.
 allowBuilds:
   electron-winstaller: false
+
+# minimatch 7.0.0 up to 11.0.0 has a glob-parts DoS. electron-builder's packaging
+# tree still pulls 9.x and 10.x; force the patched release for those ranges only.
+overrides:
+  "minimatch@>=7.0.0 <11.0.1": 11.0.9
