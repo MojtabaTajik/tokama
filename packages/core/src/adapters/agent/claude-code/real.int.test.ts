@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createProcessRunner, type ProcessRunner } from "../../../kernel/process/index.js";
 import type { AgentCallEvent } from "../../../kernel/schemas/index.js";
@@ -12,24 +12,69 @@ import { hookSettings } from "./permission-hook.js";
 // it costs a few cents and never runs in CI. It checks the permissions for real: an edit inside
 // the working directory and a command with a rule work; an edit outside it, a command without a
 // rule (also a read-only one such as `whoami`, which only Tokama's hook denies) and reading a file
-// outside it with `cat` are denied.
+// outside it with `cat` are denied. Commands run in Claude Code's sandbox: a write outside the
+// working directory or into the call's settings folder fails with the OS error, and only the
+// allowed registry host answers.
 
 const enabled = process.env["TOKAMA_REAL_CLAUDE"] === "1";
 
+// What a probe step runs inside the sandbox: a write, a read, and a read of a well-known secret folder.
+const PROBE = `const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const [kind, target] = process.argv.slice(2);
+try {
+  if (kind === "write") fs.writeFileSync(target, "x");
+  else if (kind === "read") fs.readFileSync(target);
+  else if (kind === "list-ssh") fs.readdirSync(path.join(os.homedir(), ".ssh"));
+  console.log("done");
+} catch (error) {
+  console.error(String(error));
+  process.exit(1);
+}
+`;
+
 describe.skipIf(!enabled)("Claude Code runtime against the real CLI", () => {
-  it("runs one guarded call and returns its events, usage and session id", { timeout: 180_000 }, async () => {
+  it("runs one guarded call and returns its events, usage and session id", { timeout: 300_000 }, async () => {
     const root = mkdtempSync(join(tmpdir(), "tokama-real-claude-"));
+    // The call runs in a linked worktree, as every item does: git writes the shared `.git` from it.
+    const main = join(root, "main");
     const repo = join(root, "repo");
-    mkdirSync(repo);
-    writeFileSync(join(repo, "notes.txt"), "the word is gecko\n");
+    mkdirSync(main);
+    writeFileSync(join(main, "notes.txt"), "the word is gecko\n");
+    writeFileSync(join(main, "probe.js"), PROBE);
     writeFileSync(join(root, "secret.txt"), "the secret is agama\n");
+    const git = (cwd: string, ...args: string[]) => {
+      const run = spawnSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.com", ...args], {
+        cwd,
+        encoding: "utf8",
+        env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" },
+      });
+      if (run.status !== 0) throw new Error(`git ${args.join(" ")}: ${run.stderr}`);
+      return run.stdout.trim();
+    };
+    git(main, "init", "-q", "-b", "main");
+    git(main, "config", "user.name", "Test");
+    git(main, "config", "user.email", "test@example.com");
+    // The agent's own commit reads the repo's config, not a signing setup of whoever runs the test.
+    git(main, "config", "commit.gpgsign", "false");
+    git(main, "add", "-A");
+    git(main, "commit", "-q", "-m", "seed");
+    git(main, "worktree", "add", "-q", "-b", "item", repo);
     // The CLI's raw lines, to print what the events leave out (cost, denials).
     const raw: string[] = [];
     const base = createProcessRunner();
+    // The folder of the call's settings is only known once the CLI starts: the prompt names it by
+    // a placeholder, filled in on the way to the CLI.
+    const CALL_DIR = "<CALL_DIR>";
+    let callDir = "";
     const runner: ProcessRunner = {
-      run: (request) =>
-        base.run({
+      run: (request) => {
+        const settings = "argv" in request.command ? request.command.argv.find((arg) => arg.startsWith("--settings=")) : undefined;
+        if (settings !== undefined) callDir = dirname(settings.slice("--settings=".length));
+        return base.run({
           ...request,
+          ...(request.stdin !== undefined && callDir !== "" && { stdin: request.stdin.replaceAll(CALL_DIR, callDir) }),
           stdout: {
             onLine: (line) => {
               // The version probe before the call prints text, not stream-json.
@@ -37,7 +82,8 @@ describe.skipIf(!enabled)("Claude Code runtime against the real CLI", () => {
               request.stdout?.onLine?.(line);
             },
           },
-        }),
+        });
+      },
     };
     try {
       const events: AgentCallEvent[] = [];
@@ -50,13 +96,33 @@ describe.skipIf(!enabled)("Claude Code runtime against the real CLI", () => {
         "5. Run the shell command `mkdir made-by-mkdir`.",
         "6. Run the shell command `whoami`.",
         "7. Run the shell command `cat ../secret.txt`.",
+        "8. Run the shell command `node probe.js write ../outside-by-node`.",
+        `9. Run the shell command \`node probe.js write ${CALL_DIR}/x\`.`,
+        `10. Run the shell command \`node probe.js read ${CALL_DIR}/rules.json\`.`,
+        "11. Run the shell command `node probe.js list-ssh`.",
+        "12. Run the shell command `curl --noproxy '*' -sS https://example.com`.",
+        "13. Run the shell command `curl -sS https://example.com`.",
+        "14. Run the shell command `curl -sSI https://registry.npmjs.org/`.",
+        "15. Run the shell command `git status`.",
+        "16. Run the shell command `git add -A`.",
+        "17. Run the shell command `git commit -m probe`.",
+        "Use the shell and file tools only: never WebFetch or WebSearch.",
         "Then reply with one line: which steps worked.",
       ].join("\n");
       // The hook runs from source here; the engine runs the built hook.js.
       const hookCommand: [string, ...string[]] = [process.execPath, "--import", join(import.meta.dirname, "testing", "resolve-ts.ts"), join(import.meta.dirname, "hook.ts")];
       const runtime = createClaudeCodeRuntime({ runner, hookCommand });
       for await (const event of runtime.launch(
-        { model: "haiku", prompt, cwd: repo, role: "You are terse.", limits: { edit: true, commands: ["touch:*"], web: false }, timeoutMs: 150_000 },
+        {
+          model: "haiku",
+          prompt,
+          cwd: repo,
+          role: "You are terse.",
+          // The web tools are on: they must not widen what a command can reach.
+          limits: { edit: true, commands: ["touch:*", "curl:*", "node:*", "git status:*", "git add:*", "git commit:*"], web: true },
+          timeoutMs: 240_000,
+          sandbox: { writableRoot: repo, readOnlyRoots: [], network: { allow: ["registry.npmjs.org"], unlisted: "deny" } },
+        },
         new AbortController().signal,
       )) {
         events.push(event);
@@ -79,20 +145,62 @@ describe.skipIf(!enabled)("Claude Code runtime against the real CLI", () => {
       expect(existsSync(join(repo, "made-by-mkdir"))).toBe(false);
       // Each shell command's tool result: an error for the denied ones.
       const commandIds = new Map<string, string>();
-      const results = new Map<string, boolean>();
+      const results = new Map<string, { failed: boolean; text: string }>();
+      const leaving: string[] = [];
       for (const line of lines) {
         const content = ((line["message"] as { content?: unknown } | undefined)?.content ?? []) as Array<Record<string, unknown>>;
         if (!Array.isArray(content)) continue;
         for (const block of content) {
-          const input = block["input"] as { command?: string } | undefined;
+          const input = block["input"] as { command?: string; dangerouslyDisableSandbox?: unknown } | undefined;
           if (block["type"] === "tool_use" && block["name"] === "Bash" && input?.command) commandIds.set(input.command, String(block["id"]));
-          if (block["type"] === "tool_result") results.set(String(block["tool_use_id"]), block["is_error"] === true);
+          if (block["type"] === "tool_use" && input?.dangerouslyDisableSandbox === true) leaving.push(String(block["id"]));
+          if (block["type"] === "tool_result") {
+            const body = block["content"];
+            const text = typeof body === "string" ? body : Array.isArray(body) ? body.map((part: { text?: string }) => part.text ?? "").join("\n") : "";
+            results.set(String(block["tool_use_id"]), { failed: block["is_error"] === true, text });
+          }
         }
       }
-      const failedCommand = (command: string) => results.get(commandIds.get(command) ?? "");
+      const resultOf = (command: string) => results.get(commandIds.get(command.replaceAll(CALL_DIR, callDir)) ?? "");
+      const failedCommand = (command: string) => resultOf(command)?.failed;
       expect(failedCommand("touch made-by-touch")).toBe(false);
       expect(failedCommand("whoami")).toBe(true);
       expect(failedCommand("cat ../secret.txt")).toBe(true);
+      // The hook is still the second layer: a command without a rule is denied by Tokama's own text.
+      expect(resultOf("whoami")?.text).toContain("Tokama:");
+      // A file absent proves nothing alone: Tokama's hook or Claude Code's own checks might have
+      // stopped the command first. The sandbox's own error shows the command ran and was stopped.
+      // (`touch ../x` never gets that far: Claude Code's own path check denies it first, so the
+      // probe script goes through `node`, whose paths Claude Code cannot see.)
+      const sandboxStopped = /EPERM|EROFS|Operation not permitted|Read-only file system/;
+      const probes = ["node probe.js write ../outside-by-node", `node probe.js write ${CALL_DIR}/x`, `node probe.js read ${CALL_DIR}/rules.json`, "node probe.js list-ssh"];
+      for (const command of probes) {
+        expect(resultOf(command)?.text, command).toMatch(sandboxStopped);
+        expect(resultOf(command)?.text, command).not.toMatch(/Tokama:|don't ask mode/);
+      }
+      expect(existsSync(join(root, "outside-by-node"))).toBe(false);
+      // The web tools being on does not open hosts to commands.
+      expect(resultOf("curl --noproxy '*' -sS https://example.com")?.text).toMatch(/Could not resolve host/);
+      expect(failedCommand("curl -sS https://example.com")).toBe(true);
+      // The allowed registry answers, so an allowlist that blocks everything cannot pass.
+      expect(failedCommand("curl -sSI https://registry.npmjs.org/")).toBe(false);
+      expect(resultOf("curl -sSI https://registry.npmjs.org/")?.text).toContain("HTTP/");
+      // Git works in the linked worktree: its locks and objects live in the shared `.git`.
+      for (const command of ["git status", "git add -A", "git commit -m probe"]) expect(failedCommand(command), command).toBe(false);
+      expect(git(repo, "log", "--format=%s")).toBe("probe\nseed");
+      // The raw refusal texts, kept as fixtures for what shows a blocked attempt later.
+      const folder = join(import.meta.dirname, "testing", "fixtures", "refusals");
+      const scrub = (text: string) => [callDir, root, realpathSync(root), homedir()].reduce((out, path, i) => (path === "" ? out : out.replaceAll(path, ["<call-dir>", "<root>", "<root>", "~"][i] ?? "")), text.replaceAll("/private/var/", "/var/"));
+      mkdirSync(folder, { recursive: true });
+      for (const [name, command] of [
+        ["blocked-host", "curl -sS https://example.com"],
+        ["write-outside", "node probe.js write ../outside-by-node"],
+        ["secret-read", "node probe.js list-ssh"],
+      ] as const) {
+        writeFileSync(join(folder, `${name}.txt`), `${scrub(resultOf(command)?.text ?? "")}\n`);
+      }
+      // No attempt to leave the sandbox got through.
+      for (const id of leaving) expect([...results.entries()].find(([key]) => key === id)?.[1].failed).toBe(true);
       expect(JSON.stringify(events)).not.toContain("agama");
       expect(events).toContainEqual(expect.objectContaining({ type: "tool_call", name: "Write", kind: "edit", input: expect.objectContaining({ file_path: "inside.txt" }) }));
     } finally {

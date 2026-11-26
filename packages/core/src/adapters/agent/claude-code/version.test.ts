@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ProcessRunner, RunRequest, RunResult } from "../../../kernel/process/index.js";
-import { commandRulesProblem, compareVersions, parseVersion, readClaudeVersion } from "./version.js";
+import { compareVersions, parseVersion, readClaudeVersion, shellCallsProblem } from "./version.js";
 
 const finished = (extra: Partial<Extract<RunResult, { kind: "finished" }>> = {}): RunResult => ({
   kind: "finished", pid: 2, exitCode: 0, signal: null, timedOut: false, aborted: false, startedAt: 0, endedAt: 0, durationMs: 0, ...extra,
@@ -61,20 +61,20 @@ describe("parseVersion", () => {
   });
 });
 
-describe("commandRulesProblem", () => {
+describe("shellCallsProblem", () => {
   it("names the needed version and the installed one when it is older", () => {
-    for (const version of ["2.1.294", "2.0.999"]) {
-      expect(commandRulesProblem(version)).toContain("Claude Code 2.1.295 or newer is needed");
-      expect(commandRulesProblem(version)).toContain(`this is Claude Code ${version}`);
+    for (const version of ["2.1.314", "2.1.295", "2.0.999"]) {
+      expect(shellCallsProblem(version)).toContain("Claude Code 2.1.315 or newer is needed to run commands inside its sandbox");
+      expect(shellCallsProblem(version)).toContain(`this is Claude Code ${version}`);
     }
   });
 
-  it("has no problem from 2.1.295 on", () => {
-    for (const version of ["2.1.295", "2.1.296", "2.2.0", "3.0.0"]) expect(commandRulesProblem(version)).toBeUndefined();
+  it("has no problem from 2.1.315 on", () => {
+    for (const version of ["2.1.315", "2.1.316", "2.2.0", "3.0.0"]) expect(shellCallsProblem(version)).toBeUndefined();
   });
 
   it("fails closed on an unknown version", () => {
-    expect(commandRulesProblem(undefined)).toMatch(/could not read the Claude Code version \(it printed no version\).*2\.1\.295/);
-    expect(commandRulesProblem(undefined, "it exited with code 3")).toContain("(it exited with code 3)");
+    expect(shellCallsProblem(undefined)).toMatch(/could not read the Claude Code version \(it printed no version\).*2\.1\.315/);
+    expect(shellCallsProblem(undefined, "it exited with code 3")).toContain("(it exited with code 3)");
   });
 });

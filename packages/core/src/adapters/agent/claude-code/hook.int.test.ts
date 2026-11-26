@@ -24,6 +24,17 @@ describe("command-policy hook decision", () => {
     expect(decision(hookReply(bash("npm test"), { commands: [] }))).toBe("deny");
   });
 
+  it("denies a request to run outside the sandbox, even for an allowed command", () => {
+    const leaving = (value: unknown) => JSON.stringify({ tool_name: "Bash", tool_input: { command: "npm test", dangerouslyDisableSandbox: value } });
+    for (const value of [true, "true", 1, "false", null, {}]) {
+      const reply = hookReply(leaving(value), RULES);
+      expect(decision(reply), String(value)).toBe("deny");
+      expect(reply).toContain("Tokama: commands must run inside the sandbox.");
+    }
+    expect(hookReply(leaving(false), RULES)).toBeUndefined();
+    expect(hookReply(bash("npm test"), RULES)).toBeUndefined();
+  });
+
   it("leaves other tools to Claude Code", () => {
     expect(hookReply(JSON.stringify({ tool_name: "Read", tool_input: { file_path: "a" } }), RULES)).toBeUndefined();
   });

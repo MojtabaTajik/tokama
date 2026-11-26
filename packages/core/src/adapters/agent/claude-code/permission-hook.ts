@@ -6,7 +6,10 @@ import { z } from "zod";
 import { checkCommand, posixSh } from "../../../kernel/command-policy/index.js";
 
 const Rules = z.strictObject({ commands: z.array(z.string()) });
-const HookInput = z.looseObject({ tool_name: z.string(), tool_input: z.looseObject({ command: z.unknown().optional() }) });
+const HookInput = z.looseObject({
+  tool_name: z.string(),
+  tool_input: z.looseObject({ command: z.unknown().optional(), dangerouslyDisableSandbox: z.unknown().optional() }),
+});
 
 const deny = (reason: string) =>
   JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason } });
@@ -19,6 +22,10 @@ export function hookReply(input: string, rules: unknown): string | undefined {
   const { commands } = Rules.parse(rules);
   const call = HookInput.parse(JSON.parse(input));
   if (call.tool_name !== "Bash") return undefined;
+  // Any value but an absent or false one asks to run outside the sandbox: a third layer after the
+  // sandbox settings and the deny rule.
+  const leave = call.tool_input.dangerouslyDisableSandbox;
+  if (leave !== undefined && leave !== false) return deny("Tokama: commands must run inside the sandbox.");
   const command = call.tool_input.command;
   if (typeof command !== "string") return deny("Tokama: the command is not text.");
   const decision = checkCommand(command, commands, posixSh);

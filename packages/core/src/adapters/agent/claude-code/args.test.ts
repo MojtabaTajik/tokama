@@ -36,6 +36,12 @@ describe("Claude Code args", () => {
     expect(argv).toContain("--strict-mcp-config");
   });
 
+  it("denies the file tools an absolute Tokama folder with the double slash, which a single slash would turn project-relative", () => {
+    const result = buildArgs(request(), undefined, "/home/northwind-dev/.tokama");
+    if (!result.ok) throw new Error(result.error);
+    expect(list(result.value, "--disallowedTools")).toEqual(["Read(//home/northwind-dev/.tokama/**)", "Edit(//home/northwind-dev/.tokama/**)", "WebFetch", "WebSearch"]);
+  });
+
   it("is read only by default: read tools, no allow rules, web and Tokama's data denied", () => {
     const argv = args(request());
     expect(value(argv, "--tools")).toBe("Read,Glob,Grep");

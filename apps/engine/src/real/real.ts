@@ -96,7 +96,7 @@ export class RealEngine {
     for (const item of items.list()) project(item);
     this.unsubscribe = items.subscribe(project);
 
-    const runtime = options.runtime ?? defaultRuntime(options.runner);
+    const runtime = options.runtime ?? defaultRuntime(options.runner, options.home);
     const sshAuthSock = "sshAuthSock" in options ? options.sshAuthSock : process.env["SSH_AUTH_SOCK"];
     this.loop = createRunLoop({
       store: items,
@@ -237,13 +237,13 @@ export class RealEngine {
 }
 
 /** Claude Code for claude-code agents. Keyed on where the agent runs, never on the CLI that drives a local model. */
-function defaultRuntime(runner: ProcessRunner): (agent: Agent) => AgentRuntime | undefined {
+function defaultRuntime(runner: ProcessRunner, tokamaHome: string): (agent: Agent) => AgentRuntime | undefined {
   const factories: Record<string, unknown> = { ...adapters };
-  const create = factories["createClaudeCodeRuntime"] as ((options: { runner: ProcessRunner }) => AgentRuntime) | undefined;
+  const create = factories["createClaudeCodeRuntime"] as ((options: { runner: ProcessRunner; tokamaHome: string }) => AgentRuntime) | undefined;
   let claude: AgentRuntime | undefined;
   return (agent) => {
     if (agent.cliId !== "claude-code" || create === undefined) return undefined;
-    claude ??= create({ runner });
+    claude ??= create({ runner, tokamaHome });
     return claude;
   };
 }

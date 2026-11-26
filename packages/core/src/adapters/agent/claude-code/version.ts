@@ -1,10 +1,12 @@
 import type { ProcessRunner } from "../../../kernel/process/index.js";
 
 /**
- * The first Claude Code version that honours a hook's `onFailure`, so a command-policy hook that
- * cannot start blocks the call.
+ * The first Claude Code version a call that runs commands needs. It is the newest of the versions
+ * that added what that call relies on: a hook's `onFailure` (a command-policy hook that cannot
+ * start blocks the call), `strictAllowlist`, a strict sandbox that holds, the startup check for
+ * Ubuntu's AppArmor rule on bubblewrap, and quarantined folders that are no longer deleted.
  */
-export const COMMAND_RULES_FROM = "2.1.295";
+export const SHELL_CALLS_FROM = "2.1.315";
 
 const VERSION_TIMEOUT_MS = 10_000;
 const VERSION_LINES = 20;
@@ -26,15 +28,15 @@ export function parseVersion(out: string): string | undefined {
 }
 
 /**
- * Why a call with command rules cannot run on this Claude Code version, or undefined when it can.
+ * Why a call that runs commands cannot run on this Claude Code version, or undefined when it can.
  * An undefined version fails closed.
  */
-export function commandRulesProblem(version: string | undefined, why = "it printed no version"): string | undefined {
+export function shellCallsProblem(version: string | undefined, why = "it printed no version"): string | undefined {
   if (version === undefined) {
-    return `Tokama could not read the Claude Code version (${why}), and steps that run commands need Claude Code ${COMMAND_RULES_FROM} or newer. Check that \`claude --version\` works, then retry the step.`;
+    return `Tokama could not read the Claude Code version (${why}), and steps that run commands need Claude Code ${SHELL_CALLS_FROM} or newer. Check that \`claude --version\` works, then retry the step.`;
   }
-  if (compareVersions(version, COMMAND_RULES_FROM) >= 0) return undefined;
-  return `Claude Code ${COMMAND_RULES_FROM} or newer is needed for Tokama's command rules; this is Claude Code ${version}. Update Claude Code (for example with \`claude update\`), then retry the step.`;
+  if (compareVersions(version, SHELL_CALLS_FROM) >= 0) return undefined;
+  return `Claude Code ${SHELL_CALLS_FROM} or newer is needed to run commands inside its sandbox; this is Claude Code ${version}. Update Claude Code (for example with \`claude update\`), then retry the step.`;
 }
 
 export type VersionRead = { readonly kind: "version"; readonly version: string } | { readonly kind: "aborted" } | { readonly kind: "unknown"; readonly why: string };
