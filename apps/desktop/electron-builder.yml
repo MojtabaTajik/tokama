@@ -19,6 +19,11 @@ electronDist: node_modules/electron/dist
 extraResources:
   - from: package-stage/engine
     to: engine
+  # Electron's and Chromium's licence texts sit beside Electron.app, not in it.
+  - from: node_modules/electron/dist/LICENSE
+    to: LICENSE-electron
+  - from: node_modules/electron/dist/LICENSES.chromium.html
+    to: LICENSES.chromium.html
 artifactName: ${productName}-${version}-${arch}.${ext}
 publish: null
 # Written into the asar's package.json, so the packaged app's name is "Tokama" (its data folder and

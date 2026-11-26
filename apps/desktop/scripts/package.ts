@@ -18,7 +18,7 @@ export function appVersion(dir: string): string {
   return version;
 }
 
-/** The package.json of the staged engine folder. Its version is the app's, so an app never takes its own engine for an older one. `type` is module because the bundle's files are ES modules. */
+/** The package.json of the staged engine folder. Its version is the app's, so the engine reports the version of the app it ships in. `type` is module because the bundle's files are ES modules. */
 export function engineManifest(version: string): string {
   return `${JSON.stringify({ name: "tokama-engine", private: true, version, type: "module" }, null, 2)}\n`;
 }
@@ -80,13 +80,15 @@ async function check(app: string): Promise<void> {
   const engine = join(app, "Contents", "Resources", "engine");
   const node = join(engine, "tokama-engine");
 
-  for (const file of ["tokama-engine", "LICENSE-node", "package.json", "dist/main.js", "dist/hook.js"]) {
+  const present = (path: string) => {
     try {
-      statSync(join(engine, file));
+      statSync(path);
     } catch {
-      fail("layout", `${join(engine, file)} is missing`);
+      fail("layout", `${path} is missing`);
     }
-  }
+  };
+  for (const file of ["tokama-engine", "LICENSE-node", "package.json", "dist/main.js", "dist/hook.js"]) present(join(engine, file));
+  for (const file of ["LICENSE-electron", "LICENSES.chromium.html"]) present(join(app, "Contents", "Resources", file));
   const dist = readdirSync(join(engine, "dist")).sort().join(",");
   if (dist !== "hook.js,main.js") fail("layout", `engine/dist holds ${dist}`);
   try {
