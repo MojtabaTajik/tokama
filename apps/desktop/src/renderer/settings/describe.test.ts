@@ -1,6 +1,6 @@
 import type { AgentDetail, BrokenAgentDetail } from "@tokama/core";
 import { describe, expect, it } from "vitest";
-import { agentRows, isTarget, rowLine, filterRows, limitsNotes, limitsTitle, monogram, ownerLabel, rowName, runsOnName, summaryLine } from "./describe.js";
+import { agentRows, isTarget, rowLine, filterRows, limitsNotes, limitsTitle, ownerLabel, rowName, runsOnName, summaryLine } from "./describe.js";
 
 const agent = (over: Record<string, unknown> = {}): AgentDetail =>
   ({
@@ -22,10 +22,6 @@ const brokenEntry = (over: Record<string, unknown> = {}): BrokenAgentDetail =>
   ({ id: "scribe", owner: { kind: "personal" }, source: "agents/scribe.md", replacesBuiltin: false, problems: ["agents/scribe.md line 4: runs_on 'x' isn't known."], ...over }) as unknown as BrokenAgentDetail;
 
 describe("agent words", () => {
-  it("names each CLI by a text monogram", () => {
-    expect(["claude-code", "codex-cli", "ollama"].map((id) => monogram(id as AgentDetail["cliId"]))).toEqual(["CC", "CX", "OL"]);
-  });
-
   it("sums an agent up in one line", () => {
     expect(summaryLine(agent())).toBe("CC · sonnet · cloud");
     expect(summaryLine(agent({ cliId: "ollama", drivenBy: "claude-code", model: "qwen3-coder:30b", runsOn: "local" }))).toBe("OL · qwen3-coder:30b · this machine · via CC");
