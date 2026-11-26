@@ -47,6 +47,7 @@ describe("aiClis", () => {
     expect(claudeOf([{ cliId: "claude-code", installed: false, loggedIn: false, message: "Claude Code is not installed." }]).state).toBe("not_installed");
     expect(claudeOf([{ cliId: "claude-code", installed: true, loggedIn: false, timedOut: true }]).state).toBe("no_answer");
     expect(claudeOf([]).state).toBe("not_checked");
+    expect(claudeOf([{ ...READY, message: "Claude Code 2.1.294 is older than 2.1.295." }])).toMatchObject({ state: "ready", message: "Claude Code 2.1.294 is older than 2.1.295." });
   });
 
   it("finds the path on the PATH a call gets, and leaves it out when there is none", () => {

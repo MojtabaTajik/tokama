@@ -22,7 +22,7 @@ export const AiCliSchema = z.discriminatedUnion("supported", [
     version: text.optional(),
     /** The file that runs, on the PATH a call gets; absent when not found. */
     path: z.string().min(1).max(4096).optional(),
-    /** What is wrong, in plain words. */
+    /** What is wrong, in plain words: why the CLI cannot run agents, or which steps it cannot run. */
     message: z.string().min(1).max(1000).optional(),
     /** What to type in a terminal to sign in. */
     loginCommand: text,

@@ -127,6 +127,13 @@ describe("Settings > AI CLIs", () => {
     expect(detail()).toContain("Not found on the PATH Tokama passes to it.");
   });
 
+  it("shows the message of a ready CLI next to Logged in, and no login line", async () => {
+    const message = "Claude Code 2.1.294 is older than 2.1.295. Steps that run commands will fail until you update it (for example with `claude update`).";
+    await open(withClis(() => ({ ok: true, data: answer({ ...CLAUDE, state: "ready", message }) })));
+    expect($(".ai-cli-status")?.textContent).toContain("● Logged in");
+    expect($$(".ai-cli-login").map((el) => el.textContent)).toEqual([message]);
+  });
+
   it("checks again: keeps the answer on screen, then shows the new one", async () => {
     const fake = withClis((n) => ({ ok: true, data: answer(n === 1 ? { ...CLAUDE, state: "not_logged_in" } : CLAUDE) }));
     await open(fake);

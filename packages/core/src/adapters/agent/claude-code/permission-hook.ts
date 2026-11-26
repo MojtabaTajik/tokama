@@ -27,11 +27,12 @@ export function hookReply(input: string, rules: unknown): string | undefined {
 }
 
 /**
- * Claude Code settings that run `hookArgv` before every Bash call. `onFailure: "block"` makes a
- * hook that cannot start (its binary or script is missing) block the call; without it Claude Code
- * lets the call run unchecked.
+ * Claude Code settings that run `hookArgv` before every Bash call. The shell turns a hook that
+ * cannot start (exit 127 for a missing binary, Node's exit 1 for a missing script) into exit 2,
+ * which blocks the call on every Claude Code version; `hook.ts` itself exits only 0 or 2.
+ * `onFailure: "block"` also blocks on a timeout; without it Claude Code lets the call run unchecked.
  */
 export function hookSettings(hookArgv: readonly string[]): unknown {
-  const command = hookArgv.map((arg) => `'${arg.replaceAll("'", `'\\''`)}'`).join(" ");
+  const command = `${hookArgv.map((arg) => `'${arg.replaceAll("'", `'\\''`)}'`).join(" ")} || exit 2`;
   return { hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command, onFailure: "block" }] }] } };
 }

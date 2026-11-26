@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { createProcessRunner, type ProcessRunner } from "../../../kernel/process/index.js";
 import type { CliHealth } from "../../../kernel/schemas/index.js";
 import { CLAUDE_CODE_COMMAND } from "./command.js";
+import { COMMAND_RULES_FROM, commandRulesProblem, parseVersion } from "./version.js";
 
 export interface ClaudeCodeStatusOptions {
   /** argv that starts the CLI. Default: `[CLAUDE_CODE_COMMAND]`, found on the allowlisted PATH. */
@@ -16,6 +17,7 @@ export interface ClaudeCodeStatusOptions {
 /** What a person types to sign in. */
 export const LOGIN_COMMAND = "claude auth login";
 const LOGIN_HINT = `Run \`${LOGIN_COMMAND}\` in a terminal, then check again.`;
+const UNREADABLE_VERSION = "Tokama could not read the Claude Code version, so steps that run commands will not run. Check that `claude --version` works.";
 
 export async function claudeCodeStatus(options: ClaudeCodeStatusOptions = {}): Promise<CliHealth> {
   const command = options.command ?? [CLAUDE_CODE_COMMAND];
@@ -45,7 +47,12 @@ export async function claudeCodeStatus(options: ClaudeCodeStatusOptions = {}): P
 
   const status = await run(["auth", "status", "--json"]);
   if (status.timedOut) return { ...slow(true), ...(shown === undefined ? {} : { version: shown.slice(0, 100) }) };
-  if (loggedIn(status.out)) return { ...withVersion, installed: true, loggedIn: true };
+  if (loggedIn(status.out)) {
+    const ready = { ...withVersion, installed: true, loggedIn: true };
+    const parsed = parseVersion(version.out);
+    if (commandRulesProblem(parsed) === undefined) return ready;
+    return { ...ready, message: parsed === undefined ? UNREADABLE_VERSION : `Claude Code ${parsed} is older than ${COMMAND_RULES_FROM}. Steps that run commands will fail until you update it (for example with \`claude update\`).` };
+  }
   return { ...withVersion, installed: true, loggedIn: false, message: `Claude Code is not logged in. ${LOGIN_HINT}` };
 }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { conflictAnswer, type ConflictType, type MoveDeps, offerMove, runsFromCopy, shouldOfferMove } from "./move-to-applications.js";
+import type { ConnectError } from "@tokama/client";
+import { APPLICATIONS_COPY, conflictAnswer, type ConflictType, type ConnectResult, type CopyEngineDeps, itemsRunningIn, type MoveDeps, offerMove, runsFromCopy, shouldOfferMove } from "./move-to-applications.js";
 
 function deps(overrides: Partial<MoveDeps> = {}) {
   const moveToApplicationsFolder = vi.fn<MoveDeps["moveToApplicationsFolder"]>(() => true);
@@ -66,7 +67,7 @@ describe("offerMove", () => {
       const { all, moveToApplicationsFolder, showErrorBox } = deps({ itemsRunningInApplications });
       await offerMove(all);
       expect(moveToApplicationsFolder).not.toHaveBeenCalled();
-      expect(showErrorBox).toHaveBeenCalledWith("Could not replace Tokama", expect.stringContaining("could not check"));
+      expect(showErrorBox).toHaveBeenCalledWith("Could not replace Tokama", expect.stringContaining("Open the copy in Applications"));
     }
   });
 
@@ -87,6 +88,77 @@ describe("offerMove", () => {
     const handler = moveToApplicationsFolder.mock.calls[0]![0].conflictHandler;
     expect(handler("exists")).toBe(true);
     expect(askSync).toHaveBeenCalledWith(expect.objectContaining({ buttons: ["Replace", "Quit"] }));
+  });
+});
+
+describe("itemsRunningIn", () => {
+  const LOCK = { pid: 42 };
+  const OURS = { command: `${APPLICATIONS_COPY}/Contents/Resources/engine/tokama-engine` };
+  const board = (...states: string[]) => ({ ok: true as const, data: { items: states.map((state) => ({ state })) } });
+
+  /** Deps for an engine of the copy in Applications that answers `reply`; each can be overridden. */
+  function copyDeps(overrides: Partial<CopyEngineDeps> = {}, reply: () => Promise<ReturnType<typeof board> | { ok: false }> = async () => board()) {
+    const close = vi.fn(async () => {});
+    const query = vi.fn(reply);
+    const connect = vi.fn(async (): Promise<ConnectResult> => ({ ok: true, value: { query, close } }));
+    const describe = vi.fn(async () => OURS as { command: string } | undefined);
+    const all: CopyEngineDeps = { endpoint: () => ({ ok: true, value: { lockPath: "/x/engine.lock" } }), readLock: () => LOCK, describe, connect, ...overrides };
+    return { all, close, query, connect, describe };
+  }
+  const refused = (code: ConnectError["code"], engine?: ConnectError["engine"]): CopyEngineDeps["connect"] => async () => ({ ok: false, error: { code, ...(engine !== undefined && { engine }) } });
+
+  it("is undefined when the engine endpoint is not valid", async () => {
+    expect(await itemsRunningIn(copyDeps({ endpoint: () => ({ ok: false }) }).all)).toBeUndefined();
+  });
+
+  it("is 0 without a lock, and asks nothing more", async () => {
+    const { all, describe, connect } = copyDeps({ readLock: () => undefined });
+    expect(await itemsRunningIn(all)).toBe(0);
+    expect(describe).not.toHaveBeenCalled();
+    expect(connect).not.toHaveBeenCalled();
+  });
+
+  it("is undefined when the process cannot be described, and 0 when it is gone", async () => {
+    expect(await itemsRunningIn(copyDeps({ describe: async () => Promise.reject(new Error("ps failed")) }).all)).toBeUndefined();
+    expect(await itemsRunningIn(copyDeps({ describe: async () => undefined }).all)).toBe(0);
+  });
+
+  it("is 0 for an engine that does not run from the copy, without connecting", async () => {
+    const { all, connect } = copyDeps({ describe: async () => ({ command: "/usr/local/bin/node /src/apps/engine/dist/main.js" }) });
+    expect(await itemsRunningIn(all)).toBe(0);
+    expect(connect).not.toHaveBeenCalled();
+  });
+
+  it("counts queued, running and waiting items, not finished ones, and closes the connection", async () => {
+    const { all, close } = copyDeps({}, async () => board("queued", "running", "needs_you", "done", "failed", "stopped"));
+    expect(await itemsRunningIn(all)).toBe(3);
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("is undefined when the board answer is not ok, and still closes the connection", async () => {
+    const { all, close } = copyDeps({}, async () => ({ ok: false }));
+    expect(await itemsRunningIn(all)).toBeUndefined();
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("rejects when the query rejects, and still closes the connection", async () => {
+    const { all, close } = copyDeps({}, async () => Promise.reject(new Error("socket closed")));
+    await expect(itemsRunningIn(all)).rejects.toThrow("socket closed");
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("is undefined when no engine answers", async () => {
+    expect(await itemsRunningIn(copyDeps({ connect: refused("not_running") }).all)).toBeUndefined();
+  });
+
+  it("uses the running items of an engine of another API version", async () => {
+    expect(await itemsRunningIn(copyDeps({ connect: refused("unsupported_version", { apiVersion: 1, runningItems: 2 }) }).all)).toBe(2);
+    expect(await itemsRunningIn(copyDeps({ connect: refused("unsupported_version", { apiVersion: 1, runningItems: 0 }) }).all)).toBe(0);
+  });
+
+  it("is undefined when an engine of another API version does not say how many items run", async () => {
+    expect(await itemsRunningIn(copyDeps({ connect: refused("unsupported_version", { apiVersion: 1 }) }).all)).toBeUndefined();
+    expect(await itemsRunningIn(copyDeps({ connect: refused("unsupported_version") }).all)).toBeUndefined();
   });
 });
 

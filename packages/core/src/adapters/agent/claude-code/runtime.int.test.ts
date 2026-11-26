@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { manualClock } from "../../../kernel/clock/index.js";
-import { createProcessRunner } from "../../../kernel/process/index.js";
+import { createProcessRunner, type ProcessRunner } from "../../../kernel/process/index.js";
 import type { AgentCallRequest, AgentRuntime } from "../../../kernel/ports/index.js";
 import { describeAgentRuntimeContract } from "../../../kernel/ports/testing/contracts.js";
 import type { AgentCallEvent } from "../../../kernel/schemas/index.js";
@@ -147,6 +147,64 @@ describe("Claude Code runtime", SLOW, () => {
       outcome: "failed",
       errorKind: "crash",
       error: expect.stringContaining("Claude Code did not start"),
+    });
+  });
+
+  describe("the version gate for calls with command rules", () => {
+    const withCommands = { limits: { edit: false, commands: ["npm test:*"], web: false } };
+    const launch = (env: Record<string, string>, extra: Partial<AgentCallRequest>) => collect(runtime(env).launch(request("echo", extra), new AbortController().signal));
+    const NO_TOKENS = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+
+    it("refuses a version below 2.1.295 before anything is spawned", async () => {
+      const events = await launch({ FAKE_CLAUDE_VERSION: "2.1.294 (Claude Code)" }, withCommands);
+      expect(events).toEqual([{ type: "end", outcome: "failed", usage: NO_TOKENS, errorKind: "crash", error: expect.stringMatching(/2\.1\.295.*2\.1\.294/) }]);
+    });
+
+    it("runs 2.1.295, with the hook settings", async () => {
+      const events = await launch({ FAKE_CLAUDE_VERSION: "2.1.295" }, withCommands);
+      expect(end(events).outcome).toBe("completed");
+      expect(events.find((event) => event.type === "text")).toMatchObject({ text: expect.stringContaining("--settings=") });
+    });
+
+    it("does not gate a call without command rules", async () => {
+      const events = await launch({ FAKE_CLAUDE_VERSION: "2.1.294" }, { limits: { edit: false, commands: [], web: false } });
+      expect(end(events).outcome).toBe("completed");
+    });
+
+    it.each([
+      ["garbage", "printed no version"],
+      ["exit-3", "exited with code 3"],
+    ])("fails closed when `claude --version` says %s", async (version, why) => {
+      const events = await launch({ FAKE_CLAUDE_VERSION: version }, withCommands);
+      expect(end(events)).toMatchObject({ outcome: "failed", errorKind: "crash", error: expect.stringContaining(why) });
+      expect(events).toHaveLength(1);
+    });
+
+    it("fails closed when the CLI does not start", async () => {
+      const missing = createClaudeCodeRuntime({ command: [join(dir, "no-such-claude")] });
+      const events = await collect(missing.launch(request("echo", withCommands), new AbortController().signal));
+      expect(events).toHaveLength(1);
+      expect(end(events)).toMatchObject({
+        outcome: "failed",
+        errorKind: "crash",
+        error: expect.stringContaining("could not read the Claude Code version (`claude --version` did not start)"),
+      });
+    });
+
+    it("probes in the folder of the call, and starts nothing else when the call was cancelled before it started", async () => {
+      const base = createProcessRunner({ killGraceMs: 200, drainMs: 500 });
+      const seen: Array<{ argv: readonly string[]; cwd: string }> = [];
+      const runner: ProcessRunner = {
+        run: (run) => {
+          seen.push({ argv: "argv" in run.command ? run.command.argv : [], cwd: run.cwd });
+          return base.run(run);
+        },
+      };
+      const probed = createClaudeCodeRuntime({ command: [process.execPath, FAKE], runner });
+      const stopped = new AbortController();
+      stopped.abort();
+      expect(await collect(probed.launch(request("echo", withCommands), stopped.signal))).toEqual([{ type: "end", outcome: "aborted", usage: NO_TOKENS }]);
+      expect(seen).toEqual([{ argv: [process.execPath, FAKE, "--version"], cwd: dir }]);
     });
   });
 

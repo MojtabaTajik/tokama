@@ -2,6 +2,8 @@
 // download folder it would start an engine out of a mounted or translocated copy. Electron's
 // dialogs and its move call are passed in, so the flow is tested without Electron.
 
+import type { ConnectError } from "@tokama/client";
+
 export type ConflictType = "exists" | "existsAndRunning";
 
 export interface Question {
@@ -32,6 +34,53 @@ export const APPLICATIONS_COPY = "/Applications/Tokama.app";
 /** True when `command`, the command line of a process, runs a file of the app copy `app`. */
 export function runsFromCopy(command: string, app = APPLICATIONS_COPY): boolean {
   return command.startsWith(`${app}/Contents/`);
+}
+
+/** Where `itemsRunningIn` looks for an engine, and how it asks it. */
+export interface CopyEngineDeps {
+  readonly endpoint: () => { ok: true; value: { lockPath: string } } | { ok: false };
+  readonly readLock: (lockPath: string) => { pid: number } | undefined;
+  readonly describe: (pid: number) => Promise<{ command: string } | undefined>;
+  /** Connects to a running engine without starting one. */
+  readonly connect: () => Promise<ConnectResult>;
+  /** The app copy whose engine counts. Default: the copy in Applications. */
+  readonly app?: string;
+}
+
+export type ConnectResult =
+  | {
+      ok: true;
+      value: {
+        query(query: { type: "board" }): Promise<{ ok: true; data: { items: readonly { state: string }[] } } | { ok: false }>;
+        close(): Promise<void>;
+      };
+    }
+  | { ok: false; error: Pick<ConnectError, "code" | "engine"> };
+
+/**
+ * Unfinished items of an engine that runs from the app copy: 0 when there is none, undefined when
+ * that could not be told. An engine of another API version cannot answer a board query; its
+ * handshake count is used, which has only running and finishing items, not queued or waiting ones.
+ */
+export async function itemsRunningIn(deps: CopyEngineDeps): Promise<number | undefined> {
+  const endpoint = deps.endpoint();
+  if (!endpoint.ok) return undefined;
+  const lock = deps.readLock(endpoint.value.lockPath);
+  if (lock === undefined) return 0;
+  const described = await deps.describe(lock.pid).then(
+    (found) => ({ found }),
+    () => undefined,
+  );
+  if (described === undefined) return undefined;
+  if (described.found === undefined || !runsFromCopy(described.found.command, deps.app)) return 0;
+  const connected = await deps.connect();
+  if (!connected.ok) return connected.error.code === "unsupported_version" ? connected.error.engine?.runningItems : undefined;
+  try {
+    const reply = await connected.value.query({ type: "board" });
+    return reply.ok ? reply.data.items.filter((item) => item.state === "queued" || item.state === "running" || item.state === "needs_you").length : undefined;
+  } finally {
+    await connected.value.close().catch(() => undefined);
+  }
 }
 
 /** True for a packaged app on macOS that is not in an Applications folder. `inApplications` is only called on macOS, where Electron has it. */
@@ -67,7 +116,7 @@ export async function offerMove(deps: MoveDeps): Promise<void> {
     deps.showErrorBox(
       "Could not replace Tokama",
       running === undefined
-        ? "Tokama could not check whether the copy in Applications is running items. Try again in a moment."
+        ? "Tokama could not check whether the copy in Applications is running items. Open the copy in Applications, let its items finish or stop them, quit it, then open this copy again."
         : `The copy of Tokama in Applications still has ${running} unfinished ${running === 1 ? "item" : "items"}. Let ${running === 1 ? "it" : "them"} finish or stop ${running === 1 ? "it" : "them"}, then open this copy again.`,
     );
     return;
