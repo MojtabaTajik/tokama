@@ -2,14 +2,14 @@
 // what the reviewer asked for, what Build did after, and why Review stopped; its link opens the
 // reviewer's notes. The same card is the pinned bar of the full view.
 import { expect } from "vitest";
-import { drawer, flow, row, segment } from "./harness.js";
+import { drawer, flow, openRow, segment } from "./harness.js";
 
 const REVIEW_LIMIT = "Keep the start card still while it fades";
 
 flow("a step that stopped at its limit explains itself: what the reviewer said, what ran after, why, and a link to the notes", async ({ page, resize, screenshot }) => {
   await resize(1440, 1000);
   await segment(page, "Needs you").click();
-  await row(page, REVIEW_LIMIT).click();
+  await openRow(page, REVIEW_LIMIT);
   const card = drawer(page).locator(".stopped");
   await card.waitFor();
   expect(await card.locator(".stopped-title").innerText()).toContain("Review stopped at its limit");

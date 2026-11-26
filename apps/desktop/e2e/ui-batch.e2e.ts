@@ -2,13 +2,13 @@
 // over its tabs, the rail tooltip stays closed over the Insights page, and the drawer's Stop is a
 // styled danger button while the actions that do nothing yet are not shown.
 import { expect } from "vitest";
-import { drawer, flow, row } from "./harness.js";
+import { drawer, flow, openRow } from "./harness.js";
 
 const VERIFYING = "Fix rounding in invoice totals";
 
 flow("hides the drawer on Insights, Settings and About, and brings the same item back on the board", async ({ page, resize }) => {
   await resize(1200, 800);
-  await row(page, VERIFYING).click();
+  await openRow(page, VERIFYING);
   await drawer(page).getByRole("heading", { name: VERIFYING }).waitFor();
   const rail = page.locator("nav.rail");
   const pages: ReadonlyArray<readonly [string, () => Promise<void>, () => Promise<void>]> = [
@@ -31,7 +31,7 @@ flow("hides the drawer on Insights, Settings and About, and brings the same item
 });
 
 flow("keeps the Insights header apart from the Usage and Machine tabs at narrow widths", async ({ page, resize }) => {
-  await row(page, VERIFYING).click();
+  await openRow(page, VERIFYING);
   await drawer(page).getByRole("heading", { name: VERIFYING }).waitFor();
   await page.locator("nav.rail").getByRole("button", { name: "Insights" }).click();
   await page.locator(".main-header h1", { hasText: "Insights" }).waitFor();
@@ -72,7 +72,7 @@ flow("closes the rail tooltip when Insights opens and keeps it closed there", as
 });
 
 flow("shows the drawer's Stop as a danger button, and no actions that do nothing", async ({ page }) => {
-  await row(page, VERIFYING).click();
+  await openRow(page, VERIFYING);
   await drawer(page).getByRole("heading", { name: VERIFYING }).waitFor();
   const actions = drawer(page).getByRole("group", { name: "Actions" });
   expect(await actions.getByRole("button").allInnerTexts()).toEqual(["Stop"]);

@@ -2,7 +2,7 @@
 // drawer, quiet, a long command that is not quiet, the working board cards, durations of finished
 // work, and the still version with reduced motion.
 import { expect } from "vitest";
-import { drawer, flow, row, segment, sidebarRow } from "./harness.js";
+import { drawer, openRow, flow, row, segment, sidebarRow } from "./harness.js";
 
 /** The looping investigation: its agent acts every 2 s and its step moves on every 20 s. */
 const LOOPING = "Checkout latency spike";
@@ -15,7 +15,7 @@ const DONE = "Fix the null check in cart totals";
 
 flow("drives a running item through its step track with a live activity line, and shows quiet only without a running command", async ({ page, resize, screenshot }) => {
   await resize(1440, 900);
-  await row(page, LOOPING).click();
+  await openRow(page, LOOPING);
   const panel = drawer(page);
   const track = panel.locator(".track");
   await expect.poll(() => track.getAttribute("aria-label"), { message: "the track at the second step" }).toBe("Steps: Triage done, Query logs and metrics running, Find the cause not started, Propose a fix not started");
@@ -38,7 +38,7 @@ flow("drives a running item through its step track with a live activity line, an
     .toBe("Steps: Triage done, Query logs and metrics done, Find the cause running, Propose a fix not started");
 
   // Quiet: grey words after the last action, while no command runs.
-  await row(page, QUIET).click();
+  await openRow(page, QUIET);
   await expect.poll(() => panel.locator(".activity").textContent()).toMatch(/^Orders builder·editing src\/orders\/list\.ts·\d+ m \d\d s·quiet for 3 m$/);
   const quietColor = await panel.locator(".activity-quiet").evaluate((el) => getComputedStyle(el).color);
   const mutedColor = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--muted").trim());
@@ -46,7 +46,7 @@ flow("drives a running item through its step track with a live activity line, an
   await screenshot("61-progress-quiet");
 
   // A command that has run for over a minute with no event is work, not quiet; it shows its own time.
-  await row(page, LONG_COMMAND).click();
+  await openRow(page, LONG_COMMAND);
   await expect.poll(() => panel.locator(".activity").textContent()).toMatch(/^Tokama·running pnpm test·\d+ m \d\d s$/);
   expect(await panel.locator(".activity-quiet").count()).toBe(0);
 });
@@ -58,7 +58,7 @@ flow("shows a done item's step, attempt and total times, with the time it waited
   await page.locator(".range").selectOption("7d");
   const time = row(page, DONE).locator(".pl-time");
   await expect.poll(() => time.innerText()).toMatch(/^(\d\d:\d\d|\d{1,2} [A-Z][a-z]{2}) · 7 m$/);
-  await row(page, DONE).click();
+  await openRow(page, DONE);
   const fix = drawer(page).locator(".step").first();
   // The sample's times are fixed offsets, so the durations are exact at any hour.
   await expect.poll(() => fix.locator(".step-detail").innerText()).toMatch(/· 4 m 12 s · waited 6 m for you$/);

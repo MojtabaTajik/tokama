@@ -2,7 +2,7 @@
 // failed item: each attempt's check commands with the end of their output, and each attempt's
 // transcript. Window sizes match the design's frames.
 import { expect } from "vitest";
-import { drawer, flow, row, segment } from "./harness.js";
+import { drawer, flow, openRow, segment } from "./harness.js";
 
 const FAILED = "Upgrade the Postgres driver in orders-api";
 const INVESTIGATION = "Slow query on order_items";
@@ -11,7 +11,7 @@ flow("shows the Checks and Log tabs in the drawer: commands per attempt, a faile
   await resize(1440, 900);
   await segment(page, "Failed").click();
   await page.locator(".range").selectOption("30d");
-  await row(page, FAILED).click();
+  await openRow(page, FAILED);
   const panel = drawer(page);
   await panel.getByRole("heading", { name: FAILED }).waitFor();
   expect(await panel.getByRole("tab").allInnerTexts()).toEqual(["Steps", "Output", "Checks", "Log"]);
@@ -49,7 +49,7 @@ flow("shows the Checks and Log tabs in the expanded view, and no Checks tab on a
   await resize(1440, 1120);
   await segment(page, "Failed").click();
   await page.locator(".range").selectOption("30d");
-  await row(page, FAILED).click();
+  await openRow(page, FAILED);
   await drawer(page).getByRole("heading", { name: FAILED }).waitFor();
   await drawer(page).getByRole("button", { name: "Open full view" }).click();
   const full = page.locator(".expanded");
@@ -72,7 +72,7 @@ flow("shows the Checks and Log tabs in the expanded view, and no Checks tab on a
   // An investigation changes no repo: Steps, Output and Log only.
   await page.keyboard.press("Escape");
   await segment(page, "Done").click();
-  await row(page, INVESTIGATION).click();
+  await openRow(page, INVESTIGATION);
   await drawer(page).getByRole("heading", { name: INVESTIGATION }).waitFor();
   expect(await drawer(page).getByRole("tab").allInnerTexts()).toEqual(["Steps", "Output", "Log"]);
 });

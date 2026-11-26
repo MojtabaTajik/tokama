@@ -7,7 +7,7 @@ import { type AgentCallUsage, type CliPlan, type ItemId, type ItemRecord, localD
 const MINUTE = 60_000;
 const DAYS = 90;
 
-/** Earlier items of each sample workflow, by template id (without its `builtin/` part), so the history has more than today's items. */
+/** Earlier items of each sample workflow, by template id (without its `builtin/` part), so the history has more than the sample board's own items. */
 const HISTORY: Readonly<Record<string, readonly string[]>> = {
   "plan-and-build": [
     "Add order export endpoint",
@@ -40,7 +40,7 @@ function random(seed: number): () => number {
 
 const hex = (n: number, width: number) => n.toString(16).padStart(width, "0");
 
-/** The sample calls of the last 90 days, ending now. Today's items are the sample board's own. */
+/** The sample calls of the last 90 days, ending now. Calls of today and yesterday that match a title on the sample board use that item's id. */
 export function sampleUsageRows(setup: Setup, items: readonly ItemRecord[], now: number): UsageRow[] {
   const today = new Date(now);
   const rows: UsageRow[] = [];
@@ -58,7 +58,7 @@ export function sampleUsageRows(setup: Setup, items: readonly ItemRecord[], now:
       for (let run = 0; run < runs; run++) {
         const pick = Math.floor(next() * titles.length);
         const title = titles[pick]!;
-        // Today's items with a sample record keep its id, so the drawer opens on them.
+        // A call of today or yesterday whose title is a sample board item keeps that item's id, so the drawer opens on it.
         const record = daysAgo <= 1 ? items.find((item) => item.title === title) : undefined;
         const itemId = (record?.id ?? `item_5a3e${hex(pick, 4)}-${hex(daysAgo, 4)}-4000-8000-${hex(run, 12)}`) as ItemId;
         // Work hours on earlier days. Today, the hours before now, shrunk to fit into the part of the
