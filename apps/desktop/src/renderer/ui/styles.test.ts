@@ -35,6 +35,19 @@ describe.each(SHEETS.filter((path) => path !== "theme.css"))("%s", (path) => {
     expect(css.match(/#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?)\(/gi) ?? []).toEqual([]);
   });
 
+  it("takes spacing and corner radius from the tokens: no px literals but 0 and 1px", () => {
+    const literal = declarations(css).filter(
+      ({ property, value }) =>
+        /^(?:padding|margin|gap|row-gap|column-gap)(?:-[a-z-]+)?$|^border(?:-[a-z]+)*-radius$/.test(property) &&
+        /(?<![\d.])(?!1px)\d+(?:\.\d+)?px/.test(value),
+    );
+    expect(literal.map(({ line, property, value }) => `${line}: ${property}: ${value}`)).toEqual([]);
+  });
+
+  it("has no off-scale markers left", () => {
+    expect(css).not.toContain("off-scale");
+  });
+
   it("uses only tokens that theme.css or ui/ defines", () => {
     // Custom properties a screen sets for itself are its own; one read with a fallback (such as
     // --drawer-w, which the layout sets inline) need not be a token.
@@ -48,16 +61,6 @@ describe.each(SCREENS)("%s", (path) => {
   const css = read(path);
   it("defines no keyframes and no reduced-motion block of its own: they live in ui/motion.css", () => {
     expect(css).not.toMatch(/@keyframes|prefers-reduced-motion/);
-  });
-
-  it("takes spacing and corner radius from the tokens: no px literals but 0 and 1px", () => {
-    const literal = declarations(css).filter(
-      ({ property, value, rest }) =>
-        /^(?:padding|margin|gap|row-gap|column-gap)(?:-[a-z-]+)?$|^border(?:-[a-z]+)*-radius$/.test(property) &&
-        /(?<![\d.])(?!1px)\d+(?:\.\d+)?px/.test(value) &&
-        !rest.includes("px: off-scale"),
-    );
-    expect(literal.map(({ line, property, value }) => `${line}: ${property}: ${value}`)).toEqual([]);
   });
 
   it("keeps the shared scroll bar: no scrollbar-width or scrollbar-color, which would turn it off (hiding it with none is allowed)", () => {

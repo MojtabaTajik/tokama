@@ -1,8 +1,7 @@
 /*
  * The app's sizes, next to the colours in theme.css: spacing, corner radius, shadow, focus ring,
- * scroll bar, font sizes and line heights. Screens take spacing and radius from these tokens
- * only; a test refuses literal px values there, apart from 0, 1px hairlines and lines marked
- * `px: off-scale` that keep a value the scale does not have.
+ * scroll bar, font sizes and line heights. Screens and the shared sheets take spacing and radius
+ * from these tokens only; a test refuses literal px values there, apart from 0 and 1px hairlines.
  */
 :root {
   /* Spacing, named by size in px. */

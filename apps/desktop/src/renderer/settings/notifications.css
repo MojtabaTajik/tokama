@@ -203,7 +203,7 @@
   display: flex;
   gap: var(--space-12);
   padding: var(--space-12) var(--space-14);
-  border-radius: 14px; /* px: off-scale */
+  border-radius: var(--radius-lg);
   border: 1px solid var(--hairline);
   background: var(--panel);
   box-shadow: var(--shadow-popup);
@@ -261,7 +261,7 @@
   max-width: 100%;
   box-sizing: border-box;
   padding: var(--space-12) var(--space-14);
-  border-radius: 14px; /* px: off-scale */
+  border-radius: var(--radius-lg);
   border: 1px dashed var(--hairline);
   font-size: var(--text-base);
   color: var(--muted);
