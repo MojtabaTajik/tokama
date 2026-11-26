@@ -248,8 +248,6 @@ async function start(state: Run): Promise<void> {
   if (installed === undefined) throw new Error("no installed copy");
   const home = state.args.home ?? mkdtempSync("/tmp/tk-smoke-");
   mkdirSync(home, { recursive: true });
-  // The app writes its desktop.running marker before the engine creates this folder, so on a first run the write fails and the app goes on without it. An existing user's folder exists.
-  mkdirSync(join(home, ".tokama"), { recursive: true, mode: 0o700 });
   state.home = home;
   const which = spawnSync("/usr/bin/which", ["node"], { env: { PATH: REDUCED_PATH }, encoding: "utf8" });
   if (which.status === 0) throw new Error(`node is on the reduced PATH: ${which.stdout.trim()}`);

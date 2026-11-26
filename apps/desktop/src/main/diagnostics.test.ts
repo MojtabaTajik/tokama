@@ -135,6 +135,22 @@ describe("runMarker", () => {
     expect(runMarker(path, 400, () => false).crashedBefore).toBe(false);
   });
 
+  it("writes the marker into a folder that does not exist yet, and finds a kill on the next start", () => {
+    const path = join(dir, "home", ".tokama", "desktop.running");
+    expect(runMarker(path, 100, () => false).crashedBefore).toBe(false);
+    expect(readFileSync(path, "utf8")).toBe("100\n");
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+    expect(statSync(join(dir, "home", ".tokama")).mode & 0o777).toBe(0o700);
+    expect(runMarker(path, 200, () => false).crashedBefore).toBe(true);
+  });
+
+  it("does not throw when the folder cannot be made", () => {
+    writeFileSync(join(dir, "blocked"), "x");
+    const path = join(dir, "blocked", "desktop.running");
+    expect(() => runMarker(path, 100, () => false)).not.toThrow();
+    expect(existsSync(path)).toBe(false);
+  });
+
   it("leaves another run's marker alone on clear, and never writes through a symlink", () => {
     const path = join(dir, "desktop.running");
     const mine = runMarker(path, 100, () => false);
