@@ -16,6 +16,10 @@
   /* A short light crossing a working card's top edge. */
   --motion-sweep: 2.8s;
   --motion-sweep-ease: ease-in-out;
+  /* Something new coming into view over the page, such as a card or a chip: it rises a little while it fades in. */
+  --motion-rise: 200ms;
+  --motion-rise-ease: ease-out;
+  --motion-rise-distance: 8px;
 }
 
 @keyframes tk-breathe {
@@ -51,10 +55,27 @@
   }
 }
 
+@keyframes tk-rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--motion-rise-distance));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Comes into view once, on any element that has this class. */
+.rise-in {
+  animation: tk-rise var(--motion-rise) var(--motion-rise-ease) both;
+}
+
 /* Nothing moves: marks and dots stay solid; lights become a still dashed blue line, so "working now" still reads. */
 @media (prefers-reduced-motion: reduce) {
   .track-mark[data-live="true"],
   .live-dot,
+  .rise-in,
   [data-breathe="true"] {
     animation: none;
   }

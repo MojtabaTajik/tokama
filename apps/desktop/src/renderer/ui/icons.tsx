@@ -135,3 +135,25 @@ export const SearchIcon = ({ size = 13 }: { readonly size?: number }) => (
     <path d="M20 20l-4-4" />
   </Icon>
 );
+
+export const CheckIcon = ({ size = 13 }: { readonly size?: number }) => (
+  <Icon size={size}>
+    <path d="M20 6 9 17l-5-5" />
+  </Icon>
+);
+
+/** A shield with a tick: a fix for a security problem. */
+export const ShieldIcon = ({ size = 14 }: { readonly size?: number }) => (
+  <Icon size={size}>
+    <path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z" />
+    <path d="m9 12 2 2 4-4" />
+  </Icon>
+);
+
+/** A circle with an arrow down: an update to download. */
+export const DownloadIcon = ({ size = 13 }: { readonly size?: number }) => (
+  <Icon size={size}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v8M8.5 11.5 12 15l3.5-3.5" />
+  </Icon>
+);

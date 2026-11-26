@@ -3,6 +3,7 @@
 import type { ClientEvent, CommandReply, QueryReply } from "@tokama/client";
 import type { CommandInput, DiagnosticEntry, PostFailure, QueryInput, UsageAction } from "@tokama/core";
 import type { DesktopState, LayoutPatch, NotificationSettings, SoundName, SoundSet } from "./desktop-state.js";
+import type { Note } from "./whats-new.js";
 
 /** The desktop app's view of its engine connection. */
 export type ConnectionState =
@@ -77,6 +78,8 @@ export const CHANNELS = {
   sendDiagnostics: "tokama:diagnostics:send",
   saveDiagnostics: "tokama:diagnostics:save",
   stopCrashPrompt: "tokama:diagnostics:stop-crash-prompt",
+  getWhatsNew: "tokama:whats-new:get",
+  closeWhatsNew: "tokama:whats-new:close",
 } as const;
 
 /** The usage actions only the window sees. The main process counts no other name from the window. */
@@ -93,6 +96,18 @@ export interface AboutInfo {
   readonly runtime: { readonly electron: string; readonly node: string };
   /** The system and CPU, for example "macOS · arm64". */
   readonly platform: string;
+}
+
+/**
+ * The release notes this app ships, for the card, the chip and About. `notes` are the notes of this
+ * version and earlier ones that parsed, newest first. `due` is what has not been shown yet: the
+ * card of a release with highlights, or the chip of a fixes-only or security release, each named
+ * by its version.
+ */
+export interface WhatsNewInfo {
+  readonly appVersion: string;
+  readonly notes: readonly Note[];
+  readonly due?: { readonly card?: string; readonly chip?: { readonly version: string; readonly kind: "fixes" | "security" } };
 }
 
 /**
@@ -244,4 +259,8 @@ export interface TokamaBridge {
   saveDiagnostics(ids: readonly string[]): Promise<DiagnosticsSaveResult>;
   /** Don't ask again: no crash prompt from now on. */
   stopCrashPrompt(): Promise<void>;
+  /** The release notes of this version and earlier ones, and which of them are still to show. The main process reads them from files that ship with the app. */
+  getWhatsNew(): Promise<WhatsNewInfo>;
+  /** The card or the chip of this version was shown or closed: it never shows again. The main process ignores any version that is not the one due. */
+  closeWhatsNew(version: string, what: "card" | "chip"): Promise<void>;
 }

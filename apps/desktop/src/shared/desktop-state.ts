@@ -3,6 +3,7 @@
 // and sends back changes to its own part. Pure: no files, no Electron. Reading is forgiving, so
 // a file from an older version, a hand edit or a broken write never stops the app: every field
 // that is not valid falls back to its default.
+import { isVersion } from "./whats-new.js";
 
 /** Panel widths in px: where an edge may go, and where a double-click resets it. */
 export const SIDEBAR_WIDTH = { min: 200, max: 360, default: 264 } as const;
@@ -50,6 +51,12 @@ export interface NotificationSettings {
   readonly sounds: SoundSet;
 }
 
+/** The release notes still to show, each by the version of its note: the card (a release with highlights) and the "Updated to" chip (fixes only, or security). Set when the app starts after an update; cleared when the user closes the card or the chip first shows. */
+export interface WhatsNewDue {
+  readonly card?: string;
+  readonly chip?: string;
+}
+
 export interface DesktopState {
   readonly window: {
     /** The window's normal (not maximized) bounds; absent until the window has been placed once. */
@@ -70,9 +77,13 @@ export interface DesktopState {
   readonly notificationHintShown: boolean;
   /** After a crash, the next start asks to send a report; false after "Don't ask again". */
   readonly askAfterCrash: boolean;
+  /** The version of the app that ran last; the main process sets it at each start. Absent in a file an older version wrote. */
+  readonly lastRunVersion?: string;
+  /** The release notes not yet shown; the main process owns it. */
+  readonly whatsNewDue?: WhatsNewDue;
 }
 
-/** What the renderer may change; the window, the repo folder and the crash prompt belong to the main process. */
+/** What the renderer may change; the window, the repo folder, the crash prompt and the release notes shown belong to the main process. */
 export type LayoutPatch = Partial<Pick<DesktopState, "sidebar" | "drawer" | "collapsedSections" | "lastView" | "lastFilter">>;
 
 export const DEFAULT_DESKTOP_STATE: DesktopState = {
@@ -148,6 +159,14 @@ function hintShown(root: Record<string, unknown>): boolean {
   return isRecord(old) && NOTE_KINDS.some((kind) => typeof old[kind] === "boolean");
 }
 
+/** The due versions in `value` that are valid; undefined when none is. */
+function whatsNewDue(value: unknown): WhatsNewDue | undefined {
+  if (!isRecord(value)) return undefined;
+  const { card, chip } = value;
+  if (!isVersion(card) && !isVersion(chip)) return undefined;
+  return { ...(isVersion(card) ? { card } : {}), ...(isVersion(chip) ? { chip } : {}) };
+}
+
 /** The state in `input` (a parsed file or a renderer message), with every invalid field replaced by its default. */
 export function parseDesktopState(input: unknown): DesktopState {
   const root = isRecord(input) ? input : {};
@@ -157,6 +176,8 @@ export function parseDesktopState(input: unknown): DesktopState {
   const sections = Array.isArray(root["collapsedSections"]) ? root["collapsedSections"] : [];
   const placed = bounds(win["bounds"]);
   const folder = root["lastRepoFolder"];
+  const lastRun = root["lastRunVersion"];
+  const due = whatsNewDue(root["whatsNewDue"]);
   return {
     window: { ...(placed === undefined ? {} : { bounds: placed }), maximized: win["maximized"] === true, fullscreen: win["fullscreen"] === true },
     sidebar: { width: width(sidebar["width"], SIDEBAR_WIDTH), collapsed: sidebar["collapsed"] === true },
@@ -168,6 +189,8 @@ export function parseDesktopState(input: unknown): DesktopState {
     notificationHintShown: hintShown(root),
     ...(typeof folder === "string" && folder !== "" && folder.length <= MAX_TEXT ? { lastRepoFolder: folder } : {}),
     askAfterCrash: root["askAfterCrash"] !== false,
+    ...(isVersion(lastRun) ? { lastRunVersion: lastRun } : {}),
+    ...(due === undefined ? {} : { whatsNewDue: due }),
   };
 }
 

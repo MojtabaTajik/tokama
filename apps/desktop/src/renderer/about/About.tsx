@@ -2,12 +2,13 @@
 // text renders as text. The only link that opens is the product site; the window sends it to the
 // system browser and follows no other.
 import { useEffect, useRef, useState } from "react";
-import type { AboutInfo, ConnectionState, TokamaBridge } from "../../shared/bridge.js";
+import type { AboutInfo, ConnectionState, TokamaBridge, WhatsNewInfo } from "../../shared/bridge.js";
 import { buildRows } from "../../shared/build-info.js";
 import { brand } from "../brand/index.js";
 import { notices as noticesFor } from "./notices.js";
 import { Button } from "../ui/Button.js";
 import { CopyButton } from "../ui/CopyButton.js";
+import { WhatsNewHistory } from "../whatsnew/WhatsNewHistory.js";
 
 /** The product site. The window opens this one address in the system browser; no other link is followed. */
 export const WEBSITE_URL = "https://tokama.dev";
@@ -20,9 +21,13 @@ export interface AboutProps {
   readonly bridge: TokamaBridge;
   readonly connection: ConnectionState["status"];
   readonly onClose: () => void;
+  /** The release notes for What's new: `"failed"` when they could not be read, undefined while they load. */
+  readonly whatsNew?: WhatsNewInfo | "failed" | undefined;
+  /** The release note whose row starts open, when About was opened from the card or the chip. */
+  readonly openVersion?: string | undefined;
 }
 
-export function About({ bridge, connection, onClose }: AboutProps) {
+export function About({ bridge, connection, onClose, whatsNew, openVersion }: AboutProps) {
   const [info, setInfo] = useState<AboutInfo | undefined>(undefined);
   const [failed, setFailed] = useState(false);
   const [folderError, setFolderError] = useState<string | undefined>(undefined);
@@ -102,6 +107,8 @@ export function About({ bridge, connection, onClose }: AboutProps) {
               </span>
             </p>
           </section>
+
+          <WhatsNewHistory info={whatsNew} openVersion={openVersion} siteUrl={WEBSITE_URL} />
 
           <section aria-labelledby="about-build" className="about-section">
             <div className="about-section-head">

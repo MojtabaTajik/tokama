@@ -9,6 +9,7 @@ import { RepoMenu } from "../repos/RepoMenu.js";
 import { ALL_WORK, type Badge, badgesOf, inView, needsYouCount, sameView, type View, viewKey } from "../model.js";
 import type { Section } from "../useViewState.js";
 import { EngineHealth } from "./ConnectionStatus.js";
+import { pickChip, type SidebarChipCandidate } from "./sidebar-chip.js";
 import { AllWorkIcon, RepoIcon } from "../ui/icons.js";
 import { TemplateIcon } from "./TemplateIcon.js";
 import { Button } from "../ui/Button.js";
@@ -56,10 +57,14 @@ export interface SidebarProps {
   readonly onEditRepo: (repoId: string) => void;
   /** Removes a repo; resolves to the engine's message when it refused. */
   readonly onRemoveRepo: (repoId: string) => Promise<string | undefined>;
+  /** What may take the chip slot at the foot; the one with the highest priority shows. */
+  readonly chips?: readonly SidebarChipCandidate[];
+  /** A card above the chip slot, such as the release notes. */
+  readonly foot?: ReactNode;
 }
 
 export function Sidebar(props: SidebarProps) {
-  const { id, connection, setup, items, counts, stale, now, view, onSelectView, collapsed, onToggleSection, onNewWork, onStartIn, onAddRepo, onEditRepo, onRemoveRepo } = props;
+  const { id, connection, setup, items, counts, stale, now, view, onSelectView, collapsed, onToggleSection, onNewWork, onStartIn, onAddRepo, onEditRepo, onRemoveRepo, chips = [], foot } = props;
   const workflows = (setup?.templates ?? []).map((template) => ({ view: { kind: "workflow", id: template.id } as const, name: template.name, icon: <TemplateIcon icon={template.icon} color={template.color} /> }));
   const repos = (setup?.repos ?? []).map((repo) => ({ view: { kind: "repo", id: repo.id } as const, name: repo.id, removable: repo.sample !== true }));
   // A removed repo's row takes the focus with it: "+ Add repo" gets it instead of the page.
@@ -122,6 +127,11 @@ export function Sidebar(props: SidebarProps) {
           </Button>
         </>
       )}
+      {/* Last in the panel, so Tab reaches it after the rest; a polite live region, so the card or chip is announced once it comes. */}
+      <div className="sb-foot" aria-live="polite">
+        {foot}
+        {pickChip(chips)?.node}
+      </div>
     </aside>
   );
 }

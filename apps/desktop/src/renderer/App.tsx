@@ -24,6 +24,10 @@ import { CrashPrompt, useCrashPrompt } from "./shell/CrashPrompt.js";
 import { MainArea } from "./shell/MainArea.js";
 import { Rail } from "./shell/Rail.js";
 import { Sidebar } from "./shell/Sidebar.js";
+import { CHIP_PRIORITY, type SidebarChipCandidate } from "./shell/sidebar-chip.js";
+import { UpdatedChip } from "./whatsnew/UpdatedChip.js";
+import { useWhatsNew } from "./whatsnew/useWhatsNew.js";
+import { WhatsNewCard } from "./whatsnew/WhatsNewCard.js";
 import { RETRY_DELAY_MS, useEngine } from "./useEngine.js";
 import { useViewState } from "./useViewState.js";
 
@@ -69,6 +73,13 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   const [tipShown, setTipShown] = useState(false);
   const usage = useUsage(bridge, connection, usageRange, usageScope, page === "insights" || tipShown);
   const diagnosticsWaiting = useDiagnosticsWaiting(bridge, connection);
+  const whatsNew = useWhatsNew(bridge);
+  // The release note About opens on (a row starts open): set by the card's See all and by the chip, dropped once About is left.
+  const [aboutVersion, setAboutVersion] = useState<string | undefined>(undefined);
+  const openNotes = useCallback((version: string) => {
+    setAboutVersion(version);
+    setPage("about");
+  }, []);
   const crash = useCrashPrompt(bridge, connection, initial.askAfterCrash);
   const crashPrompt = crash.open && (
     <CrashPrompt
@@ -96,6 +107,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   // A row's request is for one showing of the drawer: leaving the work views drops it, so the drawer does not repeat it on return.
   useEffect(() => {
     if (page !== "board" && page !== "needs-you") setRowRequest(undefined);
+    if (page !== "about") setAboutVersion(undefined);
   }, [page]);
   const selectItem = useCallback((itemId: string | undefined) => {
     setRowRequest(undefined);
@@ -245,6 +257,18 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
     );
   }
 
+  // The card and the chip show only inside the sidebar: with it closed, or on the Settings page, nothing shows and nothing is marked as seen.
+  const { card, chip } = whatsNew;
+  const chips: readonly SidebarChipCandidate[] =
+    chip === undefined
+      ? []
+      : [
+          {
+            key: "updated",
+            priority: CHIP_PRIORITY.updated,
+            node: <UpdatedChip key={chip.note.version} version={chip.note.version} kind={chip.kind} onShown={whatsNew.chipShown} onGone={whatsNew.chipGone} onOpen={() => openNotes(chip.note.version)} />,
+          },
+        ];
   // The drawer belongs to the work views. Insights and About hide it; the item stays selected, so
   // going back reopens it. On the page it was opened on, the full view takes the drawer's place.
   const drawerOpen = itemShown && !full;
@@ -317,10 +341,23 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
           onAddRepo={() => void pickRepoFolder()}
           onEditRepo={setEditingRepo}
           onRemoveRepo={removeRepo}
+          chips={chips}
+          foot={
+            card === undefined ? undefined : (
+              <WhatsNewCard
+                note={card}
+                onGotIt={whatsNew.closeCard}
+                onSeeAll={() => {
+                  whatsNew.closeCard();
+                  openNotes(card.version);
+                }}
+              />
+            )
+          }
         />
       )}
       {full ? null : aboutOpen ? (
-        <About bridge={bridge} connection={connection.status} onClose={() => setPage("board")} />
+        <About bridge={bridge} connection={connection.status} onClose={() => setPage("board")} whatsNew={whatsNew.info} openVersion={aboutVersion} />
       ) : page === "insights" ? (
         <Insights
           bridge={bridge}

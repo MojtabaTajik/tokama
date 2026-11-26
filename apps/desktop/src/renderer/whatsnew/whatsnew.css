@@ -1,0 +1,123 @@
+/* The release notes: the card in the sidebar, and the note text shared with About's history. Colours come from theme.css tokens only. */
+.wn-card {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  width: 100%;
+  padding: var(--space-14) var(--space-14) var(--space-12);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-popup);
+}
+
+.wn-card-head {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.wn-eyebrow {
+  font-size: var(--text-xs);
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.wn-eyebrow .mono {
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.wn-card-title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.wn-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-8);
+  padding-top: var(--space-2);
+}
+
+.wn-highlights {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wn-highlight {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.wn-highlight-title {
+  font-size: var(--text-body);
+  font-weight: 500;
+  color: var(--text);
+}
+
+.wn-highlight-text {
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
+  color: var(--text-2);
+}
+
+.wn-highlight-where {
+  font-size: var(--text-md);
+  color: var(--muted);
+}
+
+.wn-fixes {
+  margin: 0;
+  font-size: var(--text-md);
+  color: var(--muted);
+}
+
+.wn-security {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8);
+  margin: 0;
+  font-size: var(--text-base);
+  color: var(--text-2);
+}
+
+.wn-security-icon {
+  display: inline-flex;
+  flex: none;
+  margin-top: var(--space-2);
+  color: var(--pass);
+}
+
+.wn-security-word {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.wn-site {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  margin-left: auto;
+  color: var(--link);
+  font-size: var(--text-base);
+  text-decoration: none;
+}
+
+.wn-note {
+  gap: var(--space-10);
+}
+
+/* The heading takes the focus when About opens on a note; it needs no ring then, as it is no control. */
+.wn-heading:focus {
+  outline: none;
+}

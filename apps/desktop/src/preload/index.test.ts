@@ -21,7 +21,17 @@ const [, pushOpenItem] = electron.on.mock.calls.find(([channel]) => channel === 
 describe("preload bridge", () => {
   it("exposes window.tokama with only the bridge methods", () => {
     expect(exposed).toEqual([["tokama", bridge]]);
-    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "countUsage", "getAboutInfo", "getConnection", "getDesktopState", "getToolsPath", "onConnection", "onEvent", "onOpenItem", "openAttemptFile", "openTemplateFile", "pickFolder", "query", "reportError", "restartEngine", "retryConnection", "waitForEngine", "saveLayout", "saveNotifications", "playSound", "setViewedItem", "showDataFolder", "loadDiagnostics", "sendDiagnostics", "saveDiagnostics", "stopCrashPrompt"].sort());
+    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "countUsage", "getAboutInfo", "getConnection", "getDesktopState", "getToolsPath", "onConnection", "onEvent", "onOpenItem", "openAttemptFile", "openTemplateFile", "pickFolder", "query", "reportError", "restartEngine", "retryConnection", "waitForEngine", "saveLayout", "saveNotifications", "playSound", "setViewedItem", "showDataFolder", "loadDiagnostics", "sendDiagnostics", "saveDiagnostics", "stopCrashPrompt", "getWhatsNew", "closeWhatsNew"].sort());
+  });
+
+  it("the release notes calls: one without arguments, and a close that sends only two strings", async () => {
+    electron.invoke.mockResolvedValue(undefined);
+    await bridge.getWhatsNew();
+    expect(electron.invoke).toHaveBeenLastCalledWith(CHANNELS.getWhatsNew);
+    await bridge.closeWhatsNew("0.2.0", "card");
+    expect(electron.invoke).toHaveBeenLastCalledWith(CHANNELS.closeWhatsNew, "0.2.0", "card");
+    await bridge.closeWhatsNew({ evil: true } as unknown as string, 5 as unknown as "chip");
+    expect(electron.invoke).toHaveBeenLastCalledWith(CHANNELS.closeWhatsNew, "[object Object]", "5");
   });
 
   it("query and command invoke their channels with the request only", async () => {

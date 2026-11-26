@@ -29,6 +29,7 @@ import { playerFor, recordingPlayer, type SoundPlayer } from "./sound/player.js"
 import { appIcons } from "./icon.js";
 import { recordingShow, systemShow } from "./system-notification.js";
 import { openTemplateFile } from "./template-file.js";
+import { notesDir, pathExists, whatsNewService } from "./whats-new.js";
 import { fitBounds, trackWindow } from "./window-state.js";
 import { backgroundModeEnabled, devServerUrl, diagnosticsUrl, e2eEnabled, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, sampleEngineEnabled, secureWebPreferences } from "./policy.js";
 
@@ -255,9 +256,22 @@ void app.whenReady().then(async () => {
   if (icons.dock !== undefined) app.dock?.setIcon(icons.dock);
   hardenSession();
   const tokamaHome = join(homedir(), ".tokama");
-  const store = desktopStore(join(tokamaHome, "desktop.json"), { onError: (error) => console.error("could not save desktop.json:", error) });
+  const desktopFile = join(tokamaHome, "desktop.json");
+  // Asked before the store reads the file: without a file this is a first install, not an update.
+  const desktopExisted = pathExists(desktopFile);
+  const store = desktopStore(desktopFile, { onError: (error) => console.error("could not save desktop.json:", error) });
   handle(CHANNELS.getDesktopState, () => store.get());
   handle(CHANNELS.saveLayout, (patch) => store.update((state) => applyLayoutPatch(state, patch)));
+  // Release notes: read once now; the window asks for them when it has loaded.
+  const whatsNew = whatsNewService({
+    store,
+    dir: notesDir({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath(), e2e: process.env["TOKAMA_E2E"], override: process.env["TOKAMA_E2E_WHATS_NEW_DIR"] }),
+    appVersion: app.getVersion(),
+    fileExisted: desktopExisted,
+    log: (message) => console.error(message),
+  });
+  handle(CHANNELS.getWhatsNew, () => whatsNew.info());
+  handle(CHANNELS.closeWhatsNew, (version, what) => whatsNew.close(version, what));
   // Diagnostics: reports wait for the engine, and go out once it answers. An engine that does not
   // know the command (an older one still running) refuses it, and the report is dropped.
   let engineClient: () => ReturnType<ConnectionWatch["client"]> = () => undefined;

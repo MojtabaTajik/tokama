@@ -1,0 +1,48 @@
+/* The sidebar chip (ui/Chip.tsx): a pill with an icon and a short line. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  max-width: 100%;
+  min-height: var(--space-30);
+  padding: 0 var(--space-12);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-pill);
+  background: var(--panel);
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--text-base);
+  cursor: pointer;
+}
+
+.chip:hover {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.chip:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+
+.chip-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--link);
+}
+
+.chip[data-tone="done"] .chip-icon {
+  color: var(--pass);
+}
+
+.chip[data-tone="attention"] {
+  border-color: var(--warn);
+}
+
+.chip[data-tone="attention"] .chip-icon {
+  color: var(--warn);
+}
+
+.chip .mono {
+  color: var(--text);
+}

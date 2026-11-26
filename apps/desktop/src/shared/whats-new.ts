@@ -65,7 +65,8 @@ export const fixesLine = (count: number): string => `+ ${count} smaller ${count 
 
 const VERSION = /^(0|[1-9]\d{0,8})\.(0|[1-9]\d{0,8})\.(0|[1-9]\d{0,8})$/;
 const KEYS = ["version", "date", "security"];
-const CONTROL = /[\u0000-\u0009\u000b-\u001f\u007f]/;
+/** A control character other than the line break, which has split the lines already. */
+const hasControl = (line: string): boolean => [...line].some((char) => char.charCodeAt(0) < 0x20 || char.charCodeAt(0) === 0x7f);
 
 /** Whether `value` is a version as notes name them: three numbers, no leading zeros. */
 export const isVersion = (value: unknown): value is string => typeof value === "string" && VERSION.test(value);
@@ -103,7 +104,7 @@ export function parseNote(text: string, fileName?: string): ParseResult {
   if (bytes > MAX_NOTE_BYTES) return { ok: false, problems: [`the file is ${bytes} bytes, at most ${MAX_NOTE_BYTES}`] };
   const lines = text.replaceAll("\r\n", "\n").split("\n");
   const problems: string[] = [];
-  const bad = lines.findIndex((line) => CONTROL.test(line));
+  const bad = lines.findIndex(hasControl);
   if (bad >= 0) return { ok: false, problems: [`line ${bad + 1}: tabs and control characters are not allowed`] };
 
   if (lines[0] !== "---") return { ok: false, problems: ['line 1: a note starts with a "---" line and its front matter'] };
