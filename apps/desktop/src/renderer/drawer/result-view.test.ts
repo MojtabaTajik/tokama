@@ -83,6 +83,11 @@ describe("the facts of a done item", () => {
     expect(rowsOf(item([plan, summary])).at(-1)?.[2]).toBe("Code and diffs to Claude Code · The summary you approved to Codex CLI");
   });
 
+  it("lists no local agent, whatever its data rule allows: it ran on this machine", () => {
+    const local = { ...build, data: "repo-and-diff" };
+    expect(rowsOf(item([{ ...plan, data: "none" }, local])).at(-1)).toEqual(["sent", "", "Nothing: local only", ""]);
+  });
+
   it("does not list a cloud step that stopped at its approval question, and adds the branch Open PR pushed", () => {
     const asked = { name: "Propose a fix", stage: "review", state: "stopped", agentId: "reviewer", data: "summary-after-approval", doneWhen: "you approve" };
     expect(rowsOf(item([{ ...plan, data: "none" }, asked], { state: "stopped", outcome: undefined })).at(-1)).toEqual(["sent", "", "Nothing: local only", ""]);
@@ -128,6 +133,11 @@ describe("the agent's words", () => {
     expect(words([plan, points])).toMatchObject({ kind: "said", points: ["Not done: columns."], morePoints: 1, more: "2.4 KB" });
     const mustRead = { ...build, attempts: [attempt({ said: said({ bodyBytes: 3480, readMinutes: 6 }) })] };
     expect(words([plan, mustRead])).toMatchObject({ kind: "said", read: "read · 6 min", more: undefined });
+  });
+
+  it("offers no Read more when the reply was only the headline block", () => {
+    const blockOnly = { ...build, attempts: [attempt({ said: said({ points: ["Not done: columns."], bodyBytes: 0 }) })] };
+    expect(words([blockOnly])).toMatchObject({ points: ["Not done: columns."], more: undefined });
   });
 
   it("offers more to read for a long reply even when the agent wrote no points", () => {

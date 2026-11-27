@@ -305,7 +305,8 @@ const SAID_WITH_POINTS = {
   headline: "Fixed the null check in cart totals: a line without a price now counts as 0.",
   points: ["Added a test for a line with no price.", "Did not change how discounts round.", "Not run against the staging catalog."],
   morePoints: 0,
-  bodyBytes: 236,
+  // Less than the output's size on the Output tab: the block is not counted.
+  bodyBytes: 180,
 };
 
 /** What the slow query item's agent said: a write-up to read, so a headline and a read time. */
@@ -477,6 +478,8 @@ function rawItems(now: number): RawItem[] {
       cardLine: "commit 3f2a9c1 · tokama/00000011",
       steps: steps(templates.quickFix, ["passed", "passed"]).map((step, index) => ({
         ...step,
+        // This item's Fix ran on a cloud agent with the repo and diff, so its card has a "Sent out" line and Open PR is offered.
+        ...(index === 0 && { agentId: "architect", data: "repo-and-diff" }),
         attempts: [
           {
             attempt: 1,

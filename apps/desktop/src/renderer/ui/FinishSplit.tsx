@@ -10,6 +10,7 @@ import { Button } from "./Button.js";
 const TEXT = {
   merge: "local merge, then clean up",
   pr: "push and open with gh",
+  blocked: "first say you made the git changes",
   openPr: "Open PR",
   discard: "Discard…",
 } as const;
@@ -23,6 +24,8 @@ export interface FinishSplitProps {
   readonly base: string;
   /** Why Open PR is off; undefined when it can run. */
   readonly prOff: string | undefined;
+  /** What Open PR does, with where the branch goes; a generic line without it. */
+  readonly prNote?: string | undefined;
   /** For screen readers: what the arrow opens. */
   readonly moreLabel: string;
   /** What the main part says and does when it is not Merge: a retry, or taking the git changes. */
@@ -34,7 +37,7 @@ export interface FinishSplitProps {
   readonly onPicked?: ((from: HTMLElement | null) => void) | undefined;
 }
 
-export function FinishSplit({ variant, base, prOff, moreLabel, main, disabled = false, onPick, onPicked }: FinishSplitProps) {
+export function FinishSplit({ variant, base, prOff, prNote, moreLabel, main, disabled = false, onPick, onPicked }: FinishSplitProps) {
   const [open, setOpen] = useState(false);
   // A command on its way: the buttons wait for its reply, so a double click sends one.
   const [sending, setSending] = useState(false);
@@ -43,6 +46,8 @@ export function FinishSplit({ variant, base, prOff, moreLabel, main, disabled = 
   const menuId = useId();
   const off = disabled || sending;
   const mainPick = main ?? { label: `Merge into ${base}`, action: "merge" as const, disabled: false };
+  // The engineer must say they made the git changes first: Merge and Open PR would be refused again.
+  const blocked = mainPick.action === "accept_git_changes";
 
   // A click anywhere else closes the menu.
   useEffect(() => {
@@ -107,14 +112,14 @@ export function FinishSplit({ variant, base, prOff, moreLabel, main, disabled = 
       </Button>
       {open && (
         <div className="finish-menu" role="menu" id={menuId} ref={menu} onKeyDown={onMenuKey}>
-          <Button variant="plain" role="menuitem" tabIndex={-1} onClick={() => pick("merge")}>
-            <span className="finish-menu-title">Merge into {base}</span>
-            <span className="finish-menu-note">{TEXT.merge}</span>
-          </Button>
           {/* Off, but still reachable by the arrow keys, so its reason is read out. */}
-          <Button variant="plain" role="menuitem" tabIndex={-1} aria-disabled={prOff !== undefined || undefined} onClick={() => prOff === undefined && pick("pull_request")}>
+          <Button variant="plain" role="menuitem" tabIndex={-1} aria-disabled={blocked || undefined} onClick={() => !blocked && pick("merge")}>
+            <span className="finish-menu-title">Merge into {base}</span>
+            <span className="finish-menu-note">{blocked ? TEXT.blocked : TEXT.merge}</span>
+          </Button>
+          <Button variant="plain" role="menuitem" tabIndex={-1} aria-disabled={blocked || prOff !== undefined || undefined} onClick={() => !blocked && prOff === undefined && pick("pull_request")}>
             <span className="finish-menu-title">{TEXT.openPr}</span>
-            <span className="finish-menu-note">{prOff ?? TEXT.pr}</span>
+            <span className="finish-menu-note">{blocked ? TEXT.blocked : (prOff ?? prNote ?? TEXT.pr)}</span>
           </Button>
           <Button variant="plain" role="menuitem" tabIndex={-1} className="danger" onClick={() => pick("discard")}>
             <span className="finish-menu-title">{TEXT.discard}</span>

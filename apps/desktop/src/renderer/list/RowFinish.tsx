@@ -1,7 +1,7 @@
 // The finish button on a Done row: the shared split button, for an item that offers Merge. Discard…
 // opens the item with its question; nothing is thrown away from the list.
 import type { FinishAction, ItemRecord, Setup } from "@tokama/core";
-import { baseBranchOf, finishActions, prUnavailable } from "../drawer/finish-view.js";
+import { baseBranchOf, finishActions, prPushNote, prUnavailable } from "../drawer/finish-view.js";
 import { FinishSplit } from "../ui/FinishSplit.js";
 
 const TEXT = { more: (title: string) => `More ways to finish ${title}` } as const;
@@ -21,6 +21,7 @@ export function RowFinish({ item, setup, onFinish, onDiscard }: RowFinishProps) 
       variant="row"
       base={baseBranchOf(item, setup)}
       prOff={prUnavailable(item, setup)}
+      prNote={prPushNote(item)}
       moreLabel={TEXT.more(item.title)}
       // The split goes once the action starts: focus stays on the row.
       onPicked={(from) => from?.closest<HTMLElement>(".pl-row-wrap")?.querySelector<HTMLElement>(".pl-row")?.focus()}

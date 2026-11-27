@@ -621,6 +621,7 @@
 
 .rc-label {
   margin: 0;
+  font-weight: 400;
   font-size: var(--text-xs);
   letter-spacing: 0.7px;
   text-transform: uppercase;

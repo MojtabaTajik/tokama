@@ -220,5 +220,11 @@ export function finishNote(item: Pick<ItemRecord, "finish">): { readonly mark: M
   return undefined;
 }
 
+/** What Open PR does for this item, with where the branch goes: "Push tokama/00000011 to github.com/acme/orders-api and open a PR with gh". Undefined without a push target. */
+export function prPushNote(item: Pick<ItemRecord, "outcome" | "finish">): string | undefined {
+  const target = item.finish?.pushTarget;
+  return target === undefined ? undefined : `Push ${branchOf(item)} to ${target} and open a PR with gh`;
+}
+
 /** Why Open PR is off for this item, for the list's menu; undefined when it can run. */
 export const prUnavailable = (item: Pick<ItemRecord, "finish" | "privacy">, setup: Setup | undefined): string | undefined => prOff(item, setup)?.why;

@@ -23,14 +23,14 @@ flow("a done item's card says what was produced and what was checked, with the o
   await openRow(page, WITH_POINTS);
   const card = drawer(page).getByRole("region", { name: "Result" });
   await card.waitFor();
-  expect(await card.locator(".rc-who").innerText()).toBe("Local builder says");
+  expect(await card.locator(".rc-who").innerText()).toBe("Architect says");
   expect(await card.locator(".rc-headline").innerText()).toBe("Fixed the null check in cart totals: a line without a price now counts as 0.");
   expect(await card.locator(".rc-points li").allInnerTexts()).toEqual(["Added a test for a line with no price.", "Did not change how discounts round.", "Not run against the staging catalog."]);
   // Each mark has its word for screen readers, which innerText includes.
   expect((await card.locator(".rc-row").allInnerTexts()).map((line) => line.replace(/\s+/g, " ").trim())).toEqual([
     "Checked ✓ passed: 3 of 3 checks passed pnpm typecheck · pnpm lint · pnpm test",
     "Reviewed – none: Quick fix has no review step",
-    "Sent out Nothing: local only",
+    "Sent out ↗ sent out: Code and diffs to Claude Code",
   ]);
   // Grey: no fact of a normal run has a colour.
   expect(await card.locator(".rc-mark[data-tone=fail], .rc-mark[data-tone=warn]").count()).toBe(0);
@@ -38,6 +38,11 @@ flow("a done item's card says what was produced and what was checked, with the o
   expect(await drawer(page).locator(".after").count()).toBe(0);
   expect(await drawer(page).locator(".finish-split").count()).toBe(1);
   expect(await drawer(page).locator(".finish-split-main").innerText()).toBe("Merge into main");
+  // "Read more" never names more than the Output tab shows for the same step.
+  const readMore = Number((await card.getByRole("button", { name: /^Read more · / }).innerText()).match(/(\d+) B/)![1]);
+  await drawer(page).getByRole("tab", { name: "Output" }).click();
+  const outputSize = Number((await drawer(page).locator(".sec-facts").first().innerText()).match(/(\d+) B/)![1]);
+  expect(readMore).toBeLessThanOrEqual(outputSize);
   await screenshot("13-card-done-drawer");
   // The card sits above the Finish button, which sits above the tabs.
   const tops = await drawer(page).evaluate((panel) => [".result-card", ".finish", '[role="tablist"]'].map((selector) => panel.querySelector(selector)!.getBoundingClientRect().top));

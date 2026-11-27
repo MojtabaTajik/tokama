@@ -7,6 +7,7 @@ import type { ItemRecord, Setup } from "@tokama/core";
 import type { TokamaBridge } from "../../shared/bridge.js";
 import { Button } from "../ui/Button.js";
 import { Pill } from "../ui/Pill.js";
+import { finishView } from "./finish-view.js";
 import { sizeOf } from "./OutputTab.js";
 import type { Mark as MarkData } from "../ui/status.js";
 import { type FetchWords, type LinesWords, MARKS, type ResultRow, type SaidWords, resultView } from "./result-view.js";
@@ -36,10 +37,12 @@ export interface ResultCardProps {
 
 export function ResultCard({ bridge, item, setup, columns, onReadMore, onRead }: ResultCardProps) {
   const { failure, words, rows } = resultView(item, setup);
+  // The item's one filled button is Finish while it is offered; the write-up button is then plain.
+  const finishOffered = finishView(item, setup)?.kind === "offer";
   return (
     <section className="result-card" aria-label={TEXT.label} data-columns={columns || undefined}>
       <div className="rc-main">
-        <p className="rc-label">{TEXT.label}</p>
+        <h3 className="rc-label">{TEXT.label}</h3>
         {failure !== undefined && (
           <>
             <p className="rc-headline">
@@ -49,7 +52,7 @@ export function ResultCard({ bridge, item, setup, columns, onReadMore, onRead }:
             {words?.kind === "said" && <p className="rc-agent-said">{TEXT.said(words.agent, words.headline)}</p>}
           </>
         )}
-        {failure === undefined && words?.kind === "said" && <Said words={words} onReadMore={onReadMore} onRead={onRead} />}
+        {failure === undefined && words?.kind === "said" && <Said words={words} filled={!finishOffered} onReadMore={onReadMore} onRead={onRead} />}
         {failure === undefined && words?.kind === "lines" && <Lines words={words} onReadMore={onReadMore} />}
         {failure === undefined && words?.kind === "fetch" && <FetchedLines bridge={bridge} itemId={item.id} words={words} onReadMore={onReadMore} />}
       </div>
@@ -64,7 +67,7 @@ export function ResultCard({ bridge, item, setup, columns, onReadMore, onRead }:
   );
 }
 
-function Said({ words, onReadMore, onRead }: { readonly words: SaidWords; readonly onReadMore: (stepIndex: number) => void; readonly onRead: (stepIndex: number) => void }) {
+function Said({ words, filled, onReadMore, onRead }: { readonly words: SaidWords; readonly filled: boolean; readonly onReadMore: (stepIndex: number) => void; readonly onRead: (stepIndex: number) => void }) {
   return (
     <>
       <p className="rc-who">
@@ -82,7 +85,7 @@ function Said({ words, onReadMore, onRead }: { readonly words: SaidWords; readon
       {words.morePoints > 0 && <p className="rc-who">{TEXT.morePoints(words.morePoints)}</p>}
       {words.read !== undefined && (
         <div className="rc-action">
-          <Button variant="primary" onClick={() => onRead(words.stepIndex)}>
+          <Button variant={filled ? "primary" : "secondary"} onClick={() => onRead(words.stepIndex)}>
             {TEXT.readWriteUp}
           </Button>
         </div>

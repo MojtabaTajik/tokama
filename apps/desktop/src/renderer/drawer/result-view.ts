@@ -108,7 +108,8 @@ function wordsOf(item: ItemRecord, setup: Setup | undefined): ResultWords | unde
       return { kind: "lines", agent, stepIndex, lines: [said.headline, ...said.points], more: said.bodyBytes > 0 ? size : undefined };
     }
     const mustRead = said.readMinutes !== undefined;
-    const more = !mustRead && (said.points.length + said.morePoints > 0 || said.bodyBytes >= LONG_BODY_BYTES);
+    // A reply that is only the headline block has nothing more to read, whatever points it carries.
+    const more = !mustRead && said.bodyBytes > 0 && (said.points.length + said.morePoints > 0 || said.bodyBytes >= LONG_BODY_BYTES);
     return { kind: "said", agent, stepIndex, headline: said.headline, points: said.points, morePoints: said.morePoints, read: readTag(said), more: more ? size : undefined };
   }
   const step = outputStep(item);
@@ -177,6 +178,8 @@ function sentRow(item: ItemRecord, setup: Setup | undefined): ResultRow {
     // A step that stopped at its approval question has no attempt: nothing was sent. A passed step with none is an old record.
     if ((step.attempts?.length ?? 0) === 0 && step.state !== "passed") continue;
     const agent = stepAgent(step, agents);
+    // A local agent runs on this machine: its data rule allows sending, but it sent nothing. An agent the setup no longer lists counts as cloud.
+    if (agent.runsOn === "local") continue;
     const tools = to.get(step.data) ?? new Set<string>();
     tools.add(agent.cliId === undefined ? agent.name : backendOf(agent.cliId).name);
     to.set(step.data, tools);

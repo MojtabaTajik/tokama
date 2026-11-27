@@ -33,7 +33,7 @@ flow("opens a pull request for a done item from the row's menu, then removes its
   expect(await split.locator(".finish-split-main").innerText()).toBe("Merge into main");
   await split.getByRole("button", { name: `More ways to finish ${SAMPLE_DONE}` }).click();
   const menu = split.getByRole("menu");
-  expect(await menu.getByRole("menuitem").allInnerTexts()).toEqual(["Merge into main\nlocal merge, then clean up", "Open PR\npush and open with gh", "Discard…"]);
+  expect(await menu.getByRole("menuitem").allInnerTexts()).toEqual(["Merge into main\nlocal merge, then clean up", "Open PR\nPush tokama/00000011 to github.com/northwind/orders-api and open a PR with gh", "Discard…"]);
   await screenshot("finish-2-row-menu");
   await page.keyboard.press("Escape");
   await menu.waitFor({ state: "detached" });
@@ -48,7 +48,7 @@ flow("opens a pull request for a done item from the row's menu, then removes its
   await screenshot("finish-1-offered");
   const openMenu = () => finish.getByRole("button", { name: `More ways to finish ${SAMPLE_DONE}` }).click();
   await openMenu();
-  expect(await finish.getByRole("menu").getByRole("menuitem").allInnerTexts()).toEqual(["Merge into main\nlocal merge, then clean up", "Open PR\npush and open with gh", "Discard…"]);
+  expect(await finish.getByRole("menu").getByRole("menuitem").allInnerTexts()).toEqual(["Merge into main\nlocal merge, then clean up", "Open PR\nPush tokama/00000011 to github.com/northwind/orders-api and open a PR with gh", "Discard…"]);
   // The menu opens inside the drawer, all of it in view.
   const inside = await finish.getByRole("menu").evaluate((menu) => {
     const box = menu.getBoundingClientRect();
@@ -69,6 +69,8 @@ flow("opens a pull request for a done item from the row's menu, then removes its
   expect(await ended.innerText()).toContain("https://github.com/northwind/orders-api/pull/128");
   expect(await drawer(page).locator(".drawer-state").innerText()).toContain("PR open");
   await expect.poll(() => row(page, SAMPLE_DONE).innerText(), { message: "the list row" }).toContain("PR #128 open");
+  // The card now says the branch left the machine too.
+  expect((await drawer(page).locator(".result-card .rc-row").last().innerText()).replace(/\s+/g, " ")).toContain("The branch to github.com/northwind/orders-api");
   await screenshot("finish-4-pr-open");
 
   await ended.getByRole("button", { name: "Remove worktree" }).click();

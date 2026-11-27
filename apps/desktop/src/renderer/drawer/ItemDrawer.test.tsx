@@ -946,7 +946,7 @@ describe("item drawer: Finish", () => {
     expect(text(".finish-split-main")).toBe("Merge into main");
     expect($(".finish-split-more")?.getAttribute("aria-label")).toBe(`More ways to finish ${finishable.title}`);
     await openMenu();
-    expect($$("[role=menuitem]").map((el) => el.textContent)).toEqual(["Merge into mainlocal merge, then clean up", "Open PRpush and open with gh", "Discard…"]);
+    expect($$("[role=menuitem]").map((el) => el.textContent)).toEqual(["Merge into mainlocal merge, then clean up", "Open PRPush tokama/0b9f3c1e to github.com/northwind/orders-api and open a PR with gh", "Discard…"]);
     await act(async () => menuItem("Open PR").click());
     expect(fake.command).toHaveBeenCalledWith({ type: "finish_item", itemId: finishable.id, action: "pull_request" });
     await act(async () => button("Merge into main").click());
@@ -1060,7 +1060,7 @@ describe("a Done row's split button", () => {
     expect(more.getAttribute("aria-label")).toBe(`More ways to finish ${finishable.title}`);
     await act(async () => more.click());
     expect(more.getAttribute("aria-expanded")).toBe("true");
-    expect([...wrap.querySelectorAll("[role=menuitem]")].map((el) => el.textContent)).toEqual(["Merge into mainlocal merge, then clean up", "Open PRpush and open with gh", "Discard…"]);
+    expect([...wrap.querySelectorAll("[role=menuitem]")].map((el) => el.textContent)).toEqual(["Merge into mainlocal merge, then clean up", "Open PRPush tokama/0b9f3c1e to github.com/northwind/orders-api and open a PR with gh", "Discard…"]);
     expect(document.activeElement?.textContent).toBe("Merge into mainlocal merge, then clean up");
     await act(async () => void document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
     expect(wrap.querySelector("[role=menu]")).toBeNull();
@@ -1190,6 +1190,14 @@ describe("Finish: git config or hooks changed", () => {
     // Taking the changes is the Finish button itself until it is done; Open PR and Discard… stay in its menu.
     const accept = $$(".finish .btn").find((el) => el.textContent === "I made this change") as HTMLButtonElement;
     expect(accept.classList.contains("finish-split-main")).toBe(true);
+    // Merge and Open PR would be refused again: they wait in the menu until the changes are taken.
+    await act(async () => ($(".finish-split-more") as HTMLButtonElement).click());
+    expect($$("[role=menuitem]").slice(0, 2).map((el) => [el.getAttribute("aria-disabled"), el.querySelector(".finish-menu-note")?.textContent])).toEqual([
+      ["true", "first say you made the git changes"],
+      ["true", "first say you made the git changes"],
+    ]);
+    await act(async () => ($$("[role=menuitem]")[0] as HTMLButtonElement).click());
+    expect(fake.command).not.toHaveBeenCalled();
     await act(async () => accept.click());
     expect(fake.command).toHaveBeenCalledWith({ type: "accept_git_changes", itemId: refused.id });
   });
@@ -1264,8 +1272,16 @@ describe("item drawer: the result card of an ended item", () => {
     expect(text(".rc-who")).toBe("Architect saysread · 6 min");
     expect(text(".rc-headline")).toBe("Three ways to split the orders table by customer; I recommend a schema per customer.");
     expect(button("Read more · 3.4 KB →")).toBeUndefined();
+    // Finish is offered: it is the one filled button, so the write-up button is plain.
+    expect(button("Read the write-up")?.className).toContain("btn-secondary");
+    expect($$(".btn-primary")).toHaveLength(0);
+    expect($(".result-card h3.rc-label")?.textContent).toBe("Result");
     await click(button("Read the write-up"));
     expect(onRead).toHaveBeenCalledWith(0);
+    // With no Finish to offer (an ended item with no worktree) it is the filled one.
+    const noFinish = { ...item, finish: undefined } as ItemRecord;
+    await act(async () => root.render(<ItemDrawer bridge={fakeBridge([noFinish]).bridge} itemId={noFinish.id} setup={setup} onClose={vi.fn()} onRead={onRead} />));
+    expect(button("Read the write-up")?.className).toContain("btn-primary");
   });
 
   it("an agent with no headline shows the first lines the engine kept, and an old item asks for the first lines of its output", async () => {

@@ -5,7 +5,7 @@
 // comes back as item updates. Engine and repo text (paths, branches, URLs, git's words) is text only.
 import type { FinishAction, ItemRecord, Setup } from "@tokama/core";
 import { useEffect, useRef, useState } from "react";
-import { baseBranchOf, finishView, type FinishRow, prUnavailable, type Rich } from "./finish-view.js";
+import { baseBranchOf, finishView, type FinishRow, prPushNote, prUnavailable, type Rich } from "./finish-view.js";
 import { Button } from "../ui/Button.js";
 import { FinishSplit } from "../ui/FinishSplit.js";
 import { StatusMark } from "../ui/status.js";
@@ -203,6 +203,7 @@ export function FinishButton({ item, setup, busy, onFinish, onAcceptChanges, onA
       variant="filled"
       base={baseBranchOf(item, setup)}
       prOff={prUnavailable(item, setup)}
+      prNote={prPushNote(item)}
       moreLabel={TEXT.more(item.title)}
       main={view.main}
       disabled={waiting}
