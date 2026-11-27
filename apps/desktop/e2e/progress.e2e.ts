@@ -19,11 +19,11 @@ flow("drives a running item through its step track with a live activity line, an
   const panel = drawer(page);
   // Four steps are over the budget: the count form, with its full list as the focus stop's name.
   const track = panel.locator(".track-count");
-  await expect.poll(() => track.getAttribute("aria-label"), { message: "the track at the second step" }).toBe("Steps: Triage done, Query logs and metrics running, Find the cause next, Propose a fix next");
-  await expect.poll(() => track.innerText()).toBe("✓ 1 done · Query logs and metrics running · 2 to go");
+  await expect.poll(() => track.getAttribute("aria-label"), { message: "the track at the second step" }).toBe("Steps: Triage done, Query logs, metrics and slow traces running, Find the cause next, Propose a fix next");
+  await expect.poll(() => track.innerText()).toBe("✓ 1 done · Query logs, metrics and slow traces running · 2 to go");
   // The agent's badge is the header's only running mark, and the state line says it in words with no ●.
   expect(await panel.locator("[data-breathe='true']").count()).toBe(1);
-  await expect.poll(() => panel.locator(".drawer-state").innerText()).toMatch(/^running · Query logs and metrics, step 2 of 4 · \d+ m \d\d s$/);
+  await expect.poll(() => panel.locator(".drawer-state").innerText()).toMatch(/^running · Query logs, metrics and slow traces, step 2 of 4 · \d+ m \d\d s$/);
   expect(await panel.locator(".drawer-state .mark").count()).toBe(0);
 
   // Who works, the latest action and the time in the attempt; the action changes with the agent's events.
@@ -40,7 +40,7 @@ flow("drives a running item through its step track with a live activity line, an
   // The sample engine moves the step on: the track follows.
   await expect
     .poll(() => track.getAttribute("aria-label"), { message: "the track after the tick", timeout: 30_000 })
-    .toBe("Steps: Triage done, Query logs and metrics done, Find the cause running, Propose a fix next");
+    .toBe("Steps: Triage done, Query logs, metrics and slow traces done, Find the cause running, Propose a fix next");
 
   // Quiet: grey words after the last action, while no command runs.
   await openRow(page, QUIET);

@@ -115,7 +115,7 @@ describe("fake engine mode", () => {
     const emergency = setup.templates.find((template) => template.id === "builtin/emergency-investigator");
     expect(emergency?.steps.map((step) => `${step.name}/${step.stage}/${step.agentId ?? "-"}/${step.data}`)).toEqual([
       "Triage/working/local-investigator/none",
-      "Query logs and metrics/working/local-investigator/none",
+      "Query logs, metrics and slow traces/working/local-investigator/none",
       "Find the cause/working/local-investigator/none",
       "Propose a fix/review/architect/summary-after-approval",
     ]);

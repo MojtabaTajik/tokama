@@ -2,8 +2,16 @@
 // apps and what is left, the running items by item, the 30 minute chart with its two-value tooltip),
 // while the window is hidden, and on a real engine that reads this machine, with no item running.
 // Each state saves a screenshot.
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { expect } from "vitest";
 import { flow } from "./harness.js";
+
+/** The sidebar at its widest, written before the app starts: the Machine tab gets its narrowest room. */
+const seedWideSidebar = (home: string): void => {
+  mkdirSync(join(home, ".tokama"), { recursive: true });
+  writeFileSync(join(home, ".tokama", "desktop.json"), JSON.stringify({ sidebar: { width: 360, collapsed: false } }));
+};
 
 flow("shows the Machine tab on sample readings: the whole machine, the running items by item, and the chart with its two-value tooltip", async ({ page, resize, screenshot }) => {
   // Tall enough to show the whole tab in one screenshot.
@@ -57,6 +65,27 @@ flow("shows the Machine tab on sample readings: the whole machine, the running i
   expect(await sideScroll(), "1040: nothing scrolls sideways").toEqual([{ selector: ".mc-body", over: 0 }, { selector: ".ins-table-wrap", over: 0 }]);
   await screenshot("insights-machine-1040");
 });
+
+flow(
+  "breaks the facts of a row between facts, not inside one, when the sample's longest workflow and step names do not fit on a line",
+  async ({ page, resize }) => {
+    await resize(1040, 1350);
+    await page.locator('.rail button[aria-label="Insights"]').click();
+    await page.getByRole("tab", { name: "Machine" }).click();
+    const row = page.locator(".mc-item", { hasText: "Checkout latency spike" });
+    await row.waitFor();
+    // The row's facts are too long for one line here, so they break; each fact stays whole.
+    const facts = await row.locator(".mc-fact").evaluateAll((parts) => parts.map((part) => ({ text: part.textContent, lines: part.getClientRects().length })));
+    expect(facts.map((fact) => fact.text)).toContain("Query logs, metrics and slow traces");
+    expect(facts.filter((fact) => fact.lines !== 1), "no fact breaks inside itself").toEqual([]);
+    const tops = await row.locator(".mc-fact").evaluateAll((parts) => new Set(parts.map((part) => Math.round(part.getBoundingClientRect().top))).size);
+    expect(tops, "the facts take more than one line").toBeGreaterThan(1);
+    const cutOff = await row.locator(".mc-fact").evaluateAll((parts) => parts.filter((part) => part.getBoundingClientRect().right > (part.closest("td") as HTMLElement).getBoundingClientRect().right).length);
+    expect(cutOff, "every fact ends inside the row's first cell").toBe(0);
+  },
+  "sample",
+  seedWideSidebar,
+);
 
 flow("stops reading the machine while the window is hidden, and reads again at once when it shows", async ({ page }) => {
   await page.locator('.rail button[aria-label="Insights"]').click();
