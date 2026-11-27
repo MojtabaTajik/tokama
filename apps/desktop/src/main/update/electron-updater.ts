@@ -1,5 +1,6 @@
 // The only file that imports electron-updater. The feed is the `app-update.yml` that the build
 // wrote into the app's Resources: no URL comes from the window, the environment or a setting.
+import { basename } from "node:path";
 import type { Session } from "electron";
 import { DebUpdater, MacUpdater, RpmUpdater } from "electron-updater";
 import { fetchFeedFiles, LINUX_UPDATE_PUBLIC_KEY, sha512OfFile, verifyFeed } from "./feed-signature.js";
@@ -40,7 +41,7 @@ const number = (value: unknown) => (typeof value === "number" && Number.isFinite
  */
 export interface DownloadGate {
   /** Resolves when the signed feed names a package of this version with this base64 sha512; rejects with the reason when not. */
-  verify(download: { readonly version: string; readonly sha512: string }): Promise<void>;
+  verify(download: { readonly version: string; readonly sha512: string; readonly name: string }): Promise<void>;
   /** The base64 sha512 of the file. */
   hash(file: string): string;
 }
@@ -88,7 +89,7 @@ export function updateEngineFor(updater: UpdaterLike, gate?: DownloadGate): Upda
         void (async () => {
           if (typeof file !== "string") throw new Error("the updater named no downloaded file");
           const sha512 = gate.hash(file);
-          await gate.verify({ version: info.version, sha512 });
+          await gate.verify({ version: info.version, sha512, name: basename(file) });
           verified = { file, sha512 };
         })().then(
           () => listener(info),
@@ -122,9 +123,9 @@ export function linuxUpdateEngine(kind: "deb" | "rpm", feedUrl: string): { reado
   const updater = kind === "deb" ? new DebUpdater() : new RpmUpdater();
   const gate: DownloadGate = {
     hash: sha512OfFile,
-    verify: async ({ version, sha512 }) => {
+    verify: async ({ version, sha512, name }) => {
       const { yml, sig } = await fetchFeedFiles((url, init) => updater.netSession.fetch(url, init), feedUrl, (url) => updaterRequestAllowed(url, feedUrl));
-      const verdict = verifyFeed({ yml, sig, publicKey: LINUX_UPDATE_PUBLIC_KEY, format: kind, downloadedSha512: sha512, downloadedVersion: version });
+      const verdict = verifyFeed({ yml, sig, publicKey: LINUX_UPDATE_PUBLIC_KEY, format: kind, downloadedSha512: sha512, downloadedVersion: version, downloadedName: name });
       if (!verdict.ok) throw new Error(verdict.reason);
     },
   };

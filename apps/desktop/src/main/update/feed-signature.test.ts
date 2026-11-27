@@ -106,6 +106,7 @@ const check = (over: Partial<FeedCheck> = {}): FeedCheck => ({
   format: "deb",
   downloadedSha512: sha512(DEB),
   downloadedVersion: "0.2.0",
+  downloadedName: "Tokama-0.2.0-amd64.deb",
   ...over,
 });
 
@@ -124,7 +125,20 @@ describe("the pinned key", () => {
 describe("verifyFeed", () => {
   it("accepts what `ssh-keygen -Y sign` signed, for the .deb and for the .rpm", () => {
     expect(verifyFeed(check())).toEqual({ ok: true });
-    expect(verifyFeed(check({ format: "rpm", downloadedSha512: sha512(RPM) }))).toEqual({ ok: true });
+    expect(verifyFeed(check({ format: "rpm", downloadedSha512: sha512(RPM), downloadedName: "Tokama-0.2.0-x86_64.rpm" }))).toEqual({ ok: true });
+  });
+
+  it("refuses a download saved under a name the signed feed does not give it, such as one with a quote that would break out of the installer's root shell command", () => {
+    for (const downloadedName of ["x';touch pwned;'.deb", "Tokama-0.2.0-amd64.deb ", "other.deb", "../Tokama-0.2.0-amd64.deb", "Tokama-0.2.0-x86_64.rpm"]) {
+      refused(check({ downloadedName }), /name is not the one/);
+    }
+  });
+
+  it("refuses a signed entry whose own name has a shell character", () => {
+    const key = testKey();
+    const name = "x';touch pwned;'.deb";
+    const text = `version: 0.2.0\nfiles:\n  - url: "${name}"\n    sha512: ${sha512(DEB)}\n`;
+    refused(check({ yml: Buffer.from(text), sig: craft(Buffer.from(text), { key }), publicKey: key.line, downloadedName: name }), /name is not the one/);
   });
 
   it("accepts a signature of the same layout made in memory, so the tests below bend a true copy", () => {
@@ -159,7 +173,7 @@ describe("verifyFeed", () => {
 
   it("refuses a download whose sha512 is not the one the feed names", () => {
     refused(check({ downloadedSha512: sha512(Buffer.from("tampered")) }), /not the file/);
-    refused(check({ format: "rpm", downloadedSha512: sha512(DEB) }), /not the file/);
+    refused(check({ format: "rpm", downloadedSha512: sha512(DEB), downloadedName: "Tokama-0.2.0-x86_64.rpm" }), /not the file/);
   });
 
   it("refuses a missing, empty or truncated signature", () => {

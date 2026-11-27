@@ -49,7 +49,7 @@ describe("updateEngineFor with a download gate", () => {
   it("reports the download as ready only after the gate passed the file's digest and version", async () => {
     const { download, verified, downloaded, failed } = gated();
     await download();
-    expect(verified).toEqual([{ version: "0.2.0", sha512: "digest-1" }]);
+    expect(verified).toEqual([{ version: "0.2.0", sha512: "digest-1", name: "Tokama-0.2.0-amd64.deb" }]);
     expect(downloaded).toHaveBeenCalledWith({ version: "0.2.0" });
     expect(failed).not.toHaveBeenCalled();
   });

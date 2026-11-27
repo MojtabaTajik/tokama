@@ -121,7 +121,12 @@ export interface FeedCheck {
   readonly downloadedSha512: string;
   /** The version the updater found for the package on disk. */
   readonly downloadedVersion: string;
+  /** The file name of the package on disk (no folder). */
+  readonly downloadedName: string;
 }
+
+/** What a package file name may hold: no quote, space, slash or shell character. */
+const SAFE_FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._+-]*\.(deb|rpm)$/;
 
 /**
  * Whether the downloaded package is the one the signed feed file names. Every doubt is a no: a bad
@@ -141,6 +146,9 @@ export function verifyFeed(input: FeedCheck): FeedVerdict {
     if (!Array.isArray(files)) return fail("the feed file lists no files");
     const entries = files.filter((entry): entry is Record<string, unknown> => isRecord(entry) && typeof entry["url"] === "string" && entry["url"].toLowerCase().endsWith(`.${input.format}`));
     if (entries.length !== 1) return fail(`the feed file lists ${entries.length} .${input.format} files, not 1`);
+    // The updater installs the file under the name its own, unsigned, feed copy gave it, and puts that name into a root shell command: only the signed entry's plain name may stand there.
+    const name = entries[0]?.["url"];
+    if (typeof name !== "string" || !SAFE_FILE_NAME.test(name) || name !== input.downloadedName) return fail("the downloaded file's name is not the one the signed feed file names");
     return entries[0]?.["sha512"] === input.downloadedSha512 ? { ok: true } : fail("the download is not the file the signed feed file names");
   } catch {
     return fail("the feed file cannot be read");
