@@ -258,7 +258,7 @@ describe("usage query", () => {
 
     const item = await engineClient.query({ type: "item", itemId: created.value.id });
     if (!item.ok) throw new Error(item.error.message);
-    expect(item.data.usage).toEqual({ tokens: 2_000_000, retries: [{ stepId: "build", attempts: [2], tokensPercent: 50, failingCheck: "pnpm test" }] });
+    expect(item.data.usage).toEqual({ tokens: 2_000_000, retries: [{ stepIndex: 0, attempts: [2], tokensPercent: 50, failingCheck: "pnpm test" }] });
 
     // The closed window is in the database, so it outlives the item logs' readings.
     const raw = new DatabaseSync(join(home, "tokama.db"), { readOnly: true });

@@ -107,7 +107,6 @@ export {
   callWeight,
   choosePlan,
   closedWindows,
-  isWeekly,
   itemUsageOf,
   keepPast,
   localDate,

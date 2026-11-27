@@ -408,7 +408,7 @@ export function itemUsageOf(input: WeekInput, itemId: ItemId): ItemUsage | undef
     const spent = list.reduce((sum, r) => sum + r.calls.reduce((s, call) => s + total(call.tokens), 0), 0);
     const failing = list.find((r) => r.cause?.kind === "check");
     return {
-      stepId: head,
+      stepIndex: Math.max(0, item.steps.findIndex((step) => step.id === head)),
       attempts: list.map((r) => r.attempt).slice(0, 50),
       tokensPercent: tokens > 0 ? Math.min(100, round2((spent / tokens) * 100)) : 0,
       ...(failing?.cause?.kind === "check" && { failingCheck: cut(failing.cause.command, 500) }),

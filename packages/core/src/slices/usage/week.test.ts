@@ -325,7 +325,7 @@ describe("an item's use", () => {
     const input = { now: NOW, clis: [plan(80)], items: [retried, other], helperCalls: [], past: {}, logs: { "claude-code": logs({ totals: () => [{ model: "claude-opus-5-5", tokens: { ...MILLION, input: 5_000_000 } }] }) } };
     const usage = itemUsageOf(input, retried.itemId);
     // 8 of 20 logged weight is this item's: 80% used, so 32%; its part of Tokama's use is 8 of 16.
-    expect(usage).toEqual({ tokens: 2_000_000, shares: [{ cliId: "claude-code", sharePercent: 32 }], retries: [{ stepId: "build", attempts: [2], tokensPercent: 50, failingCheck: "pnpm test" }] });
+    expect(usage).toEqual({ tokens: 2_000_000, shares: [{ cliId: "claude-code", sharePercent: 32 }], retries: [{ stepIndex: 0, attempts: [2], tokensPercent: 50, failingCheck: "pnpm test" }] });
     expect(itemUsageOf(input, "item_0190a000-0000-7000-8000-ffffffffffff" as never)).toBeUndefined();
     expect(itemUsageOf({ ...input, items: [item([], [])] }, input.items[0]!.itemId)).toBeUndefined();
   });

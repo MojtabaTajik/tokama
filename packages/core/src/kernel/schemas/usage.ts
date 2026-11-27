@@ -277,7 +277,8 @@ export const ItemUsageSchema = z.strictObject({
   retries: z
     .array(
       z.strictObject({
-        stepId: StepIdSchema,
+        /** The step's place in the item's steps, as the item record lists them. */
+        stepIndex: z.int().nonnegative(),
         /** The attempts that ran the step again. */
         attempts: z.array(z.int().min(1)).max(50),
         /** Their tokens as a share of the item's tokens. */

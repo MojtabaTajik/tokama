@@ -305,7 +305,7 @@ describe("usage report", () => {
     });
 
     it("carries an item's usage on the item reply, and the reply parses without it", () => {
-      const usage = { tokens: 5000, shares: [{ cliId: "claude-code", sharePercent: 1.2 }], retries: [{ stepId: "build", attempts: [2], tokensPercent: 40, failingCheck: "pnpm test" }] };
+      const usage = { tokens: 5000, shares: [{ cliId: "claude-code", sharePercent: 1.2 }], retries: [{ stepIndex: 0, attempts: [2], tokensPercent: 40, failingCheck: "pnpm test" }] };
       expect(parseQueryResult("item", { item: item(), usage }).ok).toBe(true);
       expect(parseQueryResult("item", { item: item() }).ok).toBe(true);
       expect(parseQueryResult("item", { item: item(), usage: { ...usage, extra: 1 } }).ok).toBe(false);
