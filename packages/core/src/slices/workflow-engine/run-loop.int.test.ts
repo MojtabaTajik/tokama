@@ -1620,6 +1620,7 @@ describe("run loop: a template that reads its repo and commits nothing", () => {
     };
     const id = await start(engine(fakeRuntime([commits])), ask());
     expect(item(id).state).toBe("failed");
+    expect(item(id).outcome?.detail).toContain("moved off its base commit");
     expect(story(id)).not.toContain("finish_started");
     expect(existsSync(worktreeDir(id))).toBe(true);
     expect(await plain(repo.path, "branch", "--list", item(id).worktrees[0]!.branch)).not.toBe("");

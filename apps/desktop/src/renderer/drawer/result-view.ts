@@ -202,8 +202,11 @@ export function followUpText(item: ItemRecord): string | undefined {
   const said = saidOf(item)?.said;
   if (said === undefined) return undefined;
   const text = [item.text.trim(), "", `The answer: ${said.headline}`, ...said.points.map((point) => `- ${point}`)].join("\n");
-  // By code point, so a surrogate pair is never split.
-  return text.length > NEW_WORK_MAX ? Array.from(text).slice(0, NEW_WORK_MAX).join("") : text;
+  if (text.length <= NEW_WORK_MAX) return text;
+  // The limit counts UTF-16 units; a cut between the two halves of an emoji drops the first half.
+  const cut = text.slice(0, NEW_WORK_MAX);
+  const last = cut.charCodeAt(cut.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
 }
 
 /** The card of an item that has ended: done, failed or stopped. */

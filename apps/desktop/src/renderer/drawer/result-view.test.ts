@@ -1,7 +1,7 @@
 import type { ItemRecord } from "@tokama/core";
 import { describe, expect, it } from "vitest";
 import { setup } from "../testing/drawer.js";
-import { resultView } from "./result-view.js";
+import { followUpText, resultView } from "./result-view.js";
 
 const attempt = (over: Record<string, unknown> = {}) => ({ attempt: 1, result: "passed", checks: [], ...over });
 const check = (command: string, passed = true) => ({ command, passed, exitCode: passed ? 0 : 1 });
@@ -121,6 +121,23 @@ describe("a record the template's own words do not describe", () => {
   it("says what was measured and what was sent, and claims nothing about what a template lacks", () => {
     const bare = [{ ...plan, doneWhen: undefined }, { ...build, doneWhen: undefined }];
     expect(rowsOf(item(bare)).map(([key]) => key)).toEqual(["sent"]);
+  });
+});
+
+describe("followUpText", () => {
+  const withText = (text: string) => item([{ ...build, attempts: [attempt({ said: said({ headline: "Done." }) })] }], { text });
+
+  it("puts the question, the headline and the points together", () => {
+    expect(followUpText(withText("How hard is it?"))).toBe("How hard is it?\n\nThe answer: Done.");
+  });
+
+  it("stays within 4000 UTF-16 units, and never leaves half an emoji at the cut", () => {
+    // The 4000th unit is the first half of an emoji.
+    const long = followUpText(withText(`${"a".repeat(3999)}😀${"b".repeat(100)}`))!;
+    expect(long.length).toBe(3999);
+    expect(long.endsWith("a")).toBe(true);
+    const plain = followUpText(withText("a".repeat(5000)))!;
+    expect(plain.length).toBe(4000);
   });
 });
 
