@@ -124,33 +124,40 @@ describe("ItemDrawer sections", () => {
     ]);
   });
 
-  it("shows each step with its state, agent dot and name, where it runs and its detail", async () => {
+  it("shows each step with its state as a word, its agent name in colour, where it runs and its detail; no dot", async () => {
     await renderDrawer(fakeBridge([needsYou]).bridge, needsYou.id);
     const steps = $$(".step").map((li) => ({
-      mark: li.querySelector(".mark")?.textContent,
       name: li.querySelector(".step-name")?.textContent,
-      dot: li.querySelector(".agent-dot")?.getAttribute("data-agent"),
+      colour: li.querySelector(".step-where .agent-name")?.getAttribute("data-agent"),
       where: li.querySelector(".step-where")?.textContent,
       detail: li.querySelector(".step-detail")?.textContent,
     }));
     expect(steps).toEqual([
-      { mark: "✓", name: "Triage, passed", dot: "2", where: "Local investigator · qwen3-coder:30b · local", detail: "scope: orders-api, last 2 h" },
+      { name: "Triage ✓ passed", colour: "2", where: "Local investigator · qwen3-coder:30b · local", detail: "scope: orders-api, last 2 h" },
       {
-        mark: "✓",
-        name: "Query logs and metrics, passed",
-        dot: "2",
+        name: "Query logs and metrics ✓ passed",
+        colour: "2",
         where: "Local investigator · qwen3-coder:30b · local · App Insights (query), Postgres (read-only)",
         detail: "6 queries · 41 rows",
       },
-      { mark: "✓", name: "Find the cause, passed", dot: "2", where: "Local investigator · qwen3-coder:30b · local", detail: undefined },
+      { name: "Find the cause ✓ passed", colour: "2", where: "Local investigator · qwen3-coder:30b · local", detail: undefined },
       {
-        mark: "⏸",
-        name: "Propose a fix, needs you",
-        dot: "1",
+        name: "Propose a fix ⏸ needs you",
+        colour: "1",
         where: "Architect · opus · cloud · sees your approved summary only",
         detail: "waits for your approval of the cloud step",
       },
     ]);
+    expect($(".agent-dot")).toBeNull();
+  });
+
+  it("says a step that runs or has not started in a word with no symbol: running, next", async () => {
+    const live = { ...task, state: "running", steps: task.steps.map((step, index) => ({ ...step, state: index === 0 ? "running" : "pending" })) } as ItemRecord;
+    await renderDrawer(fakeBridge([live]).bridge, live.id);
+    const words = $$(".step").map((li) => li.querySelector(".step-name .mark-word")?.textContent);
+    expect(words[0]).toBe("running");
+    expect(words.slice(1).every((word) => word === "next")).toBe(true);
+    expect($$(".step .step-name .mark")).toHaveLength(0);
   });
 
   it("has Steps, Output and Log for an investigation: it changes no repo, so Checks and Diff are hidden, and Evidence and Findings too", async () => {
@@ -1239,7 +1246,7 @@ describe("ItemDrawer full view", () => {
     expect(button("Open full view")).toBeUndefined();
     const onExpand = vi.fn();
     await show(bridge, task.id, { onExpand });
-    expect($$(".drawer-header button").map((el) => el.getAttribute("aria-label"))).toEqual(["Open full view", "Close"]);
+    expect($$(".drawer-header > button").map((el) => el.getAttribute("aria-label"))).toEqual(["Open full view", "Close"]);
     await click(button("Open full view"));
     expect(onExpand).toHaveBeenCalledTimes(1);
     // The header's button goes with the drawer's header: focus moves to the full view, and back.
@@ -1788,17 +1795,53 @@ describe("ItemDrawer live progress", () => {
     expect($(".activity-quiet")).toBeNull();
   });
 
-  it("draws the step track, with the running step live and the item's state line once it waits", async () => {
+  it("draws the step track in words, and the running state line beside the activity line, with one breathing badge", async () => {
     const { bridge, push } = fakeBridge([live]);
     await renderDrawer(bridge, live.id);
-    expect($(".track")?.getAttribute("aria-label")).toBe("Steps: Triage done, Query logs and metrics done, Find the cause done, Propose a fix running");
-    expect($$(".track-mark").map((mark) => mark.textContent)).toEqual(["✓", "✓", "✓", "●"]);
-    expect($$(".track-mark[data-live='true']")).toHaveLength(1);
+    // Four long names are over the budget: the count form, with the whole list in the tooltip.
+    expect(text(".track-count")).toBe("✓ 3 done · Propose a fix running");
+    expect(text(".drawer-state")).toMatch(/^running · Propose a fix, step 4 of 4 · /);
+    expect($(".drawer-state .mark")).toBeNull();
+    expect($$("[data-breathe='true']")).toHaveLength(1);
+    expect($(".activity .ag-badge")?.getAttribute("aria-label")).toBe("Agent Architect, running");
     await push(needsYou);
     expect($(".activity")).toBeNull();
     expect(text(".drawer-state")).toBe("⏸needs you · step 4 of 4 · Propose a fix");
-    expect($$(".track-mark[data-live='true']")).toHaveLength(0);
-    expect(text(".track-says")).toBe("needs you");
+    expect($$("[data-breathe='true']")).toHaveLength(0);
+    expect(text(".track-count")).toBe("✓ 3 done · Propose a fix needs you");
+  });
+
+  it("names each step, its state and its agent in the track when it is short", async () => {
+    const short = { ...live, steps: live.steps.slice(2).map((step, index) => ({ ...step, name: ["Find", "Fix"][index]! })) } as ItemRecord;
+    await renderDrawer(fakeBridge([short]).bridge, short.id);
+    expect($(".track-count")).toBeNull();
+    expect($$(".track-step").map((el) => el.textContent)).toEqual(["Find✓doneLocal investigator", "FixrunningArchitect"]);
+    expect($$(".track .mark-word").map((el) => el.textContent)).toEqual(["running"]);
+    expect($$(".track .agent-name").map((el) => el.getAttribute("data-agent"))).toEqual(["2", "1"]);
+  });
+
+  it("shows Tokama's checks as ◐ before the activity line, with no badge", async () => {
+    const checking = { ...live, steps: live.steps.map((step, index) => (index === 3 ? { ...step, stage: "verifying", agentId: undefined } : step)) } as ItemRecord;
+    const { bridge } = fakeBridge([checking]);
+    await renderDrawer(bridge, checking.id);
+    expect($(".activity .ag-badge")).toBeNull();
+    expect($(".activity .activity-mark")?.textContent).toBe("◐");
+    expect(text(".drawer-state")).toMatch(/^◐checking/);
+  });
+
+  it("shortens a long track to its count form, with every step in a tooltip on focus", async () => {
+    const many = {
+      ...live,
+      steps: Array.from({ length: 6 }, (_, index) => ({ ...live.steps[0], name: `A rather long step name number ${index + 1}`, state: index < 2 ? "passed" : index === 2 ? "running" : "pending" })),
+    } as ItemRecord;
+    const { bridge } = fakeBridge([many]);
+    await renderDrawer(bridge, many.id);
+    const count = $(".track-count") as HTMLElement;
+    expect(count.textContent).toBe("✓ 2 done · A rather long step name number 3 running · 3 to go");
+    expect(count.tabIndex).toBe(0);
+    expect($(".track-tip")).toBeNull();
+    await act(async () => count.focus());
+    expect($(".track-tip")?.textContent).toContain("A rather long step name number 6");
   });
 
   it("shows each finished step's and attempt's time, and the time a step waited for you apart", async () => {

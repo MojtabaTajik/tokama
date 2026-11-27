@@ -1,6 +1,6 @@
-// The agent label on list rows and in the drawer: the model next to the name, the current step with
-// its attempt, and the tooltip on hover and on keyboard focus. Against the sample engine, where
-// "Paginate the orders list" runs its Build step on a repo agent with more power than the built-ins.
+// The working agent's badge on list rows, the agent label in the drawer, and the tooltip of both on
+// hover and on keyboard focus. Against the sample engine, where "Paginate the orders list" runs its
+// Build step on a repo agent with more power than the built-ins.
 // Screenshots go to the e2e output folder like the other flows'.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -15,17 +15,17 @@ const AMBER = "rgb(217, 169, 58)";
 /** The text of an element on one line: boxes that sit side by side read as separate lines. */
 const flat = (text: Promise<string>): Promise<string> => text.then((value) => value.replace(/\s+/g, " ").trim());
 
-flow("shows the model and the step line on a row, and opens the agent tooltip on hover with no blink", async ({ page, screenshot }) => {
+flow("shows the agent and the step in words on a row, and opens the agent tooltip from the badge on hover with no blink", async ({ page, screenshot }) => {
   const wrap = page.locator(".pl-row-wrap", { has: page.locator(".pl-title", { hasText: TITLE }) });
   await wrap.waitFor();
-  await expect.poll(() => flat(wrap.locator(".pl-agent").innerText()), { message: "the agent and its model" }).toBe("Orders builder · qwen3-coder:30b");
-  // The step line names the step and its attempt, however narrow the list is.
-  await expect.poll(() => flat(wrap.locator(".pl-pipe").innerText())).toMatch(/Build\s*· attempt 1/);
-  // The row's click cover must not hide the time and the steps from the pointer: their titles show on hover.
+  // Line two says the step, its attempt and the agent in words; the badge is named for who works on what.
+  await expect.poll(() => flat(wrap.locator(".pl-meta").innerText()), { message: "line two" }).toMatch(/Build, step 2 of 3.*Orders builder$/);
+  await expect.poll(() => wrap.locator(".ag-badge").getAttribute("aria-label")).toMatch(/^Agent Orders builder, running Build/);
+  // The row's click cover must not hide the badge and the time from the pointer: the badge opens its tooltip, the time shows its title.
   // A small window (the macOS runner's is 1024 x 674) puts the row below the fold, and a point outside the
   // viewport hits nothing, so the row is scrolled into view first.
   await wrap.scrollIntoViewIfNeeded();
-  for (const part of [".pl-time", ".pl-step"]) {
+  for (const part of [".pl-time", ".ag-badge"]) {
     const hit = await wrap.locator(part).first().evaluate((el) => {
       const box = el.getBoundingClientRect();
       const top = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
@@ -35,7 +35,7 @@ flow("shows the model and the step line on a row, and opens the agent tooltip on
   }
   await screenshot("12-agent-row");
 
-  const label = wrap.locator(".al-button");
+  const label = wrap.locator(".ag-badge");
   await label.hover();
   const tip = page.locator('[role="tooltip"]');
   await tip.waitFor({ state: "visible" });
@@ -84,7 +84,7 @@ flow("opens the agent tooltip on keyboard focus, reaches its link with Tab, and 
   const wrap = page.locator(".pl-row-wrap", { has: page.locator(".pl-title", { hasText: TITLE }) });
   await wrap.waitFor();
   const tip = page.locator('[role="tooltip"]');
-  await wrap.locator(".al-button").focus();
+  await wrap.locator(".ag-badge").focus();
   await tip.waitFor({ state: "visible" });
   await screenshot("14-agent-tooltip-focus");
   await page.keyboard.press("Tab");
@@ -92,7 +92,7 @@ flow("opens the agent tooltip on keyboard focus, reaches its link with Tab, and 
   expect(await tip.isVisible()).toBe(true);
   await page.keyboard.press("Escape");
   await tip.waitFor({ state: "detached" });
-  expect(await page.evaluate(() => document.activeElement?.className)).toContain("al-button");
+  expect(await page.evaluate(() => document.activeElement?.className)).toContain("ag-badge");
   // The item did not open, and a second Escape does nothing to the list.
   expect(await drawer(page).count()).toBe(0);
 });
@@ -132,8 +132,6 @@ const seedNarrow = (home: string): void => {
 };
 /** The widest window a CI display has: with the sidebar and the drawer open, 520 px are left for the list. */
 const NARROW_WINDOW = 1280;
-/** About six characters of the 12 px label font. */
-const SIX_CHARS = 40;
 
 interface LabelShape {
   readonly name: string;
@@ -201,7 +199,7 @@ flow(
 );
 
 flow(
-  "drops the model first and then shortens the name in a narrow list, with nothing overlapping",
+  "keeps the badge whole in a narrow list, clear of the title and the time, and shows the model it does not print in its tooltip",
   async ({ page, resize, screenshot }) => {
     await resize(NARROW_WINDOW, 900);
     const wrap = page.locator(".pl-row-wrap", {
@@ -210,64 +208,40 @@ flow(
     await wrap.waitFor();
     // The drawer is closed: the list has the whole main area minus the sidebar. Open it to narrow the list to its minimum.
     await openRow(page, TITLE);
-    const shapes = new Map<string, LabelShape>();
     for (const row of await page.locator(".pl-row-wrap").all()) {
-      const label = row.locator(".al-button");
-      if ((await label.count()) === 0) continue;
-      const shape = await shapeOf(label);
-      shapes.set(shape.name, shape);
-      expect(shape.nameInside, `${shape.name} sits on the label's line`).toBe(true);
-      expect(shape.model, `${shape.name}: the model is whole or gone, never cut`).not.toBe("cut");
-      expect(!shape.nameCut || shape.nameWidth >= SIX_CHARS, `${shape.name} keeps about six characters`).toBe(true);
-      // The agent cell sits clear of the time, the steps and the title.
-      const cell = (await row.locator(".pl-agent").boundingBox())!;
-      for (const other of [".pl-time", ".pl-pipe", ".pl-main"]) {
-        const box = await row.locator(other).first().boundingBox();
-        if (box !== null) expect(overlap(cell, box), `${shape.name} does not overlap ${other}`).toBe(false);
+      const badge = row.locator(".ag-badge");
+      if ((await badge.count()) === 0) continue;
+      const box = (await badge.boundingBox())!;
+      expect(Math.round(box.width), "the badge is a round 18 px").toBe(18);
+      expect(Math.round(box.height)).toBe(18);
+      // It sits in the mark's cell, clear of the title, the line under it and the time.
+      for (const other of [".pl-title", ".pl-meta", ".pl-time"]) {
+        const part = await row.locator(other).first().boundingBox();
+        if (part !== null) expect(overlap(box, part), `the badge does not overlap ${other}`).toBe(false);
       }
     }
-    // The sample's long model ("qwen3-coder:30b") does not fit this width: it goes, the name stays whole.
-    const builder = shapes.get("Orders builder");
-    expect(builder, "the Orders builder row").toBeDefined();
-    expect(builder).toMatchObject({ model: "hidden", nameCut: false });
     await screenshot("17-agent-list-narrow");
-    // A name too long for the cell shortens with an ellipsis, on the same line as its dot, and the model stays gone.
-    const long = await shapeOf(wrap.locator(".al-button").first());
-    expect(long.nameInside).toBe(true);
-    await wrap.locator(".al-button .ellipsis").evaluate((el) => {
-      el.textContent = "Orders API migration reviewer agent";
-    });
-    const cut = await shapeOf(wrap.locator(".al-button"));
-    expect(cut).toMatchObject({
-      nameCut: true,
-      nameInside: true,
-      model: "hidden",
-    });
-    expect(cut.nameWidth).toBeGreaterThanOrEqual(SIX_CHARS);
-    const label = wrap.locator(".al-button");
-    expect(await label.evaluate((el) => getComputedStyle(el).textDecorationLine)).toBe("underline");
-    // The label may sit below the fold: scroll it into view with the pointer out of the list, so
-    // no other row's label passes under the pointer and opens its own tooltip.
+    // The badge may sit below the fold: scroll it into view with the pointer out of the list, so
+    // no other row's badge passes under the pointer and opens its own tooltip.
+    const badge = wrap.locator(".ag-badge");
     await page.mouse.move(0, 0);
-    await label.scrollIntoViewIfNeeded();
-    await label.hover();
+    await badge.scrollIntoViewIfNeeded();
+    await badge.hover();
     const tip = page.locator('[role="tooltip"]');
     await tip.waitFor({ state: "visible" });
-    // The model that the label dropped is in the tooltip.
     await expect.poll(() => flat(tip.locator(".al-run").innerText())).toBe("Claude Code qwen3-coder:30b");
   },
   "sample",
   seedNarrow,
 );
 
-flow("shows the tool's official icon beside the agent's name, loaded from the built app", async ({ page, screenshot }) => {
-  const wrap = page.locator(".pl-row-wrap", { has: page.locator(".pl-title", { hasText: TITLE }) });
-  await wrap.waitFor();
-  const icon = wrap.getByRole("img", { name: "Claude Code" });
+flow("shows the tool's official icon beside the agent's name in the drawer, loaded from the built app", async ({ page, screenshot }) => {
+  await openRow(page, TITLE);
+  const icon = drawer(page).getByRole("img", { name: "Claude Code" }).first();
   await icon.waitFor();
   // A blocked or missing file would leave a broken image with no width.
   await expect.poll(() => icon.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
-  expect(await wrap.locator(".pl-agent").innerText()).toContain("Orders builder");
+  expect(await drawer(page).locator(".step-where").nth(1).innerText()).toContain("Orders builder");
   await screenshot("12-agent-row-icon");
 
   await page.getByRole("button", { name: "Settings" }).click();

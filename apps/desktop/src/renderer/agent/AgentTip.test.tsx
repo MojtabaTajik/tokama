@@ -55,33 +55,34 @@ const escape = () => act(async () => void document.body.dispatchEvent(new Keyboa
 const wrapOf = (title: string) => $$(".pl-row-wrap").find((wrap) => wrap.querySelector(".pl-title")?.textContent === title)!;
 const CHECKOUT = "Checkout p95 latency spike";
 
-describe("agent label on a list row", () => {
-  it("shows the agent with its model and the current step with its attempt", async () => {
+describe("agent badge on a list row", () => {
+  it("says the agent, its step and its attempt on line two in words, and names the badge for who works on what", async () => {
     await mount();
     const wrap = wrapOf(CHECKOUT);
-    expect(wrap.querySelector(".pl-agent")?.textContent).toBe("Local builder · qwen3-coder:30b");
-    expect(wrap.querySelector(".pl-pipe")?.textContent).toBe("✓●Query logs· attempt 1○");
-    expect(wrap.querySelector(".pl-pipe")?.getAttribute("aria-label")).toBe("Steps: Triage passed, Query logs running attempt 1, Propose a fix pending");
+    expect(wrap.querySelector(".pl-meta")?.textContent).toBe("Emergency investigator·checkout-web·Query logs, step 2 of 3·Local builder");
+    expect(wrap.querySelector(".ag-badge")?.getAttribute("aria-label")).toBe("Agent Local builder, running Query logs");
+    expect(wrap.querySelector(".ag-badge")?.textContent).toBe("");
   });
 
-  it("keeps the label out of the row's button, so no button holds another", async () => {
+  it("keeps the badge out of the row's button, so no button holds another", async () => {
     await mount();
     expect($$(".pl-row button, .pl-row [tabindex]")).toEqual([]);
     expect($$(".pl-row-wrap").every((wrap) => wrap.querySelector(":scope > .pl-row") !== null)).toBe(true);
+    expect(wrapOf(CHECKOUT).querySelector(":scope > .pl-badge > .ag-badge")).not.toBeNull();
   });
 
-  it("names a step that Tokama runs itself in plain text, with no tooltip", async () => {
+  it("shows no badge while Tokama runs the checks: the row says checking and names Tokama in words", async () => {
     await mount();
     const wrap = wrapOf("Fix rounding in invoice totals");
-    // The item is in its checks step: no agent runs it.
-    expect(wrap.querySelector(".pl-agent")?.textContent).toBe("Tokama");
-    expect(wrap.querySelector(".pl-agent button")).toBeNull();
+    expect(wrap.querySelector(".ag-badge")).toBeNull();
+    expect(wrap.querySelector(".pl-mark")?.textContent).toBe("◐checking: ");
+    expect(wrap.querySelector(".pl-meta")?.textContent).toContain("Run checks, step 2 of 2·Tokama");
   });
 
-  it("does not open the item when the label is clicked, and does when the rest of the row is", async () => {
+  it("does not open the item when the badge is clicked, and does when the rest of the row is", async () => {
     await mount();
     const wrap = wrapOf(CHECKOUT);
-    await click(wrap.querySelector(".al-button"));
+    await click(wrap.querySelector(".ag-badge"));
     expect($(".drawer")).toBeNull();
     expect($('.pl-row[aria-current="true"]')).toBeNull();
     await click(wrap.querySelector(".pl-row"));
@@ -91,7 +92,7 @@ describe("agent label on a list row", () => {
 
   it("opens the tooltip on keyboard focus: owner, model, what the agent may do, its role and the link", async () => {
     await mount();
-    await focus(wrapOf(CHECKOUT).querySelector(".al-button"));
+    await focus(wrapOf(CHECKOUT).querySelector(".ag-badge"));
     const tip = $('[role="tooltip"]')!;
     expect(tip.querySelector(".al-owner")?.textContent).toBe("repo orders-api");
     expect(tip.querySelector(".al-run")?.textContent).toBe(" Claude Codeqwen3-coder:30b");
@@ -106,7 +107,7 @@ describe("agent label on a list row", () => {
 
   it("opens Settings on the Agents page with the agent the tooltip names selected", async () => {
     const fake = await mount();
-    await focus(wrapOf(CHECKOUT).querySelector(".al-button"));
+    await focus(wrapOf(CHECKOUT).querySelector(".ag-badge"));
     await click($(".al-open"));
     expect($("nav.rail")).toBeNull();
     expect($('nav[aria-label="Settings"] [aria-current="page"]')?.textContent).toBe("Agents");
@@ -116,6 +117,25 @@ describe("agent label on a list row", () => {
       ["Local builder", "true"],
     ]);
     expect($(".agent-detail article")?.getAttribute("aria-label")).toBe("Local builder");
+  });
+});
+
+describe("agent badge tooltip", () => {
+  it("closes on Escape before anything else handles it, and gives the focus back to the badge", async () => {
+    await mount();
+    const badge = wrapOf(CHECKOUT).querySelector<HTMLElement>(".ag-badge")!;
+    await focus(badge);
+    expect($('[role="tooltip"]')).not.toBeNull();
+    expect(badge.getAttribute("aria-describedby")).toBe($('[role="tooltip"]')!.id);
+    await escape();
+    expect($('[role="tooltip"]')).toBeNull();
+    expect(badge.hasAttribute("aria-describedby")).toBe(false);
+  });
+
+  it("names the agent in its colour in the tooltip head", async () => {
+    await mount();
+    await focus(wrapOf(CHECKOUT).querySelector(".ag-badge"));
+    expect($('[role="tooltip"] .al-name .agent-name')?.getAttribute("data-agent")).toBe("2");
   });
 });
 

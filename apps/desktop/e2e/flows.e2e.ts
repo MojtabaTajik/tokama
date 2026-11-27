@@ -136,19 +136,17 @@ flow("keeps list rows readable and apart with the drawer open", async ({ page, r
   for (const [width, readable] of [[1200, true], [1024, true], [900, false], [720, false]] as const) {
     await resize(width, 700);
     const rows = await page.evaluate(() => {
-      const PARTS = [".pl-title", ".pl-meta", ".pl-ask", ".pl-pipe", ".pl-agent", ".pl-time"];
-      // The agent label is the row button's sibling in its wrapper, so the wrapper is the row.
+      const PARTS = [".pl-title", ".pl-meta", ".pl-ask", ".pl-facts", ".ag-badge", ".pl-time"];
+      // The agent badge is the row button's sibling in its wrapper, so the wrapper is the row.
       return [...document.querySelectorAll(".pl-row-wrap")].map((element) => {
         const outer = element.getBoundingClientRect();
         const parts = PARTS.flatMap((selector) => [...element.querySelectorAll(selector)].map((part) => ({ selector, box: part.getBoundingClientRect() })))
           .filter(({ box }) => box.width > 0 && box.height > 0)
           .map(({ selector, box }) => ({ selector, left: box.left, right: box.right, top: box.top, bottom: box.bottom }));
         const title = element.querySelector(".pl-title");
-        // The pipeline's steps: the current one keeps some of its name, and no step runs over the next.
-        const pipe = element.querySelector(".pl-pipe")?.getBoundingClientRect();
-        const steps = [...element.querySelectorAll(".pl-step")].map((step) => step.getBoundingClientRect());
-        const nameWidth = element.querySelector(".pl-step-name")?.getBoundingClientRect().width;
-        return { text: title?.textContent ?? "", titleWidth: title?.clientWidth ?? 0, left: outer.left, right: outer.right, parts, pipe, steps, nameWidth };
+        // Line two is words: the step and the agent are never cut by something else; what does not fit is clipped at the row's edge.
+        const meta = element.querySelector(".pl-meta");
+        return { text: title?.textContent ?? "", titleWidth: title?.clientWidth ?? 0, left: outer.left, right: outer.right, parts, metaClipped: meta !== null && meta.scrollWidth > meta.clientWidth + 1 };
       });
     });
     expect(rows.length, `rows at ${width}`).toBeGreaterThan(0);
@@ -160,14 +158,6 @@ flow("keeps list rows readable and apart with the drawer open", async ({ page, r
           const apart = a.right <= b.left + 0.5 || b.right <= a.left + 0.5 || a.bottom <= b.top + 0.5 || b.bottom <= a.top + 0.5;
           expect(apart, `${a.selector} and ${b.selector} overlap: ${where}`).toBe(true);
         }
-      }
-      if (item.pipe !== undefined) {
-        for (const [index, a] of item.steps.entries()) {
-          expect(a.left >= item.pipe.left - 1 && a.right <= item.pipe.right + 1, `step ${index} stays inside the pipeline: ${where}`).toBe(true);
-          const next = item.steps[index + 1];
-          if (next !== undefined) expect(a.right <= next.left + 0.5, `step ${index} overlaps the next: ${where}`).toBe(true);
-        }
-        if (item.nameWidth !== undefined) expect(item.nameWidth, `the current step's name stays visible: ${where}`).toBeGreaterThanOrEqual(14);
       }
       if (readable) expect(item.titleWidth, `the title's width: ${where}`).toBeGreaterThanOrEqual(120);
     }

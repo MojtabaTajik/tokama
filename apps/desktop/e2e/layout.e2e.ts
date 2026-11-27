@@ -164,47 +164,41 @@ flow("the drawer's content has the same gap to its right edge as to its left, at
   }
 });
 
+/** A running item of the sample whose agent works. */
+const RUNNING = "Paginate the orders list";
+
 /** The boxes of one list row's parts, in page pixels. */
 const geometry = (wrap: import("playwright-core").Locator) =>
   wrap.evaluate((el) => {
     const box = (selector: string) => {
       const found = el.querySelector(selector)?.getBoundingClientRect();
-      return found === undefined ? undefined : { top: found.top, right: found.right };
+      return found === undefined ? undefined : { top: found.top, right: found.right, left: found.left, bottom: found.bottom };
     };
-    // The agent's cell is as wide as its column: the chip is what the eye sees. That is its name and, when it
-    // fits on the first line, its model; a model that wrapped onto a second line is clipped away.
-    const chip = (() => {
-      const parts = [...el.querySelectorAll(".pl-agent .ellipsis, .pl-agent .al-model")].map((part) => part.getBoundingClientRect());
-      const first = parts[0];
-      if (first === undefined) return undefined;
-      const seen = parts.filter((part) => part.top < first.top + 12);
-      return { top: first.top, right: Math.max(...seen.map((part) => part.right)) };
-    })();
-    return { title: box(".pl-title"), time: box(".pl-time"), agent: chip, name: el.querySelector(".pl-agent")?.textContent ?? "" };
+    return { title: box(".pl-title"), time: box(".pl-time"), badge: box(".ag-badge"), name: el.querySelector(".pl-title")?.textContent ?? "" };
   });
 
-flow("a list row's time sits on its title line and the agent labels share one right edge", async ({ page, resize, screenshot }) => {
+flow("a list row's time sits on its title line and the agent badge on the title's left, in the wide and the narrow list", async ({ page, resize, screenshot }) => {
   await resize(1200, 900);
-  await page.getByRole("button", { name: "Done" }).click();
-  await page.locator(".range").selectOption("30d");
-  const wraps = page.locator(".pl-row-wrap", { has: page.locator(".pl-agent") });
+  const wraps = page.locator(".pl-row-wrap", { has: page.locator(".pl-title") });
   await wraps.first().waitFor();
   // Wide: the columns. Narrow: the open drawer squeezes the list into the stacked layout.
   for (const narrow of [false, true]) {
     if (narrow) {
-      await openRow(page, DONE);
-      await drawer(page).getByRole("heading", { name: DONE }).waitFor();
+      await openRow(page, RUNNING);
+      await drawer(page).getByRole("heading", { name: RUNNING }).waitFor();
       await page.mouse.move(600, 400);
     }
     await screenshot(narrow ? "rows-narrow" : "rows-wide");
     const all = await Promise.all((await wraps.all()).map(geometry));
-    const names = new Set(all.map((g) => g.name));
-    expect(names.size, `rows with different agents (${narrow ? "narrow" : "wide"})`).toBeGreaterThan(1);
+    expect(all.filter((g) => g.badge !== undefined).length, `rows with a working agent (${narrow ? "narrow" : "wide"})`).toBeGreaterThan(0);
     for (const g of all) {
-      if (g.title === undefined || g.time === undefined || g.agent === undefined) throw new Error("a row lacks a title, a time or an agent");
+      if (g.title === undefined || g.time === undefined) throw new Error("a row lacks a title or a time");
       expect(Math.abs(g.time.top - g.title.top), `time top vs title top (${g.name})`).toBeLessThanOrEqual(2);
-      // Stacked, the agent sits right under the time; in columns it sits left of it.
-      if (narrow) expect(Math.abs(g.agent.right - g.time.right), `agent right vs time right (${g.name})`).toBeLessThanOrEqual(1);
+      // The badge sits in the mark's cell, left of the title and on its line, in the columns and stacked.
+      if (g.badge !== undefined) {
+        expect(g.badge.right, `badge right of the title's left edge (${g.name})`).toBeLessThanOrEqual(g.title.left + 1);
+        expect(Math.abs(g.badge.top - g.title.top), `badge top vs title top (${g.name})`).toBeLessThanOrEqual(4);
+      }
     }
     // The longest time a row can show, put into the first row, and the list must not scroll sideways.
     const overflow = await page.locator(".pl-time").first().evaluate((el) => {
@@ -216,7 +210,5 @@ flow("a list row's time sits on its title line and the agent labels share one ri
       return { clippedTimes, rowOverflow: Math.max(0, ...scrollers) };
     });
     expect(overflow, `clipped times and row overflow (${narrow ? "narrow" : "wide"})`).toEqual({ clippedTimes: 0, rowOverflow: 0 });
-    const rights = all.map((g) => g.agent?.right ?? 0);
-    expect(Math.max(...rights) - Math.min(...rights), "agent right edges").toBeLessThanOrEqual(1);
   }
 });

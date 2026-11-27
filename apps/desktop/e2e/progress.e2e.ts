@@ -17,9 +17,14 @@ flow("drives a running item through its step track with a live activity line, an
   await resize(1440, 900);
   await openRow(page, LOOPING);
   const panel = drawer(page);
-  const track = panel.locator(".track");
-  await expect.poll(() => track.getAttribute("aria-label"), { message: "the track at the second step" }).toBe("Steps: Triage done, Query logs and metrics running, Find the cause not started, Propose a fix not started");
-  expect(await panel.locator(".track-mark[data-live='true']").count()).toBe(1);
+  // Four steps are over the budget: the count form, with its full list as the focus stop's name.
+  const track = panel.locator(".track-count");
+  await expect.poll(() => track.getAttribute("aria-label"), { message: "the track at the second step" }).toBe("Steps: Triage done, Query logs and metrics running, Find the cause next, Propose a fix next");
+  await expect.poll(() => track.innerText()).toBe("✓ 1 done · Query logs and metrics running · 2 to go");
+  // The agent's badge is the header's only running mark, and the state line says it in words with no ●.
+  expect(await panel.locator("[data-breathe='true']").count()).toBe(1);
+  await expect.poll(() => panel.locator(".drawer-state").innerText()).toMatch(/^running · Query logs and metrics, step 2 of 4 · \d+ m \d\d s$/);
+  expect(await panel.locator(".drawer-state .mark").count()).toBe(0);
 
   // Who works, the latest action and the time in the attempt; the action changes with the agent's events.
   const activity = panel.locator(".activity");
@@ -35,7 +40,7 @@ flow("drives a running item through its step track with a live activity line, an
   // The sample engine moves the step on: the track follows.
   await expect
     .poll(() => track.getAttribute("aria-label"), { message: "the track after the tick", timeout: 30_000 })
-    .toBe("Steps: Triage done, Query logs and metrics done, Find the cause running, Propose a fix not started");
+    .toBe("Steps: Triage done, Query logs and metrics done, Find the cause running, Propose a fix next");
 
   // Quiet: grey words after the last action, while no command runs.
   await openRow(page, QUIET);
@@ -65,7 +70,10 @@ flow("shows a done item's step, attempt and total times, with the time it waited
   // The sample's times are fixed offsets, so the durations are exact at any hour.
   await expect.poll(() => fix.locator(".step-detail").innerText()).toMatch(/· 4 m 12 s · waited 6 m for you$/);
   expect(await fix.locator(".step-attempt .mono").first().innerText()).toMatch(/^✓\s*attempt 1 · passed · 4 m 12 s$/);
-  expect(await drawer(page).locator(".track").getAttribute("aria-label")).toBe("Steps: Fix done, Run checks done");
+  const steps = drawer(page).locator(".track-step");
+  expect(await steps.count()).toBe(2);
+  for (const step of await steps.all()) expect(await step.innerText()).toContain("✓");
+  expect(await drawer(page).locator("[data-breathe='true']").count()).toBe(0);
 });
 
 flow("moves only working board cards, and keeps everything still with reduced motion", async ({ page, resize, screenshot }) => {
@@ -86,38 +94,42 @@ flow("moves only working board cards, and keeps everything still with reduced mo
   expect(await animation(".card[data-live='true'] .live-dot")).toBe("none");
   expect(await animation(".card[data-live='true'] .card-edge", "::before")).toBe("none");
   await working.first().click();
-  const mark = drawer(page).locator(".track-mark[data-live='true']");
-  await mark.waitFor();
-  expect(await mark.evaluate((el) => getComputedStyle(el).animationName)).toBe("none");
-  // The line into the working step is a still dashed line, so "working now" still reads.
-  const line = drawer(page).locator(".track-line[data-live='true']");
-  expect(await line.evaluate((el) => getComputedStyle(el).animationName)).toBe("none");
-  expect(await line.evaluate((el) => getComputedStyle(el).backgroundImage)).toContain("repeating-linear-gradient");
+  // The header's one running mark is the agent's badge: still with reduced motion, and the state line still says "running" in words.
+  const badge = drawer(page).locator(".activity .ag-badge");
+  await badge.waitFor();
+  expect(await badge.evaluate((el) => getComputedStyle(el).animationName)).toBe("none");
+  expect(await drawer(page).locator(".drawer-state").innerText()).toMatch(/^running · /);
   await screenshot("63-progress-reduced-motion");
   await page.emulateMedia({ reducedMotion: "no-preference" });
-  expect(await mark.evaluate((el) => getComputedStyle(el).animationName)).toBe("tk-breathe");
+  expect(await badge.evaluate((el) => getComputedStyle(el).animationName)).toBe("tk-breathe");
 });
 
-flow("moves only running rows in the list, ticks their time in the drawer's format, and keeps them still with reduced motion", async ({ page, resize }) => {
+flow("moves only the working agent's badge on a running row, ticks the time in the drawer's format, and keeps it still with reduced motion", async ({ page, resize, screenshot }) => {
   await resize(1440, 900);
   const running = page.locator(".pl-row[data-state='running']").first();
   await running.waitFor();
   const animation = (selector: string) => page.locator(selector).first().evaluate((el) => getComputedStyle(el).animationName);
-  const marks = [".pl-row[data-state='running'] .pl-mark", ".pl-row[data-state='running'] .pl-step[data-current] .pl-step-mark", ".pl-group-symbol[data-group='running']"];
-  for (const mark of marks) expect(await animation(mark), mark).toBe("tk-breathe");
-  // Rows that wait or ended, and the steps that are not the current one, stay still.
-  expect(await page.locator(".pl-row:not([data-state='running']) [data-breathe='true'], .pl-row .pl-step:not([data-current]) [data-breathe='true']").count()).toBe(0);
+  const badge = ".pl-row-wrap:has(.pl-row[data-state='running']) .ag-badge";
+  expect(await animation(badge), badge).toBe("tk-breathe");
+  // Exactly one breathing thing on a running row with an agent, none on a row that waits or ended, and no agent dot anywhere.
+  for (const wrap of await page.locator(".pl-row-wrap:has(.ag-badge)").all()) expect(await wrap.locator("[data-breathe='true']").count()).toBe(1);
+  expect(await page.locator(".pl-row:not([data-state='running'])").locator("xpath=..").locator("[data-breathe='true']").count()).toBe(0);
+  expect(await page.locator(".agent-dot, .pl-group-symbol, .pl-step-mark").count()).toBe(0);
 
   // The time is the drawer's format and ticks every second.
   const time = running.locator(".pl-time");
   await expect.poll(() => time.innerText()).toMatch(/^(\d+ s|\d+ m \d\d s|\d+ h \d\d m)$/);
   const before = await time.innerText();
   await expect.poll(() => time.innerText(), { timeout: 5_000 }).not.toBe(before);
+  await screenshot("64-progress-list-rows");
 
+  // With reduced motion the badge is still, and line two still says where the item is, in words.
   await page.emulateMedia({ reducedMotion: "reduce" });
-  for (const mark of marks) expect(await animation(mark), mark).toBe("none");
+  expect(await animation(badge), badge).toBe("none");
+  await expect.poll(() => running.locator(".pl-meta").innerText()).toMatch(/, step \d+ of \d+/);
+  await screenshot("65-progress-list-rows-reduced-motion");
   await page.emulateMedia({ reducedMotion: "no-preference" });
-  expect(await animation(marks[0]!)).toBe("tk-breathe");
+  expect(await animation(badge)).toBe("tk-breathe");
 });
 
 function hexToRgb(hex: string): string {

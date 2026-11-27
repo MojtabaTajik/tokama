@@ -54,15 +54,18 @@ describe("pipeline list", () => {
     expect($$(".pl-group-count").map((el) => el.textContent)).toEqual(["1", "4"]);
   });
 
-  it("shows status, title, workflow, repos, agent and time on a row", async () => {
+  it("shows status, title, and on line two the workflow, repos, step and agent in words, then the time; no template icon", async () => {
     await mount();
     const needs = row("Orders API returns 500 after deploy");
     expect(needs.querySelector(".pl-mark")?.textContent).toBe("⏸needs you: ");
     expect(needs.querySelector(".pl-workflow")?.textContent).toBe("Emergency investigator");
-    expect(needs.querySelector(".pl-meta .mono")?.textContent).toBe("orders-api");
-    expect(needs.parentElement?.querySelector(".pl-agent")?.textContent).toBe("Architect · opus");
+    expect(needs.querySelector(".pl-repos")?.textContent).toBe("orders-api");
+    expect(needs.querySelector(".pl-meta")?.textContent).toBe("Emergency investigator·orders-api·Propose a fix, step 3 of 3·Architect");
+    expect(needs.querySelector(".pl-meta .agent-name")?.hasAttribute("data-agent")).toBe(false);
+    expect(needs.parentElement?.querySelector(".pl-agent")).toBeNull();
     expect(needs.querySelector(".pl-time")?.textContent).toBe("41 m");
-    expect(needs.querySelector(".pl-meta svg")).not.toBeNull();
+    expect(needs.querySelector(".pl-meta svg")).toBeNull();
+    expect(needs.querySelector(".tpl-icon")).toBeNull();
   });
 
   it("gives a needs-you row one amber line with the question, and no other row", async () => {
@@ -71,31 +74,62 @@ describe("pipeline list", () => {
     expect(row("Orders API returns 500 after deploy").contains($(".pl-ask"))).toBe(true);
   });
 
-  it("draws each item's own steps with a symbol per step state, naming only the current step", async () => {
+  it("says each open item's step in words on line two, with no dots or hollow circles", async () => {
     await mount();
-    const pipe = (title: string) => row(title).querySelector(".pl-pipe")!;
-    const marks = (title: string) => [...pipe(title).querySelectorAll(".pl-step-mark")].map((el) => el.textContent);
-    expect(marks("Orders API returns 500 after deploy")).toEqual(["✓", "✓", "⏸"]);
-    expect(marks("Checkout p95 latency spike")).toEqual(["✓", "●", "○"]);
-    expect(marks("Fix rounding in invoice totals")).toEqual(["✓", "◐"]);
-    expect(marks("Add retry with backoff")).toEqual(["○", "○", "○", "○"]);
-    expect([...pipe("Checkout p95 latency spike").querySelectorAll(".pl-step-name")].map((el) => el.textContent)).toEqual(["Query logs"]);
-    expect(pipe("Fix rounding in invoice totals").getAttribute("aria-label")).toBe("Steps: Fix passed, Run checks checking attempt 1");
+    const line = (title: string) => row(title).querySelector(".pl-meta")?.textContent;
+    expect(line("Checkout p95 latency spike")).toBe("Emergency investigator·checkout-web·Query logs, step 2 of 3·Local builder");
+    expect(line("Fix rounding in invoice totals")).toContain("Run checks, step 2 of 2");
+    expect(line("Add retry with backoff")).toContain("Plan, step 1 of 4");
+    expect(container.querySelector(".pl-pipe, .pl-step, .pl-link, .pl-step-mark")).toBeNull();
   });
 
-  it("draws a stopped item's steps, and gives done and failed rows their facts in place of the steps", async () => {
+  it("gives done and failed rows their facts and no step line, and a stopped row nothing", async () => {
     await mount();
     await click(segment("All"));
-    const marks = (title: string) => [...row(title).querySelectorAll(".pl-step-mark")].map((el) => el.textContent);
     const facts = (title: string) => row(title).querySelector(".pl-facts")?.textContent;
-    expect(marks("Try a cache for prices")).toEqual(["■", "○"]);
     expect(facts("Try a cache for prices")).toBeUndefined();
     expect(facts("Flaky checkout test")).toBe("stopped at Fix, step 1 of 2");
     expect(facts("Bump the Postgres driver")).toBe("no checks");
-    for (const title of ["Flaky checkout test", "Bump the Postgres driver"]) {
-      expect(row(title).querySelector(".pl-pipe")).toBeNull();
-      expect(row(title).querySelector(".pl-facts")?.classList.contains("mono")).toBe(true);
+    for (const title of ["Flaky checkout test", "Bump the Postgres driver", "Try a cache for prices"]) {
+      expect(row(title).querySelector(".pl-where")).toBeNull();
+      expect(row(title).querySelector(".pl-meta .agent-name")).toBeNull();
     }
+    for (const title of ["Flaky checkout test", "Bump the Postgres driver"]) expect(row(title).querySelector(".pl-facts")?.classList.contains("mono")).toBe(true);
+  });
+
+  it("shows the working agent's badge as the one running mark of a running row, beside the row's button", async () => {
+    await mount();
+    const working = row("Checkout p95 latency spike");
+    expect(working.querySelector(".pl-mark")?.textContent).toBe("running: ");
+    const badge = working.parentElement!.querySelector<HTMLElement>(".pl-badge .ag-badge")!;
+    expect(working.contains(badge)).toBe(false);
+    expect(badge.getAttribute("aria-label")).toBe("Agent Local builder, running Query logs");
+    expect(badge.getAttribute("data-breathe")).toBe("true");
+    expect(badge.querySelector("svg")?.getAttribute("data-icon")).toBe("hammer");
+    // Exactly one breathing thing per running row, and none on a row that waits or checks.
+    expect(working.parentElement!.querySelectorAll("[data-breathe='true']")).toHaveLength(1);
+    expect(row("Orders API returns 500 after deploy").parentElement!.querySelector(".ag-badge")).toBeNull();
+    expect(row("Fix rounding in invoice totals").parentElement!.querySelector(".ag-badge")).toBeNull();
+    // The two items whose agent works breathe; the one in its checks, the one that waits and the one queued do not.
+    expect(container.querySelectorAll(".pl-row-wrap [data-breathe='true']")).toHaveLength(2);
+  });
+
+  it("shows a done row's whole facts line in the shared tooltip when its button has the focus, and with no title and no tab stop of its own", async () => {
+    await mount();
+    await click(segment("Done"));
+    const done = row("Bump the Postgres driver");
+    const facts = done.querySelector<HTMLElement>(".pl-facts")!;
+    expect(facts.hasAttribute("title")).toBe(false);
+    expect(facts.hasAttribute("tabindex")).toBe(false);
+    expect($('[role="tooltip"]')).toBeNull();
+    await act(async () => (done as HTMLElement).focus());
+    expect($('[role="tooltip"]')?.textContent).toBe("no checks");
+  });
+
+  it("shows no dot anywhere: no agent dot, no step mark, no symbol before a group heading", async () => {
+    await mount();
+    expect(container.querySelector(".agent-dot, .pl-group-symbol")).toBeNull();
+    expect($$(".pl-group-heading").map((el) => el.textContent)).toEqual(["Needs you1", "Running4"]);
   });
 
   it("keeps a done row's text free of a commit id, and of colour except the mark of its state", async () => {
@@ -116,7 +150,7 @@ describe("pipeline list", () => {
   it("marks an item in a checking step as checking, and gives every row its item id", async () => {
     await mount();
     expect(row("Fix rounding in invoice totals").querySelector(".pl-mark")?.textContent).toBe("◐checking: ");
-    expect(row("Checkout p95 latency spike").querySelector(".pl-mark")?.textContent).toBe("●running: ");
+    expect(row("Fix rounding in invoice totals").querySelector(".pl-mark")?.hasAttribute("data-breathe")).toBe(false);
     expect(row("Checkout p95 latency spike").getAttribute("data-item-id")).toBe(ITEMS.working.id);
   });
 
@@ -372,14 +406,21 @@ describe("sidebar", () => {
     for (const item of Object.values(ITEMS)) expect(aside.textContent).not.toContain(item.title);
   });
 
-  it("shows needs you, failed and running badges as a symbol and a count, only above zero", async () => {
+  it("shows needs you and failed badges as a symbol and a count, only above zero; running is no badge", async () => {
     await mount();
     const shown = (name: string) => [...sidebarRow(name).querySelectorAll(".status-count [aria-hidden]")].map((el) => el.textContent);
-    expect(shown("All work")).toEqual(["⏸ 1", "✕ 1", "● 3"]);
-    expect(shown("Emergency investigator")).toEqual(["⏸ 1", "● 1"]);
-    expect(shown("Quick fix")).toEqual(["✕ 1", "● 2"]);
-    expect(shown("orders-api")).toEqual(["⏸ 1", "● 1"]);
-    expect(shown("checkout-web")).toEqual(["✕ 1", "● 1"]);
+    expect(shown("All work")).toEqual(["⏸ 1", "✕ 1"]);
+    expect(shown("Emergency investigator")).toEqual(["⏸ 1"]);
+    expect(shown("Quick fix")).toEqual(["✕ 1"]);
+    expect(shown("orders-api")).toEqual(["⏸ 1"]);
+    expect(shown("checkout-web")).toEqual(["✕ 1"]);
+    expect($$(".status-count[data-kind='running']")).toHaveLength(0);
+  });
+
+  it("says how many run in words on All work only", async () => {
+    await mount();
+    expect(sidebarRow("All work").querySelector(".sb-running")?.textContent).toBe("3 running");
+    expect($$(".sb-running")).toHaveLength(1);
   });
 
   it("leaves out zero counts and rows without any badge", async () => {
@@ -394,7 +435,7 @@ describe("sidebar", () => {
 
   it("gives every badge a word for assistive technology, so colour is not the only signal", async () => {
     await mount();
-    expect([...sidebarRow("All work").querySelectorAll(".status-count .visually-hidden")].map((el) => el.textContent)).toEqual(["1 needs you", "1 failed", "3 running"]);
+    expect([...sidebarRow("All work").querySelectorAll(".status-count .visually-hidden")].map((el) => el.textContent)).toEqual(["1 needs you", "1 failed"]);
   });
 
   it("does not count a failure from before today in the failed badge", async () => {
@@ -420,7 +461,7 @@ describe("sidebar", () => {
     await click(toggle("Collapse Workflows"));
     expect($$(".sb-main").map((el) => el.querySelector(".ellipsis")?.textContent)).toEqual(["All work", "orders-api", "checkout-web", "inventory-service"]);
     expect(toggle("Expand Workflows").getAttribute("aria-expanded")).toBe("false");
-    expect([...$$(".panel-heading")[0]!.querySelectorAll(".status-count [aria-hidden]")].map((el) => el.textContent)).toEqual(["⏸ 1", "✕ 1", "● 3"]);
+    expect([...$$(".panel-heading")[0]!.querySelectorAll(".status-count [aria-hidden]")].map((el) => el.textContent)).toEqual(["⏸ 1", "✕ 1"]);
     await click(toggle("Collapse Repos"));
     expect($$(".sb-main")).toHaveLength(1);
     await click(toggle("Expand Workflows"));
@@ -527,7 +568,8 @@ describe("live updates", () => {
     await fake.pushItem({ ...ITEMS.working, state: "needs_you" } as ItemRecord);
     expect(titlesIn("Needs you")).toEqual(["Checkout p95 latency spike", "Orders API returns 500 after deploy"]);
     expect(counts()).toEqual(["Active5", "Needs you2", "Done2", "Failed1", "All"]);
-    expect([...sidebarRow("All work").querySelectorAll(".status-count [aria-hidden]")].map((el) => el.textContent)).toEqual(["⏸ 2", "✕ 1", "● 2"]);
+    expect([...sidebarRow("All work").querySelectorAll(".status-count [aria-hidden]")].map((el) => el.textContent)).toEqual(["⏸ 2", "✕ 1"]);
+    expect(sidebarRow("All work").querySelector(".sb-running")?.textContent).toBe("2 running");
     expect(text('.badge[data-tone="warn"]')).toBe("2");
   });
 
@@ -566,7 +608,7 @@ describe("template icons", () => {
   ] as const;
   const iconOf = (el: Element | null | undefined) => [el?.querySelector(".tpl-icon")?.getAttribute("data-icon"), el?.querySelector(".tpl-icon")?.getAttribute("data-tag")];
 
-  it.each(TEMPLATES)("%s shows its icon in its colour in the sidebar, the list, the board header and the drawer", async (name, templateId, icon, color) => {
+  it.each(TEMPLATES)("%s shows its icon in its colour in the sidebar, the board header and the drawer, and none on a list row or a card", async (name, templateId, icon, color) => {
     const own = { ...ITEMS.queued, id: "item_1a2b3c4d-0098-4a1b-8c1d-000000000098", title: `Item of ${name}`, templateId } as ItemRecord;
     await mount(fakeBridge(CONNECTED, { boardItems: [own] }));
 
@@ -577,15 +619,16 @@ describe("template icons", () => {
 
     await click(sidebarRow(name));
     expect(iconOf($(".crumb-here"))).toEqual([icon, color]);
-    expect(iconOf(row(own.title).querySelector(".pl-meta"))).toEqual([icon, color]);
+    expect(row(own.title).querySelector(".tpl-icon")).toBeNull();
 
     await click(byText('[aria-label="Layout"] button', "Board"));
-    expect(iconOf($(".card"))).toEqual([icon, color]);
+    expect($(".card .tpl-icon")).toBeNull();
   });
 
-  it("draws the neutral icon, with no tint, for a template the setup does not list", async () => {
+  it("draws the neutral icon, with no tint, for a template the setup does not list, in the drawer", async () => {
     const orphan = { ...ITEMS.queued, id: "item_1a2b3c4d-0097-4a1b-8c1d-000000000097", title: "Orphan", templateId: "builtin/retired-template" } as ItemRecord;
     await mount(fakeBridge(CONNECTED, { boardItems: [orphan] }));
-    expect(iconOf(row("Orphan").querySelector(".pl-meta"))).toEqual(["diagram-project", null]);
+    await click(row("Orphan"));
+    expect(iconOf($(".drawer-kind"))).toEqual(["diagram-project", null]);
   });
 });
