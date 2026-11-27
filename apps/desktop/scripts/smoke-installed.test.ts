@@ -20,6 +20,10 @@ describe("sandboxProblem", () => {
     expect(sandboxProblem("", "/opt/Tokama")).toBe("no process runs from /opt/Tokama");
   });
 
+  it("does not count the engine, which runs from the app's resources folder", () => {
+    expect(sandboxProblem(ps("/opt/Tokama/resources/engine/tokama-engine /opt/Tokama/resources/engine/dist/main.js --dir /x --home /y"), "/opt/Tokama")).toBe("no process runs from /opt/Tokama");
+  });
+
   it("does not take a folder that only starts with the same letters for the app", () => {
     expect(sandboxProblem(ps("/opt/TokamaOther/tokama --no-sandbox"), "/opt/Tokama")).toBe("no process runs from /opt/Tokama");
   });

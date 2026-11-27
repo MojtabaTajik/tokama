@@ -28,7 +28,7 @@ import { appVersion, run } from "./package.ts";
 const appDir = resolve(import.meta.dirname, "..");
 /** What a Finder-launched app finds on PATH when no tool is installed: no node, from any version manager or package manager. */
 const REDUCED_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
-/** The display variables are only ever set on Linux: the app needs the X server (or Wayland socket) of the session it runs in. */
+/** The display variables matter on Linux, where the app needs the X server (or Wayland socket) of the session it runs in; macOS ignores them. */
 const KEPT_ENV = ["USER", "LOGNAME", "TMPDIR", "LANG", "SHELL", "DISPLAY", "XAUTHORITY", "XDG_RUNTIME_DIR"] as const;
 /** Where the deb and the rpm put the app. */
 const LINUX_ROOT = "/opt/Tokama";
@@ -96,7 +96,8 @@ export function crashCount(data: unknown): number {
 
 /** Why the process list (`ps -eww -o args=`) shows the app of `root` without the Chromium sandbox, or that it shows no process of the app at all; undefined when every process of the app runs with the sandbox. */
 export function sandboxProblem(processes: string, root: string): string | undefined {
-  const lines = processes.split("\n").filter((line) => line.startsWith(`${root}/`));
+  // The app's own executable, not the engine in its resources folder: that one never has the switch.
+  const lines = processes.split("\n").filter((line) => line === `${root}/tokama` || line.startsWith(`${root}/tokama `));
   if (lines.length === 0) return `no process runs from ${root}`;
   const off = lines.filter((line) => /(^|\s)--no-sandbox(\s|$)/.test(line));
   return off.length === 0 ? undefined : `${off.length} process(es) run with --no-sandbox, e.g. ${off[0]?.slice(0, 200) ?? ""}`;

@@ -88,6 +88,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     environment: release
     timeout-minutes: 75
+    # The upload's id: publish downloads by it, so an artifact deleted and uploaded again under the same name is not taken.
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
     permissions:
       contents: read
     steps:
@@ -164,7 +167,8 @@ jobs:
           FEED_URL: ${{ needs.check.outputs.feed_url_mac }}
           VERSION: ${{ needs.check.outputs.version }}
         run: node scripts/smoke-installed.ts --dmg "release/Tokama-$VERSION-arm64.dmg" --signed --team "$APPLE_TEAM_ID" --feed-url "$FEED_URL"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tokama-mac-${{ needs.check.outputs.version }}
           if-no-files-found: error
@@ -194,6 +198,8 @@ jobs:
     needs: check
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
     permissions:
       contents: read
     steps:
@@ -212,7 +218,8 @@ jobs:
           feed-url: ${{ needs.check.outputs.feed_url_linux }}
           min-safe-version: ${{ needs.check.outputs.min_safe_version }}
           rpm-out: ${{ runner.temp }}/smoke-rpm
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tokama-linux-${{ needs.check.outputs.version }}
           if-no-files-found: error
@@ -245,11 +252,14 @@ jobs:
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: tokama-mac-${{ needs.check.outputs.version }}
+          artifact-ids: ${{ needs.build-mac.outputs.artifact_id }}
+          # Without a name, the action may put the files in a folder named after the artifact; this keeps them flat.
+          merge-multiple: true
           path: mac
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: tokama-linux-${{ needs.check.outputs.version }}
+          artifact-ids: ${{ needs.build-linux.outputs.artifact_id }}
+          merge-multiple: true
           path: linux
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
