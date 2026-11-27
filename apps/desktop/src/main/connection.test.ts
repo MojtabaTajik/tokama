@@ -374,22 +374,27 @@ describe("watchConnection", () => {
       expect(watcher.state()).toEqual({ status: "connected", engineId: "e-old", staleEngine: true });
     });
 
-    it("runs one check at a time", async () => {
-      const busy = fakeClient("e-old", engineOf({ engineVersion: "0.1.0", runningItems: 1 }));
+    it("runs one check at a time, and once more when an event came during it (it may have been the last item)", async () => {
+      const busy = fakeClient("e-old", engineOf({ engineVersion: "0.1.0", runningItems: 2 }));
       let release: (result: Awaited<ReturnType<Connect>>) => void = () => {};
-      const connect = vi.fn<Connect>().mockResolvedValueOnce(ok(busy.client)).mockImplementationOnce(() => new Promise((resolve) => (release = resolve)));
-      const { watcher } = watch(connect, [], undefined, APP);
+      const connect = vi
+        .fn<Connect>()
+        .mockResolvedValueOnce(ok(busy.client))
+        .mockImplementationOnce(() => new Promise((resolve) => (release = resolve)))
+        .mockResolvedValueOnce(ok(fakeClient("e-old", engineOf({ engineVersion: "0.1.0", runningItems: 0 })).client))
+        .mockResolvedValueOnce(ok(fakeClient("e-old", engineOf({ engineVersion: "0.1.0", runningItems: 0 })).client))
+        .mockResolvedValueOnce(ok(fresh()));
+      const { watcher, stop } = watch(connect, [], undefined, APP);
       await settle();
       busy.push(itemUpdated("done"));
-      busy.push(itemUpdated("failed"));
+      busy.push(itemUpdated("stopped"));
       await settle();
+      // The second event opened no second connection while the first check waits.
       expect(connect).toHaveBeenCalledTimes(2);
-      const probe = fakeClient("e-old", engineOf({ engineVersion: "0.1.0", runningItems: 1 })).client;
-      release(ok(probe));
-      await settle();
-      await settle();
-      expect(probe.close).toHaveBeenCalledOnce();
-      expect(watcher.state()).toMatchObject({ status: "connected", staleEngine: true });
+      // The first check read 1 (one item was still running then); the repeat reads 0.
+      release(ok(fakeClient("e-old", engineOf({ engineVersion: "0.1.0", runningItems: 1 })).client));
+      await vi.waitFor(() => expect(watcher.state()).toEqual({ status: "connected", engineId: "engine-new" }));
+      expect(stop).toHaveBeenCalledOnce();
     });
 
     it("stays connected, without the note and without another check, when the engine refuses the stop", async () => {

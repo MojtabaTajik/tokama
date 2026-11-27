@@ -101,9 +101,10 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
     const newestBuildAt = options.newestBuildAt?.();
     return { apiVersion: options.apiVersion, ...(options.appVersion !== undefined && { appVersion: options.appVersion }), ...(newestBuildAt !== undefined && { newestBuildAt }) };
   };
-  const action = (engine: EngineInfo) => engineAction(engine, app());
-  // True while a second connection reads the running count of a stale engine.
+  const action = (engine: EngineInfo, current = app()) => engineAction(engine, current);
+  // True while a second connection reads the running count of a stale engine; `recheckAgain` when an event came meanwhile.
   let rechecking = false;
+  let recheckAgain = false;
 
   /** A refused connection: an engine of another API version is replaced, asked about or left alone; anything else is a failure. */
   const refused = async (error: ConnectError, mine: number, mode: Mode, replaced: boolean): Promise<void> => {
@@ -162,7 +163,9 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
     // After a replace attempt the engine is used as it is: the engine refused (an item is queued, or a
     // command is in flight, which its handshake count leaves out), or it answered again; either way
     // it speaks this API, so there is nothing to ask.
-    if (stopEngine !== undefined && !replaced && action(connected.engine) === "replace") {
+    // One reading of the build files for both decisions below.
+    const current = app();
+    if (stopEngine !== undefined && !replaced && action(connected.engine, current) === "replace") {
       // Closed first: a client left open would reconnect, and start an engine, while the old one stops.
       await connected.close();
       if (closed || mine !== attempt) return;
@@ -178,7 +181,7 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
     // so, and an item event that may mean it went idle checks again. Not after a replace attempt,
     // so an engine that refuses the stop is not asked again at every event.
     const engineId = client.engineId;
-    let stale = stopEngine !== undefined && !replaced && engineStale(connected.engine, app());
+    let stale = stopEngine !== undefined && !replaced && engineStale(connected.engine, current);
     set({ status: "connected", engineId, ...(stale && { staleEngine: true as const }) });
     for await (const event of events) {
       if (mine !== attempt) break;
@@ -201,18 +204,26 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
    * starts the replace when it is idle. The stop is `ifIdle`, so a race with a new item leaves it be.
    */
   const recheck = async (mine: number): Promise<void> => {
-    if (rechecking) return;
+    // An event during a check may be the one that made the engine idle: the check runs once more.
+    if (rechecking) {
+      recheckAgain = true;
+      return;
+    }
     rechecking = true;
     try {
-      const result = await options.connect();
-      if (!result.ok) return;
-      await result.value.close();
-      if (closed || mine !== attempt || action(result.value.engine) !== "replace") return;
-      again("ask");
+      do {
+        recheckAgain = false;
+        const result = await options.connect();
+        if (!result.ok) return;
+        await result.value.close();
+        if (closed || mine !== attempt) return;
+        if (action(result.value.engine) === "replace") return again("ask");
+      } while (recheckAgain);
     } catch {
       // The check is only a hope of replacing early; the next connect looks again.
     } finally {
       rechecking = false;
+      recheckAgain = false;
     }
   };
   const start = (mode: Mode = "ask") => {
