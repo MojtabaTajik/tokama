@@ -4,7 +4,7 @@ import { type ManualClock, manualClock } from "../../kernel/clock/index.js";
 import type { AgentRuntime } from "../../kernel/ports/index.js";
 import type { AgentCallEvent } from "../../kernel/schemas/index.js";
 import { runGuardedCall } from "./guarded-call.js";
-import { claudeCodeGuardDefaults, type FileState } from "./loop-guard.js";
+import { agentCliGuardDefaults, type FileState } from "./loop-guard.js";
 
 const USAGE = { input: 10, output: 2, cacheRead: 0, cacheWrite: 0 };
 const REQUEST = { model: "fake-model", prompt: "fix the bug", cwd: "/tmp/fake" };
@@ -247,7 +247,7 @@ describe("guarded agent call", () => {
     expect(guard.idleWatch?.skippedNoActivity).toBeGreaterThan(0);
   });
   describe("silence stop", () => {
-    const settings = claudeCodeGuardDefaults;
+    const settings = agentCliGuardDefaults;
 
     it("stops an agent that sends nothing for silentMs while no tool runs", async () => {
       const clock = manualClock();
@@ -311,7 +311,7 @@ describe("guarded agent call", () => {
   });
 
   describe("tool silence stop", () => {
-    const settings = claudeCodeGuardDefaults;
+    const settings = agentCliGuardDefaults;
 
     it("stops a CLI frozen inside one tool call after toolSilentMs", async () => {
       const clock = manualClock();

@@ -1,5 +1,7 @@
 # claude-code
 
+AI CLI adapter (`claudeCodeAdapter`, in `adapter.ts`, the one export `composition.ts` wires): the CLI's name, login and update commands, minimum version, runtime, health check, launch description, plan windows and session-log reader as one object the engine loops over.
+
 AgentRuntime adapter: runs one headless `claude -p` call per launch through the kernel process runner, stream-json in and out.
 Maps the step's tool limits onto Claude Code's own permission flags (never a skip-permissions flag), parses the stream into typed events, and classifies failures (quota, rate limit, auth, crash, timeout).
 Also reads the plan windows (the `limits` list, with weekly limits scoped to one model and their share, or else the older fixed windows): Claude Code's own `get_usage` answer from an idle restricted session (version-checked), else the `cachedUsageUtilization` key of `~/.claude.json`, read-only.

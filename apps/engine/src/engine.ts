@@ -43,6 +43,7 @@ import {
   type AddRepoResult,
   type UpdateRepoResult,
   type AgentsListResult,
+  aiCliAdapters,
   type AiClisResult,
   API_VERSION,
   BOARD_COUNT_DAYS,
@@ -139,9 +140,9 @@ import { agentsFor, loadConfig, startProblem, stepProblems } from "./real/config
 import { sampleTemplateLoads } from "./sample/templates.js";
 import { openSampleDiagnostics } from "./sample/diagnostics.js";
 import { sampleMachineReport } from "./sample/machine.js";
-import { sampleClaudePlan, sampleHelperCalls, sampleLogEntries, sampleOtherPlans, sampleUsageRows } from "./sample/usage.js";
-import { ClaudeLogs } from "./claude-logs.js";
-import { claudePlanSources, type PlanSources, UsageService, usageRowsOf } from "./usage.js";
+import { sampleHelperCalls, sampleLogEntries, sampleOtherPlans, samplePlanSources, sampleUsageRows } from "./sample/usage.js";
+import { ClaudeLogs, logReader } from "./claude-logs.js";
+import { type PlanSources, planSources, UsageService, usageRowsOf } from "./usage.js";
 import { MemoryItemStore } from "./store.js";
 import { templateDetail, templateEntries, type TemplateFiles } from "./templates.js";
 
@@ -173,8 +174,8 @@ export interface EngineOptions {
   /** Real mode: time between SIGTERM and SIGKILL for a leftover agent tree at start. */
   readonly recoveryGraceMs?: number;
   /**
-   * Where plan windows come from. Default: Claude Code's usage request and its cached copy. Leave
-   * out `request` to never start the CLI for them (it calls its vendor).
+   * Where plan windows come from, by AI CLI. Default: each adapter's usage request and its cached
+   * copy. Leave out `request` to never start the CLI for them (it calls its vendor).
    */
   readonly planSources?: PlanSources;
   /** Where the machine query reads memory and processes. Default: this OS's source, none on an OS without one. */
@@ -405,10 +406,12 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   const usageAbort = new AbortController();
   const index = storage?.index;
   const tokamaHome = options.home;
+  const reader = logReader();
   const claudeLogs =
-    index !== undefined && tokamaHome !== undefined && options.claudeLogs !== undefined
+    index !== undefined && tokamaHome !== undefined && options.claudeLogs !== undefined && reader !== undefined
       ? new ClaudeLogs({
           index,
+          reader,
           root: options.claudeLogs,
           repos: async () => {
             const loaded = await loadRepos({ tokamaHome });
@@ -424,7 +427,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     sample
       ? {
           rows: () => sampleUsageRows(sample.setup, store.list(), clock.now()),
-          sources: { request: async () => ({ ok: true, value: sampleClaudePlan(clock.now()) }) },
+          sources: samplePlanSources(clock.now),
           otherClis: sampleOtherPlans,
           helperCalls: () => sampleHelperCalls(clock.now()),
           logs: {
@@ -439,7 +442,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       : {
           rows: (since) => (storage === undefined ? [] : usageRowsOf(storage.items.list(), since)),
           ...(index !== undefined && { samples: { get: (cliId) => index.planSample(cliId), save: (cliId, reading) => index.savePlanSample(cliId, reading) } }),
-          sources: options.planSources ?? claudePlanSources(usageAbort.signal),
+          sources: options.planSources ?? planSources(aiCliAdapters, usageAbort.signal),
           ...(claudeLogs !== undefined && { logs: claudeLogs }),
           clock,
           onChange: usageChanged,

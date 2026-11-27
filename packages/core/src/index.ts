@@ -63,9 +63,11 @@ export { runsInCloud } from "./slices/prompting/index.js";
 // Git and child processes, for the engine service's run loop and its startup checks.
 export { MIN_GIT_VERSION, supportsNoLazyFetch } from "./kernel/git/index.js";
 export type { RunRequest, RunResult } from "./kernel/process/index.js";
-export type { AgentCallRequest, AgentRuntime, ToolLimits } from "./kernel/ports/index.js";
-// Adapters by name: an adapter can be removed, so callers look its factories up at run time.
-export * as adapters from "./composition.js";
+export type { AgentCallRequest, AgentRuntime, AiCliAdapter, AiCliLaunch, LocalUsageMessage, LogMark, LogScanFn, RepoOfFn, RepoPaths, ToolLimits } from "./kernel/ports/index.js";
+// The AI CLI adapters this build has, in id order. An adapter can be removed, so callers loop over the list.
+import * as adapters from "./composition.js";
+import { collectAiCliAdapters } from "./kernel/ports/index.js";
+export const aiCliAdapters = collectAiCliAdapters(Object.values(adapters));
 // The run loop and its commands, for the engine service.
 export {
   attemptLimit,

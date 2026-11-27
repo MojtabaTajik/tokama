@@ -6,9 +6,11 @@
 // templates apply without a restart. Commands wait until restart recovery is done (the run loop
 // holds them).
 import {
-  adapters,
   type Agent,
   type AgentRuntime,
+  type AiCliAdapter,
+  aiCliAdapters,
+  type AiCliId,
   type AttemptChecksResult,
   type AttemptFile,
   type AttemptFileResult,
@@ -250,14 +252,17 @@ export class RealEngine {
   }
 }
 
-/** Claude Code for claude-code agents. Keyed on where the agent runs, never on the CLI that drives a local model. */
-function defaultRuntime(runner: ProcessRunner, tokamaHome: string, engineDir?: string): (agent: Agent) => AgentRuntime | undefined {
-  const factories: Record<string, unknown> = { ...adapters };
-  const create = factories["createClaudeCodeRuntime"] as ((options: { runner: ProcessRunner; tokamaHome: string; closedDirs: string[] }) => AgentRuntime) | undefined;
-  let claude: AgentRuntime | undefined;
+/** The runtime of the adapter for the CLI the agent runs on, made once per CLI. Keyed on where the agent runs, never on the CLI that drives a local model. */
+export function defaultRuntime(runner: ProcessRunner, tokamaHome: string, engineDir?: string, list: readonly AiCliAdapter[] = aiCliAdapters): (agent: Agent) => AgentRuntime | undefined {
+  const runtimes = new Map<AiCliId, AgentRuntime>();
   return (agent) => {
-    if (agent.cliId !== "claude-code" || create === undefined) return undefined;
-    claude ??= create({ runner, tokamaHome, closedDirs: engineDir === undefined ? [] : [engineDir] });
-    return claude;
+    const adapter = list.find((candidate) => candidate.id === agent.cliId);
+    if (adapter === undefined) return undefined;
+    let runtime = runtimes.get(adapter.id);
+    if (runtime === undefined) {
+      runtime = adapter.createRuntime({ runner, tokamaHome, closedDirs: engineDir === undefined ? [] : [engineDir] });
+      runtimes.set(adapter.id, runtime);
+    }
+    return runtime;
   };
 }

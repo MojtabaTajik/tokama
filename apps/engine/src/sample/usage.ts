@@ -3,6 +3,7 @@
 // show every state the Insights page draws: a CLI well inside its limits, one near its weekly
 // limit, and a local model host without a plan.
 import { type AgentCallUsage, type CliPlan, type ItemId, type ItemRecord, localDate, type PlanReading, pricedEntry, type Setup, type HelperCallRow, type UsageEntry, type UsageRow } from "@tokama/core";
+import type { PlanSources } from "../usage.js";
 
 const MINUTE = 60_000;
 const DAYS = 90;
@@ -157,6 +158,11 @@ export function sampleClaudePlan(now: number): PlanReading & { readonly version:
     extraUsage: "off",
     version: "2.1.331",
   };
+}
+
+/** Claude Code's sample usage request as a plan source. */
+export function samplePlanSources(now: () => number): PlanSources {
+  return { "claude-code": { request: async () => ({ ok: true, value: sampleClaudePlan(now()) }) } };
 }
 
 /** Codex CLI near its weekly limit, read 34 minutes ago, and Ollama without a plan. */

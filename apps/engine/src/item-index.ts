@@ -7,7 +7,7 @@
 // Extension loading stays off (the default).
 import { closeSync, constants, openSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { type AiCliId, localDate, type PlanReading, type RepoId, type TokenUsage } from "@tokama/core";
+import { type AiCliId, type LocalUsageMessage, localDate, type PlanReading, type RepoId, type TokenUsage } from "@tokama/core";
 
 export const INDEX_SCHEMA_VERSION = 5;
 
@@ -16,15 +16,7 @@ export const INDEX_SCHEMA_VERSION = 5;
 const TABLES = ["items", "usage_calls", "plan_samples", "claude_local_messages", "claude_local_files", "claude_local_projects"];
 
 /** One message's usage from Claude Code's logs. */
-export interface LocalMessage {
-  /** Counts the message once, in whichever log and however often it appears. */
-  readonly key: string;
-  readonly at: number;
-  readonly model: string;
-  /** A hash of the project folder name. */
-  readonly project: string;
-  readonly tokens: TokenUsage;
-}
+export type LocalMessage = LocalUsageMessage;
 
 /** Claude Code's usage per local day, model and project. */
 export interface LocalDayRow {

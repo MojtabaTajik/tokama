@@ -6,7 +6,8 @@
 // finds the last request older than `requestEveryMs` starts one in the background and answers
 // with what is known now; when the answer comes, `onChange` tells clients to ask again.
 import {
-  adapters,
+  type AiCliAdapter,
+  aiCliAdapters,
   type AiCliId,
   choosePlan,
   type CliPlan,
@@ -25,6 +26,7 @@ import {
   type UsageRow,
   type UsageScope,
 } from "@tokama/core";
+import { cliName } from "./real/clis.js";
 
 /**
  * One row per call that ended at or after `since`, oldest first (equal times by call id). The
@@ -42,15 +44,19 @@ export function usageRowsOf(items: readonly Pick<StoredItem, "id" | "title" | "t
   return rows.sort((a, b) => a.call.endedAt - b.call.endedAt || (a.call.callId < b.call.callId ? -1 : a.call.callId > b.call.callId ? 1 : 0));
 }
 
-/** One source of Claude Code's plan windows. */
+/** One source of an AI CLI's plan windows. */
 export type PlanSource = () => Promise<Result<PlanReading & { readonly version?: string }, string>>;
 
-export interface PlanSources {
-  /** Asks the CLI itself (Claude Code's `get_usage`). Absent: never asked, e.g. in local-only use. */
+/** The plan sources of one AI CLI. */
+export interface CliPlanSources {
+  /** Asks the CLI itself. Absent: never asked, e.g. in local-only use. */
   readonly request?: PlanSource;
   /** Reads the CLI's cached copy of its last answer. */
   readonly cache?: PlanSource;
 }
+
+/** The plan sources by CLI. A CLI without an entry has none, and its windows come from its calls only. */
+export type PlanSources = Partial<Record<AiCliId, CliPlanSources>>;
 
 export interface UsageDeps {
   /** The recorded calls that ended at or after `since`. */
@@ -61,6 +67,8 @@ export interface UsageDeps {
     save(cliId: AiCliId, reading: PlanReading): void;
   };
   readonly sources: PlanSources;
+  /** The AI CLIs that report a plan, in this order. Default: the adapters of this build that have a `plan`. */
+  readonly adapters?: readonly AiCliAdapter[];
   readonly clock: Clock;
   readonly onChange: () => void;
   readonly log?: (message: string) => void;
@@ -98,34 +106,52 @@ const NOT_YET: readonly CliPlan[] = [
   { cliId: "ollama", windows: [], note: "Local models have no plan limit." },
 ];
 
-/**
- * Claude Code's own sources, looked up by name: the adapter may have been removed. `signal` stops
- * a usage request in flight, e.g. at engine shutdown.
- */
-export function claudePlanSources(signal?: AbortSignal): PlanSources {
-  const factories: Record<string, unknown> = { ...adapters };
-  const request = factories["requestClaudePlan"] as ((options: { signal?: AbortSignal }) => ReturnType<PlanSource>) | undefined;
-  const cache = factories["readClaudePlanCache"] as (() => ReturnType<PlanSource>) | undefined;
-  return { ...(request !== undefined && { request: () => request(signal === undefined ? {} : { signal }) }), ...(cache !== undefined && { cache: () => cache() }) };
+/** The plan sources of each adapter in `list` that has some. `signal` stops a usage request in flight, e.g. at engine shutdown. */
+export function planSources(list: readonly AiCliAdapter[] = aiCliAdapters, signal?: AbortSignal): PlanSources {
+  const sources: Partial<Record<AiCliId, CliPlanSources>> = {};
+  for (const { id, plan } of list) {
+    if (plan === undefined) continue;
+    const request = plan.request?.bind(plan);
+    const cache = plan.cache?.bind(plan);
+    sources[id] = { ...(request !== undefined && { request: () => request(signal) }), ...(cache !== undefined && { cache: () => cache() }) };
+  }
+  return sources;
+}
+
+/** What the service keeps for one AI CLI. */
+interface CliState {
+  requestedAt?: number;
+  requesting?: Promise<void>;
+  requestProblem?: string;
+  version?: string;
+  cached?: { at: number; result: Promise<PlanCandidate> };
+  memorySample?: PlanReading;
 }
 
 export class UsageService {
-  private requestedAt: number | undefined;
-  private requesting: Promise<void> | undefined;
-  private requestProblem: string | undefined;
-  private version: string | undefined;
-  private cached: { at: number; result: Promise<PlanCandidate> } | undefined;
-  private memorySample: PlanReading | undefined;
+  private readonly states = new Map<AiCliId, CliState>();
 
   constructor(private readonly deps: UsageDeps) {}
 
+  private get list(): readonly AiCliAdapter[] {
+    return this.deps.adapters ?? aiCliAdapters;
+  }
+
+  private stateOf(cliId: AiCliId): CliState {
+    let state = this.states.get(cliId);
+    if (state === undefined) this.states.set(cliId, (state = {}));
+    return state;
+  }
+
   async report(range: UsageRange, scope: UsageScope = "tokama"): Promise<UsageReport> {
     const now = this.deps.clock.now();
-    this.requestIfDue(now);
+    const planned = this.list.filter((adapter) => adapter.plan !== undefined).map((adapter) => adapter.id);
+    for (const cliId of planned) this.requestIfDue(cliId, now);
     const since = Math.min(rangeStart(now, range), now - RUN_LOOKBACK_MS);
     const rows = this.deps.rows(since);
-    const claude = choosePlan("claude-code", await this.claudeCandidates(rows, now), now, this.version);
-    const clis = [claude, ...(this.deps.otherClis?.(now) ?? NOT_YET)];
+    const plans: CliPlan[] = [];
+    for (const cliId of planned) plans.push(choosePlan(cliId, await this.candidates(cliId, rows, now), now, this.stateOf(cliId).version));
+    const clis = [...plans, ...(this.deps.otherClis?.(now) ?? NOT_YET.filter((plan) => !planned.includes(plan.cliId)))];
     const helperCalls = this.deps.helperCalls?.(since) ?? [];
     if (scope === "tokama") return summarizeUsage({ rows, helperCalls, range, now, clis, scope });
     const logs = this.deps.logs;
@@ -146,55 +172,58 @@ export class UsageService {
 
   /** Waits for a usage request in flight; for tests and shutdown. */
   async settled(): Promise<void> {
-    await this.requesting;
+    await Promise.all([...this.states.values()].map((state) => state.requesting));
   }
 
-  private async claudeCandidates(rows: readonly UsageRow[], now: number): Promise<PlanCandidate[]> {
+  private async candidates(cliId: AiCliId, rows: readonly UsageRow[], now: number): Promise<PlanCandidate[]> {
+    const state = this.stateOf(cliId);
     const candidates: PlanCandidate[] = [];
-    const sample = this.deps.samples?.get("claude-code") ?? this.memorySample;
+    const sample = this.deps.samples?.get(cliId) ?? state.memorySample;
     if (sample !== undefined) candidates.push({ source: "request", reading: sample });
-    else if (this.requestProblem !== undefined) candidates.push({ source: "request", problem: this.requestProblem });
+    else if (state.requestProblem !== undefined) candidates.push({ source: "request", problem: state.requestProblem });
 
     const run = rows
-      .filter((row) => row.call.cliId === "claude-code" && row.call.plan !== undefined)
+      .filter((row) => row.call.cliId === cliId && row.call.plan !== undefined)
       .map((row) => row.call.plan!)
       .sort((a, b) => b.at - a.at)[0];
     if (run !== undefined) candidates.push({ source: "run", reading: { windows: run.windows, asOf: run.at } });
 
-    const cache = this.deps.sources.cache;
+    const cache = this.deps.sources[cliId]?.cache;
     if (cache !== undefined) {
-      if (this.cached === undefined || now - this.cached.at > CACHE_EVERY_MS) {
-        this.cached = { at: now, result: cache().then((read): PlanCandidate => (read.ok ? { source: "cache", reading: read.value } : { source: "cache", problem: read.error })) };
+      if (state.cached === undefined || now - state.cached.at > CACHE_EVERY_MS) {
+        state.cached = { at: now, result: cache().then((read): PlanCandidate => (read.ok ? { source: "cache", reading: read.value } : { source: "cache", problem: read.error })) };
       }
-      candidates.push(await this.cached.result);
+      candidates.push(await state.cached.result);
     }
     return candidates;
   }
 
-  private requestIfDue(now: number): void {
-    const request = this.deps.sources.request;
-    if (request === undefined || this.requesting !== undefined) return;
-    if (this.requestedAt !== undefined && now - this.requestedAt < (this.deps.requestEveryMs ?? REQUEST_EVERY_MS)) return;
-    this.requestedAt = now;
-    this.requesting = request()
+  private requestIfDue(cliId: AiCliId, now: number): void {
+    const request = this.deps.sources[cliId]?.request;
+    const state = this.stateOf(cliId);
+    if (request === undefined || state.requesting !== undefined) return;
+    if (state.requestedAt !== undefined && now - state.requestedAt < (this.deps.requestEveryMs ?? REQUEST_EVERY_MS)) return;
+    const name = cliName(cliId, this.list);
+    state.requestedAt = now;
+    state.requesting = request()
       .then((answer) => {
         if (answer.ok) {
           const { version, ...reading } = answer.value;
-          if (version !== undefined) this.version = version;
-          this.requestProblem = undefined;
-          this.memorySample = reading;
-          this.deps.samples?.save("claude-code", reading);
+          if (version !== undefined) state.version = version;
+          delete state.requestProblem;
+          state.memorySample = reading;
+          this.deps.samples?.save(cliId, reading);
         } else {
-          this.requestProblem = answer.error;
-          this.deps.log?.(`Claude Code usage request: ${answer.error}`);
+          state.requestProblem = answer.error;
+          this.deps.log?.(`${name} usage request: ${answer.error}`);
         }
       })
       .catch((error: unknown) => {
-        this.requestProblem = `The usage request failed: ${String(error)}`;
-        this.deps.log?.(`Claude Code usage request: ${this.requestProblem}`);
+        state.requestProblem = `The usage request failed: ${String(error)}`;
+        this.deps.log?.(`${name} usage request: ${state.requestProblem}`);
       })
       .finally(() => {
-        this.requesting = undefined;
+        delete state.requesting;
         this.deps.onChange();
       });
   }

@@ -1,5 +1,6 @@
-import { manualClock, type ItemId, type PlanReading, type UsageRow } from "@tokama/core";
+import { aiCliAdapters, manualClock, type ItemId, type PlanReading, type UsageRow } from "@tokama/core";
 import { describe, expect, it } from "vitest";
+import { fakeAiCli } from "./testing/fake-ai-cli.js";
 import { type PlanSource, UsageService, type UsageDeps, usageRowsOf } from "./usage.js";
 
 const NOW = new Date(2025, 9, 20, 15, 0).getTime();
@@ -54,7 +55,7 @@ describe("UsageService", () => {
       await answered;
       return { ok: true, value: { ...reading(36, NOW), version: "2.1.332" } };
     };
-    const { usage, changes, saved } = service({ sources: { request } });
+    const { usage, changes, saved } = service({ sources: { "claude-code": { request } } });
     const first = await usage.report(14);
     expect(first.clis[0]).toEqual({ cliId: "claude-code", windows: [], note: expect.any(String) });
     expect(changes).toEqual([]);
@@ -69,7 +70,7 @@ describe("UsageService", () => {
   it("asks the CLI at most once per interval, however often clients query", async () => {
     let asked = 0;
     const request: PlanSource = async () => (asked++, { ok: true, value: reading(36, NOW) });
-    const { usage, clock } = service({ sources: { request }, requestEveryMs: 5 * MINUTE });
+    const { usage, clock } = service({ sources: { "claude-code": { request } }, requestEveryMs: 5 * MINUTE });
     await Promise.all([usage.report(14), usage.report(14), usage.report(30)]);
     await usage.settled();
     await usage.report(14);
@@ -84,20 +85,49 @@ describe("UsageService", () => {
   it("falls back to the last run's windows, then the cache, and says why when nothing answers", async () => {
     const failed: PlanSource = async () => ({ ok: false, error: "Claude Code is not installed, or `claude` is not on the PATH." });
     const cache: PlanSource = async () => ({ ok: true, value: reading(20, NOW - 10 * MINUTE) });
-    const withRun = service({ sources: { request: failed, cache }, noSamples: true, rows: () => [runRow(44, NOW - 5 * MINUTE)] });
+    const withRun = service({ sources: { "claude-code": { request: failed, cache } }, noSamples: true, rows: () => [runRow(44, NOW - 5 * MINUTE)] });
     await withRun.usage.report(14);
     await withRun.usage.settled();
     expect((await withRun.usage.report(14)).clis[0]).toMatchObject({ source: "run", windows: [{ window: "five_hour", usedPercent: 44 }], asOf: NOW - 5 * MINUTE });
 
-    const cacheOnly = service({ sources: { request: failed, cache }, noSamples: true });
+    const cacheOnly = service({ sources: { "claude-code": { request: failed, cache } }, noSamples: true });
     await cacheOnly.usage.report(14);
     await cacheOnly.usage.settled();
     expect((await cacheOnly.usage.report(14)).clis[0]).toMatchObject({ source: "cache", windows: [{ usedPercent: 20 }] });
 
-    const nothing = service({ sources: { request: failed }, noSamples: true });
+    const nothing = service({ sources: { "claude-code": { request: failed } }, noSamples: true });
     await nothing.usage.report(14);
     await nothing.usage.settled();
     expect((await nothing.usage.report(14)).clis[0]).toEqual({ cliId: "claude-code", windows: [], note: expect.stringMatching(/not installed/) });
+  });
+
+  it("reports each adapter that has a plan from its own sources and samples, and a note only for the CLIs without one", async () => {
+    const claude = aiCliAdapters.find((adapter) => adapter.id === "claude-code")!;
+    const codex = fakeAiCli({ plan: {} });
+    const samples = new Map<string, PlanReading>();
+    let asked = 0;
+    const request: PlanSource = async () => (asked++, { ok: true, value: { ...reading(84, NOW), version: "0.169.0" } });
+    const { usage } = service({ adapters: [claude, codex], sources: { "codex-cli": { request } }, samples: { get: (cliId) => samples.get(cliId), save: (cliId, value) => void samples.set(cliId, value) } });
+    await usage.report(14);
+    await usage.settled();
+    const report = await usage.report(14);
+    expect(asked).toBe(1);
+    expect([...samples.keys()]).toEqual(["codex-cli"]);
+    expect(report.clis.map((cli) => cli.cliId)).toEqual(["claude-code", "codex-cli", "ollama"]);
+    expect(report.clis[0]).toEqual({ cliId: "claude-code", windows: [], note: expect.any(String) });
+    expect(report.clis[1]).toMatchObject({ source: "request", version: "0.169.0", windows: [{ usedPercent: 84 }] });
+    expect(report.clis[2]).toMatchObject({ cliId: "ollama", note: expect.stringMatching(/no plan limit/) });
+  });
+
+  it("leaves out an adapter without a plan, and keeps its note", async () => {
+    const claude = aiCliAdapters.find((adapter) => adapter.id === "claude-code")!;
+    let asked = 0;
+    const request: PlanSource = async () => (asked++, { ok: true, value: reading(84, NOW) });
+    const { usage } = service({ adapters: [claude, fakeAiCli()], sources: { "codex-cli": { request } } });
+    const report = await usage.report(14);
+    await usage.settled();
+    expect(asked).toBe(0);
+    expect(report.clis.map((cli) => [cli.cliId, cli.note !== undefined])).toEqual([["claude-code", true], ["codex-cli", true], ["ollama", true]]);
   });
 
   it("without a request source never starts the CLI, and reports the other CLIs as unknown", async () => {

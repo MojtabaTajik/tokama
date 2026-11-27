@@ -43,7 +43,7 @@ const RESULT_GRACE_MS = 10_000;
 /**
  * Drives `claude -p` headless: one call per launch, stream-json in and out. Every request needs
  * `timeoutMs`: the runtime owns the call's timeout and reports it as a run failure. Run it under
- * the execution slice's `claudeCodeGuardDefaults`, whose timeout is only a backstop.
+ * the execution slice's `agentCliGuardDefaults`, whose timeout is only a backstop.
  */
 export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): AgentRuntime {
   const command = options.command ?? [CLAUDE_CODE_COMMAND];

@@ -2,17 +2,10 @@
 // request, the last rate-limit event of a call Tokama ran, the CLI's own cached copy. The first
 // fresh one wins; when none is fresh, the newest. A window whose reset time has passed says
 // nothing about now and is dropped. With nothing left, the windows are unknown: never a guess.
-import type { AiCliId, CliPlan, PlanSource, PlanWindow } from "../../kernel/schemas/index.js";
+import type { AiCliId, CliPlan, PlanReading, PlanSource } from "../../kernel/schemas/index.js";
 
 /** A reading older than this gives way to a fresher source further down the order. */
 export const FRESH_MS = 60 * 60_000;
-
-export interface PlanReading {
-  readonly windows: readonly PlanWindow[];
-  readonly asOf: number;
-  readonly plan?: string;
-  readonly extraUsage?: "on" | "off";
-}
 
 /** What one source gave: a reading, or why it has none. */
 export type PlanCandidate = { readonly source: PlanSource } & ({ readonly reading: PlanReading } | { readonly problem: string });

@@ -1,9 +1,11 @@
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CliHealth } from "@tokama/core";
+import { aiCliAdapters, type CliHealth } from "@tokama/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { aiClis, aiClisWith } from "./ai-clis.js";
+import { aiClis } from "./ai-clis.js";
+import { KNOWN } from "./real/clis.js";
+import { fakeAiCli } from "./testing/fake-ai-cli.js";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -71,8 +73,21 @@ describe("aiClis", () => {
   });
 
   it("lists Claude Code as not supported when its adapter is removed", () => {
-    const result = aiClisWith(undefined, { clis: [READY], agents: [], env: {} });
+    const result = aiClis({ clis: [READY], agents: [], env: {} }, []);
     expect(result.clis.map((cli) => [cli.cliId, cli.supported])).toEqual([["claude-code", false], ["codex-cli", false]]);
+  });
+
+  it("lists one supported row for each adapter, and no not-supported row for a CLI that has one", () => {
+    const codex: CliHealth = { cliId: "codex-cli", installed: true, loggedIn: false, version: "0.169.0" };
+    const result = aiClis({ clis: [READY, codex], agents: [{ name: "Reviewer", cliId: "codex-cli" }], env: {} }, [...aiCliAdapters, fakeAiCli({ name: "Codex CLI" })]);
+    expect(result.clis.map((cli) => [cli.cliId, cli.supported])).toEqual([["claude-code", true], ["codex-cli", true]]);
+    expect(result.clis[1]).toMatchObject({ name: "Codex CLI", state: "not_logged_in", version: "0.169.0", loginCommand: "fake-cli login", command: "fake-cli", promptVia: "argument", usedBy: ["Reviewer"] });
+  });
+
+  it("names the adapters the same as the CLIs it lists without one", () => {
+    const [claude] = aiCliAdapters;
+    expect(claude).toMatchObject({ id: "claude-code", name: KNOWN["claude-code"].name, description: KNOWN["claude-code"].description });
+    expect(aiClis({ clis: [], agents: [], env: {} }, []).clis).toEqual([{ supported: false, cliId: "claude-code", ...KNOWN["claude-code"] }, { supported: false, cliId: "codex-cli", ...KNOWN["codex-cli"] }]);
   });
 
   it("caps the names under a CLI at the schema's limit", () => {

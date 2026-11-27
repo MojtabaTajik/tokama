@@ -1,6 +1,7 @@
 import { writeFileSync } from "node:fs";
-import type { ProcessRunner } from "@tokama/core";
+import { aiCliAdapters, type ProcessRunner } from "@tokama/core";
 import { describe, expect, it, vi } from "vitest";
+import { fakeAiCli } from "../testing/fake-ai-cli.js";
 import { cachedChecks, type HealthChecks, machineChecks } from "./health.js";
 
 const healthy = { git: { ok: true }, clis: [] };
@@ -24,6 +25,17 @@ describe("cachedChecks", () => {
     const message = "The checks failed: Error: spawn failed";
     expect(await cached.get()).toEqual({ git: { ok: false, message }, clis: [{ cliId: "claude-code", installed: false, loggedIn: false, timedOut: true, message }] });
   });
+
+  it("leaves one unknown entry per adapter when the checks throw, and none without adapters", async () => {
+    const message = "The checks failed: Error: spawn failed";
+    const failing = async () => Promise.reject(new Error("spawn failed"));
+    const both = await cachedChecks(failing, () => 0, 5_000, [...aiCliAdapters, fakeAiCli()]).get();
+    expect(both.clis).toEqual([
+      { cliId: "claude-code", installed: false, loggedIn: false, timedOut: true, message },
+      { cliId: "codex-cli", installed: false, loggedIn: false, timedOut: true, message },
+    ]);
+    expect((await cachedChecks(failing, () => 0, 5_000, []).get()).clis).toEqual([]);
+  });
 });
 
 describe("machineChecks: git", () => {
@@ -45,6 +57,15 @@ describe("machineChecks: git", () => {
   it("reports the version of a git that is too old, with the reason", async () => {
     const health = await machineChecks(runnerWithGit("git version 2.37.1"))();
     expect(health.git).toEqual({ ok: false, version: "git version 2.37.1", message: "git 2.38 or newer is required; found: git version 2.37.1" });
+  });
+
+  it("checks every adapter in the list, in its order, and none without adapters", async () => {
+    const list = [...aiCliAdapters, fakeAiCli({ health: { loggedIn: false, message: "Not logged in." } })];
+    const health = await machineChecks(runnerWithGit("git version 2.47.1"), undefined, list)();
+    expect(health.clis.map((cli) => cli.cliId)).toEqual(["claude-code", "codex-cli"]);
+    expect(health.clis[0]).toMatchObject({ installed: false });
+    expect(health.clis[1]).toEqual({ cliId: "codex-cli", installed: true, loggedIn: false, version: "0.1.0", message: "Not logged in." });
+    expect((await machineChecks(runnerWithGit("git version 2.47.1"), undefined, [])()).clis).toEqual([]);
   });
 
   it("reports no version when git is missing", async () => {

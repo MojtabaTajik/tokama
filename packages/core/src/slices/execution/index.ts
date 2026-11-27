@@ -3,7 +3,7 @@ export { actionOf, type Action, type ActivityState, type ActivityTracker, create
 export { runGuardedCall, type GuardedCallOptions, type GuardedCallResult } from "./guarded-call.js";
 export { callUsage, type CallUsageInput } from "./usage.js";
 export {
-  claudeCodeGuardDefaults,
+  agentCliGuardDefaults,
   localModelGuardDefaults,
   loopGuardSettings,
   LoopGuardSettingsSchema,

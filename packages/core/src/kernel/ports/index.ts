@@ -9,6 +9,8 @@ import type { Result } from "../result/index.js";
 import type { SandboxSpec } from "../sandbox/index.js";
 import type { AgentCallEvent } from "../schemas/index.js";
 
+export * from "./ai-cli.js";
+
 export interface PortError {
   /** `aborted`: the signal fired. `unavailable`: the backend cannot be reached. `failed`: anything else. */
   readonly code: "aborted" | "unavailable" | "failed";

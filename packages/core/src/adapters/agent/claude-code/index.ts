@@ -1,3 +1,5 @@
+// Claude Code as one AI CLI adapter: what the engine reads from it.
+export { claudeCodeAdapter } from "./adapter.js";
 // AgentRuntime for Claude Code: one headless `claude -p` call per launch.
 export { createClaudeCodeRuntime, type ClaudeCodeOptions } from "./runtime.js";
 // Installed and logged in, read-only.
