@@ -39,7 +39,6 @@ import {
   createGit,
   createRepoGatherer,
   createRunLoop,
-  DEFAULT_WORKTREE_FOLDER,
   err,
   type Git,
   ItemStore,
