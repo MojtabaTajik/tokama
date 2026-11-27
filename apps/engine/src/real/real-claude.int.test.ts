@@ -2,11 +2,11 @@
 // personal Builder on haiku fixes one line, Tokama runs the repo's check and commits. Opt in with
 // TOKAMA_REAL_CLAUDE=1; it costs a few cents and never runs in CI.
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { connect } from "@tokama/client";
-import { createProcessRunner, type ItemRecord, type ProcessRunner } from "@tokama/core";
+import { createProcessRunner, type HelperDefinition, type HelperRun, type ItemRecord, ok, type ProcessRunner } from "@tokama/core";
 import { describe, expect, it } from "vitest";
 import { startEngine } from "../engine.js";
 import { tempEngineDir } from "../testing/helpers.js";
@@ -88,6 +88,50 @@ describe.skipIf(!enabled)("real mode against the real Claude Code CLI", () => {
       expect(item?.state).toBe("done");
       const commit = item?.outcome?.commits?.[0]?.commit;
       expect(git("show", `${commit}:greeting.txt`)).toBe("hello world");
+    } finally {
+      for (const cleanup of cleanups.reverse()) await cleanup();
+    }
+  });
+
+  // The helper's call runs in a folder inside the Tokama home, which the CLI is told not to read:
+  // this checks that the CLI still starts and answers there.
+  it("runs a helper on the built-in Helper agent (haiku) in the helper folder and gets a valid answer", { timeout: 120_000 }, async () => {
+    const cleanups: (() => unknown)[] = [];
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "tk-claude-helper-")));
+    cleanups.push(() => rmSync(root, { recursive: true, force: true }));
+    const home = join(root, "home");
+    mkdirSync(home);
+    const definition: HelperDefinition = {
+      id: "suggest-checks",
+      version: 1,
+      name: "Suggest checks",
+      inputs: ["repo-file-names", "repo-build-files"],
+      maxTimeMs: 90_000,
+      agentId: "helper" as HelperDefinition["agentId"],
+      instructions: "Propose the commands that prove a change to this repository is correct. Use only commands that the build files show.",
+    };
+    const gatherers = { "suggest-checks": async () => ok({ "repo-file-names": "package.json\nsrc/orders.ts\n", "repo-build-files": '{ "name": "orders-api", "scripts": { "test": "vitest run", "lint": "eslint ." } }' }) };
+    try {
+      const dir = tempEngineDir(cleanups);
+      const started = await startEngine({ dir, home, planSources: {}, helpers: { definitions: [definition], gatherers } });
+      if (!started.ok) throw new Error(started.error.message);
+      cleanups.push(() => started.value.close());
+      const connected = await connect({ dir, lockPath: started.value.endpoint.lockPath, startTimeoutMs: 2_000 });
+      if (!connected.ok) throw new Error(connected.error.message);
+      const client = connected.value;
+      cleanups.push(() => client.close());
+
+      const reply = await client.command({ type: "run_helper", run: { helperId: "suggest-checks", input: { path: "/work/orders-api" } }, cloud: "accepted" });
+      if (!reply.ok) throw new Error(reply.error.message);
+      let run: HelperRun | undefined;
+      for (const deadline = Date.now() + 100_000; Date.now() < deadline && run?.state !== "done" && run?.state !== "failed"; await new Promise((resolve) => setTimeout(resolve, 300))) {
+        const current = await client.query({ type: "helper_run", runId: reply.data.runId });
+        if (current.ok) run = current.data.run;
+      }
+      process.stdout.write(`real helper: state ${run?.state}, usage ${JSON.stringify(run?.usage)}, error ${JSON.stringify(run?.error)}\n`);
+      expect(run?.state).toBe("done");
+      expect(run?.result?.value.checks.length).toBeGreaterThan(0);
+      expect(readdirSync(join(home, "helper-scratch"))).toEqual([]);
     } finally {
       for (const cleanup of cleanups.reverse()) await cleanup();
     }

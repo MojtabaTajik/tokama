@@ -1,8 +1,8 @@
-import { aiCliAdapters, type CliHealth, type Health, MIN_GIT_VERSION, type RepoSummary, type TemplateSummary } from "@tokama/core";
+import { aiCliAdapters, type CliHealth, type Health, HELPER_NO_CLI, MIN_GIT_VERSION, type RepoSummary, type TemplateSummary } from "@tokama/core";
 import { describe, expect, it } from "vitest";
 import { isWebsiteUrl } from "../../main/policy.js";
 import { aiCliBlock, aiCliState, atLeast, type Checklist, checklist, type ChecklistInput, numberIn, QUICK_FIX_ID, type Row } from "./checklist.js";
-import { CLAUDE_CODE_MIN, COMMANDS, GIT_MIN, LINKS, SAMPLE_TASK } from "./words.js";
+import { CLAUDE_CODE_MIN, COMMANDS, GIT_MIN, LINKS, SAMPLE_TASK, TITLES } from "./words.js";
 
 const claudeCode = () => {
   const adapter = aiCliAdapters.find((candidate) => candidate.id === "claude-code");
@@ -57,6 +57,10 @@ describe("the pinned numbers", () => {
 
   it("only link to pages the main process may open", () => {
     for (const href of Object.values(LINKS)) expect(isWebsiteUrl(href)).toBe(true);
+  });
+
+  it("the engine's words for a helper with no ready AI CLI send people to the Get started row by its title", () => {
+    expect(HELPER_NO_CLI).toContain(TITLES.aiCli);
   });
 });
 
