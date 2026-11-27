@@ -11,7 +11,15 @@ import type { HelperResult } from "../../kernel/schemas/index.js";
 import { loadAgents } from "../config/index.js";
 import { BUILTIN_HELPERS, createRepoGatherer, findHelper, readAnswer } from "../helpers/index.js";
 import { createHelperRunner, type HelperRunHooks } from "./helper-runner.js";
-import { fakeRuntime, says } from "./testing/fake-runtime.js";
+import { type Behavior, fakeRuntime } from "./testing/fake-runtime.js";
+
+/** One turn, one reply, done, and no tool call: what a helper does. */
+const says = (text: string): Behavior =>
+  async function* () {
+    yield { type: "turn" };
+    yield { type: "text", text };
+    yield { type: "end", outcome: "completed", usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 } };
+  };
 
 const suggestChecks = findHelper(BUILTIN_HELPERS, "suggest-checks")!;
 const FIXTURES = join(import.meta.dirname, "../helpers/testing/fixtures/suggest-checks");
@@ -29,7 +37,7 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-function world(script: ReturnType<typeof says>[]) {
+function world(script: Behavior[]) {
   const runtime = fakeRuntime(script);
   const runner = createHelperRunner({
     clock: manualClock(Date.UTC(2026, 10, 27, 9)),

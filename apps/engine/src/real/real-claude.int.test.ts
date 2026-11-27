@@ -2,7 +2,7 @@
 // personal Builder on haiku fixes one line, Tokama runs the repo's check and commits. Opt in with
 // TOKAMA_REAL_CLAUDE=1; it costs a few cents and never runs in CI.
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { connect } from "@tokama/client";
@@ -96,19 +96,13 @@ describe.skipIf(!enabled)("real mode against the real Claude Code CLI", () => {
 
   // The helper's call runs in a folder inside the Tokama home, which the CLI is told not to read:
   // this checks that the CLI still starts and answers there. It runs the built-in Suggest checks with
-  // its own gatherer on two sample folders; a run that is `done` has passed the helper's own rule
-  // (one simple command, not a command such as `rm`). Each answer is printed, to refresh the recorded ones.
-  const SAMPLES: Record<string, { files: Record<string, string>; expects: string }> = {
-    pnpm: {
-      files: { "package.json": '{ "name": "orders-api", "scripts": { "test": "vitest run", "lint": "eslint ." } }', "src/orders.ts": "export const orders = [];\n", ".env": "TOKEN=do-not-send\n" },
-      expects: "pnpm test",
-    },
-    cargo: {
-      files: { "Cargo.toml": '[package]\nname = "orders"\nversion = "0.1.0"\nedition = "2021"\n', "src/main.rs": "fn main() {}\n" },
-      expects: "cargo test",
-    },
-  };
-  it("runs the built-in Suggest checks on the built-in Helper agent (haiku) and gets valid, safe checks for two sample folders", { timeout: 240_000 }, async () => {
+  // its own gatherer on each recorded sample (the fixtures the core tests replay); a run that is `done`
+  // has passed the helper's own rule (one simple command, not a command such as `rm`). With
+  // TOKAMA_RECORD_HELPER=1 each valid live answer is written back to its fixture, with the helper version.
+  const FIXTURES = join(import.meta.dirname, "../../../../packages/core/src/slices/helpers/testing/fixtures/suggest-checks");
+  const record = process.env["TOKAMA_RECORD_HELPER"] === "1";
+  const EXPECTS: Record<string, string> = { pnpm: "pnpm test", cargo: "cargo test", go: "go test", dotnet: "dotnet test", make: "make test", hostile: "pnpm test" };
+  it("Suggest checks: runs the built-in helper on the built-in Helper agent (haiku) and gets valid, safe checks for every sample folder", { timeout: 900_000 }, async () => {
     const cleanups: (() => unknown)[] = [];
     const root = realpathSync(mkdtempSync(join(tmpdir(), "tk-claude-helper-")));
     cleanups.push(() => rmSync(root, { recursive: true, force: true }));
@@ -147,7 +141,9 @@ describe.skipIf(!enabled)("real mode against the real Claude Code CLI", () => {
       const client = connected.value;
       cleanups.push(() => client.close());
 
-      for (const [name, sample] of Object.entries(SAMPLES)) {
+      for (const file of readdirSync(FIXTURES).filter((name) => name.endsWith(".json")).sort()) {
+        const name = file.replace(/\.json$/, "");
+        const sample = JSON.parse(readFileSync(join(FIXTURES, file), "utf8")) as { version: number; files: Record<string, string>; answer: unknown };
         const folder = join(root, name, "orders-api");
         for (const [path, text] of Object.entries(sample.files)) {
           mkdirSync(join(folder, path, ".."), { recursive: true });
@@ -164,8 +160,10 @@ describe.skipIf(!enabled)("real mode against the real Claude Code CLI", () => {
         seen.length = 0;
         expect(run?.state).toBe("done");
         const commands = run?.result?.value.checks.map((check) => check.command) ?? [];
-        expect(commands).toContain(sample.expects);
+        const expected = EXPECTS[name];
+        if (expected !== undefined) expect(commands.some((command) => command.startsWith(expected))).toBe(true);
         expect(readdirSync(join(home, "helper-scratch"))).toEqual([]);
+        if (record && run?.result !== undefined) writeFileSync(join(FIXTURES, file), `${JSON.stringify({ version: run.helperVersion, files: sample.files, answer: run.result.value }, null, 2)}\n`);
       }
     } finally {
       for (const cleanup of cleanups.reverse()) await cleanup();

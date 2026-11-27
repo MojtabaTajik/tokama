@@ -650,3 +650,43 @@ describe("the real Claude Code adapter", () => {
     expect(readdirSync(join(fixture.home, "helper-scratch"))).toEqual([]);
   });
 });
+
+// Each recorded sample of Suggest checks, replayed through the engine, the real gatherer and the real
+// Claude Code adapter: only the process is fake, and it prints the recorded answer as the CLI would.
+describe("recorded Suggest checks answers through the real Claude Code adapter", () => {
+  const FIXTURES = join(import.meta.dirname, "../../../../packages/core/src/slices/helpers/testing/fixtures/suggest-checks");
+  const samples = readdirSync(FIXTURES).filter((file) => file.endsWith(".json")).map((file) => file.replace(/\.json$/, ""));
+
+  it("has the samples it should", () => {
+    expect(samples.sort()).toEqual(["cargo", "dotnet", "empty", "go", "hostile", "make", "pnpm", "python"]);
+  });
+
+  it.each(samples)("%s: the run is done with the recorded answer, and the prompt holds the sample's files", async (name) => {
+    const sample = JSON.parse(readFileSync(join(FIXTURES, `${name}.json`), "utf8")) as { version: number; files: Record<string, string>; answer: unknown };
+    const prompts: string[] = [];
+    const runner: ProcessRunner = {
+      async run(request) {
+        prompts.push((request.stdin ?? "") as string);
+        const lines = [
+          { type: "system", subtype: "init", cwd: "/x", session_id: "s", tools: [], model: "haiku" },
+          { type: "assistant", message: { id: "m1", content: [{ type: "text", text: JSON.stringify(sample.answer) }] }, session_id: "s" },
+          { type: "result", subtype: "success", is_error: false, result: "done", session_id: "s", usage: { input_tokens: 10, output_tokens: 5 } },
+        ].map((line) => JSON.stringify(line));
+        request.onSpawn?.(4242);
+        for (const line of lines) request.stdout?.onLine?.(line);
+        return { kind: "finished", pid: 4242, exitCode: 0, signal: null, timedOut: false, aborted: false, startedAt: 0, endedAt: 1, durationMs: 1 };
+      },
+    };
+    const fixture = await engine({ runner });
+    const folder = join(fixture.root, name, "orders-api");
+    for (const [path, text] of Object.entries(sample.files)) {
+      mkdirSync(join(folder, path, ".."), { recursive: true });
+      writeFileSync(join(folder, path), text);
+    }
+    const reply = await fixture.client.command({ type: "run_helper", run: { helperId: "suggest-checks", input: { path: folder } }, cloud: "accepted" });
+    if (!reply.ok) throw new Error(reply.error.message);
+    expect(await ended(fixture, reply.data.runId)).toMatchObject({ state: "done", helperVersion: sample.version, result: { helperId: "suggest-checks", value: sample.answer } });
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain(Object.keys(sample.files)[0]!.split("/")[0]!);
+  });
+});
