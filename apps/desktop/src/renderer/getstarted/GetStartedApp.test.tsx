@@ -155,6 +155,36 @@ describe("the first item", () => {
     expect(text(".gs-line-title")).toBe("Setup done");
   });
 
+  it("keeps the first item when the engine's event for it is rendered before the start reply is read", async () => {
+    const first = { ...ITEMS.working, id: "item_first" } as ItemRecord;
+    let reply: ((value: unknown) => void) | undefined;
+    const { fake } = launch(healthy());
+    fake.command.mockImplementation((c: { type: string }) => (c.type === "start_item" ? new Promise((done) => (reply = done)) : Promise.resolve({ ok: false, error: { code: "x", message: c.type } })));
+    await mount(fake);
+    await click(row("quick-fix").querySelector("button"));
+    // No act from here: React's scheduler renders the event, commits it, and only later runs the effects of that render. The reply is read in between.
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = false;
+    try {
+      ($(".np-start") as HTMLElement).click();
+      await vi.waitFor(() => expect(reply).toBeDefined());
+      const committed = new Promise<void>((done) => {
+        const watch = new MutationObserver(() => {
+          if ($(".pl-row") === null) return;
+          watch.disconnect();
+          reply?.({ ok: true, data: { itemId: first.id } });
+          done();
+        });
+        watch.observe(container, { childList: true, subtree: true });
+      });
+      fake.emitItem(first);
+      await committed;
+      await vi.waitFor(() => expect($(".gs-line-title")?.textContent).toBe("Setup done"));
+      expect(fake.saveLayout).toHaveBeenLastCalledWith({ getStarted: { done: true, lineClosed: false, firstItemId: first.id } });
+    } finally {
+      (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    }
+  });
+
   it("keeps the line while the first item is open, and drops it for good once the item ends", async () => {
     const { fake } = launch(healthy(), { items: [ITEMS.queued] });
     await mount(fake, { initial: rememberedFirst(ITEMS.queued.id) });
