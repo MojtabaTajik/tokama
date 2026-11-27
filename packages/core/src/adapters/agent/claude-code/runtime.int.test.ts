@@ -7,7 +7,7 @@ import { createProcessRunner, type ProcessRunner } from "../../../kernel/process
 import type { AgentCallRequest, AgentRuntime } from "../../../kernel/ports/index.js";
 import { describeAgentRuntimeContract } from "../../../kernel/ports/testing/contracts.js";
 import type { AgentCallEvent } from "../../../kernel/schemas/index.js";
-import type { SandboxSupport } from "../../../kernel/sandbox/index.js";
+import { APPARMOR_HINT, createSandboxSupport, type SandboxSupport } from "../../../kernel/sandbox/index.js";
 import { createClaudeCodeRuntime, type ClaudeCodeOptions } from "./index.js";
 
 // Runs the adapter against testing/fake-claude.ts through the real process runner. Kill cases
@@ -289,6 +289,20 @@ describe("Claude Code runtime", SLOW, () => {
       expect(seen).toEqual([[process.execPath, FAKE, "--version"]]);
       const windows: SandboxSupport = { check: async () => ({ ok: false, problem: "No sandbox here." }) };
       expect(end(await launch({ sandboxSupport: windows }, request("echo", withCommands)))).toMatchObject({ error: "No sandbox here." });
+    });
+
+    it("refuses the step with the AppArmor fix when bubblewrap starts but is blocked", async () => {
+      const { runner, seen } = recording();
+      const toolRunner: ProcessRunner = {
+        run: async (call) => {
+          const blocked = "argv" in call.command && call.command.argv.includes("--unshare-user");
+          return { kind: "finished", pid: 2, exitCode: blocked ? 1 : 0, signal: null, timedOut: false, aborted: false, startedAt: 0, endedAt: 0, durationMs: 0 };
+        },
+      };
+      const events = await launch({ runner, sandboxSupport: createSandboxSupport(toolRunner, "linux") }, request("echo", withCommands));
+      expect(end(events)).toMatchObject({ outcome: "failed", errorKind: "crash", error: expect.stringContaining("installed but blocked") });
+      expect(end(events)).toMatchObject({ error: expect.stringContaining(APPARMOR_HINT) });
+      expect(seen).toEqual([[process.execPath, FAKE, "--version"]]);
     });
 
     it("ends as aborted, not as a refusal, when the call is stopped during the support check", async () => {

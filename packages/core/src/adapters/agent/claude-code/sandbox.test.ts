@@ -100,9 +100,9 @@ describe("sandboxStartProblem", () => {
   });
 
   it("adds the AppArmor fix on Linux only", () => {
-    const linux = sandboxStartProblem(apparmor, "linux");
-    expect(linux).toContain("sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0");
-    expect(linux).toContain("AppArmor profile for /usr/bin/bwrap");
+    expect(sandboxStartProblem(apparmor, "linux")).toBe(
+      `Claude Code could not start its sandbox: ${apparmor}. On Ubuntu, AppArmor may block bubblewrap: add an AppArmor profile for /usr/bin/bwrap (see Claude Code's sandbox docs), or run \`sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0\` until the next reboot.`,
+    );
     expect(sandboxStartProblem(apparmor, "darwin")).not.toContain("sysctl");
   });
 
