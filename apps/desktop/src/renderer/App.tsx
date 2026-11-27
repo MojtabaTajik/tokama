@@ -259,7 +259,11 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   // Get started. The checklist takes the place of the empty board until the first item starts (or
   // at once for a user who has work already), and comes back only from Help.
   const [started, setStarted] = useState<GetStartedState>(initial.getStarted);
+  // The latest saved value, also between a save and the render that shows it: the item's own event and
+  // the window's onStarted can both save in one tick, and neither may drop what the other wrote.
+  const startedNow = useRef(started);
   const saveStarted = (next: GetStartedState) => {
+    startedNow.current = next;
     setStarted(next);
     save({ getStarted: next });
   };
@@ -274,7 +278,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
     if (setup === undefined || stale) return;
     const first = !firstLoadSeen.current;
     firstLoadSeen.current = true;
-    if (!started.done && hasWork) saveStarted({ done: true, lineClosed: first });
+    if (!startedNow.current.done && hasWork) saveStarted({ ...startedNow.current, done: true, lineClosed: first });
     // `saveStarted` only sets state and saves: it need not re-run this.
   }, [setup, stale, started.done, hasWork]);
   // Opened again from Help > Get started, over the list of work.
@@ -448,7 +452,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
       onStarted={(itemId, begun) => {
         // The first item ends the checklist; the "Setup done" line follows it until it ends.
         // (The item's own event may have marked setup done already, without a line.)
-        if (started.firstItemId === undefined && !started.lineClosed) {
+        if (startedNow.current.firstItemId === undefined && !startedNow.current.lineClosed) {
           lineWatch.current = { itemId, seen: false };
           saveStarted({ done: true, lineClosed: false, firstItemId: itemId });
         }
