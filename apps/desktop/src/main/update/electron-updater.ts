@@ -3,7 +3,7 @@
 import { basename } from "node:path";
 import type { Session } from "electron";
 import { DebUpdater, MacUpdater, RpmUpdater } from "electron-updater";
-import { fetchFeedFiles, LINUX_UPDATE_PUBLIC_KEY, sha512OfFile, verifyFeed } from "./feed-signature.js";
+import { fetchFeedFiles, LINUX_UPDATE_PUBLIC_KEY, sha512OfFile, sha512OfFileStream, verifyFeed } from "./feed-signature.js";
 import type { FeedInfo, UpdateEngine } from "./port.js";
 import { updaterRequestAllowed } from "./session.js";
 
@@ -42,8 +42,10 @@ const number = (value: unknown) => (typeof value === "number" && Number.isFinite
 export interface DownloadGate {
   /** Resolves when the signed feed names a package of this version with this base64 sha512; rejects with the reason when not. */
   verify(download: { readonly version: string; readonly sha512: string; readonly name: string }): Promise<void>;
-  /** The base64 sha512 of the file. */
-  hash(file: string): string;
+  /** The base64 sha512 of the file, read in pieces without holding up the app. */
+  hash(file: string): Promise<string>;
+  /** The same digest, at once: the install path is synchronous. */
+  hashNow(file: string): string;
 }
 
 /**
@@ -57,6 +59,10 @@ export function updateEngineFor(updater: UpdaterLike, gate?: DownloadGate): Upda
   const errorListeners: ((error: Error) => void)[] = [];
   /** The file the gate passed, and its digest then. Cleared by any download the gate does not pass. */
   let verified: { readonly file: string; readonly sha512: string } | undefined;
+  /** Counts the updater's downloads: a check that started for an earlier one never counts for a later one. */
+  let generation = 0;
+  /** The file of the latest download, as the updater named it. The install takes only this one. */
+  let latestFile: string | undefined;
   updater.autoDownload = true;
   updater.autoInstallOnAppQuit = false;
   updater.allowDowngrade = false;
@@ -85,15 +91,23 @@ export function updateEngineFor(updater: UpdaterLike, gate?: DownloadGate): Upda
         if (info === undefined) return;
         if (gate === undefined) return listener(info);
         verified = undefined;
+        const mine = ++generation;
         const file = isRecord(payload) ? payload["downloadedFile"] : undefined;
+        latestFile = typeof file === "string" ? file : undefined;
         void (async () => {
           if (typeof file !== "string") throw new Error("the updater named no downloaded file");
-          const sha512 = gate.hash(file);
+          const sha512 = await gate.hash(file);
           await gate.verify({ version: info.version, sha512, name: basename(file) });
+          // A newer download came while this one was checked: its own check decides.
+          if (mine !== generation) return false;
           verified = { file, sha512 };
+          return true;
         })().then(
-          () => listener(info),
+          (current) => {
+            if (current) listener(info);
+          },
           (error: unknown) => {
+            if (mine !== generation) return;
             const failure = error instanceof Error ? error : new Error("update verification failed");
             for (const report of errorListeners) report(failure);
           },
@@ -105,7 +119,8 @@ export function updateEngineFor(updater: UpdaterLike, gate?: DownloadGate): Upda
     },
     quitAndInstall: (relaunch) => {
       // The updater installs the file it holds; a change since the gate passed it (a disk is shared with the user's other programs) ends the install.
-      if (gate !== undefined && (verified === undefined || gate.hash(verified.file) !== verified.sha512)) throw new Error("the downloaded update is not the one that was verified");
+      // It must also be the file of the latest download: that is the one the updater holds and installs.
+      if (gate !== undefined && (verified === undefined || verified.file !== latestFile || gate.hashNow(verified.file) !== verified.sha512)) throw new Error("the downloaded update is not the one that was verified");
       updater.autoRunAppAfterInstall = relaunch;
       updater.quitAndInstall();
     },
@@ -122,7 +137,8 @@ export function updateEngineFor(updater: UpdaterLike, gate?: DownloadGate): Upda
 export function linuxUpdateEngine(kind: "deb" | "rpm", feedUrl: string): { readonly engine: UpdateEngine; readonly session: () => Session } {
   const updater = kind === "deb" ? new DebUpdater() : new RpmUpdater();
   const gate: DownloadGate = {
-    hash: sha512OfFile,
+    hash: sha512OfFileStream,
+    hashNow: sha512OfFile,
     verify: async ({ version, sha512, name }) => {
       const { yml, sig } = await fetchFeedFiles((url, init) => updater.netSession.fetch(url, init), feedUrl, (url) => updaterRequestAllowed(url, feedUrl));
       const verdict = verifyFeed({ yml, sig, publicKey: LINUX_UPDATE_PUBLIC_KEY, format: kind, downloadedSha512: sha512, downloadedVersion: version, downloadedName: name });

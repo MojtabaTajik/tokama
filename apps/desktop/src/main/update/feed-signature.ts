@@ -6,7 +6,8 @@
 // on disk must match it. No Electron here.
 // eslint-disable-next-line no-restricted-imports -- these are SHA-512 digests in the formats of an SSH signature and of the update feed; none is stored, and sha256Hex does not apply.
 import { createHash, createPublicKey, verify } from "node:crypto";
-import { closeSync, openSync, readSync } from "node:fs";
+import { closeSync, createReadStream, openSync, readSync } from "node:fs";
+import { pipeline } from "node:stream/promises";
 import yaml from "js-yaml";
 
 /** The public key of the Linux update signature, as an OpenSSH public key line. */
@@ -153,6 +154,13 @@ export function verifyFeed(input: FeedCheck): FeedVerdict {
   } catch {
     return fail("the feed file cannot be read");
   }
+}
+
+/** The base64 sha512 of a file, read as a stream so the app stays responsive. */
+export async function sha512OfFileStream(path: string): Promise<string> {
+  const hash = createHash("sha512");
+  await pipeline(createReadStream(path), hash);
+  return hash.digest("base64");
 }
 
 /** The base64 sha512 of a file, read in pieces in one go: the install path is synchronous. */

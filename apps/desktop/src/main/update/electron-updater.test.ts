@@ -27,7 +27,8 @@ describe("updateEngineFor with a download gate", () => {
     const digests = new Map([["/cache/Tokama-0.2.0-amd64.deb", "digest-1"]]);
     const verified: { version: string; sha512: string }[] = [];
     const gate: DownloadGate = {
-      hash: (file) => digests.get(file) ?? "missing",
+      hash: async (file) => digests.get(file) ?? "missing",
+      hashNow: (file) => digests.get(file) ?? "missing",
       verify: async (download) => {
         verified.push(download);
         await verdict();
@@ -73,9 +74,7 @@ describe("updateEngineFor with a download gate", () => {
 
   it("refuses a download whose file cannot be read", async () => {
     const { download, downloaded, failed, gate } = gated();
-    gate.hash = () => {
-      throw new Error("ENOENT");
-    };
+    gate.hash = () => Promise.reject(new Error("ENOENT"));
     await download();
     expect(downloaded).not.toHaveBeenCalled();
     expect(failed).toHaveBeenCalledOnce();
@@ -112,6 +111,43 @@ describe("updateEngineFor with a download gate", () => {
     await download();
     expect(() => engine.quitAndInstall(true)).toThrow();
     expect(order).toEqual([]);
+  });
+
+  it("ignores a check that was still running when a newer download came, even if it passes late", async () => {
+    let release: () => void = () => undefined;
+    let calls = 0;
+    const { download, engine, order, downloaded, failed } = gated(async () => {
+      calls += 1;
+      // The first check waits; the second is refused at once.
+      if (calls === 1) await new Promise<void>((resolve) => (release = resolve));
+      else throw new Error("not signed");
+    });
+    await download();
+    await download({ version: "0.3.0", downloadedFile: "/cache/Tokama-0.3.0-amd64.deb" });
+    expect(failed).toHaveBeenCalledOnce();
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(downloaded).not.toHaveBeenCalled();
+    expect(() => engine.quitAndInstall(true)).toThrow(/not the one that was verified/);
+    expect(order).toEqual([]);
+  });
+
+  it("does not report a refusal of a check that a newer download replaced", async () => {
+    let release: () => void = () => undefined;
+    let calls = 0;
+    const { download, failed, downloaded } = gated(async () => {
+      calls += 1;
+      if (calls === 1) {
+        await new Promise<void>((resolve) => (release = resolve));
+        throw new Error("late refusal");
+      }
+    });
+    await download();
+    await download({ version: "0.3.0", downloadedFile: "/cache/Tokama-0.3.0-amd64.deb" });
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(failed).not.toHaveBeenCalled();
+    expect(downloaded).toHaveBeenCalledOnce();
   });
 });
 

@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { type FeedCheck, fetchFeedFiles, type Fetcher, LINUX_UPDATE_PUBLIC_KEY, MAX_FEED_BYTES, SIGNATURE_NAMESPACE, sha512OfFile, verifyFeed } from "./feed-signature.js";
+import { type FeedCheck, fetchFeedFiles, type Fetcher, LINUX_UPDATE_PUBLIC_KEY, MAX_FEED_BYTES, SIGNATURE_NAMESPACE, sha512OfFile, sha512OfFileStream, verifyFeed } from "./feed-signature.js";
 
 const DEB = Buffer.from("the deb bytes");
 const RPM = Buffer.from("the rpm bytes");
@@ -247,6 +247,14 @@ describe("sha512OfFile", () => {
     const file = join(dir, "big.bin");
     writeFileSync(file, big);
     expect(sha512OfFile(file)).toBe(sha512(big));
+  });
+
+  it("is the same digest when read as a stream, and fails for a missing file", async () => {
+    const file = join(dir, "big2.bin");
+    const big = Buffer.alloc(3 * 1024 * 1024 + 5, 9);
+    writeFileSync(file, big);
+    expect(await sha512OfFileStream(file)).toBe(sha512(big));
+    await expect(sha512OfFileStream(join(dir, "missing.bin"))).rejects.toThrow();
   });
 });
 

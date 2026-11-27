@@ -255,15 +255,21 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+    # What publish needs to be sure that the signature is over the feed file it ships.
+    outputs:
+      sig_artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      yml_sha256: ${{ steps.sign.outputs.yml_sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           sparse-checkout: apps/desktop/packaging/linux-update.pub
           sparse-checkout-cone-mode: false
+      # By id, not by name: a job of this run that uploads the name again must not get its file signed.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: tokama-linux-${{ needs.check.outputs.version }}
+          artifact-ids: ${{ needs.build-linux.outputs.artifact_id }}
+          merge-multiple: true
           path: linux
       - name: Check the feed file against the build's sums
         run: |
@@ -272,6 +278,7 @@ jobs:
           [ "$(grep -c '  latest-linux\.yml$' SHA256SUMS.txt)" -eq 1 ]
           grep '  latest-linux\.yml$' SHA256SUMS.txt | sha256sum -c -
       - name: Sign latest-linux.yml and check the signature
+        id: sign
         env:
           LINUX_UPDATE_SIGNING_KEY: ${{ secrets.LINUX_UPDATE_SIGNING_KEY }}
         run: |
@@ -279,6 +286,7 @@ jobs:
           umask 077
           key="$RUNNER_TEMP/linux-update-key"
           pub=$(awk '{print $1 " " $2}' apps/desktop/packaging/linux-update.pub)
+          echo "yml_sha256=$(sha256sum linux/latest-linux.yml | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           printf '%s\n' "$LINUX_UPDATE_SIGNING_KEY" > "$key"
           # The secret must be the key whose public half the app was built with.
           [ "$(ssh-keygen -y -f "$key" < /dev/null | awk '{print $1 " " $2}')" = "$pub" ]
@@ -288,7 +296,8 @@ jobs:
       - name: Remove the key
         if: always()
         run: rm -f "$RUNNER_TEMP/linux-update-key"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tokama-linux-sig-${{ needs.check.outputs.version }}
           if-no-files-found: error
@@ -373,8 +382,8 @@ jobs:
           retention-days: 3
           path: dry-run/latest-linux.yml.dry-run.sig
 
-  # Writes the draft from the files build-mac, build-linux and sign-linux made: no checkout, no
-  # install, no secrets. A manual run stops before this job, so it never creates a release.
+  # Writes the draft from the files build-mac, build-linux and sign-linux made: a checkout of
+  # the public key file only, no install, no secrets. It refuses a signature that is not over the feed file it ships. A manual run stops before this job, so it never creates a release.
   publish:
     name: draft release
     needs: [check, build-mac, build-linux, sign-linux]
@@ -384,6 +393,12 @@ jobs:
     permissions:
       contents: write
     steps:
+      # The public key file only, to check the signature that is about to ship.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: apps/desktop/packaging/linux-update.pub
+          sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           artifact-ids: ${{ needs.build-mac.outputs.artifact_id }}
@@ -397,7 +412,8 @@ jobs:
           path: linux
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: tokama-linux-sig-${{ needs.check.outputs.version }}
+          artifact-ids: ${{ needs.sign-linux.outputs.sig_artifact_id }}
+          merge-multiple: true
           path: sig
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -407,8 +423,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           VERSION: ${{ needs.check.outputs.version }}
+          SIGNED_YML_SHA256: ${{ needs.sign-linux.outputs.yml_sha256 }}
         run: |
           set -euo pipefail
+          # The signature must be over the feed file that ships: the same bytes sign-linux signed, and a signature by the pinned key that verifies. A mismatch would give a draft that every Linux app refuses.
+          [ "$(sha256sum linux/latest-linux.yml | cut -d' ' -f1)" = "$SIGNED_YML_SHA256" ]
+          printf 'tokama-update namespaces="tokama-update" %s\n' "$(awk '{print $1 " " $2}' apps/desktop/packaging/linux-update.pub)" > "$RUNNER_TEMP/allowed_signers"
+          ssh-keygen -Y verify -f "$RUNNER_TEMP/allowed_signers" -I tokama-update -n tokama-update -s sig/latest-linux.yml.sig < linux/latest-linux.yml
           # Each build's files are checked against the sums its own job wrote, then one sums file covers all of them.
           (cd mac && shasum -a 256 -c SHA256SUMS.txt)
           (cd linux && shasum -a 256 -c SHA256SUMS.txt)
