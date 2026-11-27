@@ -546,6 +546,38 @@ describe("API on a real repo", () => {
     expect(await git.diffTreeRaw(repo, "--output=x", tree)).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
   });
 
+  it("tree diffs list a changed nested-repo pointer whatever the submodule-ignore settings say", SLOW, async () => {
+    const inner = join(repo, "inner");
+    mkdirSync(inner);
+    await plain(inner, "init", "-q", "-b", "main");
+    await plain(inner, "config", "user.name", "Test");
+    await plain(inner, "config", "user.email", "test@example.com");
+    write(join(inner, "f"), "1\n");
+    await plain(inner, "add", "-A");
+    await plain(inner, "commit", "-q", "-m", "1");
+    await plain(repo, "add", "inner");
+    write(join(repo, ".gitmodules"), '[submodule "inner"]\n\tpath = inner\n\turl = ./inner\n\tignore = all\n');
+    await plain(repo, "add", ".gitmodules");
+    await plain(repo, "commit", "-q", "-m", "gitlink");
+    const base = value(await git.revParse(repo, "HEAD^{tree}"));
+    write(join(inner, "f"), "2\n");
+    await plain(inner, "commit", "-q", "-am", "2");
+    // .gitmodules ignore=all makes a plain `add` skip the pointer.
+    await plain(repo, "add", "--force", "inner");
+    const tree = value(await git.writeTree(repo));
+    // HOME is the test's empty dir, so this is the temp global config.
+    await plain(repo, "config", "--global", "diff.ignoreSubmodules", "all");
+    await plain(repo, "config", "diff.ignoreSubmodules", "all");
+    await plain(repo, "config", "submodule.inner.ignore", "all");
+
+    expect(await plain(repo, "diff", "--raw", base, tree)).toBe("");
+    expect(value(await git.diffFiles(repo, base, tree))).toEqual([expect.objectContaining({ path: "inner", status: "M" })]);
+    expect(value(await git.diffTreeRaw(repo, base, tree))).toEqual([expect.objectContaining({ path: "inner", status: "M", newMode: "160000" })]);
+    expect(value(await git.diffNames(repo, base, tree))).toEqual(["inner"]);
+    expect(value(await git.diffTrees(repo, base, tree))).toContain("+Subproject commit ");
+    expect(value(await git.diffPatch(repo, base, tree, 100_000)).text).toContain("+Subproject commit ");
+  });
+
   it("configList: one file's entries in file order, valueless keys alone, no includes", SLOW, async () => {
     const file = join(root, "listed.config");
     write(join(root, "included.config"), "[core]\n\tpager = less\n");
