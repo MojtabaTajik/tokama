@@ -2,7 +2,7 @@
 // for windows and times, alerts per AI CLI, the forecast sentence, number formats and the AI tools'
 // colours. Pure functions that take the clock as an argument, so they are tested without React or a
 // real time.
-import type { AiCliId, CliPlan, Setup, TemplateSummary, TokenUsage, UsageReport } from "@tokama/core";
+import type { AiCliId, CliPlan, Setup, TemplateSummary, UsageReport } from "@tokama/core";
 import { formatDuration } from "../format/duration.js";
 import { clock, sameDay, stamp, weekday } from "../format/time.js";
 import { AI_CLIS, cliName, type CliIssue } from "../model.js";
@@ -89,9 +89,6 @@ export function railBadge(alerts: readonly (CliAlert | undefined)[]): { readonly
 
 /** "data 34 m old" once the data is older than a few minutes. */
 export const ageText = (asOf: number, now: number): string | undefined => (now - asOf > SHOW_AGE_AFTER_MS ? `data ${formatDuration(now - asOf, "coarse")} old` : undefined);
-
-/** Every token of a call or item, cached ones included. */
-export const totalOf = (tokens: TokenUsage): number => tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite;
 
 const TOKEN_UNITS = [
   ["k", 1e3],

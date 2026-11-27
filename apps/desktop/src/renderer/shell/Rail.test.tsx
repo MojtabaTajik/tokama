@@ -171,7 +171,7 @@ describe("Rail: Insights tooltip", () => {
       [ITEMS.verifying.title, "141k", "26 m", "Architect · Reviewer"],
       [ITEMS.needsYou.title, "63k", "18 m", "Local builder"],
     ]);
-    expect(tip.querySelector(".it-totals")?.textContent).toBe("Tokens today242kinput 171k · output 23kAgent time today44 m");
+    expect(tip.querySelector(".it-totals")?.textContent).toBe("Tokens today194kinput 171k · output 23kAgent time today44 m");
     expect(tip.querySelector(".it-foot")?.textContent).toBe("From each call’s result event. Recorded, not limited.Settings");
     // Choosing an item or Settings closes the tooltip and hands focus back to Insights.
     const button = container.querySelector<HTMLButtonElement>('.rail button[aria-label="Insights"]')!;

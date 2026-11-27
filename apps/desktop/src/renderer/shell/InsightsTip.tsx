@@ -7,7 +7,7 @@ import { stepAgent } from "../drawer/describe.js";
 import { Meter } from "../insights/Meter.js";
 import { formatDuration } from "../format/duration.js";
 import { stamp } from "../format/time.js";
-import { ALERT_TEXT, alertTone, ageText, cliAlert, formatTokens, liveWindows, shareText, totalOf, windowLabel, windowShort } from "../insights/usage-model.js";
+import { ALERT_TEXT, alertTone, ageText, cliAlert, formatTokens, liveWindows, shareText, windowLabel, windowShort } from "../insights/usage-model.js";
 import { AI_CLIS, type CliIssue } from "../model.js";
 import { Button } from "../ui/Button.js";
 import { BackendMark } from "../ui/agent.js";
@@ -144,7 +144,7 @@ export function InsightsTip({ usage, issues, health, setup, now, onSelectItem, o
       {today !== undefined && (
         <div className="it-block it-totals">
           <span className="it-total-name">{TEXT.tokensToday}</span>
-          <span className="mono it-total">{formatTokens(totalOf(today.tokens))}</span>
+          <span className="mono it-total">{formatTokens(today.tokens.input + today.tokens.output)}</span>
           <span className="it-total-parts">
             {[`input ${formatTokens(today.tokens.input)}`, `output ${formatTokens(today.tokens.output)}`].join(" · ")}
           </span>
