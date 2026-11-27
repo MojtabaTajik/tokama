@@ -258,7 +258,7 @@ export function createHelperRunner(deps: HelperRunnerDeps): HelperRunner {
           let call: Awaited<ReturnType<typeof runGuardedCall>>;
           try {
             const problem = await prepareScratch(deps.scratchDir, active === 1);
-            if (problem !== undefined) return failed("crash", problem);
+            if (problem !== undefined) return failed("crash", clean(problem));
             call = await runGuardedCall(
               runtime,
               { model: target.model, prompt: built.value.user, role: built.value.system, cwd: deps.scratchDir, limits: READ_ONLY, timeoutMs: definition.maxTimeMs },

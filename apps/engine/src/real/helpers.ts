@@ -208,7 +208,10 @@ export class HelperRuns {
     entry.timers.push(this.options.clock.setTimeout(() => this.entries.delete(rest.runId), KEEP_MS));
     // Past the cap, the oldest ended runs go first.
     const endedRuns = [...this.entries].filter(([, other]) => other.run.state !== "running");
-    for (const [id] of endedRuns.slice(0, Math.max(0, endedRuns.length - MAX_KEPT))) this.entries.delete(id);
+    for (const [id, dropped] of endedRuns.slice(0, Math.max(0, endedRuns.length - MAX_KEPT))) {
+      for (const timer of dropped.timers) this.options.clock.clearTimeout(timer);
+      this.entries.delete(id);
+    }
   }
 
   private update(entry: Entry, run: HelperRun): void {

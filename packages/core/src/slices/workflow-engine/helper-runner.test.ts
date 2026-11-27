@@ -397,6 +397,19 @@ describe("the helper's working folder", () => {
     expect(readdirSync(target)).toEqual(["keep.txt"]);
   });
 
+  it("fails with its folder written as a name when the folder cannot be read", async () => {
+    const world = setUp();
+    const ready = await prepared(world.runner);
+    chmodSync(home, 0o000);
+    try {
+      const outcome = await world.runner.run(ready, hooksFor(), new AbortController().signal);
+      expect(outcome).toMatchObject({ state: "failed", error: { code: "crash", message: expect.stringContaining("~/.tokama/helper-scratch") } });
+      expect(outcome.error?.message).not.toContain(home);
+    } finally {
+      chmodSync(home, 0o700);
+    }
+  });
+
   it("fails when a file is in its place, and leaves the file", async () => {
     writeFileSync(scratch, "a file");
     const { outcome } = await run();

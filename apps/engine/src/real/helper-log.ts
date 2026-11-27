@@ -5,7 +5,7 @@
 // same lines for its helper calls.
 import { mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { appendTextSync, type Clock, type HelperCallRow, HelperIdSchema, type HelperLogLine, HelperLogLineSchema, type HelperRunId, type HostId, readTextFile } from "@tokama/core";
+import { appendTextSync, type Clock, type HelperCallRow, HelperIdSchema, type HelperLogLine, HelperLogLineSchema, type HelperRunId, type HostId, parseJsonLine, readTextFile } from "@tokama/core";
 
 /** The monthly files read at start: the current month and three before it cover the longest usage range (90 days). */
 const MONTHS_READ = 4;
@@ -68,7 +68,8 @@ export class HelperLog {
         continue;
       }
       for (const raw of text.value.split("\n")) {
-        const parsed = raw === "" ? undefined : HelperLogLineSchema.safeParse(parseJson(raw));
+        const json = raw === "" ? undefined : parseJsonLine(raw);
+        const parsed = json?.ok === true ? HelperLogLineSchema.safeParse(json.value) : undefined;
         if (parsed?.success === true) lines.push(parsed.data);
       }
     }
@@ -85,14 +86,6 @@ export class HelperLog {
       }
     }
     return [...found.values()];
-  }
-}
-
-function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
   }
 }
 

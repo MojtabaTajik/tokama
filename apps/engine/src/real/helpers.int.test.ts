@@ -260,6 +260,32 @@ describe("run_helper", () => {
     await waitFor(() => fixture.events.some((event) => event.type === "usage_changed"), 5_000, "usage_changed");
   });
 
+  it("sends the asking phase while the agent works, then the end, and the retrying phase after a bad answer", async () => {
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const calls: string[] = [];
+    const runtime: AgentRuntime = {
+      async *launch() {
+        calls.push("call");
+        yield { type: "started", pid: 4242 };
+        yield { type: "turn" };
+        if (calls.length === 1) await gate;
+        yield { type: "text", text: calls.length === 1 ? "no json" : JSON.stringify(GOOD) };
+        yield { type: "end", outcome: "completed", usage: TOKENS };
+      },
+    };
+    const fixture = await engine({ runtime, helpers });
+    const runId = await startRun(fixture);
+    await waitFor(() => calls.length === 1, 5_000, "the first call");
+    expect(updates(fixture.events, runId)).toEqual([]);
+    if ("advance" in fixture.clock && typeof fixture.clock.advance === "function") fixture.clock.advance(0);
+    await waitFor(() => updates(fixture.events, runId).length === 1, 5_000, "the first update");
+    expect(updates(fixture.events, runId)[0]).toMatchObject({ state: "running", phase: "asking" });
+    release();
+    await waitFor(() => updates(fixture.events, runId).some((run) => run.state === "done"), 5_000, "the end");
+    expect(updates(fixture.events, runId).map((run) => run.phase ?? run.state)).toEqual(["asking", "retrying", "done"]);
+  });
+
   it("asks the agent with read-only limits in the helper folder, whatever an agent file allows", async () => {
     const runtime = scripted(["answers"]);
     const fixture = await engine({
@@ -376,6 +402,25 @@ describe("what a run leaves behind", () => {
   });
 });
 
+describe("call.json age", () => {
+  it("drops a record older than 7 days and keeps one of 6 days, with few records", async () => {
+    const id = (at: number, n: number) => `hrun_${at.toString(16).padStart(12, "0").replace(/^(.{8})(.{4})$/, "$1-$2")}-7000-8000-${n.toString().padStart(12, "0")}`;
+    const day = 24 * 60 * 60_000;
+    const six = id(NOW - 6 * day, 1);
+    const eight = id(NOW - 8 * day, 2);
+    const fixture = await engine({
+      prepare: (home) => {
+        for (const name of [six, eight]) {
+          mkdirSync(join(home, "helper-runs", name), { recursive: true });
+          writeFileSync(join(home, "helper-runs", name, "call.json"), "{}\n");
+        }
+      },
+    });
+    await waitFor(() => !existsSync(join(fixture.home, "helper-runs", eight)), 5_000, "the old record to go");
+    expect(existsSync(join(fixture.home, "helper-runs", six))).toBe(true);
+  });
+});
+
 describe("usage from an earlier log", () => {
   const usageLine = (hostId: string, runId: string, stepId: string, endedAt: number) =>
     JSON.stringify({
@@ -470,6 +515,8 @@ describe("a restart", () => {
         if (!hostId.ok) throw new Error(hostId.error);
         mkdirSync(join(home, "helper-runs"));
         const lines = [
+          // A run of this machine that did not end: proves the log was read before the checks below.
+          processLine(hostId.value, "hrun_0b9f3c1e-6a2d-4f7b-9c1a-2e3d4f5a6b7e", 5353),
           processLine("host_0190a000-0000-7000-8000-0000000000aa", RUN_ID, 5151),
           processLine(hostId.value, ended, 5252),
           { format: 1, hostId: hostId.value, at: new Date(NOW).toISOString(), runId: ended, type: "helper_run_ended", state: "done" },
@@ -477,10 +524,10 @@ describe("a restart", () => {
         writeFileSync(join(home, "helper-runs", "events-2026-11.jsonl"), lines.map((line) => JSON.stringify(line)).join("\n") + "\n");
       },
     });
-    await fixture.client.query({ type: "helpers" });
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    // Its own leftover run (a process that is gone) is ended once the log is read; only then are the other checks meaningful.
+    await waitFor(() => logLines(fixture.home).some((line) => line["runId"] === "hrun_0b9f3c1e-6a2d-4f7b-9c1a-2e3d4f5a6b7e" && line["type"] === "helper_run_ended"), 5_000, "the leftover run's end");
     expect(processTable.signals).toEqual([]);
-    expect(logLines(fixture.home)).toHaveLength(3);
+    expect(logLines(fixture.home)).toHaveLength(5);
   });
 });
 
