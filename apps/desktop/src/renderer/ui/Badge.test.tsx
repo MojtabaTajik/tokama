@@ -22,20 +22,23 @@ afterEach(() => {
 const render = (node: React.ReactNode) => act(() => root.render(node));
 
 describe("Badge", () => {
-  it("shows a count in its tone, 99+ above 99, and nothing at zero", () => {
+  it("shows a count in its tone, 1 to 9 as it is, 9+ above 9, and nothing at zero", () => {
     render(<Badge count={4} tone="warn" />);
     expect(container.querySelector(".badge")?.textContent).toBe("4");
     expect(container.querySelector(".badge")?.getAttribute("data-tone")).toBe("warn");
     expect(container.querySelector(".badge")?.getAttribute("aria-hidden")).toBe("true");
-    render(<Badge count={120} tone="neutral" />);
-    expect(container.querySelector(".badge")?.textContent).toBe("99+");
+    const shown = (count: number) => {
+      render(<Badge count={count} tone="warn" />);
+      return container.querySelector(".badge")?.textContent;
+    };
+    expect([1, 9, 10, 12, 120].map(shown)).toEqual(["1", "9", "9+", "9+", "9+"]);
     render(<Badge count={0} tone="fail" />);
     expect(container.querySelector(".badge")).toBeNull();
   });
 
-  it("shows a symbol instead of the count when given one", () => {
-    render(<Badge count={1} tone="fail" symbol="✕" />);
-    expect(container.querySelector(".badge")?.textContent).toBe("✕");
+  it("shows a ! instead of the count when given one", () => {
+    render(<Badge count={1} tone="warn" symbol="!" />);
+    expect(container.querySelector(".badge")?.textContent).toBe("!");
   });
 });
 

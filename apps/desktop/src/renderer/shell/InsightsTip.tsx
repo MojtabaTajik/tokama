@@ -33,6 +33,7 @@ const TEXT = {
   timeToday: "Agent time today",
   footer: "From each call’s result event. Recorded, not limited.",
   settings: "Settings",
+  insights: "Insights",
 } as const;
 
 const CLAUDE = AI_CLIS.find((cli) => cli.id === "claude-code")!;
@@ -40,6 +41,8 @@ const CLAUDE = AI_CLIS.find((cli) => cli.id === "claude-code")!;
 const TODAY_ITEMS = 3;
 
 export interface InsightsTipProps {
+  /** Why the Insights icon shows its "!": a limit is reached. Shown first. */
+  readonly cause?: string | undefined;
   readonly usage: UsageReport | undefined;
   readonly issues: readonly CliIssue[];
   /** The engine's checks of each AI CLI; absent until the setup loads. */
@@ -50,7 +53,7 @@ export interface InsightsTipProps {
   readonly onCliSettings?: () => void;
 }
 
-export function InsightsTip({ usage, issues, health, setup, now, onSelectItem, onCliSettings }: InsightsTipProps) {
+export function InsightsTip({ cause, usage, issues, health, setup, now, onSelectItem, onCliSettings }: InsightsTipProps) {
   const claude = usage?.clis.find((plan) => plan.cliId === CLAUDE.id);
   const windows = liveWindows(claude, now);
   const age = claude?.asOf === undefined ? undefined : (ageText(claude.asOf, now) ?? `${TEXT.asOf} ${stamp(claude.asOf, now)}`);
@@ -63,6 +66,7 @@ export function InsightsTip({ usage, issues, health, setup, now, onSelectItem, o
   const today = usage?.today;
   return (
     <>
+      {cause !== undefined && <p className="it-cause">{`${TEXT.insights} · ${cause}`}</p>}
       <div className="it-block it-status">
         <div className="it-head">
           <BackendMark cliId={CLAUDE.id} />

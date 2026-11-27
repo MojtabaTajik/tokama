@@ -15,13 +15,15 @@ const TEXT = {
   review: "Review and send",
 } as const;
 
-/** Whether the prompt shows, and what its buttons do. `askAfterCrash`: false after Don't ask again. */
+/** Whether the prompt shows, whether asking is still on, and what its buttons do. `askAfterCrash`: false after Don't ask again. */
 export function useCrashPrompt(bridge: TokamaBridge, connection: ConnectionState, askAfterCrash: boolean) {
   const [open, setOpen] = useState(false);
   const [checks, setChecks] = useState(0);
   // Once per run: after it showed, a later crash waits for the next start.
   const shown = useRef(false);
   const ask = useRef(askAfterCrash);
+  // The same flag for the render: the rail's mark on Settings goes with Don't ask again.
+  const [asking, setAsking] = useState(askAfterCrash);
   const connected = connection.status === "connected";
   // A crash is recorded with a setup_changed event; the flag is read again then.
   useEffect(() => bridge.onEvent(({ event }) => event.type === "setup_changed" && setChecks((n) => n + 1)), [bridge]);
@@ -46,10 +48,12 @@ export function useCrashPrompt(bridge: TokamaBridge, connection: ConnectionState
   };
   return {
     open,
+    asking,
     notNow: close,
     review: close,
     dontAsk: () => {
       ask.current = false;
+      setAsking(false);
       close();
       void bridge.stopCrashPrompt().catch(() => undefined);
     },

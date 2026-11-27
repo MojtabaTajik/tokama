@@ -59,6 +59,20 @@
   color: var(--fail);
 }
 
+/* The shared tooltip of a rail button (shell/Rail.tsx): to the right of the icon, level with its top. */
+.tooltip.rail-tip[popover] {
+  top: anchor(top);
+  bottom: auto;
+  left: calc(anchor(right) + 8px);
+  width: max-content;
+  max-width: 280px;
+  padding: var(--space-6) var(--space-10);
+  font-size: var(--text-md);
+  font-weight: 400;
+  text-align: left;
+  white-space: normal;
+}
+
 .rail-spacer {
   flex: 1 1 auto;
   min-height: 8px;

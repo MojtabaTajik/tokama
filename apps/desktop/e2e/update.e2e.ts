@@ -106,16 +106,33 @@ flow(
     await page.locator("aside.panel").waitFor({ state: "detached" });
     const icon = page.locator(".up-rail-button").and(page.getByRole("button", { name: /^Update: Tokama 0\.2\.0 is ready\./ }));
     await icon.waitFor();
-    // The rail icon carries a "↓" badge, never a bare dot.
-    expect(await icon.locator(".badge").innerText()).toBe("↓");
+    // The icon appears only when a restart is needed, so it is the mark: no "↓" badge, no dot.
+    expect(await icon.locator(".badge").count()).toBe(0);
     expect(await icon.locator(".up-dot").count()).toBe(0);
-    await screenshot("227-update-rail-badge", icon);
+    await screenshot("227-update-rail-icon", icon);
     const tip = await hoverTip(page, icon);
     expect(await tip.innerText()).toContain("Tokama 0.2.0 is ready");
   },
   "sample",
   undefined,
   READY,
+);
+
+flow(
+  "a collapsed sidebar marks an important update with the same icon in amber and a !",
+  async ({ page, screenshot }) => {
+    await chip(page, /^Important update: Tokama 0\.2\.2\./).waitFor();
+    await page.getByRole("button", { name: "Sidebar", exact: true }).click();
+    await page.locator("aside.panel").waitFor({ state: "detached" });
+    const icon = page.locator(".up-rail-button").and(page.getByRole("button", { name: /^Important update: Tokama 0\.2\.2\./ }));
+    await icon.waitFor();
+    expect(await icon.locator(".badge").allInnerTexts()).toEqual(["!"]);
+    expect(await icon.locator(".up-dot").count()).toBe(0);
+    await screenshot("227-update-rail-important", icon);
+  },
+  "sample",
+  undefined,
+  CRITICAL,
 );
 
 flow(

@@ -89,7 +89,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   // The report loads every minute only while someone looks at it: the page, or the rail tooltip.
   const [tipShown, setTipShown] = useState(false);
   const usage = useUsage(bridge, connection, usageWindow, page === "insights" || tipShown);
-  const diagnosticsWaiting = useDiagnosticsWaiting(bridge, connection);
+  const crashEntryWaiting = useDiagnosticsWaiting(bridge, connection);
   const whatsNew = useWhatsNew(bridge);
   // The release note About opens on (a row starts open): set by the card's See all and by the chip, dropped once About is left.
   const [aboutVersion, setAboutVersion] = useState<string | undefined>(undefined);
@@ -110,6 +110,8 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
       onDontAsk={crash.dontAsk}
     />
   );
+  // The "!" on Settings: a crash entry waits for the user's answer and asking after a crash is still on.
+  const crashMark = crashEntryWaiting && crash.asking;
   const aboutOpen = page === "about";
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(undefined);
   // Counts each "Review the diff": the drawer shows the item's Diff tab, also when it shows the item already.
@@ -515,7 +517,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
         onNeedsYou={() => setPage("needs-you")}
         onAbout={() => setPage(aboutOpen ? "board" : "about")}
         onSettings={() => {
-          setSettingsPage(undefined);
+          setSettingsPage(crashMark ? "diagnostics" : undefined);
           setSettingsAgent(undefined);
           setPage("settings");
         }}
@@ -529,7 +531,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
           setSettingsPage("ai-clis");
           setPage("settings");
         }}
-        diagnosticsWaiting={diagnosticsWaiting}
+        crashWaiting={crashMark}
         {...(!panelOpen && (updateView?.kind === "ready" || updateView?.kind === "stalled") && { update: { view: updateView, onActivate: activateUpdate, onOpenNotes: openUpdateNotes } })}
       />
       {panelOpen && (

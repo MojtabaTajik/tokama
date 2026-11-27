@@ -26,16 +26,32 @@ const click = (name: string) => act(async () => [...container.querySelectorAll("
 
 function start(options: { crashWaiting?: boolean; askAfterCrash?: boolean } = {}) {
   let crashWaiting = options.crashWaiting ?? true;
+  // The crash entries on disk: the prompt's flag is "not seen yet", an entry stays until it is sent or deleted.
+  let crashEntries = options.crashWaiting === false ? 0 : 1;
   const fake = fakeBridge(CONNECTED, {
-    reply: (query): Reply | undefined => (query.type === "diagnostics_settings" ? { ok: true, data: { collect: true, installId: "install_00000000-0000-7000-8000-000000000001", crashWaiting } } : undefined),
+    reply: (query): Reply | undefined => {
+      if (query.type === "diagnostics_list") return { ok: true, data: { entries: Array.from({ length: crashEntries }, () => ({ type: "crash" })), truncated: false } };
+      return query.type === "diagnostics_settings" ? { ok: true, data: { collect: true, installId: "install_00000000-0000-7000-8000-000000000001", crashWaiting } } : undefined;
+    },
     commandReply: (command) => {
       if ((command as { crashSeen?: true }).crashSeen) crashWaiting = false;
       return { ok: true, data: null };
     },
   });
   const show = () => act(async () => root.render(<App bridge={fake.bridge} now={NOW} initial={{ ...DEFAULT_DESKTOP_STATE, askAfterCrash: options.askAfterCrash ?? true }} />));
-  return { ...fake, show, crash: () => (crashWaiting = true) };
+  return {
+    ...fake,
+    show,
+    crash: () => (crashWaiting = true),
+    /** The user deleted or sent the crash entry. */
+    clear: async () => {
+      crashEntries = 0;
+      await fake.pushEvent({ type: "diagnostics_changed" });
+    },
+  };
 }
+
+const settings = () => container.querySelector<HTMLButtonElement>('.rail button[aria-label^="Settings"]')!;
 
 describe("crash prompt", () => {
   it("asks after a crash with the board's words; Review and send opens Diagnostics and marks it seen", async () => {
@@ -78,6 +94,38 @@ describe("crash prompt", () => {
     root = createRoot(container);
     await start({ askAfterCrash: false }).show();
     expect(dialog()).toBeNull();
+  });
+
+  it("keeps a ! on Settings after Not now until the crash entry is sent or deleted, and a click opens Diagnostics", async () => {
+    const app = start();
+    await app.show();
+    await click("Not now");
+    expect([settings().getAttribute("aria-label"), settings().querySelector(".badge")?.textContent]).toEqual(["Settings · Tokama stopped unexpectedly. Send the report?", "!"]);
+    await app.clear();
+    expect([settings().getAttribute("aria-label"), settings().querySelector(".badge")]).toEqual(["Settings", null]);
+    await app.pushEvent({ type: "diagnostics_changed" });
+    await act(async () => settings().click());
+    expect(container.querySelector(".settings-entry[aria-current=page]")?.textContent).not.toBe("Diagnostics");
+  });
+
+  it("opens Settings on Diagnostics from the marked gear", async () => {
+    const app = start();
+    await app.show();
+    await click("Not now");
+    await act(async () => settings().click());
+    expect(container.querySelector(".settings-entry[aria-current=page]")?.textContent).toBe("Diagnostics");
+  });
+
+  it("takes the ! off Settings at once after Don't ask again, and never marks it when asking is off", async () => {
+    const app = start();
+    await app.show();
+    expect(settings().querySelector(".badge")?.textContent).toBe("!");
+    await click("Don’t ask again");
+    expect(settings().querySelector(".badge")).toBeNull();
+    act(() => root.unmount());
+    root = createRoot(container);
+    await start({ askAfterCrash: false }).show();
+    expect(settings().querySelector(".badge")).toBeNull();
   });
 
   it("shows once a crash is recorded while the app runs", async () => {

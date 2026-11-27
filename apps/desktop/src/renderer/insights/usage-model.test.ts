@@ -1,3 +1,4 @@
+import type { UsageReport } from "@tokama/core";
 import { describe, expect, it } from "vitest";
 import { NOW, setup } from "../testing/sample.js";
 import { atLimit, noReading, payPerUse, planReport } from "../testing/usage.js";
@@ -67,7 +68,7 @@ describe("plan window words", () => {
     ]);
   });
 
-  it("puts a login problem before the windows, and badges the rail with ✕ before !", () => {
+  it("puts a login problem before the windows", () => {
     const near = { cliId: "codex-cli" as const, windows: [{ window: "seven_day", usedPercent: 84 }] };
     expect(cliAlert(near, undefined, NOW)).toBe("near_limit");
     expect(cliAlert(near, { cliId: "codex-cli", kind: "logged_out" }, NOW)).toBe("logged_out");
@@ -75,9 +76,42 @@ describe("plan window words", () => {
     expect(cliAlert({ cliId: "claude-code", windows: [] }, undefined, NOW)).toBeUndefined();
     // A window at its limit whose reset time has passed no longer alerts, even if the report is old.
     expect(cliAlert({ ...near, windows: [{ window: "five_hour", usedPercent: 100, resetsAt: NOW - 1 }] }, undefined, NOW)).toBeUndefined();
-    expect(railBadge([undefined, "near_limit"])).toEqual({ symbol: "!", tone: "warn" });
-    expect(railBadge(["near_limit", "logged_out"])).toEqual({ symbol: "✕", tone: "fail" });
-    expect(railBadge([undefined, undefined])).toBeUndefined();
+  });
+});
+
+describe("the rail mark on Insights", () => {
+  const codexAt = (windows: object[]) => ({ ...planReport, clis: [planReport.clis[0]!, { cliId: "codex-cli", windows }, planReport.clis[2]!] }) as unknown as UsageReport;
+
+  it("has none near a limit, logged out or not found: only a reached limit marks the icon", () => {
+    // Claude Code is at 82% of its weekly limit.
+    expect(railBadge(planReport, [], NOW)).toBeUndefined();
+    expect(railBadge(undefined, [], NOW)).toBeUndefined();
+    expect(railBadge(planReport, [{ cliId: "codex-cli", kind: "logged_out" }], NOW)).toBeUndefined();
+    expect(railBadge(planReport, [{ cliId: "codex-cli", kind: "not_installed" }], NOW)).toBeUndefined();
+    // Said once: a logged-out CLI shows on Attention, even if its last report was at the limit.
+    expect(railBadge(atLimit, [{ cliId: "claude-code", kind: "logged_out" }], NOW)).toBeUndefined();
+  });
+
+  it("names the CLI, the window and the reset time once a window is at its limit", () => {
+    expect(railBadge(atLimit, [], NOW)).toBe("Claude Code weekly limit reached. Its steps cannot run until Thu 09:00.");
+    // A window that is full but already reset says nothing.
+    expect(railBadge(codexAt([{ window: "five_hour", usedPercent: 100, resetsAt: NOW - 1 }]), [], NOW)).toBeUndefined();
+  });
+
+  it("says the time today as the clock, leaves the time out when the report has none, and names a scoped window as it is", () => {
+    expect(railBadge(codexAt([{ window: "five_hour", usedPercent: 100, resetsAt: at(20, 18, 30) }]), [], NOW)).toBe("Codex CLI 5-hour limit reached. Its steps cannot run until 18:30.");
+    expect(railBadge(codexAt([{ window: "five_hour", usedPercent: 100 }]), [], NOW)).toBe("Codex CLI 5-hour limit reached. Its steps cannot run until the limit resets.");
+    expect(railBadge(codexAt([{ window: "weekly_scoped", scope: "Fable", usedPercent: 99.6, resetsAt: at(23, 9) }]), [], NOW)).toBe("Codex CLI Fable weekly limit reached. Its steps cannot run until Thu 09:00.");
+  });
+
+  it("gives the window that resets last when several are full, and one sentence per CLI", () => {
+    const both = codexAt([
+      { window: "five_hour", usedPercent: 100, resetsAt: at(20, 18, 30) },
+      { window: "seven_day", usedPercent: 100, resetsAt: at(23, 9) },
+    ]);
+    expect(railBadge(both, [], NOW)).toBe("Codex CLI weekly limit reached. Its steps cannot run until Thu 09:00.");
+    const twoClis = { ...atLimit, clis: [atLimit.clis[0]!, both.clis[1]!, atLimit.clis[2]!] } as unknown as UsageReport;
+    expect(railBadge(twoClis, [], NOW)).toBe("Claude Code weekly limit reached. Its steps cannot run until Thu 09:00. Codex CLI weekly limit reached. Its steps cannot run until Thu 09:00.");
   });
 });
 

@@ -224,22 +224,19 @@ describe("a view with no work at all", () => {
 describe("an AI CLI that is logged out", () => {
   const codex = [{ cliId: "codex-cli", kind: "logged_out" }] as const;
 
-  it("puts a ✕ on the Insights icon and the count on Attention, and names the CLI in the Insights tooltip", async () => {
+  it("shows it on the Attention icon alone, with no count, and names the CLI in the Insights tooltip", async () => {
     await mount(fakeBridge(CONNECTED), { cliIssues: codex });
-    expect($$(".badge").map((badge) => [badge.getAttribute("data-tone"), badge.textContent])).toEqual([
-      ["warn", "1"],
-      ["fail", "✕"],
-      ["fail", "1"],
-    ]);
+    // Said once: Insights has no mark for it, and Attention is the mark itself.
+    expect($$(".badge").map((badge) => [badge.getAttribute("data-tone"), badge.textContent])).toEqual([["warn", "1"]]);
     expect($(".rail .insights-tip .it-other")?.textContent).toBe(" Codex CLI✕ logged out");
-    expect($('.rail button[aria-label="Attention · 1"]')).not.toBeNull();
+    expect($('.rail button[aria-label="Attention · Codex CLI is logged out"]')).not.toBeNull();
   });
 
   it("shows How to log in with the command in the Attention popup, never inline", async () => {
     await mount(fakeBridge(CONNECTED), { cliIssues: codex });
     expect($(".attention-popup")).toBeNull();
     expect(text(".board")).not.toContain("logged out");
-    await click($('.rail button[aria-label="Attention · 1"]'));
+    await click($('.rail button[aria-label="Attention · Codex CLI is logged out"]'));
     const popup = $('[role="dialog"][aria-label="Attention"]')!;
     expect(popup.textContent).toContain("Codex CLI logged out");
     expect(popup.querySelector(".attention-howto")?.textContent).toBe("How to log in");
@@ -249,20 +246,20 @@ describe("an AI CLI that is logged out", () => {
 
   it("gives Claude Code its own login command", async () => {
     await mount(fakeBridge(CONNECTED), { cliIssues: [{ cliId: "claude-code", kind: "logged_out" }] });
-    await click($('.rail button[aria-label="Attention · 1"]'));
+    await click($('.rail button[aria-label="Attention · Claude Code is logged out"]'));
     expect(text(".attention-item code")).toBe("claude auth login");
     expect(text(".attention-what")).toBe("Claude Code logged out");
   });
 
   it("lists every logged-out CLI", async () => {
     await mount(fakeBridge(CONNECTED), { cliIssues: [...codex, { cliId: "claude-code", kind: "logged_out" }] });
-    await click($('.rail button[aria-label="Attention · 2"]'));
+    await click($('.rail button[aria-label="Attention · 2 things to fix"]'));
     expect($$(".attention-item code").map((el) => el.textContent)).toEqual(["codex login", "claude auth login"]);
   });
 
   it("closes the popup on Escape, on a press outside and on the button again", async () => {
     await mount(fakeBridge(CONNECTED), { cliIssues: codex });
-    const button = () => $('.rail button[aria-label="Attention · 1"]');
+    const button = () => $('.rail button[aria-label="Attention · Codex CLI is logged out"]');
     await click(button());
     expect(button()?.getAttribute("aria-expanded")).toBe("true");
     await press("Escape");
@@ -275,10 +272,9 @@ describe("an AI CLI that is logged out", () => {
     expect($(".attention-popup")).toBeNull();
   });
 
-  it("says nothing needs attention when there is no issue", async () => {
+  it("has no Attention button, and no popup text, when there is no issue", async () => {
     await mount(fakeBridge(CONNECTED));
-    await click($('.rail button[aria-label="Attention"]'));
-    expect(text(".attention-popup")).toContain("Nothing needs attention.");
+    expect($('.rail button[aria-label^="Attention"]')).toBeNull();
     expect($$(".badge").map((badge) => badge.getAttribute("data-tone"))).toEqual(["warn"]);
   });
 });

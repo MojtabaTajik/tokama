@@ -126,10 +126,6 @@
   user-select: all;
 }
 
-.attention-none {
-  color: var(--muted);
-}
-
 .rail-user:hover,
 .rail-user[aria-current="page"] {
   color: var(--text);

@@ -55,12 +55,12 @@ describe("App shell", () => {
     const labels = $$(".rail button")
       .filter((button) => button.closest(".insights-tip") === null)
       .map((button) => button.getAttribute("aria-label"));
-    expect(labels).toEqual(["Sidebar", "Board", "Needs you · 1", "Insights", "Settings", "Attention", "About Tokama"]);
+    expect(labels).toEqual(["Sidebar", "Board", "Needs you · 1", "Insights", "Settings", "About Tokama"]);
     expect($(".usage-ring")).toBeNull();
     expect($('.rail-user[aria-label="About Tokama"]')).not.toBeNull();
   });
 
-  it("lists every AI CLI with its windows, reset times and data age in the Insights tooltip, and marks one near its limit", async () => {
+  it("lists every AI CLI with its windows, reset times and data age in the Insights tooltip, and puts no mark on the icon near a limit", async () => {
     await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: planReport } : undefined) }).bridge);
     const insights = $('.rail button[aria-label="Insights"]')!;
     const tip = $(".rail .insights-tip")!;
@@ -69,11 +69,9 @@ describe("App shell", () => {
     expect([...tip.querySelectorAll('[role="meter"]')].map((meter) => meter.getAttribute("aria-label"))).toEqual(["Session window", "Weekly window", "Fable weekly window", "Codex CLI Weekly window"]);
     expect(tip.querySelector(".ins-tone")?.textContent).toBe("! near limit");
     expect(tip.querySelector(".it-section-head .it-aside")?.textContent).toBe("as of 14:58");
-    // The ! is a symbol on the icon, beside the words in the tooltip.
-    expect($$(".rail .badge").map((badge) => [badge.getAttribute("data-tone"), badge.textContent])).toEqual([
-      ["warn", "1"],
-      ["warn", "!"],
-    ]);
+    // Near a limit is a forecast, not something to do: only Needs you has a mark.
+    expect($$(".rail .badge").map((badge) => [badge.getAttribute("data-tone"), badge.textContent])).toEqual([["warn", "1"]]);
+    expect(insights.getAttribute("aria-label")).toBe("Insights");
   });
 
   it("loads the usage report again when the Insights tooltip opens", async () => {
@@ -281,7 +279,7 @@ describe("App shell", () => {
   it("queries the setup and the board", async () => {
     const { bridge, query } = fakeBridge(CONNECTED);
     await render(bridge);
-    expect(query.mock.calls.map(([q]) => q)).toEqual([{ type: "setup" }, { type: "board" }, { type: "usage", window: "current" }, { type: "diagnostics_list", limit: 100 }, { type: "diagnostics_settings" }]);
+    expect(query.mock.calls.map(([q]) => q)).toEqual([{ type: "setup" }, { type: "board" }, { type: "usage", window: "current" }, { type: "diagnostics_list", types: ["crash"], limit: 1 }, { type: "diagnostics_settings" }]);
   });
 
   it("shows the All work header and the list", async () => {
@@ -560,19 +558,23 @@ describe("health from the engine", () => {
     const fake = fakeBridge(CONNECTED, { reply: (q) => (q.type === "setup" ? { ok: true, data: current } : undefined) });
     await render(fake.bridge);
     const attention = () => $$('nav[aria-label="App"] button').find((el) => el.getAttribute("aria-label")?.startsWith("Attention"))!;
-    expect(attention().getAttribute("aria-label")).toBe("Attention · 1");
+    expect(attention().getAttribute("aria-label")).toBe("Attention · Claude Code is logged out");
     const setupQueries = () => fake.query.mock.calls.filter(([q]) => q.type === "setup").length;
 
+    let before = setupQueries();
+    await click(attention());
+    await wait(0);
+    expect(setupQueries()).toBe(before + 1);
+    expect($(".attention-popup")).not.toBeNull();
+
     current = loggedIn;
-    const before = setupQueries();
+    before = setupQueries();
     await act(async () => void window.dispatchEvent(new Event("focus")));
     await wait(0);
     expect(setupQueries()).toBe(before + 1);
-    expect(attention().getAttribute("aria-label")).toBe("Attention");
-
-    await click(attention());
-    await wait(0);
-    expect(setupQueries()).toBe(before + 2);
+    // Signed in: the button and its open popup are gone.
+    expect(attention()).toBeUndefined();
+    expect($(".attention-popup")).toBeNull();
   });
 
   describe("the login shell's PATH", () => {
@@ -588,7 +590,7 @@ describe("health from the engine", () => {
     it("lists a login shell that could not be read, in words, under Attention", async () => {
       const fake = await open({ source: "inherited", shell: "zsh", problem: "Your login shell (zsh) did not answer within 5 s." });
       expect(fake.bridge.getToolsPath).toHaveBeenCalledTimes(1);
-      expect(attention().getAttribute("aria-label")).toBe("Attention · 1");
+      expect(attention().getAttribute("aria-label")).toBe("Attention · Your shell's PATH was not read");
       await click(attention());
       expect(text(".attention-what")).toBe("Your shell's PATH was not read");
       expect(text(".attention-item .mono")).toContain("Your login shell (zsh) did not answer within 5 s.");
@@ -596,7 +598,7 @@ describe("health from the engine", () => {
 
     it("shows nothing when the login shell was read", async () => {
       await open({ source: "login-shell", shell: "zsh" });
-      expect(attention().getAttribute("aria-label")).toBe("Attention");
+      expect(attention()).toBeUndefined();
     });
   });
 });

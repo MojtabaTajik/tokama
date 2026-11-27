@@ -80,11 +80,24 @@ export const ALERT_TEXT: Readonly<Record<CliAlert, string>> = {
 };
 export const alertTone = (alert: CliAlert): Tone => (alert === "near_limit" ? "warn" : "fail");
 
-/** The badge on the Insights icon: ✕ when any CLI is logged out, missing or at its limit, else ! when one is near it. */
-export function railBadge(alerts: readonly (CliAlert | undefined)[]): { readonly symbol: string; readonly tone: Tone } | undefined {
-  if (alerts.some((alert) => alert !== undefined && alertTone(alert) === "fail")) return { symbol: markOf("failed").symbol, tone: "fail" };
-  if (alerts.includes("near_limit")) return { symbol: markOf("warning").symbol, tone: "warn" };
-  return undefined;
+/**
+ * The words behind the "!" on the Insights icon, or undefined when there is no mark: some AI CLI has a
+ * window at its limit ("Claude Code weekly limit reached. Its steps cannot run until Wed 18:00."). Near a
+ * limit, logged out and not found give none: the first is a forecast, the others show on Attention.
+ * Of a CLI's windows at the limit, the one that resets last decides the time; a window without a reset
+ * time leaves it out. Two CLIs at their limits give two sentences.
+ */
+export function railBadge(usage: UsageReport | undefined, issues: readonly CliIssue[], now: number): string | undefined {
+  const causes = AI_CLIS.flatMap((cli) => {
+    const plan = usage?.clis.find((entry) => entry.cliId === cli.id);
+    if (cliAlert(plan, issues.find((issue) => issue.cliId === cli.id), now) !== "limit") return [];
+    const full = liveWindows(plan, now).filter((w) => levelOf(Math.round(w.usedPercent)) === "limit");
+    const last = full.reduce((a, b) => (a.resetsAt === undefined || (b.resetsAt !== undefined && a.resetsAt >= b.resetsAt) ? a : b));
+    const name = windowShort(last);
+    const until = last.resetsAt === undefined ? "the limit resets" : sameDay(last.resetsAt, now) ? clock(last.resetsAt) : resetWhen(last.resetsAt, now);
+    return [`${cli.name} ${last.scope === undefined ? name.charAt(0).toLowerCase() + name.slice(1) : name} limit reached. Its steps cannot run until ${until}.`];
+  });
+  return causes.length === 0 ? undefined : causes.join(" ");
 }
 
 /** "data 34 m old" once the data is older than a few minutes. */

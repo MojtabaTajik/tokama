@@ -660,6 +660,13 @@
   color: var(--muted);
 }
 
+/* Why the icon shows its "!": the first line of the rail tooltip. */
+.it-cause {
+  margin: 0;
+  color: var(--warn);
+  font-weight: 600;
+}
+
 .insights-tip .ins-window {
   gap: var(--space-4);
 }
