@@ -244,13 +244,10 @@ export function titleFrom(text: string): string {
   return cutText(line, TITLE_MAX);
 }
 
-/** The steps a reviewer step reviews, as template validation draws them: from the back target, or after the previous reviewer. */
-/** A template that reads its repo and has no repo it may edit: its agents get no edit tools, whatever their agent file says. */
+/** A template that reads its repo and has no repo it may edit: its agents get no edit tools, whatever their agent file says, and nothing is committed. */
 const readsOnly = (template: TemplateRecord): boolean => template.uses.repos.picked === "read" && !template.uses.repos.named.some((repo) => repo.access === "edit");
 
-/** Only a template that commits or opens a pull request leaves work in the repo. */
-const commitsWork = (template: TemplateRecord): boolean => template.finish.some((word) => word === "commit" || word === "pull-request");
-
+/** The steps a reviewer step reviews, as template validation draws them: from the back target, or after the previous reviewer. */
 function reviewedSteps(template: TemplateRecord, index: number): TemplateStepDef[] {
   const step = template.steps[index]!;
   const target = step.ifChangesRequested?.action === "back" ? template.steps.findIndex((s) => s.id === (step.ifChangesRequested as { stepId: StepId }).stepId) : -1;
@@ -1055,7 +1052,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     const gate = await intact(ctx, worktree, { branchMayMove: true });
     if (gate !== undefined) return gate;
     const fail = (text: string) => askRunFailure(item, text);
-    if (!commitsWork(ctx.template)) return finishWithoutCommit(ctx, worktree, fail);
+    if (readsOnly(ctx.template)) return finishWithoutCommit(ctx, worktree, fail);
 
     // The tree to commit: the one you approved, when no attempt ran after you were asked (even the
     // base tree, when the step changed nothing); else the last one the checks passed on or a

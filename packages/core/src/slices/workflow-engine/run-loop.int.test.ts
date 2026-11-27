@@ -1600,7 +1600,12 @@ describe("run loop: a template that reads its repo and commits nothing", () => {
     expect(await plain(repo.path, "rev-parse", done.worktrees[0]!.branch)).toBe(before);
   });
 
-  it("the prompt carries the headline rule and reads as one answer", SLOW, async () => {
+  it("a template that may edit still commits, whatever its finish words", SLOW, async () => {
+    const id = await start(engine(fakeRuntime([edits(FIXED)])), template([{ id: "build" }], { finish: ["findings"] }));
+    expect(item(id).outcome?.commits).toHaveLength(1);
+  });
+
+  it("the prompt carries the headline rule", SLOW, async () => {
     const runtime = fakeRuntime([says("Yes.\nHEADLINE: Yes.")]);
     await start(engine(runtime), ask());
     expect(runtime.calls[0]?.request.prompt).toContain("HEADLINE: <one line");

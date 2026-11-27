@@ -36,7 +36,7 @@ export function useItemDiff(bridge: TokamaBridge, item: ItemRecord | undefined):
       current = false;
     };
   }, [bridge, itemId, key]);
-  if (discarded) return (item.outcome?.commits?.length ?? 0) > 0 ? { kind: "discarded" } : undefined;
+  if (discarded) return { kind: "discarded" };
   if (key === undefined) return undefined;
   // While the same item's change is asked for again, its last answer stays: the tab does not
   // vanish and come back, which would drop the engineer's place in the drawer.
