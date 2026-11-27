@@ -1,0 +1,23 @@
+/* A facts line (ui/Facts.tsx): one line that is cut with an ellipsis; the screen that places it
+   says where it wraps instead. */
+.facts {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-md);
+  color: var(--muted);
+}
+
+/* The symbol carries the colour; the words beside it are in the text colour. */
+.fact-flag {
+  color: var(--text-2);
+}
+
+.fact-mark[data-tone="fail"] {
+  color: var(--fail);
+}
+
+.fact-mark[data-tone="warn"] {
+  color: var(--warn);
+}

@@ -155,13 +155,26 @@ describe("noteText", () => {
     expect(noteText("finished", done(), context).body).toBe("Done in 9 min.\nPlan and build · orders-api");
   });
 
-  it("names the failing step, its runs and its failing check", () => {
+  it("says how many checks passed, in words", () => {
+    const checks = [{ command: "pnpm test", passed: true, exitCode: 0 }, { command: "pnpm lint", passed: true, exitCode: 0 }, { command: "pnpm typecheck", passed: true, exitCode: 0 }];
+    const steps = [{ name: "Build", state: "passed", attempts: [{ attempt: 1, result: "passed", checks }] }];
+    const merged = done({ steps, outcome: { kind: "done", commits: [{ repoId: "orders-api", commit: "a".repeat(40) }] }, finish: { worktreeRemoved: false } });
+    expect(noteText("finished", merged, context).body).toBe("Done in 9 min · checks 3/3 passed. Ready to merge or open a PR.\nPlan and build · orders-api");
+    expect(noteText("finished", done({ steps }), context).body).toBe("Done in 9 min · checks 3/3 passed.\nPlan and build · orders-api");
+  });
+
+  it("says where a failed item stopped and what failed", () => {
     const build = { name: "Build", stage: "working", state: "failed", data: "none", runs: 3, attempts: [{ attempt: 3, result: "failed", checks: [{ command: "pnpm test", passed: false, exitCode: 1 }] }] };
-    expect(noteText("failed", failed({ steps: [{ name: "Plan", state: "passed" }, build] }), context).body).toBe("Build failed 3 times: pnpm test\nPlan and build · orders-api");
-    expect(noteText("failed", failed({ steps: [{ name: "Build", state: "failed", detail: "the agent crashed" }] }), context).body).toBe("Build failed: the agent crashed\nPlan and build · orders-api");
-    expect(noteText("failed", failed({ steps: [{ name: "Build", state: "failed" }] }), context).body).toBe("Build failed.\nPlan and build · orders-api");
+    expect(noteText("failed", failed({ steps: [{ name: "Plan", state: "passed" }, build, { name: "Review", state: "pending" }] }), context).body).toBe("Stopped at Build, step 2 of 3: pnpm test failed 3 times\nPlan and build · orders-api");
+    expect(noteText("failed", failed({ steps: [{ name: "Build", state: "failed", detail: "the agent crashed" }] }), context).body).toBe("Stopped at Build, step 1 of 1: the agent crashed\nPlan and build · orders-api");
+    expect(noteText("failed", failed({ steps: [{ name: "Build", state: "failed" }] }), context).body).toBe("Stopped at Build, step 1 of 1\nPlan and build · orders-api");
     expect(noteText("failed", failed({ outcome: { kind: "failed", detail: "The engine stopped." } }), context).body).toBe("The engine stopped.\nPlan and build · orders-api");
-    expect(noteText("failed", failed(), context).body).toBe("A step failed.\nPlan and build · orders-api");
+    expect(noteText("failed", failed(), context).body).not.toContain("A step failed");
+  });
+
+  it("escapes the failing check on Linux", () => {
+    const build = { name: "Build", state: "failed", attempts: [{ attempt: 1, result: "failed", checks: [{ command: "pnpm test <a> && b", passed: false, exitCode: 1 }] }] };
+    expect(noteText("failed", failed({ steps: [build] }), { ...context, platform: "linux" }).body).toBe("Stopped at Build, step 1 of 1: pnpm test &lt;a&gt; &amp;&amp; b failed\nPlan and build · orders-api");
   });
 
   it("falls back to the template id without a setup, and leaves out the repos when there are none", () => {

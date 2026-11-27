@@ -420,7 +420,10 @@ function rawItems(now: number): RawItem[] {
       state: "done",
       createdAt: ago(now, 150),
       cardLine: "commit 3f2a9c1 · tokama/00000011",
-      steps: steps(templates.quickFix, ["passed", "passed"]).map((step, index) => (index === 0 ? { ...step, attempts: [{ attempt: 1, result: "passed", checks: [] }] } : step)),
+      steps: steps(templates.quickFix, ["passed", "passed"]).map((step, index) => ({
+        ...step,
+        attempts: [{ attempt: 1, result: "passed", checks: index === 0 ? [] : ["pnpm typecheck", "pnpm lint", "pnpm test"].map((command) => ({ command, passed: true, exitCode: 0 })) }],
+      })),
       outcome: {
         kind: "done",
         detail: "Committed 3f2a9c1e8b7d on tokama/00000011.",

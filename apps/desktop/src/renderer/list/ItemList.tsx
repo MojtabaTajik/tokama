@@ -20,6 +20,8 @@ import { useFocusFollow } from "./useFocusFollow.js";
 import { Button } from "../ui/Button.js";
 import { markOf } from "../ui/status.js";
 import { AgentChip } from "../ui/agent.js";
+import { Facts } from "../ui/Facts.js";
+import { factsOf } from "../../shared/item-facts.js";
 
 const TEXT = {
   nothing: { needs: "Nothing waiting", running: "Nothing running", done: "Nothing finished", failed: "Nothing failed" },
@@ -129,6 +131,8 @@ function Row({ item, setup, now, selected, onSelect, onFinish, onDiscard, onOpen
   const template = templateOf(item, setup);
   const ask = item.state === "needs_you" ? (item.decision?.question ?? mark.word) : undefined;
   const finished = finishNote(item);
+  // Until Merge or Open PR, a done row and a failed row say what was measured where the steps were.
+  const facts = finished === undefined ? factsOf(item) : [];
   return (
     <div className="pl-row-wrap">
       <Button variant="plain" className="pl-row" data-item-id={item.id} data-state={item.state} aria-current={selected ? "true" : undefined} onClick={() => onSelect(item.id)}>
@@ -159,6 +163,8 @@ function Row({ item, setup, now, selected, onSelect, onFinish, onDiscard, onOpen
             <span className="visually-hidden">{finished.mark.word}: </span>
             {finished.text}
           </span>
+        ) : facts.length > 0 ? (
+          <Facts facts={facts} className="pl-facts" />
         ) : (
           <span className="pl-pipe" role="img" aria-label={`${TEXT.steps}: ${steps.map(stepWords).join(", ")}`}>
             {steps.map((step, index) => (
