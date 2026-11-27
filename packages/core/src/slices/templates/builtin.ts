@@ -15,7 +15,7 @@ steps:
     agent: builder
     instructions: |
       Make the change described below in this repository, keeping the diff small.
-      Run the project's tests before you finish, and fix what they report.
+      When you finish, Tokama runs the repo's checks and sends you what fails.
     done_when: checks pass
     checks: from-repo
     if_failed: retry
@@ -69,7 +69,7 @@ steps:
     agent: builder
     instructions: |
       Make the change the approved plan describes, keeping the diff small.
-      Run the project's tests before you finish, and fix what they report.
+      When you finish, Tokama runs the repo's checks and sends you what fails.
 
       The approved plan:
       {{ plan.summary }}
