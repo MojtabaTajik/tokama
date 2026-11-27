@@ -5,7 +5,7 @@
 // while items run. Tokama never restarts by itself. While the restart is under way the chip is a
 // status line. Release text (the reason) is rendered as React text only.
 import { type CSSProperties, useEffect, useId, useLayoutEffect, useRef } from "react";
-import { CANT_TELL, NOTHING_RUNNING, RESTARTING, RESTART_NOW_BLOCKED, RESTART_TOKAMA, STALLED, STALLED_ACTION, type UpdateChipView, updatePanelText } from "../../shared/update.js";
+import { CANT_TELL, NOTHING_RUNNING, RESTARTING, RESTART_NOW_BLOCKED, RESTART_TOKAMA, type UpdateChipView, updatePanelText } from "../../shared/update.js";
 import { Badge } from "../ui/Badge.js";
 import { Button } from "../ui/Button.js";
 import { Chip } from "../ui/Chip.js";
@@ -111,10 +111,10 @@ export function UpdateChip({ view, running, busy, panelOpen, onActivate, onResta
     return (
       <div role="status" className="up-stalled">
         <span className="up-stalled-text">
-          {STALLED}. {STALLED_ACTION}
+          {view.title}. {view.action}
         </span>
         <Button variant="secondary" onClick={onRestartNow}>
-          {RESTART_TOKAMA}
+          {view.button ?? RESTART_TOKAMA}
         </Button>
       </div>
     );

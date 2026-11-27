@@ -41,6 +41,8 @@ export interface UpdateChipView {
   readonly reason?: string;
   /** The tooltip's action line. */
   readonly action: string;
+  /** The label of the notice's button, for a stalled update. */
+  readonly button?: string;
   /** The accessible name of the chip and of the rail icon. */
   readonly accessibleName: string;
   /** Items running now. They block the install. */
@@ -71,13 +73,22 @@ export const RESTARTING = "Restarting to update…";
 export const STALLED = "Update didn't install";
 export const STALLED_ACTION = "Tokama will try again when you quit.";
 export const RESTART_TOKAMA = "Restart Tokama";
+/**
+ * On Linux a cancelled or failed install (the system password dialog) leaves the app on its
+ * current version and nothing holds the update: it is tried again when the app is opened again,
+ * never at quit, and the button only quits.
+ */
+export const STALLED_LINUX = "The install was cancelled";
+export const STALLED_LINUX_ACTION = "Tokama is still on its current version. Quit and open it again to try the update again.";
+export const QUIT_TOKAMA = "Quit Tokama";
 
 const withoutEnd = (text: string) => text.replace(/[.!\s]+$/, "");
 
 /** The chip for `state` with `running` items running. A chip shows only for a ready update, and as a status line while it installs. */
-export function updateChip(state: UpdateState, running: number): UpdateChipView | undefined {
+export function updateChip(state: UpdateState, running: number, linux = false): UpdateChipView | undefined {
   if (state.status === "stalled") {
-    return { kind: "stalled", version: state.version, critical: false, label: STALLED, title: STALLED, action: STALLED_ACTION, accessibleName: `${STALLED}. ${STALLED_ACTION} Click to show the notice.`, running };
+    const [title, action, button] = linux ? [STALLED_LINUX, STALLED_LINUX_ACTION, QUIT_TOKAMA] : [STALLED, STALLED_ACTION, RESTART_TOKAMA];
+    return { kind: "stalled", version: state.version, critical: false, label: title, title, action, button, accessibleName: `${title}. ${action} Click to show the notice.`, running };
   }
   if (state.status === "installing") {
     return { kind: "installing", version: state.version, critical: false, label: RESTARTING, title: RESTARTING, action: "", accessibleName: RESTARTING, running };

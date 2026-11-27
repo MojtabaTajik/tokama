@@ -30,6 +30,7 @@ import { runningItems } from "./update/running.js";
 import { UpdateChip } from "./update/UpdateChip.js";
 import { useUpdate } from "./update/useUpdate.js";
 import { updateChip } from "../shared/update.js";
+import { onLinux } from "./update/linux.js";
 import { Sidebar } from "./shell/Sidebar.js";
 import { CHIP_PRIORITY, type SidebarChipCandidate } from "./shell/sidebar-chip.js";
 import { UpdatedChip } from "./whatsnew/UpdatedChip.js";
@@ -363,7 +364,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   // Running items block the restart, so the chip's panel lists them.
   const update = useUpdate(bridge);
   const runningNow = useMemo(() => runningItems(items, setup?.templates), [items, setup]);
-  const updateView = update === undefined ? undefined : updateChip(update, runningNow.length);
+  const updateView = update === undefined ? undefined : updateChip(update, runningNow.length, onLinux());
   const [updatePanel, setUpdatePanel] = useState(false);
   const updateReady = updateView?.kind === "ready";
   useEffect(() => {
