@@ -10,6 +10,9 @@ const HOUR = 60 * MINUTE;
 const local = (day: number, hour: number, minute = 0) => new Date(2025, 9, day, hour, minute).getTime();
 const tokens = (input: number, output: number, cacheRead: number, cacheWrite: number) => ({ input, output, cacheRead, cacheWrite });
 
+/** The value without the named keys: a field the state does not have is absent, not undefined. */
+const omit = (value: object, ...keys: string[]): Record<string, unknown> => Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)));
+
 const BUILD = { templateId: "builtin/plan-and-build", stepId: "build", agentId: "local-builder" };
 const weeklyStart = local(16, 9);
 const weeklyEnd = local(23, 9);
@@ -19,7 +22,7 @@ const runsOutAt = weeklyStart + Math.round((102 * HOUR * 100) / 82);
 const claudeWindows = [
   { window: "session", usedPercent: 36, resetsAt: local(20, 17, 10), startsAt: local(20, 12, 10), forecast: { atResetPercent: 63.5 } },
   { window: "weekly_all", usedPercent: 82, resetsAt: weeklyEnd, startsAt: weeklyStart, forecast: { atResetPercent: 135.06, runsOutAt } },
-  { window: "weekly_scoped", usedPercent: 47, resetsAt: weeklyEnd, startsAt: weeklyStart, scope: "Fable", forecast: { atResetPercent: 77.4 } },
+  { window: "weekly_scoped", usedPercent: 47, resetsAt: weeklyEnd, startsAt: weeklyStart, scope: "Fable", sharePercent: 50, forecast: { atResetPercent: 77.4 } },
 ];
 
 const claudeCode = { cliId: "claude-code", windows: claudeWindows, source: "request", asOf: NOW - 2 * MINUTE, plan: "max", version: "2.1.331", extraUsage: "off", billing: "plan" };
@@ -171,11 +174,11 @@ export const noReading = {
   week: {
     ...week,
     limits: [],
-    steps: week.steps.map(({ sharePercent: _share, ...step }) => step),
-    helpers: week.helpers.map(({ sharePercent: _share, ...helper }) => helper),
-    retries: week.retries.map(({ sharePercent: _share, causes, ...retry }) => ({ ...retry, causes: causes.map(({ sharePercent: _cause, ...cause }) => cause) })),
+    steps: week.steps.map((step) => omit(step, "sharePercent")),
+    helpers: week.helpers.map((helper) => omit(helper, "sharePercent")),
+    retries: week.retries.map((retry) => ({ ...omit(retry, "sharePercent"), causes: retry.causes.map((cause) => omit(cause, "sharePercent")) })),
   },
-  stepModels: stepModels.map((group) => ({ ...group, models: group.models.map(({ sharePerRun: _share, ...record }) => record) })),
+  stepModels: stepModels.map((group) => ({ ...group, models: group.models.map((record) => omit(record, "sharePerRun")) })),
 } as unknown as UsageReport;
 
 /** An API key: money in place of limit share; one call was priced from the table. */
@@ -186,15 +189,15 @@ export const payPerUse = {
     window: "current",
     limits: [],
     steps: [
-      { ...week.steps[1], sharePercent: undefined, costUsd: 16.1 },
-      { ...week.steps[2], sharePercent: undefined, costUsd: 11.4 },
-      { ...week.steps[0], cliId: "claude-code", model: "claude-sonnet-5-5", sharePercent: undefined, costUsd: 2.7, costEstimated: true },
+      { ...omit(week.steps[1]!, "sharePercent"), costUsd: 16.1 },
+      { ...omit(week.steps[2]!, "sharePercent"), costUsd: 11.4 },
+      { ...omit(week.steps[0]!, "sharePercent"), cliId: "claude-code", model: "claude-sonnet-5-5", costUsd: 2.7, costEstimated: true },
     ],
     items: [],
     helpers: [],
     retries: [],
   },
-  stepModels: stepModels.map((group) => ({ ...group, models: group.models.map(({ sharePerRun: _share, ...record }) => ({ ...record, costPerRun: 0.35 })) })),
+  stepModels: stepModels.map((group) => ({ ...group, models: group.models.map((record) => ({ ...omit(record, "sharePerRun"), costPerRun: 0.35 })) })),
   agentModels: undefined,
 } as unknown as UsageReport;
 
@@ -204,7 +207,7 @@ export const fewRuns = { ...planReport, stepModels: undefined, agentModels: unde
 /** Nothing ran this week: limits and the forecast still show. */
 export const quiet = {
   ...planReport,
-  week: { window: "current", limits: week.limits.map(({ tokamaPercent: _t, outsidePercent: _o, ...limit }) => limit), steps: [], items: [], helpers: [], retries: [] },
+  week: { window: "current", limits: week.limits.map((limit) => omit(limit, "tokamaPercent", "outsidePercent")), steps: [], items: [], helpers: [], retries: [] },
   stepModels: undefined,
   agentModels: undefined,
 } as unknown as UsageReport;

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import type { Decision, ItemActivity, ItemChange, ItemRecord, Setup } from "@tokama/core";
+import type { Decision, ItemActivity, ItemChange, ItemRecord, ItemUsage, Setup } from "@tokama/core";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,7 +19,7 @@ type Reply = { ok: true; data: unknown } | { ok: false; error: { code: string; m
  * A bridge over a set of items: `setup`, `board`, `item_list` and `item` answer from it, commands answer
  * with `commandReply` (null by default), and events are pushed by hand to every listener.
  */
-function fakeBridge(start: ItemRecord[], activities = new Map<string, ItemActivity>()) {
+function fakeBridge(start: ItemRecord[], activities = new Map<string, ItemActivity>(), usages = new Map<string, ItemUsage>()) {
   const store = new Map<string, ItemRecord>(start.map((item) => [item.id, item]));
   const eventListeners = new Set<(event: BridgeEvent) => void>();
   const connectionListeners = new Set<(state: ConnectionState) => void>();
@@ -29,7 +29,7 @@ function fakeBridge(start: ItemRecord[], activities = new Map<string, ItemActivi
     if (q.type === "board") return { ok: true, data: board([...store.values()]) };
     if (q.type === "item_list") return { ok: true, data: itemList([...store.values()], q as unknown as ListQuery) };
     const item = q.itemId === undefined ? undefined : store.get(q.itemId);
-    if (q.type === "item" && item) return { ok: true, data: { item } };
+    if (q.type === "item" && item) return { ok: true, data: { item, ...(usages.has(item.id) && { usage: usages.get(item.id) }) } };
     if (q.type === "item_diff") return { ok: true, data: { kind: "none" } };
     if (q.type === "activity" && item) return { ok: true, data: { activity: activities.get(item.id) ?? null } };
     return { ok: false, error: { code: "not_found", message: `no item ${String(q.itemId)}` } };
@@ -1961,6 +1961,48 @@ describe("the Output tab folds per step", () => {
     const { bridge } = withOutput([committed]);
     await renderDrawer(bridge, committed.id);
     expect(stepLines().every((line) => line.tagName === "BUTTON" && (line as HTMLButtonElement).tabIndex === 0)).toBe(true);
+  });
+});
+
+describe("ItemDrawer usage", () => {
+  const withUsage = (usage: ItemUsage) => fakeBridge([stoppedReview], new Map(), new Map([[stoppedReview.id, usage]]));
+  const fact = () => text(".drawer-state")?.replace(/\s+/g, " ");
+
+  it("says what the item took of the weekly limit on a plan, and never a dollar figure", async () => {
+    await renderDrawer(withUsage({ tokens: 212_000, shares: [{ cliId: "claude-code", sharePercent: 1.2 }] }).bridge, stoppedReview.id);
+    expect(fact()).toContain("· ~1.2% of weekly limit");
+    expect(fact()).not.toContain("$");
+  });
+
+  it("names each tool when the item ran on two, and never adds their shares", async () => {
+    await renderDrawer(withUsage({ tokens: 212_000, shares: [{ cliId: "claude-code", sharePercent: 1.2 }, { cliId: "codex-cli", sharePercent: 0.4 }] }).bridge, stoppedReview.id);
+    expect(fact()).toContain("~1.2% of Claude Code weekly limit");
+    expect(fact()).toContain("~0.4% of Codex CLI weekly limit");
+    expect(fact()).not.toContain("1.6%");
+  });
+
+  it("says tokens when no share can be told, and the real cost with an API key", async () => {
+    await renderDrawer(withUsage({ tokens: 212_000 }).bridge, stoppedReview.id);
+    expect(fact()).toContain("212k tokens");
+    await renderDrawer(withUsage({ tokens: 212_000, costUsd: 0.42 }).bridge, stoppedReview.id);
+    expect(fact()).toContain("· $0.42");
+    expect(fact()).not.toContain("≈");
+    await renderDrawer(withUsage({ tokens: 212_000, costUsd: 0.42, costEstimated: true }).bridge, stoppedReview.id);
+    expect(fact()).toContain("≈ $0.42");
+  });
+
+  it("says nothing for an item with no recorded calls", async () => {
+    await renderDrawer(fakeBridge([stoppedReview]).bridge, stoppedReview.id);
+    expect($(".usage-fact")).toBeNull();
+  });
+
+  it("puts what a step's retries took under its line on the Log tab", async () => {
+    await renderDrawer(withUsage({ tokens: 212_000, retries: [{ stepIndex: 1, attempts: [2, 3], tokensPercent: 60, failingCheck: "pnpm test" }] }).bridge, stoppedReview.id);
+    await showTab("Log");
+    const lines = $$(".lg > .sec-wrap > .sec-list > .sec > .sec-h > .sec-head");
+    await click(lines[1]);
+    expect(text(".lg-retries")).toBe("Attempts 2 and 3 used 60% of this item's tokens · failing check: pnpm test");
+    expect($$(".lg-retries")).toHaveLength(1);
   });
 });
 

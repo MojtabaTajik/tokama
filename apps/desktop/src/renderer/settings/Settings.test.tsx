@@ -7,6 +7,7 @@ import type { TokamaBridge } from "../../shared/bridge.js";
 import { App } from "../App.js";
 import { CONNECTED, fakeBridge, type Reply } from "../testing/bridge.js";
 import { NOW, setup } from "../testing/sample.js";
+import { planReport } from "../testing/usage.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -77,6 +78,24 @@ describe("Settings > Agents", () => {
     expect($$(".agent-row-line img.backend-mark").map((el) => el.getAttribute("alt"))).toEqual(["Claude Code", "Claude Code", "Codex CLI"]);
     expect(fake.query).toHaveBeenCalledWith({ type: "agents_list" });
     expect($(".agents img:not(.backend-mark), .agents svg image")).toBeNull();
+  });
+
+  it("shows an agent's record per model under Model, only for an agent with enough runs, and asks for usage only while Agents is open", async () => {
+    const usageReply = { ok: true as const, data: { ...planReport, agentModels: [{ agentId: "reviewer", models: planReport.agentModels![1]!.models }] } };
+    const fake = fakeBridge(CONNECTED, { reply: (query) => (query.type === "agents_list" ? { ok: true, data: LIST } : query.type === "usage" ? usageReply : query.type === "setup" ? { ok: true, data: structuredClone(setup) } : undefined) });
+    await open(fake);
+    const usageQueries = () => fake.query.mock.calls.filter(([q]) => q.type === "usage").length;
+    // Architect has no record: nothing is drawn under its model.
+    expect($(".agent-record")).toBeNull();
+    await click(row("Reviewer"));
+    expect($(".agent-record .agents-note")?.textContent).toBe("This agent's record · last 90 days · models with 5 or more runs");
+    expect($$(".agent-record-list li").map((li) => [...li.children].map((cell) => cell.textContent))).toEqual([["gpt-5", "21 runs", "100% first try", "~0.7% of weekly limit per run"]]);
+    expect(usageQueries()).toBeGreaterThan(0);
+    // Another page of Settings reads no usage.
+    await click($$("nav button").find((el) => el.textContent === "Notifications"));
+    const before = usageQueries();
+    await click($$("nav button").find((el) => el.textContent === "Agents"));
+    expect(usageQueries()).toBe(before + 1);
   });
 
   it("lists only the pages that work, by group, with no disabled entries", async () => {

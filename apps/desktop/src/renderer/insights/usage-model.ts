@@ -119,10 +119,10 @@ export function formatTokens(n: number): string {
  */
 export const formatCost = (usd: number, estimated = false): string => `${estimated ? "≈ " : ""}$${usd < 100 ? usd.toFixed(2) : Math.round(usd).toLocaleString("en-US")}`;
 
-/** "~27%", "~5.1%", "<0.1%": a part of a limit; the tilde says it is an estimate. */
+/** "~27%", "~5.1%", "~8%", "<0.1%": a part of a limit, to one decimal under 10; the tilde says it is an estimate. */
 export function limitShare(percent: number): string {
   if (percent < 0.05) return "<0.1%";
-  return `~${percent < 10 ? percent.toFixed(1) : Math.round(percent)}%`;
+  return `~${percent < 10 ? Number(percent.toFixed(1)) : Math.round(percent)}%`;
 }
 
 /** A part of Tokama's own use, a whole percent: "39%". */

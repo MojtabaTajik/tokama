@@ -274,13 +274,13 @@
 
 .ins-split-bar {
   display: flex;
-  gap: 2px;
+  gap: var(--space-2);
   height: 8px;
 }
 
 .ins-split-bar > span {
   min-width: 3px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .ins-split-figs {
@@ -307,7 +307,7 @@
   flex: none;
   width: 8px;
   height: 8px;
-  border-radius: 2px;
+  border-radius: var(--space-2);
 }
 
 .ins-rank {
@@ -406,7 +406,7 @@
 .ins-bar > span {
   display: block;
   height: 100%;
-  border-radius: 0 3px 3px 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
 
 .ins-model {
