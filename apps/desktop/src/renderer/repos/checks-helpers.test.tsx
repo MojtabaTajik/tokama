@@ -206,6 +206,34 @@ describe("Suggest with AI", () => {
     await act(async () => void edit.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })));
     expect(checks().value).toBe("npm test\nnpm run build -- --mode ci");
     expect(fake.command.mock.calls.map(([command]) => command.type)).toEqual(["run_helper"]);
+    // The row now stands for the edited command: the original cannot be added as well.
+    expect($(".ch-card")!.textContent).toContain("npm run build -- --mode ci");
+    expect($(".ch-card")!.textContent).toContain("✓ Added");
+    expect(button("Add npm run build")).toBeUndefined();
+  });
+
+  it("cancels a run whose start reply comes after the dialog closed or Stop was pressed", async () => {
+    const releases: Array<() => void> = [];
+    const fake = fakeBridge(CONNECTED, { reply: (query) => (query.type === "helpers" ? { ok: true, data: { helpers: [SUMMARY] } } : query.type === "suggest_repo" ? { ok: true, data: SUGGESTION } : undefined) });
+    const command = fake.bridge.command as unknown as ReturnType<typeof vi.fn>;
+    command.mockImplementation((c: { type: string }) => (c.type === "run_helper" || c.type === "try_checks" ? new Promise((resolve) => releases.push(() => resolve({ ok: true, data: c.type === "run_helper" ? { runId: RUN_ID } : { trialId: TRIAL_ID } }))) : Promise.resolve({ ok: true, data: null })));
+    (fake.bridge.getDesktopState as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ ...DEFAULT_DESKTOP_STATE, helperConsent: ["claude-code"] });
+    await act(async () => root.render(<RepoDialog bridge={fake.bridge} path={FOLDER} onClose={() => undefined} />));
+    // Stop before the reply: the line ends at once, and the run is cancelled when its id is known.
+    await click(button("Suggest with AI"));
+    await click(button("Stop"));
+    expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: "cancel_helper" }));
+    await act(async () => releases.shift()!());
+    expect(command).toHaveBeenCalledWith({ type: "cancel_helper", runId: RUN_ID });
+    expect(text()).toContain("Stopped.");
+    // Close before the reply of a trial and of a run.
+    await click(button("Try checks"));
+    await click(button("Suggest with AI"));
+    act(() => root.unmount());
+    await act(async () => releases.splice(0).forEach((release) => release()));
+    expect(command).toHaveBeenCalledWith({ type: "cancel_check_trial", trialId: TRIAL_ID });
+    expect(command.mock.calls.filter(([c]) => c.type === "cancel_helper")).toHaveLength(2);
+    root = createRoot(container);
   });
 
   it("shows a long command in full, as text, and never as markup", async () => {

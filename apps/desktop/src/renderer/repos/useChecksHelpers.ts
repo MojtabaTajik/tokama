@@ -53,7 +53,6 @@ export interface ChecksHelpers {
   readonly agree: () => void;
   readonly notNow: () => void;
   readonly stopSuggest: () => void;
-  readonly dismissSuggest: () => void;
   readonly startTrial: () => void;
   readonly stopTrial: () => void;
   readonly dismissTrial: () => void;
@@ -70,9 +69,15 @@ export function useChecksHelpers({ bridge, path, baseBranch, checks, canTry }: C
   const [trial, setTrial] = useState<TrialState>({ kind: "idle" });
   const runId = useRef<string | undefined>(undefined);
   const trialId = useRef<string | undefined>(undefined);
-  // Updates heard before the reply that names their run or trial.
-  const starting = useRef(false);
-  const early = useRef(new Map<string, HelperRun | CheckTrial>());
+  // Updates heard before the reply that names their run or trial, one pair for each helper.
+  const startingRun = useRef(false);
+  const earlyRun = useRef(new Map<string, HelperRun>());
+  const startingTrial = useRef(false);
+  const earlyTrial = useRef(new Map<string, CheckTrial>());
+  // Stop pressed, or the dialog closed, before the reply that names the run or trial: it is cancelled the moment its id is known.
+  const stopRunAsked = useRef(false);
+  const stopTrialAsked = useRef(false);
+  const closed = useRef(false);
   const lines = checkLines(checks);
 
   useEffect(() => {
@@ -114,10 +119,10 @@ export function useChecksHelpers({ bridge, path, baseBranch, checks, canTry }: C
       bridge.onEvent(({ event }) => {
         if (event.type === "helper_run_updated") {
           if (runId.current === event.run.runId) applyRun(event.run);
-          else if (starting.current) early.current.set(event.run.runId, event.run);
+          else if (startingRun.current) earlyRun.current.set(event.run.runId, event.run);
         } else if (event.type === "check_trial_updated") {
           if (trialId.current === event.trial.trialId) applyTrial(event.trial);
-          else if (starting.current) early.current.set(event.trial.trialId, event.trial);
+          else if (startingTrial.current) earlyTrial.current.set(event.trial.trialId, event.trial);
         }
       }),
     [bridge, applyRun, applyTrial],
@@ -164,29 +169,35 @@ export function useChecksHelpers({ bridge, path, baseBranch, checks, canTry }: C
   }, [bridge, suggesting, trying, applyRun, applyTrial]);
 
   // Closing the dialog stops what runs.
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    closed.current = false;
+    return () => {
+      closed.current = true;
       if (runId.current !== undefined) void bridge.command({ type: "cancel_helper", runId: runId.current }).catch(() => undefined);
       if (trialId.current !== undefined) void bridge.command({ type: "cancel_check_trial", trialId: trialId.current }).catch(() => undefined);
-    },
-    [bridge],
-  );
+    };
+  }, [bridge]);
 
   const send = async () => {
     if (path === undefined) return;
     const cloud = summary?.agent?.runsOn === "cloud";
     setSuggest({ kind: "running", since: Date.now(), phase: "gathering" });
-    starting.current = true;
-    early.current.clear();
+    startingRun.current = true;
+    stopRunAsked.current = false;
+    earlyRun.current.clear();
     const reply = await bridge
       .command({ type: "run_helper", run: { helperId: "suggest-checks", input: { path } }, ...(cloud ? { cloud: "accepted" as const } : {}) })
       .catch((cause: unknown) => ({ ok: false as const, error: { code: "bridge_error", message: String(cause) } }));
-    starting.current = false;
-    if (!reply.ok) return setSuggest({ kind: "failed", failure: failureOf(reply.error) });
+    startingRun.current = false;
+    if (!reply.ok) return closed.current ? undefined : setSuggest({ kind: "failed", failure: failureOf(reply.error) });
+    if (closed.current || stopRunAsked.current) {
+      void bridge.command({ type: "cancel_helper", runId: reply.data.runId }).catch(() => undefined);
+      return closed.current ? undefined : setSuggest({ kind: "stopped" });
+    }
     runId.current = reply.data.runId;
-    const heard = early.current.get(reply.data.runId);
-    if (heard !== undefined && "runId" in heard) applyRun(heard);
-    early.current.clear();
+    const heard = earlyRun.current.get(reply.data.runId);
+    if (heard !== undefined) applyRun(heard);
+    earlyRun.current.clear();
   };
 
   const agree = () => {
@@ -203,8 +214,9 @@ export function useChecksHelpers({ bridge, path, baseBranch, checks, canTry }: C
     if (path === undefined || lines.length === 0) return;
     const asked = lines;
     setTrial({ kind: "running", lines: asked, trial: undefined });
-    starting.current = true;
-    early.current.clear();
+    startingTrial.current = true;
+    stopTrialAsked.current = false;
+    earlyTrial.current.clear();
     const minutes = new Map(suggest.kind === "answer" ? suggest.result.checks.map((check) => [check.command, check.minutes] as const) : []);
     const reply = await bridge
       .command({
@@ -214,12 +226,16 @@ export function useChecksHelpers({ bridge, path, baseBranch, checks, canTry }: C
         checks: asked.map((command) => ({ command, ...(minutes.has(command) ? { minutes: minutes.get(command)! } : {}) })),
       })
       .catch((cause: unknown) => ({ ok: false as const, error: { code: "bridge_error", message: String(cause) } }));
-    starting.current = false;
-    if (!reply.ok) return setTrial({ kind: "error", message: reply.error.message });
+    startingTrial.current = false;
+    if (!reply.ok) return closed.current ? undefined : setTrial({ kind: "error", message: reply.error.message });
+    if (closed.current || stopTrialAsked.current) {
+      void bridge.command({ type: "cancel_check_trial", trialId: reply.data.trialId }).catch(() => undefined);
+      return closed.current ? undefined : setTrial({ kind: "idle" });
+    }
     trialId.current = reply.data.trialId;
-    const heard = early.current.get(reply.data.trialId);
-    if (heard !== undefined && "trialId" in heard) applyTrial(heard);
-    early.current.clear();
+    const heard = earlyTrial.current.get(reply.data.trialId);
+    if (heard !== undefined) applyTrial(heard);
+    earlyTrial.current.clear();
   };
 
   const tool = summary?.agent?.cliId;
@@ -240,11 +256,12 @@ export function useChecksHelpers({ bridge, path, baseBranch, checks, canTry }: C
     notNow: () => setSuggest({ kind: "idle" }),
     stopSuggest: () => {
       if (runId.current !== undefined) void bridge.command({ type: "cancel_helper", runId: runId.current }).catch(() => undefined);
+      else stopRunAsked.current = true;
     },
-    dismissSuggest: () => setSuggest({ kind: "idle" }),
     startTrial: () => void startTrial(),
     stopTrial: () => {
       if (trialId.current !== undefined) void bridge.command({ type: "cancel_check_trial", trialId: trialId.current }).catch(() => undefined);
+      else stopTrialAsked.current = true;
     },
     dismissTrial: () => setTrial({ kind: "idle" }),
   };

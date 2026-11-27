@@ -220,7 +220,6 @@ function Consent({ h }: { readonly h: ChecksHelpers }) {
 /** Suggest with AI and the line under it, for the "No checks found" box, where Try checks would have nothing to run. */
 export function SuggestInBox({ h, onOpenGetStarted }: Pick<ChecksHelpersProps, "h" | "onOpenGetStarted">) {
   if (!h.loaded || h.availability === undefined) return null;
-  if (h.suggest.kind === "consent") return <Consent h={h} />;
   return (
     <div className="ch-box">
       <div className="ch-buttons">
@@ -300,11 +299,20 @@ function Suggestions({ h, result, lines, onAdd }: SuggestionsProps) {
   const [edited, setEdited] = useState("");
   const [dismissed, setDismissed] = useState(false);
   if (dismissed) return null;
+  // A row added after an edit stands for the edited command from then on, so the original cannot be added too.
+  const [replaced, setReplaced] = useState<ReadonlyMap<string, string>>(new Map());
+  const shown = (check: { readonly command: string }) => replaced.get(check.command) ?? check.command;
   const rows = result.checks.filter((check) => !removed.has(check.command));
-  const fresh = rows.filter((check) => !lines.includes(check.command));
+  const fresh = rows.filter((check) => !lines.includes(shown(check)));
   const add = (commands: readonly string[]) => {
     onAdd(commands);
     setAdded(new Set([...added, ...commands]));
+  };
+  const addEdited = (original: string) => {
+    const command = edited.trim();
+    add([command]);
+    setReplaced(new Map(replaced).set(original, command));
+    setEditing(undefined);
   };
   if (result.checks.length === 0) {
     return (
@@ -330,7 +338,7 @@ function Suggestions({ h, result, lines, onAdd }: SuggestionsProps) {
           {TEXT.suggestedBy(target)} <span className="ch-dim">{`${rows.length} ${rows.length === 1 ? "check" : "checks"} · ${fresh.length} new`}</span>
         </span>
         <span className="ch-card-actions">
-          <Button size="sm" disabled={fresh.length === 0} onClick={() => add(fresh.map((check) => check.command))}>
+          <Button size="sm" disabled={fresh.length === 0} onClick={() => add(fresh.map(shown))}>
             {TEXT.addAllNew}
           </Button>
           <CloseButton size="icon-sm" label={TEXT.closeNote} onClick={() => setDismissed(true)} />
@@ -338,7 +346,8 @@ function Suggestions({ h, result, lines, onAdd }: SuggestionsProps) {
       </div>
       <ul className="ch-rows">
         {rows.map((check) => {
-          const inField = lines.includes(check.command);
+          const command = shown(check);
+          const inField = lines.includes(command);
           const isEditing = editing === check.command;
           const problem = isEditing && (edited.trim() === "" || breaksRule(edited));
           return (
@@ -359,10 +368,7 @@ function Suggestions({ h, result, lines, onAdd }: SuggestionsProps) {
                         // The dialog is a form: Enter here adds the row, it does not save the repo.
                         if (event.key === "Enter") {
                           event.preventDefault();
-                          if (!problem) {
-                            add([edited.trim()]);
-                            setEditing(undefined);
-                          }
+                          if (!problem) addEdited(check.command);
                         } else if (event.key === "Escape") {
                           event.preventDefault();
                           event.stopPropagation();
@@ -371,14 +377,7 @@ function Suggestions({ h, result, lines, onAdd }: SuggestionsProps) {
                       }}
                     />
                     <span className="ch-row-actions">
-                      <Button
-                        size="sm"
-                        disabled={problem}
-                        onClick={() => {
-                          add([edited.trim()]);
-                          setEditing(undefined);
-                        }}
-                      >
+                      <Button size="sm" disabled={problem} onClick={() => addEdited(check.command)}>
                         {TEXT.add}
                       </Button>
                       <Button variant="quiet" size="sm" onClick={() => setEditing(undefined)}>
@@ -397,11 +396,11 @@ function Suggestions({ h, result, lines, onAdd }: SuggestionsProps) {
                 <>
                   <div className="ch-row-main">
                     <span className="ch-command" data-dim={inField || undefined}>
-                      <span className="mono ch-command-text">{check.command}</span> <span className="ch-dim">{`about ${check.minutes} min`}</span>
+                      <span className="mono ch-command-text">{command}</span> <span className="ch-dim">{`about ${check.minutes} min`}</span>
                     </span>
                     <span className="ch-row-actions">
                       {inField ? (
-                        added.has(check.command) ? (
+                        added.has(command) ? (
                           <span className="ch-added">
                             <StatusMark status="passed" /> {TEXT.added}
                           </span>
@@ -410,22 +409,22 @@ function Suggestions({ h, result, lines, onAdd }: SuggestionsProps) {
                         )
                       ) : (
                         <>
-                          <Button size="sm" aria-label={`Add ${check.command}`} onClick={() => add([check.command])}>
+                          <Button size="sm" aria-label={`Add ${command}`} onClick={() => add([command])}>
                             {TEXT.add}
                           </Button>
                           <Button
                             variant="quiet"
                             size="icon-sm"
-                            aria-label={`Edit ${check.command}`}
+                            aria-label={`Edit ${command}`}
                             title={TEXT.edit}
                             onClick={() => {
                               setEditing(check.command);
-                              setEdited(check.command);
+                              setEdited(command);
                             }}
                           >
                             <PencilIcon />
                           </Button>
-                          <CloseButton size="icon-sm" label={`Remove ${check.command}`} onClick={() => setRemoved(new Set([...removed, check.command]))} />
+                          <CloseButton size="icon-sm" label={`Remove ${command}`} onClick={() => setRemoved(new Set([...removed, check.command]))} />
                         </>
                       )}
                     </span>
