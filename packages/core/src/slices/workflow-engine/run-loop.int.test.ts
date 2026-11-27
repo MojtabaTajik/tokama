@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -834,6 +834,19 @@ describe("run loop: start, safety and control", () => {
     writeFileSync(join(repo.path, ".tokama", "wt"), "");
     const id = await start(engine(fakeRuntime([edits(FIXED)])), template([BUILD_CHECKED]));
     expect(openDecision(id)).toMatchObject({ kind: "run_failure", detail: expect.stringContaining("<repo orders-api>/.tokama/wt") });
+  });
+
+  it("scrubs the repo's real path too when the repo is listed through a link", SLOW, async () => {
+    const real = repo.path;
+    mkdirSync(join(real, ".tokama"));
+    writeFileSync(join(real, ".tokama", "wt"), "");
+    const listed = join(root, "orders-link");
+    symlinkSync(real, listed);
+    repo = { ...repo, path: listed };
+    const id = await start(engine(fakeRuntime([edits(FIXED)])), template([BUILD_CHECKED]));
+    const detail = openDecision(id)?.detail ?? "";
+    expect(detail).toContain("<repo orders-api>/.tokama/wt");
+    expect(detail).not.toContain(root);
   });
 
   it("removes ignored files and runs setup again before the checks, so a swapped tool in node_modules never runs", SLOW, async () => {

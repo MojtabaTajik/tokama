@@ -26,7 +26,7 @@ import { cutText, scrubPaths } from "../../kernel/text/index.js";
 import { simpleCommandProblem } from "../../kernel/command-policy/index.js";
 import { BRANCH, MAX_BRANCH } from "../config/index.js";
 import { checkRunOptions, runCommand, type CheckResult } from "../verification/index.js";
-import { checkTrialFolder, createTrialWorktree, removeTrialWorktree, trialWorktreePath, type WorktreeRepo } from "../worktrees/index.js";
+import { checkWorktreeFolder, createTrialWorktree, removeTrialWorktree, trialWorktreePath, type WorktreeRepo } from "../worktrees/index.js";
 
 /** What `try_checks` asks for. */
 export interface CheckTrialRequest {
@@ -112,7 +112,7 @@ export function createCheckTrialRunner(deps: CheckTrialDeps): CheckTrialRunner {
     if (!repo.ok) return repo;
     // The branch name reaches git as an argument: nothing that reads as an option or a range.
     if (!BRANCH.test(repo.value.baseBranch) || repo.value.baseBranch.length > MAX_BRANCH) return refuse("invalid_request", `The base branch ${shown(repo.value.baseBranch)} must be a branch name, such as main.`);
-    const folder = await checkTrialFolder(repo.value, { create: false });
+    const folder = await checkWorktreeFolder(repo.value, { create: false });
     if (!folder.ok) return refuse("invalid_request", `Tokama will not use this worktree folder: ${folder.error.message}.`);
     const commit = await git.revParse(repo.value.path, `${repo.value.baseBranch}^{commit}`);
     if (!commit.ok) return refuse("invalid_request", `The base branch ${shown(repo.value.baseBranch)} was not found in this repo.`);

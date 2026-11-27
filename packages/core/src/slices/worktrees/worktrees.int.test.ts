@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -126,6 +126,39 @@ describe("createWorktree", () => {
     expect(value(await findItemWorktree(git, repo, ITEM_A))).toEqual(created);
     // Another item's worktree is not this item's.
     expect(value(await findItemWorktree(git, repo, ITEM_B))).toBeUndefined();
+  });
+
+  describe("a worktree folder that is a link", () => {
+    let outside: string;
+    beforeEach(() => {
+      outside = join(root, "outside");
+      mkdirSync(outside);
+    });
+    const refused = async () => {
+      expect(await createWorktree(git, repo, ITEM_A)).toMatchObject({ ok: false, error: { reason: "folder" } });
+      expect(readdirSync(outside)).toEqual([]);
+      expect(await plain(repo.path, "branch", "--list", "tokama/*")).toBe("");
+      expect(await plain(repo.path, "worktree", "list", "--porcelain")).not.toContain("0b9f12ab");
+    };
+
+    it("refuses a linked top folder (.tokama) and makes nothing behind it", SLOW, async () => {
+      symlinkSync(outside, join(repo.path, ".tokama"));
+      await refused();
+    });
+
+    it("refuses a linked last part (.tokama/wt) and keeps the folder out of the exclude", SLOW, async () => {
+      mkdirSync(join(repo.path, ".tokama"));
+      symlinkSync(outside, join(repo.path, ".tokama", "wt"));
+      await refused();
+      expect(exclude()).not.toContain("/.tokama/wt/");
+    });
+
+    it("refuses a link to a folder inside the repo too", SLOW, async () => {
+      mkdirSync(join(repo.path, "real-wt"));
+      symlinkSync(join(repo.path, "real-wt"), join(repo.path, ".tokama"));
+      expect(await createWorktree(git, repo, ITEM_A)).toMatchObject({ ok: false, error: { reason: "folder" } });
+      expect(readdirSync(join(repo.path, "real-wt"))).toEqual([]);
+    });
   });
 
   it("takes the short id from the random tail of the item id", () => {

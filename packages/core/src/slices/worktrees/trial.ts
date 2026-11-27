@@ -2,12 +2,11 @@
 // `<repo>/<worktree folder>/try-<8 hex>` next to the item worktrees. A trial worktree is only ever
 // removed by its exact folder name and only while git lists it as detached, so an item's
 // `tokama/*` worktree is never touched.
-import { lstat, mkdir, realpath, rmdir } from "node:fs/promises";
+import { rmdir } from "node:fs/promises";
 import { basename, dirname, join, sep } from "node:path";
 import type { Git } from "../../kernel/git/index.js";
-import { hasCode } from "../../kernel/errno/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
-import { excludeFolder, normalizeFolder, real, removeEntries, type WorktreeError, type WorktreeRepo } from "./worktree.js";
+import { checkWorktreeFolder, excludeFolder, normalizeFolder, real, removeEntries, type WorktreeError, type WorktreeRepo } from "./worktree.js";
 
 const TRIAL_NAME = /^try-[0-9a-f]{8}$/;
 
@@ -19,47 +18,9 @@ export const trialWorktreePath = (repo: WorktreeRepo, trialId: string): string =
 
 const refuse = (reason: WorktreeError["reason"], message: string): Result<never, WorktreeError> => err({ reason, message });
 
-/**
- * Walks the worktree folder from the repo's real path, one part at a time. A part that is a link
- * or not a folder is refused (a cloned repo can carry a tracked link that points anywhere). With
- * `create`, missing parts are made one by one, never with a recursive mkdir that would follow a
- * link. Returns the folder's real path.
- */
-export async function checkTrialFolder(repo: WorktreeRepo, options: { readonly create: boolean }): Promise<Result<string, WorktreeError>> {
-  let current: string;
-  try {
-    current = await realpath(repo.path);
-  } catch (error) {
-    return refuse("folder", `the repo folder cannot be read: ${(error as Error).message}`);
-  }
-  const root = current;
-  for (const part of normalizeFolder(repo.worktreeFolder).split("/")) {
-    current = join(current, part);
-    try {
-      let info = await lstat(current).catch((error: unknown) => {
-        if (hasCode(error, "ENOENT")) return undefined;
-        throw error;
-      });
-      if (info === undefined) {
-        if (!options.create) return ok(current);
-        await mkdir(current).catch((error: unknown) => {
-          if (!hasCode(error, "EEXIST")) throw error;
-        });
-        info = await lstat(current);
-      }
-      if (info.isSymbolicLink()) return refuse("folder", `the worktree folder passes through a link: ${part}`);
-      if (!info.isDirectory()) return refuse("folder", `the worktree folder passes through something that is not a folder: ${part}`);
-    } catch (error) {
-      return refuse("folder", (error as Error).message);
-    }
-  }
-  const inside = (await real(current)).startsWith(`${root}${sep}`);
-  return inside ? ok(current) : refuse("folder", "the worktree folder is outside the repo");
-}
-
 /** Makes the trial's detached worktree at `commit` (a full object id). The folder is checked first and added to the repo's git exclude. */
 export async function createTrialWorktree(git: Git, repo: WorktreeRepo, trialId: string, commit: string): Promise<Result<string, WorktreeError>> {
-  const folder = await checkTrialFolder(repo, { create: true });
+  const folder = await checkWorktreeFolder(repo, { create: true });
   if (!folder.ok) return folder;
   const excluded = await excludeFolder(git, repo);
   if (!excluded.ok) return excluded;

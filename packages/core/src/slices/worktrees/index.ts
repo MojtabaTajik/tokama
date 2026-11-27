@@ -1,9 +1,10 @@
 // Public surface of the worktrees slice.
 export { commitItem, commitMessage, stageItem, type CommitError, type CommitErrorReason } from "./commit.js";
 export { buildDiff, gitQuoted, treeDiff, type DiffError, type TreeDiff } from "./diff.js";
-export { checkTrialFolder, createTrialWorktree, removeTrialWorktree, trialFolderName, trialWorktreePath } from "./trial.js";
+export { createTrialWorktree, removeTrialWorktree, trialFolderName, trialWorktreePath } from "./trial.js";
 export { worktreeSnapshot, type FileSnapshot, type FileState } from "./snapshot.js";
 export {
+  checkWorktreeFolder,
   createWorktree,
   discardWorktree,
   findItemWorktree,
