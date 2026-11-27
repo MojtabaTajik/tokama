@@ -63,7 +63,7 @@ export { runsInCloud } from "./slices/prompting/index.js";
 // Git and child processes, for the engine service's run loop and its startup checks.
 export { MIN_GIT_VERSION, supportsNoLazyFetch } from "./kernel/git/index.js";
 export type { RunRequest, RunResult } from "./kernel/process/index.js";
-export type { AgentCallRequest, AgentRuntime, AiCliAdapter, AiCliLaunch, LocalUsageMessage, LogMark, LogScanFn, RepoOfFn, RepoPaths, ToolLimits } from "./kernel/ports/index.js";
+export type { AgentCallRequest, AgentRuntime, AiCliAdapter, AiCliLaunch, LocalUsageMessage, LogMark, LogScanFn, ToolLimits } from "./kernel/ports/index.js";
 // The AI CLI adapters this build has, in id order. An adapter can be removed, so callers loop over the list.
 import * as adapters from "./composition.js";
 import { collectAiCliAdapters } from "./kernel/ports/index.js";
@@ -107,16 +107,14 @@ export {
   callWeight,
   choosePlan,
   closedWindows,
+  isWeekly,
   itemUsageOf,
   keepPast,
   localDate,
   priceOf,
-  pricedEntry,
   PRICES_AS_OF,
-  rangeStart,
   readPast,
   summarizeUsage,
-  totalTokens,
   windowWeight,
   withForecast,
   type CallLogs,
@@ -126,7 +124,6 @@ export {
   type HelperCallRow,
   type PlanReading,
   type RunItem,
-  type UsageEntry,
   type UsageRow,
   type Weight,
   type WeekInput,
@@ -213,12 +210,7 @@ export {
   type PlanSnapshot,
   type PlanWindow,
   type ItemUsage,
-  type UsageItem,
-  type UsageRange,
-  type UsageScope,
   type UsageWindow,
-  type LogScan,
-  type TokenSummary,
   type UsageReport,
   type UsageResult,
   type MachinePoint,

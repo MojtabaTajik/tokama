@@ -193,50 +193,43 @@ describe("agent call usage record", () => {
 
 describe("usage report", () => {
   const report = () => ({
-    range: 14,
     asOf: 1_760_000_000_000,
     pricesAsOf: "2026-11-03",
     clis: [
       { cliId: "claude-code", windows: [{ window: "five_hour", usedPercent: 36, resetsAt: 1_760_010_000_000 }], source: "request", asOf: 1_759_999_000_000, plan: "max", extraUsage: "off" },
       { cliId: "codex-cli", windows: [], note: "Codex comes later." },
     ],
-    days: [{ date: "2025-10-09", workflows: [{ templateId: "plan-and-build", tokens: 1200, costUsd: null, items: [{ itemId: ITEM_ID, title: "Add order export" }], itemCount: 1 }] }],
-    workflows: [{ templateId: "plan-and-build", tokens: 1200, costUsd: 0.5, calls: 2 }],
-    items: [
-      {
-        itemId: ITEM_ID,
-        title: "Add order export",
-        templateId: "plan-and-build",
-        agents: [{ agentId: "architect", cliId: "claude-code" }],
-        tokens: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 },
-        durationMs: 60_000,
-        costUsd: 0.5,
-        local: false,
-      },
-    ],
-    totals: { tokens: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 }, costUsd: 0.5, calls: 2, unpricedCalls: 0 },
+    today: {
+      items: [{ itemId: ITEM_ID, title: "Add order export", agents: [{ agentId: "architect", cliId: "claude-code" }], tokens: 10, durationMs: 60_000 }],
+      itemCount: 1,
+      tokens: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 },
+      durationMs: 60_000,
+    },
   });
 
-  it("accepts a report with unknown plan windows and unpriced costs", () => {
+  it("accepts a report with unknown plan windows", () => {
     expect(parseWith(UsageReportSchema, report())).toEqual({ ok: true, value: report() });
   });
 
+  it("refuses the day, workflow, model, repo and cost parts of the earlier report", () => {
+    for (const patch of [{ range: 14 }, { scope: "all" }, { days: [] }, { workflows: [] }, { items: [] }, { totals: {} }, { models: [] }, { repos: [] }, { scan: {} }, { helpers: [] }]) {
+      expect(parseWith(UsageReportSchema, { ...report(), ...patch }).ok).toBe(false);
+    }
+  });
+
   it.each([
-    ["a range the query does not offer", { range: 7 }, "range"],
     ["a price date that is not a date", { pricesAsOf: "November" }, "pricesAsOf"],
     ["an unknown plan source", { clis: [{ cliId: "claude-code", windows: [], source: "guess" }] }, "clis.0.source"],
   ])("refuses %s", (_label, patch, path) => {
     expect(paths(parseWith(UsageReportSchema, { ...report(), ...patch }))).toContain(path);
   });
 
-  it("refuses a usage query for another range", () => {
-    expect(parseQuery({ type: "usage", range: 7 }).ok).toBe(false);
-    expect(parseQuery({ type: "usage", range: 90 }).ok).toBe(true);
-  });
-
-  it("takes the weekly window the query asks for, and no other", () => {
-    expect(parseQuery({ type: "usage", range: 90, window: "previous" }).ok).toBe(true);
-    expect(parseQuery({ type: "usage", range: 90, window: "next" }).ok).toBe(false);
+  it("takes the weekly window the query asks for, and no other; the range and scope are gone", () => {
+    expect(parseQuery({ type: "usage" }).ok).toBe(true);
+    expect(parseQuery({ type: "usage", window: "previous" }).ok).toBe(true);
+    expect(parseQuery({ type: "usage", window: "next" }).ok).toBe(false);
+    expect(parseQuery({ type: "usage", range: 90 }).ok).toBe(false);
+    expect(parseQuery({ type: "usage", scope: "all" }).ok).toBe(false);
   });
 
   // The usage schemas are strict, so an older client cannot ignore a field it does not know: these
@@ -397,7 +390,7 @@ describe("engine API messages", () => {
     { apiVersion: API_VERSION, kind: "reply", requestId: "r5", result: { ok: false, error: { code: "not_found", message: "no item" } } },
     { apiVersion: API_VERSION, kind: "event", seq: 0, event: { type: "item_updated", item: item() } },
     { apiVersion: API_VERSION, kind: "event", seq: 1, event: { type: "usage_changed" } },
-    { apiVersion: API_VERSION, kind: "query", requestId: "r8", query: { type: "usage", range: 30 } },
+    { apiVersion: API_VERSION, kind: "query", requestId: "r8", query: { type: "usage", window: "previous" } },
     { apiVersion: API_VERSION, kind: "query", requestId: "r9", query: { type: "item_diff", itemId: ITEM_ID } },
   ];
 

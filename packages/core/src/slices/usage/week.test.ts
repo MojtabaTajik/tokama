@@ -27,7 +27,7 @@ function buildItem(endedAt: number, over: Partial<AgentCallUsage> = {}, repoIds:
 }
 
 function report(items: RunItem[], clis: CliPlan[], extra: Partial<NonNullable<SummaryInput["week"]>> = {}, helperCalls: SummaryInput["helperCalls"] = []): UsageReport {
-  const out = summarizeUsage({ rows: [], helperCalls, range: 90, now: NOW, clis, week: { items, past: {}, logs: { "claude-code": logs() }, ...extra } });
+  const out = summarizeUsage({ rows: [], helperCalls, now: NOW, clis, week: { items, past: {}, logs: { "claude-code": logs() }, ...extra } });
   expect(UsageReportSchema.safeParse(out).success).toBe(true);
   return out;
 }
@@ -76,7 +76,7 @@ describe("the week block", () => {
     expect(report([buildItem(NOW - DAY)], [plan(10)]).week?.limits[0]).toHaveProperty("tokamaPercent");
 
     const past = (usedPercent: number): PastWindow => ({ window: "weekly_all", startsAt: WEEK_START - 7 * DAY, endsAt: WEEK_START, usedPercent, weight: { tokama: 4, all: 8 }, pricesAsOf: "2025-10-01" });
-    const before = (usedPercent: number) => summarizeUsage({ rows: [], range: 90, now: NOW, clis: [plan(30)], week: { window: "previous", items: [buildItem(WEEK_START - 3 * DAY)], past: { "claude-code": [past(usedPercent)] } } }).week;
+    const before = (usedPercent: number) => summarizeUsage({ rows: [], now: NOW, clis: [plan(30)], week: { window: "previous", items: [buildItem(WEEK_START - 3 * DAY)], past: { "claude-code": [past(usedPercent)] } } }).week;
     expect(before(9.9)?.limits[0]).not.toHaveProperty("tokamaPercent");
     expect(before(10)?.limits[0]).toMatchObject({ tokamaPercent: 5, outsidePercent: 5 });
   });
@@ -92,7 +92,7 @@ describe("the week block", () => {
   it("covers the window before: its limit and use from the stored list, and its calls from their own time", () => {
     const past: PastWindow = { window: "weekly_all", startsAt: WEEK_START - 7 * DAY, endsAt: WEEK_START + 1000, usedPercent: 40, weight: { tokama: 4, all: 8 }, pricesAsOf: "2025-10-01" };
     const items = [buildItem(WEEK_START - 3 * DAY), buildItem(NOW - DAY)];
-    const { week } = summarizeUsage({ rows: [], range: 90, now: NOW, clis: [plan(60)], week: { window: "previous", items, past: { "claude-code": [past] } } });
+    const { week } = summarizeUsage({ rows: [], now: NOW, clis: [plan(60)], week: { window: "previous", items, past: { "claude-code": [past] } } });
     expect(week?.window).toBe("previous");
     expect(week?.limits).toEqual([{ cliId: "claude-code", window: "weekly_all", startsAt: past.startsAt, endsAt: past.endsAt, usedPercent: 40, tokamaPercent: 20, outsidePercent: 20 }]);
     expect(week?.steps).toHaveLength(1);
@@ -105,7 +105,7 @@ describe("the week block", () => {
     const past: PastWindow = { window: "weekly_all", startsAt: WEEK_START - 7 * DAY, endsAt: WEEK_START, usedPercent: 50, weight: { tokama: 1, all: 2 }, pricesAsOf: "2024-01-01" };
     const cheap = buildItem(WEEK_START - 3 * DAY, { model: "claude-haiku-5-5" });
     const dear = buildItem(WEEK_START - 2 * DAY);
-    const { week } = summarizeUsage({ rows: [], range: 90, now: NOW, clis: [plan(60)], week: { window: "previous", items: [cheap, dear], past: { "claude-code": [past] } } });
+    const { week } = summarizeUsage({ rows: [], now: NOW, clis: [plan(60)], week: { window: "previous", items: [cheap, dear], past: { "claude-code": [past] } } });
     expect(week?.limits[0]).toMatchObject({ tokamaPercent: 25, outsidePercent: 25 });
     // 0.1 and 4 of 4.1: 25% of the limit shared in that proportion.
     const shares = Object.fromEntries((week?.steps ?? []).map((row) => [row.model, row.sharePercent]));
@@ -172,7 +172,7 @@ describe("the week block", () => {
   });
 
   it("is absent without items, and the old blocks stay", () => {
-    const old = summarizeUsage({ rows: [], range: 14, now: NOW, clis: [] });
+    const old = summarizeUsage({ rows: [], now: NOW, clis: [] });
     expect(old).not.toHaveProperty("week");
     expect(old).not.toHaveProperty("stepModels");
     expect(old).not.toHaveProperty("agentModels");

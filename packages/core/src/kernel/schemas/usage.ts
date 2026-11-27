@@ -1,8 +1,8 @@
 // Agent call shapes: the events an agent runtime emits, the usage record stored per call, and the
-// usage report the engine serves: plan windows per AI CLI, and tokens and estimated cost per day,
-// workflow and item.
+// usage report the engine serves: plan windows per AI CLI with a forecast, what used each limit in
+// a week, retries, each model's record per step and agent, and today's totals.
 import { z } from "zod";
-import { AgentIdSchema, AiCliIdSchema, CallIdSchema, EpochMsSchema, HelperIdSchema, ItemIdSchema, RepoIdSchema, StepIdSchema } from "./ids.js";
+import { AgentIdSchema, AiCliIdSchema, CallIdSchema, EpochMsSchema, ItemIdSchema, RepoIdSchema, StepIdSchema } from "./ids.js";
 
 const count = z.int().nonnegative();
 
@@ -131,9 +131,6 @@ export const AgentCallUsageSchema = z
   })
   .refine((usage) => usage.endedAt >= usage.startedAt, { message: "endedAt is before startedAt", path: ["endedAt"] });
 
-/** The days the usage report covers, ending today. */
-export const UsageRangeSchema = z.union([z.literal(14), z.literal(30), z.literal(90)]);
-
 /** Where a plan window reading came from, best first. */
 export const PlanSourceSchema = z.enum([
   /** The CLI answered a usage request on demand (Claude Code's `get_usage`). */
@@ -202,63 +199,11 @@ export const CliPlanSchema = z.strictObject({
 });
 
 const tokens = z.int().nonnegative();
-/** US dollars; null when no call of the group could be priced. */
-const cost = z.number().nonnegative().nullable();
 /**
  * The workflow key exactly as item records carry it, so clients match it with the setup's templates
  * the same way they match items.
  */
 const templateId = z.string().min(1).max(200);
-
-/**
- * Which usage the report counts: `tokama`, the agent calls Tokama ran; `all`, every Claude Code
- * call on this machine from its session logs (Tokama's included), plus Tokama's calls on other CLIs.
- */
-export const UsageScopeSchema = z.enum(["tokama", "all"]);
-
-const percent = z.number().min(0).max(100);
-
-/** Where the tokens went, over the scope and range. */
-export const TokenSummarySchema = z.strictObject({
-  /** Every token: input, cache reads, cache writes and output. */
-  processed: tokens,
-  /** Input read from the prompt cache. */
-  cachedInput: tokens,
-  /** Cached input as a share of all input. */
-  cachedInputPercent: percent,
-  /** Input not read from the cache: plain input and cache writes. */
-  uncachedInput: tokens,
-  output: tokens,
-  /** What the cached input would have cost more at the input price; null when no cached model has a price. */
-  cacheSavingsUsd: cost,
-  /** The input price over the cache-read price, weighted by cached tokens: how many times cheaper the cache was. */
-  cacheSavingsFactor: z.number().min(0).nullable(),
-});
-
-/** Where the engine is in reading Claude Code's session logs, for the `all` scope. */
-export const LogScanSchema = z.strictObject({
-  /** `scanning`: the numbers grow until it ends. `unavailable`: see the note. */
-  state: z.enum(["scanning", "ready", "unavailable"]),
-  filesDone: z.int().nonnegative(),
-  filesTotal: z.int().nonnegative(),
-  /** When the last scan ended. */
-  asOf: EpochMsSchema.optional(),
-  note: z.string().min(1).max(500).optional(),
-});
-
-export const UsageItemSchema = z.strictObject({
-  itemId: ItemIdSchema,
-  title: z.string().min(1).max(200),
-  templateId,
-  /** Each agent once, in the order it first ran. */
-  agents: z.array(z.strictObject({ agentId: AgentIdSchema, cliId: AiCliIdSchema })).max(20),
-  tokens: TokenUsageSchema,
-  /** Wall time of the item's agent calls. */
-  durationMs: z.int().nonnegative(),
-  costUsd: cost,
-  /** Every call ran on a local model: it cost nothing. */
-  local: z.boolean(),
-});
 
 /** Which weekly window a report's `week` block covers: the one running now, or the one before it. */
 export const UsageWindowSchema = z.enum(["current", "previous"]);
@@ -345,47 +290,14 @@ export const ItemUsageSchema = z.strictObject({
 });
 
 export const UsageReportSchema = z.strictObject({
-  range: UsageRangeSchema,
   /** When the engine made the report. */
   asOf: EpochMsSchema,
   /** The date of the price table the estimates use, `YYYY-MM-DD`. */
   pricesAsOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   clis: z.array(CliPlanSchema).max(10),
-  /** The scope counted; absent means `tokama`. */
-  scope: UsageScopeSchema.optional(),
-  /** Every day of the range, oldest first, in the engine's local time. */
-  days: z
-    .array(
-      z.strictObject({
-        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-        /** The scope's tokens that day. */
-        tokens: tokens.optional(),
-        /** The scope's estimated cost that day. */
-        costUsd: cost.optional(),
-        /** Tokama's workflows with calls that day, whatever the scope. */
-        workflows: z
-          .array(
-            z.strictObject({
-              templateId,
-              tokens,
-              costUsd: cost,
-              /** The items with calls that day, most tokens first, at most five. */
-              items: z.array(z.strictObject({ itemId: ItemIdSchema, title: z.string().min(1).max(200) })).max(5),
-              itemCount: z.int().nonnegative(),
-            }),
-          )
-          .max(100),
-      }),
-    )
-    .max(90),
-  /** Totals per Tokama workflow over the range, most tokens first, whatever the scope. */
-  workflows: z.array(z.strictObject({ templateId, tokens, costUsd: cost, calls: z.int().nonnegative() })).max(100),
-  /** The Tokama items with the most tokens over the range, at most 50, whatever the scope. */
-  items: z.array(UsageItemSchema).max(50),
   /**
-   * Tokama's agent calls that ended on the current local day (a call over midnight counts in full),
-   * whatever the range and scope: the items with the most tokens, and the day's totals. Absent
-   * from older engines.
+   * Tokama's agent calls that ended on the current local day (a call over midnight counts in full):
+   * the items with the most tokens, and the day's totals.
    */
   today: z
     .strictObject({
@@ -408,42 +320,6 @@ export const UsageReportSchema = z.strictObject({
       durationMs: z.int().nonnegative(),
     })
     .optional(),
-  /** The scope's totals. */
-  totals: z.strictObject({
-    tokens: TokenUsageSchema,
-    costUsd: cost,
-    /** Agent calls; in the `all` scope, each message of Claude Code's logs counts as one. */
-    calls: z.int().nonnegative(),
-    /** Calls neither the CLI nor the price table could price; their cost is left out. */
-    unpricedCalls: z.int().nonnegative(),
-  }),
-  tokenSummary: TokenSummarySchema.optional(),
-  /** The scope's tokens and cost per model, most expensive first, at most 50. */
-  models: z
-    .array(
-      z.strictObject({
-        model: z.string().min(1).max(200),
-        cliId: AiCliIdSchema,
-        tokens,
-        costUsd: cost,
-        /** The model's share of the priced cost; null when the model has no price. */
-        sharePercent: percent.nullable(),
-      }),
-    )
-    .max(50)
-    .optional(),
-  /** The scope's tokens and cost per repo, most tokens first. `repoId` null: work outside the configured repos. */
-  repos: z.array(z.strictObject({ repoId: RepoIdSchema.nullable(), tokens, costUsd: cost })).max(100).optional(),
-  /** Present in the `all` scope. */
-  scan: LogScanSchema.optional(),
-  /**
-   * Tokama's own helper calls over the range, most tokens first, whatever the scope. Absent from
-   * older engines and when there were none. `totals`, `days[].tokens` and `days[].costUsd`, the
-   * token summary, `models`, `repos` and `today.tokens` already include these calls, so this list
-   * is a breakdown of part of them: never add it on top. `workflows`, `items` and
-   * `days[].workflows` list workflows and their items only.
-   */
-  helpers: z.array(z.strictObject({ helperId: HelperIdSchema, tokens: TokenUsageSchema, costUsd: cost, calls: z.int().nonnegative() })).max(20).optional(),
   /**
    * What used each AI CLI's limit in its weekly window (the one running now, or the one before):
    * Tokama's use by step, item, helper and retry cause. An AI CLI without a weekly window counts its
@@ -505,7 +381,6 @@ export type RateLimitWindow = z.output<typeof RateLimitWindowSchema>;
 export type AgentCallEvent = z.output<typeof AgentCallEventSchema>;
 export type AgentCallUsage = z.output<typeof AgentCallUsageSchema>;
 export type PlanSnapshot = z.output<typeof PlanSnapshotSchema>;
-export type UsageRange = z.output<typeof UsageRangeSchema>;
 export type PlanSource = z.output<typeof PlanSourceSchema>;
 export type PlanWindow = z.output<typeof PlanWindowSchema>;
 export type CliPlan = z.output<typeof CliPlanSchema>;
@@ -519,10 +394,6 @@ export interface PlanReading {
   /** `pay_per_use`: the login bills per call and has no windows (an API key). */
   readonly billing?: "pay_per_use";
 }
-export type UsageItem = z.output<typeof UsageItemSchema>;
-export type UsageScope = z.output<typeof UsageScopeSchema>;
-export type TokenSummary = z.output<typeof TokenSummarySchema>;
-export type LogScan = z.output<typeof LogScanSchema>;
 export type UsageReport = z.output<typeof UsageReportSchema>;
 export type UsageWindow = z.output<typeof UsageWindowSchema>;
 export type ItemUsage = z.output<typeof ItemUsageSchema>;

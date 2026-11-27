@@ -59,23 +59,10 @@ export interface LogScanResult {
   readonly skippedLines: number;
   /** The key of every log file that exists now; marks of other files can go. */
   readonly fileKeys: readonly string[];
-  /** Project folder names by project hash, to match them to repos. Kept in memory only. */
-  readonly projects: ReadonlyMap<string, string>;
 }
 
 /** Reads every session log under the root from where its last read ended. */
 export type LogScanFn = (options: LogScanOptions) => Promise<LogScanResult>;
-
-export interface RepoPaths {
-  readonly id: string;
-  /** The repo's folder; also its real path when that differs. */
-  readonly paths: readonly string[];
-  /** The repo's worktree folder, relative to the repo, e.g. `.tokama-wt`. */
-  readonly worktreeFolder: string;
-}
-
-/** The repo a project folder of the CLI's logs belongs to; undefined for any other folder. */
-export type RepoOfFn = (folder: string, repos: readonly RepoPaths[]) => string | undefined;
 
 export interface AiCliAdapter {
   readonly kind: "ai-cli";
@@ -104,7 +91,6 @@ export interface AiCliAdapter {
     /** The folder holding the logs, from the user's home folder. */
     root(home: string): string;
     scan: LogScanFn;
-    repoOf: RepoOfFn;
   };
 }
 
