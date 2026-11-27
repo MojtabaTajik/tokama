@@ -176,6 +176,7 @@ export function About({ bridge, connection, onClose, whatsNew, openVersion, runn
                 );
               })}
             </ul>
+            <p className="about-soft">Claude and the Claude logo are trademarks of Anthropic. The OpenAI logo is a trademark of OpenAI. The Apache-2.0 licence does not license these marks.</p>
           </section>
 
           <section id="licence" aria-label="Licence" className="about-foot">
