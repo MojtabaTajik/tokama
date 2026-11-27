@@ -154,8 +154,10 @@ export function createFinisher(deps: FinishDeps): Finisher {
   /** Why the action can't start now, in plain words; undefined when it can. */
   const refusal = (item: StoredItem, action: FinishAction, repo: Repo | undefined): Result<never, FinishError> | undefined => {
     // An item that ended on an answer with no change has no commit; its unused worktree can still be discarded.
+    // Only one that ended by Finish on a no-change answer: another no_action_needed item may hold changes.
     const ended = item.outcome?.kind;
-    if (ended !== "done" && !(ended === "no_action_needed" && action === "discard")) return fail("invalid_state", "Only a done item can be merged, opened as a pull request or discarded.");
+    const answered = ended === "no_action_needed" && item.decisions.some((d) => d.proposes === "no_change" && d.resolved?.choice === "no_action_needed");
+    if (ended !== "done" && !(answered && action === "discard")) return fail("invalid_state", "Only a done item can be merged, opened as a pull request or discarded.");
     if (item.worktrees[0] === undefined) return fail("invalid_state", "The item has no worktree.");
     const finish = item.finish;
     if (finish?.running !== undefined) return fail("invalid_state", `${LABEL[finish.running]} is still running.`);

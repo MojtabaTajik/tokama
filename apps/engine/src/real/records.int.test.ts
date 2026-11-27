@@ -360,10 +360,15 @@ describe("toItemRecord", () => {
       const ended = append(created({ names: ["Plan", "Build"] }), [
         { type: "worktree_added", repoId: "orders-api" as never, branch: "tokama/0b9f3c1e", dir: ".tokama/wt/item-0b9f3c1e", baseCommit: COMMIT },
         { type: "step_started", stepId: FIX },
+        { type: "decision_opened", decisionId: DECISION, kind: "plan_approval", stepId: FIX, choices: [{ id: "no_action_needed", label: "End" }, { id: "stop", label: "Stop" }], proposes: "no_change" },
+        { type: "decision_resolved", decisionId: DECISION, choice: "no_action_needed" },
         { type: "item_ended", outcome: "no_action_needed", detail: "No change needed: the answer is the result." },
-      ]);
-      const kept = toItemRecord(ended)!;
-      expect(kept.finish).toBeUndefined();
+      ] as never);
+      // The worktree is still there (files appeared in it, or its removal did not run): the record says so, and Discard can follow.
+      expect(toItemRecord(ended)!.finish).toEqual({ worktreeRemoved: false });
+      // An item ended by the quiet End: no action needed has no finish record at all.
+      const quiet = append(created(), [{ type: "worktree_added", repoId: "orders-api" as never, branch: "tokama/0b9f3c1e", dir: ".tokama/wt/item-0b9f3c1e", baseCommit: COMMIT }, { type: "item_ended", outcome: "no_action_needed" }]);
+      expect(toItemRecord(quiet)!.finish).toBeUndefined();
       const removed = toItemRecord(append(ended, [{ type: "finish_started", action: "discard" }, { type: "discarded", repoId: "orders-api" as never }]))!;
       expect(removed).toMatchObject({ state: "done", cardLine: "No change needed: the answer is the result.", outcome: { kind: "no_action_needed" }, finish: { worktreeRemoved: true } });
       expect(parseItemRecord(removed).ok).toBe(true);

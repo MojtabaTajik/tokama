@@ -187,8 +187,9 @@ export function toItemRecord(item: StoredItem): ItemRecord | undefined {
 /** A done item's worktree and what was done with it; undefined for other items. */
 function toFinish(item: StoredItem): ItemRecord["finish"] {
   const worktree = item.worktrees[0];
-  // An item that ended on an answer with no change has a finish record only once its unused worktree was removed (or kept after a failed removal).
-  if (worktree === undefined || (item.outcome?.kind !== "done" && !(item.outcome?.kind === "no_action_needed" && item.finish !== undefined))) return undefined;
+  // An item the engineer ended with Finish on a no-change answer has one too: its unused worktree is removed, or still there to discard.
+  const finished = item.outcome?.kind === "no_action_needed" && item.decisions.some((d) => d.proposes === "no_change" && d.resolved?.choice === "no_action_needed");
+  if (worktree === undefined || (item.outcome?.kind !== "done" && !finished)) return undefined;
   const stored = item.finish;
   const hosted = worktree.pushUrl === undefined ? undefined : hostedRepo(worktree.pushUrl);
   const failed = stored?.failed && cut(stored.failed.detail, 500);

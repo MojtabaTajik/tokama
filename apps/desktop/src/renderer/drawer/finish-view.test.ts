@@ -85,10 +85,19 @@ describe("finishView: an item that ended on an answer with no change", () => {
   it("says nothing was committed once its worktree is removed, and offers nothing before", () => {
     const view = ended(finishView(noChangeDone, setup));
     expect([view.title, flat(view.detail), view.removable]).toEqual(["Nothing committed", `Worktree and branch removed · ${clock(noChangeDone.finish!.at!)} · the log is kept`, false]);
-    // Kept (files appeared in it) or still being removed: the item has no Finish section.
-    expect(finishView({ ...noChangeDone, finish: { worktreeRemoved: false } } as ItemRecord, setup)).toBeUndefined();
-    expect(finishView({ ...noChangeDone, finish: undefined } as ItemRecord, setup)).toBeUndefined();
     expect(finishActions(noChangeDone)).toEqual([]);
+    // The worktree is still there (files appeared in it, or its removal failed): Discard is the way out, and a refusal is said.
+    const kept = { ...noChangeDone, finish: { worktreeRemoved: false } } as ItemRecord;
+    expect(finishActions(kept)).toEqual(["discard"]);
+    expect(offer(finishView(kept, setup)).rows.map((row) => row.action)).toEqual(["discard"]);
+    const failed = { ...noChangeDone, finish: { worktreeRemoved: false, failed: { action: "discard", detail: "busy", at: AT } } } as ItemRecord;
+    expect(offer(finishView(failed, setup)).rows[0]!.notice).toMatchObject({ body: "busy" });
+    expect(finishActions({ ...kept, finish: { worktreeRemoved: false, running: "discard" } } as ItemRecord)).toEqual([]);
+    expect(finishView({ ...noChangeDone, finish: undefined } as ItemRecord, setup)).toBeUndefined();
+    // The quiet End: no action needed is no such answer: nothing is offered.
+    const quiet = { ...kept, steps: kept.steps.map((step) => ({ ...step, attempts: [{ attempt: 1, result: "passed", checks: [] }] })) } as unknown as ItemRecord;
+    expect(finishActions(quiet)).toEqual([]);
+    expect(finishView(quiet, setup)).toBeUndefined();
     expect(isDiscarded(noChangeDone)).toBe(false);
     expect(finishNote(noChangeDone)).toBeUndefined();
   });

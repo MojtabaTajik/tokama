@@ -3,6 +3,7 @@
 // ended. Pure functions, tested without React. Every state has a symbol and a word, so colour is
 // never the only signal.
 import type { FinishAction, FinishRefusal, GitChange, ItemRecord, Setup } from "@tokama/core";
+import { answeredNoChange } from "../../shared/item-said.js";
 import { clock } from "../format/time.js";
 import { type Mark, markOf } from "../ui/status.js";
 
@@ -63,9 +64,11 @@ const ACTION_WORD: Record<FinishAction, string> = { merge: "Merge", pull_request
  * The actions a done item offers now: core's `finishActions`, restated because the renderer may
  * import only types from core.
  */
-export function finishActions(item: Pick<ItemRecord, "outcome" | "finish">): FinishAction[] {
+export function finishActions(item: Pick<ItemRecord, "outcome" | "finish"> & Partial<Pick<ItemRecord, "steps">>): FinishAction[] {
   const { finish, outcome } = item;
-  if (outcome?.kind !== "done" || finish === undefined || finish.running !== undefined || finish.worktreeRemoved) return [];
+  // An item that ended on a no-change answer whose unused worktree is still there (files appeared in it, or the removal failed) can be discarded.
+  const answered = outcome?.kind === "no_action_needed" && item.steps !== undefined && answeredNoChange({ outcome, steps: item.steps });
+  if ((outcome?.kind !== "done" && !answered) || finish === undefined || finish.running !== undefined || finish.worktreeRemoved) return [];
   const committed = (outcome.commits?.length ?? 0) > 0 && finish.merged === undefined && finish.pullRequest === undefined;
   return [...(committed ? (["merge", "pull_request"] as const) : []), "discard"];
 }
@@ -106,10 +109,10 @@ const REFUSAL_HEADLINE: Record<FinishRefusal, (base: string) => string> = {
 
 const ACCEPT: FinishButton = { label: "I made this change", action: "accept_git_changes", tone: "plain" };
 
-export function finishView(item: Pick<ItemRecord, "outcome" | "finish" | "repoIds" | "privacy">, setup: Setup | undefined): FinishView | undefined {
+export function finishView(item: Pick<ItemRecord, "outcome" | "finish" | "repoIds" | "privacy"> & Partial<Pick<ItemRecord, "steps">>, setup: Setup | undefined): FinishView | undefined {
   const finish = item.finish;
-  // An item that ended on an answer with no change shows how it ended once its unused worktree is removed, and offers nothing.
-  const answered = item.outcome?.kind === "no_action_needed" && finish?.worktreeRemoved === true;
+  // An item that ended on an answer with no change is shown like a done one without a commit: how it ended once its unused worktree is removed, else Discard.
+  const answered = item.outcome?.kind === "no_action_needed" && item.steps !== undefined && answeredNoChange({ outcome: item.outcome, steps: item.steps });
   if ((item.outcome?.kind !== "done" && !answered) || finish === undefined) return undefined;
   const base = baseBranchOf(item, setup);
   const branch = branchOf(item);

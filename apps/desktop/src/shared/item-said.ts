@@ -29,7 +29,9 @@ function latestSaid(step: Pick<StepRecord, "attempts">): { said: Said; attempt: 
  * of the last step that said anything. Undefined when no step said anything, as for an item from
  * before this existed.
  */
-export function saidOf(item: Pick<ItemRecord, "steps">): ItemSaid | undefined {
+export function saidOf(item: Pick<ItemRecord, "steps"> & Partial<Pick<ItemRecord, "outcome">>): ItemSaid | undefined {
+  const answered = noChangeSaidOf(item);
+  if (answered !== undefined) return answered;
   const pick = (accept: (step: StepRecord) => boolean, find: typeof lastSaid): ItemSaid | undefined => {
     for (let stepIndex = item.steps.length - 1; stepIndex >= 0; stepIndex--) {
       const step = item.steps[stepIndex]!;
@@ -43,12 +45,26 @@ export function saidOf(item: Pick<ItemRecord, "steps">): ItemSaid | undefined {
   return pick(worked, lastSaid) ?? pick((step) => !worked(step), latestSaid);
 }
 
+/**
+ * For an item that ended with no action needed: the words of the step whose answer said no change
+ * is needed, whichever step that is (an earlier step may have passed). The flag is set only when
+ * the engine offered it and the step changed nothing.
+ */
+function noChangeSaidOf(item: Pick<ItemRecord, "steps"> & Partial<Pick<ItemRecord, "outcome">>): ItemSaid | undefined {
+  if (item.outcome?.kind !== "no_action_needed") return undefined;
+  for (let stepIndex = item.steps.length - 1; stepIndex >= 0; stepIndex--) {
+    const found = lastSaid(item.steps[stepIndex]!);
+    if (found?.said.noChange === true) return { ...found, stepIndex };
+  }
+  return undefined;
+}
+
 /** The item ended on the answer of a step you approve, and its agent said no change is needed: the answer is the result. */
-export const answeredNoChange = (item: Pick<ItemRecord, "outcome" | "steps">): boolean => item.outcome?.kind === "no_action_needed" && saidOf(item)?.said.noChange === true;
+export const answeredNoChange = (item: Pick<ItemRecord, "outcome" | "steps">): boolean => noChangeSaidOf(item) !== undefined;
 
 /** "no change needed · ended at Plan, step 1 of 3" for such an item, so its row says why it did not go on. */
 export function noChangeLine(item: Pick<ItemRecord, "outcome" | "steps">): string | undefined {
-  const found = answeredNoChange(item) ? saidOf(item) : undefined;
+  const found = noChangeSaidOf(item);
   const step = found === undefined ? undefined : item.steps[found.stepIndex];
   return found === undefined || step === undefined ? undefined : `no change needed · ended at ${step.name}, step ${found.stepIndex + 1} of ${item.steps.length}`;
 }

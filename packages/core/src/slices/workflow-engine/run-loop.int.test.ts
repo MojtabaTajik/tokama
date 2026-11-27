@@ -1750,5 +1750,8 @@ describe("run loop: a step you approve says no change is needed", () => {
     expect(item(id).outcome).toMatchObject({ kind: "no_action_needed", detail: "Ended: no action needed." });
     expect(item(id).finish).toBeUndefined();
     expect(existsSync(worktreeDir(id))).toBe(true);
+    // Its worktree holds changes: the discard command refuses it.
+    expect(await current.finishItem(id, "discard")).toMatchObject({ ok: false, error: { code: "invalid_state" } });
+    expect(existsSync(worktreeDir(id))).toBe(true);
   });
 });
