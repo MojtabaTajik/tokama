@@ -1,14 +1,13 @@
-// One flat kanban card: the template icon and repos with the privacy label, a status line, the
+// One flat kanban card: the repos with the privacy label, a status line, the
 // title, the engine's one mono line (a done or failed card shows its facts instead) and the agent. A card that works right now has a breathing dot
 // before "working" or "checking" and a thin light along its top edge; cards that wait or ended are
 // still, with a mark and words (an ended one with its time and total). The card is a native
 // button, so Enter and Space select it as a click does. Engine text is rendered as React text only.
-import type { AgentSummary, ItemRecord, TemplateSummary } from "@tokama/core";
+import type { AgentSummary, ItemRecord } from "@tokama/core";
 import { PRIVACY } from "../drawer/describe.js";
-import { LiveDot } from "../drawer/Progress.js";
 import { cardStatus, rowAgent } from "../model.js";
-import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { Button } from "../ui/Button.js";
+import { LiveDot } from "../ui/LiveDot.js";
 import { AgentChip } from "../ui/agent.js";
 import { Facts } from "../ui/Facts.js";
 import { factsOf } from "../../shared/item-facts.js";
@@ -16,14 +15,13 @@ import { factsOf } from "../../shared/item-facts.js";
 export interface CardProps {
   readonly item: ItemRecord;
   readonly agents: readonly AgentSummary[];
-  readonly template: TemplateSummary;
   readonly selected: boolean;
   readonly onSelect: (itemId: string) => void;
   /** For an ended card's day or clock time. */
   readonly now: number;
 }
 
-export function Card({ item, agents, template, selected, onSelect, now }: CardProps) {
+export function Card({ item, agents, selected, onSelect, now }: CardProps) {
   const status = cardStatus(item, now);
   const agent = rowAgent(item, agents);
   // Until a Merge, a pull request or a discard has ended it, a done card and a failed card say what
@@ -34,7 +32,6 @@ export function Card({ item, agents, template, selected, onSelect, now }: CardPr
     <Button variant="plain" className="card" data-item-id={item.id} data-state={item.state} data-live={status?.live === true} aria-current={selected ? "true" : undefined} onClick={() => onSelect(item.id)}>
       {status?.live === true && <span className="card-edge" aria-hidden="true" />}
       <span className="card-meta">
-        <TemplateIcon icon={template.icon} color={template.color} />
         <span className="ellipsis mono">{item.repoIds.length > 0 ? item.repoIds.join(", ") : ""}</span>
         <span className="card-privacy">{PRIVACY[item.privacy]}</span>
       </span>

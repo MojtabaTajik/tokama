@@ -21,9 +21,10 @@ import {
   inView,
   listsFinished,
   needsYouCount,
-  pipelineOf,
   rowAgent,
+  rowLine,
   rowMark,
+  runningCount,
   showAllTime,
   type StatusFilter,
   summaryOf,
@@ -189,14 +190,19 @@ describe("groupItems", () => {
 });
 
 describe("badgesOf", () => {
-  it("counts needs you, failed today and running, in that order; queued items count nowhere", () => {
-    expect(badgesOver(items).map(({ symbol, count, word }) => `${symbol} ${count} ${word}`)).toEqual(["⏸ 1 needs you", "✕ 1 failed", "● 3 running"]);
+  it("counts needs you and failed today, in that order; running is no badge", () => {
+    expect(badgesOver(items).map(({ symbol, count, word }) => `${symbol} ${count} ${word}`)).toEqual(["⏸ 1 needs you", "✕ 1 failed"]);
   });
 
   it("leaves out zero counts", () => {
     expect(badgesOver([ITEMS.queued, ITEMS.done])).toEqual([]);
     expect(badgesOver([ITEMS.failedLastMonth])).toEqual([]);
-    expect(badgesOver([ITEMS.working]).map((badge) => badge.kind)).toEqual(["running"]);
+    expect(badgesOver([ITEMS.working])).toEqual([]);
+  });
+
+  it("counts the items that run, in words elsewhere", () => {
+    expect(runningCount(items)).toBe(3);
+    expect(runningCount([ITEMS.queued, ITEMS.done])).toBe(0);
   });
 
   it("says need for several", () => {
@@ -212,9 +218,8 @@ describe("summaryOf", () => {
 });
 
 describe("rowMark", () => {
-  it("reads an item in a checking step as checking, as its pipeline does", () => {
+  it("reads an item in a checking step as checking", () => {
     expect(rowMark(ITEMS.verifying)).toEqual({ symbol: "◐", word: "checking", tone: "live" });
-    expect(pipelineOf(ITEMS.verifying)[1]?.mark).toEqual(rowMark(ITEMS.verifying));
   });
 
   it("keeps the item's own mark otherwise", () => {
@@ -258,43 +263,54 @@ describe("attemptOf", () => {
   });
 });
 
-describe("pipelineOf", () => {
-  it("carries the attempt of each step", () => {
-    expect(pipelineOf(ITEMS.working).map((step) => step.attempt)).toEqual([1, 1, undefined]);
-    expect(pipelineOf(ITEMS.queued).map((step) => step.attempt)).toEqual([undefined, undefined, undefined, undefined]);
+describe("rowLine", () => {
+  const agents = setup.agents;
+  const attempt = (n: number, patch: object = {}) => ({ attempt: n, checks: [], ...patch });
+  const withAttempts = (item: ItemRecord, index: number, attempts: object[], extra: object = {}) =>
+    ({ ...item, steps: item.steps.map((step, i) => (i === index ? { ...step, attempts, ...extra } : step)) }) as ItemRecord;
+
+  it("says the step and its place in words", () => {
+    expect(rowLine(ITEMS.working, agents)).toMatchObject({ step: "Query logs, step 2 of 3", stepName: "Query logs" });
+    expect(rowLine(ITEMS.queued, agents)?.step).toBe("Plan, step 1 of 4");
+    expect(rowLine(ITEMS.needsYou, agents)?.step).toBe("Propose a fix, step 3 of 3");
   });
 
-  const symbols = (item: ItemRecord) => pipelineOf(item).map((step) => step.mark.symbol);
-
-  it("gives every step state its symbol and a word", () => {
-    expect(pipelineOf(ITEMS.needsYou).map((step) => `${step.mark.symbol} ${step.mark.word}`)).toEqual(["✓ passed", "✓ passed", "⏸ needs you"]);
-    expect(pipelineOf(ITEMS.working).map((step) => `${step.mark.symbol} ${step.mark.word}`)).toEqual(["✓ passed", "● running", "○ pending"]);
-    expect(symbols(ITEMS.failed)).toEqual(["✕", "○"]);
-    expect(symbols(ITEMS.stopped)).toEqual(["■", "○"]);
-    expect(symbols(ITEMS.queued)).toEqual(["○", "○", "○", "○"]);
+  it("adds the attempt from the second one, with the limit when the engine sent it", () => {
+    const again = withAttempts(ITEMS.working, 1, [attempt(1, { result: "failed" }), attempt(2, { startedAt: NOW - 5 * 60_000 })], { maxAttempts: 3 });
+    expect(rowLine(again, agents)?.step).toBe("Query logs, step 2 of 3, attempt 2 of 3");
+    expect(rowLine(withAttempts(ITEMS.working, 1, [attempt(1, { startedAt: NOW })]), agents)?.step).toBe("Query logs, step 2 of 3");
+    expect(rowLine(withAttempts(ITEMS.working, 1, [attempt(1, { result: "failed" }), attempt(2)]), agents)?.step).toBe("Query logs, step 2 of 3, attempt 2");
   });
 
-  it("shows a running step of the verifying stage as checking", () => {
-    expect(pipelineOf(ITEMS.verifying).map((step) => `${step.mark.symbol} ${step.mark.word}`)).toEqual(["✓ passed", "◐ checking"]);
+  it("takes the running attempt's start for the step's time, only while the item runs", () => {
+    const running = withAttempts(ITEMS.working, 1, [attempt(1, { startedAt: NOW - 12 * 60_000 })]);
+    expect(rowLine(running, agents)?.since).toBe(NOW - 12 * 60_000);
+    expect(rowLine(ITEMS.needsYou, agents)?.since).toBeUndefined();
+    expect(rowLine(withAttempts(ITEMS.working, 1, [attempt(1, { startedAt: 1, result: "passed" })]), agents)?.since).toBeUndefined();
   });
 
-  it("marks only the step the item is in as current, and none once all passed", () => {
-    expect(pipelineOf(ITEMS.working).map((step) => step.current)).toEqual([false, true, false]);
-    expect(pipelineOf(ITEMS.queued).map((step) => step.current)).toEqual([true, false, false, false]);
-    expect(pipelineOf(ITEMS.done).some((step) => step.current)).toBe(false);
+  it("names the agent of the step, in its colour by join order; Tokama for a step it runs itself", () => {
+    expect(rowLine(ITEMS.needsYou, agents)?.agent).toMatchObject({ name: "Architect", hue: 1 });
+    expect(rowLine(ITEMS.verifying, agents)?.agent).toMatchObject({ name: "Tokama", hue: "neutral" });
+  });
+
+  it("is nothing for an item that ended: its facts say where it stopped", () => {
+    expect(rowLine(ITEMS.done, agents)).toBeUndefined();
+    expect(rowLine(ITEMS.failed, agents)).toBeUndefined();
+    expect(rowLine(ITEMS.stopped, agents)).toBeUndefined();
   });
 });
 
 describe("rowAgent", () => {
   const agents = setup.agents;
 
-  it("names the agent of the step the item is in, with its dot by join order", () => {
-    expect(rowAgent(ITEMS.needsYou, agents)).toMatchObject({ name: "Architect", dot: 1 });
-    expect(rowAgent(ITEMS.working, agents)).toMatchObject({ name: "Local builder", dot: 2 });
+  it("names the agent of the step the item is in, with its colour by join order", () => {
+    expect(rowAgent(ITEMS.needsYou, agents)).toMatchObject({ name: "Architect", hue: 1 });
+    expect(rowAgent(ITEMS.working, agents)).toMatchObject({ name: "Local builder", hue: 2 });
   });
 
   it("names Tokama for a step Tokama runs itself, and the last step's agent once all passed", () => {
-    expect(rowAgent(ITEMS.verifying, agents)).toMatchObject({ name: "Tokama", dot: "neutral" });
+    expect(rowAgent(ITEMS.verifying, agents)).toMatchObject({ name: "Tokama", hue: "neutral" });
     expect(rowAgent(ITEMS.done, agents)).toMatchObject({ name: "Tokama" });
   });
 

@@ -1,12 +1,12 @@
 // The sidebar is navigation only: "+ New work", "All work", then WORKFLOWS and REPOS. Each row
-// carries badges (needs you, failed today, running) that show only above zero, and a "+" that
+// carries badges (needs you, failed today) that show only above zero, All work also says how many run, and a "+" that
 // appears on hover or focus. Items are never listed here: they appear in the main area. The
 // engine's health sits under "+ New work". Engine text (names) is rendered as React text only.
 import type { BoardCount, ItemRecord, Setup } from "@tokama/core";
 import { type CSSProperties, Fragment, type ReactNode, useEffect, useId, useRef } from "react";
 import type { ConnectionState } from "../../shared/bridge.js";
 import { RepoMenu } from "../repos/RepoMenu.js";
-import { ALL_WORK, type Badge, badgesOf, inView, needsYouCount, sameView, type View, viewKey } from "../model.js";
+import { ALL_WORK, type Badge, badgesOf, inView, needsYouCount, runningCount, sameView, type View, viewKey } from "../model.js";
 import type { Section } from "../useViewState.js";
 import { EngineHealth } from "./ConnectionStatus.js";
 import { pickChip, type SidebarChipCandidate } from "./sidebar-chip.js";
@@ -24,6 +24,7 @@ const TEXT = {
   noRepos: "No repos added yet.",
   thisMachine: "This machine",
   allWork: "All work",
+  running: (count: number) => `${count} running`,
   workflows: "Workflows",
   repos: "Repos",
   collapse: (section: string) => `Collapse ${section}`,
@@ -116,6 +117,7 @@ export function Sidebar(props: SidebarProps) {
         name={TEXT.allWork}
         icon={<AllWorkIcon />}
         badges={badges(() => true)}
+        running={runningCount(items)}
         selected={sameView(view, ALL_WORK)}
         onSelect={() => onSelectView(ALL_WORK)}
       />
@@ -205,6 +207,8 @@ interface RowProps {
   readonly name: string;
   readonly icon: ReactNode;
   readonly badges: readonly Badge[];
+  /** How many items run now, said in words before the badges; none at zero. */
+  readonly running?: number;
   readonly selected: boolean;
   readonly onSelect: () => void;
   readonly mono?: boolean;
@@ -215,12 +219,13 @@ interface RowProps {
   readonly menu?: ReactNode;
 }
 
-function Row({ name, icon, badges, selected, onSelect, mono, startLabel, onStart, menu }: RowProps) {
+function Row({ name, icon, badges, running = 0, selected, onSelect, mono, startLabel, onStart, menu }: RowProps) {
   return (
     <div className="sb-row" data-selected={selected || undefined}>
       <Button variant="plain" className="sb-main" aria-current={selected ? "page" : undefined} onClick={onSelect}>
         <span className="sb-icon">{icon}</span>
         <span className={mono ? "ellipsis mono" : "ellipsis"}>{name}</span>
+        {running > 0 && <span className="sb-running">{TEXT.running(running)}</span>}
         <StatusCounts counts={badges} />
       </Button>
       {startLabel !== undefined && (

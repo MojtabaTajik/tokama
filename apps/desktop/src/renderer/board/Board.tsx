@@ -30,7 +30,7 @@ export function Board({ items, notLoaded = 0, agents, template, selectedItemId, 
             <span className="column-count mono">{column.items.length + (column.key === "done" ? notLoaded : 0)}</span>
           </h3>
           {column.items.map((item) => (
-            <Card key={item.id} item={item} agents={agents} template={template} selected={item.id === selectedItemId} onSelect={onSelect} now={now} />
+            <Card key={item.id} item={item} agents={agents} selected={item.id === selectedItemId} onSelect={onSelect} now={now} />
           ))}
         </section>
       ))}

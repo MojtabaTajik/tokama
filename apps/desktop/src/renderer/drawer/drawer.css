@@ -55,6 +55,11 @@
   margin-right: var(--space-4);
 }
 
+/* A running item's time is one piece: the line may wrap before it, never inside "14 m 02 s". */
+.drawer-time {
+  white-space: nowrap;
+}
+
 .drawer-close {
   margin-left: auto;
 }
@@ -364,7 +369,7 @@
 
 .step {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4) var(--space-10);
   padding: var(--space-8) 0;
   border-bottom: 1px solid var(--hairline);
@@ -372,6 +377,12 @@
 
 .step .mark {
   width: auto;
+}
+
+/* The step's state, a word after its name: "running", "✓ passed". */
+.step-name .mark-word {
+  margin-left: var(--space-4);
+  font-size: var(--text-md);
 }
 
 .step-body {

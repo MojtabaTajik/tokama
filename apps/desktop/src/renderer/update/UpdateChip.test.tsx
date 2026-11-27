@@ -160,11 +160,12 @@ describe("UpdateRailIcon", () => {
   };
   const button = () => container.querySelector<HTMLButtonElement>("button")!;
 
-  it("is the download icon with a dot, named like the chip", () => {
+  it("is the download icon with a ↓ badge, no bare dot, named like the chip", () => {
     const onActivate = rail(READY);
     expect(button().getAttribute("aria-label")).toBe("Update: Tokama 0.2.0 is ready. Click to update, then confirm the restart.");
-    expect(container.querySelector(".up-dot")).not.toBeNull();
-    expect(container.querySelector(".badge")).toBeNull();
+    expect(container.querySelector(".up-dot")).toBeNull();
+    expect(container.querySelector(".badge")?.textContent).toBe("↓");
+    expect(container.querySelector(".badge")?.getAttribute("data-tone")).toBe("neutral");
     act(() => button().click());
     expect(onActivate).toHaveBeenCalledTimes(1);
   });

@@ -15,7 +15,6 @@ const TEXT = {
     failed: "not available",
     updating: "updating engine",
   },
-  engineId: "Engine",
   log: "Log",
   tryAgain: "Try again",
   lock: "lock",
@@ -44,22 +43,27 @@ export function startingWords(state: Extract<ConnectionState, { status: "startin
 }
 
 // A symbol with every status, so colour is never the only signal.
-const SYMBOL: Record<ConnectionState["status"], string> = {
+const SYMBOL = {
   starting: markOf("queued").symbol,
-  connected: markOf("running").symbol,
   reconnecting: markOf("checking").symbol,
   failed: markOf("failed").symbol,
-};
+} as const satisfies Partial<Record<ConnectionState["status"], string>>;
 
-/** Symbol and word; healthy is a quiet dot whose word only screen readers get. */
+/** Symbol and word when something is off; nothing to see while connected, where only screen readers get the word. The status region stays mounted, so a change is announced. */
 export function EngineHealth({ state }: { readonly state: ConnectionState }) {
-  const title = state.status === "connected" ? `${TEXT.engineId} ${state.engineId}` : undefined;
+  if (state.status === "connected") {
+    return (
+      <span className="health" data-status="connected" role="status">
+        <span className="visually-hidden">{TEXT.health.connected}</span>
+      </span>
+    );
+  }
   return (
-    <span className="health" data-status={state.status} title={title} role="status">
+    <span className="health" data-status={state.status} role="status">
       <span className="symbol" aria-hidden="true">
         {SYMBOL[state.status]}
       </span>
-      <span className={state.status === "connected" ? "visually-hidden" : "health-word"}>{state.status === "starting" && state.updating === true ? TEXT.health.updating : TEXT.health[state.status]}</span>
+      <span className="health-word">{state.status === "starting" && state.updating === true ? TEXT.health.updating : TEXT.health[state.status]}</span>
     </span>
   );
 }

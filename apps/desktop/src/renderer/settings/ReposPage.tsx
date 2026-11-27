@@ -5,7 +5,7 @@
 import type { BoardCount, ItemRecord, RepoSummary, Setup } from "@tokama/core";
 import { useEffect, useRef, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
-import { badgesOf, finishedIn, inView, needsYouCount } from "../model.js";
+import { badgesOf, finishedIn, inView, needsYouCount, runningCount } from "../model.js";
 import { RemoveRepoDialog } from "../repos/RemoveRepoDialog.js";
 import { RepoDialog } from "../repos/RepoDialog.js";
 import { ConnectionFailure } from "../shell/ConnectionStatus.js";
@@ -42,7 +42,8 @@ const checksLabel = (count: number) => (count === 0 ? TEXT.noChecks : count === 
 
 /** "2 need you · 2 running · 6 done this week": the badges' counts, then what finished in the last 7 days. */
 function itemsLine(items: readonly ItemRecord[], counts: readonly BoardCount[], now: number): string {
-  const parts = badgesOf(items, counts, now).map((badge) => `${badge.count} ${badge.word}`);
+  const running = runningCount(items);
+  const parts = [...badgesOf(items, counts, now).map((badge) => `${badge.count} ${badge.word}`), ...(running > 0 ? [`${running} running`] : [])];
   const done = finishedIn(counts, "7d", now).done;
   if (done > 0) parts.push(TEXT.doneThisWeek(done));
   return parts.join(" · ");

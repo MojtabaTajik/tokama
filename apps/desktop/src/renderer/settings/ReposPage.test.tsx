@@ -111,7 +111,8 @@ describe("Settings entries", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     await act(async () => undefined);
     expect(rows().map((el) => el.querySelector(".rp-row-id")?.textContent)).toContain("billing-api");
-    expect(rowText("inventory-service").textContent).toContain("1 running");
+    // A running item is no badge.
+    expect(rowText("inventory-service").querySelector(".status-counts")).toBeNull();
     await fake.pushItem({ ...ITEMS.stock, state: "needs_you" });
     await act(async () => new Promise((resolve) => setTimeout(resolve, REPO_ITEMS_DELAY_MS + 20)));
     expect(rowText("inventory-service").textContent).toContain("1 need");
@@ -123,12 +124,12 @@ describe("Repos page", () => {
   it("lists each repo with its path, base branch, checks and badges, and selects the first", async () => {
     await mount();
     expect(rows().map((el) => [...el.querySelectorAll(":scope > span")].map((line) => line.textContent))).toEqual([
-      ["orders-api⏸ 11 needs you● 11 running", "~/code/orders-api", "main · 2 checks"],
-      ["checkout-web✕ 11 failed● 11 running", "~/code/checkout-web", "main · 1 check"],
-      ["inventory-service● 11 running", "~/code/inventory-service", "develop · no checks"],
+      ["orders-api⏸ 11 needs you", "~/code/orders-api", "main · 2 checks"],
+      ["checkout-web✕ 11 failed", "~/code/checkout-web", "main · 1 check"],
+      ["inventory-service", "~/code/inventory-service", "develop · no checks"],
     ]);
     expect(rows().map((el) => el.getAttribute("aria-pressed"))).toEqual(["true", "false", "false"]);
-    expect(rowText("orders-api").querySelector(".status-count")?.getAttribute("title")).toBe("1 needs you");
+    expect(rowText("orders-api").querySelector(".status-count")?.hasAttribute("title")).toBe(false);
     expect($(".status-counts")?.textContent).toContain("⏸");
   });
 

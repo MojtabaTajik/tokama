@@ -104,7 +104,7 @@ export function OutputTab({ bridge, item, setup, full, onOpenAgent, focus }: Out
     // Only a new ask acts; `update` is new on every render.
   }, [asked, askedStep]);
   if (shown.length === 0) return <Placeholder>{TEXT.none}</Placeholder>;
-  const track = trackOf(item).steps;
+  const track = trackOf(item, setup?.agents ?? []).steps;
   return (
     <div className="ot" data-full={full ? "true" : undefined}>
       <SectionList>
@@ -116,7 +116,7 @@ export function OutputTab({ bridge, item, setup, full, onOpenAgent, focus }: Out
             setup={setup}
             index={index}
             attempt={attempt}
-            mark={track[index]!}
+            mark={track[index]!.mark}
             full={full}
             onOpenAgent={onOpenAgent}
             focus={focus}
@@ -154,7 +154,7 @@ function OutputStep({ bridge, item, setup, index, attempt, mark, full, onOpenAge
   return (
     <Section
       title={step.name}
-      agent={<AgentName name={info.name} dot={info.dot} coloured />}
+      agent={<AgentName name={info.name} hue={info.hue} coloured />}
       state={mark}
       facts={facts.text}
       spokenFacts={facts.spoken}

@@ -7,7 +7,9 @@ import { type StepAgent, stepAgent } from "../drawer/describe.js";
 export interface AgentInfo {
   readonly id: string;
   readonly name: string;
-  readonly dot: StepAgent["dot"];
+  readonly hue: StepAgent["hue"];
+  /** The agent's icon name from the setup; the badge draws a neutral icon for none. */
+  readonly icon: string | undefined;
   readonly model: string | undefined;
   readonly cliId: AiCliId | undefined;
   /** Absent when the engine could not resolve the agent for this step. */
@@ -34,7 +36,8 @@ export function agentInfo(item: Pick<ItemRecord, "templateId" | "steps">, index:
   return {
     id: step.agentId,
     name: resolved?.name ?? stepAgent(step, agents).name,
-    dot: stepAgent(step, agents).dot,
+    hue: stepAgent(step, agents).hue,
+    icon: listed?.icon,
     model: resolved?.model ?? listed?.model,
     cliId: resolved?.cliId ?? listed?.cliId,
     access:

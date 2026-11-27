@@ -392,21 +392,25 @@ describe("App engine health under New work", () => {
     expect(text(".health .health-word")).toBe(word);
   });
 
-  it("shows a healthy engine as a quiet dot with a hidden label and the engine id", async () => {
+  it("shows a healthy engine as nothing to see: no mark, a hidden word, and the status region kept", async () => {
     await render(fakeBridge({ status: "connected", engineId: "e-42" }).bridge);
-    expect(text(".health .symbol")).toBe("●");
+    expect($(".health .symbol")).toBeNull();
     expect(text(".health .visually-hidden")).toBe("engine connected");
     expect($(".health .health-word")).toBeNull();
-    expect(health()?.getAttribute("title")).toBe("Engine e-42");
+    expect(health()?.getAttribute("role")).toBe("status");
+    expect(health()?.hasAttribute("title")).toBe(false);
   });
 
-  it("follows pushed changes", async () => {
+  it("follows pushed changes, in the same status region", async () => {
     const fake = fakeBridge(CONNECTED);
     await render(fake.bridge);
+    const region = health();
     await fake.setConnection({ status: "reconnecting" });
     expect(text(".health .health-word")).toBe("reconnecting");
+    expect(health()).toBe(region);
     await fake.setConnection({ status: "connected", engineId: "e-2" });
-    expect(health()?.getAttribute("title")).toBe("Engine e-2");
+    expect($(".health .health-word")).toBeNull();
+    expect(text(".health .visually-hidden")).toBe("engine connected");
   });
 });
 

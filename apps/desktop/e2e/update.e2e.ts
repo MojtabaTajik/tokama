@@ -100,12 +100,16 @@ flow(
 
 flow(
   "a collapsed sidebar shows the update as a rail icon with the same tooltip",
-  async ({ page }) => {
+  async ({ page, screenshot }) => {
     await chip(page, /^Update: Tokama 0\.2\.0 is ready\./).waitFor();
     await page.getByRole("button", { name: "Sidebar", exact: true }).click();
     await page.locator("aside.panel").waitFor({ state: "detached" });
     const icon = page.locator(".up-rail-button").and(page.getByRole("button", { name: /^Update: Tokama 0\.2\.0 is ready\./ }));
     await icon.waitFor();
+    // The rail icon carries a "↓" badge, never a bare dot.
+    expect(await icon.locator(".badge").innerText()).toBe("↓");
+    expect(await icon.locator(".up-dot").count()).toBe(0);
+    await screenshot("227-update-rail-badge", icon);
     const tip = await hoverTip(page, icon);
     expect(await tip.innerText()).toContain("Tokama 0.2.0 is ready");
   },

@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { backendOf } from "../brand/backends/index.js";
-import { AgentChip, agentDot, BackendMark } from "./agent.js";
+import { AgentChip, AgentName, agentHue, BackendMark } from "./agent.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -19,14 +19,26 @@ afterEach(() => {
   container.remove();
 });
 
-describe("agentDot", () => {
-  it("gives the first three agents their dots, then neutral", () => {
+describe("agentHue", () => {
+  it("gives the first three agents their colours, then neutral", () => {
     const agents = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
-    expect(["a", "b", "c", "d", "gone"].map((id) => agentDot(id, agents))).toEqual([1, 2, 3, "neutral", "neutral"]);
+    expect(["a", "b", "c", "d", "gone"].map((id) => agentHue(id, agents))).toEqual([1, 2, 3, "neutral", "neutral"]);
   });
 
-  it("gives Tokama, which has no agent id, the neutral dot", () => {
-    expect(agentDot(undefined, [{ id: "a" }])).toBe("neutral");
+  it("gives Tokama, which has no agent id, the neutral colour", () => {
+    expect(agentHue(undefined, [{ id: "a" }])).toBe("neutral");
+  });
+});
+
+describe("AgentName", () => {
+  it("is the name as text only, grey until it is coloured", () => {
+    act(() => root.render(<AgentName name="Builder" hue={2} />));
+    const name = container.querySelector(".agent-name")!;
+    expect(name.textContent).toBe("Builder");
+    expect(name.hasAttribute("data-agent")).toBe(false);
+    expect(name.children).toHaveLength(0);
+    act(() => root.render(<AgentName name="Builder" hue={2} coloured />));
+    expect(container.querySelector(".agent-name")?.getAttribute("data-agent")).toBe("2");
   });
 });
 
@@ -79,7 +91,7 @@ describe("BackendMark hover name", () => {
 
 describe("AgentChip with the tool written out", () => {
   it("prints the short name after the name, with an icon that needs no name of its own", () => {
-    act(() => root.render(<AgentChip agent={{ name: "Reviewer", dot: 3, cliId: "codex-cli" }} showTool />));
+    act(() => root.render(<AgentChip agent={{ name: "Reviewer", hue: 3, cliId: "codex-cli" }} showTool />));
     expect(container.querySelector(".agent-chip")?.textContent).toBe("Reviewer Codex");
     const img = container.querySelector("img.backend-mark")!;
     expect(img.getAttribute("alt")).toBe("");
@@ -89,28 +101,30 @@ describe("AgentChip with the tool written out", () => {
 
 describe("AgentChip", () => {
   it("shows the tool's icon next to the agent's name when the tool is known", () => {
-    act(() => root.render(<AgentChip agent={{ name: "Architect", dot: 1, cliId: "claude-code" }} />));
+    act(() => root.render(<AgentChip agent={{ name: "Architect", hue: 1, cliId: "claude-code" }} />));
     expect(container.querySelector("img.backend-mark")?.getAttribute("alt")).toBe("Claude Code");
     expect(container.querySelector(".agent-chip")?.textContent).toBe("Architect");
   });
 
-  it("shows a decorative dot, the name and what the screen adds, with the screen's class", () => {
+  it("shows the name, grey unless coloured, and what the screen adds, with the screen's class", () => {
     act(() =>
       root.render(
-        <AgentChip agent={{ name: "Architect", dot: 1 }} className="nr-agent">
+        <AgentChip agent={{ name: "Architect", hue: 1 }} className="nr-agent">
           <span className="mono">CC</span>
         </AgentChip>,
       ),
     );
     const chip = container.querySelector(".agent-chip")!;
     expect(chip.className).toBe("agent-chip nr-agent");
-    expect(chip.querySelector(".agent-dot")?.getAttribute("data-agent")).toBe("1");
-    expect(chip.querySelector(".agent-dot")?.getAttribute("aria-hidden")).toBe("true");
+    expect(chip.querySelector(".agent-name")?.hasAttribute("data-agent")).toBe(false);
+    expect(chip.querySelector(".agent-dot")).toBeNull();
     expect(chip.textContent).toBe("ArchitectCC");
+    act(() => root.render(<AgentChip agent={{ name: "Architect", hue: 1 }} coloured />));
+    expect(container.querySelector(".agent-name")?.getAttribute("data-agent")).toBe("1");
   });
 
   it("cuts a long name with an ellipsis when asked", () => {
-    act(() => root.render(<AgentChip agent={{ name: "Orders builder", dot: "neutral" }} ellipsis />));
+    act(() => root.render(<AgentChip agent={{ name: "Orders builder", hue: "neutral" }} ellipsis />));
     expect(container.querySelector(".agent-chip .ellipsis")?.textContent).toBe("Orders builder");
   });
 });

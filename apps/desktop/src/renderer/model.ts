@@ -5,7 +5,7 @@ import type { AgentSummary, AiCliId, BoardCount, Health, ItemRecord, StepRecord,
 import type { ToolsPathInfo } from "../shared/bridge.js";
 import { BACKEND_IDS, backendOf } from "./brand/backends/index.js";
 import { itemMark, stepAgent, type StepAgent, stepMark } from "./drawer/describe.js";
-import { itemTotal } from "./drawer/progress-view.js";
+import { itemTotal, runningAttempt } from "./drawer/progress-view.js";
 import { formatDuration } from "./format/duration.js";
 import { clock, dayLabel, daysBefore, localDay, sameDay, shortDate } from "./format/time.js";
 import type { StatusCount } from "./ui/Badge.js";
@@ -222,20 +222,22 @@ export type Badge = StatusCount;
 export type BadgeKind = StatusCount["kind"];
 
 /**
- * The sidebar badges of a set of open items and the counts of the same scope: needs you, failed
- * today, running. Only counts above zero come back, in that order. Queued items count nowhere.
+ * The sidebar badges of a set of open items and the counts of the same scope: needs you and failed
+ * today, the two a person acts on. Only counts above zero come back, in that order. Running is not
+ * a badge (`runningCount` says it in words) and queued items count nowhere.
  */
 export function badgesOf(items: readonly ItemRecord[], counts: readonly BoardCount[], now: number): Badge[] {
   const needs = items.filter((item) => item.state === "needs_you").length;
   const failed = finishedIn(counts, "today", now).failed;
-  const running = items.filter((item) => item.state === "running").length;
   const badges: Badge[] = [
     { kind: "needs", symbol: markOf("needs_you").symbol, count: needs, word: needs === 1 ? "needs you" : "need you" },
     { kind: "failed", symbol: markOf("failed").symbol, count: failed, word: "failed" },
-    { kind: "running", symbol: markOf("running").symbol, count: running, word: "running" },
   ];
   return badges.filter((badge) => badge.count > 0);
 }
+
+/** How many of the items run now. */
+export const runningCount = (items: readonly Pick<ItemRecord, "state">[]): number => items.filter((item) => item.state === "running").length;
 
 export function needsYouCount(items: Iterable<Pick<ItemRecord, "state">>): number {
   let count = 0;
@@ -249,14 +251,6 @@ export function currentStep(item: Pick<ItemRecord, "steps">): number | undefined
   return index === -1 ? undefined : index;
 }
 
-export interface PipelineStep {
-  readonly mark: Mark;
-  readonly name: string;
-  /** Only the step the item is in carries its name and attempt in the row. */
-  readonly current: boolean;
-  /** The attempt the step is on; undefined for a step that has not started. */
-  readonly attempt: number | undefined;
-}
 
 /**
  * The attempt a step is on: the last one the engine recorded, or the next one when the step runs
@@ -279,15 +273,35 @@ export function rowMark(item: Pick<ItemRecord, "state" | "steps">): Mark {
   return item.state === "running" && checking ? markOfStep(step) : itemMark(item.state);
 }
 
-/** The item's own steps as a small pipeline. */
-export function pipelineOf(item: Pick<ItemRecord, "state" | "steps">): PipelineStep[] {
-  const at = currentStep(item);
-  return item.steps.map((step, index) => ({
-    mark: markOfStep(step),
-    name: step.name,
-    current: index === at,
-    attempt: attemptOf(step),
-  }));
+export interface RowLine {
+  /** The step in words: "Build, step 2 of 3", or "Build, step 2 of 3, attempt 3 of 3" from the second attempt on. */
+  readonly step: string;
+  /** The step's name alone, for what names the working agent. */
+  readonly stepName: string;
+  /** When the running attempt started: the row says how long it has run after the step. */
+  readonly since: number | undefined;
+  /** Who works the step. */
+  readonly agent: StepAgent;
+}
+
+/**
+ * What line two of an open item's row says about its steps, in words: where it is ("Build, step 2 of 3"),
+ * the attempt from the second one on ("attempt 3 of 3"), and the agent of the step. An item that ended has no
+ * such line: its facts say where it stopped. Undefined for an ended item and for one without steps.
+ */
+export function rowLine(item: Pick<ItemRecord, "state" | "steps">, agents: readonly AgentSummary[]): RowLine | undefined {
+  if (item.state === "done" || item.state === "failed" || item.state === "stopped") return undefined;
+  const index = currentStep(item);
+  const step = index === undefined ? undefined : item.steps[index];
+  if (index === undefined || step === undefined) return undefined;
+  const attempt = attemptOf(step);
+  const again = attempt !== undefined && attempt > 1 ? `, attempt ${attempt}${step.maxAttempts === undefined ? "" : ` of ${step.maxAttempts}`}` : "";
+  return {
+    step: `${step.name}, step ${index + 1} of ${item.steps.length}${again}`,
+    stepName: step.name,
+    since: item.state === "running" ? runningAttempt(step)?.startedAt : undefined,
+    agent: stepAgent(step, agents),
+  };
 }
 
 /** The agent shown for an item: the one of the step it is in, or of the last step when all passed. */

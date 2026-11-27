@@ -41,9 +41,25 @@ const done = (fields: Record<string, unknown> = {}): ItemRecord =>
   }) as unknown as ItemRecord;
 
 const line = (item: ItemRecord): string | undefined => {
-  act(() => root.render(<Card item={item} agents={[]} template={template} selected={false} onSelect={() => undefined} now={60_000} />));
+  act(() => root.render(<Card item={item} agents={[]} selected={false} onSelect={() => undefined} now={60_000} />));
   return container.querySelector(".card-line")?.textContent ?? undefined;
 };
+
+describe("Card marks", () => {
+  const draw = (item: ItemRecord, agents: unknown[] = []) => act(() => root.render(<Card item={item} agents={agents as never} selected={false} onSelect={() => undefined} now={60_000} />));
+
+  it("shows no template icon and no agent dot, only the agent's name in grey", () => {
+    const working = done({ state: "running", steps: [{ name: "Build", state: "running", stage: "working", data: "none", agentId: "builder" }] });
+    draw(working, [{ id: "builder", name: "Builder", cliId: "claude-code", model: "sonnet", runsOn: "cloud" }]);
+    expect(container.querySelector(".tpl-icon")).toBeNull();
+    expect(container.querySelector(".agent-dot")).toBeNull();
+    expect(container.querySelector(".card-agent .agent-name")?.textContent).toBe("Builder");
+    expect(container.querySelector(".card-agent .agent-name")?.hasAttribute("data-agent")).toBe(false);
+    // "working" keeps its breathing dot, because the word is beside it.
+    expect(container.querySelector(".card-working")?.textContent).toBe("working");
+    expect(container.querySelectorAll("[data-breathe]")).toHaveLength(0);
+  });
+});
 
 describe("Card line", () => {
   it("shows the facts, not the commit, on a done card before any finish action", () => {

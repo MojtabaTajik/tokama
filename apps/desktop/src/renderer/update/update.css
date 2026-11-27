@@ -188,14 +188,3 @@
   --ring: var(--warn);
   color: var(--warn);
 }
-
-.up-dot {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--link);
-  box-shadow: 0 0 0 2px var(--ground);
-}

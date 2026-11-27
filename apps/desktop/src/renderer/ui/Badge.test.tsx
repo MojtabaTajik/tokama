@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Badge, StatusCounts } from "./Badge.js";
 import { Pill } from "./Pill.js";
+import { TIP_CLOSE_MS, TIP_OPEN_MS } from "./useTip.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -39,7 +40,7 @@ describe("Badge", () => {
 });
 
 describe("StatusCounts", () => {
-  it("shows symbol and count per kind, says the words to screen readers and as a tooltip", () => {
+  it("shows symbol and count per kind, says the words to screen readers and in the shared tooltip while the row has the pointer or focus", () => {
     render(
       <StatusCounts
         counts={[
@@ -51,10 +52,53 @@ describe("StatusCounts", () => {
     const counts = [...container.querySelectorAll(".status-count")];
     expect(counts.map((el) => el.querySelector("[aria-hidden]")?.textContent)).toEqual(["⏸ 2", "✕ 1"]);
     expect(counts.map((el) => el.querySelector(".visually-hidden")?.textContent)).toEqual(["2 need you", "1 failed"]);
-    expect(counts.map((el) => [el.getAttribute("data-kind"), el.getAttribute("title")])).toEqual([
-      ["needs", "2 need you"],
-      ["failed", "1 failed"],
-    ]);
+    expect(counts.map((el) => el.hasAttribute("title"))).toEqual([false, false]);
+  });
+
+  it("lets go of the pointer and the focus when the counts go, so no tooltip opens later by itself", () => {
+    vi.useFakeTimers();
+    const some = [{ kind: "needs", symbol: "⏸", count: 2, word: "need you" }] as const;
+    render(
+      <button type="button" className="host">
+        <StatusCounts counts={some} />
+      </button>,
+    );
+    const host = container.querySelector<HTMLElement>(".host")!;
+    act(() => void host.dispatchEvent(new FocusEvent("focusin", { bubbles: true })));
+    expect(container.querySelector('[role="tooltip"]')).not.toBeNull();
+    render(
+      <button type="button" className="host">
+        <StatusCounts counts={[]} />
+      </button>,
+    );
+    act(() => void vi.advanceTimersByTime(TIP_CLOSE_MS + 10));
+    render(
+      <button type="button" className="host">
+        <StatusCounts counts={some} />
+      </button>,
+    );
+    expect(container.querySelector('[role="tooltip"]')).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it("opens the tooltip with the words while the pointer is on the row's button or the focus is in it, and not otherwise", () => {
+    vi.useFakeTimers();
+    render(
+      <button type="button" className="host">
+        <StatusCounts counts={[{ kind: "needs", symbol: "⏸", count: 2, word: "need you" }, { kind: "failed", symbol: "✕", count: 1, word: "failed" }]} />
+      </button>,
+    );
+    const host = container.querySelector<HTMLElement>(".host")!;
+    expect(container.querySelector('[role="tooltip"]')).toBeNull();
+    act(() => void host.dispatchEvent(new FocusEvent("focusin", { bubbles: true })));
+    expect(container.querySelector('[role="tooltip"]')?.textContent).toBe("2 need you · 1 failed");
+    act(() => void host.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+    act(() => void vi.advanceTimersByTime(TIP_CLOSE_MS + 10));
+    expect(container.querySelector('[role="tooltip"]')).toBeNull();
+    act(() => void host.dispatchEvent(new MouseEvent("mouseenter")));
+    act(() => void vi.advanceTimersByTime(TIP_OPEN_MS + 10));
+    expect(container.querySelector('[role="tooltip"]')?.textContent).toBe("2 need you · 1 failed");
+    vi.useRealTimers();
   });
 
   it("renders nothing without counts", () => {

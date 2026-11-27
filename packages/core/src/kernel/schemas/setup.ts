@@ -28,7 +28,7 @@ export const ConnectionSummarySchema = z.strictObject({
   type: label,
 });
 
-/** Listed in join order; clients give identity dots by that order. */
+/** Listed in join order; clients colour the first agents' names by that order. */
 export const AgentSummarySchema = z.strictObject({
   id: AgentIdSchema,
   name: label,
@@ -37,6 +37,8 @@ export const AgentSummarySchema = z.strictObject({
   model: label,
   /** Where the model runs: on this machine or at a cloud provider. */
   runsOn: z.enum(["local", "cloud"]),
+  /** The icon name of the agent's file; clients draw a neutral icon when it is missing or unknown. */
+  icon: IconNameSchema.optional(),
 });
 
 export const TemplateStepSchema = z.strictObject({
@@ -78,7 +80,7 @@ export const TemplateSummarySchema = z.strictObject({
   id: TemplateRefSchema,
   name: label,
   kind: ItemKindSchema,
-  /** A Font Awesome Free icon name; clients draw a neutral icon for a name they do not know. */
+  /** An icon name such as `screwdriver-wrench`; clients map it to their icon set and draw a neutral icon for a name they do not know. */
   icon: IconNameSchema.optional(),
   /** The tag colour of the icon. */
   color: TagColorSchema.optional(),

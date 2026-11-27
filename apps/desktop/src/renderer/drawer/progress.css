@@ -1,15 +1,19 @@
 /*
  * Live progress: the step track and activity line in the drawer and full view headers, and the
- * working card. The current step's mark and the card's dot breathe, the line into the current
- * step carries a slow light, and a light crosses a working card's top edge. The animations and
- * their still versions for reduced motion are in ui/motion.css.
+ * working card. The working agent's badge (agent/agent.css) and the card's dot breathe, and a
+ * light crosses a working card's top edge. The animations and their still versions for reduced
+ * motion are in ui/motion.css.
  */
+/* The track is words: each step with its state and its agent, wrapping onto a second line when it must. */
 .track {
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) 0;
   min-width: 0;
   margin: var(--space-6) 0 0;
   font-size: var(--text-md);
+  color: var(--text-2);
 }
 
 .expanded .track {
@@ -19,33 +23,13 @@
 
 .track-step {
   display: inline-flex;
-  flex: 0 1 auto;
-  align-items: center;
+  align-items: baseline;
   gap: var(--space-6);
-  min-width: 0;
-}
-
-.track-step[data-current="true"] {
-  flex: none;
-}
-
-.track-mark {
-  flex: none;
-  width: 12px;
-  text-align: center;
-  color: var(--muted);
+  white-space: nowrap;
 }
 
 /* Tone colours come from the drawer's shared [data-tone] rules. */
 .track-name {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.track-mark[data-tone="pass"] + .track-name {
   color: var(--text-2);
 }
 
@@ -54,38 +38,40 @@
   font-weight: 500;
 }
 
-.track-says {
-  flex: none;
-  white-space: nowrap;
+.track-sep {
+  padding: 0 var(--space-6);
+  color: var(--muted);
 }
 
-.track-line {
-  flex: 1 1 14px;
-  min-width: 10px;
-  max-width: 44px;
-  height: 2px;
-  margin: 0 var(--space-6);
-  border-radius: 1px;
-  background: var(--hairline);
+/* The short form is a focus stop: its tooltip lists every step. */
+.track-count {
+  border-radius: var(--radius);
+  text-decoration: underline dotted var(--muted);
+  text-underline-offset: 3px;
 }
 
-.track-line[data-live="true"] {
-  background: linear-gradient(90deg, var(--hairline) 0 35%, var(--live) 50%, var(--hairline) 65% 100%);
-  background-size: 300% 100%;
-  animation: tk-shimmer var(--motion-shimmer) var(--motion-shimmer-ease) infinite;
+.track-count:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
 }
 
-.track-mark[data-live="true"],
-.live-dot {
-  animation: tk-breathe var(--motion-breathe) var(--motion-breathe-ease) infinite;
+.track-tip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  width: max-content;
+  max-width: min(420px, calc(100vw - 16px));
+  padding: var(--space-8) var(--space-12);
+  white-space: normal;
 }
 
-/* One line that never wraps: who and the time stay whole, the action gives way in its middle. */
+/* Who, the time and "quiet for" stay whole; the action gives way first, in its middle. Only when they alone
+   do not fit (the narrowest drawer) the rest goes to a second line, so nothing is hidden and nothing scrolls. */
 .activity {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   min-width: 0;
-  margin: 0;
   font-size: var(--text-md);
   color: var(--muted);
   white-space: nowrap;
@@ -93,6 +79,14 @@
 
 .expanded .activity {
   font-size: var(--text-base);
+}
+
+/* The working agent's badge, or Tokama's ◐ while it checks, before the name. */
+.activity-badge,
+.activity-mark {
+  flex: none;
+  align-self: center;
+  margin-right: var(--space-8);
 }
 
 .activity-who {
@@ -105,8 +99,12 @@
   padding: 0 var(--space-6);
 }
 
+/* The action gives way first, down to nothing, so the time and "quiet for" stay with their separators. */
 .activity-head {
-  min-width: 2ch;
+  /* A small basis, so the line wraps only when the fixed parts do not fit; it then takes what is left. */
+  flex: 1 1 8ch;
+  max-width: max-content;
+  min-width: 0;
   overflow: hidden;
   color: var(--text-2);
   text-overflow: ellipsis;
@@ -154,6 +152,7 @@
   height: 6px;
   border-radius: 50%;
   background: var(--live);
+  animation: tk-breathe var(--motion-breathe) var(--motion-breathe-ease) infinite;
 }
 
 .card-edge {

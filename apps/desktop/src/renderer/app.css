@@ -148,11 +148,6 @@
   font-size: var(--text-sm);
 }
 
-.health[data-status="connected"] .symbol {
-  color: var(--pass);
-  font-size: 8px;
-}
-
 .health[data-status="starting"] .symbol,
 .health[data-status="reconnecting"] .symbol {
   color: var(--live);
@@ -395,6 +390,19 @@
   color: var(--muted);
 }
 
+/* "5 running", in words, after All work's name. */
+.sb-running {
+  flex: none;
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.sb-running + .status-counts {
+  margin-left: 0;
+}
+
 .panel-heading .status-counts {
   text-transform: none;
   letter-spacing: 0;
@@ -578,28 +586,6 @@
   color: var(--muted);
 }
 
-.pl-group-symbol {
-  width: 14px;
-  text-align: center;
-  letter-spacing: 0;
-}
-
-.pl-group-symbol[data-group="needs"] {
-  color: var(--warn);
-}
-
-.pl-group-symbol[data-group="running"] {
-  color: var(--live);
-}
-
-.pl-group-symbol[data-group="done"] {
-  color: var(--pass);
-}
-
-.pl-group-symbol[data-group="failed"] {
-  color: var(--fail);
-}
-
 .pl-group-count {
   letter-spacing: 0;
 }
@@ -700,7 +686,7 @@
 .pl-row-wrap {
   position: relative;
   display: grid;
-  grid-template-columns: 22px minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 170px) 132px;
+  grid-template-columns: 22px minmax(0, 1.3fr) minmax(0, 1fr) 132px;
   align-items: center;
   gap: var(--space-4) var(--space-14);
   padding: var(--space-8);
@@ -735,8 +721,7 @@
   inset: 0;
 }
 
-/* Above the cover, so the titles on the steps and the time still show on hover. */
-.pl-step,
+/* Above the cover, so the time's title still shows on hover. */
 .pl-time {
   position: relative;
   z-index: 1;
@@ -781,10 +766,6 @@
   color: var(--muted);
 }
 
-.pl-meta svg {
-  flex: none;
-}
-
 .pl-workflow {
   min-width: 0;
   overflow: hidden;
@@ -805,9 +786,6 @@
 /* A done or failed row's facts, in the column of the steps, on the title's line and right-aligned
    so rows compare. What does not fit is cut with an ellipsis. */
 .pl-facts {
-  /* Above the row's cover, so its tooltip shows on hover. */
-  position: relative;
-  z-index: 1;
   align-self: start;
   /* The title's line box, so both texts sit on one baseline. */
   line-height: 19.5px;
@@ -912,86 +890,50 @@
   color: var(--muted);
 }
 
-.pl-pipe {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  overflow: hidden;
-  font-size: var(--text-md);
-}
-
-.pl-step {
-  display: inline-flex;
-  align-items: center;
-  flex: none;
-  min-width: 0;
-}
-
-.pl-step[data-current] {
+/* Line two, in words: the workflow and repos give way first; the step, its time and the agent stay whole. */
+.pl-workflow,
+.pl-repos {
   flex: 0 1 auto;
-  /* What does not fit is cut here, so it never runs over the next mark. */
-  overflow: hidden;
+  min-width: 4ch;
 }
 
-.pl-link {
+.pl-for,
+.pl-sep,
+.pl-meta .agent-name {
   flex: none;
-  width: 10px;
-  height: 1px;
-  margin: 0 var(--space-4);
-  background: var(--hairline);
-}
-
-.pl-step-mark {
-  flex: none;
-  width: 12px;
-  text-align: center;
-}
-
-/* On a narrow row the name shortens first, but never below a few letters; the attempt clips only after that. */
-.pl-step-name {
-  flex: 0 100 auto;
-  min-width: 1.5em;
-  margin-left: var(--space-4);
-  color: var(--text-2);
-}
-
-.pl-step-attempt {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  margin-left: var(--space-4);
-  color: var(--muted);
   white-space: nowrap;
 }
 
-.pl-agent {
-  grid-column: 4;
+/* A long step name is cut before the time and the agent are. */
+.pl-where {
+  flex: 0 1 auto;
+  min-width: 4ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pl-for {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A row with nothing in its facts column gives line two the room. */
+.pl-main[data-wide] {
+  grid-column: 2 / span 2;
+}
+
+/* The working agent's badge, in the mark's cell and beside the row's own button, which it sits above. */
+.pl-badge {
+  grid-column: 1;
   grid-row: 1;
-  display: flex;
-  align-items: center;
-  gap: var(--space-6);
-  min-width: 0;
-  font-size: var(--text-md);
-  color: var(--text-2);
-  /* Right-aligned, so labels of different lengths end at one edge. */
-  justify-content: flex-end;
+  align-self: start;
+  justify-self: center;
+  margin-top: 1px;
 }
 
-/* The label fills its cell when the model does not fit, so its content is pushed to the cell's right
-   edge too; the button's own padding hangs outside the cell, so the text ends where the time does. */
-.pl-agent .al {
-  margin-left: 0;
-  margin-right: calc(-1 * var(--space-6));
-}
-
-.pl-agent .al-button {
-  justify-content: flex-end;
-}
-
-/* The agent label holds column 4, in the wrapper; the time stays in the last. The time sits on the
-   title's line, not centred between the title and the meta line. */
+/* The time sits on the title's line, not centred between the title and the meta line. */
 .pl-time {
-  grid-column: 5;
+  grid-column: 4;
   align-self: start;
   /* The title's line box, so both texts sit on one baseline. */
   line-height: 19.5px;
@@ -1002,59 +944,69 @@
 }
 
 .pl-mark[data-tone="warn"],
-.pl-step-mark[data-tone="warn"],
 .card-flag[data-tone="warn"] {
   color: var(--warn);
 }
 
 .pl-mark[data-tone="live"],
-.pl-step-mark[data-tone="live"],
 .card-flag[data-tone="live"] {
   color: var(--live);
 }
 
 .pl-mark[data-tone="pass"],
-.pl-step-mark[data-tone="pass"],
 .card-flag[data-tone="pass"] {
   color: var(--pass);
 }
 
 .pl-mark[data-tone="fail"],
-.pl-step-mark[data-tone="fail"],
 .card-flag[data-tone="fail"] {
   color: var(--fail);
 }
 
 .pl-mark[data-tone="muted"],
-.pl-step-mark[data-tone="muted"],
 .card-flag[data-tone="muted"] {
   color: var(--muted);
 }
 
-/* The list is as wide as the main area, which the open drawer narrows. The secondary columns go
-   before the title does: first the pipeline and agent move under the title, then the agent goes,
-   then the time. The current step keeps its name and attempt; its name shortens first. */
+/* The list is as wide as the main area, which the open drawer narrows. The facts column goes under
+   the title before the title gives way, then the time goes. */
 @container list (max-width: 719px) {
   .pl-row-wrap {
     grid-template-columns: 22px minmax(0, 1fr) fit-content(190px);
     grid-template-areas:
       "mark main time"
-      ".    pipe agent";
+      ".    pipe pipe";
   }
 
   .pl-row {
     grid-row: 1 / span 2;
   }
 
-  .pl-mark {
+  .pl-mark,
+  .pl-badge {
     grid-area: mark;
   }
 
-  .pl-main {
+  .pl-main,
+  .pl-main[data-wide] {
     grid-area: main;
   }
 
-  .pl-pipe,
+  /* Line two wraps, so the step's place is never cut: the parts that do not fit go to a second line. */
+  .pl-meta {
+    flex-wrap: wrap;
+    overflow: visible;
+    gap: 0 var(--space-6);
+  }
+
+  .pl-workflow,
+  .pl-repos,
+  .pl-where {
+    min-width: 0;
+    max-width: 100%;
+    flex: 0 1 auto;
+  }
+
   .pl-finish,
   .pl-facts {
     grid-area: pipe;
@@ -1069,24 +1021,8 @@
     overflow-wrap: anywhere;
   }
 
-  .pl-agent {
-    grid-area: agent;
-  }
-
   .pl-time {
     grid-area: time;
-  }
-}
-
-@container list (max-width: 379px) {
-  .pl-row-wrap {
-    grid-template-areas:
-      "mark main time"
-      ".    pipe pipe";
-  }
-
-  .pl-agent {
-    display: none;
   }
 }
 
@@ -1176,10 +1112,6 @@
   gap: var(--space-6);
   font-size: var(--text-sm);
   color: var(--muted);
-}
-
-.card-meta svg {
-  flex: none;
 }
 
 .card-privacy {

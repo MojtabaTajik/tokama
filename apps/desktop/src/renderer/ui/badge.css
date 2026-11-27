@@ -53,8 +53,9 @@
   color: var(--fail);
 }
 
-.status-count[data-kind="running"] {
-  color: var(--muted);
+.counts-tip {
+  padding: var(--space-6) var(--space-10);
+  white-space: nowrap;
 }
 
 .pill {

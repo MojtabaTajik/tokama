@@ -33,12 +33,12 @@ export const ITEM_IDS = {
 } as const;
 
 const agents = {
-  architect: { id: "architect", name: "Architect", cliId: "claude-code", model: "opus", runsOn: "cloud" },
-  investigator: { id: "local-investigator", name: "Local investigator", cliId: "claude-code", model: "qwen3-coder:30b", runsOn: "local" },
-  reviewer: { id: "reviewer", name: "Reviewer", cliId: "codex-cli", model: "gpt-5-codex", runsOn: "cloud" },
-  builder: { id: "local-builder", name: "Local builder", cliId: "claude-code", model: "qwen3-coder:30b", runsOn: "local" },
+  architect: { id: "architect", name: "Architect", cliId: "claude-code", model: "opus", runsOn: "cloud", icon: "compass" },
+  investigator: { id: "local-investigator", name: "Local investigator", cliId: "claude-code", model: "qwen3-coder:30b", runsOn: "local", icon: "magnifying-glass" },
+  reviewer: { id: "reviewer", name: "Reviewer", cliId: "codex-cli", model: "gpt-5-codex", runsOn: "cloud", icon: "eye" },
+  builder: { id: "local-builder", name: "Local builder", cliId: "claude-code", model: "qwen3-coder:30b", runsOn: "local", icon: "hammer" },
   /** Shared by the orders-api repo. */
-  repoBuilder: { id: "orders-builder", name: "Orders builder", cliId: "claude-code", model: "qwen3-coder:30b", runsOn: "local" },
+  repoBuilder: { id: "orders-builder", name: "Orders builder", cliId: "claude-code", model: "qwen3-coder:30b", runsOn: "local", icon: "hammer" },
 };
 
 /**

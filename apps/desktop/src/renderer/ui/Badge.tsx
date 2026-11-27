@@ -1,6 +1,9 @@
 // Counts. Badge: a small count on an icon button, or a symbol when the kind matters more than how
 // many (the button's label says it in words). StatusCounts: a row of symbol-and-count badges, such
-// as a sidebar row's "⏸ 2 ✕ 1 ● 3", each with its words for screen readers and as a tooltip.
+// as a sidebar row's "⏸ 2 ✕ 1", with their words for screen readers and in a tooltip.
+import { type CSSProperties, useId } from "react";
+import { Tooltip } from "./Tooltip.js";
+import { useHostTip } from "./useTip.js";
 
 export interface BadgeProps {
   readonly count: number;
@@ -19,18 +22,24 @@ export function Badge({ count, tone, symbol }: BadgeProps) {
 }
 
 export interface StatusCount {
-  readonly kind: "needs" | "failed" | "running";
+  readonly kind: "needs" | "failed";
   readonly symbol: string;
   readonly count: number;
   readonly word: string;
 }
 
+/**
+ * The counts of a row, each as symbol and number with its words for screen readers. The words also show in the
+ * shared tooltip while the pointer is on the row or the keyboard focus is on the row's button around the counts.
+ */
 export function StatusCounts({ counts, className }: { readonly counts: readonly StatusCount[]; readonly className?: string | undefined }) {
+  const { ref, open } = useHostTip(counts.length > 0);
+  const anchor = `--counts-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
   if (counts.length === 0) return null;
   return (
-    <span className={["status-counts", className].filter(Boolean).join(" ")}>
+    <span ref={ref} className={["status-counts", className].filter(Boolean).join(" ")} style={{ anchorName: anchor } as CSSProperties}>
       {counts.map((count) => (
-        <span key={count.kind} className="status-count" data-kind={count.kind} title={`${count.count} ${count.word}`}>
+        <span key={count.kind} className="status-count" data-kind={count.kind}>
           <span aria-hidden="true">
             {count.symbol} {count.count}
           </span>
@@ -39,6 +48,11 @@ export function StatusCounts({ counts, className }: { readonly counts: readonly 
           </span>
         </span>
       ))}
+      {open && (
+        <Tooltip id={`${anchor.slice(2)}-tip`} anchor={anchor} className="counts-tip" decorative>
+          {counts.map((count) => `${count.count} ${count.word}`).join(" · ")}
+        </Tooltip>
+      )}
     </span>
   );
 }

@@ -1,4 +1,4 @@
-// The items with the most tokens in the range: workflow, agents (identity dot, name and CLI),
+// The items with the most tokens in the range: workflow, agents (name and CLI),
 // tokens, agent time and estimated cost. Filtered with the chart. A title opens the item drawer, which says so when the
 // item is gone.
 import type { Setup, UsageReport } from "@tokama/core";

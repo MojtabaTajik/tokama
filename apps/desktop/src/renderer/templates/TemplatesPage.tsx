@@ -13,7 +13,6 @@ import { keyId, useReload, useTemplateDetail, useTemplateList } from "./useTempl
 import { Button } from "../ui/Button.js";
 import { Section, SectionList } from "../ui/Section.js";
 import { markOf } from "../ui/status.js";
-import { agentDot, AgentDotMark } from "../ui/agent.js";
 
 const FAIL = markOf("failed").symbol;
 
@@ -159,7 +158,7 @@ function Detail({ bridge, detail, agents, connections }: DetailProps) {
     const result = await bridge.openTemplateFile({ origin: entry.origin, file: entry.file }).catch((error: unknown) => ({ ok: false as const, message: String(error) }));
     if (!result.ok) setOpenNote(`${FAIL} ${result.message}`);
   };
-  const flow = useMemo(() => (template === null ? undefined : flowOf(template, agents)), [template, agents]);
+  const flow = useMemo(() => (template === null ? undefined : flowOf(template)), [template]);
   const uses = template === null ? undefined : usesOf(template, connections);
 
   return (
@@ -281,18 +280,14 @@ function Detail({ bridge, detail, agents, connections }: DetailProps) {
           <section className="tp-section" aria-label={TEXT.steps}>
             <h2>{TEXT.steps}</h2>
             <ol className="tp-steps">
-              {template.steps.map((step, index) => {
-                const dot = agentDot(step.agentId, agents);
-                return (
-                  <li key={step.id}>
-                    <span className="tp-step-n mono">{index + 1}</span>
-                    <span>
-                      <AgentDotMark dot={dot} />
-                      <strong>{step.name}</strong>: {stepSentence(step, template, agents, connections)}
-                    </span>
-                  </li>
-                );
-              })}
+              {template.steps.map((step, index) => (
+                <li key={step.id}>
+                  <span className="tp-step-n mono">{index + 1}</span>
+                  <span>
+                    <strong>{step.name}</strong>: {stepSentence(step, template, agents, connections)}
+                  </span>
+                </li>
+              ))}
             </ol>
           </section>
           <section className="tp-section" aria-label={TEXT.finish}>

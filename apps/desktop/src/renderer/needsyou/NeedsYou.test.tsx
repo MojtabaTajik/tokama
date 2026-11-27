@@ -114,6 +114,9 @@ describe("the Needs you page", () => {
     const mark = plan?.querySelector(".nr-agent img.backend-mark");
     expect(mark?.getAttribute("alt")).toBe("");
     expect(mark?.hasAttribute("title")).toBe(false);
+    // The name takes the agent's colour here, where the engineer decides on its work; no dot.
+    expect(plan?.querySelector(".nr-agent .agent-name")?.getAttribute("data-agent")).toBe("1");
+    expect(plan?.querySelector(".agent-dot")).toBeNull();
     expect(choiceButtons(plan!).map((button) => button.textContent)).toEqual(["Yes", "No"]);
     expect(choiceButtons(plan!)[0]?.className).toBe("btn btn-primary");
     expect(cloudRow?.querySelector(".nr-time")?.textContent).toBe("started 41 m ago");

@@ -26,7 +26,8 @@ afterEach(() => {
 const BUILTIN: AgentInfo = {
   id: "builder",
   name: "Builder",
-  dot: 2,
+  hue: 2,
+  icon: "hammer",
   model: "sonnet",
   cliId: "claude-code",
   access: { owner: "builtin", repoId: undefined, role: "You make the change the plan describes, in the worktree.", edit: true, commands: ["pnpm test"], web: false },
@@ -34,7 +35,8 @@ const BUILTIN: AgentInfo = {
 const REPO: AgentInfo = {
   id: "orders-builder",
   name: "Orders builder",
-  dot: 1,
+  hue: 1,
+  icon: undefined,
   model: "opus",
   cliId: "claude-code",
   access: { owner: "repo", repoId: "orders-api", role: undefined, edit: true, commands: ["pnpm test", "pnpm db:migrate", "docker compose up"], web: true },

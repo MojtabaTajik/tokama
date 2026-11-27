@@ -63,3 +63,55 @@ export function useTip(onShown: ((shown: boolean) => void) | undefined, suppress
   );
   return { open, hold, dismiss, triggers };
 }
+
+/**
+ * The tooltip of a piece of text inside a button (a row, a card) or a heading: it shows while the pointer is
+ * on that host or the keyboard focus is in it, so the text is not a tab stop of its own. Put `ref` on the
+ * text; the host is its closest button, else its parent. `active` false (nothing to show) listens to nothing.
+ */
+export function useHostTip(active = true) {
+  const ref = useRef<HTMLElement>(null);
+  const { open, hold, dismiss } = useTip(undefined);
+  useEscapeDismiss(open, dismiss);
+  useEffect(() => {
+    const host = active ? (ref.current?.closest("button") ?? ref.current?.parentElement) : null;
+    if (host === null || host === undefined) return;
+    // A click focuses the button, but only the keyboard's focus shows the tooltip: the pointer's own hover already did.
+    let clicked = false;
+    const handlers = [
+      ["pointerdown", () => void (clicked = true)],
+      ["mouseenter", () => hold("hover", true)],
+      ["mouseleave", () => hold("hover", false)],
+      ["focusin", () => hold("focus", !clicked)],
+      [
+        "focusout",
+        () => {
+          clicked = false;
+          hold("focus", false);
+        },
+      ],
+    ] as const;
+    for (const [type, handler] of handlers) host.addEventListener(type, handler);
+    return () => {
+      for (const [type, handler] of handlers) host.removeEventListener(type, handler);
+      // Nobody hears the pointer leave any more: let go, so the tooltip does not stay open or open later by itself.
+      hold("hover", false);
+      hold("focus", false);
+    };
+  }, [active, hold]);
+  return { ref, open };
+}
+
+/** While a tooltip is open, Escape closes it before anything else handles the key, so an open drawer stays open. */
+export function useEscapeDismiss(open: boolean, dismiss: () => void): void {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      dismiss();
+    };
+    document.addEventListener("keydown", onKey, { capture: true });
+    return () => document.removeEventListener("keydown", onKey, { capture: true });
+  }, [open, dismiss]);
+}

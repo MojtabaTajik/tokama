@@ -19,7 +19,7 @@ describe("agentInfo", () => {
   });
 
   it("names the agent and its model from the setup's agent list when the engine resolved nothing for the step", () => {
-    expect(agentInfo(ITEMS.queued, 0, setup)).toEqual({ id: "architect", name: "Architect", dot: 1, model: "opus", cliId: "claude-code", access: undefined });
+    expect(agentInfo(ITEMS.queued, 0, setup)).toEqual({ id: "architect", name: "Architect", hue: 1, icon: "compass", model: "opus", cliId: "claude-code", access: undefined });
   });
 
   it("falls back to the id alone for an agent the setup does not list, and to nothing before the first load", () => {
@@ -31,7 +31,8 @@ describe("agentInfo", () => {
     expect(agentInfo(ITEMS.queued, 0, withAccess())).toEqual({
       id: "architect",
       name: "Resolved name",
-      dot: 1,
+      hue: 1,
+      icon: "compass",
       model: "gpt-5",
       cliId: "codex-cli",
       access: { owner: "repo", repoId: "orders-api", role: "You build.", edit: true, commands: ["pnpm test"], web: true },

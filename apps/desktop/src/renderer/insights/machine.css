@@ -245,18 +245,13 @@
   gap: var(--space-6);
 }
 
-.mc-live {
-  font-size: 10px;
-  color: var(--live);
-}
-
 .mc-child {
   padding-left: var(--space-22);
 }
 
 .mc-branch {
   margin-right: var(--space-6);
-  color: var(--agent-neutral);
+  color: var(--muted);
 }
 
 .mc-kind {
