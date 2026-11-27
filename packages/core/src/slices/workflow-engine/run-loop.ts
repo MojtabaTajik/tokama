@@ -1038,6 +1038,10 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       append(item.id, [{ type: "item_ended", outcome: "done", detail: detail(`${count} ${count === 1 ? "file" : "files"} changed in the worktree; this template commits nothing.`) }]);
       return WAIT;
     }
+    // The worktree is removed only while the branch and the tree are both still the base: nothing is lost.
+    const [tip, baseTree] = await Promise.all([git.revParse(worktree.path, `refs/heads/${worktree.branch}`), git.revParse(worktree.path, `${worktree.baseCommit}^{tree}`)]);
+    if (!tip.ok || tip.value !== worktree.baseCommit) return { kind: "end", outcome: "failed", detail: `Stopped: the item branch ${worktree.branch} moved off its base commit.` };
+    if (!baseTree.ok || baseTree.value !== staged.value) return fail("Cannot confirm that the worktree holds no change.");
     append(item.id, [{ type: "item_ended", outcome: "done", detail: "Nothing changed: the answer is the result." }]);
     const removed = finisher.start(item.id, "discard");
     if (!removed.ok) deps.log?.(`item ${item.id}: the unused worktree was not removed: ${removed.error.message}`);
