@@ -221,6 +221,36 @@
   overflow-wrap: anywhere;
 }
 
+/* An agent's record per model: a line each, in columns that line up. */
+.agent-record {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  margin-top: var(--space-12);
+}
+
+.agent-record-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-base);
+  color: var(--text-2);
+}
+
+.agent-record-list li {
+  display: grid;
+  grid-template-columns: minmax(80px, 150px) 80px 110px minmax(0, 1fr);
+  gap: var(--space-12);
+  align-items: baseline;
+}
+
+.agent-record-model {
+  color: var(--text);
+}
+
 .agent-broken-title .symbol {
   display: inline-block;
   width: 1.4em;

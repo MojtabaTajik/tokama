@@ -1,6 +1,6 @@
 // The app shell: icon rail, sidebar, main area, and the item drawer when an item is open. An open
 // item can fill the main area instead of the drawer (the full view); the sidebar stays.
-import type { BoardCount, FinishAction, UsageRange, UsageScope } from "@tokama/core";
+import type { AiCliId, BoardCount, FinishAction, UsageWindow } from "@tokama/core";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ToolsPathInfo, TokamaBridge } from "../shared/bridge.js";
 import { DEFAULT_DESKTOP_STATE, type DesktopState, DRAWER_WIDTH, type GetStartedState, RAIL_WIDTH, SECTIONS, SIDEBAR_WIDTH } from "../shared/desktop-state.js";
@@ -76,13 +76,12 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
     setSettingsAgent(target);
     setPage("settings");
   }, []);
-  // The tooltip and the page share one report; the page's range picks its days.
-  const [usageRange, setUsageRange] = useState<UsageRange>(14);
-  // Whose usage the page counts: Tokama's own calls, or every Claude Code call on this machine.
-  const [usageScope, setUsageScope] = useState<UsageScope>("tokama");
+  // The tooltip and the page share one report; the page picks the week it shows and the AI tool, and keeps both while the app runs.
+  const [usageWindow, setUsageWindow] = useState<UsageWindow>("current");
+  const [usageTool, setUsageTool] = useState<AiCliId | undefined>(undefined);
   // The report loads every minute only while someone looks at it: the page, or the rail tooltip.
   const [tipShown, setTipShown] = useState(false);
-  const usage = useUsage(bridge, connection, usageRange, usageScope, page === "insights" || tipShown);
+  const usage = useUsage(bridge, connection, usageWindow, page === "insights" || tipShown);
   const diagnosticsWaiting = useDiagnosticsWaiting(bridge, connection);
   const whatsNew = useWhatsNew(bridge);
   // The release note About opens on (a row starts open): set by the card's See all and by the chip, dropped once About is left.
@@ -566,10 +565,10 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
           connection={connection}
           onRetryConnection={() => void bridge.retryConnection()}
           usage={usage}
-          range={usageRange}
-          onRange={setUsageRange}
-          scope={usageScope}
-          onScope={setUsageScope}
+          window={usageWindow}
+          onWindow={setUsageWindow}
+          tool={usageTool}
+          onTool={setUsageTool}
           setup={setup}
           items={items}
           issues={issues}

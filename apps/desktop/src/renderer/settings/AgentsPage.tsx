@@ -2,9 +2,11 @@
 // with its role, what it runs on, model and limits, and the files that do not load with their
 // problems. A list with a filter on the left, the selected agent on the right. Engine text (names,
 // roles, models, file names, problems) is rendered as React text only, never as HTML.
-import type { AgentDetail, AgentsListResult, BrokenAgentDetail, Setup } from "@tokama/core";
+import type { AgentDetail, AgentsListResult, BrokenAgentDetail, Setup, UsageReport } from "@tokama/core";
 import { type ReactNode, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
+import { firstTry, perRunOf } from "../insights/model-record.js";
+import { useUsage } from "../insights/useUsage.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { type AgentTarget, agentRows, filterRows, isTarget, limitsNotes, limitsTitle, ownerLabel, rowLine, rowName, runsOnName, summaryLine } from "./describe.js";
 import { useAgents } from "./useAgents.js";
@@ -29,6 +31,7 @@ const TEXT = {
   stored: "Stored in",
   runsOn: "Runs on",
   model: "Model",
+  record: "This agent's record · last 90 days · models with 5 or more runs",
   whereItRuns: "Where it runs",
   limits: "Tool limits",
   role: "Role",
@@ -52,6 +55,8 @@ export interface AgentsPageProps {
 
 export function AgentsPage({ bridge, connection, setup, initialAgent }: AgentsPageProps) {
   const { state, reload } = useAgents(bridge, connection, setup);
+  // Read while this page is open: each agent's record per model.
+  const usage = useUsage(bridge, connection, "current", true);
   const [query, setQuery] = useState("");
   const [selectedKey, setSelectedKey] = useState<string | undefined>(undefined);
   const data = state.status === "loaded" ? state.data : undefined;
@@ -91,7 +96,7 @@ export function AgentsPage({ bridge, connection, setup, initialAgent }: AgentsPa
         )}
         <p className="agents-note">{TEXT.edit}</p>
       </div>
-      <div className="agent-detail">{selected === undefined ? <Placeholder>{data === undefined ? "" : TEXT.select}</Placeholder> : selected.broken ? <BrokenDetail entry={selected.entry} /> : <Detail agent={selected.agent} />}</div>
+      <div className="agent-detail">{selected === undefined ? <Placeholder>{data === undefined ? "" : TEXT.select}</Placeholder> : selected.broken ? <BrokenDetail entry={selected.entry} /> : <Detail agent={selected.agent} report={usage.report} />}</div>
     </section>
   );
 }
@@ -130,7 +135,38 @@ function Field({ label, children }: { readonly label: string; readonly children:
   );
 }
 
-function Detail({ agent }: { readonly agent: AgentDetail }) {
+/**
+ * What this agent's runs on each model came to over the last 90 days, from 5 runs per model:
+ * runs, how often its checks passed first time (only for steps with checks), and what a run took.
+ * Nothing when the agent has no model with enough runs.
+ */
+function ModelRecords({ agentId, report }: { readonly agentId: string; readonly report: UsageReport | undefined }) {
+  const models = report?.agentModels?.find((entry) => entry.agentId === agentId)?.models ?? [];
+  if (models.length === 0) return null;
+  const unit = perRunOf(models);
+  return (
+    <div className="agent-record">
+      <p className="agents-note">{TEXT.record}</p>
+      <ul className="agent-record-list">
+        {models.map((record) => {
+          const first = firstTry(record);
+          return (
+            <li key={`${record.cliId}:${record.model}`}>
+              <span className="mono agent-record-model">{record.model}</span>
+              <span>{record.runs} runs</span>
+              <span>{first === undefined ? "" : `${first.percent} first try`}</span>
+              <span>
+                {unit.text(record)} {unit.sentence}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function Detail({ agent, report }: { readonly agent: AgentDetail; readonly report: UsageReport | undefined }) {
   return (
     <article aria-label={agent.name}>
       <header className="agent-head">
@@ -157,6 +193,7 @@ function Detail({ agent }: { readonly agent: AgentDetail }) {
       </Field>
       <Field label={TEXT.model}>
         <p className="agent-value mono">{agent.model}</p>
+        <ModelRecords agentId={agent.id} report={report} />
       </Field>
       <Field label={TEXT.whereItRuns}>
         <p className="agent-value">{agent.runsOn === "local" ? TEXT.local : TEXT.cloud}</p>

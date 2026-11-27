@@ -146,12 +146,7 @@ export function InsightsTip({ usage, issues, health, setup, now, onSelectItem, o
           <span className="it-total-name">{TEXT.tokensToday}</span>
           <span className="mono it-total">{formatTokens(totalOf(today.tokens))}</span>
           <span className="it-total-parts">
-            {[
-              `input ${formatTokens(today.tokens.input)}`,
-              `output ${formatTokens(today.tokens.output)}`,
-              `cache read ${formatTokens(today.tokens.cacheRead)}`,
-              ...(today.tokens.cacheWrite > 0 ? [`cache write ${formatTokens(today.tokens.cacheWrite)}`] : []),
-            ].join(" · ")}
+            {[`input ${formatTokens(today.tokens.input)}`, `output ${formatTokens(today.tokens.output)}`].join(" · ")}
           </span>
           <span className="it-total-name">{TEXT.timeToday}</span>
           <span className="mono it-total">{formatDuration(today.durationMs, "coarse")}</span>

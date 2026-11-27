@@ -5,10 +5,11 @@
 // while its attempt is open, and a running attempt is read again every few seconds only then. What
 // was opened stays open while the app runs. Everything is engine text, shown as React text only,
 // never as HTML or Markdown.
-import type { AttemptSummary, ItemRecord, Setup, StepRecord } from "@tokama/core";
+import type { AttemptSummary, ItemRecord, ItemUsage, Setup, StepRecord } from "@tokama/core";
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
 import { agentInfo } from "../agent/agent-info.js";
+import { attemptsText } from "../insights/usage-model.js";
 import { useNow } from "../useNow.js";
 import { agentSteps, attemptFacts, capNote, logFacts, sizeFact, stepFacts, transcriptBytes, transcriptLines, useAttemptReply } from "./attempt-view.js";
 import { attemptLine } from "./describe.js";
@@ -29,6 +30,8 @@ const TEXT = {
   final: "Final message",
   transcript: (title: string) => `${title}: transcript`,
   transcripts: (step: string) => `${step}: transcripts`,
+  retries: (retry: { readonly attempts: readonly number[]; readonly tokensPercent: number; readonly failingCheck?: string | undefined }) =>
+    `${attemptsText(retry.attempts)} used ${Math.round(retry.tokensPercent)}% of this item's tokens${retry.failingCheck === undefined ? "" : ` · failing check: ${retry.failingCheck}`}`,
 } as const;
 
 /** Looks at the box's end again after each answer only while the reader was at the end. */
@@ -37,6 +40,8 @@ const AT_END_PX = 8;
 export interface LogTabProps {
   readonly bridge: TokamaBridge;
   readonly item: ItemRecord;
+  /** What the item used: a step with retries says what they took. */
+  readonly usage?: ItemUsage | undefined;
   readonly setup: Setup | undefined;
   readonly full: boolean;
   /** Opens this step and its latest attempt and focuses its line, again for each new `seq`: a stopped step's "See the log". */
@@ -50,7 +55,7 @@ const stepKey = (index: number) => `s:${index}`;
 const attemptKey = (index: number, attempt: number) => `a:${index}:${attempt}`;
 const touchedKey = (index: number) => `t:${index}`;
 
-export function LogTab({ bridge, item, setup, full, focus }: LogTabProps) {
+export function LogTab({ bridge, item, usage, setup, full, focus }: LogTabProps) {
   const indexes = agentSteps(item);
   const withLog = indexes.filter((index) => (item.steps[index]!.attempts ?? []).length > 0);
   const { open, update } = useOpenSections(`${item.id}:Log`, []);
@@ -115,6 +120,7 @@ export function LogTab({ bridge, item, setup, full, focus }: LogTabProps) {
             key={index}
             bridge={bridge}
             item={item}
+            usage={usage}
             setup={setup}
             index={index}
             mark={track[index]!.mark}
@@ -136,6 +142,7 @@ export function LogTab({ bridge, item, setup, full, focus }: LogTabProps) {
 interface StepLogProps {
   readonly bridge: TokamaBridge;
   readonly item: ItemRecord;
+  readonly usage: ItemUsage | undefined;
   readonly setup: Setup | undefined;
   readonly index: number;
   readonly mark: Mark;
@@ -146,7 +153,7 @@ interface StepLogProps {
   readonly buttonRef: (button: HTMLButtonElement | null) => void;
 }
 
-function StepLog({ bridge, item, setup, index, mark, open, attemptOpen, onToggle, onToggleAttempt, buttonRef }: StepLogProps) {
+function StepLog({ bridge, item, usage, setup, index, mark, open, attemptOpen, onToggle, onToggleAttempt, buttonRef }: StepLogProps) {
   const step: StepRecord = item.steps[index]!;
   const attempts = step.attempts ?? [];
   const running = attempts.at(-1)?.result === undefined && attempts.length > 0;
@@ -154,6 +161,7 @@ function StepLog({ bridge, item, setup, index, mark, open, attemptOpen, onToggle
   const now = useNow(running);
   const facts = stepFacts(step, now, sizeFact(transcriptBytes(attempts)));
   const info = agentInfo(item, index, setup);
+  const retry = usage?.retries?.find((entry) => entry.stepIndex === index);
   return (
     <Section
       title={step.name}
@@ -168,6 +176,7 @@ function StepLog({ bridge, item, setup, index, mark, open, attemptOpen, onToggle
     >
       {() => (
         <div className="lg-attempts" role="group" aria-label={TEXT.transcripts(step.name)}>
+          {retry !== undefined && <p className="lg-retries">{TEXT.retries(retry)}</p>}
           {attempts.map((attempt) => (
             <AttemptLog
               key={attempt.attempt}

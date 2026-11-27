@@ -36,6 +36,38 @@
   vertical-align: baseline;
 }
 
+/* An agent in history: the same round 18 px ring in grey, then the name. */
+.ag-ring-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.ag-ring {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  color: var(--agent-neutral);
+}
+
+.ag-ring .tpl-icon {
+  vertical-align: baseline;
+}
+
+.ag-ring-text {
+  overflow: hidden;
+  color: var(--text-2);
+  text-overflow: ellipsis;
+}
+
 
 /* Pulled left so the name lines up with the text above it; it clips to its cell, so a long model never runs into the next column. */
 .al {

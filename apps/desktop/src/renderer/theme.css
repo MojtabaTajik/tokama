@@ -43,6 +43,9 @@
   --tag-rose: #d08ab2;
   --tag-plum: #a288c8;
 
+  /* Chart parts that are not one of Tokama's own: other apps, use outside Tokama. Passes the palette check against the tag colours. */
+  --chart-other: #5f6b78;
+
   /* Inter and JetBrains Mono when installed; no remote font loading (the CSP refuses it). */
   --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;

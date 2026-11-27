@@ -1,12 +1,11 @@
 // The Insights page: its header and tabs, the Usage tab (UsageTab) once the first report has come,
 // and the Machine tab (MachineTab).
-import type { ItemRecord, Setup, UsageRange, UsageScope } from "@tokama/core";
+import type { AiCliId, ItemRecord, Setup, UsageWindow } from "@tokama/core";
 import { useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import type { CliIssue } from "../model.js";
 import { ConnectionFailure } from "../shell/ConnectionStatus.js";
 import { MachineTab } from "./MachineTab.js";
-import type { Metric } from "./usage-model.js";
 import { UsageTab } from "./UsageTab.js";
 import type { UsageView } from "./useUsage.js";
 import { Tabs } from "../ui/Tabs.js";
@@ -27,10 +26,11 @@ export interface InsightsProps {
   readonly connection: ConnectionState;
   readonly onRetryConnection: () => void;
   readonly usage: UsageView;
-  readonly range: UsageRange;
-  readonly onRange: (range: UsageRange) => void;
-  readonly scope: UsageScope;
-  readonly onScope: (scope: UsageScope) => void;
+  /** The week the Usage tab shows, and the AI tool it is filtered to: both kept by the app. */
+  readonly window: UsageWindow;
+  readonly onWindow: (window: UsageWindow) => void;
+  readonly tool: AiCliId | undefined;
+  readonly onTool: (tool: AiCliId | undefined) => void;
   readonly setup: Setup | undefined;
   readonly items: readonly ItemRecord[];
   readonly issues: readonly CliIssue[];
@@ -41,10 +41,8 @@ export interface InsightsProps {
 
 const TABS = ["usage", "machine"] as const;
 
-export function Insights({ bridge, connection, onRetryConnection, usage, range, onRange, scope, onScope, setup, items, issues, now, onSelectItem, onNewWork }: InsightsProps) {
+export function Insights({ bridge, connection, onRetryConnection, usage, window, onWindow, tool, onTool, setup, items, issues, now, onSelectItem, onNewWork }: InsightsProps) {
   const [tab, setTab] = useState<"usage" | "machine">("usage");
-  const [metric, setMetric] = useState<Metric>("tokens");
-  const [filter, setFilter] = useState<string | undefined>(undefined);
   const { report } = usage;
   return (
     <main className="main insights-page" tabIndex={-1}>
@@ -62,23 +60,7 @@ export function Insights({ bridge, connection, onRetryConnection, usage, range, 
           ) : report === undefined ? (
             <Placeholder>{usage.error === undefined ? TEXT.loading : `${TEXT.failed}: ${usage.error}`}</Placeholder>
           ) : (
-            <UsageTab
-              report={report}
-              error={usage.error}
-              range={range}
-              onRange={onRange}
-              scope={scope}
-              onScope={onScope}
-              onRefresh={usage.refresh}
-              setup={setup}
-              issues={issues}
-              now={now}
-              onSelectItem={onSelectItem}
-              metric={metric}
-              onMetric={setMetric}
-              filter={filter}
-              onFilter={setFilter}
-            />
+            <UsageTab report={report} window={window} onWindow={onWindow} tool={tool} onTool={onTool} onRefresh={usage.refresh} setup={setup} issues={issues} now={now} onSelectItem={onSelectItem} onNewWork={onNewWork} />
           )}
         </section>
       )}

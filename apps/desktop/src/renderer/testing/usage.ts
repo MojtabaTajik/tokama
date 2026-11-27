@@ -1,79 +1,148 @@
-// A usage report shaped like the fake engine's: 14 days ending at NOW over the test setup's
-// workflows, Claude Code well inside its limits, Codex CLI near its weekly limit and Ollama
-// without a plan. `allReport` is the same range counted over every Claude Code call on this
-// machine. Local times, so the tests do not depend on the machine's time zone.
-// model.test.ts checks it against the engine schema.
+// Usage reports shaped like the fake engine's, at NOW (local times, so the tests do not depend on
+// the machine's time zone). `planReport` is the page's main state: Claude Code on a Max plan whose
+// weekly limit runs out before it resets, Codex CLI on pace, and Ollama without a plan. The others
+// are the states the page draws beside it. model.test.ts checks every one against the engine schema.
 import type { UsageReport } from "@tokama/core";
 import { ITEMS, NOW } from "./sample.js";
 
 const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
 const local = (day: number, hour: number, minute = 0) => new Date(2025, 9, day, hour, minute).getTime();
-const date = (day: number) => `2025-10-${String(day).padStart(2, "0")}`;
 const tokens = (input: number, output: number, cacheRead: number, cacheWrite: number) => ({ input, output, cacheRead, cacheWrite });
 
-const day = (n: number, workflows: UsageReport["days"][number]["workflows"]) => ({ date: date(n), workflows });
-const exportItem = { itemId: ITEMS.verifying.id, title: ITEMS.verifying.title };
-const outage = { itemId: ITEMS.needsYou.id, title: ITEMS.needsYou.title };
+const BUILD = { templateId: "builtin/plan-and-build", stepId: "build", agentId: "local-builder" };
+const weeklyStart = local(16, 9);
+const weeklyEnd = local(23, 9);
+// 82% used 102 hours into a 168-hour window: the limit runs out at 100 hours / 0.82 in.
+const runsOutAt = weeklyStart + Math.round((102 * HOUR * 100) / 82);
 
-export const usageReport = {
-  range: 14,
-  asOf: NOW,
-  pricesAsOf: "2026-11-03",
-  clis: [
+const claudeWindows = [
+  { window: "session", usedPercent: 36, resetsAt: local(20, 17, 10), startsAt: local(20, 12, 10), forecast: { atResetPercent: 63.5 } },
+  { window: "weekly_all", usedPercent: 82, resetsAt: weeklyEnd, startsAt: weeklyStart, forecast: { atResetPercent: 135.06, runsOutAt } },
+  { window: "weekly_scoped", usedPercent: 47, resetsAt: weeklyEnd, startsAt: weeklyStart, scope: "Fable", forecast: { atResetPercent: 77.4 } },
+];
+
+const claudeCode = { cliId: "claude-code", windows: claudeWindows, source: "request", asOf: NOW - 2 * MINUTE, plan: "max", version: "2.1.331", extraUsage: "off", billing: "plan" };
+const codexCli = {
+  cliId: "codex-cli",
+  windows: [{ window: "seven_day", usedPercent: 30, resetsAt: local(25, 6), startsAt: local(18, 6), forecast: { atResetPercent: 88.4 } }],
+  source: "request",
+  asOf: NOW - 34 * MINUTE,
+  plan: "plus",
+  version: "0.169.0",
+  billing: "plan",
+};
+const ollama = { cliId: "ollama", windows: [], note: "Local models have no plan limit." };
+
+const item = (id: string, title: string, runs: number, shareTokens: number, sharePercent?: number) => ({ itemId: id, title, runs, tokens: shareTokens, ...(sharePercent !== undefined && { sharePercent }) });
+
+const week = {
+  window: "current",
+  limits: [
+    { cliId: "claude-code", window: "weekly_all", startsAt: weeklyStart, endsAt: weeklyEnd, usedPercent: 82, tokamaPercent: 62, outsidePercent: 20 },
+    { cliId: "codex-cli", window: "seven_day", startsAt: local(18, 6), endsAt: local(25, 6), usedPercent: 30, tokamaPercent: 22, outsidePercent: 8 },
+  ],
+  steps: [
     {
-      cliId: "claude-code",
-      windows: [
-        { window: "five_hour", usedPercent: 36, resetsAt: local(20, 17, 10) },
-        { window: "seven_day", usedPercent: 58, resetsAt: local(23, 9) },
-      ],
-      source: "request",
-      asOf: NOW - 2 * MINUTE,
-      plan: "max",
-      version: "2.1.331",
-      extraUsage: "off",
+      templateId: "builtin/plan-and-build",
+      stepId: "review",
+      stepName: "Review",
+      agentId: "reviewer",
+      cliId: "codex-cli",
+      model: "gpt-5",
+      runs: 21,
+      itemCount: 12,
+      tokens: 1_900_000,
+      tokamaPercent: 66,
+      sharePercent: 14.5,
+      items: [item(ITEMS.verifying.id, ITEMS.verifying.title, 3, 400_000, 3.1)],
     },
-    { cliId: "codex-cli", windows: [{ window: "seven_day", usedPercent: 84, resetsAt: local(25, 6) }], source: "request", asOf: NOW - 34 * MINUTE, version: "0.169.0" },
-    { cliId: "ollama", windows: [], note: "Local models have no plan limit." },
-  ],
-  days: [
-    ...Array.from({ length: 12 }, (_, i) =>
-      day(7 + i, i % 3 === 0 ? [{ templateId: "builtin/plan-and-build", tokens: 120_000 + i * 1000, costUsd: 2 + i / 10, items: [exportItem], itemCount: 1 }] : []),
-    ),
-    day(19, [{ templateId: "builtin/emergency-investigator", tokens: 90_000, costUsd: 0, items: [outage], itemCount: 1 }]),
-    day(20, [
-      { templateId: "builtin/plan-and-build", tokens: 186_000, costUsd: 3.1, items: [exportItem], itemCount: 1 },
-      { templateId: "builtin/emergency-investigator", tokens: 114_000, costUsd: 0.4, items: [outage], itemCount: 1 },
-    ]),
-  ],
-  workflows: [
-    { templateId: "builtin/plan-and-build", tokens: 692_000, costUsd: 11.7, calls: 9 },
-    { templateId: "builtin/emergency-investigator", tokens: 204_000, costUsd: 0.4, calls: 5 },
+    {
+      templateId: "builtin/plan-and-build",
+      stepId: "build",
+      stepName: "Build",
+      agentId: "local-builder",
+      cliId: "claude-code",
+      model: "sonnet",
+      runs: 19,
+      itemCount: 12,
+      tokens: 3_000_000,
+      tokamaPercent: 40,
+      sharePercent: 24.8,
+      items: [item(ITEMS.verifying.id, ITEMS.verifying.title, 3, 500_000, 5.1), item(ITEMS.working.id, ITEMS.working.title, 2, 300_000, 3.9), item(ITEMS.queued.id, ITEMS.queued.title, 1, 100_000, 1.8)],
+    },
+    {
+      templateId: "builtin/plan-and-build",
+      stepId: "plan",
+      stepName: "Plan",
+      agentId: "architect",
+      cliId: "claude-code",
+      model: "opus",
+      runs: 14,
+      itemCount: 12,
+      tokens: 2_100_000,
+      tokamaPercent: 30,
+      sharePercent: 18.6,
+      items: [],
+    },
+    {
+      templateId: "builtin/emergency-investigator",
+      stepId: "triage",
+      stepName: "Triage",
+      agentId: "local-builder",
+      cliId: "ollama",
+      model: "qwen3-coder:30b",
+      runs: 6,
+      itemCount: 3,
+      tokens: 404_000,
+      tokamaPercent: 100,
+      items: [item(ITEMS.needsYou.id, ITEMS.needsYou.title, 2, 200_000)],
+    },
   ],
   items: [
+    { ...item(ITEMS.verifying.id, ITEMS.verifying.title, 6, 900_000, 8.2), templateId: "builtin/plan-and-build", cliId: "claude-code" },
+    { ...item(ITEMS.needsYou.id, ITEMS.needsYou.title, 2, 200_000), templateId: "builtin/emergency-investigator", cliId: "ollama" },
+  ],
+  helpers: [{ cliId: "claude-code", model: "haiku", calls: 38, tokens: 120_000, sharePercent: 1 }],
+  retries: [
     {
-      itemId: ITEMS.verifying.id,
-      title: ITEMS.verifying.title,
-      templateId: "builtin/plan-and-build",
-      agents: [
-        { agentId: "architect", cliId: "claude-code" },
-        { agentId: "reviewer", cliId: "codex-cli" },
+      cliId: "claude-code",
+      tokens: 700_000,
+      sharePercent: 14,
+      causes: [
+        { kind: "check", command: "pnpm test", repoId: "orders-api", ...BUILD, retries: 9, itemCount: 5, tokens: 400_000, sharePercent: 8 },
+        { kind: "check", command: "pnpm e2e", repoId: "checkout-web", ...BUILD, retries: 4, itemCount: 2, tokens: 200_000, sharePercent: 4 },
+        { kind: "review", ...BUILD, retries: 3, itemCount: 3, tokens: 100_000, sharePercent: 2 },
       ],
-      tokens: tokens(40_000, 23_000, 100_000, 0),
-      durationMs: 29 * MINUTE,
-      costUsd: 3.1,
-      local: false,
-    },
-    {
-      itemId: ITEMS.needsYou.id,
-      title: ITEMS.needsYou.title,
-      templateId: "builtin/emergency-investigator",
-      agents: [{ agentId: "local-builder", cliId: "ollama" }],
-      tokens: tokens(90_000, 28_000, 0, 0),
-      durationMs: 41 * MINUTE,
-      costUsd: 0,
-      local: true,
     },
   ],
+};
+
+const model = (name: string, cliId: string, runs: number, firstTryPassed: number, avgAttempts: number, sharePerRun: number, minutes: number) => ({
+  model: name,
+  cliId,
+  runs,
+  firstTryPassed,
+  avgAttempts,
+  tokensPerRun: Math.round(sharePerRun * 90_000),
+  sharePerRun,
+  durationMsPerRun: minutes * MINUTE,
+});
+
+const stepModels = [
+  { templateId: "builtin/plan-and-build", stepId: "build", stepName: "Build", models: [model("sonnet", "claude-code", 46, 36, 1.3, 0.9, 11), model("opus", "claude-code", 12, 11, 1.1, 2.2, 14)] },
+  { templateId: "builtin/quick-change", stepId: "change", stepName: "Change", models: [model("sonnet", "claude-code", 31, 27, 1.2, 0.4, 5), model("haiku", "claude-code", 9, 6, 1.6, 0.2, 6)] },
+];
+
+const agentModels = [
+  { agentId: "local-builder", models: [model("sonnet", "claude-code", 58, 47, 1.3, 0.8, 11), model("opus", "claude-code", 12, 11, 1.1, 2.2, 14)] },
+  { agentId: "reviewer", models: [model("gpt-5", "codex-cli", 21, 21, 1, 0.7, 4)] },
+];
+
+export const planReport = {
+  asOf: NOW,
+  pricesAsOf: "2026-11-03",
+  clis: [claudeCode, codexCli, ollama],
   today: {
     items: [
       { itemId: ITEMS.verifying.id, title: ITEMS.verifying.title, agents: [{ agentId: "architect", cliId: "claude-code" }, { agentId: "reviewer", cliId: "codex-cli" }], tokens: 141_000, durationMs: 26 * MINUTE },
@@ -83,53 +152,59 @@ export const usageReport = {
     tokens: tokens(171_000, 23_000, 48_000, 0),
     durationMs: 44 * MINUTE,
   },
-  totals: { tokens: tokens(300_000, 96_000, 500_000, 0), costUsd: 12.1, calls: 14, unpricedCalls: 2 },
-  scope: "tokama",
-  tokenSummary: { processed: 896_000, cachedInput: 500_000, cachedInputPercent: 62.5, uncachedInput: 300_000, output: 96_000, cacheSavingsUsd: 2.25, cacheSavingsFactor: 10 },
-  models: [
-    { model: "claude-opus-5-5", cliId: "claude-code", tokens: 692_000, costUsd: 11.7, sharePercent: 96.7 },
-    { model: "gpt-5-codex", cliId: "codex-cli", tokens: 86_000, costUsd: 0.4, sharePercent: 3.3 },
-    { model: "qwen3-coder:30b", cliId: "ollama", tokens: 118_000, costUsd: null, sharePercent: null },
-  ],
-  repos: [
-    { repoId: "orders-api", tokens: 692_000, costUsd: 11.7 },
-    { repoId: "checkout-web", tokens: 204_000, costUsd: 0.4 },
-  ],
+  week,
+  stepModels,
+  agentModels,
 } as unknown as UsageReport;
 
-/** Every Claude Code call on this machine from its logs, plus Tokama's calls on other CLIs. */
-export const allReport = {
-  ...usageReport,
-  scope: "all",
-  days: usageReport.days.map((d) => ({ ...d, tokens: 160_000_000, costUsd: 120 })),
-  totals: { tokens: tokens(38_600_000, 6_900_000, 2_290_000_000, 4_000_000), costUsd: 1755, calls: 24_400, unpricedCalls: 0 },
-  tokenSummary: { processed: 2_339_500_000, cachedInput: 2_290_000_000, cachedInputPercent: 98.2, uncachedInput: 42_600_000, output: 6_900_000, cacheSavingsUsd: 6180, cacheSavingsFactor: 4.5 },
-  models: [
-    { model: "claude-opus-5-5", cliId: "claude-code", tokens: 1_020_000_000, costUsd: 1120, sharePercent: 63.8 },
-    { model: "claude-sonnet-5-5", cliId: "claude-code", tokens: 1_210_000_000, costUsd: 541, sharePercent: 30.8 },
-    { model: "claude-haiku-5-5", cliId: "claude-code", tokens: 110_000_000, costUsd: 94, sharePercent: 5.4 },
-  ],
-  repos: [
-    { repoId: "orders-api", tokens: 1_210_000_000, costUsd: 905 },
-    { repoId: "checkout-web", tokens: 710_000_000, costUsd: 534 },
-    { repoId: null, tokens: 420_000_000, costUsd: 316 },
-  ],
-  scan: { state: "ready", filesDone: 684, filesTotal: 684, asOf: NOW },
+/** The same, with Claude Code's weekly limit reached. */
+export const atLimit = {
+  ...planReport,
+  clis: [{ ...claudeCode, windows: [claudeWindows[0], { window: "weekly_all", usedPercent: 100, resetsAt: weeklyEnd, startsAt: weeklyStart }] }, codexCli, ollama],
+  week: { ...week, limits: [{ ...week.limits[0], usedPercent: 100, tokamaPercent: 78, outsidePercent: 22 }, week.limits[1]] },
 } as unknown as UsageReport;
 
-/** The same report with Claude Code's `limits` list: session, weekly, and a weekly limit for one model. */
-export const limitsReport = {
-  ...usageReport,
-  clis: usageReport.clis.map((cli) =>
-    cli.cliId === "claude-code"
-      ? {
-          ...cli,
-          windows: [
-            { window: "session", usedPercent: 63, resetsAt: local(20, 17, 10), group: "session", severity: "normal", active: true },
-            { window: "weekly_all", usedPercent: 41, resetsAt: local(23, 9), group: "weekly", severity: "normal", active: false },
-            { window: "weekly_scoped", usedPercent: 0, resetsAt: local(23, 9), scope: "Fable", group: "weekly", severity: "normal", active: false, sharePercent: 50 },
-          ],
-        }
-      : cli,
-  ),
+/** No limit reading yet: shares are of Tokama's own use, and no split or forecast is told. */
+export const noReading = {
+  ...planReport,
+  clis: [{ cliId: "claude-code", windows: [], billing: "plan" }, { cliId: "codex-cli", windows: [] }, ollama],
+  week: {
+    ...week,
+    limits: [],
+    steps: week.steps.map(({ sharePercent: _share, ...step }) => step),
+    helpers: week.helpers.map(({ sharePercent: _share, ...helper }) => helper),
+    retries: week.retries.map(({ sharePercent: _share, causes, ...retry }) => ({ ...retry, causes: causes.map(({ sharePercent: _cause, ...cause }) => cause) })),
+  },
+  stepModels: stepModels.map((group) => ({ ...group, models: group.models.map(({ sharePerRun: _share, ...record }) => record) })),
+} as unknown as UsageReport;
+
+/** An API key: money in place of limit share; one call was priced from the table. */
+export const payPerUse = {
+  ...planReport,
+  clis: [{ cliId: "claude-code", windows: [], billing: "pay_per_use", source: "run", asOf: NOW - MINUTE }, ollama],
+  week: {
+    window: "current",
+    limits: [],
+    steps: [
+      { ...week.steps[1], sharePercent: undefined, costUsd: 16.1 },
+      { ...week.steps[2], sharePercent: undefined, costUsd: 11.4 },
+      { ...week.steps[0], cliId: "claude-code", model: "claude-sonnet-5-5", sharePercent: undefined, costUsd: 2.7, costEstimated: true },
+    ],
+    items: [],
+    helpers: [],
+    retries: [],
+  },
+  stepModels: stepModels.map((group) => ({ ...group, models: group.models.map(({ sharePerRun: _share, ...record }) => ({ ...record, costPerRun: 0.35 })) })),
+  agentModels: undefined,
+} as unknown as UsageReport;
+
+/** Too few runs to compare models: the section and the agents' records are left out. */
+export const fewRuns = { ...planReport, stepModels: undefined, agentModels: undefined } as unknown as UsageReport;
+
+/** Nothing ran this week: limits and the forecast still show. */
+export const quiet = {
+  ...planReport,
+  week: { window: "current", limits: week.limits.map(({ tokamaPercent: _t, outsidePercent: _o, ...limit }) => limit), steps: [], items: [], helpers: [], retries: [] },
+  stepModels: undefined,
+  agentModels: undefined,
 } as unknown as UsageReport;

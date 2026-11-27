@@ -7,7 +7,7 @@
 // questions, the cloud summary, step details, agent output, check output and transcripts) is
 // rendered as React text only. While the item runs, the header shows the live activity line (who
 // works, the latest action, the time) beside the state line, and every item shows its step track.
-import type { CommandErrorCode, Decision, ItemRecord, Setup } from "@tokama/core";
+import type { CommandErrorCode, Decision, ItemRecord, ItemUsage, Setup } from "@tokama/core";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
 import { AgentLabel } from "../agent/AgentLabel.js";
@@ -36,6 +36,7 @@ import { StepOutput, useStepOutput } from "./StepOutput.js";
 import { StoppedCard } from "./StoppedCard.js";
 import { finishState, isDiscarded } from "./finish-view.js";
 import { useItem } from "./useItem.js";
+import { UsageFact } from "./UsageFact.js";
 import { useActivity } from "./useActivity.js";
 import { ActivityLine, StepTrack } from "./Progress.js";
 import { attemptTime, stepTimes, trackOf } from "./progress-view.js";
@@ -153,7 +154,7 @@ export interface Expanded {
 }
 
 export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckAgain, onOpenAgent, request, onExpand, onRead, expanded }: ItemDrawerProps) {
-  const { item, error, refresh } = useItem(bridge, itemId);
+  const { item, usage, error, refresh } = useItem(bridge, itemId);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<Notice | undefined>(undefined);
   const [confirmingStop, setConfirmingStop] = useState(false);
@@ -360,7 +361,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
             <LiveActivity bridge={bridge} item={item} setup={setup} onOpenAgent={onOpenAgent} />
             <StepTrack item={item} agents={setup?.agents ?? []} />
             <div className="ex-meta">
-              <StateLine item={item} />
+              <StateLine item={item} usage={usage} />
               <span className="ex-meta-part">
                 <TemplateIcon icon={template?.icon} color={template?.color} />
                 {TEXT.template(template?.name ?? item.templateId)}
@@ -391,7 +392,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
             {template?.name ?? item.templateId} · {PRIVACY[item.privacy]}
           </p>
           <h2 id={titleId}>{item.title}</h2>
-          <StateLine item={item} />
+          <StateLine item={item} usage={usage} />
           <LiveActivity bridge={bridge} item={item} setup={setup} onOpenAgent={onOpenAgent} />
           <StepTrack item={item} agents={setup?.agents ?? []} />
         </div>
@@ -462,7 +463,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
                 ) : shown === "Checks" ? (
                   <ChecksTab bridge={bridge} item={item} setup={setup} full={full} />
                 ) : shown === "Log" ? (
-                  <LogTab bridge={bridge} item={item} setup={setup} full={full} focus={logOf} />
+                  <LogTab bridge={bridge} item={item} usage={usage} setup={setup} full={full} focus={logOf} />
                 ) : change !== undefined ? (
                   <ItemDiffTab
                     item={item}
@@ -509,7 +510,7 @@ const DISCARDED = markOf("discarded");
  * The item's state in words. A running item has no mark: "running · Build, step 2 of 3, attempt 2 of 3 · 33 m 04 s",
  * its time ticking in this line only; the working agent's badge in the activity line is its running mark.
  */
-function StateLine({ item }: { readonly item: ItemRecord }) {
+function StateLine({ item, usage }: { readonly item: ItemRecord; readonly usage: ItemUsage | undefined }) {
   const working = item.state === "running";
   const now = useNow(working);
   const mark = isDiscarded(item) ? DISCARDED : rowMark(item);
@@ -530,6 +531,7 @@ function StateLine({ item }: { readonly item: ItemRecord }) {
       {position && <span className="drawer-position"> · {position}</span>}
       {working && <span className="drawer-position drawer-time mono"> · {timeOf(item, now).text}</span>}
       {outcome && <span className="drawer-position mono"> · {outcome}</span>}
+      <UsageFact usage={usage} />
     </p>
   );
 }
