@@ -11,7 +11,7 @@ export { spawnDetached, type ChildProcess, type DetachedService } from "./kernel
 // Pid files, the pid-alive check and atomic file replacement, for the engine service and the desktop app.
 export { pidAlive, readPidFile, type PidFile } from "./kernel/process/pid-file.js";
 export { readTextFile, type ReadFailure, type ReadTextOptions } from "./kernel/fs-safe/read.js";
-export { replaceTextSync, type WriteFailure, type WriteFailureReason } from "./kernel/fs-safe/write.js";
+export { appendTextSync, replaceTextSync, type WriteFailure, type WriteFailureReason } from "./kernel/fs-safe/write.js";
 export { manualClock, sleep, systemClock, withDeadline, type Clock, type ManualClock, type TimerHandle } from "./kernel/clock/index.js";
 // Small helpers the apps share with core.
 export { hasCode } from "./kernel/errno/index.js";
@@ -53,7 +53,7 @@ export {
   type RecoveryOptions,
   type StoreError,
 } from "./slices/items/index.js";
-export { posixProcessTable, type LeftoverOutcome, type ProcessInfo, type ProcessTable } from "./kernel/process/leftover.js";
+export { killLeftoverTree, posixProcessTable, type LeftoverOutcome, type ProcessInfo, type ProcessTable } from "./kernel/process/leftover.js";
 // The engine's lock and the per-OS process parts around it.
 export { posixEngineProcesses, probeSocket, readEngineLock, type EngineLock, type EngineProcesses, type Liveness } from "./kernel/process/own-engine.js";
 // Config, templates and the cloud rule, for the engine service's real mode.
@@ -71,21 +71,36 @@ export const aiCliAdapters = collectAiCliAdapters(Object.values(adapters));
 // The run loop and its commands, for the engine service.
 export {
   attemptLimit,
+  cleanCliText,
+  createHelperRunner,
   createRunLoop,
   explainStop,
+  HELPER_LOCAL_ONLY,
+  HELPER_NO_CLI,
+  HELPER_TARGETS,
   lastEnded,
   parseVerdict,
   ROUND_TRIPS,
   summarizeOutput,
   titleFrom,
   VERDICT_RULE,
+  type CliStatus,
   type CommandError,
+  type HelperCallRecord,
+  type HelperCommandError,
+  type HelperGatherer,
+  type HelperOutcome,
+  type HelperRunHooks,
+  type HelperRunner,
+  type PreparedHelperRun,
   type RunLoop,
   type RunLoopDeps,
   type StartItemInput,
   type Stopped,
   type Verdict,
 } from "./slices/workflow-engine/index.js";
+// The helpers this build has and the shape of one; the engine service lists them and runs them through the helper runner.
+export { BUILTIN_HELPERS, readAnswer, type AnswerProblem, type HelperDefinition, type HelperInputName } from "./slices/helpers/index.js";
 // Usage reports: roll-ups, estimated costs and the plan window choice, for the engine service.
 export {
   callCost,
@@ -344,9 +359,16 @@ export {
   type ItemDiff,
   type ItemChange,
   type TreeDiff,
+  AgentCallUsageSchema,
+  AiCliIdSchema,
   CheckTrialSchema,
   HELPER_RUN_ERROR_CODES,
+  HelperIdSchema,
+  HelperLogLineSchema,
+  HelperRunIdSchema,
   HelperRunSchema,
+  HostIdSchema,
+  type HelperLogLine,
   MAX_SUGGESTED_CHECKS,
   MAX_TRIAL_CHECKS,
   MAX_TRIAL_OUTPUT_CHARS,

@@ -5,6 +5,9 @@
 // read again for every setup query and before every start, so edits to repos.yaml, agents and
 // templates apply without a restart. Commands wait until restart recovery is done (the run loop
 // holds them).
+import { realpathSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import {
   type Agent,
   type AgentRuntime,
@@ -15,10 +18,16 @@ import {
   type AttemptFile,
   type AttemptFileResult,
   type AttemptLogResult,
+  BUILTIN_HELPERS,
   type Clock,
   type Command,
   type CommandError,
+  createHelperRunner,
   type DecisionId,
+  type EngineEvent,
+  type HelperDefinition,
+  type HelperGatherer,
+  type HelperId,
   type ItemChange,
   type ItemDiff,
   type ItemId,
@@ -28,6 +37,7 @@ import {
   err,
   type Git,
   ItemStore,
+  loadAgents,
   ok,
   type ProcessRunner,
   type ProcessTable,
@@ -45,6 +55,8 @@ import {
 import type { MemoryItemStore } from "../store.js";
 import { agentsFor, type Config, findTemplate, loadConfig, resolveAgent, startProblem, stepProblems, toSetup } from "./config.js";
 import { cachedChecks, type HealthChecks } from "./health.js";
+import { cliName, cliReadiness } from "./clis.js";
+import { HelperRuns } from "./helpers.js";
 import { toItemRecord } from "./records.js";
 
 export interface RealEngineOptions {
@@ -70,7 +82,23 @@ export interface RealEngineOptions {
   readonly onError?: (error: unknown) => void;
   /** What a running item does now, for live display; `undefined` once nothing runs. */
   readonly onActivity?: RunLoopDeps["onActivity"];
+  /** Where helper runs send their events: `helper_run_updated` and `usage_changed`. Default: nowhere. */
+  readonly emit?: (event: EngineEvent) => void;
+  /** The helpers this engine offers and how it collects their inputs. Default: the built-in list, which is empty. */
+  readonly helpers?: { readonly definitions: readonly HelperDefinition[]; readonly gatherers: Readonly<Partial<Record<HelperId, HelperGatherer>>> };
 }
+
+/** The folder a helper's call runs in, inside the Tokama home. */
+const HELPER_FOLDER = "helper-scratch";
+
+/** A folder in each form a CLI may report it: as given and as its real path (a temp folder on macOS is reached through a link). */
+const forms = (path: string): string[] => {
+  try {
+    return [...new Set([path, realpathSync(path)])];
+  } catch {
+    return [path];
+  }
+};
 
 /** The commands about items; repo commands are the engine's own. */
 type ItemCommand = Extract<Command, { type: "start_item" | "resolve_decision" | "stop_item" | "finish_item" | "accept_git_changes" }>;
@@ -84,6 +112,8 @@ export class RealEngine {
   private readonly git: Git;
   private readonly health: ReturnType<typeof cachedChecks>;
   private readonly unsubscribe: () => void;
+  /** The helper runs: asking, cancelling, the log and the usage rows. */
+  readonly helpers: HelperRuns;
 
   private constructor(
     private readonly options: RealEngineOptions,
@@ -122,6 +152,33 @@ export class RealEngine {
       ...(options.onActivity !== undefined && { onActivity: options.onActivity }),
     });
     this.ready = this.loop.ready;
+
+    const home = options.home;
+    const homes = forms(home);
+    const helpers = options.helpers ?? { definitions: BUILTIN_HELPERS, gatherers: {} };
+    this.helpers = new HelperRuns({
+      runner: createHelperRunner({
+        clock: options.clock,
+        definitions: helpers.definitions,
+        gatherers: helpers.gatherers,
+        agents: () => loadAgents({ tokamaHome: home }),
+        cliStatus: async (cliId) => cliReadiness(cliId, (await this.health.get()).clis),
+        cliName: (cliId) => cliName(cliId),
+        runtime,
+        // Local-only mode is not built yet; the helper checks it for every call from the day it is.
+        localOnly: () => false,
+        scratchDir: join(home, HELPER_FOLDER),
+        // Longest first is scrubPaths' own job: the helper folder, the Tokama home and the user's home, each in both forms.
+        folders: [...homes.map((path) => [join(path, HELPER_FOLDER), "~/.tokama/helper-scratch"] as const), ...homes.map((path) => [path, "~/.tokama"] as const), ...forms(homedir()).map((path) => [path, "~"] as const)],
+      }),
+      home,
+      hostId: items.hostId,
+      clock: options.clock,
+      processes: options.processes,
+      ...(options.recoveryGraceMs !== undefined && { recoveryGraceMs: options.recoveryGraceMs }),
+      emit: options.emit ?? (() => {}),
+      log,
+    });
   }
 
   /** Reads the config first: the run loop picks up items as soon as it exists, and needs the repos. */
@@ -247,6 +304,7 @@ export class RealEngine {
 
   /** Stops running agents and checks without recording an end; the next start asks Retry step / Stop. */
   async close(): Promise<void> {
+    await this.helpers.close();
     await this.loop.close();
     this.unsubscribe();
   }

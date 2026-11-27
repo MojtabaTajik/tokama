@@ -4,9 +4,9 @@
 // never change them.
 import { z } from "zod";
 import { checkCommand, folderPath, MAX_CHECK_CHARS } from "./common.js";
-import { CheckTrialIdSchema, EpochMsSchema, type HelperId, HelperIdSchema, HelperRunIdSchema } from "./ids.js";
+import { AiCliIdSchema, CheckTrialIdSchema, EpochMsSchema, type HelperId, HelperIdSchema, HelperRunIdSchema, HostIdSchema } from "./ids.js";
 import { AgentSummarySchema } from "./setup.js";
-import { TokenUsageSchema } from "./usage.js";
+import { AgentCallUsageSchema, TokenUsageSchema } from "./usage.js";
 
 /** What each helper takes in, by helper id. */
 export const HelperInputSchemas = {
@@ -165,6 +165,21 @@ export const CheckTrialSchema = z
     }
     if ((trial.state === "failed") !== (trial.error !== undefined)) problem("error is set exactly when the trial failed", "error");
   });
+
+/**
+ * One line of the helper log (`helper-runs/events-<yyyy-mm>.jsonl`): what a helper run did. It
+ * holds ids, times, process ids and token counts, never a path, prompt, input or answer. Readers
+ * ignore fields they do not know.
+ */
+const logEnvelope = { format: z.literal(1), hostId: HostIdSchema, at: z.iso.datetime(), runId: HelperRunIdSchema };
+export const HelperLogLineSchema = z.discriminatedUnion("type", [
+  z.object({ ...logEnvelope, type: z.literal("helper_run_started"), helperId: HelperIdSchema, version: z.int().min(1), agentId: z.string().min(1), cliId: AiCliIdSchema, model: z.string().min(1) }),
+  z.object({ ...logEnvelope, type: z.literal("process_started"), pid: z.int().min(2), startedAt: EpochMsSchema, bootTime: EpochMsSchema }),
+  z.object({ ...logEnvelope, type: z.literal("usage_recorded"), usage: AgentCallUsageSchema }),
+  z.object({ ...logEnvelope, type: z.literal("helper_run_ended"), state: z.enum(["done", "failed", "cancelled"]), errorCode: z.string().optional() }),
+]);
+
+export type HelperLogLine = z.output<typeof HelperLogLineSchema>;
 
 export type HelperInput<T extends HelperId = HelperId> = z.output<(typeof HelperInputSchemas)[T]>;
 export type HelperRunRequest = z.output<typeof HelperRunRequestSchema>;

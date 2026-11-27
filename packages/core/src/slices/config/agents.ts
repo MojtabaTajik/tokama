@@ -130,6 +130,16 @@ Judge the raw diff and the check output, not the builder's account of its work.
 Look for wrong behaviour, missing tests and weakened assertions.
 Say whether the change is ready or needs changes, and give a file and line for each note.
 `,
+  // Answers Tokama's own small questions (helpers). It has no role: each helper brings its
+  // instructions. Replace it with `~/.tokama/agents/helper.md` to use another model.
+  helper: `---
+format: 1
+name: Helper
+runs_on: claude-code
+model: haiku
+tools: read-only
+---
+`,
 };
 
 /** The ids of the built-in agents: a file with one of these ids replaces the built-in. */

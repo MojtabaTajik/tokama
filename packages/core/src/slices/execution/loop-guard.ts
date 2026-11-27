@@ -54,6 +54,12 @@ export const localModelGuardDefaults: LoopGuardSettings = { turnCap: 30, repeatL
 /** For a cloud AI CLI such as Claude Code, which takes many more turns on a real task. */
 export const agentCliGuardDefaults: LoopGuardSettings = { turnCap: 150, repeatLimit: 6, idleMs: 180_000, silentMs: 600_000, toolSilentMs: 1_200_000, timeoutMs: 5_400_000 };
 
+/**
+ * For a helper: one reply and no work. It has no file watch (no idle stop), a short turn cap and
+ * repeat limit, and stops after a minute of silence. `timeoutMs` is the helper's own limit, per try.
+ */
+export const helperGuardDefaults = (timeoutMs: number): LoopGuardSettings => ({ turnCap: 3, repeatLimit: 3, idleMs: 0, silentMs: 60_000, toolSilentMs: 60_000, timeoutMs });
+
 const LoopGuardOverridesSchema = LoopGuardSettingsSchema.partial();
 
 /** A runtime's defaults with `overrides` applied, e.g. from the engine's settings file. */

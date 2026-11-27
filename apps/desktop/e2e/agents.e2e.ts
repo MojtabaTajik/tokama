@@ -17,8 +17,8 @@ flow("lists the built-in and personal agents, and a file that does not load with
   await page.getByRole("button", { name: "Settings" }).click();
   const rows = page.locator(".agents-list .agent-row");
   await rows.first().waitFor();
-  expect(await rows.locator(".agent-row-name").allInnerTexts()).toEqual(["Architect", "Builder", "Reviewer", "Scribe", "✕ brokentriager"]);
-  expect((await rows.locator(".agent-row-line").allInnerTexts()).map((text) => text.trim())).toEqual(["opus · cloud", "sonnet · cloud", "opus · cloud", "sonnet · cloud", "agents/triager.md"]);
+  expect(await rows.locator(".agent-row-name").allInnerTexts()).toEqual(["Architect", "Builder", "Helper", "Reviewer", "Scribe", "✕ brokentriager"]);
+  expect((await rows.locator(".agent-row-line").allInnerTexts()).map((text) => text.trim())).toEqual(["opus · cloud", "sonnet · cloud", "haiku · cloud", "opus · cloud", "sonnet · cloud", "agents/triager.md"]);
 
   const detail = page.locator(".agent-detail");
   expect(await detail.getByRole("heading", { name: "Architect", level: 2 }).count()).toBe(1);

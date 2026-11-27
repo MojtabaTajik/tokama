@@ -4,6 +4,7 @@ export { runGuardedCall, type GuardedCallOptions, type GuardedCallResult } from 
 export { callUsage, type CallUsageInput } from "./usage.js";
 export {
   agentCliGuardDefaults,
+  helperGuardDefaults,
   localModelGuardDefaults,
   loopGuardSettings,
   LoopGuardSettingsSchema,

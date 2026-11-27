@@ -47,7 +47,8 @@ describe("agents_list", () => {
     expect(agents.map((agent) => [agent.id, agent.owner, agent.source, agent.cliId, agent.model, agent.runsOn, agent.limits.edit])).toEqual([
       ["architect", { kind: "builtin" }, "builtin/architect.md", "claude-code", "opus", "cloud", false],
       ["builder", { kind: "builtin" }, "builtin/builder.md", "claude-code", "sonnet", "cloud", true],
-      ["reviewer", { kind: "builtin" }, "builtin/reviewer.md", "claude-code", "opus", "cloud", false],
+      ["helper", { kind: "builtin" }, "builtin/helper.md", "claude-code", "haiku", "cloud", false],
+      ["reviewer",{ kind: "builtin" }, "builtin/reviewer.md", "claude-code", "opus", "cloud", false],
     ]);
     expect(agents[1]).toMatchObject({ replacesBuiltin: false, name: "Builder", icon: "hammer", roleCut: false, role: expect.stringContaining("worktree") });
     expect([broken, problems]).toEqual([[], []]);
@@ -73,6 +74,7 @@ describe("agents_list", () => {
     expect(agents.map((agent) => [agent.id, agent.name, agent.owner, agent.source])).toEqual([
       ["architect", "Architect", { kind: "builtin" }, "builtin/architect.md"],
       ["builder", "Builder", { kind: "builtin" }, "builtin/builder.md"],
+      ["helper", "Helper", { kind: "builtin" }, "builtin/helper.md"],
       ["reviewer", "My reviewer", { kind: "personal" }, "agents/reviewer.md"],
       ["scribe", "Scribe", { kind: "personal" }, "agents/scribe.md"],
       ["triager", "Triager", { kind: "repo", repoId: "ledger-api" }, "ledger-api/.tokama/agents/triager.md"],
@@ -132,7 +134,7 @@ describe("agents_list", () => {
     write(join(home, "agents"), "builder.md", agentFile("Bad builder", { runs_on: "claud-code" }));
     write(join(home, "agents"), "scribe.md", agentFile("Scribe"));
     const data = await list(client);
-    expect(data.agents.map((agent) => [agent.id, agent.replacesBuiltin])).toEqual([["architect", false], ["reviewer", true], ["scribe", false]]);
+    expect(data.agents.map((agent) => [agent.id, agent.replacesBuiltin])).toEqual([["architect", false], ["helper", false], ["reviewer", true], ["scribe", false]]);
     expect(data.broken.map((entry) => [entry.id, entry.replacesBuiltin])).toEqual([["builder", true]]);
   });
 
