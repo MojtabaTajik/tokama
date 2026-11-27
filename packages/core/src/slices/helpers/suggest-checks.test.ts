@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { sha256Hex } from "../../kernel/hash/index.js";
 import { HelperResultSchemas } from "../../kernel/schemas/index.js";
 import { retryNote, readAnswer } from "./answer.js";
 import { definitionProblem } from "./definition.js";
@@ -17,6 +18,13 @@ describe("the suggest-checks definition", () => {
   it("shows an example with a note, so the agent may explain an empty list", () => {
     expect(HelperResultSchemas["suggest-checks"].safeParse(suggestChecks.example).success).toBe(true);
     expect(suggestChecks.example).toHaveProperty("note");
+  });
+
+  // The recorded answers are made for one text of the instructions and the example. A change to either
+  // needs a new `version` and new recordings; then put the new digest here.
+  it("has the instructions and example that version 1 was recorded for", () => {
+    expect(suggestChecks.version).toBe(1);
+    expect(sha256Hex(`${suggestChecks.instructions}\n${JSON.stringify(suggestChecks.example)}`)).toBe("7c0e2c9046c07d7f51b39d344f123b82e5675025a9896c735835adbb2a817b37");
   });
 
   it("asks for the file names and the build files, and nothing else", () => {

@@ -3,7 +3,7 @@
 // a file only through fs-safe (a regular file, no link), a name only when it is not a secret file's.
 // Whatever the repo holds is untrusted: a name or a file can be planted to steer the agent or to
 // pull a secret into the prompt, so nothing is read by a name the repo chose except as listed here.
-import { realpath, stat } from "node:fs/promises";
+import { lstat, realpath, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import { listFiles, listFolders, readTextFileInside, readTextHead, type ReadFailureReason } from "../../../kernel/fs-safe/index.js";
 import { err, ok, type Result } from "../../../kernel/result/index.js";
@@ -191,6 +191,12 @@ async function buildFiles(root: string, signal: AbortSignal): Promise<string> {
   for (const { rel, head } of await candidates(root)) {
     if (signal.aborted) break;
     const path = join(root, rel);
+    // A hard link is a regular file inside the folder that may be another file's second name (a key, a token file): fs-safe cannot tell, so it is not read.
+    const info = await lstat(path).catch(() => undefined);
+    if (info?.isFile() === true && info.nlink > 1) {
+      skip(rel, "a file with more than one link");
+      continue;
+    }
     let body: string;
     let cut = false;
     if (head === true) {

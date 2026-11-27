@@ -1,7 +1,7 @@
 // The suggest-checks helper end to end inside core, with no AI: the real definition and the real
 // gatherer run on sample repos, and a scripted agent replies with the recorded answer of that sample
 // (or with what a hostile README asks for). Each recorded answer carries the helper version it was
-// made for, so changing the instructions forces a new recording.
+// made for; a digest test in the helpers slice fails when the instructions or example change without a new version.
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -106,6 +106,17 @@ describe("links and files that are not plain", () => {
     const { builds } = await gather();
     expect(builds).not.toContain(SECRET);
     expect(builds).toContain("package.json (a link)");
+  });
+
+  it("does not read a build file or a readme that is a hard link to another file, and names it", async () => {
+    put(join(outside, "secret.txt"));
+    for (const name of ["package.json", "README.md"]) linkSync(join(outside, "secret.txt"), join(repo, name));
+    put(join(repo, "Makefile"), "test:\n\ttrue\n");
+    const { builds } = await gather();
+    expect(builds).not.toContain(SECRET);
+    expect(builds).toContain("--- Makefile ---");
+    expect(builds).toContain("package.json (a file with more than one link)");
+    expect(builds).toContain("README.md (a file with more than one link)");
   });
 
   it("does not follow a folder link out of the folder, for names or for the workflows", async () => {
