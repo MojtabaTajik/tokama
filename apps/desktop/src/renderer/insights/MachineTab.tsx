@@ -51,6 +51,7 @@ const TEXT = {
   engine: "Tokama engine",
   engineKind: "background service",
   checks: "Checks",
+  agent: "Agent",
   total: (items: number, processes: number) => `Tokama in total · ${plural(items, "item", "items")} · ${plural(processes, "process", "processes")}`,
   noItems: "No items running.",
   noItemsHint: "Agents and checks show here, under their item, while they run.",
@@ -291,7 +292,7 @@ function ItemRows({ group, items, setup, cores, onSelectItem }: RowContext & { r
           <span className="mc-item-title">
             {title}
             {info !== undefined && <Agent info={info} stepName={step?.name} />}
-            <span className="muted">{facts(workflow, step?.name, tool, plural(group.processes, "process", "processes"))}</span>
+            <span className="muted mc-facts">{facts(workflow, step?.name, tool, plural(group.processes, "process", "processes"))}</span>
           </span>
         </td>
         <td className="num mono">{cpuText(group.cpuPercent, cores)}</td>
@@ -305,18 +306,18 @@ function ItemRows({ group, items, setup, cores, onSelectItem }: RowContext & { r
         <td>
           <span className="mc-item-title">
             {title}
-            <span className="muted">{facts(workflow, step?.name)}</span>
+            <span className="muted mc-facts">{facts(workflow, step?.name)}</span>
           </span>
         </td>
         <td className="num mono">{cpuText(group.cpuPercent, cores)}</td>
         <td className="num mono">{formatBytes(group.memoryBytes)}</td>
       </tr>
       {group.rows.map((row, index) => (
-        <tr key={`${row.role}-${index}`} className="mc-child-row">
+        <tr key={`${row.role}-${group.rows.slice(0, index).filter((earlier) => earlier.role === row.role).length}`} className="mc-child-row">
           <td>
             <span className="mc-child">
               {row.role === "agent" && info !== undefined ? <Agent info={info} stepName={step?.name} /> : <span className="mc-ring-gap" aria-hidden="true" />}
-              {row.role === "agent" ? info === undefined && <span className="mc-kind">Agent</span> : <span className="mc-kind">{TEXT.checks}</span>}
+              {row.role === "agent" ? info === undefined && <span className="mc-kind">{TEXT.agent}</span> : <span className="mc-kind">{TEXT.checks}</span>}
               <span className="muted">{facts(row.role === "agent" ? tool : undefined, plural(row.processes, "process", "processes"))}</span>
             </span>
           </td>

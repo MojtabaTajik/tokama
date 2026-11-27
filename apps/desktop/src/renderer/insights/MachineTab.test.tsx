@@ -236,6 +236,22 @@ describe("Machine tab: running now, by item", () => {
     expect(onNewWork).toHaveBeenCalledTimes(1);
   });
 
+  it("puts a second agent row under its item with the item's current agent, since the engine names no agent per row", async () => {
+    const stock = machineReport.items[1]!;
+    await render(serve({ ...machineReport, items: [stock, { ...stock, memoryBytes: 100 * 1024 ** 2 }] }));
+    expect(cells().slice(0, 3)).toEqual([
+      ["Stock sync drops <b>items</b>Quick fix · Fix", "14.4%", "512 MB"],
+      ["Local builderClaude Code · 3 processes", "7.2%", "412 MB"],
+      ["Local builderClaude Code · 3 processes", "7.2%", "100 MB"],
+    ]);
+    expect($$(".ag-badge")).toHaveLength(2);
+  });
+
+  it("calls an agent row of an item the board does not have just 'Agent'", async () => {
+    await render(serve({ ...machineReport, items: [machineReport.items[1]!, machineReport.items[2]!].map((row) => ({ ...row, itemId: "item_0190a000-0000-7000-8000-0000000000ff" as never, title: "Gone item" })) }));
+    expect(cells().slice(0, 3).map((row) => row[0])).toEqual(["Gone item", "Agent3 processes", "Checks1 process"]);
+  });
+
   it("names an item the board does not have by its title alone, with no ring", async () => {
     await render(serve({ ...machineReport, items: [{ ...machineReport.items[3]!, itemId: "item_0190a000-0000-7000-8000-0000000000ff" as never, title: "Gone item" }] }));
     const row = $$(".mc-item")[0]!;

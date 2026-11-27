@@ -334,6 +334,11 @@
   gap: var(--space-2) var(--space-10);
 }
 
+/* The facts of a row wrap as one piece, not in the middle of "4 processes". */
+.mc-facts {
+  white-space: nowrap;
+}
+
 .mc-child {
   padding-left: var(--space-22);
   white-space: nowrap;
