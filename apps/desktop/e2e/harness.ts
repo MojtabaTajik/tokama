@@ -39,8 +39,8 @@ export interface Session {
   killEngine(): void;
   /** Sizes the window's content area, like a user dragging its edge. */
   resize(width: number, height: number): Promise<void>;
-  /** A screenshot into `<outDir>/screenshots`. */
-  screenshot(name: string): Promise<void>;
+  /** A screenshot into `<outDir>/screenshots`: the window, or just `target` (a crop of one element). */
+  screenshot(name: string, target?: Locator): Promise<void>;
   /**
    * Quits the app and starts it again on the same home folder, like a user restarting it; the
    * engine keeps running through it. Resolves to the new app's session; use that one from then on.
@@ -104,8 +104,11 @@ export const whatsNewFixture = (name: "none" | "highlights" | "fixes"): string =
 
 /** What a flow may set besides its engine mode. */
 export interface FlowOptions {
-  /** Added to the app's environment at every start of the flow, a restart included. */
-  readonly env?: Readonly<Record<string, string>>;
+  /**
+   * Added to the app's environment at every start of the flow, a restart included. A function gets
+   * the test's temp dir, for a value that points into it (a PATH with fake tools).
+   */
+  readonly env?: Readonly<Record<string, string>> | ((tmp: string) => Readonly<Record<string, string>>);
 }
 
 /**
@@ -195,7 +198,7 @@ async function launch(tmp: string, baseDir: string, output: string[], mode: Engi
   env["TOKAMA_E2E"] = "1";
   // No release notes unless the flow names a folder of them.
   env["TOKAMA_E2E_WHATS_NEW_DIR"] = whatsNewFixture("none");
-  Object.assign(env, extraEnv);
+  Object.assign(env, typeof extraEnv === "function" ? extraEnv(tmp) : extraEnv);
   // The engine keeps its items, its lock and repos.yaml in `~/.tokama`: that is a folder of this test.
   env["HOME"] = homeOf(tmp);
   mkdirSync(env["HOME"], { recursive: true });
@@ -252,10 +255,10 @@ function sessionOf(app: ElectronApplication, page: Page, engineDir: string, tmp:
       await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setContentSize(size.width, size.height), { width, height });
       await page.waitForFunction((size) => window.innerWidth === size, width);
     },
-    screenshot: async (name) => {
+    screenshot: async (name, target) => {
       const dir = join(outDir, "screenshots");
       mkdirSync(dir, { recursive: true });
-      await page.screenshot({ path: join(dir, `${name}.png`), animations: "disabled" });
+      await (target ?? page).screenshot({ path: join(dir, `${name}.png`), animations: "disabled" });
     },
     restart,
   };

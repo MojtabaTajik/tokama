@@ -4,40 +4,6 @@
   margin: 8vh auto 0;
 }
 
-.state .empty-state-text code {
-  color: var(--text);
-}
-
-.state-code {
-  margin: 0;
-  padding: var(--space-10) var(--space-12);
-  background: var(--input);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-sm);
-  color: var(--text-2);
-  overflow-x: auto;
-}
-
-.state-fields {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: var(--space-4) var(--space-14);
-  margin: 0;
-  color: var(--muted);
-}
-
-.state-fields div {
-  display: contents;
-}
-
-.state-fields dt {
-  color: var(--text-2);
-}
-
-.state-fields dd {
-  margin: 0;
-}
-
 .failure .hint {
   margin-top: var(--space-12);
   color: var(--muted);
@@ -47,9 +13,21 @@
   margin-top: var(--space-8);
 }
 
-.new-work:disabled {
+.new-work:disabled,
+.new-work[aria-disabled="true"] {
   color: var(--muted);
   cursor: not-allowed;
+}
+
+/* Holds "+ New work" and its tooltip: no box of its own, so the button keeps its place in the sidebar. */
+.new-work-wrap {
+  display: contents;
+}
+
+.new-work-tip {
+  width: max-content;
+  max-width: calc(100vw - 16px);
+  padding: var(--space-8) var(--space-12);
 }
 
 .sb-empty {

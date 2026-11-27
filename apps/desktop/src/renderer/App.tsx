@@ -3,17 +3,20 @@
 import type { BoardCount, FinishAction, UsageRange, UsageScope } from "@tokama/core";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ToolsPathInfo, TokamaBridge } from "../shared/bridge.js";
-import { DEFAULT_DESKTOP_STATE, type DesktopState, DRAWER_WIDTH, RAIL_WIDTH, SECTIONS, SIDEBAR_WIDTH } from "../shared/desktop-state.js";
+import { DEFAULT_DESKTOP_STATE, type DesktopState, DRAWER_WIDTH, type GetStartedState, RAIL_WIDTH, SECTIONS, SIDEBAR_WIDTH } from "../shared/desktop-state.js";
 import { About } from "./about/About.js";
 import { SIDE_BY_SIDE_MIN_WIDTH } from "./ui/DiffView.js";
 import { ItemDrawer } from "./drawer/ItemDrawer.js";
+import { aiCliBlock, checklist } from "./getstarted/checklist.js";
+import { GetStarted } from "./getstarted/GetStarted.js";
+import { SetupDoneLine } from "./getstarted/SetupDoneLine.js";
 import { Insights } from "./insights/Insights.js";
 import { fitPanels, sidebarMax } from "./layout/fit.js";
 import { ResizeEdge } from "./layout/ResizeEdge.js";
 import { useWindowWidth } from "./layout/useWindowWidth.js";
 import { useUsage } from "./insights/useUsage.js";
 import { ALL_WORK, type CliIssue, cliIssuesOf, healthProblemsOf, inView, needsYouCount, type View } from "./model.js";
-import { isMac, NewWork, type NewWorkHandle } from "./newwork/NewWork.js";
+import { isMac, NewWork, type NewWorkHandle, type NewWorkPrefill } from "./newwork/NewWork.js";
 import { RepoDialog, type SetUpNote } from "./repos/RepoDialog.js";
 import { RepoNote } from "./repos/RepoNote.js";
 import type { AgentTarget } from "./settings/describe.js";
@@ -40,6 +43,10 @@ const TEXT = { allWork: "All work", needsYou: "Needs you" } as const;
 /** How often the times in the list move on. */
 const CLOCK_TICK_MS = 30_000;
 const NO_COUNTS: readonly BoardCount[] = [];
+/** How often the Get started list asks the engine for fresh checks while it is on screen. Longer than the engine's 5 s answer cache, so each ask runs the checks once, not more. */
+const CHECK_POLL_MS = 10_000;
+/** Check again shows "Checking…" at least this long, so the click is seen. */
+const CHECKING_MIN_MS = 600;
 
 export interface AppProps {
   readonly bridge: TokamaBridge;
@@ -135,13 +142,16 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   // New work asked for where no composer shows (Insights, the full view): the list comes back in
   // the same update, and the composer opens once it is there. Each ask is used once, also when
   // no composer can show (no repos yet).
-  const [composerAsked, setComposerAsked] = useState<{ readonly prefill: Parameters<NewWorkHandle["open"]>[0] } | undefined>(undefined);
+  const [composerAsked, setComposerAsked] = useState<{ readonly prefill: NewWorkPrefill | undefined } | undefined>(undefined);
   useEffect(() => {
     if (composerAsked === undefined) return;
     composer.current?.open(composerAsked.prefill);
     setComposerAsked(undefined);
   }, [composerAsked]);
-  const openComposer = (prefill?: Parameters<NewWorkHandle["open"]>[0]) => {
+  // Why no work can start (the AI CLI row's word), set once the setup is known; read when New work is asked for.
+  const workBlock = useRef<string | undefined>(undefined);
+  const openComposer = (prefill?: NewWorkPrefill) => {
+    if (workBlock.current !== undefined) return;
     if (composer.current !== null) return composer.current.open(prefill);
     setExpanded(undefined);
     setPage((current) => (current === "needs-you" ? current : "board"));
@@ -215,6 +225,111 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   }, [bridge, setup, views.view, views.filter, views.collapsed]);
   const save = (patch: Parameters<TokamaBridge["saveLayout"]>[0]) => void bridge.saveLayout(patch).catch(() => undefined);
 
+  // Get started. The checklist takes the place of the empty board until the first item starts (or
+  // at once for a user who has work already), and comes back only from Help.
+  const [started, setStarted] = useState<GetStartedState>(initial.getStarted);
+  const saveStarted = (next: GetStartedState) => {
+    setStarted(next);
+    save({ getStarted: next });
+  };
+  const hasWork = items.length > 0 || counts.some((row) => row.done + row.failed > 0);
+  const setupDone = started.done || hasWork;
+  // Work that exists marks setup done for good, so the list never comes back when the work is gone
+  // from the board (the counts reach back 31 days). A user who had work before this version gets
+  // it on the first load, with no "Setup done" line; work that appears later (started from the CLI)
+  // leaves the line to the first item the window starts itself.
+  const firstLoadSeen = useRef(false);
+  useEffect(() => {
+    if (setup === undefined || stale) return;
+    const first = !firstLoadSeen.current;
+    firstLoadSeen.current = true;
+    if (!started.done && hasWork) saveStarted({ done: true, lineClosed: first });
+    // `saveStarted` only sets state and saves: it need not re-run this.
+  }, [setup, stale, started.done, hasWork]);
+  // Opened again from Help > Get started, over the list of work.
+  const [helpOpen, setHelpOpen] = useState(false);
+  const openHelp = useRef<() => void>(() => undefined);
+  useEffect(() => bridge.onOpenGetStarted(() => openHelp.current()), [bridge]);
+  useEffect(() => {
+    if (page !== "board" || views.view.kind !== "all") setHelpOpen(false);
+  }, [page, views.view.kind]);
+  const checklistShown = setup !== undefined && page === "board" && (!setupDone || helpOpen);
+  // The checks: Check again shows "Checking…" for a moment; the poll while the list is on screen is silent.
+  const [checking, setChecking] = useState(false);
+  const [checkFailed, setCheckFailed] = useState(false);
+  const checkAgain = useCallback(async () => {
+    setChecking(true);
+    const [answered] = await Promise.all([refreshSetup(), new Promise((done) => setTimeout(done, CHECKING_MIN_MS))]);
+    setCheckFailed(!answered);
+    setChecking(false);
+  }, [refreshSetup]);
+  openHelp.current = () => {
+    setExpanded(undefined);
+    setPage("board");
+    views.setView(ALL_WORK);
+    setHelpOpen(true);
+    void checkAgain();
+  };
+  useEffect(() => {
+    if (!checklistShown) return;
+    const timer = setInterval(() => void refreshSetup().then((answered) => setCheckFailed(!answered)), CHECK_POLL_MS);
+    return () => clearInterval(timer);
+  }, [checklistShown, refreshSetup]);
+  // What the first item was, for step 4: from the open items, or asked of the engine once it has ended.
+  const [firstRun, setFirstRun] = useState<{ readonly itemId: string; readonly text: string; readonly repoId: string | undefined } | undefined>(undefined);
+  const firstId = started.firstItemId;
+  const firstOpen = firstId === undefined ? undefined : items.find((item) => item.id === firstId);
+  useEffect(() => {
+    if (!checklistShown || firstId === undefined || firstRun?.itemId === firstId) return;
+    if (firstOpen !== undefined) return setFirstRun({ itemId: firstId, text: firstOpen.text, repoId: firstOpen.repoIds[0] });
+    void bridge.query({ type: "item", itemId: firstId }).then(
+      (reply) => {
+        if (reply.ok) setFirstRun({ itemId: firstId, text: reply.data.item.text, repoId: reply.data.item.repoIds[0] });
+      },
+      () => undefined,
+    );
+  }, [bridge, checklistShown, firstId, firstOpen, firstRun?.itemId]);
+  // The "Setup done" line stays until it is closed or the first item ends. An item that started in
+  // this session may not be in the list yet, so it counts as ended only after it was seen there.
+  const lineWatch = useRef<{ readonly itemId: string; seen: boolean } | undefined>(undefined);
+  useEffect(() => {
+    if (setup === undefined || stale || firstId === undefined || started.lineClosed) return;
+    if (lineWatch.current?.itemId !== firstId) lineWatch.current = { itemId: firstId, seen: true };
+    const watch = lineWatch.current;
+    if (firstOpen !== undefined) watch.seen = true;
+    else if (watch.seen) saveStarted({ ...started, lineClosed: true });
+  }, [setup, stale, firstId, firstOpen, started.lineClosed]);
+  const aiBlock = aiCliBlock(setup?.health);
+  workBlock.current = aiBlock;
+  const checklistNode =
+    checklistShown && setup !== undefined ? (
+      <GetStarted
+        list={checklist({
+          health: setup.health,
+          checkFailed,
+          checking,
+          repos: setup.repos,
+          templates: setup.templates,
+          started: setupDone,
+          firstItem: firstRun === undefined || firstRun.itemId !== firstId ? undefined : { text: firstRun.text, repoId: firstRun.repoId },
+          mac: isMac(),
+        })}
+        checking={checking}
+        onCheckAgain={() => void checkAgain()}
+        onAddRepo={() => void pickRepoFolder()}
+        onStart={(prefill) => openComposer({ ...(prefill.templateId !== undefined && { templateId: prefill.templateId }), repoId: prefill.repoId, text: prefill.text })}
+        onAct={(id) => {
+          if (id === "open-templates") {
+            setSettingsPage("templates");
+            setSettingsAgent(undefined);
+            setPage("settings");
+          } else setEditingRepo(setup.repos[0]?.id);
+        }}
+        onClose={setupDone ? () => setHelpOpen(false) : undefined}
+      />
+    ) : undefined;
+  const showLine = started.done && !started.lineClosed && firstId !== undefined && page === "board" && !helpOpen;
+
   // A ready update: a chip at the sidebar's foot, or an icon in the rail while the sidebar is closed.
   // Running items block the restart, so the chip's panel lists them.
   const update = useUpdate(bridge);
@@ -287,16 +402,22 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   const startIn = (target: View) => openComposer(target.kind === "workflow" ? { templateId: target.id } : target.kind === "repo" ? { repoId: target.id } : undefined);
 
   // Pinned below the board and the Needs you page, so New work keeps working from either.
-  const composerNode = setup !== undefined && setup.repos.length > 0 && connection.status !== "failed" && (
+  const composerNode = setup !== undefined && setup.repos.length > 0 && connection.status !== "failed" && aiBlock === undefined && (
     <NewWork
       ref={composer}
       bridge={bridge}
       setup={setup}
       repoId={page === "board" && views.view.kind === "repo" ? views.view.id : undefined}
-      onStarted={(itemId, started) => {
+      onStarted={(itemId, begun) => {
+        // The first item ends the checklist; the "Setup done" line follows it until it ends.
+        // (The item's own event may have marked setup done already, without a line.)
+        if (started.firstItemId === undefined && !started.lineClosed) {
+          lineWatch.current = { itemId, seen: false };
+          saveStarted({ done: true, lineClosed: false, firstItemId: itemId });
+        }
         // Show the new item where the user is, or in All work when this view would hide it.
         setPage("board");
-        views.reveal(inView(started, views.view) ? views.view : ALL_WORK);
+        views.reveal(inView(begun, views.view) ? views.view : ALL_WORK);
         setSelectedItemId(itemId);
       }}
     />
@@ -394,6 +515,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
           collapsed={views.collapsed}
           onToggleSection={views.toggleSection}
           onNewWork={() => openComposer()}
+          newWorkBlock={aiBlock}
           onStartIn={startIn}
           onAddRepo={() => void pickRepoFolder()}
           onEditRepo={setEditingRepo}
@@ -473,6 +595,8 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
           onDiscard={discardFromRow}
           onOpenAgent={openAgent}
           composer={composerNode}
+          checklist={checklistNode === undefined ? undefined : { node: setupDone ? <div className="gs-above">{checklistNode}</div> : checklistNode, where: setupDone ? "above" : "instead" }}
+          doneLine={showLine ? <SetupDoneLine workflow={setup?.templates.find((template) => template.id === firstOpen?.templateId)?.name} onClose={() => saveStarted({ ...started, lineClosed: true })} /> : undefined}
         />
       )}
       {addingRepo !== undefined && (

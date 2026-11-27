@@ -74,6 +74,7 @@ export const CHANNELS = {
   playSound: "tokama:sounds:play",
   viewedItem: "tokama:notifications:viewed",
   openItem: "tokama:notifications:open-item",
+  openGetStarted: "tokama:help:get-started",
   loadDiagnostics: "tokama:diagnostics:load",
   sendDiagnostics: "tokama:diagnostics:send",
   saveDiagnostics: "tokama:diagnostics:save",
@@ -250,6 +251,11 @@ export interface TokamaBridge {
    * one that came before the listener was set is delivered at once. Returns a function that stops it.
    */
   onOpenItem(listener: (itemId: string) => void): () => void;
+  /**
+   * Calls `listener` when the user chose Help > Get started in the menu; one that came before the
+   * listener was set is delivered at once. Returns a function that stops it.
+   */
+  onOpenGetStarted(listener: () => void): () => void;
   /** Every waiting diagnostics entry with its text. The main process keeps the texts it gave out. */
   loadDiagnostics(): Promise<DiagnosticsLoad>;
   /**

@@ -30,8 +30,8 @@ export interface EngineView {
   readonly stale: boolean;
   /** Loads again now. */
   readonly retry: () => void;
-  /** Loads the setup again, e.g. for fresh health checks; a failure keeps the setup there is. */
-  readonly refreshSetup: () => void;
+  /** Loads the setup again, e.g. for fresh health checks; a failure keeps the setup there is. Resolves to whether the engine answered. */
+  readonly refreshSetup: () => Promise<boolean>;
 }
 
 /** Delay before the one automatic retry of a failed load. */
@@ -167,18 +167,20 @@ export function useEngine(bridge: TokamaBridge, retryDelayMs = RETRY_DELAY_MS): 
   }, [bridge, connection, countReloads]);
 
   const connected = connection.status === "connected";
-  const refreshSetup = useCallback(() => {
-    if (!connected) return;
-    void bridge
-      .query({ type: "setup" })
-      .then((reply) => {
-        if (reply.ok) setData((current) => (current === undefined ? current : { ...current, setup: reply.data }));
-      })
-      .catch(() => undefined);
+  const refreshSetup = useCallback(async (): Promise<boolean> => {
+    if (!connected) return false;
+    try {
+      const reply = await bridge.query({ type: "setup" });
+      if (reply.ok) setData((current) => (current === undefined ? current : { ...current, setup: reply.data }));
+      return reply.ok;
+    } catch {
+      return false;
+    }
   }, [bridge, connected]);
   useEffect(() => {
-    window.addEventListener("focus", refreshSetup);
-    return () => window.removeEventListener("focus", refreshSetup);
+    const onFocus = () => void refreshSetup();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, [refreshSetup]);
 
   const failed = connection.status === "failed";

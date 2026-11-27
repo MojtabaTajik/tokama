@@ -27,9 +27,13 @@ export const NO_NOTES: WhatsNewInfo = { appVersion: ABOUT_INFO.app.version, note
 
 export const CONNECTED: ConnectionState = { status: "connected", engineId: "e-1" };
 
+/** What an app remembers once setup is done: the Get started list neither shows nor leaves a line. */
+export const SETUP_DONE: DesktopState = { ...DEFAULT_DESKTOP_STATE, getStarted: { done: true, lineClosed: true } };
+
 export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | Promise<Reply> | undefined; commandReply?: (command: { type: string }) => Reply; pickFolder?: () => Promise<string | null>; openTemplateFile?: () => Promise<OpenResult>; openAttemptFile?: () => Promise<OpenResult>; about?: AboutInfo; toolsPath?: ToolsPathInfo; copyBuildInfo?: () => Promise<void>; showDataFolder?: () => Promise<OpenResult>; desktopState?: DesktopState; loadDiagnostics?: () => Promise<DiagnosticsLoad>; sendDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSendResult>; saveDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSaveResult>; whatsNew?: WhatsNewInfo | (() => Promise<WhatsNewInfo>); update?: UpdateState; installUpdate?: () => Promise<InstallResult> } = {}) {
   let connectionListener: ((state: ConnectionState) => void) | undefined;
   let openListener: ((itemId: string) => void) | undefined;
+  let getStartedListener: (() => void) | undefined;
   // The update state the main process would hold; `setUpdate` changes it and tells the listeners.
   let updateState: UpdateState = options.update ?? { status: "idle" };
   const updateListeners = new Set<(state: UpdateState) => void>();
@@ -77,6 +81,12 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
       openListener = listener;
       return () => {
         openListener = undefined;
+      };
+    }),
+    onOpenGetStarted: vi.fn((listener: () => void) => {
+      getStartedListener = listener;
+      return () => {
+        getStartedListener = undefined;
       };
     }),
     loadDiagnostics: vi.fn(options.loadDiagnostics ?? (async (): Promise<DiagnosticsLoad> => ({ ok: true, items: [] }))),
@@ -132,7 +142,9 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
     });
   /** A click on a notification: the main process asks the window to open the item. */
   const openItem = (itemId: string) => act(async () => openListener?.(itemId));
-  return { bridge, query, saveLayout, saveNotifications, playSound, setViewedItem, getWhatsNew, closeWhatsNew, openItem, copyBuildInfo, showDataFolder, command, retryConnection, openTemplateFile, setConnection, pushItem, pushEvent, stops, installUpdate, checkForUpdates, openUpdateNotes, setUpdate };
+  /** Help > Get started: the main process asks the window to open the checklist. */
+  const openGetStarted = () => act(async () => getStartedListener?.());
+  return { bridge, openGetStarted, query, saveLayout, saveNotifications, playSound, setViewedItem, getWhatsNew, closeWhatsNew, openItem, copyBuildInfo, showDataFolder, command, retryConnection, openTemplateFile, setConnection, pushItem, pushEvent, stops, installUpdate, checkForUpdates, openUpdateNotes, setUpdate };
 }
 
 export interface ListQuery {

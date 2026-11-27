@@ -3,7 +3,7 @@
 // appears on hover or focus. Items are never listed here: they appear in the main area. The
 // engine's health sits under "+ New work". Engine text (names) is rendered as React text only.
 import type { BoardCount, ItemRecord, Setup } from "@tokama/core";
-import { Fragment, type ReactNode, useEffect, useRef } from "react";
+import { type CSSProperties, Fragment, type ReactNode, useEffect, useId, useRef } from "react";
 import type { ConnectionState } from "../../shared/bridge.js";
 import { RepoMenu } from "../repos/RepoMenu.js";
 import { ALL_WORK, type Badge, badgesOf, inView, needsYouCount, sameView, type View, viewKey } from "../model.js";
@@ -14,10 +14,13 @@ import { AllWorkIcon, RepoIcon } from "../ui/icons.js";
 import { TemplateIcon } from "./TemplateIcon.js";
 import { Button } from "../ui/Button.js";
 import { StatusCounts } from "../ui/Badge.js";
+import { Tooltip } from "../ui/Tooltip.js";
+import { useTip } from "../ui/useTip.js";
 
 const TEXT = {
   panel: "Sidebar",
   newWork: "+ New work",
+  setUpFirst: (word: string) => `Set up an AI CLI first: ${word.toLowerCase()}`,
   noRepos: "No repos added yet.",
   thisMachine: "This machine",
   allWork: "All work",
@@ -61,6 +64,8 @@ export interface SidebarProps {
   readonly chips?: readonly SidebarChipCandidate[];
   /** A card above the chip slot, such as the release notes. */
   readonly foot?: ReactNode;
+  /** Why no work can start: the status word of the AI CLI row of the checklist ("Not installed"). "+ New work" then says so on hover and focus. */
+  readonly newWorkBlock?: string | undefined;
 }
 
 export function Sidebar(props: SidebarProps) {
@@ -94,9 +99,7 @@ export function Sidebar(props: SidebarProps) {
   );
   return (
     <aside className="panel" id={id} aria-label={TEXT.panel} data-stale={stale || undefined}>
-      <Button variant="plain" className="new-work" disabled={setup !== undefined && setup.repos.length === 0} onClick={onNewWork}>
-        {TEXT.newWork}
-      </Button>
+      <NewWorkButton noRepos={setup !== undefined && setup.repos.length === 0} block={props.newWorkBlock} onNewWork={onNewWork} />
       <p className="engine-line">
         {TEXT.thisMachine}
         <EngineHealth state={connection} />
@@ -134,6 +137,39 @@ export function Sidebar(props: SidebarProps) {
         {chip !== undefined && <Fragment key={chip.id}>{chip.node}</Fragment>}
       </div>
     </aside>
+  );
+}
+
+/**
+ * "+ New work". With no repo it is off. With an AI CLI that is not ready it is off too, but stays
+ * reachable (aria-disabled, not disabled), so hover and keyboard focus can tell why.
+ */
+function NewWorkButton({ noRepos, block, onNewWork }: { readonly noRepos: boolean; readonly block: string | undefined; readonly onNewWork: () => void }) {
+  const tip = useTip(undefined, block === undefined);
+  const id = useId();
+  const anchor = `--new-work-${id.replace(/[^a-zA-Z0-9]/g, "")}`;
+  const blocked = block !== undefined;
+  const reason = blocked ? TEXT.setUpFirst(block) : undefined;
+  return (
+    <span className="new-work-wrap" {...tip.triggers}>
+      <Button
+        variant="plain"
+        className="new-work"
+        disabled={noRepos}
+        aria-disabled={blocked || undefined}
+        aria-describedby={blocked ? id : undefined}
+        style={{ anchorName: anchor } as CSSProperties}
+        onClick={blocked ? undefined : onNewWork}
+      >
+        {TEXT.newWork}
+      </Button>
+      {blocked && <span id={id} className="visually-hidden">{reason}</span>}
+      {tip.open && reason !== undefined && (
+        <Tooltip id={`${id}-tip`} anchor={anchor} className="new-work-tip">
+          {reason}
+        </Tooltip>
+      )}
+    </span>
   );
 }
 

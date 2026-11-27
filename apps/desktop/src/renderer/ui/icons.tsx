@@ -159,6 +159,22 @@ export const ShieldIcon = ({ size = 13 }: { readonly size?: number }) => (
   </Icon>
 );
 
+/** Two sheets: copy to the clipboard. */
+export const CopyIcon = ({ size = 13 }: { readonly size?: number }) => (
+  <Icon size={size}>
+    <rect x="9" y="9" width="11" height="11" rx="2" />
+    <path d="M5 15V6a2 2 0 0 1 2-2h9" />
+  </Icon>
+);
+
+/** A shield with an exclamation mark: a note on what runs with the user's access. */
+export const ShieldNoteIcon = ({ size = 15 }: { readonly size?: number }) => (
+  <Icon size={size}>
+    <path d="M12 3 4 6v6c0 4.5 3.4 8 8 9 4.6-1 8-4.5 8-9V6z" />
+    <path d="M12 8v5M12 16h.01" />
+  </Icon>
+);
+
 /** A circle with an arrow down: an update to download. */
 export const DownloadIcon = ({ size = 13 }: { readonly size?: number }) => (
   <Icon size={size}>

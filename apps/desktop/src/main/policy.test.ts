@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { backgroundModeEnabled, devServerUrl, e2eEnabled, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, secureWebPreferences, sampleEngineEnabled } from "./policy.js";
+import { backgroundModeEnabled, DOCS_URL, devServerUrl, e2eEnabled, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, secureWebPreferences, sampleEngineEnabled, websiteHref } from "./policy.js";
 
 describe("secureWebPreferences", () => {
   it("isolates and sandboxes the renderer, with no Node", () => {
@@ -145,13 +145,36 @@ describe("sampleEngineEnabled", () => {
 });
 
 describe("isWebsiteUrl", () => {
-  it.each(["https://tokama.dev", "https://tokama.dev/", "HTTPS://TOKAMA.DEV/"])("accepts %s", (url) => {
+  it.each(["https://tokama.dev", "https://tokama.dev/", "HTTPS://TOKAMA.DEV/", "https://tokama.dev/docs/", "https://tokama.dev/docs/install-claude-code", "https://tokama.dev/docs/install-git"])("accepts %s", (url) => {
     expect(isWebsiteUrl(url)).toBe(true);
+  });
+
+  it("gives the parsed, checked address to open, not the string it was given", () => {
+    expect(websiteHref("HTTPS://TOKAMA.DEV/docs/install-git")).toBe("https://tokama.dev/docs/install-git");
+    expect(websiteHref("https://tokama.dev")).toBe("https://tokama.dev/");
+    expect(websiteHref("https://tokama.dev/docs/install-git?x=1")).toBeUndefined();
+    expect(websiteHref("not a url")).toBeUndefined();
+  });
+
+  it("accepts the address Help opens", () => {
+    expect(isWebsiteUrl(DOCS_URL)).toBe(true);
   });
 
   it.each([
     "http://tokama.dev/",
+    "http://tokama.dev/docs/install-git",
     "https://tokama.dev/docs",
+    "https://tokama.dev/docs/install-git/",
+    "https://tokama.dev/docs/install-git?a=1",
+    "https://tokama.dev/docs/install-git#x",
+    "https://tokama.dev/docs/install-git/../../account",
+    "https://tokama.dev/docs/install-codex",
+    "https://tokama.dev/docs/other",
+    "https://tokama.dev/docs/?",
+    "https://tokama.dev:8443/docs/install-git",
+    "https://user@tokama.dev/docs/install-git",
+    "https://tokama.dev.evil.example/docs/install-git",
+    "https://tokama.ai/docs/install-git",
     "https://tokama.dev/?a=1",
     "https://tokama.dev/#x",
     "https://tokama.dev:8443/",

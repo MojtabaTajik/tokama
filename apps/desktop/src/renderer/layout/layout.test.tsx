@@ -4,9 +4,9 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DEFAULT_DESKTOP_STATE, type DesktopState } from "../../shared/desktop-state.js";
+import type { DesktopState } from "../../shared/desktop-state.js";
 import { App } from "../App.js";
-import { CONNECTED, fakeBridge } from "../testing/bridge.js";
+import { CONNECTED, fakeBridge, SETUP_DONE } from "../testing/bridge.js";
 import { NOW } from "../testing/sample.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -35,8 +35,8 @@ const resizeWindow = (width: number) =>
     window.dispatchEvent(new Event("resize"));
   });
 const mount = async (desktopState?: Partial<DesktopState>) => {
-  const fake = fakeBridge(CONNECTED, { desktopState: { ...DEFAULT_DESKTOP_STATE, ...desktopState } });
-  await act(async () => root.render(<App bridge={fake.bridge} retryDelayMs={10} now={NOW} initial={{ ...DEFAULT_DESKTOP_STATE, ...desktopState }} />));
+  const fake = fakeBridge(CONNECTED, { desktopState: { ...SETUP_DONE, ...desktopState } });
+  await act(async () => root.render(<App bridge={fake.bridge} retryDelayMs={10} now={NOW} initial={{ ...SETUP_DONE, ...desktopState }} />));
   return fake;
 };
 const openDrawer = async () => {

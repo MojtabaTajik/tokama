@@ -5,7 +5,7 @@ import { createProcessRunner, type ProcessRunner } from "../../../kernel/process
 import { createSandboxSupport, type SandboxSupport } from "../../../kernel/sandbox/index.js";
 import type { CliHealth } from "../../../kernel/schemas/index.js";
 import { CLAUDE_CODE_COMMAND } from "./command.js";
-import { parseVersion, SHELL_CALLS_FROM, shellCallsProblem } from "./version.js";
+import { parseVersion, SHELL_CALLS_FROM, shellCallsProblem, UPDATE_COMMAND } from "./version.js";
 
 export interface ClaudeCodeStatusOptions {
   /** argv that starts the CLI. Default: `[CLAUDE_CODE_COMMAND]`, found on the allowlisted PATH. */
@@ -55,7 +55,7 @@ export async function claudeCodeStatus(options: ClaudeCodeStatusOptions = {}): P
     const ready = { ...withVersion, installed: true, loggedIn: true };
     const parsed = parseVersion(version.out);
     if (shellCallsProblem(parsed) !== undefined) {
-      return { ...ready, message: parsed === undefined ? UNREADABLE_VERSION : `Claude Code ${parsed} is older than ${SHELL_CALLS_FROM}. Steps that run commands will fail until you update it (for example with \`claude update\`).` };
+      return { ...ready, message: parsed === undefined ? UNREADABLE_VERSION : `Claude Code ${parsed} is older than ${SHELL_CALLS_FROM}. Steps that run commands will fail until you update it (for example with \`${UPDATE_COMMAND}\`).` };
     }
     // Only checked once the CLI itself is fine: one problem at a time on the screen.
     const support = await sandboxSupport.check(new AbortController().signal);

@@ -126,14 +126,30 @@ export function e2eEnabled(value: string | undefined, isPackaged: boolean): bool
   return !isPackaged && value === "1";
 }
 
-/** The one address the app opens in the system browser: the product site. Nothing else ever leaves the window. */
-const WEBSITE = "https://tokama.dev/";
+/** The addresses the app opens in the system browser: the product site and its docs pages. Nothing else ever leaves the window. */
+export const WEBSITE_URLS: ReadonlySet<string> = new Set([
+  "https://tokama.dev/",
+  "https://tokama.dev/docs/",
+  "https://tokama.dev/docs/install-claude-code",
+  "https://tokama.dev/docs/install-git",
+]);
 
-/** Whether `url` is exactly the product site (no other host, path, query or credentials). */
-export function isWebsiteUrl(url: string): boolean {
+/** The docs start page, which Help > Tokama docs opens. */
+export const DOCS_URL = "https://tokama.dev/docs/";
+
+/**
+ * The checked, parsed address of `url` when it is exactly one of the pages in `WEBSITE_URLS` (no
+ * other host, path, query, fragment or credentials); undefined otherwise. Open this string, not
+ * the one that was given: it is the one that was checked.
+ */
+export function websiteHref(url: string): string | undefined {
   try {
-    return new URL(url).href === WEBSITE;
+    const { href } = new URL(url);
+    return WEBSITE_URLS.has(href) ? href : undefined;
   } catch {
-    return false;
+    return undefined;
   }
 }
+
+/** Whether `url` is exactly one of the pages in `WEBSITE_URLS`. */
+export const isWebsiteUrl = (url: string): boolean => websiteHref(url) !== undefined;

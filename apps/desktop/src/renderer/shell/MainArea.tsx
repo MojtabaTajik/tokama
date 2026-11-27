@@ -10,7 +10,7 @@ import { ALL_WORK, finishedIn, inView, summaryOf } from "../model.js";
 import type { AgentTarget } from "../settings/describe.js";
 import type { Layout, ViewState } from "../useViewState.js";
 import { ConnectionFailure, EngineChip, startingWords, UpdatingEngine } from "./ConnectionStatus.js";
-import { FirstLaunch, NoWork } from "./EmptyStates.js";
+import { NoWork } from "./EmptyStates.js";
 import { RepoIcon } from "../ui/icons.js";
 import { TemplateIcon } from "./TemplateIcon.js";
 import { Button } from "../ui/Button.js";
@@ -18,6 +18,7 @@ import { ErrorRetry } from "../ui/ErrorRetry.js";
 import { Placeholder } from "../ui/EmptyState.js";
 
 const TEXT = {
+  app: "Tokama",
   allWork: "All work",
   board: "Board",
   breadcrumb: "Breadcrumb",
@@ -57,17 +58,26 @@ export interface MainAreaProps {
   readonly onOpenAgent?: (agent: AgentTarget) => void;
   /** Pinned below the board: the New work input. */
   readonly composer?: ReactNode;
+  /**
+   * The Get started checklist: in place of the empty board (`instead`, before the first item), or
+   * at the top of All work (`above`, opened from Help), in front of the list.
+   */
+  readonly checklist?: { readonly node: ReactNode; readonly where: "instead" | "above" } | undefined;
+  /** The "Setup done" line above the list, until it is closed or the first item ends. */
+  readonly doneLine?: ReactNode;
 }
 
 export function MainArea(props: MainAreaProps) {
   const { views, setup } = props;
   const { view } = views;
   const template = view.kind === "workflow" ? setup?.templates.find((candidate) => candidate.id === view.id) : undefined;
+  // Before the first item the board has no work to name or count: the checklist is the page.
+  const firstRun = props.checklist?.where === "instead";
   return (
     <main className="main">
       <header className="main-header">
         {view.kind === "all" ? (
-          <h1 className="ellipsis">{TEXT.allWork}</h1>
+          <h1 className="ellipsis">{firstRun ? TEXT.app : TEXT.allWork}</h1>
         ) : (
           <nav aria-label={TEXT.breadcrumb}>
             <ol className="breadcrumb">
@@ -87,7 +97,7 @@ export function MainArea(props: MainAreaProps) {
           </nav>
         )}
         <EngineChip state={props.connection} restartable={props.onRestartEngine !== undefined} />
-        {setup !== undefined && <span className="summary mono">{summaryOf(props.items.filter((item) => inView(item, view)), props.counts.filter((row) => inView(row, view)), props.now)}</span>}
+        {setup !== undefined && !firstRun && <span className="summary mono">{summaryOf(props.items.filter((item) => inView(item, view)), props.counts.filter((row) => inView(row, view)), props.now)}</span>}
         {template !== undefined && <LayoutSwitch layout={views.layout} onChange={views.setLayout} />}
       </header>
       <section className="board" aria-label={TEXT.board}>
@@ -130,30 +140,38 @@ function Body(props: MainAreaProps & { readonly template: Setup["templates"][num
       {loadError !== undefined && <ErrorRetry title={TEXT.loadFailed} detail={loadError} onRetry={onRetry} />}
       {setup === undefined ? (
         loadError === undefined && <Placeholder>{waiting(connection)}</Placeholder>
-      ) : setup.repos.length === 0 ? (
-        <FirstLaunch />
+      ) : props.checklist?.where === "instead" ? (
+        props.checklist.node
       ) : scoped.length === 0 && finished.done + finished.failed === 0 ? (
-        <NoWork />
+        <>
+          {props.checklist?.node}
+          {props.doneLine}
+          <NoWork />
+        </>
       ) : (
-        <WorkArea
-          bridge={props.bridge}
-          connected={connection.status === "connected"}
-          setup={setup}
-          scoped={scoped}
-          counts={scopedCounts}
-          items={new Map(items.map((item) => [item.id, item]))}
-          view={views.view}
-          filter={views.filter}
-          onFilter={views.setFilter}
-          layout={views.layout}
-          template={template}
-          now={now}
-          selectedItemId={selectedItemId}
-          onSelectItem={onSelectItem}
-          onFinish={props.onFinish}
-          onDiscard={props.onDiscard}
-          onOpenAgent={props.onOpenAgent}
-        />
+        <>
+          {props.checklist?.node}
+          {props.doneLine}
+          <WorkArea
+            bridge={props.bridge}
+            connected={connection.status === "connected"}
+            setup={setup}
+            scoped={scoped}
+            counts={scopedCounts}
+            items={new Map(items.map((item) => [item.id, item]))}
+            view={views.view}
+            filter={views.filter}
+            onFilter={views.setFilter}
+            layout={views.layout}
+            template={template}
+            now={now}
+            selectedItemId={selectedItemId}
+            onSelectItem={onSelectItem}
+            onFinish={props.onFinish}
+            onDiscard={props.onDiscard}
+            onOpenAgent={props.onOpenAgent}
+          />
+        </>
       )}
     </>
   );

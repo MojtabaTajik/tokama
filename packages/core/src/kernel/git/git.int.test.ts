@@ -916,7 +916,10 @@ describe("how git is called", () => {
     for (const version of ["git version 2.37.9", "git version 1.9.0", "git version unknown"]) {
       const result = await createGit({ runner: versionRunner(version) }).checkGitVersion();
       expect(result).toMatchObject({ ok: false, error: { reason: "unsupported-version" } });
-      if (!result.ok) expect(result.error.message).toBe(`git 2.38 or newer is required; found: ${version}`);
+      if (!result.ok) {
+        expect(result.error.message).toBe(`git 2.38 or newer is required; found: ${version}`);
+        expect(result.error.found).toBe(version);
+      }
     }
   });
 

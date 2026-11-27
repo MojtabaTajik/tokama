@@ -50,6 +50,7 @@ function fakeBridge(start: ItemRecord[], activities = new Map<string, ItemActivi
     saveLayout: vi.fn(async () => undefined),
     setViewedItem: vi.fn(async () => undefined),
     onOpenItem: vi.fn(() => () => undefined),
+    onOpenGetStarted: vi.fn(() => () => undefined),
     onEvent: vi.fn((listener: (event: BridgeEvent) => void) => {
       eventListeners.add(listener);
       return () => eventListeners.delete(listener);
