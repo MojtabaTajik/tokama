@@ -301,7 +301,7 @@ describe("watchConnection", () => {
       await settle();
       await settle();
       expect(stop).toHaveBeenCalledOnce();
-      expect(watcher.state()).toEqual({ status: "connected", engineId: "e-old" });
+      expect(watcher.state()).toEqual({ status: "connected", engineId: "e-old", staleEngine: true });
       expect(states.map((s) => s.status)).toEqual(["starting", "connected"]);
     });
 
@@ -397,21 +397,38 @@ describe("watchConnection", () => {
       expect(stop).toHaveBeenCalledOnce();
     });
 
-    it("stays connected, without the note and without another check, when the engine refuses the stop", async () => {
+    it("keeps the note when the stop is refused (item B is queued while A ends), and replaces it once B is done", async () => {
       const busy = fakeClient("e-old", engineOf({ engineVersion: "0.1.0", runningItems: 1 }));
       const idleOld = () => fakeClient("e-old", engineOf({ engineVersion: "0.1.0", runningItems: 0 })).client;
       const afterRefusal = fakeClient("e-old", engineOf({ engineVersion: "0.1.0", runningItems: 0 }));
-      const connect = vi.fn<Connect>().mockResolvedValueOnce(ok(busy.client)).mockResolvedValueOnce(ok(idleOld())).mockResolvedValueOnce(ok(idleOld())).mockResolvedValueOnce(ok(afterRefusal.client));
-      const { watcher, stop } = watch(connect, [], async () => ({ kind: "refused", runningItems: 1 }), APP);
+      const connect = vi
+        .fn<Connect>()
+        .mockResolvedValueOnce(ok(busy.client))
+        // A is done: the probe reads 0 (a queued item is not counted), the replace is tried and refused.
+        .mockResolvedValueOnce(ok(idleOld()))
+        .mockResolvedValueOnce(ok(idleOld()))
+        .mockResolvedValueOnce(ok(afterRefusal.client))
+        // B is done: the probe, the replace and the new engine.
+        .mockResolvedValueOnce(ok(idleOld()))
+        .mockResolvedValueOnce(ok(idleOld()))
+        .mockResolvedValueOnce(ok(fresh()));
+      const stopOutcomes: StopResult[] = [{ kind: "refused", runningItems: 1 }, STOPPED];
+      const { watcher, stop } = watch(connect, [], async () => stopOutcomes.shift() ?? STOPPED, APP);
       await settle();
       busy.push(itemUpdated("done"));
       await vi.waitFor(() => expect(stop).toHaveBeenCalledOnce());
       await settle();
       await settle();
-      expect(watcher.state()).toEqual({ status: "connected", engineId: "e-old" });
-      afterRefusal.push(itemUpdated("done"));
+      expect(watcher.state()).toEqual({ status: "connected", engineId: "e-old", staleEngine: true });
+      expect(connect).toHaveBeenCalledTimes(4);
+      // B's own updates while it sets up (queued) or runs start no check; its end does.
+      afterRefusal.push(itemUpdated("queued"));
+      afterRefusal.push(itemUpdated("running"));
       await settle();
       expect(connect).toHaveBeenCalledTimes(4);
+      afterRefusal.push(itemUpdated("done"));
+      await vi.waitFor(() => expect(watcher.state()).toEqual({ status: "connected", engineId: "engine-new" }));
+      expect(stop).toHaveBeenCalledTimes(2);
     });
 
     it("keeps the note when the same engine is reached again, and drops it for an engine that started since", async () => {

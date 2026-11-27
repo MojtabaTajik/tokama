@@ -102,9 +102,8 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
     return { apiVersion: options.apiVersion, ...(options.appVersion !== undefined && { appVersion: options.appVersion }), ...(newestBuildAt !== undefined && { newestBuildAt }) };
   };
   const action = (engine: EngineInfo, current = app()) => engineAction(engine, current);
-  // True while a second connection reads the running count of a stale engine; `recheckAgain` when an event came meanwhile.
-  let rechecking = false;
-  let recheckAgain = false;
+  // The check that reads the running count of a stale engine on a second connection, with whether an event came meanwhile. It belongs to one attempt.
+  let checking: { readonly mine: number; again: boolean } | undefined;
 
   /** A refused connection: an engine of another API version is replaced, asked about or left alone; anything else is a failure. */
   const refused = async (error: ConnectError, mine: number, mode: Mode, replaced: boolean): Promise<void> => {
@@ -140,8 +139,10 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
       case "stopped":
         return run(mine, "ask", true, outcome.forced);
       case "replaced":
-      case "refused":
         return run(mine, "ask", true);
+      // The engine is idle by its count but has a queued item (or another command): it is kept, and stays stale.
+      case "refused":
+        return run(mine, "ask", true, false, true);
       case "still_running":
         return fail(
           outcome.pid === undefined
@@ -151,7 +152,7 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
     }
   };
 
-  const run = async (mine: number, mode: Mode, replaced = false, forced = false): Promise<void> => {
+  const run = async (mine: number, mode: Mode, replaced = false, forced = false, kept = false): Promise<void> => {
     const result = await options.connect();
     if (closed || mine !== attempt) {
       if (result.ok) await result.value.close();
@@ -178,10 +179,11 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
     if (forced) await client.command({ type: "diagnostics_settings", crashSeen: true }).catch(() => undefined);
     if (closed || mine !== attempt) return;
     // Used as it is although it runs older code (it runs items, or did not say): the connection says
-    // so, and an item event that may mean it went idle checks again. Not after a replace attempt,
-    // so an engine that refuses the stop is not asked again at every event.
+    // so, and an item event that may mean it went idle checks again. After a replace attempt only an
+    // engine that refused the stop (`kept`) is still checked; a new one is not asked about again.
+    // Checks run on item events only, so a refusal cannot loop.
     const engineId = client.engineId;
-    let stale = stopEngine !== undefined && !replaced && engineStale(connected.engine, current);
+    let stale = stopEngine !== undefined && (!replaced || kept) && engineStale(connected.engine, current);
     set({ status: "connected", engineId, ...(stale && { staleEngine: true as const }) });
     for await (const event of events) {
       if (mine !== attempt) break;
@@ -193,8 +195,8 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
       } else if (event.kind === "failed") fail(event.error.message);
       else {
         options.onEvent(event);
-        // A running item's own updates say nothing new; one that left "running" may have been the last.
-        if (stale && event.event.type === "item_updated" && event.event.item.state !== "running") void recheck(mine);
+        // Updates of a running or queued item say nothing new (a queued one is in setup and keeps the engine busy); one that left both may have been the last.
+        if (stale && event.event.type === "item_updated" && event.event.item.state !== "running" && event.event.item.state !== "queued") void recheck(mine);
       }
     }
   };
@@ -205,25 +207,26 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
    */
   const recheck = async (mine: number): Promise<void> => {
     // An event during a check may be the one that made the engine idle: the check runs once more.
-    if (rechecking) {
-      recheckAgain = true;
+    if (checking?.mine === mine) {
+      checking.again = true;
       return;
     }
-    rechecking = true;
+    // A check left over from an earlier attempt ends by itself (its attempt is over) and does not hold this one.
+    const own = { mine, again: false };
+    checking = own;
     try {
       do {
-        recheckAgain = false;
+        own.again = false;
         const result = await options.connect();
         if (!result.ok) return;
         await result.value.close();
         if (closed || mine !== attempt) return;
         if (action(result.value.engine) === "replace") return again("ask");
-      } while (recheckAgain);
+      } while (own.again);
     } catch {
       // The check is only a hope of replacing early; the next connect looks again.
     } finally {
-      rechecking = false;
-      recheckAgain = false;
+      if (checking === own) checking = undefined;
     }
   };
   const start = (mode: Mode = "ask") => {
