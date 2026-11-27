@@ -4,8 +4,8 @@
 // `removeWorktree` removes a finished item's worktree after its commit (the branch stays). Both
 // can run again after a partial run: a missing entry is done, a missing folder is pruned.
 import { constants } from "node:fs";
-import { mkdir, open, readFile, realpath } from "node:fs/promises";
-import { join, posix } from "node:path";
+import { lstat, mkdir, open, readFile, realpath } from "node:fs/promises";
+import { join, posix, sep } from "node:path";
 import type { Git, GitError, WorktreeEntry } from "../../kernel/git/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import type { ItemId } from "../../kernel/schemas/index.js";
@@ -34,7 +34,7 @@ export type WorktreeErrorReason =
   /** The item branch exists already; it is never deleted or reused. */
   | "exists"
   | "exclude"
-  /** The worktree folder is, or passes through, a link or something that is not a folder. */
+  /** The worktree folder is, or passes through, a link or something that is not a folder, or it cannot be read or made. */
   | "folder"
   | "add"
   | "remove"
@@ -86,6 +86,45 @@ export async function excludeFolder(git: Git, repo: WorktreeRepo): Promise<Resul
 /** The real path, or the path itself when it does not exist. */
 export const real = (path: string) => realpath(path).catch(() => path);
 
+/**
+ * Walks the worktree folder from the repo's real path, one part at a time. A part that is a link
+ * or not a folder is refused (a cloned repo can carry a tracked link that points anywhere). With
+ * `create`, missing parts are made one by one, never with a recursive mkdir that would follow a
+ * link. Returns the folder's real path.
+ */
+export async function checkWorktreeFolder(repo: WorktreeRepo, options: { readonly create: boolean }): Promise<Result<string, WorktreeError>> {
+  const refuse = (message: string): Result<never, WorktreeError> => err({ reason: "folder", message });
+  let current: string;
+  try {
+    current = await realpath(repo.path);
+  } catch (error) {
+    return refuse(`the repo folder cannot be read: ${(error as Error).message}`);
+  }
+  const root = current;
+  for (const part of normalizeFolder(repo.worktreeFolder).split("/")) {
+    current = join(current, part);
+    try {
+      let info = await lstat(current).catch((error: unknown) => {
+        if (hasCode(error, "ENOENT")) return undefined;
+        throw error;
+      });
+      if (info === undefined) {
+        if (!options.create) return ok(current);
+        await mkdir(current).catch((error: unknown) => {
+          if (!hasCode(error, "EEXIST")) throw error;
+        });
+        info = await lstat(current);
+      }
+      if (info.isSymbolicLink()) return refuse(`the worktree folder passes through a link: ${current}`);
+      if (!info.isDirectory()) return refuse(`the worktree folder passes through something that is not a folder: ${current}`);
+    } catch (error) {
+      return refuse((error as Error).message);
+    }
+  }
+  const inside = (await real(current)).startsWith(`${root}${sep}`);
+  return inside ? ok(current) : refuse("the worktree folder is outside the repo");
+}
+
 /** The listed worktree entries at `path` or on `branch`. */
 async function entriesFor(git: Git, repoPath: string, path: string, branch: string): Promise<Result<WorktreeEntry[], WorktreeError>> {
   const listed = await git.worktreeList(repoPath);
@@ -123,6 +162,8 @@ export async function createWorktree(git: Git, repo: WorktreeRepo, itemId: ItemI
   if ((await git.revParse(repo.path, `refs/heads/${branch}`)).ok) {
     return err({ reason: "exists", message: `branch ${branch} exists already` });
   }
+  const folder = await checkWorktreeFolder(repo, { create: true });
+  if (!folder.ok) return folder;
   const excluded = await excludeFolder(git, repo);
   if (!excluded.ok) return excluded;
   const worktree: ItemWorktree = {
@@ -130,11 +171,6 @@ export async function createWorktree(git: Git, repo: WorktreeRepo, itemId: ItemI
     folder: posix.join(normalizeFolder(repo.worktreeFolder), shortItemId(itemId)),
     baseCommit: base.value,
   };
-  try {
-    await mkdir(join(repo.path, ...normalizeFolder(repo.worktreeFolder).split("/")), { recursive: true });
-  } catch (error) {
-    return fail("add", error as Error);
-  }
   const path = worktreePath(repo.path, worktree);
   const added = await git.worktreeAdd(repo.path, path, branch, worktree.baseCommit);
   if (!added.ok) {

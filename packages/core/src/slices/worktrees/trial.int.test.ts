@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createGit, type Git } from "../../kernel/git/index.js";
 import { createProcessRunner } from "../../kernel/process/index.js";
 import type { ItemId } from "../../kernel/schemas/index.js";
-import { checkTrialFolder, createTrialWorktree, createWorktree, removeTrialWorktree, trialWorktreePath, worktreePath, type WorktreeRepo } from "./index.js";
+import { checkWorktreeFolder, createTrialWorktree, createWorktree, removeTrialWorktree, trialWorktreePath, worktreePath, type WorktreeRepo } from "./index.js";
 
 const SLOW = { timeout: 30_000 };
 const TRIAL = "trial_019a1b2c-3d4e-7f00-8a9b-00000b9f12ab";
@@ -149,7 +149,7 @@ describe("a worktree folder that is a link", () => {
 
   it("refuses a linked top folder (.tokama) and makes nothing behind it", SLOW, async () => {
     symlinkSync(outside, join(repo.path, ".tokama"));
-    expect(await checkTrialFolder(repo, { create: false })).toMatchObject({ ok: false, error: { reason: "folder" } });
+    expect(await checkWorktreeFolder(repo, { create: false })).toMatchObject({ ok: false, error: { reason: "folder" } });
     expect(await createTrialWorktree(git, repo, TRIAL, commit)).toMatchObject({ ok: false, error: { reason: "folder" } });
     nothingMade();
   });
@@ -171,13 +171,13 @@ describe("a worktree folder that is a link", () => {
 
   it("refuses a worktree folder that is a file", SLOW, async () => {
     writeFileSync(join(repo.path, ".tokama"), "not a folder");
-    expect(await checkTrialFolder(repo, { create: false })).toMatchObject({ ok: false, error: { reason: "folder" } });
+    expect(await checkWorktreeFolder(repo, { create: false })).toMatchObject({ ok: false, error: { reason: "folder" } });
   });
 
   it("accepts a folder that does not exist yet, and makes it only on create", SLOW, async () => {
-    expect(await checkTrialFolder(repo, { create: false })).toMatchObject({ ok: true });
+    expect(await checkWorktreeFolder(repo, { create: false })).toMatchObject({ ok: true });
     expect(existsSync(join(repo.path, ".tokama"))).toBe(false);
-    expect(await checkTrialFolder(repo, { create: true })).toMatchObject({ ok: true });
+    expect(await checkWorktreeFolder(repo, { create: true })).toMatchObject({ ok: true });
     expect(existsSync(join(repo.path, ".tokama", "wt"))).toBe(true);
   });
 });

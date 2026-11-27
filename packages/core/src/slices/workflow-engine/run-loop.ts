@@ -12,7 +12,7 @@
 // before checks run on it and before it is committed; protected changes the engineer has not
 // approved ask. One tree flows through: the checks pass on it, the reviewer sees its diff, Finish
 // commits it. For `checks pass`: remove ignored files, run setup again, stage, judge, then check.
-import { existsSync, lstatSync, mkdirSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Clock } from "../../kernel/clock/index.js";
@@ -433,6 +433,12 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     const repo = repoId === undefined ? undefined : deps.repo(repoId);
     if (repo === undefined) return askRunFailure(item, `Repo ${repoId ?? "(none)"} is not set up on this machine. Add it, then retry.`);
     rootsOf(item.id).set(repo.path, `<repo ${repo.id}>`);
+    // A repo listed through a link: git and the folder check name its real path.
+    try {
+      rootsOf(item.id).set(realpathSync(repo.path), `<repo ${repo.id}>`);
+    } catch {
+      // A repo folder that cannot be read has no real path to hide.
+    }
     return { item, template: template.value, repo };
   };
   const isNext = (value: object): value is Next => "kind" in value;
