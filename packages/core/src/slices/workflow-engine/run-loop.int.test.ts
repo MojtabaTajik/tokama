@@ -1031,6 +1031,122 @@ describe("run loop: protection", () => {
     expect(item(id)).toMatchObject({ state: "failed", outcome: { detail: expect.stringContaining("modified git:config (git)") } });
   });
 
+  describe("a step that moves a branch or tag of other work", () => {
+    /** What an agent command in the worktree can do: git writes the repo's shared refs. */
+    const doing = (...commands: string[][]): Behavior => async function* (call) {
+      for (const args of commands) await plain(repo.path, ...args);
+      yield* edits(FIXED)(call);
+    };
+    const refs = async () => await plain(repo.path, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads", "refs/tags");
+    const stopped = (id: ItemId, text: string) => {
+      expect(item(id).state).not.toBe("done");
+      expect(story(id)).toContain("attempt_ended build#1 run_failed crash");
+      expect(openDecision(id)).toMatchObject({ kind: "run_failure", detail: text, choices: [{ id: "retry_step" }, { id: "stop" }] });
+    };
+    const STOPPED = (what: string) => `${what.charAt(0).toUpperCase()}${what.slice(1)} during this step. Tokama stopped the item; nothing was undone.`;
+
+    it("stops the item when the step moves main, and undoes nothing", SLOW, async () => {
+      writeFileSync(join(repo.path, "later.txt"), "x\n");
+      await plain(repo.path, "add", "-A");
+      await plain(repo.path, "commit", "-q", "-m", "later");
+      const seed = await plain(repo.path, "rev-parse", "HEAD~1");
+      const loop = engine(fakeRuntime([doing(["update-ref", "refs/heads/main", seed])]));
+      const id = await start(loop, template([BUILD_CHECKED]));
+      stopped(id, STOPPED("branch main changed"));
+      expect(await plain(repo.path, "rev-parse", "main")).toBe(seed);
+    });
+
+    it("stops the item when the step deletes a tag", SLOW, async () => {
+      await plain(repo.path, "tag", "v1");
+      const id = await start(engine(fakeRuntime([doing(["tag", "-d", "v1"])])), template([BUILD_CHECKED]));
+      stopped(id, STOPPED("tag v1 was deleted"));
+    });
+
+    it("stops the item when the step makes another branch", SLOW, async () => {
+      const id = await start(engine(fakeRuntime([doing(["branch", "side"])])), template([BUILD_CHECKED]));
+      stopped(id, STOPPED("branch side was created"));
+    });
+
+    it("names several refs, and a retry after the person restored them goes on", SLOW, async () => {
+      const before = await refs();
+      const loop = engine(fakeRuntime([doing(["branch", "side"], ["tag", "v2"]), edits(FIXED)]));
+      const id = await start(loop, template([BUILD_CHECKED]));
+      stopped(id, "During this step, branch side was created; tag v2 was created. Tokama stopped the item; nothing was undone.");
+      await plain(repo.path, "branch", "-D", "side");
+      await plain(repo.path, "tag", "-d", "v2");
+      // The item's own branch is not in the first list: it was made after.
+      expect((await refs()).split("\n").filter((line) => !line.startsWith("refs/heads/tokama/"))).toEqual(before.split("\n"));
+      await answer(loop, id, "retry_step");
+      expect(item(id).state).toBe("done");
+    });
+
+    it("stops the item when the checks, which run code the agent wrote, move a branch", SLOW, async () => {
+      writeFileSync(join(repo.path, "mover.sh"), "git branch from-check\n");
+      await plain(repo.path, "add", "-A");
+      await plain(repo.path, "commit", "-q", "-m", "mover");
+      repo = { ...repo, checks: ["sh mover.sh"] };
+      const id = await start(engine(fakeRuntime([edits(FIXED)])), template([BUILD_CHECKED]));
+      stopped(id, STOPPED("branch from-check was created"));
+    });
+
+    it("reports a move by an earlier check even when a later check cannot start", SLOW, async () => {
+      writeFileSync(join(repo.path, "mover.sh"), "git branch from-check\n");
+      await plain(repo.path, "add", "-A");
+      await plain(repo.path, "commit", "-q", "-m", "mover");
+      repo = { ...repo, checks: ["sh mover.sh", "tokama-no-such-command-xyz"] };
+      const id = await start(engine(fakeRuntime([edits(FIXED)])), template([BUILD_CHECKED]));
+      stopped(id, STOPPED("branch from-check was created"));
+    });
+
+    it("does not blame the step for a branch Tokama makes for another item meanwhile", SLOW, async () => {
+      // While the first item's agent works, a second item on the same repo starts, runs and commits.
+      let other: ItemId | undefined;
+      const meanwhile: Behavior = async function* (call) {
+        other = await start(loop, template([BUILD_CHECKED]));
+        yield* edits(FIXED)(call);
+      };
+      const loop: RunLoop = engine(fakeRuntime([meanwhile, edits(FIXED)]));
+      const id = await start(loop, template([BUILD_CHECKED]));
+      expect(item(other!).state).toBe("done");
+      expect(item(id).state).toBe("done");
+    });
+
+    describe("while another item on the repo is finished", () => {
+      /** The first item's agent works; meanwhile a second item runs and is finished; `then` may be a git command of the agent's. */
+      const withFinish = async (action: "merge" | "discard", then: string[] | undefined) => {
+        const meanwhile: Behavior = async function* (call) {
+          const other = await start(loop, template([BUILD_CHECKED]));
+          expect((await loop.finishItem(other, action)).ok).toBe(true);
+          await loop.settled(other);
+          if (then !== undefined) await plain(repo.path, ...then);
+          yield* edits(FIXED)(call);
+        };
+        const loop: RunLoop = engine(fakeRuntime([meanwhile, edits(FIXED)]));
+        return start(loop, template([BUILD_CHECKED]));
+      };
+
+      it("is not stopped by the merge", SLOW, async () => {
+        expect(item(await withFinish("merge", undefined)).state).toBe("done");
+      });
+
+      it("is not stopped by the discard", SLOW, async () => {
+        expect(item(await withFinish("discard", undefined)).state).toBe("done");
+      });
+
+      it("is still stopped when its own agent moves main after that merge", SLOW, async () => {
+        const seed = await plain(repo.path, "rev-parse", "main");
+        stopped(await withFinish("merge", ["update-ref", "refs/heads/main", seed]), STOPPED("branch main changed"));
+      });
+    });
+
+    it("lets a step that only edits files pass, with branches and tags around it", SLOW, async () => {
+      await plain(repo.path, "tag", "v1");
+      await plain(repo.path, "branch", "side");
+      const id = await start(engine(fakeRuntime([edits(FIXED)])), template([BUILD_CHECKED]));
+      expect(item(id).state).toBe("done");
+    });
+  });
+
   describe("the baseline is taken after setup, and git config counts by its keys", () => {
     const sharedConfig = () => join(repo.path, ".git", "config");
     /** Like husky's `prepare`: setup points git at the repo's hooks folder. */

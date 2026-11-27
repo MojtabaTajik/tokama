@@ -169,6 +169,8 @@ export interface Git {
   status(repo: string): Promise<GitResult<StatusEntry[]>>;
   /** `for-each-ref refs/heads`: the local branch names, without `refs/heads/` (so a tag named `main` does not turn `main` into `heads/main`). */
   branches(repo: string): Promise<GitResult<string[]>>;
+  /** `for-each-ref refs/heads refs/tags`: full ref name to the object id it points at (an annotated tag's own object), or "<id> -> <ref>" for a ref that is a link to another. */
+  refs(repo: string): Promise<GitResult<ReadonlyMap<string, string>>>;
   /**
    * `symbolic-ref -q refs/remotes/<remote>/HEAD`: the branch the remote's HEAD points at as last
    * recorded in this repo (e.g. `main`); undefined when it is not set. Nothing is fetched.
@@ -469,6 +471,16 @@ export function createGit(options: GitOptions): Git {
           .filter((ref) => ref.startsWith("refs/heads/"))
           .map((ref) => ref.slice("refs/heads/".length)),
       ),
+    refs: (repo) =>
+      map(git(repo, ["for-each-ref", "--format=%(objectname) %(symref) %(refname)", "refs/heads", "refs/tags"]), (out) => {
+        const refs = new Map<string, string>();
+        // Names have no space: object id, the ref a link points to (empty when it is no link), name.
+        for (const line of out.split("\n")) {
+          const [id = "", target = "", name = ""] = line.split(" ");
+          if (name !== "") refs.set(name, target === "" ? id : `${id} -> ${target}`);
+        }
+        return refs;
+      }),
     async remoteHead(repo, remote) {
       const args = ["symbolic-ref", "-q", `refs/remotes/${remote}/HEAD`];
       const refused = refuseOption(args, remote);
@@ -623,7 +635,8 @@ export function createGit(options: GitOptions): Git {
       return map(git(repo, args, sock === undefined || sock === "" ? {} : { SSH_AUTH_SOCK: sock }), none);
     },
     async updateRef(repo, ref, newId, oldId) {
-      const args = ["update-ref", ref, newId, oldId];
+      // No deref: a ref that was turned into a link to another branch is not followed to it.
+      const args = ["update-ref", "--no-deref", ref, newId, oldId];
       const refused = refuseOption(args, ref, newId, oldId);
       if (refused !== undefined) return refused;
       if (!ref.startsWith("refs/")) {

@@ -677,6 +677,27 @@ describe("API on a real repo", () => {
     expect(await git.configList("listed.config")).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
   });
 
+  it("refs lists branches and tags with the object each points at, and nothing else", SLOW, async () => {
+    const head = (await plain(repo, "rev-parse", "HEAD")).trim();
+    await plain(repo, "branch", "side");
+    await plain(repo, "tag", "v1");
+    await plain(repo, "tag", "-a", "-m", "annotated", "v2");
+    await plain(repo, "update-ref", "refs/notes/other", head);
+    const refs = value(await git.refs(repo));
+    expect([...refs.keys()].sort()).toEqual(["refs/heads/main", "refs/heads/side", "refs/tags/v1", "refs/tags/v2"]);
+    expect(refs.get("refs/heads/main")).toBe(head);
+    expect(refs.get("refs/tags/v1")).toBe(head);
+    expect(refs.get("refs/tags/v2")).toBe((await plain(repo, "rev-parse", "v2")).trim());
+    // A ref that is a link to another shows where it points.
+    await plain(repo, "symbolic-ref", "refs/heads/link", "refs/heads/side");
+    expect(value(await git.refs(repo)).get("refs/heads/link")).toBe(`${head} -> refs/heads/side`);
+    // And updateRef does not follow it: the other branch stays put, the link itself is replaced.
+    const next = value(await git.commitTree(repo, (await plain(repo, "rev-parse", "HEAD^{tree}")).trim(), head, "next"));
+    value(await git.updateRef(repo, "refs/heads/link", next, head));
+    expect((await plain(repo, "rev-parse", "side")).trim()).toBe(head);
+    expect((await plain(repo, "rev-parse", "link")).trim()).toBe(next);
+  });
+
   it("branchDelete, lsTree and gitDirs", SLOW, async () => {
     mkdirSync(join(repo, "dir"));
     write(join(repo, "dir", "b c.txt"), "x\n");

@@ -64,10 +64,11 @@ import { protectedSet, sharedGitSettings, type ProtectedSet } from "../integrity
 import { countedAttempts, openAttempt, openDecisions, recoverItems, RUN_FAILURE_CHOICES, type ItemStore, type RecoveredItem } from "../items/index.js";
 import { buildPrompt, type StepResults } from "../prompting/index.js";
 import { checkRunOptions, checksPass, runCommand, type CheckResult } from "../verification/index.js";
-import { commitItem, createWorktree, findItemWorktree, originPushUrl, stageItem, treeDiff, worktreePath, worktreeSnapshot, type ItemWorktree } from "../worktrees/index.js";
+import { commitItem, createWorktree, findItemWorktree, itemBranch, originPushUrl, stageItem, treeDiff, worktreePath, worktreeSnapshot, type ItemWorktree } from "../worktrees/index.js";
 import { attemptChecks, attemptLog, toolLine } from "./attempt-files.js";
 import { minutes } from "./explain.js";
 import { createFinisher, GIT_SETTINGS_FILE } from "./finish.js";
+import { branchRef, createRefLedger, movedRefsText, type RefWatch } from "./moved-refs.js";
 import { sandboxFor } from "./sandbox.js";
 import { attemptLimit, budgetAllowedMs, budgetUsedMs, CONTINUE_ID, ONE_MORE_ID, ONE_MORE_ROUND_ID, roundTripLimit, sameFailureTwice } from "./counters.js";
 import {
@@ -263,9 +264,13 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
   const guard = deps.guard ?? agentCliGuardDefaults;
   const commandTimeoutMs = deps.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
   const live = new Map<ItemId, Live>();
+  const refLedger = createRefLedger(git);
+  /** The branches and tags an item's latest attempt started from; only that attempt is judged by it. */
+  const refWatches = new Map<ItemId, { readonly stepId: StepId; readonly attempt: number; readonly watch: RefWatch }>();
   const finisher = createFinisher({
     store,
     git,
+    aroundRefs: refLedger.around,
     runner: deps.runner,
     repo: deps.repo,
     ...(deps.ghCommand !== undefined && { ghCommand: deps.ghCommand }),
@@ -312,6 +317,8 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     live.delete(itemId);
     protectedSets.delete(itemId);
     roots.delete(itemId);
+    refWatches.get(itemId)?.watch.close();
+    refWatches.delete(itemId);
   };
 
   // ---- writing ----------------------------------------------------------------------------
@@ -538,6 +545,32 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
   };
 
   /**
+   * Starts (or restarts) the attempt's list of the repo's branches and tags: before the agent's
+   * call, and again before the checks, so the time the engineer took to answer a question does not
+   * count against the step.
+   */
+  const watchRefs = async (item: StoredItem, stepId: StepId, attempt: number, repoPath: string, ownBranch: string): Promise<Next | undefined> => {
+    refWatches.get(item.id)?.watch.close();
+    refWatches.delete(item.id);
+    const watch = await refLedger.watch(repoPath, ownBranch);
+    if (!watch.ok) return runFailed(item, stepId, attempt, "crash", `Cannot read the repo's branches and tags: ${watch.error}`);
+    refWatches.set(item.id, { stepId, attempt, watch: watch.value });
+    return undefined;
+  };
+
+  /**
+   * Stops the attempt when a branch or tag of other work changed since its list was taken (the
+   * agent's call, or setup and checks it wrote code for); nothing is undone. Retry step is offered.
+   */
+  const refsMoved = async (item: StoredItem, stepId: StepId, attempt: number): Promise<Next | undefined> => {
+    const watched = refWatches.get(item.id);
+    if (watched === undefined || watched.stepId !== stepId || watched.attempt !== attempt) return undefined;
+    const moved = await watched.watch.moved();
+    if (!moved.ok) return runFailed(item, stepId, attempt, "crash", `Cannot read the repo's branches and tags: ${moved.error}`);
+    return moved.value.length > 0 ? runFailed(item, stepId, attempt, "crash", movedRefsText(moved.value)) : undefined;
+  };
+
+  /**
    * Judges a staged tree against the base commit: Tokama's own files stop the item, protected
    * changes the engineer has not approved ask (covering exactly this content).
    */
@@ -585,7 +618,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     }
     let current = ctx;
     if (item.worktrees.length === 0) {
-      let created = await createWorktree(git, repo, item.id);
+      let created = await refLedger.around(repo.path, [branchRef(itemBranch(item.id))], () => createWorktree(git, repo, item.id));
       // A start that crashed after making the worktree: nothing has run in it yet, so it is reused.
       if (!created.ok && created.error.reason === "exists") {
         const found = await findItemWorktree(git, repo, item.id);
@@ -733,6 +766,8 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     }
     const gate = await intact({ ...ctx, item }, worktree);
     if (gate !== undefined) return gate;
+    const watching = await watchRefs(item, stepId, attempt, ctx.repo.path, worktree.branch);
+    if (watching !== undefined) return watching;
 
     let diff: string | undefined;
     if (reviewer) {
@@ -830,6 +865,8 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     const current = store.get(item.id)!;
     const after = await intact({ ...ctx, item: current }, worktree);
     if (after !== undefined) return after;
+    const refs = await refsMoved(item, stepId, attempt);
+    if (refs !== undefined) return refs;
 
     // Run failures: the run failed, not the work. Other guard stops end the call, and the step's
     // done_when decides.
@@ -918,6 +955,8 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     const dir = attemptDir(stepId, attempt);
     const runner = recording(item.id, stepId, attempt);
     const fail = (text: string) => runFailed(item, stepId, attempt, "crash", text);
+    const watching = await watchRefs(item, stepId, attempt, ctx.repo.path, worktree.branch);
+    if (watching !== undefined) return watching;
     // Ignored files go first, then setup installs them again from the protected lockfile.
     const cleaned = await git.cleanIgnored(worktree.path);
     if (!cleaned.ok) return fail(`Cannot remove ignored files before the checks: ${cleaned.error.message}`);
@@ -928,6 +967,8 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       if (signal.aborted) return WAIT;
       const gate = await intact(ctx, worktree);
       if (gate !== undefined) return gate;
+      const setupRefs = await refsMoved(item, stepId, attempt);
+      if (setupRefs !== undefined) return setupRefs;
       if (setup.outcome !== "passed") return fail(`The setup command failed before the checks. ${commandFailure(setup)}`);
     }
     const tree = await stageItem(git, worktree.path);
@@ -941,6 +982,11 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       reportActivity(item, stepId, attempt, "tokama", commandActivity(command));
       const result = await runOne(runner, command, worktree.path, signal, itemPath(item.id, outputFile)).finally(() => reportActivity(item, stepId, attempt, "tokama", undefined));
       if (signal.aborted) return WAIT;
+      if (result.outcome === "refused" || result.outcome === "not-started") {
+        // An earlier check may have moved a ref before this one could not start.
+        const earlier = await refsMoved(item, stepId, attempt);
+        if (earlier !== undefined) return earlier;
+      }
       if (result.outcome === "refused" || result.outcome === "not-started") return fail(`The check could not run. ${commandFailure(result)}`);
       const passed = result.outcome === "passed";
       append(item.id, [{ type: "check_result", stepId, attempt, command, exitCode: result.exitCode, passed, outputFile, durationMs: Math.max(0, Math.round(result.durationMs)) }]);
@@ -949,6 +995,8 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     // A check that wrote to the files that steer Tokama stops the item, pass or fail.
     const gate = await intact(ctx, worktree);
     if (gate !== undefined) return gate;
+    const checkRefs = await refsMoved(item, stepId, attempt);
+    if (checkRefs !== undefined) return checkRefs;
     if (failures.length === 0) return passStep(item, stepId, [attemptEnded(stepId, attempt, "passed", { tree: tree.value, said })]);
     const feedback = failures.map((f) => `$ ${f.command} (${f.outcome === "failed" ? `exit ${f.exitCode}` : f.outcome})\n${f.output}`).join("\n\n");
     return workFailed({ ...ctx, item: store.get(item.id)! }, stepId, attempt, feedback, failures.map(commandFailure).join(" "), said);
@@ -1112,7 +1160,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       if (await isOurCommit(worktree, tip.value, tree)) return done(tip.value);
       return { kind: "end", outcome: "failed", detail: `Stopped: the item branch ${worktree.branch} moved off its base commit.` };
     }
-    const commit = await commitItem(git, worktree.path, worktree, { id: item.id, title: item.title, text: item.text, tree });
+    const commit = await refLedger.around(ctx.repo.path, [branchRef(worktree.branch)], () => commitItem(git, worktree.path, worktree, { id: item.id, title: item.title, text: item.text, tree }));
     if (!commit.ok && commit.error.reason === "nothing-to-commit") {
       append(item.id, [{ type: "item_ended", outcome: "done", detail: "The item made no changes, so there is nothing to commit." }]);
       return WAIT;
