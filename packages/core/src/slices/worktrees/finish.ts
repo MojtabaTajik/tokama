@@ -153,7 +153,7 @@ async function untrackedInTheWay(git: Git, repoPath: string, from: string, to: s
 async function cleanUp(git: Git, repo: WorktreeRepo, worktree: ItemWorktree, commit: string, merged: string): Promise<Result<MergeResult, MergeError>> {
   const removed = await removeWorktree(git, repo.path, worktree);
   if (!removed.ok) {
-    return ok({ commit: merged, worktreeRemoved: false, detail: "The worktree was kept: it has files that are not in the commit. Discard it once you no longer need them." });
+    return ok({ commit: merged, worktreeRemoved: false, detail: "The worktree was kept: it has files that are not in the commit, or a nested repo. Discard it once you no longer need them." });
   }
   const tip = await git.revParse(repo.path, `refs/heads/${worktree.branch}`);
   if (tip.ok && tip.value !== commit) {

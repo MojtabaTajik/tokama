@@ -169,7 +169,7 @@ export async function findItemWorktree(git: Git, repo: WorktreeRepo, itemId: Ite
 
 /**
  * Removes a finished item's worktree; the branch stays. Without `force` it is refused while the
- * worktree has changes (after a commit, those are files the checks wrote).
+ * worktree has changes (after a commit, those are files the checks wrote) or a checked-out nested repo.
  */
 export async function removeWorktree(
   git: Git,
