@@ -55,7 +55,7 @@ const StoredSettingsSchema = z.strictObject({
   schemaVersion: z.literal(1),
   collect: z.boolean(),
   installId: InstallIdSchema,
-  /** Crashes recorded up to this time were seen; null when none was. */
+  /** Crashes recorded up to this time were seen: the time of the newest crash entry when it was marked seen; null when none was. */
   crashSeenAt: EpochMsSchema.nullable(),
 });
 type StoredSettings = z.output<typeof StoredSettingsSchema>;
@@ -302,7 +302,7 @@ export class DiagnosticsStore {
     const next: StoredSettings = { ...this.settingsValue };
     if (change.collect !== undefined) next.collect = change.collect;
     if (change.resetInstallId === true) next.installId = InstallIdSchema.parse(newId("install", this.clock.now()));
-    if (change.crashSeen === true) next.crashSeenAt = this.clock.now();
+    if (change.crashSeen === true) next.crashSeenAt = this.newestCrashAt() ?? next.crashSeenAt;
     // Off means nothing more is written, counts not yet written included; a new install id
     // starts fresh too, so no count from before it is written under it.
     if (!next.collect || change.resetInstallId === true) this.pending.clear();
@@ -310,6 +310,13 @@ export class DiagnosticsStore {
     this.saveSettings();
     this.options.onChange?.();
     return this.settings();
+  }
+
+  /** The time of the newest crash entry still kept; undefined when there is none. */
+  private newestCrashAt(): number | undefined {
+    let newest: number | undefined;
+    for (const { entry } of this.kept) if (entry.type === "crash" && (newest === undefined || entry.at > newest)) newest = entry.at;
+    return newest;
   }
 
   /** On a clean stop: writes the pending counts and removes the crash marker. */
