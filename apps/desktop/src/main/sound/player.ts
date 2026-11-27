@@ -21,6 +21,8 @@ export interface PlayerDeps {
   readonly makeRunner: () => Pick<ProcessRunner, "run">;
   /** The full path of the program `name` on the PATH, or undefined when it is not installed. */
   readonly findProgram: (name: string) => string | undefined;
+  /** The variables a player needs to find the sound server (`XDG_RUNTIME_DIR`, `PULSE_SERVER`). The runner drops every other variable of the app. */
+  readonly audioEnv: Readonly<Record<string, string>>;
   readonly soundsDir: string;
   readonly packaged: boolean;
   /** Electron's `shell.beep`. */
@@ -49,9 +51,11 @@ function programPlayer(deps: PlayerDeps, programs: () => readonly string[]): Sou
       const file = join(deps.soundsDir, soundFileName(name, deps.packaged));
       void (async () => {
         for (const program of found) {
-          const result = await runner.run({ command: { argv: [program, file] }, cwd: deps.soundsDir, timeoutMs: PLAY_TIMEOUT_MS }).catch(() => undefined);
+          const result = await runner.run({ command: { argv: [program, file] }, cwd: deps.soundsDir, env: deps.audioEnv, timeoutMs: PLAY_TIMEOUT_MS }).catch(() => undefined);
           if (result?.kind === "finished" && result.exitCode === 0) return;
         }
+        // Every program failed (no sound server, for one): the beep is better than silence.
+        deps.beep();
       })().finally(() => {
         playing = false;
       });

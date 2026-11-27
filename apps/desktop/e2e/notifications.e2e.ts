@@ -75,7 +75,7 @@ flow("the page shows a mode per kind and the sound set, and a restart finds the 
 
   const next = await session.restart();
   await openPage(next.page);
-  expect(await choices(next.page)).toEqual([["notes-needsYou", "✓Banner only"], ["notes-finished", "✓Off"], ["notes-failed", "✓Banner + sound"], ["notes-sounds", "✓macOS default"]]);
+  expect(await choices(next.page)).toEqual([["notes-needsYou", "✓Banner only"], ["notes-finished", "✓Off"], ["notes-failed", "✓Banner + sound"], ["notes-sounds", "✓System sound"]]);
   expect(savedNotifications(home)).toEqual({ needsYou: "banner", finished: "off", failed: "both", sounds: "system" });
 });
 

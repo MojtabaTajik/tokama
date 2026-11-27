@@ -282,6 +282,7 @@ function soundPlayer(): SoundPlayer {
   return playerFor(process.platform, {
     makeRunner: () => createProcessRunner(),
     findProgram: (name) => findOnPath(name, process.env),
+    audioEnv: Object.fromEntries(["XDG_RUNTIME_DIR", "PULSE_SERVER"].flatMap((name) => (process.env[name] === undefined ? [] : [[name, process.env[name]]]))),
     soundsDir: soundsFolder,
     packaged,
     beep: () => shell.beep(),

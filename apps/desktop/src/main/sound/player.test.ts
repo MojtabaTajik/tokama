@@ -23,7 +23,7 @@ function setup(options: { packaged?: boolean; result?: (request: RunRequest) => 
   const makeRunner = vi.fn(() => runner);
   const installed = options.installed ?? [];
   const findProgram = vi.fn((name: string) => (installed.includes(name) ? `/usr/bin/${name}` : undefined));
-  const deps = { makeRunner, findProgram, soundsDir: "/res", packaged: options.packaged ?? true, beep };
+  const deps = { makeRunner, findProgram, audioEnv: { XDG_RUNTIME_DIR: "/run/user/1000" }, soundsDir: "/res", packaged: options.packaged ?? true, beep };
   return { requests, release, beep, deps, makeRunner, findProgram };
 }
 
@@ -110,6 +110,23 @@ describe("the Linux player", () => {
     playerFor("linux", deps).play("finished", "tokama");
     await tick();
     expect(requests).toHaveLength(1);
+  });
+
+  it("passes the sound server variables the runner would otherwise drop", () => {
+    const { deps, requests } = setup({ installed: ["paplay"] });
+    playerFor("linux", deps).play("needsYou", "tokama");
+    expect(requests[0]?.env).toEqual({ XDG_RUNTIME_DIR: "/run/user/1000" });
+  });
+
+  it("beeps when every program fails, and not when one works", async () => {
+    const failing = setup({ installed: ["paplay", "aplay"], result: () => Promise.resolve(FAILED) });
+    playerFor("linux", failing.deps).play("needsYou", "tokama");
+    await tick();
+    expect(failing.beep).toHaveBeenCalledTimes(1);
+    const working = setup({ installed: ["paplay"], result: () => Promise.resolve(FINISHED) });
+    playerFor("linux", working.deps).play("needsYou", "tokama");
+    await tick();
+    expect(working.beep).not.toHaveBeenCalled();
   });
 
   it("falls back to aplay when paplay rejects, and plays again after both fail", async () => {

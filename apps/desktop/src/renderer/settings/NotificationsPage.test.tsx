@@ -64,7 +64,7 @@ describe("Settings > Notifications", () => {
       "No notification while you are looking at that item: Tokama is in front and the item is open in the drawer or the full view.",
       "Sound only: Tokama plays the sound itself while the app is running, with no banner. Sounds play even during Focus or Do Not Disturb, but not while your computer is locked. Choose Banner only for a row if that bothers you. The ▶ buttons always play.",
     ]);
-    expect($(".notes-preview-hint")?.textContent).toBe("How each one looks in the top-right corner of the screen. Plain text, no formatting.");
+    expect($(".notes-preview-hint")?.textContent).toBe("How each one looks as a notification. Plain text, no formatting.");
   });
 
   it("previews a banner for the kinds that show one, a line for the sound-only kind, and the sound note", async () => {
