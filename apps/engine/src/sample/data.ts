@@ -200,15 +200,26 @@ export const sampleSetup = {
 
 type StepState = "pending" | "running" | "needs_you" | "passed" | "failed";
 
+/** What ends each step of a sample template, as the engine records it on an item's steps (the template summary does not carry it). */
+const DONE_WHEN: Readonly<Record<string, readonly string[]>> = {
+  [templates.emergency.id]: ["agent finishes", "agent finishes", "agent finishes", "you approve"],
+  [templates.slowQuery.id]: ["agent finishes", "agent finishes", "you approve"],
+  [templates.planAndBuild.id]: ["you approve", "agent finishes", "checks pass", "reviewer approves"],
+  [templates.quickFix.id]: ["agent finishes", "checks pass"],
+  [templates.quickChange.id]: ["you approve"],
+  [templates.reviewOnly.id]: ["reviewer approves"],
+};
+
 /** The template's steps with these states and detail lines (a passed step without one says "passed"). */
-function steps(template: { steps: readonly object[] }, states: readonly StepState[], details: Record<number, string> = {}) {
+function steps(template: { id: string; steps: readonly object[] }, states: readonly StepState[], details: Record<number, string> = {}) {
   return template.steps.map((templateStep: { checks?: unknown }, index) => {
     // Item steps carry no checks; the template summary does.
     const step = { ...templateStep };
     delete step.checks;
     const state = states[index] ?? "pending";
     const detail = details[index] ?? (state === "passed" ? "passed" : undefined);
-    return { ...step, state, ...(detail ? { detail } : {}) };
+    const doneWhen = DONE_WHEN[template.id]?.[index];
+    return { ...step, ...(doneWhen !== undefined && { doneWhen }), state, ...(detail ? { detail } : {}) };
   });
 }
 
@@ -294,7 +305,8 @@ const SAID_WITH_POINTS = {
   headline: "Fixed the null check in cart totals: a line without a price now counts as 0.",
   points: ["Added a test for a line with no price.", "Did not change how discounts round.", "Not run against the staging catalog."],
   morePoints: 0,
-  bodyBytes: 236,
+  // Less than the output's size on the Output tab: the block is not counted.
+  bodyBytes: 180,
 };
 
 /** What the slow query item's agent said: a write-up to read, so a headline and a read time. */
@@ -466,6 +478,8 @@ function rawItems(now: number): RawItem[] {
       cardLine: "commit 3f2a9c1 · tokama/00000011",
       steps: steps(templates.quickFix, ["passed", "passed"]).map((step, index) => ({
         ...step,
+        // This item's Fix ran on a cloud agent with the repo and diff, so its card has a "Sent out" line and Open PR is offered.
+        ...(index === 0 && { agentId: "architect", data: "repo-and-diff" }),
         attempts: [
           {
             attempt: 1,

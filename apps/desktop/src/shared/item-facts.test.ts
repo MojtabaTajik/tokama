@@ -1,6 +1,6 @@
 import type { ItemRecord } from "@tokama/core";
 import { describe, expect, it } from "vitest";
-import { checksOf, checksWords, doneFacts, factsOf, failedFacts, failureLine, finishedLine } from "./item-facts.js";
+import { checkAttempts, checksOf, checksWords, doneFacts, factsOf, failedFacts, failureLine, finishedLine } from "./item-facts.js";
 
 const check = (command: string, passed = true) => ({ command, passed, exitCode: passed ? 0 : 1 });
 const attempt = (n: number, checks: ReturnType<typeof check>[], fields: Record<string, unknown> = {}) => ({ attempt: n, result: checks.every((c) => c.passed) ? "passed" : "failed", checks, ...fields });
@@ -8,6 +8,14 @@ const step = (name: string, state: string, fields: Record<string, unknown> = {})
 const item = (fields: Record<string, unknown> = {}): ItemRecord => ({ kind: "task", state: "done", steps: [], ...fields }) as unknown as ItemRecord;
 
 const THREE = [check("pnpm typecheck"), check("pnpm lint"), check("pnpm test")];
+
+describe("checkAttempts", () => {
+  it("lists each step's latest attempt that ran checks, with its step, and none for steps without", () => {
+    const build = step("Build", "passed", { attempts: [attempt(1, [check("pnpm test", false)]), attempt(2, THREE), attempt(3, [], { result: "run_failed" })] });
+    const found = checkAttempts(item({ steps: [step("Plan", "passed"), build] }));
+    expect(found.map(({ step: { name }, attempt: { attempt: n } }) => [name, n])).toEqual([["Build", 2]]);
+  });
+});
 
 describe("checksOf", () => {
   it("adds up the latest attempt with checks of each step", () => {

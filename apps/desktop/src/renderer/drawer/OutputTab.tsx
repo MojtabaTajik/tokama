@@ -9,7 +9,7 @@ import type { TokamaBridge } from "../../shared/bridge.js";
 import { AgentLabel } from "../agent/AgentLabel.js";
 import { agentInfo } from "../agent/agent-info.js";
 import type { AgentTarget } from "../settings/describe.js";
-import { spokenSize, stepFacts } from "./attempt-view.js";
+import { bytesText, spokenSize, stepFacts } from "./attempt-view.js";
 import { trackOf } from "./progress-view.js";
 import { type OutputState, StepOutput, useStepOutput } from "./StepOutput.js";
 import { useNow } from "../useNow.js";
@@ -42,10 +42,7 @@ export function shownAttempt(step: Pick<StepRecord, "agentId" | "attempts">): nu
 const bytesOf = (text: string): number => new TextEncoder().encode(text).length;
 
 /** "512 B", "1.9 KB": the output's size in UTF-8. */
-export function sizeOf(text: string): string {
-  const bytes = bytesOf(text);
-  return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`;
-}
+export const sizeOf = (text: string): string => bytesText(bytesOf(text));
 
 /**
  * What an output says in one line: the headline its agent wrote ("said"), else "approve",

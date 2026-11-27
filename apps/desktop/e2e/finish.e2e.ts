@@ -33,7 +33,7 @@ flow("opens a pull request for a done item from the row's menu, then removes its
   expect(await split.locator(".finish-split-main").innerText()).toBe("Merge into main");
   await split.getByRole("button", { name: `More ways to finish ${SAMPLE_DONE}` }).click();
   const menu = split.getByRole("menu");
-  expect(await menu.getByRole("menuitem").allInnerTexts()).toEqual(["Merge into main\nlocal merge, then clean up", "Open PR\npush and open with gh", "Discard…"]);
+  expect(await menu.getByRole("menuitem").allInnerTexts()).toEqual(["Merge into main\nlocal merge, then clean up", "Open PR\nPush tokama/00000011 to github.com/northwind/orders-api and open a PR with gh", "Discard…"]);
   await screenshot("finish-2-row-menu");
   await page.keyboard.press("Escape");
   await menu.waitFor({ state: "detached" });
@@ -42,21 +42,35 @@ flow("opens a pull request for a done item from the row's menu, then removes its
   const finish = drawer(page).locator(".finish");
   await finish.waitFor();
   expect((await finish.locator(".finish-head").innerText()).replace(/\s+/g, " ")).toBe("FINISH tokama/00000011 · 1 commit ahead of main");
-  expect(await finish.locator(".finish-row .btn").allTextContents()).toEqual(["Merge into main", "Open PR", "Discard…"]);
-  expect(await finish.locator(".finish-row").nth(1).innerText()).toContain("Pushes tokama/00000011 to github.com/northwind/orders-api and opens a pull request with gh.");
+  // One filled button; the other two ways are in its menu.
+  expect(await finish.locator(".finish-split").count()).toBe(1);
+  expect(await finish.locator(".finish-split-main").innerText()).toBe("Merge into main");
   await screenshot("finish-1-offered");
-
-  await finish.getByRole("button", { name: "Discard…" }).click();
+  const openMenu = () => finish.getByRole("button", { name: `More ways to finish ${SAMPLE_DONE}` }).click();
+  await openMenu();
+  expect(await finish.getByRole("menu").getByRole("menuitem").allInnerTexts()).toEqual(["Merge into main\nlocal merge, then clean up", "Open PR\nPush tokama/00000011 to github.com/northwind/orders-api and open a PR with gh", "Discard…"]);
+  // The menu opens inside the drawer, all of it in view.
+  const inside = await finish.getByRole("menu").evaluate((menu) => {
+    const box = menu.getBoundingClientRect();
+    const panel = menu.closest(".drawer")!.getBoundingClientRect();
+    return box.left >= panel.left && box.right <= panel.right;
+  });
+  expect(inside).toBe(true);
+  await screenshot("finish-1b-drawer-menu");
+  await finish.getByRole("menuitem", { name: "Discard…" }).click();
   await finish.getByRole("group", { name: "Discard this work?" }).waitFor();
   await screenshot("finish-3-discard-question");
   await finish.getByRole("button", { name: "Keep" }).click();
 
-  await finish.getByRole("button", { name: "Open PR" }).click();
+  await openMenu();
+  await finish.getByRole("menuitem", { name: /^Open PR/ }).click();
   const ended = drawer(page).locator(".finish-ended");
   await expect.poll(() => ended.innerText().catch(() => ""), { message: "the pull request end" }).toContain("PR #128 open");
   expect(await ended.innerText()).toContain("https://github.com/northwind/orders-api/pull/128");
   expect(await drawer(page).locator(".drawer-state").innerText()).toContain("PR open");
   await expect.poll(() => row(page, SAMPLE_DONE).innerText(), { message: "the list row" }).toContain("PR #128 open");
+  // The card now says the branch left the machine too.
+  expect((await drawer(page).locator(".result-card .rc-row").last().innerText()).replace(/\s+/g, " ")).toContain("The branch to github.com/northwind/orders-api");
   await screenshot("finish-4-pr-open");
 
   await ended.getByRole("button", { name: "Remove worktree" }).click();
@@ -200,7 +214,7 @@ flow(
     await offer.getByRole("button", { name: "Merge into main" }).click();
     await expect.poll(() => offer.locator(".finish-notice").innerText().catch(() => ""), { message: "the refusal", timeout: 20_000 }).toContain("Your checkout is on another branch.");
     expect(await offer.locator(".finish-notice").innerText()).toContain("Your checkout is on feature/login, not main.");
-    expect(await offer.locator(".finish-row").first().getByRole("button").innerText()).toBe("Try again");
+    expect(await offer.locator(".finish-split-main").innerText()).toBe("Try again");
     await screenshot("finish-7-refused-other-branch");
     git(repoPath, "switch", "-q", "main");
     await drawer(page).getByRole("button", { name: "Close" }).click();
@@ -241,7 +255,8 @@ flow(
     await drawer(page).getByRole("heading", { name: DISCARD_TITLE }).waitFor();
     const finish = drawer(page).locator(".finish");
     // The merge moved main on; this branch still starts from the old main and is thrown away.
-    await finish.getByRole("button", { name: "Discard…" }).click();
+    await finish.getByRole("button", { name: /^More ways to finish/ }).click();
+    await finish.getByRole("menuitem", { name: "Discard…" }).click();
     await finish.getByRole("group", { name: "Discard this work?" }).getByRole("button", { name: "Discard" }).click();
     await expect.poll(() => drawer(page).locator(".finish-ended").innerText().catch(() => ""), { message: "the discarded end", timeout: 20_000 }).toContain("Discarded");
     expect(await drawer(page).locator(".drawer-state").innerText()).toContain("discarded");

@@ -40,6 +40,11 @@
   cursor: default;
 }
 
+/* A phrase that wraps as one piece: "step 2 of 3" is never split across lines. */
+.nowrap {
+  white-space: nowrap;
+}
+
 .ellipsis {
   min-width: 0;
   overflow: hidden;

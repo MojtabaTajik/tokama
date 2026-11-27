@@ -150,6 +150,7 @@ describe("fake engine mode", () => {
       state: "needs_you",
       agentId: "architect",
       data: "summary-after-approval",
+      doneWhen: "you approve",
       detail: "waits for your approval of the cloud step",
     });
     expect(needsYou.steps[1]?.uses).toEqual([

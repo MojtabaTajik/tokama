@@ -13,8 +13,6 @@ const TEXT = {
   noQuestion: "This item waits for you, but the engine sent no question yet.",
   willBeSent: "Will be sent",
   notSentYet: "Nothing has been sent yet",
-  committed: (commit: string) => `Committed · ${commit}`,
-  committedLine: (title: string, branch: string | undefined) => `${title}${branch === undefined ? "" : ` · on ${branch}`} · Done`,
   makingChanges: (agent: string, run: string | undefined) => `${agent} is making your changes${run === undefined ? "" : ` · ${run}`}`,
   yourNote: (note: string) => `Your note: "${note}"`,
   wrote: (step: string, agent: string | undefined) => `${step} · what ${agent ?? "the agent"} wrote`,
@@ -92,24 +90,8 @@ export function NeedsYou({ item, setup, decision, busy, output, full, changedFil
   );
 }
 
-/**
- * What happened after a decision: the commit an approval made, or the step running again with the
- * note of Request changes.
- */
+/** What happened after a decision: the step running again with the note of Request changes. */
 export function After({ item, setup }: { readonly item: ItemRecord; readonly setup: Setup | undefined }) {
-  const commit = item.outcome?.commits?.[0];
-  // After a merge the branch is gone: the Merged card in Finish says it all.
-  if (item.state === "done" && commit !== undefined && item.finish?.merged === undefined) {
-    return (
-      <section className="after" data-tone="pass" aria-label={TEXT.committed(commit.commit.slice(0, 7))}>
-        <StatusMark status="passed" />
-        <div className="after-body">
-          <p className="after-head">{TEXT.committed(commit.commit.slice(0, 7))}</p>
-          <p className="after-text">{TEXT.committedLine(item.title, commit.branch)}</p>
-        </div>
-      </section>
-    );
-  }
   const step = item.steps.find((candidate) => candidate.state === "running" && candidate.changesNote !== undefined);
   if (step?.changesNote === undefined) return null;
   const line = TEXT.makingChanges(stepAgent(step, setup?.agents ?? []).name, runLine(step));

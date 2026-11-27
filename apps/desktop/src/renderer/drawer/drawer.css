@@ -585,10 +585,6 @@
   color: var(--text);
 }
 
-.after[data-tone="pass"] .mark {
-  color: var(--pass);
-}
-
 .after[data-tone="live"] .mark {
   color: var(--live);
 }
@@ -600,11 +596,141 @@
   overflow-wrap: anywhere;
 }
 
-/* Finish: a done item's worktree, the three ways to finish it, and how it ended */
+/* The result card of an ended item: its agent's words, then what Tokama measured. Grey text; only ✕ and ! have a colour. */
+
+.result-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  margin: 0 0 var(--space-12);
+  padding: var(--space-12) var(--space-14);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--panel);
+  font-size: var(--text-base);
+  overflow-wrap: anywhere;
+}
+
+.rc-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.rc-label {
+  margin: 0;
+  font-weight: 400;
+  font-size: var(--text-xs);
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.rc-who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-4) var(--space-8);
+  margin: 0;
+  color: var(--muted);
+}
+
+.rc-headline {
+  margin: 0;
+  font-size: var(--text-lg);
+  line-height: var(--leading-body);
+  color: var(--text);
+}
+
+.rc-agent-said {
+  margin: 0;
+  color: var(--text-2);
+}
+
+.rc-points {
+  margin: 0;
+  padding-left: 1.2em;
+  color: var(--text-2);
+}
+
+.rc-lines {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  color: var(--text-2);
+}
+
+.rc-action {
+  margin-top: var(--space-4);
+}
+
+.rc-facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  margin: 0;
+  padding-top: var(--space-12);
+  border-top: 1px solid var(--hairline);
+  min-width: 0;
+}
+
+.rc-facts:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.rc-row {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  gap: var(--space-8);
+}
+
+.rc-row dt {
+  color: var(--muted);
+}
+
+.rc-row dd {
+  margin: 0;
+  color: var(--text-2);
+}
+
+.rc-mark {
+  display: inline-block;
+  width: 1.4em;
+  text-align: center;
+  color: var(--muted);
+}
+
+.rc-mark[data-tone="fail"] {
+  color: var(--fail);
+}
+
+.rc-mark[data-tone="warn"] {
+  color: var(--warn);
+}
+
+.rc-detail {
+  display: block;
+  font-size: var(--text-md);
+  color: var(--muted);
+}
+
+/* Finish: a done item's one Finish button with its branch, what a refusal says, and how it ended */
 
 .finish {
   display: flex;
   flex-direction: column;
+  gap: var(--space-10);
+  margin-bottom: var(--space-12);
+}
+
+.finish-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-6) var(--space-12);
 }
 
 .finish-head {
@@ -612,8 +738,7 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--space-4) var(--space-8);
-  padding-bottom: var(--space-6);
-  border-bottom: 1px solid var(--hairline);
+  min-width: 0;
   font-size: var(--text-md);
   color: var(--muted);
 }
@@ -625,38 +750,9 @@
 }
 
 .finish-running {
-  padding: var(--space-8) 0;
   color: var(--text);
 }
 
-.finish-row {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-8);
-  padding: var(--space-12) 0;
-  border-bottom: 1px solid var(--hairline);
-}
-
-.finish-row-main {
-  display: flex;
-  align-items: center;
-  gap: var(--space-16);
-}
-
-.finish-row-body {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: var(--space-4);
-  min-width: 0;
-}
-
-.finish-row-main > .btn {
-  flex: none;
-  align-self: center;
-}
-
-.finish-title,
 .finish-ended-title,
 .finish-confirm-title {
   color: var(--text);
@@ -758,13 +854,6 @@
   color: var(--link);
   overflow-wrap: anywhere;
   user-select: text;
-}
-
-@media (max-width: 520px) {
-  .finish-row-main {
-    flex-direction: column;
-    align-items: flex-start;
-  }
 }
 
 .drawer-expand {
@@ -1040,28 +1129,25 @@
   justify-content: flex-end;
 }
 
-.expanded > .after {
+.expanded > :is(.after, .result-card) {
   margin: var(--space-12) var(--space-28) 0;
+}
+
+/* With room, the words on the left and the facts on the right. */
+.expanded > .result-card[data-columns] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: var(--space-12) var(--space-28);
+}
+
+.expanded > .result-card[data-columns] > .rc-facts {
+  padding-top: 0;
+  border-top: 0;
 }
 
 .expanded > :is(.finish, .finish-ended) {
   padding: var(--space-12) var(--space-28);
   border-bottom: 1px solid var(--hairline);
-}
-
-/* Finish's three ways side by side, each with what it does under its button's row. */
-.expanded > .finish {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  column-gap: var(--space-24);
-}
-
-.expanded > .finish > :is(.finish-head, .finish-running) {
-  grid-column: 1 / -1;
-}
-
-.expanded > .finish > .finish-row {
-  border-bottom: 0;
 }
 
 .expanded .drawer-tabs {

@@ -15,7 +15,7 @@ import { templateOf } from "../drawer/describe.js";
 import { finishNote } from "../drawer/finish-view.js";
 import { currentStep, type GroupKey, type ItemGroup, listEntries, rowLine, rowMark, timeOf } from "../model.js";
 import type { AgentTarget } from "../settings/describe.js";
-import { FinishSplit } from "./FinishSplit.js";
+import { RowFinish } from "./RowFinish.js";
 import { useFocusFollow } from "./useFocusFollow.js";
 import { Button } from "../ui/Button.js";
 import { AgentName } from "../ui/agent.js";
@@ -180,7 +180,7 @@ function Row({ item, setup, now, selected, onSelect, onFinish, onDiscard, onOpen
         <RowTime item={item} now={now} />
       </Button>
       {info !== undefined && <AgentBadge info={info} stepName={line?.stepName} since={line?.since} className="pl-badge" onOpen={onOpenAgent} />}
-      {onFinish !== undefined && onDiscard !== undefined && <FinishSplit item={item} setup={setup} onFinish={onFinish} onDiscard={onDiscard} />}
+      {onFinish !== undefined && onDiscard !== undefined && <RowFinish item={item} setup={setup} onFinish={onFinish} onDiscard={onDiscard} />}
     </div>
   );
 }

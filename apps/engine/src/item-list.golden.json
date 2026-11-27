@@ -194,7 +194,7 @@
   {"query":{"group":"failed","limit":10,"since":"2026-11-10","repo":"checkout-web","template":"builtin/db-slow-query","q":"SAME MILLISECOND"},"ids":[],"total":0,"days":[],"more":false},
   {"query":{"group":"done","limit":10,"q":"   "},"ids":[7,6,1526,1525,30,21,29,20,37,28],"total":1300,"days":[["2026-11-26",3],["2026-11-25",26]],"more":true},
   {"query":{"group":"done","limit":10,"q":"checkout-web"},"ids":[29,20,35,17,32,23,14,38,56,62],"total":430,"days":[["2026-11-25",7],["2026-11-24",8]],"more":true},
-  {"query":{"group":"done","limit":10,"q":"local-builder"},"ids":[7,1526,1525,29,20,37,28,35,17,34],"total":870,"days":[["2026-11-26",2],["2026-11-25",19]],"more":true},
+  {"query":{"group":"done","limit":10,"q":"local-builder"},"ids":[1526,1525,29,20,37,28,35,17,34,25],"total":869,"days":[["2026-11-26",1],["2026-11-25",19]],"more":true},
   {"query":{"group":"done","limit":10,"q":"orders-api"},"ids":[7,1526,1525,37,28,34,25,16,31,22],"total":440,"days":[["2026-11-26",2],["2026-11-25",12]],"more":true},
   {"query":{"group":"done","limit":10,"repo":"unknown-repo"},"ids":[],"total":0,"days":[],"more":false},
   {"query":{"group":"done","limit":10,"repo":"orders"},"ids":[],"total":0,"days":[],"more":false},

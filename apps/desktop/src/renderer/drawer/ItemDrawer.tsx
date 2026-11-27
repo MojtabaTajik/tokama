@@ -7,7 +7,7 @@
 // questions, the cloud summary, step details, agent output, check output and transcripts) is
 // rendered as React text only. While the item runs, the header shows the live activity line (who
 // works, the latest action, the time) beside the state line, and every item shows its step track.
-import type { CommandErrorCode, Decision, ItemRecord, ItemUsage, Setup } from "@tokama/core";
+import type { CommandErrorCode, Decision, FinishAction, ItemRecord, ItemUsage, Setup } from "@tokama/core";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
 import { AgentLabel } from "../agent/AgentLabel.js";
@@ -28,7 +28,8 @@ import { useDecisionDiff } from "./useDecisionDiff.js";
 import { ItemDiffTab } from "./ItemDiffTab.js";
 import { showsChange, type ItemDiffState } from "./item-diff-view.js";
 import { useItemDiff } from "./useItemDiff.js";
-import { Finish } from "./Finish.js";
+import { Finish, FinishButton } from "./Finish.js";
+import { ResultCard } from "./ResultCard.js";
 import { LogTab } from "./LogTab.js";
 import { OutputTab, shownAttempt } from "./OutputTab.js";
 import { Reader } from "./Reader.js";
@@ -159,6 +160,8 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
   const [notice, setNotice] = useState<Notice | undefined>(undefined);
   const [confirmingStop, setConfirmingStop] = useState(false);
   const [tab, setTab] = useState<Tab>("Steps");
+  // Discard… from the Finish button in the full view's header: each ask opens the question below the card.
+  const [discardAsks, setDiscardAsks] = useState(0);
   const drawer = useRef<HTMLElement>(null);
   const opener = useRef<Element | null>(null);
   const stopLink = useRef<HTMLButtonElement>(null);
@@ -178,6 +181,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
     setConfirmingStop(false);
     setBusy(false);
     setTab("Steps");
+    setDiscardAsks(0);
     setLogOf(undefined);
     setNotesOf(undefined);
   }, [itemId]);
@@ -204,6 +208,10 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
     watcher.observe(bar);
     return () => watcher.disconnect();
   });
+  // Discard… from the list: each new request asks again, as the header's button does. One counter, so a request that ends asks nothing.
+  useEffect(() => {
+    if (request?.discard === true) setDiscardAsks((count) => count + 1);
+  }, [request?.seq, request?.discard]);
   // A refusal of a command the list sent for this item, in the engine's words.
   useEffect(() => {
     if (request?.notice !== undefined) setNotice({ tone: "warn", text: request.notice });
@@ -270,6 +278,8 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
     if (REFRESH_ON.has(reply.error.code)) refresh();
   };
 
+  const finishWith = (done: ItemRecord) => (action: FinishAction) => void send({ type: "finish_item", itemId: done.id, action });
+  const acceptChanges = (done: ItemRecord) => () => void send({ type: "accept_git_changes", itemId: done.id });
   const resolve = (decision: Decision, choice: string, note?: string) => {
     if (item) void send({ type: "resolve_decision", itemId: item.id, decisionId: decision.id, choice, ...(note !== undefined && { note }) });
   };
@@ -378,6 +388,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
           <Missing error={error} onRetry={refresh} />
         )}
       </div>
+      {item && <FinishButton item={item} setup={setup} busy={busy} onFinish={finishWith(item)} onAcceptChanges={acceptChanges(item)} onAskDiscard={() => setDiscardAsks((count) => count + 1)} />}
       <Button variant="secondary" className="ex-collapse" aria-label={TEXT.collapse} title={TEXT.collapseTip} onClick={expanded.onCollapse}>
         <CollapseIcon />
         <kbd>Esc</kbd>
@@ -436,15 +447,27 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
       )}
       {item !== undefined && item.state !== "needs_you" && <After item={item} setup={setup} />}
 
+      {item !== undefined && hasEnded(item) && expanded?.reader === undefined && (
+        <ResultCard
+          bridge={bridge}
+          item={item}
+          setup={setup}
+          columns={expanded?.wide === true}
+          onReadMore={(stepIndex) => showStopped("Output", stepIndex)}
+          onRead={(stepIndex) => (onRead === undefined ? showStopped("Output", stepIndex) : onRead(stepIndex))}
+        />
+      )}
+
       {item?.state === "done" && (
         <Finish
           item={item}
           setup={setup}
           busy={busy}
-          askDiscard={request?.discard === true ? request.seq : undefined}
+          askDiscard={discardAsks > 0 ? discardAsks : undefined}
+          buttonElsewhere={full}
           {...(onCheckAgain !== undefined && { onCheckAgain })}
-          onFinish={(action) => void send({ type: "finish_item", itemId: item.id, action })}
-          onAcceptChanges={() => void send({ type: "accept_git_changes", itemId: item.id })}
+          onFinish={finishWith(item)}
+          onAcceptChanges={acceptChanges(item)}
         />
       )}
 
@@ -528,11 +551,27 @@ function StateLine({ item, usage }: { readonly item: ItemRecord; readonly usage:
           <span data-tone={mark.tone}>{mark.word}</span>
         </>
       )}
-      {position && <span className="drawer-position"> · {position}</span>}
+      {position && (
+        <span className="drawer-position">
+          {" · "}
+          <Position text={position} />
+        </span>
+      )}
       {working && <span className="drawer-position drawer-time mono"> · {timeOf(item, now).text}</span>}
       {outcome && <span className="drawer-position mono"> · {outcome}</span>}
       <UsageFact usage={usage} />
     </p>
+  );
+}
+
+/** "step 2 of 3 · Build": the count is one piece that wraps as a whole, the step's name may wrap. */
+function Position({ text }: { readonly text: string }) {
+  const count = /^step \d+ of \d+/.exec(text)?.[0];
+  return count === undefined ? text : (
+    <>
+      <span className="nowrap">{count}</span>
+      {text.slice(count.length)}
+    </>
   );
 }
 

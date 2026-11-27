@@ -34,6 +34,12 @@ export type FinishView =
       readonly branch: string;
       /** "1 commit ahead of main", or undefined without a commit. */
       readonly ahead?: string;
+      /**
+       * The one Finish button: Merge, or what a refusal asks for instead (try again, open a PR,
+       * take the engineer's git changes); only Discard… for an item with no commit.
+       */
+      readonly main: FinishButton;
+      /** The ways to finish, each with its refusal or why it is off; the button and its menu are drawn from them. */
       readonly rows: readonly FinishRow[];
       /** The running action, e.g. "Merging into main". */
       readonly running?: string;
@@ -183,6 +189,8 @@ export function finishView(item: Pick<ItemRecord, "outcome" | "finish" | "repoId
     kind: "offer",
     branch,
     ...(committed && { ahead: `1 commit ahead of ${base}` }),
+    // Taking the git changes comes first, whichever way was refused; else the first way (Merge, or Discard… without a commit).
+    main: rows.find((row) => row.button.action === "accept_git_changes")?.button ?? rows[0]!.button,
     rows,
     ...(runningText !== undefined && { running: runningText }),
   };
@@ -210,6 +218,12 @@ export function finishNote(item: Pick<ItemRecord, "finish">): { readonly mark: M
   if (finish.worktreeRemoved) return { mark: markOf("discarded"), text: "Discarded" };
   if (finish.failed !== undefined) return { mark: markOf("warning", "refused"), text: `${ACTION_WORD[finish.failed.action]} did not finish` };
   return undefined;
+}
+
+/** What Open PR does for this item, with where the branch goes: "Push tokama/00000011 to github.com/acme/orders-api and open a PR with gh". Undefined without a push target. */
+export function prPushNote(item: Pick<ItemRecord, "outcome" | "finish">): string | undefined {
+  const target = item.finish?.pushTarget;
+  return target === undefined ? undefined : `Push ${branchOf(item)} to ${target} and open a PR with gh`;
 }
 
 /** Why Open PR is off for this item, for the list's menu; undefined when it can run. */
