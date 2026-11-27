@@ -237,6 +237,7 @@ export function buildWeek(input: WeekInput, which: UsageWindow): Week {
         title: cut(item.title, 200),
         templateId: cut(item.templateId, 200),
         cliId: plan.cliId,
+        agents: [...new Set(list.map((t) => t.call.agentId))].slice(0, 20),
         runs: spanRuns.filter((run) => run.item === item).length,
         ...itemMeasure(measure(list.map((t) => t.call))),
       });

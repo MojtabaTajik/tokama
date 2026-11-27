@@ -204,7 +204,11 @@ function RankRow({ row, ranking, tools, setup, open, onToggle, onSelectItem }: R
           {row.name}
         </Button>
       )}</span>
-      <span className="ins-rank-cell">{row.agentId !== undefined && <AgentRing agentId={row.agentId} agents={setup?.agents ?? []} />}</span>
+      <span className="ins-rank-cell ins-rank-agents">
+        {(row.agentIds ?? []).map((agentId) => (
+          <AgentRing key={agentId} agentId={agentId} agents={setup?.agents ?? []} />
+        ))}
+      </span>
       <span className="ins-rank-cell">
         <ToolMark cliId={row.cliId} text={row.kind === "outside" ? "" : (row.model ?? cliName(row.cliId))} />
       </span>

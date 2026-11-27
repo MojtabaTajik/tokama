@@ -103,8 +103,8 @@ const week = {
     },
   ],
   items: [
-    { ...item(ITEMS.verifying.id, ITEMS.verifying.title, 6, 900_000, 8.2), templateId: "builtin/plan-and-build", cliId: "claude-code" },
-    { ...item(ITEMS.needsYou.id, ITEMS.needsYou.title, 2, 200_000), templateId: "builtin/emergency-investigator", cliId: "ollama" },
+    { ...item(ITEMS.verifying.id, ITEMS.verifying.title, 6, 900_000, 8.2), templateId: "builtin/plan-and-build", cliId: "claude-code", agents: ["architect", "local-builder"] },
+    { ...item(ITEMS.needsYou.id, ITEMS.needsYou.title, 2, 200_000), templateId: "builtin/emergency-investigator", cliId: "ollama", agents: ["local-builder"] },
   ],
   helpers: [{ cliId: "claude-code", model: "haiku", calls: 38, tokens: 120_000, sharePercent: 1 }],
   retries: [

@@ -228,14 +228,14 @@ describe("weekly history", () => {
     const answer = week(60, NOW + 2 * DAY);
     const request: PlanSource = async () => ({ ok: true, value: answer });
     let complete = true;
-    // The status says a scan runs now, as it does for a moment about once a minute.
-    const scanning = logs({ status: () => ({ state: "scanning", filesDone: 1, filesTotal: 3 }), complete: () => complete, coveredFrom: () => NOW - 30 * DAY });
+    // A later scan runs now, as one does for a moment about once a minute: `complete` still holds the last scan that ended.
+    const scanning = logs({ complete: () => complete, coveredFrom: () => NOW - 30 * DAY });
     const { usage } = service({ sources: { "claude-code": { request } }, items: () => [item()], logs: scanning });
-    await usage.report(14);
+    await usage.report();
     await usage.settled();
-    expect((await usage.report(14)).week?.limits[0]).toHaveProperty("tokamaPercent");
+    expect((await usage.report()).week?.limits[0]).toHaveProperty("tokamaPercent");
     complete = false;
-    expect((await usage.report(14)).week?.limits[0]).not.toHaveProperty("tokamaPercent");
+    expect((await usage.report()).week?.limits[0]).not.toHaveProperty("tokamaPercent");
   });
 
   it("has no week block when it is given no items", async () => {

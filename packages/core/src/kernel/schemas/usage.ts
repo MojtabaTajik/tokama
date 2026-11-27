@@ -357,7 +357,7 @@ export const UsageReportSchema = z.strictObject({
         )
         .max(100),
       /** The items that used most, at most 50, one row per item and AI CLI. */
-      items: z.array(z.strictObject({ ...ItemRowShape, templateId, cliId: AiCliIdSchema })).max(50),
+      items: z.array(z.strictObject({ ...ItemRowShape, templateId, cliId: AiCliIdSchema, /** Each agent that ran on this AI CLI for the item, once, in the order it first ran. */ agents: z.array(AgentIdSchema).max(20) })).max(50),
       /** Tokama's own helper calls. */
       helpers: z.array(z.strictObject({ cliId: AiCliIdSchema, model: modelName, calls: count, tokens, sharePercent: limitPercent.optional(), costUsd: usd.optional() })).max(20),
       /** What repeated attempts took, per AI CLI. `tokens` holds every retry, also those under no cause. */

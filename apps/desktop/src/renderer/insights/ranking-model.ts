@@ -31,7 +31,8 @@ export interface Row extends Measure {
   readonly kind: "step" | "workflow" | "item" | "helpers" | "outside";
   readonly cliId: AiCliId;
   readonly name: string;
-  readonly agentId?: string;
+  /** The agents of the row, each once: one for a step, several for a workflow or an item. */
+  readonly agentIds?: readonly string[];
   readonly model?: string;
   readonly itemId?: string;
   readonly facts: string;
@@ -89,7 +90,7 @@ function stepRow(step: StepRow, plan: CliPlan | undefined, setup: Setup | undefi
     kind: "step",
     cliId: step.cliId,
     name: `${workflowName(step.templateId, setup)} · ${step.stepName}`,
-    agentId: step.agentId,
+    agentIds: [step.agentId],
     model: step.model,
     facts: runsFacts(step.runs, step.itemCount),
     items,
@@ -119,6 +120,7 @@ function workflowRows(steps: readonly StepRow[], plans: ReadonlyMap<AiCliId, Cli
       kind: "workflow",
       cliId: first.cliId,
       name: workflowName(first.templateId, setup),
+      agentIds: [...new Set(group.map((step) => step.agentId))],
       facts: runsFacts(sum(group.map((step) => step.runs)), Math.max(...group.map((step) => step.itemCount))),
     };
   });
@@ -140,6 +142,7 @@ export function rankingOf(week: Week, clis: readonly CliPlan[], group: Group, on
         cliId: item.cliId,
         name: item.title,
         itemId: item.itemId,
+        agentIds: item.agents,
         facts: plural(item.runs, "run"),
       });
     }

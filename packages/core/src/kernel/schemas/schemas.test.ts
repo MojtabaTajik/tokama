@@ -270,7 +270,7 @@ describe("usage report", () => {
               items: [itemRow],
             },
           ],
-          items: [{ ...itemRow, templateId: "plan-and-build", cliId: "claude-code" }],
+          items: [{ ...itemRow, templateId: "plan-and-build", cliId: "claude-code", agents: ["builder"] }],
           helpers: [{ cliId: "claude-code", model: "claude-haiku-5-5", calls: 2, tokens: 300, sharePercent: 0.1, costUsd: 0.01 }],
           retries: [
             {

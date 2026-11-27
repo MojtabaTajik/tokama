@@ -138,6 +138,21 @@ describe("Insights: what uses the weekly limits", () => {
     expect(rankRows().filter((row) => row.querySelector(".ins-rank-name")?.textContent === "Plan and build").map(rankValue)).toEqual(["~43%", "~15%"]);
     await click($$('[role="radio"]').find((radio) => radio.textContent?.includes("Item")) ?? null);
     expect(rankNames().slice(0, 2)).toEqual([ITEMS.verifying.title, "Tokama helpers"]);
+    // Each agent once, as an icon in its ring and a name; the AI tool once per row, never after every agent.
+    const first = rankRows()[0]!;
+    expect($$(".ins-rank-agents")[0]?.textContent).toBe("ArchitectLocal builder");
+    expect(first.querySelectorAll(".ag-ring")).toHaveLength(2);
+    expect(first.querySelectorAll(".ins-model")).toHaveLength(1);
+    expect(first.textContent).not.toContain("≈");
+    for (const row of rankRows()) expect(row.querySelectorAll(".ins-model").length).toBeLessThanOrEqual(1);
+  });
+
+  it("shows a workflow's agents once each in its row, with the tool once", async () => {
+    render();
+    await click($$('[role="radio"]').find((radio) => radio.textContent?.includes("Workflow")) ?? null);
+    const claude = rankRows().find((row) => row.querySelector(".ins-rank-name")?.textContent === "Plan and build" && row.querySelector(".ins-model")?.getAttribute("title") === "Claude Code")!;
+    expect(claude.querySelector(".ins-rank-agents")?.textContent).toBe("Local builderArchitect");
+    expect(claude.querySelectorAll(".ins-model")).toHaveLength(1);
   });
 
   it("colours a bar by its AI tool and always draws the tool's icon in the same row", () => {
