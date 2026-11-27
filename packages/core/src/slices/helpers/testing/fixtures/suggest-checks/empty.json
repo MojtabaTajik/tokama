@@ -5,6 +5,6 @@
   },
   "answer": {
     "checks": [],
-    "note": "No build file shows how to test this folder."
+    "note": "The repository has no build files; the only file is notes.txt. No test, lint, type or build command can be found from the files shown."
   }
 }

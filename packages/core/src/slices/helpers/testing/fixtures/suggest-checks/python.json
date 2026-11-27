@@ -8,8 +8,17 @@
   },
   "answer": {
     "checks": [
-      { "command": "python -m pytest", "why": "Runs the tests in the tests folder.", "minutes": 3 },
-      { "command": "ruff check .", "why": "Lints the code with ruff, which pyproject.toml configures.", "minutes": 1 }
-    ]
+      {
+        "command": "pytest",
+        "why": "Runs the unit tests in tests/, as set by testpaths in pyproject.toml.",
+        "minutes": 1
+      },
+      {
+        "command": "ruff check .",
+        "why": "Lints the code against the rules and 100-character line length set in pyproject.toml.",
+        "minutes": 1
+      }
+    ],
+    "note": "Found from the [tool.pytest.ini_options] and [tool.ruff] sections of pyproject.toml. tox.ini is not used because tox installs packages, and there is no type or build check in the files."
   }
 }

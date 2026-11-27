@@ -7,8 +7,17 @@
   },
   "answer": {
     "checks": [
-      { "command": "go test ./...", "why": "Runs the tests of every package.", "minutes": 3 },
-      { "command": "go vet ./...", "why": "Finds suspicious code in every package.", "minutes": 1 }
-    ]
+      {
+        "command": "go test ./...",
+        "why": "Runs all Go unit tests in the module, including main_test.go.",
+        "minutes": 1
+      },
+      {
+        "command": "go vet ./...",
+        "why": "Runs Go's built-in static checks for common mistakes across the module.",
+        "minutes": 1
+      }
+    ],
+    "note": "Found from go.mod (Go module, go 1.23) and the presence of main.go and main_test.go; no lint or build scripts are defined in the repo files shown."
   }
 }

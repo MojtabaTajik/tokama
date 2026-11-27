@@ -9,8 +9,17 @@
   },
   "answer": {
     "checks": [
-      { "command": "dotnet test", "why": "Builds the solution and runs the xunit tests.", "minutes": 5 },
-      { "command": "dotnet build", "why": "Checks that the solution compiles.", "minutes": 3 }
-    ]
+      {
+        "command": "dotnet test Orders.sln --no-restore",
+        "why": "Runs the xunit tests in Orders.Tests.csproj.",
+        "minutes": 2
+      },
+      {
+        "command": "dotnet build Orders.sln --no-restore",
+        "why": "Compiles the solution with the net9.0 SDK pinned in global.json.",
+        "minutes": 1
+      }
+    ],
+    "note": "Found from Orders.sln, Orders.Tests.csproj (xunit) and global.json. Both commands use --no-restore so they do not reach NuGet; the packages must already be restored."
   }
 }
