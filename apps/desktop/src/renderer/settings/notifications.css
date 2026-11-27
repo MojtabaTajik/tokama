@@ -28,6 +28,24 @@
   color: var(--text-2);
 }
 
+.notes-blocked {
+  display: flex;
+  align-items: center;
+  gap: var(--space-10);
+  margin-bottom: var(--space-14);
+  padding: var(--space-12) var(--space-14);
+  border-radius: var(--radius);
+  border: 1px solid var(--warn);
+  background: var(--panel);
+  font-size: var(--text-base);
+  color: var(--text);
+}
+
+.notes-blocked-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .notes-row {
   display: flex;
   align-items: center;

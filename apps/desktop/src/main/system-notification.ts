@@ -9,11 +9,26 @@ export type ShowNote = (note: Note, onClick: () => void) => boolean;
 /** A shown notification that has not been clicked or closed must stay referenced, or its click is lost. */
 const MAX_LIVE = 50;
 
-export function systemShow(): ShowNote {
+export interface SystemNotifications {
+  readonly show: ShowNote;
+  /**
+   * Whether the system turned the last notification down: no notification service, a refusal when it
+   * was shown, or the system's `failed` event (which macOS sends when the app is not allowed to show
+   * notifications). Electron has no call that reads the permission itself, so a banner has to be
+   * tried first; a later banner that appears clears it.
+   */
+  readonly blocked: () => boolean;
+}
+
+export function systemNotifications(): SystemNotifications {
   const live: Notification[] = [];
-  return (note, onClick) => {
+  let blocked = false;
+  const show: ShowNote = (note, onClick) => {
     try {
-      if (!Notification.isSupported()) return false;
+      if (!Notification.isSupported()) {
+        blocked = true;
+        return false;
+      }
       const shown = new Notification({ title: note.title, body: note.body, silent: note.silent, ...(note.sound === undefined ? {} : { sound: note.sound }) });
       const forget = () => {
         const index = live.indexOf(shown);
@@ -24,16 +39,24 @@ export function systemShow(): ShowNote {
         onClick();
       });
       shown.on("close", forget);
-      shown.on("failed", forget);
+      shown.on("show", () => {
+        blocked = false;
+      });
+      shown.on("failed", () => {
+        blocked = true;
+        forget();
+      });
       live.push(shown);
       if (live.length > MAX_LIVE) live.shift();
       shown.show();
       return true;
     } catch {
       // No permission or no notification service: the choices still work and nothing else breaks.
+      blocked = true;
       return false;
     }
   };
+  return { show, blocked: () => blocked };
 }
 
 /** What a test sees of a note: its text, and `click` for the engineer's click. */

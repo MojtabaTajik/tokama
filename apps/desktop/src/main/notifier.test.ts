@@ -1,7 +1,7 @@
 import type { ItemRecord, Setup } from "@tokama/core";
 import { describe, expect, it } from "vitest";
 import type { NoteKind, NotificationSettings, SoundSet } from "../shared/desktop-state.js";
-import { type BannerSound, createNotifier, createTracker, durationText, isSuppressed, type Note, type NotifierDeps, noteText, PLAY_WHEN_FOCUS_UNKNOWN, plainText } from "./notifier.js";
+import { BANNER_SOUND, type BannerSound, createNotifier, createTracker, durationText, isSuppressed, type Note, type NotifierDeps, noteText, PLAY_WHEN_FOCUS_UNKNOWN, plainText, TEST_NOTE } from "./notifier.js";
 import type { FocusState } from "./sound/focus.js";
 
 const MINUTE = 60_000;
@@ -271,8 +271,14 @@ describe("createNotifier", () => {
   });
 
   describe.each(["needsYou", "finished", "failed"] as const)("a %s transition", (kind) => {
-    it("Banner + sound shows a banner that is not silent and names the bundled sound, and plays nothing itself", async () => {
+    it("Banner + sound shows a silent banner and the app plays the sound of the kind from the set", async () => {
       const { shown, played } = await transition(kind, { settings: { [kind]: "both" } });
+      expect(shown.map(({ note }) => [note.silent, note.sound])).toEqual([[true, undefined]]);
+      expect(played).toEqual([[kind, "tokama"]]);
+    });
+
+    it("with the bundled switch, Banner + sound shows a banner that is not silent and names the bundled sound, and plays nothing itself", async () => {
+      const { shown, played } = await transition(kind, { settings: { [kind]: "both" }, bannerSound: "bundled" });
       expect(shown.map(({ note }) => [note.silent, note.sound])).toEqual([[false, `tokama-${kind}.wav`]]);
       expect(played).toEqual([]);
     });
@@ -295,31 +301,51 @@ describe("createNotifier", () => {
     });
   });
 
-  it("Banner + sound with the macOS default set, or where no bundled sound applies, leaves the sound to the system", async () => {
-    for (const options of [{ settings: { needsYou: "both", sounds: "macos" } }, { settings: { needsYou: "both" }, packagedMac: false }] as const) {
+  it("the player is the default way a banner gets its sound", () => {
+    expect(BANNER_SOUND).toBe("player");
+  });
+
+  it("with the bundled switch, the macOS default set, or where no bundled sound applies, leaves the sound to the system", async () => {
+    for (const options of [{ settings: { needsYou: "both", sounds: "macos" }, bannerSound: "bundled" }, { settings: { needsYou: "both" }, packagedMac: false, bannerSound: "bundled" }] as const) {
       const { shown } = await transition("needsYou", options);
       expect(shown.map(({ note }) => [note.silent, note.sound])).toEqual([[false, undefined]]);
     }
   });
 
-  it("with the player switch, Banner + sound shows a silent banner and the app plays the sound; Banner only plays nothing", async () => {
-    const both = await transition("failed", { settings: { failed: "both" }, bannerSound: "player" });
-    expect(both.shown.map(({ note }) => [note.silent, note.sound])).toEqual([[true, undefined]]);
-    expect(both.played).toEqual([["failed", "tokama"]]);
-    const banner = await transition("failed", { settings: { failed: "banner" }, bannerSound: "player" });
+  it("Banner only plays nothing, with the player", async () => {
+    const banner = await transition("failed", { settings: { failed: "banner" } });
     expect(banner.played).toEqual([]);
   });
 
-  it("Sound only is quiet while the screen is locked or Focus is on, and plays when Focus is off", async () => {
+  it.each(["sound", "both"] as const)("%s is quiet while the screen is locked or Focus is on, and plays when Focus is off", async (mode) => {
     for (const [focus, plays] of [["locked", 0], ["on", 0], ["off", 1], ["unknown", PLAY_WHEN_FOCUS_UNKNOWN ? 1 : 0]] as const) {
-      const { played } = await transition("finished", { settings: { finished: "sound" }, focus });
+      const { played } = await transition("finished", { settings: { finished: mode }, focus });
       expect(played).toHaveLength(plays);
     }
   });
 
-  it("the focus check does not apply to banners", async () => {
-    const { shown } = await transition("needsYou", { settings: { needsYou: "both" }, focus: "locked" });
-    expect(shown).toHaveLength(1);
+  it("Focus and a locked screen keep the sound of a banner quiet, not the banner", async () => {
+    for (const focus of ["locked", "on"] as const) {
+      const { shown, played } = await transition("needsYou", { settings: { needsYou: "both" }, focus });
+      expect(shown.map(({ note }) => note.silent)).toEqual([true]);
+      expect(played).toEqual([]);
+    }
+  });
+
+  describe("the test notification", () => {
+    it("shows one silent banner and plays the Needs you sound from the set, whatever the modes say", async () => {
+      const { notifier, shown, played } = setupNotifier({ settings: { needsYou: "off", finished: "off", failed: "off", sounds: "macos" } });
+      await notifier.sendTest();
+      expect(shown.map(({ note }) => [note.title, note.silent, note.sound])).toEqual([[TEST_NOTE.title, true, undefined]]);
+      expect(played).toEqual([["needsYou", "macos"]]);
+    });
+
+    it("keeps the hint line for a real banner, and follows the quiet rules for the sound", async () => {
+      const { notifier, shown, played, hint } = setupNotifier({ hintShown: false, focus: "on" });
+      await notifier.sendTest();
+      expect(shown.map(({ note }) => note.body)).toEqual([TEST_NOTE.body]);
+      expect([played, hint.marked]).toEqual([[], 0]);
+    });
   });
 
   it("Sound only is also stopped by the item the focused window shows", async () => {

@@ -4,7 +4,7 @@
 // settings file; the main process shows the notifications and plays the sounds. The preview texts
 // are samples, rendered as React text.
 import { useEffect, useRef, useState } from "react";
-import type { TokamaBridge } from "../../shared/bridge.js";
+import type { NotificationStatus, TokamaBridge } from "../../shared/bridge.js";
 import { DEFAULT_DESKTOP_STATE, NOTE_KINDS, type NoteKind, type NoteMode, type NotificationSettings, type SoundSet } from "../../shared/desktop-state.js";
 import { failureLine, finishedLine } from "../../shared/item-facts.js";
 import { brand } from "../brand/index.js";
@@ -18,13 +18,23 @@ const TEXT = {
   soundsName: "Sounds",
   soundsHelp: "Used by Banner + sound and Sound only. The ▶ buttons play it too, whatever a row is set to.",
   infoLooking: "No notification while you are looking at that item: Tokama is in front and the item is open in the drawer or the full view.",
-  infoSoundOnly: "Sound only: macOS cannot play a sound without a banner, so Tokama plays it itself while the app is running. Sound only plays even during Focus, but not while your Mac is locked. The ▶ buttons always play.",
+  infoSoundOnly: "Sound only: macOS cannot play a sound without a banner, so Tokama plays it itself while the app is running. Sounds play even during Focus, but not while your Mac is locked. Choose Banner only for a row if that bothers you. The ▶ buttons always play.",
   preview: "Preview",
   previewHint: "How each one looks in the top-right corner of the screen. Plain text, no formatting.",
   now: "now",
   playing: "Playing",
   silent: "Silent. No kind plays a sound.",
+  testName: "Test",
+  testHelp: "Shows one banner and plays the Needs you sound, the way a real event does. A locked screen keeps the sound quiet.",
+  testHelpMac: " After you allow notifications in System Settings, send a test to check.",
+  testButton: "Send a test notification",
+  blockedMac: "macOS is not showing Tokama's notifications.",
+  blockedOpen: "Open System Settings › Notifications",
+  blockedOther: "No notification service answered. Check that one is running.",
 } as const;
+
+/** How long after a test the page asks again whether the system turned the banner down: the refusal comes a moment later. */
+const STATUS_RECHECK_MS = 1_000;
 
 const MODES: readonly { readonly value: NoteMode; readonly label: string }[] = [
   { value: "both", label: "Banner + sound" },
@@ -92,6 +102,27 @@ export function NotificationsPage({ bridge }: NotificationsPageProps) {
   }, [bridge]);
   useEffect(() => () => clearTimeout(timer.current), []);
 
+  // Whether the system turned the last notification down. The system cannot be asked, so this only
+  // changes when a banner is tried: by an event, or by the test button.
+  const [status, setStatus] = useState<NotificationStatus | undefined>(undefined);
+  const recheck = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    void bridge
+      .notificationStatus()
+      .then((next) => live && setStatus(next))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+      clearTimeout(recheck.current);
+    };
+  }, [bridge]);
+  const sendTest = () => {
+    void bridge.sendTestNotification().catch(() => undefined);
+    clearTimeout(recheck.current);
+    recheck.current = setTimeout(() => void bridge.notificationStatus().then(setStatus).catch(() => undefined), STATUS_RECHECK_MS);
+  };
+
   const choose = (patch: Partial<NotificationSettings>) => {
     if (values === undefined) return;
     setValues({ ...values, ...patch });
@@ -115,6 +146,19 @@ export function NotificationsPage({ bridge }: NotificationsPageProps) {
           {TEXT.heading}
         </h1>
         <p className="notes-intro">{TEXT.intro}</p>
+        {status?.blocked && (
+          <div className="notes-blocked" role="status">
+            <span className="notes-glyph notes-warn" aria-hidden="true">
+              !
+            </span>
+            <span className="notes-blocked-text">{status.canOpenSettings ? TEXT.blockedMac : TEXT.blockedOther}</span>
+            {status.canOpenSettings && (
+              <Button variant="secondary" onClick={() => void bridge.openNotificationSettings().catch(() => undefined)}>
+                {TEXT.blockedOpen}
+              </Button>
+            )}
+          </div>
+        )}
         {values !== undefined && (
           <>
             {ROWS.map((row) => (
@@ -140,7 +184,7 @@ export function NotificationsPage({ bridge }: NotificationsPageProps) {
                 </div>
               </div>
             ))}
-            <div className="notes-row notes-row-last">
+            <div className="notes-row">
               <div className="notes-text">
                 <span id="notes-sounds" className="notes-name">
                   <span className="notes-glyph notes-quiet" aria-hidden="true">
@@ -151,6 +195,20 @@ export function NotificationsPage({ bridge }: NotificationsPageProps) {
                 <span className="notes-help">{TEXT.soundsHelp}</span>
               </div>
               <Segmented options={SOUND_SETS} value={values.sounds} onChange={(sounds) => choose({ sounds })} labelledBy="notes-sounds" />
+            </div>
+            <div className="notes-row notes-row-last">
+              <div className="notes-text">
+                <span className="notes-name">
+                  <span className="notes-glyph notes-quiet" aria-hidden="true">
+                    ✉
+                  </span>
+                  {TEXT.testName}
+                </span>
+                <span className="notes-help">{status?.canOpenSettings ? TEXT.testHelp + TEXT.testHelpMac : TEXT.testHelp}</span>
+              </div>
+              <Button variant="secondary" onClick={sendTest}>
+                {TEXT.testButton}
+              </Button>
             </div>
             <div className="notes-info">
               <span className="notes-i" aria-hidden="true">

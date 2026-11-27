@@ -76,6 +76,9 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
     countUsage: vi.fn(async () => undefined),
     saveNotifications: vi.fn(async () => undefined),
     playSound: vi.fn(async () => undefined),
+    notificationStatus: vi.fn(async () => ({ blocked: false, canOpenSettings: true })),
+    sendTestNotification: vi.fn(async () => undefined),
+    openNotificationSettings: vi.fn(async () => undefined),
     setViewedItem: vi.fn(async () => undefined),
     onOpenItem: vi.fn((listener: (itemId: string) => void) => {
       openListener = listener;
@@ -133,6 +136,9 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
   const closeWhatsNew = bridge.closeWhatsNew as unknown as ReturnType<typeof vi.fn>;
   const installUpdate = bridge.installUpdate as unknown as ReturnType<typeof vi.fn>;
   const checkForUpdates = bridge.checkForUpdates as unknown as ReturnType<typeof vi.fn>;
+  const notificationStatus = bridge.notificationStatus as unknown as ReturnType<typeof vi.fn>;
+  const sendTestNotification = bridge.sendTestNotification as unknown as ReturnType<typeof vi.fn>;
+  const openNotificationSettings = bridge.openNotificationSettings as unknown as ReturnType<typeof vi.fn>;
   const openUpdateNotes = bridge.openUpdateNotes as unknown as ReturnType<typeof vi.fn>;
   /** The main process moves to a new update state and tells the window. */
   const setUpdate = (state: UpdateState) =>
@@ -144,7 +150,7 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
   const openItem = (itemId: string) => act(async () => openListener?.(itemId));
   /** Help > Get started: the main process asks the window to open the checklist. */
   const openGetStarted = () => act(async () => getStartedListener?.());
-  return { bridge, openGetStarted, query, saveLayout, saveNotifications, playSound, setViewedItem, getWhatsNew, closeWhatsNew, openItem, copyBuildInfo, showDataFolder, command, retryConnection, openTemplateFile, setConnection, pushItem, pushEvent, stops, installUpdate, checkForUpdates, openUpdateNotes, setUpdate };
+  return { bridge, openGetStarted, query, saveLayout, saveNotifications, playSound, notificationStatus, sendTestNotification, openNotificationSettings, setViewedItem, getWhatsNew, closeWhatsNew, openItem, copyBuildInfo, showDataFolder, command, retryConnection, openTemplateFile, setConnection, pushItem, pushEvent, stops, installUpdate, checkForUpdates, openUpdateNotes, setUpdate };
 }
 
 export interface ListQuery {

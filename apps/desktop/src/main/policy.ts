@@ -134,6 +134,16 @@ export const WEBSITE_URLS: ReadonlySet<string> = new Set([
   "https://tokama.dev/docs/install-git",
 ]);
 
+/**
+ * The one system address besides the website that the app opens: the Notifications pane of macOS
+ * System Settings. It is a constant the main process opens itself; no address from the window is
+ * ever passed to `shell.openExternal`, and this one is opened on macOS only.
+ */
+export const MACOS_NOTIFICATION_SETTINGS_URL = "x-apple.systempreferences:com.apple.preference.notifications";
+
+/** The address of the system's notification settings on `platform`, or undefined where the app cannot open them. */
+export const notificationSettingsUrl = (platform: NodeJS.Platform): string | undefined => (platform === "darwin" ? MACOS_NOTIFICATION_SETTINGS_URL : undefined);
+
 /** The docs start page, which Help > Tokama docs opens. */
 export const DOCS_URL = "https://tokama.dev/docs/";
 
