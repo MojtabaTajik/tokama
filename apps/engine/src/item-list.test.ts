@@ -53,6 +53,29 @@ describe("work list", () => {
     expect(titles(page(items, { group: "running", since: "2026-11-24" }).ids)).toEqual([6]);
   });
 
+  it("endedAfter keeps done and failed items that ended at or after it, whenever they started; live groups ignore it", () => {
+    const ended = (n: number, state: ItemState, endedAt: number | undefined, createdAt: number) => ({
+      ...item(n, { state, createdAt }),
+      ...(endedAt === undefined ? {} : { outcome: { kind: state === "failed" ? ("failed" as const) : ("done" as const), at: endedAt } }),
+    });
+    const items = [
+      // Started yesterday, ended today.
+      ended(1, "done", at(25, 9), at(24)),
+      ended(2, "done", at(25, 7), at(24)),
+      ended(3, "failed", at(25, 10), at(25, 6)),
+      // An item with no end time is left out.
+      ended(4, "done", undefined, at(25, 6)),
+      item(5, { state: "running", createdAt: at(1) }),
+    ];
+    const from = at(25, 8);
+    expect(titles(page(items, { group: "done", endedAfter: from }).ids)).toEqual([1]);
+    expect(titles(page(items, { group: "failed", endedAfter: from }).ids)).toEqual([3]);
+    expect(page(items, { group: "done", endedAfter: at(25, 9) }).total).toBe(1);
+    expect(page(items, { group: "done", endedAfter: at(25, 9) + 1 }).total).toBe(0);
+    expect(page(items, { group: "done" }).total).toBe(3);
+    expect(titles(page(items, { group: "running", endedAfter: from }).ids)).toEqual([5]);
+  });
+
   it("pages with a cursor and loses no row when a page ends inside one millisecond", () => {
     // Items 1 to 5 started at the same millisecond; 6 later.
     const items = [1, 2, 3, 4, 5].map((n) => item(n, { createdAt: at(24, 10) }));

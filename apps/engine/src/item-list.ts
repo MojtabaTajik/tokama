@@ -35,6 +35,8 @@ export interface ListQuery {
   readonly group: ListGroup;
   /** The first local day (`YYYY-MM-DD`) of done and failed items; live groups ignore it. */
   readonly since?: string | undefined;
+  /** Done and failed items that ended at or after this time (epoch ms), whenever they started; live groups ignore it. */
+  readonly endedAfter?: number | undefined;
   readonly repo?: string | undefined;
   readonly template?: string | undefined;
   /** The search text, as the engineer typed it. */
@@ -93,6 +95,7 @@ export function listPage(items: readonly ItemRecord[], query: ListQuery, names: 
     (item) =>
       groupOf(item.state) === query.group &&
       !(finished && query.since !== undefined && localDate(item.createdAt) < query.since) &&
+      !(finished && query.endedAfter !== undefined && (item.outcome?.at ?? -1) < query.endedAfter) &&
       (query.repo === undefined || (item.repoIds as readonly string[]).includes(query.repo)) &&
       (query.template === undefined || item.templateId === query.template) &&
       (text === "" || matchesSearch(item, text, names)),

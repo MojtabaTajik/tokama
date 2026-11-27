@@ -400,6 +400,7 @@ export class SampleEngine {
       return {
         ...withoutDecision(item),
         state: "done",
+        outcome: { kind: "done", at: now },
         cardLine: `done · ${item.steps.length} steps`,
         steps,
         ...(starts.length > 0 && { durationMs: Math.max(0, now - Math.min(...starts) - waited) }),
@@ -423,6 +424,7 @@ export class SampleEngine {
       cardLine: "needs you · cloud step approval",
       decision: {
         id: `decision_${randomUUID()}` as DecisionId,
+        askedAt: this.clock.now(),
         stepIndex: index,
         question: `Send ${step.data === "repo-and-diff" ? "the repo and the diff" : "the redacted summary"} to ${target}?`,
         why: `${step.name} runs on a cloud agent; its data rule is ${step.data}.`,

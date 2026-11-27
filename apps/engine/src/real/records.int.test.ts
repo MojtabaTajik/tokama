@@ -299,6 +299,18 @@ describe("toItemRecord", () => {
     expect(toItemRecord(item)!.decision).toMatchObject({ stepIndex: 0, why: "The setup command failed." });
   });
 
+  it("serves when a question was asked and when the item ended", () => {
+    clock.advance(60_000);
+    const asked = clock.now();
+    let item = append(created(), [{ type: "decision_opened", decisionId: DECISION, kind: "run_failure", choices: [{ id: "retry_step", label: "Check again" }, { id: "stop", label: "Stop" }] }]);
+    expect(toItemRecord(item)!.decision?.askedAt).toBe(asked);
+    clock.advance(120_000);
+    item = append(item, [{ type: "decision_resolved", decisionId: DECISION, choice: "stop" }, { type: "item_ended", outcome: "stopped" }]);
+    const record = toItemRecord(item)!;
+    expect(record.outcome).toMatchObject({ kind: "stopped", at: asked + 120_000 });
+    expect(parseItemRecord(record).ok).toBe(true);
+  });
+
   it("serves the commit and branch of a done item", () => {
     const item = append(created(), [
       { type: "worktree_added", repoId: "orders-api" as never, branch: "tokama/0b9f3c1e", dir: ".tokama/wt/item-0b9f3c1e", baseCommit: COMMIT },

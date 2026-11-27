@@ -405,6 +405,7 @@ function rawItems(now: number): RawItem[] {
       cardLine: "cause found · null customer region",
       decision: {
         id: DECISION_ID,
+        askedAt: ago(now, 38),
         stepIndex: 3,
         question: "Send this summary to Claude Code?",
         why: "Propose a fix runs on a cloud agent; its data rule sends a summary after your approval.",
@@ -459,6 +460,7 @@ function rawItems(now: number): RawItem[] {
       state: "done",
       createdAt: ago(now, 180),
       cardLine: "missing index on order_items(order_id)",
+      outcome: { kind: "done", at: ago(now, 110) },
       // The write-up is the thing to read: its headline comes with a read time.
       steps: steps(templates.slowQuery, ["passed", "passed", "passed"]).map((step, index) =>
         index === 2 ? { ...step, attempts: [{ attempt: 1, result: "passed", checks: [], said: SAID_MUST_READ }] } : step,
@@ -493,6 +495,7 @@ function rawItems(now: number): RawItem[] {
         kind: "done",
         detail: "Committed 3f2a9c1e8b7d on tokama/00000011.",
         commits: [{ repoId: "orders-api", commit: "3f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39", branch: "tokama/00000011" }],
+        at: ago(now, 90),
       },
       finish: { worktreeRemoved: false, pushTarget: "github.com/northwind/orders-api" },
     },
@@ -508,6 +511,7 @@ function rawItems(now: number): RawItem[] {
       state: "failed",
       createdAt: ago(now, 130),
       cardLine: "checks failed 3 times",
+      outcome: { kind: "failed", at: ago(now, 100) },
       steps: steps(templates.quickFix, ["passed", "failed"], { 1: "pnpm test: 4 failing after 3 attempts" }).map((step, index) => ({
         ...step,
         attempts: [1, 2, 3].map((attempt) =>
@@ -531,6 +535,7 @@ function rawItems(now: number): RawItem[] {
       cardLine: "Commit this change?",
       decision: {
         id: DIFF_DECISION_ID,
+        askedAt: ago(now, 7),
         kind: "plan_approval",
         stepIndex: 0,
         question: "Commit this change?",
@@ -559,6 +564,7 @@ function rawItems(now: number): RawItem[] {
       cardLine: "Build it this way?",
       decision: {
         id: PLAN_DECISION_ID,
+        askedAt: ago(now, 10),
         kind: "plan_approval",
         stepIndex: 0,
         question: "Build it this way?",
@@ -586,6 +592,7 @@ function rawItems(now: number): RawItem[] {
       cardLine: "Review used its 1 run. Run it once more?",
       decision: {
         id: LIMIT_DECISION_ID,
+        askedAt: ago(now, 15),
         kind: "after_failure",
         stepIndex: 3,
         question: "Review used its 1 run. Run it once more?",
