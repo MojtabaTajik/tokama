@@ -295,6 +295,41 @@ jobs:
           retention-days: 14
           path: linux/latest-linux.yml.sig
 
+  # A dry run's check of the real key, in the release environment (it needs the reviewer's
+  # approval): the secret must be an OpenSSH private key with no passphrase whose public half is
+  # the key the app was built with. It signs nothing and uploads nothing, so no signature made with
+  # the real key exists for a dry run's feed.
+  check-linux-key:
+    name: check (linux update key)
+    needs: check
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    environment: release
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: apps/desktop/packaging/linux-update.pub
+          sparse-checkout-cone-mode: false
+      - name: Derive the public key from the secret and compare it
+        env:
+          LINUX_UPDATE_SIGNING_KEY: ${{ secrets.LINUX_UPDATE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          key="$RUNNER_TEMP/linux-update-key"
+          printf '%s\n' "$LINUX_UPDATE_SIGNING_KEY" > "$key"
+          # Fails on a passphrase (no terminal to ask) and on a key in another format.
+          derived=$(ssh-keygen -y -f "$key" < /dev/null | awk '{print $1 " " $2}')
+          [ "$derived" = "$(awk '{print $1 " " $2}' apps/desktop/packaging/linux-update.pub)" ]
+          echo "The secret is an OpenSSH key without a passphrase, and its public half is linux-update.pub."
+      - name: Remove the key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/linux-update-key"
+
   # A dry run's signing path with a key made in the job: no environment, no secret. The signature
   # is named as a dry run's and no app trusts its key, so it proves the shell steps and nothing else.
   sign-linux-dry:
