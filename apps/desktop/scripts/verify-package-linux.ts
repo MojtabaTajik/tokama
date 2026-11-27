@@ -131,6 +131,13 @@ export function latestLinuxProblem(latest: LatestFeed, version: string, files: r
   return undefined;
 }
 
+/** Why the app archive does not hold the update key of `packaging/linux-update.pub`, or undefined. The archive stores its files as they are, so the key's base64 is found by a byte search. */
+export function updateKeyProblem(asar: Buffer, publicKeyLine: string): string | undefined {
+  const blob = /^ssh-ed25519 ([A-Za-z0-9+/]+={0,2})/.exec(publicKeyLine.trim())?.[1];
+  if (blob === undefined) return "packaging/linux-update.pub is not an ssh-ed25519 key";
+  return asar.includes(blob) ? undefined : "app.asar does not hold the update key of packaging/linux-update.pub, so no update would pass";
+}
+
 // ---- Runners ----
 
 /** Why `file` is not a regular file (or not an executable one), or undefined. */
@@ -245,6 +252,7 @@ export async function checkTree(report: Report, root: string, kind: PackageKind,
   await report.check(`${label} engine version`, () => engineVersionProblem(join(resources, "engine"), options.version));
   await report.check(`${label} fuses`, () => fusesProblem(join(install, "tokama")));
   await report.check(`${label} update feed`, () => feedProblem(resources, options.feedUrl));
+  await report.check(`${label} update signing key`, () => updateKeyProblem(readFileSync(join(resources, "app.asar")), readFileSync(join(appDir, "packaging", "linux-update.pub"), "utf8")));
   await report.check(`${label} bundled hook denies a command`, () => hookProblem(join(resources, "engine")));
   await report.check(`${label} launcher entry`, () => {
     const path = "usr/share/applications/tokama.desktop";

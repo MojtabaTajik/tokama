@@ -1,5 +1,6 @@
 // Electron main process: one hardened window, and the connection to the engine service through
 // @tokama/client. The engine runs detached and keeps running when the app quits.
+import { readFileSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import { connect, type EngineInfo, stopEngine, type StopResult } from "@tokama/client";
@@ -21,8 +22,8 @@ import { menuTemplate } from "./menu.js";
 import { itemsRunningIn, offerMove, shouldOfferMove } from "./move-to-applications.js";
 import { fakeUpdateEngine, fakeUpdateMode } from "./testing/update.js";
 import { createUpdateController } from "./update/controller.js";
-import { macUpdateEngine } from "./update/electron-updater.js";
-import { checksEnabled } from "./update/gate.js";
+import { linuxUpdateEngine, macUpdateEngine } from "./update/electron-updater.js";
+import { checksEnabled, linuxPackageKind } from "./update/gate.js";
 import { createInstaller } from "./update/install.js";
 import { updateNotesUrl } from "./update/notes.js";
 import type { UpdateEngine } from "./update/port.js";
@@ -241,19 +242,31 @@ function itemsRunningInApplications(): Promise<number | undefined> {
   return itemsRunningIn({ connect: () => connect({ dir, lockPath }) });
 }
 
+const readOrUndefined = (path: string): string | undefined => {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return undefined;
+  }
+};
+
 /**
  * The updater this run uses: a test's stand-in when a UI test asks, the real one for a packaged
- * Mac in Applications, none otherwise (`reason` then says why, for About). The real one gets its
+ * Mac in Applications or an installed Linux .deb or .rpm, none otherwise (`reason` then says why, for About). The real one gets its
  * network session locked down before anything is asked of it.
  */
 function updateSetup(): { readonly engine?: UpdateEngine; readonly reason: Extract<UpdateState, { status: "unavailable" }>["reason"] } {
   if (fakeUpdate !== undefined) return { engine: fakeUpdateEngine(fakeUpdate, { outDir: app.getPath("userData"), quit: () => app.quit() }), reason: "development" };
-  const gate = checksEnabled({ platform: process.platform, isPackaged: app.isPackaged, inApplications: () => app.isInApplicationsFolder() });
+  const linuxPackage = process.platform === "linux" ? linuxPackageKind(readOrUndefined(join(process.resourcesPath, "package-type"))) : undefined;
+  const gate = checksEnabled({ platform: process.platform, isPackaged: app.isPackaged, inApplications: () => app.isInApplicationsFolder(), linuxPackage: () => linuxPackage });
   if (!gate.ok) return { reason: gate.reason };
   try {
-    const mac = macUpdateEngine();
-    lockDownUpdaterSession(mac.session(), bakedFeedUrl(join(process.resourcesPath, "app-update.yml")));
-    return { engine: mac.engine, reason: "development" };
+    const feedUrl = bakedFeedUrl(join(process.resourcesPath, "app-update.yml"));
+    // The Linux check needs the feed's address to fetch the signed feed file from.
+    if (linuxPackage !== undefined && feedUrl === undefined) return { reason: "development" };
+    const real = linuxPackage !== undefined && feedUrl !== undefined ? linuxUpdateEngine(linuxPackage, feedUrl) : macUpdateEngine();
+    lockDownUpdaterSession(real.session(), feedUrl);
+    return { engine: real.engine, reason: "development" };
   } catch (error) {
     // An updater that cannot start must not take the app with it.
     console.error("updates are off:", error);
@@ -511,6 +524,8 @@ void app.whenReady().then(async () => {
   }
   const onBeforeQuit = createQuitHandler({
     state: updateState,
+    // On Linux the install asks for the system password, which only a click on Restart now may start.
+    installOnQuit: process.platform !== "linux",
     install: (options) => installUpdate?.(options) ?? Promise.resolve({ ok: false, reason: "not_ready" }),
     quit: () => app.quit(),
     teardown: () => {

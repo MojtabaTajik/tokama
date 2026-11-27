@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { updateEngineFor, type UpdaterLike } from "./electron-updater.js";
+import { type DownloadGate, updateEngineFor, type UpdaterLike } from "./electron-updater.js";
 
 function fakeUpdater(over: Partial<UpdaterLike> = {}) {
   const handlers = new Map<string, (payload: unknown) => void>();
@@ -20,6 +20,100 @@ function fakeUpdater(over: Partial<UpdaterLike> = {}) {
   };
   return { updater, handlers, order };
 }
+
+describe("updateEngineFor with a download gate", () => {
+  /** A gate whose verdict and file digest the test sets. */
+  function gated(verdict: () => Promise<void> = async () => undefined) {
+    const digests = new Map([["/cache/Tokama-0.2.0-amd64.deb", "digest-1"]]);
+    const verified: { version: string; sha512: string }[] = [];
+    const gate: DownloadGate = {
+      hash: (file) => digests.get(file) ?? "missing",
+      verify: async (download) => {
+        verified.push(download);
+        await verdict();
+      },
+    };
+    const base = fakeUpdater();
+    const engine = updateEngineFor(base.updater, gate);
+    const downloaded = vi.fn();
+    const failed = vi.fn();
+    engine.onDownloaded(downloaded);
+    engine.onError(failed);
+    const download = (payload: unknown = { version: "0.2.0", downloadedFile: "/cache/Tokama-0.2.0-amd64.deb" }) => {
+      base.handlers.get("update-downloaded")?.(payload);
+      return new Promise((resolve) => setTimeout(resolve, 0));
+    };
+    return { ...base, engine, gate, digests, verified, downloaded, failed, download };
+  }
+
+  it("reports the download as ready only after the gate passed the file's digest and version", async () => {
+    const { download, verified, downloaded, failed } = gated();
+    await download();
+    expect(verified).toEqual([{ version: "0.2.0", sha512: "digest-1" }]);
+    expect(downloaded).toHaveBeenCalledWith({ version: "0.2.0" });
+    expect(failed).not.toHaveBeenCalled();
+  });
+
+  it("reports a refused download as an error, and never as ready", async () => {
+    const { download, downloaded, failed } = gated(async () => {
+      throw new Error("not signed");
+    });
+    await download();
+    expect(downloaded).not.toHaveBeenCalled();
+    expect(failed).toHaveBeenCalledWith(expect.objectContaining({ message: "not signed" }));
+  });
+
+  it("refuses a download that names no file", async () => {
+    const { download, downloaded, failed, verified } = gated();
+    await download({ version: "0.2.0" });
+    expect(verified).toEqual([]);
+    expect(downloaded).not.toHaveBeenCalled();
+    expect(failed).toHaveBeenCalledOnce();
+  });
+
+  it("refuses a download whose file cannot be read", async () => {
+    const { download, downloaded, failed, gate } = gated();
+    gate.hash = () => {
+      throw new Error("ENOENT");
+    };
+    await download();
+    expect(downloaded).not.toHaveBeenCalled();
+    expect(failed).toHaveBeenCalledOnce();
+  });
+
+  it("installs a file that still has the verified digest", async () => {
+    const { download, engine, order } = gated();
+    await download();
+    engine.quitAndInstall(true);
+    expect(order).toEqual(["quit:true"]);
+  });
+
+  it("does not install a file that changed after it was verified", async () => {
+    const { download, engine, order, digests } = gated();
+    await download();
+    digests.set("/cache/Tokama-0.2.0-amd64.deb", "digest-2");
+    expect(() => engine.quitAndInstall(true)).toThrow(/not the one that was verified/);
+    expect(order).toEqual([]);
+  });
+
+  it("does not install before any download was verified", () => {
+    const { engine, order } = gated();
+    expect(() => engine.quitAndInstall(false)).toThrow();
+    expect(order).toEqual([]);
+  });
+
+  it("does not install after a later download was refused: the updater holds that file now", async () => {
+    let refuse = false;
+    const { download, engine, order } = gated(async () => {
+      if (refuse) throw new Error("not signed");
+    });
+    await download();
+    refuse = true;
+    await download();
+    expect(() => engine.quitAndInstall(true)).toThrow();
+    expect(order).toEqual([]);
+  });
+});
 
 describe("updateEngineFor", () => {
   it("downloads by itself and installs, downgrades and pre-releases never by itself", () => {

@@ -17,6 +17,7 @@ import {
   parseDebControl,
   parseDesktopEntry,
   rpmRequiresOf,
+  updateKeyProblem,
 } from "./verify-package-linux.js";
 
 // What `dpkg-deb -f` prints for a package built by electron-builder through fpm.
@@ -234,5 +235,23 @@ releaseDate: '2026-12-01T10:00:00.000Z'
 
   it("refuses packages that are not the ones of the version", () => {
     expect(latestLinuxProblem(feed(), VERSION, [{ name: "Tokama-0.1.0-arm64.deb", sha512: DEB, size: 100 }, ...files.slice(1)])).toMatch(/is not one of/);
+  });
+});
+
+describe("updateKeyProblem", () => {
+  const pub = readFileSync(join(import.meta.dirname, "..", "packaging", "linux-update.pub"), "utf8");
+  const blob = pub.split(" ")[1] ?? "";
+
+  it("accepts an archive that holds the key of the .pub file", () => {
+    expect(updateKeyProblem(Buffer.from(`...const KEY = "ssh-ed25519 ${blob}";...`), pub)).toBeUndefined();
+  });
+
+  it("refuses an archive without it, and one with another key", () => {
+    expect(updateKeyProblem(Buffer.from("no key in here"), pub)).toMatch(/does not hold the update key/);
+    expect(updateKeyProblem(Buffer.from(`"ssh-ed25519 ${blob.replace("Fvm7", "Gvm7")}"`), pub)).toMatch(/does not hold the update key/);
+  });
+
+  it("refuses a .pub file that is not an ed25519 key", () => {
+    expect(updateKeyProblem(Buffer.from("x"), "ssh-rsa AAAA")).toMatch(/not an ssh-ed25519 key/);
   });
 });

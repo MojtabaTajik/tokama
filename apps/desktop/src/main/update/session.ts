@@ -1,7 +1,8 @@
 // The network session the updater downloads with. It is locked down like the window's: no
 // permission is ever granted, and only https leaves it. Hosts are not listed: the release
 // downloads redirect to storage hosts that change, and what protects the user is the feed's
-// digest of the download plus the installer's check that the new app is signed by the same team.
+// digest of the download plus, on a Mac, the installer's check that the new app is signed by the
+// same team and, on Linux, the signature on the feed file (feed-signature.ts).
 import { readFileSync } from "node:fs";
 import type { Session } from "electron";
 

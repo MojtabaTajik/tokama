@@ -1,8 +1,10 @@
 // The only file that imports electron-updater. The feed is the `app-update.yml` that the build
 // wrote into the app's Resources: no URL comes from the window, the environment or a setting.
 import type { Session } from "electron";
-import { MacUpdater } from "electron-updater";
+import { DebUpdater, MacUpdater, RpmUpdater } from "electron-updater";
+import { fetchFeedFiles, LINUX_UPDATE_PUBLIC_KEY, sha512OfFile, verifyFeed } from "./feed-signature.js";
 import type { FeedInfo, UpdateEngine } from "./port.js";
+import { updaterRequestAllowed } from "./session.js";
 
 /** The part of an updater that this file uses, so a test can hand in a fake. */
 export interface UpdaterLike {
@@ -32,12 +34,28 @@ function feedInfo(payload: unknown): FeedInfo | undefined {
 const number = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : 0);
 
 /**
+ * What stands between a download and the installer where the package has no publisher signature
+ * (Linux): the download counts as ready only after `verify` passes, and the install happens only
+ * if the file still has the digest that was verified.
+ */
+export interface DownloadGate {
+  /** Resolves when the signed feed names a package of this version with this base64 sha512; rejects with the reason when not. */
+  verify(download: { readonly version: string; readonly sha512: string }): Promise<void>;
+  /** The base64 sha512 of the file. */
+  hash(file: string): string;
+}
+
+/**
  * Wraps an updater as the app's port and sets it up. The download stays on disk and nothing is
  * handed to the installer by itself: `autoInstallOnAppQuit` stays off, because an update that the
  * installer already holds would be installed on any quit, running work or not. Downgrades and
- * pre-releases are off.
+ * pre-releases are off. With a `gate`, a download is held back until the gate passes it; a failure
+ * is reported as the updater's own error, and the install refuses a file that changed since.
  */
-export function updateEngineFor(updater: UpdaterLike): UpdateEngine {
+export function updateEngineFor(updater: UpdaterLike, gate?: DownloadGate): UpdateEngine {
+  const errorListeners: ((error: Error) => void)[] = [];
+  /** The file the gate passed, and its digest then. Cleared by any download the gate does not pass. */
+  let verified: { readonly file: string; readonly sha512: string } | undefined;
   updater.autoDownload = true;
   updater.autoInstallOnAppQuit = false;
   updater.allowDowngrade = false;
@@ -63,13 +81,54 @@ export function updateEngineFor(updater: UpdaterLike): UpdateEngine {
     onDownloaded: (listener) =>
       updater.on("update-downloaded", (payload) => {
         const info = feedInfo(payload);
-        if (info !== undefined) listener(info);
+        if (info === undefined) return;
+        if (gate === undefined) return listener(info);
+        verified = undefined;
+        const file = isRecord(payload) ? payload["downloadedFile"] : undefined;
+        void (async () => {
+          if (typeof file !== "string") throw new Error("the updater named no downloaded file");
+          const sha512 = gate.hash(file);
+          await gate.verify({ version: info.version, sha512 });
+          verified = { file, sha512 };
+        })().then(
+          () => listener(info),
+          (error: unknown) => {
+            const failure = error instanceof Error ? error : new Error("update verification failed");
+            for (const report of errorListeners) report(failure);
+          },
+        );
       }),
-    onError: (listener) => updater.on("error", (error) => listener(error instanceof Error ? error : new Error("update error"))),
+    onError: (listener) => {
+      errorListeners.push(listener);
+      updater.on("error", (error) => listener(error instanceof Error ? error : new Error("update error")));
+    },
     quitAndInstall: (relaunch) => {
+      // The updater installs the file it holds; a change since the gate passed it (a disk is shared with the user's other programs) ends the install.
+      if (gate !== undefined && (verified === undefined || gate.hash(verified.file) !== verified.sha512)) throw new Error("the downloaded update is not the one that was verified");
       updater.autoRunAppAfterInstall = relaunch;
       updater.quitAndInstall();
-    },  };
+    },
+  };
+}
+
+/**
+ * The updater of a Linux package (`deb` or `rpm`, as the build recorded in the package) and its
+ * network session. The .deb and .rpm carry no publisher signature and are installed as root, so
+ * a download is ready only when the feed file, signed by the release key, names it. The
+ * package-specific class is chosen here and never by the library's own `autoUpdater`, which falls
+ * back to an AppImage updater.
+ */
+export function linuxUpdateEngine(kind: "deb" | "rpm", feedUrl: string): { readonly engine: UpdateEngine; readonly session: () => Session } {
+  const updater = kind === "deb" ? new DebUpdater() : new RpmUpdater();
+  const gate: DownloadGate = {
+    hash: sha512OfFile,
+    verify: async ({ version, sha512 }) => {
+      const { yml, sig } = await fetchFeedFiles((url, init) => updater.netSession.fetch(url, init), feedUrl, (url) => updaterRequestAllowed(url, feedUrl));
+      const verdict = verifyFeed({ yml, sig, publicKey: LINUX_UPDATE_PUBLIC_KEY, format: kind, downloadedSha512: sha512, downloadedVersion: version });
+      if (!verdict.ok) throw new Error(verdict.reason);
+    },
+  };
+  return { engine: updateEngineFor(updater as unknown as UpdaterLike, gate), session: () => updater.netSession };
 }
 
 /** The Mac updater and its network session, which the app locks down before the first check. */

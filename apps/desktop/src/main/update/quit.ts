@@ -10,6 +10,8 @@ export interface QuitDeps {
   quit(): void;
   /** What the app does on every quit that goes through: save, clear the run marker, let go of the engine. */
   teardown(): void;
+  /** Whether a quit may start the install. False where the install asks for the system password (Linux): that only follows a click on Restart now. */
+  readonly installOnQuit: boolean;
 }
 
 /**
@@ -28,7 +30,7 @@ export function createQuitHandler(deps: QuitDeps): (event: { preventDefault(): v
     deps.quit();
   };
   return (event) => {
-    if (phase === "none" && deps.state().status === "ready") {
+    if (deps.installOnQuit && phase === "none" && deps.state().status === "ready") {
       event.preventDefault();
       phase = "installing";
       deps.install({ relaunch: false, onFailed: quitNow, onSilent: quitNow }).then((result) => {
