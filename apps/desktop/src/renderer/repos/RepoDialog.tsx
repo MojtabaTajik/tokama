@@ -1,7 +1,7 @@
 // The repo dialog. Add: after the folder picker, the engine's suggestions for the folder (id, base
 // branch, checks) as editable fields, then Add. A folder that is no git repo yet, or a repo with
 // no commit, offers to set git up and make a first commit, showing what the commit will hold.
-// Edit: from a repo row's menu, the repo's base branch and checks, with its id fixed, then Save.
+// Under the Checks field, two helpers: Suggest with AI and Try checks (ChecksHelpers.tsx). Edit: from a repo row's menu, the repo's base branch and checks, with its id fixed, then Save.
 // The engine checks every field again and answers a refusal in plain words, shown here. Engine
 // text is rendered as React text only.
 import type { CommandInput, InitRepoResult, RepoBranchesResult, RepoSummary, SuggestRepoResult } from "@tokama/core";
@@ -12,6 +12,9 @@ import { Problem } from "./Problem.js";
 import { Button } from "../ui/Button.js";
 import { Combobox, type ComboboxGroup } from "../ui/Combobox.js";
 import { markOf, StatusMark } from "../ui/status.js";
+import { ChecksHelpersRow, SuggestInBox } from "./ChecksHelpers.js";
+import { checkLines } from "./checks-model.js";
+import { useChecksHelpers } from "./useChecksHelpers.js";
 
 const TEXT = {
   title: "Add repo",
@@ -86,6 +89,8 @@ export type RepoDialogProps = {
   readonly onSetUp?: (note: SetUpNote) => void;
   /** From a refusal: closes this dialog and opens the folder picker again. */
   readonly onPickAnother?: () => void;
+  /** From the line that says no AI CLI is ready: closes this dialog and opens the Get started list. */
+  readonly onOpenGetStarted?: () => void;
 } & (
   | { /** The folder the picker returned: adds a repo. */ readonly path: string; readonly repo?: undefined }
   | { /** The repo to change: edits it. */ readonly repo: RepoSummary; readonly path?: undefined }
@@ -108,7 +113,7 @@ function size(bytes: number): string {
 
 const plural = (count: number, word: string) => `${count.toLocaleString("en-US")} ${word}${count === 1 ? "" : "s"}`;
 
-export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother }: RepoDialogProps) {
+export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother, onOpenGetStarted }: RepoDialogProps) {
   const titleId = useId();
   const editing = repo !== undefined;
   const [loaded, setLoaded] = useState<Loaded | undefined>(undefined);
@@ -166,6 +171,25 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
   const lines = checks.split("\n").map((line) => line.trim()).filter((line) => line !== "");
   const fallback = suggestion?.fallbackCheck ?? null;
   const hadChecks = (suggestion?.checks.length ?? 0) > 0;
+  // The helpers work on the repo's folder as the engine can open it. Try checks needs a commit to start its worktree from.
+  const helpers = useChecksHelpers({
+    bridge,
+    path: editing ? repo.path : suggestion?.path,
+    baseBranch,
+    checks,
+    canTry: editing || (suggestion?.gitRepo === true && suggestion.hasCommits),
+  });
+  /** Suggested commands go on new lines at the end of the field, where they stay editable. */
+  const addChecks = (commands: readonly string[]) =>
+    setChecks((before) => {
+      const have = new Set(checkLines(before));
+      const fresh = commands.filter((command) => !have.has(command));
+      const kept = before.replace(/\s+$/, "");
+      return fresh.length === 0 ? before : `${kept === "" ? "" : `${kept}\n`}${fresh.join("\n")}`;
+    });
+  // With nothing in the field and nothing asked yet, Suggest with AI sits in the "No checks found" box, where Try checks would have nothing to run.
+  const suggestInBox = lines.length === 0 && helpers.suggest.kind === "idle" && helpers.trial.kind === "idle";
+  const helpersOffered = helpers.canTry || (helpers.loaded && helpers.availability !== undefined) || helpers.suggest.kind !== "idle" || helpers.trial.kind !== "idle";
 
   /** The add_repo or update_repo command for what the fields hold now. */
   const saveCommand = (): CommandInput =>
@@ -357,6 +381,11 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
     <Field
       label={TEXT.checks}
       hint={lines.length === 0 && !editing ? "" : editing ? TEXT.checksHint : checksHint}
+      after={
+        helpersOffered && !suggestInBox ? (
+          <ChecksHelpersRow h={helpers} lines={lines} onAdd={addChecks} baseBranch={baseBranch} editing={editing} onOpenGetStarted={onOpenGetStarted} />
+        ) : undefined
+      }
       tag={editing ? undefined : hadChecks ? <span className="rd-suggested"><span aria-hidden="true">{markOf("passed").symbol} </span>{TEXT.suggested}</span> : <span className="rd-dim">{TEXT.noneFound}</span>}
     >
       {(props) => <textarea {...props} className="mono" rows={3} value={checks} placeholder={"npm test\nnode --check src/main.js"} onChange={(event) => setChecks(event.target.value)} spellCheck={false} />}
@@ -374,6 +403,7 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
           {suggestion?.fallbackFromPackage === true && <span className="rd-dim">{TEXT.fromPackageMain(fallback.replace(/^node --check /, ""))}</span>}
         </p>
       )}
+      {suggestInBox && <SuggestInBox h={helpers} onOpenGetStarted={onOpenGetStarted} />}
     </div>
   );
 
@@ -544,11 +574,13 @@ interface FieldProps {
   readonly hint: string;
   /** Next to the label, such as "✓ suggested". */
   readonly tag?: ReactNode | undefined;
+  /** Under the hint, still part of the field: the checks helpers. */
+  readonly after?: ReactNode | undefined;
   /** Gets the props of the control, and the id of the label, for a control that names itself from it. */
   readonly children: (props: { id: string; "aria-describedby": string }, labelId: string) => ReactNode;
 }
 
-function Field({ label, hint, tag, children }: FieldProps) {
+function Field({ label, hint, tag, after, children }: FieldProps) {
   const id = useId();
   return (
     <div className="repo-field">
@@ -562,6 +594,7 @@ function Field({ label, hint, tag, children }: FieldProps) {
           {hint}
         </span>
       )}
+      {after}
     </div>
   );
 }

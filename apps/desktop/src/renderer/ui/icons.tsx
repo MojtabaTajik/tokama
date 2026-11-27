@@ -25,10 +25,13 @@ import {
   Package,
   PanelLeft,
   Pencil,
+  Play,
   Search,
   Settings,
   ShieldCheck,
   ShieldExclamationPoint,
+  Sparkles,
+  Square,
   SquareTerminal,
   Terminal,
   TriangleExclamationPoint,
@@ -93,7 +96,12 @@ export const ShellIcon = lucide(Terminal, 12);
 export const ErrorIcon = lucide(CircleX, 13);
 export const UsageIcon = lucide(ChartColumn, 13);
 
-export const GlobeIcon = ({ off, size = 12 }: IconProps & { readonly off: boolean }) => {
+/** The checks helpers' buttons in the repo dialog: sparkles (Suggest with AI), a play triangle (Try checks) and a square (Stop). */
+export const SuggestIcon = lucide(Sparkles, 13);
+export const PlayIcon = lucide(Play, 12);
+export const StopIcon = lucide(Square, 12);
+
+export const GlobeIcon =({ off, size = 12 }: IconProps & { readonly off: boolean }) => {
   const Icon = off ? GlobeOff : Globe;
   return <Icon size={size} aria-hidden="true" focusable="false" />;
 };

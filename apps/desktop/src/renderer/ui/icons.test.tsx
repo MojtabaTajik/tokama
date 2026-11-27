@@ -48,6 +48,9 @@ const DEFAULT_SIZES: Record<string, number> = {
   ShellIcon: 12,
   ErrorIcon: 13,
   UsageIcon: 13,
+  SuggestIcon: 13,
+  PlayIcon: 12,
+  StopIcon: 12,
 };
 
 describe("ui/icons", () => {

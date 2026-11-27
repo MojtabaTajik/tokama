@@ -87,6 +87,23 @@ describe("engineApi.command", () => {
   });
 });
 
+describe("engineApi.command and repo paths written with ~", () => {
+  it("gives Try checks and the suggest-checks helper a full path, and leaves a full path and every other command as it is", async () => {
+    const { client, command } = fakeClient();
+    const api = engineApi(() => client, "/home/ada");
+    await api.command({ type: "try_checks", path: "~/code/orders-api", checks: [{ command: "pnpm test" }] });
+    await api.command({ type: "try_checks", path: "/srv/orders-api", checks: [{ command: "pnpm test" }] });
+    await api.command({ type: "run_helper", run: { helperId: "suggest-checks", input: { path: "~/code/orders-api" } }, cloud: "accepted" });
+    await api.command({ type: "stop_item", itemId: ITEM_ID });
+    expect(command.mock.calls).toEqual([
+      [{ type: "try_checks", path: "/home/ada/code/orders-api", checks: [{ command: "pnpm test" }] }],
+      [{ type: "try_checks", path: "/srv/orders-api", checks: [{ command: "pnpm test" }] }],
+      [{ type: "run_helper", run: { helperId: "suggest-checks", input: { path: "/home/ada/code/orders-api" } }, cloud: "accepted" }],
+      [{ type: "stop_item", itemId: ITEM_ID }],
+    ]);
+  });
+});
+
 describe("engineApi.command and diagnostics", () => {
   it("refuses a diagnostics report from the window, which has its own narrow channel", async () => {
     const { client, command } = fakeClient();
