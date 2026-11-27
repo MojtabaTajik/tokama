@@ -299,6 +299,7 @@ describe("About", () => {
     expect(text(".about-lead")).toContain("Agent workbench for engineers.");
     expect(text(".about-links")).toContain("Open source under the Apache License 2.0");
     expect(text(".about-foot")).toBe("Tokama · Apache License 2.0");
+    expect(text(".about-body")).toContain("Claude and the Claude logo are trademarks of Anthropic. The OpenAI logo is a trademark of OpenAI. The Apache-2.0 licence does not license these marks.");
     expect(text(".about-body")).not.toContain("Amsterdam");
     expect(text(".about-body")).not.toContain("Thank you");
     expect($('.rail-user[aria-label="About Tokama"]')?.getAttribute("aria-current")).toBe("page");
