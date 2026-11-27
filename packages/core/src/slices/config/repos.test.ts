@@ -135,6 +135,7 @@ repos:
       - echo $(whoami)
       - "pnpm test 'unclosed"
       - ""
+      - "pnpmㅤtest"
 `);
     expect(messages(await load())).toEqual([
       "repos.yaml line 8: checks item 2 must be one command, with no &&, ||, ; or |",
@@ -143,6 +144,7 @@ repos:
       "repos.yaml line 11: checks item 5 can't use command substitution ($(...) or backticks)",
       "repos.yaml line 12: checks item 6 can't use an unclosed quote",
       "repos.yaml line 13: checks item 7 has no command words",
+      "repos.yaml line 14: checks item 8 has a control, invisible or line-break character",
     ]);
   });
 

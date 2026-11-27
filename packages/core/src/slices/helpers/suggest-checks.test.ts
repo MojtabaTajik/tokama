@@ -74,6 +74,10 @@ describe("the rule for a proposed command", () => {
     expect(checksProblem(answer("./gradlew test"))).toBeUndefined();
   });
 
+  it.each(["npmㅤtest", "npm test️", "npm​test", "npm ‮test"])("refuses %j: an invisible character, which the answer's shape lets through", (command) => {
+    expect(checksProblem(answer(command))).toBe("check 1's command is not one simple command: it has a control, invisible or line-break character. Give one command, with no && or pipe.");
+  });
+
   it("refuses a variable assignment in front of the command", () => {
     expect(checksProblem(answer("CI=1 pnpm test"))).toBe("check 1's command starts with a variable assignment. Give only the command.");
   });

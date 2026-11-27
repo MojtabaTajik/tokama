@@ -21,4 +21,9 @@ describe("simpleCommandProblem", () => {
   ])("refuses %j", (command, problem) => {
     expect(simpleCommandProblem(command)).toBe(problem);
   });
+
+  // A command that reads as `npm test` but holds a character nobody can see.
+  it.each([["a Hangul filler", "npmㅤtest"], ["a variation selector", "npm test️"], ["a zero-width space", "npm​test"], ["a right-to-left override", "npm ‮test"], ["a combining grapheme joiner", "npm test͏"], ["a control character", "npm test\u0001"], ["a tab", "npm\ttest"]])("refuses %s", (_name, command) => {
+    expect(simpleCommandProblem(command)).toBe("has a control, invisible or line-break character");
+  });
 });
