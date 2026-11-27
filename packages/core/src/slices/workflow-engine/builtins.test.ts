@@ -18,8 +18,8 @@ describe("built-in templates with the built-in agents", async () => {
 
   it("has the agents the templates name and none broken", () => {
     expect(broken).toEqual([]);
-    expect([...byId.keys()]).toEqual(["architect", "builder", "reviewer"]);
-    expect(agents.filter((agent) => !agent.limits.edit).map((agent) => agent.id)).toEqual(["architect", "reviewer"]);
+    expect([...byId.keys()]).toEqual(["architect", "builder", "helper", "reviewer"]);
+    expect(agents.filter((agent) => !agent.limits.edit).map((agent) => agent.id)).toEqual(["architect", "helper", "reviewer"]);
   });
 
   it("loads every built-in template with no problem and no warning", () => {
