@@ -87,6 +87,8 @@ export interface DesktopState {
   readonly getStarted: GetStartedState;
   /** The AI tool the Insights Usage tab is filtered to; absent: all tools. */
   readonly usageTool?: AiCliId;
+  /** The cloud AI tools the user agreed to send a folder's file names and build files to, once each, from the repo dialog; absent: none. */
+  readonly helperConsent?: readonly AiCliId[];
   /** The repo folder chosen last in the Add repo picker. */
   readonly lastRepoFolder?: string;
   readonly notifications: NotificationSettings;
@@ -104,9 +106,11 @@ export interface DesktopState {
 export type LayoutPatch = Partial<Pick<DesktopState, "sidebar" | "drawer" | "collapsedSections" | "lastView" | "lastFilter" | "getStarted">> & {
   /** `undefined` says all tools. */
   readonly usageTool?: AiCliId | undefined;
+  /** The whole list of tools the user agreed to send to. */
+  readonly helperConsent?: readonly AiCliId[];
 };
 /** The keys of a layout patch the main process accepts. */
-const LAYOUT_KEYS = ["sidebar", "drawer", "collapsedSections", "lastView", "lastFilter", "getStarted", "usageTool"] as const;
+const LAYOUT_KEYS = ["sidebar", "drawer", "collapsedSections", "lastView", "lastFilter", "getStarted", "usageTool", "helperConsent"] as const;
 
 export const DEFAULT_DESKTOP_STATE: DesktopState = {
   window: { maximized: false, fullscreen: false },
@@ -212,6 +216,8 @@ export function parseDesktopState(input: unknown): DesktopState {
   const lastRun = root["lastRunVersion"];
   const due = whatsNewDue(root["whatsNewDue"]);
   const tool = oneOf(USAGE_TOOLS, root["usageTool"]);
+  const consent: unknown = root["helperConsent"];
+  const agreed = Array.isArray(consent) ? USAGE_TOOLS.filter((name) => consent.includes(name)) : [];
   return {
     window: { ...(placed === undefined ? {} : { bounds: placed }), maximized: win["maximized"] === true, fullscreen: win["fullscreen"] === true },
     sidebar: { width: width(sidebar["width"], SIDEBAR_WIDTH), collapsed: sidebar["collapsed"] === true },
@@ -221,6 +227,7 @@ export function parseDesktopState(input: unknown): DesktopState {
     lastFilter: lastFilter(root["lastFilter"]),
     getStarted: getStarted(root["getStarted"]),
     ...(tool === undefined ? {} : { usageTool: tool }),
+    ...(agreed.length === 0 ? {} : { helperConsent: agreed }),
     notifications: notifications(root["notifications"]),
     notificationHintShown: hintShown(root),
     ...(typeof folder === "string" && folder !== "" && folder.length <= MAX_TEXT ? { lastRepoFolder: folder } : {}),
@@ -235,7 +242,7 @@ export function applyLayoutPatch(state: DesktopState, patch: unknown): DesktopSt
   if (!isRecord(patch)) return state;
   const merged = parseDesktopState({ ...state, ...Object.fromEntries(LAYOUT_KEYS.filter((key) => key in patch).map((key) => [key, patch[key]])) });
   // The tool is set when the patch names a valid one, and dropped (all tools) when it names none.
-  const kept = Object.fromEntries(Object.entries(state).filter(([key]) => key !== "usageTool")) as unknown as DesktopState;
+  const kept = Object.fromEntries(Object.entries(state).filter(([key]) => key !== "usageTool" && key !== "helperConsent")) as unknown as DesktopState;
   return {
     ...kept,
     sidebar: merged.sidebar,
@@ -245,6 +252,7 @@ export function applyLayoutPatch(state: DesktopState, patch: unknown): DesktopSt
     lastFilter: merged.lastFilter,
     getStarted: merged.getStarted,
     ...(merged.usageTool === undefined ? {} : { usageTool: merged.usageTool }),
+    ...(merged.helperConsent === undefined ? {} : { helperConsent: merged.helperConsent }),
   };
 }
 

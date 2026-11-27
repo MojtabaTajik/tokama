@@ -77,6 +77,16 @@ describe("parseDesktopState", () => {
     expect(applyLayoutPatch(picked, { usageTool: "gemini" })).not.toHaveProperty("usageTool");
   });
 
+  it("remembers which AI tools the user agreed to send a folder to: known tools are kept once, and a layout patch sets and keeps them", () => {
+    expect(parseDesktopState({ helperConsent: ["claude-code", "gemini", "claude-code", 7] }).helperConsent).toEqual(["claude-code"]);
+    expect(parseDesktopState({ helperConsent: "claude-code" })).toEqual(DEFAULT_DESKTOP_STATE);
+    expect(parseDesktopState({ helperConsent: [] })).not.toHaveProperty("helperConsent");
+    const agreed = applyLayoutPatch(DEFAULT_DESKTOP_STATE, { helperConsent: ["codex-cli"] });
+    expect(agreed.helperConsent).toEqual(["codex-cli"]);
+    expect(applyLayoutPatch(agreed, { usageTool: "ollama" }).helperConsent).toEqual(["codex-cli"]);
+    expect(applyLayoutPatch(agreed, { helperConsent: ["gemini"] as never })).not.toHaveProperty("helperConsent");
+  });
+
   it("limits the length of ids and folders", () => {
     const state = parseDesktopState({ lastView: { kind: "repo", id: "x".repeat(600) }, lastRepoFolder: "/".repeat(600) });
     expect(state.lastView).toEqual({ kind: "all" });

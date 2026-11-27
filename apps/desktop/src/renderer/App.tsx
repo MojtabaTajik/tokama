@@ -424,6 +424,12 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
     const path = await bridge.pickFolder().catch(() => null);
     if (path !== null) setAddingRepo(path);
   };
+  // The repo dialog's "No AI CLI is ready" line: the dialog closes and the checklist opens, as from Help.
+  const openGetStarted = () => {
+    setAddingRepo(undefined);
+    setEditingRepo(undefined);
+    openHelp.current();
+  };
   const removeRepo = async (repoId: string) => {
     const reply = await bridge.command({ type: "remove_repo", repoId });
     return reply.ok ? undefined : reply.error.message;
@@ -641,11 +647,12 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
             setAddingRepo(undefined);
             void pickRepoFolder();
           }}
+          onOpenGetStarted={openGetStarted}
         />
       )}
       {crashPrompt}
       {setUpNote !== undefined && <RepoNote note={setUpNote} onStart={() => startIn({ kind: "repo", id: setUpNote.id })} onDismiss={() => setSetUpNote(undefined)} />}
-      {editedRepo !== undefined && <RepoDialog bridge={bridge} repo={editedRepo} onClose={() => setEditingRepo(undefined)} />}
+      {editedRepo !== undefined && <RepoDialog bridge={bridge} repo={editedRepo} onClose={() => setEditingRepo(undefined)} onOpenGetStarted={openGetStarted} />}
       {itemShown && (
         <ItemDrawer
           bridge={bridge}

@@ -2,8 +2,10 @@
 // parsed with the engine API schemas before anything reaches the engine. Failures are reply
 // values, like the engine's own errors, never thrown. No Electron here, so it is tested with a
 // fake client.
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { CommandReply, EngineClient, QueryReply } from "@tokama/client";
-import { type CommandType, parseCommand, parseQuery, type ParseError, type QueryType } from "@tokama/core";
+import { type Command, type CommandType, parseCommand, parseQuery, type ParseError, type QueryType } from "@tokama/core";
 import { BRIDGE_ERROR_CODES } from "../shared/bridge.js";
 
 type Failure = { readonly ok: false; readonly error: { readonly code: string; readonly message: string } };
@@ -16,8 +18,20 @@ export interface EngineApi {
 /** Queries whose replies carry a full path: only the main process sends them, never its window. */
 const MAIN_ONLY_QUERIES: ReadonlySet<string> = new Set<QueryType>(["attempt_file"]);
 
+/**
+ * A repo's path in the setup is written for display, with the home folder as `~`, and the engine
+ * asks for a full path when it tries a repo's checks or collects its files for a helper. The engine
+ * runs as this user on this machine, so the window's `~/` stands for this user's home folder.
+ */
+function withFullPath(command: Command, home: string): Command {
+  const full = (path: string) => (path.startsWith("~/") ? join(home, path.slice(2)) : path);
+  if (command.type === "try_checks") return { ...command, path: full(command.path) };
+  if (command.type === "run_helper") return { ...command, run: { ...command.run, input: { ...command.run.input, path: full(command.run.input.path) } } };
+  return command;
+}
+
 /** `client` returns the connected client, or undefined when there is none. */
-export function engineApi(client: () => EngineClient | undefined): EngineApi {
+export function engineApi(client: () => EngineClient | undefined, home: string = homedir()): EngineApi {
   const own = mainQuery(client);
   return {
     query: async (input) => {
@@ -36,7 +50,7 @@ export function engineApi(client: () => EngineClient | undefined): EngineApi {
       if (command.value.type === "report_diagnostic") {
         return { ok: false, error: { code: BRIDGE_ERROR_CODES.invalidRequest, message: "the app sends diagnostics reports itself" } };
       }
-      return (await client()?.command(command.value)) ?? notConnected();
+      return (await client()?.command(withFullPath(command.value, home))) ?? notConnected();
     },
   };
 }
