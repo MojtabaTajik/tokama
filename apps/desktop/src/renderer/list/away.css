@@ -151,9 +151,21 @@
 
 /* The finish split of a row sits in the line, always shown, instead of over a hovered row. */
 .away-line .finish-split[data-variant="row"] {
-  position: static;
+  position: relative;
   display: flex;
   transform: none;
+}
+
+/* Only the oldest question is filled: Merge is outlined here. */
+.away-line .finish-split-main,
+.away-line .finish-split-more {
+  border-color: var(--hairline);
+  background: transparent;
+  color: var(--text-2);
+}
+
+.away-line .finish-split-more {
+  border-left-color: var(--hairline);
 }
 
 .away-group-more {
