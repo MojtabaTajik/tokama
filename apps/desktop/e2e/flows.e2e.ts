@@ -231,6 +231,8 @@ flow("switches status filters, workflow and repo views, and List and Board", asy
 
 flow("starts work through the New work input", async ({ page }) => {
   const text = "Slow checkout query on orders-api";
+  // The shortcut does nothing until the input is on the page, which waits for the setup to load: wait for the input, not for the connection.
+  await page.locator("textarea.np-text").waitFor();
   // A fresh window may not have keyboard focus yet; a click gives it.
   await page.locator("main h1").click();
   await page.keyboard.press("ControlOrMeta+n");

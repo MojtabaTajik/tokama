@@ -129,10 +129,12 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
   } as unknown as TokamaBridge;
   const setConnection = (state: ConnectionState) => act(async () => connectionListener?.(state));
   let seq = 0;
-  const pushItem = (item: ItemRecord) => act(async () => {
-      listed.set(item.id, item);
-      for (const listener of eventListeners) listener({ kind: "event", seq: seq++, event: { type: "item_updated", item } });
-    });
+  /** `pushItem` without `act`: for a test that lets React's own scheduler decide when the renders and their effects run. */
+  const emitItem = (item: ItemRecord) => {
+    listed.set(item.id, item);
+    for (const listener of eventListeners) listener({ kind: "event", seq: seq++, event: { type: "item_updated", item } });
+  };
+  const pushItem = (item: ItemRecord) => act(async () => emitItem(item));
   const pushEvent = (event: BridgeEvent["event"]) => act(async () => {
       for (const listener of eventListeners) listener({ kind: "event", seq: seq++, event });
     });
@@ -171,7 +173,7 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
   const openItem = (itemId: string) => act(async () => openListener?.(itemId));
   /** Help > Get started: the main process asks the window to open the checklist. */
   const openGetStarted = () => act(async () => getStartedListener?.());
-  return { bridge, openGetStarted, query, saveLayout, saveNotifications, playSound, notificationStatus, sendTestNotification, openNotificationSettings, setViewedItem, getWhatsNew, closeWhatsNew, openItem, copyBuildInfo, showDataFolder, openNotices, command, retryConnection, openTemplateFile, setConnection, pushItem, pushEvent, stops, installUpdate, checkForUpdates, openUpdateNotes, setUpdate, closeAway, setAway };
+  return { bridge, openGetStarted, query, saveLayout, saveNotifications, playSound, notificationStatus, sendTestNotification, openNotificationSettings, setViewedItem, getWhatsNew, closeWhatsNew, openItem, copyBuildInfo, showDataFolder, openNotices, command, retryConnection, openTemplateFile, setConnection, pushItem, emitItem, pushEvent, stops, installUpdate, checkForUpdates, openUpdateNotes, setUpdate, closeAway, setAway };
 }
 
 export interface ListQuery {

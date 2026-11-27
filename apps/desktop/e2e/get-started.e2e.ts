@@ -85,6 +85,9 @@ flow(
     expect(await row(page, "quick-fix").getByRole("button", { name: "Start a Quick fix" }).isDisabled()).toBe(true);
     await row(page, "repo").getByRole("button", { name: "Add repo" }).click();
     const add = page.getByRole("dialog", { name: "Add repo" });
+    // The engine reads the folder (git, build files) before the dialog fills in; that is a query on a busy runner, so wait for it to end, not for a fixed time.
+    await add.waitFor();
+    await add.getByText("Reading the folder…").waitFor({ state: "detached" });
     await expect.poll(() => add.getByLabel("Id", { exact: true }).inputValue(), { message: "the suggested id" }).toBe("orders-api");
     await add.getByRole("button", { name: "Add repo" }).click();
     await add.waitFor({ state: "detached" });

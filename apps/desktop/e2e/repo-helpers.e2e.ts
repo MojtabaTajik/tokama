@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { join } from "node:path";
 import type { ElectronApplication, Locator, Page } from "playwright-core";
 import { expect } from "vitest";
+import { fakeToolsEnv } from "./fake-tools.js";
 import { flow } from "./harness.js";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", ...args], { cwd, encoding: "utf8" });
@@ -165,12 +166,15 @@ flow(
     await add.getByRole("button", { name: "Add repo", exact: true }).click();
     await add.waitFor({ state: "detached" });
 
-    // Edit repo has Try checks too. The real engine lists no suggest-checks helper yet, so no Suggest with AI here (the sample-engine flows above cover it).
+    // Edit repo has Try checks too. The fake PATH has no AI CLI, so Suggest with AI is listed but off, with the note that says why (the sample-engine flows above cover a ready one).
     await page.getByRole("button", { name: "Actions for billing-api" }).click();
     await page.getByRole("menuitem", { name: /^Edit…/ }).click();
     const edit = page.getByRole("dialog", { name: "Edit repo" });
     await edit.getByRole("button", { name: "Try checks" }).waitFor();
-    expect(await edit.getByRole("button", { name: "Suggest with AI" }).count()).toBe(0);
+    // The helper list arrives after the dialog opens, so wait for it instead of counting at once.
+    // The note and the button appear together, once the helper list has answered.
+    await edit.getByText("No AI CLI is ready on this computer.").waitFor();
+    expect(await edit.getByRole("button", { name: "Suggest with AI" }).isDisabled()).toBe(true);
     await screenshot("repo-helpers-e-edit", edit);
     await edit.getByRole("button", { name: "Try checks" }).click();
     await edit.getByRole("region", { name: "Try checks results" }).waitFor({ timeout: 60_000 });
@@ -182,4 +186,6 @@ flow(
     expect(!existsSync(wt) || readdirSync(wt).length === 0).toBe(true);
   },
   "real",
+  undefined,
+  { env: fakeToolsEnv },
 );
