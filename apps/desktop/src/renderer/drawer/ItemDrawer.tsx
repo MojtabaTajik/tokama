@@ -8,7 +8,7 @@
 // rendered as React text only. While the item runs, the header shows the live activity line (who
 // works, the latest action, the time) beside the state line, and every item shows its step track.
 import type { CommandErrorCode, Decision, ItemRecord, Setup } from "@tokama/core";
-import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
 import { AgentLabel } from "../agent/AgentLabel.js";
 import { agentInfo } from "../agent/agent-info.js";
