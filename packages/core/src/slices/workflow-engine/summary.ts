@@ -1,7 +1,7 @@
 // What an agent's output says, read for the card of a step that stopped: the reviewer's verdict
 // with the items of its "Must change" list, or the first lines as written. Agent output is free
 // text, so the reading is tolerant: an unknown shape gives the first lines, never an error.
-import { MAX_SUMMARY_ITEMS, MAX_SUMMARY_LINE_CHARS, type OutputSummary } from "../../kernel/schemas/index.js";
+import { MAX_HEADLINE_CHARS, MAX_POINT_CHARS, MAX_POINTS, MAX_SUMMARY_ITEMS, MAX_SUMMARY_LINE_CHARS, type OutputSummary } from "../../kernel/schemas/index.js";
 import { cutText } from "../../kernel/text/index.js";
 import { parseVerdict } from "./verdict.js";
 
@@ -47,13 +47,15 @@ function summarize(text: string, verdictFormat: boolean, tail: string | undefine
 }
 
 /**
- * The first non-empty lines as written, each cut to fit: without verdict lines, unless the output
- * holds nothing else (`VERDICT: APPROVE` alone is no verdict, and still says something).
+ * The first non-empty lines as written, each cut to fit: without the headline block and verdict
+ * lines, unless the output holds nothing else (`VERDICT: APPROVE` alone is no verdict, and still
+ * says something).
  */
 function firstLines(lines: readonly string[], count: number): string[] {
-  const written = lines.map((line) => line.trim()).filter((line) => line !== "");
+  const all = lines.map((line) => line.trim()).filter((line) => line !== "");
+  const written = all.filter((line) => labelOf(line)?.block !== true);
   const words = written.filter((line) => !VERDICT_LINE.test(line));
-  return (words.length > 0 ? words : written).slice(0, count).map(cut);
+  return (words.length > 0 ? words : written.length > 0 ? written : all).slice(0, count).map(cut);
 }
 
 /** The items of the first "Must change" (or "Must fix") section, up to the next heading. */
@@ -62,7 +64,7 @@ function mustFixItems(lines: readonly string[]): { ref?: string; text: string }[
   if (start < 0) return [];
   const items: { ref?: string; text: string }[] = [];
   for (const line of lines.slice(start + 1)) {
-    if (headingText(line) !== undefined || VERDICT_LINE.test(line.trim())) break;
+    if (headingText(line) !== undefined || VERDICT_LINE.test(line.trim()) || labelOf(line)?.block === true) break;
     const item = LIST_ITEM.exec(line);
     if (item === null) continue;
     const parsed = itemOf(item[1]!);
@@ -105,6 +107,94 @@ function itemOf(raw: string): { ref?: string; text: string } | undefined {
   if (lead === "") return undefined;
   const where = ref?.[1];
   return { ...(where !== undefined && { ref: cutRef(where) }), text: cut(lead) };
+}
+
+// ---- the headline block ---------------------------------------------------------------------
+
+/** How many non-empty lines at the end of a reply the headline block is looked for in. */
+const BLOCK_WINDOW = 30;
+// A label at the start of a line, in any letter case, after a list mark, a quote mark or bold marks.
+const BLOCK_LABEL = /^\s*(?:(?:[-*]\s+|>\s*)*)(?:\*\*|__)?(HEADLINE|POINT|READ)(?:\*\*|__)?\s*:(.*)$/i;
+// Control, invisible formatting and line-break characters, as a notification's text drops them.
+const INVISIBLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu;
+
+/** One line of plain text: no control characters, no Markdown marks, spaces folded. */
+const plain = (text: string): string =>
+  text
+    .replace(INVISIBLE, " ")
+    .replace(/\*\*|__|`/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^#{1,6}\s+/, "");
+
+/**
+ * The label of a headline block line and its plain value. `block` is false for a `READ:` line
+ * that says something other than yes or no: such a line is part of the reply.
+ */
+function labelOf(line: string): { label: "HEADLINE" | "POINT" | "READ"; value: string; block: boolean } | undefined {
+  const match = BLOCK_LABEL.exec(line);
+  if (match === null) return undefined;
+  const label = match[1]!.toUpperCase() as "HEADLINE" | "POINT" | "READ";
+  const value = plain(match[2]!);
+  return { label, value, block: label !== "READ" || /^(?:yes|no)\b/i.test(value) };
+}
+
+/** What `parseHeadline` reads from a reply. `words` and `bodyBytes` count the reply without the block. */
+export interface ParsedHeadline {
+  readonly source: "headline" | "first_lines";
+  readonly headline: string;
+  readonly points: string[];
+  readonly morePoints: number;
+  readonly bodyBytes: number;
+  readonly words: number;
+  /** The agent wrote `READ: yes`. */
+  readonly readFlag: boolean;
+}
+
+/**
+ * The headline of an agent's final reply: the last `HEADLINE:` line among the last 30 non-empty
+ * lines, with the `POINT:` and `READ:` lines after it. Without one the first lines of the reply
+ * stand in. Undefined when the reply says nothing. Never throws.
+ */
+export function parseHeadline(text: string): ParsedHeadline | undefined {
+  try {
+    return parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+function parse(text: string): ParsedHeadline | undefined {
+  const lines = text.split(/\r?\n/);
+  const window = lines.flatMap((line, index) => (line.trim() === "" ? [] : [index])).slice(-BLOCK_WINDOW);
+  const head = window.findLast((index) => labelOf(lines[index]!)?.label === "HEADLINE");
+  const headline = head === undefined ? "" : labelOf(lines[head]!)!.value;
+  const after = head === undefined || headline === "" ? [] : window.filter((index) => index > head).map((index) => labelOf(lines[index]!));
+  // Whatever is block text from the headline on is not part of the reply.
+  const body = lines.filter((line, index) => (head === undefined || index < head) || labelOf(line)?.block !== true);
+  const bodyText = body.join("\n").trim();
+  const result = { bodyBytes: new TextEncoder().encode(bodyText).length, words: bodyText === "" ? 0 : bodyText.split(/\s+/).length };
+  if (headline !== "") {
+    const points = after.flatMap((found) => (found?.label === "POINT" && found.value !== "" ? [found.value] : []));
+    return {
+      source: "headline",
+      headline: cutText(headline, MAX_HEADLINE_CHARS),
+      points: points.slice(0, MAX_POINTS).map((point) => cutText(point, MAX_POINT_CHARS)),
+      morePoints: Math.max(0, points.length - MAX_POINTS),
+      ...result,
+      readFlag: after.some((found) => found?.label === "READ" && /^yes\b/i.test(found.value)),
+    };
+  }
+  const said = body.flatMap((line) => (VERDICT_LINE.test(line.trim()) || labelOf(line)?.block === true ? [] : [plain(line)])).filter((line) => line !== "");
+  if (said.length === 0) return undefined;
+  return {
+    source: "first_lines",
+    headline: cutText(said[0]!, MAX_HEADLINE_CHARS),
+    points: said.slice(1, 3).map((line) => cutText(line, MAX_POINT_CHARS)),
+    morePoints: 0,
+    ...result,
+    readFlag: false,
+  };
 }
 
 /** Markdown emphasis and code marks out, spaces folded. */

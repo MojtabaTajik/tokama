@@ -3,7 +3,7 @@
 // output as a document: in the full view at a readable line length, with its headings as an outline
 // and the agent that wrote it beside it. The text is shown with StepOutput (React text only); the
 // outline holds the headings' own words as text.
-import type { ItemRecord, OutputSummary, Setup, StepRecord } from "@tokama/core";
+import type { ItemRecord, OutputSummary, Said, Setup, StepRecord } from "@tokama/core";
 import { type ReactNode, useEffect, useRef } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
 import { AgentLabel } from "../agent/AgentLabel.js";
@@ -47,8 +47,12 @@ export function sizeOf(text: string): string {
   return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`;
 }
 
-/** What an output says in one line: "approve", "changes · 2 must-fix · src/x.ts:12", or its first line; undefined when it says nothing. */
-export function summaryLine(summary: OutputSummary | undefined): string | undefined {
+/**
+ * What an output says in one line: the headline its agent wrote ("said"), else "approve",
+ * "changes · 2 must-fix · src/x.ts:12", or its first line; undefined when it says nothing.
+ */
+export function summaryLine(summary: OutputSummary | undefined, said?: Said): string | undefined {
+  if (said !== undefined) return said.headline;
   switch (summary?.kind) {
     case "verdict": {
       if (summary.verdict === "approve") return TEXT.approve;
@@ -151,6 +155,8 @@ function OutputStep({ bridge, item, setup, index, attempt, mark, full, onOpenAge
   const now = useNow(step.attempts?.at(-1)?.result === undefined && step.attempts !== undefined);
   const facts = stepFacts(step, now, loaded === undefined ? undefined : { text: sizeOf(loaded.text), spoken: spokenSize(bytesOf(loaded.text)) });
   const info = agentInfo(item, index, setup)!;
+  // A reviewer's closed line keeps its verdict and must-fix items: that is what it decided.
+  const said = step.doneWhen === "reviewer approves" ? undefined : step.attempts?.find((candidate) => candidate.attempt === attempt)?.said;
   return (
     <Section
       title={step.name}
@@ -158,7 +164,7 @@ function OutputStep({ bridge, item, setup, index, attempt, mark, full, onOpenAge
       state={mark}
       facts={facts.text}
       spokenFacts={facts.spoken}
-      summary={summaryLine(loaded?.summary)}
+      summary={summaryLine(loaded?.summary, said)}
       open={open}
       onToggle={onToggle}
     >

@@ -142,6 +142,23 @@ describe("toItemRecord", () => {
     }
   });
 
+  it("sends what the agent said on its ended attempt; an attempt recorded without it sends none", () => {
+    const said = { source: "headline" as const, headline: "Fixed the greeting.", points: ["Not run on Windows."], morePoints: 0, bodyBytes: 240, readMinutes: 2 };
+    const record = toItemRecord(
+      append(created(), [
+        { type: "step_started", stepId: FIX },
+        { type: "attempt_started", stepId: FIX, attempt: 1 },
+        { type: "attempt_ended", stepId: FIX, attempt: 1, result: "passed", said },
+        { type: "attempt_started", stepId: FIX, attempt: 2 },
+        { type: "attempt_ended", stepId: FIX, attempt: 2, result: "failed" },
+      ]),
+    )!;
+    const [one, two] = record.steps[0]!.attempts!;
+    expect(one?.said).toEqual(said);
+    expect(two).not.toHaveProperty("said");
+    expect(parseItemRecord(record).ok).toBe(true);
+  });
+
   it("does not count the time the engine was down as working time", () => {
     let item = append(created(), [{ type: "step_started", stepId: FIX }, { type: "attempt_started", stepId: FIX, attempt: 1 }]);
     // The engine stops during the attempt and comes back 15 hours later; recovery ends the attempt then.
@@ -159,8 +176,8 @@ describe("toItemRecord", () => {
     const record = toItemRecord(created())!;
     expect(record).toMatchObject({ templateId: "orders-api/careful-fix", kind: "task", privacy: "local_and_cloud", state: "queued", title: "Fix the greeting", cardLine: "starting" });
     expect(record.steps).toEqual([
-      { name: "Fix", stage: "working", state: "pending", agentId: "builder", data: "repo-and-diff", runs: 0, maxAttempts: 3 },
-      { name: "Review", stage: "review", state: "pending", agentId: "reviewer", data: "none", runs: 0, maxAttempts: 3 },
+      { name: "Fix", stage: "working", state: "pending", agentId: "builder", doneWhen: "checks pass", data: "repo-and-diff", runs: 0, maxAttempts: 3 },
+      { name: "Review", stage: "review", state: "pending", agentId: "reviewer", doneWhen: "reviewer approves", data: "none", runs: 0, maxAttempts: 3 },
     ]);
   });
 

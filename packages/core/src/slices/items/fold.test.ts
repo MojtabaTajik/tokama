@@ -175,6 +175,17 @@ describe("foldItem", () => {
     ]);
   });
 
+  it("attempt_ended: keeps what the agent said; an old log without it folds with none", () => {
+    const said = { source: "headline" as const, headline: "Fixed the null check.", points: ["Not run on Windows."], morePoints: 0, bodyBytes: 120 };
+    const item = fold([
+      ...startBuild,
+      { type: "attempt_ended", stepId: BUILD, attempt: 1, result: "passed", said },
+      { type: "attempt_started", stepId: BUILD, attempt: 2 },
+      { type: "attempt_ended", stepId: BUILD, attempt: 2, result: "failed" },
+    ]);
+    expect(item.steps[0]?.attempts.map((a) => a.said)).toEqual([said, undefined]);
+  });
+
   it("attempt_ended and item_ended: the checked tree on a passed attempt, the commits on a done item", () => {
     const tree = "a".repeat(40);
     const commit = "b".repeat(40);

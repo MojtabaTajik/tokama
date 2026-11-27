@@ -1426,6 +1426,54 @@ describe("ItemDrawer full view", () => {
     expect($$('[role="tab"]').map((el) => el.textContent)).toEqual(["Steps", "Output", "Checks", "Log"]);
   });
 
+  describe("what the step's agent said", () => {
+    const said = { source: "headline", headline: "Use a lookup table, not a join <b>per row</b>.", points: ["Not run on the staging data.", "Assumes prices are in cents."], morePoints: 1, bodyBytes: 2_400, readMinutes: 2 };
+    const sayer = { ...plan, steps: [{ ...plan.steps[0]!, attempts: [{ attempt: 1, result: "passed", checks: [], said }] }, plan.steps[1]!] } as unknown as ItemRecord;
+
+    it("opens the question card with 'Architect says', the headline in full and its read time, above the plan", async () => {
+      const { bridge } = bridgeFor([sayer]);
+      await show(bridge, sayer.id, { setup });
+      expect(text(".needs-you .said-line")).toBe("Architect saysUse a lookup table, not a join <b>per row</b>.read · 2 min");
+      expect($(".needs-you .said-line b")).toBeNull();
+      const order = $$(".needs-you .said-line, .needs-you .step-output").map((el) => el.className.split(" ")[0]);
+      expect(order).toEqual(["said-line", "step-output"]);
+    });
+
+    it("has no line on a question about an item whose step said nothing", async () => {
+      const { bridge } = bridgeFor([plan]);
+      await show(bridge, plan.id, { setup });
+      expect($(".said-line")).toBeNull();
+    });
+
+    it("shows 'In short' above the reader: the headline, the points, and how many more there are in the output", async () => {
+      const { bridge } = bridgeFor([sayer]);
+      await show(bridge, sayer.id, full(vi.fn(), true, { reader: { stepIndex: 0 } }));
+      const short = $('[aria-label="Reader"] .said-short')!;
+      expect(short.querySelector(".said-short-title")?.textContent).toBe("In short");
+      expect(short.querySelector(".said-headline")?.textContent).toBe("Use a lookup table, not a join <b>per row</b>.");
+      expect([...short.querySelectorAll("li")].map((el) => el.textContent)).toEqual(["Not run on the staging data.", "Assumes prices are in cents."]);
+      expect(short.querySelector(".said-more")?.textContent).toBe("+1 more in the output");
+      expect(short.querySelector("b")).toBeNull();
+    });
+
+    it("has no 'In short' when the agent wrote no headline", async () => {
+      const first = { ...sayer, steps: [{ ...sayer.steps[0]!, attempts: [{ attempt: 1, result: "passed", checks: [], said: { ...said, source: "first_lines" } }] }, sayer.steps[1]!] } as unknown as ItemRecord;
+      const { bridge } = bridgeFor([first]);
+      await show(bridge, first.id, full(vi.fn(), true, { reader: { stepIndex: 0 } }));
+      expect($(".said-short")).toBeNull();
+      expect($('[aria-label="Reader"] .ot')).not.toBeNull();
+    });
+
+    it("shows the headline on the Output tab's closed line for the step", async () => {
+      const { bridge } = bridgeFor([sayer]);
+      await show(bridge, sayer.id, full());
+      await click(tab("Output"));
+      // The step waits for its approval, so its section opens by itself; closed, it shows its line.
+      await click($(".ot .sec-head") ?? undefined);
+      expect(text(".ot .sec-sum")).toBe("Use a lookup table, not a join <b>per row</b>.");
+    });
+  });
+
   describe("the reader", () => {
     const reading = (onCollapse = vi.fn(), onShowAll = vi.fn(), stepIndex = 0) => full(onCollapse, true, { reader: { stepIndex }, onShowAll });
 

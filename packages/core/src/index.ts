@@ -281,6 +281,7 @@ export {
   type HelloMessage,
   type AttemptRecord,
   type AttemptSummary,
+  type Said,
   type AgentCallEvent,
   type CliHealth,
   type Health,

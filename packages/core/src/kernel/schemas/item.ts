@@ -11,6 +11,8 @@ export const StepStateSchema = z.enum(["pending", "running", "needs_you", "passe
 export const ItemStateSchema = z.enum(["queued", "running", "needs_you", "done", "failed", "stopped"]);
 /** What a step may send off the machine. */
 export const DataRuleSchema = z.enum(["none", "summary-after-approval", "repo-and-diff"]);
+/** What ends a step: its agent finishing, its checks passing, a reviewer's approval or yours. */
+export const DoneWhenSchema = z.enum(["agent finishes", "checks pass", "reviewer approves", "you approve"]);
 /** The card's privacy label: "local only" when no step may send anything out. */
 export const PrivacySchema = z.enum(["local_only", "local_and_cloud"]);
 
@@ -79,6 +81,28 @@ export const PullRequestUrlSchema = z
   .max(500)
   .regex(/^https:\/\/[A-Za-z0-9.-]+(?::\d+)?\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/\d+$/, "must be a pull request URL");
 
+/** The longest headline and point a step's agent can have in what it said. */
+export const MAX_HEADLINE_CHARS = 140;
+export const MAX_POINT_CHARS = 160;
+/** The most points carried; the rest are only counted. */
+export const MAX_POINTS = 3;
+
+/**
+ * What a step's agent said about its own work, as the row and the cards show it: a headline and
+ * up to three points it wrote, or (`first_lines`) the first lines of its reply when it wrote
+ * none. `readMinutes` is present exactly when the reply is a must-read.
+ */
+export const SaidSchema = z.strictObject({
+  source: z.enum(["headline", "first_lines"]),
+  headline: z.string().min(1).max(MAX_HEADLINE_CHARS),
+  points: z.array(z.string().min(1).max(MAX_POINT_CHARS)).max(MAX_POINTS),
+  /** POINT lines past the ones carried. */
+  morePoints: z.int().nonnegative(),
+  /** The reply without its headline block, in UTF-8 bytes. */
+  bodyBytes: z.int().nonnegative(),
+  readMinutes: z.int().min(1).max(60).optional(),
+});
+
 /** One attempt of a step: one agent session plus its checks. */
 export const AttemptSummarySchema = z.strictObject({
   attempt: z.int().min(1),
@@ -95,6 +119,8 @@ export const AttemptSummarySchema = z.strictObject({
   /** Once it ended: whether its transcript was saved, and how large it is. Absent while it runs and on attempts recorded before these existed. */
   transcriptSaved: z.boolean().optional(),
   transcriptBytes: z.int().nonnegative().optional(),
+  /** What the step's agent said, once its attempt ended; absent when the agent said nothing and on attempts recorded before this existed. */
+  said: SaidSchema.optional(),
   checks: z.array(z.strictObject({ command: z.string().min(1).max(500), passed: z.boolean(), exitCode: z.int().nullable() })).max(20),
 });
 
@@ -105,6 +131,8 @@ export const StepRecordSchema = z.strictObject({
   /** Absent for steps Tokama runs itself, such as checks. */
   agentId: AgentIdSchema.optional(),
   data: DataRuleSchema,
+  /** What ends the step, as its template says; absent when the snapshot does not describe the step. */
+  doneWhen: DoneWhenSchema.optional(),
   uses: ConnectionUsesSchema.optional(),
   /** One line about the step in its current state, on every step: what it waits for, how it ended. */
   detail: z.string().min(1).max(200).optional(),
@@ -265,6 +293,7 @@ export type ItemOutcome = z.output<typeof ItemOutcomeSchema>;
 export type AttemptResult = z.output<typeof AttemptResultSchema>;
 export type RunFailure = z.output<typeof RunFailureSchema>;
 export type AttemptSummary = z.output<typeof AttemptSummarySchema>;
+export type Said = z.output<typeof SaidSchema>;
 export type Stage = z.output<typeof StageSchema>;
 export type ItemKind = z.output<typeof ItemKindSchema>;
 export type StepState = z.output<typeof StepStateSchema>;

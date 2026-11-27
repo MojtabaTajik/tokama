@@ -6,6 +6,7 @@ import type { AgentTarget } from "../settings/describe.js";
 import { Button } from "../ui/Button.js";
 import { Placeholder } from "../ui/EmptyState.js";
 import { OutputDoc, shownAttempt } from "./OutputTab.js";
+import { InShort } from "./SaidBlock.js";
 
 const TEXT = {
   label: "Reader",
@@ -26,8 +27,10 @@ export interface ReaderProps {
 export function Reader({ bridge, item, setup, stepIndex, onShowAll, onOpenAgent }: ReaderProps) {
   const step = item.steps[stepIndex];
   const attempt = step === undefined ? undefined : shownAttempt(step);
+  const said = step?.attempts?.find((candidate) => candidate.attempt === attempt)?.said;
   return (
     <div className="drawer-panel reader" role="region" aria-label={TEXT.label}>
+      {said !== undefined && <InShort said={said} />}
       <div className="ot" data-full="true" data-reader="true">
         {attempt === undefined ? (
           <Placeholder>{TEXT.none}</Placeholder>

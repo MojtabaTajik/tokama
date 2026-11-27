@@ -4,14 +4,13 @@
 // slice.
 import { z } from "zod";
 import { AgentIdSchema, ConnectionIdSchema, RepoIdSchema, StepIdSchema, TemplateIdSchema, TemplateRefSchema, type StepId } from "./ids.js";
-import { DataRuleSchema } from "./item.js";
+import { DataRuleSchema, DoneWhenSchema } from "./item.js";
 
 /** The 8 tag colours; a template or step colours its icon with one. */
 export const TagColorSchema = z.enum(["slate", "sky", "teal", "moss", "sand", "clay", "rose", "plum"]);
 /** An icon name such as `screwdriver-wrench`; clients map it to their icon set. */
 export const IconNameSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/, "must be an icon name such as screwdriver-wrench");
 export const RepoAccessSchema = z.enum(["read", "edit"]);
-export const DoneWhenSchema = z.enum(["agent finishes", "checks pass", "reviewer approves", "you approve"]);
 /** What the New work input asks for: the text, exactly one repo, or one or more repos. */
 export const StartNeedSchema = z.enum(["text", "repo", "repos"]);
 export const FinishSchema = z.enum(["commit", "pull-request", "findings", "document", "outside-changes"]);

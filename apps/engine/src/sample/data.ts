@@ -288,6 +288,25 @@ function withTimes(item: RawItem, now: number, waits: Readonly<Record<number, nu
   return { ...item, steps, ...(ended && first !== undefined && { durationMs: at - 5_000 - first - waited }) };
 }
 
+/** What the Quick fix item's agent said: a headline and three points. */
+const SAID_WITH_POINTS = {
+  source: "headline",
+  headline: "Fixed the null check in cart totals: a line without a price now counts as 0.",
+  points: ["Added a test for a line with no price.", "Did not change how discounts round.", "Not run against the staging catalog."],
+  morePoints: 0,
+  bodyBytes: 236,
+};
+
+/** What the slow query item's agent said: a write-up to read, so a headline and a read time. */
+const SAID_MUST_READ = {
+  source: "headline",
+  headline: "A missing index on order_items(order_id) is the cause; adding it cuts the query from 900 ms to 4 ms.",
+  points: [],
+  morePoints: 0,
+  bodyBytes: 3_480,
+  readMinutes: 4,
+};
+
 /** The sample items, created minutes before `now`. */
 export function sampleItems(now: number) {
   return rawItems(now).map((item) => withTimes(item, now, item.id === ITEM_IDS.finished ? { 0: SAMPLE_WAIT_MS } : {}));
@@ -406,7 +425,10 @@ function rawItems(now: number): RawItem[] {
       state: "done",
       createdAt: ago(now, 180),
       cardLine: "missing index on order_items(order_id)",
-      steps: steps(templates.slowQuery, ["passed", "passed", "passed"]),
+      // The write-up is the thing to read: its headline comes with a read time.
+      steps: steps(templates.slowQuery, ["passed", "passed", "passed"]).map((step, index) =>
+        index === 2 ? { ...step, attempts: [{ attempt: 1, result: "passed", checks: [], said: SAID_MUST_READ }] } : step,
+      ),
     },
     {
       ...base,
@@ -422,7 +444,14 @@ function rawItems(now: number): RawItem[] {
       cardLine: "commit 3f2a9c1 · tokama/00000011",
       steps: steps(templates.quickFix, ["passed", "passed"]).map((step, index) => ({
         ...step,
-        attempts: [{ attempt: 1, result: "passed", checks: index === 0 ? [] : ["pnpm typecheck", "pnpm lint", "pnpm test"].map((command) => ({ command, passed: true, exitCode: 0 })) }],
+        attempts: [
+          {
+            attempt: 1,
+            result: "passed",
+            checks: index === 0 ? [] : ["pnpm typecheck", "pnpm lint", "pnpm test"].map((command) => ({ command, passed: true, exitCode: 0 })),
+            ...(index === 0 && { said: SAID_WITH_POINTS }),
+          },
+        ],
       })),
       outcome: {
         kind: "done",
