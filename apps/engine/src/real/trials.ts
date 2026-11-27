@@ -166,18 +166,7 @@ export class CheckTrials {
     }
     // The record stays when the worktree could not be removed, for the next start to try again.
     if (worktreePath === undefined || !existsSync(worktreePath)) this.forget(trialId);
-    if (entry.trial?.state === "running") this.update(entry, this.crashed(entry.trial));
     this.keep(entry, trialId);
-  }
-
-  private crashed(trial: CheckTrial): CheckTrial {
-    return {
-      ...trial,
-      state: "failed",
-      endedAt: Math.max(trial.startedAt, this.options.clock.now()),
-      checks: trial.checks.map((check) => (check.state === "waiting" || check.state === "running" ? { command: check.command, state: "skipped" as const } : check)),
-      error: { code: "crash", message: "The trial stopped before it finished." },
-    };
   }
 
   private keep(entry: Entry, trialId: string): void {
@@ -191,10 +180,9 @@ export class CheckTrials {
   }
 
   private update(entry: Entry, trial: CheckTrial): void {
-    // The trial's own state moves on even when its record cannot be sent: a trial must never stay "running" for good.
-    entry.trial = trial;
     const parsed = CheckTrialSchema.safeParse(trial);
     if (!parsed.success) return this.options.log(`a check trial record was not valid and was not sent: ${JSON.stringify(parsed.error.issues.slice(0, 3))}`);
+    entry.trial = parsed.data;
     if (entry.announced) this.send(parsed.data);
   }
 
@@ -258,8 +246,8 @@ export class CheckTrials {
         left.push(trial);
       }
     }
-    // Trials recorded while this sweep ran are already in `open`.
-    this.open = [...left, ...this.open];
+    // `start` waits for the sweep, so nothing else is recorded yet.
+    this.open = left;
     if (left.length > 0 || existsSync(this.file)) this.save();
   }
 }

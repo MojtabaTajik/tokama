@@ -103,7 +103,7 @@ afterEach(() => {
 
 describe("what runs", () => {
   it("only accepts one simple command of plain text, and creates nothing for a bad one", SLOW, async () => {
-    const bad = ["a && b", "x | sh", "rm -rf build; ls", "echo $(whoami)", "echo `id`", "ls > out", "sleep 1 &", "echo hi\nrm -rf x", "ls​", "ls‮", "ls rm x", "ls\u0000", ""];
+    const bad = ["a && b", "x | sh", "rm -rf build; ls", "echo $(whoami)", "echo `id`", "ls > out", "sleep 1 &", "echo hi\nrm -rf x", "ls​", "ls‮", "ls rm x", "ls\u0000", "lsㅤ", "ls͏", "ls️", ""];
     const trials = runner();
     for (const command of bad) {
       expect(await trials.prepare({ path: repo.path, checks: [{ command }] }), JSON.stringify(command)).toMatchObject({ ok: false, error: { code: "invalid_request" } });

@@ -75,7 +75,7 @@ export async function createTrialWorktree(git: Git, repo: WorktreeRepo, trialId:
 /**
  * Removes a trial worktree, changes included, then prunes. Refuses any path whose name is not
  * `try-<8 hex>` or that is not directly inside the repo; removes only the entry git lists as
- * detached at that path. A folder git no longer knows is removed when it is empty.
+ * detached at that path (an entry whose folder is gone is pruned). A folder git no longer knows is removed when it is empty.
  */
 export async function removeTrialWorktree(git: Git, repoPath: string, path: string): Promise<Result<void, WorktreeError>> {
   if (!TRIAL_NAME.test(basename(path))) return refuse("remove", `not a trial worktree: ${basename(path)}`);
@@ -89,8 +89,6 @@ export async function removeTrialWorktree(git: Git, repoPath: string, path: stri
   for (const entry of listed.value) if (entry.branch === undefined && (await real(entry.path)) === target) entries.push(entry);
   const removed = await removeEntries(git, repoPath, entries, true);
   if (!removed.ok) return removed;
-  const pruned = await git.worktreePrune(repoPath);
-  if (!pruned.ok) return refuse("remove", pruned.error.message);
   // Only an empty folder goes: git's own removal handles the rest, and a folder git does not list is not ours to delete with content.
   await rmdir(target).catch(() => undefined);
   return ok(undefined);

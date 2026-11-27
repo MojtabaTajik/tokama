@@ -81,7 +81,7 @@ const MIN_CHECK_MINUTES = 2;
 const RAW_OUTPUT_CAP = 8_000;
 const SETUP_TAIL_CHARS = 300;
 // Control characters, invisible and direction-changing characters, and line and paragraph breaks.
-const NOT_PLAIN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+const NOT_PLAIN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u;
 
 /** Why a command or setup cannot run, or undefined: one simple command on one line of plain text. */
 export function trialCommandProblem(command: string): string | undefined {
@@ -147,14 +147,18 @@ export function createCheckTrialRunner(deps: CheckTrialDeps): CheckTrialRunner {
     hooks.onPlanned({ repoPath: repo.path, worktreePath });
     let final: (() => void) | undefined;
     try {
+      if (signal.aborted) {
+        final = () => end("cancelled");
+        return;
+      }
+      // Longest first is scrubPaths' own job.
+      const folders = [...deps.folders, ...(await names(worktreePath, worktreePath, "<worktree>")), ...(await names(repo.path, repo.path, "<repo>"))];
       const made = await createTrialWorktree(git, repo, trialId, commit);
       if (!made.ok) {
-        final = () => end("failed", { error: { code: "worktree_failed", message: cutText(made.error.message, 500) } });
+        final = () => end("failed", { error: { code: "worktree_failed", message: cutText(tidyOutput(made.error.message, folders), 500) } });
         return;
       }
       const cwd = made.value;
-      // Longest first is scrubPaths' own job.
-      const folders = [...deps.folders, ...(await names(worktreePath, cwd, "<worktree>")), ...(await names(repo.path, repo.path, "<repo>"))];
       publish({ ...trial, commit: commit.slice(0, 12) });
       const execute = (command: string, minutes: number): Promise<CheckResult> =>
         runCommand(deps.runner, command, checkRunOptions(command, { cwd, timeoutMs: minutes * minuteMs, signal, outputCap: RAW_OUTPUT_CAP, onSpawn: hooks.onProcess }));
