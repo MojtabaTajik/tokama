@@ -116,7 +116,7 @@ describe("away", () => {
   it("a strip not yet dismissed is still due after a restart", () => {
     const { away } = setup({ seenUntil: T0 - 90 * MINUTE, leftAt: T0 - MINUTE, due: true, backAt: T0 - 5 * MINUTE });
     away.start();
-    expect(away.info()).toEqual({ seenUntil: T0 - 90 * MINUTE, due: true, backAt: T0 });
+    expect(away.info()).toEqual({ seenUntil: T0 - 90 * MINUTE, due: true, backAt: T0 - 5 * MINUTE });
   });
 
   it("Got it sees everything up to now and ends the strip until the next time away", () => {
@@ -132,14 +132,14 @@ describe("away", () => {
     expect(away.info().due).toBe(false);
   });
 
-  it("a blur while the strip is due keeps seenUntil, so the news is not lost", () => {
+  it("a blur while the strip is due keeps seenUntil and the first return time, so the time away does not grow", () => {
     const { away, saved, wait } = setup({ seenUntil: T0 - 90 * MINUTE, due: true, backAt: T0 });
     away.start();
     wait(MINUTE);
     away.left();
     wait(MINUTE);
     away.back();
-    expect(saved()).toEqual({ seenUntil: T0 - 90 * MINUTE, due: true, backAt: T0 + 2 * MINUTE });
+    expect(saved()).toEqual({ seenUntil: T0 - 90 * MINUTE, due: true, backAt: T0 });
   });
 
   it("quitting counts as leaving, so the next start measures from it", () => {

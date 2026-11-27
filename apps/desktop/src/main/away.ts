@@ -45,7 +45,8 @@ export function createAway(deps: AwayDeps): Away {
   const returned = (state: AwayState, since: number): AwayState => {
     const t = now();
     const due = state.due || t - since >= AWAY_MS;
-    return { seenUntil: state.seenUntil, due, ...(due ? { backAt: t } : {}) };
+    // A strip already due keeps its first return time, so the time away does not grow with each blur.
+    return { seenUntil: state.seenUntil, due, ...(due ? { backAt: state.due && state.backAt !== undefined ? state.backAt : t } : {}) };
   };
   return {
     start: () => {

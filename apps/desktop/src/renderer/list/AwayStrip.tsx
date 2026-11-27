@@ -5,7 +5,7 @@
 // written here and no AI is used. Got it ends the strip until the user is away again. Engine text
 // (titles, questions, names) is rendered as React text only.
 import type { FinishAction, ItemRecord, Setup } from "@tokama/core";
-import { Fragment, type ReactNode, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useState } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
 import { AgentBadge } from "../agent/AgentBadge.js";
 import { agentInfo } from "../agent/agent-info.js";
@@ -86,6 +86,13 @@ function Strip({ bridge, connected, setup, open: openItems, now, onSelectItem, o
   const done = list.pages.get("done");
   const failed = list.pages.get("failed");
   const model = awayModel({ seenUntil, open: openItems, done, failed });
+  // Nothing asked, ended or failed once both lists are in: there is nothing to dismiss, so the due state ends here and
+  // does not show news from a later time as if the user had been away for it.
+  const loaded = [done, failed].every((page) => page !== undefined && page.total !== undefined && page.loading === undefined && page.failed === undefined);
+  const empty = loaded && !model.news;
+  useEffect(() => {
+    if (empty) onGotIt();
+  }, [empty, onGotIt]);
   if (!model.news) return null;
   const away = formatDuration(backAt - seenUntil, "coarse");
   const oldest = model.needs.shown[0]?.id;

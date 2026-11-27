@@ -71,7 +71,11 @@ describe("the While you were away strip", () => {
   });
 
   it("shows nothing when nothing asked, ended or failed since, however much runs", async () => {
-    await mount({ boardItems: [ended(ITEMS.done, 400), asked(ITEMS.needsYou, 300), ITEMS.working, ITEMS.verifying], away: DUE });
+    const fake = await mount({ boardItems: [ended(ITEMS.done, 400), asked(ITEMS.needsYou, 300), ITEMS.working, ITEMS.verifying], away: DUE });
+    expect(strip()).toBeNull();
+    // With nothing to show there is nothing to dismiss: the due state ends, so later news is not "while you were away".
+    expect(fake.closeAway).toHaveBeenCalledTimes(1);
+    await fake.pushItem(ended(ITEMS.failed, 0));
     expect(strip()).toBeNull();
   });
 

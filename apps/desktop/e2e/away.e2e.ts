@@ -72,13 +72,13 @@ flow(
   async ({ page }) => {
     await page.locator(".pl-row").first().waitFor();
     // Due, but the user last saw the list a day from now: nothing in the sample is newer than that.
-    expect((await away(page)).due).toBe(true);
     const news = await page.evaluate((endedAfter) => {
       const bridge = (globalThis as unknown as { tokama: TokamaBridge }).tokama;
       return Promise.all((["done", "failed"] as const).map((group) => bridge.query({ type: "item_list", group, limit: 5, endedAfter }))).then((replies) => replies.map((reply) => reply.ok && reply.data.total));
     }, Date.now() + 24 * 60 * MINUTE);
     expect(news).toEqual([0, 0]);
-    await page.waitForTimeout(500);
+    // With nothing to show the due state ends by itself.
+    await expect.poll(async () => (await away(page)).due).toBe(false);
     expect(await strip(page).count()).toBe(0);
   },
   "sample",
