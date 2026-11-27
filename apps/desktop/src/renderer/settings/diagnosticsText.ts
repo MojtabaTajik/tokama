@@ -56,11 +56,10 @@ const CRASH_WORD = {
   memory_eviction: "was closed to free memory",
 } as const;
 const CRASH_SUBJECT = { engine: "Engine", desktop: "Tokama", renderer: "Window" } as const;
-const DAY_MS = 24 * 60 * 60 * 1000;
-const startOfDay = (time: number) => {
+/** Local midnight of the day `daysBack` calendar days before the day of `time`; a day with a clock change is not 24 hours long. */
+const startOfDay = (time: number, daysBack = 0) => {
   const date = new Date(time);
-  date.setHours(0, 0, 0, 0);
-  return date.getTime();
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() - daysBack).getTime();
 };
 
 /** One line about the entry, from its typed fields. */
@@ -99,9 +98,9 @@ export function inDateRange(at: number, filter: DateFilter, now: number): boolea
     case "today":
       return at >= startOfDay(now);
     case "7d":
-      return at >= startOfDay(now) - 6 * DAY_MS;
+      return at >= startOfDay(now, 6);
     case "30d":
-      return at >= startOfDay(now) - 29 * DAY_MS;
+      return at >= startOfDay(now, 29);
   }
 }
 

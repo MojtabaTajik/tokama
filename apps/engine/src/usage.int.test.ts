@@ -3,13 +3,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { type ClientEvent, connect, type EngineClient } from "@tokama/client";
-import { ItemStore, loadHostId, parseQueryResult, parseTemplateRecord, type RepoId, type StepId, type StoredItem, systemClock } from "@tokama/core";
+import { ItemStore, loadHostId, parseQueryResult, parseTemplateRecord, type RepoId, type StepId, type StoredItem } from "@tokama/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { startEngine } from "./engine.js";
-import { tempEngineDir, waitFor } from "./testing/helpers.js";
+import { pinnedClock, tempEngineDir, waitFor } from "./testing/helpers.js";
 
 const BUILD = "build" as StepId;
 const MINUTE = 60_000;
+// Local noon: the calls of the tests, up to a few hours old, stay on the day of "today" at any hour the tests run.
+const clock = pinnedClock(new Date(2026, 10, 26, 12).getTime());
 
 let cleanups: (() => unknown)[] = [];
 afterEach(async () => {
@@ -76,7 +78,7 @@ function spend(items: ItemStore, item: StoredItem, n: number, endedAt: number) {
 describe("usage query", () => {
   it("serves realistic sample usage in sample mode: every CLI, today's items, and a fresh answer", async () => {
     const dir = tempEngineDir(cleanups);
-    const started = await startEngine({ dir, sample: true });
+    const started = await startEngine({ dir, sample: true, clock });
     if (!started.ok) throw new Error(started.error.message);
     cleanups.push(() => started.value.close());
     const engineClient = await client(dir, started.value.endpoint.lockPath);
@@ -104,7 +106,7 @@ describe("usage query", () => {
 
   it("tells the sample's weekly forecast, split, retries and model records, and an item's use", async () => {
     const dir = tempEngineDir(cleanups);
-    const started = await startEngine({ dir, sample: true });
+    const started = await startEngine({ dir, sample: true, clock });
     if (!started.ok) throw new Error(started.error.message);
     cleanups.push(() => started.value.close());
     const engineClient = await client(dir, started.value.endpoint.lockPath);
@@ -166,14 +168,14 @@ describe("usage query", () => {
     cleanups.push(() => rmSync(home, { recursive: true, force: true }));
     const hostId = loadHostId(home);
     if (!hostId.ok) throw new Error(hostId.error);
-    const before = ItemStore.open({ home, hostId: hostId.value, clock: systemClock }).store;
+    const before = ItemStore.open({ home, hostId: hostId.value, clock }).store;
     const created = before.create({ template, title: "Fix the checkout timeout", text: "", repoIds: ["orders-api" as RepoId] });
     if (!created.ok) throw new Error(created.error.message);
-    const now = Date.now();
+    const now = clock.now();
     spend(before, created.value, 1, now - 10 * MINUTE);
 
     const dir = tempEngineDir(cleanups);
-    const started = await startEngine({ dir, home, planSources: {}, processTable: { list: async () => [], bootTime: () => 0, signalGroup: () => undefined } });
+    const started = await startEngine({ dir, home, clock, planSources: {}, processTable: { list: async () => [], bootTime: () => 0, signalGroup: () => undefined } });
     if (!started.ok) throw new Error(started.error.message);
     cleanups.push(() => started.value.close());
     const engineClient = await client(dir, started.value.endpoint.lockPath);
@@ -185,7 +187,7 @@ describe("usage query", () => {
     // The windows come from the run's own rate-limit event.
     expect(first.data.clis[0]).toMatchObject({ source: "run", windows: [{ window: "five_hour", usedPercent: 40 }] });
 
-    spend(started.value.items!, started.value.items!.get(created.value.id)!, 2, Date.now());
+    spend(started.value.items!, started.value.items!.get(created.value.id)!, 2, clock.now());
     await waitFor(() => usageChanged(events) === 1, 5_000, "usage_changed");
     const second = await engineClient.query({ type: "usage" });
     expect(second.ok && second.data.today?.tokens.input).toBeGreaterThan(first.data.today?.tokens.input ?? 0);
@@ -199,10 +201,10 @@ describe("usage query", () => {
     if (!hostId.ok) throw new Error(hostId.error);
     const checked = parseTemplateRecord({ ...template, steps: [{ ...template.steps[0]!, doneWhen: "checks pass", checks: { commands: ["pnpm test"] }, ifFailed: { action: "retry" }, maxAttempts: 3 }] });
     if (!checked.ok) throw new Error(JSON.stringify(checked.error.issues));
-    const store = ItemStore.open({ home, hostId: hostId.value, clock: systemClock }).store;
+    const store = ItemStore.open({ home, hostId: hostId.value, clock }).store;
     const created = store.create({ template: checked.value, title: "Fix the checkout timeout", text: "", repoIds: ["orders-api" as RepoId] });
     if (!created.ok) throw new Error(created.error.message);
-    const now = Date.now();
+    const now = clock.now();
     const DAY = 24 * 60 * MINUTE;
     const call = (n: number, attempt: number, endedAt: number, windowEnds: number, usedPercent: number) => ({
       type: "usage_recorded" as const,
@@ -237,7 +239,7 @@ describe("usage query", () => {
     if (!appended.ok) throw new Error(appended.error.message);
 
     const dir = tempEngineDir(cleanups);
-    const started = await startEngine({ dir, home, planSources: {}, processTable: { list: async () => [], bootTime: () => 0, signalGroup: () => undefined } });
+    const started = await startEngine({ dir, home, clock, planSources: {}, processTable: { list: async () => [], bootTime: () => 0, signalGroup: () => undefined } });
     if (!started.ok) throw new Error(started.error.message);
     cleanups.push(() => started.value.close());
     const engineClient = await client(dir, started.value.endpoint.lockPath);
@@ -275,8 +277,8 @@ describe("usage query", () => {
     cleanups.push(() => rmSync(home, { recursive: true, force: true }));
     const hostId = loadHostId(home);
     if (!hostId.ok) throw new Error(hostId.error);
-    const before = ItemStore.open({ home, hostId: hostId.value, clock: systemClock }).store;
-    const now = Date.now();
+    const before = ItemStore.open({ home, hostId: hostId.value, clock }).store;
+    const now = clock.now();
     // Finished before the start, so the start-up recovery leaves it alone; it holds a call.
     const finished = before.create({ template, title: "Fix the retry loop", text: "", repoIds: ["orders-api" as RepoId] });
     const running = before.create({ template, title: "Fix the checkout timeout", text: "", repoIds: ["orders-api" as RepoId] });
@@ -287,7 +289,7 @@ describe("usage query", () => {
     spend(before, running.value, 1, now - 5 * MINUTE);
 
     const dir = tempEngineDir(cleanups);
-    const started = await startEngine({ dir, home, planSources: {}, processTable: { list: async () => [], bootTime: () => 0, signalGroup: () => undefined } });
+    const started = await startEngine({ dir, home, clock, planSources: {}, processTable: { list: async () => [], bootTime: () => 0, signalGroup: () => undefined } });
     if (!started.ok) throw new Error(started.error.message);
     cleanups.push(() => started.value.close());
     const engineClient = await client(dir, started.value.endpoint.lockPath);
@@ -303,7 +305,7 @@ describe("usage query", () => {
     expect(usageChanged(events)).toBe(0);
 
     // A new call.
-    spend(started.value.items!, started.value.items!.get(running.value.id)!, 2, Date.now());
+    spend(started.value.items!, started.value.items!.get(running.value.id)!, 2, clock.now());
     await waitFor(() => usageChanged(events) === 1, 5_000, "usage_changed");
     await settle();
     await new Promise((resolve) => setTimeout(resolve, 100));

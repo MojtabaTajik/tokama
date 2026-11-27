@@ -3,7 +3,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { connect, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type ItemRecord, LineDecoder, parseItemRecord } from "@tokama/core";
+import { type Clock, type ItemRecord, LineDecoder, parseItemRecord, systemClock } from "@tokama/core";
+
+/** A clock that always reads `at` and keeps real timers: a test that must not depend on the hour it runs at. */
+export function pinnedClock(at: number): Clock {
+  return { ...systemClock, now: () => at };
+}
 
 /** A short temp dir (macOS socket paths are limited to 103 bytes). Returns the engine dir inside it. */
 export function tempEngineDir(cleanups: (() => unknown)[]): string {
