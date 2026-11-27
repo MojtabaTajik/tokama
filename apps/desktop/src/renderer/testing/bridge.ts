@@ -30,7 +30,7 @@ export const CONNECTED: ConnectionState = { status: "connected", engineId: "e-1"
 /** What an app remembers once setup is done: the Get started list neither shows nor leaves a line. */
 export const SETUP_DONE: DesktopState = { ...DEFAULT_DESKTOP_STATE, getStarted: { done: true, lineClosed: true } };
 
-export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | Promise<Reply> | undefined; commandReply?: (command: { type: string }) => Reply; pickFolder?: () => Promise<string | null>; openTemplateFile?: () => Promise<OpenResult>; openAttemptFile?: () => Promise<OpenResult>; about?: AboutInfo; toolsPath?: ToolsPathInfo; copyBuildInfo?: () => Promise<void>; showDataFolder?: () => Promise<OpenResult>; desktopState?: DesktopState; loadDiagnostics?: () => Promise<DiagnosticsLoad>; sendDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSendResult>; saveDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSaveResult>; whatsNew?: WhatsNewInfo | (() => Promise<WhatsNewInfo>); update?: UpdateState; installUpdate?: () => Promise<InstallResult> } = {}) {
+export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | Promise<Reply> | undefined; commandReply?: (command: { type: string }) => Reply; pickFolder?: () => Promise<string | null>; openTemplateFile?: () => Promise<OpenResult>; openAttemptFile?: () => Promise<OpenResult>; about?: AboutInfo; toolsPath?: ToolsPathInfo; copyBuildInfo?: () => Promise<void>; showDataFolder?: () => Promise<OpenResult>; openNotices?: () => Promise<OpenResult>; desktopState?: DesktopState; loadDiagnostics?: () => Promise<DiagnosticsLoad>; sendDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSendResult>; saveDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSaveResult>; whatsNew?: WhatsNewInfo | (() => Promise<WhatsNewInfo>); update?: UpdateState; installUpdate?: () => Promise<InstallResult> } = {}) {
   let connectionListener: ((state: ConnectionState) => void) | undefined;
   let openListener: ((itemId: string) => void) | undefined;
   let getStartedListener: (() => void) | undefined;
@@ -70,6 +70,7 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
     getAboutInfo: vi.fn(async () => options.about ?? ABOUT_INFO),
     copyBuildInfo: vi.fn(options.copyBuildInfo ?? (async () => undefined)),
     showDataFolder: vi.fn(options.showDataFolder ?? (async (): Promise<OpenResult> => ({ ok: true }))),
+    openNotices: vi.fn(options.openNotices ?? (async (): Promise<OpenResult> => ({ ok: true }))),
     getDesktopState: vi.fn(async () => options.desktopState ?? DEFAULT_DESKTOP_STATE),
     saveLayout: vi.fn(async () => undefined),
     reportError: vi.fn(async () => undefined),
@@ -128,6 +129,7 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
   const openTemplateFile = bridge.openTemplateFile as unknown as ReturnType<typeof vi.fn>;
   const copyBuildInfo = bridge.copyBuildInfo as unknown as ReturnType<typeof vi.fn>;
   const showDataFolder = bridge.showDataFolder as unknown as ReturnType<typeof vi.fn>;
+  const openNotices = bridge.openNotices as unknown as ReturnType<typeof vi.fn>;
   const saveLayout = bridge.saveLayout as unknown as ReturnType<typeof vi.fn>;
   const saveNotifications = bridge.saveNotifications as unknown as ReturnType<typeof vi.fn>;
   const playSound = bridge.playSound as unknown as ReturnType<typeof vi.fn>;
@@ -150,7 +152,7 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
   const openItem = (itemId: string) => act(async () => openListener?.(itemId));
   /** Help > Get started: the main process asks the window to open the checklist. */
   const openGetStarted = () => act(async () => getStartedListener?.());
-  return { bridge, openGetStarted, query, saveLayout, saveNotifications, playSound, notificationStatus, sendTestNotification, openNotificationSettings, setViewedItem, getWhatsNew, closeWhatsNew, openItem, copyBuildInfo, showDataFolder, command, retryConnection, openTemplateFile, setConnection, pushItem, pushEvent, stops, installUpdate, checkForUpdates, openUpdateNotes, setUpdate };
+  return { bridge, openGetStarted, query, saveLayout, saveNotifications, playSound, notificationStatus, sendTestNotification, openNotificationSettings, setViewedItem, getWhatsNew, closeWhatsNew, openItem, copyBuildInfo, showDataFolder, openNotices, command, retryConnection, openTemplateFile, setConnection, pushItem, pushEvent, stops, installUpdate, checkForUpdates, openUpdateNotes, setUpdate };
 }
 
 export interface ListQuery {

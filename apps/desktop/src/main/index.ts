@@ -8,7 +8,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, scr
 import { type BridgeEvent, CHANNELS, type NotificationStatus } from "../shared/bridge.js";
 import { buildInfoText } from "../shared/build-info.js";
 import { applyLayoutPatch, applyNotificationsPatch, type NoteKind } from "../shared/desktop-state.js";
-import { aboutInfo } from "./about.js";
+import { aboutInfo, noticesPath } from "./about.js";
 import { engineApi, mainQuery } from "./api.js";
 import { openAttemptFile } from "./attempt-file.js";
 import { type ConnectionWatch, watchConnection } from "./connection.js";
@@ -445,6 +445,10 @@ void app.whenReady().then(async () => {
   handle(CHANNELS.copyBuildInfo, () => clipboard.writeText(buildInfoText(about(), watch.state().status, toolsPathValue === undefined ? undefined : toolsPathInfo(toolsPathValue, attach.attached()))));
   handle(CHANNELS.showDataFolder, async () => {
     const message = await shell.openPath(tokamaHome);
+    return message === "" ? { ok: true } : { ok: false, message };
+  });
+  handle(CHANNELS.openNotices, async () => {
+    const message = await shell.openPath(noticesPath({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() }));
     return message === "" ? { ok: true } : { ok: false, message };
   });
   // Updates. The engine of the updater is the real one when this run may check, a test's stand-in

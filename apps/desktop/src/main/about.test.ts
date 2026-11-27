@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { aboutInfo, readEnginePid } from "./about.js";
+import { aboutInfo, noticesPath, readEnginePid } from "./about.js";
 
 let dir: string;
 beforeEach(() => {
@@ -28,6 +28,13 @@ describe("readEnginePid", () => {
     writeFileSync(join(dir, "elsewhere"), "48211 e-1\n");
     symlinkSync(join(dir, "elsewhere"), join(dir, "engine.lock"));
     expect(readEnginePid(join(dir, "engine.lock"))).toBeUndefined();
+  });
+});
+
+describe("noticesPath", () => {
+  it("is in Resources in a packaged app and in the desktop folder in development", () => {
+    expect(noticesPath({ packaged: true, resourcesPath: "/r", appPath: "/a" })).toBe(join("/r", "THIRD_PARTY_NOTICES.md"));
+    expect(noticesPath({ packaged: false, resourcesPath: "/r", appPath: "/a" })).toBe(join("/a", "THIRD_PARTY_NOTICES.md"));
   });
 });
 

@@ -369,6 +369,21 @@ describe("About", () => {
     expect(text(".about-row button")).toBe("Show in file manager");
   });
 
+  const noticesLink = () => $$(".about-section-head button").find((button) => button.textContent === "Open full licence texts") ?? null;
+
+  it("opens the shipped licence texts from the notices section", async () => {
+    const fake = await open();
+    await click(noticesLink());
+    expect(fake.openNotices).toHaveBeenCalledOnce();
+    expect($(".about-error")).toBeNull();
+  });
+
+  it("says why the licence texts did not open", async () => {
+    await open(fakeBridge(CONNECTED, { openNotices: async () => ({ ok: false, message: "No app opens Markdown." }) }));
+    await click(noticesLink());
+    expect(text(".about-error")).toBe("No app opens Markdown.");
+  });
+
   it("lists the third-party notices all closed, and each opens and closes on its own click", async () => {
     await open();
     const heads = () => $$(".about-notice-head").map((head) => head.getAttribute("aria-expanded"));

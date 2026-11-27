@@ -22,7 +22,7 @@ const [, pushOpenGetStarted] = electron.on.mock.calls.find(([channel]) => channe
 describe("preload bridge", () => {
   it("exposes window.tokama with only the bridge methods", () => {
     expect(exposed).toEqual([["tokama", bridge]]);
-    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "countUsage", "getAboutInfo", "getConnection", "getDesktopState", "getToolsPath", "onConnection", "onEvent", "onOpenGetStarted", "onOpenItem", "openAttemptFile", "openTemplateFile", "pickFolder", "query", "reportError", "restartEngine", "retryConnection", "saveLayout", "saveNotifications", "playSound", "notificationStatus", "sendTestNotification", "openNotificationSettings", "setViewedItem", "showDataFolder", "loadDiagnostics", "sendDiagnostics", "saveDiagnostics", "stopCrashPrompt", "getWhatsNew", "closeWhatsNew", "getUpdate", "onUpdate", "checkForUpdates", "installUpdate", "openUpdateNotes"].sort());
+    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "countUsage", "getAboutInfo", "getConnection", "getDesktopState", "getToolsPath", "onConnection", "onEvent", "onOpenGetStarted", "onOpenItem", "openAttemptFile", "openTemplateFile", "pickFolder", "query", "reportError", "restartEngine", "retryConnection", "saveLayout", "saveNotifications", "playSound", "notificationStatus", "sendTestNotification", "openNotificationSettings", "setViewedItem", "showDataFolder", "loadDiagnostics", "sendDiagnostics", "saveDiagnostics", "stopCrashPrompt", "getWhatsNew", "closeWhatsNew", "getUpdate", "onUpdate", "checkForUpdates", "installUpdate", "openUpdateNotes", "openNotices"].sort());
   });
 
   it("the release notes calls: one without arguments, and a close that sends only two strings", async () => {
@@ -120,7 +120,8 @@ describe("preload bridge", () => {
     await bridge.getAboutInfo();
     await bridge.copyBuildInfo();
     await bridge.showDataFolder();
-    expect(electron.invoke.mock.calls).toEqual([[CHANNELS.getAboutInfo], [CHANNELS.copyBuildInfo], [CHANNELS.showDataFolder]]);
+    await bridge.openNotices();
+    expect(electron.invoke.mock.calls).toEqual([[CHANNELS.getAboutInfo], [CHANNELS.copyBuildInfo], [CHANNELS.showDataFolder], [CHANNELS.openNotices]]);
   });
 
   it("getToolsPath invokes its channel with no arguments", async () => {

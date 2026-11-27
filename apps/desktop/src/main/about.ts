@@ -1,5 +1,6 @@
 // What About shows about this build, and the text "Copy build info" puts on the clipboard. The
 // renderer never sends text to the clipboard: the main process composes it from its own facts.
+import { join } from "node:path";
 import { displayPath, readPidFile } from "@tokama/core";
 import type { AboutInfo } from "../shared/bridge.js";
 
@@ -19,6 +20,11 @@ export interface AboutDeps {
   readonly platform: NodeJS.Platform;
   readonly arch: string;
   readonly versions: { readonly electron?: string; readonly node?: string };
+}
+
+/** The file of third-party licence texts: `Resources/THIRD_PARTY_NOTICES.md` in a packaged app, the file in the desktop folder in development. */
+export function noticesPath(options: { readonly packaged: boolean; readonly resourcesPath: string; readonly appPath: string }): string {
+  return join(options.packaged ? options.resourcesPath : options.appPath, "THIRD_PARTY_NOTICES.md");
 }
 
 const SYSTEMS: Partial<Record<NodeJS.Platform, string>> = { darwin: "macOS", linux: "Linux", win32: "Windows" };

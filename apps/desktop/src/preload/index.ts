@@ -51,6 +51,7 @@ export const bridge: TokamaBridge = {
   getAboutInfo: () => ipcRenderer.invoke(CHANNELS.getAboutInfo) as Promise<AboutInfo>,
   copyBuildInfo: () => ipcRenderer.invoke(CHANNELS.copyBuildInfo) as Promise<void>,
   showDataFolder: () => ipcRenderer.invoke(CHANNELS.showDataFolder) as Promise<OpenResult>,
+  openNotices: () => ipcRenderer.invoke(CHANNELS.openNotices) as Promise<OpenResult>,
   getDesktopState: () => ipcRenderer.invoke(CHANNELS.getDesktopState) as Promise<DesktopState>,
   saveLayout: (patch) => ipcRenderer.invoke(CHANNELS.saveLayout, patch) as Promise<void>,
   // Only the two strings cross, whatever else the renderer passes.

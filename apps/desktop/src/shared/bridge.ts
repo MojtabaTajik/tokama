@@ -66,6 +66,7 @@ export const CHANNELS = {
   getAboutInfo: "tokama:about:info",
   copyBuildInfo: "tokama:about:copy",
   showDataFolder: "tokama:about:show-folder",
+  openNotices: "tokama:about:open-notices",
   getDesktopState: "tokama:desktop:get",
   saveLayout: "tokama:desktop:save-layout",
   reportError: "tokama:diagnostics:report-error",
@@ -233,6 +234,8 @@ export interface TokamaBridge {
   copyBuildInfo(): Promise<void>;
   /** Opens the Tokama home in the system's file manager. */
   showDataFolder(): Promise<OpenResult>;
+  /** Opens the file of third-party licence texts that ships with the app in the system's default app for Markdown. */
+  openNotices(): Promise<OpenResult>;
   /** What this machine's `desktop.json` holds, validated; the defaults when it is missing or broken. */
   getDesktopState(): Promise<DesktopState>;
   /** Remembers the layout choices in `patch`. The main process validates them and ignores any other field. */

@@ -8,7 +8,8 @@ describe("notices", () => {
   const file = readFileSync(join(import.meta.dirname, "..", "..", "..", "THIRD_PARTY_NOTICES.md"), "utf8");
 
   it("lists every part that THIRD_PARTY_NOTICES.md lists, and no other", () => {
-    const headings = [...file.matchAll(/^## (.+)$/gm)].map((match) => match[1]);
+    // The licence texts below the notices hold lines of their own that start with "## ".
+    const headings = [...(file.split(/^# Licence texts$/m)[0] ?? "").matchAll(/^## (.+)$/gm)].map((match) => match[1]);
     expect(notices("45.4.1").map((notice) => notice.name)).toEqual(headings);
   });
 
