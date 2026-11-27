@@ -127,13 +127,18 @@ describe("parseGetUsageReply", () => {
     expect(labelOf({ model: { display_name: "x".repeat(49) } })).toBeUndefined();
   });
 
-  it("reports a login without plan windows, an error reply and an unknown shape as unknown, never as numbers", () => {
+  it("reads a login without plan windows (an API key) as billed per use, with no windows", () => {
     const reply = JSON.parse(REPLY) as { response: { response: Record<string, unknown> } };
     const apiKey = { ...reply, response: { ...reply.response, response: { ...reply.response.response, rate_limits_available: false, rate_limits: null } } };
-    expect(parseGetUsageReply(JSON.stringify(apiKey), NOW)).toEqual({ ok: false, error: expect.stringMatching(/no plan windows/) });
+    expect(parseGetUsageReply(JSON.stringify(apiKey), NOW)).toEqual({ ok: true, value: { windows: [], asOf: NOW, billing: "pay_per_use" } });
+    // Plan windows that are available but missing are unknown, not pay per use.
+    const missing = { ...reply, response: { ...reply.response, response: { ...reply.response.response, rate_limits: null } } };
+    expect(parseGetUsageReply(JSON.stringify(missing), NOW)).toEqual({ ok: false, error: expect.stringMatching(/no plan windows/) });
+  });
+
+  it("reports an error reply and an unknown shape as unknown, never as numbers", () => {
     const failed = { type: "control_response", response: { subtype: "error", request_id: "tokama-usage", error: "not logged in" } };
-    expect(parseGetUsageReply(JSON.stringify(failed), NOW)).toEqual({ ok: false, error: expect.stringMatching(/not logged in/) });
-    expect(parseGetUsageReply(REPLY.replace('"rate_limits_available":true', '"rate_limits_available":"yes"'), NOW)).toMatchObject({ ok: false, error: expect.stringMatching(/shape/) });
+    expect(parseGetUsageReply(JSON.stringify(failed), NOW)).toEqual({ ok: false, error: expect.stringMatching(/not logged in/) });    expect(parseGetUsageReply(REPLY.replace('"rate_limits_available":true', '"rate_limits_available":"yes"'), NOW)).toMatchObject({ ok: false, error: expect.stringMatching(/shape/) });
     expect(parseGetUsageReply("{not json", NOW).ok).toBe(false);
     // Another request's answer is not this one.
     expect(parseGetUsageReply(REPLY.replace('"request_id":"tokama-usage"', '"request_id":"other"'), NOW).ok).toBe(false);

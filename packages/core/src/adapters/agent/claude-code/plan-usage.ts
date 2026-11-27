@@ -30,6 +30,8 @@ export interface ClaudePlan {
   /** The subscription, e.g. `max`, `pro`. */
   readonly plan?: string;
   readonly extraUsage?: "on" | "off";
+  /** `pay_per_use`: the login has no plan limits and bills per call. */
+  readonly billing?: "pay_per_use";
   readonly version?: string;
 }
 
@@ -159,7 +161,9 @@ export function parseGetUsageReply(line: string, now: number): Result<ClaudePlan
   const { response } = parsed.data;
   if (response.subtype === "error") return err(`Claude Code could not read its usage${response.error ? `: ${response.error.slice(0, 200)}` : "."}`);
   const answer = response.response;
-  if (!answer.rate_limits_available || answer.rate_limits === null) return err("This Claude Code login has no plan windows (an API key or a cloud provider).");
+  // A login without plan limits (an API key or a cloud provider) is billed per use: that is its reading.
+  if (!answer.rate_limits_available) return ok({ windows: [], asOf: now, billing: "pay_per_use" });
+  if (answer.rate_limits === null) return err("Claude Code reported no plan windows.");
   return ok(reading(answer.rate_limits, now, answer.subscription_type ?? undefined));
 }
 

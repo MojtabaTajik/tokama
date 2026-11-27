@@ -516,6 +516,8 @@ export interface PlanReading {
   readonly asOf: number;
   readonly plan?: string;
   readonly extraUsage?: "on" | "off";
+  /** `pay_per_use`: the login bills per call and has no windows (an API key). */
+  readonly billing?: "pay_per_use";
 }
 export type UsageItem = z.output<typeof UsageItemSchema>;
 export type UsageScope = z.output<typeof UsageScopeSchema>;
