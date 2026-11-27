@@ -418,6 +418,18 @@ describe("run loop: done_when", () => {
     expect(await plain(repo.path, "show", `${item(id).outcome?.commits?.[0]?.commit}:app.txt`)).toBe("fixed");
   });
 
+  it("you approve: a tree that differs from the base is a change with files even when the file list is empty", SLOW, async () => {
+    const empty = { ...git, diffFiles: async () => ({ ok: true as const, value: [] }) };
+    const loop = engine(fakeRuntime([edits(FIXED)]), { git: empty });
+    const id = await start(loop, template([{ id: "change", doneWhen: "you approve", maxAttempts: 3 }]));
+    const asked = openDecision(id)!;
+    expect(asked.tree).not.toBe(await plain(repo.path, "rev-parse", "main^{tree}"));
+    expect(asked.change).toEqual({ files: 1 });
+    expect(asked.detail).toContain("Nothing is committed until you approve");
+    expect(asked.detail).not.toContain("changed 0 files");
+    expect(asked.choices[0]?.label).toBe("Approve and commit");
+  });
+
   it("you approve: a change reverted after Request changes is not committed; the item ends with nothing to commit", SLOW, async () => {
     const loop = engine(fakeRuntime([edits(FIXED), edits({ "app.txt": "broken\n" })]));
     const id = await start(loop, template([{ id: "change", doneWhen: "you approve", maxAttempts: 3 }]));
