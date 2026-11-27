@@ -18,18 +18,19 @@ const TEXT = {
   soundsName: "Sounds",
   soundsHelp: "Used by Banner + sound and Sound only. The ▶ buttons play it too, whatever a row is set to.",
   infoLooking: "No notification while you are looking at that item: Tokama is in front and the item is open in the drawer or the full view.",
-  infoSoundOnly: "Sound only: macOS cannot play a sound without a banner, so Tokama plays it itself while the app is running. Sound only plays even during Focus, but not while your Mac is locked. The ▶ buttons always play.",
+  infoSoundOnly: "Sound only: macOS cannot play a sound without a banner, so Tokama plays it itself while the app is running. Sounds play even during Focus, but not while your Mac is locked. Choose Banner only for a row if that bothers you. The ▶ buttons always play.",
   preview: "Preview",
   previewHint: "How each one looks in the top-right corner of the screen. Plain text, no formatting.",
   now: "now",
   playing: "Playing",
   silent: "Silent. No kind plays a sound.",
   testName: "Test",
-  testHelp: "Shows one banner and plays the Needs you sound, the way a real event does. A locked screen keeps the sound quiet. After you allow notifications in System Settings, send a test to check.",
+  testHelp: "Shows one banner and plays the Needs you sound, the way a real event does. A locked screen keeps the sound quiet.",
+  testHelpMac: " After you allow notifications in System Settings, send a test to check.",
   testButton: "Send a test notification",
   blockedMac: "macOS is not showing Tokama's notifications.",
   blockedOpen: "Open System Settings › Notifications",
-  blockedOther: "Tokama's notifications are not showing. Check that a notification service is running and that Do Not Disturb is off.",
+  blockedOther: "No notification service answered. Check that one is running.",
 } as const;
 
 /** How long after a test the page asks again whether the system turned the banner down: the refusal comes a moment later. */
@@ -203,7 +204,7 @@ export function NotificationsPage({ bridge }: NotificationsPageProps) {
                   </span>
                   {TEXT.testName}
                 </span>
-                <span className="notes-help">{TEXT.testHelp}</span>
+                <span className="notes-help">{status?.canOpenSettings ? TEXT.testHelp + TEXT.testHelpMac : TEXT.testHelp}</span>
               </div>
               <Button variant="secondary" onClick={sendTest}>
                 {TEXT.testButton}

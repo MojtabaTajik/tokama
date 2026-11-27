@@ -23,7 +23,7 @@ type Hooked = { __tokamaNotifications?: (Recorded & { click: () => void })[]; __
 
 /** Banners get their sound from the app's own player on macOS only. */
 const PLAYER_WAY = process.platform === "darwin";
-const HINT ="Change how Tokama notifies you in Settings → Notifications";
+const HINT = "Change how Tokama notifies you in Settings → Notifications";
 
 const recorded = (app: ElectronApplication): Promise<Recorded[]> =>
   app.evaluate(() => ((globalThis as Hooked).__tokamaNotifications ?? []).map(({ title, body, silent, sound }) => ({ title, body, silent, ...(sound === undefined ? {} : { sound }) })));

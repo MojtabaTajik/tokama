@@ -61,7 +61,7 @@ describe("Settings > Notifications", () => {
     expect(checks()).toEqual(["✓Banner + sound", "✓Banner only", "✓Banner + sound", "✓Tokama sounds"]);
     expect($$(".notes-info-text span").map((el) => el.textContent)).toEqual([
       "No notification while you are looking at that item: Tokama is in front and the item is open in the drawer or the full view.",
-      "Sound only: macOS cannot play a sound without a banner, so Tokama plays it itself while the app is running. Sound only plays even during Focus, but not while your Mac is locked. The ▶ buttons always play.",
+      "Sound only: macOS cannot play a sound without a banner, so Tokama plays it itself while the app is running. Sounds play even during Focus, but not while your Mac is locked. Choose Banner only for a row if that bothers you. The ▶ buttons always play.",
     ]);
     expect($(".notes-preview-hint")?.textContent).toBe("How each one looks in the top-right corner of the screen. Plain text, no formatting.");
   });
@@ -116,8 +116,9 @@ describe("Settings > Notifications", () => {
       const fake = fakeBridge(CONNECTED);
       fake.notificationStatus.mockResolvedValue({ blocked: true, canOpenSettings: false });
       await openPage(fake.bridge);
-      expect($(".notes-blocked-text")?.textContent).toContain("Do Not Disturb");
+      expect($(".notes-blocked-text")?.textContent).toBe("No notification service answered. Check that one is running.");
       expect($$(".notes-blocked button")).toHaveLength(0);
+      expect($$(".notes-help").at(-1)?.textContent).not.toContain("System Settings");
     });
 
     it("sends a test notification, and asks the status again a moment later", async () => {
