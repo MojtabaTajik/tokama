@@ -19,7 +19,7 @@ flow("shows the agent and the step in words on a row, and opens the agent toolti
   const wrap = page.locator(".pl-row-wrap", { has: page.locator(".pl-title", { hasText: TITLE }) });
   await wrap.waitFor();
   // Line two says the step, its attempt and the agent in words; the badge is named for who works on what.
-  await expect.poll(() => flat(wrap.locator(".pl-meta").innerText()), { message: "line two" }).toMatch(/Build, step 2 of 3.*Orders builder$/);
+  await expect.poll(() => flat(wrap.locator(".pl-meta").innerText()), { message: "line two" }).toMatch(/Build, step 2 of \d · \d+ m(?: \d\d s)? · Orders builder$/);
   await expect.poll(() => wrap.locator(".ag-badge").getAttribute("aria-label")).toMatch(/^Agent Orders builder, running Build/);
   // The row's click cover must not hide the badge and the time from the pointer: the badge opens its tooltip, the time shows its title.
   // A small window (the macOS runner's is 1024 x 674) puts the row below the fold, and a point outside the

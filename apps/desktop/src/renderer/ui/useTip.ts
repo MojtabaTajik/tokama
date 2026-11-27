@@ -75,11 +75,20 @@ export function useHostTip(active = true) {
   useEffect(() => {
     const host = active ? (ref.current?.closest("button") ?? ref.current?.parentElement) : null;
     if (host === null || host === undefined) return;
+    // A click focuses the button, but only the keyboard's focus shows the tooltip: the pointer's own hover already did.
+    let clicked = false;
     const handlers = [
+      ["pointerdown", () => void (clicked = true)],
       ["mouseenter", () => hold("hover", true)],
       ["mouseleave", () => hold("hover", false)],
-      ["focusin", () => hold("focus", true)],
-      ["focusout", () => hold("focus", false)],
+      ["focusin", () => hold("focus", !clicked)],
+      [
+        "focusout",
+        () => {
+          clicked = false;
+          hold("focus", false);
+        },
+      ],
     ] as const;
     for (const [type, handler] of handlers) host.addEventListener(type, handler);
     return () => {

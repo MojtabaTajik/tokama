@@ -52,7 +52,8 @@ flow("drives a running item through its step track with a live activity line, an
 
   // A command that has run for over a minute with no event is work, not quiet; it shows its own time.
   await openRow(page, LONG_COMMAND);
-  await expect.poll(() => panel.locator(".activity").textContent()).toMatch(/^Tokama·running pnpm test·\d+ m \d\d s$/);
+  await expect.poll(() => panel.locator(".activity").textContent()).toMatch(/^◐checkingTokama·running pnpm test·\d+ m \d\d s$/);
+  expect(await panel.locator(".activity .ag-badge").count()).toBe(0);
   expect(await panel.locator(".activity-quiet").count()).toBe(0);
 });
 

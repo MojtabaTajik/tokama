@@ -50,7 +50,7 @@
 }
 
 /* One line of 24px: the model is the last flex item and wraps onto a second line, which the fixed height clips,
-   when dot, name and model do not fit together. So it is shown whole or not at all, never cut to a few letters. */
+   when icon, name and model do not fit together. So it is shown whole or not at all, never cut to a few letters. */
 .al-button {
   display: inline-flex;
   flex-wrap: wrap;
@@ -82,7 +82,7 @@
   outline-offset: -1px;
 }
 
-/* Dot and name are one item that never wraps: it shortens the name, with an ellipsis, only when it is alone on its line and still too wide. */
+/* Icon and name are one item that never wraps: it shortens the name, with an ellipsis, only when it is alone on its line and still too wide. */
 .al-who {
   display: flex;
   flex: 0 1 auto;
