@@ -416,14 +416,14 @@ function changedItem(now: number, n: number, id: string, repo: string, minutesAg
  */
 export function sampleChangedItems(now: number): RawItem[] {
   return [
-    changedItem(now, 14, ITEM_IDS.dependencyUpgrade, "orders-api", 210, {
+    changedItem(now, 15, ITEM_IDS.dependencyUpgrade, "orders-api", 210, {
       title: "Upgrade the HTTP client in orders-api",
       text: "Upgrade the HTTP client library in orders-api to its latest minor version.",
       headline: "HTTP client 4.2 to 4.7; the retry option was renamed in 2 files.",
       change: { files: 5, added: 61, removed: 40, touches: [{ kind: "dependencies", files: 2 }] },
       risk: { level: "high", reasons: ["no_review_sensitive"] },
     }),
-    changedItem(now, 15, ITEM_IDS.imageSwap, "checkout-web", 240, {
+    changedItem(now, 16, ITEM_IDS.imageSwap, "checkout-web", 240, {
       title: "Replace the product images in checkout-web",
       text: "Convert the product images in checkout-web to WebP.",
       headline: "All 212 product images are now WebP.",
