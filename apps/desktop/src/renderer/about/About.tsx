@@ -38,6 +38,7 @@ export function About({ bridge, connection, onClose, whatsNew, openVersion, runn
   const [info, setInfo] = useState<AboutInfo | undefined>(undefined);
   const [failed, setFailed] = useState(false);
   const [folderError, setFolderError] = useState<string | undefined>(undefined);
+  const [noticesError, setNoticesError] = useState<string | undefined>(undefined);
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   useEffect(() => {
     let live = true;
@@ -64,6 +65,10 @@ export function About({ bridge, connection, onClose, whatsNew, openVersion, runn
     if (!next.delete(id)) next.add(id);
     return next;
   });
+  const showNotices = async () => {
+    const result = await bridge.openNotices().catch(() => ({ ok: false as const, message: "The licence texts could not be opened." }));
+    setNoticesError(result.ok ? undefined : result.message);
+  };
   const showFolder = async () => {
     const result = await bridge.showDataFolder().catch(() => ({ ok: false as const, message: "The folder could not be opened." }));
     setFolderError(result.ok ? undefined : result.message);
@@ -150,7 +155,11 @@ export function About({ bridge, connection, onClose, whatsNew, openVersion, runn
             <div className="about-section-head">
               <h2 id="about-notices" className="about-heading">Third-party notices</h2>
               <span className="about-count">{notices.length}</span>
+              <Button variant="link" className="about-action" onClick={() => void showNotices()}>
+                Open full licence texts
+              </Button>
             </div>
+            {noticesError === undefined ? null : <p role="alert" className="about-error">{noticesError}</p>}
             <ul className="about-notices">
               {notices.map((notice) => {
                 const expanded = open.has(notice.id);

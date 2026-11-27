@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { entitlementProblem, isMachO, latestProblem, machOFiles, parseLatestMac, parseSignature, parseYamlScalars, minSafeProblem, signatureProblem, zipName } from "./verify-package-mac.js";
+import { entitlementProblem, isMachO, latestProblem, layoutProblem, machOFiles, parseLatestMac, parseSignature, parseYamlScalars, minSafeProblem, signatureProblem, zipName } from "./verify-package-mac.js";
 import { parseVerifyArgs } from "./verify-package.js";
 
 let root: string;
@@ -199,6 +199,30 @@ describe("minSafeProblem", () => {
   it("does not take a top-level key or another vendor entry for it", () => {
     expect(minSafeProblem(feed("minSafeVersion: 0.0.9\n"), "0.0.9")).toMatch(/no vendor\.tokama\.minSafeVersion/);
     expect(minSafeProblem(feed("vendor:\n  other:\n    minSafeVersion: 0.0.9\n"), "0.0.9")).toMatch(/no vendor\.tokama\.minSafeVersion/);
+  });
+});
+
+describe("layoutProblem", () => {
+  const resources = () => join(root, "Contents", "Resources");
+  const build = () => {
+    const engine = join(resources(), "engine");
+    mkdirSync(join(engine, "dist"), { recursive: true });
+    mkdirSync(join(resources(), "whats-new"));
+    for (const note of readdirSync(join(import.meta.dirname, "..", "..", "..", "whats-new")).filter((name) => /^\d+\.\d+\.\d+\.md$/.test(name))) writeFileSync(join(resources(), "whats-new", note), "");
+    for (const file of ["LICENSE-node", "package.json", "dist/main.js", "dist/hook.js", "tokama-engine"]) writeFileSync(join(engine, file), "");
+    chmodSync(join(engine, "tokama-engine"), 0o755);
+    for (const file of ["LICENSE-electron", "LICENSES.chromium.html", "THIRD_PARTY_NOTICES.md", "app.asar", ...["needs-you", "finished", "failed", "tokay-call"].map((name) => `tokama-${name}.wav`)]) writeFileSync(join(resources(), file), "");
+  };
+
+  it("accepts a layout that holds the licence texts", () => {
+    build();
+    expect(layoutProblem(root, false)).toBeUndefined();
+  });
+
+  it("names THIRD_PARTY_NOTICES.md when the licence texts are missing", () => {
+    build();
+    rmSync(join(resources(), "THIRD_PARTY_NOTICES.md"));
+    expect(layoutProblem(root, false)).toMatch(/THIRD_PARTY_NOTICES\.md is missing/);
   });
 });
 

@@ -39,6 +39,9 @@ extraResources:
     to: LICENSE-electron
   - from: node_modules/electron/dist/LICENSES.chromium.html
     to: LICENSES.chromium.html
+  # The licence texts of the open-source code built into the app; About opens this file.
+  - from: THIRD_PARTY_NOTICES.md
+    to: THIRD_PARTY_NOTICES.md
 artifactName: ${productName}-${version}-${arch}.${ext}
 # The update feed baked into the app (app-update.yml) and named in latest-mac.yml. Builds run with
 # --publish never, so nothing is uploaded; scripts/package.ts --feed-url replaces the URL.
