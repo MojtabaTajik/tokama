@@ -1230,6 +1230,36 @@ describe("item drawer: the result card of an ended item", () => {
     expect($$(".finish .btn-primary, .result-card .btn-primary")).toHaveLength(0);
   });
 
+  it("shows Changed and Risk: High with a symbol and a word, two reasons, and the rest behind +N more", async () => {
+    const risky = withSaid(said(), {
+      change: { files: 38, added: 1204, removed: 310, touches: [{ kind: "migrations", files: 2 }, { kind: "ci", files: 1 }] },
+      risk: { level: "high", reasons: ["no_checks", "no_review_sensitive", "very_large"] },
+    });
+    await renderDrawer(fakeBridge([risky]).bridge, risky.id);
+    expect(rows().map(([label]) => label)).toEqual(["Checked", "Reviewed", "Changed", "Sent out", "Risk"]);
+    expect(rows()[2]).toEqual(["Changed", "38 files +1,204 −310 · 2 migrations · 1 CI file"]);
+    const risk = () => $$(".rc-row")[4]!;
+    expect(risk().querySelector(".rc-mark")?.textContent).toBe("!");
+    expect(risk().querySelector(".rc-mark")?.getAttribute("data-tone")).toBe("fail");
+    expect(risk().querySelector("dd")?.textContent).toContain("High · no checks ran on the committed files; changes database migrations and CI and no second agent reviewed +1 more");
+    expect(risk().querySelector("dt")?.getAttribute("title")).toContain("No AI judges risk");
+    await click(button("+1 more"));
+    expect(risk().querySelector(".rc-detail")?.textContent).toBe("more than 30 files or 800 changed lines");
+    expect($$("button").some((el) => el.textContent === "+1 more")).toBe(false);
+  });
+
+  it("shows Low as plain text and Not rated with ? and its reason", async () => {
+    const low = withSaid(said(), { change: { files: 3, added: 48, removed: 6 }, risk: { level: "low", reasons: ["small_checked"] } });
+    await renderDrawer(fakeBridge([low]).bridge, low.id);
+    expect(rows().at(-1)).toEqual(["Risk", "Low · small change, checks passed"]);
+    expect($$(".rc-mark").map((el) => el.getAttribute("data-tone"))).not.toContain("fail");
+    const binary = withSaid(said(), { change: { files: 212, unreadable: "binary_only" }, risk: { level: "not_rated", reasons: ["unreadable_change"] } });
+    await renderDrawer(fakeBridge([binary]).bridge, binary.id);
+    expect(rows().at(-1)).toEqual(["Risk", "?unknown: Not rated · Tokama could not read the change: binary files only"]);
+    expect(rows().at(-2)).toEqual(["Sent out", "↗sent out: Code and diffs to Claude Code"]);
+    expect(rows().find(([label]) => label === "Changed")?.[1]).toBe("212 files · binary, no line counts");
+  });
+
   it("is on every ended item: failed and stopped say where they stopped, and the card shows after a merge", async () => {
     const failedItem = withSaid(said({ headline: "I could not make the retry test pass." }), {
       state: "failed",

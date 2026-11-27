@@ -7,6 +7,7 @@
 import type { ItemRecord, Setup, StepRecord } from "@tokama/core";
 import { checkAttempts, checksOf, failureLine } from "../../shared/item-facts.js";
 import { answeredNoChange, readTag, saidOf } from "../../shared/item-said.js";
+import { changeText, RISK_MARKS, riskWords, touchesText } from "../../shared/risk-words.js";
 import { agentInfo } from "../agent/agent-info.js";
 import { backendOf } from "../brand/backends/index.js";
 import { type Mark, markOf } from "../ui/status.js";
@@ -29,12 +30,16 @@ export const MARKS = {
 } as const;
 
 export interface ResultRow {
-  readonly key: "checked" | "reviewed" | "sent" | "changed" | "ran";
+  readonly key: "checked" | "reviewed" | "changed" | "sent" | "risk" | "ran";
   readonly label: string;
   readonly mark?: Mark;
   readonly text: string;
   /** A second line in mono: the commands that ran, the tool and model that reviewed. */
   readonly detail?: string;
+  /** Risk reasons past the two the row names, shown behind "+N more". */
+  readonly more?: readonly string[];
+  /** What the row's label means, for a tooltip on it. */
+  readonly help?: string;
 }
 
 /** What the step's agent said in its own words: a headline, the points it wrote, and how much more there is to read. */
@@ -217,13 +222,44 @@ function noChangeRows(item: ItemRecord): ResultRow[] {
   const skipped = item.steps.filter((step) => (step.attempts?.length ?? 0) === 0).map((step) => step.name);
   const removed = item.finish?.worktreeRemoved === true ? " · the worktree is removed" : "";
   return [
-    { key: "changed", label: "Changed", text: `0 files · nothing committed${removed}` },
+    { key: "changed", label: "Changed", text: `none · 0 files changed, nothing committed${removed}` },
     {
       key: "ran",
       label: "Ran",
       text: `${ran.length === 1 ? `${ran[0]} only` : `${list.format(ran)} ran`}${skipped.length === 0 ? "" : ` · ${list.format(skipped)} did not run`}`,
     },
   ];
+}
+
+/**
+ * What the item changed: files and lines, then how many of them are tests or sensitive. A read-only
+ * item changed nothing; a task that ended with no file changed says so. A failed or stopped item
+ * has no row: what it left in its worktree is not what it changed.
+ */
+function changedRow(item: ItemRecord, described: boolean): ResultRow | undefined {
+  const label = "Changed";
+  if (item.state !== "done") return undefined;
+  if (item.kind === "investigation") return described ? { key: "changed", label, text: "Nothing: read-only" } : undefined;
+  const { change } = item;
+  if (change === undefined) return undefined;
+  if (change.files === 0) return { key: "changed", label, text: "No files changed" };
+  const parts = change.unreadable === "binary_only" ? ["binary, no line counts"] : change.unreadable === "too_large" ? ["too many files to count lines"] : touchesText(change);
+  return { key: "changed", label, text: [changeText(change), ...parts].join(" · ") };
+}
+
+/** How far to trust the change: low, or high or not rated with their reasons. An item that changed nothing has no row. */
+function riskRow(item: ItemRecord): ResultRow | undefined {
+  const words = riskWords(item);
+  if (words === undefined) return undefined;
+  const mark = words.level === "low" ? undefined : RISK_MARKS[words.level];
+  return {
+    key: "risk",
+    label: "Risk",
+    ...(mark !== undefined && { mark }),
+    text: `${words.word} · ${words.shown.join("; ")}`,
+    ...(words.more.length > 0 && { more: words.more }),
+    help: "Rated by fixed rules from what Tokama measured. No AI judges risk.",
+  };
 }
 
 /** The card of an item that has ended: done, failed or stopped. */
@@ -237,6 +273,6 @@ export function resultView(item: ItemRecord, setup: Setup | undefined): ResultVi
     failure,
     // What an item that did not finish says is what its agent wrote, not the first lines of its output.
     words: failure !== undefined && !(words?.kind === "said") ? undefined : words,
-    rows: [checkedRow(item, described), reviewedRow(item, setup, described), sentRow(item, setup)].filter((row) => row !== undefined),
+    rows: [checkedRow(item, described), reviewedRow(item, setup, described), changedRow(item, described), sentRow(item, setup), riskRow(item)].filter((row) => row !== undefined),
   };
 }

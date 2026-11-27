@@ -105,15 +105,73 @@ describe("an investigation", () => {
   const find = { name: "Find the cause", stage: "working", state: "passed", agentId: "local-investigator", data: "none", doneWhen: "agent finishes", attempts: [attempt()] };
   const approve = { name: "Propose a fix", stage: "review", state: "passed", agentId: "architect", data: "summary-after-approval", doneWhen: "you approve", attempts: [attempt()] };
 
-  it("says what you approved and has no Reviewed row", () => {
+  it("says what you approved and that it changed nothing, and has no Reviewed or Risk row", () => {
     expect(rowsOf(item([find, approve], { kind: "investigation", outcome: { kind: "done" } }))).toEqual([
       ["checked", "✓", "You approved the findings", ""],
+      ["changed", "", "Nothing: read-only", ""],
       ["sent", "↗", "The summary you approved to Claude Code", ""],
     ]);
   });
 
   it("has no Checked row when nothing was approved", () => {
-    expect(rowsOf(item([find], { kind: "investigation", outcome: { kind: "done" } })).map(([key]) => key)).toEqual(["sent"]);
+    expect(rowsOf(item([find], { kind: "investigation", outcome: { kind: "done" } })).map(([key]) => key)).toEqual(["changed", "sent"]);
+  });
+});
+
+describe("the change and the risk of a done task", () => {
+  const sensitive = { files: 5, added: 61, removed: 40, touches: [{ kind: "dependencies", files: 2 }, { kind: "tests_added", files: 1 }] };
+  const row = (record: ItemRecord, key: string) => resultView(record, setup).rows.find((candidate) => candidate.key === key);
+
+  it("puts Changed after Reviewed and Risk last, in the order Checked, Reviewed, Changed, Sent out, Risk", () => {
+    const record = item([plan, build, checks, review], { change: { files: 6, added: 214, removed: 12 }, risk: { level: "low", reasons: ["small_checked_reviewed"] } });
+    expect(resultView(record, setup).rows.map((candidate) => candidate.key)).toEqual(["checked", "reviewed", "changed", "sent", "risk"]);
+  });
+
+  it("says the files, the lines and what kind of files, as words", () => {
+    expect(row(item([plan, build, checks], { change: { files: 6, added: 214, removed: 12, touches: [{ kind: "tests_added", files: 2 }] } }), "changed")?.text).toBe("6 files +214 −12 · 2 new test files");
+    expect(row(item([plan, build, checks], { change: sensitive }), "changed")?.text).toBe("5 files +61 −40 · 2 dependency files · 1 new test file");
+  });
+
+  it("says a change it could not count, and a task that changed no file", () => {
+    expect(row(item([build], { change: { files: 212, unreadable: "binary_only" } }), "changed")?.text).toBe("212 files · binary, no line counts");
+    expect(row(item([build], { change: { files: 900, unreadable: "too_large" } }), "changed")?.text).toBe("900 files · too many files to count lines");
+    expect(row(item([build], { change: { files: 0 } }), "changed")?.text).toBe("No files changed");
+    expect(row(item([build], { change: undefined }), "changed")).toBeUndefined();
+  });
+
+  it("has no Changed row for an item that did not finish", () => {
+    expect(row(item([build], { state: "failed", outcome: undefined, change: { files: 4, added: 96, removed: 8 } }), "changed")).toBeUndefined();
+  });
+
+  it("says Low in plain text, with no mark", () => {
+    const low = row(item([build], { change: { files: 3, added: 48, removed: 6 }, risk: { level: "low", reasons: ["small_checked"] } }), "risk");
+    expect(low).toMatchObject({ label: "Risk", text: "Low · small change, checks passed" });
+    expect(low?.mark).toBeUndefined();
+  });
+
+  it("says High with ! and a word, with its reasons", () => {
+    const high = row(item([build], { change: sensitive, risk: { level: "high", reasons: ["no_review_sensitive"] } }), "risk");
+    expect(high).toMatchObject({ text: "High · changes dependencies and no second agent reviewed", mark: { symbol: "!", tone: "fail" } });
+    expect(high?.help).toContain("No AI judges risk");
+  });
+
+  it("names two reasons, then the others behind +N more", () => {
+    const record = item([build], { change: sensitive, risk: { level: "high", reasons: ["no_checks", "no_review_sensitive", "very_large"] } });
+    expect(row(record, "risk")).toMatchObject({
+      text: "High · no checks ran on the committed files; changes dependencies and no second agent reviewed",
+      more: ["more than 30 files or 800 changed lines"],
+    });
+  });
+
+  it("says Not rated with ? and why, also for an item from before risk was rated", () => {
+    const binary = row(item([build], { change: { files: 212, unreadable: "binary_only" }, risk: { level: "not_rated", reasons: ["unreadable_change"] } }), "risk");
+    expect(binary).toMatchObject({ text: "Not rated · Tokama could not read the change: binary files only", mark: { symbol: "?", tone: "muted" } });
+    const old = row(item([build], { risk: { level: "not_rated", reasons: ["unreadable_change"] } }), "risk");
+    expect(old?.text).toBe("Not rated · Tokama could not read the change: this item is from before risk was rated");
+  });
+
+  it("has no Risk row for an item with no risk", () => {
+    expect(row(item([build], { change: { files: 0 } }), "risk")).toBeUndefined();
   });
 });
 

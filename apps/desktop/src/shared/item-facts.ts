@@ -4,13 +4,14 @@
 // renderer and the main process both use this file.
 import type { AttemptSummary, ItemRecord, StepRecord } from "@tokama/core";
 import { answeredNoChange } from "./item-said.js";
+import { changeText, RISK_MARKS, riskBanner, riskWords } from "./risk-words.js";
 
-type FactItem = Pick<ItemRecord, "kind" | "steps" | "outcome">;
+type FactItem = Pick<ItemRecord, "kind" | "steps" | "outcome"> & Partial<Pick<ItemRecord, "change" | "risk">>;
 
 /** A symbol for a fact that is not normal, with its word for screen readers. */
 export interface FactMark {
-  readonly symbol: "✕" | "!";
-  readonly tone: "fail" | "warn";
+  readonly symbol: "✕" | "!" | "?";
+  readonly tone: "fail" | "warn" | "muted";
   readonly word: string;
 }
 
@@ -54,12 +55,14 @@ export function checksWords(item: Pick<ItemRecord, "steps">): string | undefined
 
 /**
  * A done item in words, for a banner: "Done in 9 min · checks 3/3 passed. Ready to merge or open a PR."
+ * A risk that is not low comes last: "· risk high: changes dependencies, no review".
  * `took` is the time already worded; `ready` is whether Merge is offered.
  */
-export function finishedLine(item: Pick<ItemRecord, "steps" | "outcome">, took: string, ready: boolean): string {
+export function finishedLine(item: Pick<ItemRecord, "steps" | "outcome"> & Partial<Pick<ItemRecord, "change" | "risk">>, took: string, ready: boolean): string {
   const checks = checksWords(item);
+  const risk = riskBanner(item);
   const next = ready ? " Ready to merge or open a PR." : item.outcome?.detail === undefined ? "" : ` ${item.outcome.detail}`;
-  return `Done in ${took}${checks === undefined ? "" : ` · ${checks}`}.${next}`;
+  return `Done in ${took}${checks === undefined ? "" : ` · ${checks}`}${risk === undefined ? "" : ` · ${risk}`}.${next}`;
 }
 
 /** The part for the checks: plain when all passed, with a ✕ when some did not. */
@@ -67,13 +70,25 @@ function checksFact(checks: Checks): Fact {
   return checks.passed === checks.total ? { text: checksText(checks) } : { text: checksText(checks), mark: FAILED_MARK };
 }
 
-/** The facts of a done item: its checks, or that it had none. An investigation has no checks to name. */
+/** The part for the risk: plain when low; "! risk high · changes dependencies, no review" and "? risk not rated" carry their symbol. */
+function riskFact(item: Pick<ItemRecord, "risk"> & Partial<Pick<ItemRecord, "change">>): Fact | undefined {
+  const words = riskWords(item);
+  if (words === undefined) return undefined;
+  if (words.level === "low") return { text: "risk low" };
+  return words.level === "high" ? { text: `risk high · ${words.first}`, mark: RISK_MARKS.high } : { text: "risk not rated", mark: RISK_MARKS.not_rated };
+}
+
+/**
+ * The facts of a done item: what it changed, its checks (or that it had none) and its risk. An
+ * investigation has no checks to name, and an item that changed nothing says nothing of change or risk.
+ */
 export function doneFacts(item: FactItem): Fact[] {
   // An answer that needed no change changed nothing: that is its one fact.
   if (answeredNoChange(item)) return [{ text: "0 files" }];
   const checks = checksOf(item);
-  if (checks !== undefined) return [checksFact(checks)];
-  return item.kind === "task" ? [{ text: "no checks" }] : [];
+  const change = item.change !== undefined && item.change.files > 0 ? { text: changeText(item.change) } : undefined;
+  const checked = checks !== undefined ? checksFact(checks) : item.kind === "task" ? { text: "no checks" } : undefined;
+  return [change, checked, riskFact(item)].filter((fact) => fact !== undefined);
 }
 
 interface Failure {

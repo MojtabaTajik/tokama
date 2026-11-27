@@ -115,6 +115,35 @@ describe("finishedLine", () => {
   it("leaves the checks out when there were none, and ends with the outcome's own line", () => {
     expect(finishedLine(item({ outcome: { kind: "no_action_needed", detail: "Nothing to change." } }), "1 h", false)).toBe("Done in 1 h. Nothing to change.");
   });
+  it("names a risk that is not low in words, and says nothing of a low one", () => {
+    const risky = { ...checked, change: { files: 5, added: 61, removed: 40, touches: [{ kind: "dependencies", files: 2 }] }, risk: { level: "high", reasons: ["no_review_sensitive"] } } as unknown as ItemRecord;
+    expect(finishedLine(risky, "9 min", true)).toBe("Done in 9 min · checks 3/3 passed · risk high: changes dependencies, no review. Ready to merge or open a PR.");
+    expect(finishedLine({ ...checked, risk: { level: "not_rated", reasons: ["unreadable_change"] } } as unknown as ItemRecord, "9 min", false)).toBe("Done in 9 min · checks 3/3 passed · risk not rated.");
+    expect(finishedLine({ ...checked, risk: { level: "low", reasons: ["small_checked"] } } as unknown as ItemRecord, "9 min", false)).toBe("Done in 9 min · checks 3/3 passed.");
+  });
+});
+
+describe("the change and the risk among the facts of a done item", () => {
+  const checked = { steps: [step("Build", "passed", { attempts: [attempt(1, THREE)] })] };
+  const withRisk = (fields: Record<string, unknown>) => item({ ...checked, ...fields });
+
+  it("puts the files and lines first, then the checks, then a risk that is low as plain text", () => {
+    const low = withRisk({ change: { files: 6, added: 214, removed: 12 }, risk: { level: "low", reasons: ["small_checked_reviewed"] } });
+    expect(doneFacts(low)).toEqual([{ text: "6 files +214 −12" }, { text: "checks 3/3" }, { text: "risk low" }]);
+  });
+
+  it("marks a high risk with ! and its first reason, and a risk not rated with ?", () => {
+    const high = withRisk({ change: { files: 5, added: 61, removed: 40, touches: [{ kind: "dependencies", files: 2 }] }, risk: { level: "high", reasons: ["no_review_sensitive"] } });
+    expect(doneFacts(high).at(-1)).toEqual({ text: "risk high · changes dependencies, no review", mark: { symbol: "!", tone: "fail", word: "warning" } });
+    const binary = withRisk({ change: { files: 212, unreadable: "binary_only" }, risk: { level: "not_rated", reasons: ["unreadable_change"] } });
+    expect(doneFacts(binary)).toEqual([{ text: "212 files" }, { text: "checks 3/3" }, { text: "risk not rated", mark: { symbol: "?", tone: "muted", word: "unknown" } }]);
+  });
+
+  it("says nothing of change or risk for an item that changed nothing or has none recorded", () => {
+    expect(doneFacts(withRisk({ change: { files: 0 } }))).toEqual([{ text: "checks 3/3" }]);
+    expect(doneFacts(withRisk({}))).toEqual([{ text: "checks 3/3" }]);
+    expect(factsOf(item({ state: "failed", steps: [step("Build", "failed", { detail: "x" })], change: { files: 3, added: 1, removed: 1 } })).map((fact) => fact.text)).toEqual(["x", "stopped at Build, step 1 of 1"]);
+  });
 });
 
 describe("doneFacts: an answer that needed no change", () => {
