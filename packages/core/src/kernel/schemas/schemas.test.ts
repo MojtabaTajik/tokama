@@ -236,7 +236,7 @@ describe("usage report", () => {
   // two tests hold that a report without the newer fields, and with all of them, both parse.
   describe("the weekly blocks, forecast and billing", () => {
     const model = { model: "claude-sonnet-5-5", cliId: "claude-code", runs: 5, firstTryPassed: 4, avgAttempts: 1.2, tokensPerRun: 90_000, sharePerRun: 0.4, costPerRun: 0.2, durationMsPerRun: 600_000 };
-    const itemRow = { itemId: ITEM_ID, title: "Add order export", runs: 2, tokens: 5000, sharePercent: 1.5, costUsd: 0.4 };
+    const itemRow = { itemId: ITEM_ID, title: "Add order export", runs: 2, tokens: 5000, tokamaPercent: 2.5, sharePercent: 1.5, costUsd: 0.4 };
     const full = () => {
       const base = report();
       return {
@@ -271,7 +271,7 @@ describe("usage report", () => {
             },
           ],
           items: [{ ...itemRow, templateId: "plan-and-build", cliId: "claude-code", agents: ["builder"] }],
-          helpers: [{ cliId: "claude-code", model: "claude-haiku-5-5", calls: 2, tokens: 300, sharePercent: 0.1, costUsd: 0.01 }],
+          helpers: [{ cliId: "claude-code", model: "claude-haiku-5-5", calls: 2, tokens: 300, tokamaPercent: 0.2, sharePercent: 0.1, costUsd: 0.01 }],
           retries: [
             {
               cliId: "claude-code",

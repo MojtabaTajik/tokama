@@ -218,6 +218,8 @@ const ItemRowShape = {
   title: text(200),
   runs: count,
   tokens,
+  /** Part of Tokama's use of this CLI in the window, weighed by price like a step's. */
+  tokamaPercent: limitPercent,
   sharePercent: limitPercent.optional(),
   costUsd: usd.optional(),
 };
@@ -359,10 +361,10 @@ export const UsageReportSchema = z.strictObject({
       /** The items that used most, at most 50, one row per item and AI CLI. */
       items: z.array(z.strictObject({ ...ItemRowShape, templateId, cliId: AiCliIdSchema, /** Each agent that ran on this AI CLI for the item, once, in the order it first ran. */ agents: z.array(AgentIdSchema).max(20) })).max(50),
       /** Tokama's own helper calls. */
-      helpers: z.array(z.strictObject({ cliId: AiCliIdSchema, model: modelName, calls: count, tokens, sharePercent: limitPercent.optional(), costUsd: usd.optional() })).max(20),
-      /** What repeated attempts took, per AI CLI. `tokens` holds every retry, also those under no cause. */
+      helpers: z.array(z.strictObject({ cliId: AiCliIdSchema, model: modelName, calls: count, tokens, tokamaPercent: limitPercent, sharePercent: limitPercent.optional(), costUsd: usd.optional() })).max(20),
+      /** What repeated attempts took, per AI CLI. `tokens`, `sharePercent` and `costUsd` hold every retry, also those under no cause. */
       retries: z
-        .array(z.strictObject({ cliId: AiCliIdSchema, tokens, sharePercent: limitPercent.optional(), causes: z.array(RetryCauseSchema).max(20) }))
+        .array(z.strictObject({ cliId: AiCliIdSchema, tokens, sharePercent: limitPercent.optional(), costUsd: usd.optional(), costEstimated: z.boolean().optional(), causes: z.array(RetryCauseSchema).max(20) }))
         .max(10),
     })
     .optional(),

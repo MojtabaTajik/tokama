@@ -275,6 +275,45 @@ describe("retries sent back by a reviewer", () => {
   });
 });
 
+describe("what retries cost on a tool billed per use", () => {
+  it("counts every retry, also one under no cause, and marks a price from the table", () => {
+    const base = NOW - 2 * DAY;
+    // Fix ran again after a failure with no check or review behind it: no cause. Build ran again after a failed check: a cause.
+    const noCause = item([step("fix", "agent finishes", [attempt(1, "failed", base), attempt(2, "passed", base + HOUR)])], [call({ stepId: "fix", attempt: 1, endedAt: base, model: "claude-opus-5-5", tokens: MILLION }), call({ stepId: "fix", attempt: 2, endedAt: base + HOUR, model: "claude-opus-5-5", tokens: MILLION })]);
+    const withCause = item(
+      [step("build", "checks pass", [attempt(1, "failed", base, [["pnpm test", false]]), attempt(2, "passed", base + HOUR, [["pnpm test", true]])])],
+      [call({ stepId: "build", attempt: 1, endedAt: base, model: "claude-opus-5-5", tokens: MILLION }), call({ stepId: "build", attempt: 2, endedAt: base + HOUR, model: "claude-opus-5-5", tokens: MILLION })],
+    );
+    const { week } = report([noCause, withCause], [perUse]);
+    const [row] = week?.retries ?? [];
+    // Two retries of one million opus tokens each, priced from the table (the calls carry no figure of their own).
+    expect(row?.costUsd).toBeGreaterThan(0);
+    expect(row?.costEstimated).toBe(true);
+    expect(row?.causes).toHaveLength(1);
+    const causeCost = row?.causes.reduce((sum, cause) => sum + (cause.costUsd ?? 0), 0) ?? 0;
+    expect(row?.costUsd).toBeGreaterThan(causeCost);
+    expect(row?.costUsd).toBeCloseTo(causeCost * 2, 6);
+    // A plan user's retries carry no money at all.
+    expect(report([noCause, withCause], [plan(60)]).week?.retries[0]).not.toHaveProperty("costUsd");
+  });
+});
+
+describe("an item's retry line", () => {
+  it("names the step by its place among the item's steps", () => {
+    const base = NOW - 2 * DAY;
+    const twoSteps = item(
+      [step("plan", "agent finishes", [attempt(1, "passed", base)]), step("build", "checks pass", [attempt(1, "failed", base + HOUR, [["pnpm test", false]]), attempt(2, "passed", base + 2 * HOUR, [["pnpm test", true]])])],
+      [
+        call({ stepId: "plan", attempt: 1, endedAt: base, model: "claude-opus-5-5", tokens: MILLION }),
+        call({ stepId: "build", attempt: 1, endedAt: base + HOUR, model: "claude-opus-5-5", tokens: MILLION }),
+        call({ stepId: "build", attempt: 2, endedAt: base + 2 * HOUR, model: "claude-opus-5-5", tokens: MILLION }),
+      ],
+    );
+    const usage = itemUsageOf({ now: NOW, clis: [plan(60)], items: [twoSteps], helperCalls: [], past: {}, logs: { "claude-code": logs() } }, twoSteps.itemId);
+    expect(usage?.retries).toEqual([expect.objectContaining({ stepIndex: 1, attempts: [2], failingCheck: "pnpm test" })]);
+  });
+});
+
 describe("the model records", () => {
   /** `count` items that pass Build on the first try, on `model`. */
   const runs = (model: string, count: number, agentId = "builder", first = true) =>

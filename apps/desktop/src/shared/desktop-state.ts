@@ -3,7 +3,11 @@
 // and sends back changes to its own part. Pure: no files, no Electron. Reading is forgiving, so
 // a file from an older version, a hand edit or a broken write never stops the app: every field
 // that is not valid falls back to its default.
+import type { AiCliId } from "@tokama/core";
 import { isVersion } from "./whats-new.js";
+
+/** The AI tools the Insights filter can remember; a file naming another tool falls back to All. */
+export const USAGE_TOOLS = ["claude-code", "codex-cli", "ollama"] as const satisfies readonly AiCliId[];
 
 /** Panel widths in px: where an edge may go, and where a double-click resets it. */
 export const SIDEBAR_WIDTH = { min: 200, max: 360, default: 264 } as const;
@@ -81,6 +85,8 @@ export interface DesktopState {
   /** The status filter and range of `lastView`. */
   readonly lastFilter: LastFilter;
   readonly getStarted: GetStartedState;
+  /** The AI tool the Insights Usage tab is filtered to; absent: all tools. */
+  readonly usageTool?: AiCliId;
   /** The repo folder chosen last in the Add repo picker. */
   readonly lastRepoFolder?: string;
   readonly notifications: NotificationSettings;
@@ -95,9 +101,12 @@ export interface DesktopState {
 }
 
 /** What the renderer may change; the window, the repo folder, the crash prompt and the release notes shown belong to the main process. */
-export type LayoutPatch = Partial<Pick<DesktopState, "sidebar" | "drawer" | "collapsedSections" | "lastView" | "lastFilter" | "getStarted">>;
+export type LayoutPatch = Partial<Pick<DesktopState, "sidebar" | "drawer" | "collapsedSections" | "lastView" | "lastFilter" | "getStarted">> & {
+  /** `undefined` says all tools. */
+  readonly usageTool?: AiCliId | undefined;
+};
 /** The keys of a layout patch the main process accepts. */
-const LAYOUT_KEYS = ["sidebar", "drawer", "collapsedSections", "lastView", "lastFilter", "getStarted"] as const;
+const LAYOUT_KEYS = ["sidebar", "drawer", "collapsedSections", "lastView", "lastFilter", "getStarted", "usageTool"] as const;
 
 export const DEFAULT_DESKTOP_STATE: DesktopState = {
   window: { maximized: false, fullscreen: false },
@@ -202,6 +211,7 @@ export function parseDesktopState(input: unknown): DesktopState {
   const folder = root["lastRepoFolder"];
   const lastRun = root["lastRunVersion"];
   const due = whatsNewDue(root["whatsNewDue"]);
+  const tool = oneOf(USAGE_TOOLS, root["usageTool"]);
   return {
     window: { ...(placed === undefined ? {} : { bounds: placed }), maximized: win["maximized"] === true, fullscreen: win["fullscreen"] === true },
     sidebar: { width: width(sidebar["width"], SIDEBAR_WIDTH), collapsed: sidebar["collapsed"] === true },
@@ -210,6 +220,7 @@ export function parseDesktopState(input: unknown): DesktopState {
     lastView: lastView(root["lastView"]),
     lastFilter: lastFilter(root["lastFilter"]),
     getStarted: getStarted(root["getStarted"]),
+    ...(tool === undefined ? {} : { usageTool: tool }),
     notifications: notifications(root["notifications"]),
     notificationHintShown: hintShown(root),
     ...(typeof folder === "string" && folder !== "" && folder.length <= MAX_TEXT ? { lastRepoFolder: folder } : {}),
@@ -223,7 +234,18 @@ export function parseDesktopState(input: unknown): DesktopState {
 export function applyLayoutPatch(state: DesktopState, patch: unknown): DesktopState {
   if (!isRecord(patch)) return state;
   const merged = parseDesktopState({ ...state, ...Object.fromEntries(LAYOUT_KEYS.filter((key) => key in patch).map((key) => [key, patch[key]])) });
-  return { ...state, sidebar: merged.sidebar, drawer: merged.drawer, collapsedSections: merged.collapsedSections, lastView: merged.lastView, lastFilter: merged.lastFilter, getStarted: merged.getStarted };
+  // The tool is set when the patch names a valid one, and dropped (all tools) when it names none.
+  const kept = Object.fromEntries(Object.entries(state).filter(([key]) => key !== "usageTool")) as unknown as DesktopState;
+  return {
+    ...kept,
+    sidebar: merged.sidebar,
+    drawer: merged.drawer,
+    collapsedSections: merged.collapsedSections,
+    lastView: merged.lastView,
+    lastFilter: merged.lastFilter,
+    getStarted: merged.getStarted,
+    ...(merged.usageTool === undefined ? {} : { usageTool: merged.usageTool }),
+  };
 }
 
 /** `state` with the modes and sound set of `patch` that are valid; any other field or value is ignored. */

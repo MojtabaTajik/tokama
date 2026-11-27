@@ -76,9 +76,16 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
     setSettingsAgent(target);
     setPage("settings");
   }, []);
-  // The tooltip and the page share one report; the page picks the week it shows and the AI tool, and keeps both while the app runs.
+  // The tooltip and the page share one report. The page picks the week it shows (kept while the app runs; it opens on this week) and the AI tool (kept across restarts).
   const [usageWindow, setUsageWindow] = useState<UsageWindow>("current");
-  const [usageTool, setUsageTool] = useState<AiCliId | undefined>(undefined);
+  const [usageTool, setUsageTool] = useState<AiCliId | undefined>(initial.usageTool);
+  const chooseUsageTool = useCallback(
+    (tool: AiCliId | undefined) => {
+      setUsageTool(tool);
+      void bridge.saveLayout({ usageTool: tool }).catch(() => undefined);
+    },
+    [bridge],
+  );
   // The report loads every minute only while someone looks at it: the page, or the rail tooltip.
   const [tipShown, setTipShown] = useState(false);
   const usage = useUsage(bridge, connection, usageWindow, page === "insights" || tipShown);
@@ -568,7 +575,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
           window={usageWindow}
           onWindow={setUsageWindow}
           tool={usageTool}
-          onTool={setUsageTool}
+          onTool={chooseUsageTool}
           setup={setup}
           items={items}
           issues={issues}

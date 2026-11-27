@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ConnectionState, ToolsPathInfo, TokamaBridge } from "../shared/bridge.js";
+import { DEFAULT_DESKTOP_STATE } from "../shared/desktop-state.js";
 import { App } from "./App.js";
 import { BACKEND_IDS, backendOf } from "./brand/backends/index.js";
 import { brand } from "./brand/index.js";
@@ -223,6 +224,23 @@ describe("App shell", () => {
     expect($$(".ins-limit-tool").map((tool) => tool.textContent)).toEqual(["Claude CodeMAX", "Codex CLIPLUS", "OLOllama"]);
     await click($('.rail button[aria-label="Board"]')!);
     expect(text(".main-header h1")).toBe("All work");
+  });
+
+  it("saves the AI tool picked on the Usage tab, and opens on the one the last run saved", async () => {
+    const reply = (q: { type: string }) => (q.type === "usage" ? { ok: true as const, data: planReport } : undefined);
+    const fake = fakeBridge(CONNECTED, { reply });
+    await render(fake.bridge);
+    await click($('.rail button[aria-label="Insights"]')!);
+    await click($$('[aria-label="AI tool"] [role="radio"]')[2]!);
+    expect(fake.saveLayout).toHaveBeenLastCalledWith({ usageTool: "codex-cli" });
+    await click($$('[aria-label="AI tool"] [role="radio"]')[0]!);
+    expect(fake.saveLayout).toHaveBeenLastCalledWith({ usageTool: undefined });
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    const again = fakeBridge(CONNECTED, { reply });
+    await act(async () => root.render(<App bridge={again.bridge} retryDelayMs={10} now={NOW} initial={{ ...DEFAULT_DESKTOP_STATE, usageTool: "ollama" }} />));
+    await click($('.rail button[aria-label="Insights"]')!);
+    expect($('[aria-label="AI tool"] [aria-checked="true"]')?.getAttribute("aria-label")).toBe("Ollama");
   });
 
   it("opens the board and its New work composer from the Machine tab's empty state", async () => {

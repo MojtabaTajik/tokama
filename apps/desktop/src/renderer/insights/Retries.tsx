@@ -28,10 +28,8 @@ export function retrySentence(retry: Retry, week: Week, perUse: boolean): string
   const tool = cliName(retry.cliId);
   const tokensOfTool = [...week.steps, ...week.helpers].filter((row) => row.cliId === retry.cliId).reduce((sum, row) => sum + row.tokens, 0);
   const ofTokama = tokensOfTool > 0 ? `${Math.max(1, Math.round((retry.tokens / tokensOfTool) * 100))}% of what Tokama used there` : undefined;
-  if (perUse) {
-    const cost = retry.causes.reduce((sum, cause) => sum + (cause.costUsd ?? 0), 0);
-    return `Retries cost about ${formatCost(cost)} on ${tool}${ofTokama === undefined ? "" : `, ${ofTokama}`}.`;
-  }
+  // The cost of every retry, also those under no cause: money is the number a pay-per-use user acts on.
+  if (perUse && retry.costUsd !== undefined) return `Retries cost about ${formatCost(retry.costUsd, retry.costEstimated)} on ${tool}${ofTokama === undefined ? "" : `, ${ofTokama}`}.`;
   if (retry.sharePercent !== undefined) return `Retries took about ${limitShare(retry.sharePercent).replace(/^~/, "")} of the ${tool} weekly limit${ofTokama === undefined ? "" : `, ${ofTokama}`}.`;
   return `Retries took ${formatTokens(retry.tokens)} tokens on ${tool}${ofTokama === undefined ? "" : `, ${ofTokama}`}.`;
 }

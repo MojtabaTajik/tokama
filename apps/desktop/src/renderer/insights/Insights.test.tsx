@@ -50,11 +50,11 @@ function render(overrides: Partial<InsightsProps> = {}, report: UsageReport | un
 }
 
 // Every row of every tool's list, in page order; a step's items are sub rows and not counted.
-const rankRows = () => $$('.ins-rank [role="row"]:not(.ins-rank-head):not(.ins-rank-sub)');
+const rankRows = () => $$('.ins-rank [role="row"]:not(.ins-rank-head):not(.ins-rank-sub):not(.ins-rank-more)');
 const rankNames = () => rankRows().map((row) => row.querySelector(".ins-rank-name")?.textContent);
 const rankValue = (row: Element | undefined) => row?.querySelector(".ins-rank-value")?.textContent;
 const listOf = (tool: string) => $$(".ins-list").find((el) => el.getAttribute("aria-label")?.startsWith(`${tool}:`))!;
-const rowsIn = (list: Element) => [...list.querySelectorAll('.ins-rank [role="row"]:not(.ins-rank-head):not(.ins-rank-sub)')];
+const rowsIn = (list: Element) => [...list.querySelectorAll('.ins-rank [role="row"]:not(.ins-rank-head):not(.ins-rank-sub):not(.ins-rank-more)')];
 const valuesIn = (list: Element) => rowsIn(list).map(rankValue);
 const namesIn = (list: Element) => rowsIn(list).map((row) => row.querySelector(".ins-rank-name")?.textContent);
 const meters = () => $$('.ins-limits [role="meter"]').map((meter) => [meter.getAttribute("aria-label"), meter.getAttribute("aria-valuetext")]);
@@ -161,6 +161,34 @@ describe("Insights: what uses the weekly limits", () => {
     expect(namesIn(claude()).at(-1)).toBe("Outside Tokama");
   });
 
+  it("is a table a screen reader can walk: every row holds only cells or column heads, the expand button sits in a cell, and Show all sits in a row", async () => {
+    const many = {
+      ...planReport,
+      week: { ...planReport.week!, steps: Array.from({ length: 10 }, (_, n) => ({ ...planReport.week!.steps[1]!, stepId: `step-${n}`, stepName: `Step ${n}`, sharePercent: 10 - n * 0.5 })), helpers: [] },
+    } as unknown as UsageReport;
+    render({}, many);
+    const check = () => {
+      const rows = $$(".ins-rank [role=\"row\"]");
+      expect(rows.length).toBeGreaterThan(10);
+      for (const row of rows) {
+        const kids = [...row.children];
+        expect(kids.length).toBeGreaterThan(0);
+        expect(kids.every((kid) => ["cell", "columnheader"].includes(kid.getAttribute("role") ?? ""))).toBe(true);
+      }
+      // Nothing but rows sits directly in the table, and no row is itself a button.
+      expect([...$$(".ins-rank")[0]!.children].every((kid) => kid.getAttribute("role") === "row")).toBe(true);
+      expect(rows.some((row) => row.tagName === "BUTTON")).toBe(false);
+    };
+    check();
+    const toggle = $(".ins-rank [aria-expanded]");
+    expect(toggle?.parentElement?.getAttribute("role")).toBe("cell");
+    expect($(".ins-rank-more")?.getAttribute("role")).toBe("row");
+    await click($(".ins-rank [aria-expanded=\"false\"]"));
+    check();
+    await click($(".ins-rank-more .btn"));
+    check();
+  });
+
   it("opens a step to its items, with the rest in one line, and an item opens", async () => {
     const onSelectItem = vi.fn<(id: string) => void>();
     render({ onSelectItem });
@@ -263,6 +291,22 @@ describe("Insights: a plan, an API key, no reading", () => {
     expect(rowsIn(listOf("Codex CLI"))[0]?.querySelector(".ins-bar > span")?.getAttribute("style")).toContain("width: 100%");
   });
 
+  it("measures item and helper rows as the engine measures a step: one price-weighted part of Tokama's use for the whole list", async () => {
+    render({}, noReading);
+    // Step view: the helpers row carries the engine's own part (2.4%), as a step row carries its own.
+    expect(valuesIn(listOf("Claude Code"))).toEqual(["40%", "30%", "2%"]);
+    await click($$('[role="radio"]').find((radio) => radio.textContent?.includes("Item")) ?? null);
+    // Item view: the item's own part (900k tokens = 18% in the fixture), and the same helpers row.
+    expect(valuesIn(listOf("Claude Code"))).toEqual(["18%", "2%"]);
+  });
+
+  it("says what retries cost with an API key from the cost of every retry, also one under no cause", () => {
+    const retried = { ...payPerUse, week: { ...payPerUse.week!, retries: [{ cliId: "claude-code", tokens: 100_000, costUsd: 4.2, causes: [] }] } } as unknown as UsageReport;
+    render({}, retried);
+    expect(text(".ins-sentence")).toMatch(/^Retries cost about \$4\.20 on Claude Code/);
+    expect($(".ins-retry")).toBeNull();
+  });
+
   it("shows shares of Tokama's own use, and no split, when no limit reading is there", () => {
     render({}, noReading);
     expect($(".ins-split-bar")).toBeNull();
@@ -274,7 +318,7 @@ describe("Insights: a plan, an API key, no reading", () => {
   });
 
   it("reads a share under 1% as <1%, never 0%", () => {
-    const tiny = { ...noReading, week: { ...noReading.week!, helpers: [{ ...noReading.week!.helpers[0]!, tokens: 1_000 }] } } as UsageReport;
+    const tiny = { ...noReading, week: { ...noReading.week!, helpers: [{ ...noReading.week!.helpers[0]!, tokamaPercent: 0.3 }] } } as UsageReport;
     render({}, tiny);
     expect(valuesIn(listOf("Claude Code"))).toContain("<1%");
     expect(container.textContent).not.toContain("0% of use");

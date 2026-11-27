@@ -139,7 +139,6 @@ function ToolListView({ list, group, tools, setup, open, onToggle, showAll, onSh
       <div className="ins-scroll">
         <div className="ins-rank" role="table" aria-label={`${name}: ${list.header}`} data-group={group}>
           <div className="ins-rank-row ins-rank-head" role="row">
-            <span />
             <span role="columnheader">{TEXT.by[group]}</span>
             <span role="columnheader">{group === "step" ? TEXT.agent : TEXT.agents}</span>
             {group === "step" && <span role="columnheader">{TEXT.model}</span>}
@@ -155,10 +154,12 @@ function ToolListView({ list, group, tools, setup, open, onToggle, showAll, onSh
             <RankRow key={row.key} row={row} group={group} scale={list.scale} colour={colour} setup={setup} open={open.has(row.key)} onToggle={() => onToggle(row.key)} onSelectItem={onSelectItem} />
           ))}
           {list.rows.length > LIST_ROWS && (
-            <div className="ins-rank-more">
-              <Button variant="link" aria-expanded={showAll} onClick={onShowAll}>
-                {showAll ? TEXT.showLess : TEXT.showAll(list.rows.length)}
-              </Button>
+            <div role="row" className="ins-rank-more">
+              <span role="cell">
+                <Button variant="link" aria-expanded={showAll} onClick={onShowAll}>
+                  {showAll ? TEXT.showLess : TEXT.showAll(list.rows.length)}
+                </Button>
+              </span>
             </div>
           )}
           {list.outside !== undefined && <RankRow row={list.outside} group={group} scale={list.scale} colour="var(--chart-other)" setup={setup} open={false} onToggle={() => undefined} onSelectItem={onSelectItem} />}
@@ -197,9 +198,10 @@ function SplitLine({ name, heading, colour }: { readonly name: string; readonly 
 
 function Bar({ value, scale, colour, thin = false }: { readonly value: number; readonly scale: number; readonly colour: string; readonly thin?: boolean }) {
   const width = value > 0 && scale > 0 ? Math.max(1.5, (value / scale) * 100) : 0;
+  // A cell like any other: the bar says nothing the value beside it does not, so its drawing is hidden from screen readers.
   return (
-    <span className="ins-bar" aria-hidden="true" data-thin={thin || undefined}>
-      {width > 0 && <span style={{ width: `${width}%`, background: colour }} />}
+    <span role="cell" className="ins-bar" data-thin={thin || undefined}>
+      {width > 0 && <span aria-hidden="true" style={{ width: `${width}%`, background: colour }} />}
     </span>
   );
 }
@@ -217,11 +219,18 @@ interface RankRowProps {
 
 function RankRow({ row, group, scale, colour, setup, open, onToggle, onSelectItem }: RankRowProps) {
   const expandable = row.items !== undefined && (row.items.length > 0 || row.more !== undefined);
-  const cells = (
-    <>
+  // Every row holds cells only. The first cell holds the expand button (chevron and name), so the
+  // button is one stop in the row and the other cells stay cells a reader can step through.
+  const first = expandable ? (
+    <Button variant="plain" className="ins-rank-toggle" aria-expanded={open} onClick={onToggle}>
       <span className="ins-chevron" aria-hidden="true">
-        {expandable ? (open ? "⌄" : "›") : ""}
+        {open ? "⌄" : "›"}
       </span>
+      <span className="ins-rank-name">{row.name}</span>
+    </Button>
+  ) : (
+    <>
+      <span className="ins-chevron" aria-hidden="true" />
       <span className="ins-rank-name">
         {row.itemId === undefined ? (
           row.name
@@ -231,49 +240,50 @@ function RankRow({ row, group, scale, colour, setup, open, onToggle, onSelectIte
           </Button>
         )}
       </span>
-      <span className="ins-rank-cell ins-rank-agents">
-        {(row.agentIds ?? []).map((agentId) => (
-          <AgentRing key={agentId} agentId={agentId} agents={setup?.agents ?? []} />
-        ))}
-      </span>
-      {group === "step" && (
-        <span className="ins-rank-cell">
-          {row.model !== undefined && (
-            <span className="ins-model" title={row.model}>
-              <BackendMark cliId={row.cliId} size={12} />
-              <span className="mono ins-model-name">{shortModel(row.model)}</span>
-            </span>
-          )}
-        </span>
-      )}
-      <Bar value={row.value} scale={scale} colour={colour} />
-      <span className="mono ins-rank-num ins-rank-value">{row.text}</span>
-      <span className="ins-rank-num ins-rank-facts">{row.facts}</span>
     </>
   );
   return (
     <>
-      {expandable ? (
-        <div role="row" className="ins-rank-line">
-          <Button variant="plain" className="ins-rank-row" aria-expanded={open} onClick={onToggle}>
-            {cells}
-          </Button>
-        </div>
-      ) : (
-        <div role="row" className="ins-rank-line ins-rank-row">
-          {cells}
-        </div>
-      )}
+      <div role="row" className="ins-rank-row">
+        <span role="cell" className="ins-rank-first">
+          {first}
+        </span>
+        <span role="cell" className="ins-rank-cell ins-rank-agents">
+          {(row.agentIds ?? []).map((agentId) => (
+            <AgentRing key={agentId} agentId={agentId} agents={setup?.agents ?? []} />
+          ))}
+        </span>
+        {group === "step" && (
+          <span role="cell" className="ins-rank-cell">
+            {row.model !== undefined && (
+              <span className="ins-model" title={row.model}>
+                <BackendMark cliId={row.cliId} size={12} />
+                <span className="mono ins-model-name">{shortModel(row.model)}</span>
+              </span>
+            )}
+          </span>
+        )}
+        <Bar value={row.value} scale={scale} colour={colour} />
+        <span role="cell" className="mono ins-rank-num ins-rank-value">
+          {row.text}
+        </span>
+        <span role="cell" className="ins-rank-num ins-rank-facts">
+          {row.facts}
+        </span>
+      </div>
       {open && row.items?.map((item) => <SubLine key={item.itemId} item={item} scale={scale} colour={colour} onSelectItem={onSelectItem} />)}
       {open && row.more !== undefined && (
         <div role="row" className="ins-rank-row ins-rank-sub">
-          <span />
-          <span className="ins-rank-name ins-sub-name muted">{TEXT.more(row.more.count)}</span>
-          <span />
-          <span />
-          <span />
-          <span className="mono ins-rank-num ins-rank-value">{row.more.text}</span>
-          <span />
+          <span role="cell" className="ins-rank-first ins-sub-first muted">
+            {TEXT.more(row.more.count)}
+          </span>
+          <span role="cell" />
+          <span role="cell" />
+          <span role="cell" />
+          <span role="cell" className="mono ins-rank-num ins-rank-value">
+            {row.more.text}
+          </span>
+          <span role="cell" />
         </div>
       )}
     </>
@@ -283,17 +293,22 @@ function RankRow({ row, group, scale, colour, setup, open, onToggle, onSelectIte
 function SubLine({ item, scale, colour, onSelectItem }: { readonly item: SubRow; readonly scale: number; readonly colour: string; readonly onSelectItem: (itemId: string) => void }) {
   return (
     <div role="row" className="ins-rank-row ins-rank-sub">
-      <span />
-      <span className="ins-rank-name ins-sub-name">
-        <Button variant="quiet" onClick={() => onSelectItem(item.itemId)}>
-          {item.title}
-        </Button>
+      <span role="cell" className="ins-rank-first ins-sub-first">
+        <span className="ins-rank-name">
+          <Button variant="quiet" onClick={() => onSelectItem(item.itemId)}>
+            {item.title}
+          </Button>
+        </span>
       </span>
-      <span />
-      <span />
+      <span role="cell" />
+      <span role="cell" />
       <Bar value={item.value} scale={scale} colour={colour} thin />
-      <span className="mono ins-rank-num ins-rank-value">{item.text}</span>
-      <span className="ins-rank-num ins-rank-facts">{item.facts}</span>
+      <span role="cell" className="mono ins-rank-num ins-rank-value">
+        {item.text}
+      </span>
+      <span role="cell" className="ins-rank-num ins-rank-facts">
+        {item.facts}
+      </span>
     </div>
   );
 }

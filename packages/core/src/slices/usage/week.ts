@@ -246,7 +246,7 @@ export function buildWeek(input: WeekInput, which: UsageWindow): Week {
     // Tokama's own helper calls.
     for (const { head, list } of group(tagged.filter((t) => t.item === undefined), (t) => t.call.model, (t) => t.call.model).values()) {
       const m = measure(list.map((t) => t.call));
-      helpers.push({ cliId: plan.cliId, model: cut(head, 200), calls: list.length, tokens: m.tokens, ...(m.sharePercent !== undefined && { sharePercent: m.sharePercent }), ...(m.costUsd !== undefined && { costUsd: m.costUsd }) });
+      helpers.push({ cliId: plan.cliId, model: cut(head, 200), calls: list.length, tokens: m.tokens, tokamaPercent: m.tokamaPercent, ...(m.sharePercent !== undefined && { sharePercent: m.sharePercent }), ...(m.costUsd !== undefined && { costUsd: m.costUsd }) });
     }
 
     // What repeated attempts took.
@@ -262,6 +262,7 @@ export function buildWeek(input: WeekInput, which: UsageWindow): Week {
         cliId: plan.cliId,
         tokens: spent.tokens,
         ...(spent.sharePercent !== undefined && { sharePercent: spent.sharePercent }),
+        ...(spent.costUsd !== undefined && { costUsd: spent.costUsd, ...(spent.costEstimated === true && { costEstimated: true }) }),
         causes: [...causes.values()]
           .map(({ head: r, list }) => {
             const m = measure(list.flatMap((x) => [...x.calls]));
@@ -299,7 +300,7 @@ export function buildWeek(input: WeekInput, which: UsageWindow): Week {
 
 /** The fields an item row takes from a measure. */
 function itemMeasure(m: Measure) {
-  return { tokens: m.tokens, ...(m.sharePercent !== undefined && { sharePercent: m.sharePercent }), ...(m.costUsd !== undefined && { costUsd: m.costUsd }) };
+  return { tokens: m.tokens, tokamaPercent: m.tokamaPercent, ...(m.sharePercent !== undefined && { sharePercent: m.sharePercent }), ...(m.costUsd !== undefined && { costUsd: m.costUsd }) };
 }
 
 type ModelRecord = NonNullable<UsageReport["stepModels"]>[number]["models"][number];
@@ -406,15 +407,20 @@ export function itemUsageOf(input: WeekInput, itemId: ItemId): ItemUsage | undef
   }
 
   const bySteps = group(retriesOf(item), (r) => r.step.id, (r) => r.step.id);
-  const retries = [...bySteps.values()].map(({ head, list }) => {
+  const retries = [...bySteps.values()].flatMap(({ head, list }) => {
+    // A retry whose step the item does not list is left out: it must not read as a retry of the first step.
+    const stepIndex = item.steps.findIndex((step) => step.id === head);
+    if (stepIndex < 0) return [];
     const spent = list.reduce((sum, r) => sum + r.calls.reduce((s, call) => s + total(call.tokens), 0), 0);
     const failing = list.find((r) => r.cause?.kind === "check");
-    return {
-      stepIndex: Math.max(0, item.steps.findIndex((step) => step.id === head)),
-      attempts: list.map((r) => r.attempt).slice(0, 50),
-      tokensPercent: tokens > 0 ? Math.min(100, round2((spent / tokens) * 100)) : 0,
-      ...(failing?.cause?.kind === "check" && { failingCheck: cut(failing.cause.command, 500) }),
-    };
+    return [
+      {
+        stepIndex,
+        attempts: list.map((r) => r.attempt).slice(0, 50),
+        tokensPercent: tokens > 0 ? Math.min(100, round2((spent / tokens) * 100)) : 0,
+        ...(failing?.cause?.kind === "check" && { failingCheck: cut(failing.cause.command, 500) }),
+      },
+    ];
   });
   return {
     tokens,

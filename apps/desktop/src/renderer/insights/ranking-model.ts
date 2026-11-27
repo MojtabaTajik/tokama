@@ -91,7 +91,7 @@ const known = (values: readonly (number | undefined)[]): number | undefined => (
 function stepRow(step: StepRow, plan: CliPlan | undefined, setup: Setup | undefined): Row {
   const own = measure(step, plan);
   const itemMeasure = (item: StepRow["items"][number]): Measure =>
-    measure({ cliId: step.cliId, tokens: item.tokens, sharePercent: item.sharePercent, costUsd: item.costUsd, costEstimated: step.costEstimated, tokamaPercent: step.tokens > 0 ? (step.tokamaPercent * item.tokens) / step.tokens : 0 }, plan);
+    measure({ cliId: step.cliId, tokens: item.tokens, sharePercent: item.sharePercent, costUsd: item.costUsd, costEstimated: step.costEstimated, tokamaPercent: item.tokamaPercent }, plan);
   const items = step.items.map((item): SubRow => ({ ...itemMeasure(item), itemId: item.itemId, title: item.title, facts: plural(item.runs, "run") }));
   const left = step.itemCount - step.items.length;
   const rest = Math.max(0, own.value - sum(items.map((item) => item.value)));
@@ -170,16 +170,13 @@ export function listsOf(week: Week, clis: readonly CliPlan[], group: Group, only
   for (const cliId of [...cliIds].filter((id) => only === undefined || id === only)) {
     const plan = plans.get(cliId);
     const steps = week.steps.filter((step) => step.cliId === cliId);
-    const toolTokens = sum([...steps.map((step) => step.tokens), ...week.helpers.filter((h) => h.cliId === cliId).map((h) => h.tokens)]);
-    // Without a split, a part of Tokama's use is a part of the tokens it used on this tool.
-    const byTokens = (tokens: number) => (toolTokens > 0 ? (tokens / toolTokens) * 100 : 0);
     const rows: Row[] = [];
     if (group === "step") rows.push(...steps.map((step) => stepRow(step, plan, setup)));
     if (group === "workflow") rows.push(...workflowRows(steps, plan, setup));
     if (group === "item") {
       for (const item of week.items.filter((entry) => entry.cliId === cliId)) {
         rows.push({
-          ...measure({ cliId, tokens: item.tokens, sharePercent: item.sharePercent, costUsd: item.costUsd, tokamaPercent: byTokens(item.tokens) }, plan),
+          ...measure({ cliId, tokens: item.tokens, sharePercent: item.sharePercent, costUsd: item.costUsd, tokamaPercent: item.tokamaPercent }, plan),
           key: `item:${item.itemId}`,
           kind: "item",
           cliId,
@@ -192,7 +189,7 @@ export function listsOf(week: Week, clis: readonly CliPlan[], group: Group, only
     }
     for (const helper of week.helpers.filter((entry) => entry.cliId === cliId)) {
       rows.push({
-        ...measure({ cliId, tokens: helper.tokens, sharePercent: helper.sharePercent, costUsd: helper.costUsd, tokamaPercent: byTokens(helper.tokens) }, plan),
+        ...measure({ cliId, tokens: helper.tokens, sharePercent: helper.sharePercent, costUsd: helper.costUsd, tokamaPercent: helper.tokamaPercent }, plan),
         key: `helpers:${cliId}:${helper.model}`,
         kind: "helpers",
         cliId,

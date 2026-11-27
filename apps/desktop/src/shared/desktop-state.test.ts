@@ -65,6 +65,18 @@ describe("parseDesktopState", () => {
     expect(state).toEqual({ ...DEFAULT_DESKTOP_STATE, collapsedSections: ["repos"], lastFilter: { status: "active", range: "30d" } });
   });
 
+  it("remembers the Insights AI tool filter: a known tool is kept, any other falls back to all tools, and a layout patch sets and clears it", () => {
+    expect(parseDesktopState({ usageTool: "codex-cli" }).usageTool).toBe("codex-cli");
+    expect(parseDesktopState({ usageTool: "gemini" })).toEqual(DEFAULT_DESKTOP_STATE);
+    expect(parseDesktopState({})).not.toHaveProperty("usageTool");
+    const picked = applyLayoutPatch(DEFAULT_DESKTOP_STATE, { usageTool: "ollama" });
+    expect(picked.usageTool).toBe("ollama");
+    // A patch about something else leaves it; naming no tool, or a bad one, means all tools.
+    expect(applyLayoutPatch(picked, { sidebar: { width: 300, collapsed: false } }).usageTool).toBe("ollama");
+    expect(applyLayoutPatch(picked, { usageTool: undefined })).not.toHaveProperty("usageTool");
+    expect(applyLayoutPatch(picked, { usageTool: "gemini" })).not.toHaveProperty("usageTool");
+  });
+
   it("limits the length of ids and folders", () => {
     const state = parseDesktopState({ lastView: { kind: "repo", id: "x".repeat(600) }, lastRepoFolder: "/".repeat(600) });
     expect(state.lastView).toEqual({ kind: "all" });

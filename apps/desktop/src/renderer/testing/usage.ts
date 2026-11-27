@@ -37,7 +37,8 @@ const codexCli = {
 };
 const ollama = { cliId: "ollama", windows: [], note: "Local models have no plan limit." };
 
-const item = (id: string, title: string, runs: number, shareTokens: number, sharePercent?: number) => ({ itemId: id, title, runs, tokens: shareTokens, ...(sharePercent !== undefined && { sharePercent }) });
+// A row's part of Tokama's use of its tool: here 1% per 50k tokens.
+const item = (id: string, title: string, runs: number, shareTokens: number, sharePercent?: number) => ({ itemId: id, title, runs, tokens: shareTokens, tokamaPercent: shareTokens / 50_000, ...(sharePercent !== undefined && { sharePercent }) });
 
 const week = {
   window: "current",
@@ -106,7 +107,7 @@ const week = {
     { ...item(ITEMS.verifying.id, ITEMS.verifying.title, 6, 900_000, 8.2), templateId: "builtin/plan-and-build", cliId: "claude-code", agents: ["architect", "local-builder"] },
     { ...item(ITEMS.needsYou.id, ITEMS.needsYou.title, 2, 200_000), templateId: "builtin/emergency-investigator", cliId: "ollama", agents: ["local-builder"] },
   ],
-  helpers: [{ cliId: "claude-code", model: "haiku", calls: 38, tokens: 120_000, sharePercent: 1 }],
+  helpers: [{ cliId: "claude-code", model: "haiku", calls: 38, tokens: 120_000, tokamaPercent: 2.4, sharePercent: 1 }],
   retries: [
     {
       cliId: "claude-code",
@@ -174,7 +175,8 @@ export const noReading = {
   week: {
     ...week,
     limits: [],
-    steps: week.steps.map((step) => omit(step, "sharePercent")),
+    steps: week.steps.map((step) => ({ ...omit(step, "sharePercent"), items: step.items.map((row) => omit(row, "sharePercent")) })),
+    items: week.items.map((row) => omit(row, "sharePercent")),
     helpers: week.helpers.map((helper) => omit(helper, "sharePercent")),
     retries: week.retries.map((retry) => ({ ...omit(retry, "sharePercent"), causes: retry.causes.map((cause) => omit(cause, "sharePercent")) })),
   },
