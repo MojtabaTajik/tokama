@@ -12,13 +12,15 @@ export interface RowFinishProps {
   readonly onFinish: (itemId: string, action: FinishAction) => void | Promise<void>;
   /** Opens the item with its Discard question. */
   readonly onDiscard: (itemId: string) => void;
+  /** `outlined` for a place that is not a hovered row and has a primary button of its own. */
+  readonly variant?: "row" | "outlined";
 }
 
-export function RowFinish({ item, setup, onFinish, onDiscard }: RowFinishProps) {
+export function RowFinish({ item, setup, onFinish, onDiscard, variant = "row" }: RowFinishProps) {
   if (!finishActions(item).includes("merge")) return null;
   return (
     <FinishSplit
-      variant="row"
+      variant={variant}
       base={baseBranchOf(item, setup)}
       prOff={prUnavailable(item, setup)}
       prNote={prPushNote(item)}

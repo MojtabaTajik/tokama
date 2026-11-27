@@ -7,6 +7,26 @@ describe("clampWidth", () => {
   });
 });
 
+describe("parseDesktopState away", () => {
+  it("keeps a valid away state and leaves it out when absent or without a valid seenUntil", () => {
+    const away = { seenUntil: 1_000, leftAt: 2_000, due: true, backAt: 3_000 };
+    expect(parseDesktopState({ away }).away).toEqual(away);
+    expect(parseDesktopState({ away: { seenUntil: 5 } }).away).toEqual({ seenUntil: 5, due: false });
+    expect(parseDesktopState({}).away).toBeUndefined();
+    for (const bad of [{ due: true }, { seenUntil: "1" }, { seenUntil: -1 }, { seenUntil: Number.NaN }, [], "x", null]) expect(parseDesktopState({ away: bad })).not.toHaveProperty("away");
+  });
+
+  it("drops invalid optional times and a due that is not true", () => {
+    expect(parseDesktopState({ away: { seenUntil: 5, leftAt: "x", backAt: -3, due: "yes" } }).away).toEqual({ seenUntil: 5, due: false });
+  });
+
+  it("is main-owned: a layout or notification patch neither sets nor loses it", () => {
+    const state = { ...DEFAULT_DESKTOP_STATE, away: { seenUntil: 1_000, due: true } };
+    expect(applyLayoutPatch(state, { away: { seenUntil: 9, due: false }, sidebar: { width: 300, collapsed: false } }).away).toEqual(state.away);
+    expect(applyNotificationsPatch(state, { away: { seenUntil: 9, due: false } })).toEqual(state);
+  });
+});
+
 describe("parseDesktopState", () => {
   it("gives the defaults for anything that is not an object", () => {
     for (const input of [undefined, null, 5, "x", [], true]) expect(parseDesktopState(input)).toEqual(DEFAULT_DESKTOP_STATE);

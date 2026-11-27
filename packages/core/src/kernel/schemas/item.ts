@@ -200,6 +200,8 @@ export const DecisionSchema = z.strictObject({
   kind: DecisionKindSchema.optional(),
   stepIndex: z.int().nonnegative(),
   question: z.string().min(1).max(500),
+  /** When the question was asked (UTC epoch ms); absent on records from an older engine. */
+  askedAt: EpochMsSchema.optional(),
   /** Why the engine asks, e.g. the step's data rule sends data to a cloud agent. */
   why: z.string().min(1).max(500).optional(),
   /** For a cloud-step approval: the exact text that would leave the machine. */
@@ -254,6 +256,8 @@ export const ItemRecordSchema = z.strictObject({
       kind: ItemOutcomeSchema,
       detail: z.string().min(1).max(500).optional(),
       commits: z.array(z.strictObject({ repoId: RepoIdSchema, commit: GIT_ID, branch: z.string().min(1).max(200).optional() })).max(20).optional(),
+      /** When the item ended (UTC epoch ms); absent on records from an older engine. */
+      at: EpochMsSchema.optional(),
     })
     .optional(),
   /** A done item's worktree and what was done with it. Present once a done item has a worktree. */

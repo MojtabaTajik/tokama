@@ -40,6 +40,8 @@ function fakeBridge(start: ItemRecord[], activities = new Map<string, ItemActivi
     getUpdate: vi.fn(async () => ({ status: "idle" as const })),
     onUpdate: vi.fn(() => () => undefined),
     openUpdateNotes: vi.fn(async () => undefined),
+    getAway: vi.fn(async () => ({ seenUntil: 0, due: false })),
+    onAway: vi.fn(() => () => undefined),
     onConnection: vi.fn((listener: (state: ConnectionState) => void) => {
       connectionListeners.add(listener);
       return () => connectionListeners.delete(listener);

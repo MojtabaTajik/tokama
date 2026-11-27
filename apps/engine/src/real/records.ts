@@ -145,6 +145,7 @@ export function toItemRecord(item: StoredItem): ItemRecord | undefined {
   const outcome = item.outcome && {
     kind: item.outcome.kind,
     ...(cut(item.outcome.detail, 500) !== undefined && { detail: cut(item.outcome.detail, 500)! }),
+    at: item.outcome.at,
     ...(item.outcome.commits !== undefined && {
       commits: item.outcome.commits.map(({ repoId, commit }) => {
         const branch = item.worktrees.find((w) => w.repoId === repoId)?.branch;
@@ -278,6 +279,7 @@ function toDecision(item: StoredItem, template: TemplateRecord | undefined): Dec
     kind: open.kind,
     stepIndex,
     question: questionOf(open, template, runLimit),
+    askedAt: open.askedAt,
     ...(why !== undefined && { why }),
     // A step that changed no files has nothing to diff; a log from before the count was kept shows the diff of its tree.
     ...(open.kind === "plan_approval" && open.tree !== undefined && (open.change?.files ?? 1) > 0 && { hasDiff: true }),

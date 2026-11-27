@@ -61,6 +61,21 @@ export interface WhatsNewDue {
   readonly chip?: string;
 }
 
+/**
+ * Where "While you were away" stands on this machine, all epoch ms. `seenUntil`: what ended or
+ * asked before it was shown or dismissed. `leftAt`: when the user went away, until they are back.
+ * `due`: they were away 15 minutes or more and have not pressed Got it. `backAt`: when they came back, while due.
+ */
+export interface AwayState {
+  readonly seenUntil: number;
+  readonly leftAt?: number;
+  readonly due: boolean;
+  readonly backAt?: number;
+}
+
+/** What the window knows of it: no `leftAt`. */
+export type AwayInfo = Omit<AwayState, "leftAt">;
+
 /** Where the "Get started" checklist stands on this machine. */
 export interface GetStartedState {
   /** The first item has started (or the user had items already): the checklist no longer takes the place of the empty board. */
@@ -100,6 +115,8 @@ export interface DesktopState {
   readonly lastRunVersion?: string;
   /** The release notes not yet shown; the main process owns it. */
   readonly whatsNewDue?: WhatsNewDue;
+  /** The "While you were away" strip; the main process owns it. Absent until the first start. */
+  readonly away?: AwayState;
 }
 
 /** What the renderer may change; the window, the repo folder, the crash prompt and the release notes shown belong to the main process. */
@@ -204,6 +221,15 @@ function whatsNewDue(value: unknown): WhatsNewDue | undefined {
   return { ...(isVersion(card) ? { card } : {}), ...(isVersion(chip) ? { chip } : {}) };
 }
 
+/** The away state in `value`; undefined unless it has a valid `seenUntil`. */
+function awayState(value: unknown): AwayState | undefined {
+  if (!isRecord(value)) return undefined;
+  const { seenUntil, leftAt, backAt } = value;
+  const time = (at: unknown): at is number => finite(at) && at >= 0;
+  if (!time(seenUntil)) return undefined;
+  return { seenUntil, ...(time(leftAt) ? { leftAt } : {}), due: value["due"] === true, ...(time(backAt) ? { backAt } : {}) };
+}
+
 /** The state in `input` (a parsed file or a renderer message), with every invalid field replaced by its default. */
 export function parseDesktopState(input: unknown): DesktopState {
   const root = isRecord(input) ? input : {};
@@ -215,6 +241,7 @@ export function parseDesktopState(input: unknown): DesktopState {
   const folder = root["lastRepoFolder"];
   const lastRun = root["lastRunVersion"];
   const due = whatsNewDue(root["whatsNewDue"]);
+  const away = awayState(root["away"]);
   const tool = oneOf(USAGE_TOOLS, root["usageTool"]);
   const consent: unknown = root["helperConsent"];
   const agreed = Array.isArray(consent) ? USAGE_TOOLS.filter((name) => consent.includes(name)) : [];
@@ -234,6 +261,7 @@ export function parseDesktopState(input: unknown): DesktopState {
     askAfterCrash: root["askAfterCrash"] !== false,
     ...(isVersion(lastRun) ? { lastRunVersion: lastRun } : {}),
     ...(due === undefined ? {} : { whatsNewDue: due }),
+    ...(away === undefined ? {} : { away }),
   };
 }
 

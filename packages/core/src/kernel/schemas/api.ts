@@ -175,7 +175,9 @@ export const QuerySchema = z.discriminatedUnion("type", [
   /**
    * One page of one group of the work list, newest start first, scoped like the sidebar view
    * (`repo` or `template`). `since` (a local day) limits done and failed items to those started
-   * on or after it; live groups ignore it. `q` matches the title, a repo id, the template's name,
+   * on or after it; live groups ignore it. `endedAfter` (epoch ms) limits done and failed items to
+   * those that ended at or after it, whenever they started; an item with no end time is left out,
+   * and live groups ignore it. `q` matches the title, a repo id, the template's name,
    * and the id or name of any step's agent, ignoring case. `before` is the `nextCursor` of the
    * page before.
    */
@@ -183,6 +185,7 @@ export const QuerySchema = z.discriminatedUnion("type", [
     type: z.literal("item_list"),
     group: ListGroupSchema,
     since: LocalDaySchema.optional(),
+    endedAfter: EpochMsSchema.optional(),
     repo: RepoIdSchema.optional(),
     template: TemplateRefSchema.optional(),
     q: z.string().max(MAX_LIST_SEARCH).optional(),

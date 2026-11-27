@@ -2,7 +2,7 @@
 // constants only: the renderer and the sandboxed preload import nothing else from outside.
 import type { ClientEvent, CommandReply, QueryReply } from "@tokama/client";
 import type { CommandInput, DiagnosticEntry, PostFailure, QueryInput, UsageAction } from "@tokama/core";
-import type { DesktopState, LayoutPatch, NotificationSettings, SoundName, SoundSet } from "./desktop-state.js";
+import type { AwayInfo, DesktopState, LayoutPatch, NotificationSettings, SoundName, SoundSet } from "./desktop-state.js";
 import type { InstallResult, UpdateState } from "./update.js";
 import type { Note } from "./whats-new.js";
 
@@ -90,6 +90,9 @@ export const CHANNELS = {
   checkForUpdates: "tokama:update:check",
   installUpdate: "tokama:update:install",
   openUpdateNotes: "tokama:update:notes",
+  getAway: "tokama:away:get",
+  awayChanged: "tokama:away:changed",
+  closeAway: "tokama:away:close",
 } as const;
 
 /** The usage actions only the window sees. The main process counts no other name from the window. */
@@ -308,4 +311,10 @@ export interface TokamaBridge {
    * address comes from the window: the main process builds it from the update's own version.
    */
   openUpdateNotes(): Promise<void>;
+  /** Whether the user was away 15 minutes or more and has not pressed Got it, and what they have seen until. */
+  getAway(): Promise<AwayInfo>;
+  /** Calls `listener` on every change of the away state; returns a function that stops it. */
+  onAway(listener: (info: AwayInfo) => void): () => void;
+  /** Got it: the main process sets "seen until" to its own now and ends the strip. The window sends no time. */
+  closeAway(): Promise<void>;
 }

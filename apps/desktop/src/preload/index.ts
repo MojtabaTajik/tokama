@@ -3,7 +3,7 @@
 // channel names, no Node.
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import { type AboutInfo, type BridgeEvent, CHANNELS, type ConnectionState, type DiagnosticsLoad, type DiagnosticsSaveResult, type DiagnosticsSendResult, type NotificationStatus, type OpenResult, type ToolsPathInfo, type TokamaBridge, type WhatsNewInfo } from "../shared/bridge.js";
-import type { DesktopState } from "../shared/desktop-state.js";
+import type { AwayInfo, DesktopState } from "../shared/desktop-state.js";
 import type { InstallResult, UpdateState } from "../shared/update.js";
 
 /** Subscribes to a pushed channel. Wrapped, so the renderer never receives the IPC event object (it carries `sender`). */
@@ -100,6 +100,10 @@ export const bridge: TokamaBridge = {
   checkForUpdates: () => ipcRenderer.invoke(CHANNELS.checkForUpdates) as Promise<void>,
   installUpdate: () => ipcRenderer.invoke(CHANNELS.installUpdate) as Promise<InstallResult>,
   openUpdateNotes: () => ipcRenderer.invoke(CHANNELS.openUpdateNotes) as Promise<void>,
+  getAway: () => ipcRenderer.invoke(CHANNELS.getAway) as Promise<AwayInfo>,
+  onAway: (listener) => subscribe<AwayInfo>(CHANNELS.awayChanged, listener),
+  // No argument crosses: the main process takes its own clock.
+  closeAway: () => ipcRenderer.invoke(CHANNELS.closeAway) as Promise<void>,
 };
 
 contextBridge.exposeInMainWorld("tokama", bridge);
