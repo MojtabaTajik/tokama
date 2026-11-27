@@ -138,6 +138,33 @@ flow(
     expect((await page.locator('.np-list [role="option"]').allTextContents()).map((entry) => entry.replace(/^✓/, ""))).toEqual(["Askread-only", "Review coderead-only", "Quick fixchanges code", "Quick changechanges code", "Plan and buildchanges code"]);
     await screenshot("ask-1-picker");
     await page.keyboard.press("Escape");
+
+    // A question with nothing picked: Ask is the suggestion, and the line says why.
+    const trigger = page.locator(".np-trigger", { hasText: "Template" });
+    const hint = page.locator(".np-suggest");
+    const QUESTION = "how hard is it to add cars to street?";
+    await text.fill(QUESTION);
+    await expect.poll(() => trigger.innerText(), { message: "the suggested template" }).toContain("Ask (suggested)");
+    expect(await hint.allInnerTexts()).toEqual(["Reads like a question. Ask answers it and changes no file."]);
+    await screenshot("suggest-ask-1-nothing-picked");
+
+    // A request is not a question: the engine's answer for it drops the suggestion, which is the change waited for.
+    await text.fill("Can you add CSV export to orders?");
+    await expect.poll(() => trigger.innerText(), { message: "the suggestion for a request" }).toContain("Choose…");
+    expect(await hint.count()).toBe(0);
+    await text.fill(QUESTION);
+    await expect.poll(() => trigger.innerText(), { message: "the suggested template again" }).toContain("Ask (suggested)");
+
+    // A template that changes code picked: it stays, with the same line and a way to switch.
+    await trigger.click();
+    await page.locator('.np-list [role="option"]', { hasText: "Quick change" }).click();
+    expect(await trigger.innerText()).toContain("Quick change");
+    expect(await hint.allInnerTexts()).toEqual(["Reads like a question. Ask answers it and changes no file. Use Ask"]);
+    await screenshot("suggest-ask-2-task-picked");
+    await hint.getByRole("button", { name: "Use Ask" }).click();
+    expect(await trigger.innerText()).toContain("Ask");
+    expect(await hint.count()).toBe(0);
+
     // Nothing starts by itself.
     expect(await page.locator(".pl-row").count()).toBeGreaterThan(0);
     expect(git(repoPath, "branch", "--list", "tokama/*").split("\n").filter(Boolean)).toHaveLength(1);

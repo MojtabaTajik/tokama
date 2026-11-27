@@ -28,6 +28,8 @@ const SUGGEST = "builtin/plan-and-build";
 
 interface Options {
   readonly suggest?: string | null;
+  /** Why the engine suggests it: the text reads like a question. */
+  readonly reason?: "question";
   readonly commandReply?: Reply;
   readonly setup?: Setup;
   /** Answers `suggest_template` by hand, per text, instead of at once. */
@@ -37,7 +39,7 @@ const mount = async (options: Options = {}) => {
   const fake = fakeBridge(CONNECTED, {
     reply: (q) => {
       if (q.type === "suggest_template" && options.suggestReply) return options.suggestReply((q as unknown as { text: string }).text);
-      if (q.type === "suggest_template") return { ok: true, data: { templateId: options.suggest === undefined ? SUGGEST : options.suggest } };
+      if (q.type === "suggest_template") return { ok: true, data: { templateId: options.suggest === undefined ? SUGGEST : options.suggest, ...(options.reason !== undefined && { reason: options.reason }) } };
       if (q.type === "setup" && options.setup) return { ok: true, data: options.setup };
       if (q.type === "item" && (q as { itemId?: string }).itemId === NEW_ID) return { ok: true, data: { item: newItem } };
       return undefined;
@@ -74,7 +76,7 @@ describe("New work input", () => {
   it("is one line until focused, then expands with the template, repos and steps, and no run option", async () => {
     await mount();
     expect($(".np-body")).toBeNull();
-    expect(input().placeholder).toBe("Describe a task or paste an alert…");
+    expect(input().placeholder).toBe("Describe a task, ask a question or paste an alert…");
     await focusInput();
     expect($(".np-body")).not.toBeNull();
     expect($$(".np-trigger").map((el) => el.textContent)).toEqual(["TemplateChoose…▾", "ReposChoose…▾"]);
@@ -175,6 +177,66 @@ describe("New work input", () => {
     expect(trigger("Template").textContent).toBe("TemplateAsk (suggested)▾");
     await click(trigger("Template"));
     expect(options()).toEqual(["Askread-only · suggested", "Emergency investigatorread-only", "DB slow query checkread-only", "Review coderead-only", "Plan and buildchanges code", "Quick fixchanges code"]);
+  });
+
+  describe("a question", () => {
+    const ask = { id: "builtin/ask", name: "Ask", icon: "circle-question", color: "sand", kind: "investigation", start: { needs: ["text", "repo"], askBeforeCloud: false }, warnings: [], connections: [], steps: [] };
+    const withAsk = { ...setup, templates: [ask, ...setup.templates] } as unknown as Setup;
+    const QUESTION = "why does the export skip refunds?";
+    const line = () => $$(".np-suggest").map((el) => el.textContent);
+    const pick = (name: string) => click($$('[role="option"]').find((el) => el.textContent?.startsWith(name) || el.textContent?.startsWith(`✓${name}`))!);
+    const ask_ = async () => {
+      const fake = await mount({ setup: withAsk, suggest: "builtin/ask", reason: "question" });
+      await focusInput();
+      return fake;
+    };
+
+    it("with nothing picked, suggests Ask and says why, and starts nothing by itself", async () => {
+      const fake = await ask_();
+      await type(input(), QUESTION);
+      await wait(300);
+      expect(trigger("Template").textContent).toBe("TemplateAsk (suggested)▾");
+      expect(line()).toEqual(["Reads like a question. Ask answers it and changes no file."]);
+      expect($(".np-suggest button")).toBeNull();
+      expect(fake.command).not.toHaveBeenCalled();
+    });
+
+    it("with a template that changes code picked, keeps it, says why, and offers Use Ask", async () => {
+      const fake = await ask_();
+      await click(trigger("Template"));
+      await pick("Quick fix");
+      await type(input(), QUESTION);
+      await wait(300);
+      expect(trigger("Template").textContent).toBe("TemplateQuick fix▾");
+      expect(line()).toEqual(["Reads like a question. Ask answers it and changes no file. Use Ask"]);
+      expect(fake.command).not.toHaveBeenCalled();
+      await click($(".np-suggest button"));
+      expect(trigger("Template").textContent).toBe("TemplateAsk▾");
+      expect(line()).toEqual([]);
+    });
+
+    it("says nothing when a read-only template is picked, or while the answer is for older text", async () => {
+      await ask_();
+      await click(trigger("Template"));
+      await pick("Review code");
+      await type(input(), QUESTION);
+      await wait(300);
+      expect(line()).toEqual([]);
+      await click(trigger("Template"));
+      await pick("Quick fix");
+      expect(line()).toHaveLength(1);
+      await type(input(), `${QUESTION} And why?`);
+      expect(line()).toEqual([]);
+    });
+
+    it("says nothing when the engine gives no reason", async () => {
+      await mount({ setup: withAsk, suggest: "builtin/plan-and-build" });
+      await focusInput();
+      await type(input(), "add retry to the payment client");
+      await wait(300);
+      expect(trigger("Template").textContent).toBe("TemplatePlan and build (suggested)▾");
+      expect(line()).toEqual([]);
+    });
   });
 
   it("shows no read-only tag on a template whose step agent may run commands", async () => {

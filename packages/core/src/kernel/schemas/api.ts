@@ -360,7 +360,8 @@ export const QueryResultSchemas = {
   attempt_checks: AttemptChecksSchema,
   attempt_log: AttemptLogSchema,
   attempt_file: z.strictObject({ path: z.string().min(1).max(4096) }),
-  suggest_template: z.strictObject({ templateId: TemplateRefSchema.nullable() }),
+  // `reason` says why the template is suggested, when the text is the reason: "question" for Ask.
+  suggest_template: z.strictObject({ templateId: TemplateRefSchema.nullable(), reason: z.literal("question").optional() }),
   suggest_repo: RepoSuggestionSchema,
   repo_branches: z.strictObject(BranchListShape),
   agents_list: AgentsListSchema,

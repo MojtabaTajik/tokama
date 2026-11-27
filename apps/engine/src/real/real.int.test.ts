@@ -538,6 +538,18 @@ finish: [commit]
     });
   });
 
+  it("suggests Ask, with the reason, for a question, and nothing for a request", SLOW, async () => {
+    const { client } = await engine(scripted([{ writes: {} }]));
+    const suggest = async (text: string) => {
+      const reply = await client.query({ type: "suggest_template", text });
+      if (!reply.ok) throw new Error(reply.error.message);
+      return reply.data;
+    };
+    expect(await suggest("Why does the nightly export skip refunds")).toEqual({ templateId: "builtin/ask", reason: "question" });
+    expect(await suggest("Can you add CSV export?")).toEqual({ templateId: null });
+    expect(await suggest("Add CSV export")).toEqual({ templateId: null });
+  });
+
   it("reads repos.yaml again after remove_repo, so a start in that repo is refused at once", SLOW, async () => {
     const { client } = await engine(scripted([{ writes: {} }]));
     expect(await client.command({ type: "remove_repo", repoId: "orders-api" })).toEqual({ ok: true, data: null });

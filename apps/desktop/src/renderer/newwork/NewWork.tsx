@@ -5,7 +5,7 @@
 import type { ItemRecord, Setup } from "@tokama/core";
 import { type FormEvent, type KeyboardEvent, type Ref, useEffect, useId, useImperativeHandle, useRef, useState } from "react";
 import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
-import { agentLines, commandsOf, KIND_GROUPS, missing, needsRepo, noChecks, noteOf, reposFor, stepsLine, usesOf } from "./needs.js";
+import { agentLines, ASK_ID, commandsOf, KIND_GROUPS, missing, needsRepo, noChecks, noteOf, reposFor, stepsLine, usesOf } from "./needs.js";
 import { Picker } from "./Picker.js";
 import { useSuggestion } from "./useSuggestion.js";
 import { Button } from "../ui/Button.js";
@@ -17,7 +17,7 @@ const TEXT = {
   describe: "Describe a task or paste an alert",
   sampleLabel: "What should change? This is a sample: keep it or type your own.",
   sampleHint: "Runs on its own branch. Nothing is merged until you say so.",
-  placeholder: "Describe a task or paste an alert…",
+  placeholder: "Describe a task, ask a question or paste an alert…",
   collapse: "Collapse",
   template: "Template",
   chooseTemplate: "Choose…",
@@ -38,6 +38,7 @@ const TEXT = {
   failed: (message: string) => `Could not start the work: ${message}`,
   instead: (name: string) => `${name} lets you review the diff yourself instead.`,
   use: (name: string) => `Use ${name}`,
+  question: (name: string) => `Reads like a question. ${name} answers it and changes no file.`,
 } as const;
 
 /** macOS uses Cmd for shortcuts, other systems Ctrl. */
@@ -101,6 +102,12 @@ export function NewWork({ bridge, setup, ref, repoId, onStarted }: NewWorkProps)
   const blocked = noChecks(shown, setup.repos, chosenRepos, setup.templates);
   const reason = missing({ template, text, repoIds: chosenRepos }) ?? blocked?.reason;
   const sampleShown = sample !== undefined && text === sample;
+  // A question the engine has just read: with nothing picked Ask is the suggestion (the line says why);
+  // a picked template that changes code stays, with a way to switch; a read-only pick needs no line.
+  const ask = setup.templates.find((candidate) => candidate.id === ASK_ID);
+  const readsAsQuestion = ask !== undefined && suggestion?.fresh === true && suggestion.reason === "question";
+  const askLine = readsAsQuestion && (picked === undefined || shown?.kind === "task");
+  const askSwitch = askLine && picked !== undefined;
 
   useImperativeHandle(ref, () => ({
     open(prefill) {
@@ -263,6 +270,19 @@ export function NewWork({ bridge, setup, ref, repoId, onStarted }: NewWorkProps)
                 {warning}
               </p>
             ))}
+            {askLine && ask !== undefined && (
+              <p className="np-suggest">
+                {TEXT.question(ask.name)}
+                {askSwitch && (
+                  <>
+                    {" "}
+                    <Button variant="link" inline onClick={() => setPicked(ask.id)}>
+                      {TEXT.use(ask.name)}
+                    </Button>
+                  </>
+                )}
+              </p>
+            )}
             {blocked?.instead !== undefined && (
               // Why the template can't run is the Start reason below; this offers the way out.
               <p className="np-suggest">

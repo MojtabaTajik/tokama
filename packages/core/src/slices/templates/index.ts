@@ -2,5 +2,6 @@
 export { BUILTIN_TEMPLATES } from "./builtin.js";
 export { TEMPLATE_SCHEMA_FILES, templateJsonSchema, templateJsonSchemaText } from "./json-schema.js";
 export { loadBuiltins, loadTemplates, TEMPLATES_DIR, type LoadInput, type RepoLocation, type TemplateLoad } from "./load.js";
+export { looksLikeQuestion } from "./question.js";
 export { validateTemplate, type AgentLocation, type TemplateProblem, type ValidateContext } from "./validate.js";
 export { lineWarning, templateWarnings } from "./warnings.js";
