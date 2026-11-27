@@ -214,20 +214,13 @@ describe("sample helpers", () => {
     expect(JSON.stringify(updates)).not.toMatch(/[<>]/);
   });
 
-  it("counts the sample helper calls in the usage totals and days, and lists them by helper", async () => {
+  it("lists the sample helper calls of the week by model in the usage report", async () => {
     const { client } = await sampleEngine();
-    const reply = await client.query({ type: "usage", range: 14, scope: "tokama" });
+    const reply = await client.query({ type: "usage" });
     if (!reply.ok) throw new Error(reply.error.message);
-    const report = reply.data;
-    expect(report.helpers).toEqual([{ helperId: "suggest-checks", tokens: { input: 37_200, output: 1_080, cacheRead: 0, cacheWrite: 0 }, costUsd: expect.any(Number), calls: 6 }]);
-    // The list is part of the totals, and the totals, the days, the models and the token summary agree.
-    const sum = (t: { input: number; output: number; cacheRead: number; cacheWrite: number }) => t.input + t.output + t.cacheRead + t.cacheWrite;
-    const total = sum(report.totals.tokens);
-    expect(report.days.reduce((n, day) => n + (day.tokens ?? 0), 0)).toBe(total);
-    expect(report.tokenSummary?.processed).toBe(total);
-    expect(report.models?.reduce((n, model) => n + model.tokens, 0)).toBe(total);
-    // The workflows list only workflows: the totals are their tokens plus the helpers'.
-    expect(total).toBe(report.workflows.reduce((n, workflow) => n + workflow.tokens, 0) + 37_200 + 1_080);
+    const helpers = reply.data.week?.helpers ?? [];
+    expect(helpers.length).toBeGreaterThan(0);
+    expect(helpers.every((helper) => helper.cliId === "claude-code" && helper.calls > 0 && helper.tokens > 0)).toBe(true);
   });
 });
 

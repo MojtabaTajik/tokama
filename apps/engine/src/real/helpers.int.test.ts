@@ -164,7 +164,7 @@ async function ended(fixture: Fixture, runId: string): Promise<HelperRun> {
 }
 
 const usage = async (client: EngineClient): Promise<UsageReport> => {
-  const reply = await client.query({ type: "usage", range: 14 });
+  const reply = await client.query({ type: "usage" });
   if (!reply.ok) throw new Error(reply.error.message);
   return reply.data;
 };
@@ -195,9 +195,9 @@ describe("a real engine with no helpers built in", () => {
     expect(await client.query({ type: "check_trial", trialId: TRIAL_ID as never })).toMatchObject(notImplemented);
   });
 
-  it("leaves its usage report without a helpers block", async () => {
+  it("lists no helper calls in its usage report", async () => {
     const { client } = await engine();
-    expect((await usage(client)).helpers).toBeUndefined();
+    expect((await usage(client)).week?.helpers).toEqual([]);
   });
 
   it("makes no folder for helpers until one runs", async () => {

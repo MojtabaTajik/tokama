@@ -74,32 +74,29 @@ function spend(items: ItemStore, item: StoredItem, n: number, endedAt: number) {
 }
 
 describe("usage query", () => {
-  it("serves realistic sample usage in sample mode: 14 days, every CLI, and a fresh answer", async () => {
+  it("serves realistic sample usage in sample mode: every CLI, today's items, and a fresh answer", async () => {
     const dir = tempEngineDir(cleanups);
     const started = await startEngine({ dir, sample: true });
     if (!started.ok) throw new Error(started.error.message);
     cleanups.push(() => started.value.close());
     const engineClient = await client(dir, started.value.endpoint.lockPath);
     const events = collect(engineClient);
-    const reply = await engineClient.query({ type: "usage", range: 14 });
+    const reply = await engineClient.query({ type: "usage" });
     if (!reply.ok) throw new Error(reply.error.message);
     expect(parseQueryResult("usage", reply.data).ok).toBe(true);
     const report = reply.data;
-    expect(report.days).toHaveLength(14);
     expect(report.clis.map((cli) => cli.cliId)).toEqual(["claude-code", "codex-cli", "ollama"]);
     expect(report.clis[1]?.windows[0]?.usedPercent).toBe(41);
-    expect(report.items.length).toBeGreaterThan(3);
-    expect(report.totals.calls).toBeGreaterThan(10);
-    expect(report.days.at(-1)?.workflows.length).toBeGreaterThan(0);
+    expect(report.today?.itemCount).toBeGreaterThan(0);
+    expect(report.week?.items.length).toBeGreaterThan(3);
     await waitFor(() => usageChanged(events) > 0, 5_000, "usage_changed");
-    const again = await engineClient.query({ type: "usage", range: 90 });
+    const again = await engineClient.query({ type: "usage" });
     expect(again.ok && again.data.clis[0]).toMatchObject({ source: "request", windows: [
         { window: "session", usedPercent: 36 },
         { window: "weekly_all", usedPercent: 82 },
         { window: "weekly_scoped", usedPercent: 47, scope: "Fable", sharePercent: 50 },
       ],
     });
-    expect(again.ok && again.data.days).toHaveLength(90);
   });
 
   it("tells the sample's weekly forecast, split, retries and model records, and an item's use", async () => {
@@ -109,9 +106,9 @@ describe("usage query", () => {
     cleanups.push(() => started.value.close());
     const engineClient = await client(dir, started.value.endpoint.lockPath);
     const events = collect(engineClient);
-    await engineClient.query({ type: "usage", range: 90 });
+    await engineClient.query({ type: "usage" });
     await waitFor(() => usageChanged(events) > 0, 5_000, "usage_changed");
-    const reply = await engineClient.query({ type: "usage", range: 90 });
+    const reply = await engineClient.query({ type: "usage" });
     if (!reply.ok) throw new Error(reply.error.message);
     expect(parseQueryResult("usage", reply.data).ok).toBe(true);
     const { clis, week, stepModels, agentModels } = reply.data;
@@ -147,7 +144,7 @@ describe("usage query", () => {
     expect(agentModels?.map((a) => a.agentId)).toEqual(expect.arrayContaining(["orders-builder", "local-builder", "architect"]));
 
     // The previous weekly window is the one that closed: told from its own calls and its stored weight.
-    const previous = await engineClient.query({ type: "usage", range: 90, window: "previous" });
+    const previous = await engineClient.query({ type: "usage", window: "previous" });
     if (!previous.ok) throw new Error(previous.error.message);
     expect(previous.data.week?.window).toBe("previous");
     expect(previous.data.week?.limits[0]).toMatchObject({ cliId: "claude-code", usedPercent: 64, tokamaPercent: 46, outsidePercent: 18 });
@@ -179,17 +176,16 @@ describe("usage query", () => {
     const engineClient = await client(dir, started.value.endpoint.lockPath);
     const events = collect(engineClient);
 
-    const first = await engineClient.query({ type: "usage", range: 14 });
+    const first = await engineClient.query({ type: "usage" });
     if (!first.ok) throw new Error(first.error.message);
-    expect(first.data.totals).toMatchObject({ calls: 1, costUsd: 4, unpricedCalls: 0 });
-    expect(first.data.items).toEqual([expect.objectContaining({ title: "Fix the checkout timeout", templateId: "orders-api/quick-fix", costUsd: 4 })]);
+    expect(first.data.today?.items).toEqual([expect.objectContaining({ title: "Fix the checkout timeout", agents: [{ agentId: expect.any(String), cliId: "claude-code" }] })]);
     // The windows come from the run's own rate-limit event.
     expect(first.data.clis[0]).toMatchObject({ source: "run", windows: [{ window: "five_hour", usedPercent: 40 }] });
 
     spend(started.value.items!, started.value.items!.get(created.value.id)!, 2, Date.now());
     await waitFor(() => usageChanged(events) === 1, 5_000, "usage_changed");
-    const second = await engineClient.query({ type: "usage", range: 14 });
-    expect(second.ok && second.data.totals.calls).toBe(2);
+    const second = await engineClient.query({ type: "usage" });
+    expect(second.ok && second.data.today?.tokens.input).toBeGreaterThan(first.data.today?.tokens.input ?? 0);
     expect(usageChanged(events)).toBe(1);
   });
 
@@ -243,7 +239,7 @@ describe("usage query", () => {
     cleanups.push(() => started.value.close());
     const engineClient = await client(dir, started.value.endpoint.lockPath);
 
-    const current = await engineClient.query({ type: "usage", range: 90 });
+    const current = await engineClient.query({ type: "usage" });
     if (!current.ok) throw new Error(current.error.message);
     expect(parseQueryResult("usage", current.data).ok).toBe(true);
     const week = current.data.week;
@@ -255,7 +251,7 @@ describe("usage query", () => {
     expect(week?.retries).toEqual([{ cliId: "claude-code", tokens: 1_000_000, causes: [expect.objectContaining({ kind: "check", command: "pnpm test", repoId: "orders-api", stepId: "build", retries: 1, itemCount: 1, tokens: 1_000_000 })] }]);
 
     // The window before: from the first call's own reading, closed because the second showed a later reset.
-    const previous = await engineClient.query({ type: "usage", range: 90, window: "previous" });
+    const previous = await engineClient.query({ type: "usage", window: "previous" });
     if (!previous.ok) throw new Error(previous.error.message);
     expect(previous.data.week?.window).toBe("previous");
     expect(previous.data.week?.limits).toEqual([expect.objectContaining({ cliId: "claude-code", window: "weekly_all", usedPercent: 64, endsAt: now - 2 * DAY })]);

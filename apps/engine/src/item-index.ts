@@ -3,31 +3,22 @@
 // CLI's data, read again when lost) and Claude Code's usage from its session logs (`claude_local_*`:
 // numbers per message and where each log was read up to, never text or paths; rebuilt by reading
 // the logs again). Only the engine writes it. A database of another schema version is recreated;
-// version 3 and 4 only drop the tables that were derived from the item logs and keep the rest.
+// versions 3 to 5 only drop the tables that are no longer used and keep the rest.
 // Extension loading stays off (the default).
 import { closeSync, constants, openSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { type AiCliId, keepPast, type LocalUsageMessage, localDate, type PastWindow, type PlanReading, readPast, type RepoId, type TokenUsage } from "@tokama/core";
+import { type AiCliId, keepPast, type LocalUsageMessage, localDate, type PastWindow, type PlanReading, readPast, type TokenUsage } from "@tokama/core";
 
-export const INDEX_SCHEMA_VERSION = 5;
+export const INDEX_SCHEMA_VERSION = 6;
 
-// "items" and "usage_calls" stay so a database of an older version loses those tables too.
+/** The tables no longer used, dropped from a database of version 3 to 5. */
+const UNUSED_TABLES = ["items", "usage_calls", "claude_local_projects"];
 
-const TABLES = ["items", "usage_calls", "plan_samples", "claude_local_messages", "claude_local_files", "claude_local_projects"];
+// The unused tables stay in this list so a database of an older version loses them too.
+const TABLES = [...UNUSED_TABLES, "plan_samples", "claude_local_messages", "claude_local_files"];
 
 /** One message's usage from Claude Code's logs. */
 export type LocalMessage = LocalUsageMessage;
-
-/** Claude Code's usage per local day, model and project. */
-export interface LocalDayRow {
-  readonly day: string;
-  readonly model: string;
-  readonly project: string;
-  /** Null: the project is outside the configured repos, or not matched yet. */
-  readonly repoId: RepoId | null;
-  readonly tokens: TokenUsage;
-  readonly messages: number;
-}
 
 const CREATE = `
   CREATE TABLE plan_samples (
@@ -52,10 +43,6 @@ const CREATE = `
     ino INTEGER NOT NULL,
     offset INTEGER NOT NULL
   ) STRICT;
-  CREATE TABLE claude_local_projects (
-    project TEXT PRIMARY KEY,
-    repo_id TEXT
-  ) STRICT;
 `;
 
 export class ItemIndex {
@@ -68,11 +55,10 @@ export class ItemIndex {
     try {
       db.exec("PRAGMA journal_mode = WAL");
       const version = (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
-      if (version === 3 || version === 4) {
-        // Only the tables derived from the item logs go; the plan samples and Claude Code usage stay.
+      if (version >= 3 && version <= 5) {
+        // Only the tables no longer used go; the plan samples and Claude Code usage stay.
         db.exec("BEGIN");
-        db.exec("DROP TABLE IF EXISTS items");
-        db.exec("DROP TABLE IF EXISTS usage_calls");
+        for (const table of UNUSED_TABLES) db.exec(`DROP TABLE IF EXISTS ${table}`);
         db.exec(`PRAGMA user_version = ${INDEX_SCHEMA_VERSION}`);
         db.exec("COMMIT");
       } else if (version !== INDEX_SCHEMA_VERSION) {
@@ -123,37 +109,10 @@ export class ItemIndex {
     });
   }
 
-  /** Stores which repo each project hash belongs to (null: none), so it holds across restarts. */
-  saveLocalProjects(repos: ReadonlyMap<string, string | null>): void {
-    this.transaction(() => {
-      const put = this.db.prepare("INSERT INTO claude_local_projects (project, repo_id) VALUES (?, ?) ON CONFLICT (project) DO UPDATE SET repo_id = excluded.repo_id");
-      for (const [project, repoId] of repos) put.run(project, repoId);
-    });
-  }
-
   /** The time of the oldest message kept from the logs: Claude Code's calls before it are not in them. */
   localCoveredFrom(): number | undefined {
     const row = this.db.prepare("SELECT min(at) AS at FROM claude_local_messages").get() as { at: number | null };
     return row.at ?? undefined;
-  }
-
-  /** Claude Code's usage since `since`, summed per local day, model and project, with the project's repo. */
-  localDays(since: number): LocalDayRow[] {
-    const rows = this.db
-      .prepare(
-        `SELECT m.day, m.model, m.project, p.repo_id, sum(m.input) AS input, sum(m.output) AS output, sum(m.cache_read) AS cache_read, sum(m.cache_write) AS cache_write, count(*) AS messages
-         FROM claude_local_messages m LEFT JOIN claude_local_projects p ON p.project = m.project
-         WHERE m.at >= ? GROUP BY m.day, m.model, m.project ORDER BY m.day, m.model, m.project`,
-      )
-      .all(since) as unknown as { day: string; model: string; project: string; repo_id: string | null; input: number; output: number; cache_read: number; cache_write: number; messages: number }[];
-    return rows.map((row) => ({
-      day: row.day,
-      model: row.model,
-      project: row.project,
-      repoId: row.repo_id as RepoId | null,
-      tokens: { input: row.input, output: row.output, cacheRead: row.cache_read, cacheWrite: row.cache_write },
-      messages: row.messages,
-    }));
   }
 
   /** Claude Code's tokens per model between two times, from its logs. */

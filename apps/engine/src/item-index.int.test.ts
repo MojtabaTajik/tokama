@@ -107,6 +107,9 @@ function openIndex(file = join(home, "tokama.db")): ItemIndex {
   return index;
 }
 
+/** The tables of schema version 5: the version 4 tables without the call table. */
+const V5_SCHEMA = V4_SCHEMA.replace(/CREATE TABLE usage_calls \([^;]*;\s*CREATE INDEX usage_calls_ended_at[^;]*;/, "");
+
 /** The tables of schema version 3, as the engine created them before the items table was dropped. */
 const V3_SCHEMA = `
   CREATE TABLE items (
@@ -247,7 +250,7 @@ describe("ItemIndex", () => {
     expect(statSync(file).mode & 0o777).toBe(0o600);
 
     const raw = new DatabaseSync(file);
-    expect(raw.prepare("PRAGMA user_version").get()).toEqual({ user_version: 5 });
+    expect(raw.prepare("PRAGMA user_version").get()).toEqual({ user_version: 6 });
     raw.exec("PRAGMA user_version = 99");
     raw.close();
 
@@ -274,16 +277,40 @@ describe("ItemIndex", () => {
     const index = openIndex(file);
     const check = new DatabaseSync(file, { readOnly: true });
     cleanups.push(() => check.close());
-    expect(check.prepare("PRAGMA user_version").get()).toEqual({ user_version: 5 });
-    expect(check.prepare("SELECT name FROM sqlite_master WHERE name IN ('items', 'items_updated_at', 'usage_calls', 'usage_calls_ended_at')").all()).toEqual([]);
+    expect(check.prepare("PRAGMA user_version").get()).toEqual({ user_version: 6 });
+    expect(check.prepare("SELECT name FROM sqlite_master WHERE name IN ('items', 'items_updated_at', 'usage_calls', 'usage_calls_ended_at', 'claude_local_projects')").all()).toEqual([]);
     expect(index.planSample("claude-code")).toEqual({ windows: [{ window: "five_hour", usedPercent: 36 }], asOf: T0 });
     expect(index.localMark("f1")).toEqual({ ino: 7, offset: 99 });
     expect(index.localCoveredFrom()).toBe(T0);
-    expect(index.localDays(0)).toEqual([{ day: "2026-11-24", model: "claude-opus-5-5", project: "p1", repoId: "orders-api", tokens: { input: 10, output: 20, cacheRead: 30, cacheWrite: 40 }, messages: 1 }]);
+    expect(index.localTotals(0, T0)).toEqual([{ model: "claude-opus-5-5", tokens: { input: 10, output: 20, cacheRead: 30, cacheWrite: 40 } }]);
 
     // The upgraded database takes writes.
     index.savePlanSample("claude-code", { windows: [{ window: "five_hour", usedPercent: 37 }], asOf: T0 + 1 });
     expect(index.planSample("claude-code")?.asOf).toBe(T0 + 1);
+  });
+
+  it("upgrades a v5 database: drops only the project table, keeps messages, files and plan samples", () => {
+    const file = join(home, "tokama.db");
+    const raw = new DatabaseSync(file);
+    raw.exec(V5_SCHEMA);
+    raw.exec("PRAGMA user_version = 5");
+    raw.prepare("INSERT INTO plan_samples (cli_id, as_of, record) VALUES (?, ?, ?)").run("claude-code", T0, JSON.stringify({ windows: [{ window: "five_hour", usedPercent: 36 }], asOf: T0 }));
+    raw.prepare("INSERT INTO claude_local_messages (key, at, day, model, project, input, output, cache_read, cache_write) VALUES ('req_1', ?, '2026-11-24', 'claude-opus-5-5', 'p1', 10, 20, 30, 40)").run(T0);
+    raw.prepare("INSERT INTO claude_local_files (file_key, ino, offset) VALUES ('f1', 7, 99)").run();
+    raw.prepare("INSERT INTO claude_local_projects (project, repo_id) VALUES ('p1', 'orders-api')").run();
+    raw.close();
+
+    const index = openIndex(file);
+    const check = new DatabaseSync(file, { readOnly: true });
+    cleanups.push(() => check.close());
+    expect(check.prepare("PRAGMA user_version").get()).toEqual({ user_version: 6 });
+    expect(check.prepare("SELECT name FROM sqlite_master WHERE name = 'claude_local_projects'").all()).toEqual([]);
+    expect(index.planSample("claude-code")?.asOf).toBe(T0);
+    expect(index.localMark("f1")).toEqual({ ino: 7, offset: 99 });
+    expect(index.localTotals(0, T0)).toEqual([{ model: "claude-opus-5-5", tokens: { input: 10, output: 20, cacheRead: 30, cacheWrite: 40 } }]);
+    // The kept messages table takes new messages.
+    index.saveLocalFile("f1", { ino: 7, offset: 120 }, [{ key: "req_2", at: T0 + 1, model: "claude-opus-5-5", project: "p1", tokens: { input: 1, output: 1, cacheRead: 1, cacheWrite: 1 } }]);
+    expect(index.localTotals(0, T0 + 1)[0]?.tokens.input).toBe(11);
   });
 
   it("stores no absolute paths", () => {
@@ -348,7 +375,7 @@ describe("engine start with a home folder", () => {
     expect(readdirSync(home).filter((name) => name.includes(".damaged-"))).toEqual([]);
     const upgraded = new DatabaseSync(join(home, "tokama.db"), { readOnly: true });
     cleanups.push(() => upgraded.close());
-    expect(upgraded.prepare("PRAGMA user_version").get()).toEqual({ user_version: 5 });
+    expect(upgraded.prepare("PRAGMA user_version").get()).toEqual({ user_version: 6 });
     expect(upgraded.prepare("SELECT cli_id FROM plan_samples").all()).toEqual([{ cli_id: "claude-code" }]);
     const connected = await connect({ dir, lockPath: join(home, "engine.lock"), startTimeoutMs: 2_000 });
     if (!connected.ok) throw new Error(connected.error.message);
@@ -474,7 +501,7 @@ describe("engine start with a home folder", () => {
   it("moves a damaged database aside, loads the items, and answers usage from the logs", async () => {
     const store = openStore();
     const item = create(store, "Fix it");
-    spend(store, item, 1, Date.now() - 60_000);
+    spend(store, item, 1, Date.now());
     writeFileSync(join(home, "tokama.db"), "this is not a database, just garbage bytes ".repeat(200));
     writeFileSync(join(home, "tokama.db-wal"), "garbage");
     const logs: string[] = [];
@@ -485,8 +512,8 @@ describe("engine start with a home folder", () => {
     const connected = await connect({ dir, lockPath: join(home, "engine.lock"), startTimeoutMs: 2_000 });
     if (!connected.ok) throw new Error(connected.error.message);
     cleanups.push(() => connected.value.close());
-    const usage = await connected.value.query({ type: "usage", range: 14 });
-    expect(usage.ok && usage.data.items.map((row) => row.title)).toEqual(["Fix it"]);
+    const usage = await connected.value.query({ type: "usage" });
+    expect(usage.ok && usage.data.today?.items.map((row) => row.title)).toEqual(["Fix it"]);
 
     expect(logs.some((line) => line.includes("is damaged"))).toBe(true);
     const aside = readdirSync(home).filter((name) => name.includes(".damaged-") && !name.endsWith("-wal") && !name.endsWith("-shm"));
@@ -521,43 +548,42 @@ describe("ItemIndex: Claude Code's usage from its logs", () => {
   const day2 = new Date(2026, 10, 24, 9).getTime();
 
   it("counts a message once across logs and reads, with its largest counts", () => {
-    const index = openIndex();
-    index.saveLocalFile("f1", { ino: 1, offset: 10 }, [message("req_1", day1, 5), message("req_1", day1 + 1, 400), message("req_2", day1, 50)]);
+    const store = openIndex();
+    store.saveLocalFile("f1", { ino: 1, offset: 10 }, [message("req_1", day1, 5), message("req_1", day1 + 1, 400), message("req_2", day1, 50)]);
     // The same message in another log, and the first log read again from the start.
-    index.saveLocalFile("f2", { ino: 2, offset: 20 }, [message("req_2", day1, 50)]);
-    index.saveLocalFile("f1", { ino: 1, offset: 10 }, [message("req_1", day1, 5)]);
-    expect(index.localDays(0)).toEqual([{ day: "2026-11-23", model: "claude-opus-5-5", project: "p1", repoId: null, tokens: { input: 20, output: 450, cacheRead: 200, cacheWrite: 10 }, messages: 2 }]);
-    index.saveLocalProjects(new Map([["p1", "orders-api"]]));
-    expect(index.localDays(0)[0]?.repoId).toBe("orders-api");
-    expect(index.localCoveredFrom()).toBe(day1);
-    expect(index.localMark("f1")).toEqual({ ino: 1, offset: 10 });
-    expect(index.localMark("f3")).toBeUndefined();
+    store.saveLocalFile("f2", { ino: 2, offset: 20 }, [message("req_2", day1, 50)]);
+    store.saveLocalFile("f1", { ino: 1, offset: 10 }, [message("req_1", day1, 5)]);
+    expect(store.localTotals(0, day2)).toEqual([{ model: "claude-opus-5-5", tokens: { input: 20, output: 450, cacheRead: 200, cacheWrite: 10 } }]);
+    expect(store.localCoveredFrom()).toBe(day1);
+    expect(store.localMark("f1")).toEqual({ ino: 1, offset: 10 });
+    expect(store.localMark("f3")).toBeUndefined();
   });
 
-  it("sums per local day, model and project, and keeps it when the database is opened again", () => {
+  it("keeps the messages when the database is opened again", () => {
     const first = openIndex();
     first.saveLocalFile("f1", { ino: 1, offset: 1 }, [message("a", day1, 1), message("b", day2, 2), message("c", day2, 3, "claude-sonnet-5-5"), message("d", day2, 4, "claude-opus-5-5", "p2")]);
     first.close();
     cleanups.pop();
-    const index = openIndex();
-    expect(index.localDays(0).map((row) => [row.day, row.model, row.project, row.tokens.output, row.messages])).toEqual([
-      ["2026-11-23", "claude-opus-5-5", "p1", 1, 1],
-      ["2026-11-24", "claude-opus-5-5", "p1", 2, 1],
-      ["2026-11-24", "claude-opus-5-5", "p2", 4, 1],
-      ["2026-11-24", "claude-sonnet-5-5", "p1", 3, 1],
+    const store = openIndex();
+    expect(store.localTotals(0, day2).map((row) => [row.model, row.tokens.output])).toEqual([
+      ["claude-opus-5-5", 7],
+      ["claude-sonnet-5-5", 3],
     ]);
-    expect(index.localDays(day2).map((row) => row.day)).not.toContain("2026-11-23");
+    expect(store.localTotals(day2, day2).map((row) => [row.model, row.tokens.output])).toEqual([
+      ["claude-opus-5-5", 6],
+      ["claude-sonnet-5-5", 3],
+    ]);
   });
 
   it("forgets the marks of logs that are gone and messages older than the range", () => {
-    const index = openIndex();
-    index.saveLocalFile("f1", { ino: 1, offset: 1 }, [message("a", day1, 1)]);
-    index.saveLocalFile("f2", { ino: 2, offset: 2 }, [message("b", day2, 2)]);
-    index.pruneLocal(undefined, day2);
-    expect(index.localDays(0).map((row) => row.day)).toEqual(["2026-11-24"]);
-    expect(index.localMark("f1")).toEqual({ ino: 1, offset: 1 });
-    index.pruneLocal(["f2"], day2);
-    expect(index.localMark("f1")).toBeUndefined();
-    expect(index.localMark("f2")).toEqual({ ino: 2, offset: 2 });
+    const store = openIndex();
+    store.saveLocalFile("f1", { ino: 1, offset: 1 }, [message("a", day1, 1)]);
+    store.saveLocalFile("f2", { ino: 2, offset: 2 }, [message("b", day2, 2)]);
+    store.pruneLocal(undefined, day2);
+    expect(store.localCoveredFrom()).toBe(day2);
+    expect(store.localMark("f1")).toEqual({ ino: 1, offset: 1 });
+    store.pruneLocal(["f2"], day2);
+    expect(store.localMark("f1")).toBeUndefined();
+    expect(store.localMark("f2")).toEqual({ ino: 2, offset: 2 });
   });
 });

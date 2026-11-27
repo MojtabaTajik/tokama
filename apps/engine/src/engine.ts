@@ -142,7 +142,7 @@ import { agentsFor, loadConfig, startProblem, stepProblems } from "./real/config
 import { sampleTemplateLoads } from "./sample/templates.js";
 import { openSampleDiagnostics } from "./sample/diagnostics.js";
 import { sampleMachineReport } from "./sample/machine.js";
-import { sampleHelperCalls, sampleHistory, sampleLogEntries, sampleLogTotals, sampleOtherPlans, samplePlanSources, sampleUsageItems, sampleUsageRows } from "./sample/usage.js";
+import { sampleHelperCalls, sampleHistory, sampleLogTotals, sampleOtherPlans, samplePlanSources, sampleUsageItems, sampleUsageRows } from "./sample/usage.js";
 import { ClaudeLogs, logReader } from "./claude-logs.js";
 import { type PlanSources, planSources, UsageService, usageItemsOf, usageRowsOf } from "./usage.js";
 import { MemoryItemStore } from "./store.js";
@@ -427,10 +427,6 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
           index,
           reader,
           root: options.claudeLogs,
-          repos: async () => {
-            const loaded = await loadRepos({ tokamaHome });
-            return loaded.ok ? loaded.value : [];
-          },
           clock,
           onChange: usageChanged,
           log,
@@ -450,9 +446,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
           logs: {
             cliId: "claude-code",
             refresh: () => {},
-            status: () => ({ state: "ready", filesDone: 412, filesTotal: 412, asOf: clock.now() - 40_000 }),
             complete: () => true,
-            entries: () => sampleLogEntries(sample.setup, clock.now()),
             totals: (from, to) => sampleLogTotals(sampleUsageRows(sample.setup, store.list(), clock.now()).map((row) => row.call), from, to),
             coveredFrom: () => 0,
           },
@@ -807,7 +801,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
         return { ok: true, data: detail satisfies TemplateDetailResult };
       }
       case "usage":
-        return { ok: true, data: (await usage.report(query.range, query.scope, query.window)) satisfies UsageResult };
+        return { ok: true, data: (await usage.report(query.window)) satisfies UsageResult };
       case "diagnostics_list":
       case "diagnostics_settings":
         return diagnostics?.query(query) ?? noDiagnostics;
