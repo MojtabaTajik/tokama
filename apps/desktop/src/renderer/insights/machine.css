@@ -14,7 +14,7 @@
   align-items: center;
 }
 
-/* On a narrower window the bar gives room to the words, so the three parts stay on one line. */
+/* On a narrower window the bar gives room to the words, so they wrap less; the parts then fall on two lines. */
 @media (max-width: 1200px) {
   .mc-summary {
     grid-template-columns: 64px minmax(96px, 180px) minmax(0, 1fr);
@@ -38,12 +38,12 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-6);
-  min-width: 144px;
+  min-width: 158px;
   white-space: nowrap;
 }
 
 .mc-key b {
-  font-size: var(--text-xl);
+  font-size: 13.5px;
   font-weight: 500;
   color: var(--text);
 }
@@ -334,8 +334,8 @@
   gap: var(--space-2) var(--space-10);
 }
 
-/* The facts of a row wrap as one piece, not in the middle of "4 processes". */
-.mc-facts {
+/* One fact of a row ("4 processes") stays whole: a long line breaks between facts, never inside one. */
+.mc-fact {
   white-space: nowrap;
 }
 

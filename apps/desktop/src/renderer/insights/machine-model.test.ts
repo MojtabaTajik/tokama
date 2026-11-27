@@ -50,11 +50,21 @@ describe("the split of the machine", () => {
     expect(cpuSplit(point({ cpuPercent: 32, tokamaCpuPercent: 240 }), 12)).toEqual({ tokama: 20, other: 12, rest: 68, total: 100 });
   });
 
-  it("never lets a part go below nothing or Tokama above the whole when the two readings disagree", () => {
-    // Tokama's processes read a moment after the machine: more than the machine used.
-    expect(memorySplit(point({ memoryUsedBytes: 2 * GIB, tokamaMemoryBytes: 3 * GIB }), 32 * GIB)).toEqual({ tokama: 3 * GIB, other: 0, rest: 30 * GIB, total: 32 * GIB });
-    expect(memorySplit(point({ memoryUsedBytes: 40 * GIB, tokamaMemoryBytes: 50 * GIB }), 32 * GIB)).toMatchObject({ tokama: 32 * GIB, rest: 0 });
-    expect(cpuSplit(point({ cpuPercent: 5, tokamaCpuPercent: 1200 }), 12)).toEqual({ tokama: 100, other: 0, rest: 95, total: 100 });
+  it("keeps the three parts adding up to the whole when the machine's reading and Tokama's disagree", () => {
+    const sum = (parts: { tokama: number; other: number; rest: number }) => parts.tokama + parts.other + parts.rest;
+    // Tokama's processes read more than the machine used.
+    const more = memorySplit(point({ memoryUsedBytes: 2 * GIB, tokamaMemoryBytes: 3 * GIB }), 32 * GIB);
+    expect(more).toEqual({ tokama: 2 * GIB, other: 0, rest: 30 * GIB, total: 32 * GIB });
+    // More than the machine has at all.
+    const over = memorySplit(point({ memoryUsedBytes: 40 * GIB, tokamaMemoryBytes: 50 * GIB }), 32 * GIB);
+    expect(over).toEqual({ tokama: 32 * GIB, other: 0, rest: 0, total: 32 * GIB });
+    const cpu = cpuSplit(point({ cpuPercent: 5, tokamaCpuPercent: 1200 }), 12);
+    expect(cpu).toEqual({ tokama: 5, other: 0, rest: 95, total: 100 });
+    for (const parts of [more, over, cpu]) expect(sum(parts)).toBe(parts.total);
+  });
+
+  it("never lets a part go below nothing", () => {
+    expect(memorySplit(point({ memoryUsedBytes: -1, tokamaMemoryBytes: -5 }), 32 * GIB)).toEqual({ tokama: 0, other: 0, rest: 32 * GIB, total: 32 * GIB });
   });
 
   it("calls the memory low when under a tenth is free, and not at exactly a tenth", () => {

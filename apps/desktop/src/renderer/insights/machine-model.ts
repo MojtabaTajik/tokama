@@ -34,10 +34,15 @@ export interface Split {
   readonly total: number;
 }
 
-/** Tokama's part is clamped to the whole, and the other parts never go below nothing: the readings of the machine and of Tokama's processes are taken a moment apart. */
+/**
+ * What is used is clamped to the whole, and Tokama's part to what is used, so the three parts always
+ * add up to the whole: the machine's reading and Tokama's processes' reading come from different
+ * sources and may disagree.
+ */
 function split(total: number, tokama: number, used: number): Split {
-  const own = Math.min(total, Math.max(0, tokama));
-  return { tokama: own, other: Math.max(0, used - own), rest: Math.max(0, total - used), total };
+  const all = Math.min(total, Math.max(0, used));
+  const own = Math.min(all, Math.max(0, tokama));
+  return { tokama: own, other: all - own, rest: total - all, total };
 }
 
 export const memorySplit = (now: MachinePoint, totalBytes: number): Split => split(totalBytes, now.tokamaMemoryBytes, now.memoryUsedBytes);

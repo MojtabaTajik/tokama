@@ -75,6 +75,9 @@ describe("Machine tab: the whole machine now", () => {
     const [memory, cpu] = $$(".mc-sum-row");
     expect(memory?.textContent).toBe("MemoryTokama6.8 GBOther apps23.9 GBFree1.3 GB! lowof 32 GB");
     expect(memory?.querySelector(".ins-tone")?.getAttribute("data-tone")).toBe("warn");
+    // The bar says it in words too, for a screen reader that reads the bar as one image.
+    expect(memory?.querySelector("[role=img]")?.getAttribute("aria-label")).toBe("Memory: Tokama 6.8 GB, other apps 23.9 GB, free 1.3 GB of 32 GB, low");
+    expect(cpu?.querySelector("[role=img]")?.getAttribute("aria-label")).not.toContain("low");
     expect(cpu?.querySelector(".ins-tone")).toBeNull();
   });
 

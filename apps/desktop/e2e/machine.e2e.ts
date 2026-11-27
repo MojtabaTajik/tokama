@@ -36,6 +36,14 @@ flow("shows the Machine tab on sample readings: the whole machine, the running i
   await expect.poll(() => page.locator(".mc-table tbody").innerText()).toMatch(/Fix rounding in invoice totals[\s\S]*Checks\s+\d+ process(es)?[\s\S]*Tokama engine\s+background service · 1 process[\s\S]*Tokama in total · \d+ items · \d+ processes/);
   await expect.poll(() => page.locator("svg.mc-svg").count(), { message: "CPU and memory charts" }).toBe(2);
 
+  // The summary and the total row are one reading: Tokama's memory is the same text, its CPU the same whole percent.
+  const totalCells = page.locator(".mc-total td");
+  expect(await memory.locator(".mc-key").first().locator("b").innerText(), "Tokama's memory in the summary is the total row's").toBe(await totalCells.nth(2).innerText());
+  expect(Number.parseInt(await cpu.locator(".mc-key").first().locator("b").innerText(), 10), "Tokama's CPU in the summary is the total row's").toBe(Math.round(Number.parseFloat(await totalCells.nth(1).innerText())));
+  // No sideways scroll, with the sample's longest workflow and step names in the table.
+  const sideScroll = () => page.evaluate(() => [".mc-body", ".ins-table-wrap"].map((selector) => ({ selector, over: (document.querySelector(selector) as HTMLElement).scrollWidth - (document.querySelector(selector) as HTMLElement).clientWidth })));
+  expect(await sideScroll(), "1440: nothing scrolls sideways").toEqual([{ selector: ".mc-body", over: 0 }, { selector: ".ins-table-wrap", over: 0 }]);
+
   // Hovering the chart shows both lines' readings for both measures.
   await page.locator(".mc-plot").first().hover({ position: { x: 300, y: 40 } });
   await page.locator(".mc-tip").waitFor({ state: "visible" });
@@ -46,6 +54,7 @@ flow("shows the Machine tab on sample readings: the whole machine, the running i
   await resize(1040, 1350);
   await page.mouse.move(0, 0);
   await expect.poll(() => page.locator(".mc-plot").first().evaluate((el) => el.getBoundingClientRect().width)).toBeLessThan(800);
+  expect(await sideScroll(), "1040: nothing scrolls sideways").toEqual([{ selector: ".mc-body", over: 0 }, { selector: ".ins-table-wrap", over: 0 }]);
   await screenshot("insights-machine-1040");
 });
 

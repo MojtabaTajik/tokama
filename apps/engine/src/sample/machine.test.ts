@@ -32,6 +32,30 @@ describe("sample machine", () => {
   });
 });
 
+describe("sample machine: Tokama's part", () => {
+  const items = sampleItems(NOW).map((item) => {
+    const parsed = parseItemRecord(item);
+    if (!parsed.ok) throw new Error(JSON.stringify(parsed.error.issues));
+    return parsed.value;
+  });
+
+  it("is never more than all apps use, at any reading", () => {
+    const report = sampleMachineReport(items, NOW);
+    for (const p of report.points) {
+      expect(p.tokamaCpuPercent / report.cores).toBeLessThanOrEqual(p.cpuPercent);
+      expect(p.tokamaMemoryBytes).toBeLessThanOrEqual(p.memoryUsedBytes);
+    }
+  });
+
+  it("is, at the last reading, what the engine and the running items use", () => {
+    const report = sampleMachineReport(items, NOW);
+    const last = report.points.at(-1)!;
+    const rows = [report.engine, ...report.items];
+    expect(last.tokamaCpuPercent).toBeCloseTo(rows.reduce((sum, row) => sum + row.cpuPercent, 0), 1);
+    expect(last.tokamaMemoryBytes).toBe(rows.reduce((sum, row) => sum + row.memoryBytes, 0));
+  });
+});
+
 describe("sample machine rows", () => {
   it("lists an agent group for an item whose step has an agent, and a check group for one that runs checks", () => {
     const items = sampleItems(NOW).map((item) => {

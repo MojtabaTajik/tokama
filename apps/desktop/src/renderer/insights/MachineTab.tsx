@@ -3,6 +3,7 @@
 // Tokama's line and the all-apps line. CPU of a process is shown as a share of all cores, like the
 // machine's own. Engine text (item titles) renders as React text only.
 import type { ItemRecord, MachineReport, Setup } from "@tokama/core";
+import { Fragment } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { agentInfo, type AgentInfo } from "../agent/agent-info.js";
 import { AgentBadge } from "../agent/AgentBadge.js";
@@ -36,6 +37,7 @@ const TEXT = {
   free: "Free",
   idle: "Idle",
   low: "! low",
+  lowWord: "low",
   ofMemory: (total: string) => `of ${total}`,
   ofCores: (cores: number) => `of ${plural(cores, "core", "cores")}`,
   load: ([one, five, fifteen]: readonly number[]) => `Load average ${[one, five, fifteen].map((value) => (value ?? 0).toFixed(2)).join(" · ")} (1, 5 and 15 min)`,
@@ -125,7 +127,7 @@ interface SummaryRowProps {
 }
 
 function SummaryRow({ name, split, format, rest, of, warning, hint }: SummaryRowProps) {
-  const label = `${name}: ${TEXT.tokama} ${format(split.tokama)}, ${TEXT.other.toLowerCase()} ${format(split.other)}, ${rest.toLowerCase()} ${format(split.rest)} ${of}`;
+  const label = `${name}: ${TEXT.tokama} ${format(split.tokama)}, ${TEXT.other.toLowerCase()} ${format(split.other)}, ${rest.toLowerCase()} ${format(split.rest)} ${of}${warning === undefined ? "" : `, ${TEXT.lowWord}`}`;
   return (
     <div role="listitem" className="mc-sum-row">
       <span className="mc-name">{name}</span>
@@ -265,6 +267,22 @@ function RunningNow({ report, setup, items, onSelectItem, onNewWork }: Omit<RowC
   );
 }
 
+/** What a row says about itself, joined by " · ": a long line breaks between the facts, never inside one. */
+function Facts({ parts }: { readonly parts: readonly (string | undefined)[] }) {
+  const shown = parts.filter((part): part is string => part !== undefined && part !== "");
+  return (
+    <span className="muted">
+      {shown.map((part, index) => (
+        // The facts of a row never change places, so the index is a stable key (two can read the same).
+        <Fragment key={index}>
+          {index > 0 && " · "}
+          <span className="mc-fact">{part}</span>
+        </Fragment>
+      ))}
+    </span>
+  );
+}
+
 /** The agent as the row shows it: the blue ring that says it works now, and its name in grey. */
 function Agent({ info, stepName }: { readonly info: AgentInfo; readonly stepName: string | undefined }) {
   return (
@@ -283,7 +301,6 @@ function ItemRows({ group, items, setup, cores, onSelectItem }: RowContext & { r
   const tool = info?.cliId === undefined ? undefined : backendOf(info.cliId).shortName;
   const workflow = item === undefined ? undefined : workflowName(item.templateId, setup);
   const title = item === undefined ? <span>{group.title}</span> : <Button variant="link" onClick={() => onSelectItem(item.id)}>{group.title}</Button>;
-  const facts = (...parts: (string | undefined)[]) => parts.filter((part) => part !== undefined && part !== "").join(" · ");
 
   if (isOneRow(group)) {
     return (
@@ -292,7 +309,7 @@ function ItemRows({ group, items, setup, cores, onSelectItem }: RowContext & { r
           <span className="mc-item-title">
             {title}
             {info !== undefined && <Agent info={info} stepName={step?.name} />}
-            <span className="muted mc-facts">{facts(workflow, step?.name, tool, plural(group.processes, "process", "processes"))}</span>
+            <Facts parts={[workflow, step?.name, tool, plural(group.processes, "process", "processes")]} />
           </span>
         </td>
         <td className="num mono">{cpuText(group.cpuPercent, cores)}</td>
@@ -306,7 +323,7 @@ function ItemRows({ group, items, setup, cores, onSelectItem }: RowContext & { r
         <td>
           <span className="mc-item-title">
             {title}
-            <span className="muted mc-facts">{facts(workflow, step?.name)}</span>
+            <Facts parts={[workflow, step?.name]} />
           </span>
         </td>
         <td className="num mono">{cpuText(group.cpuPercent, cores)}</td>
@@ -318,7 +335,7 @@ function ItemRows({ group, items, setup, cores, onSelectItem }: RowContext & { r
             <span className="mc-child">
               {row.role === "agent" && info !== undefined ? <Agent info={info} stepName={step?.name} /> : <span className="mc-ring-gap" aria-hidden="true" />}
               {row.role === "agent" ? info === undefined && <span className="mc-kind">{TEXT.agent}</span> : <span className="mc-kind">{TEXT.checks}</span>}
-              <span className="muted">{facts(row.role === "agent" ? tool : undefined, plural(row.processes, "process", "processes"))}</span>
+              <Facts parts={[row.role === "agent" ? tool : undefined, plural(row.processes, "process", "processes")]} />
             </span>
           </td>
           <td className="num mono">{cpuText(row.cpuPercent, cores)}</td>
