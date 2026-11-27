@@ -210,6 +210,53 @@ describe("DiagnosticsStore", () => {
     expect(third.settings().crashWaiting).toBe(false);
   });
 
+  it("marks only a recorded crash as seen", async () => {
+    const savedSeenAt = () => JSON.parse(readFileSync(join(dir, SETTINGS_FILE), "utf8")).crashSeenAt;
+    const store = await open();
+    // No crash entry: nothing to mark, whatever the time.
+    clock.advance(5);
+    expect(store.updateSettings({ crashSeen: true }).crashWaiting).toBe(false);
+    expect(savedSeenAt()).toBeNull();
+
+    store.crash("desktop", "unclean_exit");
+    const crashAt = clock.now();
+    expect(store.settings().crashWaiting).toBe(true);
+    clock.advance(10);
+    expect(store.updateSettings({ crashSeen: true }).crashWaiting).toBe(false);
+    expect(savedSeenAt()).toBe(crashAt);
+
+    // Deleting or sending the seen entry never brings the notice back; a later crash does.
+    store.delete({ all: true });
+    expect(store.settings().crashWaiting).toBe(false);
+    clock.advance(1);
+    store.crash("desktop", "unclean_exit");
+    expect(store.settings().crashWaiting).toBe(true);
+  });
+
+  it("marks the newest of several crashes as seen", async () => {
+    const store = await open();
+    store.crash("desktop", "unclean_exit");
+    clock.advance(7);
+    store.crash("renderer", "unclean_exit");
+    const newest = clock.now();
+    clock.advance(100);
+    store.updateSettings({ crashSeen: true });
+    expect(JSON.parse(readFileSync(join(dir, SETTINGS_FILE), "utf8")).crashSeenAt).toBe(newest);
+  });
+
+  it("leaves the seen time alone when collecting is off and no crash was recorded", async () => {
+    const store = await open();
+    store.updateSettings({ collect: false });
+    clock.advance(5);
+    store.crash("engine", "unclean_exit");
+    expect(store.updateSettings({ crashSeen: true }).crashWaiting).toBe(false);
+    expect(JSON.parse(readFileSync(join(dir, SETTINGS_FILE), "utf8")).crashSeenAt).toBeNull();
+    store.updateSettings({ collect: true });
+    clock.advance(5);
+    store.crash("engine", "unclean_exit");
+    expect(store.settings().crashWaiting).toBe(true);
+  });
+
   it("resets the install id on request and keeps it otherwise", async () => {
     const store = await open();
     const before = store.settings().installId;
