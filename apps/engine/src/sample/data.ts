@@ -288,6 +288,47 @@ function withTimes(item: RawItem, now: number, waits: Readonly<Record<number, nu
   return { ...item, steps, ...(ended && first !== undefined && { durationMs: at - 5_000 - first - waited }) };
 }
 
+/** What the Quick fix item's agent said: a headline and three points. */
+const SAID_WITH_POINTS = {
+  source: "headline",
+  headline: "Fixed the null check in cart totals: a line without a price now counts as 0.",
+  points: ["Added a test for a line with no price.", "Did not change how discounts round.", "Not run against the staging catalog."],
+  morePoints: 0,
+  bodyBytes: 236,
+};
+
+/** What the slow query item's agent said: a write-up to read, so a headline and a read time. */
+const SAID_MUST_READ = {
+  source: "headline",
+  headline: "A missing index on order_items(order_id) is the cause; adding it cuts the query from 900 ms to 4 ms.",
+  points: [],
+  morePoints: 0,
+  bodyBytes: 3_480,
+  readMinutes: 4,
+};
+
+/** What the Architect said of the stock reservation plan: a must-read with two points. */
+const SAID_PLAN = {
+  source: "headline",
+  headline: "Reserve stock at checkout and release it when an order is cancelled: 6 files, one reversible migration.",
+  points: ["The reserve call adds a network hop to checkout; it times out after 2 s and checkout then fails safe.", "Nothing is changed until Build runs."],
+  morePoints: 0,
+  bodyBytes: 1_480,
+  readMinutes: 2,
+};
+
+/** A one-line headline: no points, a small reply. */
+export const SAID_ONE_LINE = { source: "headline", headline: "Added a /healthz route that returns 200 once the database answers.", points: [], morePoints: 0, bodyBytes: 90 };
+
+/** A reply that had no headline block: its first lines stand in. */
+export const SAID_FIRST_LINES = {
+  source: "first_lines",
+  headline: "Renamed the status enum values to match the API docs.",
+  points: ["Updated the two call sites in the orders service.", "Left the old names in the migration history."],
+  morePoints: 0,
+  bodyBytes: 310,
+};
+
 /** The sample items, created minutes before `now`. */
 export function sampleItems(now: number) {
   return rawItems(now).map((item) => withTimes(item, now, item.id === ITEM_IDS.finished ? { 0: SAMPLE_WAIT_MS } : {}));
@@ -406,7 +447,10 @@ function rawItems(now: number): RawItem[] {
       state: "done",
       createdAt: ago(now, 180),
       cardLine: "missing index on order_items(order_id)",
-      steps: steps(templates.slowQuery, ["passed", "passed", "passed"]),
+      // The write-up is the thing to read: its headline comes with a read time.
+      steps: steps(templates.slowQuery, ["passed", "passed", "passed"]).map((step, index) =>
+        index === 2 ? { ...step, attempts: [{ attempt: 1, result: "passed", checks: [], said: SAID_MUST_READ }] } : step,
+      ),
     },
     {
       ...base,
@@ -422,7 +466,14 @@ function rawItems(now: number): RawItem[] {
       cardLine: "commit 3f2a9c1 · tokama/00000011",
       steps: steps(templates.quickFix, ["passed", "passed"]).map((step, index) => ({
         ...step,
-        attempts: [{ attempt: 1, result: "passed", checks: index === 0 ? [] : ["pnpm typecheck", "pnpm lint", "pnpm test"].map((command) => ({ command, passed: true, exitCode: 0 })) }],
+        attempts: [
+          {
+            attempt: 1,
+            result: "passed",
+            checks: index === 0 ? [] : ["pnpm typecheck", "pnpm lint", "pnpm test"].map((command) => ({ command, passed: true, exitCode: 0 })),
+            ...(index === 0 && { said: SAID_WITH_POINTS }),
+          },
+        ],
       })),
       outcome: {
         kind: "done",
@@ -504,7 +555,8 @@ function rawItems(now: number): RawItem[] {
           { id: "stop", label: "Stop" },
         ],
       },
-      steps: steps(templates.planAndBuild, ["needs_you"], { 0: "waits for you" }).map((step, index) => (index === 0 ? { ...step, runs: 1, maxAttempts: 3, attempts: [{ attempt: 1, result: "passed", checks: [] }] } : step)),
+      // The plan changed no file, so what the Architect says of it is a must-read.
+      steps: steps(templates.planAndBuild, ["needs_you"], { 0: "waits for you" }).map((step, index) => (index === 0 ? { ...step, runs: 1, maxAttempts: 3, attempts: [{ attempt: 1, result: "passed", checks: [], said: SAID_PLAN }] } : step)),
     },
     {
       ...base,
@@ -809,7 +861,11 @@ export function sampleHistory(now: number, count: number) {
       privacy: "local_and_cloud",
       state,
       createdAt,
-      steps: steps(template, states),
+      // The first two finished items show the other two sizes of what an agent said.
+      steps: steps(template, states).map((step, at) => {
+        const said = at === 0 && state === "done" ? (n === 1 ? SAID_ONE_LINE : n === 2 ? SAID_FIRST_LINES : undefined) : undefined;
+        return said === undefined ? step : { ...step, attempts: [{ attempt: 1, result: "passed", checks: [], said }] };
+      }),
     };
   });
 }

@@ -127,6 +127,63 @@
   overflow-wrap: anywhere;
 }
 
+/* What a step's agent said: "{Agent} says" and its headline on a question card, "In short" above the reader. */
+.said-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-4) var(--space-8);
+  margin: 0;
+  font-size: var(--text-base);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.said-who {
+  color: var(--muted);
+}
+
+.said-short {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 72ch;
+  margin-bottom: var(--space-18);
+}
+
+.said-short-title {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: 400;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.said-headline,
+.said-more {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.said-short .said-headline {
+  font-size: var(--text-xl);
+  line-height: var(--leading-text);
+  color: var(--text);
+}
+
+.said-points {
+  margin: 0;
+  padding-left: 1.2em;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.said-more {
+  font-size: var(--text-base);
+  color: var(--muted);
+}
+
 /* A step that stopped: what its agent said, what ran after, why it stopped. Labels above their
    content in the drawer; a label column beside it in the full view. */
 

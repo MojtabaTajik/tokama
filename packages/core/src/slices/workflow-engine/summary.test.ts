@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { OutputSummarySchema } from "../../kernel/schemas/index.js";
-import { summarizeOutput } from "./summary.js";
+import { OutputSummarySchema, SaidSchema } from "../../kernel/schemas/index.js";
+import { parseHeadline, summarizeOutput } from "./summary.js";
 
 // The shape a real reviewer wrote: a bold lead per item, a long paragraph after it, sections that
 // are not must-fix with file:line items of their own, and the verdict last.
@@ -102,5 +102,95 @@ describe("summarizeOutput", () => {
     // Without the tail the same head holds no verdict; a tail that breaks the format is none.
     expect(summarizeOutput(head, true)).toMatchObject({ kind: "lines", format: "no_verdict" });
     expect(summarizeOutput(head, true, "VERDICT: changes\nOne more thing.")).toMatchObject({ kind: "lines", format: "no_verdict" });
+  });
+
+  it("keeps the headline block out of the first lines and ends the must-fix list at it", () => {
+    const block = ["HEADLINE: Two things to fix.", "POINT: the fade timing", "READ: yes"];
+    expect(summarizeOutput(["Work done.", "More.", ...block].join("\n"), false)).toMatchObject({ lines: ["Work done.", "More."] });
+    const review = ["**Must change**", "1. `a.ts:3` add the test.", ...block, "- `b.ts:4` not a must-fix item", "VERDICT: changes"].join("\n");
+    expect(summarizeOutput(review, true)).toMatchObject({ kind: "verdict", mustFix: [{ ref: "a.ts:3", text: "add the test" }] });
+    // A reply of only the block still shows its first lines: it says nothing else.
+    expect(summarizeOutput(block.join("\n"), false)).toEqual({ kind: "lines", format: "none", lines: ["HEADLINE: Two things to fix.", "POINT: the fade timing"] });
+  });
+});
+
+describe("parseHeadline", () => {
+  const words = (count: number) => Array.from({ length: count }, (_, i) => `word${i}`).join(" ");
+
+  it("reads the block at the end of a reply: the headline, up to 3 points, and the read flag", () => {
+    const text = ["I changed the cart totals.", "", "HEADLINE: Fixed the null check in cart totals.", "POINT: Not run against the staging data.", "POINT: Assumed prices are in cents.", "READ: yes"].join("\n");
+    const parsed = parseHeadline(text);
+    expect(parsed).toEqual({
+      source: "headline",
+      headline: "Fixed the null check in cart totals.",
+      points: ["Not run against the staging data.", "Assumed prices are in cents."],
+      morePoints: 0,
+      bodyBytes: "I changed the cart totals.".length,
+      words: 5,
+      readFlag: true,
+    });
+  });
+
+  it("counts bytes and words on the reply without the block", () => {
+    const parsed = parseHeadline(`é ${words(3)}\nHEADLINE: Done.\nPOINT: x`);
+    expect(parsed).toMatchObject({ source: "headline", words: 4, bodyBytes: new TextEncoder().encode(`é ${words(3)}`).length });
+  });
+
+  it("cuts a long headline to 140 and a long point to 160 with a mark, and keeps 3 points and counts the rest", () => {
+    const parsed = parseHeadline(["HEADLINE: " + "h".repeat(300), ...["a", "b", "c", "d", "e"].map((p, i) => `POINT: ${i === 0 ? p.repeat(400) : p}`)].join("\n"))!;
+    expect(parsed.headline).toBe(`${"h".repeat(139)}…`);
+    expect(parsed.points).toEqual([`${"a".repeat(159)}…`, "b", "c"]);
+    expect(parsed.morePoints).toBe(2);
+  });
+
+  it("fits the stored shape at the caps, also with characters that take 2 UTF-16 units", () => {
+    const emoji = "🙂".repeat(200);
+    const parsed = parseHeadline(`HEADLINE: ${emoji}\nPOINT: ${emoji}\nPOINT: ${emoji}\nPOINT: ${emoji}\nPOINT: ${emoji}`)!;
+    expect(parsed.headline.length).toBeLessThanOrEqual(140);
+    expect(parsed.points.every((point) => point.length <= 160)).toBe(true);
+    expect(SaidSchema.safeParse({ source: parsed.source, headline: parsed.headline, points: parsed.points, morePoints: parsed.morePoints, bodyBytes: parsed.bodyBytes }).success).toBe(true);
+  });
+
+  it.each([
+    ["any letter case", "headline: Fixed it.\npoint: One thing.", "Fixed it.", ["One thing."]],
+    ["a list mark", "- HEADLINE: Fixed it.\n* POINT: One thing.", "Fixed it.", ["One thing."]],
+    ["a quote mark", "> HEADLINE: Fixed it.\n> POINT: One thing.", "Fixed it.", ["One thing."]],
+    ["bold around the label", "**HEADLINE:** Fixed it.\n**POINT**: One thing.", "Fixed it.", ["One thing."]],
+    ["bold and code in the value", "HEADLINE: **Fixed** `it`.\nPOINT: ## One   thing.", "Fixed it.", ["One thing."]],
+    ["control and invisible characters", "HEADLINE: Fi\u001b[31mxed‮ it.​\nPOINT: One\tthing.", "Fi [31mxed it.", ["One thing."]],
+    ["a line separator in the value", "HEADLINE: Fixed it.\nPOINT: One thing.", "Fixed it.", ["One thing."]],
+    ["Windows line ends", "HEADLINE: Fixed it.\r\nPOINT: One thing.\r\n", "Fixed it.", ["One thing."]],
+  ])("reads a block written with %s", (_label, text, headline, points) => {
+    expect(parseHeadline(text)).toMatchObject({ source: "headline", headline, points });
+  });
+
+  it("takes the last HEADLINE of the last 30 lines, and only the points after it", () => {
+    const text = ["HEADLINE: first", "POINT: of the first", "HEADLINE: second", "POINT: of the second"].join("\n");
+    expect(parseHeadline(text)).toMatchObject({ headline: "second", points: ["of the second"] });
+    const old = ["HEADLINE: too far up", ...Array.from({ length: 30 }, (_, i) => `line ${i}`)].join("\n");
+    expect(parseHeadline(old)).toMatchObject({ source: "first_lines", headline: "line 0" });
+  });
+
+  it("skips a VERDICT line before or after the block", () => {
+    expect(parseHeadline("Notes.\nHEADLINE: Needs work.\nPOINT: the fade\nVERDICT: changes")).toMatchObject({ source: "headline", headline: "Needs work.", points: ["the fade"] });
+    expect(parseHeadline("Notes.\nVERDICT: changes\nHEADLINE: Needs work.\nPOINT: the fade")).toMatchObject({ source: "headline", headline: "Needs work.", points: ["the fade"] });
+  });
+
+  it("falls back to the first lines when there is no block or the headline is empty; nothing throws", () => {
+    const first = "Added GET /orders/export.\n\nIt streams CSV.\nIt takes ?from and ?to.\nMore.";
+    expect(parseHeadline(first)).toMatchObject({ source: "first_lines", headline: "Added GET /orders/export.", points: ["It streams CSV.", "It takes ?from and ?to."], morePoints: 0, readFlag: false });
+    expect(parseHeadline("Text.\nHEADLINE:   \nPOINT: orphan\nREAD: yes")).toMatchObject({ source: "first_lines", headline: "Text.", points: [], readFlag: false });
+    expect(parseHeadline("## Plan\nVERDICT: approve")).toMatchObject({ source: "first_lines", headline: "Plan", points: [] });
+    expect(parseHeadline("Read: the docs first.")).toMatchObject({ source: "first_lines", headline: "Read: the docs first." });
+  });
+
+  it("says nothing for an empty reply or one that holds only a verdict", () => {
+    expect(parseHeadline("")).toBeUndefined();
+    expect(parseHeadline(" \n\t\n")).toBeUndefined();
+    expect(parseHeadline("VERDICT: approve")).toBeUndefined();
+  });
+
+  it("reads READ: no as no flag", () => {
+    expect(parseHeadline("HEADLINE: Done.\nREAD: no")).toMatchObject({ readFlag: false });
   });
 });

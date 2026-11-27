@@ -130,6 +130,7 @@ export function toItemRecord(item: StoredItem): ItemRecord | undefined {
       state: step.state,
       // A step the snapshot does not describe: say it may send data out.
       data: def?.data ?? "repo-and-diff",
+      ...(def && { doneWhen: def.doneWhen }),
       ...(def && { agentId: def.agentId }),
       ...(def && def.connections.length > 0 && { uses: def.connections.map(({ connectionId, access }) => ({ connectionId, access })) }),
       ...(detail !== undefined && { detail }),
@@ -230,6 +231,7 @@ function toAttempt(item: StoredItem, attempt: AttemptRecord): AttemptSummary {
     ...(detail !== undefined && { detail }),
     ...(attempt.transcriptSaved !== undefined && { transcriptSaved: attempt.transcriptSaved }),
     ...(attempt.transcriptBytes !== undefined && { transcriptBytes: attempt.transcriptBytes }),
+    ...(attempt.said !== undefined && { said: attempt.said }),
     checks: attempt.checks.slice(-MAX_CHECKS_SHOWN).map(({ command, passed, exitCode }) => ({ command, passed, exitCode })),
   };
 }

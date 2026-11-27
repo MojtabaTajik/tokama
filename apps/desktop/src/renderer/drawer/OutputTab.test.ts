@@ -17,6 +17,12 @@ describe("summaryLine", () => {
     expect(summaryLine({ kind: "empty" })).toBeUndefined();
     expect(summaryLine(undefined)).toBeUndefined();
   });
+
+  it("is the headline the agent wrote when there is one, also before the output has loaded", () => {
+    const said = { source: "headline" as const, headline: "Added GET /orders/export.", points: [], morePoints: 0, bodyBytes: 80 };
+    expect(summaryLine(undefined, said)).toBe("Added GET /orders/export.");
+    expect(summaryLine({ kind: "lines", format: "none", lines: ["The first line."] }, said)).toBe("Added GET /orders/export.");
+  });
 });
 
 describe("shownAttempt", () => {

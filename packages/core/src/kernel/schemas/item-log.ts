@@ -24,6 +24,7 @@ import {
   PullRequestUrlSchema,
   PushUrlSchema,
   RunFailureSchema,
+  SaidSchema,
   StepStateSchema,
 } from "./item.js";
 
@@ -148,6 +149,8 @@ const AttemptEndedSchema = z.strictObject({
   /** Whether the attempt's transcript file exists, and its size; absent in records written before they were. */
   transcriptSaved: z.boolean().optional(),
   transcriptBytes: z.int().nonnegative().optional(),
+  /** What the step's agent said about its work; absent when the attempt had no agent reply to read and in records written before it existed. */
+  said: SaidSchema.optional(),
 });
 const StepEndedSchema = z.strictObject({ type: z.literal("step_ended"), stepId: StepIdSchema, result: StepResultSchema });
 /** The event's `at` is when the engine asked. */
@@ -313,6 +316,7 @@ export const AttemptRecordSchema = z.strictObject({
   tree: GIT_ID.optional(),
   transcriptSaved: z.boolean().optional(),
   transcriptBytes: z.int().nonnegative().optional(),
+  said: SaidSchema.optional(),
   processes: z.array(ProcessRecordSchema),
   checks: z.array(CheckRecordSchema),
 });

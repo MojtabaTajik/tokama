@@ -7,6 +7,7 @@ import { cutText, finishActions, type ItemRecord, type Setup } from "@tokama/cor
 import type { BridgeEvent } from "../shared/bridge.js";
 import type { NoteKind, NotificationSettings, SoundSet } from "../shared/desktop-state.js";
 import { failureLine, finishedLine } from "../shared/item-facts.js";
+import { saidOf } from "../shared/item-said.js";
 import type { FocusState } from "./sound/focus.js";
 
 export type { NoteKind };
@@ -105,7 +106,7 @@ function bodyLine(kind: NoteKind, item: ItemRecord, now: number): string {
 
 export interface Note {
   readonly title: string;
-  /** The line about the item, then the template and the repos. */
+  /** The line about the item (a finished item's headline first, when its agent wrote one), then the template and the repos. */
   readonly body: string;
   readonly silent: boolean;
   /** The name of a sound file in the app bundle (macOS); without it, and not silent, the system's default plays. */
@@ -117,7 +118,10 @@ export function noteText(kind: NoteKind, item: ItemRecord, context: { readonly s
   const template = context.setup?.templates.find((candidate) => candidate.id === item.templateId)?.name ?? item.templateId;
   const where = [template, ...(item.repoIds.length === 0 ? [] : [item.repoIds.join(", ")])].join(" · ");
   const text = (value: string, max: number) => plainText(value, max, context.platform);
-  return { title: text(`${TITLE[kind]}: ${item.title}`, TITLE_MAX), body: `${text(bodyLine(kind, item, context.now), BODY_MAX)}\n${text(where, BODY_MAX)}` };
+  // A finished item opens with what its agent said, when the agent wrote a headline.
+  const said = kind === "finished" ? saidOf(item) : undefined;
+  const headline = said?.said.source === "headline" ? [text(said.said.headline, BODY_MAX)] : [];
+  return { title: text(`${TITLE[kind]}: ${item.title}`, TITLE_MAX), body: [...headline, text(bodyLine(kind, item, context.now), BODY_MAX), text(where, BODY_MAX)].join("\n") };
 }
 
 export interface NotifierDeps {

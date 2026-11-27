@@ -1446,3 +1446,101 @@ describe("run loop: item diff", () => {
     expect(await loop.itemDiff(id)).toEqual({ ok: true, value: { kind: "none" } });
   });
 });
+
+describe("run loop: what the step's agent says", () => {
+  const said = (id: ItemId, step = 0, attempt = 0) => item(id).steps[step]?.attempts[attempt]?.said;
+  /** The `said` of every `attempt_ended` event in the log, by step and attempt. */
+  const logged = (id: ItemId) => log(id).flatMap((event) => (event.type === "attempt_ended" ? [[`${event.stepId}#${event.attempt}`, event.result, event.said?.headline] as const] : []));
+  const bigReply = (block: string) => `${Array.from({ length: 450 }, (_, i) => `w${i}`).join(" ")}\n${block}`;
+
+  it("every agent step's prompt asks for the headline block; a step that changes files records its headline and points", SLOW, async () => {
+    const runtime = fakeRuntime([edits(FIXED, "I fixed it.\n\nHEADLINE: Fixed app.txt.\nPOINT: Not run on Windows.")]);
+    const id = await start(engine(runtime), template([{ id: "build" }]));
+    expect(runtime.calls[0]?.request.prompt).toContain("HEADLINE: <one line, at most 140 characters");
+    expect(runtime.calls[0]?.request.prompt).not.toContain("VERDICT");
+    expect(said(id)).toEqual({ source: "headline", headline: "Fixed app.txt.", points: ["Not run on Windows."], morePoints: 0, bodyBytes: "I fixed it.".length });
+  });
+
+  it("a reply without the block shows its first lines; nothing fails or retries", SLOW, async () => {
+    const runtime = fakeRuntime([edits(FIXED, "Fixed app.txt.\nIt now says fixed.\nMore.")]);
+    const id = await start(engine(runtime), template([{ id: "build" }]));
+    expect(item(id).state).toBe("done");
+    expect(runtime.calls).toHaveLength(1);
+    expect(said(id)).toMatchObject({ source: "first_lines", headline: "Fixed app.txt.", points: ["It now says fixed.", "More."] });
+  });
+
+  it("an empty reply records no headline", SLOW, async () => {
+    const id = await start(engine(fakeRuntime([edits(FIXED, "")])), template([{ id: "build" }]));
+    expect(item(id).state).toBe("done");
+    expect(said(id)).toBeUndefined();
+  });
+
+  it("a run failure records none", SLOW, async () => {
+    const id = await start(engine(fakeRuntime([crashes("quota", "You've hit your limit")])), template([{ id: "build" }]));
+    expect(logged(id)).toEqual([["build#1", "run_failed", undefined]]);
+  });
+
+  it("must-read: a step you approve that changed nothing; not one that changed files", SLOW, async () => {
+    const plan = fakeRuntime([says("A plan.\nHEADLINE: Use a lookup table.")]);
+    const first = await start(engine(plan), template([{ id: "plan", doneWhen: "you approve" }]));
+    expect(said(first)).toMatchObject({ headline: "Use a lookup table.", readMinutes: 1 });
+
+    const changed = fakeRuntime([edits(FIXED, "Done.\nHEADLINE: Fixed app.txt.")]);
+    const second = await start(engine(changed), template([{ id: "plan", doneWhen: "you approve" }]));
+    expect(said(second)).not.toHaveProperty("readMinutes");
+  });
+
+  it("must-read: the last step of a template that ends with findings or a document", SLOW, async () => {
+    const loop = engine(fakeRuntime([says("Looked.\nHEADLINE: The index is missing."), says("The write-up.\nHEADLINE: Cause found.")]));
+    const id = await start(loop, template([{ id: "scope" }, { id: "report" }], { finish: ["findings"], uses: { repos: { picked: "read", named: [] }, connections: [], commands: [] } }));
+    expect(said(id, 0)).not.toHaveProperty("readMinutes");
+    expect(said(id, 1)).toMatchObject({ headline: "Cause found.", readMinutes: 1 });
+  });
+
+  it("must-read: the agent's own flag counts only for a reply of 150 words or more", SLOW, async () => {
+    const small = await start(engine(fakeRuntime([edits(FIXED, "Done.\nHEADLINE: Fixed it.\nREAD: yes")])), template([{ id: "build" }]));
+    expect(said(small)).not.toHaveProperty("readMinutes");
+    const big = await start(engine(fakeRuntime([edits(FIXED, bigReply("HEADLINE: A design.\nREAD: yes"))])), template([{ id: "build" }]));
+    expect(said(big)).toMatchObject({ headline: "A design.", readMinutes: 3 });
+  });
+
+  it("checks pass: a passed attempt and a failed one each record what the agent said", SLOW, async () => {
+    const loop = engine(fakeRuntime([edits(WRONG, "Tried.\nHEADLINE: First try."), edits(FIXED, "Again.\nHEADLINE: Second try.")]));
+    const id = await start(loop, template([BUILD_CHECKED]));
+    expect(logged(id)).toEqual([
+      ["build#1", "failed", "First try."],
+      ["build#2", "passed", "Second try."],
+    ]);
+  });
+
+  it("a reviewer's prompt has the headline rule above the verdict rule; its attempts record the headline for both verdicts, written above or below the verdict", SLOW, async () => {
+    const builder = fakeRuntime([edits(FIXED, "Built.\nHEADLINE: Built it."), edits({ "app.txt": "fixed\nwith a test\n" }, "Built.\nHEADLINE: Added a test.")]);
+    const reviewer = fakeRuntime([says("Add a test.\nHEADLINE: One test is missing.\nPOINT: app.txt\nVERDICT: changes"), says("Looks good.\n\nVERDICT: approve\nHEADLINE: Ready to merge.")]);
+    const loop = engine(builder, { runtime: (a) => (a.id === "reviewer" ? reviewer : builder) });
+    const tpl = template([
+      { id: "build", maxAttempts: 2 },
+      { id: "review", agentId: "reviewer", doneWhen: "reviewer approves", ifChangesRequested: { action: "back", stepId: "build" }, maxAttempts: 2 },
+    ]);
+    const id = await start(loop, tpl);
+    expect(item(id).state).toBe("done");
+    const prompt = reviewer.calls[0]!.request.prompt;
+    expect(prompt.indexOf("HEADLINE: <one line")).toBeGreaterThan(-1);
+    expect(prompt.indexOf("HEADLINE: <one line")).toBeLessThan(prompt.indexOf("VERDICT: approve"));
+    expect(builder.calls[0]?.request.prompt).not.toContain("VERDICT");
+    expect(logged(id)).toEqual([
+      ["build#1", "passed", "Built it."],
+      ["review#1", "failed", "One test is missing."],
+      ["build#2", "passed", "Added a test."],
+      ["review#2", "passed", "Ready to merge."],
+    ]);
+  });
+
+  it("a step that carries on after a tamper question reads the reply from its file: the attempt still records the headline", SLOW, async () => {
+    const loop = engine(fakeRuntime([edits({ ...FIXED, "package.json": "{}\n" }, "Done.\nHEADLINE: Fixed app.txt.")]));
+    const id = await start(loop, template([BUILD_CHECKED]));
+    expect(openDecision(id)?.kind).toBe("tamper");
+    await answer(loop, id, "approve");
+    expect(logged(id)).toEqual([["build#1", "passed", "Fixed app.txt."]]);
+  });
+
+});

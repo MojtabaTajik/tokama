@@ -5,6 +5,7 @@ import { Button } from "../ui/Button.js";
 import { StatusMark } from "../ui/status.js";
 import { DecisionChoices } from "./DecisionChoices.js";
 import { nextRunLine, runLine, stepAgent } from "./describe.js";
+import { SaidLine } from "./SaidBlock.js";
 import { type OutputState, StepPreview } from "./StepOutput.js";
 
 const TEXT = {
@@ -41,6 +42,8 @@ interface NeedsYouProps {
 export function NeedsYou({ item, setup, decision, busy, output, full, changedFiles, onRead, onShowDiff, onChoose }: NeedsYouProps) {
   const step = decision === undefined ? undefined : item.steps[decision.stepIndex];
   const agent = step?.agentId === undefined ? undefined : stepAgent(step, setup?.agents ?? []).name;
+  // What the agent says of the work you are asked to approve: the latest attempt's headline, never an earlier attempt's.
+  const said = decision?.kind === "plan_approval" ? step?.attempts?.at(-1)?.said : undefined;
   return (
     <section className={full ? "needs-you ex-decision" : "needs-you"} aria-label={TEXT.needsYou}>
       {decision ? (
@@ -62,6 +65,7 @@ export function NeedsYou({ item, setup, decision, busy, output, full, changedFil
               </pre>
             </div>
           )}
+          {said !== undefined && <SaidLine said={said} agent={agent} />}
           {output !== undefined && step !== undefined && (
             <div className="step-output">
               <p className="step-output-label">

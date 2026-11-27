@@ -21,6 +21,7 @@ import { Button } from "../ui/Button.js";
 import { AgentName } from "../ui/agent.js";
 import { Facts } from "../ui/Facts.js";
 import { factsOf } from "../../shared/item-facts.js";
+import { saidOf, saidTag } from "../../shared/item-said.js";
 
 const TEXT = {
   nothing: { needs: "Nothing waiting", running: "Nothing running", done: "Nothing finished", failed: "Nothing failed" },
@@ -116,6 +117,9 @@ function Row({ item, setup, now, selected, onSelect, onFinish, onDiscard, onOpen
   const finished = finishNote(item);
   // Until Merge or Open PR, a done row and a failed row say what was measured where the steps were.
   const facts = finished === undefined ? factsOf(item) : [];
+  // A done row's third line is what the step's agent said; a failed row keeps its facts.
+  const said = item.state === "done" ? saidOf(item) : undefined;
+  const tag = said === undefined ? undefined : saidTag(said.said);
   const separator = (
     <span aria-hidden="true" className="pl-sep">
       ·
@@ -154,6 +158,12 @@ function Row({ item, setup, now, selected, onSelect, onFinish, onDiscard, onOpen
             )}
           </span>
           {ask !== undefined && <span className="pl-ask ellipsis">{ask}</span>}
+          {said !== undefined && (
+            <span className="pl-said">
+              <span className="pl-said-text ellipsis">{said.said.headline}</span>
+              {tag !== undefined && <span className="pl-said-tag">{tag}</span>}
+            </span>
+          )}
         </span>
         {finished !== undefined ? (
           // A finished row says how it ended where the steps were.

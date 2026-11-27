@@ -47,6 +47,7 @@ import {
   type ItemId,
   type ItemOutcome,
   type RepoId,
+  type Said,
   type StepOutputResult,
   type StepId,
   type StoredDecision,
@@ -81,6 +82,8 @@ import {
   unapproved,
   type SteeringEntry,
 } from "./protect.js";
+import { HEADLINE_RULE, REVIEWER_HEADLINE_RULE, saidOf } from "./headline.js";
+import { parseHeadline } from "./summary.js";
 import { parseVerdict, VERDICT_RULE } from "./verdict.js";
 
 export interface RunLoopDeps {
@@ -355,7 +358,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     stepId: StepId,
     attempt: number,
     result: "passed" | "failed" | "run_failed" | "stopped",
-    extra: { failure?: RunFailure; detail?: string; tree?: string } = {},
+    extra: { failure?: RunFailure; detail?: string; tree?: string; said?: Said | undefined } = {},
   ): ItemEventBody => ({
     type: "attempt_ended",
     stepId,
@@ -364,6 +367,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     ...(extra.failure !== undefined && { failure: extra.failure }),
     ...(extra.detail !== undefined && { detail: detail(extra.detail) }),
     ...(extra.tree !== undefined && { tree: extra.tree }),
+    ...(extra.said !== undefined && { said: extra.said }),
   });
 
   /** The attempt's run failed: it does not count, and the engineer chooses Retry step / Stop. */
@@ -742,9 +746,9 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       diff = shown.value;
     }
     const feedback = await feedbackFor({ ...ctx, item });
-    const template = reviewer
-      ? { ...ctx.template, steps: ctx.template.steps.map((s) => (s.id === stepId ? { ...s, instructions: { ...s.instructions, text: s.instructions.text + VERDICT_RULE } } : s)) }
-      : ctx.template;
+    // The step's agent also writes its headline: the rule is part of the instructions every prompt is built from, so a cloud agent's recorded prompt holds it too. A reviewer's verdict line stays the last.
+    const rules = reviewer ? REVIEWER_HEADLINE_RULE + VERDICT_RULE : HEADLINE_RULE;
+    const template = { ...ctx.template, steps: ctx.template.steps.map((s) => (s.id === stepId ? { ...s, instructions: { ...s.instructions, text: s.instructions.text + rules } } : s)) };
     const prompt = buildPrompt({
       template,
       stepId,
@@ -848,21 +852,25 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
   const afterAgent = async (ctx: Context, stepId: StepId, attempt: number, signal: AbortSignal, reviewed?: string): Promise<Next> => {
     const { item } = ctx;
     const step = stepDef(ctx.template, stepId);
+    // Read here, not kept from the call, so an attempt that resumes after a restart has it too.
+    const reply = (await readItemFile(item.id, `${attemptDir(stepId, attempt)}/agent.txt`)) ?? "";
+    const parsed = parseHeadline(reply);
+    const document = ctx.template.steps.at(-1)?.id === stepId && ctx.template.finish.some((finish) => finish === "findings" || finish === "document");
+    const said = (approvesText = false): Said | undefined => saidOf(parsed, { approvesText, lastOfDocument: document });
     switch (step.doneWhen) {
       case "agent finishes":
-        return passStep(item, stepId, [attemptEnded(stepId, attempt, "passed")]);
+        return passStep(item, stepId, [attemptEnded(stepId, attempt, "passed", { said: said() })]);
       case "you approve":
-        return askApproval(ctx, step, attempt);
+        return askApproval(ctx, step, attempt, said);
       case "reviewer approves": {
-        const reply = (await readItemFile(item.id, `${attemptDir(stepId, attempt)}/agent.txt`)) ?? "";
         const verdict = parseVerdict(reply);
         if (verdict === undefined) return runFailed(item, stepId, attempt, "crash", "The reviewer's reply did not end with VERDICT: approve or VERDICT: changes.");
         // The reviewed tree is recorded: Finish commits only the tree a reviewer approved.
-        if (verdict === "approve") return passStep(item, stepId, [attemptEnded(stepId, attempt, "passed", reviewed === undefined ? {} : { tree: reviewed })]);
-        return workFailed(ctx, stepId, attempt, `The reviewer asked for changes:\n${reply}`, "The reviewer asked for changes.");
+        if (verdict === "approve") return passStep(item, stepId, [attemptEnded(stepId, attempt, "passed", { ...(reviewed !== undefined && { tree: reviewed }), said: said() })]);
+        return workFailed(ctx, stepId, attempt, `The reviewer asked for changes:\n${reply}`, "The reviewer asked for changes.", said());
       }
       case "checks pass":
-        return runChecksOf(ctx, stepId, attempt, signal);
+        return runChecksOf(ctx, stepId, attempt, signal, said());
     }
   };
 
@@ -870,7 +878,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
    * The engineer approves one tree, and Finish commits that tree: it is staged and judged before
    * the question, and the question carries it, so the diff shown is the change committed.
    */
-  const askApproval = async (ctx: Context, step: TemplateStepDef, attempt: number): Promise<Next> => {
+  const askApproval = async (ctx: Context, step: TemplateStepDef, attempt: number, said: (approvesText: boolean) => Said | undefined): Promise<Next> => {
     const { item } = ctx;
     const fail = (text: string) => runFailed(item, step.id, attempt, "crash", text);
     const worktree = worktreeOf(ctx);
@@ -902,13 +910,14 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     // Only the question carries the tree: Finish commits it when nothing ran after the approval,
     // and a later step's work is committed as before.
     append(item.id, [
-      attemptEnded(step.id, attempt, "passed"),
+      // A step that changed nothing asks you to approve its text: that text is a must-read.
+      attemptEnded(step.id, attempt, "passed", { said: said(unchanged) }),
       decision("plan_approval", step.id, [commits ? APPROVE_AND_COMMIT : APPROVE, REQUEST_CHANGES, NO_ACTION, STOP], text, { tree: staged.value, change: { files: shown } }),
     ]);
     return WAIT;
   };
 
-  const runChecksOf = async (ctx: Context, stepId: StepId, attempt: number, signal: AbortSignal): Promise<Next> => {
+  const runChecksOf = async (ctx: Context, stepId: StepId, attempt: number, signal: AbortSignal, said: Said | undefined): Promise<Next> => {
     const { item } = ctx;
     const worktree = worktreeOf(ctx)!;
     const dir = attemptDir(stepId, attempt);
@@ -945,17 +954,17 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     // A check that wrote to the files that steer Tokama stops the item, pass or fail.
     const gate = await intact(ctx, worktree);
     if (gate !== undefined) return gate;
-    if (failures.length === 0) return passStep(item, stepId, [attemptEnded(stepId, attempt, "passed", { tree: tree.value })]);
+    if (failures.length === 0) return passStep(item, stepId, [attemptEnded(stepId, attempt, "passed", { tree: tree.value, said })]);
     const feedback = failures.map((f) => `$ ${f.command} (${f.outcome === "failed" ? `exit ${f.exitCode}` : f.outcome})\n${f.output}`).join("\n\n");
-    return workFailed({ ...ctx, item: store.get(item.id)! }, stepId, attempt, feedback, failures.map(commandFailure).join(" "));
+    return workFailed({ ...ctx, item: store.get(item.id)! }, stepId, attempt, feedback, failures.map(commandFailure).join(" "), said);
   };
 
   /** The work failed: counts as an attempt; the same failure twice asks, else if_failed (or if_changes_requested) decides. */
-  const workFailed = (ctx: Context, stepId: StepId, attempt: number, feedback: string, summary: string): Next => {
+  const workFailed = (ctx: Context, stepId: StepId, attempt: number, feedback: string, summary: string, said: Said | undefined): Next => {
     const step = stepDef(ctx.template, stepId);
     writeItemFile(ctx.item.id, `${attemptDir(stepId, attempt)}/feedback.txt`, feedback.slice(-FEEDBACK_MAX_BYTES));
     const rule = failureRule(step);
-    const item = append(ctx.item.id, [attemptEnded(stepId, attempt, "failed", { detail: summary })]);
+    const item = append(ctx.item.id, [attemptEnded(stepId, attempt, "failed", { detail: summary, said })]);
     if (rule.action === "stop") return { kind: "end", outcome: "failed", detail: `Step ${step.name} failed.` };
     const stored = storedStep(item, stepId);
     const same = sameFailureTwice(stored);

@@ -155,6 +155,18 @@ describe("noteText", () => {
     expect(noteText("finished", done(), context).body).toBe("Done in 9 min.\nPlan and build · orders-api");
   });
 
+  it("opens a finished item's banner with the headline its agent wrote, as plain text; first lines the agent did not write as a headline are not used", () => {
+    const attempt = (said: object) => [{ name: "Build", state: "passed", attempts: [{ attempt: 1, result: "passed", checks: [], said }] }];
+    const headline = { source: "headline", points: [], morePoints: 0, bodyBytes: 10 };
+    const written = done({ steps: attempt({ ...headline, headline: "Fixed the\ttotals ‮<b>now</b> & cleaned up" }) });
+    expect(noteText("finished", written, context).body).toBe("Fixed the totals <b>now</b> & cleaned up\nDone in 9 min.\nPlan and build · orders-api");
+    expect(noteText("finished", written, { ...context, platform: "linux" }).body).toBe("Fixed the totals &lt;b&gt;now&lt;/b&gt; &amp; cleaned up\nDone in 9 min.\nPlan and build · orders-api");
+    expect(noteText("finished", done({ steps: attempt({ ...headline, source: "first_lines", headline: "Some first line" }) }), context).body).toBe("Done in 9 min.\nPlan and build · orders-api");
+    expect(noteText("finished", done({ steps: attempt({ ...headline, headline: "h".repeat(140) }) }), context).body.split("\n")[0]).toBe("h".repeat(140));
+    // Only a finished item says it: a question and a failure keep their own line.
+    expect(noteText("failed", failed({ steps: attempt({ ...headline, headline: "Fixed it" }) }), context).body).not.toContain("Fixed it");
+  });
+
   it("says how many checks passed, in words", () => {
     const checks = [{ command: "pnpm test", passed: true, exitCode: 0 }, { command: "pnpm lint", passed: true, exitCode: 0 }, { command: "pnpm typecheck", passed: true, exitCode: 0 }];
     const steps = [{ name: "Build", state: "passed", attempts: [{ attempt: 1, result: "passed", checks }] }];

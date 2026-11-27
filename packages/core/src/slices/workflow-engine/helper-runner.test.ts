@@ -9,6 +9,7 @@ import type { AgentCallEvent, AgentCallUsage, AiCliId, HelperRunPhase, HelperRun
 import { loadAgents } from "../config/index.js";
 import type { HelperDefinition } from "../helpers/index.js";
 import { HELPER_LOCAL_ONLY, HELPER_NO_CLI } from "./helper-agent.js";
+import { HEADLINE_RULE } from "./headline.js";
 import { cleanCliText, createHelperRunner, type HelperGatherer, type HelperRunnerDeps, type HelperRunHooks, type PreparedHelperRun } from "./helper-runner.js";
 import { crashes, FAKE_PID, fakeRuntime, hangs, type Behavior, type FakeRuntime } from "./testing/fake-runtime.js";
 import { GOOD_ANSWER, testSuggestChecks } from "./testing/suggest-checks.js";
@@ -130,6 +131,18 @@ describe("a helper run", () => {
     expect(request.timeoutMs).toBe(90_000);
     expect(request.prompt).toContain(NAMES);
     expect(request.prompt).toContain(BUILDS);
+  });
+
+  it("does not ask a helper for the headline block: its answer is one JSON object, and it also gets no verdict rule", async () => {
+    const { runtime } = await run();
+    for (const call of runtime.calls) {
+      for (const text of [call.request.prompt, call.request.role ?? ""]) {
+        expect(text).not.toContain(HEADLINE_RULE.trim());
+        expect(text).not.toContain("HEADLINE:");
+        expect(text).not.toContain("POINT:");
+        expect(text).not.toContain("VERDICT");
+      }
+    }
   });
 
   it("shows the agent one example answer, not a schema", async () => {

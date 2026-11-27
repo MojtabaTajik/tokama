@@ -136,6 +136,30 @@ describe("item record", () => {
       expect(paths(parseItemRecord(withAttempt(patch)))).toContain(path);
     });
   });
+
+  describe("what an attempt's agent said", () => {
+    const withAttempt = (attempt: object) => ({ ...item(), steps: [{ ...item().steps[0]!, attempts: [{ attempt: 1, result: "passed", checks: [], ...attempt }] }] });
+    const said = { source: "headline", headline: "x".repeat(140), points: ["y".repeat(160), "b", "c"], morePoints: 2, bodyBytes: 900, readMinutes: 60 };
+
+    it("may carry a headline at its caps with three points and a read time; a record without it is valid", () => {
+      expect(parseItemRecord(withAttempt({ said })).ok).toBe(true);
+      expect(parseItemRecord(withAttempt({ said: { source: "first_lines", headline: "x", points: [], morePoints: 0, bodyBytes: 0 } })).ok).toBe(true);
+      expect(parseItemRecord(withAttempt({})).ok).toBe(true);
+    });
+
+    it.each([
+      ["a headline over its cap", { headline: "x".repeat(141) }, "steps.0.attempts.0.said.headline"],
+      ["an empty headline", { headline: "" }, "steps.0.attempts.0.said.headline"],
+      ["a point over its cap", { points: ["y".repeat(161)] }, "steps.0.attempts.0.said.points.0"],
+      ["four points", { points: ["a", "b", "c", "d"] }, "steps.0.attempts.0.said.points"],
+      ["a read time of 0", { readMinutes: 0 }, "steps.0.attempts.0.said.readMinutes"],
+      ["a read time over 60", { readMinutes: 61 }, "steps.0.attempts.0.said.readMinutes"],
+      ["an unknown source", { source: "guess" }, "steps.0.attempts.0.said.source"],
+      ["an unknown field", { color: "red" }, "steps.0.attempts.0.said"],
+    ])("refuses %s", (_label, patch, path) => {
+      expect(paths(parseItemRecord(withAttempt({ said: { ...said, ...patch } })))).toContain(path);
+    });
+  });
 });
 
 describe("agent call usage record", () => {
