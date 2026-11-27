@@ -129,6 +129,10 @@ describe("pipeline list", () => {
   it("shows no dot anywhere: no agent dot, no step mark, no symbol before a group heading", async () => {
     await mount();
     expect(container.querySelector(".agent-dot, .pl-group-symbol")).toBeNull();
+    // Agent names on list rows stay grey: only the screens that compare agents colour them.
+    const rowNames = $$(".pl-row-wrap .agent-name");
+    expect(rowNames.length).toBeGreaterThan(0);
+    expect(rowNames.every((name) => !name.hasAttribute("data-agent") && !name.hasAttribute("data-coloured"))).toBe(true);
     expect($$(".pl-group-heading").map((el) => el.textContent)).toEqual(["Needs you1", "Running4"]);
   });
 

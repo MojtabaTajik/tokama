@@ -15,19 +15,6 @@
   color: var(--agent-neutral);
 }
 
-/* A neutral agent keeps the text colour: the neutral token is a dot colour, too dim for words. */
-.agent-name[data-coloured][data-agent="1"] {
-  color: var(--agent-1);
-}
-
-.agent-name[data-coloured][data-agent="2"] {
-  color: var(--agent-2);
-}
-
-.agent-name[data-coloured][data-agent="3"] {
-  color: var(--agent-3);
-}
-
 .agent-chip {
   display: inline-flex;
   align-items: center;

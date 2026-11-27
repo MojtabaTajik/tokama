@@ -75,7 +75,7 @@ export function LogTab({ bridge, item, setup, full, focus }: LogTabProps) {
   }, [reveal]);
 
   if (withLog.length === 0) return <Placeholder>{TEXT.none}</Placeholder>;
-  const track = trackOf(item).steps;
+  const track = trackOf(item, setup?.agents ?? []).steps;
   const latestOf = (index: number) => item.steps[index]!.attempts!.at(-1)!.attempt;
   const attemptOpen = (index: number, attempt: number) => open.has(attemptKey(index, attempt)) || (open.has(stepKey(index)) && !open.has(touchedKey(index)) && attempt === latestOf(index));
 
@@ -117,7 +117,7 @@ export function LogTab({ bridge, item, setup, full, focus }: LogTabProps) {
             item={item}
             setup={setup}
             index={index}
-            mark={track[index]!}
+            mark={track[index]!.mark}
             open={open.has(stepKey(index))}
             attemptOpen={(attempt) => attemptOpen(index, attempt)}
             onToggle={() => toggleStep(index)}
@@ -157,7 +157,7 @@ function StepLog({ bridge, item, setup, index, mark, open, attemptOpen, onToggle
   return (
     <Section
       title={step.name}
-      agent={info === undefined ? undefined : <AgentName name={info.name} dot={info.dot} coloured />}
+      agent={info === undefined ? undefined : <AgentName name={info.name} hue={info.hue} coloured />}
       state={mark}
       facts={facts.text}
       spokenFacts={facts.spoken}
