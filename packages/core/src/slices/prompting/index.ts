@@ -16,4 +16,13 @@ export {
   type StepResults,
 } from "./build-prompt.js";
 export { CHECK_OUTPUT_MAX_BYTES } from "./fence.js";
-export { TOKAMA_RULES } from "./rules.js";
+export {
+  buildHelperPrompt,
+  HELPER_PROMPT_LIMITS,
+  type BuiltHelperPrompt,
+  type HelperPromptInput,
+  type HelperPromptRecord,
+  type HelperPromptRefusal,
+  type HelperPromptRefusalCode,
+} from "./helper-prompt.js";
+export { HELPER_RULES, TOKAMA_RULES } from "./rules.js";
