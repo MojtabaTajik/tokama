@@ -358,7 +358,10 @@ describe("repo config, hooks and attributes never run code", () => {
     const wt = join(root, "wt");
     value(await git.worktreeAdd(repo, wt, "hardened", "main"));
     await plain(wt, "config", "--worktree", "filter.evil.clean", trap("wt-config"));
-    write(join(wt, "a.txt"), "dirty\n");
+    // Same size as the committed "one\n": git then compares content, which runs the clean filter.
+    // A different size is reported as modified from the stat data alone, and the filter would run
+    // only when git happened to find .gitattributes racy (same second as the index).
+    write(join(wt, "a.txt"), "two\n");
     await provesBlocked(
       "wt-config",
       () => plainMayFail(repo, "worktree", "remove", wt),
