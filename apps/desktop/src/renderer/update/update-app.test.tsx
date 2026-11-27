@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_DESKTOP_STATE } from "../../shared/desktop-state.js";
 import type { UpdateState } from "../../shared/update.js";
 import { App } from "../App.js";
@@ -12,12 +12,16 @@ import { items, NOW } from "../testing/sample.js";
 
 let container: HTMLElement;
 let root: Root;
+/** The window's system: the words of a stalled update differ on Linux, and the host of the test run is not the test's choice. */
+const system = (userAgent: string) => vi.spyOn(navigator, "userAgent", "get").mockReturnValue(userAgent);
 beforeEach(() => {
+  system("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Electron");
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
 });
 afterEach(() => {
+  vi.restoreAllMocks();
   act(() => root.unmount());
   container.remove();
 });
@@ -106,6 +110,16 @@ describe("App: ready update", () => {
     await click([...notice.querySelectorAll("button")].find((button) => button.textContent === "Restart Tokama")!);
     expect(installUpdate).toHaveBeenCalledTimes(1);
     expect($('[role="dialog"]')).toBeNull();
+  });
+
+  it("on Linux says the install was cancelled and offers Quit Tokama, not a promise to try again at quit", async () => {
+    system("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Electron");
+    const { setUpdate } = await start();
+    await setUpdate({ status: "stalled", version: "0.2.0" });
+    const notice = $('.sb-foot [role="status"]')!;
+    expect(notice.textContent).toContain("The install was cancelled. Tokama is still on its current version.");
+    expect(notice.textContent).not.toContain("when you quit");
+    expect([...notice.querySelectorAll("button")].map((button) => button.textContent)).toEqual(["Quit Tokama"]);
   });
 
   it("opens the sidebar notice from the collapsed rail icon, and does not restart on that click", async () => {
