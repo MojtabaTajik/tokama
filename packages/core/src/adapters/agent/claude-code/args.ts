@@ -50,6 +50,8 @@ export interface ArgGroups {
 export function argGroups(request: AgentCallRequest, settingsPath?: string, tokamaHome: string = DEFAULT_TOKAMA_HOME): Result<ArgGroups, string> {
   const limits = request.limits ?? READ_ONLY;
   if (request.model === "" || request.model.startsWith("-")) return err(`not a model name: "${request.model}"`);
+  // Safe mode turns hooks off, and the command-policy hook is how a command outside the step's rules is refused.
+  if (request.plain === true && limits.commands.length > 0) return err("a plain call cannot be allowed to run commands");
   const prefixes = rulePrefixes(limits.commands);
   for (const words of prefixes) {
     if (words[0]?.startsWith("-") || words.some((word) => UNSAFE_WORD.test(word))) {
