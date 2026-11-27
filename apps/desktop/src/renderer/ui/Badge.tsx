@@ -8,7 +8,8 @@ import { useHostTip } from "./useTip.js";
 
 export interface BadgeProps {
   readonly count: number;
-  readonly tone: "warn" | "fail";
+  /** Every mark is the one amber look. */
+  readonly tone: "warn";
   /** "!" in place of the count. */
   readonly symbol?: "!" | undefined;
 }

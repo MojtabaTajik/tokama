@@ -100,6 +100,7 @@ describe("the rail mark on Insights", () => {
 
   it("says the time today as the clock, leaves the time out when the report has none, and names a scoped window as it is", () => {
     expect(railBadge(codexAt([{ window: "five_hour", usedPercent: 100, resetsAt: at(20, 18, 30) }]), [], NOW)).toBe("Codex CLI 5-hour limit reached. Its steps cannot run until 18:30.");
+    expect(railBadge(codexAt([{ window: "seven_day_opus", usedPercent: 100, resetsAt: at(23, 9) }]), [], NOW)).toBe("Codex CLI Opus weekly limit reached. Its steps cannot run until Thu 09:00.");
     expect(railBadge(codexAt([{ window: "five_hour", usedPercent: 100 }]), [], NOW)).toBe("Codex CLI 5-hour limit reached. Its steps cannot run until the limit resets.");
     expect(railBadge(codexAt([{ window: "weekly_scoped", scope: "Fable", usedPercent: 99.6, resetsAt: at(23, 9) }]), [], NOW)).toBe("Codex CLI Fable weekly limit reached. Its steps cannot run until Thu 09:00.");
   });

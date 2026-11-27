@@ -32,7 +32,7 @@ describe("Badge", () => {
       return container.querySelector(".badge")?.textContent;
     };
     expect([1, 9, 10, 12, 120].map(shown)).toEqual(["1", "9", "9+", "9+", "9+"]);
-    render(<Badge count={0} tone="fail" />);
+    render(<Badge count={0} tone="warn" />);
     expect(container.querySelector(".badge")).toBeNull();
   });
 

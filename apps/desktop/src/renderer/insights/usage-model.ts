@@ -93,9 +93,12 @@ export function railBadge(usage: UsageReport | undefined, issues: readonly CliIs
     if (cliAlert(plan, issues.find((issue) => issue.cliId === cli.id), now) !== "limit") return [];
     const full = liveWindows(plan, now).filter((w) => levelOf(Math.round(w.usedPercent)) === "limit");
     const last = full.reduce((a, b) => (a.resetsAt === undefined || (b.resetsAt !== undefined && a.resetsAt >= b.resetsAt) ? a : b));
-    const name = windowShort(last);
+    // "Weekly" reads "weekly", a scoped "Fable weekly" stays, the older "Weekly · Opus" reads "Opus weekly".
+    const short = windowShort(last);
+    const named = /^Weekly · (.+)$/.exec(short);
+    const name = named !== null ? `${named[1]} weekly` : last.scope === undefined ? short.charAt(0).toLowerCase() + short.slice(1) : short;
     const until = last.resetsAt === undefined ? "the limit resets" : sameDay(last.resetsAt, now) ? clock(last.resetsAt) : resetWhen(last.resetsAt, now);
-    return [`${cli.name} ${last.scope === undefined ? name.charAt(0).toLowerCase() + name.slice(1) : name} limit reached. Its steps cannot run until ${until}.`];
+    return [`${cli.name} ${name} limit reached. Its steps cannot run until ${until}.`];
   });
   return causes.length === 0 ? undefined : causes.join(" ");
 }

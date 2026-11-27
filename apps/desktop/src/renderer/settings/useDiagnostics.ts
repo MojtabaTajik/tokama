@@ -32,7 +32,10 @@ export function useDiagnostics(bridge: TokamaBridge, connection: ConnectionState
   return { state, reload };
 }
 
-/** Whether a crash entry waits to be sent or deleted, for the rail's mark on Settings; false without an engine. */
+/**
+ * Whether a crash entry waits to be sent or deleted, for the rail's mark on Settings; false without an
+ * engine. A kept entry counts also while collecting is off: it still waits for the user's answer.
+ */
 export function useDiagnosticsWaiting(bridge: TokamaBridge, connection: ConnectionState): boolean {
   const [waiting, setWaiting] = useState(false);
   const [reloads, setReloads] = useState(0);

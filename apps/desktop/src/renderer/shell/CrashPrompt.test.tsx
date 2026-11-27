@@ -105,7 +105,7 @@ describe("crash prompt", () => {
     expect([settings().getAttribute("aria-label"), settings().querySelector(".badge")]).toEqual(["Settings", null]);
     await app.pushEvent({ type: "diagnostics_changed" });
     await act(async () => settings().click());
-    expect(container.querySelector(".settings-entry[aria-current=page]")?.textContent).not.toBe("Diagnostics");
+    expect(container.querySelector(".settings-entry[aria-current=page]")?.textContent).toBe("Agents");
   });
 
   it("opens Settings on Diagnostics from the marked gear", async () => {

@@ -21,10 +21,6 @@
   background: var(--warn);
 }
 
-.badge[data-tone="fail"] {
-  background: var(--fail);
-}
-
 /* Symbol-and-count badges at the end of a row. */
 .status-counts {
   display: inline-flex;
