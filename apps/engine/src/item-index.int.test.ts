@@ -169,6 +169,76 @@ describe("ItemIndex", () => {
     expect(again.planSample("codex-cli")).toBeUndefined();
   });
 
+  describe("past weekly windows", () => {
+    const week = (n: number) => ({ window: "weekly_all", startsAt: T0 + n * 7 * 86_400_000, endsAt: T0 + (n + 1) * 7 * 86_400_000, usedPercent: 40 + n, weight: { tokama: 3, all: 4 }, pricesAsOf: "2026-11-25" });
+
+    it("survive closing and opening again, and a newer plan sample", () => {
+      const index = openIndex();
+      index.savePlanSample("claude-code", { windows: [{ window: "weekly_all", usedPercent: 36 }], asOf: T0 });
+      index.savePlanHistory("claude-code", [week(0), week(1)]);
+      index.savePlanSample("claude-code", { windows: [{ window: "weekly_all", usedPercent: 37 }], asOf: T0 + 1 });
+      index.close();
+      cleanups.pop();
+      const again = openIndex();
+      expect(again.planHistory("claude-code")).toEqual([week(0), week(1)]);
+      // The sample reads as it was saved, without the history.
+      expect(again.planSample("claude-code")).toEqual({ windows: [{ window: "weekly_all", usedPercent: 37 }], asOf: T0 + 1 });
+    });
+
+    it("keep the newest 14, oldest first, and are kept without any plan sample", () => {
+      const index = openIndex();
+      index.savePlanHistory("claude-code", Array.from({ length: 16 }, (_, n) => week(n)));
+      expect(index.planHistory("claude-code").map((w) => w.usedPercent)).toEqual(Array.from({ length: 14 }, (_, n) => 42 + n));
+      // A record that holds only the history is no plan sample, so a request's problem still shows.
+      expect(index.planSample("claude-code")).toBeUndefined();
+      expect(index.planHistory("codex-cli")).toEqual([]);
+    });
+
+    it("read as none from an old record, a damaged one and a record that is not an object, without throwing", () => {
+      const file = join(home, "tokama.db");
+      openIndex(file).close();
+      cleanups.pop();
+      const raw = new DatabaseSync(file);
+      const put = raw.prepare("INSERT INTO plan_samples (cli_id, as_of, record) VALUES (?, ?, ?)");
+      put.run("claude-code", T0, JSON.stringify({ windows: [{ window: "weekly_all", usedPercent: 36 }], asOf: T0 }));
+      put.run("codex-cli", T0, "{not json");
+      put.run("ollama", T0, JSON.stringify([1, 2]));
+      raw.close();
+      const index = openIndex(file);
+      expect(index.planHistory("claude-code")).toEqual([]);
+      expect(index.planSample("claude-code")).toEqual({ windows: [{ window: "weekly_all", usedPercent: 36 }], asOf: T0 });
+      for (const cliId of ["codex-cli", "ollama"] as const) {
+        expect(index.planHistory(cliId)).toEqual([]);
+        expect(index.planSample(cliId)).toBeUndefined();
+      }
+      // A damaged record is replaced by the next write.
+      index.savePlanSample("codex-cli", { windows: [], asOf: T0 + 5 });
+      expect(index.planSample("codex-cli")).toEqual({ windows: [], asOf: T0 + 5 });
+    });
+
+    it("drop the entries of a stored list that are wrong, and keep the rest", () => {
+      const file = join(home, "tokama.db");
+      openIndex(file).close();
+      cleanups.pop();
+      const raw = new DatabaseSync(file);
+      raw.prepare("INSERT INTO plan_samples (cli_id, as_of, record) VALUES ('claude-code', ?, ?)").run(T0, JSON.stringify({ windows: [], asOf: T0, history: [week(0), { window: 5 }, "x", { ...week(1), endsAt: 1 }] }));
+      raw.close();
+      expect(openIndex(file).planHistory("claude-code")).toEqual([week(0)]);
+    });
+  });
+
+  it("sums Claude Code's tokens per model between two times, both ends included", () => {
+    const index = openIndex();
+    const message = (key: string, at: number, model: string, input: number) => ({ key, at, model, project: "p1", tokens: { input, output: 1, cacheRead: 2, cacheWrite: 3 } });
+    index.saveLocalFile("f1", { ino: 1, offset: 10 }, [message("a", T0, "claude-opus-5-5", 10), message("b", T0 + 1000, "claude-opus-5-5", 20), message("c", T0 + 1000, "claude-haiku-5-5", 5), message("d", T0 + 2000, "claude-opus-5-5", 40)]);
+    expect(index.localTotals(T0, T0 + 1000)).toEqual([
+      { model: "claude-haiku-5-5", tokens: { input: 5, output: 1, cacheRead: 2, cacheWrite: 3 } },
+      { model: "claude-opus-5-5", tokens: { input: 30, output: 2, cacheRead: 4, cacheWrite: 6 } },
+    ]);
+    expect(index.localTotals(T0 + 1, T0 + 999)).toEqual([]);
+    expect(index.localTotals(T0 + 2000, T0 + 9000).map((row) => row.tokens.input)).toEqual([40]);
+  });
+
   it("creates the database file 0600 with a schema version, and recreates a database of another version", () => {
     const file = join(home, "tokama.db");
     const index = ItemIndex.open(file);

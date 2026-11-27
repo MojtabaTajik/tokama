@@ -11,7 +11,7 @@ export const NOW = new Date(2025, 9, 20, 15, 0).getTime();
 export const MILLION = { input: 1_000_000, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 let calls = 0;
-export function call(fields: Partial<AgentCallUsage> & { stepId: string; attempt: number; endedAt: number }): AgentCallUsage {
+export function call(fields: Omit<Partial<AgentCallUsage>, "stepId"> & { stepId: string; attempt: number; endedAt: number }): AgentCallUsage {
   calls++;
   const { stepId, ...rest } = fields;
   return {

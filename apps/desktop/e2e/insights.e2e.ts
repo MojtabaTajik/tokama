@@ -6,14 +6,14 @@ import { flow } from "./harness.js";
 
 flow("shows plan usage in the Insights tooltip, opens Insights, shows a day on hover, filters by workflow and counts all of this Mac", async ({ page, screenshot, resize }) => {
   const insights = page.locator('.rail button[aria-label="Insights"]');
-  // Codex CLI is near its weekly limit in the sample: a ! on the icon, words in the tooltip.
+  // Claude Code is near its weekly limit in the sample: a ! on the icon, words in the tooltip.
   await expect.poll(() => page.locator(".rail .insights .badge").innerText(), { message: "the Insights badge" }).toBe("!");
   await insights.hover();
   const tip = page.locator(".insights-tip");
   await tip.waitFor({ state: "visible" });
   await expect
     .poll(() => tip.locator('[role="meter"]').evaluateAll((meters) => meters.map((meter) => `${meter.getAttribute("aria-label")} ${meter.getAttribute("aria-valuetext")}`)), { message: "the tooltip's meters" })
-    .toEqual(["Session window 36%, ok", "Weekly window 58%, ok", "Fable weekly window 12%, ok", "Codex CLI Weekly window 84%, near limit"]);
+    .toEqual(["Session window 36%, ok", "Weekly window 82%, near limit", "Fable weekly window 47%, ok", "Codex CLI Weekly window 41%, ok"]);
   await expect.poll(() => tip.innerText(), { message: "the share, today's items and totals" }).toMatch(/50% share of the weekly limit[\s\S]*TODAY[\s\S]*Tokens today[\s\S]*Agent time today/i);
   // The pointer rests on the icon: the tooltip stays shown, with no flicker, while the data refreshes.
   const shown: boolean[] = [];

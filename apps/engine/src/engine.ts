@@ -142,9 +142,9 @@ import { agentsFor, loadConfig, startProblem, stepProblems } from "./real/config
 import { sampleTemplateLoads } from "./sample/templates.js";
 import { openSampleDiagnostics } from "./sample/diagnostics.js";
 import { sampleMachineReport } from "./sample/machine.js";
-import { sampleHelperCalls, sampleLogEntries, sampleOtherPlans, samplePlanSources, sampleUsageRows } from "./sample/usage.js";
+import { sampleHelperCalls, sampleHistory, sampleLogEntries, sampleLogTotals, sampleOtherPlans, samplePlanSources, sampleUsageItems, sampleUsageRows } from "./sample/usage.js";
 import { ClaudeLogs, logReader } from "./claude-logs.js";
-import { type PlanSources, planSources, UsageService, usageRowsOf } from "./usage.js";
+import { type PlanSources, planSources, UsageService, usageItemsOf, usageRowsOf } from "./usage.js";
 import { MemoryItemStore } from "./store.js";
 import { templateDetail, templateEntries, type TemplateFiles } from "./templates.js";
 
@@ -441,13 +441,18 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     sample
       ? {
           rows: () => sampleUsageRows(sample.setup, store.list(), clock.now()),
+          items: () => sampleUsageItems(sample.setup, store.list(), clock.now()),
           sources: samplePlanSources(clock.now),
           otherClis: sampleOtherPlans,
           helperCalls: () => sampleHelperCalls(clock.now()),
+          // The window that closed when this one began; the sample keeps nothing, so a new one is never kept.
+          history: { get: () => sampleHistory(sampleUsageRows(sample.setup, store.list(), clock.now()).map((row) => row.call), clock.now()), save: () => {} },
           logs: {
+            cliId: "claude-code",
             refresh: () => {},
             status: () => ({ state: "ready", filesDone: 412, filesTotal: 412, asOf: clock.now() - 40_000 }),
             entries: () => sampleLogEntries(sample.setup, clock.now()),
+            totals: (from, to) => sampleLogTotals(sampleUsageRows(sample.setup, store.list(), clock.now()).map((row) => row.call), from, to),
             coveredFrom: () => 0,
           },
           clock,
@@ -455,8 +460,12 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
         }
       : {
           rows: (since) => (storage === undefined ? [] : usageRowsOf(storage.items.list(), since)),
+          items: (since) => (storage === undefined ? [] : usageItemsOf(storage.items.list(), since)),
           helperCalls: (since) => helperRuns?.calls(since) ?? [],
-          ...(index !== undefined && { samples: { get: (cliId) => index.planSample(cliId), save: (cliId, reading) => index.savePlanSample(cliId, reading) } }),
+          ...(index !== undefined && {
+            samples: { get: (cliId) => index.planSample(cliId), save: (cliId, reading) => index.savePlanSample(cliId, reading) },
+            history: { get: (cliId) => index.planHistory(cliId), save: (cliId, windows) => index.savePlanHistory(cliId, windows) },
+          }),
           sources: options.planSources ?? planSources(aiCliAdapters, usageAbort.signal),
           ...(claudeLogs !== undefined && { logs: claudeLogs }),
           clock,
@@ -725,7 +734,9 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       }
       case "item": {
         const item = store.get(query.itemId);
-        return item ? { ok: true, data: { item } satisfies ItemResult } : { ok: false, error: { code: "not_found", message: `no item ${query.itemId}` } };
+        if (!item) return { ok: false, error: { code: "not_found", message: `no item ${query.itemId}` } };
+        const itemUsage = await usage.itemUsage(query.itemId);
+        return { ok: true, data: { item, ...(itemUsage !== undefined && { usage: itemUsage }) } satisfies ItemResult };
       }
       case "activity":
         if (store.get(query.itemId) === undefined) return { ok: false, error: { code: "not_found", message: `no item ${query.itemId}` } };
@@ -794,7 +805,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
         return { ok: true, data: detail satisfies TemplateDetailResult };
       }
       case "usage":
-        return { ok: true, data: (await usage.report(query.range, query.scope)) satisfies UsageResult };
+        return { ok: true, data: (await usage.report(query.range, query.scope, query.window)) satisfies UsageResult };
       case "diagnostics_list":
       case "diagnostics_settings":
         return diagnostics?.query(query) ?? noDiagnostics;

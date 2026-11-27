@@ -1,7 +1,7 @@
-import { aiCliAdapters, manualClock, type ItemId, type PlanReading, type UsageRow } from "@tokama/core";
+import { aiCliAdapters, manualClock, type ItemId, type PastWindow, type PlanReading, PRICES_AS_OF, type RunItem, type UsageRow } from "@tokama/core";
 import { describe, expect, it } from "vitest";
 import { fakeAiCli } from "./testing/fake-ai-cli.js";
-import { type PlanSource, UsageService, type UsageDeps, usageRowsOf } from "./usage.js";
+import { type PlanSource, UsageService, type UsageDeps, usageItemsOf, usageRowsOf } from "./usage.js";
 
 const NOW = new Date(2025, 9, 20, 15, 0).getTime();
 const MINUTE = 60_000;
@@ -140,6 +140,140 @@ describe("UsageService", () => {
       ["codex-cli", 0, true],
       ["ollama", 0, true],
     ]);
+  });
+});
+
+describe("weekly history", () => {
+  const DAY = 24 * 60 * MINUTE;
+  const week = (usedPercent: number, resetsAt: number): PlanReading => ({ windows: [{ window: "weekly_all", usedPercent, resetsAt }], asOf: NOW });
+  const MILLION = { input: 1_000_000, output: 0, cacheRead: 0, cacheWrite: 0 };
+  // One build that ended 3 days ago: 1M opus tokens, which weigh 4 in the price table.
+  const item = (): RunItem => ({
+    itemId: ITEM,
+    title: "Add order export",
+    templateId: "plan-and-build",
+    repoIds: [],
+    steps: [{ id: "build" as never, name: "Build", doneWhen: "checks pass", attempts: [{ attempt: 1, result: "passed", startedAt: NOW - 3 * DAY - MINUTE, endedAt: NOW - 3 * DAY, checks: [{ command: "pnpm test", passed: true }] }] }],
+    calls: [{ ...runRow(0, NOW - 3 * DAY).call, tokens: MILLION }],
+  });
+  const logs = (overrides: Partial<NonNullable<UsageDeps["logs"]>> = {}): NonNullable<UsageDeps["logs"]> => ({
+    cliId: "claude-code",
+    refresh: () => {},
+    status: () => ({ state: "ready", filesDone: 1, filesTotal: 1 }),
+    entries: () => [],
+    totals: () => [{ model: "claude-opus-5-5", tokens: { ...MILLION, input: 2_000_000 } }],
+    coveredFrom: () => NOW - 30 * DAY,
+    ...overrides,
+  });
+
+  /** Two answers to the usage request, a week apart: the first closes the window the second shows as over. */
+  async function twoAnswers(deps: Partial<UsageDeps>) {
+    const answers = [week(64, NOW - DAY), week(5, NOW + 6 * DAY)];
+    let n = 0;
+    const request: PlanSource = async () => ({ ok: true, value: answers[n++]! });
+    const stored: PastWindow[] = [];
+    const made = service({
+      sources: { "claude-code": { request } },
+      items: () => [item()],
+      history: { get: () => stored, save: (_cli, windows) => void stored.splice(0, stored.length, ...windows) },
+      ...deps,
+    });
+    await made.usage.report(14);
+    await made.usage.settled();
+    made.clock.advance(6 * MINUTE);
+    await made.usage.report(14);
+    await made.usage.settled();
+    return { ...made, stored };
+  }
+
+  it("closes a weekly window when a request shows a later reset, and fixes its weight then", async () => {
+    const { stored } = await twoAnswers({ logs: logs() });
+    expect(stored).toEqual([{ window: "weekly_all", startsAt: NOW - 8 * DAY, endsAt: NOW - DAY, usedPercent: 64, weight: { tokama: 4, all: 8 }, pricesAsOf: PRICES_AS_OF }]);
+  });
+
+  it("keeps a window it could not weigh, and weighs it when the logs are read later", async () => {
+    let ready = false;
+    const { stored, usage } = await twoAnswers({ logs: logs({ status: () => ({ state: ready ? "ready" : "scanning", filesDone: 0, filesTotal: 1 }) }) });
+    expect(stored).toEqual([{ window: "weekly_all", startsAt: NOW - 8 * DAY, endsAt: NOW - DAY, usedPercent: 64 }]);
+    ready = true;
+    await usage.report(14);
+    expect(stored).toEqual([expect.objectContaining({ usedPercent: 64, weight: { tokama: 4, all: 8 } })]);
+    // Nothing more is written when nothing changes.
+    const again = [...stored];
+    await usage.report(14);
+    expect(stored).toEqual(again);
+  });
+
+  it("does not close the window that is still running, and does not close one twice", async () => {
+    const { stored, usage } = await twoAnswers({});
+    expect(stored).toHaveLength(1);
+    await usage.report(14);
+    await usage.report(14);
+    expect(stored).toHaveLength(1);
+  });
+
+  it("keeps the windows in memory when nothing stores them, and tells the previous week from them", async () => {
+    const answers = [week(64, NOW - DAY), week(5, NOW + 6 * DAY)];
+    let n = 0;
+    const request: PlanSource = async () => ({ ok: true, value: answers[n++]! });
+    const { usage, clock } = service({ sources: { "claude-code": { request } }, items: () => [item()], logs: logs() });
+    await usage.report(14);
+    await usage.settled();
+    clock.advance(6 * MINUTE);
+    await usage.report(14);
+    await usage.settled();
+    const previous = await usage.report(14, "tokama", "previous");
+    expect(previous.week?.limits).toEqual([expect.objectContaining({ cliId: "claude-code", usedPercent: 64, tokamaPercent: 32, outsidePercent: 32 })]);
+  });
+
+  it("has no week block when it is given no items", async () => {
+    const report = await service().usage.report(14);
+    expect(report.week).toBeUndefined();
+    expect(report.stepModels).toBeUndefined();
+    expect(await service().usage.itemUsage(ITEM)).toBeUndefined();
+  });
+
+  it("tells an item's use, and nothing for an item it has no calls of", async () => {
+    const { usage } = service({ items: () => [item()] });
+    expect(await usage.itemUsage(ITEM)).toEqual({ tokens: 1_000_000 });
+    expect(await usage.itemUsage("item_0190a000-0000-7000-8000-0000000000ff" as ItemId)).toBeUndefined();
+  });
+});
+
+describe("usageItemsOf", () => {
+  const template = (steps: object[]) => ({
+    sha256: "a".repeat(63) + String(steps.length),
+    record: { schemaVersion: 2, ref: "orders-api/quick-fix", id: "quick-fix", source: { kind: "builtin" }, name: "Quick fix", uses: { repos: { named: [] }, connections: [], commands: [] }, start: { needs: ["text"], askBeforeCloud: false, notify: false }, steps, finish: ["commit"] },
+  });
+  const step = { id: "build", name: "Build", agentId: "builder", instructions: { text: "Fix it." }, doneWhen: "checks pass", checks: { commands: ["pnpm test"] }, ifFailed: { action: "retry" }, maxAttempts: 3, data: "none", sees: [], connections: [], commands: [] };
+  const stored = (over: object): Parameters<typeof usageItemsOf>[0][number] =>
+    ({
+      id: ITEM,
+      title: "Add order export",
+      templateRef: "orders-api/quick-fix",
+      template: template([step]),
+      repoIds: ["orders-api"],
+      deleted: false,
+      calls: [runRow(10, NOW - MINUTE).call],
+      steps: [{ id: "build", state: "passed", attempts: [{ attempt: 1, startedAt: NOW - 2 * MINUTE, endedAt: NOW - MINUTE, result: "passed", processes: [], checks: [{ command: "pnpm test", exitCode: 0, passed: true, at: NOW - MINUTE }] }] }],
+      ...over,
+    }) as never;
+
+  it("reads each step's name, agent and rule from the item's template record, with its attempts and checks", () => {
+    const [one] = usageItemsOf([stored({})], 0);
+    expect(one).toMatchObject({ itemId: ITEM, title: "Add order export", templateId: "orders-api/quick-fix", repoIds: ["orders-api"] });
+    expect(one?.steps).toEqual([{ id: "build", name: "Build", agentId: "builder", doneWhen: "checks pass", attempts: [{ attempt: 1, result: "passed", startedAt: NOW - 2 * MINUTE, endedAt: NOW - MINUTE, checks: [{ command: "pnpm test", passed: true }] }] }]);
+  });
+
+  it("tells a step by its id when the template record cannot be read, and still has its attempts", () => {
+    const [one] = usageItemsOf([stored({ template: { sha256: "b".repeat(64), record: { schemaVersion: 99 } } })], 0);
+    expect(one?.steps).toEqual([{ id: "build", name: "build", attempts: expect.any(Array) }]);
+  });
+
+  it("leaves out a deleted item and an item without a call since the time", () => {
+    expect(usageItemsOf([stored({ deleted: true })], 0)).toEqual([]);
+    expect(usageItemsOf([stored({})], NOW)).toEqual([]);
+    expect(usageItemsOf([stored({ calls: undefined })], 0)).toEqual([]);
   });
 });
 

@@ -7,7 +7,7 @@
 // Project folders are matched to repos after each scan, so a repo added later counts from the
 // next scan on; the index keeps the match by a hash of each folder name, never the name.
 import { realpath } from "node:fs/promises";
-import { type AiCliAdapter, type AiCliId, aiCliAdapters, type Clock, type LogScan, type LogScanFn, pricedEntry, rangeStart, type RepoId, type RepoOfFn, type RepoPaths, type UsageEntry } from "@tokama/core";
+import { type AiCliAdapter, type AiCliId, aiCliAdapters, type Clock, type LogScan, type LogScanFn, pricedEntry, rangeStart, type RepoId, type RepoOfFn, type RepoPaths, type TokenUsage, type UsageEntry } from "@tokama/core";
 import type { ItemIndex } from "./item-index.js";
 import { cliName } from "./real/clis.js";
 
@@ -81,6 +81,16 @@ export class ClaudeLogs {
     return this.deps.index.localDays(since).map((row) =>
       pricedEntry({ day: row.day, model: row.model, cliId: this.deps.reader.cliId, repoId: row.repoId, tokens: row.tokens, calls: row.messages }),
     );
+  }
+
+  /** The AI CLI whose logs these are. */
+  get cliId(): AiCliId {
+    return this.deps.reader.cliId;
+  }
+
+  /** Claude Code's tokens per model between two times, Tokama's own calls included. */
+  totals(from: number, to: number): { model: string; tokens: TokenUsage }[] {
+    return this.deps.index.localTotals(from, to);
   }
 
   /** The time from which the logs hold Claude Code's calls; undefined while they hold none. */

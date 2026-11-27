@@ -104,6 +104,7 @@ export { BUILTIN_HELPERS, readAnswer, type AnswerProblem, type HelperDefinition,
 // Usage reports: roll-ups, estimated costs and the plan window choice, for the engine service.
 export {
   callCost,
+  callWeight,
   choosePlan,
   closedWindows,
   itemUsageOf,
@@ -117,6 +118,7 @@ export {
   summarizeUsage,
   totalTokens,
   windowWeight,
+  withForecast,
   type CallLogs,
   type LogTotal,
   type PastWindow,
