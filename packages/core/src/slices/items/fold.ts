@@ -85,7 +85,7 @@ function applyTo(next: StoredItem, event: ItemEvent): FoldError | undefined {
   // A call that a stop ended reports its usage after the item ended; finish actions follow a done item.
   const finishEvent = FINISH_EVENTS.has(event.type);
   if (next.outcome !== undefined && event.type !== "tombstone" && event.type !== "usage_recorded" && !finishEvent) return fail(`the item has ended; ${event.type} is not allowed`);
-  if (finishEvent && next.outcome?.kind !== "done") return fail(`${event.type} is allowed only once the item is done`);
+  if (finishEvent && next.outcome?.kind !== "done" && !(next.outcome?.kind === "no_action_needed" && isDiscard(event))) return fail(`${event.type} is allowed only once the item is done`);
 
   next.lastSeq = event.seq;
   // Usage is accounting, not a change of the item's state: the board order stays.
@@ -206,6 +206,7 @@ function applyTo(next: StoredItem, event: ItemEvent): FoldError | undefined {
         ...(event.covers !== undefined && { covers: event.covers }),
         ...(event.tree !== undefined && { tree: event.tree }),
         ...(event.change !== undefined && { change: event.change }),
+        ...(event.proposes !== undefined && { proposes: event.proposes }),
       });
       if (step !== undefined && step.state === "running") step.state = "needs_you";
       break;
@@ -315,7 +316,9 @@ function applyTo(next: StoredItem, event: ItemEvent): FoldError | undefined {
 }
 
 const FINISH_EVENTS: ReadonlySet<string> = new Set(["finish_started", "merged", "pr_opened", "discarded", "finish_failed", "git_changes_accepted"]);
-const RESULT_OF = { merged: "merge", pr_opened: "pull_request", discarded: "discard" } as const;
+/** The finish events of a discard: the only ones that may follow an item that ended with no action needed, whose unused worktree is removed. */
+const isDiscard = (event: ItemEvent): boolean => event.type === "discarded" || ((event.type === "finish_started" || event.type === "finish_failed") && event.action === "discard");
+const RESULT_OF ={ merged: "merge", pr_opened: "pull_request", discarded: "discard" } as const;
 
 /** The attempt of the current step that has started and not ended, if any. */
 export function openAttempt(item: StoredItem): { step: StoredStep; attempt: AttemptRecord } | undefined {

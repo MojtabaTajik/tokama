@@ -21,7 +21,7 @@ import { Button } from "../ui/Button.js";
 import { AgentName } from "../ui/agent.js";
 import { Facts } from "../ui/Facts.js";
 import { factsOf } from "../../shared/item-facts.js";
-import { saidOf, saidTag } from "../../shared/item-said.js";
+import { noChangeLine, saidOf, saidTag } from "../../shared/item-said.js";
 
 const TEXT = {
   nothing: { needs: "Nothing waiting", running: "Nothing running", done: "Nothing finished", failed: "Nothing failed" },
@@ -120,6 +120,7 @@ function Row({ item, setup, now, selected, onSelect, onFinish, onDiscard, onOpen
   // A done row's third line is what the step's agent said; a failed row keeps its facts.
   const said = item.state === "done" ? saidOf(item) : undefined;
   const tag = said === undefined ? undefined : saidTag(said.said);
+  const noChange = noChangeLine(item);
   const separator = (
     <span aria-hidden="true" className="pl-sep">
       ·
@@ -140,6 +141,12 @@ function Row({ item, setup, now, selected, onSelect, onFinish, onDiscard, onOpen
               <>
                 {separator}
                 <span className="pl-repos ellipsis mono">{item.repoIds.join(", ")}</span>
+              </>
+            )}
+            {noChange !== undefined && (
+              <>
+                {separator}
+                <span className="pl-where">{noChange}</span>
               </>
             )}
             {line !== undefined && (

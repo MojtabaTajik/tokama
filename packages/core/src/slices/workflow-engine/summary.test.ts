@@ -128,6 +128,7 @@ describe("parseHeadline", () => {
       bodyBytes: "I changed the cart totals.".length,
       words: 5,
       readFlag: true,
+      noChange: false,
     });
   });
 
@@ -192,5 +193,31 @@ describe("parseHeadline", () => {
 
   it("reads READ: no as no flag", () => {
     expect(parseHeadline("HEADLINE: Done.\nREAD: no")).toMatchObject({ readFlag: false });
+  });
+
+  describe("NO_CHANGE", () => {
+    it("is a block line after the headline, only for the value yes in any letter case; it is not part of the reply", () => {
+      expect(parseHeadline("The answer is no.\nHEADLINE: Done.\nPOINT: x\nNO_CHANGE: yes")).toMatchObject({ source: "headline", points: ["x"], noChange: true, bodyBytes: "The answer is no.".length, words: 4 });
+      expect(parseHeadline("Text.\nHEADLINE: Done.\n- **No_Change:** YES")).toMatchObject({ noChange: true });
+      for (const value of ["no", "maybe", "yes, but", ""]) expect(parseHeadline(`Text.\nHEADLINE: Done.\nNO_CHANGE: ${value}`), value).toMatchObject({ noChange: false });
+    });
+
+    it("counts only below the headline, and never without one", () => {
+      expect(parseHeadline("Text.\nNO_CHANGE: yes\nHEADLINE: Done.")).toMatchObject({ source: "headline", noChange: false });
+      expect(parseHeadline("Text.\nNO_CHANGE: yes")).toMatchObject({ source: "first_lines", headline: "Text.", noChange: false });
+    });
+
+    it("other values are text of the reply, so the line stays in the body and the first lines", () => {
+      const parsed = parseHeadline("NO_CHANGE: maybe\nHEADLINE: Done.");
+      expect(parsed).toMatchObject({ noChange: false, bodyBytes: "NO_CHANGE: maybe".length });
+      expect(summarizeOutput("NO_CHANGE: maybe\nMore.", false)).toMatchObject({ lines: ["NO_CHANGE: maybe", "More."] });
+    });
+
+    it("stays out of the first lines, the must-fix list and the verdict", () => {
+      expect(summarizeOutput("Work done.\nHEADLINE: Done.\nNO_CHANGE: yes", false)).toMatchObject({ lines: ["Work done."] });
+      const review = ["**Must change**", "1. `a.ts:3` add the test.", "NO_CHANGE: yes", "- `b.ts:4` not a must-fix item", "VERDICT: changes"].join("\n");
+      expect(summarizeOutput(review, true)).toMatchObject({ kind: "verdict", mustFix: [{ ref: "a.ts:3", text: "add the test" }] });
+      expect(summarizeOutput("Fine.\nVERDICT: approve\nHEADLINE: ok\nNO_CHANGE: yes", true)).toMatchObject({ kind: "verdict", verdict: "approve" });
+    });
   });
 });

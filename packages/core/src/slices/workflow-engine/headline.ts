@@ -12,6 +12,10 @@ HEADLINE: <one line, at most ${MAX_HEADLINE_CHARS} characters: the most importan
 POINT: <optional; up to ${MAX_POINTS} such lines, each at most ${MAX_POINT_CHARS} characters: what else the engineer must know, such as what is not done, what you assumed, what you are unsure about>
 READ: yes   <only when the engineer must read your full reply to use this work: a design, findings, a plan with choices>`;
 
+/** Added after `HEADLINE_RULE` on a step you approve that a step follows, unless the engineer chose to build anyway on it. */
+export const NO_CHANGE_RULE = `
+NO_CHANGE: yes   <only when nothing needs to be changed or built and your reply is the answer, and you changed no files; leave the line out otherwise>`;
+
 /** Added to a reviewer's instructions in place of `HEADLINE_RULE`, before its `VERDICT_RULE`, which keeps the last line. */
 export const REVIEWER_HEADLINE_RULE = `${HEADLINE_RULE}
 This block goes above the VERDICT line.`;
@@ -19,7 +23,7 @@ This block goes above the VERDICT line.`;
 // A block label at the start of a line, in any letter case, after a list mark, a quote mark or bold
 // marks; the rest of the line is the value (any character, so a line separator does not end it).
 // The one grammar for the headline parser and the verdict reader.
-const BLOCK_LABEL = /^\s*(?:(?:[-*]\s+|>\s*)*)(?:\*\*|__)?(HEADLINE|POINT|READ)(?:\*\*|__)?\s*:([\s\S]*)$/i;
+const BLOCK_LABEL = /^\s*(?:(?:[-*]\s+|>\s*)*)(?:\*\*|__)?(HEADLINE|POINT|READ|NO_CHANGE)(?:\*\*|__)?\s*:([\s\S]*)$/i;
 // Control, invisible formatting and line-break characters, as a notification's text drops them.
 const INVISIBLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu;
 
@@ -34,15 +38,17 @@ export const plain = (text: string): string =>
 
 /**
  * The label of a headline block line and its plain value. `block` is true for a `HEADLINE:` or
- * `POINT:` line, and for a `READ:` line that says yes or no; any other `READ:` line is part of
- * the reply. Both the headline reader and the verdict reader decide by this flag.
+ * `POINT:` line, for a `READ:` line that says yes or no, and for a `NO_CHANGE:` line that says
+ * yes; any other `READ:` or `NO_CHANGE:` line is part of the reply. Both the headline reader and
+ * the verdict reader decide by this flag.
  */
-export function labelOf(line: string): { label: "HEADLINE" | "POINT" | "READ"; value: string; block: boolean } | undefined {
+export function labelOf(line: string): { label: "HEADLINE" | "POINT" | "READ" | "NO_CHANGE"; value: string; block: boolean } | undefined {
   const match = BLOCK_LABEL.exec(line);
   if (match === null) return undefined;
-  const label = match[1]!.toUpperCase() as "HEADLINE" | "POINT" | "READ";
+  const label = match[1]!.toUpperCase() as "HEADLINE" | "POINT" | "READ" | "NO_CHANGE";
   const value = plain(match[2]!);
-  return { label, value, block: label !== "READ" || /^(?:yes|no)\b/i.test(value) };
+  const block = label === "READ" ? /^(?:yes|no)\b/i.test(value) : label === "NO_CHANGE" ? /^yes$/i.test(value) : true;
+  return { label, value, block };
 }
 
 /** Whether the line is a line of the headline block. */
@@ -59,6 +65,8 @@ export interface ReadContext {
   readonly approvesText: boolean;
   /** The template finishes with findings or a document and this is its last agent step. */
   readonly lastOfDocument: boolean;
+  /** The step was told it may say "no change needed", and what it asks you to approve changed nothing. */
+  readonly noChangeOffered?: boolean;
 }
 
 /** Minutes to read `words`, rounded up: 1 to 60. */
@@ -79,5 +87,6 @@ export function saidOf(parsed: ParsedHeadline | undefined, context: ReadContext)
     morePoints: parsed.morePoints,
     bodyBytes: parsed.bodyBytes,
     ...(mustRead && { readMinutes: readMinutesOf(parsed.words) }),
+    ...(context.noChangeOffered === true && parsed.noChange && { noChange: true as const }),
   };
 }

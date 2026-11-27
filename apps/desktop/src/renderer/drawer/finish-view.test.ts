@@ -1,7 +1,8 @@
 import type { ItemRecord, Setup } from "@tokama/core";
 import { describe, expect, it } from "vitest";
-import { committed, finishable, setup } from "../testing/drawer.js";
-import { finishNote, finishState, finishView, isDiscarded, prName, type FinishView } from "./finish-view.js";
+import { clock } from "../format/time.js";
+import { committed, finishable, noChangeDone, setup } from "../testing/drawer.js";
+import { finishActions, finishNote, finishState, finishView, isDiscarded, prName, type FinishView } from "./finish-view.js";
 
 const withFinish = (finish: Partial<NonNullable<ItemRecord["finish"]>>, extra: Partial<ItemRecord> = {}): ItemRecord => ({ ...finishable, ...extra, finish: { ...finishable.finish!, ...finish } });
 const withGh = (gh: NonNullable<Setup["health"]["gh"]>) => ({ ...setup, health: { ...setup.health, gh } }) as Setup;
@@ -77,6 +78,19 @@ describe("finishView: the offer", () => {
     const view = offer(finishView(withFinish({ running: "merge" }), setup));
     expect(view.running).toBe("Merging into main");
     expect(view.rows.every((row) => row.button.disabled === true)).toBe(true);
+  });
+});
+
+describe("finishView: an item that ended on an answer with no change", () => {
+  it("says nothing was committed once its worktree is removed, and offers nothing before", () => {
+    const view = ended(finishView(noChangeDone, setup));
+    expect([view.title, flat(view.detail), view.removable]).toEqual(["Nothing committed", `Worktree and branch removed · ${clock(noChangeDone.finish!.at!)} · the log is kept`, false]);
+    // Kept (files appeared in it) or still being removed: the item has no Finish section.
+    expect(finishView({ ...noChangeDone, finish: { worktreeRemoved: false } } as ItemRecord, setup)).toBeUndefined();
+    expect(finishView({ ...noChangeDone, finish: undefined } as ItemRecord, setup)).toBeUndefined();
+    expect(finishActions(noChangeDone)).toEqual([]);
+    expect(isDiscarded(noChangeDone)).toBe(false);
+    expect(finishNote(noChangeDone)).toBeUndefined();
   });
 });
 

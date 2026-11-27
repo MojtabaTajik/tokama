@@ -33,6 +33,10 @@ const TEXT = {
     `Goes into ${agent === undefined ? "the step" : `${agent}'s`} next run${diff ? " with the current diff" : ""}.${run === undefined ? "" : ` ${run}.`}`,
   send: (agent: string | undefined) => (agent === undefined ? "Send and run again" : `Send to ${agent}`),
   cancel: "Cancel",
+  // Build anyway, on a question that proposes finishing with the answer: the note says what to build, and is required.
+  buildNote: "What should be built?",
+  buildHint: (agent: string | undefined) => `${agent === undefined ? "The step" : agent} plans again with your note. You are asked "Build it this way?" before anything is built.`,
+  buildSend: "Send and plan",
 } as const;
 
 export interface DecisionChoicesProps {
@@ -60,6 +64,8 @@ export function DecisionChoices({ decision, busy, onChoose, context, agent, run,
   const hintId = useId();
   const named = (label: string) => (context === undefined ? undefined : `${label}: ${context}`);
   const choices = shownChoices(decision);
+  // The question proposes finishing with the agent's answer: Finish is its filled button, and Build anyway needs a note.
+  const proposes = decision.proposes === "no_change";
 
   // Escape closes the note before anything else handles it (the drawer, the full view).
   useEffect(() => {
@@ -79,10 +85,11 @@ export function DecisionChoices({ decision, busy, onChoose, context, agent, run,
         className="decision-note"
         onSubmit={(event) => {
           event.preventDefault();
+          if (proposes && note.trim() === "") return;
           onChoose(REQUEST_CHANGES_ID, note.trim() === "" ? undefined : note.trim());
         }}
       >
-        <label htmlFor={noteId}>{TEXT.note}</label>
+        <label htmlFor={noteId}>{proposes ? TEXT.buildNote : TEXT.note}</label>
         <textarea
           id={noteId}
           className="decision-note-text"
@@ -90,15 +97,16 @@ export function DecisionChoices({ decision, busy, onChoose, context, agent, run,
           maxLength={MAX_NOTE_CHARS}
           value={note}
           autoFocus
+          required={proposes}
           aria-describedby={hintId}
           onChange={(event) => setNote(event.target.value)}
         />
         <span id={hintId} className="decision-note-hint">
-          {TEXT.hint(agent, run, decision.hasDiff === true)}
+          {proposes ? TEXT.buildHint(agent) : TEXT.hint(agent, run, decision.hasDiff === true)}
         </span>
         <div className="choices">
-          <Button variant="primary" type="submit" disabled={busy} aria-label={named(TEXT.send(agent))}>
-            {TEXT.send(agent)}
+          <Button variant="primary" type="submit" disabled={busy || (proposes && note.trim() === "")} aria-label={named(proposes ? TEXT.buildSend : TEXT.send(agent))}>
+            {proposes ? TEXT.buildSend : TEXT.send(agent)}
           </Button>
           <Button variant="secondary" onClick={() => setNoting(false)}>
             {TEXT.cancel}
@@ -107,14 +115,14 @@ export function DecisionChoices({ decision, busy, onChoose, context, agent, run,
       </form>
     );
   }
-  const buttons = choices.filter((choice) => choice.id !== NO_ACTION_ID);
-  const quiet = choices.find((choice) => choice.id === NO_ACTION_ID);
+  const buttons = choices.filter((choice) => proposes || choice.id !== NO_ACTION_ID);
+  const quiet = proposes ? undefined : choices.find((choice) => choice.id === NO_ACTION_ID);
   return (
     <div className="choices">
       {buttons.map((choice, position) => (
         <Button
           key={choice.id}
-          variant={position === 0 && primary ? "primary" : choice.id === danger ? "danger" : "secondary"}
+          variant={position === 0 && primary ? "primary" : choice.id === danger || (proposes && choice.id === STOP_ID) ? "danger" : "secondary"}
           disabled={busy}
           aria-label={named(choice.label)}
           onClick={() => (choice.id === REQUEST_CHANGES_ID ? setNoting(true) : onChoose(choice.id))}

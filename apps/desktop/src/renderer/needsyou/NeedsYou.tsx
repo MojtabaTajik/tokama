@@ -8,6 +8,7 @@ import type { ItemRecord, Setup } from "@tokama/core";
 import { type MouseEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { DecisionChoices } from "../drawer/DecisionChoices.js";
+import { NoChangeFacts } from "../drawer/NoChangeFacts.js";
 import { nextRunLine } from "../drawer/describe.js";
 import { useDecisionDiff } from "../drawer/useDecisionDiff.js";
 import { ChangedFiles } from "../ui/DiffView.js";
@@ -240,6 +241,7 @@ function Row({ row, index, bridge, selected, onSelect, onReviewDiff, onRead, ret
           </Button>
         </div>
       )}
+      {decision !== undefined && <NoChangeFacts item={item} decision={decision} />}
       {diff !== undefined && <ChangedFiles state={diff} context={item.title} />}
       {notice !== undefined && (
         <p className="drawer-notice" data-tone={notice.tone} role="status">

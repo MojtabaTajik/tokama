@@ -1637,3 +1637,118 @@ describe("run loop: a template that reads its repo and commits nothing", () => {
     expect(runtime.calls[0]?.request.prompt).toContain("HEADLINE: <one line");
   });
 });
+
+describe("run loop: a step you approve says no change is needed", () => {
+  const PLAN_BUILD = () => template([{ id: "plan", doneWhen: "you approve", maxAttempts: 3 }, { id: "build" }]);
+  const ANSWER = "The answer.\nHEADLINE: About half a day of work.\nPOINT: 4 files would change\nNO_CHANGE: yes";
+  const mainTip = () => plain(repo.path, "rev-parse", "main");
+  /** The loop that holds the item is the one that answers it. */
+  let current: RunLoop;
+  const started = async (runtime: AgentRuntime, tpl = PLAN_BUILD()): Promise<ItemId> => {
+    current = engine(runtime);
+    return start(current, tpl);
+  };
+
+  it("only a step you approve with a step after it is asked for the line", SLOW, async () => {
+    const runtime = fakeRuntime([says(ANSWER)]);
+    await started(runtime);
+    expect(runtime.calls[0]?.request.prompt).toContain("NO_CHANGE: yes");
+    const last = fakeRuntime([says(ANSWER)]);
+    await started(last, template([{ id: "plan", doneWhen: "you approve" }]));
+    expect(last.calls[0]?.request.prompt).not.toContain("NO_CHANGE");
+    const first = fakeRuntime([edits(FIXED)]);
+    await started(first, template([{ id: "build" }, { id: "plan", doneWhen: "you approve" }]));
+    expect(first.calls[0]?.request.prompt).not.toContain("NO_CHANGE");
+    const reviewed = fakeRuntime([says("Fine.\nHEADLINE: ok\nVERDICT: approve")]);
+    await started(reviewed, template([{ id: "build" }, { id: "review", agentId: "reviewer", doneWhen: "reviewer approves", ifChangesRequested: { action: "ask" } }]));
+    expect(reviewed.calls.every((call) => !call.request.prompt.includes("NO_CHANGE"))).toBe(true);
+  });
+
+  it("with the line and no changed file, the card proposes finishing: no Approve, the attempt records it", SLOW, async () => {
+    const id = await started(fakeRuntime([says(ANSWER)]));
+    const asked = openDecision(id)!;
+    expect(asked).toMatchObject({ kind: "plan_approval", stepId: "plan", proposes: "no_change", change: { files: 0 } });
+    expect(asked.choices.map((c) => c.id)).toEqual(["no_action_needed", "request_changes", "stop"]);
+    expect(item(id).steps[0]?.attempts[0]?.said).toMatchObject({ headline: "About half a day of work.", points: ["4 files would change"], noChange: true, readMinutes: 1 });
+    expect(item(id).state).toBe("needs_you");
+  });
+
+  it("Finish ends the item with its answer and removes the worktree it did not need", SLOW, async () => {
+    const before = await mainTip();
+    const id = await started(fakeRuntime([says(ANSWER)]));
+    await answer(current, id, "no_action_needed");
+    const ended = item(id);
+    expect(ended).toMatchObject({ state: "done", outcome: { kind: "no_action_needed", detail: "No change needed: the answer is the result." } });
+    expect(ended.outcome?.commits).toBeUndefined();
+    expect(story(id).slice(-3)).toEqual(["item_ended no_action_needed", "finish_started", "discarded"]);
+    expect(ended.finish?.worktreeRemoved).toBe(true);
+    expect(existsSync(worktreeDir(id))).toBe(false);
+    expect(await plain(repo.path, "branch", "--list", ended.worktrees[0]!.branch)).toBe("");
+    expect(await mainTip()).toBe(before);
+  });
+
+  it("keeps the worktree when files appeared in it while the card waited", SLOW, async () => {
+    const id = await started(fakeRuntime([says(ANSWER)]));
+    writeFileSync(join(worktreeDir(id), "notes.txt"), "mine\n");
+    await answer(current, id, "no_action_needed");
+    expect(item(id).outcome?.kind).toBe("no_action_needed");
+    expect(item(id).finish).toBeUndefined();
+    expect(existsSync(join(worktreeDir(id), "notes.txt"))).toBe(true);
+    expect(story(id)).not.toContain("finish_started");
+    // There is no commit to merge or push, whatever the outcome.
+    expect(await current.finishItem(id, "merge")).toMatchObject({ ok: false, error: { code: "invalid_state" } });
+  });
+
+  it("ignores the line when the step changed a file: the usual question comes", SLOW, async () => {
+    const id = await started(fakeRuntime([edits(FIXED, ANSWER)]));
+    const asked = openDecision(id)!;
+    expect(asked.proposes).toBeUndefined();
+    expect(asked.choices.map((c) => c.id)).toEqual(["approve", "request_changes", "no_action_needed", "stop"]);
+    expect(item(id).steps[0]?.attempts[0]?.said).not.toHaveProperty("noChange");
+  });
+
+  it("ignores a line that is not an exact yes, sits above the headline, or comes with no headline", SLOW, async () => {
+    for (const reply of ["Text.\nHEADLINE: A.\nNO_CHANGE: no", "Text.\nHEADLINE: A.\nNO_CHANGE: yes, but build it", "NO_CHANGE: yes\nHEADLINE: A.", "Just text.\nNO_CHANGE: yes"]) {
+      const id = await started(fakeRuntime([says(reply)]));
+      expect(openDecision(id)?.proposes, reply).toBeUndefined();
+    }
+  });
+
+  it("reads the line in any letter case and inside list or bold marks", SLOW, async () => {
+    const id = await started(fakeRuntime([says("Text.\nHEADLINE: A.\n- **no_change**: YES")]));
+    expect(openDecision(id)?.proposes).toBe("no_change");
+  });
+
+  it("Build anyway needs a note, runs the step again without the rule, and then asks the usual question", SLOW, async () => {
+    const runtime = fakeRuntime([says(ANSWER)]);
+    const id = await started(runtime);
+    const first = openDecision(id)!;
+    expect(await current.resolveDecision(id, first.id, "request_changes")).toMatchObject({ ok: false, error: { code: "invalid_request", message: expect.stringContaining("needs a note") } });
+    expect(await current.resolveDecision(id, first.id, "request_changes", "   ")).toMatchObject({ ok: false, error: { code: "invalid_request" } });
+    expect(openDecision(id)?.id).toBe(first.id);
+
+    const resolved = await current.resolveDecision(id, first.id, "request_changes", "Yes, add it. CSV only.");
+    if (!resolved.ok) throw new Error(resolved.error.message);
+    await current.settled(id);
+    expect(runtime.calls).toHaveLength(2);
+    expect(runtime.calls[1]?.request.prompt).toContain("You asked for changes:\nYes, add it. CSV only.");
+    expect(runtime.calls[1]?.request.prompt).not.toContain("NO_CHANGE");
+    // The agent says the line again; it was not asked for, so the usual question comes.
+    const again = openDecision(id)!;
+    expect(again).toMatchObject({ kind: "plan_approval", stepId: "plan" });
+    expect(again.proposes).toBeUndefined();
+    expect(again.choices.map((c) => c.id)).toEqual(["approve", "request_changes", "no_action_needed", "stop"]);
+    expect(item(id).steps[0]?.attempts[1]?.said).not.toHaveProperty("noChange");
+    // A normal change request on the new plan does not bring the rule back.
+    await answer(current, id, "request_changes", "plan_approval");
+    expect(runtime.calls[2]?.request.prompt).not.toContain("NO_CHANGE");
+  });
+
+  it("the quiet End: no action needed of an ordinary plan question ends as before and keeps its worktree", SLOW, async () => {
+    const id = await started(fakeRuntime([edits(FIXED)]));
+    await answer(current, id, "no_action_needed");
+    expect(item(id).outcome).toMatchObject({ kind: "no_action_needed", detail: "Ended: no action needed." });
+    expect(item(id).finish).toBeUndefined();
+    expect(existsSync(worktreeDir(id))).toBe(true);
+  });
+});

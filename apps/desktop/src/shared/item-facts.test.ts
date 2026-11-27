@@ -117,6 +117,15 @@ describe("finishedLine", () => {
   });
 });
 
+describe("doneFacts: an answer that needed no change", () => {
+  it("is 0 files, not the checks that never ran", () => {
+    const answer = { headline: "x", source: "headline", points: [], morePoints: 0, bodyBytes: 1, noChange: true };
+    const answered = item({ outcome: { kind: "no_action_needed", at: 1 }, steps: [step("Plan", "stopped", { attempts: [{ attempt: 1, result: "passed", checks: [], said: answer }] } as never)] } as never);
+    expect(doneFacts(answered)).toEqual([{ text: "0 files" }]);
+    expect(doneFacts(item())).toEqual([{ text: "no checks" }]);
+  });
+});
+
 describe("factsOf", () => {
   it("gives the facts of a done or failed item and none for another", () => {
     expect(factsOf(item())).toEqual([{ text: "no checks" }]);

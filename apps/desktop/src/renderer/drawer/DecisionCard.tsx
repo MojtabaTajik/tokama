@@ -5,6 +5,7 @@ import { Button } from "../ui/Button.js";
 import { StatusMark } from "../ui/status.js";
 import { DecisionChoices } from "./DecisionChoices.js";
 import { nextRunLine, runLine, stepAgent } from "./describe.js";
+import { NoChangeFacts } from "./NoChangeFacts.js";
 import { SaidLine } from "./SaidBlock.js";
 import { type OutputState, StepPreview } from "./StepOutput.js";
 
@@ -78,6 +79,7 @@ export function NeedsYou({ item, setup, decision, busy, output, full, changedFil
               <StepPreview state={output} label={TEXT.wrote(step.name, agent)} isPlan={step.name.toLowerCase() === "plan"} onShowFull={onRead && (() => onRead(decision.stepIndex))} />
             </div>
           )}
+          <NoChangeFacts item={item} decision={decision} />
           <DecisionChoices key={decision.id} decision={decision} busy={busy} agent={agent} run={nextRunLine(step)} onChoose={(choice, note) => onChoose(decision, choice, note)} />
         </>
       ) : (

@@ -41,19 +41,19 @@ export interface ResultCardProps {
 }
 
 export function ResultCard({ bridge, item, setup, columns, onReadMore, onRead, onStartFrom }: ResultCardProps) {
-  const { failure, words, rows } = resultView(item, setup);
+  const { failure, words, rows, heading } = resultView(item, setup);
   // The item's one filled button is Finish while it is offered; the write-up button is then plain.
   // Without a commit only Discard is offered, and that is never the item's main action.
   const offered = finishView(item, setup);
   const finishOffered = offered?.kind === "offer" && offered.ahead !== undefined;
-  const answer = item.templateId === ASK_ID;
+  const answer = item.templateId === ASK_ID || heading !== undefined;
   const text = answer ? followUpText(item) : undefined;
   const repoId = item.repoIds[0];
   const startFrom = onStartFrom === undefined || text === undefined ? undefined : () => onStartFrom({ ...(repoId !== undefined && { repoId }), text });
   return (
     <section className="result-card" aria-label={TEXT.label} data-columns={columns || undefined}>
       <div className="rc-main">
-        <h3 className="rc-label">{TEXT.label}</h3>
+        <h3 className="rc-label">{heading ?? TEXT.label}</h3>
         {failure !== undefined && (
           <>
             <p className="rc-headline">

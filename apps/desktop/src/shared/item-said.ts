@@ -43,6 +43,16 @@ export function saidOf(item: Pick<ItemRecord, "steps">): ItemSaid | undefined {
   return pick(worked, lastSaid) ?? pick((step) => !worked(step), latestSaid);
 }
 
+/** The item ended on the answer of a step you approve, and its agent said no change is needed: the answer is the result. */
+export const answeredNoChange = (item: Pick<ItemRecord, "outcome" | "steps">): boolean => item.outcome?.kind === "no_action_needed" && saidOf(item)?.said.noChange === true;
+
+/** "no change needed · ended at Plan, step 1 of 3" for such an item, so its row says why it did not go on. */
+export function noChangeLine(item: Pick<ItemRecord, "outcome" | "steps">): string | undefined {
+  const found = answeredNoChange(item) ? saidOf(item) : undefined;
+  const step = found === undefined ? undefined : item.steps[found.stepIndex];
+  return found === undefined || step === undefined ? undefined : `no change needed · ended at ${step.name}, step ${found.stepIndex + 1} of ${item.steps.length}`;
+}
+
 /** The tag of a must-read: "read · 6 min". */
 export const readTag = (said: Said): string | undefined => (said.readMinutes === undefined ? undefined : `read · ${said.readMinutes} min`);
 

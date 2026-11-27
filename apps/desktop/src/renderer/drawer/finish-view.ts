@@ -108,7 +108,9 @@ const ACCEPT: FinishButton = { label: "I made this change", action: "accept_git_
 
 export function finishView(item: Pick<ItemRecord, "outcome" | "finish" | "repoIds" | "privacy">, setup: Setup | undefined): FinishView | undefined {
   const finish = item.finish;
-  if (item.outcome?.kind !== "done" || finish === undefined) return undefined;
+  // An item that ended on an answer with no change shows how it ended once its unused worktree is removed, and offers nothing.
+  const answered = item.outcome?.kind === "no_action_needed" && finish?.worktreeRemoved === true;
+  if ((item.outcome?.kind !== "done" && !answered) || finish === undefined) return undefined;
   const base = baseBranchOf(item, setup);
   const branch = branchOf(item);
   const failure = finish.failed;
