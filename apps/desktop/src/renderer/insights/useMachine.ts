@@ -1,6 +1,8 @@
 // The machine report for the Machine tab. The engine reads the machine only while somebody keeps
-// asking, so this asks again after each answer, `everyMs` later, for as long as it is mounted and
-// the engine is connected. A load keeps the last report on screen.
+// asking, so this asks again after each answer, `everyMs` later, for as long as it is mounted, the
+// engine is connected and the window is visible. A hidden window asks nothing (the engine then stops
+// reading, and the chart shows the time as hatched); it asks at once when it shows again. A load
+// keeps the last report on screen.
 import type { MachineReport } from "@tokama/core";
 import { useEffect, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
@@ -12,18 +14,36 @@ export interface MachineView {
   readonly error: string | undefined;
 }
 
+const isVisible = () => document.visibilityState !== "hidden";
+
+/** Whether the window is on screen: not minimised, and not on another desktop or tab. */
+function useVisible(): boolean {
+  const [visible, setVisible] = useState(isVisible);
+  useEffect(() => {
+    const update = () => setVisible(isVisible());
+    document.addEventListener("visibilitychange", update);
+    update();
+    return () => document.removeEventListener("visibilitychange", update);
+  }, []);
+  return visible;
+}
+
 export function useMachine(bridge: TokamaBridge, connection: ConnectionState): MachineView {
   const [report, setReport] = useState<MachineReport | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const connected = connection.status === "connected";
+  const visible = useVisible();
 
   useEffect(() => {
+    // After a restart the old readings are not this engine's: show nothing until it answers.
     if (!connected) {
-      // After a restart the old readings are not this engine's: show nothing until it answers.
       setReport(undefined);
       setError(undefined);
-      return;
     }
+  }, [bridge, connected]);
+
+  useEffect(() => {
+    if (!connected || !visible) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const ask = () => {
@@ -49,7 +69,7 @@ export function useMachine(bridge: TokamaBridge, connection: ConnectionState): M
       stopped = true;
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, [bridge, connected]);
+  }, [bridge, connected, visible]);
 
   return connection.status === "failed" ? { report: undefined, error: undefined } : { report, error };
 }

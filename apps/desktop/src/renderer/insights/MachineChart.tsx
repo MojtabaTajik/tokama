@@ -1,12 +1,14 @@
-// The last 30 minutes of CPU and memory as two lines on one time axis (one measure per chart, one
-// colour: the label column names each). Drawn in SVG from attributes, since the page allows no
-// inline styles. Hatching marks stretches with no readings; the line breaks there. Hovering or
-// focusing the charts (arrow keys, Home, End) shows one crosshair on both and a tooltip with the
-// readings and Tokama's share. A hidden table with one row a minute stands in for the lines.
-import type { MachineReport } from "@tokama/core";
+// The last 30 minutes of CPU and memory, one chart each on its own scale (CPU 0 to 100%, memory 0 to
+// the machine's size) on one time axis. Each chart has two lines: all apps in grey, Tokama's own in
+// teal over a light wash; the label column is the legend and says the readings now. Drawn in SVG
+// from attributes, since the page allows no inline styles. Hatching marks stretches with no
+// readings; the lines break there. Hovering or focusing the charts (arrow keys, Home, End) shows one
+// crosshair on both and one tooltip with both lines' readings. A hidden table with one row a minute
+// stands in for the lines.
+import type { MachinePoint, MachineReport } from "@tokama/core";
 import { type KeyboardEvent, type MouseEvent, useEffect, useId, useRef, useState } from "react";
 import { clock, clockSeconds } from "../format/time.js";
-import { chartModel, formatBytes, formatSize, fraction, linePaths, nearestPoint, ofAllCores, onePercent, tableRows, wholePercent, type ChartModel } from "./machine-model.js";
+import { chartModel, formatBytes, formatSize, fraction, linePaths, nearestPoint, ofAllCores, onePercent, sharePercent, tableRows, type ChartModel } from "./machine-model.js";
 
 const HEIGHT = 96;
 const DEFAULT_WIDTH = 720;
@@ -14,42 +16,66 @@ const DEFAULT_WIDTH = 720;
 const TEXT = {
   cpu: "CPU",
   memory: "Memory",
-  cpuRange: "0% – 100%",
-  cpuAria: (from: string) => `CPU over the last 30 minutes, from ${from}`,
-  memoryAria: (from: string) => `Memory over the last 30 minutes, from ${from}`,
+  tokama: "Tokama",
+  all: "All apps",
+  aria: (name: string, from: string) => `${name} over the last 30 minutes, from ${from}: Tokama and all apps`,
   group: "Readings over the last 30 minutes",
-  share: "Tokama share",
   table: "CPU and memory, one reading a minute",
   time: "Time",
-  tokama: "Tokama",
 } as const;
 
+/** One measure: how to read it from a reading, how to write it, and where its scale ends. */
+interface Measure {
+  readonly name: string;
+  readonly tokama: (point: MachinePoint) => number;
+  readonly all: (point: MachinePoint) => number;
+  readonly text: (value: number) => string;
+  readonly max: number;
+  /** The scale's top, written in the corner of the plot. */
+  readonly top: string;
+}
+
 interface RowProps {
-  readonly label: string;
-  readonly range: string;
+  readonly measure: Measure;
   readonly aria: string;
   readonly model: ChartModel;
   readonly report: MachineReport;
   readonly width: number;
-  readonly value: (point: MachineReport["points"][number]) => number;
-  readonly max: number;
-  readonly top: string;
   readonly hovered: number | undefined;
   readonly plotRef?: (element: HTMLDivElement | null) => void;
   readonly onMove: (event: MouseEvent<HTMLDivElement>) => void;
 }
 
-function ChartRow({ label, range, aria, model, report, width, value, max, top, hovered, plotRef, onMove }: RowProps) {
+function ChartRow({ measure, aria, model, report, width, hovered, plotRef, onMove }: RowProps) {
   const id = useId();
-  const paths = linePaths(model, width, HEIGHT, value, max);
+  const tokama = linePaths(model, width, HEIGHT, measure.tokama, measure.max);
+  const all = linePaths(model, width, HEIGHT, measure.all, measure.max);
   const last = report.points.at(-1);
   const hoveredPoint = hovered === undefined ? undefined : report.points[hovered];
-  const y = (point: NonNullable<typeof last>) => HEIGHT - Math.min(1, Math.max(0, value(point) / max)) * HEIGHT;
+  const y = (value: number) => HEIGHT - Math.min(1, Math.max(0, value / measure.max)) * HEIGHT;
+  const dots = (point: MachinePoint, className: string, radius: number) => (
+    <>
+      <circle className={`${className} mc-dot-all`} cx={fraction(model, point.at) * width} cy={y(measure.all(point))} r={radius} />
+      <circle className={`${className} mc-dot-tokama`} cx={fraction(model, point.at) * width} cy={y(measure.tokama(point))} r={radius} />
+    </>
+  );
   return (
     <div className="mc-row">
       <div className="mc-label">
-        <span className="mc-name">{label}</span>
-        <span className="mono muted">{range}</span>
+        <span className="mc-name">{measure.name}</span>
+        {last !== undefined &&
+          (
+            [
+              ["tokama", TEXT.tokama, measure.tokama(last)],
+              ["all", TEXT.all, measure.all(last)],
+            ] as const
+          ).map(([line, name, value]) => (
+            <span key={line} className="mc-legend muted">
+              <span className="mc-line-key" data-line={line} aria-hidden="true" />
+              {name}
+              <b className="mono">{measure.text(value)}</b>
+            </span>
+          ))}
       </div>
       <div className="mc-plot" ref={plotRef} onMouseMove={onMove}>
         <svg className="mc-svg" width={width} height={HEIGHT} role="img" aria-label={aria}>
@@ -61,18 +87,19 @@ function ChartRow({ label, range, aria, model, report, width, value, max, top, h
           {model.unsampled.map((gap) => (
             <rect key={gap.from} className="mc-gap" x={fraction(model, gap.from) * width} y={0} width={Math.max(0, (fraction(model, gap.to) - fraction(model, gap.from)) * width)} height={HEIGHT} fill={`url(#${id})`} />
           ))}
-          <text className="mc-top" x={width - 4} y={12} textAnchor="end">
-            {top}
+          <text className="mc-top" x={4} y={12}>
+            {measure.top}
           </text>
-          <path className="mc-area" d={paths.area} />
-          <path className="mc-line" d={paths.line} />
+          <path className="mc-area" d={tokama.area} />
+          <path className="mc-line mc-line-all" d={all.line} />
+          <path className="mc-line mc-line-tokama" d={tokama.line} />
           {hoveredPoint !== undefined && (
             <g aria-hidden="true">
               <line className="mc-cross" x1={fraction(model, hoveredPoint.at) * width} x2={fraction(model, hoveredPoint.at) * width} y1={-6} y2={HEIGHT + 6} />
-              <circle className="mc-hover-dot" cx={fraction(model, hoveredPoint.at) * width} cy={y(hoveredPoint)} r={5} />
+              {dots(hoveredPoint, "mc-hover-dot", 5)}
             </g>
           )}
-          {last !== undefined && <circle className="mc-now-dot" cx={fraction(model, last.at) * width} cy={y(last)} r={4} aria-hidden="true" />}
+          {last !== undefined && <g aria-hidden="true">{dots(last, "mc-now-dot", 4)}</g>}
         </svg>
       </div>
     </div>
@@ -114,6 +141,8 @@ export function MachineChart({ report }: { readonly report: MachineReport }) {
     setHovered(inWindow[Math.max(0, Math.min(inWindow.length - 1, next))]);
   };
 
+  const cpu: Measure = { name: TEXT.cpu, tokama: (p) => ofAllCores(p.tokamaCpuPercent, report.cores), all: (p) => p.cpuPercent, text: sharePercent, max: 100, top: "100%" };
+  const memory: Measure = { name: TEXT.memory, tokama: (p) => p.tokamaMemoryBytes, all: (p) => p.memoryUsedBytes, text: formatBytes, max: report.memoryTotalBytes, top: formatSize(report.memoryTotalBytes) };
   const point = hovered === undefined ? undefined : report.points[hovered];
   return (
     <div
@@ -126,33 +155,8 @@ export function MachineChart({ report }: { readonly report: MachineReport }) {
       onBlur={() => setHovered(undefined)}
       onMouseLeave={() => setHovered(undefined)}
     >
-      <ChartRow
-        label={TEXT.cpu}
-        range={TEXT.cpuRange}
-        aria={TEXT.cpuAria(from)}
-        model={model}
-        report={report}
-        width={width}
-        value={(p) => p.cpuPercent}
-        max={100}
-        top="100%"
-        hovered={hovered}
-        plotRef={(element) => void (plot.current = element)}
-        onMove={move}
-      />
-      <ChartRow
-        label={TEXT.memory}
-        range={`0 – ${formatSize(report.memoryTotalBytes)}`}
-        aria={TEXT.memoryAria(from)}
-        model={model}
-        report={report}
-        width={width}
-        value={(p) => p.memoryUsedBytes}
-        max={report.memoryTotalBytes}
-        top={formatSize(report.memoryTotalBytes)}
-        hovered={hovered}
-        onMove={move}
-      />
+      <ChartRow measure={cpu} aria={TEXT.aria(TEXT.cpu, from)} model={model} report={report} width={width} hovered={hovered} plotRef={(element) => void (plot.current = element)} onMove={move} />
+      <ChartRow measure={memory} aria={TEXT.aria(TEXT.memory, from)} model={model} report={report} width={width} hovered={hovered} onMove={move} />
       <div className="mc-row">
         <span />
         <svg className="mc-axis" width={width} height={18} aria-hidden="true">
@@ -166,20 +170,17 @@ export function MachineChart({ report }: { readonly report: MachineReport }) {
       {point !== undefined && (
         <div className="mc-tip" role="status" data-side={fraction(model, point.at) < 0.5 ? "right" : "left"}>
           <p className="mc-tip-time mono">{clockSeconds(point.at)}</p>
-          <p className="mc-tip-line">
-            <span>{TEXT.cpu}</span>
-            <b className="mono">{wholePercent(point.cpuPercent)}</b>
-          </p>
-          <p className="mc-tip-line">
-            <span>{TEXT.memory}</span>
-            <b className="mono">{formatBytes(point.memoryUsedBytes)}</b>
-          </p>
-          <p className="mc-tip-line">
-            <span>{TEXT.share}</span>
-            <b className="mono">
-              {onePercent(ofAllCores(point.tokamaCpuPercent, report.cores))} · {formatBytes(point.tokamaMemoryBytes)}
-            </b>
-          </p>
+          <span className="mc-tip-head mc-legend">
+            <span className="mc-line-key" data-line="tokama" aria-hidden="true" />
+            {TEXT.tokama}
+          </span>
+          <span className="mc-tip-head mc-legend">
+            <span className="mc-line-key" data-line="all" aria-hidden="true" />
+            {TEXT.all}
+          </span>
+          {[cpu, memory].map((measure) => (
+            <TipRow key={measure.name} measure={measure} point={point} />
+          ))}
         </div>
       )}
       <table className="visually-hidden">
@@ -187,8 +188,8 @@ export function MachineChart({ report }: { readonly report: MachineReport }) {
         <thead>
           <tr>
             <th scope="col">{TEXT.time}</th>
-            <th scope="col">{TEXT.cpu}</th>
-            <th scope="col">{TEXT.memory}</th>
+            <th scope="col">{`${TEXT.all} ${TEXT.cpu}`}</th>
+            <th scope="col">{`${TEXT.all} ${TEXT.memory}`}</th>
             <th scope="col">{`${TEXT.tokama} ${TEXT.cpu}`}</th>
             <th scope="col">{`${TEXT.tokama} ${TEXT.memory}`}</th>
           </tr>
@@ -197,7 +198,7 @@ export function MachineChart({ report }: { readonly report: MachineReport }) {
           {tableRows(report, model).map((row) => (
             <tr key={row.at}>
               <th scope="row">{clockSeconds(row.at)}</th>
-              <td>{wholePercent(row.cpuPercent)}</td>
+              <td>{sharePercent(row.cpuPercent)}</td>
               <td>{formatBytes(row.memoryUsedBytes)}</td>
               <td>{onePercent(ofAllCores(row.tokamaCpuPercent, report.cores))}</td>
               <td>{formatBytes(row.tokamaMemoryBytes)}</td>
@@ -206,5 +207,15 @@ export function MachineChart({ report }: { readonly report: MachineReport }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+function TipRow({ measure, point }: { readonly measure: Measure; readonly point: MachinePoint }) {
+  return (
+    <>
+      <span className="mc-tip-name">{measure.name}</span>
+      <b className="mono">{measure.text(measure.tokama(point))}</b>
+      <b className="mono">{measure.text(measure.all(point))}</b>
+    </>
   );
 }

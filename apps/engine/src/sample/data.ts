@@ -83,7 +83,7 @@ const templates = {
     steps: [
       { name: "Triage", stage: "working", agentId: "local-investigator", data: "none" },
       {
-        name: "Query logs and metrics",
+        name: "Query logs, metrics and slow traces",
         stage: "working",
         agentId: "local-investigator",
         data: "none",

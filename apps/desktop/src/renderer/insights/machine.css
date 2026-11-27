@@ -1,51 +1,56 @@
 /* The Machine tab. Colours come from theme.css tokens only. */
 
-.mc-meters {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  margin-left: calc(-1 * var(--space-20));
-}
-
-.mc-meter {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-  min-width: 0;
-  padding: var(--space-4) var(--space-20);
-  border-left: 1px solid var(--hairline);
-}
-
-.mc-big {
-  margin-left: auto;
-  font-size: 20px;
-  color: var(--text);
-}
-
-.mc-fill {
-  fill: var(--tag-teal);
-}
-
-.mc-note,
 .mc-hint {
-  margin: 0;
-  font-size: var(--text-md);
-}
-
-.mc-hint {
-  margin-bottom: var(--space-10);
+  margin: 0 0 var(--space-10);
   font-size: var(--text-base);
   color: var(--text-2);
 }
 
-.mc-loads {
+/* The whole machine now: one row each for memory and CPU, a name, a thin bar and the three parts in words. */
+.mc-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-8);
-  font-size: var(--text-md);
+  grid-template-columns: 64px minmax(140px, 300px) minmax(0, 1fr);
+  gap: var(--space-14) var(--space-18);
+  align-items: center;
 }
 
-.mc-load {
-  color: var(--text-2);
+/* On a narrower window the bar gives room to the words, so they wrap less; the parts then fall on two lines. */
+@media (max-width: 1200px) {
+  .mc-summary {
+    grid-template-columns: 64px minmax(96px, 180px) minmax(0, 1fr);
+  }
+}
+
+.mc-sum-row {
+  display: contents;
+}
+
+.mc-keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-8);
+  min-width: 0;
+  font-size: var(--text-body);
+}
+
+.mc-key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  min-width: 158px;
+  white-space: nowrap;
+}
+
+.mc-key b {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.mc-of {
+  font-size: var(--text-md);
+  white-space: nowrap;
 }
 
 /* The two charts share one time axis and one tooltip. */
@@ -64,24 +69,53 @@
 .mc-row {
   display: grid;
   grid-template-columns: 150px minmax(0, 1fr);
-  gap: var(--space-14);
+  gap: var(--space-24);
   align-items: stretch;
 }
 
+/* The legend of one chart: its name, then the two lines with their readings now. */
 .mc-label {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 1px;
-}
-
-.mc-label .mono {
-  font-size: var(--text-xs);
+  gap: var(--space-4);
+  font-size: var(--text-md);
 }
 
 .mc-name {
   color: var(--text);
   font-weight: 500;
+}
+
+.mc-label .mc-name {
+  font-size: var(--text-body);
+}
+
+.mc-legend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+.mc-legend b {
+  margin-left: auto;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.mc-line-key {
+  flex: none;
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+}
+
+.mc-line-key[data-line="tokama"] {
+  background: var(--tag-teal);
+}
+
+.mc-line-key[data-line="all"] {
+  background: var(--chart-other);
 }
 
 .mc-plot {
@@ -124,10 +158,17 @@
 
 .mc-line {
   fill: none;
-  stroke: var(--tag-teal);
   stroke-width: 2;
   stroke-linejoin: round;
   stroke-linecap: round;
+}
+
+.mc-line-all {
+  stroke: var(--chart-other);
+}
+
+.mc-line-tokama {
+  stroke: var(--tag-teal);
 }
 
 .mc-cross {
@@ -135,13 +176,18 @@
   stroke-width: 1;
 }
 
-.mc-hover-dot {
-  fill: var(--tag-teal);
+/* A dot on each line, ringed in the ground colour so two that meet stay two. */
+.mc-hover-dot,
+.mc-now-dot {
   stroke: var(--ground);
   stroke-width: 2;
 }
 
-.mc-now-dot {
+.mc-dot-all {
+  fill: var(--chart-other);
+}
+
+.mc-dot-tokama {
   fill: var(--tag-teal);
 }
 
@@ -150,21 +196,23 @@
   overflow: visible;
 }
 
+/* Time, then a column for each line; a row for each measure. */
 .mc-tip {
   position: absolute;
   top: 6px;
   z-index: 5;
-  width: 230px;
   box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-10) var(--space-12);
+  display: grid;
+  grid-template-columns: auto auto auto;
+  gap: var(--space-2) var(--space-18);
+  align-items: center;
+  width: max-content;
+  padding: var(--space-8) var(--space-12);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-md);
   background: var(--raised);
   font-size: var(--text-md);
-  color: var(--text-2);
+  color: var(--muted);
   pointer-events: none;
 }
 
@@ -173,7 +221,7 @@
 }
 
 .mc-tip[data-side="left"] {
-  left: 178px;
+  left: 188px;
 }
 
 .mc-tip p {
@@ -184,94 +232,139 @@
   color: var(--text);
 }
 
-.mc-tip-line {
-  display: flex;
-  color: var(--muted);
+.mc-tip-head {
+  justify-self: end;
 }
 
-.mc-tip-line b {
-  margin-left: auto;
+.mc-tip b {
+  justify-self: end;
   font-weight: 500;
   color: var(--text);
 }
 
-/* The process table: items with their agent and check rows beneath. */
+/* Running now, by item: an item's title, its agent with the blue ring, and its checks beneath. */
 .ins-table-wrap {
   overflow-x: auto;
 }
 
 .mc-table {
-  min-width: 640px;
+  min-width: 620px;
 }
 
 .mc-table caption {
-  padding-bottom: var(--space-8);
+  padding-bottom: var(--space-10);
   text-align: left;
   font-size: var(--text-md);
 }
 
 .mc-caption {
-  font-size: var(--text-body);
+  font-size: var(--text-lg);
   font-weight: 600;
   color: var(--text);
+}
+
+.mc-table th {
+  padding-left: 0;
+  font-size: var(--text-xs);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.mc-table th.num {
+  width: 90px;
+}
+
+.mc-table th.num:last-child {
+  width: 110px;
 }
 
 .mc-table td {
   padding: var(--space-6) var(--space-10) var(--space-6) 0;
   border-bottom: 0;
+  vertical-align: middle;
 }
 
-.mc-table tr {
-  border-top: 0;
+.mc-table .num {
+  padding-right: var(--space-10);
 }
 
-.mc-table tbody tr:first-child,
-.mc-item {
+.mc-table td.num {
+  color: var(--text-2);
+}
+
+.mc-item,
+.mc-total {
   border-top: 1px solid var(--hairline);
 }
 
 .mc-item td {
-  padding-top: var(--space-10);
-  padding-bottom: var(--space-4);
+  padding-top: var(--space-8);
+  padding-bottom: var(--space-8);
 }
 
 .mc-item td.num {
-  color: var(--text-2);
+  color: var(--text);
 }
 
-.mc-item-title {
+/* An item with checks or a second agent keeps its rows close under it. */
+.mc-item:has(+ .mc-child-row) td {
+  padding-bottom: var(--space-2);
+}
+
+.mc-child-row td {
+  padding-top: var(--space-4);
+  padding-bottom: var(--space-4);
+}
+
+.mc-child-row:not(:has(+ .mc-child-row)) td {
+  padding-bottom: var(--space-8);
+}
+
+.mc-item-title,
+.mc-child,
+.mc-agent {
   display: inline-flex;
   align-items: center;
   gap: var(--space-6);
 }
 
-.mc-child {
-  padding-left: var(--space-22);
+.mc-item-title {
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-10);
 }
 
-.mc-branch {
-  margin-right: var(--space-6);
-  color: var(--muted);
+/* One fact of a row ("4 processes") stays whole: a long line breaks between facts, never inside one. */
+.mc-fact {
+  white-space: nowrap;
+}
+
+.mc-child {
+  padding-left: var(--space-22);
+  white-space: nowrap;
+}
+
+/* The width of the ring, so a row with no agent lines up with one that has. */
+.mc-ring-gap {
+  flex: none;
+  width: 18px;
 }
 
 .mc-kind {
   color: var(--text);
 }
 
-.mc-total {
-  border-top: 1px solid var(--hairline);
-}
-
 .mc-total td {
   padding-top: var(--space-8);
+  padding-bottom: 0;
   font-size: var(--text-base);
 }
 
-.mc-total td.num:not(.muted) {
+.mc-total td.num {
   color: var(--text);
 }
 
-.mc-empty {
+.mc-table .mc-empty {
   padding: var(--space-22) 0;
   text-align: center;
 }
@@ -289,4 +382,3 @@
   font-size: var(--text-base);
   color: var(--link);
 }
-

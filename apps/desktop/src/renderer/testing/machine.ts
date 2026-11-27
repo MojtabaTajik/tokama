@@ -1,6 +1,6 @@
 // A machine report shaped like the engine's: 30 minutes of readings every 5 s ending at NOW, on
-// 12 cores and 32 GB, with the engine and three running items. model.test.ts checks it against the
-// engine schema.
+// 12 cores and 32 GB, with the engine and three running items (one with a check, one with an agent
+// and a check, one with an agent alone). model.test.ts checks it against the engine schema.
 import type { MachineReport } from "@tokama/core";
 import { ITEMS, NOW } from "./sample.js";
 
@@ -29,5 +29,13 @@ export const machineReport: MachineReport = {
     { itemId: ITEMS.verifying.id, title: ITEMS.verifying.title, role: "check", cpuPercent: 170.4, memoryBytes: 1126 * MIB, processes: 5 },
     { itemId: ITEMS.stock.id, title: ITEMS.stock.title, role: "agent", cpuPercent: 86.4, memoryBytes: 412 * MIB, processes: 3 },
     { itemId: ITEMS.stock.id, title: ITEMS.stock.title, role: "check", cpuPercent: 12, memoryBytes: 36 * MIB, processes: 1 },
+    // An item with one agent and nothing else: one row.
+    { itemId: ITEMS.working.id, title: ITEMS.working.title, role: "agent", cpuPercent: 58.8, memoryBytes: 395 * MIB, processes: 1 },
   ],
+};
+
+/** The same machine with 1.3 GB of its 32 GB left. */
+export const lowMemory: MachineReport = {
+  ...machineReport,
+  points: machineReport.points.map((point) => ({ ...point, memoryUsedBytes: Math.round(30.7 * GIB), tokamaMemoryBytes: Math.round(6.8 * GIB) })),
 };

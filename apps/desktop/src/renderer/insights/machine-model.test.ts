@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { machinePoints, machineReport } from "../testing/machine.js";
 import { NOW } from "../testing/sample.js";
 import { clock, clockSeconds } from "../format/time.js";
-import { chartModel, formatBytes, formatSize, linePaths, nearestPoint, ofAllCores, tableRows, WINDOW_MS } from "./machine-model.js";
+import { chartModel, cpuSplit, formatBytes, formatSize, groupItems, isLow, isOneRow, linePaths, memorySplit, nearestPoint, ofAllCores, sharePercent, tableRows, tokamaTotal, WINDOW_MS } from "./machine-model.js";
 
 const MINUTE = 60_000;
 const withPoints = (points: MachineReport["points"]): MachineReport => ({ ...machineReport, points });
@@ -31,6 +31,82 @@ describe("text", () => {
   it("turns a share of one core into a share of all cores", () => {
     expect(ofAllCores(120, 12)).toBe(10);
     expect(ofAllCores(50, 0)).toBe(50);
+  });
+
+  it("shows a share in whole percent, with one decimal only where whole would say nothing", () => {
+    expect([27.4, 4.6, 0.4, 0, 0.6, 100].map(sharePercent)).toEqual(["27%", "5%", "0.4%", "0%", "1%", "100%"]);
+  });
+});
+
+const GIB = 1024 ** 3;
+const point = (fields: Partial<MachineReport["points"][number]>): MachineReport["points"][number] => ({ at: NOW, cpuPercent: 0, memoryUsedBytes: 0, tokamaCpuPercent: 0, tokamaMemoryBytes: 0, ...fields });
+
+describe("the split of the machine", () => {
+  it("cuts the memory into Tokama, the other apps and what is free", () => {
+    expect(memorySplit(point({ memoryUsedBytes: 20 * GIB, tokamaMemoryBytes: 2 * GIB }), 32 * GIB)).toEqual({ tokama: 2 * GIB, other: 18 * GIB, rest: 12 * GIB, total: 32 * GIB });
+  });
+
+  it("cuts the CPU as a share of all cores, with Tokama's cores turned into a share of the whole", () => {
+    expect(cpuSplit(point({ cpuPercent: 32, tokamaCpuPercent: 240 }), 12)).toEqual({ tokama: 20, other: 12, rest: 68, total: 100 });
+  });
+
+  it("keeps the three parts adding up to the whole when the machine's reading and Tokama's disagree", () => {
+    const sum = (parts: { tokama: number; other: number; rest: number }) => parts.tokama + parts.other + parts.rest;
+    // Tokama's processes read more than the machine used.
+    const more = memorySplit(point({ memoryUsedBytes: 2 * GIB, tokamaMemoryBytes: 3 * GIB }), 32 * GIB);
+    expect(more).toEqual({ tokama: 2 * GIB, other: 0, rest: 30 * GIB, total: 32 * GIB });
+    // More than the machine has at all.
+    const over = memorySplit(point({ memoryUsedBytes: 40 * GIB, tokamaMemoryBytes: 50 * GIB }), 32 * GIB);
+    expect(over).toEqual({ tokama: 32 * GIB, other: 0, rest: 0, total: 32 * GIB });
+    const cpu = cpuSplit(point({ cpuPercent: 5, tokamaCpuPercent: 1200 }), 12);
+    expect(cpu).toEqual({ tokama: 5, other: 0, rest: 95, total: 100 });
+    for (const parts of [more, over, cpu]) expect(sum(parts)).toBe(parts.total);
+  });
+
+  it("never lets a part go below nothing", () => {
+    expect(memorySplit(point({ memoryUsedBytes: -1, tokamaMemoryBytes: -5 }), 32 * GIB)).toEqual({ tokama: 0, other: 0, rest: 32 * GIB, total: 32 * GIB });
+  });
+
+  it("calls the memory low when under a tenth is free, and not at exactly a tenth", () => {
+    const free = (fraction: number) => memorySplit(point({ memoryUsedBytes: Math.round((1 - fraction) * 100 * GIB) }), 100 * GIB);
+    expect(isLow(free(0.099))).toBe(true);
+    expect(isLow(free(0.1))).toBe(false);
+    expect(isLow(free(0.5))).toBe(false);
+    expect(isLow(memorySplit(point({}), 0))).toBe(false);
+  });
+});
+
+describe("the items by memory", () => {
+  type Fields = Partial<Omit<MachineReport["items"][number], "itemId">> & { itemId: string };
+  const row = (fields: Fields): MachineReport["items"][number] => ({ title: "Item", role: "agent", cpuPercent: 10, memoryBytes: 100, processes: 1, ...fields }) as MachineReport["items"][number];
+
+  it("sums the rows of one item and puts the heaviest item first", () => {
+    const groups = groupItems([row({ itemId: "a", title: "Light", memoryBytes: 100 }), row({ itemId: "b", title: "Heavy", role: "check", memoryBytes: 300, processes: 4 }), row({ itemId: "b", title: "Heavy", memoryBytes: 50, processes: 2 })]);
+    expect(groups.map((group) => group.title)).toEqual(["Heavy", "Light"]);
+    expect(groups[0]).toMatchObject({ memoryBytes: 350, processes: 6, cpuPercent: 20 });
+    // Inside an item the heaviest row is first too.
+    expect(groups[0]!.rows.map((entry) => entry.role)).toEqual(["check", "agent"]);
+  });
+
+  it("keeps equal items in a fixed order: by title, then by id, and an agent before a check", () => {
+    const groups = groupItems([row({ itemId: "z", title: "Same" }), row({ itemId: "y", title: "Same" }), row({ itemId: "x", title: "Earlier title" })]);
+    expect(groups.map((group) => group.itemId)).toEqual(["x", "y", "z"]);
+    expect(groupItems([row({ itemId: "a", role: "check" }), row({ itemId: "a", role: "agent" })])[0]!.rows.map((entry) => entry.role)).toEqual(["agent", "check"]);
+  });
+
+  it("is one row only for an item with a single agent", () => {
+    const one = (rows: Fields[]) => isOneRow(groupItems(rows.map(row))[0]!);
+    expect(one([{ itemId: "a", role: "agent" }])).toBe(true);
+    expect(one([{ itemId: "a", role: "check" }])).toBe(false);
+    expect(one([{ itemId: "a", role: "agent" }, { itemId: "a", role: "check" }])).toBe(false);
+    expect(one([{ itemId: "a", role: "agent" }, { itemId: "a", role: "agent" }])).toBe(false);
+  });
+
+  it("totals the engine and every item, and counts the items", () => {
+    const groups = groupItems(machineReport.items);
+    const total = tokamaTotal(machineReport, groups);
+    expect(total).toMatchObject({ items: 3, processes: 11, memoryBytes: (182 + 1126 + 412 + 36 + 395) * 1024 ** 2 });
+    expect(total.cpuPercent).toBeCloseTo(332.4);
   });
 });
 

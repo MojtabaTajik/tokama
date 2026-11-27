@@ -5,8 +5,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConnectionState } from "../../shared/bridge.js";
 import { CONNECTED, fakeBridge, type Reply } from "../testing/bridge.js";
-import { machinePoints, machineReport } from "../testing/machine.js";
-import { items, NOW, setup } from "../testing/sample.js";
+import { lowMemory, machinePoints, machineReport } from "../testing/machine.js";
+import { ITEMS, items, NOW, setup } from "../testing/sample.js";
 import { MachineTab } from "./MachineTab.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -22,11 +22,14 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   vi.useRealTimers();
+  // Put back the window's own visibility, which a test may have faked.
+  delete (document as { visibilityState?: unknown }).visibilityState;
 });
 
 const $ = (selector: string) => container.querySelector(selector);
 const $$ = (selector: string) => [...container.querySelectorAll(selector)];
 const text = (selector: string) => $(selector)?.textContent;
+const cells = () => $$(".mc-table tbody tr").map((row) => [...row.children].map((cell) => cell.textContent));
 
 async function render(reply: (query: { type: string }) => Reply | Promise<Reply> | undefined, connection: ConnectionState = CONNECTED, extra: { onSelectItem?: (id: string) => void; onNewWork?: () => void } = {}) {
   const bridge = fakeBridge(connection, { reply: (query) => (query.type === "machine" ? reply(query) : undefined) });
@@ -35,33 +38,53 @@ async function render(reply: (query: { type: string }) => Reply | Promise<Reply>
 }
 const serve = (report: MachineReport = machineReport) => (): Reply => ({ ok: true, data: report });
 
-describe("Machine tab: now", () => {
-  it("shows CPU, memory and load as meters with the numbers beside them", async () => {
+/** Make the window say it is hidden or visible, and tell the listeners. */
+const showWindow = (state: "visible" | "hidden") => {
+  Object.defineProperty(document, "visibilityState", { configurable: true, get: () => state });
+  return act(async () => void document.dispatchEvent(new Event("visibilitychange")));
+};
+
+describe("Machine tab: the whole machine now", () => {
+  it("shows memory, then CPU, each as Tokama, the other apps and what is left, with the sizes", async () => {
     await render(serve());
-    const last = machineReport.points.at(-1)!;
-    expect(text("#mc-now-title")).toBe("This machine · now");
-    expect($(".mc-meters")?.previousElementSibling?.textContent).toContain("12 cores · 32 GB · as of");
-    const meters = $$('[role="meter"]');
-    expect(meters.map((meter) => [meter.getAttribute("aria-label"), meter.getAttribute("aria-valuenow")])).toEqual([
-      ["CPU", String(Math.round(last.cpuPercent))],
-      ["Memory", String(Math.round((last.memoryUsedBytes / machineReport.memoryTotalBytes) * 100))],
-    ]);
-    const [cpu, memory, load] = $$(".mc-meter");
-    expect(cpu?.querySelector(".mc-big")?.textContent).toBe(`${Math.round(last.cpuPercent)}%`);
-    expect(cpu?.textContent).toContain("all 12 cores · Tokama");
-    expect(memory?.querySelector(".mc-big")?.textContent).toMatch(/^\d+\.\d GB$/);
-    expect(memory?.textContent).toContain("of 32 GB");
-    expect(load?.querySelector(".mc-big")?.textContent).toBe("4.92");
-    expect(load?.textContent).toContain("1 min 4.92");
-    expect(load?.textContent).toContain("5 min 3.80");
-    expect(load?.textContent).toContain("15 min 2.55");
-    expect(load?.textContent).toContain("12 or less keeps up on 12 cores");
+    expect(text("#mc-now-title")).toBe("This machine now");
+    expect(text("#mc-now-title + span")).toMatch(/^12 cores · 32 GB · read every 5 s while this tab is open · as of \d\d:\d\d:\d\d$/);
+    // The last reading: memory 18 GB used, 2 GB of it Tokama's; CPU 20% used, 120% of one core (10% of 12 cores) Tokama's.
+    expect($$(".mc-sum-row").map((row) => row.textContent)).toEqual(["MemoryTokama2.0 GBOther apps16.0 GBFree14.0 GBof 32 GB", "CPUTokama10%Other apps10%Idle80%of 12 cores"]);
+    expect($$(".mc-summary [role=img]").map((bar) => bar.getAttribute("aria-label"))).toEqual(["Memory: Tokama 2.0 GB, other apps 16.0 GB, free 14.0 GB of 32 GB", "CPU: Tokama 10%, other apps 10%, idle 80% of 12 cores"]);
+    expect($$(".split-part")).toHaveLength(6);
+    expect($(".mc-summary")?.getAttribute("aria-label")).toBe("Whole machine now");
+    expect($$("[role=meter]")).toHaveLength(0);
+  });
+
+  it("keeps the load average out of sight: it is the hover text of the CPU legend, and absent on a machine that has none", async () => {
+    await render(serve());
+    expect($$(".mc-keys").map((keys) => keys.getAttribute("title"))).toEqual([null, "Load average 4.92 · 3.80 · 2.55 (1, 5 and 15 min)"]);
+    act(() => root.unmount());
+    root = createRoot(container);
+    await render(serve({ ...machineReport, load: [0, 0, 0] }));
+    expect($$(".mc-keys").map((keys) => keys.getAttribute("title"))).toEqual([null, null]);
+  });
+
+  it("warns with '! low' next to Free only when less than a tenth of the memory is free", async () => {
+    await render(serve());
+    expect($$(".ins-tone")).toHaveLength(0);
+    act(() => root.unmount());
+    root = createRoot(container);
+    await render(serve(lowMemory));
+    const [memory, cpu] = $$(".mc-sum-row");
+    expect(memory?.textContent).toBe("MemoryTokama6.8 GBOther apps23.9 GBFree1.3 GB! lowof 32 GB");
+    expect(memory?.querySelector(".ins-tone")?.getAttribute("data-tone")).toBe("warn");
+    // The bar says it in words too, for a screen reader that reads the bar as one image.
+    expect(memory?.querySelector("[role=img]")?.getAttribute("aria-label")).toBe("Memory: Tokama 6.8 GB, other apps 23.9 GB, free 1.3 GB of 32 GB, low");
+    expect(cpu?.querySelector("[role=img]")?.getAttribute("aria-label")).not.toContain("low");
+    expect(cpu?.querySelector(".ins-tone")).toBeNull();
   });
 
   it("says it is reading until the first answer", async () => {
     await render(() => new Promise<Reply>(() => undefined));
     expect(text(".placeholder")).toBe("Reading this machine");
-    expect($$('[role="meter"]')).toHaveLength(0);
+    expect($(".mc-summary")).toBeNull();
   });
 
   it("says why when the first answer fails", async () => {
@@ -72,30 +95,47 @@ describe("Machine tab: now", () => {
   it("shows the connection failure when there is no engine", async () => {
     await render(serve(), { status: "failed", reason: "gone", logPath: "/tmp/engine.log", logTail: [] });
     expect($(".failure")).not.toBeNull();
-    expect($$('[role="meter"]')).toHaveLength(0);
+    expect($(".mc-summary")).toBeNull();
   });
 });
 
 describe("Machine tab: the last 30 minutes", () => {
-  it("draws CPU and memory with a label, a range and a table for screen readers", async () => {
+  it("draws CPU and memory, each with a Tokama line and an all-apps line, a legend with the readings now and a table for screen readers", async () => {
     await render(serve());
     expect(text("#mc-chart-title")).toBe("Last 30 minutes");
-    expect($$(".mc-label").map((label) => label.textContent)).toEqual(["CPU0% – 100%", "Memory0 – 32 GB"]);
-    expect($$("svg.mc-svg").map((svg) => svg.getAttribute("aria-label"))).toEqual([expect.stringMatching(/^CPU over the last 30 minutes, from \d\d:\d\d$/), expect.stringMatching(/^Memory over the last 30 minutes, from \d\d:\d\d$/)]);
-    expect($$(".mc-line")).toHaveLength(2);
+    expect($$(".mc-label").map((label) => label.textContent)).toEqual(["CPUTokama10%All apps20%", "MemoryTokama2.0 GBAll apps18.0 GB"]);
+    expect($$("svg.mc-svg").map((svg) => svg.getAttribute("aria-label"))).toEqual([expect.stringMatching(/^CPU over the last 30 minutes, from \d\d:\d\d: Tokama and all apps$/), expect.stringMatching(/^Memory over the last 30 minutes, from \d\d:\d\d: Tokama and all apps$/)]);
+    expect($$(".mc-line-tokama")).toHaveLength(2);
+    expect($$(".mc-line-all")).toHaveLength(2);
     expect($$(".mc-line").every((line) => line.getAttribute("d")?.startsWith("M"))).toBe(true);
+    // A dot at the end of each line.
+    expect($$(".mc-now-dot")).toHaveLength(4);
     expect($(".mc-hint")).toBeNull();
     expect($$(".mc-axis text").at(-1)?.textContent).toMatch(/ now$/);
+    expect($$("table.visually-hidden thead th").map((head) => head.textContent)).toEqual(["Time", "All apps CPU", "All apps Memory", "Tokama CPU", "Tokama Memory"]);
     expect($$("table.visually-hidden tbody tr")).toHaveLength(31);
   });
 
-  it("explains the hatched part when the readings start late", async () => {
+  it("puts the Tokama line under the same scale as all apps: the CPU line of Tokama reads in all cores", async () => {
+    await render(serve());
+    // Tokama's 120% of one core is 10% of 12 cores; all apps 20%: on a 96 px plot the lines end at 86.4 and 76.8.
+    const ends = ["mc-line-tokama", "mc-line-all"].map((name) => Number($$(`.${name}`)[0]!.getAttribute("d")!.split(" ").at(-1)));
+    expect(ends[0]!).toBeGreaterThan(ends[1]!);
+  });
+
+  it("explains the hatched part when this tab was opened late", async () => {
     await render(serve({ ...machineReport, points: machinePoints(NOW - 8 * 60_000) }));
-    expect(text(".mc-hint")).toMatch(/^Sampling started at \d\d:\d\d, so the hatched part has no samples\.$/);
+    expect(text(".mc-hint")).toMatch(/^You opened this tab at \d\d:\d\d, so the hatched part has no readings\.$/);
     expect($$(".mc-gap")).toHaveLength(2);
   });
 
-  it("shows a tooltip on hover with the readings and Tokama's share, and hides it on leave", async () => {
+  it("explains hatched parts in the middle, where nobody read the machine", async () => {
+    const points = [...machinePoints(NOW - 30 * 60_000).filter((p) => p.at < NOW - 20 * 60_000), ...machinePoints(NOW - 10 * 60_000)];
+    await render(serve({ ...machineReport, points }));
+    expect(text(".mc-hint")).toBe("The hatched parts have no readings.");
+  });
+
+  it("shows one tooltip on hover with both lines' readings for CPU and memory, and hides it on leave", async () => {
     await render(serve());
     expect($(".mc-tip")).toBeNull();
     const plot = $(".mc-plot")!;
@@ -103,8 +143,11 @@ describe("Machine tab: the last 30 minutes", () => {
     await act(async () => plot.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: 600 })));
     const tip = $(".mc-tip")!;
     expect(tip.getAttribute("data-side")).toBe("left");
-    expect(tip.textContent).toMatch(/^\d\d:\d\d:\d\dCPU\d+%Memory\d+\.\d GBTokama share[\d.]+% · \d\.\d GB$/);
+    expect(tip.textContent).toMatch(/^\d\d:\d\d:\d\dTokamaAll appsCPU10%20%Memory2\.0 GB18\.0 GB$/);
+    expect(tip.textContent).not.toContain("share");
+    // A crosshair and a dot on each of the two lines of each chart.
     expect($$(".mc-cross")).toHaveLength(2);
+    expect($$(".mc-hover-dot")).toHaveLength(4);
     await act(async () => $(".mc-chart")!.dispatchEvent(new MouseEvent("mouseout", { bubbles: true })));
     await act(async () => $(".mc-chart")!.dispatchEvent(new MouseEvent("mouseleave")));
     expect($(".mc-tip")).toBeNull();
@@ -139,19 +182,30 @@ describe("Machine tab: the last 30 minutes", () => {
   });
 });
 
-describe("Machine tab: Tokama processes", () => {
-  it("lists the engine, then each item with its agent and check rows, then the total", async () => {
+describe("Machine tab: running now, by item", () => {
+  it("lists the items by memory: an item with one agent is one row; checks or a second row go under the item; then the engine and the total", async () => {
     await render(serve());
-    const rows = $$(".mc-table tbody tr").map((row) => [...row.children].map((cell) => cell.textContent));
-    expect(rows[0]).toEqual(["Engine tokama-engine", "background service", "1", "0.4%", "182 MB"]);
-    // Invoice item: one check group, in the step "Run checks".
-    expect(rows[1]).toEqual(["Fix rounding in invoice totals· Quick fix · Run checks", "14.2%", "1.1 GB"]);
-    expect(rows[2]).toEqual(["└Check", "Tokama", "5", "14.2%", "1.1 GB"]);
-    expect(rows[3]![0]).toBe("Stock sync drops <b>items</b>· Quick fix · Fix");
-    expect(rows[4]).toEqual(["└Agent", "Local builder Claude Code", "3", "7.2%", "412 MB"]);
-    expect(rows[5]).toEqual(["└Check", "Tokama", "1", "1.0%", "36 MB"]);
-    expect(rows[6]).toEqual(["Tokama in total · 2 items running · 10 processes", "10", "22.8%", "1.7 GB"]);
-    expect($(".mc-table caption")?.textContent).toBe("Tokama processes now · CPU is a share of all 12 cores · memory is resident");
+    expect(cells()).toEqual([
+      ["Fix rounding in invoice totalsQuick fix · Run checks", "14.2%", "1.1 GB"],
+      ["Checks5 processes", "14.2%", "1.1 GB"],
+      ["Stock sync drops <b>items</b>Quick fix · Fix", "8.2%", "448 MB"],
+      ["Local builderClaude Code · 3 processes", "7.2%", "412 MB"],
+      ["Checks1 process", "1.0%", "36 MB"],
+      ["Checkout p95 latency spikeLocal builderEmergency investigator · Query logs · Claude Code · 1 process", "4.9%", "395 MB"],
+      ["Tokama enginebackground service · 1 process", "0.4%", "182 MB"],
+      ["Tokama in total · 3 items · 11 processes", "27.7%", "2.1 GB"],
+    ]);
+    expect($(".mc-table caption")?.textContent).toBe("Running now, by item · CPU is a share of all 12 cores · heaviest memory first");
+    expect($$(".mc-table thead th").map((head) => head.textContent)).toEqual(["Item or process", "CPU", "Memory"]);
+  });
+
+  it("marks only the agents with the blue ring, named by who works on which step; a check has none", async () => {
+    await render(serve());
+    const rows = $$(".mc-table tbody tr");
+    expect(rows.map((row) => row.querySelectorAll(".ag-badge").length)).toEqual([0, 0, 0, 1, 0, 1, 0, 0]);
+    expect($$(".ag-badge").map((badge) => badge.getAttribute("aria-label"))).toEqual(["Agent Local builder, running Fix", "Agent Local builder, running Query logs"]);
+    // The old tree branch, the "Agent" and "Check" words and the process column are gone.
+    expect($(".mc-table")?.textContent).not.toMatch(/└|Process\b|Agent\b(?! Local)|\bCheck\b/);
   });
 
   it("renders item titles as text, never as markup", async () => {
@@ -164,7 +218,12 @@ describe("Machine tab: Tokama processes", () => {
     const onSelectItem = vi.fn();
     await render(serve(), CONNECTED, { onSelectItem });
     await act(async () => $$(".mc-item button")[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    expect(onSelectItem).toHaveBeenCalledWith(items.find((item) => item.title === "Fix rounding in invoice totals")!.id);
+    expect(onSelectItem).toHaveBeenCalledWith(ITEMS.verifying.id);
+  });
+
+  it("puts the heaviest item first, whatever order the engine lists them in", async () => {
+    await render(serve({ ...machineReport, items: [...machineReport.items].reverse() }));
+    expect($$(".mc-item-title").map((title) => title.textContent?.slice(0, 12))).toEqual(["Fix rounding", "Stock sync d", "Checkout p95", "Tokama engin"]);
   });
 
   it("shows only the engine and an empty note when no item runs, with a way to start work", async () => {
@@ -173,32 +232,85 @@ describe("Machine tab: Tokama processes", () => {
     expect($$(".mc-table tbody tr")).toHaveLength(2);
     expect(text(".mc-empty")).toBe("No items running.Agents and checks show here, under their item, while they run.+ New work");
     expect($(".mc-total")).toBeNull();
-    // The meters and the chart stay.
-    expect($$('[role="meter"]')).toHaveLength(2);
+    // The summary and the chart stay.
+    expect($$(".mc-sum-row")).toHaveLength(2);
     expect($$("svg.mc-svg")).toHaveLength(2);
     await act(async () => $(".mc-new")?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
     expect(onNewWork).toHaveBeenCalledTimes(1);
   });
 
-  it("names an item the board does not have by its title alone", async () => {
-    await render(serve({ ...machineReport, items: [{ ...machineReport.items[0]!, itemId: "item_0190a000-0000-7000-8000-0000000000ff" as never, title: "Gone item" }] }));
+  it("puts a second agent row under its item with the item's current agent, since the engine names no agent per row", async () => {
+    const stock = machineReport.items[1]!;
+    await render(serve({ ...machineReport, items: [stock, { ...stock, memoryBytes: 100 * 1024 ** 2 }] }));
+    expect(cells().slice(0, 3)).toEqual([
+      ["Stock sync drops <b>items</b>Quick fix · Fix", "14.4%", "512 MB"],
+      ["Local builderClaude Code · 3 processes", "7.2%", "412 MB"],
+      ["Local builderClaude Code · 3 processes", "7.2%", "100 MB"],
+    ]);
+    expect($$(".ag-badge")).toHaveLength(2);
+  });
+
+  it("calls an agent row of an item the board does not have just 'Agent'", async () => {
+    await render(serve({ ...machineReport, items: [machineReport.items[1]!, machineReport.items[2]!].map((row) => ({ ...row, itemId: "item_0190a000-0000-7000-8000-0000000000ff" as never, title: "Gone item" })) }));
+    expect(cells().slice(0, 3).map((row) => row[0])).toEqual(["Gone item", "Agent3 processes", "Checks1 process"]);
+  });
+
+  it("names an item the board does not have by its title alone, with no ring", async () => {
+    await render(serve({ ...machineReport, items: [{ ...machineReport.items[3]!, itemId: "item_0190a000-0000-7000-8000-0000000000ff" as never, title: "Gone item" }] }));
     const row = $$(".mc-item")[0]!;
     expect(row.querySelector("button")).toBeNull();
-    expect(row.textContent).toContain("Gone item");
+    expect(row.firstElementChild?.textContent).toBe("Gone item1 process");
+    expect($(".ag-badge")).toBeNull();
   });
 });
 
 describe("Machine tab: asking again", () => {
+  const asked = (query: { mock: { calls: readonly [{ type: string }][] } }) => query.mock.calls.filter(([q]) => q.type === "machine").length;
+
   it("asks again after the reading interval, and stops when the tab closes", async () => {
     vi.useFakeTimers();
     const { query } = await render(serve());
-    const asked = () => query.mock.calls.filter(([q]) => q.type === "machine").length;
-    expect(asked()).toBe(1);
+    expect(asked(query)).toBe(1);
     await act(async () => void (await vi.advanceTimersByTimeAsync(5_000)));
-    expect(asked()).toBe(2);
+    expect(asked(query)).toBe(2);
     act(() => root.render(<div />));
     await act(async () => void (await vi.advanceTimersByTimeAsync(20_000)));
-    expect(asked()).toBe(2);
+    expect(asked(query)).toBe(2);
+  });
+
+  it("asks nothing while the window is hidden, and asks at once when it shows again", async () => {
+    vi.useFakeTimers();
+    const { query } = await render(serve());
+    expect(asked(query)).toBe(1);
+    await showWindow("hidden");
+    await act(async () => void (await vi.advanceTimersByTimeAsync(30_000)));
+    expect(asked(query)).toBe(1);
+    // The numbers stay on screen meanwhile.
+    expect($(".mc-summary")).not.toBeNull();
+    await showWindow("visible");
+    expect(asked(query)).toBe(2);
+    await act(async () => void (await vi.advanceTimersByTimeAsync(5_000)));
+    expect(asked(query)).toBe(3);
+  });
+
+  it("does not start another round from an answer that comes after the window was hidden", async () => {
+    vi.useFakeTimers();
+    let release: (reply: Reply) => void = () => undefined;
+    const { query } = await render(() => new Promise<Reply>((resolve) => void (release = resolve)));
+    await showWindow("hidden");
+    await act(async () => release({ ok: true, data: machineReport }));
+    await act(async () => void (await vi.advanceTimersByTimeAsync(30_000)));
+    expect(asked(query)).toBe(1);
+  });
+
+  it("asks nothing when it opens in a hidden window", async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+    const { query } = await render(serve());
+    await act(async () => void (await vi.advanceTimersByTimeAsync(30_000)));
+    expect(asked(query)).toBe(0);
+    await showWindow("visible");
+    expect(asked(query)).toBe(1);
   });
 
   it("keeps the last report on screen when a later ask fails, and says the numbers are old", async () => {
@@ -206,7 +318,7 @@ describe("Machine tab: asking again", () => {
     let calls = 0;
     await render(() => (++calls === 1 ? { ok: true, data: machineReport } : { ok: false, error: { code: "unavailable", message: "busy" } }));
     await act(async () => void (await vi.advanceTimersByTimeAsync(5_000)));
-    expect($$('[role="meter"]')).toHaveLength(2);
+    expect($$(".mc-sum-row")).toHaveLength(2);
     expect(text(".mc-hint")).toBe("Could not refresh: busy. The numbers below are from the last reading.");
   });
 
@@ -214,9 +326,9 @@ describe("Machine tab: asking again", () => {
     const fake = fakeBridge(CONNECTED, { reply: (query) => (query.type === "machine" ? { ok: true, data: machineReport } : undefined) });
     const show = (connection: ConnectionState) => act(async () => root.render(<MachineTab bridge={fake.bridge} connection={connection} onRetryConnection={() => undefined} setup={setup} items={items} onSelectItem={() => undefined} onNewWork={() => undefined} />));
     await show(CONNECTED);
-    expect($$('[role="meter"]')).toHaveLength(2);
+    expect($$(".mc-sum-row")).toHaveLength(2);
     await show({ status: "failed", reason: "gone", logPath: "/tmp/engine.log", logTail: [] });
-    expect($$('[role="meter"]')).toHaveLength(0);
+    expect($$(".mc-sum-row")).toHaveLength(0);
     // The engine comes back with a slow first answer: the old readings must not show meanwhile.
     fake.query.mockImplementation(() => new Promise(() => undefined));
     await show({ status: "connected", engineId: "e-2" });

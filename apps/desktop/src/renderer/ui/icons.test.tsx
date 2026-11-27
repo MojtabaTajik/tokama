@@ -101,7 +101,7 @@ describe("hand-drawn icons", () => {
   }
 
   // The files below draw charts, meters and flow lines, which are data, not icons.
-  const DRAWS_DATA = ["insights/MachineChart.tsx", "insights/MachineTab.tsx", "insights/Meter.tsx","templates/FlowDiagram.tsx"];
+  const DRAWS_DATA = ["insights/MachineChart.tsx", "insights/Meter.tsx", "templates/FlowDiagram.tsx", "ui/SplitBar.tsx"];
 
   it("leaves no inline <svg> outside brand/ except the files that draw data", () => {
     const drawn = sources(renderer)
