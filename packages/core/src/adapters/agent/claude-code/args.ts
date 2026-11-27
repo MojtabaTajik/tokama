@@ -72,6 +72,8 @@ export function argGroups(request: AgentCallRequest, settingsPath?: string, toka
   if (allow.length > 0) permission.push("--allowedTools", ...allow);
   permission.push("--disallowedTools", ...deny);
   if (settingsPath !== undefined) permission.push(`--settings=${settingsPath}`);
+  // `--restricted` skips the settings files but not the person's CLAUDE.md, skills or plugin hooks; safe mode skips them all and keeps the login.
+  if (request.plain === true) permission.push("--safe-mode");
   return ok({
     headless: ["-p", "--input-format=stream-json", "--output-format=stream-json", "--verbose"],
     model: [`--model=${request.model}`],

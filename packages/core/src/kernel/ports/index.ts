@@ -47,6 +47,12 @@ export interface AgentCallRequest {
   readonly limits?: ToolLimits;
   /** The call is stopped and fails once it runs this long. */
   readonly timeoutMs?: number;
+  /**
+   * The call loads none of the person's own customizations (instruction files such as CLAUDE.md,
+   * hooks, skills, plugins), so its answer depends on the prompt alone. For calls that must
+   * answer in one fixed shape.
+   */
+  readonly plain?: boolean;
   /** Required when `limits.commands` is not empty: a runtime refuses a call that runs commands without one. */
   readonly sandbox?: SandboxSpec;
 }

@@ -36,6 +36,13 @@ describe("Claude Code args", () => {
     expect(argv).toContain("--strict-mcp-config");
   });
 
+  it("starts in safe mode, without the person's CLAUDE.md, hooks and skills, only for a plain call, and the flag ends the deny list", () => {
+    expect(args(request())).not.toContain("--safe-mode");
+    const argv = args(request(undefined, { plain: true }));
+    expect(argv).toContain("--safe-mode");
+    expect(list(argv, "--disallowedTools")).toEqual(["Read(~/.tokama/**)", "Edit(~/.tokama/**)", "WebFetch", "WebSearch"]);
+  });
+
   it("denies the file tools an absolute Tokama folder with the double slash, which a single slash would turn project-relative", () => {
     const result = buildArgs(request(), undefined, "/home/northwind-dev/.tokama");
     if (!result.ok) throw new Error(result.error);

@@ -120,7 +120,9 @@ describe("a helper run", () => {
   it("asks with exactly the request a read-only helper needs: Tokama's folder, read-only limits, the helper's time, no sandbox", async () => {
     const { runtime } = await run();
     const { request } = runtime.calls[0]!;
-    expect(Object.keys(request).sort()).toEqual(["cwd", "limits", "model", "prompt", "role", "timeoutMs"]);
+    expect(Object.keys(request).sort()).toEqual(["cwd", "limits", "model", "plain", "prompt", "role", "timeoutMs"]);
+    // The answer must depend on the prompt alone, not on the person's own instruction files or hooks.
+    expect(request.plain).toBe(true);
     expect(request.model).toBe("haiku");
     expect(request.cwd).toBe(scratch);
     expect(request.limits).toEqual(READ_ONLY);
@@ -128,6 +130,14 @@ describe("a helper run", () => {
     expect(request.timeoutMs).toBe(90_000);
     expect(request.prompt).toContain(NAMES);
     expect(request.prompt).toContain(BUILDS);
+  });
+
+  it("shows the agent the answer's shape with every rule the engine checks: required keys, no other keys, whole minutes from 1 to 120, at most 4 checks", async () => {
+    const { runtime } = await run();
+    const prompt = runtime.calls[0]!.request.prompt;
+    const shape = JSON.parse(prompt.slice(prompt.indexOf("{\n"), prompt.indexOf("\n}\n\n") + 2)) as Record<string, unknown>;
+    expect(JSON.stringify(shape)).toContain('"additionalProperties":false');
+    expect(shape).toMatchObject({ type: "object", required: ["checks"], properties: { checks: { type: "array", maxItems: 4, items: { required: ["command", "why", "minutes"], properties: { minutes: { type: "integer", minimum: 1, maximum: 120 }, why: { maxLength: 200 } } } } } });
   });
 
   it("keeps read-only limits for a personal agent file that allows edits, commands and the web, and uses the file's model", async () => {

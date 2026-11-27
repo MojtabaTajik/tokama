@@ -556,6 +556,7 @@ describe("the real Claude Code adapter", () => {
     expect(calls[0]!.cwd).toBe(join(fixture.home, "helper-scratch"));
     expect(argv).toContain("--tools=Read,Glob,Grep");
     expect(argv).toContain("--restricted");
+    expect(argv).toContain("--safe-mode");
     expect(argv).toContain("--permission-mode=dontAsk");
     expect(argv).toContain("--model=haiku");
     expect(argv.some((word) => word.includes("Bash"))).toBe(false);

@@ -3,7 +3,8 @@
 // thinks and answers with one JSON object.
 //
 // The call runs in a folder of Tokama's own, `scratchDir`, that must hold nothing, with read-only
-// limits whatever the agent file says. The request has no sandbox: with no commands the CLI is given
+// limits whatever the agent file says, and `plain`, so the person's own instruction files, hooks and
+// skills cannot change the one answer it must give. The request has no sandbox: with no commands the CLI is given
 // no shell, and its file tools are confined to the working folder.
 //
 // `prepare` makes every refusal, before a run exists; `run` then gathers, asks and reads the
@@ -261,7 +262,7 @@ export function createHelperRunner(deps: HelperRunnerDeps): HelperRunner {
             if (problem !== undefined) return failed("crash", clean(problem));
             call = await runGuardedCall(
               runtime,
-              { model: target.model, prompt: built.value.user, role: built.value.system, cwd: deps.scratchDir, limits: READ_ONLY, timeoutMs: definition.maxTimeMs },
+              { model: target.model, prompt: built.value.user, role: built.value.system, cwd: deps.scratchDir, limits: READ_ONLY, timeoutMs: definition.maxTimeMs, plain: true },
               signal,
               {
                 clock,

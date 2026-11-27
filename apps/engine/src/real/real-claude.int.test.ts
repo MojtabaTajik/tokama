@@ -6,10 +6,11 @@ import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { connect } from "@tokama/client";
-import { createProcessRunner, type HelperDefinition, type HelperRun, type ItemRecord, ok, type ProcessRunner } from "@tokama/core";
+import { type Agent, type AgentRuntime, cleanCliText, createProcessRunner, type HelperDefinition, type HelperRun, type ItemRecord, ok, type ProcessRunner, readAnswer } from "@tokama/core";
 import { describe, expect, it } from "vitest";
 import { startEngine } from "../engine.js";
 import { tempEngineDir } from "../testing/helpers.js";
+import { defaultRuntime } from "./real.js";
 
 const enabled = process.env["TOKAMA_REAL_CLAUDE"] === "1";
 
@@ -113,7 +114,28 @@ describe.skipIf(!enabled)("real mode against the real Claude Code CLI", () => {
     const gatherers = { "suggest-checks": async () => ok({ "repo-file-names": "package.json\nsrc/orders.ts\n", "repo-build-files": '{ "name": "orders-api", "scripts": { "test": "vitest run", "lint": "eslint ." } }' }) };
     try {
       const dir = tempEngineDir(cleanups);
-      const started = await startEngine({ dir, home, planSources: {}, helpers: { definitions: [definition], gatherers } });
+      // Test only: shows each reply of the agent, cleaned, and what is wrong with it, so a failed run explains itself.
+      const inner = defaultRuntime(createProcessRunner(), home, dir);
+      const seen: string[] = [];
+      const runtime = (agent: Agent): AgentRuntime | undefined => {
+        const real = inner(agent);
+        if (real === undefined) return undefined;
+        return {
+          async *launch(request, signal) {
+            let last = "";
+            for await (const event of real.launch(request, signal)) {
+              if (event.type === "text") last = event.text;
+              if (event.type === "end") {
+                const problem = readAnswer(definition, last);
+                const shown = cleanCliText(last, [[home, "~/.tokama"]], 1_500);
+                seen.push(`try ${seen.length + 1}: ${problem.ok ? "valid" : JSON.stringify(problem.error)}; ended ${event.outcome}; reply ${JSON.stringify(shown)}`);
+              }
+              yield event;
+            }
+          },
+        };
+      };
+      const started = await startEngine({ dir, home, planSources: {}, runtime, helpers: { definitions: [definition], gatherers } });
       if (!started.ok) throw new Error(started.error.message);
       cleanups.push(() => started.value.close());
       const connected = await connect({ dir, lockPath: started.value.endpoint.lockPath, startTimeoutMs: 2_000 });
@@ -128,7 +150,7 @@ describe.skipIf(!enabled)("real mode against the real Claude Code CLI", () => {
         const current = await client.query({ type: "helper_run", runId: reply.data.runId });
         if (current.ok) run = current.data.run;
       }
-      process.stdout.write(`real helper: state ${run?.state}, usage ${JSON.stringify(run?.usage)}, error ${JSON.stringify(run?.error)}\n`);
+      process.stdout.write(`real helper: state ${run?.state}, usage ${JSON.stringify(run?.usage)}, error ${JSON.stringify(run?.error)}\n${seen.join("\n")}\n`);
       expect(run?.state).toBe("done");
       expect(run?.result?.value.checks.length).toBeGreaterThan(0);
       expect(readdirSync(join(home, "helper-scratch"))).toEqual([]);
