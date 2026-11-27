@@ -243,11 +243,13 @@ jobs:
   # Signs latest-linux.yml, the feed file the Linux app checks before it installs an update (the
   # packages carry no publisher signature and are installed as root). The only other job with
   # secrets, and the only one that holds the Linux update key: it checks out one public file, runs
-  # no install and no dependency code, and takes the build's files as data. Also on a dry run, so
-  # the key and the whole signing path are tried before a release.
+  # no install and no dependency code, and takes the build's files as data. Only on a tag push: a
+  # dry run can bake any feed URL into the packages, so a real signature for its feed file must
+  # never exist (sign-linux-dry signs dry runs with a key made for the run).
   sign-linux:
     name: sign (linux feed)
     needs: [check, build-linux]
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: release
     timeout-minutes: 10
@@ -292,6 +294,49 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           path: linux/latest-linux.yml.sig
+
+  # A dry run's signing path with a key made in the job: no environment, no secret. The signature
+  # is named as a dry run's and no app trusts its key, so it proves the shell steps and nothing else.
+  sign-linux-dry:
+    name: sign (linux feed, dry run)
+    needs: [check, build-linux]
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tokama-linux-${{ needs.check.outputs.version }}
+          path: linux
+      - name: Check the feed file against the build's sums
+        run: |
+          set -euo pipefail
+          cd linux
+          [ "$(grep -c '  latest-linux\.yml$' SHA256SUMS.txt)" -eq 1 ]
+          grep '  latest-linux\.yml$' SHA256SUMS.txt | sha256sum -c -
+      - name: Sign latest-linux.yml with a throwaway key and check the signature
+        run: |
+          set -euo pipefail
+          umask 077
+          key="$RUNNER_TEMP/throwaway-key"
+          ssh-keygen -q -t ed25519 -N '' -f "$key"
+          pub=$(awk '{print $1 " " $2}' "$key.pub")
+          rm -f "$key.pub"
+          cp linux/latest-linux.yml "$RUNNER_TEMP/latest-linux.yml"
+          ssh-keygen -Y sign -f "$key" -n tokama-update "$RUNNER_TEMP/latest-linux.yml"
+          printf 'tokama-update namespaces="tokama-update" %s\n' "$pub" > "$RUNNER_TEMP/allowed_signers"
+          ssh-keygen -Y verify -f "$RUNNER_TEMP/allowed_signers" -I tokama-update -n tokama-update -s "$RUNNER_TEMP/latest-linux.yml.sig" < "$RUNNER_TEMP/latest-linux.yml"
+          mkdir dry-run
+          mv "$RUNNER_TEMP/latest-linux.yml.sig" dry-run/latest-linux.yml.dry-run.sig
+          rm -f "$key"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tokama-linux-dry-run-sig-${{ needs.check.outputs.version }}
+          if-no-files-found: error
+          retention-days: 3
+          path: dry-run/latest-linux.yml.dry-run.sig
 
   # Writes the draft from the files build-mac, build-linux and sign-linux made: no checkout, no
   # install, no secrets. A manual run stops before this job, so it never creates a release.
