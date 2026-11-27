@@ -773,6 +773,7 @@
 /* The reader: one document at a reading width and size, its outline dropping below it when the window is narrow. */
 
 .ot[data-reader] .ot-doc {
+  flex: 1 1 440px;
   max-width: 72ch;
 }
 

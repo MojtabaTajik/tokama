@@ -164,8 +164,7 @@ flow("reads a plan in the reader from Read the plan and from Show full plan: Esc
   await screenshot("9-reader-1024");
 
   await full.getByRole("button", { name: "All of this item: Steps, Output, Log →" }).click();
-  await full.getByRole("tab", { name: "Output" }).waitFor();
-  expect(await full.getByRole("tab", { name: "Output" }).getAttribute("aria-selected")).toBe("true");
+  await expect.poll(() => full.getByRole("tab", { name: "Output" }).getAttribute("aria-selected"), { message: "the Output tab after All of this item" }).toBe("true");
   await page.keyboard.press("Escape");
   await drawer(page).getByRole("heading", { name: PLAN_APPROVAL }).waitFor();
 
