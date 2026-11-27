@@ -99,7 +99,7 @@ export function usageRowsOf(items: readonly Pick<StoredItem, "id" | "title" | "t
   for (const item of items) {
     if (item.deleted) continue;
     for (const call of item.calls ?? []) {
-      if (call.endedAt >= since) rows.push({ itemId: item.id, title: item.title, templateId: item.templateRef, call });
+      if (call.endedAt >= since) rows.push({ itemId: item.id, title: item.title, call });
     }
   }
   return rows.sort((a, b) => a.call.endedAt - b.call.endedAt || (a.call.callId < b.call.callId ? -1 : a.call.callId > b.call.callId ? 1 : 0));

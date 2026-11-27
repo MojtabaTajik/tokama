@@ -25,7 +25,7 @@ function call(fields: Partial<AgentCallUsage> & { endedAt: number }): AgentCallU
     ...fields,
   };
 }
-const row = (itemId: ItemId, templateId: string, usage: AgentCallUsage, title = itemId === ITEM_A ? "Add order export" : "Slow query"): UsageRow => ({ itemId, title, templateId, call: usage });
+const row = (itemId: ItemId, usage: AgentCallUsage, title = itemId === ITEM_A ? "Add order export" : "Slow query"): UsageRow => ({ itemId, title, call: usage });
 
 describe("prices", () => {
   it("prices a model by its exact id, ignoring a provider prefix, a context tag and a date", () => {
@@ -59,11 +59,11 @@ describe("prices", () => {
 describe("summarizeUsage", () => {
   it("lists today's items with their tokens, agents and agent time, and today's totals", () => {
     const today = [
-      row(ITEM_A, "builtin/plan-and-build", call({ endedAt: at(0, 9), startedAt: at(0, 9) - 120_000 })),
-      row(ITEM_B, "builtin/db-check", call({ endedAt: at(0, 10), agentId: "reviewer" as AgentCallUsage["agentId"], cliId: "codex-cli", tokens: MILLION })),
-      row(ITEM_A, "builtin/plan-and-build", call({ endedAt: at(0, 11), agentId: "builder" as AgentCallUsage["agentId"] })),
+      row(ITEM_A, call({ endedAt: at(0, 9), startedAt: at(0, 9) - 120_000 })),
+      row(ITEM_B, call({ endedAt: at(0, 10), agentId: "reviewer" as AgentCallUsage["agentId"], cliId: "codex-cli", tokens: MILLION })),
+      row(ITEM_A, call({ endedAt: at(0, 11), agentId: "builder" as AgentCallUsage["agentId"] })),
       // Just before midnight: yesterday, not today.
-      row(ITEM_A, "builtin/plan-and-build", call({ endedAt: new Date(2025, 9, 19, 23, 59).getTime(), tokens: MILLION })),
+      row(ITEM_A, call({ endedAt: new Date(2025, 9, 19, 23, 59).getTime(), tokens: MILLION })),
     ];
     const report = summarizeUsage({ rows: today, now: NOW, clis: [] });
     expect(report.today).toEqual({
@@ -77,12 +77,12 @@ describe("summarizeUsage", () => {
     });
     expect(UsageReportSchema.safeParse(report).success).toBe(true);
     // Seven items today: the five with the most tokens, and the count of all.
-    const many = Array.from({ length: 7 }, (_, n) => row(`item_0190a000-0000-7000-8000-00000000010${n}` as ItemId, "builtin/quick-fix", call({ endedAt: at(0, 9), tokens: { ...MILLION, input: n + 1 } }), `Item ${n}`));
+    const many = Array.from({ length: 7 }, (_, n) => row(`item_0190a000-0000-7000-8000-00000000010${n}` as ItemId, call({ endedAt: at(0, 9), tokens: { ...MILLION, input: n + 1 } }), `Item ${n}`));
     const busy = summarizeUsage({ rows: many, now: NOW, clis: [] }).today;
     expect(busy?.items.map((item) => item.title)).toEqual(["Item 6", "Item 5", "Item 4", "Item 3", "Item 2"]);
     expect(busy?.itemCount).toBe(7);
     // An item with more agents than the report holds keeps the first 20.
-    const crowded = Array.from({ length: 25 }, (_, n) => row(ITEM_A, "builtin/quick-fix", call({ endedAt: at(0, 9), agentId: `agent-${n}` as AgentCallUsage["agentId"] })));
+    const crowded = Array.from({ length: 25 }, (_, n) => row(ITEM_A, call({ endedAt: at(0, 9), agentId: `agent-${n}` as AgentCallUsage["agentId"] })));
     const full = summarizeUsage({ rows: crowded, now: NOW, clis: [] });
     expect(full.today?.items[0]?.agents.length).toBe(20);
     expect(UsageReportSchema.safeParse(full).success).toBe(true);
@@ -91,9 +91,9 @@ describe("summarizeUsage", () => {
 
   it("leaves out calls of other days and of the future", () => {
     const rows = [
-      row(ITEM_A, "plan-and-build", call({ endedAt: at(0, 10), tokens: MILLION })),
-      row(ITEM_A, "plan-and-build", call({ endedAt: at(2, 9), tokens: MILLION })),
-      row(ITEM_A, "plan-and-build", call({ endedAt: at(-1, 9), tokens: MILLION })),
+      row(ITEM_A, call({ endedAt: at(0, 10), tokens: MILLION })),
+      row(ITEM_A, call({ endedAt: at(2, 9), tokens: MILLION })),
+      row(ITEM_A, call({ endedAt: at(-1, 9), tokens: MILLION })),
     ];
     expect(summarizeUsage({ rows, now: NOW, clis: [] }).today?.tokens.input).toBe(1_000_000);
   });
@@ -108,7 +108,7 @@ describe("summarizeUsage with helper calls", () => {
     helperId: "suggest-checks" as const,
     call: call({ endedAt, stepId: "suggest-checks" as AgentCallUsage["stepId"], agentId: "helper" as AgentCallUsage["agentId"], model: "claude-haiku-5-5", tokens: MILLION, ...fields }),
   });
-  const rows = [row(ITEM_A, "builtin/plan-and-build", call({ endedAt: at(0, 10), tokens: MILLION }))];
+  const rows = [row(ITEM_A, call({ endedAt: at(0, 10), tokens: MILLION }))];
 
   it("counts today's helper calls in today's tokens and time, but in no item", () => {
     const report = summarizeUsage({ rows, helperCalls: [helperCall(at(0, 9)), helperCall(at(2, 9))], now: NOW, clis: [] });
@@ -136,7 +136,7 @@ describe("local days in a zone with a DST change", () => {
     const late = new Date(2025, 10, 1, 23, 30).getTime();
     expect(new Date(late).getUTCDate()).toBe(2);
     expect(localDate(late)).toBe("2025-11-01");
-    const rows = [row(ITEM_A, "plan-and-build", call({ endedAt: late }))];
+    const rows = [row(ITEM_A, call({ endedAt: late }))];
     expect(summarizeUsage({ rows, now: new Date(2025, 10, 1, 23, 45).getTime(), clis: [] }).today?.itemCount).toBe(1);
     expect(summarizeUsage({ rows, now: new Date(2025, 10, 2, 0, 15).getTime(), clis: [] }).today?.itemCount).toBe(0);
   });

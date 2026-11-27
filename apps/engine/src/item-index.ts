@@ -20,6 +20,8 @@ const TABLES = [...UNUSED_TABLES, "plan_samples", "claude_local_messages", "clau
 /** One message's usage from Claude Code's logs. */
 export type LocalMessage = LocalUsageMessage;
 
+// `day` and `project` of a message are written and never read: a database of version 3 to 5 keeps
+// this table, with both columns required, so a new row must still fill them.
 const CREATE = `
   CREATE TABLE plan_samples (
     cli_id TEXT PRIMARY KEY,

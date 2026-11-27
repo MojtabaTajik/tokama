@@ -55,8 +55,8 @@ export interface AgentsPageProps {
 
 export function AgentsPage({ bridge, connection, setup, initialAgent }: AgentsPageProps) {
   const { state, reload } = useAgents(bridge, connection, setup);
-  // Read while this page is open: each agent's record per model.
-  const usage = useUsage(bridge, connection, "current", true);
+  // Each agent's record per model covers 90 days: it is read when the page opens and on a change, never on a timer.
+  const usage = useUsage(bridge, connection, "current", false);
   const [query, setQuery] = useState("");
   const [selectedKey, setSelectedKey] = useState<string | undefined>(undefined);
   const data = state.status === "loaded" ? state.data : undefined;

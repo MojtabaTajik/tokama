@@ -26,8 +26,6 @@ export interface ScanLogsOptions {
   readonly mark: (fileKey: string) => LogMark | undefined;
   /** Called once per file read, with its new mark and the messages found since the old one. */
   readonly onFile: (fileKey: string, mark: LogMark, messages: readonly LoggedUsage[]) => void;
-  /** Files done of the files found. */
-  readonly onProgress?: (done: number, total: number) => void;
   /** Stops between files and between chunks of a file. */
   readonly signal?: AbortSignal;
   /** Default: 512 MiB. A larger file is skipped. */
@@ -126,10 +124,8 @@ export async function scanClaudeLogs(options: ScanLogsOptions): Promise<ScanLogs
     await walk(folder, projectKey(folder), 1);
   }
 
-  let done = 0;
   let skippedLines = 0;
   const fileKeys: string[] = [];
-  options.onProgress?.(0, files.length);
   for (const file of files) {
     if (options.signal?.aborted) break;
     const fileKey = hash(`file:${file.rel}`);
@@ -158,7 +154,6 @@ export async function scanClaudeLogs(options: ScanLogsOptions): Promise<ScanLogs
     } else {
       skippedFiles++;
     }
-    options.onProgress?.(++done, files.length);
   }
   return { found: true, complete: options.signal?.aborted !== true, files: files.length, skippedFiles, skippedLines, fileKeys };
 }

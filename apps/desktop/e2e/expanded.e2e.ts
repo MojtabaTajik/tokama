@@ -196,7 +196,7 @@ flow("shows a running item's header in the full view: the agent's badge, the sta
   await full.locator(".activity .ag-badge").waitFor();
   // The badge is the header's only running mark; the state line says it in words, with the time in one piece.
   expect(await full.locator("[data-breathe='true']").count()).toBe(1);
-  await expect.poll(() => full.locator(".drawer-state").innerText()).toMatch(/^running · Build, step 2 of \d · \d+ m \d\d s$/);
+  await expect.poll(() => full.locator(".drawer-state").innerText()).toMatch(/^running · Build, step 2 of \d · \d+ m \d\d s( · ~[\d.]+% of weekly limit)?$/);
   expect(await full.locator(".drawer-state .mark").count()).toBe(0);
   expect(
     await full.locator(".drawer-state .drawer-time").evaluate((el) => {

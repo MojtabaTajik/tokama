@@ -15,7 +15,7 @@ const TEXT = {
   localOnly: "Local models have no plan limits, so there is no forecast. Rows show tokens.",
   noReading: (names: string) => `No limit reading from ${names} yet, so there is no forecast. It comes with the first call Tokama runs on it.`,
   tooEarly: "No forecast yet: a window needs a little of its time to pass before its pace says anything.",
-  perUse: (names: string) => `${names} · API key, pay per use · amounts are what ${names} reported for each call`,
+  perUse: (names: string) => `${names} · API key, pay per use · amounts are what ${names} reported for each call; ≈ marks a price from Tokama's table`,
 } as const;
 
 /** "weekly", "session", "Fable weekly": the window as it reads inside "your … limit". */
@@ -70,14 +70,15 @@ function atLimitFacts(plan: CliPlan, window: CliPlan["windows"][number], now: nu
 function PerUse({ report, plans }: { readonly report: UsageReport; readonly plans: readonly CliPlan[] }) {
   const ids = new Set(plans.map((plan) => plan.cliId));
   const week = report.week;
-  const costs = [...(week?.steps ?? []), ...(week?.helpers ?? [])].filter((row) => ids.has(row.cliId)).map((row) => row.costUsd);
-  const total = costs.reduce<number>((sum, cost) => sum + (cost ?? 0), 0);
+  const rows = [...(week?.steps ?? []), ...(week?.helpers ?? [])].filter((row) => ids.has(row.cliId));
+  const total = rows.reduce((sum, row) => sum + (row.costUsd ?? 0), 0);
+  const estimated = rows.some((row) => "costEstimated" in row && row.costEstimated === true);
   const names = plans.map((plan) => cliName(plan.cliId)).join(" and ");
   return (
     <div className="ins-forecast">
       <p className="ins-forecast-line">
         <span>
-          <span className="mono">{formatCost(total)}</span> {week?.window === "previous" ? "last week" : "this week"}
+          <span className="mono">{formatCost(total, estimated)}</span> {week?.window === "previous" ? "last week" : "this week"}
         </span>
       </p>
       <p className="ins-forecast-facts">{TEXT.perUse(names)}</p>

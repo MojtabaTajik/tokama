@@ -189,8 +189,8 @@ export interface EngineOptions {
   /** Tests only: awaited once the socket listens and before the lock is published, so a test can hold the start there. */
   readonly afterListen?: () => Promise<void>;
   /**
-   * Real mode: Claude Code's projects folder (`~/.claude/projects`), whose session logs the `all`
-   * usage scope reads. Absent: the logs are never read.
+   * Real mode: Claude Code's projects folder (`~/.claude/projects`), whose session logs split a plan
+   * limit between Tokama and the user's own sessions. Absent: the logs are never read.
    */
   readonly claudeLogs?: string;
   /** Real mode: argv that starts gh for Open PR and its check. Default: `["gh"]`. */

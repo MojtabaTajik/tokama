@@ -45,7 +45,6 @@ export interface LogScanOptions {
   readonly mark: (fileKey: string) => LogMark | undefined;
   /** Called once per file read, with its new mark and the messages found since the old one. */
   readonly onFile: (fileKey: string, mark: LogMark, messages: readonly LocalUsageMessage[]) => void;
-  readonly onProgress?: (done: number, total: number) => void;
   readonly signal?: AbortSignal;
 }
 

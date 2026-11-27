@@ -9,7 +9,7 @@ import { cliName } from "../model.js";
 import { BackendMark } from "../ui/agent.js";
 import { Button } from "../ui/Button.js";
 import { Segmented } from "../ui/Segmented.js";
-import { type Group, type Ranking as RankingData, rankingOf, type Row, type SubRow } from "./ranking-model.js";
+import { type Group, kindOf, type Ranking as RankingData, rankingOf, type Row, type SubRow } from "./ranking-model.js";
 import { limitShare, toolColour } from "./usage-model.js";
 
 const TEXT = {
@@ -191,7 +191,7 @@ interface RankRowProps {
 }
 
 function RankRow({ row, ranking, tools, setup, open, onToggle, onSelectItem }: RankRowProps) {
-  const scale = row.unit === "tokens" ? ranking.scale.tokens : ranking.scale.other;
+  const scale = ranking.scale[kindOf(row.unit)];
   const colour = row.kind === "outside" ? "var(--chart-other)" : toolColour(row.cliId, tools);
   const expandable = row.items !== undefined && (row.items.length > 0 || row.more !== undefined);
   const cells = (

@@ -43,9 +43,13 @@ export interface Row extends Measure {
 export interface Ranking {
   readonly header: string;
   readonly rows: readonly Row[];
-  /** The longest bar of tokens rows, and of every other row: tokens and shares are never on one scale. */
-  readonly scale: { readonly tokens: number; readonly other: number };
+  /** The longest bar of each kind of row: shares, money and tokens are never on one scale. */
+  readonly scale: { readonly percent: number; readonly cost: number; readonly tokens: number };
 }
+
+/** A share of a limit and a part of use are both percents; money and tokens are each their own kind. */
+export const kindOf = (unit: Unit): "percent" | "cost" | "tokens" => (unit === "limit" || unit === "use" ? "percent" : unit);
+const KIND_ORDER = { percent: 0, cost: 1, tokens: 2 } as const;
 
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" : "s"}`;
 const runsFacts = (runs: number, itemCount: number): string => `${plural(runs, "run")} · ${plural(itemCount, "item")}`;
@@ -146,8 +150,8 @@ export function rankingOf(week: Week, clis: readonly CliPlan[], group: Group, on
     const text = own.unit === "use" ? { unit: "tokens" as const, value: 0, text: formatTokens(helper.tokens) } : own;
     rows.push({ ...text, key: `helpers:${helper.cliId}:${helper.model}`, kind: "helpers", cliId: helper.cliId, name: "Tokama helpers", model: helper.model, facts: plural(helper.calls, "call") });
   }
-  // Rows measured in tokens have no limit to compare with: they come last. The rest by what they took.
-  rows.sort((a, b) => Number(a.unit === "tokens") - Number(b.unit === "tokens") || b.value - a.value || (a.key < b.key ? -1 : 1));
+  // Shares of a limit first, then money, then tokens (a local model has no limit): a number is only ranked against numbers of its own kind.
+  rows.sort((a, b) => KIND_ORDER[kindOf(a.unit)] - KIND_ORDER[kindOf(b.unit)] || b.value - a.value || (a.key < b.key ? -1 : 1));
   const outside = week.limits.filter((limit) => shown(limit.cliId) && limit.outsidePercent !== undefined && !isPayPerUse(plans.get(limit.cliId)));
   for (const limit of outside) {
     rows.push({
@@ -164,13 +168,13 @@ export function rankingOf(week: Week, clis: readonly CliPlan[], group: Group, on
   const measured = rows.filter((row) => row.kind !== "outside");
   const limited = measured.some((row) => row.unit !== "tokens") || outside.length > 0;
   const has = (unit: Unit) => measured.some((row) => row.unit === unit);
-  const header = has("limit") || outside.length > 0 ? "Weekly limit" : has("cost") ? "Cost" : has("use") ? "Of Tokama's use" : "Tokens";
+  const header = (has("limit") || outside.length > 0) && has("cost") ? "Used" : has("limit") || outside.length > 0 ? "Weekly limit" : has("cost") ? "Cost" : has("use") ? "Of Tokama's use" : "Tokens";
   const shownRows = rows.map((row): Row => {
     // Next to rows with a limit, a row without one says so instead of showing tokens; a part of use says "of use".
     if (limited && row.unit === "tokens" && row.cliId === "ollama") return { ...row, text: "no limit" };
     if (header === "Weekly limit" && row.unit === "use") return { ...row, text: `${row.text} of use` };
     return row;
   });
-  const max = (list: readonly Row[]) => Math.max(0, ...list.map((row) => row.value));
-  return { header, rows: shownRows, scale: { tokens: max(rows.filter((row) => row.unit === "tokens")), other: max(rows.filter((row) => row.unit !== "tokens")) } };
+  const max = (kind: "percent" | "cost" | "tokens") => Math.max(0, ...rows.filter((row) => kindOf(row.unit) === kind).map((row) => row.value));
+  return { header, rows: shownRows, scale: { percent: max("percent"), cost: max("cost"), tokens: max("tokens") } };
 }

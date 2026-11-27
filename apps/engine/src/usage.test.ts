@@ -13,7 +13,6 @@ function runRow(usedPercent: number, at: number): UsageRow {
   return {
     itemId: ITEM,
     title: "Add order export",
-    templateId: "plan-and-build",
     call: {
       callId: "call_0190a000-0000-7000-8000-000000000001" as never,
       stepId: "build" as never,
@@ -315,9 +314,9 @@ describe("usageRowsOf", () => {
     expect(usageRowsOf([item(2, { calls: [call(1, NOW)] })], NOW)).toHaveLength(1);
   });
 
-  it("carries the title and the workflow", () => {
+  it("carries the title", () => {
     const [row] = usageRowsOf([item(1, { calls: [call(1, NOW)] })], 0);
-    expect(row).toStrictEqual({ itemId: ITEM.replace(/a$/, "1"), title: "Item 1", templateId: "orders-api/quick-fix", call: call(1, NOW) });
+    expect(row).toStrictEqual({ itemId: ITEM.replace(/a$/, "1"), title: "Item 1", call: call(1, NOW) });
   });
 
   it("leaves out the calls of a deleted item", () => {

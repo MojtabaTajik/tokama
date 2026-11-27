@@ -41,7 +41,6 @@ function layout(): string {
 async function scan(options: { marks?: Map<string, LogMark>; since?: number; maxFiles?: number; maxFileBytes?: number; signal?: AbortSignal } = {}) {
   const marks = options.marks ?? new Map<string, LogMark>();
   const messages: LoggedUsage[] = [];
-  const progress: [number, number][] = [];
   const result = await scanClaudeLogs({
     root,
     since: options.since ?? 0,
@@ -50,12 +49,11 @@ async function scan(options: { marks?: Map<string, LogMark>; since?: number; max
       marks.set(key, mark);
       messages.push(...found);
     },
-    onProgress: (done, total) => progress.push([done, total]),
     ...(options.maxFiles !== undefined && { maxFiles: options.maxFiles }),
     ...(options.maxFileBytes !== undefined && { maxFileBytes: options.maxFileBytes }),
     ...(options.signal !== undefined && { signal: options.signal }),
   });
-  return { result, messages, marks, progress };
+  return { result, messages, marks };
 }
 
 describe("parseLogLine", () => {
@@ -118,7 +116,7 @@ describe("scanClaudeLogs", () => {
     // A huge line, then a good one.
     appendFileSync(join(project, "00000000-0000-4000-8000-00000000000b.jsonl"), `{"type":"assistant","usage":"${"x".repeat(17 * 1024 * 1024)}"}\n${lines("subagent.jsonl")[0]?.replace("req_00000000000000000000000005", "req_after_huge")}\n`);
 
-    const { result, messages, progress } = await scan();
+    const { result, messages } = await scan();
     expect(result).toMatchObject({ found: true, complete: true, files: 4, skippedFiles: 1, skippedLines: 3 });
     expect(result.fileKeys).toHaveLength(4);
     expect(messages.map((m) => m.key).sort()).toEqual([
@@ -130,8 +128,6 @@ describe("scanClaudeLogs", () => {
       "req_00000000000000000000000005",
       "req_after_huge",
     ]);
-    expect(progress[0]).toEqual([0, 4]);
-    expect(progress.at(-1)).toEqual([4, 4]);
     expect(JSON.stringify({ messages, result })).not.toContain(SENTINEL);
   });
 

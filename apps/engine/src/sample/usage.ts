@@ -297,7 +297,7 @@ export function sampleUsageItems(setup: Setup, board: readonly ItemRecord[], now
 /** The sample calls as the report's rows, oldest first. */
 export function sampleUsageRows(setup: Setup, board: readonly ItemRecord[], now: number): UsageRow[] {
   return sampleUsageItems(setup, board, now)
-    .flatMap((item) => item.calls.map((call): UsageRow => ({ itemId: item.itemId, title: item.title, templateId: item.templateId, call })))
+    .flatMap((item) => item.calls.map((call): UsageRow => ({ itemId: item.itemId, title: item.title, call })))
     .sort((a, b) => a.call.endedAt - b.call.endedAt || (a.call.callId < b.call.callId ? -1 : 1));
 }
 

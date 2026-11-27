@@ -73,7 +73,7 @@ describe("Insights: the first sentence", () => {
     render({ tool: "ollama" });
     expect(text(".ins-forecast-note")).toBe("Local models have no plan limits, so there is no forecast. Rows show tokens.");
     render({}, payPerUse);
-    expect(text(".ins-forecast-line")).toBe("$30.20 this week");
+    expect(text(".ins-forecast-line")).toBe("≈ $30.20 this week");
     expect(text(".ins-forecast-facts")).toContain("API key, pay per use");
   });
 });
@@ -193,6 +193,21 @@ describe("Insights: a plan, an API key, no reading", () => {
     expect($(".ins-split")).toBeNull();
     expect(container.textContent).not.toContain("Outside Tokama");
     expect(container.textContent).not.toMatch(/~\d/);
+  });
+
+  it("keeps money apart from limit shares when one tool is on a plan and another bills per use: own order, own bar scale, a neutral header", () => {
+    const mixed = {
+      ...planReport,
+      clis: planReport.clis.map((cli) => (cli.cliId === "codex-cli" ? { cliId: "codex-cli", windows: [], billing: "pay_per_use" } : cli)),
+      week: { ...planReport.week!, limits: planReport.week!.limits.filter((limit) => limit.cliId === "claude-code"), steps: planReport.week!.steps.map((step) => (step.cliId === "codex-cli" ? { ...step, sharePercent: undefined, costUsd: 16.1 } : step)) },
+    } as UsageReport;
+    render({}, mixed);
+    expect($(".ins-rank-head")?.textContent).toContain("Used");
+    expect(rankNames().slice(0, 4)).toEqual(["Plan and build · Build", "Plan and build · Plan", "Tokama helpers", "Plan and build · Review"]);
+    // The $16.10 row is not ranked against the percents, and its bar is its own longest bar.
+    expect(rankValue(rankRows()[3])).toBe("$16.10");
+    expect(rankRows()[3]?.querySelector(".ins-bar > span")?.getAttribute("style")).toContain("width: 100%");
+    expect(rankRows()[0]?.querySelector(".ins-bar > span")?.getAttribute("style")).toContain("width: 100%");
   });
 
   it("shows shares of Tokama's own use, and no split, when no limit reading is there", () => {

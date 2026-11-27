@@ -9,10 +9,14 @@ import { BackendMark } from "../ui/agent.js";
 
 /** The facts to show, in order; each names its tool only when there are several. */
 export function usageFacts(usage: ItemUsage): readonly { readonly text: string; readonly cliId?: AiCliId }[] {
-  if (usage.costUsd !== undefined) return [{ text: formatCost(usage.costUsd, usage.costEstimated) }];
   const shares = usage.shares ?? [];
-  if (shares.length === 1) return [{ text: `${limitShare(shares[0]!.sharePercent)} of weekly limit` }];
-  if (shares.length > 1) return shares.map((share) => ({ text: `${limitShare(share.sharePercent)} of ${cliName(share.cliId)} weekly limit`, cliId: share.cliId }));
+  // An item that ran on a plan tool and on one billed per use has both: the share and the cost.
+  const cost = usage.costUsd === undefined ? [] : [{ text: formatCost(usage.costUsd, usage.costEstimated) }];
+  const parts =
+    shares.length === 1 && cost.length === 0
+      ? [{ text: `${limitShare(shares[0]!.sharePercent)} of weekly limit` }]
+      : shares.map((share) => ({ text: `${limitShare(share.sharePercent)} of ${cliName(share.cliId)} weekly limit`, cliId: share.cliId }));
+  if (parts.length + cost.length > 0) return [...parts, ...cost];
   return usage.tokens > 0 ? [{ text: `${formatTokens(usage.tokens)} tokens` }] : [];
 }
 

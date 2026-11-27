@@ -1991,6 +1991,12 @@ describe("ItemDrawer usage", () => {
     expect(fact()).toContain("≈ $0.42");
   });
 
+  it("keeps the plan share when another tool of the item was billed per use", async () => {
+    await renderDrawer(withUsage({ tokens: 212_000, shares: [{ cliId: "claude-code", sharePercent: 1.2 }], costUsd: 0.42 }).bridge, stoppedReview.id);
+    expect(fact()).toContain("~1.2% of Claude Code weekly limit");
+    expect(fact()).toContain("$0.42");
+  });
+
   it("says nothing for an item with no recorded calls", async () => {
     await renderDrawer(fakeBridge([stoppedReview]).bridge, stoppedReview.id);
     expect($(".usage-fact")).toBeNull();

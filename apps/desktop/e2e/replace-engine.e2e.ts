@@ -7,7 +7,10 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { chmodSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { join } from "node:path";
-import { API_VERSION } from "@tokama/core";
+import { SHUTDOWN_IF_IDLE_SINCE } from "@tokama/core";
+
+/** An engine from before `ifIdle` existed: it speaks the version just under the one that added it. */
+const OLD_API = SHUTDOWN_IF_IDLE_SINCE - 1;
 import { afterEach, expect } from "vitest";
 import { flow } from "./harness.js";
 
@@ -69,7 +72,7 @@ async function startFakeEngine(dir: string, running: number | undefined): Promis
         const message = JSON.parse(buffer.slice(0, end)) as { kind?: string; apiVersion?: number; ifIdle?: boolean };
         messages.push(`${message.kind}${message.ifIdle === true ? " ifIdle" : ""}`);
         if (message.kind === "shutdown") {
-          socket.end(line({ kind: "shutdown_accepted", apiVersion: API_VERSION - 1 }));
+          socket.end(line({ kind: "shutdown_accepted", apiVersion: OLD_API }));
           for (const name of ["engine.lock", "engine.token"]) {
             try {
               unlinkSync(join(dir, name));
@@ -83,9 +86,9 @@ async function startFakeEngine(dir: string, running: number | undefined): Promis
         socket.end(
           line({
             kind: "connection_error",
-            apiVersion: API_VERSION - 1,
+            apiVersion: OLD_API,
             code: "unsupported_version",
-            message: `engine speaks API version ${API_VERSION - 1}, client sent ${message.apiVersion}`,
+            message: `engine speaks API version ${OLD_API}, client sent ${message.apiVersion}`,
             ...(fakeEngine.running !== undefined && { runningItems: fakeEngine.running }),
           }),
         );
@@ -122,7 +125,7 @@ async function startStuckEngine(dir: string, options: { alive: boolean }): Promi
         }
       });
     }).listen(process.env.SOCK, () => console.log("ready"));`;
-  const child = spawn(process.execPath, ["-e", script], { env: { ...process.env, SOCK: socketPath, OLD_API: String(API_VERSION - 1) }, stdio: ["ignore", "pipe", "ignore"] });
+  const child = spawn(process.execPath, ["-e", script], { env: { ...process.env, SOCK: socketPath, OLD_API: String(OLD_API) }, stdio: ["ignore", "pipe", "ignore"] });
   await new Promise<void>((resolve) => child.stdout?.once("data", () => resolve()));
   if (options.alive) {
     writeFileSync(join(dir, "engine.lock"), `${child.pid} old-${child.pid} ${socketPath}\n`, { mode: 0o600 });

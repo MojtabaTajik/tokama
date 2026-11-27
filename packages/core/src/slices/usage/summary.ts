@@ -9,8 +9,6 @@ import { buildModels, buildWeek, type WeekInput } from "./week.js";
 export interface UsageRow {
   readonly itemId: ItemId;
   readonly title: string;
-  /** The workflow key exactly as the item record carries it. */
-  readonly templateId: string;
   readonly call: AgentCallUsage;
 }
 
