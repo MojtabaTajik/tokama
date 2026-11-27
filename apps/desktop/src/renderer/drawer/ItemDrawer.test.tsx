@@ -1366,6 +1366,11 @@ describe("ItemDrawer full view", () => {
     await click($(".finish-split-more") ?? undefined);
     await click($$("[role=menuitem]").find((el) => el.textContent === "Discard…"));
     expect(text(".finish-confirm-title")).toBe("Discard this work?");
+    // A request from the list that ends does not ask again.
+    await show(bridge, finishable.id, { request: { seq: 1, discard: true }, ...full() });
+    await click($$(".finish-confirm .btn").find((el) => el.textContent === "Keep"));
+    await show(bridge, finishable.id, { request: { seq: 2, notice: "refused" }, ...full() });
+    expect($(".finish-confirm")).toBeNull();
     await show(bridge, finishable.id, full(vi.fn(), false));
     expect($(".result-card")?.hasAttribute("data-columns")).toBe(false);
   });

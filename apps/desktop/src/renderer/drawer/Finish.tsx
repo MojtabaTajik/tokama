@@ -74,9 +74,10 @@ export function Finish({ item, setup, busy, onFinish, onCheckAgain, onAcceptChan
   useEffect(() => {
     if (running !== undefined) setConfirming(false);
   }, [running]);
+  // Asking again while the question is open moves focus to it too.
   useEffect(() => {
     if (confirming) keep.current?.focus();
-  }, [confirming]);
+  }, [confirming, askDiscard]);
   // Escape closes the question first; the drawer closes only on the next Escape.
   useEffect(() => {
     if (!confirming) return;
@@ -205,6 +206,8 @@ export function FinishButton({ item, setup, busy, onFinish, onAcceptChanges, onA
       moreLabel={TEXT.more(item.title)}
       main={view.main}
       disabled={waiting}
+      // The menu item or the button that had focus goes with the pick: focus stays in the drawer or the full view.
+      onPicked={(from) => from?.closest<HTMLElement>(".drawer, .expanded")?.focus()}
       onPick={(pick) => (pick === "discard" ? onAskDiscard() : pick === "accept_git_changes" ? onAcceptChanges?.() : onFinish(pick))}
     />
   );

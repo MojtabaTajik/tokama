@@ -208,6 +208,10 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
     watcher.observe(bar);
     return () => watcher.disconnect();
   });
+  // Discard… from the list: each new request asks again, as the header's button does. One counter, so a request that ends asks nothing.
+  useEffect(() => {
+    if (request?.discard === true) setDiscardAsks((count) => count + 1);
+  }, [request?.seq, request?.discard]);
   // A refusal of a command the list sent for this item, in the engine's words.
   useEffect(() => {
     if (request?.notice !== undefined) setNotice({ tone: "warn", text: request.notice });
@@ -459,7 +463,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
           item={item}
           setup={setup}
           busy={busy}
-          askDiscard={request?.discard === true || discardAsks > 0 ? (request?.discard === true ? request.seq : 0) + discardAsks : undefined}
+          askDiscard={discardAsks > 0 ? discardAsks : undefined}
           buttonElsewhere={full}
           {...(onCheckAgain !== undefined && { onCheckAgain })}
           onFinish={finishWith(item)}

@@ -49,6 +49,13 @@ flow("opens a pull request for a done item from the row's menu, then removes its
   const openMenu = () => finish.getByRole("button", { name: `More ways to finish ${SAMPLE_DONE}` }).click();
   await openMenu();
   expect(await finish.getByRole("menu").getByRole("menuitem").allInnerTexts()).toEqual(["Merge into main\nlocal merge, then clean up", "Open PR\npush and open with gh", "Discard…"]);
+  // The menu opens inside the drawer, all of it in view.
+  const inside = await finish.getByRole("menu").evaluate((menu) => {
+    const box = menu.getBoundingClientRect();
+    const panel = menu.closest(".drawer")!.getBoundingClientRect();
+    return box.left >= panel.left && box.right <= panel.right;
+  });
+  expect(inside).toBe(true);
   await screenshot("finish-1b-drawer-menu");
   await finish.getByRole("menuitem", { name: "Discard…" }).click();
   await finish.getByRole("group", { name: "Discard this work?" }).waitFor();

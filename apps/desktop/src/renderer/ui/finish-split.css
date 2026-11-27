@@ -7,6 +7,12 @@
   flex: none;
 }
 
+/* Left of the page it sits at the left edge: the menu opens rightwards from the button. */
+.finish-split[data-variant="filled"] .finish-menu {
+  right: auto;
+  left: 0;
+}
+
 .finish-split-main,
 .finish-split-more {
   min-height: 28px;

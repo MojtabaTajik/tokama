@@ -174,14 +174,18 @@ function sentRow(item: ItemRecord, setup: Setup | undefined): ResultRow {
   const to = new Map<keyof typeof SENT_PHRASE, Set<string>>();
   for (const step of item.steps) {
     if (step.agentId === undefined || step.data === "none") continue;
-    if (step.state === "pending" && (step.attempts?.length ?? 0) === 0) continue;
+    // A step that stopped at its approval question has no attempt: nothing was sent. A passed step with none is an old record.
+    if ((step.attempts?.length ?? 0) === 0 && step.state !== "passed") continue;
     const agent = stepAgent(step, agents);
     const tools = to.get(step.data) ?? new Set<string>();
     tools.add(agent.cliId === undefined ? agent.name : backendOf(agent.cliId).name);
     to.set(step.data, tools);
   }
-  if (to.size === 0) return { key: "sent", label, text: "Nothing: local only" };
-  return { key: "sent", label, mark: MARKS.sent, text: [...to].map(([rule, tools]) => `${SENT_PHRASE[rule]} ${list.format(tools)}`).join(" · ") };
+  const parts = [...to].map(([rule, tools]) => `${SENT_PHRASE[rule]} ${list.format(tools)}`);
+  // Open PR pushed the branch: that left the machine too.
+  if (item.finish?.pullRequest !== undefined) parts.push(`The branch to ${item.finish.pushTarget ?? "the remote"}`);
+  if (parts.length === 0) return { key: "sent", label, text: "Nothing: local only" };
+  return { key: "sent", label, mark: MARKS.sent, text: parts.join(" · ") };
 }
 
 /** The card of an item that has ended: done, failed or stopped. */

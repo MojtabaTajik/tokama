@@ -83,6 +83,13 @@ describe("the facts of a done item", () => {
     expect(rowsOf(item([plan, summary])).at(-1)?.[2]).toBe("Code and diffs to Claude Code · The summary you approved to Codex CLI");
   });
 
+  it("does not list a cloud step that stopped at its approval question, and adds the branch Open PR pushed", () => {
+    const asked = { name: "Propose a fix", stage: "review", state: "stopped", agentId: "reviewer", data: "summary-after-approval", doneWhen: "you approve" };
+    expect(rowsOf(item([{ ...plan, data: "none" }, asked], { state: "stopped", outcome: undefined })).at(-1)).toEqual(["sent", "", "Nothing: local only", ""]);
+    const pushed = item([{ ...plan, data: "none" }, build], { finish: { worktreeRemoved: false, pushTarget: "github.com/northwind/orders-api", pullRequest: { url: "https://github.com/northwind/orders-api/pull/1" } } });
+    expect(rowsOf(pushed).at(-1)).toEqual(["sent", "↗", "The branch to github.com/northwind/orders-api", ""]);
+  });
+
   it("names a step's agent by its id when the setup does not list it", () => {
     const stranger = { ...plan, agentId: "retired-agent" };
     expect(rowsOf(item([stranger])).at(-1)?.[2]).toBe("Code and diffs to retired-agent");
