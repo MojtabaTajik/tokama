@@ -26,7 +26,7 @@ Review templates and check commands before you run them, especially ones you did
 - pnpm, at the version in `packageManager` in `package.json`. Node 25 and later do not bundle corepack, so install it with the Node you use (`npm install -g corepack@latest`) and then run `corepack enable`. You can also install pnpm directly at that version.
 - git 2.38 or newer (a repo that is a partial clone needs git 2.44 or newer)
 - Claude Code 2.1.315 or newer, installed and logged in, to run real agent steps
-- Linux only: `bubblewrap` and `socat`, for steps that run commands (`sudo apt-get install bubblewrap socat`). On Ubuntu 24.04 an AppArmor rule can also stop bubblewrap; Claude Code's sandbox documentation has the profile, or run `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` until the next reboot.
+- Linux only: `bubblewrap` and `socat`, for steps that run commands (Ubuntu or Debian: `sudo apt install bubblewrap socat`; Fedora: `sudo dnf install bubblewrap socat`). On Ubuntu 24.04 an AppArmor rule can also stop bubblewrap, and the health check then reports it as blocked; Claude Code's sandbox documentation has the profile, or run `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` until the next reboot.
 
 macOS and Linux are supported. Windows is not yet.
 

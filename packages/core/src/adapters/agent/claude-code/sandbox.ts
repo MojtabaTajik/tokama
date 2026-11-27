@@ -2,7 +2,7 @@
 // It wraps the commands the agent runs and their children. The file tools and the web tools
 // (WebFetch, WebSearch) are not in it: files stay limited by `--restricted` and the permission
 // rules (args.ts), and a step with `web` on can open any website, whatever the host list says.
-import { CREDENTIAL_PATHS, type NetworkPolicy, type SandboxSpec } from "../../../kernel/sandbox/index.js";
+import { APPARMOR_HINT, CREDENTIAL_PATHS, type NetworkPolicy, type SandboxSpec } from "../../../kernel/sandbox/index.js";
 import { permissionPath } from "./args.js";
 
 export interface SandboxSettingsOptions {
@@ -67,13 +67,11 @@ function unlistedHosts(unlisted: NetworkPolicy["unlisted"]): boolean {
 }
 
 const START_CHARS = 300;
-const APPARMOR_HINT =
-  " On Ubuntu, AppArmor may block bubblewrap: add an AppArmor profile for /usr/bin/bwrap (see Claude Code's sandbox docs), or run `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` until the next reboot.";
 
 /** The failed-step text for a Claude Code that exited at startup because its sandbox could not start. */
 export function sandboxStartProblem(stderr: string, platform: NodeJS.Platform): string {
   const said = stderr.trim().slice(0, START_CHARS);
-  return `Claude Code could not start its sandbox: ${said}.${platform === "linux" ? APPARMOR_HINT : ""}`;
+  return `Claude Code could not start its sandbox: ${said}.${platform === "linux" ? ` ${APPARMOR_HINT}` : ""}`;
 }
 
 /** True when the CLI's stderr says the sandbox is why it stopped. */

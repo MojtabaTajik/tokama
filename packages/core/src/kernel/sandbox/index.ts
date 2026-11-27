@@ -1,12 +1,13 @@
 // kernel/sandbox: what an agent's commands may touch, in words every AI CLI adapter maps onto
 // its own sandbox flags, and whether this machine can run that sandbox. One implementation per OS.
 import type { ProcessRunner } from "../process/index.js";
-import { createLinuxSupport, LINUX_CACHE_DIRS } from "./linux.js";
+import { APPARMOR_HINT, createLinuxSupport, LINUX_CACHE_DIRS } from "./linux.js";
 import { createMacosSupport, MACOS_CACHE_DIRS } from "./macos.js";
 import type { SandboxSupport } from "./support.js";
 
 export { CREDENTIAL_PATHS, checkSandboxSpec, isWithin, PACKAGE_REGISTRY_HOSTS, usableCacheDirs, type NetworkPolicy, type SandboxContext, type SandboxSpec } from "./spec.js";
 export type { SandboxCheck, SandboxSupport } from "./support.js";
+export { APPARMOR_HINT };
 
 /** The tool caches (`~/`-relative) a build may write on this OS. None where there is no sandbox. */
 export function toolCacheDirs(platform: NodeJS.Platform = process.platform): readonly string[] {

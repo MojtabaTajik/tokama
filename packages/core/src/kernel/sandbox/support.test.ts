@@ -31,7 +31,7 @@ describe("createSandboxSupport", () => {
   it("is ready on Linux when bwrap and socat answer, looked up in the call's environment", async () => {
     const { runner, requests } = runnerWith({ bwrap: finished(), socat: finished() });
     expect(await createSandboxSupport(runner, "linux", { PATH: "/opt/tools" }).check(signal)).toEqual({ ok: true });
-    expect(requests.map((request) => ("argv" in request.command ? request.command.argv : []))).toEqual([["bwrap", "--version"], ["socat", "-V"]]);
+    expect(requests.map((request) => ("argv" in request.command ? request.command.argv.slice(0, 2) : []))).toEqual([["bwrap", "--version"], ["socat", "-V"], ["bwrap", "--ro-bind"]]);
     expect(requests.every((request) => request.env?.["PATH"] === "/opt/tools" && request.timeoutMs === 5_000)).toBe(true);
   });
 
@@ -40,7 +40,7 @@ describe("createSandboxSupport", () => {
     expect(check).toEqual({
       ok: false,
       problem: "Steps that run commands need bubblewrap and socat for Claude Code's sandbox, and `bwrap` is missing or not working.",
-      fix: "Install them (Ubuntu: `sudo apt-get install bubblewrap socat`).",
+      fix: "Install them (Ubuntu or Debian: `sudo apt install bubblewrap socat`; Fedora: `sudo dnf install bubblewrap socat`).",
     });
     expect(await createSandboxSupport(runnerWith({ bwrap: finished() }).runner, "linux").check(signal)).toMatchObject({ ok: false, problem: expect.stringContaining("`socat` is missing") });
   });
