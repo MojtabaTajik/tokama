@@ -240,13 +240,25 @@ describe("choosePlan", () => {
     expect(choosePlan("claude-code", [cache, run, request], NOW, "2.1.332")).toEqual({
       cliId: "claude-code",
       version: "2.1.332",
-      windows: [window(36, later)],
+      // Four hours into a five-hour window less a minute: 36% would be 45.19% at the reset.
+      windows: [{ ...window(36, later), startsAt: later - 5 * 3_600_000, forecast: { atResetPercent: 45.19 } }],
       source: "request",
       asOf: NOW - 60_000,
       plan: "max",
       extraUsage: "off",
+      billing: "plan",
     });
-    expect(choosePlan("claude-code", [{ source: "request", problem: "no answer" }, cache, run], NOW)).toMatchObject({ source: "run", windows: [window(40, later)] });
+    expect(choosePlan("claude-code", [{ source: "request", problem: "no answer" }, cache, run], NOW)).toMatchObject({ source: "run", windows: [{ ...window(40, later) }] });
+  });
+
+  it("keeps a login billed per use, which has no windows, as the reading, and says plan when there are windows", () => {
+    const apiKey = { source: "request" as const, reading: { windows: [], asOf: NOW - 60_000, billing: "pay_per_use" as const } };
+    const cache = { source: "cache" as const, reading: { windows: [window(20, later)], asOf: NOW - 10_000 } };
+    expect(choosePlan("claude-code", [apiKey], NOW)).toEqual({ cliId: "claude-code", windows: [], source: "request", asOf: NOW - 60_000, billing: "pay_per_use" });
+    expect(choosePlan("claude-code", [cache], NOW)).toMatchObject({ billing: "plan" });
+    // No reading says nothing about billing.
+    expect(choosePlan("claude-code", [], NOW)).not.toHaveProperty("billing");
+    expect(CliPlanSchema.safeParse(choosePlan("claude-code", [apiKey], NOW)).success).toBe(true);
   });
 
   it("passes over an old reading for a fresh one, and uses the newest when none is fresh", () => {

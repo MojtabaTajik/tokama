@@ -1,8 +1,11 @@
 // The usage report: the recorded calls of the range rolled up by day, workflow and item, with
 // estimated costs. Days are the engine's local days, the same machine the desktop app runs on.
-import type { AgentCallUsage, CliPlan, HelperId, ItemId, LogScan, RepoId, TokenUsage, UsageRange, UsageReport, UsageScope } from "../../kernel/schemas/index.js";
+import type { AgentCallUsage, CliPlan, HelperId, ItemId, LogScan, RepoId, TokenUsage, UsageRange, UsageReport, UsageScope, UsageWindow } from "../../kernel/schemas/index.js";
 import { breakdown, callEntries, type UsageEntry } from "./breakdown.js";
 import { callCost, PRICES_AS_OF } from "./prices.js";
+import { buildModels, buildWeek, type WeekInput } from "./week.js";
+
+const weekBlocks = (input: WeekInput, window: UsageWindow): Pick<UsageReport, "week" | "stepModels" | "agentModels"> => ({ week: buildWeek(input, window), ...buildModels(input) });
 
 /** One recorded call with the item it belongs to. */
 export interface UsageRow {
@@ -44,6 +47,12 @@ export interface SummaryInput {
   readonly logs?: readonly UsageEntry[];
   readonly logsFrom?: number;
   readonly scan?: LogScan;
+  /**
+   * With it, the report also has the `week` block and the model records. `items` are the items with
+   * calls in the last 90 days, `past` the weekly windows that are over, `logs` the AI CLIs' own
+   * records of their calls (to split a limit between Tokama and everything else on the machine).
+   */
+  readonly week?: Pick<WeekInput, "items" | "past" | "logs"> & { readonly window?: UsageWindow };
 }
 
 const DAY_ITEMS = 5;
@@ -74,7 +83,7 @@ export function rangeStart(now: number, range: UsageRange): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() - (range - 1)).getTime();
 }
 
-export function summarizeUsage({ rows, helperCalls = [], range, now, clis, scope, logs = [], logsFrom, scan }: SummaryInput): UsageReport {
+export function summarizeUsage({ rows, helperCalls = [], range, now, clis, scope, logs = [], logsFrom, scan, week }: SummaryInput): UsageReport {
   const start = rangeStart(now, range);
   const inRange = rows.filter((row) => row.call.endedAt >= start && row.call.endedAt <= now);
   const helpersInRange = helperCalls.filter((helper) => helper.call.endedAt >= start && helper.call.endedAt <= now);
@@ -192,6 +201,7 @@ export function summarizeUsage({ rows, helperCalls = [], range, now, clis, scope
     },
     totals,
     ...(helpers.length > 0 && { helpers }),
+    ...(week !== undefined && weekBlocks({ now, clis, helperCalls, items: week.items, past: week.past, ...(week.logs !== undefined && { logs: week.logs }) }, week.window ?? "current")),
   };
   if (scope === undefined) return report;
 

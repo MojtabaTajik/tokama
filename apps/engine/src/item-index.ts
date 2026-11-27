@@ -7,7 +7,7 @@
 // Extension loading stays off (the default).
 import { closeSync, constants, openSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { type AiCliId, type LocalUsageMessage, localDate, type PlanReading, type RepoId, type TokenUsage } from "@tokama/core";
+import { type AiCliId, keepPast, type LocalUsageMessage, localDate, type PastWindow, type PlanReading, readPast, type RepoId, type TokenUsage } from "@tokama/core";
 
 export const INDEX_SCHEMA_VERSION = 5;
 
@@ -156,16 +156,59 @@ export class ItemIndex {
     }));
   }
 
+  /** Claude Code's tokens per model between two times, from its logs. */
+  localTotals(from: number, to: number): { model: string; tokens: TokenUsage }[] {
+    const rows = this.db
+      .prepare(
+        `SELECT model, sum(input) AS input, sum(output) AS output, sum(cache_read) AS cache_read, sum(cache_write) AS cache_write
+         FROM claude_local_messages WHERE at >= ? AND at <= ? GROUP BY model ORDER BY model`,
+      )
+      .all(from, to) as unknown as { model: string; input: number; output: number; cache_read: number; cache_write: number }[];
+    return rows.map((row) => ({ model: row.model, tokens: { input: row.input, output: row.output, cacheRead: row.cache_read, cacheWrite: row.cache_write } }));
+  }
+
+  /**
+   * One plan sample's record: the last reading, and the weekly windows that ended, kept beside it.
+   * A record that cannot be read is the same as none.
+   */
+  private planRecord(cliId: AiCliId): Record<string, unknown> | undefined {
+    const row = this.db.prepare("SELECT record FROM plan_samples WHERE cli_id = ?").get(cliId) as { record: string } | undefined;
+    if (row === undefined) return undefined;
+    try {
+      const record: unknown = JSON.parse(row.record);
+      return typeof record === "object" && record !== null && !Array.isArray(record) ? (record as Record<string, unknown>) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   /** The last plan windows the AI CLI reported on request. */
   planSample(cliId: AiCliId): PlanReading | undefined {
-    const row = this.db.prepare("SELECT record FROM plan_samples WHERE cli_id = ?").get(cliId) as { record: string } | undefined;
-    return row === undefined ? undefined : (JSON.parse(row.record) as PlanReading);
+    const record = this.planRecord(cliId);
+    // A record that holds only the past windows has no reading.
+    if (record === undefined || !Array.isArray(record["windows"])) return undefined;
+    return Object.fromEntries(Object.entries(record).filter(([key]) => key !== "history")) as unknown as PlanReading;
   }
 
   savePlanSample(cliId: AiCliId, reading: PlanReading): void {
+    const history = this.planRecord(cliId)?.["history"];
     this.db
       .prepare("INSERT INTO plan_samples (cli_id, as_of, record) VALUES (?, ?, ?) ON CONFLICT (cli_id) DO UPDATE SET as_of = excluded.as_of, record = excluded.record")
-      .run(cliId, reading.asOf, JSON.stringify(reading));
+      .run(cliId, reading.asOf, JSON.stringify({ ...reading, ...(history !== undefined && { history }) }));
+  }
+
+  /** The weekly windows of the AI CLI that ended, oldest first. A damaged record gives none. */
+  planHistory(cliId: AiCliId): PastWindow[] {
+    return readPast(this.planRecord(cliId)?.["history"]);
+  }
+
+  /** Keeps the weekly windows that ended beside the plan sample, whatever the sample says next. */
+  savePlanHistory(cliId: AiCliId, history: readonly PastWindow[]): void {
+    const record = this.planRecord(cliId) ?? {};
+    const asOf = typeof record["asOf"] === "number" ? record["asOf"] : 0;
+    this.db
+      .prepare("INSERT INTO plan_samples (cli_id, as_of, record) VALUES (?, ?, ?) ON CONFLICT (cli_id) DO UPDATE SET as_of = excluded.as_of, record = excluded.record")
+      .run(cliId, asOf, JSON.stringify({ ...record, history: keepPast(history) }));
   }
 
   close(): void {

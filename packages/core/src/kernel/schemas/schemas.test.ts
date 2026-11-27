@@ -209,6 +209,91 @@ describe("usage report", () => {
     expect(parseQuery({ type: "usage", range: 7 }).ok).toBe(false);
     expect(parseQuery({ type: "usage", range: 90 }).ok).toBe(true);
   });
+
+  it("takes the weekly window the query asks for, and no other", () => {
+    expect(parseQuery({ type: "usage", range: 90, window: "previous" }).ok).toBe(true);
+    expect(parseQuery({ type: "usage", range: 90, window: "next" }).ok).toBe(false);
+  });
+
+  // The usage schemas are strict, so an older client cannot ignore a field it does not know: these
+  // two tests hold that a report without the newer fields, and with all of them, both parse.
+  describe("the weekly blocks, forecast and billing", () => {
+    const model = { model: "claude-sonnet-5-5", cliId: "claude-code", runs: 5, firstTryPassed: 4, avgAttempts: 1.2, tokensPerRun: 90_000, sharePerRun: 0.4, costPerRun: 0.2, durationMsPerRun: 600_000 };
+    const itemRow = { itemId: ITEM_ID, title: "Add order export", runs: 2, tokens: 5000, sharePercent: 1.5, costUsd: 0.4 };
+    const full = () => {
+      const base = report();
+      return {
+        ...base,
+        clis: [
+          {
+            cliId: "claude-code",
+            windows: [{ window: "weekly_all", usedPercent: 105, resetsAt: 1_760_100_000_000, startsAt: 1_759_495_200_000, forecast: { atResetPercent: 210, runsOutAt: 1_759_900_000_000 } }],
+            billing: "plan",
+          },
+          { cliId: "codex-cli", windows: [], billing: "pay_per_use" },
+        ],
+        week: {
+          window: "current",
+          limits: [{ cliId: "claude-code", window: "weekly_all", startsAt: 1_759_495_200_000, endsAt: 1_760_100_000_000, usedPercent: 105, tokamaPercent: 70, outsidePercent: 35 }],
+          steps: [
+            {
+              templateId: "plan-and-build",
+              stepId: "build",
+              stepName: "Build",
+              agentId: "builder",
+              cliId: "claude-code",
+              model: "claude-sonnet-5-5",
+              runs: 2,
+              itemCount: 1,
+              tokens: 5000,
+              tokamaPercent: 100,
+              sharePercent: 70,
+              costUsd: 0.4,
+              costEstimated: true,
+              items: [itemRow],
+            },
+          ],
+          items: [{ ...itemRow, templateId: "plan-and-build", cliId: "claude-code" }],
+          helpers: [{ cliId: "claude-code", model: "claude-haiku-5-5", calls: 2, tokens: 300, sharePercent: 0.1, costUsd: 0.01 }],
+          retries: [
+            {
+              cliId: "claude-code",
+              tokens: 900,
+              sharePercent: 12,
+              causes: [{ kind: "check", command: "pnpm test", repoId: "orders-api", templateId: "plan-and-build", stepId: "build", agentId: "builder", retries: 1, itemCount: 1, tokens: 900, sharePercent: 12, costUsd: 0.1 }],
+            },
+          ],
+        },
+        stepModels: [{ templateId: "plan-and-build", stepId: "build", stepName: "Build", models: [model, { ...model, model: "claude-opus-5-5" }] }],
+        agentModels: [{ agentId: "builder", models: [model] }],
+      };
+    };
+
+    it("accepts a report without any of the newer fields", () => {
+      expect(parseWith(UsageReportSchema, report())).toEqual({ ok: true, value: report() });
+    });
+
+    it("accepts a report with all of them, also over the limit", () => {
+      expect(parseWith(UsageReportSchema, full())).toEqual({ ok: true, value: full() });
+    });
+
+    it.each([
+      ["a step model table with one model", { stepModels: [{ templateId: "plan-and-build", stepId: "build", stepName: "Build", models: [model] }] }, "stepModels.0.models"],
+      ["an unknown billing", { clis: [{ cliId: "claude-code", windows: [], billing: "free" }] }, "clis.0.billing"],
+      ["a week that is not current or previous", { week: { ...full().week, window: "next" } }, "week.window"],
+      ["more than five items in a step", { week: { ...full().week, steps: [{ ...full().week.steps[0]!, items: Array(6).fill(itemRow) }] } }, "week.steps.0.items"],
+      ["an unknown retry kind", { week: { ...full().week, retries: [{ cliId: "claude-code", tokens: 1, causes: [{ ...full().week.retries[0]!.causes[0]!, kind: "flaky" }] }] } }, "week.retries.0.causes.0.kind"],
+    ])("refuses %s", (_label, patch, path) => {
+      expect(paths(parseWith(UsageReportSchema, { ...full(), ...patch }))).toContain(path);
+    });
+
+    it("carries an item's usage on the item reply, and the reply parses without it", () => {
+      const usage = { tokens: 5000, shares: [{ cliId: "claude-code", sharePercent: 1.2 }], retries: [{ stepId: "build", attempts: [2], tokensPercent: 40, failingCheck: "pnpm test" }] };
+      expect(parseQueryResult("item", { item: item(), usage }).ok).toBe(true);
+      expect(parseQueryResult("item", { item: item() }).ok).toBe(true);
+      expect(parseQueryResult("item", { item: item(), usage: { ...usage, extra: 1 } }).ok).toBe(false);
+    });
+  });
 });
 
 describe("agent call events", () => {

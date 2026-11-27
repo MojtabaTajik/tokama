@@ -7,7 +7,7 @@
 // Project folders are matched to repos after each scan, so a repo added later counts from the
 // next scan on; the index keeps the match by a hash of each folder name, never the name.
 import { realpath } from "node:fs/promises";
-import { type AiCliAdapter, type AiCliId, aiCliAdapters, type Clock, type LogScan, type LogScanFn, pricedEntry, rangeStart, type RepoId, type RepoOfFn, type RepoPaths, type UsageEntry } from "@tokama/core";
+import { type AiCliAdapter, type AiCliId, aiCliAdapters, type Clock, type LogScan, type LogScanFn, pricedEntry, rangeStart, type RepoId, type RepoOfFn, type RepoPaths, type TokenUsage, type UsageEntry } from "@tokama/core";
 import type { ItemIndex } from "./item-index.js";
 import { cliName } from "./real/clis.js";
 
@@ -53,6 +53,8 @@ export class ClaudeLogs {
   private progress = { done: 0, total: 0 };
   private note: string | undefined;
   private found = true;
+  /** The last scan that ended read every log and found logs. A scan that runs now does not change it. */
+  private completed = false;
   /** Project folder names by hash, from the last scan: in memory only. */
   private projects: ReadonlyMap<string, string> = new Map();
 
@@ -81,6 +83,21 @@ export class ClaudeLogs {
     return this.deps.index.localDays(since).map((row) =>
       pricedEntry({ day: row.day, model: row.model, cliId: this.deps.reader.cliId, repoId: row.repoId, tokens: row.tokens, calls: row.messages }),
     );
+  }
+
+  /** Whether the last scan that ended read every log and found logs; a scan in progress does not undo it. */
+  complete(): boolean {
+    return this.completed;
+  }
+
+  /** The AI CLI whose logs these are. */
+  get cliId(): AiCliId {
+    return this.deps.reader.cliId;
+  }
+
+  /** Claude Code's tokens per model between two times, Tokama's own calls included. */
+  totals(from: number, to: number): { model: string; tokens: TokenUsage }[] {
+    return this.deps.index.localTotals(from, to);
   }
 
   /** The time from which the logs hold Claude Code's calls; undefined while they hold none. */
@@ -115,11 +132,13 @@ export class ClaudeLogs {
       });
       index.pruneLocal(result.complete && result.found ? result.fileKeys : undefined, since);
       this.found = result.found;
+      this.completed = result.complete && result.found;
       this.projects = result.projects;
       this.note = result.skippedFiles > 0 ? `${result.skippedFiles} of ${cliName(this.deps.reader.cliId)}'s log files could not be read: too large, a link, or unreadable.` : undefined;
       await this.matchRepos();
     } catch (error) {
       const name = cliName(this.deps.reader.cliId);
+      this.completed = false;
       this.note = `${name}'s logs could not be read this time.`;
       this.deps.log?.(`reading ${name}'s logs failed: ${error instanceof Error ? error.name : "error"}`);
     } finally {
