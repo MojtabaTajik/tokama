@@ -87,6 +87,16 @@ export function OutputTab({ bridge, item, setup, full, onOpenAgent, focus }: Out
     `${item.id}:Output`,
     shown.filter(({ index }) => index === waiting || index === focus?.stepIndex).map(({ index }) => stepKey(index)),
   );
+  // Each new question opens its step, also when the engineer closed it for an earlier question.
+  const approvalId = waiting === undefined ? undefined : item.decision?.id;
+  const seenApproval = useRef(approvalId);
+  useEffect(() => {
+    // The question already there when the tab opens is the defaults' business: a visit does not undo a close.
+    if (seenApproval.current === approvalId) return;
+    seenApproval.current = approvalId;
+    if (approvalId !== undefined && waiting !== undefined) update((keys) => keys.add(stepKey(waiting)));
+    // Only a new question acts; `update` is new on every render.
+  }, [approvalId]);
   const asked = focus?.seq;
   const askedStep = focus?.stepIndex;
   useEffect(() => {

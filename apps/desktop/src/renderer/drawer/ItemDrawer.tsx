@@ -185,6 +185,23 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
   useLayoutEffect(() => {
     if (document.activeElement === null || document.activeElement === document.body) drawer.current?.focus();
   }, [full]);
+  // In the full view the decision is a bar pinned at the top; an open section's line sticks, and a line scrolled to
+  // stops, just under it: its height is `--sec-top` for the page.
+  useLayoutEffect(() => {
+    const page = drawer.current;
+    if (page === null) return;
+    const bar = full ? page.querySelector<HTMLElement>(".ex-decision") : null;
+    if (bar === null) {
+      page.style.removeProperty("--sec-top");
+      return;
+    }
+    const measure = () => page.style.setProperty("--sec-top", `${bar.offsetHeight}px`);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const watcher = new ResizeObserver(measure);
+    watcher.observe(bar);
+    return () => watcher.disconnect();
+  });
   // A refusal of a command the list sent for this item, in the engine's words.
   useEffect(() => {
     if (request?.notice !== undefined) setNotice({ tone: "warn", text: request.notice });

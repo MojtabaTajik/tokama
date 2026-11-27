@@ -55,12 +55,13 @@ flow("shows the Checks and Log tabs in the drawer: commands per attempt, a faile
   expect(await logs.locator(":scope > .sec-h > .sec-head").evaluateAll((all) => all.map((line) => line.getAttribute("aria-expanded")))).toEqual(["false", "false", "true"]);
   await logs.nth(2).locator(".lg-line").first().waitFor();
   expect(await logs.nth(2).locator(".lg-cap").innerText()).toMatch(/^Showing the last 400 of 444 lines/);
+  // The default state of an opened step: its latest attempt open, the earlier ones closed.
+  await screenshot("7-log-open");
   await logs.first().locator(":scope > .sec-h > .sec-head").click();
   await logs.first().locator(".lg-line").first().waitFor();
   expect(await logs.first().locator('.lg-line[data-kind="tool"]').first().innerText()).toBe("→\nRead package.json");
   expect(await logs.first().locator(".lg-final").innerText()).toContain("Upgraded pg and moved the pool to the new connect API.");
   expect(await panel.locator("script").count()).toBe(0);
-  await screenshot("7-log-open");
   // Collapse all closes everything; Expand all opens each step on its latest attempt only.
   await panel.getByRole("button", { name: "Collapse all" }).click();
   await expect.poll(() => panel.locator(".lg-body").count()).toBe(0);

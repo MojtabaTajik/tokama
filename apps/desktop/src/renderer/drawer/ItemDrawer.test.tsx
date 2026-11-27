@@ -436,6 +436,22 @@ describe("ItemDrawer step output", () => {
   };
   const outputCalls = (query: ReturnType<typeof vi.fn>) => query.mock.calls.filter(([q]) => (q as { type: string }).type === "step_output").map(([q]) => q as unknown);
 
+  it("opens the waiting step in the Output tab for each new question, also after the engineer closed it", async () => {
+    const fake = withOutput(() => ({ ok: true, data: { attempt: 1, text: PLAN, truncated: false } }));
+    await renderDrawer(fake.bridge, waiting.id);
+    await showTab("Output");
+    const line = () => $(".ot .sec-head");
+    expect(line()?.getAttribute("aria-expanded")).toBe("true");
+    await click(line() ?? undefined);
+    expect(line()?.getAttribute("aria-expanded")).toBe("false");
+    // Leaving and coming back does not open it again: it is the same question.
+    await showTab("Steps");
+    await showTab("Output");
+    expect(line()?.getAttribute("aria-expanded")).toBe("false");
+    await fake.push({ ...waiting, decision: { ...waiting.decision!, id: "decision_00000000-0000-4000-8000-0000000000e2" } } as ItemRecord);
+    expect(line()?.getAttribute("aria-expanded")).toBe("true");
+  });
+
   it("shows the plan as text above Approve and Request changes, in a preview region", async () => {
     const { bridge, query } = withOutput(() => ({ ok: true, data: { attempt: 1, text: PLAN, truncated: false } }));
     await renderDrawer(bridge, waiting.id);

@@ -38,6 +38,12 @@
   font: inherit;
 }
 
+/* A line scrolled to stops below whatever the page pins at its top (--sec-top). */
+.sec-h,
+.sec-head {
+  scroll-margin-top: var(--sec-top, 0);
+}
+
 /* The tab's own width, not the window's, decides when the facts wrap under the name. */
 .drawer-panel {
   container: tab / inline-size;
