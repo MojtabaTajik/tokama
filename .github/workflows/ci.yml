@@ -56,8 +56,9 @@ jobs:
           skip_nightly=false
           removal_test=true
           # The Linux packages are built on the nightly and manual runs, and on a pull request that
-          # can change them: the build config, the packaging scripts, the pinned Node, the updater
-          # code and the workflows. Never on a push to main: the pull request ran it.
+          # can change them: the build config, the dependencies (Electron and electron-builder), the
+          # icons, the engine, the packaging scripts, the pinned Node, the updater code and the
+          # workflows. Never on a push to main: the pull request ran it.
           linux_package=false
           if [ "$EVENT" = schedule ] || [ "$EVENT" = workflow_dispatch ]; then
             linux_package=true
@@ -77,7 +78,7 @@ jobs:
               removal_test=false
             fi
             # An empty list (failed query) builds them.
-            if [ -z "$files" ] || printf '%s\n' "$files" | grep -Eq '^(\.github/workflows/|\.github/actions/|apps/desktop/(electron-builder\.yml$|scripts/|packaging/|src/main/update/))'; then
+            if [ -z "$files" ] || printf '%s\n' "$files" | grep -Eq '^(\.github/workflows/|\.github/actions/|pnpm-lock\.yaml$|apps/engine/|apps/desktop/(electron-builder\.yml$|package\.json$|build/|scripts/|packaging/|src/main/update/))'; then
               linux_package=true
             fi
           elif [ "$EVENT" = schedule ]; then
@@ -221,8 +222,6 @@ jobs:
       - uses: ./.github/actions/linux-package
         with:
           rpm-out: ${{ runner.temp }}/smoke-rpm
-      - name: TEMP the deb resolves on Ubuntu 26.04
-        run: docker run --rm -v "$PWD/apps/desktop/release:/r:ro" ubuntu:26.04 bash -euxo pipefail -c 'apt-get update && apt-get install -y /r/Tokama-*-amd64.deb && dpkg -s tokama | head -8 && /opt/Tokama/resources/engine/tokama-engine --version'
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:

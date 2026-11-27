@@ -32,14 +32,6 @@ runs:
         FEED_URL: ${{ inputs.feed-url }}
         MIN_SAFE_VERSION: ${{ inputs.min-safe-version }}
       run: pnpm exec install-electron && node scripts/package.ts --feed-url "$FEED_URL" --min-safe-version "$MIN_SAFE_VERSION"
-    - name: What the build made
-      if: always()
-      shell: bash
-      working-directory: apps/desktop
-      run: |
-        ls -la release || true
-        cat release/latest-linux.yml || true
-        cat release/SHA256SUMS.txt || true
     # The Chromium sandbox must stay on: this runner has the AppArmor restriction on user namespaces, so the
     # test only passes through the profile the package installs. Nothing lifts the restriction here.
     - name: Install the .deb and run it

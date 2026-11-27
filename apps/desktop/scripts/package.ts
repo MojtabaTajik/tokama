@@ -184,10 +184,9 @@ export function hostPlatform(platform: string, arch: string): PackagePlatform | 
 }
 
 /**
- * The Linux build: the .deb and the .rpm, and latest-linux.yml, which lists both. There is nothing
- * to sign (the update feed file is signed in the release workflow, after the build), so there is no
- * keychain and no secret in this function. The feed config is always passed, because
- * electron-builder.yml holds the macOS feed.
+ * The Linux build: the .deb and the .rpm, and latest-linux.yml, which lists both. Nothing in it is
+ * signed, so there is no keychain and no secret in this function. The feed config is always passed,
+ * because electron-builder.yml holds the macOS feed.
  */
 async function buildLinux(feedUrl: string, minSafeVersion: string | undefined): Promise<void> {
   const release = join(appDir, "release");
