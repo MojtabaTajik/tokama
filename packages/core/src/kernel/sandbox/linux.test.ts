@@ -28,7 +28,7 @@ describe("Linux sandbox support: bubblewrap must be able to start", () => {
     expect(await createLinuxSupport(runner, { PATH: "/opt/tools" }).check(signal)).toEqual({ ok: true });
     const probe = requests.find(isNoop);
     expect("argv" in probe!.command && probe!.command.argv).toEqual([
-      "bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--unshare-user", "--unshare-pid", "--unshare-net", "--die-with-parent", "/usr/bin/true",
+      "bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--unshare-user", "--unshare-pid", "--unshare-net", "--die-with-parent", "true",
     ]);
     expect(requests.every((request) => request.env?.["PATH"] === "/opt/tools" && request.timeoutMs === 5_000)).toBe(true);
   });

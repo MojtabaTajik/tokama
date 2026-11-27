@@ -31,7 +31,7 @@ const TOOLS: readonly (readonly [name: string, argv: readonly [string, ...string
   ["socat", ["socat", "-V"]],
 ];
 // A no-op in the namespaces Claude Code's sandbox needs: `--version` passes even where the kernel refuses these.
-const BWRAP_NOOP = ["bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--unshare-user", "--unshare-pid", "--unshare-net", "--die-with-parent", "/usr/bin/true"] as const;
+const BWRAP_NOOP = ["bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--unshare-user", "--unshare-pid", "--unshare-net", "--die-with-parent", "true"] as const;
 
 /**
  * Linux needs `bwrap` and `socat` on the PATH, and a bubblewrap that can start: a no-op must run
