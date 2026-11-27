@@ -1,6 +1,6 @@
 // What the Updates row of About says for each update state: a mark, one main line, a sub line, an
 // optional progress bar and one button. Pure, so every state is tested without React.
-import { CANT_TELL, RESTART_TOKAMA, RESTARTING, STALLED, STALLED_ACTION, type UpdateState } from "../../shared/update.js";
+import { CANT_TELL, QUIT_TOKAMA, RESTART_TOKAMA, RESTARTING, STALLED, STALLED_ACTION, STALLED_LINUX, type UpdateState } from "../../shared/update.js";
 import { clock, sameDay, shortDate } from "../format/time.js";
 import { markOf } from "../ui/status.js";
 
@@ -34,7 +34,7 @@ function checked(at: number, now: number): string {
 }
 
 /** The row for `state`, or undefined when About shows no row (a development build, or a copy outside Applications). `running` is the number of items running now. */
-export function updatesRow(state: UpdateState, version: string, running: number, now: number, busy?: { readonly running?: number }): UpdatesRow | undefined {
+export function updatesRow(state: UpdateState, version: string, running: number, now: number, busy?: { readonly running?: number }, linux = false): UpdatesRow | undefined {
   const check = { label: "Check now", kind: "check", primary: false } as const;
   switch (state.status) {
     case "unavailable":
@@ -75,11 +75,17 @@ export function updatesRow(state: UpdateState, version: string, running: number,
         tone: "link",
         notes: state.version,
         main: `${state.version} is ready`,
-        sub: running > 0 ? `${items(running)} running. You can restart when ${running === 1 ? "it finishes" : "they finish"}. Tokama never restarts by itself.` : "Restart now, or Tokama installs it when you quit with nothing running. It never restarts by itself.",
+        sub:
+          running > 0
+            ? `${items(running)} running. You can restart when ${running === 1 ? "it finishes" : "they finish"}. Tokama never restarts by itself.`
+            : linux
+              ? "Restart now to install it. Your system asks for your password. Tokama never installs it by itself."
+              : "Restart now, or Tokama installs it when you quit with nothing running. It never restarts by itself.",
         action: { label: "Restart now", kind: "restart", primary: true, disabled: running > 0 },
       };
     }
     case "stalled":
+      if (linux) return { mark: "!", tone: "fail", main: STALLED_LINUX, sub: `Tokama is still on ${version}. Quit and open it again to try the update again.`, action: { label: QUIT_TOKAMA, kind: "restart", primary: true, disabled: false } };
       return { mark: "!", tone: "fail", main: STALLED, sub: STALLED_ACTION, action: { label: RESTART_TOKAMA, kind: "restart", primary: true, disabled: false } };
     case "installing":
       return { mark: BUSY, tone: "live", main: RESTARTING, sub: `Version ${version}` };

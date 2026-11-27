@@ -52,6 +52,18 @@ describe("updateChip", () => {
     });
   });
 
+  it("on Linux says the install was cancelled and never promises a try at quit", () => {
+    const view = updateChip({ status: "stalled", version: "0.2.0" }, 0, true);
+    expect(view).toMatchObject({
+      kind: "stalled",
+      label: "The install was cancelled",
+      button: "Quit Tokama",
+      accessibleName: "The install was cancelled. Tokama is still on its current version. Quit and open it again to try the update again. Click to show the notice.",
+    });
+    expect(view?.accessibleName).not.toMatch(/when you quit/);
+    expect(updateChip({ status: "stalled", version: "0.2.0" }, 0)?.button).toBe("Restart Tokama");
+  });
+
   it("shows the status line while it installs", () => {
     expect(updateChip({ status: "installing", version: "0.2.0" }, 0)).toMatchObject({ kind: "installing", label: "Restarting to update…", accessibleName: "Restarting to update…" });
   });

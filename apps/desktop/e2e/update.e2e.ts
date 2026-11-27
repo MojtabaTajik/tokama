@@ -172,11 +172,18 @@ async function quit(session: Session): Promise<void> {
   await exited;
 }
 
+// On Linux the install asks for the system password, so only a click on Restart now starts it.
 flow(
-  "quitting with a ready update and nothing running installs it, without starting the app again",
+  process.platform === "linux"
+    ? "quitting with a ready update and nothing running installs nothing on Linux"
+    : "quitting with a ready update and nothing running installs it, without starting the app again",
   async (session) => {
     await chip(session.page, /^Update: Tokama 0\.2\.0 is ready\./).waitFor();
     await quit(session);
+    if (process.platform === "linux") {
+      expect(existsSync(installedFile(session.tmp))).toBe(false);
+      return;
+    }
     expect(JSON.parse(readFileSync(installedFile(session.tmp), "utf8"))).toEqual({ version: "0.2.0", relaunch: false });
     expect(session.engine()).toBeUndefined();
   },

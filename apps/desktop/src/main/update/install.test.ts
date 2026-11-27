@@ -200,12 +200,13 @@ describe("the install", () => {
 });
 
 describe("the quit", () => {
-  function quitSetup(options: Parameters<typeof setup>[0] = {}) {
+  function quitSetup(options: Parameters<typeof setup>[0] = {}, installOnQuit = true) {
     const base = setup(options);
     const install = createInstaller(base.deps);
     const events: string[] = [];
     const handler = createQuitHandler({
       state: base.state,
+      installOnQuit,
       install,
       quit: () => events.push("quit"),
       teardown: () => events.push("teardown"),
@@ -227,6 +228,14 @@ describe("the quit", () => {
     expect(events).toEqual([]);
     // The installer quits the app: the second pass is not held back.
     expect(press().preventDefault).not.toHaveBeenCalled();
+    expect(events).toEqual(["teardown"]);
+  });
+
+  it("never starts the install on a quit where the install asks for a password (Linux)", async () => {
+    const { press, events, calls } = quitSetup({}, false);
+    expect(press().preventDefault).not.toHaveBeenCalled();
+    await flush();
+    expect(calls).toEqual([]);
     expect(events).toEqual(["teardown"]);
   });
 

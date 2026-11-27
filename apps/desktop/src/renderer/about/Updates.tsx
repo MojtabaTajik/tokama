@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
 import type { UpdateState } from "../../shared/update.js";
+import { onLinux } from "../update/linux.js";
 import { Button } from "../ui/Button.js";
 import { updatesRow } from "./update-row.js";
 
@@ -31,7 +32,7 @@ export function Updates({ bridge, state, version, running, now }: UpdatesProps) 
   useEffect(() => {
     if (state?.status !== "ready") setBusy(undefined);
   }, [state?.status]);
-  const row = state === undefined ? undefined : updatesRow(state, version ?? "…", running, now, busy);
+  const row = state === undefined ? undefined : updatesRow(state, version ?? "…", running, now, busy, onLinux());
   if (row === undefined) return null;
   const { action } = row;
   const act = () => {

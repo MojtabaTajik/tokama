@@ -64,6 +64,17 @@ describe("updatesRow", () => {
     });
   });
 
+  it("on Linux says the install was cancelled and the version it is on, and never mentions quitting installing it", () => {
+    expect(updatesRow({ status: "stalled", version: "0.2.0" }, "0.1.0", 0, NOW, undefined, true)).toMatchObject({
+      main: "The install was cancelled",
+      sub: "Tokama is still on 0.1.0. Quit and open it again to try the update again.",
+      action: { label: "Quit Tokama", kind: "restart", disabled: false },
+    });
+    const ready = updatesRow({ status: "ready", version: "0.2.0" }, "0.1.0", 0, NOW, undefined, true);
+    expect(ready?.sub).toBe("Restart now to install it. Your system asks for your password. Tokama never installs it by itself.");
+    expect(ready?.sub).not.toMatch(/quit/);
+  });
+
   it("says it cannot tell what runs, with Restart now off, when the engine refused without a count", () => {
     const refused = updatesRow({ status: "ready", version: "0.2.0" }, "0.1.0", 0, NOW, {});
     expect(refused?.sub).toBe("Tokama can't tell what's running right now. Try again in a moment. Tokama never restarts by itself.");
