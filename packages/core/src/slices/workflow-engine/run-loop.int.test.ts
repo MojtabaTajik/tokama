@@ -1569,7 +1569,7 @@ describe("run loop: a template that reads its repo and commits nothing", () => {
     const id = await start(engine(fakeRuntime([says("Rounding is in total.ts.\nHEADLINE: Totals round down.\nPOINT: total.ts:12")])), ask());
     const done = item(id);
     expect(done.state).toBe("done");
-    expect(done.outcome).toMatchObject({ kind: "done", detail: "Nothing changed: the answer is the result." });
+    expect(done.outcome).toMatchObject({ kind: "done", detail: "Nothing changed: the output is the result." });
     expect(done.outcome?.commits).toBeUndefined();
     expect(said(id)).toMatchObject({ headline: "Totals round down.", points: ["total.ts:12"], readMinutes: 1 });
     expect(story(id).slice(-3)).toEqual(["item_ended done", "finish_started", "discarded"]);
@@ -1598,6 +1598,31 @@ describe("run loop: a template that reads its repo and commits nothing", () => {
     expect(story(id)).not.toContain("finish_started");
     expect(existsSync(join(worktreeDir(id), "notes.txt"))).toBe(true);
     expect(await plain(repo.path, "rev-parse", done.worktrees[0]!.branch)).toBe(before);
+  });
+
+  it("follows the picked repo: a template that names another repo with edit access gets no edit tools and commits nothing", SLOW, async () => {
+    const named = template([{ id: "build" }], { uses: { repos: { picked: "read", named: [{ repoId: "billing-api", access: "edit" }] }, connections: [], commands: [] }, finish: ["commit"] });
+    const runtime = fakeRuntime([edits(FIXED)]);
+    const before = await mainTip();
+    const id = await start(engine(runtime), named);
+    expect(runtime.calls[0]?.request.limits?.edit).toBe(false);
+    expect(item(id).outcome).toMatchObject({ kind: "done", detail: "1 file changed in the worktree; this template commits nothing." });
+    expect(item(id).outcome?.commits).toBeUndefined();
+    expect(await plain(repo.path, "rev-parse", item(id).worktrees[0]!.branch)).toBe(before);
+  });
+
+  it("an agent that commits on the item branch stops the item; the worktree and the branch stay", SLOW, async () => {
+    const commits: Behavior = async function* ({ request }) {
+      writeFileSync(join(request.cwd, "notes.txt"), "committed by the agent\n");
+      await plain(request.cwd, "add", "-A");
+      await plain(request.cwd, "commit", "-q", "-m", "agent commit");
+      yield* says("Done.\nHEADLINE: Committed.")({ request, signal: new AbortController().signal });
+    };
+    const id = await start(engine(fakeRuntime([commits])), ask());
+    expect(item(id).state).toBe("failed");
+    expect(story(id)).not.toContain("finish_started");
+    expect(existsSync(worktreeDir(id))).toBe(true);
+    expect(await plain(repo.path, "branch", "--list", item(id).worktrees[0]!.branch)).not.toBe("");
   });
 
   it("a template that may edit still commits, whatever its finish words", SLOW, async () => {

@@ -177,6 +177,16 @@ describe("New work input", () => {
     expect(options()).toEqual(["Askread-only · suggested", "Emergency investigatorread-only", "DB slow query checkread-only", "Review coderead-only", "Plan and buildchanges code", "Quick fixchanges code"]);
   });
 
+  it("shows no read-only tag on a template whose step agent may run commands", async () => {
+    const access = { name: "Local runner", owner: "personal", edit: false, commands: ["node"], web: false };
+    const runner = { id: "builtin/runner", name: "Runner", icon: "terminal", color: "slate", kind: "investigation", start: { needs: ["text", "repo"], askBeforeCloud: false }, warnings: [], connections: [], steps: [{ name: "Run", stage: "working", agentId: "local-runner", data: "none", agentAccess: access }] };
+    await mount({ setup: { ...setup, templates: [runner, ...setup.templates] } as unknown as Setup });
+    await focusInput();
+    await click(trigger("Template"));
+    expect(options()[0]).toBe("Runner");
+    expect(options()).toContain("Review coderead-only");
+  });
+
   it("groups the templates as Investigate and Build", async () => {
     await mount();
     await focusInput();

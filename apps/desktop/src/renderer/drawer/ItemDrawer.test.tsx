@@ -1293,7 +1293,7 @@ describe("item drawer: the result card of an ended item", () => {
       title: "How hard is it to add CSV export?",
       text: "How hard is it to add CSV export to orders?",
       repoIds: ["orders-api"],
-      outcome: { kind: "done", detail: "Nothing changed: the answer is the result." },
+      outcome: { kind: "done", detail: "Nothing changed: the output is the result." },
       finish: { worktreeRemoved: true },
     });
 

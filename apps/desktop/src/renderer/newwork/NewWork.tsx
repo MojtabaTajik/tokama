@@ -5,7 +5,7 @@
 import type { ItemRecord, Setup } from "@tokama/core";
 import { type FormEvent, type KeyboardEvent, type Ref, useEffect, useId, useImperativeHandle, useRef, useState } from "react";
 import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
-import { agentLines, commandsOf, KIND_GROUPS, missing, needsRepo, noChecks, noteOfKind, reposFor, stepsLine, usesOf } from "./needs.js";
+import { agentLines, commandsOf, KIND_GROUPS, missing, needsRepo, noChecks, noteOf, reposFor, stepsLine, usesOf } from "./needs.js";
 import { Picker } from "./Picker.js";
 import { useSuggestion } from "./useSuggestion.js";
 import { Button } from "../ui/Button.js";
@@ -211,7 +211,7 @@ export function NewWork({ bridge, setup, ref, repoId, onStarted }: NewWorkProps)
                   heading,
                   options: setup.templates
                     .filter((candidate) => candidate.kind === kind)
-                    .map((candidate) => ({ id: candidate.id, label: candidate.name, tag: [noteOfKind(candidate.kind), candidate.id === suggestedId ? TEXT.suggested : undefined].filter(Boolean).join(" · ") })),
+                    .map((candidate) => ({ id: candidate.id, label: candidate.name, tag: [noteOf(candidate), candidate.id === suggestedId ? TEXT.suggested : undefined].filter(Boolean).join(" · ") })),
                 }))}
                 onPick={setPicked}
               />

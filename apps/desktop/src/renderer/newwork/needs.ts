@@ -73,8 +73,14 @@ export const KIND_GROUPS: readonly { readonly kind: ItemKind; readonly heading: 
   { kind: "task", heading: "Build" },
 ];
 
-/** What a template does to code, from its kind: an investigation reads, a task changes the repo. */
-export const noteOfKind = (kind: ItemKind): string => (kind === "investigation" ? READ_ONLY_NOTE : CHANGES_CODE_NOTE);
+/**
+ * What a template does to code: a task changes the repo; an investigation is "read-only", unless a
+ * step's agent may run commands, which can write files: then no promise is made.
+ */
+export function noteOf(template: Pick<TemplateSummary, "kind" | "steps">): string | undefined {
+  if (template.kind === "task") return CHANGES_CODE_NOTE;
+  return template.steps.some((step) => (step.agentAccess?.commands.length ?? 0) > 0) ? undefined : READ_ONLY_NOTE;
+}
 
 /** The template's steps on one line: "Plan · Architect (cloud) → Build · Local builder → Run checks · Tokama". */
 export function stepsLine(template: TemplateSummary, agents: readonly AgentSummary[]): string {

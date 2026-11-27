@@ -244,8 +244,8 @@ export function titleFrom(text: string): string {
   return cutText(line, TITLE_MAX);
 }
 
-/** A template that reads its repo and has no repo it may edit: its agents get no edit tools, whatever their agent file says, and nothing is committed. */
-const readsOnly = (template: TemplateRecord): boolean => template.uses.repos.picked === "read" && !template.uses.repos.named.some((repo) => repo.access === "edit");
+/** A template whose picked repo is read-only: its agents get no edit tools, whatever their agent file says, and nothing is committed. The loop works only in the picked repo. */
+const readsOnly = (template: TemplateRecord): boolean => template.uses.repos.picked === "read";
 
 /** The steps a reviewer step reviews, as template validation draws them: from the back target, or after the previous reviewer. */
 function reviewedSteps(template: TemplateRecord, index: number): TemplateStepDef[] {
@@ -1030,16 +1030,17 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     if (judged !== undefined) return judged;
     const files = await git.diffFiles(worktree.path, worktree.baseCommit, staged.value);
     if (!files.ok) return fail(`Cannot compare the changes with the base commit: ${files.error.message}`);
+    // A commit the agent made itself stops the item, as on a template that commits.
+    const [tip, baseTree] = await Promise.all([git.revParse(worktree.path, `refs/heads/${worktree.branch}`), git.revParse(worktree.path, `${worktree.baseCommit}^{tree}`)]);
+    if (!tip.ok || tip.value !== worktree.baseCommit) return { kind: "end", outcome: "failed", detail: `Stopped: the item branch ${worktree.branch} moved off its base commit.` };
     if (files.value.length > 0) {
       const count = files.value.length;
       append(item.id, [{ type: "item_ended", outcome: "done", detail: detail(`${count} ${count === 1 ? "file" : "files"} changed in the worktree; this template commits nothing.`) }]);
       return WAIT;
     }
-    // The worktree is removed only while the branch and the tree are both still the base: nothing is lost.
-    const [tip, baseTree] = await Promise.all([git.revParse(worktree.path, `refs/heads/${worktree.branch}`), git.revParse(worktree.path, `${worktree.baseCommit}^{tree}`)]);
-    if (!tip.ok || tip.value !== worktree.baseCommit) return { kind: "end", outcome: "failed", detail: `Stopped: the item branch ${worktree.branch} moved off its base commit.` };
+    // The worktree is removed only while the tree is still the base: nothing is lost.
     if (!baseTree.ok || baseTree.value !== staged.value) return fail("Cannot confirm that the worktree holds no change.");
-    append(item.id, [{ type: "item_ended", outcome: "done", detail: "Nothing changed: the answer is the result." }]);
+    append(item.id, [{ type: "item_ended", outcome: "done", detail: "Nothing changed: the output is the result." }]);
     const removed = finisher.start(item.id, "discard");
     if (!removed.ok) deps.log?.(`item ${item.id}: the unused worktree was not removed: ${removed.error.message}`);
     return WAIT;

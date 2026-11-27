@@ -137,8 +137,8 @@ export function finishView(item: Pick<ItemRecord, "outcome" | "finish" | "repoId
         ...failed,
       };
     }
-    // Without a commit nothing was lost: an Ask answer, or an item that changed nothing.
-    if (!hasCommit(item)) return { kind: "ended", mark: markOf("done"), title: "Nothing committed", detail: [`${withTime("Worktree removed", finish.at)} · the log is kept`], removable: false };
+    // Without a commit there was no commit to lose: an Ask answer, or an item that changed nothing.
+    if (!hasCommit(item)) return { kind: "ended", mark: markOf("done"), title: "Nothing committed", detail: [`${withTime("Worktree and branch removed", finish.at)} · the log is kept`], removable: false };
     return { kind: "ended", mark: markOf("discarded"), title: "Discarded", detail: [`${withTime("Worktree and branch deleted", finish.at)} · the log is kept`], removable: false };
   }
 

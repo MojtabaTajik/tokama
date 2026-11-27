@@ -143,9 +143,15 @@ export function stepSentence(step: TemplateStepView, template: Pick<TemplateView
 export const READ_ONLY_NOTE = "read-only";
 export const CHANGES_CODE_NOTE = "changes code";
 
-/** "read-only" unless the template may edit a repo, the one it picks at Start or one it names. */
-export const accessNote = (template: Pick<TemplateView, "uses">): string =>
-  template.uses.repos.picked === "edit" || template.uses.repos.named.some((repo) => repo.access === "edit") ? CHANGES_CODE_NOTE : READ_ONLY_NOTE;
+/**
+ * "changes code" when Start picks the repo to edit, "read-only" when it picks one to read; the
+ * engine works only in the picked repo. Commands the template gives its agents can write files, so
+ * then no promise is made (undefined).
+ */
+export function accessNote(template: Pick<TemplateView, "uses" | "steps">): string | undefined {
+  if (template.uses.repos.picked === "edit") return CHANGES_CODE_NOTE;
+  return template.uses.commands.length > 0 || template.steps.some((step) => step.commands.length > 0) ? undefined : READ_ONLY_NOTE;
+}
 
 export interface UseLine {
   readonly name: string;

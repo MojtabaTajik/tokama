@@ -202,7 +202,8 @@ export function followUpText(item: ItemRecord): string | undefined {
   const said = saidOf(item)?.said;
   if (said === undefined) return undefined;
   const text = [item.text.trim(), "", `The answer: ${said.headline}`, ...said.points.map((point) => `- ${point}`)].join("\n");
-  return text.length > NEW_WORK_MAX ? text.slice(0, NEW_WORK_MAX) : text;
+  // By code point, so a surrogate pair is never split.
+  return text.length > NEW_WORK_MAX ? Array.from(text).slice(0, NEW_WORK_MAX).join("") : text;
 }
 
 /** The card of an item that has ended: done, failed or stopped. */

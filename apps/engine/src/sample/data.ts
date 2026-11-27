@@ -664,7 +664,7 @@ function rawItems(now: number): RawItem[] {
         ...step,
         attempts: [{ attempt: 1, result: "passed", checks: [], said: SAID_ANSWER }],
       })),
-      outcome: { kind: "done", detail: "Nothing changed: the answer is the result." },
+      outcome: { kind: "done", detail: "Nothing changed: the output is the result." },
       finish: { worktreeRemoved: true },
     },
     {

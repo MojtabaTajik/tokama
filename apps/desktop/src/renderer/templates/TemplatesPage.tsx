@@ -169,7 +169,7 @@ function Detail({ bridge, detail, agents, connections }: DetailProps) {
         </span>
         <div className="tp-head-text">
           <h1>{titleOf(entry)}</h1>
-          {template !== null && <span className="tp-quiet">{accessNote(template)}</span>}
+          {template !== null && accessNote(template) !== undefined && <span className="tp-quiet">{accessNote(template)}</span>}
           {template?.budget !== undefined && (
             <span className="tp-quiet">
               {TEXT.budget} <span className="mono">{budgetText(template.budget.timeMinutes)}</span>

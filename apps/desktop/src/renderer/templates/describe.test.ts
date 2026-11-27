@@ -117,12 +117,19 @@ describe("usesOf", () => {
 });
 
 describe("accessNote", () => {
-  const uses = (picked: "read" | "edit" | undefined, named: { repoId: string; access: "read" | "edit" }[] = []) => ({ uses: { repos: { picked, named }, connections: [], commands: [] } }) as unknown as TemplateView;
-  it("says read-only unless the template may edit a repo, picked or named", () => {
+  const uses = (picked: "read" | "edit" | undefined, named: { repoId: string; access: "read" | "edit" }[] = [], commands: string[] = [], stepCommands: string[] = []) =>
+    ({ uses: { repos: { picked, named }, connections: [], commands }, steps: [{ commands: stepCommands }] }) as unknown as TemplateView;
+  it("follows the picked repo, as the engine does: read-only for read, changes code for edit", () => {
     expect(accessNote(uses("read"))).toBe("read-only");
-    expect(accessNote(uses(undefined, [{ repoId: "orders-api", access: "read" }]))).toBe("read-only");
     expect(accessNote(uses("edit"))).toBe("changes code");
-    expect(accessNote(uses("read", [{ repoId: "orders-api", access: "edit" }]))).toBe("changes code");
+    // The engine works only in the picked repo, so a named edit repo does not change the answer.
+    expect(accessNote(uses("read", [{ repoId: "billing-api", access: "edit" }]))).toBe("read-only");
+  });
+
+  it("makes no read-only promise when the template gives its agents commands", () => {
+    expect(accessNote(uses("read", [], ["node"]))).toBeUndefined();
+    expect(accessNote(uses("read", [], [], ["node"]))).toBeUndefined();
+    expect(accessNote(uses("edit", [], ["node"]))).toBe("changes code");
   });
 });
 
