@@ -188,7 +188,7 @@ describe("a real engine with no helpers built in", () => {
 
   it("still answers Try checks with not_implemented", async () => {
     const { client } = await engine();
-    const notImplemented = { ok: false, error: { code: "not_implemented" } };
+    const notImplemented = { ok: false, error: { code: "not_implemented", message: "Try checks is not in this engine yet." } };
     expect(await client.command({ type: "try_checks", path: "/work/orders-api", checks: [{ command: "pnpm test" }] })).toMatchObject(notImplemented);
     expect(await client.command({ type: "cancel_check_trial", trialId: TRIAL_ID as never })).toMatchObject(notImplemented);
     expect(await client.query({ type: "check_trial", trialId: TRIAL_ID as never })).toMatchObject(notImplemented);

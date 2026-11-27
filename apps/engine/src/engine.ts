@@ -567,6 +567,8 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   };
 
   const noHelpers: ReplyResult = { ok: false, error: { code: "not_implemented" satisfies CommandErrorCode, message: "helpers are not built into this engine yet" } };
+  // A real engine runs helpers; only Try checks is missing there.
+  const noTryChecks: ReplyResult = { ok: false, error: { code: "not_implemented" satisfies CommandErrorCode, message: "Try checks is not in this engine yet." } };
   const noDiagnostics: ReplyResult = { ok: false, error: { code: "not_implemented" satisfies CommandErrorCode, message: "this engine keeps no diagnostics" } };
 
   /** The crash flag for the setup's health, when the engine keeps diagnostics. */
@@ -671,7 +673,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       if (isRepoCommand(command)) return repoCommand(command);
       if (isDiagnosticsCommand(command)) return diagnostics?.command(command) ?? noDiagnostics;
       if (isHelperCommand(command)) {
-        if (sample === undefined) return noHelpers;
+        if (sample === undefined) return real === undefined ? noHelpers : noTryChecks;
         const result = sample.helpers.command(command);
         return result.ok ? { ok: true, data: result.value } : { ok: false, error: result.error };
       }
@@ -804,7 +806,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
         return run.ok ? { ok: true, data: { run: run.value } satisfies HelperRunQueryResult } : { ok: false, error: run.error };
       }
       case "check_trial": {
-        if (sample === undefined) return noHelpers;
+        if (sample === undefined) return real === undefined ? noHelpers : noTryChecks;
         const trial = sample.helpers.checkTrial(query.trialId);
         return trial.ok ? { ok: true, data: { trial: trial.value } satisfies CheckTrialResult } : { ok: false, error: trial.error };
       }
