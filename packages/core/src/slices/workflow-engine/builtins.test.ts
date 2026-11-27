@@ -31,6 +31,16 @@ describe("built-in templates with the built-in agents", async () => {
     }
   });
 
+  it("no step asks an agent that has no commands to run anything", () => {
+    for (const load of loads) {
+      if (!load.ok) throw new Error(JSON.stringify(load));
+      for (const step of load.template.steps) {
+        if (byId.get(step.agentId)?.limits.commands.length !== 0) continue;
+        expect(step.instructions.text.replace(/\s+/g, " "), `${load.template.id}/${step.id}`).not.toMatch(/\brun\b.*\b(tests?|checks?|commands?)\b/i);
+      }
+    }
+  });
+
   it.each(["quick-fix", "quick-change", "plan-and-build", "review-only"])("%s: each step builds a prompt that leaves nothing out", (id) => {
     const load = loads.find((candidate) => candidate.ok && candidate.template.id === id);
     if (!load?.ok) throw new Error(`no ${id}`);
