@@ -184,7 +184,7 @@ describe("watchConnection", () => {
       await settle();
       expect(watcher.state()).toEqual({
         status: "failed",
-        reason: "The older Tokama engine (pid 4821) did not stop. Press Try again.",
+        reason: "The engine (pid 4821) did not stop. Quit it in Activity Monitor (macOS) or with `kill 4821` (Linux), then press Try again.",
         logPath: "/run/tokama/engine.log",
         logTail: [],
       });

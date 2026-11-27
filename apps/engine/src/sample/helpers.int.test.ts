@@ -29,7 +29,7 @@ async function sampleEngine(): Promise<Fixture> {
   const started = await startEngine({ dir, sample: true, clock });
   if (!started.ok) throw new Error(started.error.message);
   cleanups.push(() => started.value.close());
-  const connected = await connect({ dir, startTimeoutMs: 2_000 });
+  const connected = await connect({ dir, lockPath: started.value.endpoint.lockPath, startTimeoutMs: 2_000 });
   if (!connected.ok) throw new Error(connected.error.message);
   cleanups.push(() => connected.value.close());
   const events: EngineEvent[] = [];

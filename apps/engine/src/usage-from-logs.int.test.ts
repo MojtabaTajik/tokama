@@ -21,8 +21,8 @@ const tempFolder = (): string => {
   return folder;
 };
 
-async function clientOf(dir: string): Promise<EngineClient> {
-  const connected = await connect({ dir, startTimeoutMs: 2_000 });
+async function clientOf(dir: string, lockPath: string): Promise<EngineClient> {
+  const connected = await connect({ dir, lockPath, startTimeoutMs: 2_000 });
   if (!connected.ok) throw new Error(connected.error.message);
   cleanups.push(() => connected.value.close());
   return connected.value;
@@ -45,7 +45,7 @@ describe("usage from the item logs", () => {
     });
     if (!started.ok) throw new Error(started.error.message);
     cleanups.push(() => started.value.close());
-    const client = await clientOf(dir);
+    const client = await clientOf(dir, started.value.endpoint.lockPath);
 
     // The first query for all usage starts the scan of Claude Code's logs; wait until it ends.
     for (let tries = 0; ; tries++) {

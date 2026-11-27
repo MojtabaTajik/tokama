@@ -17,8 +17,8 @@ afterEach(async () => {
   cleanups = [];
 });
 
-async function client(dir: string): Promise<EngineClient> {
-  const connected = await connect({ dir, startTimeoutMs: 2_000 });
+async function client(dir: string, lockPath: string): Promise<EngineClient> {
+  const connected = await connect({ dir, lockPath, startTimeoutMs: 2_000 });
   if (!connected.ok) throw new Error(connected.error.message);
   cleanups.push(() => connected.value.close());
   return connected.value;
@@ -46,7 +46,7 @@ describe("machine query", () => {
     const started = await startEngine({ dir, sample: true });
     if (!started.ok) throw new Error(started.error.message);
     cleanups.push(() => started.value.close());
-    const reply = await (await client(dir)).query({ type: "machine" });
+    const reply = await (await client(dir, started.value.endpoint.lockPath)).query({ type: "machine" });
     if (!reply.ok) throw new Error(reply.error.message);
     expect(parseQueryResult("machine", reply.data).ok).toBe(true);
     expect(reply.data.points).toHaveLength(360);
@@ -79,7 +79,7 @@ describe("machine query", () => {
     ]);
     if (!recorded.ok) throw new Error(recorded.error.message);
 
-    const reply = await (await client(dir)).query({ type: "machine" });
+    const reply = await (await client(dir, started.value.endpoint.lockPath)).query({ type: "machine" });
     if (!reply.ok) throw new Error(reply.error.message);
     const report = parseQueryResult("machine", reply.data);
     if (!report.ok) throw new Error(JSON.stringify(report.error.issues));
@@ -97,7 +97,7 @@ describe("machine query", () => {
     const started = await startEngine({ dir, machineSource: { memory: async () => err("no access"), processes: async () => err("no access") } });
     if (!started.ok) throw new Error(started.error.message);
     cleanups.push(() => started.value.close());
-    const reply = await (await client(dir)).query({ type: "machine" });
+    const reply = await (await client(dir, started.value.endpoint.lockPath)).query({ type: "machine" });
     expect(reply).toMatchObject({ ok: false, error: { code: "unavailable", message: "no access" } });
   });
 });

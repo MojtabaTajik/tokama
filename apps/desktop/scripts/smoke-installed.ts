@@ -14,7 +14,7 @@ import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { parseArgs } from "node:util";
 import { requestShutdown, connect } from "@tokama/client";
-import { API_VERSION } from "@tokama/core";
+import { API_VERSION, readEngineLock, tokenPathOf } from "@tokama/core";
 import { appVersion, run } from "./package.ts";
 
 const appDir = resolve(import.meta.dirname, "..");
@@ -49,16 +49,16 @@ export function installDirProblem(dir: string, home: string): string | undefined
   return dir === "/Applications" || dir === join(home, "Applications") ? undefined : `the install folder must be /Applications or ${join(home, "Applications")}, not ${dir}`;
 }
 
-/** The engine's `<pid> <engineId>` lock line, or undefined when it is not one. */
+/** The engine's `<pid> <engineId> <socketPath>` lock line, or undefined when it is not one. */
 export function parseLock(text: string): { readonly pid: number; readonly engineId: string } | undefined {
-  const match = /^(\d+) (\S+)\s*$/.exec(text);
+  const match = /^(\d+) (\S+) \S.*$/.exec(text.trim());
   return match?.[1] === undefined || match[2] === undefined ? undefined : { pid: Number(match[1]), engineId: match[2] };
 }
 
-/** The command line the desktop starts its engine with. `dirs` lists the engine dir as given and as the system resolves it (/tmp is /private/tmp), since either may show in `ps`. The desktop passes no other flag in a normal run. */
-export function expectedEngineCommands(app: string, dirs: readonly string[]): string[] {
+/** The command line the desktop starts its engine with. `dirs` and `homes` list the engine dir and the Tokama home as given and as the system resolves them (/tmp is /private/tmp), since either may show in `ps`. The desktop passes no other flag in a normal run. */
+export function expectedEngineCommands(app: string, dirs: readonly string[], homes: readonly string[]): string[] {
   const engine = join(app, "Contents", "Resources", "engine");
-  return dirs.map((dir) => `${join(engine, "tokama-engine")} ${join(engine, "dist", "main.js")} --dir ${dir}`);
+  return dirs.flatMap((dir) => homes.map((home) => `${join(engine, "tokama-engine")} ${join(engine, "dist", "main.js")} --dir ${dir} --home ${home}`));
 }
 
 /** The whole environment of the app: its HOME, a PATH without node, and a few variables every login has. Nothing of Tokama's, Electron's or Node's switches passes. */
@@ -242,6 +242,8 @@ async function verifyInstalled(state: Run): Promise<void> {
 }
 
 const engineDir = (home: string) => join(home, ".tokama", "run");
+/** The engine's lock is in the Tokama home, whatever its engine dir. */
+const lockFileOf = (home: string) => join(home, ".tokama", "engine.lock");
 
 async function start(state: Run): Promise<void> {
   const installed = state.installed;
@@ -276,7 +278,7 @@ async function engineProcess(state: Run): Promise<void> {
   const home = homeOf(state);
   const installed = state.installed ?? "";
   const dir = engineDir(home);
-  const lockFile = join(dir, "engine.lock");
+  const lockFile = lockFileOf(home);
   // A lock left by an engine that died (a kept --home) names a pid that is gone; the app's new engine replaces it.
   const { lock, command } = await waitFor("engine.lock of a running engine", 60_000, () => {
     if (state.appExit !== undefined) throw new Error(`the app ended before the engine started (${state.appExit}); see app.stderr.log`);
@@ -288,19 +290,21 @@ async function engineProcess(state: Run): Promise<void> {
       return undefined;
     }
   });
-  const expected = expectedEngineCommands(installed, [...new Set([dir, realpathSync(dir)])]);
+  const tokamaHome = join(home, ".tokama");
+  const expected = expectedEngineCommands(installed, [...new Set([dir, realpathSync(dir)])], [...new Set([tokamaHome, realpathSync(tokamaHome)])]);
   if (!expected.includes(command)) throw new Error(`the engine runs\n  ${command}\nexpected\n  ${expected.join("\n  or ")}`);
   process.stdout.write(`engine pid ${lock.pid}: ${command}\n`);
 }
 
 async function clientChecks(state: Run): Promise<void> {
   const home = homeOf(state);
-  // The engine takes its lock before it listens, so it may not be there yet; connect never starts one.
+  // The engine publishes its lock once it listens, so the lock may not be there yet; connect never starts one.
   const deadline = Date.now() + 60_000;
-  let connected = await connect({ dir: engineDir(home), reconnect: false, requestTimeoutMs: 15_000 });
+  const open = () => connect({ dir: engineDir(home), lockPath: lockFileOf(home), reconnect: false, requestTimeoutMs: 15_000 });
+  let connected = await open();
   while (!connected.ok && connected.error.code === "not_running" && Date.now() < deadline) {
     await sleep(500);
-    connected = await connect({ dir: engineDir(home), reconnect: false, requestTimeoutMs: 15_000 });
+    connected = await open();
   }
   if (!connected.ok) throw new Error(`connect: ${connected.error.code}: ${connected.error.message}`);
   const client = connected.value;
@@ -342,16 +346,15 @@ async function hook(state: Run): Promise<void> {
 
 async function quit(state: Run): Promise<void> {
   const home = homeOf(state);
-  const dir = engineDir(home);
   const appPid = state.app?.pid;
-  const lock = parseLock(readFileSync(join(dir, "engine.lock"), "utf8"));
+  const lock = readEngineLock(lockFileOf(home));
   if (appPid === undefined || lock === undefined) throw new Error("the app or the engine lock is gone");
   // SIGTERM makes Chromium quit like Cmd-Q. Asking the app through AppleScript could open an automation prompt that hangs a runner.
   process.kill(appPid, "SIGTERM");
   await waitFor("the app to quit", 20_000, () => !alive(appPid));
   if (!alive(lock.pid)) throw new Error("the engine ended with the app; it must keep running");
-  if (!(await requestShutdown(dir, 5_000))) throw new Error("the engine did not accept the shutdown request");
-  await waitFor("the engine to stop", 20_000, () => !alive(lock.pid) && !existsSync(join(dir, "engine.lock")));
+  if (!(await requestShutdown({ socketPath: lock.socketPath, tokenPath: tokenPathOf(lock.socketPath) }, 5_000))) throw new Error("the engine did not accept the shutdown request");
+  await waitFor("the engine to stop", 20_000, () => !alive(lock.pid) && !existsSync(lockFileOf(home)));
 }
 
 /** Always runs: copies the engine log, stops what this run started, removes what it installed. */
@@ -371,7 +374,7 @@ function cleanUp(state: Run): void {
   if (appPid !== undefined && state.appExit === undefined && alive(appPid)) process.kill(appPid, "SIGKILL");
   if (home !== undefined && installed !== undefined) {
     try {
-      const lock = parseLock(readFileSync(join(engineDir(home), "engine.lock"), "utf8"));
+      const lock = parseLock(readFileSync(lockFileOf(home), "utf8"));
       if (lock !== undefined && alive(lock.pid) && commandOf(lock.pid).startsWith(join(installed, "Contents", "Resources", "engine", "tokama-engine"))) process.kill(lock.pid, "SIGKILL");
     } catch {
       // No lock, no engine.

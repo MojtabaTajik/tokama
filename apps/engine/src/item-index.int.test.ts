@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -280,7 +280,7 @@ describe("engine start with a home folder", () => {
     cleanups.push(() => upgraded.close());
     expect(upgraded.prepare("PRAGMA user_version").get()).toEqual({ user_version: 5 });
     expect(upgraded.prepare("SELECT cli_id FROM plan_samples").all()).toEqual([{ cli_id: "claude-code" }]);
-    const connected = await connect({ dir, startTimeoutMs: 2_000 });
+    const connected = await connect({ dir, lockPath: join(home, "engine.lock"), startTimeoutMs: 2_000 });
     if (!connected.ok) throw new Error(connected.error.message);
     cleanups.push(() => connected.value.close());
 
@@ -315,10 +315,7 @@ describe("engine start with a home folder", () => {
     };
     const dir = tempEngineDir(cleanups);
     const first = startEngine({ dir, home, processTable: table });
-    await waitFor(() => existsSync(join(dir, "engine.sock")), 10_000, "socket");
-    // Old enough that a lock whose engine does not answer counts as stale.
-    const old = new Date(Date.now() - 60_000);
-    utimesSync(join(dir, "engine.lock"), old, old);
+    await waitFor(() => existsSync(join(home, "engine.lock")), 10_000, "lock");
 
     expect(await startEngine({ dir, home })).toMatchObject({ ok: false, error: { code: "already_running" } });
 
@@ -336,8 +333,8 @@ describe("engine start with a home folder", () => {
     const secondDir = tempEngineDir(cleanups);
     const second = await startEngine({ dir: secondDir, home });
     expect(second).toMatchObject({ ok: false, error: { code: "already_running" } });
-    // It released its own engine lock, and the first engine still holds the home lock.
-    expect(existsSync(join(secondDir, "engine.lock"))).toBe(false);
+    // It removed its own socket and token, and the first engine still holds the home lock.
+    expect(readdirSync(secondDir)).toEqual([]);
     expect(readFileSync(join(home, "engine.lock"), "utf8")).toContain(first.value.endpoint.socketPath);
 
     // Once the first engine stops, the home folder is free again.
@@ -381,7 +378,7 @@ describe("engine start with a home folder", () => {
     const dir = tempEngineDir(cleanups);
     const stop = new AbortController();
     const starting = startEngine({ dir, home, processTable: table, signal: stop.signal });
-    await waitFor(() => existsSync(join(dir, "engine.sock")), 10_000, "socket");
+    await waitFor(() => existsSync(join(home, "engine.lock")), 10_000, "lock");
     stop.abort();
     // Shutdown waits for the recovery that is in the middle of a kill.
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -415,7 +412,7 @@ describe("engine start with a home folder", () => {
     const started = await startEngine({ dir, home, planSources: {}, log: (line) => logs.push(line) });
     if (!started.ok) throw new Error(started.error.message);
     cleanups.push(() => started.value.close());
-    const connected = await connect({ dir, startTimeoutMs: 2_000 });
+    const connected = await connect({ dir, lockPath: join(home, "engine.lock"), startTimeoutMs: 2_000 });
     if (!connected.ok) throw new Error(connected.error.message);
     cleanups.push(() => connected.value.close());
     const usage = await connected.value.query({ type: "usage", range: 14 });
@@ -440,7 +437,8 @@ describe("engine start with a home folder", () => {
     cleanups.push(() => sample.value.close());
     expect(sample.value.items).toBeUndefined();
 
-    const second = await startEngine({ dir, home: join(dirname(home), `${home.split("/").pop()}-second`) });
+    // The sample engine's lock is in its own dir, so a second sample engine there finds it.
+    const second = await startEngine({ dir, sample: true, home: join(dirname(home), `${home.split("/").pop()}-second`) });
     expect(second).toMatchObject({ ok: false, error: { code: "already_running" } });
     expect(() => statSync(join(home, "tokama.db"))).toThrow();
   });

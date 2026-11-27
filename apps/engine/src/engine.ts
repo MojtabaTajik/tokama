@@ -1,27 +1,43 @@
 // The engine service: serves the engine API on a user-owned Unix domain socket.
 //
-// Start order: a 0700 directory owned by the user, then the single-instance lock, then a new
-// per-session token (0600 file), then the socket (0600). Each connection starts with a hello
-// carrying the token and the client's API version; after the welcome, the client sends commands
-// and queries (one JSON message per line) and receives replies and events.
+// Start order: a 0700 directory owned by the user, a new per-session token (0600 file), the
+// socket (0600) under a name of its own (`s-<8 hex>.sock`), and only then the lock, which names
+// that socket. The socket accepts from the first moment: a connection that comes while the engine
+// is still opening its storage waits, paused, and gets its welcome once the engine is ready. A
+// client that sees an accepted connection knows that an engine lives and waits for it.
+//
+// The lock is one line, `<pid> <engineId> <socketPath>`, published with link(2) so that it appears
+// whole or not at all and only one engine can have it. A real engine's lock is in the Tokama home,
+// so one home has one engine whatever its engine dir. When a lock exists, the engine asks its
+// socket: an answer means an engine runs and this one exits; a refused connection or a missing
+// socket means that engine is dead, and its lock is taken over.
+//
+// Each connection starts with a hello carrying the token and the client's API version; after the
+// welcome, the client sends commands and queries (one JSON message per line) and receives replies
+// and events.
 //
 // A connection may start with a shutdown request (with the token) in place of the hello: a newer
 // app sends it to replace this engine, whatever its API version. With `ifIdle`, the engine stops
 // only when no item is running, queued or finishing; otherwise it answers `shutdown_refused` with
-// the count and keeps running. Once it drains, commands get `invalid_state`.
+// the count and keeps running. Once it drains, commands get `invalid_state`. Replies to a
+// shutdown request and the welcome carry the engine's id and pid, so a client can tell which
+// process answered.
 //
-// Shutdown, when the signal aborts, close() is called or a client asks for it: refuse new connections, wait for
-// in-flight requests (bounded), close the connections, stop listening, then remove the socket,
-// token and lock files if the lock is still this engine's. The socket keeps answering until the
-// drain ends, so an engine starting meanwhile sees a live engine instead of a stale lock.
+// Shutdown, when the signal aborts, close() is called or a client asks for it: wait for in-flight
+// requests (bounded), close the connections, stop the run loop, release storage, remove the lock
+// if it is still this engine's, stop listening, then remove the socket and token. While it drains,
+// the socket still answers (a token-checked shutdown request gets its reply; anything else is
+// closed), so an engine starting meanwhile sees a live engine instead of a stale lock.
 // Threat model: local desktop, no network listener.
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { chmodSync, closeSync, mkdirSync, openSync, readFileSync, unlinkSync } from "node:fs";
-// eslint-disable-next-line no-restricted-imports -- the engine lock is created exclusively (O_EXCL), which is the lock itself; renameSync moves a damaged usage database aside.
+import { chmodSync, closeSync, constants, mkdirSync, openSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
+// eslint-disable-next-line no-restricted-imports -- the lock's temp file is created exclusively (O_EXCL); renameSync moves a stale lock or a damaged usage database aside.
 import { renameSync, writeSync } from "node:fs";
-import { connect, createServer, type Server, type Socket } from "node:net";
+// eslint-disable-next-line no-restricted-imports -- link(2) publishes the lock whole and fails if one exists: that is the lock itself.
+import { linkSync } from "node:fs";
+import { createServer, type Server, type Socket } from "node:net";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   addRepo,
   type AddRepoResult,
@@ -62,6 +78,11 @@ import {
   type Git,
   type EngineEndpoint,
   engineEndpoint,
+  engineLockPath,
+  newSocketPath,
+  probeSocket,
+  tokenPathOf,
+  readEngineLock,
   err,
   type ItemResult,
   type ActivityResult,
@@ -74,9 +95,6 @@ import {
   parseClientMessage,
   parseOpeningMessage,
   type ParseError,
-  lockWriterLive,
-  posixEngineProcesses,
-  readPidFile,
   replaceTextSync,
   removeRepo,
   repoBranches,
@@ -163,6 +181,8 @@ export interface EngineOptions {
   readonly machineSource?: MachineSource;
   /** Tests only: awaited before each command is handled, so a test can hold a command in flight. */
   readonly beforeCommand?: (command: Command) => Promise<void>;
+  /** Tests only: awaited once the socket listens and before the lock is published, so a test can hold the start there. */
+  readonly afterListen?: () => Promise<void>;
   /**
    * Real mode: Claude Code's projects folder (`~/.claude/projects`), whose session logs the `all`
    * usage scope reads. Absent: the logs are never read.
@@ -192,7 +212,8 @@ export interface EngineOptions {
 export interface EngineHandle {
   /** New on each start; clients see it in the welcome and resync when it changes. */
   readonly engineId: string;
-  readonly endpoint: EngineEndpoint;
+  /** The engine dir and the files of this run: its socket and token, and the lock it holds. */
+  readonly endpoint: EngineEndpoint & { readonly socketPath: string; readonly tokenPath: string; readonly lockPath: string };
   readonly store: MemoryItemStore;
   /** The item logs, when the engine stores items. */
   readonly items?: ItemStore;
@@ -221,19 +242,20 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   const log = options.log ?? (() => {});
   const endpoint = engineEndpoint(options.dir);
   if (!endpoint.ok) return err({ code: "invalid_endpoint", message: endpoint.error.message });
-  const { socketPath, tokenPath, lockPath } = endpoint.value;
 
   const dir = ensurePrivateDir(endpoint.value.dir);
   if (!dir.ok) return dir;
   const engineId = randomUUID();
   const version = options.engineVersion ?? "0.0.0";
+  // This run's own socket and token; the lock names the socket.
+  const socketPath = newSocketPath(endpoint.value.dir);
+  const tokenPath = tokenPathOf(socketPath);
+  const lockPath = engineLockPath({ dir: endpoint.value.dir, home: options.home, sample: options.sample });
   // Unique per engine instance (two engines in one process share the pid).
-  const lockContent = `${process.pid} ${engineId}\n`;
-  const lock = await acquireLock(endpoint.value, lockContent, log);
-  if (!lock.ok) return lock;
+  const lockContent = `${process.pid} ${engineId} ${socketPath}\n`;
 
-  // The item store has one writer: the engine that holds the home folder's own lock. Engines with
-  // different engine dirs can share a home, so the engine dir's lock does not cover it.
+  // The item store has one writer: the engine that holds the lock, and a real engine's lock is in
+  // the home folder.
   let storage: Storage | undefined;
   let diagnostics: EngineDiagnostics | undefined;
   // Set once events can go out; the storage calls it when an item records new agent calls.
@@ -242,19 +264,60 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   let diagnosticsChanged = () => {};
   // Set once events can go out; diagnostics call it when entries are recorded or deleted.
   let entriesChanged = () => {};
-  const homeLock = options.home !== undefined && !options.sample ? { lockPath: join(options.home, "engine.lock"), socketPath, dir: options.home } : undefined;
-  const homeLockContent = `${process.pid} ${engineId} ${socketPath}\n`;
-  if (homeLock !== undefined) {
-    const home = homeLock.dir;
+  const releaseStorage = () => {
+    storage?.close();
+    diagnostics?.close();
+  };
+
+  // Connections that come before the engine is ready wait here, paused, until `accept` takes them.
+  const early = new Set<Socket>();
+  let accept = (socket: Socket): void => {
+    socket.on("error", () => {});
+    early.add(socket);
+    socket.once("close", () => early.delete(socket));
+  };
+  let server: Server;
+  let token: Buffer;
+  try {
+    token = writeToken(tokenPath);
+    server = await listen(socketPath, (socket) => accept(socket));
+    chmodSync(socketPath, 0o600);
+  } catch (error) {
+    unlinkIfPresent(socketPath);
+    unlinkIfPresent(tokenPath);
+    return err({ code: "start_failed", message: `could not listen on ${socketPath}: ${String(error)}` });
+  }
+  // An accept error (e.g. EMFILE) must not end the engine; the server keeps listening.
+  server.on("error", (error) => log(`socket server error: ${String(error)}`));
+
+  /** Closes what this run opened: connections that wait, the socket and token, and the lock if it is ours. */
+  const abandon = () => {
+    for (const socket of early) socket.destroy();
+    early.clear();
+    server.close();
+    unlinkIfPresent(socketPath);
+    unlinkIfPresent(tokenPath);
+    releaseLock(lockPath, lockContent);
+  };
+
+  await options.afterListen?.();
+
+  // The lock is published after the socket listens: a client that finds it reaches a live engine.
+  const published = await publishLock(lockPath, lockContent, engineId, log);
+  if (!published.ok) {
+    abandon();
+    return published;
+  }
+  // Another engine that took over the same stale lock may have replaced ours since.
+  if (!ownsLock(lockPath, lockContent)) {
+    abandon();
+    return err({ code: "already_running", message: `another engine is starting in ${dirname(lockPath)}` });
+  }
+
+  if (options.home !== undefined && !options.sample) {
+    const home = options.home;
     const opened = await (async (): Promise<Result<Storage, StartError>> => {
-      try {
-        mkdirSync(home, { recursive: true, mode: 0o700 });
-      } catch (error) {
-        return err({ code: "start_failed", message: `cannot create ${home}: ${String(error)}` });
-      }
-      const locked = await acquireLock(homeLock, homeLockContent, log);
-      if (!locked.ok) return locked;
-      // Only the engine holding the home lock may read or clear the last engine's crash marker.
+      // Only the engine holding the lock may read or clear the last engine's crash marker.
       diagnostics = await EngineDiagnostics.open({
         home,
         userHome: options.userHome ?? homedir(),
@@ -274,12 +337,11 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       if (!result.ok) {
         diagnostics?.close();
         diagnostics = undefined;
-        releaseLock(homeLock.lockPath, homeLockContent);
       }
       return result;
     })();
     if (!opened.ok) {
-      releaseLock(lockPath, lockContent);
+      abandon();
       return opened;
     }
     storage = opened.value;
@@ -301,28 +363,6 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       return undefined;
     });
   }
-  const releaseStorage = () => {
-    storage?.close();
-    diagnostics?.close();
-    if (homeLock !== undefined) releaseLock(homeLock.lockPath, homeLockContent);
-  };
-
-  // From here on the lock is ours, so the socket and token files at these paths are ours too.
-  let server: Server;
-  let token: Buffer;
-  try {
-    unlinkIfPresent(socketPath);
-    token = writeToken(tokenPath);
-    server = await listen(socketPath);
-    chmodSync(socketPath, 0o600);
-  } catch (error) {
-    releaseStorage();
-    unlinkIfPresent(socketPath);
-    unlinkIfPresent(tokenPath);
-    releaseLock(lockPath, lockContent);
-    return err({ code: "start_failed", message: `could not listen on ${socketPath}: ${String(error)}` });
-  }
-
   const store = options.store ?? new MemoryItemStore();
   // The last setup served: the work-list search matches template and agent names from it.
   let servedSetup: SetupResult | undefined;
@@ -784,13 +824,13 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       const busy = hello.value.ifIdle === true ? busyItems() : 0;
       if (busy === undefined || busy > 0) {
         log(`a client with API version ${hello.value.apiVersion} asked the engine to stop when idle; ${busy === undefined ? "it could not count its items" : `${busy} still run`}, so it keeps running`);
-        const refused = encodeLine({ kind: "shutdown_refused", apiVersion: API_VERSION, ...(busy !== undefined && { runningItems: busy }) });
+        const refused = encodeLine({ kind: "shutdown_refused", apiVersion: API_VERSION, engineId, pid: process.pid, ...(busy !== undefined && { runningItems: busy }) });
         if (refused.ok) write(socket, refused.value);
         socket.end();
         return false;
       }
       log(`a client with API version ${hello.value.apiVersion} asked the engine to stop`);
-      const accepted = encodeLine({ kind: "shutdown_accepted", apiVersion: API_VERSION });
+      const accepted = encodeLine({ kind: "shutdown_accepted", apiVersion: API_VERSION, engineId, pid: process.pid });
       if (accepted.ok) write(socket, accepted.value);
       socket.end();
       void shutdown();
@@ -800,7 +840,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       fail(socket, "unsupported_version", `engine speaks API version ${API_VERSION}, client sent ${hello.value.apiVersion}`, { ...runningItems(), engineVersion: version });
       return false;
     }
-    const welcome = encodeLine({ kind: "welcome", apiVersion: API_VERSION, engineId, engineVersion: version, ...runningItems() });
+    const welcome = encodeLine({ kind: "welcome", apiVersion: API_VERSION, engineId, engineVersion: version, pid: process.pid, ...runningItems() });
     if (welcome.ok) write(socket, welcome.value);
     ready.add(socket);
     return true;
@@ -835,14 +875,43 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     void work.finally(() => inFlight.delete(work));
   };
 
-  // An accept error (e.g. EMFILE) must not end the engine; the server keeps listening.
-  server.on("error", (error) => log(`socket server error: ${String(error)}`));
+  // Connections that come while the engine drains: a token-checked shutdown request is answered
+  // (with the engine's id and pid, which is how a client proves who it is about to signal); any
+  // other first line, or none in time, closes the connection.
+  const stopping = new Set<Socket>();
+  const acceptWhileStopping = (socket: Socket) => {
+    stopping.add(socket);
+    const decoder = new LineDecoder();
+    const timer = setTimeout(() => socket.destroy(), helloTimeoutMs);
+    timer.unref();
+    socket.on("error", () => {});
+    socket.on("close", () => {
+      clearTimeout(timer);
+      stopping.delete(socket);
+    });
+    socket.on("data", (chunk: Buffer) => {
+      if (!stopping.has(socket)) return;
+      const lines = decoder.push(chunk);
+      const line = lines.ok ? lines.value[0] : undefined;
+      if (line === undefined) {
+        if (!lines.ok) socket.destroy();
+        return;
+      }
+      clearTimeout(timer);
+      stopping.delete(socket);
+      const opening = parseJsonLine(line);
+      const request = parseOpeningMessage(opening.ok ? opening.value : undefined);
+      if (!request.ok || request.value.kind !== "shutdown" || !sameToken(token, request.value.token)) return socket.destroy();
+      const accepted = encodeLine({ kind: "shutdown_accepted", apiVersion: API_VERSION, engineId, pid: process.pid });
+      if (accepted.ok) write(socket, accepted.value);
+      socket.end();
+      setTimeout(() => socket.destroy(), 1_000).unref();
+    });
+    socket.resume();
+  };
 
-  server.on("connection", (socket) => {
-    if (shuttingDown) {
-      socket.destroy();
-      return;
-    }
+  const acceptConnection = (socket: Socket) => {
+    if (shuttingDown) return acceptWhileStopping(socket);
     connections.add(socket);
     const decoder = new LineDecoder();
     let welcomed = false;
@@ -870,7 +939,13 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       ready.delete(socket);
       if (connections.size === 0) onAllClosed?.();
     });
-  });
+    // The server pauses a new connection; it is read from here on.
+    socket.resume();
+  };
+  // The connections that came before the engine was ready get their turn now, in order.
+  accept = acceptConnection;
+  for (const socket of early) acceptConnection(socket);
+  early.clear();
 
   // Events go out only when something changes; there is no heartbeat.
   function broadcast(event: EngineEvent): void {
@@ -913,14 +988,13 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       log(`closing the run loop failed: ${String(error)}`);
       diagnostics?.store.error("engine", "shutdown", error);
     });
-    // Closing the server removes the socket file. Only then may another engine take over.
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    // The socket answers until the lock is gone, so a starter never finds a lock whose engine is dead.
     releaseStorage();
-    if (ownsLock(lockPath, lockContent)) {
-      unlinkIfPresent(socketPath);
-      unlinkIfPresent(tokenPath);
-      releaseLock(lockPath, lockContent);
-    }
+    releaseLock(lockPath, lockContent);
+    for (const socket of stopping) socket.destroy();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    unlinkIfPresent(socketPath);
+    unlinkIfPresent(tokenPath);
     log("stopped");
     resolveClosed();
     return closed;
@@ -953,8 +1027,10 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     return err({ code: "stopped", message: "the engine was stopped while it started" });
   }
 
+  // Sockets that engines left behind when they died (kill -9, power loss) are cleaned up here.
+  await sweepDeadSockets(endpoint.value.dir, socketPath, log);
   log(`listening on ${socketPath} (engine ${engineId}${sample ? ", sample data" : ""})`);
-  return ok({ engineId, endpoint: endpoint.value, store, ...(storage && { items: storage.items }), closed, close: shutdown });
+  return ok({ engineId, endpoint: { ...endpoint.value, socketPath, tokenPath, lockPath }, store, ...(storage && { items: storage.items }), closed, close: shutdown });
 }
 
 interface Storage {
@@ -1033,62 +1109,100 @@ function ensurePrivateDir(dir: string): Result<void, StartError> {
   }
 }
 
-/** A lock file, the socket of the engine that holds it, and the folder named in messages. */
-type LockSpec = Pick<EngineEndpoint, "lockPath" | "socketPath" | "dir">;
-
-async function acquireLock(endpoint: LockSpec, content: string, log: (message: string) => void): Promise<Result<void, StartError>> {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const fd = openSync(endpoint.lockPath, "wx", 0o600);
-      try {
-        writeSync(fd, content);
-      } finally {
-        closeSync(fd);
-      }
-      return ok(undefined);
-    } catch (error) {
-      if (!hasCode(error, "EEXIST")) return err({ code: "start_failed", message: `cannot create ${endpoint.lockPath}: ${String(error)}` });
-    }
-    const live = await lockIsLive(endpoint);
-    if (live.live) {
-      const starting = live.startingPid === undefined ? "" : ` (pid ${live.startingPid}, still starting: it does not answer yet)`;
-      return err({ code: "already_running", message: `an engine is already running on ${live.socketPath}${starting}` });
-    }
-    log(`removing a stale lock in ${endpoint.dir}`);
-    unlinkIfPresent(endpoint.lockPath);
-  }
-  return err({ code: "already_running", message: `another engine is starting in ${endpoint.dir}` });
-}
-
 /**
- * A lock whose third field names a socket (the home lock) is probed on that socket; the engine
- * dir's lock is probed on the dir's socket.
- *
- * A lock whose engine does not answer yet is live while the process that wrote it still runs
- * (`lockWriterLive`), however long it has been starting.
+ * Publishes the engine's lock: the text is written to a file of its own and linked to the lock
+ * path, which fails when a lock exists, so a reader never sees half a lock and only one engine
+ * gets it. When a lock exists, its socket tells: an answer (or no answer in time) means that engine
+ * runs; a refused connection or a missing socket means it is dead, and its lock, if it is still the
+ * same text, is removed. An unreadable or untrusted lock is removed too (an unlink never follows a
+ * symlink). At most two rounds.
  */
-async function lockIsLive(endpoint: LockSpec): Promise<{ live: boolean; socketPath: string; startingPid?: number }> {
-  const lock = readPidFile(endpoint.lockPath);
-  if (lock === undefined) return { live: await socketAnswers(endpoint.socketPath), socketPath: endpoint.socketPath };
-  const socketPath = lock.fields.slice(2).join(" ") || endpoint.socketPath;
-  if (await socketAnswers(socketPath)) return { live: true, socketPath };
-  const live = await lockWriterLive(lock, posixEngineProcesses);
-  return live && lock.pid !== undefined ? { live, socketPath, startingPid: lock.pid } : { live, socketPath };
+async function publishLock(lockPath: string, content: string, engineId: string, log: (message: string) => void): Promise<Result<void, StartError>> {
+  const folder = dirname(lockPath);
+  const temp = `${lockPath}.${engineId}.tmp`;
+  try {
+    mkdirSync(folder, { recursive: true, mode: 0o700 });
+    const fd = openSync(temp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0), 0o600);
+    try {
+      writeSync(fd, content);
+    } finally {
+      closeSync(fd);
+    }
+  } catch (error) {
+    return err({ code: "start_failed", message: `cannot create the engine lock in ${folder}: ${String(error)}` });
+  }
+  try {
+    for (let round = 0; round < 2; round++) {
+      try {
+        linkSync(temp, lockPath);
+        return ok(undefined);
+      } catch (error) {
+        if (!hasCode(error, "EEXIST")) {
+          return err({ code: "start_failed", message: `cannot create ${lockPath} (the folder's file system must support hard links): ${String(error)}` });
+        }
+      }
+      const existing = readEngineLock(lockPath);
+      if (existing === undefined) log(`removing an unusable lock at ${lockPath}`);
+      else {
+        if ((await probeSocket(existing.socketPath, PROBE_TIMEOUT_MS)) !== "dead") {
+          return err({ code: "already_running", message: `an engine is already running on ${existing.socketPath}` });
+        }
+        log(`taking over the lock of an engine that is gone (pid ${existing.pid})`);
+      }
+      // Moved aside in one step, so a lock another engine published meanwhile is never deleted
+      // unseen: if what was moved is not the lock read above, it goes back and this engine yields.
+      const aside = `${lockPath}.${engineId}.stale`;
+      try {
+        renameSync(lockPath, aside);
+      } catch (error) {
+        if (hasCode(error, "ENOENT")) continue;
+        throw error;
+      }
+      const moved = readEngineLock(aside);
+      if (moved !== undefined && moved.text !== existing?.text) {
+        try {
+          linkSync(aside, lockPath);
+        } catch {
+          // Another lock is there already: that engine holds it.
+        }
+        unlinkIfPresent(aside);
+        return err({ code: "already_running", message: `another engine is starting in ${folder}` });
+      }
+      unlinkIfPresent(aside);
+    }
+    return err({ code: "already_running", message: `another engine is starting in ${folder}` });
+  } catch (error) {
+    return err({ code: "start_failed", message: `cannot take the engine lock ${lockPath}: ${String(error)}` });
+  } finally {
+    try {
+      unlinkSync(temp);
+    } catch {
+      // Already gone.
+    }
+  }
 }
 
-/** True when something accepts connections on the socket (or it does not answer in time). */
-function socketAnswers(socketPath: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const socket = connect(socketPath);
-    const done = (answers: boolean) => {
-      clearTimeout(timer);
-      socket.destroy();
-      resolve(answers);
-    };
-    const timer = setTimeout(() => done(true), PROBE_TIMEOUT_MS);
-    socket.once("connect", () => done(true));
-    socket.once("error", () => done(false));
-  });
+/** Removes the sockets and tokens of engines that are gone: `s-*.sock` files in `dir` that refuse a connection. */
+async function sweepDeadSockets(dir: string, own: string, log: (message: string) => void): Promise<void> {
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return;
+  }
+  const others = names.filter((name) => /^s-[0-9a-f]{8}\.sock$/.test(name)).map((name) => join(dir, name)).filter((path) => path !== own);
+  await Promise.all(
+    others.map(async (path) => {
+      if ((await probeSocket(path, PROBE_TIMEOUT_MS)) !== "dead") return;
+      try {
+        unlinkIfPresent(path);
+        unlinkIfPresent(tokenPathOf(path));
+        log(`removed the files of an engine that is gone: ${path}`);
+      } catch (error) {
+        log(`could not remove ${path}: ${String(error)}`);
+      }
+    }),
+  );
 }
 
 function ownsLock(lockPath: string, content: string): boolean {
@@ -1116,9 +1230,10 @@ function writeToken(tokenPath: string): Buffer {
   return Buffer.from(token);
 }
 
-function listen(socketPath: string): Promise<Server> {
+/** Listens on the socket. A new connection is paused until `onConnection` reads it. */
+function listen(socketPath: string, onConnection: (socket: Socket) => void): Promise<Server> {
   return new Promise((resolve, reject) => {
-    const server = createServer();
+    const server = createServer({ pauseOnConnect: true }, onConnection);
     server.once("error", reject);
     server.listen(socketPath, () => {
       server.off("error", reject);

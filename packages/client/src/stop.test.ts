@@ -2,9 +2,9 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, unlinkSync, writ
 import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { API_VERSION, encodeLine, type ManualClock, manualClock } from "@tokama/core";
+import { API_VERSION, encodeLine, type Liveness, type ManualClock, manualClock } from "@tokama/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type Liveness, stopEngine, type StopOptions } from "./stop.js";
+import { stopEngine, type StopOptions } from "./stop.js";
 
 const PID = 4821;
 const ID = "e-1";
@@ -23,9 +23,9 @@ afterEach(async () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-const socketPath = () => join(dir, "engine.sock");
+const socketPath = () => join(dir, "s-1a2b3c4d.sock");
 const lockPath = () => join(dir, "engine.lock");
-const writeLock = (pid: number, id: string) => writeFileSync(lockPath(), `${pid} ${id}\n`);
+const writeLock = (pid: number, id: string) => writeFileSync(lockPath(), `${pid} ${id} ${socketPath()}\n`);
 
 interface FakeEngine {
   /** Every message the engine received, parsed. */
@@ -38,7 +38,7 @@ interface FakeEngine {
 
 /** A plain socket server that stands in for an engine. `answer` gets each message and its socket. */
 async function fakeEngine(answer: (message: Record<string, unknown>, socket: Socket, engine: FakeEngine) => void = () => {}): Promise<FakeEngine> {
-  writeFileSync(join(dir, "engine.token"), "tok\n");
+  writeFileSync(join(dir, "s-1a2b3c4d.token"), "tok\n");
   const received: Record<string, unknown>[] = [];
   const sockets = new Set<Socket>();
   let accepted = 0;
@@ -81,7 +81,10 @@ const send = (socket: Socket, message: Record<string, unknown>) => {
   const line = encodeLine(message);
   if (line.ok) socket.write(line.value);
 };
+/** An engine of an earlier build: it accepts without saying who it is. */
 const accept = (socket: Socket) => send(socket, { kind: "shutdown_accepted", apiVersion: API_VERSION });
+/** An engine of this build: it says its id and pid. */
+const acceptAs = (socket: Socket, engineId: string, pid: number) => send(socket, { kind: "shutdown_accepted", apiVersion: API_VERSION, engineId, pid });
 /** What an engine from before the shutdown request answers. */
 const bad = (socket: Socket) => send(socket, { kind: "connection_error", apiVersion: 1, code: "bad_message", message: "the first message must be a hello" });
 
@@ -100,7 +103,7 @@ function setup(options: Partial<StopOptions> = {}) {
   const clock = manualClock();
   const signals: [number, string][] = [];
   const stop = (override: Partial<StopOptions> = {}) =>
-    run(clock, stopEngine({ dir, ifIdle: true, force: true, signal: (pid, signal) => void signals.push([pid, signal]), clock, ...options, ...override }));
+    run(clock, stopEngine({ lockPath: lockPath(), ifIdle: true, force: true, signal: (pid, signal) => void signals.push([pid, signal]), clock, ...options, ...override }));
   return { stop, signals, clock };
 }
 
@@ -334,14 +337,78 @@ describe("stopEngine", () => {
     expect(existsSync(socketPath())).toBe(true);
   });
 
-  it("stops without a lock for the engine's id: the lock is optional", async () => {
-    const engine = await fakeEngine((_message, socket, self) => {
-      accept(socket);
-      void self.stop();
+  it("stops an engine of this build with its identity proven at each signal, and re-asks before each one", async () => {
+    writeLock(PID, ID);
+    const engine = await fakeEngine((_message, socket) => acceptAs(socket, ID, PID));
+    const { stop, signals } = setup();
+    expect(await stop({ expectedEngineId: ID })).toEqual({ kind: "still_running", pid: PID });
+    expect(signals).toEqual([
+      [PID, "SIGTERM"],
+      [PID, "SIGKILL"],
+    ]);
+    // The request, then one identity check before each signal.
+    expect(engine.received).toHaveLength(3);
+    expect(engine.received.every((message) => message["kind"] === "shutdown" && message["token"] === "tok")).toBe(true);
+  });
+
+  it("signals nothing when the socket answers with another pid or another engine id than the lock names", async () => {
+    writeLock(PID, ID);
+    const { stop, signals } = setup();
+    for (const [engineId, pid] of [[ID, PID + 1], ["e-other", PID]] as const) {
+      const engine = await fakeEngine((_message, socket) => acceptAs(socket, engineId, pid));
+      expect(await stop({ expectedEngineId: ID })).toEqual({ kind: "replaced" });
+      expect(signals).toEqual([]);
+      await engine.stop();
+      writeLock(PID, ID);
+    }
+  });
+
+  it("signals nothing when the lock changes between the engine's reply and the signal", async () => {
+    writeLock(PID, ID);
+    let requests = 0;
+    await fakeEngine((_message, socket) => {
+      // The first request is the stop; the second is the identity check before the signal.
+      if (++requests === 2) writeLock(5000, "e-2");
+      acceptAs(socket, ID, PID);
     });
     const { stop, signals } = setup();
-    expect(await stop({})).toEqual({ kind: "stopped", forced: false });
-    expect(engine.received).toHaveLength(1);
+    expect(await stop({ expectedEngineId: ID })).toEqual({ kind: "replaced" });
+    expect(signals).toEqual([]);
+  });
+
+  it("signals an engine that gives no identity (an older build) only while its socket accepts and the lock is unchanged", async () => {
+    writeLock(PID, ID);
+    const engine = await fakeEngine((_message, socket) => accept(socket));
+    const { stop, signals } = setup({
+      signal: (pid, signal) => {
+        signals.push([pid, signal]);
+        void engine.stop();
+      },
+    });
+    expect(await stop({ expectedEngineId: ID })).toEqual({ kind: "stopped", forced: false });
+    expect(signals).toEqual([[PID, "SIGTERM"]]);
+  });
+
+  it("signals nothing when the lock names a live process that is not an engine and its socket is dead", async () => {
+    // A stale lock after a crash whose pid another process took over: this test's parent stands in.
+    writeLock(process.ppid, ID);
+    const { stop, signals } = setup();
+    expect(await stop({ ifIdle: false, expectedEngineId: ID })).toEqual({ kind: "stopped", forced: false });
+    expect(await stop({ ifIdle: false })).toEqual({ kind: "stopped", forced: false });
+    expect(signals).toEqual([]);
+  });
+
+  it("signals nothing when the socket dies between the request and the signal, though the lock names a live process", async () => {
+    writeLock(process.ppid, ID);
+    const engine = await fakeEngine((_message, socket) => bad(socket));
+    let probes = 0;
+    // Alive at the entry; dead right before the signal.
+    const probe = async (): Promise<Liveness> => {
+      if (++probes === 2) await engine.stop();
+      return probes === 1 ? "alive" : "dead";
+    };
+    const { stop, signals } = setup({ probe });
+    expect(await stop({ ifIdle: false, expectedEngineId: ID })).toEqual({ kind: "stopped", forced: false });
     expect(signals).toEqual([]);
   });
 
@@ -350,8 +417,7 @@ describe("stopEngine", () => {
     // The engine accepts and closes its socket, but its lock stays (a kill or a crash).
     await fakeEngine((_message, socket, self) => {
       accept(socket);
-      const lock = lockPath();
-      void self.stop().then(() => writeFileSync(lock, `${PID} ${ID}\n`));
+      void self.stop().then(() => writeLock(PID, ID));
     });
     const { stop, signals, clock } = setup({ stepMs: 1_000 });
     const before = clock.now();

@@ -11,6 +11,11 @@ export interface PidFile {
   readonly fields: readonly string[];
   /** The file's modification time, epoch ms: when its writer wrote it. */
   readonly writtenAt: number;
+  /** The file's owner and permission bits, from the same open file as the content. */
+  readonly uid: number;
+  readonly mode: number;
+  /** The whole content, trimmed. */
+  readonly text: string;
 }
 
 const MAX_PID_FILE_BYTES = 512;
@@ -34,7 +39,7 @@ export function readPidFile(path: string): PidFile | undefined {
     const text = buffer.subarray(0, length).toString("utf8").trim();
     const fields = text === "" ? [] : text.split(/\s+/);
     const first = fields[0] ?? "";
-    return { pid: PID.test(first) ? Number(first) : undefined, fields, writtenAt: stat.mtimeMs };
+    return { pid: PID.test(first) ? Number(first) : undefined, fields, writtenAt: stat.mtimeMs, uid: stat.uid, mode: stat.mode, text };
   } catch {
     return undefined;
   } finally {

@@ -4,10 +4,7 @@
 import type { ConnectError } from "@tokama/client";
 
 export interface RunningDeps {
-  readonly lockPath: () => string | undefined;
-  readonly readLock: (lockPath: string) => { readonly pid: number } | undefined;
-  readonly pidAlive: (pid: number) => boolean;
-  /** Connects to a running engine without starting one. */
+  /** Connects to a running engine, found through its lock, without starting one. */
   readonly connect: () => Promise<
     { ok: true; value: { readonly engine: { readonly apiVersion?: number; readonly runningItems?: number }; close(): Promise<void> } } | { ok: false; error: Pick<ConnectError, "code" | "engine"> }
   >;
@@ -24,14 +21,12 @@ export interface RunningCount {
 }
 
 export async function runningNow(deps: RunningDeps): Promise<RunningCount> {
-  const lockPath = deps.lockPath();
-  if (lockPath === undefined) return { items: undefined };
-  const lock = deps.readLock(lockPath);
-  if (lock === undefined || !deps.pidAlive(lock.pid)) return { items: 0 };
   const connected = await deps.connect().catch(() => undefined);
   if (connected === undefined) return { items: undefined };
   // An engine of another API version refuses the handshake but still says how many items it runs.
   if (!connected.ok) {
+    // No lock, or a lock whose engine is gone: nothing runs.
+    if (connected.error.code === "not_running") return { items: 0 };
     if (connected.error.code !== "unsupported_version") return { items: undefined };
     const engine = connected.error.engine;
     return { items: engine?.runningItems, ...(engine !== undefined && { apiVersion: engine.apiVersion }) };

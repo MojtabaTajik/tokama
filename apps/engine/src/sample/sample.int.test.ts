@@ -32,7 +32,7 @@ async function sampleEngine(): Promise<Fixture> {
   const started = await startEngine({ dir, sample: true, clock });
   if (!started.ok) throw new Error(started.error.message);
   cleanups.push(() => started.value.close());
-  const connected = await connect({ dir, startTimeoutMs: 2_000 });
+  const connected = await connect({ dir, lockPath: started.value.endpoint.lockPath, startTimeoutMs: 2_000 });
   if (!connected.ok) throw new Error(connected.error.message);
   cleanups.push(() => connected.value.close());
 
@@ -505,7 +505,7 @@ describe("sample history", () => {
     const started = await startEngine({ dir, sample: true, sampleHistory: 200, clock: manualClock(NOW) });
     if (!started.ok) throw new Error(started.error.message);
     cleanups.push(() => started.value.close());
-    const connected = await connect({ dir, startTimeoutMs: 2_000 });
+    const connected = await connect({ dir, lockPath: started.value.endpoint.lockPath, startTimeoutMs: 2_000 });
     if (!connected.ok) throw new Error(connected.error.message);
     cleanups.push(() => connected.value.close());
     const client = connected.value;
@@ -535,7 +535,7 @@ describe("sample history", () => {
     const started = await startEngine({ dir, sample: true, sampleHistory: 200, sampleHistoryOnly: true, clock: manualClock(NOW) });
     if (!started.ok) throw new Error(started.error.message);
     cleanups.push(() => started.value.close());
-    const connected = await connect({ dir, startTimeoutMs: 2_000 });
+    const connected = await connect({ dir, lockPath: started.value.endpoint.lockPath, startTimeoutMs: 2_000 });
     if (!connected.ok) throw new Error(connected.error.message);
     cleanups.push(() => connected.value.close());
 

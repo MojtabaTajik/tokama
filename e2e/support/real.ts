@@ -192,7 +192,7 @@ export async function startEngine(workspace: Workspace): Promise<RunningEngine> 
   try {
     for (const deadline = Date.now() + 20_000; client === undefined; await new Promise((done) => setTimeout(done, 100))) {
       if (child.exitCode !== null) throw new Error(`the engine exited with ${child.exitCode}: ${readFileSync(join(workspace.root, "engine.out"), "utf8")}`);
-      const connected = await connect({ dir: workspace.engineDir, startTimeoutMs: 1_000 });
+      const connected = await connect({ dir: workspace.engineDir, lockPath: join(workspace.tokamaHome, "engine.lock"), startTimeoutMs: 1_000 });
       if (connected.ok) client = connected.value;
       else if (Date.now() > deadline) throw new Error(`no connection to the engine: ${connected.error.message}`);
     }
@@ -228,8 +228,8 @@ export function realTokamaHome(): string[] {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name);
       const stat = statSync(path, { throwIfNoEntry: false });
-      // The engine's own run dir holds sockets and locks of an engine the user may run.
-      if (stat === undefined || entry.name === "run") continue;
+      // The engine's own run dir and its lock (with the temp and moved-aside files it makes) belong to an engine the user may run.
+      if (stat === undefined || entry.name === "run" || entry.name.startsWith("engine.lock")) continue;
       entries.push(`${path} ${stat.size} ${stat.mtimeMs}`);
       if (entry.isDirectory()) walk(path);
     }

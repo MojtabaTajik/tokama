@@ -130,7 +130,11 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
       case "refused":
         return run(mine, "ask", true);
       case "still_running":
-        return fail(`The older Tokama engine${outcome.pid === undefined ? "" : ` (pid ${outcome.pid})`} did not stop. Press Try again.`);
+        return fail(
+          outcome.pid === undefined
+            ? "The engine did not stop. Quit it in Activity Monitor (macOS) or end its process (Linux), then press Try again."
+            : `The engine (pid ${outcome.pid}) did not stop. Quit it in Activity Monitor (macOS) or with \`kill ${outcome.pid}\` (Linux), then press Try again.`,
+        );
     }
   };
 

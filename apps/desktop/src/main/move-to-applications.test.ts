@@ -84,7 +84,6 @@ describe("offerMove", () => {
 });
 
 describe("itemsRunningIn", () => {
-  const LOCK = { pid: 42 };
   const board = (...states: string[]) => ({ ok: true as const, data: { items: states.map((state) => ({ state })) } });
 
   /** Deps for a live engine that answers `reply`; each can be overridden. */
@@ -92,25 +91,13 @@ describe("itemsRunningIn", () => {
     const close = vi.fn(async () => {});
     const query = vi.fn(reply);
     const connect = vi.fn(async (): Promise<ConnectResult> => ({ ok: true, value: { query, close } }));
-    const all: CopyEngineDeps = { endpoint: () => ({ ok: true, value: { lockPath: "/x/engine.lock" } }), readLock: () => LOCK, pidAlive: () => true, connect, ...overrides };
+    const all: CopyEngineDeps = { connect, ...overrides };
     return { all, close, query, connect };
   }
   const refused = (code: ConnectError["code"], engine?: ConnectError["engine"]): CopyEngineDeps["connect"] => async () => ({ ok: false, error: { code, ...(engine !== undefined && { engine }) } });
 
-  it("is undefined when the engine endpoint is not valid", async () => {
-    expect(await itemsRunningIn(copyDeps({ endpoint: () => ({ ok: false }) }).all)).toBeUndefined();
-  });
-
-  it("is 0 without a lock, and asks nothing more", async () => {
-    const { all, connect } = copyDeps({ readLock: () => undefined });
-    expect(await itemsRunningIn(all)).toBe(0);
-    expect(connect).not.toHaveBeenCalled();
-  });
-
-  it("is 0 when the lock names a pid that is gone, without connecting", async () => {
-    const { all, connect } = copyDeps({ pidAlive: () => false });
-    expect(await itemsRunningIn(all)).toBe(0);
-    expect(connect).not.toHaveBeenCalled();
+  it("is 0 when no engine runs: no lock, or a lock whose socket is dead", async () => {
+    expect(await itemsRunningIn(copyDeps({ connect: refused("not_running") }).all)).toBe(0);
   });
 
   it("counts queued, running and waiting items, not finished ones, and closes the connection", async () => {
@@ -131,8 +118,8 @@ describe("itemsRunningIn", () => {
     expect(close).toHaveBeenCalledOnce();
   });
 
-  it("is undefined when no engine answers", async () => {
-    expect(await itemsRunningIn(copyDeps({ connect: refused("not_running") }).all)).toBeUndefined();
+  it("is undefined when an engine that runs does not answer", async () => {
+    expect(await itemsRunningIn(copyDeps({ connect: refused("timeout") }).all)).toBeUndefined();
   });
 
   it("uses the running items of an engine of another API version", async () => {

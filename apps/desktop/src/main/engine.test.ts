@@ -113,6 +113,13 @@ describe("engineCommand", () => {
     });
   });
 
+  it("passes the home folder as --home for the real engine", () => {
+    expect(engineCommand({ ...input, home: "/home/a/.tokama" })).toMatchObject({
+      ok: true,
+      value: { args: ["/repo/apps/engine/dist/main.js", "--dir", "/run/tokama", "--home", "/home/a/.tokama"] },
+    });
+  });
+
   it("adds --sample for the fake engine mode", () => {
     expect(engineCommand({ ...input, sample: true })).toMatchObject({
       ok: true,
@@ -125,6 +132,7 @@ describe("engineCommand", () => {
     expect(engineCommand({ ...input, node: "node" })).toMatchObject({ ok: false, error: expect.stringContaining("node binary") });
     expect(engineCommand({ ...input, entry: "dist/main.js" })).toMatchObject({ ok: false, error: expect.stringContaining("engine entry") });
     expect(engineCommand({ ...input, dir: "run" })).toMatchObject({ ok: false, error: expect.stringContaining("engine dir") });
+    expect(engineCommand({ ...input, home: ".tokama" })).toMatchObject({ ok: false, error: expect.stringContaining("home folder") });
   });
 });
 

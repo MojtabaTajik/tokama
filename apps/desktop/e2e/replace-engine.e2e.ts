@@ -44,7 +44,7 @@ const alive = (pid: number | undefined): boolean => {
 
 /**
  * An engine of the previous API version in the app's engine dir: a 0700 dir, a token, a socket and
- * a lock `<pid> <id>`. Like an engine from before `ifIdle`, it answers a hello with an
+ * a lock `<pid> <id> <socket>`. Like an engine from before `ifIdle`, it answers a hello with an
  * unsupported_version refusal that says how many items it runs, and a shutdown request by
  * accepting it and going away.
  */
@@ -94,13 +94,56 @@ async function startFakeEngine(dir: string, running: number | undefined): Promis
   };
   await new Promise<void>((resolve) => fakeEngine.server.listen(join(dir, "engine.sock"), resolve));
   chmodSync(join(dir, "engine.sock"), 0o600);
-  writeFileSync(join(dir, "engine.lock"), `${child.pid} old-${child.pid}\n`, { mode: 0o600 });
+  writeFileSync(join(dir, "engine.lock"), `${child.pid} old-${child.pid} ${join(dir, "engine.sock")}\n`, { mode: 0o600 });
   return fakeEngine;
 }
 
 const seed = (running: number | undefined) => async (_home: string, tmp: string) => {
   fake = await startFakeEngine(engineDir(tmp), running);
 };
+
+/**
+ * An engine of the previous API version that is stuck: a process that holds its socket open,
+ * says it runs nothing when it gets a hello, and never answers a shutdown request. Its lock names
+ * itself. With `alive: false` the process is killed after it listened: its lock stays, its socket
+ * is dead, and the pid in the lock still names a live process (one that has no part in this).
+ */
+async function startStuckEngine(dir: string, options: { alive: boolean }): Promise<{ readonly child: ChildProcess; readonly harmless: ChildProcess | undefined }> {
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  chmodSync(dir, 0o700);
+  const socketPath = join(dir, "engine.sock");
+  writeFileSync(join(dir, "engine.token"), "fake-token\n", { mode: 0o600 });
+  const script = `const net = require("net");
+    net.createServer((socket) => {
+      socket.on("error", () => {});
+      socket.once("data", (chunk) => {
+        if (JSON.parse(chunk.toString().split("\\n")[0]).kind === "hello") {
+          socket.end(JSON.stringify({ kind: "connection_error", apiVersion: Number(process.env.OLD_API), code: "unsupported_version", message: "old", runningItems: 0 }) + "\\n");
+        }
+      });
+    }).listen(process.env.SOCK, () => console.log("ready"));`;
+  const child = spawn(process.execPath, ["-e", script], { env: { ...process.env, SOCK: socketPath, OLD_API: String(API_VERSION - 1) }, stdio: ["ignore", "pipe", "ignore"] });
+  await new Promise<void>((resolve) => child.stdout?.once("data", () => resolve()));
+  if (options.alive) {
+    writeFileSync(join(dir, "engine.lock"), `${child.pid} old-${child.pid} ${socketPath}\n`, { mode: 0o600 });
+    return { child, harmless: undefined };
+  }
+  // Killed: the socket file stays and nobody listens. A process that has nothing to do with it holds the lock's pid.
+  const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  child.kill("SIGKILL");
+  await exited;
+  const harmless = spawn(process.execPath, ["-e", "setTimeout(() => {}, 120000)"], { stdio: "ignore" });
+  writeFileSync(join(dir, "engine.lock"), `${harmless.pid} old-${harmless.pid} ${socketPath}\n`, { mode: 0o600 });
+  return { child, harmless };
+}
+
+let stuck: { readonly child: ChildProcess; readonly harmless: ChildProcess | undefined } | undefined;
+
+afterEach(() => {
+  stuck?.child.kill("SIGKILL");
+  stuck?.harmless?.kill("SIGKILL");
+  stuck = undefined;
+});
 
 const QUESTION = "An older engine is still running";
 
@@ -170,4 +213,30 @@ flow(
   },
   "older",
   seed(undefined),
+);
+
+flow(
+  "force-stops an idle older engine that holds its socket open and never answers the shutdown request",
+  async ({ connection }) => {
+    await expect.poll(async () => (await connection()).status, { timeout: 60_000 }).toBe("connected");
+    // The app signalled it, because its socket accepted and its lock named it: the process is gone.
+    await expect.poll(() => alive(stuck?.child.pid), { timeout: 30_000 }).toBe(false);
+  },
+  "older",
+  async (_home, tmp) => {
+    stuck = await startStuckEngine(engineDir(tmp), { alive: true });
+  },
+);
+
+flow(
+  "never signals the process of a stale lock whose socket is dead, and starts its own engine",
+  async ({ connection }) => {
+    await expect.poll(async () => (await connection()).status, { timeout: 60_000 }).toBe("connected");
+    // The pid in the old lock belongs to a process that is no engine; with nothing listening, nothing may signal it.
+    expect(alive(stuck?.harmless?.pid)).toBe(true);
+  },
+  "sample",
+  async (_home, tmp) => {
+    stuck = await startStuckEngine(engineDir(tmp), { alive: false });
+  },
 );

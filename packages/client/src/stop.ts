@@ -1,19 +1,26 @@
-// Stops the engine of one engine dir. One path for every caller (an update, a replace, the user's
+// Stops the engine that a lock names. One path for every caller (an update, a replace, the user's
 // "Restart engine now"): ask the engine to stop, wait, and only then, when allowed, signal it.
 //
 // The engine's own socket says whether it lives: a connect that is refused, or finds no socket
 // file, means it is dead; an accepted connect means it lives. No process list is read. A signal
-// goes out only when, right before it, the socket accepts a connection and the lock still names the
-// engine the caller meant: while the socket accepts, the lock's pid is that live engine, so a pid
-// that another process took over is never hit. A probe that times out, or fails for any other
-// reason, is "cannot tell", and nothing is signalled on a guess.
+// goes out only to the pid in the lock, and only when, right before it, one of two things holds:
+//
+//  - Identity proven: the engine behind the socket answered a token-checked shutdown request with
+//    the engine id and pid of the lock. Nothing else can answer there.
+//  - Identity not proven (an engine of an older build sends no pid, or accepts and never answers):
+//    the lock is valid, unchanged since it was read, its folder is ours and private, and its
+//    socket accepts a connection. A socket that is dead never gets a signal, so a stale lock whose
+//    pid another process took over is never acted on.
+//
+// A probe that times out, or fails for any other reason, is "cannot tell", and nothing is signalled
+// on a guess.
 //
 // An engine is stopped on Tokama's own initiative only with `ifIdle`: the engine itself refuses
 // while an item runs, so no item can start between the count and the stop. Signals follow only an
 // engine that said it was idle (or was idle when the caller last counted); a busy or silent engine
 // is signalled only when the user asked for it (`ifIdle` false).
-import { connect as connectSocket } from "node:net";
-import { checkEngineDir, type Clock, engineEndpoint, hasCode, readEngineLock, SHUTDOWN_IF_IDLE_SINCE, sleep, systemClock } from "@tokama/core";
+import { dirname } from "node:path";
+import { checkEngineDir, type Clock, type EngineLock, type Liveness, probeSocket, readEngineLock, SHUTDOWN_IF_IDLE_SINCE, sleep, systemClock, tokenPathOf } from "@tokama/core";
 import { type EngineInfo, sendShutdown } from "./client.js";
 
 export type StopResult =
@@ -26,11 +33,9 @@ export type StopResult =
   /** Still running, or not known to be stopped, and nothing more may be sent. `pid` is the lock's, when it names one. */
   | { readonly kind: "still_running"; readonly pid?: number };
 
-export type Liveness = "alive" | "dead" | "unknown";
-
 export interface StopOptions {
-  /** The engine dir. */
-  readonly dir: string;
+  /** The engine's lock file. */
+  readonly lockPath: string;
   /** The engine id the lock named when the caller decided to stop it; a lock naming another engine is left alone. */
   readonly expectedEngineId?: string;
   /** What the engine said about itself in its handshake, when the caller has it. */
@@ -51,44 +56,26 @@ export interface StopOptions {
   readonly probe?: (socketPath: string) => Promise<Liveness>;
 }
 
-const PROBE_TIMEOUT_MS = 2_000;
-
-/** One connect to the socket: accepted is alive, refused or no such file is dead, anything else is not knowing. */
-export function probeSocket(socketPath: string, timeoutMs = PROBE_TIMEOUT_MS): Promise<Liveness> {
-  return new Promise((resolve) => {
-    const socket = connectSocket(socketPath);
-    const done = (state: Liveness) => {
-      clearTimeout(timer);
-      socket.destroy();
-      resolve(state);
-    };
-    const timer = setTimeout(() => done("unknown"), timeoutMs);
-    socket.once("connect", () => done("alive"));
-    socket.once("error", (error) => done(hasCode(error, "ECONNREFUSED") || hasCode(error, "ENOENT") ? "dead" : "unknown"));
-  });
-}
-
 export async function stopEngine(options: StopOptions): Promise<StopResult> {
-  const endpoint = engineEndpoint(options.dir);
-  // No engine listens on a socket that has no valid path.
-  if (!endpoint.ok) return { kind: "stopped", forced: false };
-  const { socketPath, lockPath } = endpoint.value;
   const clock = options.clock ?? systemClock;
   const stepMs = options.stepMs ?? 15_000;
   const pollMs = options.pollMs ?? 200;
   const probe = options.probe ?? ((path: string) => probeSocket(path));
   const expected = options.expectedEngineId;
-  const named = () => readEngineLock(lockPath);
+  const named = () => readEngineLock(options.lockPath);
   const first = named();
+  // No lock, no engine to stop.
+  if (first === undefined) return { kind: "stopped", forced: false };
   // The engine the caller meant: the one it named, or else the one the lock named when this began.
-  const meant = (lock: ReturnType<typeof named>) => lock !== undefined && (expected !== undefined ? lock.engineId === expected : lock.pid === first?.pid && lock.engineId === first.engineId);
+  const meant = (lock: EngineLock | undefined) => lock !== undefined && (expected !== undefined ? lock.engineId === expected : lock.text === first.text);
+  const filesOf = (lock: EngineLock) => ({ socketPath: lock.socketPath, tokenPath: tokenPathOf(lock.socketPath) });
   const stillRunning = (): StopResult => {
     const lock = named();
     return lock === undefined ? { kind: "still_running" } : { kind: "still_running", pid: lock.pid };
   };
 
-  if (expected !== undefined && first !== undefined && first.engineId !== expected) return { kind: "replaced" };
-  if ((await probe(socketPath)) === "dead") return { kind: "stopped", forced: false };
+  if (expected !== undefined && first.engineId !== expected) return { kind: "replaced" };
+  if ((await probe(first.socketPath)) === "dead") return { kind: "stopped", forced: false };
 
   // An engine that does not know `ifIdle` would stop whatever it runs, so it is asked nothing
   // unless its handshake said that it runs nothing.
@@ -98,7 +85,7 @@ export async function stopEngine(options: StopOptions): Promise<StopResult> {
     if (info.runningItems !== 0) return { kind: "refused", ...(info.runningItems !== undefined && { runningItems: info.runningItems }) };
     ifIdle = false;
   }
-  const answer = await sendShutdown(options.dir, { ifIdle });
+  const answer = await sendShutdown(filesOf(first), { ifIdle });
   if (answer.kind === "refused") return { kind: "refused", ...(answer.runningItems !== undefined && { runningItems: answer.runningItems }) };
 
   // Gone: nothing listens, and (while the engine ends cleanly) its lock is released. After a kill
@@ -106,26 +93,35 @@ export async function stopEngine(options: StopOptions): Promise<StopResult> {
   const waitGone = async (lockMustGo: boolean): Promise<boolean> => {
     const deadline = clock.now() + stepMs;
     for (;;) {
-      const dead = (await probe(socketPath)) === "dead";
+      const dead = (await probe(first.socketPath)) === "dead";
       if (dead && (!lockMustGo || !meant(named()))) return true;
       if (clock.now() >= deadline) return dead;
       await sleep(clock, pollMs);
     }
   };
 
-  /** The signal, only if the socket accepts and the lock still names the same engine, checked right before. */
+  /** The signal, only for a proven engine, or an unproven one whose lock and live socket are checked right before. */
   const signalGuarded = async (signal: "SIGTERM" | "SIGKILL"): Promise<"sent" | StopResult> => {
     const lock = named();
-    if (lock === undefined) return (await probe(socketPath)) === "dead" ? { kind: "stopped", forced: false } : stillRunning();
-    // Only the engine the caller meant: a newer engine that took the dir meanwhile is never signalled.
+    if (lock === undefined) return (await probe(first.socketPath)) === "dead" ? { kind: "stopped", forced: false } : stillRunning();
+    // Only the engine the caller meant: a newer engine that took the lock meanwhile is never signalled.
     if (!meant(lock)) return { kind: "replaced" };
-    // The pid is trusted only in a folder that is ours and private, and is never this process.
-    if (!checkEngineDir(options.dir).ok || lock.pid === process.pid) return stillRunning();
-    const state = await probe(socketPath);
-    if (state === "dead") return { kind: "stopped", forced: false };
-    if (state === "unknown") return stillRunning();
-    const after = named();
-    if (after === undefined || after.pid !== lock.pid || after.engineId !== lock.engineId) return { kind: "replaced" };
+    // The pid is trusted only in a folder that is ours and private, and is never this process or a group.
+    if (!checkEngineDir(dirname(lock.socketPath)).ok || lock.pid === process.pid || lock.pid <= 1) return stillRunning();
+    // Ask the engine behind the socket who it is, over the token-checked connection.
+    const proof = await sendShutdown(filesOf(lock), { ifIdle });
+    if (proof.kind === "refused") return { kind: "refused", ...(proof.runningItems !== undefined && { runningItems: proof.runningItems }) };
+    if (proof.kind !== "none" && proof.engineId !== undefined && proof.pid !== undefined) {
+      // Another engine listens where the lock says this one does: not the one to signal.
+      if (proof.engineId !== lock.engineId || proof.pid !== lock.pid) return { kind: "replaced" };
+    } else {
+      // Not proven: the socket must accept right now (a dead socket means the engine is gone).
+      const state = await probe(lock.socketPath);
+      if (state === "dead") return { kind: "stopped", forced: false };
+      if (state === "unknown") return stillRunning();
+    }
+    // The lock must read the same as when this began, right before the signal.
+    if (named()?.text !== lock.text) return { kind: "replaced" };
     try {
       options.signal(lock.pid, signal);
     } catch {

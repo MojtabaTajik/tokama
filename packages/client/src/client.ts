@@ -1,24 +1,24 @@
 // Typed client of the engine API over the local socket.
 //
-// connect() reads the per-session token, sends a hello and waits for the welcome. When the engine
-// is not running and a start command is given, it starts the engine (detached, so it outlives
-// the client) and keeps trying until the start timeout. After a lost connection the client
-// reconnects on its own (starting the engine again when it can) and emits `reconnected`: the
-// engine may have restarted and `seq` restarted with it, so the consumer re-runs its queries.
-// Requests in flight when the connection drops fail with `disconnected`; they are never resent,
-// because commands are not idempotent.
+// connect() finds the engine through its lock, reads the token that sits next to the lock's
+// socket, sends a hello and waits for the welcome. An accepted connection means that an engine
+// lives, however long it takes to answer (it may be opening a large item log): the client keeps
+// that one connection and waits for the welcome until the start timeout, then gives up and names
+// the engine's pid. A refused connection or a missing socket means the engine is dead. When there
+// is no engine and a start command is given, the client starts one (detached, so it outlives the
+// client) and waits for the lock it publishes; it never starts a second one while the first still
+// runs. After a lost connection the client reconnects on its own (starting the engine again when
+// it can) and emits `reconnected`: the engine may have restarted and `seq` restarted with it, so
+// the consumer re-runs its queries. Requests in flight when the connection drops fail with
+// `disconnected`; they are never resent, because commands are not idempotent.
 //
-// Starts are bounded: after MAX_STARTS starts in a row without a connection (with a growing delay
-// between them) the client gives up with `start_failed`. No engine is started while an engine that
-// is still starting holds the engine dir's lock (another one would only exit with code 3, "an
-// engine already runs"): the client waits for it, past the start timeout, up to `startingLimitMs`,
-// then gives up and names its pid. Nor is one started while the one started last is still running
-// and has not taken the lock yet (up to a grace period). A started engine's output goes to
-// `engine.log` in the engine dir; if it exits before a connection (other than with code 3), the
-// client gives up at once and names the exit code and the log.
+// A started engine's output goes to `engine.log` in the engine dir. If it exits before a
+// connection with a code other than 3 ("an engine already runs", so another one won), the client
+// gives up at once and names the exit code and the log.
 import { mkdirSync, readFileSync } from "node:fs";
 import { connect as connectSocket, type Socket } from "node:net";
 import { homedir } from "node:os";
+import { dirname } from "node:path";
 import {
   API_VERSION,
   checkEngineDir,
@@ -29,8 +29,10 @@ import {
   type CommandType,
   defaultEngineDir,
   encodeLine,
+  hasCode,
   type EngineEndpoint,
   engineEndpoint,
+  type EngineLock,
   type EngineEvent,
   err,
   LineDecoder,
@@ -44,11 +46,9 @@ import {
   parseServerMessage,
   spawnDetached,
   parseShutdownReply,
-  pidAlive,
-  type PidFile,
-  posixEngineProcesses,
-  readPidFile,
-  lockWriterLive,
+  probeSocket,
+  readEngineLock,
+  tokenPathOf,
   type QueryInput,
   type QueryResult,
   type QueryType,
@@ -64,17 +64,17 @@ export interface EngineCommand {
 }
 
 export interface ConnectOptions {
-  /** Engine directory. Default: `defaultEngineDir()` (TOKAMA_ENGINE_DIR, XDG_RUNTIME_DIR or ~/.tokama/run). */
+  /** Where an engine this client starts runs, and its `engine.log`. Default: `defaultEngineDir()` (TOKAMA_ENGINE_DIR or ~/.tokama/run). */
   readonly dir?: string;
+  /** The engine's lock file, from `engineLockPath`: a client finds the engine only through it, never by guessing a socket. */
+  readonly lockPath: string;
   /** How to start the engine when it is not running. Without it, the client never starts one. */
   readonly start?: EngineCommand;
-  /** How long connect() waits for a started engine. Default 10 s; longer while an engine is still starting (see `startingLimitMs`). */
-  readonly startTimeoutMs?: number;
   /**
-   * How long the client waits for an engine that holds the engine dir's lock but does not answer
-   * yet (it is still starting) before it gives up with `start_failed`. Default 2 min.
+   * The one limit of the first connect: how long it waits for an engine to start, or for one that
+   * accepted the connection to answer. Default 2 min with `start`, 10 s without it.
    */
-  readonly startingLimitMs?: number;
+  readonly startTimeoutMs?: number;
   /** Default timeout of one request. Default 30 s. */
   readonly requestTimeoutMs?: number;
   /** Reconnect after a lost connection. Default true. */
@@ -148,21 +148,15 @@ const TERMINAL: ReadonlySet<ConnectErrorCode> = new Set([
   "protocol_error",
   "start_failed",
 ]);
-const ATTEMPT_TIMEOUT_MS = 2_000;
-/** Starts in a row without a connection before the client gives up. */
-const MAX_STARTS = 5;
-/** Delay before the second start; it doubles for each further start (200 ms ... 3.2 s). */
-const START_BACKOFF_MS = 200;
-/** How long an engine this client started may run without taking the lock before another is started. */
-const STARTING_GRACE_MS = 10_000;
-const STARTING_LIMIT_MS = 120_000;
+const START_TIMEOUT_MS = 120_000;
+const PROBE_ONLY_TIMEOUT_MS = 10_000;
 /** Exit code of an engine that found another engine running: not a failure. */
 const EXIT_ALREADY_RUNNING = 3;
 
-export async function connect(options: ConnectOptions = {}): Promise<Result<EngineClient, ConnectError>> {
+export async function connect(options: ConnectOptions): Promise<Result<EngineClient, ConnectError>> {
   const endpoint = engineEndpoint(options.dir ?? defaultEngineDir(process.env, homedir()));
   if (!endpoint.ok) return err({ code: "invalid_endpoint", message: endpoint.error.message });
-  const client = new Client(endpoint.value, options);
+  const client = new Client(endpoint.value, options.lockPath, options);
   const opened = await client.open();
   return opened.ok ? ok(client) : opened;
 }
@@ -191,33 +185,30 @@ class Client implements EngineClient {
   private readonly subscribers = new Set<Subscriber>();
   private closing = false;
   private nextRequest = 0;
-  private lastStart = Number.NEGATIVE_INFINITY;
-  /** Starts since the last good connection. */
-  private starts = 0;
   /** The engine this client started and has not connected to yet. */
   private child: ChildProcess | undefined;
   private startError: string | undefined;
-  /** The lock of an engine that is still starting, and since when the client has waited for it. */
-  private waiting: { readonly lock: PidFile; readonly since: number } | undefined;
-  /** The last lock whose writer's start time was read, and whether that writer was live. */
-  private checked: { readonly lock: PidFile; readonly live: boolean } | undefined;
+  /** How long to wait before the next try while the engine closes connections (it is stopping). */
+  private drainDelayMs = 50;
   private readonly wakeups = new Set<() => void>();
 
   constructor(
     private readonly endpoint: EngineEndpoint,
+    private readonly lockPath: string,
     private readonly options: ConnectOptions,
   ) {}
 
+  private get limitMs(): number {
+    return this.options.startTimeoutMs ?? (this.options.start ? START_TIMEOUT_MS : PROBE_ONLY_TIMEOUT_MS);
+  }
+
   /** First connection: start the engine if needed and wait for it. */
   async open(): Promise<Result<void, ConnectError>> {
-    const timeoutMs = this.options.startTimeoutMs ?? 10_000;
-    let deadline = Date.now() + timeoutMs;
+    const deadline = Date.now() + this.limitMs;
     for (;;) {
-      const attempt = await this.attempt();
+      const attempt = await this.attempt(Math.max(deadline - Date.now(), 0));
       if (attempt.ok || TERMINAL.has(attempt.error.code)) return attempt;
       if (!this.options.start) return attempt;
-      // While an engine is still starting the timeout does not run; once it is gone, a full one starts.
-      if (attempt.error.code === "not_running" && this.waiting !== undefined) deadline = Date.now() + timeoutMs;
       if (Date.now() >= deadline) return err({ code: "timeout", message: `the engine did not start: ${attempt.error.message}` });
       await this.sleep(50);
     }
@@ -319,74 +310,67 @@ class Client implements EngineClient {
     });
   }
 
-  /** One connection attempt; starts the engine (at most every few seconds) when it is not running. */
-  private async attempt(): Promise<Result<void, ConnectError>> {
+  /**
+   * One connection attempt, through the lock. An engine whose socket accepts is waited for on that
+   * one connection, up to `limitMs`, and never replaced. With no lock, or one whose socket is dead,
+   * the client starts an engine when it has a start command and none of its own is still running.
+   */
+  private async attempt(limitMs: number): Promise<Result<void, ConnectError>> {
     if (this.startError) return err({ code: "start_failed", message: this.startError });
-    const session = await openSession(this.endpoint, ATTEMPT_TIMEOUT_MS, {
+    const lock = readEngineLock(this.lockPath);
+    let none: ConnectError = { code: "not_running", message: `no engine is running (no lock at ${this.lockPath})` };
+    if (lock !== undefined) {
+      const reached = await this.reach(lock, limitMs);
+      if (reached.kind === "done") return reached.result;
+      none = reached.error;
+    }
+    const start = this.options.start;
+    if (!start) return err(none);
+    // The engine started last has not published its lock yet, or has exited with code 3 and the
+    // winner's lock is next: wait for it, never start another beside it.
+    if (this.child !== undefined && this.child.exitCode === null && this.child.signalCode === null) return err(none);
+    const started = this.startEngine(start);
+    return started.ok ? err(none) : started;
+  }
+
+  /** Connects to the engine the lock names: connected or failed for good (`done`), or `dead` when nothing listens. */
+  private async reach(lock: EngineLock, limitMs: number): Promise<{ readonly kind: "done"; readonly result: Result<void, ConnectError> } | { readonly kind: "dead"; readonly error: ConnectError }> {
+    const session = await openSession({ socketPath: lock.socketPath, tokenPath: tokenPathOf(lock.socketPath) }, limitMs, {
       onLine: (line) => this.onLine(line),
       onClose: () => this.onClose(),
     });
     if (session.ok) {
       if (this.closing) {
         session.value.socket.destroy();
-        return err({ code: "not_running", message: "the client was closed" });
+        return { kind: "done", result: err({ code: "not_running", message: "the client was closed" }) };
       }
       this.socket = session.value.socket;
       this.engineId = session.value.engineId;
       this.engine = session.value.engine;
-      this.starts = 0;
       this.child = undefined;
-      this.waiting = undefined;
-      return ok(undefined);
+      this.drainDelayMs = 50;
+      return { kind: "done", result: ok(undefined) };
     }
-    const start = this.options.start;
-    if (session.error.code !== "not_running" || !start) return session;
-    // An engine that holds the lock is still starting (a large item log, a slow disk): another one
-    // would only exit with code 3, so the client waits, without counting a start.
-    if (await this.engineStarting()) {
-      const limitMs = this.options.startingLimitMs ?? STARTING_LIMIT_MS;
-      const waiting = this.waiting;
-      // At the limit the start time is read again: the pid may belong to another process by now.
-      if (waiting !== undefined && Date.now() - waiting.since >= limitMs && (await this.engineStarting(true))) {
-        const pid = waiting.lock.pid ?? "unknown";
-        return err({ code: "start_failed", message: `the engine (pid ${pid}) has been starting for ${Math.round(limitMs / 1000)} s and does not answer; see ${this.endpoint.logPath}` });
-      }
-      if (this.waiting !== undefined) return session;
+    const { reason, ...error } = session.error;
+    if (reason === "dead") return { kind: "dead", error };
+    if (reason === "no_token") {
+      // The token is written before the socket listens, but an engine of an earlier build writes it
+      // after its lock. With a socket that accepts, an engine lives (or is starting): never start one beside it.
+      if ((await probeSocket(lock.socketPath)) === "dead") return { kind: "dead", error };
+      return { kind: "done", result: err({ code: "timeout", message: error.message }) };
     }
-    // The engine started last is still running but has not taken the lock yet: on a loaded machine
-    // that takes seconds. Another engine started meanwhile could take the dir over once the first
-    // one stops. Another engine is started only when this one has not taken it within STARTING_GRACE_MS.
-    if (this.child !== undefined && this.child.exitCode === null && this.child.signalCode === null && Date.now() - this.lastStart < STARTING_GRACE_MS) return session;
-    // The first start is immediate; each further one waits twice as long as the one before.
-    const delay = this.starts === 0 ? 0 : START_BACKOFF_MS * 2 ** (this.starts - 1);
-    if (Date.now() - this.lastStart < delay) return session;
-    if (this.starts >= MAX_STARTS) {
-      return err({ code: "start_failed", message: `the engine did not come up after ${MAX_STARTS} starts; see ${this.endpoint.logPath}` });
+    if (reason === "closed") {
+      // The engine took the connection and closed it without a welcome: it is stopping. Never start one beside it.
+      await this.sleep(this.drainDelayMs);
+      this.drainDelayMs = Math.min(this.drainDelayMs * 2, 1_000);
     }
-    this.lastStart = Date.now();
-    this.starts++;
-    const started = this.startEngine(start);
-    return started.ok ? session : started;
-  }
-
-  /** True while an engine that is still starting holds the engine dir's lock; tracks how long the client has waited for it. */
-  private async engineStarting(recheck = false): Promise<boolean> {
-    const lock = readPidFile(this.endpoint.lockPath);
-    const sameLock = (other: PidFile | undefined) => lock !== undefined && other !== undefined && other.pid === lock.pid && other.writtenAt === lock.writtenAt;
-    const checked = this.checked;
-    let live = false;
-    if (lock !== undefined) {
-      // The start time is read once per lock (`ps` is slow, and this runs every 50 ms); after that a
-      // live pid is enough. A lock with no pid yet needs no `ps`.
-      if (!recheck && lock.pid !== undefined && checked !== undefined && sameLock(checked.lock)) live = checked.live && pidAlive(lock.pid);
-      else {
-        live = await lockWriterLive(lock, posixEngineProcesses);
-        this.checked = { lock, live };
-      }
+    // Something other than "nothing listens" went wrong: that is not the same as no engine.
+    if (error.code === "not_running" && reason === undefined) return { kind: "done", result: err({ code: "timeout", message: error.message }) };
+    if (reason === "silent") {
+      const message = `The engine (pid ${lock.pid}) does not answer; see ${this.endpoint.logPath}`;
+      return { kind: "done", result: err({ code: this.options.start ? "start_failed" : "timeout", message }) };
     }
-    if (!live) this.waiting = undefined;
-    else if (!sameLock(this.waiting?.lock) && lock !== undefined) this.waiting = { lock, since: Date.now() };
-    return live;
+    return { kind: "done", result: err(error) };
   }
 
   private startEngine(start: EngineCommand): Result<void, ConnectError> {
@@ -446,7 +430,7 @@ class Client implements EngineClient {
     while (!this.closing) {
       await this.sleep(delay);
       if (this.closing) return;
-      const attempt = await this.attempt();
+      const attempt = await this.attempt(this.limitMs);
       if (attempt.ok) return this.publish({ kind: "reconnected", engineId: this.engineId });
       if (TERMINAL.has(attempt.error.code)) return this.fail(attempt.error);
       delay = Math.min(delay * 2, 1_000);
@@ -486,45 +470,72 @@ class Client implements EngineClient {
   }
 }
 
+/** A socket and the token that belongs to it. */
+export interface SocketFiles {
+  readonly socketPath: string;
+  readonly tokenPath: string;
+}
+
+/**
+ * Why a connection did not come to a welcome, beyond the error code: `dead` (nothing listens, or
+ * its files are gone), `closed` (the engine closed the connection without a reply: it is
+ * stopping), `silent` (it accepted and did not answer in time).
+ */
+interface SessionFailure extends ConnectError {
+  readonly reason?: "dead" | "closed" | "silent" | "no_token";
+}
+
+/**
+ * The token of a socket, read only from a folder that is ours and private, as the engine made it.
+ * A folder or token that is missing means the engine is gone; a folder that is not ours is refused.
+ */
+function readToken(files: SocketFiles): Result<string, SessionFailure> {
+  const dir = checkEngineDir(dirname(files.socketPath));
+  if (!dir.ok) return err(dir.error.code === "missing" ? { code: "not_running", message: dir.error.message, reason: "dead" } : { code: "unsafe_dir", message: dir.error.message });
+  try {
+    // Read on every attempt: the token changes each time the engine starts.
+    return ok(readFileSync(files.tokenPath, "utf8").trim());
+  } catch {
+    return err({ code: "not_running", message: `no engine token at ${files.tokenPath}`, reason: "no_token" });
+  }
+}
+
 /** Connects and handshakes. The handlers get every line after the welcome, and the close. */
-function openSession(endpoint: EngineEndpoint, timeoutMs: number, handlers: SessionHandlers): Promise<Result<Session, ConnectError>> {
+function openSession(files: SocketFiles, timeoutMs: number, handlers: SessionHandlers): Promise<Result<Session, SessionFailure>> {
   return new Promise((resolve) => {
-    // Send the token only into a directory that is ours and private, as the engine made it.
-    const dir = checkEngineDir(endpoint.dir);
-    if (!dir.ok) {
-      const code = dir.error.code === "missing" ? "not_running" : "unsafe_dir";
-      resolve(err({ code, message: dir.error.message }));
+    const read = readToken(files);
+    if (!read.ok) {
+      resolve(read);
       return;
     }
-    let token: string;
-    try {
-      // Read on every attempt: the token changes each time the engine starts.
-      token = readFileSync(endpoint.tokenPath, "utf8").trim();
-    } catch {
-      resolve(err({ code: "not_running", message: `no engine token at ${endpoint.tokenPath}` }));
-      return;
-    }
-    const socket = connectSocket(endpoint.socketPath);
+    const token = read.value;
+    const socket = connectSocket(files.socketPath);
     const decoder = new LineDecoder();
     let session: Session | undefined;
     let settled = false;
-    const settle = (result: Result<Session, ConnectError>) => {
+    let accepted = false;
+    const settle = (result: Result<Session, SessionFailure>) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       if (!result.ok) socket.destroy();
       resolve(result);
     };
-    const timer = setTimeout(() => settle(err({ code: "timeout", message: `no welcome within ${timeoutMs} ms` })), timeoutMs);
+    const timer = setTimeout(() => settle(err({ code: "timeout", message: `no welcome within ${timeoutMs} ms`, ...(accepted && { reason: "silent" as const }) })), timeoutMs);
 
     socket.once("connect", () => {
+      accepted = true;
       const hello = encodeLine({ kind: "hello", apiVersion: API_VERSION, token });
       if (hello.ok) socket.write(hello.value);
     });
-    socket.on("error", (error) => settle(err({ code: "not_running", message: `cannot reach the engine: ${error.message}` })));
+    socket.on("error", (error) => {
+      // Refused, or no such socket: the engine is gone.
+      const dead = hasCode(error, "ECONNREFUSED") || hasCode(error, "ENOENT");
+      settle(err({ code: "not_running", message: `cannot reach the engine: ${error.message}`, ...(dead && { reason: "dead" as const }) }));
+    });
     socket.on("close", () => {
       if (session) handlers.onClose();
-      else settle(err({ code: "not_running", message: "the engine closed the connection" }));
+      else settle(err({ code: "not_running", message: "the engine closed the connection", ...(accepted && { reason: "closed" as const }) }));
     });
     socket.on("data", (chunk: Buffer) => {
       const lines = decoder.push(chunk);
@@ -566,31 +577,26 @@ function openSession(endpoint: EngineEndpoint, timeoutMs: number, handlers: Sess
  * answer (an engine older than the request, a wrong token, silence, no engine).
  */
 export type ShutdownAnswer =
-  | { readonly kind: "accepted" }
-  | { readonly kind: "refused"; readonly runningItems?: number }
+  /** `engineId` and `pid` say which engine answered; an engine older than the lock rewrite does not send them. */
+  | { readonly kind: "accepted"; readonly engineId?: string; readonly pid?: number }
+  | { readonly kind: "refused"; readonly runningItems?: number; readonly engineId?: string; readonly pid?: number }
   | { readonly kind: "none" };
 
 /**
- * Asks the engine in `dir` to stop, with its token, in place of a hello. Every engine from the
- * version that added the request accepts it, whatever its API version. `ifIdle` is understood
- * only from API version SHUTDOWN_IF_IDLE_SINCE on: an older engine ignores it and stops at once.
+ * Asks the engine on a socket to stop, with the token next to it, in place of a hello. Every
+ * engine from the version that added the request accepts it, whatever its API version. `ifIdle`
+ * is understood only from API version SHUTDOWN_IF_IDLE_SINCE on: an older engine ignores it and
+ * stops at once.
  */
-export function sendShutdown(dir: string, options: { readonly ifIdle?: boolean; readonly timeoutMs?: number } = {}): Promise<ShutdownAnswer> {
+export function sendShutdown(files: SocketFiles, options: { readonly ifIdle?: boolean; readonly timeoutMs?: number } = {}): Promise<ShutdownAnswer> {
   const timeoutMs = options.timeoutMs ?? 2_000;
   const none: ShutdownAnswer = { kind: "none" };
-  const endpoint = engineEndpoint(dir);
-  if (!endpoint.ok) return Promise.resolve(none);
-  const { tokenPath, socketPath } = endpoint.value;
   return new Promise((resolve) => {
     // The token goes only into a directory that is ours and private, as for a hello.
-    if (!checkEngineDir(endpoint.value.dir).ok) return resolve(none);
-    let token: string;
-    try {
-      token = readFileSync(tokenPath, "utf8").trim();
-    } catch {
-      return resolve(none);
-    }
-    const socket = connectSocket(socketPath);
+    const read = readToken(files);
+    if (!read.ok) return resolve(none);
+    const token = read.value;
+    const socket = connectSocket(files.socketPath);
     const decoder = new LineDecoder();
     let settled = false;
     const settle = (answer: ShutdownAnswer) => {
@@ -616,19 +622,20 @@ export function sendShutdown(dir: string, options: { readonly ifIdle?: boolean; 
       const json = parseJsonLine(first);
       const reply = parseShutdownReply(json.ok ? json.value : undefined);
       if (!reply.ok) return settle(none);
-      if (reply.value.kind === "shutdown_accepted") return settle({ kind: "accepted" });
-      if (reply.value.kind === "shutdown_refused") return settle({ kind: "refused", ...(reply.value.runningItems !== undefined && { runningItems: reply.value.runningItems }) });
+      const who = { ...(reply.value.kind !== "connection_error" && reply.value.engineId !== undefined && { engineId: reply.value.engineId }), ...(reply.value.kind !== "connection_error" && reply.value.pid !== undefined && { pid: reply.value.pid }) };
+      if (reply.value.kind === "shutdown_accepted") return settle({ kind: "accepted", ...who });
+      if (reply.value.kind === "shutdown_refused") return settle({ kind: "refused", ...(reply.value.runningItems !== undefined && { runningItems: reply.value.runningItems }), ...who });
       settle(none);
     });
   });
 }
 
 /**
- * Asks the engine in `dir` to stop. True when the engine accepted; false when it refused (an
+ * Asks the engine on a socket to stop. True when the engine accepted; false when it refused (an
  * engine older than the request), did not answer within `timeoutMs`, or is not there.
  */
-export async function requestShutdown(dir: string, timeoutMs = 2_000): Promise<boolean> {
-  return (await sendShutdown(dir, { timeoutMs })).kind === "accepted";
+export async function requestShutdown(files: SocketFiles, timeoutMs = 2_000): Promise<boolean> {
+  return (await sendShutdown(files, { timeoutMs })).kind === "accepted";
 }
 
 function handshakeCode(code: string): ConnectErrorCode {

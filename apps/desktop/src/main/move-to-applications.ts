@@ -31,10 +31,7 @@ export interface MoveDeps {
 
 /** Where `itemsRunningIn` looks for an engine, and how it asks it. */
 export interface CopyEngineDeps {
-  readonly endpoint: () => { ok: true; value: { lockPath: string } } | { ok: false };
-  readonly readLock: (lockPath: string) => { pid: number } | undefined;
-  readonly pidAlive: (pid: number) => boolean;
-  /** Connects to a running engine without starting one. */
+  /** Connects to a running engine, found through its lock, without starting one. */
   readonly connect: () => Promise<ConnectResult>;
 }
 
@@ -49,18 +46,17 @@ export type ConnectResult =
   | { ok: false; error: Pick<ConnectError, "code" | "engine"> };
 
 /**
- * Unfinished items of the engine that runs now: 0 when there is none (no lock, or a lock whose pid
- * is gone), undefined when that could not be told. An engine of another API version cannot answer
+ * Unfinished items of the engine that runs now: 0 when there is none (no lock, or a lock whose socket
+ * is dead), undefined when that could not be told. An engine of another API version cannot answer
  * a board query; its handshake count is used, which has only running and finishing items, not
  * queued or waiting ones.
  */
 export async function itemsRunningIn(deps: CopyEngineDeps): Promise<number | undefined> {
-  const endpoint = deps.endpoint();
-  if (!endpoint.ok) return undefined;
-  const lock = deps.readLock(endpoint.value.lockPath);
-  if (lock === undefined || !deps.pidAlive(lock.pid)) return 0;
   const connected = await deps.connect();
-  if (!connected.ok) return connected.error.code === "unsupported_version" ? connected.error.engine?.runningItems : undefined;
+  if (!connected.ok) {
+    if (connected.error.code === "not_running") return 0;
+    return connected.error.code === "unsupported_version" ? connected.error.engine?.runningItems : undefined;
+  }
   try {
     const reply = await connected.value.query({ type: "board" });
     return reply.ok ? reply.data.items.filter((item) => item.state === "queued" || item.state === "running" || item.state === "needs_you").length : undefined;
