@@ -175,6 +175,13 @@ describe("noteText", () => {
     expect(noteText("finished", done({ steps }), context).body).toBe("Done in 9 min · checks 3/3 passed.\nPlan and build · orders-api");
   });
 
+  it("names a risk that is not low in words, and escapes it on Linux", () => {
+    const high = done({ risk: { level: "high", reasons: ["no_review_sensitive"] }, change: { files: 2, added: 3, removed: 1, touches: [{ kind: "ci", files: 1 }] } });
+    expect(noteText("finished", high, context).body).toBe("Done in 9 min · risk high: changes CI, no review.\nPlan and build · orders-api");
+    expect(noteText("finished", done({ risk: { level: "low", reasons: ["small_checked"] } }), context).body).toBe("Done in 9 min.\nPlan and build · orders-api");
+    expect(noteText("finished", done({ risk: { level: "not_rated", reasons: ["unreadable_change"] } }), { ...context, platform: "linux" }).body).toBe("Done in 9 min · risk not rated.\nPlan and build · orders-api");
+  });
+
   it("says where a failed item stopped and what failed", () => {
     const build = { name: "Build", stage: "working", state: "failed", data: "none", runs: 3, attempts: [1, 2, 3].map((n) => ({ attempt: n, result: "failed", checks: [{ command: "pnpm test", passed: false, exitCode: 1 }] })) };
     expect(noteText("failed", failed({ steps: [{ name: "Plan", state: "passed" }, build, { name: "Review", state: "pending" }] }), context).body).toBe("Stopped at Build, step 2 of 3: pnpm test failed 3 times\nPlan and build · orders-api");

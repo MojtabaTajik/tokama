@@ -369,7 +369,7 @@ describe("run loop: done_when", () => {
     // The question says what Approve does: this last step commits.
     expect(asked).toMatchObject({ detail: "builder changed 2 files in a worktree of orders-api. Nothing is committed until you approve. Request changes sends your note to builder for another run." });
     expect(asked.choices[0]?.label).toBe("Approve and commit");
-    expect(asked.change).toEqual({ files: 2 });
+    expect(asked.change).toEqual({ files: 2, added: 2, removed: 1 });
     expect(diff.value.files.map((f) => [f.path, f.status, f.added, f.removed])).toEqual([
       ["app.txt", "modified", 1, 1],
       ["notes.txt", "added", 1, 0],
