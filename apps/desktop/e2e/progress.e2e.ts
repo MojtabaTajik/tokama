@@ -59,6 +59,8 @@ flow("shows a done item's step, attempt and total times, with the time it waited
   const time = row(page, DONE).locator(".pl-time");
   await expect.poll(() => time.innerText()).toMatch(/^(\d\d:\d\d|\d{1,2} [A-Z][a-z]{2}) · 7 m$/);
   await openRow(page, DONE);
+  // A done item opens on Output; the times are on the Steps tab.
+  await drawer(page).getByRole("tab", { name: "Steps" }).click();
   const fix = drawer(page).locator(".step").first();
   // The sample's times are fixed offsets, so the durations are exact at any hour.
   await expect.poll(() => fix.locator(".step-detail").innerText()).toMatch(/· 4 m 12 s · waited 6 m for you$/);

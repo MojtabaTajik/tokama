@@ -23,6 +23,8 @@ export interface SectionProps {
   readonly spokenFacts?: string | undefined;
   /** An attempt is one size smaller than a step and sits inside one. */
   readonly level?: SectionLevel;
+  /** The heading the line sits in, when the page's outline needs another than the level gives (h3 for a step, h4 for an attempt). */
+  readonly heading?: "h2" | "h3" | "h4";
   readonly open: boolean;
   readonly onToggle: () => void;
   /** Nothing to show behind the line: no arrow, not a button. */
@@ -36,11 +38,11 @@ export interface SectionProps {
   readonly children: () => ReactNode;
 }
 
-export function Section({ title, agent, state, facts, spokenFacts, level = "step", open, onToggle, disabled = false, summary, buttonRef, className, children }: SectionProps) {
+export function Section({ title, agent, state, facts, spokenFacts, level = "step", heading, open, onToggle, disabled = false, summary, buttonRef, className, children }: SectionProps) {
   const id = useId();
   const headId = `${id}-head`;
   const bodyId = `${id}-body`;
-  const Heading = level === "step" ? "h3" : "h4";
+  const Heading = heading ?? (level === "step" ? "h3" : "h4");
   const line = (
     <>
       <span className="sec-chev" aria-hidden="true">

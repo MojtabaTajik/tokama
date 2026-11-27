@@ -1636,6 +1636,28 @@ describe("the card of a step that stopped", () => {
     expect(tab("Output")?.getAttribute("aria-selected")).toBe("true");
   });
 
+  it("opens the notes once: a step the engineer closed stays closed when the tab is visited again", async () => {
+    const { bridge } = withOutput({ ok: true, data: { attempt: 1, text: REVIEW, truncated: false, summary } });
+    await renderDrawer(bridge, stoppedReview.id);
+    await click(button("See Reviewer’s notes →"));
+    const line = () => $$(".ot .sec-head").find((el) => el.textContent?.startsWith("Review"));
+    expect(line()?.getAttribute("aria-expanded")).toBe("true");
+    await click(line());
+    await showTab("Steps");
+    await showTab("Output");
+    expect(line()?.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("opens the stopped step's output when the stop arrives after the attempt's end", async () => {
+    const quiet = { ...stoppedReview, state: "running", decision: undefined } as unknown as ItemRecord;
+    const fake = withOutput({ ok: true, data: { attempt: 1, text: REVIEW, truncated: false, summary } }, quiet);
+    await renderDrawer(fake.bridge, quiet.id);
+    const review = () => $$(".step")[3]?.querySelector(".attempt-output button");
+    expect(review()?.getAttribute("aria-expanded")).toBe("false");
+    await fake.push(stoppedReview);
+    expect(review()?.getAttribute("aria-expanded")).toBe("true");
+  });
+
   it("answers with the choice", async () => {
     const { bridge, command } = withOutput({ ok: true, data: { attempt: 1, text: REVIEW, truncated: false, summary } });
     await renderDrawer(bridge, stoppedReview.id);

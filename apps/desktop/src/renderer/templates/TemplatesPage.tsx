@@ -226,7 +226,7 @@ function Detail({ bridge, detail, agents, connections }: DetailProps) {
 
       {text !== null && (
         <SectionList>
-          <Section title={TEXT.file} facts={entry.file.split("/").at(-1)} open={fileOpen} onToggle={() => setFileOpen(!fileOpen)}>
+          <Section heading="h2" title={TEXT.file} facts={entry.file.split("/").at(-1)} open={fileOpen} onToggle={() => setFileOpen(!fileOpen)}>
             {() => <FileText id={fileId} text={text} problemLines={new Set(problems.map((problem) => problem.line))} mark={mark} />}
           </Section>
         </SectionList>

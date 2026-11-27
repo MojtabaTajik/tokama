@@ -104,6 +104,15 @@ describe("Section", () => {
     expect($(".sec")?.classList.contains("sec-sub")).toBe(true);
   });
 
+  it("sits in the heading the page asks for", async () => {
+    await render(
+      <Section heading="h2" title="File" open={false} onToggle={() => undefined}>
+        {() => null}
+      </Section>,
+    );
+    expect($("h2 > button.sec-head")).not.toBeNull();
+  });
+
   it("gives the line's button to its parent for the deep link", async () => {
     let button: HTMLButtonElement | null = null;
     await render(

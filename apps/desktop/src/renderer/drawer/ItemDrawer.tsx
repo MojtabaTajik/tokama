@@ -177,6 +177,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
     setBusy(false);
     setTab("Steps");
     setLogOf(undefined);
+    setNotesOf(undefined);
   }, [itemId]);
   // Focus follows the item into the full view and back into the drawer when the button that
   // switched it went away; focus elsewhere (the rail button that changed the page) stays.
@@ -316,9 +317,10 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
   const template = item && templateOf(item, setup);
   const tabs = item ? tabsOf(item, diff, change) : [];
   const shown = tabs.includes(tab) ? tab : "Steps";
-  // The ask belongs to one visit: coming back to Log later does not jump again.
+  // An ask belongs to one visit: coming back to Log or Output later does not jump again.
   useEffect(() => {
     if (shown !== "Log") setLogOf(undefined);
+    if (shown !== "Output") setNotesOf(undefined);
   }, [shown]);
   // ⤢ on the diff inside the drawer: the full view on the Diff tab.
   const expandTo = onExpand === undefined || full ? undefined : (to: Tab) => () => {
@@ -617,6 +619,13 @@ function AttemptOutput({
   // Once opened, the answer stays when it is folded again.
   const [opened, setOpened] = useState(unfolded);
   const output = useStepOutput(bridge, itemId, stepIndex, attempt, opened ? `${stepIndex} ${attempt}` : undefined);
+  // The stop decision can arrive after the attempt's end: the output then opens as it comes.
+  useEffect(() => {
+    if (unfolded) {
+      setOpen(true);
+      setOpened(true);
+    }
+  }, [unfolded]);
   return (
     <Section
       level="attempt"
