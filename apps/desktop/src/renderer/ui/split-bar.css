@@ -1,0 +1,37 @@
+/* The split bar and its legend swatch. The colour only repeats the words beside it. */
+
+.split-bar {
+  display: block;
+  min-width: 0;
+}
+
+.split-part[data-tone="tokama"] {
+  fill: var(--tag-teal);
+}
+
+.split-part[data-tone="other"] {
+  fill: var(--chart-other);
+}
+
+.split-part[data-tone="rest"] {
+  fill: var(--hairline);
+}
+
+.split-swatch {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-sm);
+}
+
+.split-swatch[data-tone="tokama"] {
+  background: var(--tag-teal);
+}
+
+.split-swatch[data-tone="other"] {
+  background: var(--chart-other);
+}
+
+.split-swatch[data-tone="rest"] {
+  background: var(--hairline);
+}

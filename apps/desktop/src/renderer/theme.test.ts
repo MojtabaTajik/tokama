@@ -57,6 +57,9 @@ describe("theme.css", () => {
     // The selected row is drawn on --raised.
     for (const ground of ["--ground", "--panel", "--raised"]) expect(contrast(TOKENS[name]!, TOKENS[ground]!)).toBeGreaterThanOrEqual(4.5);
   });
+  it("reads --chart-other, a line and a bar that carry no text, at 3:1 or better on the ground and the panel", () => {
+    for (const ground of ["--ground", "--panel"]) expect(contrast(TOKENS["--chart-other"]!, TOKENS[ground]!)).toBeGreaterThanOrEqual(3);
+  });
   it("tints a template icon with each tag colour, and only the icon", () => {
     for (const tag of ["slate", "sky", "teal", "moss", "sand", "clay", "rose", "plum"]) {
       expect(app).toMatch(new RegExp(`\\.tpl-icon\\[data-tag="${tag}"\\]\\s*\\{\\s*color:\\s*var\\(--tag-${tag}\\);\\s*\\}`));

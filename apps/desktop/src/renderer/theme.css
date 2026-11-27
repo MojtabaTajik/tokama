@@ -43,7 +43,7 @@
   --tag-rose: #d08ab2;
   --tag-plum: #a288c8;
 
-  /* Chart parts that are not one of Tokama's own: other apps, use outside Tokama. Passes the palette check against the tag colours. */
+  /* Everything that is not Tokama in a chart or a split bar: the other apps' line and bar. Grey, so Tokama's own colour stands out; 3:1 on the ground and the panel. */
   --chart-other: #5f6b78;
 
   /* Inter and JetBrains Mono when installed; no remote font loading (the CSP refuses it). */
