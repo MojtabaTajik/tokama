@@ -518,18 +518,32 @@ describe("ItemDrawer step output", () => {
       };
     };
 
-    it("cuts a long plan with Show full plan, which switches to the Output tab that holds all of it", async () => {
+    const renderWithRead = async (bridge: TokamaBridge, itemId: string, onRead = vi.fn()) => {
+      await act(async () => root.render(<ItemDrawer bridge={bridge} itemId={itemId} setup={setup} onClose={vi.fn()} onRead={onRead} />));
+      return onRead;
+    };
+
+    it("cuts a long plan with Show full plan, which asks for the reader on that step and leaves the tab alone", async () => {
+      const restore = heights(600, 171);
+      try {
+        const { bridge } = withOutput(() => ({ ok: true, data: { attempt: 1, text: LONG, truncated: false } }));
+        const onRead = await renderWithRead(bridge, waiting.id);
+        expect($(".needs-you .step-output-preview")?.getAttribute("data-cut")).toBe("true");
+        await click(button("Show full plan"));
+        expect(onRead).toHaveBeenCalledExactlyOnceWith(waiting.decision!.stepIndex);
+        expect($$('[role="tab"]').find((el) => el.getAttribute("aria-selected") === "true")?.textContent).toBe("Steps");
+      } finally {
+        restore();
+      }
+    });
+
+    it("has no Show full plan link when it cannot open the reader", async () => {
       const restore = heights(600, 171);
       try {
         const { bridge } = withOutput(() => ({ ok: true, data: { attempt: 1, text: LONG, truncated: false } }));
         await renderDrawer(bridge, waiting.id);
         expect($(".needs-you .step-output-preview")?.getAttribute("data-cut")).toBe("true");
-        expect($$('[role="tab"]').find((el) => el.getAttribute("aria-selected") === "true")?.textContent).toBe("Steps");
-        await click(button("Show full plan"));
-        const output = $$('[role="tab"]').find((el) => el.textContent === "Output");
-        expect(output?.getAttribute("aria-selected")).toBe("true");
-        expect(document.activeElement).toBe(output);
-        expect($(".ot .step-output-text")?.textContent).toContain("Line 30");
+        expect(button("Show full plan")).toBeUndefined();
       } finally {
         restore();
       }
@@ -540,10 +554,10 @@ describe("ItemDrawer step output", () => {
       try {
         const build = { ...waiting, steps: [{ ...planStep, name: "Build" }, waiting.steps[1]!] } as unknown as ItemRecord;
         const { bridge } = withOutput(() => ({ ok: true, data: { attempt: 1, text: LONG, truncated: false } }), [build]);
-        await renderDrawer(bridge, build.id);
+        const onRead = await renderWithRead(bridge, build.id);
         expect(button("Show full plan")).toBeUndefined();
         await click(button("Show full output"));
-        expect($$('[role="tab"]').find((el) => el.textContent === "Output")?.getAttribute("aria-selected")).toBe("true");
+        expect(onRead).toHaveBeenCalledExactlyOnceWith(build.decision!.stepIndex);
       } finally {
         restore();
       }
@@ -1187,7 +1201,7 @@ describe("ItemDrawer full view", () => {
   };
   const show = (bridge: TokamaBridge, itemId: string, props: Partial<Parameters<typeof ItemDrawer>[0]> = {}) =>
     act(async () => root.render(<ItemDrawer bridge={bridge} itemId={itemId} setup={setup} onClose={vi.fn()} {...props} />));
-  const full = (onCollapse = vi.fn(), wide = true) => ({ expanded: { back: "All work", wide, onCollapse } });
+  const full = (onCollapse = vi.fn(), wide = true, more: { reader?: { stepIndex: number }; onShowAll?: () => void } = {}) => ({ expanded: { back: "All work", wide, onCollapse, onShowAll: vi.fn(), ...more } });
   const selected = () => text('[role="tab"][aria-selected="true"]');
   const tab = (name: string) => $$('[role="tab"]').find((el) => el.textContent === name);
   const cells = (row: Element) => [...row.querySelectorAll('[role="cell"]')].map((cell) => cell.textContent).join("|");
@@ -1384,6 +1398,65 @@ describe("ItemDrawer full view", () => {
     await show(fake.bridge, empty.id, { onExpand: vi.fn(), ...full() });
     expect(selected()).toBe("Output");
     expect($$('[role="tab"]').map((el) => el.textContent)).toEqual(["Steps", "Output", "Checks", "Log"]);
+  });
+
+  describe("the reader", () => {
+    const reading = (onCollapse = vi.fn(), onShowAll = vi.fn(), stepIndex = 0) => full(onCollapse, true, { reader: { stepIndex }, onShowAll });
+
+    it("shows one step's document with its outline and agent in place of the tabs, under the pinned decision", async () => {
+      const { bridge } = bridgeFor([plan]);
+      await show(bridge, plan.id, reading());
+      expect($('[role="tab"]')).toBeNull();
+      const reader = $('[aria-label="Reader"]')!;
+      expect(reader.querySelector(".ot")?.getAttribute("data-reader")).toBe("true");
+      expect(reader.querySelectorAll(".ot-step").length).toBe(1);
+      expect([...reader.querySelectorAll(".st-heading")].map((el) => el.textContent)).toEqual(["Plan", "Risks"]);
+      expect([...reader.querySelectorAll(".ot-label")].map((el) => el.textContent)).toEqual(["On this page", "Written by"]);
+      expect(reader.querySelector(".ot-aside .al")?.textContent).toContain("Architect");
+      expect($(".ex-decision")).not.toBeNull();
+      // The question stays above the document in the page.
+      expect($(".ex-decision")!.compareDocumentPosition(reader) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it("has All of this item, which asks for the tabs, and Esc and the back link, which close the reader", async () => {
+      const { bridge } = bridgeFor([plan]);
+      const onCollapse = vi.fn();
+      const onShowAll = vi.fn();
+      await show(bridge, plan.id, reading(onCollapse, onShowAll));
+      await click(button("All of this item: Steps, Output, Log →"));
+      expect(onShowAll).toHaveBeenCalledTimes(1);
+      expect(onCollapse).not.toHaveBeenCalled();
+      await key("Escape");
+      await click($(".ex-back")!);
+      expect(onCollapse).toHaveBeenCalledTimes(2);
+    });
+
+    it("answers from the pinned bar, and the document stays", async () => {
+      const { bridge, command } = bridgeFor([plan]);
+      await show(bridge, plan.id, reading());
+      await click(button("Approve"));
+      expect(command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: plan.id, decisionId: plan.decision!.id, choice: "approve" });
+      expect($('[aria-label="Reader"] .st-heading')).not.toBeNull();
+    });
+
+    it("says so when the step has written nothing, and still links to the whole item", async () => {
+      const { bridge } = bridgeFor([plan]);
+      await show(bridge, plan.id, reading(vi.fn(), vi.fn(), 1));
+      expect(text('[aria-label="Reader"]')).toContain("This step has not written an output yet.");
+      expect(button("All of this item: Steps, Output, Log →")).toBeDefined();
+    });
+
+    it("leaves the drawer's tab as it was when closed, and shows Output after All of this item", async () => {
+      const { bridge } = bridgeFor([plan]);
+      await show(bridge, plan.id, { onExpand: vi.fn() });
+      expect(selected()).toBe("Steps");
+      await show(bridge, plan.id, reading());
+      await show(bridge, plan.id, { onExpand: vi.fn() });
+      expect(selected()).toBe("Steps");
+      await show(bridge, plan.id, reading());
+      await show(bridge, plan.id, full());
+      expect(selected()).toBe("Output");
+    });
   });
 
   it("leaves focus where it is when the view switches without its button going away", async () => {

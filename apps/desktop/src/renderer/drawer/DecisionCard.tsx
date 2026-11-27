@@ -32,13 +32,13 @@ interface NeedsYouProps {
   readonly full: boolean;
   /** The step changed files: the card links to the Diff tab. */
   readonly changedFiles: boolean;
-  /** Show full plan: the Output tab. */
-  readonly onShowOutput: () => void;
+  /** Show full plan: the reader on this step's document; undefined hides the link. */
+  readonly onRead: ((stepIndex: number) => void) | undefined;
   readonly onShowDiff: () => void;
   readonly onChoose: (decision: Decision, choice: string, note?: string) => void;
 }
 
-export function NeedsYou({ item, setup, decision, busy, output, full, changedFiles, onShowOutput, onShowDiff, onChoose }: NeedsYouProps) {
+export function NeedsYou({ item, setup, decision, busy, output, full, changedFiles, onRead, onShowDiff, onChoose }: NeedsYouProps) {
   const step = decision === undefined ? undefined : item.steps[decision.stepIndex];
   const agent = step?.agentId === undefined ? undefined : stepAgent(step, setup?.agents ?? []).name;
   return (
@@ -73,7 +73,7 @@ export function NeedsYou({ item, setup, decision, busy, output, full, changedFil
                   </Button>
                 )}
               </p>
-              <StepPreview state={output} label={TEXT.wrote(step.name, agent)} isPlan={step.name.toLowerCase() === "plan"} onShowFull={onShowOutput} />
+              <StepPreview state={output} label={TEXT.wrote(step.name, agent)} isPlan={step.name.toLowerCase() === "plan"} onShowFull={onRead && (() => onRead(decision.stepIndex))} />
             </div>
           )}
           <DecisionChoices key={decision.id} decision={decision} busy={busy} agent={agent} run={nextRunLine(step)} onChoose={(choice, note) => onChoose(decision, choice, note)} />

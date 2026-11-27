@@ -770,6 +770,17 @@
   background: transparent;
 }
 
+/* The reader: one document at a reading width and size, its outline dropping below it when the window is narrow. */
+
+.ot[data-reader] .ot-doc {
+  max-width: 72ch;
+}
+
+.ot[data-reader] .step-text {
+  font-size: var(--text-xl);
+  line-height: var(--leading-text);
+}
+
 .ot-aside {
   display: flex;
   flex: 0 1 280px;

@@ -252,7 +252,7 @@ describe("the Needs you page", () => {
     expect(fake.command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: change.id, decisionId: change.decision!.id, choice: "approve" });
   });
 
-  it("a plan approval row previews the first lines of the plan as text, and Read the plan opens the drawer with the whole plan", async () => {
+  it("a plan approval row previews the first lines of the plan as text, and Read the plan opens the reader, which Esc closes with focus back on the button", async () => {
     const plan = {
       ...older,
       id: "item_1a2b3c4d-0097-4a1b-8c1d-000000000097",
@@ -286,8 +286,87 @@ describe("the Needs you page", () => {
     expect($(".drawer")).toBeNull();
     await click(read);
     await wait(10);
+    expect($(".drawer")).toBeNull();
+    expect($(".expanded h1")?.textContent).toBe(plan.title);
+    expect(text(".ex-back")).toBe("← Needs you");
+    expect($('[role="tab"]')).toBeNull();
+    expect($$('[aria-label="Reader"] .st-list li').map((el) => el.textContent)).toEqual(["Add a table", "Call it at checkout", "Release it on cancel", "Test it"]);
+    // The question stays pinned, and answering works from it.
+    await click($$(".ex-decision .choices .btn").find((el) => el.textContent === "Approve"));
+    expect(fake.command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: plan.id, decisionId: plan.decision!.id, choice: "approve" });
+
+    await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+    await wait(10);
+    expect($(".expanded")).toBeNull();
+    expect($(".drawer")).toBeNull();
+    expect(document.activeElement).toBe($(".nr-read"));
+  });
+
+  it("Show full plan in the drawer opens the reader, and Esc returns to the drawer on the same item and tab", async () => {
+    const plan = {
+      ...older,
+      id: "item_1a2b3c4d-0095-4a1b-8c1d-000000000095",
+      title: "Reserve stock when an order is placed",
+      decision: { id: "decision_aaaaaaaa-0000-4000-8000-0000000000e3", kind: "plan_approval", stepIndex: 0, question: "Approve this step's result?", choices: [{ id: "approve", label: "Approve" }] },
+      steps: [{ ...older.steps[0]!, attempts: [{ attempt: 1, result: "passed", checks: [] }] }, older.steps[1]!],
+    } as unknown as ItemRecord;
+    const fake = fakeBridge(CONNECTED, {
+      boardItems: [...withoutWaiting, plan],
+      reply: (q) =>
+        q.type === "step_output" ? { ok: true, data: { attempt: 1, text: "## Plan\n\n- Add a table", truncated: false } } : q.type === "item" && (q as { itemId?: string }).itemId === plan.id ? { ok: true, data: { item: plan } } : undefined,
+    });
+    const scrollHeight = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(600);
+    const clientHeight = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(171);
+    try {
+      await render(fake.bridge);
+      await openPage();
+      await wait(0);
+      await click($(".nr-title"));
+      await wait(10);
+      expect($(".drawer h2")?.textContent).toBe(plan.title);
+      await click($$("button").find((el) => el.textContent === "Show full plan"));
+      await wait(10);
+      expect($(".drawer")).toBeNull();
+      expect($('[aria-label="Reader"]')).not.toBeNull();
+      expect($('[role="tab"]')).toBeNull();
+      expect(fake.bridge.countUsage).not.toHaveBeenCalledWith("expand_view");
+      await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+      await wait(10);
+      expect($(".expanded")).toBeNull();
+      expect($(".drawer h2")?.textContent).toBe(plan.title);
+      expect($('.drawer [role="tab"][aria-selected="true"]')?.textContent).toBe("Steps");
+    } finally {
+      scrollHeight.mockRestore();
+      clientHeight.mockRestore();
+    }
+  });
+
+  it("All of this item in the reader opens the full view on its tabs, and Esc then returns to the list with the drawer on the item", async () => {
+    const plan = {
+      ...older,
+      id: "item_1a2b3c4d-0096-4a1b-8c1d-000000000096",
+      title: "Reserve stock when an order is placed",
+      decision: { id: "decision_aaaaaaaa-0000-4000-8000-0000000000e2", kind: "plan_approval", stepIndex: 0, question: "Approve this step's result?", choices: [{ id: "approve", label: "Approve" }] },
+      steps: [{ ...older.steps[0]!, attempts: [{ attempt: 1, result: "passed", checks: [] }] }, older.steps[1]!],
+    } as unknown as ItemRecord;
+    const fake = fakeBridge(CONNECTED, {
+      boardItems: [...withoutWaiting, plan],
+      reply: (q) =>
+        q.type === "step_output" ? { ok: true, data: { attempt: 1, text: "## Plan\n\n- Add a table", truncated: false } } : q.type === "item" && (q as { itemId?: string }).itemId === plan.id ? { ok: true, data: { item: plan } } : undefined,
+    });
+    await render(fake.bridge);
+    await openPage();
+    await wait(0);
+    await click($(".nr-read"));
+    await wait(10);
+    await click($$("button").find((el) => el.textContent === "All of this item: Steps, Output, Log →"));
+    await wait(10);
+    expect($('[aria-label="Reader"]')).toBeNull();
+    expect($('[role="tab"][aria-selected="true"]')?.textContent).toBe("Output");
+    await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+    await wait(10);
+    expect($(".expanded")).toBeNull();
     expect($(".drawer h2")?.textContent).toBe(plan.title);
-    expect($$(".drawer .step-output-preview li").map((el) => el.textContent)).toEqual(["Add a table", "Call it at checkout", "Release it on cancel", "Test it"]);
   });
 
   it("shows an item that waits without a question as text only, with no buttons", async () => {

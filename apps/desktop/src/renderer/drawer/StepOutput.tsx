@@ -96,9 +96,9 @@ export function StepOutput({ state, label }: { readonly state: OutputState; read
 
 /**
  * The first lines of the output, faded where they are cut, for the approval card. When the whole
- * output fits it is shown as it is; when it does not, "Show full plan" (a Plan step) or "Show full output" goes to the place that has it all.
+ * output fits it is shown as it is; when it does not, "Show full plan" (a Plan step) or "Show full output" opens the reader (without `onShowFull` there is no link).
  */
-export function StepPreview({ state, label, isPlan, onShowFull }: { readonly state: OutputState; readonly label: string; readonly isPlan: boolean; readonly onShowFull: () => void }) {
+export function StepPreview({ state, label, isPlan, onShowFull }: { readonly state: OutputState; readonly label: string; readonly isPlan: boolean; readonly onShowFull: (() => void) | undefined }) {
   const box = useRef<HTMLDivElement>(null);
   const [cut, setCut] = useState(false);
   const loaded = state.kind === "loaded";
@@ -119,7 +119,7 @@ export function StepPreview({ state, label, isPlan, onShowFull }: { readonly sta
       <div ref={box} className="step-output-preview" data-cut={cut ? "true" : undefined} role="region" aria-label={label}>
         <Markdown text={state.output.text} />
       </div>
-      {cut && (
+      {cut && onShowFull !== undefined && (
         <Button variant="link" className="step-output-more" onClick={onShowFull}>
           {isPlan ? TEXT.showFullPlan : TEXT.showFullOutput}
         </Button>

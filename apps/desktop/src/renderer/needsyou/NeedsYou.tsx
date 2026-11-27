@@ -5,7 +5,7 @@
 // what its agent wrote. Engine text (titles, questions, summaries, names, agent output) is
 // rendered as React text only.
 import type { ItemRecord, Setup } from "@tokama/core";
-import { type MouseEvent, type ReactNode, useLayoutEffect, useRef, useState } from "react";
+import { type MouseEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { DecisionChoices } from "../drawer/DecisionChoices.js";
 import { nextRunLine } from "../drawer/describe.js";
@@ -63,6 +63,12 @@ export interface NeedsYouProps {
   readonly onSelectItem: (itemId: string) => void;
   /** Opens the item's drawer on its Diff tab. */
   readonly onReviewDiff: (itemId: string) => void;
+  /** "Read the plan" / "Read the output": the step's document in the full view. */
+  readonly onRead: (itemId: string, stepIndex: number) => void;
+  /** The item whose Read button takes focus once it shows: the reader it opened was closed. */
+  readonly returnFocusTo?: string | undefined;
+  /** The Read button has taken the focus. */
+  readonly onFocusReturned?: (() => void) | undefined;
   /** Pinned below the list: the New work input, so it keeps working from this page. */
   readonly composer?: ReactNode;
 }
@@ -111,7 +117,7 @@ export function NeedsYou(props: NeedsYouProps) {
             ) : (
               <ol className="nr-list" aria-label={TEXT.list}>
                 {rows.map((row, index) => (
-                  <Row key={row.item.id} row={row} index={index} bridge={props.bridge} selected={row.item.id === props.selectedItemId} onSelect={props.onSelectItem} onReviewDiff={props.onReviewDiff} onRefresh={onRetry} />
+                  <Row key={row.item.id} row={row} index={index} bridge={props.bridge} selected={row.item.id === props.selectedItemId} onSelect={props.onSelectItem} onReviewDiff={props.onReviewDiff} onRead={props.onRead} returnFocus={row.item.id === props.returnFocusTo} onFocusReturned={props.onFocusReturned} onRefresh={onRetry} />
                 ))}
               </ol>
             )}
@@ -134,10 +140,13 @@ interface RowProps {
   readonly selected: boolean;
   readonly onSelect: (itemId: string) => void;
   readonly onReviewDiff: (itemId: string) => void;
+  readonly onRead: (itemId: string, stepIndex: number) => void;
+  readonly returnFocus: boolean;
+  readonly onFocusReturned: (() => void) | undefined;
   readonly onRefresh: () => void;
 }
 
-function Row({ row, index, bridge, selected, onSelect, onReviewDiff, onRefresh }: RowProps) {
+function Row({ row, index, bridge, selected, onSelect, onReviewDiff, onRead, returnFocus, onFocusReturned, onRefresh }: RowProps) {
   const { item, decision } = row;
   const [busy, setBusy] = useState(false);
   const diff = useDecisionDiff(bridge, item.id, decision);
@@ -145,6 +154,14 @@ function Row({ row, index, bridge, selected, onSelect, onReviewDiff, onRefresh }
   const output = useStepOutput(bridge, item.id, approval?.stepIndex ?? 0, undefined, approval?.id);
   const preview = output?.kind === "loaded" ? previewOf(output.output.text) : "";
   const read = approval?.hasDiff === true ? TEXT.readOutput : TEXT.readPlan;
+  // The Read button shows once the output has loaded; closing the reader it opened puts focus back on it.
+  const readButton = useRef<HTMLButtonElement>(null);
+  const readShown = preview !== "";
+  useEffect(() => {
+    if (!returnFocus || !readShown) return;
+    readButton.current?.focus();
+    onFocusReturned?.();
+  }, [returnFocus, readShown, onFocusReturned]);
   const [notice, setNotice] = useState<Notice | undefined>(undefined);
   // The row can be gone when the reply arrives (the answer worked and the item moved on).
   const mounted = useRef(true);
@@ -216,7 +233,7 @@ function Row({ row, index, bridge, selected, onSelect, onReviewDiff, onRefresh }
       {preview !== "" && (
         <div className="nr-output">
           <p className="nr-preview">{preview}</p>
-          <Button variant="link" className="nr-read" aria-label={`${read}: ${item.title}`} onClick={() => onSelect(item.id)}>
+          <Button variant="link" className="nr-read" ref={readButton} aria-label={`${read}: ${item.title}`} onClick={() => approval !== undefined && onRead(item.id, approval.stepIndex)}>
             {read}
           </Button>
         </div>

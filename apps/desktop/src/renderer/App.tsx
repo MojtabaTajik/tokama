@@ -114,7 +114,13 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   const requests = useRef(0);
   // The item shown in the full view, and the work page it was opened on. Like the drawer, it waits
   // behind Insights, About and Settings and is there again on return.
-  const [expanded, setExpanded] = useState<{ readonly itemId: string; readonly page: "board" | "needs-you" } | undefined>(undefined);
+  // `reader` shows one step's document instead of the tabs; `from` is where closing it returns to:
+  // the drawer on the item, or the Needs you list.
+  const [expanded, setExpanded] = useState<
+    { readonly itemId: string; readonly page: "board" | "needs-you"; readonly reader?: { readonly stepIndex: number; readonly from: "drawer" | "page" } } | undefined
+  >(undefined);
+  // The item whose "Read the plan" button on the Needs you list takes focus when the list returns.
+  const [returnToRead, setReturnToRead] = useState<string | undefined>(undefined);
   // A row's request is for one showing of the drawer: leaving the work views drops it, so the drawer does not repeat it on return.
   useEffect(() => {
     if (page !== "board" && page !== "needs-you") setRowRequest(undefined);
@@ -124,6 +130,22 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
     setRowRequest(undefined);
     setSelectedItemId(itemId);
   }, []);
+  // Any item shown ends the pending focus return; only the list coming back claims it.
+  useEffect(() => {
+    if (selectedItemId !== undefined) setReturnToRead(undefined);
+  }, [selectedItemId]);
+  const openReader = (itemId: string, stepIndex: number, from: "drawer" | "page") => {
+    selectItem(itemId);
+    setExpanded({ itemId, page: page === "needs-you" ? "needs-you" : "board", reader: { stepIndex, from } });
+  };
+  const closeReader = () => {
+    const reader = expanded?.reader;
+    if (reader?.from === "page") {
+      setReturnToRead(expanded?.itemId);
+      setSelectedItemId(undefined);
+    }
+    setExpanded(undefined);
+  };
   // A finish action from a Done row; the result comes back as item updates.
   const finishFromRow = useCallback(
     async (itemId: string, action: FinishAction) => {
@@ -574,6 +596,9 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
             setSelectedItemId(itemId);
             setDiffAsked((count) => (count ?? 0) + 1);
           }}
+          onRead={(itemId, stepIndex) => openReader(itemId, stepIndex, "page")}
+          returnFocusTo={returnToRead}
+          onFocusReturned={() => setReturnToRead(undefined)}
           composer={composerNode}
         />
       ) : (
@@ -628,7 +653,18 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
             void bridge.countUsage("expand_view").catch(() => undefined);
             setExpanded({ itemId: selectedItemId, page: page === "needs-you" ? "needs-you" : "board" });
           }}
-          expanded={full ? { back: backTo, wide: windowWidth - RAIL_WIDTH - fit.sidebar >= SIDE_BY_SIDE_MIN_WIDTH, onCollapse: () => setExpanded(undefined) } : undefined}
+          onRead={(stepIndex) => openReader(selectedItemId, stepIndex, "drawer")}
+          expanded={
+            full
+              ? {
+                  back: backTo,
+                  wide: windowWidth - RAIL_WIDTH - fit.sidebar >= SIDE_BY_SIDE_MIN_WIDTH,
+                  reader: expanded?.reader,
+                  onCollapse: closeReader,
+                  onShowAll: () => setExpanded((current) => current && { itemId: current.itemId, page: current.page }),
+                }
+              : undefined
+          }
         />
       )}
       {panelOpen && (
