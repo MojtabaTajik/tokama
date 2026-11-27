@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -230,6 +230,8 @@ describe("run loop: done_when", () => {
     expect(await plain(repo.path, "rev-parse", `${commit}^{tree}`)).toBe(done.steps[0]?.attempts[0]?.tree);
     expect(await plain(repo.path, "rev-parse", `${commit}^`)).toBe(await plain(repo.path, "rev-parse", "main"));
     expect(await plain(repo.path, "show", `${commit}:app.txt`)).toBe("fixed");
+    // The attempt's end says its transcript was saved and how large the file is, so no one has to read it to know.
+    expect(done.steps[0]?.attempts[0]).toMatchObject({ transcriptSaved: true, transcriptBytes: statSync(join(tokamaHome, "items", id, "attempts", "build-1", "transcript.txt")).size });
     // The check wrote check-output.txt after the tree was fixed: it is in the worktree, not the commit.
     expect(existsSync(join(worktreeDir(id), "check-output.txt"))).toBe(true);
     expect(await plain(repo.path, "ls-tree", "--name-only", commit!)).not.toContain("check-output.txt");

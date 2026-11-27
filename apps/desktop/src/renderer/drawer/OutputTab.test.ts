@@ -1,5 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { shownAttempt, sizeOf } from "./OutputTab.js";
+import { shownAttempt, sizeOf, summaryLine } from "./OutputTab.js";
+
+describe("summaryLine", () => {
+  it("is 'approve' for an approving verdict", () => {
+    expect(summaryLine({ kind: "verdict", verdict: "approve", mustFix: [], more: 0, lines: ["Looks good."] })).toBe("approve");
+  });
+
+  it("counts the must-fix items, those carried and those past them, and names the first file and line", () => {
+    const mustFix = [{ text: "the card shifts" }, { ref: "src/x.ts:12", text: "no test" }];
+    expect(summaryLine({ kind: "verdict", verdict: "changes", mustFix, more: 1, lines: [] })).toBe("changes · 3 must-fix · src/x.ts:12");
+    expect(summaryLine({ kind: "verdict", verdict: "changes", mustFix: [], more: 0, lines: [] })).toBe("changes");
+  });
+
+  it("is the first line of an output without a verdict, and nothing for an empty or unread one", () => {
+    expect(summaryLine({ kind: "lines", format: "none", lines: ["Add GET /orders/export.", "Reuse the list query."] })).toBe("Add GET /orders/export.");
+    expect(summaryLine({ kind: "empty" })).toBeUndefined();
+    expect(summaryLine(undefined)).toBeUndefined();
+  });
+});
 
 describe("shownAttempt", () => {
   it("is the latest ended attempt of an agent's step", () => {

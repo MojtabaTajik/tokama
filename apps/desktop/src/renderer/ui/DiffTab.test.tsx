@@ -37,6 +37,24 @@ describe("DiffTab for an ended item", () => {
     expect(container.querySelector(".dv-summary")).toBeNull();
   });
 
+  it("brings the file you pick into view in its own scrolling list, and does not scroll for the first one", () => {
+    const scrolled: string[] = [];
+    (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView = function (this: Element, options: unknown) {
+      scrolled.push(`${this.textContent} ${JSON.stringify(options)}`);
+    };
+    try {
+      const many = Array.from({ length: 10 }, (_, n) => ({ ...modified, path: `src/f${n}.ts` }));
+      show({ files: many, moreFiles: 0, cut: false });
+      expect(scrolled).toEqual([]);
+      act(() => (container.querySelectorAll(".dv-file")[9] as HTMLElement).click());
+      expect(scrolled).toHaveLength(1);
+      expect(scrolled[0]).toContain("src/f9.ts");
+      expect(scrolled[0]).toContain('{"block":"nearest"}');
+    } finally {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    }
+  });
+
   it("sets the side-by-side heads from columns, else from the base branch", () => {
     const diff = { files: [modified], moreFiles: 0, cut: false };
     show(diff, { layout: "wide", columns: { before: "Before · main 85a75e3", after: "After · abc1234" } });

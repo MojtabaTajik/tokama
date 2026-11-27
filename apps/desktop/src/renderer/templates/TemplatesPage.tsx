@@ -11,6 +11,7 @@ import { flowOf } from "./flow.js";
 import { FlowDiagram } from "./FlowDiagram.js";
 import { keyId, useReload, useTemplateDetail, useTemplateList } from "./useTemplates.js";
 import { Button } from "../ui/Button.js";
+import { Section, SectionList } from "../ui/Section.js";
 import { markOf } from "../ui/status.js";
 import { agentDot, AgentDotMark } from "../ui/agent.js";
 
@@ -31,8 +32,6 @@ const TEXT = {
   readOnly: "Read-only here: change the file and Tokama checks it again.",
   open: "Open in editor",
   noFile: "There is no file on this machine to open.",
-  showFile: "Show file",
-  hideFile: "Hide file",
   tooLarge: "The file is too large to show here; open it in your editor.",
   file: "File",
   cannotUse: "New work can’t use this template until the file is fixed.",
@@ -196,11 +195,6 @@ function Detail({ bridge, detail, agents, connections }: DetailProps) {
         ) : (
           entry.origin !== "builtin" && <span className="tp-quiet">{TEXT.noFile}</span>
         )}
-        {text !== null && (
-          <Button variant="link" className="tp-link" aria-expanded={fileOpen} aria-controls={fileOpen ? fileId : undefined} onClick={() => setFileOpen(!fileOpen)}>
-            {fileOpen ? TEXT.hideFile : TEXT.showFile}
-          </Button>
-        )}
         {textTooLarge && <span className="tp-quiet">{TEXT.tooLarge}</span>}
         {openNote !== undefined && (
           <span className="tp-open-note" role="alert">
@@ -230,13 +224,12 @@ function Detail({ bridge, detail, agents, connections }: DetailProps) {
         </section>
       )}
 
-      {fileOpen && text !== null && (
-        <section className="tp-section" aria-label={TEXT.file}>
-          <h2>
-            {TEXT.file} <code className="mono tp-quiet">{entry.file.split("/").at(-1)}</code>
-          </h2>
-          <FileText id={fileId} text={text} problemLines={new Set(problems.map((problem) => problem.line))} mark={mark} />
-        </section>
+      {text !== null && (
+        <SectionList>
+          <Section title={TEXT.file} facts={entry.file.split("/").at(-1)} open={fileOpen} onToggle={() => setFileOpen(!fileOpen)}>
+            {() => <FileText id={fileId} text={text} problemLines={new Set(problems.map((problem) => problem.line))} mark={mark} />}
+          </Section>
+        </SectionList>
       )}
 
       {warnings.length > 0 && (

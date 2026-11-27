@@ -6,6 +6,7 @@ import type { AttemptSummary, ItemRecord, QueryResult, Setup, StepRecord } from 
 import { useEffect, useState } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
 import { formatDuration } from "../format/duration.js";
+import { clock } from "../format/time.js";
 
 /** How often a running attempt's checks or transcript are read again while its tab is open. */
 export const POLL_MS = 2000;
@@ -36,6 +37,13 @@ export function attemptsOf(item: Pick<ItemRecord, "steps">, indexes: readonly nu
   });
 }
 
+/** The check commands a step runs after its agent, as the template and the item's repo give them now; none when the setup does not say. */
+export function plannedChecks(item: Pick<ItemRecord, "templateId" | "repoIds">, setup: Setup | undefined, index: number): readonly string[] {
+  const checks = setup?.templates.find((template) => template.id === item.templateId)?.steps[index]?.checks;
+  if (checks === undefined) return [];
+  return "commands" in checks ? checks.commands : (setup?.repos.find((repo) => repo.id === item.repoIds[0])?.checks ?? []);
+}
+
 /** The steps an agent runs, by index: the ones with a transcript. */
 export const agentSteps = (item: Pick<ItemRecord, "steps">): number[] => item.steps.flatMap((step, index) => (step.agentId === undefined ? [] : [index]));
 
@@ -56,6 +64,94 @@ export function sizeText(bytes: number): string {
 }
 
 const count = (n: number) => n.toLocaleString("en-US");
+
+const unit = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/** "4 minutes 12 seconds": a duration with its units spelled, for screen readers. */
+export function spokenDuration(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  const parts = [
+    [Math.floor(seconds / 86_400), "day"],
+    [Math.floor((seconds % 86_400) / 3600), "hour"],
+    [Math.floor((seconds % 3600) / 60), "minute"],
+    [seconds % 60, "second"],
+  ] as const;
+  const shown = parts.filter(([n]) => n > 0).map(([n, word]) => unit(n, word));
+  return shown.length === 0 ? unit(0, "second") : shown.join(" ");
+}
+
+/** "38 kilobytes": a size with its unit spelled, for screen readers. */
+export function spokenSize(bytes: number): string {
+  if (bytes < 1024) return unit(bytes, "byte");
+  if (bytes < 1024 * 1024) return unit(Math.round(bytes / 1024), "kilobyte");
+  return `${(bytes / (1024 * 1024)).toFixed(1)} megabytes`;
+}
+
+/** A line's facts as they are seen and as they are spoken. */
+export interface LineFacts {
+  readonly text: string;
+  readonly spoken: string;
+}
+
+const joinFacts = (parts: readonly { readonly text: string; readonly spoken?: string }[]): LineFacts => ({
+  text: parts.map((part) => part.text).join(" · "),
+  spoken: parts.map((part) => part.spoken ?? part.text).join(", "),
+});
+
+/** How long an attempt worked: its recorded time once it ended, the time since it started while it runs. */
+export const attemptMs = (attempt: Pick<AttemptSummary, "durationMs" | "startedAt" | "result">, now: number): number | undefined =>
+  attempt.durationMs ?? (attempt.result === undefined && attempt.startedAt !== undefined ? Math.max(0, now - attempt.startedAt) : undefined);
+
+/**
+ * The bytes of the transcripts of these attempts, when every one that has a transcript says its
+ * size; an older record that does not leaves the whole size unknown. Running attempts add nothing yet.
+ */
+export function transcriptBytes(attempts: readonly Pick<AttemptSummary, "result" | "transcriptSaved" | "transcriptBytes">[]): number | undefined {
+  let total = 0;
+  let known = false;
+  for (const attempt of attempts) {
+    if (attempt.result === undefined || attempt.transcriptSaved === false) continue;
+    if (attempt.transcriptBytes === undefined) return undefined;
+    total += attempt.transcriptBytes;
+    known = true;
+  }
+  return known ? total : undefined;
+}
+
+/** A size as the line shows and speaks it; undefined when it is not known. */
+export const sizeFact = (bytes: number | undefined): LineFacts | undefined => (bytes === undefined ? undefined : { text: sizeText(bytes), spoken: spokenSize(bytes) });
+
+/** A step's line: "3 attempts · 4 m 12 s · 38 KB"; a running step says "attempt 2 of 3". `size` is of what the tab shows: transcripts, an output. */
+export function stepFacts(step: Pick<StepRecord, "attempts" | "runs" | "maxAttempts">, now: number, size: LineFacts | undefined): LineFacts {
+  const attempts = step.attempts ?? [];
+  if (attempts.length === 0) return { text: "no log", spoken: "no log" };
+  const running = attempts.at(-1)!.result === undefined;
+  const total = attempts.flatMap((attempt) => attemptMs(attempt, now) ?? []).reduce((sum, ms) => sum + ms, 0);
+  const timed = attempts.some((attempt) => attemptMs(attempt, now) !== undefined);
+  return joinFacts([
+    { text: running && step.runs !== undefined && step.maxAttempts !== undefined ? `attempt ${step.runs} of ${step.maxAttempts}` : unit(attempts.length, "attempt") },
+    ...(timed ? [{ text: formatDuration(total), spoken: spokenDuration(total) }] : []),
+    ...(size === undefined ? [] : [size]),
+  ]);
+}
+
+/** An attempt's line: "14:16 · 1 m 22 s · 12 KB". */
+export function attemptFacts(attempt: Pick<AttemptSummary, "startedAt" | "durationMs" | "result" | "transcriptSaved" | "transcriptBytes">, now: number): LineFacts {
+  const ms = attemptMs(attempt, now);
+  const size = sizeFact(attempt.transcriptSaved === false ? undefined : attempt.transcriptBytes);
+  return joinFacts([
+    ...(attempt.startedAt === undefined ? [] : [{ text: clock(attempt.startedAt) }]),
+    ...(ms === undefined ? [] : [{ text: formatDuration(ms), spoken: spokenDuration(ms) }]),
+    ...(size === undefined ? [] : [size]),
+  ]);
+}
+
+/** The Log bar: "3 steps · 5 attempts · 248 KB"; the size only when every transcript's size is known. */
+export function logFacts(steps: readonly Pick<StepRecord, "attempts">[]): string {
+  const attempts = steps.flatMap((step) => step.attempts ?? []);
+  const bytes = transcriptBytes(attempts);
+  return [unit(steps.length, "step"), unit(attempts.length, "attempt"), ...(bytes === undefined ? [] : [sizeText(bytes)])].join(" · ");
+}
 
 /** The lines of a reply's text; an empty text has none. */
 export const linesOf = (text: string): string[] => (text === "" ? [] : text.split("\n"));

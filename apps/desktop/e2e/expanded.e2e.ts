@@ -118,10 +118,13 @@ flow("shows a done item with Finish and its steps' outputs folded", async ({ pag
   await drawer(page).getByRole("button", { name: "Open full view" }).click();
   const full = page.locator(".expanded");
   await full.getByRole("region", { name: "Finish" }).waitFor();
+  // An item that has ended opens on its output; the Steps tab keeps each attempt's output folded.
+  expect(await full.getByRole("tab", { name: "Output" }).getAttribute("aria-selected")).toBe("true");
+  await full.getByRole("tab", { name: "Steps" }).click();
   const output = full.locator(".attempt-output");
-  expect(await output.evaluate((el) => (el as HTMLDetailsElement).open)).toBe(false);
+  expect(await output.locator("[aria-expanded]").getAttribute("aria-expanded")).toBe("false");
   await screenshot("36-expanded-done");
-  await output.locator("summary").click();
+  await output.locator("[aria-expanded]").click();
   await expect.poll(() => output.locator(".step-output-text").innerText(), { message: "the unfolded output" }).toContain("Fixed the null check");
 });
 

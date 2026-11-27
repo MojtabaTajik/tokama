@@ -8,6 +8,7 @@ import {
   ChartColumn,
   ChartLine,
   Check,
+  ChevronRight,
   CircleArrowDown,
   CircleX,
   Copy,
@@ -67,6 +68,8 @@ export const TerminalIcon = lucide(SquareTerminal, 16);
 /** A triangle with an exclamation mark: important. */
 export const WarningIcon = lucide(TriangleExclamationPoint, 18);
 export const SearchIcon = lucide(Search, 13);
+/** › : points right; a section's arrow, turned down by CSS while it is open. */
+export const ChevronIcon = lucide(ChevronRight, 14);
 
 // The three icons below are the ones a sidebar chip (ui/Chip.tsx) shows; chip icons are 13 px.
 export const CheckIcon = lucide(Check, 13);

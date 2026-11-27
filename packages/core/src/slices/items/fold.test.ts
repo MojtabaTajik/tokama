@@ -159,6 +159,22 @@ describe("foldItem", () => {
     expect(foldError([...startBuild, { type: "attempt_ended", stepId: BUILD, attempt: 1, result: "failed", failure: "crash" }])).toMatch(/failure is given/);
   });
 
+  it("attempt_ended: keeps whether the transcript was saved and its size; an attempt that ended without them has neither", () => {
+    const item = fold([
+      ...startBuild,
+      { type: "attempt_ended", stepId: BUILD, attempt: 1, result: "failed", transcriptSaved: true, transcriptBytes: 2048 },
+      { type: "attempt_started", stepId: BUILD, attempt: 2 },
+      { type: "attempt_ended", stepId: BUILD, attempt: 2, result: "run_failed", failure: "crash", transcriptSaved: false },
+      { type: "attempt_started", stepId: BUILD, attempt: 3 },
+      { type: "attempt_ended", stepId: BUILD, attempt: 3, result: "failed" },
+    ]);
+    expect(item.steps[0]?.attempts.map((a) => [a.transcriptSaved, a.transcriptBytes])).toEqual([
+      [true, 2048],
+      [false, undefined],
+      [undefined, undefined],
+    ]);
+  });
+
   it("attempt_ended and item_ended: the checked tree on a passed attempt, the commits on a done item", () => {
     const tree = "a".repeat(40);
     const commit = "b".repeat(40);

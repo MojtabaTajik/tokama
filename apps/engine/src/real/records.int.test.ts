@@ -119,6 +119,29 @@ describe("toItemRecord", () => {
     check(toItemRecord(reopened.get(ended.id)!));
   });
 
+  it("sends whether an ended attempt's transcript was saved and its size; an attempt recorded without them sends neither", () => {
+    const record = toItemRecord(
+      append(created(), [
+        { type: "step_started", stepId: FIX },
+        { type: "attempt_started", stepId: FIX, attempt: 1 },
+        { type: "attempt_ended", stepId: FIX, attempt: 1, result: "failed", transcriptSaved: true, transcriptBytes: 38_912 },
+        { type: "attempt_started", stepId: FIX, attempt: 2 },
+        { type: "attempt_ended", stepId: FIX, attempt: 2, result: "failed", transcriptSaved: false },
+        { type: "attempt_started", stepId: FIX, attempt: 3 },
+        { type: "attempt_ended", stepId: FIX, attempt: 3, result: "failed" },
+        { type: "attempt_started", stepId: FIX, attempt: 4 },
+      ]),
+    )!;
+    const [one, two, three, four] = record.steps[0]!.attempts!;
+    expect(one).toMatchObject({ transcriptSaved: true, transcriptBytes: 38_912 });
+    expect(two).toMatchObject({ transcriptSaved: false });
+    expect(two).not.toHaveProperty("transcriptBytes");
+    for (const old of [three, four]) {
+      expect(old).not.toHaveProperty("transcriptSaved");
+      expect(old).not.toHaveProperty("transcriptBytes");
+    }
+  });
+
   it("does not count the time the engine was down as working time", () => {
     let item = append(created(), [{ type: "step_started", stepId: FIX }, { type: "attempt_started", stepId: FIX, attempt: 1 }]);
     // The engine stops during the attempt and comes back 15 hours later; recovery ends the attempt then.

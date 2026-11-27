@@ -145,6 +145,9 @@ const AttemptEndedSchema = z.strictObject({
   detail: z.string().min(1).max(500).optional(),
   /** On a passed `checks pass` attempt: the tree the checks ran on, the one the item commits. */
   tree: GIT_ID.optional(),
+  /** Whether the attempt's transcript file exists, and its size; absent in records written before they were. */
+  transcriptSaved: z.boolean().optional(),
+  transcriptBytes: z.int().nonnegative().optional(),
 });
 const StepEndedSchema = z.strictObject({ type: z.literal("step_ended"), stepId: StepIdSchema, result: StepResultSchema });
 /** The event's `at` is when the engine asked. */
@@ -308,6 +311,8 @@ export const AttemptRecordSchema = z.strictObject({
   failure: RunFailureSchema.optional(),
   detail: z.string().optional(),
   tree: GIT_ID.optional(),
+  transcriptSaved: z.boolean().optional(),
+  transcriptBytes: z.int().nonnegative().optional(),
   processes: z.array(ProcessRecordSchema),
   checks: z.array(CheckRecordSchema),
 });

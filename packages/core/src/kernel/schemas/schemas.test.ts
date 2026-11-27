@@ -118,6 +118,24 @@ describe("item record", () => {
   it("returns errors for non-objects instead of throwing", () => {
     for (const input of [null, undefined, 42, "item", []]) expect(parseItemRecord(input).ok).toBe(false);
   });
+
+  describe("an attempt's transcript", () => {
+    const withAttempt = (attempt: object) => ({ ...item(), steps: [{ ...item().steps[0]!, attempts: [{ attempt: 1, result: "passed", checks: [], ...attempt }] }] });
+
+    it("may say whether it was saved and how large it is; a record written before these existed has neither", () => {
+      expect(parseItemRecord(withAttempt({ transcriptSaved: true, transcriptBytes: 38_912 })).ok).toBe(true);
+      expect(parseItemRecord(withAttempt({ transcriptSaved: false })).ok).toBe(true);
+      expect(parseItemRecord(withAttempt({})).ok).toBe(true);
+    });
+
+    it.each([
+      ["a negative size", { transcriptBytes: -1 }, "steps.0.attempts.0.transcriptBytes"],
+      ["a fractional size", { transcriptBytes: 1.5 }, "steps.0.attempts.0.transcriptBytes"],
+      ["a saved flag that is not a boolean", { transcriptSaved: "yes" }, "steps.0.attempts.0.transcriptSaved"],
+    ])("refuses %s", (_label, patch, path) => {
+      expect(paths(parseItemRecord(withAttempt(patch)))).toContain(path);
+    });
+  });
 });
 
 describe("agent call usage record", () => {

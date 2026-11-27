@@ -173,6 +173,8 @@ function applyTo(next: StoredItem, event: ItemEvent): FoldError | undefined {
       running.result = event.result;
       if (event.failure !== undefined) running.failure = event.failure;
       if (event.detail !== undefined) running.detail = event.detail;
+      if (event.transcriptSaved !== undefined) running.transcriptSaved = event.transcriptSaved;
+      if (event.transcriptBytes !== undefined) running.transcriptBytes = event.transcriptBytes;
       if (event.tree !== undefined) {
         if (event.result !== "passed") return fail("tree is given only on a passed attempt");
         running.tree = event.tree;

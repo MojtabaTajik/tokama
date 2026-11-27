@@ -14,6 +14,15 @@ export function agentDot(agentId: string | undefined, agents: readonly { readonl
   return index >= 0 && index < 3 ? ((index + 1) as 1 | 2 | 3) : "neutral";
 }
 
+/** An agent's name as text; `coloured` draws it in the agent's colour (the name is always there, so colour is never the signal). */
+export function AgentName({ name, dot, coloured = false }: { readonly name: string; readonly dot: AgentDot; readonly coloured?: boolean }) {
+  return (
+    <span className="agent-name" data-agent={dot} data-coloured={coloured || undefined}>
+      {name}
+    </span>
+  );
+}
+
 export function AgentDotMark({ dot }: { readonly dot: AgentDot }) {
   return <span className="agent-dot" data-agent={dot} aria-hidden="true" />;
 }

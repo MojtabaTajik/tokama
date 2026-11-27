@@ -36,6 +36,7 @@ const DEFAULT_SIZES: Record<string, number> = {
   TerminalIcon: 16,
   WarningIcon: 18,
   SearchIcon: 13,
+  ChevronIcon: 14,
   CheckIcon: 13,
   ShieldIcon: 13,
   CopyIcon: 13,

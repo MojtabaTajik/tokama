@@ -79,6 +79,12 @@
   border-bottom: 1px solid var(--hairline);
 }
 
+/* In the drawer a long list shows eight rows (30px and a rule each) and scrolls, so the diff stays in view. */
+.dv[data-layout="drawer"] .dv-files {
+  max-height: 248px;
+  overflow-y: auto;
+}
+
 .dv-file {
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr) auto;
