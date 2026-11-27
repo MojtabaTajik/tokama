@@ -1,35 +1,11 @@
 // The `ai_clis` query: each AI CLI, found or not, logged in or not, and exactly what Tokama runs.
 // The arguments and environment names come from the adapter's own description of a call, and the
 // state from the same health checks as the setup. Environment variable names only, never values.
-import { adapters, type AgentSummary, type AiCli, type AiClisResult, type AiCliState, type CliHealth, findOnPath } from "@tokama/core";
-
-/** The slice of the adapter this query reads. The adapter may have been removed. */
-interface LaunchInfo {
-  readonly command: string;
-  readonly headlessArgs: readonly string[];
-  readonly modelArgs: readonly string[];
-  readonly permissionArgs: readonly string[];
-  readonly promptVia: "stdin";
-  readonly roleArgs: readonly string[];
-  readonly envNames: readonly string[];
-  readonly loginCommand: string;
-}
-
-const NOT_SUPPORTED: readonly { readonly cliId: "codex-cli"; readonly name: string; readonly description: string }[] = [
-  { cliId: "codex-cli", name: "Codex CLI", description: "Coding agent CLI from OpenAI." },
-];
+import { type AgentSummary, type AiCli, type AiCliAdapter, aiCliAdapters, type AiClisResult, type CliHealth, findOnPath } from "@tokama/core";
+import { cliState, KNOWN } from "./real/clis.js";
 
 /** The schema's limit on names listed under one CLI. */
 const MAX_USED_BY = 200;
-
-const CLAUDE = { name: "Claude Code", description: "Coding agent CLI from Anthropic. Reads code, edits files, runs commands." } as const;
-
-function stateOf(health: CliHealth | undefined): AiCliState {
-  if (health === undefined) return "not_checked";
-  if (health.timedOut === true) return "no_answer";
-  if (!health.installed) return "not_installed";
-  return health.loggedIn ? "ready" : "not_logged_in";
-}
 
 export interface AiClisInput {
   readonly clis: readonly CliHealth[];
@@ -39,18 +15,20 @@ export interface AiClisInput {
   readonly env: Readonly<Record<string, string | undefined>>;
 }
 
-function claudeCode(launch: LaunchInfo, input: AiClisInput): AiCli {
-  const health = input.clis.find((cli) => cli.cliId === "claude-code");
+function supportedRow(adapter: AiCliAdapter, input: AiClisInput): AiCli {
+  const launch = adapter.launch();
+  const health = input.clis.find((cli) => cli.cliId === adapter.id);
   const path = findOnPath(launch.command, input.env);
   return {
     supported: true,
-    cliId: "claude-code",
-    ...CLAUDE,
-    state: stateOf(health),
+    cliId: adapter.id,
+    name: adapter.name,
+    description: adapter.description,
+    state: cliState(health),
     ...(health?.version === undefined ? {} : { version: health.version }),
     ...(path === undefined ? {} : { path }),
     ...(health?.message === undefined ? {} : { message: health.message }),
-    loginCommand: launch.loginCommand,
+    loginCommand: adapter.loginCommand,
     command: launch.command,
     headlessArgs: [...launch.headlessArgs],
     modelArgs: [...launch.modelArgs],
@@ -58,17 +36,15 @@ function claudeCode(launch: LaunchInfo, input: AiClisInput): AiCli {
     promptVia: launch.promptVia,
     roleArgs: [...launch.roleArgs],
     envNames: [...launch.envNames],
-    usedBy: input.agents.filter((agent) => agent.cliId === "claude-code").map((agent) => agent.name).slice(0, MAX_USED_BY),
+    usedBy: input.agents.filter((agent) => agent.cliId === adapter.id).map((agent) => agent.name).slice(0, MAX_USED_BY),
   };
 }
 
-export function aiClis(input: AiClisInput): AiClisResult {
-  const factories: Record<string, unknown> = { ...adapters };
-  return aiClisWith(factories["claudeCodeLaunch"] as (() => LaunchInfo) | undefined, input);
-}
-
-/** `describe` is the adapter's description of a call; undefined when the adapter was removed. */
-export function aiClisWith(describe: (() => LaunchInfo) | undefined, input: AiClisInput): AiClisResult {
-  const claude: AiCli = describe === undefined ? { supported: false, cliId: "claude-code", ...CLAUDE } : claudeCode(describe(), input);
-  return { clis: [claude, ...NOT_SUPPORTED.map((cli) => ({ supported: false as const, ...cli }))] };
+/** One supported row per adapter, then the CLIs Tokama knows that this build has no adapter for. */
+export function aiClis(input: AiClisInput, list: readonly AiCliAdapter[] = aiCliAdapters): AiClisResult {
+  const supported = list.map((adapter) => supportedRow(adapter, input));
+  const missing = (Object.entries(KNOWN) as [keyof typeof KNOWN, (typeof KNOWN)[keyof typeof KNOWN]][])
+    .filter(([cliId]) => !list.some((adapter) => adapter.id === cliId))
+    .map(([cliId, known]): AiCli => ({ supported: false, cliId, ...known }));
+  return { clis: [...supported, ...missing] };
 }

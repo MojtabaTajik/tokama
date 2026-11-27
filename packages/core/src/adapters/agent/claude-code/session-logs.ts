@@ -11,24 +11,11 @@ import { join, posix } from "node:path";
 import { listFiles, listFolders, readLinesFrom } from "../../../kernel/fs-safe/index.js";
 import { sha256Hex } from "../../../kernel/hash/index.js";
 import { parseJsonLine } from "../../../kernel/json-line/index.js";
-import type { TokenUsage } from "../../../kernel/schemas/index.js";
+import type { LocalUsageMessage, LogMark, RepoPaths } from "../../../kernel/ports/index.js";
 
-/** One assistant message's usage. */
-export interface LoggedUsage {
-  /** The request id, else the message id: the same message logged twice has the same key. */
-  readonly key: string;
-  readonly at: number;
-  readonly model: string;
-  /** A hash of the project folder's name: the folder name is a full path, so it is not kept. */
-  readonly project: string;
-  readonly tokens: TokenUsage;
-}
-
-/** Where the last read of a log file ended. */
-export interface LogMark {
-  readonly ino: number;
-  readonly offset: number;
-}
+/** One assistant message's usage; its key is the request id, else the message id. */
+export type LoggedUsage = LocalUsageMessage;
+export type { LogMark, RepoPaths };
 
 export interface ScanLogsOptions {
   /** Default: `~/.claude/projects`. */
@@ -85,14 +72,6 @@ export const projectKey = (folder: string): string => hash(`project:${folder}`);
  * ASCII letter or digit becomes `-`, so `/Users/someone/orders-api` is `-Users-someone-orders-api`.
  */
 export const claudeProjectFolder = (path: string): string => path.replace(/[^A-Za-z0-9]/g, "-");
-
-export interface RepoPaths {
-  readonly id: string;
-  /** The repo's folder; also its real path when that differs. */
-  readonly paths: readonly string[];
-  /** The repo's worktree folder, relative to the repo, e.g. `.tokama-wt`. */
-  readonly worktreeFolder: string;
-}
 
 /**
  * The repo a project folder belongs to: the repo's own folder, or a worktree in the repo's

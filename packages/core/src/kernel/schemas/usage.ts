@@ -356,6 +356,14 @@ export type UsageRange = z.output<typeof UsageRangeSchema>;
 export type PlanSource = z.output<typeof PlanSourceSchema>;
 export type PlanWindow = z.output<typeof PlanWindowSchema>;
 export type CliPlan = z.output<typeof CliPlanSchema>;
+
+/** One reading of an AI CLI's plan windows, from whichever source gave it. */
+export interface PlanReading {
+  readonly windows: readonly PlanWindow[];
+  readonly asOf: number;
+  readonly plan?: string;
+  readonly extraUsage?: "on" | "off";
+}
 export type UsageItem = z.output<typeof UsageItemSchema>;
 export type UsageScope = z.output<typeof UsageScopeSchema>;
 export type TokenSummary = z.output<typeof TokenSummarySchema>;

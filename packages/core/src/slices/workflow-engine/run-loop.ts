@@ -58,7 +58,7 @@ import {
 } from "../../kernel/schemas/index.js";
 import { cutText, scrubPaths } from "../../kernel/text/index.js";
 import type { Agent, Repo } from "../config/index.js";
-import { type ActivityState, callUsage, claudeCodeGuardDefaults, labelText, redactPaths, runGuardedCall, type LoopGuardSettings } from "../execution/index.js";
+import { type ActivityState, callUsage, agentCliGuardDefaults, labelText, redactPaths, runGuardedCall, type LoopGuardSettings } from "../execution/index.js";
 import { protectedSet, sharedGitSettings, type ProtectedSet } from "../integrity/index.js";
 import { countedAttempts, openAttempt, openDecisions, recoverItems, RUN_FAILURE_CHOICES, type ItemStore, type RecoveredItem } from "../items/index.js";
 import { buildPrompt, type StepResults } from "../prompting/index.js";
@@ -99,7 +99,7 @@ export interface RunLoopDeps {
    */
   readonly agent: (repo: Repo, id: Agent["id"], template: TemplateRecord) => Agent | { readonly problem: string } | undefined;
   readonly runtime: (agent: Agent) => AgentRuntime | undefined;
-  /** Loop guards of every agent call; its timeout is also the call's. Default: `claudeCodeGuardDefaults`. */
+  /** Loop guards of every agent call; its timeout is also the call's. Default: `agentCliGuardDefaults`. */
   readonly guard?: LoopGuardSettings;
   /** Per setup or check command. Default: 20 minutes. */
   readonly commandTimeoutMs?: number;
@@ -254,7 +254,7 @@ type Worktree = ItemWorktree & { readonly path: string; readonly protectedDigest
 
 export function createRunLoop(deps: RunLoopDeps): RunLoop {
   const { store, git, clock } = deps;
-  const guard = deps.guard ?? claudeCodeGuardDefaults;
+  const guard = deps.guard ?? agentCliGuardDefaults;
   const commandTimeoutMs = deps.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
   const live = new Map<ItemId, Live>();
   const finisher = createFinisher({

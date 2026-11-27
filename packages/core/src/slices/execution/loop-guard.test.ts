@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentCallEvent } from "../../kernel/schemas/index.js";
 import {
   createFileWatch,
-  claudeCodeGuardDefaults,
+  agentCliGuardDefaults,
   createStreamWatch,
   type FileSnapshot,
   type FileState,
@@ -36,14 +36,14 @@ const turnWith = (watch: ReturnType<typeof createStreamWatch>, call: AgentCallEv
 describe("loop guard settings", () => {
   it("has defaults per runtime, each within the bounds", () => {
     expect(localModelGuardDefaults).toEqual({ turnCap: 30, repeatLimit: 6, idleMs: 75_000, silentMs: 300_000, toolSilentMs: 1_200_000, timeoutMs: 600_000 });
-    expect(claudeCodeGuardDefaults).toEqual({ turnCap: 150, repeatLimit: 6, idleMs: 180_000, silentMs: 600_000, toolSilentMs: 1_200_000, timeoutMs: 5_400_000 });
-    for (const defaults of [localModelGuardDefaults, claudeCodeGuardDefaults]) expect(LoopGuardSettingsSchema.safeParse(defaults).success).toBe(true);
+    expect(agentCliGuardDefaults).toEqual({ turnCap: 150, repeatLimit: 6, idleMs: 180_000, silentMs: 600_000, toolSilentMs: 1_200_000, timeoutMs: 5_400_000 });
+    for (const defaults of [localModelGuardDefaults, agentCliGuardDefaults]) expect(LoopGuardSettingsSchema.safeParse(defaults).success).toBe(true);
   });
 
   it("applies overrides over the local-model defaults, or over the defaults it is given", () => {
     expect(loopGuardSettings({ turnCap: 80, idleMs: 0 })).toEqual({ ok: true, value: { turnCap: 80, repeatLimit: 6, idleMs: 0, silentMs: 300_000, toolSilentMs: 1_200_000, timeoutMs: 600_000 } });
-    expect(loopGuardSettings({ repeatLimit: 0 }, claudeCodeGuardDefaults)).toEqual({ ok: true, value: { ...claudeCodeGuardDefaults, repeatLimit: 0 } });
-    expect(loopGuardSettings(undefined, claudeCodeGuardDefaults)).toEqual({ ok: true, value: claudeCodeGuardDefaults });
+    expect(loopGuardSettings({ repeatLimit: 0 }, agentCliGuardDefaults)).toEqual({ ok: true, value: { ...agentCliGuardDefaults, repeatLimit: 0 } });
+    expect(loopGuardSettings(undefined, agentCliGuardDefaults)).toEqual({ ok: true, value: agentCliGuardDefaults });
   });
 
   it.each([
@@ -73,11 +73,11 @@ describe("loop guard settings", () => {
   });
 
   it("takes silentMs 0, which turns the silence stop off", () => {
-    expect(loopGuardSettings({ silentMs: 0 }, claudeCodeGuardDefaults)).toEqual({ ok: true, value: { ...claudeCodeGuardDefaults, silentMs: 0 } });
+    expect(loopGuardSettings({ silentMs: 0 }, agentCliGuardDefaults)).toEqual({ ok: true, value: { ...agentCliGuardDefaults, silentMs: 0 } });
   });
 
   it("takes toolSilentMs 0, which turns the tool silence stop off", () => {
-    expect(loopGuardSettings({ toolSilentMs: 0 }, claudeCodeGuardDefaults)).toEqual({ ok: true, value: { ...claudeCodeGuardDefaults, toolSilentMs: 0 } });
+    expect(loopGuardSettings({ toolSilentMs: 0 }, agentCliGuardDefaults)).toEqual({ ok: true, value: { ...agentCliGuardDefaults, toolSilentMs: 0 } });
   });
 });
 

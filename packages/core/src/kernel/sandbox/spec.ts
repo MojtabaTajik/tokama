@@ -63,6 +63,7 @@ export const CREDENTIAL_PATHS: readonly string[] = [
   "~/.terraform.d/credentials.tfrc.json",
   "~/.claude/.credentials.json",
   "~/.claude.json",
+  "~/.codex",
 ];
 
 const HOST = /^(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(:\d{1,5})?$/;

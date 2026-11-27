@@ -88,4 +88,8 @@ describe("lists", () => {
     for (const path of CREDENTIAL_PATHS) expect(path.startsWith("~/")).toBe(true);
     expect(PACKAGE_REGISTRY_HOSTS).not.toContain("github.com");
   });
+
+  it("close the login folders of Claude Code and Codex CLI", () => {
+    expect(CREDENTIAL_PATHS).toEqual(expect.arrayContaining(["~/.claude/.credentials.json", "~/.claude.json", "~/.codex"]));
+  });
 });

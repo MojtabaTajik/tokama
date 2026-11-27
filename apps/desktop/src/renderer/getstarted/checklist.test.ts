@@ -1,9 +1,14 @@
-import { adapters, type CliHealth, type Health, MIN_GIT_VERSION, type RepoSummary, type TemplateSummary } from "@tokama/core";
+import { aiCliAdapters, type CliHealth, type Health, MIN_GIT_VERSION, type RepoSummary, type TemplateSummary } from "@tokama/core";
 import { describe, expect, it } from "vitest";
 import { isWebsiteUrl } from "../../main/policy.js";
 import { aiCliBlock, aiCliState, atLeast, type Checklist, checklist, type ChecklistInput, numberIn, QUICK_FIX_ID, type Row } from "./checklist.js";
 import { CLAUDE_CODE_MIN, COMMANDS, GIT_MIN, LINKS, SAMPLE_TASK } from "./words.js";
 
+const claudeCode = () => {
+  const adapter = aiCliAdapters.find((candidate) => candidate.id === "claude-code");
+  if (adapter === undefined) throw new Error("The Claude Code adapter is not part of this build.");
+  return adapter;
+};
 const claude = (overrides: Partial<CliHealth> = {}): CliHealth => ({ cliId: "claude-code", installed: true, loggedIn: true, version: "2.1.332", ...overrides });
 const health = (parts: { git?: Health["git"]; cli?: CliHealth | undefined } = {}): Health => ({
   git: parts.git ?? { ok: true, version: "git version 2.47.1" },
@@ -42,12 +47,12 @@ const textOf = (row: Row) => row.detail.map((part) => (typeof part === "string" 
 describe("the pinned numbers", () => {
   it("match the engine's: git minimum and the Claude Code minimum", () => {
     expect(GIT_MIN).toBe(`${MIN_GIT_VERSION.major}.${MIN_GIT_VERSION.minor}`);
-    expect(CLAUDE_CODE_MIN).toBe((adapters as Record<string, unknown>)["SHELL_CALLS_FROM"]);
+    expect(CLAUDE_CODE_MIN).toBe(claudeCode().minimumVersion);
   });
 
   it("the commands to sign in and to update are the engine's", () => {
-    expect(COMMANDS.login).toBe((adapters as Record<string, unknown>)["LOGIN_COMMAND"]);
-    expect(COMMANDS.update).toBe((adapters as Record<string, unknown>)["UPDATE_COMMAND"]);
+    expect(COMMANDS.login).toBe(claudeCode().loginCommand);
+    expect(COMMANDS.update).toBe(claudeCode().updateCommand);
   });
 
   it("only link to pages the main process may open", () => {

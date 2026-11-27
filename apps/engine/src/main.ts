@@ -9,7 +9,7 @@ import { readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { defaultEngineDir } from "@tokama/core";
+import { aiCliAdapters, defaultEngineDir } from "@tokama/core";
 import { engineCodeRoots } from "./code-roots.js";
 import type { EngineDiagnostics } from "./diagnostics.js";
 import { startEngine } from "./engine.js";
@@ -50,14 +50,14 @@ async function main(): Promise<number> {
   const root = new AbortController();
   for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => root.abort());
 
-  // Claude Code's session logs, read only for the "all on this Mac" usage view; never in sample mode.
-  const claudeLogs = sample ? undefined : join(homedir(), ".claude", "projects");
+  // An AI CLI's session logs, read only for the "all on this Mac" usage view; never in sample mode.
+  const logsRoot = sample ? undefined : aiCliAdapters.find((adapter) => adapter.localUsage !== undefined)?.localUsage?.root(homedir());
   // Fake engine mode only: TOKAMA_SAMPLE_HISTORY=200 adds a long history of finished items.
   const history = sample ? Math.min(1500, Math.max(0, Number.parseInt(process.env["TOKAMA_SAMPLE_HISTORY"] ?? "0", 10) || 0)) : 0;
   // With it, TOKAMA_SAMPLE_ONLY_HISTORY=1 leaves out the sample's own items, so nothing is open.
   const historyOnly = sample && process.env["TOKAMA_SAMPLE_ONLY_HISTORY"] === "1";
   const codeRoots = engineCodeRoots(import.meta.dirname, (path) => statSync(path, { throwIfNoEntry: false })?.isFile() === true);
-  const started = await startEngine({ dir, home, signal: root.signal, log, sample, sampleHistory: history, sampleHistoryOnly: historyOnly, engineVersion: engineVersion(), codeRoots, onDiagnostics: (opened) => (diagnostics = opened), ...(claudeLogs !== undefined && { claudeLogs }) });
+  const started = await startEngine({ dir, home, signal: root.signal, log, sample, sampleHistory: history, sampleHistoryOnly: historyOnly, engineVersion: engineVersion(), codeRoots, onDiagnostics: (opened) => (diagnostics = opened), ...(logsRoot !== undefined && { claudeLogs: logsRoot }) });
   if (!started.ok) {
     log(started.error.message);
     if (started.error.code === "stopped") return 0;

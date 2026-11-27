@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { type ClientEvent, connect, type EngineClient } from "@tokama/client";
 import { manualClock, parseQueryResult, type RepoId } from "@tokama/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { ClaudeLogs } from "./claude-logs.js";
+import { ClaudeLogs, logReader } from "./claude-logs.js";
 import { startEngine } from "./engine.js";
 import { ItemIndex } from "./item-index.js";
 import { tempEngineDir, waitFor } from "./testing/helpers.js";
@@ -47,6 +47,7 @@ function logsFor(repoPath: string, at: number): { root: string; project: string 
 }
 
 describe("ClaudeLogs", () => {
+  const reader = logReader()!;
   function setUp(now: number, repoPath: string) {
     const { root, project } = logsFor(repoPath, now - 10 * MINUTE);
     const index = ItemIndex.open(join(tempDir("tokama-claude-index-"), "tokama.db"));
@@ -55,6 +56,7 @@ describe("ClaudeLogs", () => {
     let changes = 0;
     const logs = new ClaudeLogs({
       index,
+      reader,
       root,
       repos: async () => [{ id: "orders-api" as RepoId, path: repoPath, worktreeFolder: ".tokama-wt" }],
       clock,
@@ -108,7 +110,7 @@ describe("ClaudeLogs", () => {
     const { logs, index, root } = setUp(now, "/Users/someone/orders-api");
     logs.refresh();
     await logs.settled();
-    const restarted = new ClaudeLogs({ index, root, repos: async () => [], clock: manualClock(now), onChange: () => {} });
+    const restarted = new ClaudeLogs({ index, reader, root, repos: async () => [], clock: manualClock(now), onChange: () => {} });
     expect(restarted.status().state).toBe("scanning");
     expect(restarted.entries(0).filter((e) => e.repoId === "orders-api")).toHaveLength(3);
     expect(restarted.coveredFrom()).toBe(now - 10 * MINUTE);
