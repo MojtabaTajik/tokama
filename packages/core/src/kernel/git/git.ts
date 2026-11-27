@@ -38,6 +38,13 @@ const NO_TRANSPORT_ENV: Readonly<Record<string, string>> = { GIT_ALLOW_PROTOCOL:
 export const DIFF_SAFE: readonly string[] = ["--no-ext-diff", "--no-textconv", "--no-color", "--submodule=short"];
 
 /**
+ * On the tree-to-tree diffs that build the approval diff and the protected-file check: a changed
+ * nested-repo pointer is always listed, whatever `diff.ignoreSubmodules`, `submodule.<name>.ignore`
+ * or `.gitmodules` say. Not part of DIFF_SAFE: the worktree `diff` would then show dirty nested repos.
+ */
+const WITH_SUBMODULES = "--ignore-submodules=none";
+
+/**
  * Rename detection on, whatever the repo config says, in git's own file order (no orderFile) and
  * over the whole tree (no diff.relative), so every diff form lists the same files in the same order.
  */
@@ -478,16 +485,16 @@ export function createGit(options: GitOptions): Git {
     diffCachedNumstat: (repo) =>
       map(git(repo, ["diff", "--cached", "--numstat", "-z", "--no-renames", ...DIFF_SAFE]), parseNumstat),
     async diffTreeRaw(repo, from, to) {
-      const args = ["diff-tree", "-r", "-z", "--raw", "--no-abbrev", "--no-renames", from, to, "--"];
+      const args = ["diff-tree", "-r", "-z", "--raw", "--no-abbrev", "--no-renames", WITH_SUBMODULES, from, to, "--"];
       return refuseOption(args, from, to) ?? map(git(repo, args), parseDiffTreeRaw);
     },
     async diffFiles(repo, from, to) {
-      const rawArgs = ["diff", "--raw", "-z", "--no-abbrev", ...RENAMES, ...DIFF_SAFE, from, to, "--"];
+      const rawArgs = ["diff", "--raw", "-z", "--no-abbrev", ...RENAMES, ...DIFF_SAFE, WITH_SUBMODULES, from, to, "--"];
       const refused = refuseOption(rawArgs, from, to);
       if (refused !== undefined) return refused;
       const listed = await git(repo, rawArgs);
       if (!listed.ok) return listed;
-      const counted = await git(repo, ["diff", "--numstat", "-z", ...RENAMES, ...DIFF_SAFE, from, to, "--"]);
+      const counted = await git(repo, ["diff", "--numstat", "-z", ...RENAMES, ...DIFF_SAFE, WITH_SUBMODULES, from, to, "--"]);
       if (!counted.ok) return counted;
       const counts = new Map(parseNumstatRenames(counted.value).map((entry) => [entry.path, entry]));
       return ok(
@@ -498,11 +505,11 @@ export function createGit(options: GitOptions): Git {
       );
     },
     async diffPatch(repo, from, to, maxBytes) {
-      const args = ["-c", "core.quotePath=true", "diff", "--patch", "--src-prefix=a/", "--dst-prefix=b/", ...RENAMES, ...DIFF_SAFE, from, to, "--"];
+      const args = ["-c", "core.quotePath=true", "diff", "--patch", "--src-prefix=a/", "--dst-prefix=b/", ...RENAMES, ...DIFF_SAFE, WITH_SUBMODULES, from, to, "--"];
       return refuseOption(args, from, to) ?? gitCapped(repo, args, maxBytes);
     },
     async diffTrees(repo, from, to) {
-      const args = ["diff", "--no-renames", ...DIFF_SAFE, from, to, "--"];
+      const args = ["diff", "--no-renames", ...DIFF_SAFE, WITH_SUBMODULES, from, to, "--"];
       return refuseOption(args, from, to) ?? git(repo, args);
     },
     diff: (repo, diffOptions = {}) => git(repo, ["diff", ...(diffOptions.cached === true ? ["--cached"] : []), ...DIFF_SAFE]),
@@ -595,7 +602,7 @@ export function createGit(options: GitOptions): Git {
       return ok([]);
     },
     async diffNames(repo, from, to) {
-      const args = ["diff", "--name-only", "-z", "--no-renames", ...DIFF_SAFE, from, to, "--"];
+      const args = ["diff", "--name-only", "-z", "--no-renames", ...DIFF_SAFE, WITH_SUBMODULES, from, to, "--"];
       return refuseOption(args, from, to) ?? map(git(repo, args), (out) => out.split("\0").filter((path) => path !== ""));
     },
     async remoteResolvedPushUrl(repo, remote) {
