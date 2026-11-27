@@ -116,6 +116,36 @@ describe("ClaudeLogs", () => {
     expect(restarted.coveredFrom()).toBe(now - 10 * MINUTE);
   });
 
+  it("is complete from the last scan that read every log: a later scan that runs does not undo it, one that fails and one that finds no logs do", async () => {
+    const now = Date.now();
+    const { logs, clock, root, index } = setUp(now, "/Users/someone/orders-api");
+    expect(logs.complete()).toBe(false);
+    logs.refresh();
+    expect(logs.complete()).toBe(false);
+    await logs.settled();
+    expect(logs.complete()).toBe(true);
+
+    // A new scan is running: the status says scanning, the earlier scan still stands.
+    clock.advance(61_000);
+    logs.refresh();
+    expect(logs.status().state).toBe("scanning");
+    expect(logs.complete()).toBe(true);
+    await logs.settled();
+    expect(logs.complete()).toBe(true);
+
+    const failing = new ClaudeLogs({ index, reader: { ...reader, scan: async () => { throw new Error("cannot read") } }, root, repos: async () => [], clock: manualClock(now), onChange: () => {} });
+    failing.refresh();
+    await failing.settled();
+    expect(failing.status().state).toBe("ready");
+    expect(failing.complete()).toBe(false);
+
+    rmSync(root, { recursive: true });
+    clock.advance(61_000);
+    logs.refresh();
+    await logs.settled();
+    expect(logs.complete()).toBe(false);
+  });
+
   it("says when there are no logs", async () => {
     const now = Date.now();
     const { logs, root } = setUp(now, "/Users/someone/orders-api");

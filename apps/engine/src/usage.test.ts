@@ -160,6 +160,7 @@ describe("weekly history", () => {
     cliId: "claude-code",
     refresh: () => {},
     status: () => ({ state: "ready", filesDone: 1, filesTotal: 1 }),
+    complete: () => true,
     entries: () => [],
     totals: () => [{ model: "claude-opus-5-5", tokens: { ...MILLION, input: 2_000_000 } }],
     coveredFrom: () => NOW - 30 * DAY,
@@ -193,7 +194,7 @@ describe("weekly history", () => {
 
   it("keeps a window it could not weigh, and weighs it when the logs are read later", async () => {
     let ready = false;
-    const { stored, usage } = await twoAnswers({ logs: logs({ status: () => ({ state: ready ? "ready" : "scanning", filesDone: 0, filesTotal: 1 }) }) });
+    const { stored, usage } = await twoAnswers({ logs: logs({ complete: () => ready }) });
     expect(stored).toEqual([{ window: "weekly_all", startsAt: NOW - 8 * DAY, endsAt: NOW - DAY, usedPercent: 64 }]);
     ready = true;
     await usage.report(14);
@@ -224,6 +225,20 @@ describe("weekly history", () => {
     await usage.settled();
     const previous = await usage.report(14, "tokama", "previous");
     expect(previous.week?.limits).toEqual([expect.objectContaining({ cliId: "claude-code", usedPercent: 64, tokamaPercent: 32, outsidePercent: 32 })]);
+  });
+
+  it("tells the split while a later scan of the logs runs, and none when the last scan did not complete", async () => {
+    const answer = week(60, NOW + 2 * DAY);
+    const request: PlanSource = async () => ({ ok: true, value: answer });
+    let complete = true;
+    // The status says a scan runs now, as it does for a moment about once a minute.
+    const scanning = logs({ status: () => ({ state: "scanning", filesDone: 1, filesTotal: 3 }), complete: () => complete, coveredFrom: () => NOW - 30 * DAY });
+    const { usage } = service({ sources: { "claude-code": { request } }, items: () => [item()], logs: scanning });
+    await usage.report(14);
+    await usage.settled();
+    expect((await usage.report(14)).week?.limits[0]).toHaveProperty("tokamaPercent");
+    complete = false;
+    expect((await usage.report(14)).week?.limits[0]).not.toHaveProperty("tokamaPercent");
   });
 
   it("has no week block when it is given no items", async () => {

@@ -158,6 +158,8 @@ export interface UsageDeps {
     readonly cliId: AiCliId;
     refresh(): void;
     status(): LogScan;
+    /** The last scan that ended read every log and found logs; the split needs it. */
+    complete(): boolean;
     entries(since: number): readonly UsageEntry[];
     /** The tokens the logs hold between two times, per model. */
     totals(from: number, to: number): readonly { readonly model: string; readonly tokens: TokenUsage }[];
@@ -286,7 +288,7 @@ export class UsageService {
   private callLogs(): Partial<Record<AiCliId, CallLogs>> | undefined {
     const logs = this.deps.logs;
     if (logs === undefined) return undefined;
-    const ofCli: CallLogs = { totals: (from, to) => logs.totals(from, to), coveredFrom: logs.coveredFrom(), ready: logs.status().state === "ready" };
+    const ofCli: CallLogs = { totals: (from, to) => logs.totals(from, to), coveredFrom: logs.coveredFrom(), ready: logs.complete() };
     return { [logs.cliId]: ofCli };
   }
 

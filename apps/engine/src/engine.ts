@@ -451,6 +451,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
             cliId: "claude-code",
             refresh: () => {},
             status: () => ({ state: "ready", filesDone: 412, filesTotal: 412, asOf: clock.now() - 40_000 }),
+            complete: () => true,
             entries: () => sampleLogEntries(sample.setup, clock.now()),
             totals: (from, to) => sampleLogTotals(sampleUsageRows(sample.setup, store.list(), clock.now()).map((row) => row.call), from, to),
             coveredFrom: () => 0,
