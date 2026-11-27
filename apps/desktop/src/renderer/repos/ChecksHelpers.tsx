@@ -19,6 +19,8 @@ const TEXT = {
   try: "Try checks",
   suggest: "Suggest with AI",
   stop: "Stop",
+  stopSuggesting: "Stop suggesting",
+  stopTrying: "Stop trying checks",
   noSource: "No source files, no .env.",
   stays: "It stays on this computer.",
   noCli: "No AI CLI is ready on this computer.",
@@ -32,7 +34,7 @@ const TEXT = {
   stopped: "Stopped.",
   consentTitle: (target: string) => `Send this folder's file names and build files to ${target}?`,
   sent: "Sent",
-  sentWhat: "File and folder names, two levels deep. The text of build files, such as package.json, Makefile, CI workflows and the start of the README.",
+  sentWhat: (sends: string) => `${sends.charAt(0).toUpperCase()}${sends.slice(1)} of this folder.`,
   neverSent: "Never sent",
   neverSentWhat: "Source files, .env files, anything else in the folder.",
   goesTo: "Goes to",
@@ -182,11 +184,14 @@ function Running({ h, state }: { readonly h: ChecksHelpers; readonly state: Extr
   const reading = state.phase === "gathering";
   const word = reading ? TEXT.reading : state.phase === "retrying" ? TEXT.askingAgain : TEXT.asking(target);
   return (
-    <span className="ch-status" role="status">
+    <span className="ch-status">
       <StatusMark status={reading ? "queued" : "running"} />
-      <span className="ch-status-word">{word}</span>
+      {/* Only the phase is announced: the clock beside it changes every second. */}
+      <span className="ch-status-word" role="status">
+        {word}
+      </span>
       <span className="ch-time mono">{formatDuration(now - state.since)}</span>
-      <Button variant="link" size="sm" onClick={h.stopSuggest}>
+      <Button variant="link" size="sm" aria-label={TEXT.stopSuggesting} onClick={h.stopSuggest}>
         {TEXT.stop}
       </Button>
     </span>
@@ -202,7 +207,7 @@ function Consent({ h }: { readonly h: ChecksHelpers }) {
       <p className="ch-consent-title">{TEXT.consentTitle(name)}</p>
       <dl className="ch-facts">
         <dt>{TEXT.sent}</dt>
-        <dd>{TEXT.sentWhat}</dd>
+        <dd>{TEXT.sentWhat(h.summary === undefined ? "file names and build files" : sendsOf(h.summary))}</dd>
         <dt>{TEXT.neverSent}</dt>
         <dd>{TEXT.neverSentWhat}</dd>
         <dt>{TEXT.goesTo}</dt>
@@ -253,7 +258,7 @@ export function ChecksHelpersRow({ h, lines, onAdd, baseBranch, editing, onOpenG
           <div className="ch-buttons">
             {h.canTry &&
               (trying ? (
-                <Button onClick={h.stopTrial}>
+                <Button aria-label={TEXT.stopTrying} onClick={h.stopTrial}>
                   <StopIcon />
                   {TEXT.stop}
                 </Button>
@@ -297,10 +302,11 @@ function Suggestions({ h, result, lines, onAdd }: SuggestionsProps) {
   const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set());
   const [editing, setEditing] = useState<string | undefined>(undefined);
   const [edited, setEdited] = useState("");
-  const [dismissed, setDismissed] = useState(false);
-  if (dismissed) return null;
   // A row added after an edit stands for the edited command from then on, so the original cannot be added too.
   const [replaced, setReplaced] = useState<ReadonlyMap<string, string>>(new Map());
+  const [dismissed, setDismissed] = useState(false);
+  // Every hook is above this line: a card that closes must render the same hooks as one that is open.
+  if (dismissed) return null;
   const shown = (check: { readonly command: string }) => replaced.get(check.command) ?? check.command;
   const rows = result.checks.filter((check) => !removed.has(check.command));
   const fresh = rows.filter((check) => !lines.includes(shown(check)));

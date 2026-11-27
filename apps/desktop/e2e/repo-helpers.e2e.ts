@@ -162,6 +162,19 @@ flow(
     await results.getByRole("button", { name: "Output" }).click();
     expect(await results.locator(".ch-output-text").textContent()).toMatch(/SyntaxError/);
     await screenshot("repo-helpers-l-real", add);
+    await add.getByRole("button", { name: "Add repo", exact: true }).click();
+    await add.waitFor({ state: "detached" });
+
+    // Edit repo has Try checks too. The real engine lists no suggest-checks helper yet, so no Suggest with AI here (the sample-engine flows above cover it).
+    await page.getByRole("button", { name: "Actions for billing-api" }).click();
+    await page.getByRole("menuitem", { name: /^Edit…/ }).click();
+    const edit = page.getByRole("dialog", { name: "Edit repo" });
+    await edit.getByRole("button", { name: "Try checks" }).waitFor();
+    expect(await edit.getByRole("button", { name: "Suggest with AI" }).count()).toBe(0);
+    await screenshot("repo-helpers-e-edit", edit);
+    await edit.getByRole("button", { name: "Try checks" }).click();
+    await edit.getByRole("region", { name: "Try checks results" }).waitFor({ timeout: 60_000 });
+    await page.keyboard.press("Escape");
     // The trial's worktree is gone and the folder has no new file but the local exclude line.
     expect(git(folder, "status", "--porcelain").trim()).toBe("");
     expect(git(folder, "worktree", "list").trim().split("\n")).toHaveLength(1);

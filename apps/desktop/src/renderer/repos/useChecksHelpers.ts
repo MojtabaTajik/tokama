@@ -60,6 +60,9 @@ export interface ChecksHelpers {
 
 const gone = (code: string) => code === "not_found";
 
+/** The tools of every list, each once, in the order first seen. */
+const mergeTools = (...lists: ReadonlyArray<readonly AiCliId[]>): AiCliId[] => [...new Set(lists.flat())];
+
 export function useChecksHelpers({ bridge, path, baseBranch, checks, canTry }: ChecksHelpersArgs): ChecksHelpers {
   const [summary, setSummary] = useState<HelperSummary | undefined>(undefined);
   const [loaded, setLoaded] = useState(false);
@@ -74,9 +77,9 @@ export function useChecksHelpers({ bridge, path, baseBranch, checks, canTry }: C
   const earlyRun = useRef(new Map<string, HelperRun>());
   const startingTrial = useRef(false);
   const earlyTrial = useRef(new Map<string, CheckTrial>());
-  // Stop pressed, or the dialog closed, before the reply that names the run or trial: it is cancelled the moment its id is known.
-  const stopRunAsked = useRef(false);
-  const stopTrialAsked = useRef(false);
+  // The start that waits for its reply, and whether Stop was pressed since; and whether the dialog closed. Either one cancels the run or trial the moment its id is known.
+  const pendingRun = useRef<{ stop: boolean } | undefined>(undefined);
+  const pendingTrial = useRef<{ stop: boolean } | undefined>(undefined);
   const closed = useRef(false);
   const lines = checkLines(checks);
 
@@ -92,7 +95,7 @@ export function useChecksHelpers({ bridge, path, baseBranch, checks, canTry }: C
       .catch(() => live && setLoaded(true));
     void bridge
       .getDesktopState()
-      .then((state) => live && setConsent(state.helperConsent ?? []))
+      .then((state) => live && setConsent((now) => mergeTools(now, state.helperConsent ?? [])))
       .catch(() => undefined);
     return () => {
       live = false;
@@ -183,17 +186,18 @@ export function useChecksHelpers({ bridge, path, baseBranch, checks, canTry }: C
     const cloud = summary?.agent?.runsOn === "cloud";
     setSuggest({ kind: "running", since: Date.now(), phase: "gathering" });
     startingRun.current = true;
-    stopRunAsked.current = false;
+    const mine = { stop: false };
+    pendingRun.current = mine;
     earlyRun.current.clear();
     const reply = await bridge
       .command({ type: "run_helper", run: { helperId: "suggest-checks", input: { path } }, ...(cloud ? { cloud: "accepted" as const } : {}) })
       .catch((cause: unknown) => ({ ok: false as const, error: { code: "bridge_error", message: String(cause) } }));
     startingRun.current = false;
-    if (!reply.ok) return closed.current ? undefined : setSuggest({ kind: "failed", failure: failureOf(reply.error) });
-    if (closed.current || stopRunAsked.current) {
-      void bridge.command({ type: "cancel_helper", runId: reply.data.runId }).catch(() => undefined);
-      return closed.current ? undefined : setSuggest({ kind: "stopped" });
-    }
+    if (pendingRun.current === mine) pendingRun.current = undefined;
+    // Stop already ended the line, and a closed dialog has none: either way only the run itself is left to cancel.
+    const gone = closed.current || mine.stop;
+    if (!reply.ok) return gone ? undefined : setSuggest({ kind: "failed", failure: failureOf(reply.error) });
+    if (gone) return void bridge.command({ type: "cancel_helper", runId: reply.data.runId }).catch(() => undefined);
     runId.current = reply.data.runId;
     const heard = earlyRun.current.get(reply.data.runId);
     if (heard !== undefined) applyRun(heard);
@@ -203,9 +207,16 @@ export function useChecksHelpers({ bridge, path, baseBranch, checks, canTry }: C
   const agree = () => {
     const tool = summary?.agent?.cliId;
     if (tool !== undefined && !consent.includes(tool)) {
-      const next = [...consent, tool];
-      setConsent(next);
-      void bridge.saveLayout({ helperConsent: next }).catch(() => undefined);
+      // Merged with what the app has stored now, so a list that had not loaded yet loses no tool.
+      void bridge
+        .getDesktopState()
+        .catch(() => undefined)
+        .then((state) => {
+          const next = mergeTools(state?.helperConsent ?? [], consent, [tool]);
+          setConsent(next);
+          return bridge.saveLayout({ helperConsent: next });
+        })
+        .catch(() => undefined);
     }
     void send();
   };
@@ -215,7 +226,8 @@ export function useChecksHelpers({ bridge, path, baseBranch, checks, canTry }: C
     const asked = lines;
     setTrial({ kind: "running", lines: asked, trial: undefined });
     startingTrial.current = true;
-    stopTrialAsked.current = false;
+    const mine = { stop: false };
+    pendingTrial.current = mine;
     earlyTrial.current.clear();
     const minutes = new Map(suggest.kind === "answer" ? suggest.result.checks.map((check) => [check.command, check.minutes] as const) : []);
     const reply = await bridge
@@ -227,11 +239,10 @@ export function useChecksHelpers({ bridge, path, baseBranch, checks, canTry }: C
       })
       .catch((cause: unknown) => ({ ok: false as const, error: { code: "bridge_error", message: String(cause) } }));
     startingTrial.current = false;
-    if (!reply.ok) return closed.current ? undefined : setTrial({ kind: "error", message: reply.error.message });
-    if (closed.current || stopTrialAsked.current) {
-      void bridge.command({ type: "cancel_check_trial", trialId: reply.data.trialId }).catch(() => undefined);
-      return closed.current ? undefined : setTrial({ kind: "idle" });
-    }
+    if (pendingTrial.current === mine) pendingTrial.current = undefined;
+    const gone = closed.current || mine.stop;
+    if (!reply.ok) return gone ? undefined : setTrial({ kind: "error", message: reply.error.message });
+    if (gone) return void bridge.command({ type: "cancel_check_trial", trialId: reply.data.trialId }).catch(() => undefined);
     trialId.current = reply.data.trialId;
     const heard = earlyTrial.current.get(reply.data.trialId);
     if (heard !== undefined) applyTrial(heard);
@@ -256,12 +267,19 @@ export function useChecksHelpers({ bridge, path, baseBranch, checks, canTry }: C
     notNow: () => setSuggest({ kind: "idle" }),
     stopSuggest: () => {
       if (runId.current !== undefined) void bridge.command({ type: "cancel_helper", runId: runId.current }).catch(() => undefined);
-      else stopRunAsked.current = true;
+      else if (pendingRun.current !== undefined) {
+        // No id yet: the line ends now, and the run is cancelled when the reply names it.
+        pendingRun.current.stop = true;
+        setSuggest({ kind: "stopped" });
+      }
     },
     startTrial: () => void startTrial(),
     stopTrial: () => {
       if (trialId.current !== undefined) void bridge.command({ type: "cancel_check_trial", trialId: trialId.current }).catch(() => undefined);
-      else stopTrialAsked.current = true;
+      else if (pendingTrial.current !== undefined) {
+        pendingTrial.current.stop = true;
+        setTrial({ kind: "idle" });
+      }
     },
     dismissTrial: () => setTrial({ kind: "idle" }),
   };

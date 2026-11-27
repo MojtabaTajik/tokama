@@ -108,6 +108,8 @@ describe("Suggest with AI", () => {
     await click(button("Suggest with AI"));
     expect(text()).toContain("Send this folder's file names and build files to Claude Code?");
     expect(text()).toContain("Claude Code · haiku, a cloud AI tool. It leaves this computer.");
+    // What is sent is named from the engine's own list.
+    expect(text()).toContain("File names and build files of this folder.");
     expect(button("Try checks")).toBeUndefined();
     expect(fake.command).not.toHaveBeenCalled();
     // Not now sends nothing and brings the buttons back.
@@ -221,8 +223,9 @@ describe("Suggest with AI", () => {
     await act(async () => root.render(<RepoDialog bridge={fake.bridge} path={FOLDER} onClose={() => undefined} />));
     // Stop before the reply: the line ends at once, and the run is cancelled when its id is known.
     await click(button("Suggest with AI"));
-    await click(button("Stop"));
+    await click(button("Stop suggesting"));
     expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: "cancel_helper" }));
+    expect(text()).toContain("Stopped.");
     await act(async () => releases.shift()!());
     expect(command).toHaveBeenCalledWith({ type: "cancel_helper", runId: RUN_ID });
     expect(text()).toContain("Stopped.");
@@ -320,6 +323,43 @@ describe("Suggest with AI", () => {
     expect(text()).toContain("It stays on this computer.");
     await click(button("Suggest with AI"));
     expect(fake.command).toHaveBeenCalledWith({ type: "run_helper", run: { helperId: "suggest-checks", input: { path: FOLDER } } });
+  });
+
+  it("keeps the dialog on screen when either card is closed with its ✕", async () => {
+    const fake = await mount({ consent: ["claude-code"], commandReply: replies(START) });
+    await click(button("Suggest with AI"));
+    await fake.pushEvent({ type: "helper_run_updated", run: run({ state: "done", phase: undefined, endedAt: 2, result: { helperId: "suggest-checks", value: ANSWER } }) } as never);
+    await click($(".ch-card [aria-label='Close']"));
+    expect($(".ch-card")).toBeNull();
+    expect(text()).toContain("Suggest with AI");
+    // The card of an empty answer is another return of the same component.
+    await click(button("Suggest with AI"));
+    await fake.pushEvent({ type: "helper_run_updated", run: run({ state: "done", phase: undefined, endedAt: 3, result: { helperId: "suggest-checks", value: { checks: [], note: "No build file." } } }) } as never);
+    expect(text()).toContain("suggested no checks");
+    await click($(".ch-card [aria-label='Close']"));
+    expect($(".ch-card")).toBeNull();
+    expect(button("Suggest with AI")).toBeDefined();
+  });
+
+  it("announces only the phase of a running suggestion, and names each Stop for what it stops", async () => {
+    const fake = await mount({ consent: ["claude-code"], commandReply: replies(START) });
+    await click(button("Suggest with AI"));
+    expect($(".ch-status")?.getAttribute("role")).toBeNull();
+    expect($(".ch-status-word")?.getAttribute("role")).toBe("status");
+    expect($(".ch-time")?.closest("[role='status']")).toBeNull();
+    expect(button("Stop suggesting")).toBeDefined();
+    await click(button("Stop suggesting"));
+    await fake.pushEvent({ type: "helper_run_updated", run: run({ state: "cancelled", phase: undefined, endedAt: 2 }) } as never);
+    await type(checks(), "npm test");
+    await click(button("Try checks"));
+    expect(button("Stop trying checks")).toBeDefined();
+  });
+
+  it("merges a new agreement with the tools already stored, not over them", async () => {
+    const fake = await mount({ consent: ["codex-cli"], commandReply: replies(START) });
+    await click(button("Suggest with AI"));
+    await click(button("Send and suggest"));
+    expect(fake.saveLayout).toHaveBeenLastCalledWith({ helperConsent: ["codex-cli", "claude-code"] });
   });
 
   it("stops what runs when the dialog closes", async () => {
