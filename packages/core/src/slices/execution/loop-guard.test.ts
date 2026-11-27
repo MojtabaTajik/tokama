@@ -7,6 +7,7 @@ import {
   type FileSnapshot,
   type FileState,
   guardReport,
+  helperGuardDefaults,
   localModelGuardDefaults,
   LoopGuardSettingsSchema,
   loopGuardSettings,
@@ -349,5 +350,10 @@ describe("guard report", () => {
     expect(pollIntervalMs(75_000)).toBe(10_000);
     expect(pollIntervalMs(2_000)).toBe(500);
     expect(pollIntervalMs(0)).toBe(10_000);
+  });
+
+  it("has helper settings that are valid, with no idle stop and the helper's own time", () => {
+    expect(helperGuardDefaults(90_000)).toEqual({ turnCap: 3, repeatLimit: 3, idleMs: 0, silentMs: 60_000, toolSilentMs: 60_000, timeoutMs: 90_000 });
+    expect(LoopGuardSettingsSchema.safeParse(helperGuardDefaults(300_000)).success).toBe(true);
   });
 });

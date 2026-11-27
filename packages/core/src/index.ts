@@ -71,21 +71,36 @@ export const aiCliAdapters = collectAiCliAdapters(Object.values(adapters));
 // The run loop and its commands, for the engine service.
 export {
   attemptLimit,
+  cleanCliText,
+  createHelperRunner,
   createRunLoop,
   explainStop,
+  HELPER_LOCAL_ONLY,
+  HELPER_NO_CLI,
+  HELPER_TARGETS,
   lastEnded,
   parseVerdict,
   ROUND_TRIPS,
   summarizeOutput,
   titleFrom,
   VERDICT_RULE,
+  type CliStatus,
   type CommandError,
+  type HelperCallRecord,
+  type HelperCommandError,
+  type HelperGatherer,
+  type HelperOutcome,
+  type HelperRunHooks,
+  type HelperRunner,
+  type PreparedHelperRun,
   type RunLoop,
   type RunLoopDeps,
   type StartItemInput,
   type Stopped,
   type Verdict,
 } from "./slices/workflow-engine/index.js";
+// The helpers this build has and the shape of one; the engine service lists them and runs them through the helper runner.
+export { BUILTIN_HELPERS, type HelperDefinition, type HelperInputName } from "./slices/helpers/index.js";
 // Usage reports: roll-ups, estimated costs and the plan window choice, for the engine service.
 export {
   callCost,
