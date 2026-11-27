@@ -46,7 +46,7 @@ describe("App shell", () => {
     expect($('nav[aria-label="App"]')).not.toBeNull();
     expect($('aside[aria-label="Sidebar"]')).not.toBeNull();
     expect($("main")).not.toBeNull();
-    expect($("img")?.getAttribute("src")).toBe(brand.markUrl);
+    expect($("img")?.getAttribute("src")).toBe(brand.mark32Url);
     expect($('img[alt="Tokama"]')).not.toBeNull();
   });
 
