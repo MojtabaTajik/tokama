@@ -539,6 +539,14 @@ describe("handshake messages", () => {
   });
 });
 
+describe("suggest_template reply", () => {
+  it("takes an optional reason, and only the value question", () => {
+    expect(parseQueryResult("suggest_template", { templateId: "builtin/ask" }).ok).toBe(true);
+    expect(parseQueryResult("suggest_template", { templateId: "builtin/ask", reason: "question" }).ok).toBe(true);
+    expect(parseQueryResult("suggest_template", { templateId: "builtin/ask", reason: "other" }).ok).toBe(false);
+  });
+});
+
 describe("check command length", () => {
   it("allows MAX_CHECK_CHARS (500) characters per check in add_repo and in a repo suggestion, and no more", () => {
     expect(MAX_CHECK_CHARS).toBe(500);

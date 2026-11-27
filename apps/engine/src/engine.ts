@@ -661,7 +661,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
         diagnostics?.setClis(current.health.clis);
         servedSetup = { ...current, health: { ...current.health, ...crashFlag() } };
         return { ok: true, data: servedSetup };
-      } else if (message.query.type === "suggest_template") { return { ok: true, data: { templateId: await real.suggestTemplate() } as SuggestTemplateResult };
+      } else if (message.query.type === "suggest_template") { return { ok: true, data: (await real.suggestTemplate(message.query.text)) as SuggestTemplateResult };
       } else if (message.query.type === "decision_diff") {
         const diff = await real.decisionDiff(message.query.itemId, message.query.decisionId);
         return diff.ok ? { ok: true, data: diff.value satisfies DecisionDiffResult } : { ok: false, error: diff.error };

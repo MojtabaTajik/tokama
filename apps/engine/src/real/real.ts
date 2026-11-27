@@ -64,6 +64,7 @@ import { agentsFor, type Config, findTemplate, loadConfig, resolveAgent, startPr
 import { cachedChecks, type HealthChecks } from "./health.js";
 import { cliName, cliReadiness } from "./clis.js";
 import { HelperRuns } from "./helpers.js";
+import { type Suggestion, suggestFrom } from "./suggest.js";
 import { CheckTrials } from "./trials.js";
 import { toItemRecord } from "./records.js";
 
@@ -264,10 +265,10 @@ export class RealEngine {
     return toSetup(config, { ...health, config: [] });
   }
 
-  /** The only template that can start, when there is exactly one; otherwise none. */
-  async suggestTemplate(): Promise<string | null> {
+  /** The template New work suggests for the text. */
+  async suggestTemplate(text: string): Promise<Suggestion> {
     const startable = this.config.templates.flatMap((load) => (load.ok && startProblem(load.template) === undefined ? [load.template.ref] : []));
-    return startable.length === 1 ? startable[0]! : null;
+    return suggestFrom(startable, text);
   }
 
   async command(command: ItemCommand): Promise<Result<CommandResult<ItemCommand["type"]>, CommandError>> {
