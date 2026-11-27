@@ -3,6 +3,7 @@
 // symbol for what is not normal; the notifier says the same in words only. Type imports only: the
 // renderer and the main process both use this file.
 import type { AttemptSummary, ItemRecord, StepRecord } from "@tokama/core";
+import { answeredNoChange } from "./item-said.js";
 
 type FactItem = Pick<ItemRecord, "kind" | "steps" | "outcome">;
 
@@ -68,6 +69,8 @@ function checksFact(checks: Checks): Fact {
 
 /** The facts of a done item: its checks, or that it had none. An investigation has no checks to name. */
 export function doneFacts(item: FactItem): Fact[] {
+  // An answer that needed no change changed nothing: that is its one fact.
+  if (answeredNoChange(item)) return [{ text: "0 files" }];
   const checks = checksOf(item);
   if (checks !== undefined) return [checksFact(checks)];
   return item.kind === "task" ? [{ text: "no checks" }] : [];

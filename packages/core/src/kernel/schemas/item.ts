@@ -101,6 +101,8 @@ export const SaidSchema = z.strictObject({
   /** The reply without its headline block, in UTF-8 bytes. */
   bodyBytes: z.int().nonnegative(),
   readMinutes: z.int().min(1).max(60).optional(),
+  /** The step changed nothing and its agent said no change is needed: its reply is the answer. Absent otherwise and in older records. */
+  noChange: z.literal(true).optional(),
 });
 
 /** One attempt of a step: one agent session plus its checks. */
@@ -208,6 +210,8 @@ export const DecisionSchema = z.strictObject({
   summaryText: z.string().min(1).max(20_000).optional(),
   /** For a step you approve: the engine serves the change to approve through `decision_diff`. */
   hasDiff: z.boolean().optional(),
+  /** For a step you approve whose agent said no change is needed: ending the item with its answer is what the question proposes. */
+  proposes: z.literal("no_change").optional(),
   /**
    * For a step that failed or reached a limit: whether it was a limit, what ran after its last
    * ended attempt, and why Tokama stopped, in plain words. What the agent said comes with the

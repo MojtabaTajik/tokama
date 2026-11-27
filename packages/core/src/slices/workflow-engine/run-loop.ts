@@ -83,7 +83,7 @@ import {
   unapproved,
   type SteeringEntry,
 } from "./protect.js";
-import { HEADLINE_RULE, REVIEWER_HEADLINE_RULE, saidOf } from "./headline.js";
+import { HEADLINE_RULE, NO_CHANGE_RULE, REVIEWER_HEADLINE_RULE, saidOf } from "./headline.js";
 import { parseHeadline } from "./summary.js";
 import { parseVerdict, VERDICT_RULE } from "./verdict.js";
 
@@ -191,6 +191,8 @@ const RETRY = choice(RUN_FAILURE_CHOICES[0].id, RUN_FAILURE_CHOICES[0].label);
 const ONE_MORE = choice(ONE_MORE_ID, "Retry once more");
 const ONE_MORE_ROUND = choice(ONE_MORE_ROUND_ID, "Run one more round");
 const NO_ACTION = choice("no_action_needed", "End: no action needed");
+/** The detail of an item that ended on an answer that needs no change. */
+const NO_CHANGE_DETAIL = "No change needed: the answer is the result.";
 const APPROVE = choice(APPROVE_ID, "Approve");
 const APPROVE_AND_COMMIT = choice(APPROVE_ID, "Approve and commit");
 const REQUEST_CHANGES = choice(REQUEST_CHANGES_ID, "Request changes");
@@ -222,7 +224,8 @@ type Next =
   /** The step sends the work back to the step its rule names: a new round there. */
   | { readonly kind: "back"; readonly stepId: StepId }
   | { readonly kind: "finish" }
-  | { readonly kind: "end"; readonly outcome: ItemOutcome; readonly detail: string }
+  /** `removeUnused`: the item ended on an answer with no change, so its worktree goes when it still holds none. */
+  | { readonly kind: "end"; readonly outcome: ItemOutcome; readonly detail: string; readonly removeUnused?: true }
   | { readonly kind: "wait" };
 
 const WAIT: Next = { kind: "wait" };
@@ -247,6 +250,17 @@ export function titleFrom(text: string): string {
 
 /** A template whose picked repo is read-only: its agents get no edit tools, whatever their agent file says, and nothing is committed. The loop works only in the picked repo. */
 const readsOnly = (template: TemplateRecord): boolean => template.uses.repos.picked === "read";
+
+/**
+ * Whether a step's agent may say that no change is needed: a step you approve with a step after
+ * it, until the engineer has chosen "Build anyway" on it. After that the step asks as before, so
+ * the answer cannot send the item round in a circle.
+ */
+function mayProposeNoChange(item: StoredItem, template: TemplateRecord, step: TemplateStepDef): boolean {
+  const at = template.steps.findIndex((s) => s.id === step.id);
+  if (step.doneWhen !== "you approve" || at < 0 || at === template.steps.length - 1) return false;
+  return !item.decisions.some((d) => d.stepId === step.id && d.proposes === "no_change" && d.resolved?.choice === REQUEST_CHANGES_ID);
+}
 
 /** The steps a reviewer step reviews, as template validation draws them: from the back target, or after the previous reviewer. */
 function reviewedSteps(template: TemplateRecord, index: number): TemplateStepDef[] {
@@ -351,7 +365,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     stepId: StepId | undefined,
     choices: readonly DecisionChoice[],
     text: string,
-    extra: { covers?: readonly CoveredPath[]; tree?: string; change?: { files: number } } = {},
+    extra: { covers?: readonly CoveredPath[]; tree?: string; change?: { files: number }; proposes?: "no_change" } = {},
   ): ItemEventBody => ({
     type: "decision_opened",
     decisionId: DecisionIdSchema.parse(newId("decision", clock.now())),
@@ -362,6 +376,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     ...(extra.covers !== undefined && { covers: extra.covers.map(({ path, mode, blob }) => ({ path, mode, blob })) }),
     ...(extra.tree !== undefined && { tree: extra.tree }),
     ...(extra.change !== undefined && { change: extra.change }),
+    ...(extra.proposes !== undefined && { proposes: extra.proposes }),
   });
 
   const attemptEnded = (
@@ -783,7 +798,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     }
     const feedback = await feedbackFor({ ...ctx, item });
     // The step's agent also writes its headline: the rule is part of the instructions every prompt is built from, so a cloud agent's recorded prompt holds it too. A reviewer's verdict line stays the last.
-    const rules = reviewer ? REVIEWER_HEADLINE_RULE + VERDICT_RULE : HEADLINE_RULE;
+    const rules = reviewer ? REVIEWER_HEADLINE_RULE + VERDICT_RULE : HEADLINE_RULE + (mayProposeNoChange(item, ctx.template, step) ? NO_CHANGE_RULE : "");
     const template = { ...ctx.template, steps: ctx.template.steps.map((s) => (s.id === stepId ? { ...s, instructions: { ...s.instructions, text: s.instructions.text + rules } } : s)) };
     const prompt = buildPrompt({
       template,
@@ -894,7 +909,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     const reply = (await readItemFile(item.id, `${attemptDir(stepId, attempt)}/agent.txt`)) ?? "";
     const parsed = parseHeadline(reply);
     const document = ctx.template.steps.at(-1)?.id === stepId && ctx.template.finish.some((finish) => finish === "findings" || finish === "document");
-    const said = (approvesText = false): Said | undefined => saidOf(parsed, { approvesText, lastOfDocument: document });
+    const said = (approvesText = false, noChangeOffered = false): Said | undefined => saidOf(parsed, { approvesText, lastOfDocument: document, noChangeOffered });
     switch (step.doneWhen) {
       case "agent finishes":
         return passStep(item, stepId, [attemptEnded(stepId, attempt, "passed", { said: said() })]);
@@ -916,7 +931,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
    * The engineer approves one tree, and Finish commits that tree: it is staged and judged before
    * the question, and the question carries it, so the diff shown is the change committed.
    */
-  const askApproval = async (ctx: Context, step: TemplateStepDef, attempt: number, said: (approvesText: boolean) => Said | undefined): Promise<Next> => {
+  const askApproval = async (ctx: Context, step: TemplateStepDef, attempt: number, said: (approvesText: boolean, noChangeOffered: boolean) => Said | undefined): Promise<Next> => {
     const { item } = ctx;
     const fail = (text: string) => runFailed(item, step.id, attempt, "crash", text);
     const worktree = worktreeOf(ctx);
@@ -945,11 +960,25 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       : commits
       ? `${agent} changed ${changed} in a worktree of ${ctx.repo.id}. Nothing is committed until you approve. Request changes sends your note to ${agent} for another run.`
       : `${agent} finished step ${step.name} and changed ${changed}. Approve to go on. Request changes sends your note to ${agent} for another run.`;
+    // The agent's "no change needed" counts only when it was asked for, the tree equals the base
+    // tree and a step follows; otherwise the line is ignored and the usual question comes.
+    const spoken = said(unchanged, unchanged && next !== undefined && mayProposeNoChange(item, ctx.template, step));
+    if (spoken?.noChange === true) {
+      append(item.id, [
+        attemptEnded(step.id, attempt, "passed", { said: spoken }),
+        decision("plan_approval", step.id, [NO_ACTION, REQUEST_CHANGES, STOP], `${agent} says no change is needed. Finish keeps its answer and ends the item; Build anyway sends your note to ${agent} for another run.`, {
+          tree: staged.value,
+          change: { files: 0 },
+          proposes: "no_change",
+        }),
+      ]);
+      return WAIT;
+    }
     // Only the question carries the tree: Finish commits it when nothing ran after the approval,
     // and a later step's work is committed as before.
     append(item.id, [
       // A step that changed nothing asks you to approve its text: that text is a must-read.
-      attemptEnded(step.id, attempt, "passed", { said: said(unchanged) }),
+      attemptEnded(step.id, attempt, "passed", { said: said(unchanged, false) }),
       decision("plan_approval", step.id, [commits ? APPROVE_AND_COMMIT : APPROVE, REQUEST_CHANGES, NO_ACTION, STOP], text, { tree: staged.value, change: { files: shown } }),
     ]);
     return WAIT;
@@ -1100,6 +1129,28 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     return WAIT;
   };
 
+  /**
+   * After an item ended on an answer with no change: the worktree goes only while its branch is
+   * still at the base commit and its tree still equals the base tree, so nothing is lost. Files
+   * the engineer added meanwhile keep it; the engineer decides what to do with them.
+   */
+  const removeUnusedWorktree = async (itemId: ItemId): Promise<void> => {
+    const item = store.get(itemId);
+    if (item === undefined) return;
+    const ctx = contextOf(item);
+    if (isNext(ctx)) return;
+    const worktree = worktreeOf(ctx);
+    if (worktree === undefined) return;
+    const [tip, baseTree, staged] = await Promise.all([
+      git.revParse(worktree.path, `refs/heads/${worktree.branch}`),
+      git.revParse(worktree.path, `${worktree.baseCommit}^{tree}`),
+      stageItem(git, worktree.path),
+    ]);
+    if (!tip.ok || tip.value !== worktree.baseCommit || !baseTree.ok || !staged.ok || staged.value !== baseTree.value) return;
+    const removed = finisher.start(itemId, "discard");
+    if (!removed.ok) deps.log?.(`item ${itemId}: the unused worktree was not removed: ${removed.error.message}`);
+  };
+
   const finish = async (ctx: Context): Promise<Next> => {
     const { item } = ctx;
     const worktree = worktreeOf(ctx);
@@ -1182,6 +1233,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     if (item === undefined || item.outcome !== undefined || item.deleted || signal.aborted) return WAIT;
     if (next.kind === "end") {
       endItem(itemId, next.outcome, next.detail);
+      if (next.removeUnused === true) await removeUnusedWorktree(itemId);
       return WAIT;
     }
     if (openDecisions(item).length > 0) return WAIT;
@@ -1247,7 +1299,11 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
    */
   const nextAfter = (item: StoredItem, asked: StoredDecision, chosen: string): Next => {
     if (chosen === STOP.id) return { kind: "end", outcome: "stopped", detail: "Stopped by the engineer." };
-    if (chosen === NO_ACTION.id) return { kind: "end", outcome: "no_action_needed", detail: "Ended: no action needed." };
+    if (chosen === NO_ACTION.id) {
+      return asked.proposes === "no_change"
+        ? { kind: "end", outcome: "no_action_needed", detail: NO_CHANGE_DETAIL, removeUnused: true }
+        : { kind: "end", outcome: "no_action_needed", detail: "Ended: no action needed." };
+    }
     if (openDecisions(item).length > 0) return WAIT;
     const carryOn = (): Next => {
       if (!item.steps.some((s) => s.state !== "pending")) return { kind: "begin" };
@@ -1359,6 +1415,8 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       if (!asked.choices.some((c) => c.id === chosen)) return failure("invalid_choice", `"${chosen}" is not a choice of ${decisionId}.`);
       const words = note?.trim().slice(0, MAX_NOTE_CHARS) ?? "";
       if (words !== "" && chosen !== REQUEST_CHANGES.id) return failure("invalid_request", "Only Request changes takes a note.");
+      // Build anyway runs the step again, and with no note the agent would only say the same.
+      if (words === "" && chosen === REQUEST_CHANGES.id && asked.proposes === "no_change") return failure("invalid_request", "Build anyway needs a note that says what should be built.");
       const appended = store.append(itemId, [{ type: "decision_resolved", decisionId: asked.id, choice: chosen, ...(words !== "" && { note: words }) }]);
       if (!appended.ok) return failure("invalid_state", appended.error.message);
       const next = nextAfter(appended.value, asked, chosen);

@@ -123,6 +123,57 @@ export const finishable = {
   finish: { worktreeRemoved: false, pushTarget: "github.com/northwind/orders-api" },
 } as unknown as ItemRecord;
 
+const NO_CHANGE_SAID = {
+  source: "headline",
+  headline: "About half a day: the list query already streams, so export is one new endpoint and one test file.",
+  points: ["4 files in orders-api would change, no database change", "Main risk: memory on ranges over 31 days"],
+  morePoints: 0,
+  bodyBytes: 1100,
+  readMinutes: 1,
+  noChange: true,
+};
+
+/** A plan step whose agent says no change is needed: the question proposes finishing with the answer. */
+export const noChangeAsked = {
+  ...task,
+  id: "item_1a2b3c4d-0014-4a1b-8c1d-000000000014",
+  title: "How hard is it to add CSV export to orders?",
+  text: "How hard is it to add CSV export to orders?",
+  state: "needs_you",
+  decision: {
+    id: "decision_5e1c9a7b-3f2d-4c8e-9a6b-1d2e3f4a5b70",
+    kind: "plan_approval",
+    stepIndex: 0,
+    question: "No change needed. Finish with this answer?",
+    why: "Architect says no change is needed. Finish keeps its answer and ends the item; Build anyway sends your note to Architect for another run.",
+    proposes: "no_change",
+    choices: [
+      { id: "no_action_needed", label: "Finish, keep the answer" },
+      { id: "request_changes", label: "Build anyway…" },
+      { id: "stop", label: "Stop" },
+    ],
+  },
+  steps: [
+    { name: "Plan", stage: "review", state: "needs_you", agentId: "architect", data: "repo-and-diff", detail: "waits for you", attempts: [{ attempt: 1, result: "passed", checks: [], said: NO_CHANGE_SAID }] },
+    { name: "Build", stage: "working", state: "pending", agentId: "local-builder", data: "none" },
+    { name: "Review", stage: "review", state: "pending", agentId: "reviewer", data: "repo-and-diff" },
+  ],
+} as unknown as ItemRecord;
+
+/** The same item after Finish: done with its answer, 0 files, the worktree removed. */
+export const noChangeDone = {
+  ...noChangeAsked,
+  state: "done",
+  decision: undefined,
+  steps: [
+    { name: "Plan", stage: "review", state: "stopped", agentId: "architect", data: "repo-and-diff", attempts: [{ attempt: 1, result: "passed", checks: [], said: NO_CHANGE_SAID }] },
+    { name: "Build", stage: "working", state: "pending", agentId: "local-builder", data: "none" },
+    { name: "Review", stage: "review", state: "pending", agentId: "reviewer", data: "repo-and-diff" },
+  ],
+  outcome: { kind: "no_action_needed", detail: "No change needed: the answer is the result.", at: 1_760_000_100_000 },
+  finish: { worktreeRemoved: true, at: 1_760_000_100_500 },
+} as unknown as ItemRecord;
+
 /** A task whose Review stopped at its limit after Build fixed what it asked for. */
 export const stoppedReview = {
   ...task,

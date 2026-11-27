@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SaidSchema } from "../../kernel/schemas/index.js";
-import { HEADLINE_RULE, readMinutesOf, saidOf } from "./headline.js";
+import { HEADLINE_RULE, NO_CHANGE_RULE, readMinutesOf, saidOf } from "./headline.js";
 import { parseHeadline } from "./summary.js";
 
 const words = (count: number) => Array.from({ length: count }, (_, i) => `w${i}`).join(" ");
@@ -11,6 +11,24 @@ describe("HEADLINE_RULE", () => {
     expect(HEADLINE_RULE).toContain("HEADLINE: <one line, at most 140 characters");
     expect(HEADLINE_RULE).toContain("up to 3 such lines, each at most 160 characters");
     expect(HEADLINE_RULE).toContain("READ: yes");
+  });
+});
+
+describe("NO_CHANGE_RULE", () => {
+  it("asks for one line, only for an answer that changes nothing", () => {
+    expect(NO_CHANGE_RULE).toContain("NO_CHANGE: yes");
+    expect(NO_CHANGE_RULE).toContain("changed no files");
+    expect(HEADLINE_RULE).not.toContain("NO_CHANGE");
+  });
+});
+
+describe("saidOf: no change needed", () => {
+  const reply = "The answer.\nHEADLINE: Half a day.\nNO_CHANGE: yes";
+  it("records the line only when it was asked for", () => {
+    expect(saidOf(parseHeadline(reply), { ...none, noChangeOffered: true })).toMatchObject({ headline: "Half a day.", noChange: true });
+    expect(saidOf(parseHeadline(reply), none)).not.toHaveProperty("noChange");
+    expect(saidOf(parseHeadline("Text.\nHEADLINE: Half a day."), { ...none, noChangeOffered: true })).not.toHaveProperty("noChange");
+    expect(SaidSchema.safeParse(saidOf(parseHeadline(reply), { ...none, noChangeOffered: true })).success).toBe(true);
   });
 });
 

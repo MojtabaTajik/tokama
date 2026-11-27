@@ -1,6 +1,6 @@
 import type { ItemRecord, Said } from "@tokama/core";
 import { describe, expect, it } from "vitest";
-import { readTag, saidOf, saidTag } from "./item-said.js";
+import { answeredNoChange, noChangeLine, readTag, saidOf, saidTag } from "./item-said.js";
 
 const said = (headline: string, more: Partial<Said> = {}): Said => ({ source: "headline", headline, points: [], morePoints: 0, bodyBytes: 100, ...more });
 type Step = ItemRecord["steps"][number];
@@ -36,6 +36,30 @@ describe("saidOf", () => {
     expect(saidOf({ steps: [step("Build", "passed", [{}])] })).toBeUndefined();
     expect(saidOf({ steps: [{ name: "Build", stage: "working", state: "passed", data: "none" } as Step] })).toBeUndefined();
     expect(saidOf({ steps: [] })).toBeUndefined();
+  });
+});
+
+describe("answeredNoChange and noChangeLine", () => {
+  const ended = (outcome: "no_action_needed" | "done", plan: Said) =>
+    ({ outcome: { kind: outcome, at: 1 }, steps: [step("Plan", "stopped", [{ said: plan }], "you approve"), step("Build", "pending", [])] }) as unknown as Pick<ItemRecord, "outcome" | "steps">;
+
+  it("is true only for an item that ended with no action needed on an answer that said no change", () => {
+    expect(answeredNoChange(ended("no_action_needed", said("The answer.", { noChange: true })))).toBe(true);
+    expect(answeredNoChange(ended("no_action_needed", said("The answer.")))).toBe(false);
+    expect(answeredNoChange(ended("done", said("The answer.", { noChange: true })))).toBe(false);
+    expect(answeredNoChange({ steps: [] })).toBe(false);
+  });
+
+  it("finds the answer when an earlier step passed, and makes it the words of the item", () => {
+    const item = { outcome: { kind: "no_action_needed", at: 1 }, steps: [step("Scope", "passed", [{ said: said("Scoped.") }]), step("Plan", "stopped", [{ said: said("The answer.", { noChange: true }) }], "you approve"), step("Build", "pending", [])] } as unknown as Pick<ItemRecord, "outcome" | "steps">;
+    expect(answeredNoChange(item)).toBe(true);
+    expect(saidOf(item)).toMatchObject({ stepIndex: 1, said: { headline: "The answer." } });
+    expect(noChangeLine(item)).toBe("no change needed · ended at Plan, step 2 of 3");
+  });
+
+  it("says why the row did not go on, and where it ended", () => {
+    expect(noChangeLine(ended("no_action_needed", said("The answer.", { noChange: true })))).toBe("no change needed · ended at Plan, step 1 of 2");
+    expect(noChangeLine(ended("no_action_needed", said("The answer.")))).toBeUndefined();
   });
 });
 

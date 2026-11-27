@@ -124,6 +124,8 @@ export interface ParsedHeadline {
   readonly words: number;
   /** The agent wrote `READ: yes`. */
   readonly readFlag: boolean;
+  /** The agent wrote `NO_CHANGE: yes` in its block, after the headline. */
+  readonly noChange: boolean;
 }
 
 /**
@@ -158,6 +160,7 @@ function parse(text: string): ParsedHeadline | undefined {
       morePoints: Math.max(0, points.length - MAX_POINTS),
       ...result,
       readFlag: after.some((found) => found?.label === "READ" && /^yes\b/i.test(found.value)),
+      noChange: after.some((found) => found?.label === "NO_CHANGE" && found.block),
     };
   }
   const said = body.flatMap((line) => (VERDICT_LINE.test(line.trim()) || labelOf(line)?.block === true ? [] : [plain(line)])).filter((line) => line !== "");
@@ -169,6 +172,7 @@ function parse(text: string): ParsedHeadline | undefined {
     morePoints: 0,
     ...result,
     readFlag: false,
+    noChange: false,
   };
 }
 

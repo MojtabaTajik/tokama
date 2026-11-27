@@ -433,6 +433,24 @@ describe("finish events", () => {
     expect(fold([...done, start("merge"), { type: "merged", repoId: "orders-api" as never, baseBranch: "main", commit: COMMIT, worktreeRemoved: false }, start("discard"), { type: "discarded", repoId: "orders-api" as never }]).finish?.worktreeRemoved).toBe(true);
   });
 
+  it("a discard may follow an item that ended with no action needed; nothing else of Finish may", () => {
+    const answered: ItemEventBody[] = [created(), worktree, { type: "item_ended", outcome: "no_action_needed" }];
+    const removed = fold([...answered, start("discard"), { type: "discarded", repoId: "orders-api" as never }]);
+    expect(removed).toMatchObject({ state: "done", outcome: { kind: "no_action_needed" }, finish: { worktreeRemoved: true } });
+    expect(fold([...answered, start("discard"), { type: "finish_failed", action: "discard", detail: "busy" }]).finish).toMatchObject({ worktreeRemoved: false, failed: { action: "discard" } });
+    // No commit, no merge or pull request; and the log of a stopped or failed item still refuses a discard.
+    expect(foldError([...answered, start("merge")])).toMatch(/only once the item is done/);
+    expect(foldError([...answered, start("pull_request")])).toMatch(/only once the item is done/);
+    expect(foldError([...answered, start("discard"), { type: "git_changes_accepted", repoId: "orders-api" as never, protectedDigest: "1".repeat(64) }])).toMatch(/only once the item is done/);
+    expect(foldError([created(), worktree, { type: "item_ended", outcome: "failed" }, start("discard")])).toMatch(/only once the item is done/);
+  });
+
+  it("a decision keeps what it proposes; an older log has none", () => {
+    const asked: ItemEventBody = { type: "decision_opened", decisionId: "decision_0190a000-0000-7000-8000-000000000001" as never, kind: "plan_approval", stepId: BUILD, choices: [{ id: "no_action_needed", label: "End" }, { id: "stop", label: "Stop" }], proposes: "no_change" };
+    expect(fold([created(), { type: "step_started", stepId: BUILD }, asked]).decisions[0]?.proposes).toBe("no_change");
+    expect(fold([created(), { type: "step_started", stepId: BUILD }, { ...asked, proposes: undefined } as ItemEventBody]).decisions[0]).not.toHaveProperty("proposes");
+  });
+
   it("git_changes_accepted: after a refusal for changed git config or hooks, sets the new baseline and clears the refusal", () => {
     const D1 = "1".repeat(64);
     const D2 = "2".repeat(64);

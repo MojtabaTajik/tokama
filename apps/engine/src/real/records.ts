@@ -66,6 +66,7 @@ export function questionOf(open: StoredDecision, template: TemplateRecord | unde
       const { next, commits, files } = approvalOf(open, template);
       // No step, or a log from before both the tree and the count were kept: nothing tells what the approval covers.
       if (step === undefined || (files === undefined && open.tree === undefined)) return QUESTIONS.plan_approval;
+      if (open.proposes === "no_change") return "No change needed. Finish with this answer?";
       if (files === 0) {
         if (next === undefined) return "Accept this result and finish?";
         return COMMAND_VERBS.has(next.name.toLowerCase()) ? `${next.name} it this way?` : `Go on to ${next.name} this way?`;
@@ -154,7 +155,8 @@ export function toItemRecord(item: StoredItem): ItemRecord | undefined {
     }),
   };
   const finish = toFinish(item);
-  const cardLine = cut(finishLine(finish) ?? cardLineOf(item, steps, decision?.question), 120);
+  // The card of an item that ended on an answer says so in the outcome's words, not "discarded".
+  const cardLine = cut((item.outcome?.kind === "no_action_needed" ? undefined : finishLine(finish)) ?? cardLineOf(item, steps, decision?.question), 120);
   const durationMs = itemMs(item);
 
   const record = {
@@ -185,7 +187,9 @@ export function toItemRecord(item: StoredItem): ItemRecord | undefined {
 /** A done item's worktree and what was done with it; undefined for other items. */
 function toFinish(item: StoredItem): ItemRecord["finish"] {
   const worktree = item.worktrees[0];
-  if (item.outcome?.kind !== "done" || worktree === undefined) return undefined;
+  // An item the engineer ended with Finish on a no-change answer has one too: its unused worktree is removed, or still there to discard.
+  const finished = item.outcome?.kind === "no_action_needed" && item.decisions.some((d) => d.proposes === "no_change" && d.resolved?.choice === "no_action_needed");
+  if (worktree === undefined || (item.outcome?.kind !== "done" && !finished)) return undefined;
   const stored = item.finish;
   const hosted = worktree.pushUrl === undefined ? undefined : hostedRepo(worktree.pushUrl);
   const failed = stored?.failed && cut(stored.failed.detail, 500);
@@ -283,6 +287,7 @@ function toDecision(item: StoredItem, template: TemplateRecord | undefined): Dec
     ...(why !== undefined && { why }),
     // A step that changed no files has nothing to diff; a log from before the count was kept shows the diff of its tree.
     ...(open.kind === "plan_approval" && open.tree !== undefined && (open.change?.files ?? 1) > 0 && { hasDiff: true }),
+    ...(open.kind === "plan_approval" && open.proposes !== undefined && { proposes: open.proposes }),
     ...(stopped !== undefined && { stopped }),
     choices: choicesOf(open, template).slice(0, 5),
   };
@@ -294,7 +299,11 @@ const RUN_AGAIN = new Set(["retry_step", "one_more_attempt"]);
 /** A label the question's words explain; a name too long for a label leaves the stored one. */
 const relabel = (choice: DecisionChoice, label: string): DecisionChoice => (label.length <= 64 ? { ...choice, label } : choice);
 
+/** The two answers of a "no change needed" question: end with the agent's answer, or run the step again with a note on what to build. */
+const NO_CHANGE_LABELS: Readonly<Record<string, string>> = { no_action_needed: "Finish, keep the answer", [REQUEST_CHANGES_ID]: "Build anyway…" };
+
 function choicesOf(open: StoredDecision, template: TemplateRecord | undefined): DecisionChoice[] {
+  if (open.kind === "plan_approval" && open.proposes === "no_change") return open.choices.map((choice) => relabel(choice, NO_CHANGE_LABELS[choice.id] ?? choice.label));
   const name = template?.steps.find((step) => step.id === open.stepId)?.name;
   if (name === undefined) return open.choices;
   if (open.kind === "plan_approval") {

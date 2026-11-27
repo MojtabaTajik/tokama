@@ -6,7 +6,7 @@
 // ("– Quick fix has no review step"). Pure functions, tested without React.
 import type { ItemRecord, Setup, StepRecord } from "@tokama/core";
 import { checkAttempts, checksOf, failureLine } from "../../shared/item-facts.js";
-import { readTag, saidOf } from "../../shared/item-said.js";
+import { answeredNoChange, readTag, saidOf } from "../../shared/item-said.js";
 import { agentInfo } from "../agent/agent-info.js";
 import { backendOf } from "../brand/backends/index.js";
 import { type Mark, markOf } from "../ui/status.js";
@@ -29,7 +29,7 @@ export const MARKS = {
 } as const;
 
 export interface ResultRow {
-  readonly key: "checked" | "reviewed" | "sent";
+  readonly key: "checked" | "reviewed" | "sent" | "changed" | "ran";
   readonly label: string;
   readonly mark?: Mark;
   readonly text: string;
@@ -76,6 +76,8 @@ export interface ResultView {
   readonly failure: string | undefined;
   readonly words: ResultWords | undefined;
   readonly rows: readonly ResultRow[];
+  /** The card's heading when it is not "Result": "Done · no change needed". */
+  readonly heading?: string;
 }
 
 const list = new Intl.ListFormat("en", { style: "long", type: "conjunction" });
@@ -209,8 +211,24 @@ export function followUpText(item: ItemRecord): string | undefined {
   return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
 }
 
+/** What an item that ended on a no-change answer changed, and which steps ran: its answer is the result, and Build never started. */
+function noChangeRows(item: ItemRecord): ResultRow[] {
+  const ran = item.steps.filter((step) => (step.attempts?.length ?? 0) > 0).map((step) => step.name);
+  const skipped = item.steps.filter((step) => (step.attempts?.length ?? 0) === 0).map((step) => step.name);
+  const removed = item.finish?.worktreeRemoved === true ? " · the worktree is removed" : "";
+  return [
+    { key: "changed", label: "Changed", text: `0 files · nothing committed${removed}` },
+    {
+      key: "ran",
+      label: "Ran",
+      text: `${ran.length === 1 ? `${ran[0]} only` : `${list.format(ran)} ran`}${skipped.length === 0 ? "" : ` · ${list.format(skipped)} did not run`}`,
+    },
+  ];
+}
+
 /** The card of an item that has ended: done, failed or stopped. */
 export function resultView(item: ItemRecord, setup: Setup | undefined): ResultView {
+  if (answeredNoChange(item)) return { failure: undefined, words: wordsOf(item, setup), heading: "Done · no change needed", rows: [...noChangeRows(item), sentRow(item, setup)] };
   // Without the template's own words for its steps (a record the snapshot does not describe), what a template lacks cannot be said.
   const described = item.steps.some((step) => step.doneWhen !== undefined);
   const failure = item.state === "done" ? undefined : failureLine(item);

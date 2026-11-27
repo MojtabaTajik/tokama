@@ -7,7 +7,7 @@ import type { BridgeEvent, ConnectionState, TokamaBridge } from "../../shared/br
 import { App } from "../App.js";
 import { BACKEND_IDS, backendOf } from "../brand/backends/index.js";
 import { board, itemList, type ListQuery } from "../testing/bridge.js";
-import { approved, committed, DECISION_ID, finishable, needsYou, setup, stoppedReview, task } from "../testing/drawer.js";
+import { approved, committed, DECISION_ID, finishable, noChangeAsked, noChangeDone, needsYou, setup, stoppedReview, task } from "../testing/drawer.js";
 import { cardOffersStop } from "./DecisionChoices.js";
 import { ItemDrawer, tabsOf } from "./ItemDrawer.js";
 
@@ -2210,6 +2210,72 @@ describe("ItemDrawer usage", () => {
     await click(lines[1]);
     expect(text(".lg-retries")).toBe("Attempts 2 and 3 used 60% of this item's tokens · failing check: pnpm test");
     expect($$(".lg-retries")).toHaveLength(1);
+  });
+});
+
+describe("ItemDrawer: an answer that needs no change", () => {
+  const typeNote = (value: string) =>
+    act(async () => {
+      const note = $(".decision-note-text") as HTMLTextAreaElement;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(note, value);
+      note.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+  it("the card asks to finish with the answer: Finish is the filled button, no Approve, Stop in danger, and what follows is said", async () => {
+    await renderDrawer(fakeBridge([noChangeAsked]).bridge, noChangeAsked.id);
+    expect(text(".needs-you-question")).toBe("⏸No change needed. Finish with this answer?");
+    expect($$(".needs-you .choices .btn").map((el) => [el.textContent, el.className.match(/btn-(\w+)/)?.[1]])).toEqual([
+      ["Finish, keep the answer", "primary"],
+      ["Build anyway…", "secondary"],
+      ["Stop", "danger"],
+    ]);
+    // The card has its own Stop, so the drawer shows none.
+    expect($$(".drawer-actions button").map((el) => el.textContent)).toEqual([]);
+    expect($$(".needs-you .rc-row").map((el) => el.textContent)).toEqual(["ThenThe item ends as done · Build and Review do not run", "Changesnone · 0 files changed, nothing is committed"]);
+  });
+
+  it("Finish sends the answer at once; Build anyway asks for a note first and sends it, and cannot send an empty one", async () => {
+    const { bridge, command } = fakeBridge([noChangeAsked]);
+    await renderDrawer(bridge, noChangeAsked.id);
+    await click(button("Finish, keep the answer"));
+    expect(command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: noChangeAsked.id, decisionId: noChangeAsked.decision!.id, choice: "no_action_needed" });
+    command.mockClear();
+
+    await click(button("Build anyway…"));
+    expect(text(".decision-note label")).toBe("What should be built?");
+    expect(text(".decision-note-hint")).toBe('Architect plans again with your note. You are asked "Build it this way?" before anything is built.');
+    expect($$(".decision-note .btn").map((el) => el.textContent)).toEqual(["Send and plan", "Cancel"]);
+    expect(($(".decision-note .btn") as HTMLButtonElement).disabled).toBe(true);
+    await typeNote("   ");
+    expect(($(".decision-note .btn") as HTMLButtonElement).disabled).toBe(true);
+    await typeNote("  Yes, add it. CSV only.  ");
+    await click(button("Send and plan"));
+    expect(command).toHaveBeenCalledTimes(1);
+    expect(command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: noChangeAsked.id, decisionId: noChangeAsked.decision!.id, choice: "request_changes", note: "Yes, add it. CSV only." });
+  });
+
+  it("after Finish, the card says done with no change, the answer stays, and Start work from this opens New work", async () => {
+    const onStartFrom = vi.fn();
+    await act(async () => root.render(<ItemDrawer bridge={fakeBridge([noChangeDone]).bridge} itemId={noChangeDone.id} setup={setup} onClose={vi.fn()} onStartFrom={onStartFrom} />));
+    expect(text(".rc-label")).toBe("Done · no change needed");
+    expect(text(".rc-headline")).toBe(noChangeDone.steps[0]!.attempts![0]!.said!.headline);
+    expect($$(".rc-points li").map((el) => el.textContent)).toHaveLength(2);
+    expect($$(".rc-row").map((el) => el.textContent)).toEqual([
+      "Changed0 files · nothing committed · the worktree is removed",
+      "RanPlan only · Build and Review did not run",
+      expect.stringMatching(/^Sent out/),
+    ]);
+    expect($(".result-card")?.textContent).toContain("Read the answer");
+    expect(text(".finish-ended-title")).toContain("Nothing committed");
+    expect($$("button").some((el) => el.textContent?.startsWith("Discard"))).toBe(false);
+    await click(button("Start work from this…"));
+    expect(onStartFrom).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining("The answer: About half a day") }));
+  });
+
+  it("an item that ended with the quiet End: no action needed keeps the ordinary result card", async () => {
+    const plain = { ...noChangeDone, steps: noChangeDone.steps.map((step, index) => (index === 0 ? { ...step, attempts: [{ attempt: 1, result: "passed", checks: [] }] } : step)) } as unknown as ItemRecord;
+    await renderDrawer(fakeBridge([plain]).bridge, plain.id);
+    expect(text(".rc-label")).toBe("Result");
   });
 });
 

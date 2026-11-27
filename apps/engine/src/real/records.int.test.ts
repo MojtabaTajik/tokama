@@ -345,6 +345,35 @@ describe("toItemRecord", () => {
       expect(parseItemRecord(record).ok).toBe(true);
     });
 
+    it("a plan that says no change is needed asks to finish with its answer: two answers and Stop, no Approve", () => {
+      const NO_CHANGE = [{ id: "no_action_needed", label: "End: no action needed" }, { id: "request_changes", label: "Request changes" }, { id: "stop", label: "Stop" }];
+      const record = toItemRecord(append(created({ names: ["Plan", "Build"] }), [...START, { type: "decision_opened", decisionId: DECISION, kind: "plan_approval", stepId: FIX, choices: NO_CHANGE, proposes: "no_change", tree: TREE, change: { files: 0 } }] as never))!;
+      expect(record.decision).toMatchObject({ kind: "plan_approval", question: "No change needed. Finish with this answer?", proposes: "no_change", choices: [{ id: "no_action_needed", label: "Finish, keep the answer" }, { id: "request_changes", label: "Build anyway…" }, { id: "stop", label: "Stop" }] });
+      expect(record.decision!.hasDiff).toBeUndefined();
+      expect(record.cardLine).toBe("No change needed. Finish with this answer?");
+      expect(parseItemRecord(record).ok).toBe(true);
+      // A plan question without it, and an older log, are unchanged.
+      expect(approval({ names: ["Plan", "Build"] }, FIX, { tree: TREE, change: { files: 0 } }).decision).not.toHaveProperty("proposes");
+    });
+
+    it("an item that ended on a no-change answer says so, with its worktree removed", () => {
+      const ended = append(created({ names: ["Plan", "Build"] }), [
+        { type: "worktree_added", repoId: "orders-api" as never, branch: "tokama/0b9f3c1e", dir: ".tokama/wt/item-0b9f3c1e", baseCommit: COMMIT },
+        { type: "step_started", stepId: FIX },
+        { type: "decision_opened", decisionId: DECISION, kind: "plan_approval", stepId: FIX, choices: [{ id: "no_action_needed", label: "End" }, { id: "stop", label: "Stop" }], proposes: "no_change" },
+        { type: "decision_resolved", decisionId: DECISION, choice: "no_action_needed" },
+        { type: "item_ended", outcome: "no_action_needed", detail: "No change needed: the answer is the result." },
+      ] as never);
+      // The worktree is still there (files appeared in it, or its removal did not run): the record says so, and Discard can follow.
+      expect(toItemRecord(ended)!.finish).toEqual({ worktreeRemoved: false });
+      // An item ended by the quiet End: no action needed has no finish record at all.
+      const quiet = append(created(), [{ type: "worktree_added", repoId: "orders-api" as never, branch: "tokama/0b9f3c1e", dir: ".tokama/wt/item-0b9f3c1e", baseCommit: COMMIT }, { type: "item_ended", outcome: "no_action_needed" }]);
+      expect(toItemRecord(quiet)!.finish).toBeUndefined();
+      const removed = toItemRecord(append(ended, [{ type: "finish_started", action: "discard" }, { type: "discarded", repoId: "orders-api" as never }]))!;
+      expect(removed).toMatchObject({ state: "done", cardLine: "No change needed: the answer is the result.", outcome: { kind: "no_action_needed" }, finish: { worktreeRemoved: true } });
+      expect(parseItemRecord(removed).ok).toBe(true);
+    });
+
     it("a next step whose name is no command is asked as Go on to <name> this way", () => {
       expect(approval({ names: ["Plan", "Pull request"] }, FIX, { tree: TREE, change: { files: 0 } }).decision!.question).toBe("Go on to Pull request this way?");
       expect(approval({}, FIX, { tree: TREE, change: { files: 0 } }).decision!.question).toBe("Go on to Review this way?");
