@@ -171,7 +171,8 @@
   color: var(--muted);
 }
 
-.al-glyph {
+.al-can svg,
+.al-owner svg {
   flex: none;
 }
 

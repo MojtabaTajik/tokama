@@ -3,7 +3,7 @@
 // stays open while the pointer or the focus is on the label or the tooltip, and Escape closes it. The label
 // does nothing when clicked. It sits next to the row's own button, never inside it. Engine text (names,
 // models, commands, the role) is rendered as React text only.
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties } from "react";
 import { useEffect, useId, useRef } from "react";
 import type { AgentTarget } from "../settings/describe.js";
 import { cliName } from "../model.js";
@@ -13,6 +13,7 @@ import { Button } from "../ui/Button.js";
 import { AgentDotMark, BackendMark } from "../ui/agent.js";
 import { Pill } from "../ui/Pill.js";
 import { Tooltip } from "../ui/Tooltip.js";
+import { BuiltinIcon, EyeIcon, GlobeIcon, PencilIcon, RepoIcon, ShellIcon, UserIcon } from "../ui/icons.js";
 
 const TEXT = {
   builtin: "built-in",
@@ -160,53 +161,10 @@ const Dot = () => (
   </span>
 );
 
-function Glyph({ children, size = 12 }: { readonly children: ReactNode; readonly size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="al-glyph">
-      {children}
-    </svg>
-  );
-}
-
-const ShieldGlyph = () => (
-  <Glyph size={11}>
-    <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" />
-  </Glyph>
-);
-const PersonGlyph = () => (
-  <Glyph size={11}>
-    <circle cx="12" cy="8" r="3.5" />
-    <path d="M5 20c1-4 4-6 7-6s6 2 7 6" />
-  </Glyph>
-);
-const RepoGlyph = () => (
-  <Glyph size={11}>
-    <path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z" />
-    <path d="M5 17a3 3 0 0 1 3-3h11" />
-  </Glyph>
-);
-const PencilGlyph = () => (
-  <Glyph>
-    <path d="M4 20h4L19 9l-4-4L4 16z" />
-    <path d="M13.5 6.5l4 4" />
-  </Glyph>
-);
-const EyeGlyph = () => (
-  <Glyph>
-    <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" />
-    <circle cx="12" cy="12" r="3" />
-  </Glyph>
-);
-const TerminalGlyph = () => (
-  <Glyph>
-    <path d="M4 6l5 6-5 6" />
-    <path d="M12 18h8" />
-  </Glyph>
-);
-const GlobeGlyph = ({ off }: { readonly off: boolean }) => (
-  <Glyph>
-    <circle cx="12" cy="12" r="9" />
-    <path d="M3 12h18M12 3c3.5 3.5 3.5 14.5 0 18M12 3c-3.5 3.5-3.5 14.5 0 18" />
-    {off && <path d="M4 4l16 16" />}
-  </Glyph>
-);
+const ShieldGlyph = () => <BuiltinIcon size={11} />;
+const PersonGlyph = () => <UserIcon size={11} />;
+const RepoGlyph = () => <RepoIcon size={11} />;
+const PencilGlyph = () => <PencilIcon />;
+const EyeGlyph = () => <EyeIcon />;
+const TerminalGlyph = () => <ShellIcon />;
+const GlobeGlyph = ({ off }: { readonly off: boolean }) => <GlobeIcon off={off} />;

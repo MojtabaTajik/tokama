@@ -247,8 +247,24 @@ describe("eslint preset: desktop", () => {
     expect(await errorRules(`${desktop}/${zone}/virtual.ts`, code)).toEqual([IMPORTS]);
   });
 
-  it.each(["@fortawesome/free-brands-svg-icons", "@fortawesome/free-brands-svg-icons/faGithub"])("refuses the Font Awesome brands set: %s", async (specifier) => {
-    for (const zone of everyZone) expect(await errorRules(`${desktop}/${zone}/virtual.ts`, `import "${specifier}";`)).toEqual([IMPORTS]);
+  it.each(["@fortawesome/free-solid-svg-icons", "@fortawesome/free-brands-svg-icons/faGithub", "lucide-react/dynamic", "lucide-react/dynamic/index.js"])(
+    "refuses Font Awesome and Lucide's dynamic icons everywhere: %s",
+    async (specifier) => {
+      for (const zone of everyZone) expect(await errorRules(`${desktop}/${zone}/virtual.ts`, `import "${specifier}";`)).toEqual([IMPORTS]);
+      for (const file of ["renderer/ui/icons.tsx", "renderer/shell/TemplateIcon.tsx", "renderer/virtual.test.tsx"]) {
+        expect(await errorRules(`${desktop}/${file}`, `import "${specifier}";`), file).toEqual([IMPORTS]);
+      }
+    },
+  );
+
+  it.each(["lucide-react", "lucide-react/icons/zap"])("lets only the two icon files and tests import %s", async (specifier) => {
+    const code = `import "${specifier}";`;
+    for (const file of ["renderer/ui/icons.tsx", "renderer/shell/TemplateIcon.tsx", "renderer/shell/TemplateIcon.test.tsx"]) {
+      expect(await errorRules(`${desktop}/${file}`, code), file).toEqual([]);
+    }
+    for (const file of ["renderer/virtual.tsx", "renderer/ui/Button.tsx", "main/virtual.ts", "shared/virtual.ts", "preload/virtual.ts"]) {
+      expect(await errorRules(`${desktop}/${file}`, code), file).toEqual([IMPORTS]);
+    }
   });
 
   it("lets main use the client, core's public entry, Electron and Node", async () => {

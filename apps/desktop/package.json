@@ -19,7 +19,6 @@
   },
   "devDependencies": {
     "@electron/fuses": "1.8.0",
-    "@fortawesome/free-solid-svg-icons": "7.3.1",
     "@resvg/resvg-js": "2.6.2",
     "@tokama/client": "workspace:*",
     "@tokama/core": "workspace:*",
@@ -29,6 +28,7 @@
     "electron-builder": "26.18.1",
     "electron-updater": "6.8.12",
     "electron-vite": "6.0.0",
+    "lucide-react": "1.81.0",
     "playwright-core": "1.65.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",

@@ -184,11 +184,16 @@ const toWorkflowEngineEntry = {
 // (window.tokama); the sandboxed preload may import only electron and ../shared.
 const DESKTOP = "apps/desktop/src";
 const desktopFiles = (dir: string) => `${DESKTOP}/${dir}**/*.{ts,tsx,mts,cts}`;
+// Every icon of the app is a Lucide icon, imported by name in these two files only, so the bundle holds the icons listed there and nothing else.
+const LUCIDE_FILES = [`${DESKTOP}/renderer/ui/icons.tsx`, `${DESKTOP}/renderer/shell/TemplateIcon.tsx`];
+const lucideOnlyHere = { regex: "^lucide-react(?:/(?!dynamic(?:/|$)).*)?$", message: "Import Lucide icons only in renderer/ui/icons.tsx (app icons) and renderer/shell/TemplateIcon.tsx (template and agent icons); screens use those." };
 const desktopPatterns = [
   { regex: "^@tokama/core/.+", message: "desktop uses @tokama/core's public entry only, never core internals." },
   { regex: "^@tokama/engine(?:/.*)?$", message: "desktop talks to the engine through @tokama/client, never the engine app." },
   { regex: "(?:^|/)(?:packages|apps)/", message: "Import workspace packages by name (@tokama/client, @tokama/core), never by path." },
-  { regex: "^@fortawesome/free-brands-svg-icons(?:/.*)?$", message: "Template icons use the Font Awesome Free solid set, never the brands set." },
+  { regex: "^@fortawesome(?:/.*)?$", message: "App icons are Lucide icons; Font Awesome is not used." },
+  { regex: "^lucide-react/dynamic(?:/.*)?$", message: "Lucide's dynamic icons load by name at run time and bundle every icon; import the icons you need by name." },
+  lucideOnlyHere,
 ];
 const sandboxedNode = {
   regex: `^node:|^(?:${builtinModules.filter((name) => !name.startsWith("node:")).join("|")})(?:/.*)?$`,
@@ -343,5 +348,14 @@ export default defineConfig(
     files: [desktopFiles("preload/")],
     ignores: ["**/*.test.{ts,tsx}"],
     rules: { "@typescript-eslint/no-restricted-imports": ["error", { patterns: preloadPatterns }] },
+  },
+  // The two icon files, and tests that check them, may import Lucide; the rest of each zone's patterns stay.
+  {
+    files: LUCIDE_FILES,
+    rules: { "@typescript-eslint/no-restricted-imports": ["error", { patterns: rendererPatterns.filter((pattern) => pattern !== lucideOnlyHere) }] },
+  },
+  {
+    files: [`${DESKTOP}/**/*.test.{ts,tsx}`],
+    rules: { "@typescript-eslint/no-restricted-imports": ["error", { patterns: desktopPatterns.filter((pattern) => pattern !== lucideOnlyHere) }] },
   },
 );

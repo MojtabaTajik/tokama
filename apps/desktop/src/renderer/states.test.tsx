@@ -381,7 +381,7 @@ describe("About", () => {
     expect($$(".about-notice-head")[1]?.textContent).toContain("45.4.1");
     await click($$(".about-notice-head")[0] ?? null);
     expect(heads()).toEqual(["true", "true", "false", "false", "false", "false", "false", "false"]);
-    expect(text(".about-notice-body")).toContain("Font Awesome Free icons");
+    expect(text(".about-notice-body")).toContain("Every icon in the app is a Lucide icon");
     await click($$(".about-notice-head")[1] ?? null);
     expect(heads()).toEqual(["true", "false", "false", "false", "false", "false", "false", "false"]);
   });
