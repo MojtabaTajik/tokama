@@ -83,13 +83,28 @@ describe("pipeline list", () => {
     expect(pipe("Fix rounding in invoice totals").getAttribute("aria-label")).toBe("Steps: Fix passed, Run checks checking attempt 1");
   });
 
-  it("draws failed and stopped steps under the Failed and Done filters", async () => {
+  it("draws a stopped item's steps, and gives done and failed rows their facts in place of the steps", async () => {
     await mount();
     await click(segment("All"));
     const marks = (title: string) => [...row(title).querySelectorAll(".pl-step-mark")].map((el) => el.textContent);
-    expect(marks("Flaky checkout test")).toEqual(["✕", "○"]);
+    const facts = (title: string) => row(title).querySelector(".pl-facts")?.textContent;
     expect(marks("Try a cache for prices")).toEqual(["■", "○"]);
-    expect(marks("Bump the Postgres driver")).toEqual(["✓", "✓"]);
+    expect(facts("Try a cache for prices")).toBeUndefined();
+    expect(facts("Flaky checkout test")).toBe("stopped at Fix, step 1 of 2");
+    expect(facts("Bump the Postgres driver")).toBe("no checks");
+    for (const title of ["Flaky checkout test", "Bump the Postgres driver"]) {
+      expect(row(title).querySelector(".pl-pipe")).toBeNull();
+      expect(row(title).querySelector(".pl-facts")?.classList.contains("mono")).toBe(true);
+    }
+  });
+
+  it("keeps a done row's text free of a commit id, and of colour except the mark of its state", async () => {
+    await mount();
+    await click(segment("Done"));
+    const done = row("Bump the Postgres driver");
+    expect(done.textContent).not.toContain("3f2a9c1");
+    expect(done.querySelector(".pl-mark")?.textContent).toBe("✓done: ");
+    expect(done.querySelectorAll("[data-tone]")).toHaveLength(1);
   });
 
   it("renders engine text as text", async () => {
@@ -287,6 +302,18 @@ describe("List and Board", () => {
     expect(card.querySelector(".card-privacy")?.textContent).toBe("local + cloud");
     expect(card.querySelector(".card-agent")?.textContent).toBe("Architect");
     expect(card.querySelectorAll(".card-flag")).toHaveLength(1);
+  });
+
+  it("shows facts on a done and a failed card in place of the engine's line, and none on a stopped one", async () => {
+    await mount();
+    await click(sidebarRow("Quick fix"));
+    await click(byText('[aria-label="Layout"] button', "Board"));
+    await click(segment("All"));
+    const line = (title: string) => $$(".card").find((el) => el.querySelector(".card-title")?.textContent === title)?.querySelector(".card-line");
+    expect(line("Bump the Postgres driver")?.textContent).toBe("no checks");
+    expect(line("Bump the Postgres driver")?.classList.contains("facts")).toBe(true);
+    expect(line("Flaky checkout test")?.textContent).toBe("stopped at Fix, step 1 of 2");
+    expect(line("Try a cache for prices")).toBeNull();
   });
 
   it("puts queued items in Queued and applies the status filter to the board", async () => {

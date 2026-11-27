@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
 import { DEFAULT_DESKTOP_STATE, NOTE_KINDS, type NoteKind, type NoteMode, type NotificationSettings, type SoundSet } from "../../shared/desktop-state.js";
+import { failureLine, finishedLine } from "../../shared/item-facts.js";
 import { brand } from "../brand/index.js";
 import { Button } from "../ui/Button.js";
 import { Segmented } from "../ui/Segmented.js";
@@ -44,10 +45,24 @@ const ROWS: readonly { readonly key: NoteKind; readonly name: string; readonly g
   { key: "failed", name: "Failed", glyph: markOf("failed").symbol, tone: "fail", help: "An item stopped because a step failed." },
 ];
 
+/** Sample items the Finished and Failed previews word with the same functions as the real banners. */
+const sampleCheck = (command: string, passed: boolean) => ({ command, passed, exitCode: passed ? 0 : 1 });
+const SAMPLE_DONE = {
+  steps: [{ attempts: [{ checks: ["pnpm typecheck", "pnpm lint", "pnpm test"].map((command) => sampleCheck(command, true)) }] }],
+  outcome: undefined,
+} as unknown as Parameters<typeof finishedLine>[0];
+const SAMPLE_FAILED = {
+  steps: [
+    { name: "Plan", state: "passed" },
+    { name: "Build", state: "failed", attempts: [1, 2, 3].map(() => ({ checks: [sampleCheck("pnpm test", false)] })) },
+    { name: "Review", state: "pending" },
+  ],
+} as unknown as Parameters<typeof failureLine>[0];
+
 const PREVIEWS: readonly { readonly key: NoteKind; readonly title: string; readonly body: string; readonly meta: string }[] = [
   { key: "needsYou", title: "Needs you: Add order export endpoint", body: "The plan is ready. Approve it to start Build.", meta: "Plan and build · orders-api" },
-  { key: "finished", title: "Finished: Fix the null check in cart totals", body: "Done in 9 min. Ready to merge or open a PR.", meta: "Quick fix · checkout-web" },
-  { key: "failed", title: "Failed: Upgrade the Postgres driver", body: "Build failed 3 times: pnpm test, 4 failing.", meta: "Plan and build · orders-api" },
+  { key: "finished", title: "Finished: Fix the null check in cart totals", body: finishedLine(SAMPLE_DONE, "9 min", true), meta: "Quick fix · checkout-web" },
+  { key: "failed", title: "Failed: Upgrade the Postgres driver", body: failureLine(SAMPLE_FAILED), meta: "Plan and build · orders-api" },
 ];
 
 /** How long "Playing" stays beside a ▶ button. */
