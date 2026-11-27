@@ -20,9 +20,9 @@ export const setup = {
   ],
   connections: [{ id: "app-insights-prod", name: "App Insights · prod", type: "App Insights" }],
   agents: [
-    { id: "architect", name: "Architect", cliId: "claude-code", model: "opus", runsOn: "cloud" },
-    { id: "local-builder", name: "Local builder", cliId: "claude-code", model: "qwen3-coder:30b", runsOn: "local" },
-    { id: "reviewer", name: "Reviewer", cliId: "codex-cli", model: "gpt-5-codex", runsOn: "cloud" },
+    { id: "architect", name: "Architect", cliId: "claude-code", model: "opus", runsOn: "cloud", icon: "compass" },
+    { id: "local-builder", name: "Local builder", cliId: "claude-code", model: "qwen3-coder:30b", runsOn: "local", icon: "hammer" },
+    { id: "reviewer", name: "Reviewer", cliId: "codex-cli", model: "gpt-5-codex", runsOn: "cloud", icon: "eye" },
   ],
   templates: [
     {

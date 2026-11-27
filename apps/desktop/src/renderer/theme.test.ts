@@ -25,10 +25,10 @@ const TOKENS: Record<string, string> = {
   "--warn": "#d9a93a",
   "--fail": "#e07a70",
   "--pass": "#6fb884",
-  "--agent-1": "#8f73f2",
-  "--agent-2": "#22a98b",
-  "--agent-3": "#b23a6e",
-  "--agent-neutral": "#4a5563",
+  "--agent-1": "#a99bf0",
+  "--agent-2": "#6cc3d5",
+  "--agent-3": "#d08fdb",
+  "--agent-neutral": "#9da9b6",
   "--tag-slate": "#aeb6c0",
   "--tag-sky": "#6f9fd8",
   "--tag-teal": "#58b8bc",
@@ -51,6 +51,10 @@ describe("theme.css", () => {
   });
   it.each(Object.keys(TOKENS).filter((name) => name.startsWith("--tag-")))("reads %s at 4.5:1 or better on the ground and the panel", (name) => {
     for (const ground of ["--ground", "--panel"]) expect(contrast(TOKENS[name]!, TOKENS[ground]!)).toBeGreaterThanOrEqual(4.5);
+  });
+  it.each(Object.keys(TOKENS).filter((name) => name.startsWith("--agent-")))("reads %s, an agent name, at 4.5:1 or better on the ground, the panel and the selected row", (name) => {
+    // The selected row is drawn on --raised.
+    for (const ground of ["--ground", "--panel", "--raised"]) expect(contrast(TOKENS[name]!, TOKENS[ground]!)).toBeGreaterThanOrEqual(4.5);
   });
   it("tints a template icon with each tag colour, and only the icon", () => {
     for (const tag of ["slate", "sky", "teal", "moss", "sand", "clay", "rose", "plum"]) {

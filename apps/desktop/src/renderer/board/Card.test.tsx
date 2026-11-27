@@ -41,7 +41,7 @@ const done = (fields: Record<string, unknown> = {}): ItemRecord =>
   }) as unknown as ItemRecord;
 
 const line = (item: ItemRecord): string | undefined => {
-  act(() => root.render(<Card item={item} agents={[]} template={template} selected={false} onSelect={() => undefined} now={60_000} />));
+  act(() => root.render(<Card item={item} agents={[]} selected={false} onSelect={() => undefined} now={60_000} />));
   return container.querySelector(".card-line")?.textContent ?? undefined;
 };
 

@@ -256,7 +256,7 @@
 
 .mc-branch {
   margin-right: var(--space-6);
-  color: var(--agent-neutral);
+  color: var(--muted);
 }
 
 .mc-kind {

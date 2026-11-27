@@ -1,12 +1,13 @@
 // What a running item shows to say it is working: the step track, the live activity line (who
 // works, the latest action, the time in the attempt, "quiet for 2 m"), and how long finished work
 // took. Pure functions that take the clock as an argument, tested without React. Every state comes
-// as a symbol and a word, so colour is never the only signal. There is no percent: Tokama cannot
-// know how long an agent will take.
+// as a word, so colour is never the only signal. There is no percent: Tokama cannot know how long
+// an agent will take.
 import type { AgentSummary, AttemptSummary, ItemActivity, ItemRecord, StepRecord } from "@tokama/core";
 import { formatDuration } from "../format/duration.js";
-import { stepAgent, stepMark } from "./describe.js";
-import { markOf, type Tone } from "../ui/status.js";
+import { stepAgent } from "./describe.js";
+import type { AgentHue } from "../ui/agent.js";
+import { type Mark, markOf } from "../ui/status.js";
 
 /** No agent event for this long, with no tool running, reads as quiet. */
 export const QUIET_AFTER_MS = 120_000;
@@ -23,43 +24,62 @@ export function quietForMs(activity: Pick<ItemActivity, "lastEventAt" | "toolRun
 
 export interface TrackStep {
   readonly name: string;
-  readonly symbol: string;
-  readonly word: string;
-  readonly tone: Tone;
-  /** Working right now: the mark breathes, and the line into it carries a slow light. */
-  readonly live: boolean;
+  readonly mark: Mark;
+  /** How the state reads: a symbol with its word for screen readers ("spoken"), a symbol with its word ("visible"), or the word alone. */
+  readonly show: "spoken" | "visible" | "word";
   /** The step the item is at: shown in full, the other names give way first. */
   readonly current: boolean;
-  /** Needs you and failed steps say so in words next to the name. */
-  readonly says?: string;
+  /** The step's agent; none for a step Tokama runs itself. */
+  readonly agent: { readonly name: string; readonly hue: AgentHue } | undefined;
 }
 
-/** The template's steps in order, each with its mark: ✓ done, ● running, ◐ checking, ⏸ needs you, ✕ failed, ○ not started, – not run. */
-export function trackOf(item: Pick<ItemRecord, "state" | "steps">): { readonly steps: readonly TrackStep[]; readonly label: string } {
+/** More characters than this and the track shortens to its count form, with the full list in a tooltip. */
+export const TRACK_BUDGET = 64;
+
+export interface TrackCount {
+  readonly done: number;
+  /** The step the item is at, when it has one. */
+  readonly at: TrackStep | undefined;
+  /** The steps after it, or all the steps while none has started. */
+  readonly ahead: number;
+}
+
+/**
+ * The template's steps in order, each with its state in words: "Plan ✓ Architect · Build running Builder · Review next
+ * Reviewer". `count` is the short form ("✓ 2 done · Build running · 2 to go") for a track longer than the budget.
+ */
+export function trackOf(item: Pick<ItemRecord, "state" | "steps">, agents: readonly AgentSummary[]): { readonly steps: readonly TrackStep[]; readonly label: string; readonly count: TrackCount | undefined } {
   const current = item.steps.findIndex((step) => step.state === "running" || step.state === "needs_you" || step.state === "failed" || step.state === "stopped");
   const stoppedAt = item.steps.findIndex((step) => step.state === "failed" || step.state === "stopped");
   const ended = item.state === "done" || item.state === "failed" || item.state === "stopped";
   const steps = item.steps.map((step, index): TrackStep => {
-    const base = { name: step.name, current: index === current, live: false };
-    const mark = stepMark(step.state);
+    const who = step.agentId === undefined ? undefined : stepAgent(step, agents);
+    const base = { name: step.name, current: index === current, agent: who === undefined ? undefined : { name: who.name, hue: who.hue } };
     switch (step.state) {
       case "passed":
-        return { ...base, symbol: mark.symbol, word: "done", tone: mark.tone };
+        return { ...base, mark: markOf("passed", "done"), show: "spoken" };
       case "running":
-        // Checking is Tokama running the checks: its own mark, still live.
-        return step.stage === "verifying"
-          ? { ...base, symbol: markOf("checking").symbol, word: markOf("checking").word, tone: mark.tone, live: item.state === "running" }
-          : { ...base, symbol: mark.symbol, word: mark.word, tone: mark.tone, live: item.state === "running" };
+        // Checking is Tokama running the checks: its own mark.
+        return step.stage === "verifying" ? { ...base, mark: markOf("checking"), show: "visible" } : { ...base, mark: markOf("running"), show: "word" };
       case "needs_you":
+        return { ...base, mark: markOf("needs_you"), show: "visible" };
       case "failed":
+        return { ...base, mark: markOf("failed"), show: "visible" };
       case "stopped":
-        return { ...base, symbol: mark.symbol, word: mark.word, tone: mark.tone, says: mark.word };
+        return { ...base, mark: markOf("stopped"), show: "visible" };
       case "pending":
         // Steps after a failure, or left when the item ended, did not run.
-        return (stoppedAt >= 0 && index > stoppedAt) || ended ? { ...base, symbol: "–", word: "not run", tone: mark.tone } : { ...base, symbol: mark.symbol, word: "not started", tone: mark.tone };
+        return (stoppedAt >= 0 && index > stoppedAt) || ended ? { ...base, mark: { symbol: "–", word: "not run", tone: "muted" }, show: "word" } : { ...base, mark: markOf("next"), show: "word" };
     }
   });
-  return { steps, label: `Steps: ${steps.map((step) => `${step.name} ${step.word}`).join(", ")}` };
+  const text = steps.map((step) => [step.name, step.mark.word, step.agent?.name].filter((part) => part !== undefined).join(" ")).join(" · ");
+  const done = steps.filter((step) => step.mark.word === "done").length;
+  const ahead = steps.filter((step) => step.mark.word === "next" || step.mark.word === "not run").length;
+  return {
+    steps,
+    label: `Steps: ${steps.map((step) => `${step.name} ${step.mark.word}`).join(", ")}`,
+    count: steps.length > 2 && text.length > TRACK_BUDGET ? { done, at: steps.find((step) => step.current), ahead } : undefined,
+  };
 }
 
 /** The attempt of a step that runs now: the last one, while it has no result. */
@@ -71,6 +91,8 @@ export const runningAttempt = (step: Pick<StepRecord, "attempts"> | undefined): 
 export interface ActivityView {
   /** The step's agent, or Tokama while it runs the checks. Never cut. */
   readonly who: string;
+  /** Tokama itself works (the checks), so no agent badge shows. */
+  readonly tokama: boolean;
   /** The latest action, in words; `head` gives way first when space runs out, `tail` (the file name, the end of a command) stays. */
   readonly action: { readonly full: string; readonly head: string; readonly tail: string };
   /** Time in the current attempt, or the running command's own time; undefined when the engine sent no start. */
@@ -112,6 +134,7 @@ export function activityView(item: Pick<ItemRecord, "state" | "steps">, activity
   const quiet = fresh === undefined ? undefined : quietForMs(fresh, now);
   return {
     who,
+    tokama,
     action: { full: label, ...splitAction(label) },
     ...(since !== undefined && { elapsed: formatDuration(now - since) }),
     ...(quiet !== undefined && { quiet: `quiet for ${Math.floor(quiet / 60_000)} m` }),

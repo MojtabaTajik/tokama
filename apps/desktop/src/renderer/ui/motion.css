@@ -12,9 +12,6 @@
   /* Breathing: a mark of something working now. JS that aligns marks to one clock uses 2 s too. */
   --motion-breathe: 2s;
   --motion-breathe-ease: ease-in-out;
-  /* A slow light along a line into the working step. */
-  --motion-shimmer: 2.4s;
-  --motion-shimmer-ease: linear;
   /* A short light crossing a working card's top edge. */
   --motion-sweep: 2.8s;
   --motion-sweep-ease: ease-in-out;
@@ -60,15 +57,6 @@
   animation: tk-ring var(--motion-ring) ease-out 300ms 3;
 }
 
-@keyframes tk-shimmer {
-  from {
-    background-position: 100% 0;
-  }
-  to {
-    background-position: 0 0;
-  }
-}
-
 @keyframes tk-sweep {
   from {
     transform: translateX(-100%);
@@ -101,9 +89,8 @@
     tk-ring var(--motion-ring) ease-out 300ms 3;
 }
 
-/* Nothing moves: marks and dots stay solid; lights become a still dashed blue line, so "working now" still reads. */
+/* Nothing moves: the agent badge and the dots stay solid; the card's light becomes a still dashed blue line, so "working now" still reads. */
 @media (prefers-reduced-motion: reduce) {
-  .track-mark[data-live="true"],
   .live-dot,
   .rise-in,
   .rise-in[data-ring],
@@ -114,11 +101,6 @@
 
   .sec-chev {
     transition: none;
-  }
-
-  .track-line[data-live="true"] {
-    animation: none;
-    background: repeating-linear-gradient(90deg, var(--live) 0 4px, transparent 4px 7px);
   }
 
   .card-edge::before {

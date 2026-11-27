@@ -44,9 +44,25 @@ describe("StatusMark", () => {
   });
 
   it("says the word to screen readers when asked, and takes a mark already looked up", () => {
-    act(() => root.render(<StatusMark status={markOf("done", "merged")} spoken />));
+    act(() => root.render(<StatusMark status={markOf("done", "merged")} word="spoken" />));
     expect(container.querySelector(".visually-hidden")?.textContent).toBe("merged");
     expect(container.querySelector(".mark")?.getAttribute("data-tone")).toBe("pass");
+  });
+
+  it("prints the word after the symbol when it is visible, in the tone", () => {
+    act(() => root.render(<StatusMark status="needs_you" word="visible" />));
+    expect(container.textContent).toBe("⏸ needs you");
+    expect(container.querySelector(".mark")?.getAttribute("aria-hidden")).toBe("true");
+    expect(container.querySelector(".mark-word")?.getAttribute("data-tone")).toBe("warn");
+    expect(container.querySelector(".visually-hidden")).toBeNull();
+  });
+
+  it("prints only the word, with no symbol, when markless; the table has next for a step that has not started", () => {
+    act(() => root.render(<StatusMark status="running" markless />));
+    expect(container.textContent).toBe("running");
+    expect(container.querySelector(".mark")).toBeNull();
+    expect(container.querySelector(".mark-word")?.getAttribute("data-tone")).toBe("live");
+    expect(markOf("next")).toEqual({ symbol: "○", word: "next", tone: "muted" });
   });
 });
 

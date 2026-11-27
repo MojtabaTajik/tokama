@@ -223,7 +223,7 @@ export interface UpdateRailIconProps {
   readonly onOpenNotes: () => void;
 }
 
-/** The collapsed rail's update icon: the download icon with a dot, or the warning icon with a "!" badge. */
+/** The collapsed rail's update icon: the download icon with a "↓" badge, or the warning icon with a "!" badge. */
 export function UpdateRailIcon({ view, onActivate, onOpenNotes }: UpdateRailIconProps) {
   const tipId = useId();
   const anchor = "--update-rail";
@@ -248,7 +248,7 @@ export function UpdateRailIcon({ view, onActivate, onOpenNotes }: UpdateRailIcon
         }}
       >
         {alert ? <WarningIcon /> : <DownloadIcon size={18} />}
-        {alert ? <Badge count={1} tone="warn" symbol="!" /> : <span aria-hidden="true" className="up-dot" />}
+        {alert ? <Badge count={1} tone="warn" symbol="!" /> : <Badge count={1} tone="neutral" symbol="↓" />}
       </Button>
       {tip.open && <UpdateTip id={tipId} anchor={anchor} view={view} placement="right" onOpenNotes={onOpenNotes} />}
     </div>

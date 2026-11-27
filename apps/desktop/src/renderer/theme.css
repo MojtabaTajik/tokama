@@ -27,11 +27,11 @@
   --primary-fill: #0f2257;
   --primary-text: #e4ecff;
 
-  /* Agent identity dots, in join order, then neutral. */
-  --agent-1: #8f73f2;
-  --agent-2: #22a98b;
-  --agent-3: #b23a6e;
-  --agent-neutral: #4a5563;
+  /* Agent name text only, in join order, then neutral; never a fill or a mark. */
+  --agent-1: #a99bf0;
+  --agent-2: #6cc3d5;
+  --agent-3: #d08fdb;
+  --agent-neutral: #9da9b6;
 
   /* Tag colours: for a template's icon only, never a fill. Apart from the status, agent and link colours. */
   --tag-slate: #aeb6c0;

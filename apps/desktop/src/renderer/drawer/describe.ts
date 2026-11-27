@@ -2,7 +2,7 @@
 // Every state comes as a symbol and a word, so colour is never the only signal.
 import type { AgentSummary, AiCliId, AttemptSummary, ConnectionSummary, ItemKind, ItemRecord, ItemState, Privacy, StepRecord, StepState, Setup } from "@tokama/core";
 import { type Mark, markOf } from "../ui/status.js";
-import { type AgentDot, agentDot } from "../ui/agent.js";
+import { type AgentHue, agentHue } from "../ui/agent.js";
 
 
 // Item and step states share their names with the status table.
@@ -69,24 +69,26 @@ export function stepPosition(item: Pick<ItemRecord, "state" | "steps">): string 
   return step ? `step ${index + 1} of ${item.steps.length} · ${step.name}` : undefined;
 }
 
-/** Who runs a step: its agent, with an identity dot by join order (1 to 3, then neutral). */
+/** Who runs a step: its agent, with a colour for its name by join order (1 to 3, then neutral). */
 export interface StepAgent {
   readonly name: string;
-  readonly dot: AgentDot;
+  readonly hue: AgentHue;
   readonly runsOn: "local" | "cloud";
   /** The tool that runs the agent; absent for Tokama and for an agent the setup no longer lists. */
   readonly cliId?: AiCliId;
+  /** The agent's icon name; absent for Tokama and for an agent the setup no longer lists. */
+  readonly icon?: string;
 }
 
 /** Steps without an agent are run by Tokama itself, such as checks. */
-const TOKAMA: StepAgent = { name: "Tokama", dot: "neutral", runsOn: "local" };
+const TOKAMA: StepAgent = { name: "Tokama", hue: "neutral", runsOn: "local" };
 
 export function stepAgent(step: Pick<StepRecord, "agentId" | "data">, agents: readonly AgentSummary[]): StepAgent {
   if (step.agentId === undefined) return TOKAMA;
   const agent = agents.find((candidate) => candidate.id === step.agentId);
   // An agent the setup no longer lists: its id is all there is, and only the data rule tells where it runs.
-  if (!agent) return { name: step.agentId, dot: "neutral", runsOn: step.data === "none" ? "local" : "cloud" };
-  return { name: agent.name, dot: agentDot(agent.id, agents), runsOn: agent.runsOn, cliId: agent.cliId };
+  if (!agent) return { name: step.agentId, hue: "neutral", runsOn: step.data === "none" ? "local" : "cloud" };
+  return { name: agent.name, hue: agentHue(agent.id, agents), runsOn: agent.runsOn, cliId: agent.cliId, ...(agent.icon !== undefined && { icon: agent.icon }) };
 }
 
 /**

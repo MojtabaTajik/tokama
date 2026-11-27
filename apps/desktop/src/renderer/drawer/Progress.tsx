@@ -1,48 +1,75 @@
-// The step track and the live activity line of the drawer and full view headers, and the
-// breathing dot of a working card. Motion means an agent or a check works right now; with reduced
-// motion the CSS keeps everything still (a dashed line, a solid mark). Engine text (step names,
-// the activity label) is rendered as React text only.
+// The step track and the live activity line of the drawer and full view headers. Motion means an
+// agent works right now: the working agent's badge at the start of the activity line breathes, and
+// nothing else in the header moves. The track is words: each step with its state and its agent.
+// Engine text (step names, the activity label) is rendered as React text only.
 import type { AgentSummary, ItemActivity, ItemRecord } from "@tokama/core";
-import { type CSSProperties, Fragment, useMemo } from "react";
-import { activityView, trackOf } from "./progress-view.js";
+import { type CSSProperties, Fragment, useId } from "react";
+import { AgentBadge } from "../agent/AgentBadge.js";
+import type { AgentInfo } from "../agent/agent-info.js";
+import type { AgentTarget } from "../settings/describe.js";
+import { AgentName } from "../ui/agent.js";
+import { markOf, StatusMark } from "../ui/status.js";
+import { Tooltip } from "../ui/Tooltip.js";
+import { useTip } from "../ui/useTip.js";
+import { activityView, type TrackStep, trackOf } from "./progress-view.js";
 
-/** One breathing cycle, in ms: `--motion-breathe` in ui/motion.css. */
-const BREATH_MS = 2_000;
-
-/**
- * Every breathing mark on screen shares one 2 s clock: each starts its animation part-way into the
- * cycle, by the wall clock, so marks that appear at different times breathe together. A mark that
- * starts breathing after it is shown (`active` turns on) takes its delay then, not when it first showed.
- */
-export function useBreath(active = true): CSSProperties {
-  // The delay is fixed while the mark breathes: changing it would make a running animation jump.
-  const delay = useMemo(() => -(Date.now() % BREATH_MS), [active]);
-  return { animationDelay: `${delay}ms` };
-}
-
-export function StepTrack({ item }: { readonly item: Pick<ItemRecord, "state" | "steps"> }) {
-  const breath = useBreath();
-  const track = trackOf(item);
-  if (track.steps.length === 0) return null;
+function TrackSteps({ steps }: { readonly steps: readonly TrackStep[] }) {
   return (
-    <p className="track" role="img" aria-label={track.label}>
-      {track.steps.map((step, index) => (
+    <>
+      {steps.map((step, index) => (
         <Fragment key={index}>
-          {index > 0 && <span className="track-line" data-live={step.live} aria-hidden="true" />}
-          <span className="track-step" data-current={step.current} title={step.name}>
-            <span className="track-mark" data-tone={step.tone} data-live={step.live} style={step.live ? breath : undefined} aria-hidden="true">
-              {step.symbol}
+          {index > 0 && (
+            <span className="track-sep" aria-hidden="true">
+              ·
             </span>
+          )}
+          <span className="track-step" data-current={step.current}>
             <span className="track-name">{step.name}</span>
-            {step.says !== undefined && (
-              <span className="track-says" data-tone={step.tone}>
-                {step.says}
-              </span>
-            )}
+            <StatusMark status={step.mark} word={step.show === "spoken" ? "spoken" : "visible"} markless={step.show === "word"} />
+            {step.agent !== undefined && <AgentName name={step.agent.name} hue={step.agent.hue} coloured />}
           </span>
         </Fragment>
       ))}
-    </p>
+    </>
+  );
+}
+
+/** "Plan ✓ Architect · Build running Builder · Review next Reviewer"; a long one is "✓ 2 done · Build running · 2 to go" with the whole list in a tooltip. */
+export function StepTrack({ item, agents }: { readonly item: Pick<ItemRecord, "state" | "steps">; readonly agents: readonly AgentSummary[] }) {
+  const track = trackOf(item, agents);
+  const tip = useTip(undefined);
+  const tipId = useId();
+  const anchor = `--track-${tipId.replace(/[^a-zA-Z0-9]/g, "")}`;
+  if (track.steps.length === 0) return null;
+  if (track.count === undefined) {
+    return (
+      <div className="track">
+        <TrackSteps steps={track.steps} />
+      </div>
+    );
+  }
+  const { done, at, ahead } = track.count;
+  const parts = [
+    ...(done > 0 ? [<Fragment key="done">{`${markOf("passed").symbol} ${done} done`}</Fragment>] : []),
+    ...(at === undefined ? [] : [<Fragment key="at">{`${at.name} ${at.mark.word}`}</Fragment>]),
+    ...(ahead > 0 ? [<Fragment key="ahead">{`${ahead} to go`}</Fragment>] : []),
+  ];
+  return (
+    <div className="track">
+      <span className="track-count" tabIndex={0} role="group" aria-label={track.label} aria-describedby={tip.open ? tipId : undefined} style={{ anchorName: anchor } as CSSProperties} {...tip.triggers}>
+        {parts.map((part, index) => (
+          <Fragment key={index}>
+            {index > 0 && " · "}
+            {part}
+          </Fragment>
+        ))}
+      </span>
+      {tip.open && (
+        <Tooltip id={tipId} anchor={anchor} className="track-tip">
+          <TrackSteps steps={track.steps} />
+        </Tooltip>
+      )}
+    </div>
   );
 }
 
@@ -50,15 +77,19 @@ export interface ActivityLineProps {
   readonly item: Pick<ItemRecord, "state" | "steps">;
   readonly activity: ItemActivity | null;
   readonly agents: readonly AgentSummary[];
+  /** The working agent, for its badge; none while Tokama runs the checks, which show ◐ instead. */
+  readonly info?: AgentInfo | undefined;
+  readonly onOpenAgent?: ((agent: AgentTarget) => void) | undefined;
   readonly now: number;
 }
 
-/** "Builder · editing src/orders/list.ts · 3 m 12 s · quiet for 2 m", on one line; nothing when the item does not run a step. */
-export function ActivityLine({ item, activity, agents, now }: ActivityLineProps) {
+/** "[badge] Builder · editing src/orders/list.ts · 3 m 12 s · quiet for 2 m", on one line; nothing when the item does not run a step. */
+export function ActivityLine({ item, activity, agents, info, onOpenAgent, now }: ActivityLineProps) {
   const view = activityView(item, activity, agents, now);
   if (view === undefined) return null;
   return (
-    <p className="activity" data-testid="activity">
+    <div className="activity" data-testid="activity">
+      {info === undefined || view.tokama ? <StatusMark status="checking" word="spoken" className="activity-mark" /> : <AgentBadge info={info} className="activity-badge" onOpen={onOpenAgent} />}
       <span className="activity-who">{view.who}</span>
       <span className="activity-sep" aria-hidden="true">
         ·
@@ -85,12 +116,6 @@ export function ActivityLine({ item, activity, agents, now }: ActivityLineProps)
           <span className="activity-quiet">{view.quiet}</span>
         </>
       )}
-    </p>
+    </div>
   );
-}
-
-/** The breathing dot before a working card's status word. */
-export function LiveDot() {
-  const breath = useBreath();
-  return <span className="live-dot" style={breath} aria-hidden="true" />;
 }

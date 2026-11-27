@@ -63,3 +63,28 @@ export function useTip(onShown: ((shown: boolean) => void) | undefined, suppress
   );
   return { open, hold, dismiss, triggers };
 }
+
+/**
+ * The tooltip of a piece of text inside a button (a row, a card) or a heading: it shows while the pointer is
+ * on that host or the keyboard focus is in it, so the text is not a tab stop of its own. Put `ref` on the
+ * text; the host is its closest button, else its parent. `active` false (nothing to show) listens to nothing.
+ */
+export function useHostTip(active = true) {
+  const ref = useRef<HTMLElement>(null);
+  const { open, hold } = useTip(undefined);
+  useEffect(() => {
+    const host = active ? (ref.current?.closest("button") ?? ref.current?.parentElement) : null;
+    if (host === null || host === undefined) return;
+    const handlers = [
+      ["mouseenter", () => hold("hover", true)],
+      ["mouseleave", () => hold("hover", false)],
+      ["focusin", () => hold("focus", true)],
+      ["focusout", () => hold("focus", false)],
+    ] as const;
+    for (const [type, handler] of handlers) host.addEventListener(type, handler);
+    return () => {
+      for (const [type, handler] of handlers) host.removeEventListener(type, handler);
+    };
+  }, [active, hold]);
+  return { ref, open };
+}

@@ -382,12 +382,6 @@
   color: var(--text-2);
 }
 
-.tp-steps .agent-dot {
-  display: inline-block;
-  margin-right: var(--space-6);
-  vertical-align: 1px;
-}
-
 .tp-steps strong,
 .tp-finish strong {
   font-weight: 600;

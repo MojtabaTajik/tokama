@@ -9,6 +9,15 @@
   color: var(--muted);
 }
 
+/* The whole line, in the shared tooltip. */
+.facts-tip {
+  max-width: min(480px, calc(100vw - 16px));
+  padding: var(--space-6) var(--space-10);
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+  overflow-wrap: anywhere;
+}
+
 /* The symbol carries the colour; the words beside it are in the text colour. */
 .fact-flag {
   color: var(--text-2);

@@ -1,4 +1,4 @@
-// The agent of a step as a small label (dot, name, model) with a tooltip that says who owns it, what it
+// The agent of a step as a small label (tool icon, name, model) with a tooltip that says who owns it, what it
 // runs on and what it may do. The tooltip opens on hover after a short rest and at once on keyboard focus,
 // stays open while the pointer or the focus is on the label or the tooltip, and Escape closes it. The label
 // does nothing when clicked. It sits next to the row's own button, never inside it. Engine text (names,
@@ -10,7 +10,7 @@ import { cliName } from "../model.js";
 import { useTip } from "../ui/useTip.js";
 import { type AgentAccess, type AgentInfo, extraPower } from "./agent-info.js";
 import { Button } from "../ui/Button.js";
-import { AgentDotMark, BackendMark } from "../ui/agent.js";
+import { AgentName, BackendMark } from "../ui/agent.js";
 import { Pill } from "../ui/Pill.js";
 import { Tooltip } from "../ui/Tooltip.js";
 import { BuiltinIcon, EyeIcon, GlobeIcon, PencilIcon, RepoIcon, ShellIcon, UserIcon } from "../ui/icons.js";
@@ -37,24 +37,30 @@ export interface AgentLabelProps {
   readonly info: AgentInfo;
   /** Opens the agent in Settings → Agents; without it the tooltip has no link. */
   readonly onOpen?: ((agent: AgentTarget) => void) | undefined;
+  /** Tint the name with the agent's colour. */
+  readonly coloured?: boolean;
 }
 
-export function AgentLabel({ info, onOpen }: AgentLabelProps) {
+/**
+ * Everything a trigger of the agent's tooltip needs: the hover and focus handlers for the element that
+ * holds trigger and tooltip (`wrapper`), the trigger button's `button` ref and anchor, and the tooltip's id.
+ * Escape closes the tooltip before anything else handles it, so an open drawer stays open.
+ */
+export function useAgentTip() {
   const tip = useTip(undefined);
   const button = useRef<HTMLButtonElement>(null);
   const wrapper = useRef<HTMLSpanElement>(null);
   const tipId = useId();
-  // A dashed ident for the anchor, one per label: useId's colons are not valid in one.
+  // A dashed ident for the anchor, one per trigger: useId's colons are not valid in one.
   const anchor = `--agent-${tipId.replace(/[^a-zA-Z0-9]/g, "")}`;
   const { open, dismiss } = tip;
 
-  // Escape closes the tooltip before anything else handles it, so an open drawer stays open.
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
-      // Focus on the tooltip's link would fall to the page when the tooltip goes: it goes back to the label.
+      // Focus on the tooltip's link would fall to the page when the tooltip goes: it goes back to the trigger.
       if (wrapper.current?.contains(document.activeElement) === true) button.current?.focus();
       dismiss();
     };
@@ -62,28 +68,36 @@ export function AgentLabel({ info, onOpen }: AgentLabelProps) {
     return () => document.removeEventListener("keydown", onKey, { capture: true });
   }, [open, dismiss]);
 
+  return { open, triggers: tip.triggers, button, wrapper, tipId, anchor, anchorStyle: { anchorName: anchor } as CSSProperties };
+}
+
+export function AgentLabel({ info, onOpen, coloured = false }: AgentLabelProps) {
+  const { open, triggers, button, wrapper, tipId, anchor, anchorStyle } = useAgentTip();
   return (
-    <span ref={wrapper} className="al" {...tip.triggers}>
-      <Button variant="plain" ref={button} className="al-button" data-open={open || undefined} aria-describedby={open ? tipId : undefined} style={{ anchorName: anchor } as CSSProperties}>
+    <span ref={wrapper} className="al" {...triggers}>
+      <Button variant="plain" ref={button} className="al-button" data-open={open || undefined} aria-describedby={open ? tipId : undefined} style={anchorStyle}>
         <span className="al-who">
-          <AgentDotMark dot={info.dot} />
           {info.cliId !== undefined && <BackendMark cliId={info.cliId} named hoverName={false} />}
-          <span className="ellipsis">{info.name}</span>
+          <span className="ellipsis">
+            <AgentName name={info.name} hue={info.hue} coloured={coloured} />
+          </span>
         </span>{" "}
         {info.model !== undefined && <span className="al-model">· {info.model}</span>}
       </Button>
-      {open && <Tip id={tipId} anchor={anchor} info={info} onOpen={onOpen} />}
+      {open && <AgentTip id={tipId} anchor={anchor} info={info} onOpen={onOpen} />}
     </span>
   );
 }
 
-function Tip({ id, anchor, info, onOpen }: { readonly id: string; readonly anchor: string; readonly info: AgentInfo; readonly onOpen: AgentLabelProps["onOpen"] }) {
+/** The tooltip that says who owns the agent, what it runs on and what it may do; the head always shows the name in the agent's colour. */
+export function AgentTip({ id, anchor, info, onOpen }: { readonly id: string; readonly anchor: string; readonly info: AgentInfo; readonly onOpen: AgentLabelProps["onOpen"] }) {
   const { access } = info;
   return (
     <Tooltip id={id} anchor={anchor} className="al-tip">
       <div className="al-head">
-        <AgentDotMark dot={info.dot} />
-        <b className="al-name">{info.name}</b>
+        <b className="al-name">
+          <AgentName name={info.name} hue={info.hue} coloured />
+        </b>
         {access !== undefined && <Owner access={access} />}
       </div>
       {info.cliId !== undefined && (

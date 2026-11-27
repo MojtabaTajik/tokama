@@ -13,7 +13,7 @@ import { chartModel, formatBytes, formatSize, ofAllCores, onePercent, wholePerce
 import { useMachine } from "./useMachine.js";
 import { workflowName } from "./usage-model.js";
 import { Button } from "../ui/Button.js";
-import { AgentChip, AgentDotMark } from "../ui/agent.js";
+import { AgentChip } from "../ui/agent.js";
 import { Placeholder } from "../ui/EmptyState.js";
 import { markOf } from "../ui/status.js";
 
@@ -288,10 +288,7 @@ function ItemRows({ group, item, setup, cpu, onSelectItem }: { readonly group: G
             {row.role === "agent" && agent !== undefined ? (
               <AgentChip agent={agent} className="ins-agent" showTool />
             ) : (
-              <span className="ins-agent">
-                <AgentDotMark dot="neutral" />
-                {TEXT.tokama}
-              </span>
+              <span className="ins-agent">{TEXT.tokama}</span>
             )}
           </td>
           <td className="num mono muted">{row.processes}</td>

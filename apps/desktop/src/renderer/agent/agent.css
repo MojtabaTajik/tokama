@@ -1,4 +1,41 @@
-/* The agent label of a list row and a drawer step, and its tooltip. */
+/* The agent label of a drawer step and its tooltip, and the badge of an agent that works now. */
+
+/* Above the row button's cover, so the badge takes the pointer and the focus; the rest of the row still opens it. */
+.ag-badge-wrap {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  flex: none;
+}
+
+/* A round 18 px badge in the running blue (never the agent's own colour): a 1 px ring round the agent's icon. */
+.ag-badge {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  color: var(--live);
+  cursor: default;
+}
+
+.ag-badge[data-open] {
+  background: var(--raised);
+}
+
+.ag-badge:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.ag-badge .tpl-icon {
+  vertical-align: baseline;
+}
+
 
 /* Pulled left so the name lines up with the text above it; it clips to its cell, so a long model never runs into the next column. */
 .al {

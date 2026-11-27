@@ -2,7 +2,7 @@ import type { AgentSummary, ItemActivity, ItemRecord, StepRecord } from "@tokama
 import { describe, expect, it } from "vitest";
 import { activityView, itemTotal, quietForMs, splitAction, stepTimes, trackOf } from "./progress-view.js";
 
-const step = (name: string, state: StepRecord["state"], extra: Partial<StepRecord> = {}): StepRecord => ({ name, stage: "working", state, data: "none", agentId: "builder", ...extra }) as StepRecord;
+const step = (name: string, state: StepRecord["state"], extra: object = {}): StepRecord => ({ name, stage: "working", state, data: "none", agentId: "builder", ...extra }) as StepRecord;
 const AGENTS = [{ id: "builder", name: "Builder" }] as unknown as AgentSummary[];
 const NOW = 1_780_000_000_000;
 const activity = (patch: Partial<ItemActivity> = {}): ItemActivity =>
@@ -20,30 +20,65 @@ describe("quiet", () => {
   });
 });
 
+const AGENTS3 = [
+  { id: "architect", name: "Architect" },
+  { id: "builder", name: "Builder" },
+  { id: "reviewer", name: "Reviewer" },
+] as unknown as AgentSummary[];
+const words = (steps: ReturnType<typeof trackOf>["steps"]) => steps.map((s) => `${s.name} ${s.show === "word" ? "" : `${s.mark.symbol} `}${s.mark.word}`.replace("  ", " "));
+
 describe("step track", () => {
-  it("marks done, running and not started steps; the running one is live and current", () => {
-    const track = trackOf(running());
-    expect(track.steps.map((s) => s.symbol)).toEqual(["✓", "●", "○"]);
-    expect(track.steps.map((s) => s.live)).toEqual([false, true, false]);
-    expect(track.steps[1]).toMatchObject({ current: true, word: "running" });
-    expect(track.label).toBe("Steps: Plan done, Build running, Review not started");
+  const plan = running();
+  const named = { state: "running", steps: [step("Plan", "passed", { agentId: "architect" }), step("Build", "running", { agentId: "builder" }), step("Review", "pending", { agentId: "reviewer" })] } as Pick<ItemRecord, "state" | "steps">;
+
+  it("says each step's state in words: done, running, next; the running one is current", () => {
+    const track = trackOf(plan, AGENTS);
+    expect(words(track.steps)).toEqual(["Plan ✓ done", "Build running", "Review next"]);
+    expect(track.steps.map((s) => s.current)).toEqual([false, true, false]);
+    expect(track.steps.map((s) => s.show)).toEqual(["spoken", "word", "word"]);
+    expect(track.label).toBe("Steps: Plan done, Build running, Review next");
   });
 
-  it("shows a checking step as ◐", () => {
-    expect(trackOf(running({ stage: "verifying" })).steps[1]).toMatchObject({ symbol: "◐", word: "checking", live: true });
+  it("names each step's agent with its colour by join order, and none for a step Tokama runs", () => {
+    const track = trackOf({ ...named, steps: [...named.steps, step("Run checks", "pending", { agentId: undefined })] }, AGENTS3);
+    expect(track.steps.map((s) => s.agent)).toEqual([{ name: "Architect", hue: 1 }, { name: "Builder", hue: 2 }, { name: "Reviewer", hue: 3 }, undefined]);
   });
 
-  it("is still when the item needs you, and says so in words", () => {
-    const track = trackOf({ state: "needs_you", steps: [step("Plan", "needs_you"), step("Build", "pending")] });
-    expect(track.steps[0]).toMatchObject({ symbol: "⏸", says: "needs you", live: false, current: true });
-    expect(track.steps.some((s) => s.live)).toBe(false);
+  it("shows a checking step with ◐ and its word", () => {
+    expect(trackOf(running({ stage: "verifying" }), AGENTS).steps[1]).toMatchObject({ mark: { symbol: "◐", word: "checking" }, show: "visible" });
+  });
+
+  it("says needs you, with its symbol, in words", () => {
+    const track = trackOf({ state: "needs_you", steps: [step("Plan", "needs_you"), step("Build", "pending")] }, AGENTS);
+    expect(track.steps[0]).toMatchObject({ mark: { symbol: "⏸", word: "needs you" }, show: "visible", current: true });
   });
 
   it("marks a failed step ✕ with a word, and the steps after it as not run", () => {
-    const track = trackOf({ state: "failed", steps: [step("Plan", "passed"), step("Build", "failed"), step("Review", "pending")] });
-    expect(track.steps.map((s) => s.symbol)).toEqual(["✓", "✕", "–"]);
-    expect(track.steps[1]).toMatchObject({ says: "failed", tone: "fail" });
+    const track = trackOf({ state: "failed", steps: [step("Plan", "passed"), step("Build", "failed"), step("Review", "pending")] }, AGENTS);
+    expect(words(track.steps)).toEqual(["Plan ✓ done", "Build ✕ failed", "Review not run"]);
     expect(track.label).toBe("Steps: Plan done, Build failed, Review not run");
+  });
+
+  it("keeps the full form for a short track and gives the count form for a long one", () => {
+    expect(trackOf(plan, AGENTS).count).toBeUndefined();
+    const long = {
+      state: "running",
+      steps: [
+        step("Investigate the failing checkout", "passed", { agentId: "architect" }),
+        step("Write the failing test first", "passed", { agentId: "architect" }),
+        step("Build the change in the worktree", "running", { agentId: "builder" }),
+        step("Review the change before merge", "pending", { agentId: "reviewer" }),
+        step("Write the release notes", "pending", { agentId: "reviewer" }),
+      ],
+    } as Pick<ItemRecord, "state" | "steps">;
+    const count = trackOf(long, AGENTS3).count;
+    expect(count).toMatchObject({ done: 2, ahead: 2 });
+    expect(count?.at).toMatchObject({ name: "Build the change in the worktree", mark: { word: "running" } });
+  });
+
+  it("never shortens a track of two steps or fewer", () => {
+    const two = { state: "running", steps: [step("A very long first step name that goes on and on", "passed"), step("An equally long second step name that goes on", "running")] } as Pick<ItemRecord, "state" | "steps">;
+    expect(trackOf(two, AGENTS).count).toBeUndefined();
   });
 });
 
@@ -51,6 +86,7 @@ describe("activity line", () => {
   it("says who works, the latest action and the time in the attempt", () => {
     expect(activityView(running(), activity(), AGENTS, NOW)).toEqual({
       who: "Builder",
+      tokama: false,
       action: { full: "editing src/orders/list.ts", head: "editing src/orders/", tail: "list.ts" },
       elapsed: "3 m 12 s",
     });

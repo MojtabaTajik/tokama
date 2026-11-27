@@ -1,30 +1,33 @@
-// Who runs a step, as the board shows it everywhere: an identity dot by the agent's join order
-// (the first three agents get a colour, later ones and Tokama itself are neutral) and its name.
-// The dot is decorative; the name always comes with it.
+// Who runs a step, as the board shows it everywhere: its name, in grey, or in the agent's colour where
+// the screen says who works (the first three agents get a colour by the order they were added; later
+// ones and Tokama itself stay neutral). The colour only ever tints the name's text.
 import type { AiCliId } from "@tokama/core";
 import type { CSSProperties, ReactNode } from "react";
 import { backendOf } from "../brand/backends/index.js";
 
 /** 1, 2 or 3 for the first three agents; "neutral" for later ones, unknown ones and Tokama. */
-export type AgentDot = 1 | 2 | 3 | "neutral";
+export type AgentHue = 1 | 2 | 3 | "neutral";
 
-/** The dot of an agent by its place in the setup's agent list. */
-export function agentDot(agentId: string | undefined, agents: readonly { readonly id: string }[]): AgentDot {
+/** The colour of an agent by its place in the setup's agent list. */
+export function agentHue(agentId: string | undefined, agents: readonly { readonly id: string }[]): AgentHue {
   const index = agentId === undefined ? -1 : agents.findIndex((agent) => agent.id === agentId);
   return index >= 0 && index < 3 ? ((index + 1) as 1 | 2 | 3) : "neutral";
 }
 
-/** An agent's name as text; `coloured` draws it in the agent's colour (the name is always there, so colour is never the signal). */
-export function AgentName({ name, dot, coloured = false }: { readonly name: string; readonly dot: AgentDot; readonly coloured?: boolean }) {
+export interface AgentNameProps {
+  readonly name: string;
+  readonly hue: AgentHue;
+  /** Tint the name with the agent's colour; grey (the surrounding text) by default. */
+  readonly coloured?: boolean;
+}
+
+/** An agent's name as text: nothing else, so it reads well in a sentence or a line of facts. */
+export function AgentName({ name, hue, coloured = false }: AgentNameProps) {
   return (
-    <span className="agent-name" data-agent={dot} data-coloured={coloured || undefined}>
+    <span className="agent-name" data-agent={coloured ? hue : undefined}>
       {name}
     </span>
   );
-}
-
-export function AgentDotMark({ dot }: { readonly dot: AgentDot }) {
-  return <span className="agent-dot" data-agent={dot} aria-hidden="true" />;
 }
 
 /**
@@ -54,7 +57,7 @@ export function BackendMark({ cliId, named = false, hoverName = named, size = 12
 }
 
 export interface AgentChipProps {
-  readonly agent: { readonly name: string; readonly dot: AgentDot; readonly cliId?: AiCliId | undefined };
+  readonly agent: { readonly name: string; readonly hue: AgentHue; readonly cliId?: AiCliId | undefined };
   /** The screen's class for the chip's place in its row. */
   readonly className?: string | undefined;
   /** Cut a long name with an ellipsis instead of wrapping. */
@@ -63,18 +66,20 @@ export interface AgentChipProps {
   readonly markNamed?: boolean;
   /** Print the tool's short name after the name, for tables that have room; the icon then needs no name of its own. */
   readonly showTool?: boolean;
+  /** Tint the name with the agent's colour. */
+  readonly coloured?: boolean;
   /** What follows the name. */
   readonly children?: ReactNode;
 }
 
-/** The dot, the tool's icon when the agent's tool is known (its name on hover), and the name, then anything the screen adds. */
-export function AgentChip({ agent, className, ellipsis = false, markNamed = true, showTool = false, children }: AgentChipProps) {
+/** The tool's icon when the agent's tool is known (its name on hover), and the name, then anything the screen adds. */
+export function AgentChip({ agent, className, ellipsis = false, markNamed = true, showTool = false, coloured = false, children }: AgentChipProps) {
   const written = showTool ? agent.cliId : undefined;
+  const name = <AgentName name={agent.name} hue={agent.hue} coloured={coloured} />;
   return (
     <span className={["agent-chip", className].filter(Boolean).join(" ")}>
-      <AgentDotMark dot={agent.dot} />
       {agent.cliId !== undefined && written === undefined && <BackendMark cliId={agent.cliId} named={markNamed} />}
-      {ellipsis ? <span className="ellipsis">{agent.name}</span> : agent.name}
+      {ellipsis ? <span className="ellipsis">{name}</span> : name}
       {written !== undefined && (
         <>
           <BackendMark cliId={written} /> {backendOf(written).shortName}

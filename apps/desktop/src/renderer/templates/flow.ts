@@ -4,7 +4,6 @@
 // not cross, and is limited by round trips. Pure geometry, tested without React; the component
 // only draws it.
 import type { TemplateStepView, TemplateView } from "@tokama/core";
-import { type AgentDot, agentDot } from "../ui/agent.js";
 import { attempts, ROUND_TRIPS } from "./limits.js";
 
 export const SLOT = 128;
@@ -19,8 +18,6 @@ export interface FlowNode {
   readonly key: string;
   readonly label: string;
   readonly kind: "start" | "step" | "finish";
-  /** The agent's identity dot; steps only. */
-  readonly dot?: AgentDot;
   readonly x: number;
   readonly width: number;
 }
@@ -96,7 +93,7 @@ function loopsOf(steps: readonly TemplateStepView[]): LoopSpec[] {
   return loops;
 }
 
-export function flowOf(template: Pick<TemplateView, "steps">, agents: readonly { readonly id: string }[]): Flow {
+export function flowOf(template: Pick<TemplateView, "steps">): Flow {
   const specs = loopsOf(template.steps);
   const selfAbove = specs.some((loop) => loop.kind === "self");
   const backs = specs.filter((loop) => loop.kind === "back").length;
@@ -110,7 +107,7 @@ export function flowOf(template: Pick<TemplateView, "steps">, agents: readonly {
 
   const nodes: FlowNode[] = [
     { key: "start", label: "Start", kind: "start", x: x(0), width: nodeWidth },
-    ...template.steps.map((step, i): FlowNode => ({ key: `step:${step.id}`, label: step.name, kind: "step", dot: agentDot(step.agentId, agents), x: x(i + 1), width: nodeWidth })),
+    ...template.steps.map((step, i): FlowNode => ({ key: `step:${step.id}`, label: step.name, kind: "step", x: x(i + 1), width: nodeWidth })),
     { key: "finish", label: "Finish", kind: "finish", x: x(template.steps.length + 1), width: nodeWidth },
   ];
   const arrows = nodes.slice(1).map((_, i) => ({ x1: x(i) + nodeWidth, x2: x(i + 1), y: middle }));

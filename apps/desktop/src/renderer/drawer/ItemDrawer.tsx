@@ -6,8 +6,8 @@
 // everything open in it: the tab, the chosen file, a note being written. Engine text (titles,
 // questions, the cloud summary, step details, agent output, check output and transcripts) is
 // rendered as React text only. While the item runs, the header shows the live activity line (who
-// works, the latest action, the time) in place of the state line, and every item shows its step track.
-import type { AgentSummary, CommandErrorCode, Decision, ItemRecord, Setup } from "@tokama/core";
+// works, the latest action, the time) beside the state line, and every item shows its step track.
+import type { CommandErrorCode, Decision, ItemRecord, Setup } from "@tokama/core";
 import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
 import { AgentLabel } from "../agent/AgentLabel.js";
@@ -19,7 +19,8 @@ import { ExpandButton } from "../ui/ExpandButton.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { changesRepo } from "./attempt-view.js";
 import { ChecksTab } from "./ChecksTab.js";
-import { attemptLine, hasEnded, itemMark, KIND, outcomeLine, PRIVACY, stepAgent, stepMark, stepPosition, templateOf, whereLine } from "./describe.js";
+import { attemptLine, hasEnded, KIND, outcomeLine, PRIVACY, stepAgent, stepPosition, templateOf, whereLine } from "./describe.js";
+import { rowLine, rowMark, timeOf } from "../model.js";
 import { cardOffersStop, inTextField } from "./DecisionChoices.js";
 import { After, NeedsYou } from "./DecisionCard.js";
 import { DiffTab, type DiffState } from "../ui/DiffView.js";
@@ -37,11 +38,11 @@ import { finishState, isDiscarded } from "./finish-view.js";
 import { useItem } from "./useItem.js";
 import { useActivity } from "./useActivity.js";
 import { ActivityLine, StepTrack } from "./Progress.js";
-import { attemptTime, stepTimes } from "./progress-view.js";
+import { attemptTime, stepTimes, trackOf } from "./progress-view.js";
 import { useNow } from "../useNow.js";
 import { Button, CloseButton } from "../ui/Button.js";
 import { ErrorRetry } from "../ui/ErrorRetry.js";
-import { markOf } from "../ui/status.js";
+import { markOf, StatusMark } from "../ui/status.js";
 import { AgentChip } from "../ui/agent.js";
 import { Section } from "../ui/Section.js";
 import { Tabs } from "../ui/Tabs.js";
@@ -356,8 +357,8 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
         {item ? (
           <>
             <h1 id={titleId}>{item.title}</h1>
-            <LiveActivity bridge={bridge} item={item} agents={setup?.agents ?? []} />
-            <StepTrack item={item} />
+            <LiveActivity bridge={bridge} item={item} setup={setup} onOpenAgent={onOpenAgent} />
+            <StepTrack item={item} agents={setup?.agents ?? []} />
             <div className="ex-meta">
               <StateLine item={item} />
               <span className="ex-meta-part">
@@ -390,8 +391,9 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
             {template?.name ?? item.templateId} · {PRIVACY[item.privacy]}
           </p>
           <h2 id={titleId}>{item.title}</h2>
-          <LiveActivity bridge={bridge} item={item} agents={setup?.agents ?? []} fallback={<StateLine item={item} />} />
-          <StepTrack item={item} />
+          <StateLine item={item} />
+          <LiveActivity bridge={bridge} item={item} setup={setup} onOpenAgent={onOpenAgent} />
+          <StepTrack item={item} agents={setup?.agents ?? []} />
         </div>
       ) : (
         <div className="drawer-heading">
@@ -503,17 +505,30 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
 /** A discarded item's work is gone: it reads as discarded rather than done. */
 const DISCARDED = markOf("discarded");
 
+/**
+ * The item's state in words. A running item has no mark: "running · Build, step 2 of 3, attempt 2 of 3 · 33 m 04 s",
+ * its time ticking in this line only; the working agent's badge in the activity line is its running mark.
+ */
 function StateLine({ item }: { readonly item: ItemRecord }) {
-  const mark = isDiscarded(item) ? DISCARDED : itemMark(item.state);
-  const position = stepPosition(item);
+  const working = item.state === "running";
+  const now = useNow(working);
+  const mark = isDiscarded(item) ? DISCARDED : rowMark(item);
+  const position = working ? rowLine(item, [])?.step : stepPosition(item);
   const outcome = isDiscarded(item) ? undefined : (finishState(item) ?? outcomeLine(item));
   return (
     <p className="drawer-state">
-      <span className="mark" data-tone={mark.tone} aria-hidden="true">
-        {mark.symbol}
-      </span>
-      <span data-tone={mark.tone}>{mark.word}</span>
+      {working && mark.word === "running" ? (
+        <StatusMark status={mark} markless />
+      ) : (
+        <>
+          <span className="mark" data-tone={mark.tone} aria-hidden="true">
+            {mark.symbol}
+          </span>
+          <span data-tone={mark.tone}>{mark.word}</span>
+        </>
+      )}
       {position && <span className="drawer-position"> · {position}</span>}
+      {working && <span className="drawer-position mono"> · {timeOf(item, now).text}</span>}
       {outcome && <span className="drawer-position mono"> · {outcome}</span>}
     </p>
   );
@@ -523,11 +538,14 @@ function StateLine({ item }: { readonly item: ItemRecord }) {
  * The activity line while the item runs a step, ticking every second; `fallback` otherwise. Its
  * own component, so only this line renders again each second.
  */
-function LiveActivity({ bridge, item, agents, fallback = null }: { readonly bridge: TokamaBridge; readonly item: ItemRecord; readonly agents: readonly AgentSummary[]; readonly fallback?: ReactNode }) {
-  const running = item.state === "running" && item.steps.some((step) => step.state === "running");
+function LiveActivity({ bridge, item, setup, onOpenAgent, fallback = null }: { readonly bridge: TokamaBridge; readonly item: ItemRecord; readonly setup: Setup | undefined; readonly onOpenAgent: ItemDrawerProps["onOpenAgent"]; readonly fallback?: ReactNode }) {
+  const at = item.state === "running" ? item.steps.findIndex((step) => step.state === "running") : -1;
+  const running = at >= 0;
   const activity = useActivity(bridge, item.id, running);
   const now = useNow(running);
-  return running ? <ActivityLine item={item} activity={activity} agents={agents} now={now} /> : fallback;
+  // Tokama's own step (the checks) has no agent, so no badge: the line starts with ◐.
+  const info = running ? agentInfo(item, at, setup) : undefined;
+  return running ? <ActivityLine item={item} activity={activity} agents={setup?.agents ?? []} info={info} onOpenAgent={onOpenAgent} now={now} /> : fallback;
 }
 
 function Missing({ error, onRetry }: { readonly error: { code: string; message: string } | undefined; readonly onRetry: () => void }) {
@@ -552,28 +570,27 @@ function Steps({ bridge, item, setup, onOpenAgent, unfold }: StepsProps) {
   if (item.steps.length === 0) return <Placeholder>{TEXT.noSteps}</Placeholder>;
   const agents = setup?.agents ?? [];
   const connections = setup?.connections ?? [];
+  const track = trackOf(item, agents).steps;
   return (
     <ol className="steps">
       {item.steps.map((step, index) => {
-        const mark = stepMark(step.state);
+        // The state is a word: "✓ passed", "running", "next", "✕ failed", "⏸ needs you".
+        const state = track[index]!;
+        const mark = state.mark.word === "done" ? markOf("passed") : state.mark;
         const agent = stepAgent(step, agents);
         const tip = agentInfo(item, index, setup);
         const unfolded = index === unfold ? shownAttempt(step) : undefined;
         return (
           <li key={index} className="step" data-state={step.state}>
-            <span className="mark" data-tone={mark.tone} aria-hidden="true">
-              {mark.symbol}
-            </span>
             <div className="step-body">
               <p className="step-name">
-                {step.name}
-                <span className="visually-hidden">, {mark.word}</span>
+                {step.name} <StatusMark status={mark} word="visible" markless={state.show === "word"} />
               </p>
               <div className="step-where">
                 {tip === undefined ? (
-                  <AgentChip agent={agent} />
+                  <AgentChip agent={agent} coloured />
                 ) : (
-                  <AgentLabel info={tip} onOpen={onOpenAgent} />
+                  <AgentLabel info={tip} onOpen={onOpenAgent} coloured />
                 )}{" "}
                 <span>· {whereLine(step, agents, connections)}</span>
               </div>
@@ -586,9 +603,12 @@ function Steps({ bridge, item, setup, onOpenAgent, unfold }: StepsProps) {
                     return (
                       <li key={attempt.attempt} className="step-attempt">
                         <span className="mono">
-                          <span className="mark" data-tone={line.mark.tone} aria-hidden="true">
-                            {line.mark.symbol}
-                          </span>
+                          {/* An attempt that runs has no mark: the step's own word says it. */}
+                          {attempt.result !== undefined && (
+                            <span className="mark" data-tone={line.mark.tone} aria-hidden="true">
+                              {line.mark.symbol}
+                            </span>
+                          )}
                           {took === undefined ? line.text : `${line.text} · ${took}`}
                         </span>
                         {/* Only an ended attempt of an agent's step has an output. */}

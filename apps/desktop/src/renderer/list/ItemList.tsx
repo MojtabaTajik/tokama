@@ -1,38 +1,32 @@
 // The pipeline list: one flat row per item, in groups (Needs you, Running, Done, Failed). A row
-// shows the status, the title, the workflow and repos, the item's own steps as a small pipeline
-// (the current step with its attempt), its agent with the model, and its time. A row is a native
-// button, so Enter and Space select it as a click does; the agent label next to it has its own
-// tooltip and does not select the row. Engine text (titles, questions, names) is rendered as React
-// text only.
+// shows the status, the title, and on line two in words the workflow, the repos, the step the item
+// is at ("Build, step 2 of 3"), how long it has run and its agent, then its time. The one running
+// mark of a row is the working agent's badge, which breathes; a row that waits, checks or ended shows
+// its status symbol and word instead. A row is a native button, so Enter and Space select it as a
+// click does; the badge next to it has its own tooltip and does not select the row. Engine text
+// (titles, questions, names) is rendered as React text only.
 import type { FinishAction, ItemRecord, Setup } from "@tokama/core";
 import type { ReactNode } from "react";
-import { AgentLabel } from "../agent/AgentLabel.js";
+import { AgentBadge } from "../agent/AgentBadge.js";
 import { agentInfo } from "../agent/agent-info.js";
-import { useBreath } from "../drawer/Progress.js";
+import { formatDuration } from "../format/duration.js";
 import { useNow } from "../useNow.js";
 import { templateOf } from "../drawer/describe.js";
 import { finishNote } from "../drawer/finish-view.js";
-import { currentStep, type GroupKey, type ItemGroup, listEntries, pipelineOf, rowAgent, rowMark, timeOf } from "../model.js";
-import { TemplateIcon } from "../shell/TemplateIcon.js";
+import { currentStep, type GroupKey, type ItemGroup, listEntries, rowLine, rowMark, timeOf } from "../model.js";
 import type { AgentTarget } from "../settings/describe.js";
 import { FinishSplit } from "./FinishSplit.js";
 import { useFocusFollow } from "./useFocusFollow.js";
 import { Button } from "../ui/Button.js";
 import { markOf } from "../ui/status.js";
-import { AgentChip } from "../ui/agent.js";
+import { AgentName } from "../ui/agent.js";
 import { Facts } from "../ui/Facts.js";
 import { factsOf } from "../../shared/item-facts.js";
 
 const TEXT = {
   nothing: { needs: "Nothing waiting", running: "Nothing running", done: "Nothing finished", failed: "Nothing failed" },
   nothingFor: (what: string, name: string) => `${what} for ${name}`,
-  steps: "Steps",
-  attempt: (n: number) => `attempt ${n}`,
 } as const;
-
-/** A step in words, for the pipeline's label: "Review running attempt 1", "Plan passed". */
-const stepWords = (step: { readonly name: string; readonly mark: { readonly word: string }; readonly current: boolean; readonly attempt: number | undefined }): string =>
-  `${step.name} ${step.mark.word}${step.current && step.attempt !== undefined ? ` ${TEXT.attempt(step.attempt)}` : ""}`;
 
 export interface ItemListProps {
   readonly groups: readonly ItemGroup[];
@@ -52,18 +46,6 @@ export interface ItemListProps {
   readonly footers?: Partial<Record<GroupKey, ReactNode>>;
 }
 
-/** A mark that breathes while `on`, in step with every other breathing mark on screen. */
-function BreathMark({ on, className, children, ...rest }: { readonly on: boolean; readonly className: string; readonly children: ReactNode; readonly "data-tone"?: string; readonly "data-group"?: string; readonly "aria-hidden"?: "true" }) {
-  const breath = useBreath(on);
-  return (
-    <span className={className} {...rest} data-breathe={on} style={on ? breath : undefined}>
-      {children}
-    </span>
-  );
-}
-
-const GROUP_SYMBOL = { needs: markOf("needs_you").symbol, running: markOf("running").symbol, done: markOf("done").symbol, failed: markOf("failed").symbol } as const;
-
 export function ItemList({ groups, setup, now, selectedItemId, onSelect, repoId, onFinish, onDiscard, onOpenAgent, footers }: ItemListProps) {
   const focus = useFocusFollow();
   return (
@@ -73,9 +55,6 @@ export function ItemList({ groups, setup, now, selectedItemId, onSelect, repoId,
         return (
           <section key={group.key} className="pl-group" aria-label={group.name}>
             <h3 className="pl-group-heading">
-              <BreathMark className="pl-group-symbol" on={group.key === "running" && group.items.some((item) => item.state === "running")} data-group={group.key} aria-hidden="true">
-                {GROUP_SYMBOL[group.key]}
-              </BreathMark>
               {group.name}
               {count !== undefined && <span className="pl-group-count mono">{count}</span>}
             </h3>
@@ -121,34 +100,57 @@ function RowTime({ item, now }: { readonly item: ItemRecord; readonly now: numbe
   );
 }
 
+/** How long the running attempt has run, ticking every second in its own component so only this text renders again. */
+function StepTime({ since }: { readonly since: number }) {
+  const now = useNow(true);
+  return <span className="pl-for">{formatDuration(now - since, "coarse")}</span>;
+}
+
 function Row({ item, setup, now, selected, onSelect, onFinish, onDiscard, onOpenAgent }: RowProps) {
   const mark = rowMark(item);
-  const steps = pipelineOf(item);
-  const agent = rowAgent(item, setup?.agents ?? []);
-  // Tokama's own steps (checks) have no agent to describe: the row names Tokama in plain text.
-  const agentTip = agentInfo(item, currentStep(item) ?? item.steps.length - 1, setup);
+  const line = rowLine(item, setup?.agents ?? []);
   const working = item.state === "running";
   const template = templateOf(item, setup);
+  // The working agent's badge is the row's running mark; a step Tokama runs itself (the checks) shows its own mark.
+  const info = working && mark.word === "running" ? agentInfo(item, currentStep(item) ?? 0, setup) : undefined;
   const ask = item.state === "needs_you" ? (item.decision?.question ?? mark.word) : undefined;
   const finished = finishNote(item);
   // Until Merge or Open PR, a done row and a failed row say what was measured where the steps were.
   const facts = finished === undefined ? factsOf(item) : [];
+  const separator = (
+    <span aria-hidden="true" className="pl-sep">
+      ·
+    </span>
+  );
   return (
     <div className="pl-row-wrap">
       <Button variant="plain" className="pl-row" data-item-id={item.id} data-state={item.state} aria-current={selected ? "true" : undefined} onClick={() => onSelect(item.id)}>
-        <BreathMark className="pl-mark" on={working} data-tone={mark.tone}>
-          <span aria-hidden="true">{mark.symbol}</span>
+        <span className="pl-mark" data-tone={mark.tone}>
+          {info === undefined && <span aria-hidden="true">{mark.symbol}</span>}
           <span className="visually-hidden">{mark.word}: </span>
-        </BreathMark>
-        <span className="pl-main">
+        </span>
+        <span className="pl-main" data-wide={(finished === undefined && facts.length === 0) || undefined}>
           <span className="pl-title">{item.title}</span>
           <span className="pl-meta">
-            <TemplateIcon icon={template?.icon} color={template?.color} />
             <span className="pl-workflow">{template?.name ?? item.templateId}</span>
             {item.repoIds.length > 0 && (
               <>
-                <span aria-hidden="true">·</span>
-                <span className="ellipsis mono">{item.repoIds.join(", ")}</span>
+                {separator}
+                <span className="pl-repos ellipsis mono">{item.repoIds.join(", ")}</span>
+              </>
+            )}
+            {line !== undefined && (
+              <>
+                {separator}
+                <span className="pl-where">{line.step}</span>
+                {line.since !== undefined && (
+                  <>
+                    {separator}
+                    <StepTime since={line.since} />
+                  </>
+                )}
+                {separator}
+                <AgentName name={line.agent.name} hue={line.agent.hue} />
               </>
             )}
           </span>
@@ -163,33 +165,12 @@ function Row({ item, setup, now, selected, onSelect, onFinish, onDiscard, onOpen
             <span className="visually-hidden">{finished.mark.word}: </span>
             {finished.text}
           </span>
-        ) : facts.length > 0 ? (
-          <Facts facts={facts} className="pl-facts" />
         ) : (
-          <span className="pl-pipe" role="img" aria-label={`${TEXT.steps}: ${steps.map(stepWords).join(", ")}`}>
-            {steps.map((step, index) => (
-              <span key={index} className="pl-step" data-current={step.current || undefined} title={`${step.name} · ${step.mark.word}`} aria-hidden="true">
-                {index > 0 && <span className="pl-link" />}
-                <BreathMark className="pl-step-mark" on={working && step.current && step.mark.tone === "live"} data-tone={step.mark.tone}>
-                  {step.mark.symbol}
-                </BreathMark>
-                {step.current && <span className="pl-step-name ellipsis">{step.name}</span>}
-                {step.current && step.attempt !== undefined && <span className="pl-step-attempt">· {TEXT.attempt(step.attempt)}</span>}
-              </span>
-            ))}
-          </span>
+          facts.length > 0 && <Facts facts={facts} className="pl-facts" />
         )}
         <RowTime item={item} now={now} />
       </Button>
-      {agent !== undefined && (
-        <span className="pl-agent">
-          {agentTip !== undefined ? (
-            <AgentLabel info={agentTip} onOpen={onOpenAgent} />
-          ) : (
-            <AgentChip agent={agent} ellipsis />
-          )}
-        </span>
-      )}
+      {info !== undefined && <AgentBadge info={info} stepName={line?.stepName} since={line?.since} className="pl-badge" onOpen={onOpenAgent} />}
       {onFinish !== undefined && onDiscard !== undefined && <FinishSplit item={item} setup={setup} onFinish={onFinish} onDiscard={onDiscard} />}
     </div>
   );
