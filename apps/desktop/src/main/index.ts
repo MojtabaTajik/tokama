@@ -36,7 +36,7 @@ import { pickRepoFolder } from "./folder.js";
 import { BANNER_SOUND, createNotifier } from "./notifier.js";
 import { runSoundCheck } from "./sound-check.js";
 import { createFocusProbe } from "./sound/focus.js";
-import { soundFileName, soundsDir } from "./sound/files.js";
+import { fileUnder, soundFileName, soundsDir } from "./sound/files.js";
 import { playRequestHandler } from "./sound/play-request.js";
 import { playerFor, recordingPlayer, type SoundPlayer } from "./sound/player.js";
 import { appIcons } from "./icon.js";
@@ -275,13 +275,14 @@ function updateSetup(): { readonly engine?: UpdateEngine; readonly reason: Extra
   }
 }
 
-/** The folder of the sound files and the player that plays them; the player is silent off macOS and Linux. */
+/** The folder of the sound files and the player that plays them; the player is silent on Windows. */
 function soundPlayer(): SoundPlayer {
   const packaged = app.isPackaged;
   const soundsFolder = soundsDir({ packaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() });
   return playerFor(process.platform, {
     makeRunner: () => createProcessRunner(),
     findProgram: (name) => findOnPath(name, process.env),
+    themeFile: (path) => fileUnder("/usr/share/sounds", path),
     audioEnv: Object.fromEntries(["XDG_RUNTIME_DIR", "PULSE_SERVER"].flatMap((name) => (process.env[name] === undefined ? [] : [[name, process.env[name]]]))),
     soundsDir: soundsFolder,
     packaged,

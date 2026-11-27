@@ -9,7 +9,7 @@ const NOT_STARTED: RunResult = { kind: "not-started", reason: "spawn-error", mes
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-function setup(options: { packaged?: boolean; result?: (request: RunRequest) => Promise<RunResult>; installed?: readonly string[] } = {}) {
+function setup(options: { packaged?: boolean; result?: (request: RunRequest) => Promise<RunResult>; installed?: readonly string[]; themeFiles?: readonly string[] } = {}) {
   const requests: RunRequest[] = [];
   const release: Array<() => void> = [];
   const beep = vi.fn();
@@ -23,7 +23,9 @@ function setup(options: { packaged?: boolean; result?: (request: RunRequest) => 
   const makeRunner = vi.fn(() => runner);
   const installed = options.installed ?? [];
   const findProgram = vi.fn((name: string) => (installed.includes(name) ? `/usr/bin/${name}` : undefined));
-  const deps = { makeRunner, findProgram, audioEnv: { XDG_RUNTIME_DIR: "/run/user/1000" }, soundsDir: "/res", packaged: options.packaged ?? true, beep };
+  const themeFiles = options.themeFiles ?? [];
+  const themeFile = vi.fn((path: string) => (themeFiles.includes(path) ? path : undefined));
+  const deps = { makeRunner, findProgram, themeFile, audioEnv: { XDG_RUNTIME_DIR: "/run/user/1000" }, soundsDir: "/res", packaged: options.packaged ?? true, beep };
   return { requests, release, beep, deps, makeRunner, findProgram };
 }
 
@@ -75,6 +77,23 @@ describe("the macOS player", () => {
     await tick();
     player.play("needsYou", "tokama");
     expect(requests).toHaveLength(2);
+  });
+
+  it("beeps when afplay fails, does not start or rejects, and not when it works", async () => {
+    for (const result of [FAILED, NOT_STARTED]) {
+      const failing = setup({ result: () => Promise.resolve(result) });
+      playerFor("darwin", failing.deps).play("needsYou", "tokama");
+      await tick();
+      expect(failing.beep).toHaveBeenCalledTimes(1);
+    }
+    const rejecting = setup({ result: () => Promise.reject(new Error("boom")) });
+    playerFor("darwin", rejecting.deps).play("needsYou", "tokama");
+    await tick();
+    expect(rejecting.beep).toHaveBeenCalledTimes(1);
+    const working = setup({ result: () => Promise.resolve(FINISHED) });
+    playerFor("darwin", working.deps).play("needsYou", "tokama");
+    await tick();
+    expect(working.beep).not.toHaveBeenCalled();
   });
 
   it("never reports a missing player and never looks a program up", () => {
@@ -151,13 +170,41 @@ describe("the Linux player", () => {
     expect(player.playerMissing()).toBe(true);
   });
 
-  it("beeps for the system set and plays the Tokay from its file", () => {
-    const { deps, requests, beep } = setup({ installed: ["paplay"] });
-    const player = playerFor("linux", deps);
-    player.play("finished", "system");
-    expect(beep).toHaveBeenCalledTimes(1);
-    expect(requests).toEqual([]);
-    player.play("tokayCall", "system");
+  it("plays the system set from the freedesktop theme file of each kind, through paplay only", async () => {
+    const THEME = "/usr/share/sounds/freedesktop/stereo";
+    const expected = { needsYou: "message-new-instant.oga", finished: "complete.oga", failed: "dialog-warning.oga" } as const;
+    for (const [name, file] of Object.entries(expected) as Array<[keyof typeof expected, string]>) {
+      const { deps, requests, beep } = setup({ installed: ["paplay", "aplay"], themeFiles: [`${THEME}/${file}`], result: () => Promise.resolve(FAILED) });
+      playerFor("linux", deps).play(name, "system");
+      await tick();
+      // aplay cannot decode Ogg, so a failing paplay goes straight to the beep.
+      expect(requests.map((request) => request.command)).toEqual([{ argv: ["/usr/bin/paplay", `${THEME}/${file}`] }]);
+      expect(requests[0]?.env).toEqual({ XDG_RUNTIME_DIR: "/run/user/1000" });
+      expect(beep).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("does not beep when the theme file plays", async () => {
+    const { deps, beep } = setup({ installed: ["paplay"], themeFiles: ["/usr/share/sounds/freedesktop/stereo/complete.oga"], result: () => Promise.resolve(FINISHED) });
+    playerFor("linux", deps).play("finished", "system");
+    await tick();
+    expect(beep).not.toHaveBeenCalled();
+  });
+
+  it("beeps for the system set when the theme file is missing, or when only aplay is installed, and runs nothing", () => {
+    const missing = setup({ installed: ["paplay"] });
+    playerFor("linux", missing.deps).play("finished", "system");
+    expect(missing.beep).toHaveBeenCalledTimes(1);
+    expect(missing.requests).toEqual([]);
+    const onlyAplay = setup({ installed: ["aplay"], themeFiles: ["/usr/share/sounds/freedesktop/stereo/complete.oga"] });
+    playerFor("linux", onlyAplay.deps).play("finished", "system");
+    expect(onlyAplay.beep).toHaveBeenCalledTimes(1);
+    expect(onlyAplay.requests).toEqual([]);
+  });
+
+  it("plays the Tokay from its own file in the system set", () => {
+    const { deps, requests } = setup({ installed: ["paplay"] });
+    playerFor("linux", deps).play("tokayCall", "system");
     expect(requests[0]?.command).toEqual({ argv: ["/usr/bin/paplay", "/res/tokama-tokay-call.wav"] });
   });
 

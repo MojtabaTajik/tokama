@@ -8,13 +8,13 @@ describe("soundCheckSteps", () => {
     expect(soundCheckSteps(bundledName).map((step) => step.note.title)).toEqual([
       "Sound check: Needs you (bundled)",
       "Sound check: Needs you (player)",
-      "Sound check: Needs you (macOS default)",
+      "Sound check: Needs you (system default)",
       "Sound check: Finished (bundled)",
       "Sound check: Finished (player)",
-      "Sound check: Finished (macOS default)",
+      "Sound check: Finished (system default)",
       "Sound check: Failed (bundled)",
       "Sound check: Failed (player)",
-      "Sound check: Failed (macOS default)",
+      "Sound check: Failed (system default)",
     ]);
   });
 

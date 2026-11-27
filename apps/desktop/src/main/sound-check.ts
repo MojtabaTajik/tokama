@@ -20,7 +20,7 @@ export function soundCheckSteps(bundledName: (kind: NoteKind) => string): CheckS
     return [
       { kind, way: "bundled", note: { title: label("bundled"), body: "Banner with the Tokama sound named in it.", silent: false, sound: bundledName(kind) } },
       { kind, way: "player", note: { title: label("player"), body: "Silent banner, the app plays the Tokama sound.", silent: true } },
-      { kind, way: "default", note: { title: label("macOS default"), body: "Banner with the system's own sound.", silent: false } },
+      { kind, way: "default", note: { title: label("system default"), body: "Banner with the system's own sound.", silent: false } },
     ];
   });
 }
