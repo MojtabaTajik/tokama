@@ -146,8 +146,11 @@ async function doneItem(files: Record<string, string> = { "greeting.txt": "hello
   return ended.value;
 }
 
+/** No step runs on the repo in these tests, so a write needs no ledger. */
+const plainWrite: FinishDeps["aroundRefs"] = (_repoPath, _refs, write) => write();
+
 function finisher(extra: Partial<FinishDeps> = {}) {
-  return createFinisher({ store, git, runner: createProcessRunner(), repo: (id) => (id === repo.id ? repo : undefined), ghCommand: [join(ghDir, "gh")], ...extra });
+  return createFinisher({ store, git, runner: createProcessRunner(), repo: (id) => (id === repo.id ? repo : undefined), ghCommand: [join(ghDir, "gh")], aroundRefs: plainWrite, ...extra });
 }
 
 /** Starts the action and waits for its result. */
@@ -589,7 +592,7 @@ describe("a restart in the middle of an action", () => {
     const item = await doneItem();
     store.append(item.id, [{ type: "finish_started", action: "discard" }]);
     const other = ItemStore.open({ home, hostId: "host_0190a000-0000-7000-8000-000000000002" as HostId }).store;
-    createFinisher({ store: other, git, runner: createProcessRunner(), repo: () => repo }).recover();
+    createFinisher({ store: other, git, runner: createProcessRunner(), repo: () => repo, aroundRefs: plainWrite }).recover();
     expect(other.get(item.id as ItemId)?.finish?.running).toBe("discard");
   });
 });

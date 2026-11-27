@@ -19,6 +19,7 @@ import type { Repo } from "../config/index.js";
 import { sharedGitHashes, sharedGitSettings, type GitSetting, type TamperChange } from "../integrity/index.js";
 import type { ItemStore } from "../items/index.js";
 import { digestOf, steeringChanges, steeringEntries, type SteeringEntry } from "./protect.js";
+import { branchRef } from "./moved-refs.js";
 import { discardWorktree, ghStatus, hostedRepo, mergeItem, openPullRequest, pushItem, withoutUserInfo, type ItemWorktree } from "../worktrees/index.js";
 
 export interface FinishDeps {
@@ -33,6 +34,8 @@ export interface FinishDeps {
   readonly sshAuthSock?: string;
   /** Nothing leaves the machine for any item: Open PR is refused. Local-only items refuse it on their own. */
   readonly localOnly?: boolean;
+  /** Runs a merge or discard that writes these refs, so a step running on the repo is not blamed for them. */
+  readonly aroundRefs: <T>(repoPath: string, refs: readonly string[], write: () => Promise<T>) => Promise<T>;
 }
 
 export interface FinishError {
@@ -242,7 +245,8 @@ export function createFinisher(deps: FinishDeps): Finisher {
     }
     switch (action) {
       case "merge": {
-        const merged = await mergeItem(git, repo, worktree, { id: item.id, title: item.title, commit: commit! });
+        const write = () => mergeItem(git, repo, worktree, { id: item.id, title: item.title, commit: commit! });
+        const merged = await deps.aroundRefs(repo.path, [branchRef(repo.baseBranch), branchRef(worktree.branch)], write);
         if (!merged.ok) return failed(merged.error.message, merged.error.reason);
         const { detail } = merged.value;
         return {
@@ -272,7 +276,8 @@ export function createFinisher(deps: FinishDeps): Finisher {
         return opened.ok ? { type: "pr_opened", repoId: repo.id, url: opened.value } : failed(opened.error);
       }
       case "discard": {
-        const discarded = await discardWorktree(git, repo.path, worktree);
+        const write = () => discardWorktree(git, repo.path, worktree);
+        const discarded = await deps.aroundRefs(repo.path, [branchRef(worktree.branch)], write);
         return discarded.ok ? { type: "discarded", repoId: repo.id } : failed(`Cannot remove the worktree and branch: ${discarded.error.message}`);
       }
     }
