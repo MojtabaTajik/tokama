@@ -68,6 +68,7 @@ import {
   type CheckTrialResult,
   type HelperRunQueryResult,
   type HelpersResult,
+  type RunHelperResult,
   type Command,
   createGit,
   createMachineSource,
@@ -134,7 +135,8 @@ import { ItemIndex } from "./item-index.js";
 import { boardCounts, COUNTS_BUDGET, groupOf, listPage, nameHits } from "./item-list.js";
 import { type HealthChecks, machineChecks } from "./real/health.js";
 import { runningGroups } from "./machine.js";
-import { RealEngine } from "./real/real.js";
+import type { HelperRuns } from "./real/helpers.js";
+import { RealEngine, type RealEngineOptions } from "./real/real.js";
 import { SampleEngine } from "./sample/sample.js";
 import { agentsFor, loadConfig, startProblem, stepProblems } from "./real/config.js";
 import { sampleTemplateLoads } from "./sample/templates.js";
@@ -171,6 +173,8 @@ export interface EngineOptions {
   readonly runtime?: (agent: Agent) => AgentRuntime | undefined;
   /** Real mode: the startup checks. Default: git's version and Claude Code's login, on this machine. */
   readonly checks?: HealthChecks;
+  /** Real mode: the helpers this engine offers and how their inputs are collected. Default: the built-in list, which is empty. */
+  readonly helpers?: RealEngineOptions["helpers"];
   /** Real mode: time between SIGTERM and SIGKILL for a leftover agent tree at start. */
   readonly recoveryGraceMs?: number;
   /**
@@ -265,6 +269,10 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   let diagnosticsChanged = () => {};
   // Set once events can go out; diagnostics call it when entries are recorded or deleted.
   let entriesChanged = () => {};
+  // Set once events can go out; helper runs send their updates through it.
+  let helperEvent: (event: EngineEvent) => void = () => {};
+  // Set once a real engine exists: the helper runs a stop that waits for idle must not interrupt.
+  let helperRuns: HelperRuns | undefined;
   const releaseStorage = () => {
     storage?.close();
     diagnostics?.close();
@@ -391,6 +399,8 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
           ...(options.runtime !== undefined && { runtime: options.runtime }),
           ...(options.recoveryGraceMs !== undefined && { recoveryGraceMs: options.recoveryGraceMs }),
           ...(options.ghCommand !== undefined && { ghCommand: options.ghCommand }),
+          ...(options.helpers !== undefined && { helpers: options.helpers }),
+          emit: (event) => helperEvent(event),
           onActivity: (itemId, latest) => activity.update(itemId, latest),
           ...(diagnostics !== undefined && { onError: (error: unknown) => diagnostics?.store.error("engine", "storage", error) }),
           log,
@@ -400,6 +410,10 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
           diagnostics?.store.error("engine", "startup", error);
           return undefined;
         });
+  // Before any command waits on the engine, so a stop that waits for idle always sees the helper runs.
+  void realEngine.then((created) => {
+    helperRuns = created?.helpers;
+  });
   const clock = options.clock ?? systemClock;
   const usageChanged = () => broadcast({ type: "usage_changed" });
   // Stops a usage request in flight when the engine shuts down.
@@ -441,6 +455,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
         }
       : {
           rows: (since) => (storage === undefined ? [] : usageRowsOf(storage.items.list(), since)),
+          helperCalls: (since) => helperRuns?.calls(since) ?? [],
           ...(index !== undefined && { samples: { get: (cliId) => index.planSample(cliId), save: (cliId, reading) => index.savePlanSample(cliId, reading) } }),
           sources: options.planSources ?? planSources(aiCliAdapters, usageAbort.signal),
           ...(claudeLogs !== undefined && { logs: claudeLogs }),
@@ -608,6 +623,20 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
           const result = await real.command(command);
           return result.ok ? { ok: true, data: result.value } : { ok: false, error: result.error };
         }
+        // Try checks is not built into a real engine yet; its commands fall through to `noHelpers`.
+        if (command.type === "run_helper") {
+          const started = await real.helpers.start(command.run, command.cloud);
+          return started.ok ? { ok: true, data: started.value satisfies RunHelperResult } : { ok: false, error: started.error };
+        }
+        if (command.type === "cancel_helper") {
+          const cancelled = real.helpers.cancel(command.runId);
+          return cancelled.ok ? { ok: true, data: null } : { ok: false, error: cancelled.error };
+        }
+      } else if (message.query.type === "helpers") {
+        return { ok: true, data: (await real.helpers.helpers()) satisfies HelpersResult };
+      } else if (message.query.type === "helper_run") {
+        const run = real.helpers.get(message.query.runId);
+        return run.ok ? { ok: true, data: { run: run.value } satisfies HelperRunQueryResult } : { ok: false, error: run.error };
       } else if (message.query.type === "setup") {
         const current = await real.setup();
         diagnostics?.setClis(current.health.clis);
@@ -804,7 +833,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   let commandsInFlight = 0;
   const busyItems = (): number | undefined => {
     try {
-      return commandsInFlight + store.list().filter((item) => item.state === "running" || item.state === "queued" || item.finish?.running !== undefined).length;
+      return commandsInFlight + (helperRuns?.running() ?? 0) + store.list().filter((item) => item.state === "running" || item.state === "queued" || item.finish?.running !== undefined).length;
     } catch {
       return undefined;
     }
@@ -961,6 +990,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   pushActivity = (latest) => broadcast({ type: "item_activity", activity: latest });
   diagnosticsChanged = () => broadcast({ type: "setup_changed" });
   entriesChanged = () => broadcast({ type: "diagnostics_changed" });
+  helperEvent = broadcast;
 
   const stopTicking = sample?.startTicking();
 

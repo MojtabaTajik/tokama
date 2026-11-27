@@ -11,7 +11,7 @@ export { spawnDetached, type ChildProcess, type DetachedService } from "./kernel
 // Pid files, the pid-alive check and atomic file replacement, for the engine service and the desktop app.
 export { pidAlive, readPidFile, type PidFile } from "./kernel/process/pid-file.js";
 export { readTextFile, type ReadFailure, type ReadTextOptions } from "./kernel/fs-safe/read.js";
-export { replaceTextSync, type WriteFailure, type WriteFailureReason } from "./kernel/fs-safe/write.js";
+export { appendTextSync, replaceTextSync, type WriteFailure, type WriteFailureReason } from "./kernel/fs-safe/write.js";
 export { manualClock, sleep, systemClock, withDeadline, type Clock, type ManualClock, type TimerHandle } from "./kernel/clock/index.js";
 // Small helpers the apps share with core.
 export { hasCode } from "./kernel/errno/index.js";
@@ -53,7 +53,7 @@ export {
   type RecoveryOptions,
   type StoreError,
 } from "./slices/items/index.js";
-export { posixProcessTable, type LeftoverOutcome, type ProcessInfo, type ProcessTable } from "./kernel/process/leftover.js";
+export { killLeftoverTree, posixProcessTable, type LeftoverOutcome, type ProcessInfo, type ProcessTable } from "./kernel/process/leftover.js";
 // The engine's lock and the per-OS process parts around it.
 export { posixEngineProcesses, probeSocket, readEngineLock, type EngineLock, type EngineProcesses, type Liveness } from "./kernel/process/own-engine.js";
 // Config, templates and the cloud rule, for the engine service's real mode.
@@ -359,9 +359,16 @@ export {
   type ItemDiff,
   type ItemChange,
   type TreeDiff,
+  AgentCallUsageSchema,
+  AiCliIdSchema,
   CheckTrialSchema,
   HELPER_RUN_ERROR_CODES,
+  HelperIdSchema,
+  HelperLogLineSchema,
+  HelperRunIdSchema,
   HelperRunSchema,
+  HostIdSchema,
+  type HelperLogLine,
   MAX_SUGGESTED_CHECKS,
   MAX_TRIAL_CHECKS,
   MAX_TRIAL_OUTPUT_CHARS,

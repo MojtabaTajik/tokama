@@ -5,6 +5,7 @@ import {
   COMMAND_ERROR_CODES,
   CommandSchema,
   EventSchema,
+  HelperLogLineSchema,
   HelperRunSchema,
   HelperSummarySchema,
   isUnknownEvent,
@@ -293,6 +294,43 @@ describe("usage report helpers block", () => {
     expect(UsageReportSchema.safeParse(report()).success).toBe(true);
     expect(UsageReportSchema.safeParse(report({ helpers })).success).toBe(true);
     expect(UsageReportSchema.safeParse(report({ helpers: [{ ...helpers[0], helperId: "other" }] })).success).toBe(false);
+  });
+});
+
+describe("HelperLogLineSchema", () => {
+  const base = { format: 1, hostId: "host_0190a000-0000-7000-8000-0000000000aa", at: "2026-11-27T09:00:00.000Z", runId: RUN_ID };
+  const usage = {
+    callId: "call_0190a000-0000-7000-8000-000000000001",
+    stepId: "suggest-checks",
+    attempt: 1,
+    agentId: "helper",
+    cliId: "claude-code",
+    model: "haiku",
+    outcome: "completed",
+    startedAt: 1,
+    endedAt: 2,
+    tokens: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+  };
+
+  it.each([
+    { type: "helper_run_started", helperId: "suggest-checks", version: 1, agentId: "helper", cliId: "claude-code", model: "haiku" },
+    { type: "process_started", pid: 4242, startedAt: 1, bootTime: 2 },
+    { type: "usage_recorded", usage },
+    { type: "helper_run_ended", state: "failed", errorCode: "timeout" },
+  ])("reads a $type line", (line) => {
+    expect(HelperLogLineSchema.safeParse({ ...base, ...line }).success).toBe(true);
+  });
+
+  it("refuses an unknown type, a wrong format, a pid of 1 and a run id that is not one", () => {
+    const ended = { ...base, type: "helper_run_ended", state: "done" };
+    expect(HelperLogLineSchema.safeParse({ ...ended, type: "other" }).success).toBe(false);
+    expect(HelperLogLineSchema.safeParse({ ...ended, format: 2 }).success).toBe(false);
+    expect(HelperLogLineSchema.safeParse({ ...ended, runId: "../../x" }).success).toBe(false);
+    expect(HelperLogLineSchema.safeParse({ ...base, type: "process_started", pid: 1, startedAt: 1, bootTime: 2 }).success).toBe(false);
+  });
+
+  it("ignores a field it does not know, so a later version's line still reads", () => {
+    expect(HelperLogLineSchema.safeParse({ ...base, type: "helper_run_ended", state: "done", added: true }).success).toBe(true);
   });
 });
 

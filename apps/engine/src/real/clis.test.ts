@@ -1,7 +1,7 @@
 import { type Agent, type AgentId, type AgentRuntime, type AiCliAdapter, aiCliAdapters, type CliHealth, type ProcessRunner } from "@tokama/core";
 import { describe, expect, it } from "vitest";
 import { fakeAiCli } from "../testing/fake-ai-cli.js";
-import { cliName, cliState, defaultCli } from "./clis.js";
+import { cliName, cliReadiness, cliState, defaultCli } from "./clis.js";
 import { defaultRuntime } from "./real.js";
 
 const claude: CliHealth = { cliId: "claude-code", installed: true, loggedIn: true, version: "2.1.331" };
@@ -44,6 +44,26 @@ describe("cliName", () => {
     expect(cliName("claude-code", [])).toBe("Claude Code");
     expect(cliName("codex-cli", [])).toBe("Codex CLI");
     expect(cliName("ollama", [])).toBe("ollama");
+  });
+});
+
+describe("cliReadiness", () => {
+  it("is ready for an installed, logged-in CLI, whatever its version", () => {
+    expect(cliReadiness("claude-code", [claude])).toEqual({ ready: true });
+    expect(cliReadiness("claude-code", [{ ...claude, version: "1.0.0" }])).toEqual({ ready: true });
+  });
+
+  it("says why a CLI is not ready, with the health check's own message when it has one", () => {
+    expect(cliReadiness("claude-code", [])).toEqual({ ready: false, problem: "Tokama has not checked Claude Code yet. Try again." });
+    expect(cliReadiness("claude-code", [{ ...claude, installed: false }])).toEqual({ ready: false, problem: "Claude Code is not installed." });
+    expect(cliReadiness("claude-code", [{ ...claude, loggedIn: false }])).toEqual({ ready: false, problem: "Claude Code is installed but not logged in." });
+    expect(cliReadiness("claude-code", [{ ...claude, timedOut: true }])).toEqual({ ready: false, problem: "Tokama could not check Claude Code. Try again." });
+    expect(cliReadiness("claude-code", [{ ...claude, loggedIn: false, message: "Run claude auth login." }])).toEqual({ ready: false, problem: "Run claude auth login." });
+  });
+
+  it("is not ready for a CLI this build has no adapter for, even when it is installed", () => {
+    expect(cliReadiness("codex-cli", [codex], [fakeAiCli()])).toEqual({ ready: true });
+    expect(cliReadiness("codex-cli", [codex], [])).toEqual({ ready: false, problem: "Tokama cannot run Codex CLI agents yet." });
   });
 });
 
