@@ -315,7 +315,9 @@ describe("About", () => {
       expect(call?.getAttribute("title")).toBe("Play the Tokay call");
       expect(call?.querySelector("img")?.getAttribute("alt")).toBe("");
       expect(text(".about-calling")).toBe("");
+      expect($(".about-calling")?.hasAttribute("data-playing")).toBe(false);
       await click(call);
+      expect($(".about-calling")?.hasAttribute("data-playing")).toBe(true);
       expect(fake.playSound).toHaveBeenCalledWith("tokayCall", "tokama");
       expect(text(".about-calling")).toBe("♪ Playing");
       expect($(".about-calling")?.getAttribute("aria-live")).toBe("polite");

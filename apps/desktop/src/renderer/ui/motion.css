@@ -99,7 +99,8 @@
     animation: none;
   }
 
-  .sec-chev {
+  .sec-chev,
+  .about-calling {
     transition: none;
   }
 

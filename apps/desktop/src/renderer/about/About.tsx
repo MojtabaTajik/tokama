@@ -90,7 +90,7 @@ export function About({ bridge, connection, onClose, whatsNew, openVersion, runn
                 <img src={brand.iconUrl} alt="" width={120} height={120} />
               </Button>
               <img className="about-wordmark" src={brand.wordmarkUrl} alt={brand.name} height={28} />
-              <span className="about-calling" aria-live="polite">
+              <span className="about-calling" aria-live="polite" data-playing={calling || undefined}>
                 {calling ? "♪ Playing" : ""}
               </span>
             </div>
