@@ -337,8 +337,9 @@ describe("repo config, hooks and attributes never run code", () => {
     );
     const wt = join(root, "wt");
     expect(await plain(wt, "status", "--porcelain")).toBe("");
-    write(join(root, "wt-control", "a.txt"), "dirty\n");
-    write(join(wt, "a.txt"), "dirty\n");
+    // Same size as the committed "one\n", so git compares content and runs the clean filter.
+    write(join(root, "wt-control", "a.txt"), "two\n");
+    write(join(wt, "a.txt"), "two\n");
     await provesBlocked(
       "wt-clean",
       () => plainMayFail(repo, "worktree", "remove", join(root, "wt-control")),
@@ -360,7 +361,8 @@ describe("repo config, hooks and attributes never run code", () => {
     await plain(wt, "config", "--worktree", "filter.evil.clean", trap("wt-config"));
     // Same size as the committed "one\n": git then compares content, which runs the clean filter.
     // A different size is reported as modified from the stat data alone, and the filter would run
-    // only when git happened to find .gitattributes racy (same second as the index).
+    // only when git happened to find .gitattributes (which `*` also matches) racy: same second as
+    // the index.
     write(join(wt, "a.txt"), "two\n");
     await provesBlocked(
       "wt-config",
