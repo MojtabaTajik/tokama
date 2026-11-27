@@ -359,26 +359,6 @@
       "limits": [],
       "steps": [
         {
-          "templateId": "northwind/triage",
-          "stepId": "build",
-          "stepName": "Build",
-          "agentId": "builder",
-          "cliId": "claude-code",
-          "model": "claude-opus-5-5",
-          "runs": 0,
-          "itemCount": 1,
-          "tokens": 1449500,
-          "tokamaPercent": 50,
-          "items": [
-            {
-              "itemId": "item-3",
-              "title": "Triage the login errors",
-              "runs": 0,
-              "tokens": 1449500
-            }
-          ]
-        },
-        {
           "templateId": "orders-api/quick-fix",
           "stepId": "build",
           "stepName": "Build",
@@ -401,6 +381,26 @@
               "title": "Fix the checkout timeout",
               "runs": 0,
               "tokens": 334500
+            }
+          ]
+        },
+        {
+          "templateId": "northwind/triage",
+          "stepId": "build",
+          "stepName": "Build",
+          "agentId": "builder",
+          "cliId": "claude-code",
+          "model": "claude-opus-5-5",
+          "runs": 0,
+          "itemCount": 1,
+          "tokens": 1449500,
+          "tokamaPercent": 50,
+          "items": [
+            {
+              "itemId": "item-3",
+              "title": "Triage the login errors",
+              "runs": 0,
+              "tokens": 1449500
             }
           ]
         },
@@ -969,26 +969,6 @@
       "limits": [],
       "steps": [
         {
-          "templateId": "northwind/triage",
-          "stepId": "build",
-          "stepName": "Build",
-          "agentId": "builder",
-          "cliId": "claude-code",
-          "model": "claude-opus-5-5",
-          "runs": 0,
-          "itemCount": 1,
-          "tokens": 1449500,
-          "tokamaPercent": 50,
-          "items": [
-            {
-              "itemId": "item-3",
-              "title": "Triage the login errors",
-              "runs": 0,
-              "tokens": 1449500
-            }
-          ]
-        },
-        {
           "templateId": "orders-api/quick-fix",
           "stepId": "build",
           "stepName": "Build",
@@ -1011,6 +991,26 @@
               "title": "Fix the checkout timeout",
               "runs": 0,
               "tokens": 334500
+            }
+          ]
+        },
+        {
+          "templateId": "northwind/triage",
+          "stepId": "build",
+          "stepName": "Build",
+          "agentId": "builder",
+          "cliId": "claude-code",
+          "model": "claude-opus-5-5",
+          "runs": 0,
+          "itemCount": 1,
+          "tokens": 1449500,
+          "tokamaPercent": 50,
+          "items": [
+            {
+              "itemId": "item-3",
+              "title": "Triage the login errors",
+              "runs": 0,
+              "tokens": 1449500
             }
           ]
         },
@@ -1952,26 +1952,6 @@
       "limits": [],
       "steps": [
         {
-          "templateId": "northwind/triage",
-          "stepId": "build",
-          "stepName": "Build",
-          "agentId": "builder",
-          "cliId": "claude-code",
-          "model": "claude-opus-5-5",
-          "runs": 0,
-          "itemCount": 1,
-          "tokens": 1449500,
-          "tokamaPercent": 50,
-          "items": [
-            {
-              "itemId": "item-3",
-              "title": "Triage the login errors",
-              "runs": 0,
-              "tokens": 1449500
-            }
-          ]
-        },
-        {
           "templateId": "orders-api/quick-fix",
           "stepId": "build",
           "stepName": "Build",
@@ -1994,6 +1974,26 @@
               "title": "Fix the checkout timeout",
               "runs": 0,
               "tokens": 334500
+            }
+          ]
+        },
+        {
+          "templateId": "northwind/triage",
+          "stepId": "build",
+          "stepName": "Build",
+          "agentId": "builder",
+          "cliId": "claude-code",
+          "model": "claude-opus-5-5",
+          "runs": 0,
+          "itemCount": 1,
+          "tokens": 1449500,
+          "tokamaPercent": 50,
+          "items": [
+            {
+              "itemId": "item-3",
+              "title": "Triage the login errors",
+              "runs": 0,
+              "tokens": 1449500
             }
           ]
         },
@@ -2447,26 +2447,6 @@
       "limits": [],
       "steps": [
         {
-          "templateId": "northwind/triage",
-          "stepId": "build",
-          "stepName": "Build",
-          "agentId": "builder",
-          "cliId": "claude-code",
-          "model": "claude-opus-5-5",
-          "runs": 0,
-          "itemCount": 1,
-          "tokens": 1449500,
-          "tokamaPercent": 50,
-          "items": [
-            {
-              "itemId": "item-3",
-              "title": "Triage the login errors",
-              "runs": 0,
-              "tokens": 1449500
-            }
-          ]
-        },
-        {
           "templateId": "orders-api/quick-fix",
           "stepId": "build",
           "stepName": "Build",
@@ -2489,6 +2469,26 @@
               "title": "Fix the checkout timeout",
               "runs": 0,
               "tokens": 334500
+            }
+          ]
+        },
+        {
+          "templateId": "northwind/triage",
+          "stepId": "build",
+          "stepName": "Build",
+          "agentId": "builder",
+          "cliId": "claude-code",
+          "model": "claude-opus-5-5",
+          "runs": 0,
+          "itemCount": 1,
+          "tokens": 1449500,
+          "tokamaPercent": 50,
+          "items": [
+            {
+              "itemId": "item-3",
+              "title": "Triage the login errors",
+              "runs": 0,
+              "tokens": 1449500
             }
           ]
         },
@@ -3058,26 +3058,6 @@
       "limits": [],
       "steps": [
         {
-          "templateId": "northwind/triage",
-          "stepId": "build",
-          "stepName": "Build",
-          "agentId": "builder",
-          "cliId": "claude-code",
-          "model": "claude-opus-5-5",
-          "runs": 0,
-          "itemCount": 1,
-          "tokens": 1449500,
-          "tokamaPercent": 50,
-          "items": [
-            {
-              "itemId": "item-3",
-              "title": "Triage the login errors",
-              "runs": 0,
-              "tokens": 1449500
-            }
-          ]
-        },
-        {
           "templateId": "orders-api/quick-fix",
           "stepId": "build",
           "stepName": "Build",
@@ -3100,6 +3080,26 @@
               "title": "Fix the checkout timeout",
               "runs": 0,
               "tokens": 334500
+            }
+          ]
+        },
+        {
+          "templateId": "northwind/triage",
+          "stepId": "build",
+          "stepName": "Build",
+          "agentId": "builder",
+          "cliId": "claude-code",
+          "model": "claude-opus-5-5",
+          "runs": 0,
+          "itemCount": 1,
+          "tokens": 1449500,
+          "tokamaPercent": 50,
+          "items": [
+            {
+              "itemId": "item-3",
+              "title": "Triage the login errors",
+              "runs": 0,
+              "tokens": 1449500
             }
           ]
         },
@@ -4042,26 +4042,6 @@
       "limits": [],
       "steps": [
         {
-          "templateId": "northwind/triage",
-          "stepId": "build",
-          "stepName": "Build",
-          "agentId": "builder",
-          "cliId": "claude-code",
-          "model": "claude-opus-5-5",
-          "runs": 0,
-          "itemCount": 1,
-          "tokens": 1449500,
-          "tokamaPercent": 50,
-          "items": [
-            {
-              "itemId": "item-3",
-              "title": "Triage the login errors",
-              "runs": 0,
-              "tokens": 1449500
-            }
-          ]
-        },
-        {
           "templateId": "orders-api/quick-fix",
           "stepId": "build",
           "stepName": "Build",
@@ -4084,6 +4064,26 @@
               "title": "Fix the checkout timeout",
               "runs": 0,
               "tokens": 334500
+            }
+          ]
+        },
+        {
+          "templateId": "northwind/triage",
+          "stepId": "build",
+          "stepName": "Build",
+          "agentId": "builder",
+          "cliId": "claude-code",
+          "model": "claude-opus-5-5",
+          "runs": 0,
+          "itemCount": 1,
+          "tokens": 1449500,
+          "tokamaPercent": 50,
+          "items": [
+            {
+              "itemId": "item-3",
+              "title": "Triage the login errors",
+              "runs": 0,
+              "tokens": 1449500
             }
           ]
         },

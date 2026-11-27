@@ -153,6 +153,15 @@ describe("the week block", () => {
     expect(week?.steps).toHaveLength(1);
   });
 
+  it("gives the same rows, in the same order, whatever order the items come in", () => {
+    // Two workflows that used the same tokens: only the items' own order could tell them apart.
+    const a = item([step("build", "checks pass", [attempt(1, "passed", NOW - DAY)])], [call({ stepId: "build", attempt: 1, endedAt: NOW - DAY, model: "claude-opus-5-5", tokens: MILLION })], { title: "A change", templateId: "builtin/quick-fix" });
+    const b = item([step("fix", "agent finishes", [attempt(1, "passed", NOW - DAY)])], [call({ stepId: "fix", attempt: 1, endedAt: NOW - DAY, model: "claude-opus-5-5", tokens: MILLION })], { title: "B change", templateId: "builtin/quick-change" });
+    const forward = report([a, b], [plan(9)]).week;
+    expect(report([b, a], [plan(9)]).week).toEqual(forward);
+    expect(forward?.steps.map((row) => row.templateId)).toEqual(["builtin/quick-fix", "builtin/quick-change"]);
+  });
+
   it("is absent without items, and the old blocks stay", () => {
     const old = summarizeUsage({ rows: [], range: 14, now: NOW, clis: [] });
     expect(old).not.toHaveProperty("week");

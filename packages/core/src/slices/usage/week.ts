@@ -55,9 +55,12 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
 const cut = (text: string, max: number): string => text.slice(0, max);
 const nearly = (a: number, b: number): boolean => Math.abs(a - b) < SAME_MS;
 
+/** The items by title, then id, so rows that weigh the same come out in the same order whatever order the engine listed the items in. */
+const inOrder = (items: readonly RunItem[]): RunItem[] => [...items].sort((a, b) => (a.title < b.title ? -1 : a.title > b.title ? 1 : a.itemId < b.itemId ? -1 : a.itemId > b.itemId ? 1 : 0));
+
 /** Everything Tokama's calls of the input: item calls with their item, then helper calls. */
 function taggedOf(input: WeekInput): Tagged[] {
-  return [...input.items.flatMap((item) => item.calls.map((call) => ({ call, item }))), ...input.helperCalls.map(({ call }) => ({ call }))];
+  return [...inOrder(input.items).flatMap((item) => item.calls.map((call) => ({ call, item }))), ...input.helperCalls.map(({ call }) => ({ call }))];
 }
 
 const callsIn = (all: readonly Tagged[], cliId: AiCliId, from: number, to: number): Tagged[] => all.filter(({ call }) => call.cliId === cliId && call.endedAt >= from && call.endedAt <= to);
@@ -157,8 +160,9 @@ function group<T, K>(list: readonly T[], key: (value: T) => string, make: (value
 
 export function buildWeek(input: WeekInput, which: UsageWindow): Week {
   const all = taggedOf(input);
-  const runs = input.items.flatMap(runsOf);
-  const retries = input.items.flatMap(retriesOf);
+  const ordered = inOrder(input.items);
+  const runs = ordered.flatMap(runsOf);
+  const retries = ordered.flatMap(retriesOf);
   const limits: Week["limits"] = [];
   const steps: Week["steps"] = [];
   const items: Week["items"] = [];
@@ -309,7 +313,7 @@ function modelRecord(model: string, cliId: AiCliId, runs: readonly Run[], share:
 export function buildModels(input: WeekInput): Pick<UsageReport, "stepModels" | "agentModels"> {
   const all = taggedOf(input);
   const since = input.now - MODEL_DAYS * DAY;
-  const runs = input.items.flatMap(runsOf).filter((run) => run.endedAt >= since && run.endedAt <= input.now);
+  const runs = inOrder(input.items).flatMap(runsOf).filter((run) => run.endedAt >= since && run.endedAt <= input.now);
   const spans = new Map(input.clis.map((plan) => [plan.cliId, splitSpans(input, all, plan)] as const));
   const billed = new Map(input.clis.map((plan) => [plan.cliId, plan.billing === "pay_per_use"] as const));
   // The part of the limit a run took: its calls' part of the window it ended in, when that window was split.
