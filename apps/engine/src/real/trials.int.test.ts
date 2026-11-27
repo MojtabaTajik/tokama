@@ -109,6 +109,8 @@ async function ended(fixture: Fixture, trialId: string): Promise<CheckTrial> {
 }
 
 const worktreesOf = async (fixture: Pick<Fixture, "home" | "repo">) => (await plain(fixture.home, fixture.repo, "worktree", "list", "--porcelain")).split("\n").filter((line) => line.startsWith("worktree "));
+/** A start waits for the start-up sweep, so once a (refused) request is answered, the sweep has ended. */
+const sweepDone = (fixture: Fixture) => tryChecks(fixture, [{ command: "a && b" }]);
 const openFile = (home: string) => join(home, "run", "check-trials.json");
 
 describe("try_checks in a real engine", () => {
@@ -248,6 +250,7 @@ describe("the start-up cleanup", () => {
     let made: Awaited<ReturnType<typeof leftovers>> | undefined;
     const fixture = await engine({ prepare: async (paths) => void (made = await leftovers(paths, { bootTime: Date.UTC(2026, 10, 1) })) });
     await waitFor(() => !existsSync(made!.trial), 10_000, "the sweep");
+    await sweepDone(fixture);
     expect(existsSync(made!.item)).toBe(true);
     expect(existsSync(made!.lookalike)).toBe(true);
     expect(await plain(fixture.home, fixture.repo, "branch", "--list", "tokama/*")).toContain("tokama/0b9f12ab");
@@ -274,5 +277,8 @@ describe("the start-up cleanup", () => {
     const fixture = await engine({ prepare: async (paths) => void (made = await leftovers(paths, { bootTime: Date.UTC(2026, 10, 1) })) });
     expect(existsSync(join(fixture.home, "repos.yaml"))).toBe(false);
     await waitFor(() => !existsSync(made!.trial), 10_000, "the sweep");
+    await sweepDone(fixture);
+    expect(existsSync(made!.item)).toBe(true);
+    expect(existsSync(made!.lookalike)).toBe(true);
   });
 });

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -86,6 +86,31 @@ describe("trial worktrees", () => {
     expect(await removeTrialWorktree(git, repo.path, made.value)).toMatchObject({ ok: true });
     expect((await listed()).map((entry) => entry.path)).toEqual([repo.path]);
     expect(await removeTrialWorktree(git, repo.path, made.value)).toMatchObject({ ok: true });
+  });
+
+  it("removing a trial whose folder is gone keeps the entries of the person's other missing worktrees", SLOW, async () => {
+    const sibling = join(root, "sibling-wt");
+    await plain(repo.path, "worktree", "add", "-q", "--detach", sibling, commit);
+    const siblingAdmin = readdirSync(join(repo.path, ".git", "worktrees"));
+    expect(siblingAdmin).toHaveLength(1);
+    // The sibling's disk is not mounted now.
+    renameSync(sibling, join(root, "sibling-away"));
+    const made = await createTrialWorktree(git, repo, TRIAL, commit);
+    if (!made.ok) throw new Error("create failed");
+    rmSync(made.value, { recursive: true, force: true });
+    expect(await removeTrialWorktree(git, repo.path, made.value)).toMatchObject({ ok: true });
+    expect(readdirSync(join(repo.path, ".git", "worktrees"))).toEqual(siblingAdmin);
+    expect((await listed()).map((entry) => entry.path)).toContain(sibling);
+  });
+
+  it("removing a trial keeps the entry of another detached worktree whose folder was deleted too", SLOW, async () => {
+    const first = await createTrialWorktree(git, repo, TRIAL, commit);
+    const second = await createTrialWorktree(git, repo, OTHER, commit);
+    if (!first.ok || !second.ok) throw new Error("create failed");
+    rmSync(first.value, { recursive: true, force: true });
+    rmSync(second.value, { recursive: true, force: true });
+    expect(await removeTrialWorktree(git, repo.path, first.value)).toMatchObject({ ok: true });
+    expect((await listed()).map((entry) => entry.path)).toEqual([repo.path, second.value]);
   });
 
   it("removes only the trial asked for", SLOW, async () => {

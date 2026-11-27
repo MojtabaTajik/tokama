@@ -73,9 +73,9 @@ export async function createTrialWorktree(git: Git, repo: WorktreeRepo, trialId:
 }
 
 /**
- * Removes a trial worktree, changes included, then prunes. Refuses any path whose name is not
- * `try-<8 hex>` or that is not directly inside the repo; removes only the entry git lists as
- * detached at that path (an entry whose folder is gone is pruned). A folder git no longer knows is removed when it is empty.
+ * Removes a trial worktree, changes included. Refuses any path whose name is not
+ * `try-<8 hex>` or whose parent folder is not inside the repo (any depth: the worktree folder may
+ * be nested); removes only the entry git lists as detached at that path. A folder git no longer knows is removed when it is empty.
  */
 export async function removeTrialWorktree(git: Git, repoPath: string, path: string): Promise<Result<void, WorktreeError>> {
   if (!TRIAL_NAME.test(basename(path))) return refuse("remove", `not a trial worktree: ${basename(path)}`);

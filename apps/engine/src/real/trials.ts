@@ -4,7 +4,7 @@
 // engine that stopped in between finds the leftover at its next start: it stops the trial's
 // process tree (only when the boot time and the process's start time match) and removes the
 // worktree, even in a folder that was never added as a repo.
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   type CheckTrial,
@@ -204,7 +204,10 @@ export class CheckTrials {
 
   private save(): void {
     try {
-      mkdirSync(join(this.options.home, "run"), { recursive: true, mode: 0o700 });
+      const dir = join(this.options.home, "run");
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      // The mode above applies only to a folder made now; one that exists already is closed too.
+      chmodSync(dir, 0o700);
     } catch (error) {
       return this.options.log(`the open check trials were not recorded: ${String(error)}`);
     }

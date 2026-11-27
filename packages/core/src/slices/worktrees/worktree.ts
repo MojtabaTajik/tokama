@@ -98,14 +98,18 @@ async function entriesFor(git: Git, repoPath: string, path: string, branch: stri
   return ok(found);
 }
 
-/** Removes listed entries: pruned when the folder is gone, else removed (with `force`, changes too). */
+/**
+ * Removes listed entries (with `force`, changes too). An entry whose folder is gone is removed by
+ * its path alone: a repo-wide prune would also drop the entries of the person's other worktrees
+ * whose folders are missing for now (an unmounted disk, say).
+ */
 export async function removeEntries(git: Git, repoPath: string, entries: readonly WorktreeEntry[], force: boolean): Promise<Result<void, WorktreeError>> {
   for (const entry of entries) {
     const gone = await realpath(entry.path).then(
       () => false,
       () => true,
     );
-    const removed = gone ? await git.worktreePrune(repoPath) : await git.worktreeRemove(repoPath, entry.path, { force });
+    const removed = await git.worktreeRemove(repoPath, entry.path, { force: gone || force });
     if (!removed.ok) return fail("remove", removed.error);
   }
   return ok(undefined);
