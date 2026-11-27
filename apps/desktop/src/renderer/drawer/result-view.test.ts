@@ -136,6 +136,7 @@ describe("the change and the risk of a done task", () => {
     expect(row(item([build], { change: { files: 212, unreadable: "binary_only" } }), "changed")?.text).toBe("212 files · binary, no line counts");
     expect(row(item([build], { change: { files: 900, unreadable: "too_large" } }), "changed")?.text).toBe("900 files · too many files to count lines");
     expect(row(item([build], { change: { files: 0 } }), "changed")?.text).toBe("No files changed");
+    expect(row(item([build], { change: { files: 0, unreadable: "too_large" } }), "changed")?.text).toBe("Tokama could not count the change");
     expect(row(item([build], { change: undefined }), "changed")).toBeUndefined();
   });
 

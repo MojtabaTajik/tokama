@@ -36,7 +36,19 @@ describe("touchOf: kinds that hold in any repo", () => {
     ["go.sum", "dependencies"],
     ["Cargo.lock", "dependencies"],
     ["poetry.lock", "dependencies"],
-  ])("%s is %s", (path, kind) => {
+    ["src/Api/Api.csproj", "dependencies"],
+    ["Directory.Packages.props", "dependencies"],
+    ["packages.lock.json", "dependencies"],
+    ["global.json", "dependencies"],
+    ["pyproject.toml", "dependencies"],
+    ["services/api/requirements-dev.txt", "dependencies"],
+    ["Pipfile", "dependencies"],
+    ["services/x/go.mod", "dependencies"],
+    ["crates/api/Cargo.toml", "dependencies"],
+    ["pom.xml", "dependencies"],
+    ["app/build.gradle.kts", "dependencies"],
+    ["src/Api/appsettings.Production.json", "secrets"],
+  ])("%s is %s, with no repo kind known (a .NET repo with only a .sln, a monorepo)", (path, kind) => {
     expect(touchOf(path, false, NONE)).toBe(kind);
   });
 
@@ -57,29 +69,15 @@ describe("touchOf: kinds that belong to a kind of repo", () => {
     ["go", "db/migrate/20260101_init.up.sql", "migrations"],
     ["rust", "db/migrate/20260101_init.rb", "migrations"],
     ["java", "db/migrate/V1__init.java", "migrations"],
-    ["dotnet", "Api/Api.csproj", "dependencies"],
-    ["dotnet", "Directory.Packages.props", "dependencies"],
-    ["dotnet", "packages.lock.json", "dependencies"],
-    ["dotnet", "global.json", "dependencies"],
-    ["python", "pyproject.toml", "dependencies"],
-    ["python", "requirements-dev.txt", "dependencies"],
-    ["go", "go.mod", "dependencies"],
-    ["rust", "crates/api/Cargo.toml", "dependencies"],
-    ["java", "pom.xml", "dependencies"],
-    ["java", "app/build.gradle.kts", "dependencies"],
-    ["dotnet", "Api/appsettings.Production.json", "secrets"],
     ["python", "shop/settings_prod.py", "secrets"],
   ] as const)("%s repo: %s is %s", (kind, path, touched) => {
     expect(touchOf(path, false, kinds(kind))).toBe(touched);
   });
 
   it.each([
-    ["go", "Api/Api.csproj"],
+    ["node", "shop/settings_prod.py"],
     ["node", "alembic/versions/ab12_add.py"],
-    ["node", "Api/appsettings.json"],
     ["node", "shop/settings.py"],
-    ["rust", "pyproject.toml"],
-    ["python", "go.mod"],
     ["node", "prisma/other.prisma"],
   ])("%s repo: %s is not sensitive", (kind, path) => {
     expect(touchOf(path, false, kinds(kind as RepoKind))).toBeUndefined();

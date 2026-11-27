@@ -39,10 +39,10 @@ describe("summarizeChange", () => {
     expect(await summarizeChange(fakeGit([], []), "/w", "base", [])).toEqual({ files: 0 });
   });
 
-  it("uses the repo's kind from the base commit: a .NET settings file counts only in a .NET repo", async () => {
-    const entries = [entry("Api/appsettings.json", 1, 1)];
-    expect(await summarizeChange(fakeGit(["global.json"], []), "/w", "base", entries)).toMatchObject({ touches: [{ kind: "secrets", files: 1 }] });
-    expect(await summarizeChange(fakeGit(["package.json"], []), "/w", "base", entries)).not.toHaveProperty("touches");
+  it("uses the repo's kind from the base commit: a Prisma schema is a migration only in a Node repo", async () => {
+    const entries = [entry("prisma/schema.prisma", 1, 1)];
+    expect(await summarizeChange(fakeGit(["package.json"], []), "/w", "base", entries)).toMatchObject({ touches: [{ kind: "migrations", files: 1 }] });
+    expect(await summarizeChange(fakeGit(["pyproject.toml"], []), "/w", "base", entries)).not.toHaveProperty("touches");
   });
 
   it("holds no path", async () => {

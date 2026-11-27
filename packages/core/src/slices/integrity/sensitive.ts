@@ -1,9 +1,10 @@
 // Which kind of file a change touches, by repo-relative path: the one fixed table behind the
 // Changed row and the risk rules. Dependencies, migrations, CI, infrastructure, secrets and
 // settings, and sign-in code are sensitive; test files are counted apart (added or edited).
-// Some rows belong to one kind of repo (a .NET `appsettings.json`, a Python `settings.py`); the
-// kinds of a repo come from marker files in its base commit and from the extensions of the
-// changed files, and a repo can be several kinds. Paths match in lowercase, as in `protected.ts`.
+// Names that mean one thing anywhere (`go.mod`, `appsettings.json`, `requirements.txt`) count in
+// any repo. Rows whose names are common (a Python `settings.py`, `alembic/`, `db/migrate/`) belong to
+// one kind of repo; the kinds come from marker files in the base commit and from the extensions
+// of the changed files, and a repo can be several kinds. Paths match in lowercase, as in `protected.ts`.
 import type { TouchKind } from "../../kernel/schemas/index.js";
 import { baseCategory, patternCategory } from "./protected.js";
 
@@ -46,14 +47,11 @@ const basename = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 const folders = (path: string) => path.split("/").slice(0, -1);
 const kindsAny = (kinds: ReadonlySet<RepoKind>, ...wanted: RepoKind[]) => wanted.some((kind) => kinds.has(kind));
 
-function isDependency(path: string, name: string, kinds: ReadonlySet<RepoKind>): boolean {
+/** Dependency files have names that belong to no other use, so they count in any folder of any repo: a monorepo has no marker at its root. */
+function isDependency(path: string, name: string): boolean {
   const category = patternCategory(path);
   if (category === "package" || category === "lockfile") return true;
-  if (kindsAny(kinds, "dotnet") && (/\.csproj$/.test(name) || ["directory.packages.props", "packages.lock.json", "global.json"].includes(name))) return true;
-  if (kindsAny(kinds, "python") && (name === "pyproject.toml" || /^requirements.*\.txt$/.test(name))) return true;
-  if (kindsAny(kinds, "go") && name === "go.mod") return true;
-  if (kindsAny(kinds, "rust") && name === "cargo.toml") return true;
-  return kindsAny(kinds, "java") && (name === "pom.xml" || /^build\.gradle/.test(name));
+  return /\.(?:cs|fs|vb)proj$/.test(name) || /^requirements.*\.txt$/.test(name) || /^build\.gradle/.test(name) || ["directory.packages.props", "packages.lock.json", "global.json", "pyproject.toml", "pipfile", "go.mod", "cargo.toml", "pom.xml"].includes(name);
 }
 
 function isMigration(path: string, name: string, kinds: ReadonlySet<RepoKind>): boolean {
@@ -71,7 +69,7 @@ function isInfrastructure(path: string, name: string): boolean {
 
 function isSecret(path: string, name: string, kinds: ReadonlySet<RepoKind>): boolean {
   if (name.startsWith(".env") || path.split("/").some((part) => part.startsWith("secrets"))) return true;
-  if (kindsAny(kinds, "dotnet") && /^appsettings.*\.json$/.test(name)) return true;
+  if (/^appsettings.*\.json$/.test(name)) return true;
   return kindsAny(kinds, "python") && /^settings.*\.py$/.test(name);
 }
 
@@ -83,7 +81,7 @@ export function touchOf(original: string, added: boolean, kinds: ReadonlySet<Rep
   const path = original.toLowerCase();
   const name = basename(path);
   if (patternCategory(path) === "ci" || /(?:^|\/)azure-pipelines[^/]*\.ya?ml$/.test(path)) return "ci";
-  if (isDependency(path, name, kinds)) return "dependencies";
+  if (isDependency(path, name)) return "dependencies";
   if (isMigration(path, name, kinds)) return "migrations";
   if (isInfrastructure(path, name)) return "infrastructure";
   if (isSecret(path, name, kinds)) return "secrets";

@@ -242,7 +242,8 @@ function changedRow(item: ItemRecord, described: boolean): ResultRow | undefined
   if (item.kind === "investigation") return described ? { key: "changed", label, text: "Nothing: read-only" } : undefined;
   const { change } = item;
   if (change === undefined) return undefined;
-  if (change.files === 0) return { key: "changed", label, text: "No files changed" };
+  // No file and no way to count: the diff could not be read, which is not the same as nothing changed.
+  if (change.files === 0) return { key: "changed", label, text: change.unreadable === undefined ? "No files changed" : "Tokama could not count the change" };
   const parts = change.unreadable === "binary_only" ? ["binary, no line counts"] : change.unreadable === "too_large" ? ["too many files to count lines"] : touchesText(change);
   return { key: "changed", label, text: [changeText(change), ...parts].join(" · ") };
 }
