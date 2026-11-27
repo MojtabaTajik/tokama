@@ -441,6 +441,10 @@
   color: var(--text-2);
 }
 
+.ins-retry-tool + .ins-retry-tool {
+  margin-top: var(--space-18);
+}
+
 .ins-retry,
 .ins-models {
   display: flex;
