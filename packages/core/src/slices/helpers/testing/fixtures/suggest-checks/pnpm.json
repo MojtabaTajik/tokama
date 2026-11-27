@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "files": {
+    "package.json": "{\n  \"name\": \"orders-api\",\n  \"scripts\": { \"test\": \"vitest run\", \"lint\": \"eslint .\", \"typecheck\": \"tsc --noEmit\", \"build\": \"tsc\" }\n}\n",
+    "pnpm-workspace.yaml": "packages:\n  - packages/*\n",
+    "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+    ".github/workflows/ci.yml": "name: ci\non: [push]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: pnpm test\n",
+    "src/index.ts": "export const orders = [];\n",
+    "README.md": "# orders-api\n\nRun `pnpm test` before you push.\n"
+  },
+  "answer": {
+    "checks": [
+      { "command": "pnpm test", "why": "Runs the unit tests with vitest.", "minutes": 3 },
+      { "command": "pnpm lint", "why": "Lints the code with eslint.", "minutes": 2 },
+      { "command": "pnpm typecheck", "why": "Type-checks the code with tsc.", "minutes": 2 }
+    ],
+    "note": "Found from package.json scripts."
+  }
+}

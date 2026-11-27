@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "files": {
+    "go.mod": "module example.com/orders\n\ngo 1.23\n",
+    "main.go": "package main\n\nfunc main() {}\n",
+    "main_test.go": "package main\n"
+  },
+  "answer": {
+    "checks": [
+      { "command": "go test ./...", "why": "Runs the tests of every package.", "minutes": 3 },
+      { "command": "go vet ./...", "why": "Finds suspicious code in every package.", "minutes": 1 }
+    ]
+  }
+}

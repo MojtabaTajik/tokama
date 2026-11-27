@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "files": {
+    "Orders.sln": "Microsoft Visual Studio Solution File, Format Version 12.00\n",
+    "Orders.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net9.0</TargetFramework></PropertyGroup></Project>\n",
+    "Orders.Tests.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"xunit\" Version=\"2.9.0\" /></ItemGroup></Project>\n",
+    "global.json": "{ \"sdk\": { \"version\": \"9.0.100\" } }\n",
+    "Program.cs": "System.Console.WriteLine();\n"
+  },
+  "answer": {
+    "checks": [
+      { "command": "dotnet test", "why": "Builds the solution and runs the xunit tests.", "minutes": 5 },
+      { "command": "dotnet build", "why": "Checks that the solution compiles.", "minutes": 3 }
+    ]
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "files": {
+    "Makefile": "test:\n\t./run-tests.sh\n\nlint:\n\t./lint.sh\n",
+    "run-tests.sh": "#!/bin/sh\n"
+  },
+  "answer": {
+    "checks": [
+      { "command": "make test", "why": "Runs the test target of the Makefile.", "minutes": 2 },
+      { "command": "make lint", "why": "Runs the lint target of the Makefile.", "minutes": 1 }
+    ]
+  }
+}

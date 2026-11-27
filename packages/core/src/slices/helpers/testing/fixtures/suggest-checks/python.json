@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "files": {
+    "pyproject.toml": "[project]\nname = \"orders\"\n\n[tool.pytest.ini_options]\ntestpaths = [\"tests\"]\n\n[tool.ruff]\nline-length = 100\n",
+    "tox.ini": "[tox]\nenvlist = py312\n",
+    "src/orders/__init__.py": "",
+    "tests/test_orders.py": "def test_orders():\n    assert True\n"
+  },
+  "answer": {
+    "checks": [
+      { "command": "python -m pytest", "why": "Runs the tests in the tests folder.", "minutes": 3 },
+      { "command": "ruff check .", "why": "Lints the code with ruff, which pyproject.toml configures.", "minutes": 1 }
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "files": {
+    "Cargo.toml": "[package]\nname = \"orders\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    "Cargo.lock": "# lock\n",
+    "src/main.rs": "fn main() {}\n",
+    "README.md": "# orders\n"
+  },
+  "answer": {
+    "checks": [
+      { "command": "cargo test", "why": "Builds the crate and runs its tests.", "minutes": 5 },
+      { "command": "cargo clippy --all-targets", "why": "Runs the Rust linter on the code and the tests.", "minutes": 3 }
+    ]
+  }
+}

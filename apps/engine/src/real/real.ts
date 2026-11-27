@@ -37,7 +37,9 @@ import {
   type ItemId,
   type CommandResult,
   createGit,
+  createRepoGatherer,
   createRunLoop,
+  DEFAULT_WORKTREE_FOLDER,
   err,
   type Git,
   ItemStore,
@@ -91,7 +93,7 @@ export interface RealEngineOptions {
   readonly onActivity?: RunLoopDeps["onActivity"];
   /** Where helper runs send their events: `helper_run_updated` and `usage_changed`. Default: nowhere. */
   readonly emit?: (event: EngineEvent) => void;
-  /** The helpers this engine offers and how it collects their inputs. Default: the built-in list, which is empty. */
+  /** The helpers this engine offers and how it collects their inputs. Default: the built-in list, with the repo gatherer. */
   readonly helpers?: { readonly definitions: readonly HelperDefinition[]; readonly gatherers: Readonly<Partial<Record<HelperId, HelperGatherer>>> };
 }
 
@@ -164,7 +166,16 @@ export class RealEngine {
 
     const home = options.home;
     const homes = forms(home);
-    const helpers = options.helpers ?? { definitions: BUILTIN_HELPERS, gatherers: {} };
+    const helpers = options.helpers ?? {
+      definitions: BUILTIN_HELPERS,
+      gatherers: {
+        "suggest-checks": createRepoGatherer({
+          tokamaHome: home,
+          userHome: homedir(),
+          worktreeFolders: () => [DEFAULT_WORKTREE_FOLDER, ...this.config.repos.map((repo) => repo.worktreeFolder)],
+        }),
+      },
+    };
     this.helpers = new HelperRuns({
       runner: createHelperRunner({
         clock: options.clock,

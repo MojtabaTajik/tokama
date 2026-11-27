@@ -175,7 +175,7 @@ export interface EngineOptions {
   readonly runtime?: (agent: Agent) => AgentRuntime | undefined;
   /** Real mode: the startup checks. Default: git's version and Claude Code's login, on this machine. */
   readonly checks?: HealthChecks;
-  /** Real mode: the helpers this engine offers and how their inputs are collected. Default: the built-in list, which is empty. */
+  /** Real mode: the helpers this engine offers and how their inputs are collected. Default: the built-in list, with the repo gatherer. */
   readonly helpers?: RealEngineOptions["helpers"];
   /** Real mode: time between SIGTERM and SIGKILL for a leftover agent tree at start. */
   readonly recoveryGraceMs?: number;

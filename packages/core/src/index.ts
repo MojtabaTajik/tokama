@@ -107,7 +107,7 @@ export {
   type Verdict,
 } from "./slices/workflow-engine/index.js";
 // The helpers this build has and the shape of one; the engine service lists them and runs them through the helper runner.
-export { BUILTIN_HELPERS, readAnswer, type AnswerProblem, type HelperDefinition, type HelperInputName } from "./slices/helpers/index.js";
+export { BUILTIN_HELPERS, createRepoGatherer, readAnswer, type AnswerProblem, type HelperDefinition, type HelperInputName, type RepoGatherer } from "./slices/helpers/index.js";
 // Usage reports: roll-ups, estimated costs and the plan window choice, for the engine service.
 export {
   callCost,

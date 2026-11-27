@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "files": {
+    "notes.txt": "nothing to build here\n"
+  },
+  "answer": {
+    "checks": [],
+    "note": "No build file shows how to test this folder."
+  }
+}
