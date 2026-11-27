@@ -136,7 +136,9 @@ describe("the change and the risk of a done task", () => {
     expect(row(item([build], { change: { files: 212, unreadable: "binary_only" } }), "changed")?.text).toBe("212 files · binary, no line counts");
     expect(row(item([build], { change: { files: 900, unreadable: "too_large" } }), "changed")?.text).toBe("900 files · too many files to count lines");
     expect(row(item([build], { change: { files: 0 } }), "changed")?.text).toBe("No files changed");
-    expect(row(item([build], { change: { files: 0, unreadable: "too_large" } }), "changed")?.text).toBe("Tokama could not count the change");
+    expect(row(item([build], { change: { files: 0, unreadable: "unknown" } }), "changed")?.text).toBe("Tokama could not count the change");
+    const unknown = item([build], { change: { files: 0, unreadable: "unknown" }, risk: { level: "not_rated", reasons: ["unreadable_change"] } });
+    expect(row(unknown, "risk")?.text).toBe("Not rated · Tokama could not read the change");
     expect(row(item([build], { change: undefined }), "changed")).toBeUndefined();
   });
 
@@ -159,7 +161,7 @@ describe("the change and the risk of a done task", () => {
   it("names two reasons, then the others behind +N more", () => {
     const record = item([build], { change: sensitive, risk: { level: "high", reasons: ["no_checks", "no_review_sensitive", "very_large"] } });
     expect(row(record, "risk")).toMatchObject({
-      text: "High · no checks ran on the committed files; changes dependencies and no second agent reviewed",
+      text: "High · no checks ran on these changes; changes dependencies and no second agent reviewed",
       more: ["more than 30 files or 800 changed lines"],
     });
   });

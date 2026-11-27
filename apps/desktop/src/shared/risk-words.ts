@@ -60,15 +60,17 @@ function sensitiveText(change: ChangeSummary | undefined): string {
   return kinds.length === 0 ? "a sensitive file" : list.format(kinds.map((kind) => KIND_WORDS[kind]));
 }
 
-/** Why a change could not be read, as it reads after "Tokama could not read the change: ". */
-const unreadableText = (change: ChangeSummary | undefined): string =>
-  change === undefined ? "this item is from before risk was rated" : change.unreadable === "too_large" ? "the change is too large to count" : "binary files only";
+/** Why a change could not be read: "Tokama could not read the change: binary files only", or no more when git gave no reason. */
+function unreadableText(change: ChangeSummary | undefined): string {
+  const why = change === undefined ? "this item is from before risk was rated" : change.unreadable === "too_large" ? "the change is too large to count" : change.unreadable === "binary_only" ? "binary files only" : undefined;
+  return why === undefined ? "Tokama could not read the change" : `Tokama could not read the change: ${why}`;
+}
 
 /** A reason in full, for the result card. */
 function reasonText(reason: RiskReason, change: ChangeSummary | undefined): string {
   switch (reason) {
     case "no_checks":
-      return "no checks ran on the committed files";
+      return "no checks ran on these changes";
     case "review_asked_changes":
       return "the last review asked for changes";
     case "no_review_sensitive":
@@ -86,7 +88,7 @@ function reasonText(reason: RiskReason, change: ChangeSummary | undefined): stri
     case "small_checked":
       return "small change, checks passed";
     case "unreadable_change":
-      return `Tokama could not read the change: ${unreadableText(change)}`;
+      return unreadableText(change);
   }
 }
 

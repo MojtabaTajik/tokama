@@ -1241,7 +1241,7 @@ describe("item drawer: the result card of an ended item", () => {
     const risk = () => $$(".rc-row")[4]!;
     expect(risk().querySelector(".rc-mark")?.textContent).toBe("!");
     expect(risk().querySelector(".rc-mark")?.getAttribute("data-tone")).toBe("fail");
-    expect(risk().querySelector("dd")?.textContent).toContain("High · no checks ran on the committed files; changes database migrations and CI and no second agent reviewed +1 more");
+    expect(risk().querySelector("dd")?.textContent).toContain("High · no checks ran on these changes; changes database migrations and CI and no second agent reviewed +1 more");
     expect(risk().querySelector("dt")?.getAttribute("title")).toContain("No AI judges risk");
     await click(button("+1 more"));
     expect(risk().querySelector(".rc-detail")?.textContent).toBe("more than 30 files or 800 changed lines");

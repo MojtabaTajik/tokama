@@ -111,14 +111,14 @@ export const TouchKindSchema = z.enum(["dependencies", "migrations", "ci", "infr
 /**
  * What a change to a repo comes to, as counted from one `git diff --numstat`: files and lines,
  * and how many files of each kind. Counts only, never paths. `unreadable` says the lines could not
- * be counted: only binary files, or too many files to count.
+ * be counted: only binary files, too many files to count, or (`unknown`) git did not give the files.
  */
 export const ChangeSummarySchema = z.strictObject({
   files: z.int().nonnegative(),
   added: z.int().nonnegative().optional(),
   removed: z.int().nonnegative().optional(),
   touches: z.array(z.strictObject({ kind: TouchKindSchema, files: z.int().positive() })).max(8).optional(),
-  unreadable: z.enum(["binary_only", "too_large"]).optional(),
+  unreadable: z.enum(["binary_only", "too_large", "unknown"]).optional(),
 });
 
 /** Why an item is rated as it is; the words belong to the clients. */

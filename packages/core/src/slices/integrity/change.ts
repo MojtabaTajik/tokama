@@ -24,8 +24,12 @@ export async function summarizeChange(git: Pick<Git, "revParse">, dir: string, b
   return { ...found, added: counted.reduce((sum, entry) => sum + entry.added!, 0), removed: counted.reduce((sum, entry) => sum + entry.removed!, 0) };
 }
 
-/** The change from `base` to `to`, read in `dir`. A diff that cannot be read is `too_large`. */
+/**
+ * The change from `base` to a commit that differs from it, read in `dir`. A diff that git cannot
+ * give, or one that lists no file though the commit differs, is `unknown`: never "no files".
+ */
 export async function readChange(git: Pick<Git, "diffFiles" | "revParse">, dir: string, base: string, to: string): Promise<ChangeSummary> {
   const diff = await git.diffFiles(dir, base, to);
-  return diff.ok ? summarizeChange(git, dir, base, diff.value) : { files: 0, unreadable: "too_large" };
+  if (!diff.ok || diff.value.length === 0) return { files: 0, unreadable: "unknown" };
+  return summarizeChange(git, dir, base, diff.value);
 }

@@ -23,7 +23,7 @@ describe("risk: low", () => {
 });
 
 describe("risk: high, one rule at a time", () => {
-  it("no_checks: no check passed on the committed files", () => {
+  it("no_checks: no check passed on the tree being judged", () => {
     expect(rate({ checked: false })).toEqual({ level: "high", reasons: ["no_checks"] });
   });
 

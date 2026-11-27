@@ -464,6 +464,10 @@ describe("run loop: done_when", () => {
     expect(asked.detail).toContain("Nothing is committed until you approve");
     expect(asked.detail).not.toContain("changed 0 files");
     expect(asked.choices[0]?.label).toBe("Approve and commit");
+    // The commit differs from the base though no file is listed: the end records an unknown change, not "no files".
+    await answer(loop, id, "approve");
+    expect(item(id).outcome?.commits).toHaveLength(1);
+    expect(item(id).outcome?.change).toEqual({ files: 0, unreadable: "unknown" });
   });
 
   it("you approve: a change reverted after Request changes is not committed; the item ends with nothing to commit", SLOW, async () => {

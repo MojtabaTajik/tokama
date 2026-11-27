@@ -66,7 +66,7 @@ describe("riskWords", () => {
 
   it("shows two reasons in the order given, and the rest apart", () => {
     const words = riskWords(rated({ level: "high", reasons: ["no_checks", "no_review_sensitive", "very_large"] }, DEPENDENCIES))!;
-    expect(words.shown).toEqual(["no checks ran on the committed files", "changes dependencies and no second agent reviewed"]);
+    expect(words.shown).toEqual(["no checks ran on these changes", "changes dependencies and no second agent reviewed"]);
     expect(words.more).toEqual(["more than 30 files or 800 changed lines"]);
     expect(words.first).toBe("no checks ran");
   });
@@ -75,7 +75,7 @@ describe("riskWords", () => {
     const reasons = ["no_checks", "review_asked_changes", "no_review_sensitive", "no_review_large", "no_review_last_attempt", "protected_change", "very_large"] as const;
     const words = riskWords(rated({ level: "high", reasons: [...reasons] }, DEPENDENCIES))!;
     expect([...words.shown, ...words.more]).toEqual([
-      "no checks ran on the committed files",
+      "no checks ran on these changes",
       "the last review asked for changes",
       "changes dependencies and no second agent reviewed",
       "more than 150 changed lines and no second agent reviewed",
@@ -98,6 +98,7 @@ describe("riskWords", () => {
     const why = (change: ChangeSummary | undefined) => riskWords(rated({ level: "not_rated", reasons: ["unreadable_change"] }, change))?.shown[0];
     expect(why({ files: 212, unreadable: "binary_only" })).toBe("Tokama could not read the change: binary files only");
     expect(why({ files: 900, unreadable: "too_large" })).toBe("Tokama could not read the change: the change is too large to count");
+    expect(why({ files: 0, unreadable: "unknown" })).toBe("Tokama could not read the change");
     expect(why(undefined)).toBe("Tokama could not read the change: this item is from before risk was rated");
     expect(riskWords(rated({ level: "not_rated", reasons: ["unreadable_change"] }))).toMatchObject({ word: "Not rated", first: undefined });
   });

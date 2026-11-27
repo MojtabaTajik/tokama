@@ -74,13 +74,20 @@ describe("touchOf: kinds that belong to a kind of repo", () => {
     expect(touchOf(path, false, kinds(kind))).toBe(touched);
   });
 
-  it.each([
-    ["node", "shop/settings_prod.py"],
-    ["node", "alembic/versions/ab12_add.py"],
-    ["node", "shop/settings.py"],
-    ["node", "prisma/other.prisma"],
-  ])("%s repo: %s is not sensitive", (kind, path) => {
-    expect(touchOf(path, false, kinds(kind as RepoKind))).toBeUndefined();
+  it("does not count a file of another kind of repo", () => {
+    expect(touchOf("prisma/other.prisma", false, kinds("node"))).toBeUndefined();
+    expect(touchOf("db/migrate/x.rb", false, kinds("node"))).toBeUndefined();
+  });
+
+  it("counts a changed .py file as Python, whatever the repo's markers say: the safer way", () => {
+    // A Node repo that changes a Python settings file: the extension adds the Python kind.
+    const changed = ["shop/settings.py", "alembic/versions/ab12_add.py"];
+    const found = repoKinds(["package.json"], changed);
+    expect([...found].sort()).toEqual(["node", "python"]);
+    expect(touchesOf(changed.map((path) => ({ path, added: false })), found)).toEqual([
+      { kind: "migrations", files: 1 },
+      { kind: "secrets", files: 1 },
+    ]);
   });
 });
 

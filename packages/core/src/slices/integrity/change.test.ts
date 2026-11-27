@@ -56,7 +56,11 @@ describe("readChange", () => {
     expect(await readChange(fakeGit([], [entry("a.ts", 2, 1)]), "/w", "base", "tree")).toEqual({ files: 1, added: 2, removed: 1 });
   });
 
-  it("is unreadable as too large when the diff cannot be read", async () => {
-    expect(await readChange(fakeGit([], "fails"), "/w", "base", "tree")).toEqual({ files: 0, unreadable: "too_large" });
+  it("is unreadable as unknown when the diff cannot be read, not too large", async () => {
+    expect(await readChange(fakeGit([], "fails"), "/w", "base", "tree")).toEqual({ files: 0, unreadable: "unknown" });
+  });
+
+  it("is unreadable as unknown when the commit differs but no file is listed, not no files", async () => {
+    expect(await readChange(fakeGit([], []), "/w", "base", "tree")).toEqual({ files: 0, unreadable: "unknown" });
   });
 });
