@@ -38,7 +38,7 @@ const type = (input: Element, value: string) =>
 
 const LIST = {
   agents: [
-    { id: "architect", name: "Architect", cliId: "claude-code", model: "opus", runsOn: "cloud", limits: { edit: false, commands: [], web: false }, icon: "sitemap", role: "Plan the change.", roleCut: false, replacesBuiltin: false, owner: { kind: "builtin" }, source: "builtin/architect.md" },
+    { id: "architect", name: "Architect", cliId: "claude-code", model: "opus", runsOn: "cloud", limits: { edit: false, commands: [], web: false }, icon: "compass", role: "Plan the change.", roleCut: false, replacesBuiltin: false, owner: { kind: "builtin" }, source: "builtin/architect.md" },
     { id: "builder", name: "Builder", cliId: "claude-code", model: "sonnet", runsOn: "cloud", limits: { edit: true, commands: [], web: false }, role: "Build it.", roleCut: false, replacesBuiltin: false, owner: { kind: "builtin" }, source: "builtin/builder.md" },
     { id: "reviewer", name: "Reviewer", cliId: "codex-cli", model: "gpt-5", runsOn: "cloud", limits: { edit: false, commands: ["git diff"], web: true }, role: "Review <b>strictly</b>.\nSecond line.", roleCut: true, replacesBuiltin: true, owner: { kind: "personal" }, source: "agents/reviewer.md" },
     { id: "local", name: "Local investigator", cliId: "ollama", drivenBy: "claude-code", model: "qwen3-coder:30b", runsOn: "local", limits: { edit: false, commands: [], web: false }, role: "Look.", roleCut: false, replacesBuiltin: false, owner: { kind: "repo", repoId: "orders-api" }, source: "orders-api/.tokama/agents/local.md" },

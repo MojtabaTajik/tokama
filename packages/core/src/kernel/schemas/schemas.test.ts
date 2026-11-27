@@ -570,6 +570,15 @@ describe("setup query result", () => {
     expect(parseQueryResult("setup", tagged)).toEqual({ ok: true, value: tagged });
   });
 
+  it("passes an agent's icon through", () => {
+    const iconed = { ...setup, agents: [{ ...setup.agents[0], icon: "compass" }] };
+    expect(parseQueryResult("setup", iconed)).toEqual({ ok: true, value: iconed });
+  });
+
+  it("refuses an agent icon that is not an icon name", () => {
+    expect(paths(parseQueryResult("setup", { ...setup, agents: [{ ...setup.agents[0], icon: "Fire Icon" }] }))).toContain("agents.0.icon");
+  });
+
   it.each([
     ["a template colour outside the 8 tag colours", { templates: [{ ...setup.templates[0], color: "red" }] }, "templates.0.color"],
     ["a template icon that is not an icon name", { templates: [{ ...setup.templates[0], icon: "Fire Icon" }] }, "templates.0.icon"],

@@ -190,7 +190,7 @@ export function toSetup(config: Config, health: Health): Setup {
   const add = (agent: Agent) => {
     if (listed.has(agent.id)) return;
     listed.add(agent.id);
-    agents.push({ id: agent.id, name: agent.name, cliId: agent.cliId, model: agent.model, runsOn: runsInCloud(agent.cliId) ? "cloud" : "local" });
+    agents.push({ id: agent.id, name: agent.name, cliId: agent.cliId, model: agent.model, runsOn: runsInCloud(agent.cliId) ? "cloud" : "local", ...(agent.icon !== undefined && { icon: agent.icon }) });
   };
   config.homeAgents.agents.forEach(add);
   for (const loaded of config.repoAgents.values()) loaded.agents.forEach(add);
