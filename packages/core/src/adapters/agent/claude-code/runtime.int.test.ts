@@ -152,6 +152,20 @@ describe("Claude Code runtime", SLOW, () => {
     });
   });
 
+  it("tells the person to update a CLI that does not know a flag Tokama passes", async () => {
+    expect(end(await collect(runtime().launch(request("unknown-option", { plain: true }), new AbortController().signal)))).toMatchObject({
+      outcome: "failed",
+      errorKind: "crash",
+      error: "Update Claude Code (for example with `claude update`), then try again.",
+    });
+  });
+
+  it("refuses a plain call that may run commands before anything is spawned", async () => {
+    const events = await collect(runtime().launch(request("success", { plain: true, limits: { edit: false, commands: ["npm test:*"], web: false } }), new AbortController().signal));
+    expect(events.map((event) => event.type)).toEqual(["end"]);
+    expect(end(events)).toMatchObject({ outcome: "failed", errorKind: "crash", error: "a plain call cannot be allowed to run commands" });
+  });
+
   it("reports a CLI that does not start as a crash", async () => {
     const missing = createClaudeCodeRuntime({ command: [join(dir, "no-such-claude")] });
     expect(end(await collect(missing.launch(request("success"), new AbortController().signal)))).toMatchObject({

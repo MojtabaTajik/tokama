@@ -2,5 +2,6 @@
 
 The small AI tasks Tokama runs for itself (suggest the checks of a repo, ...), each started by a click. A helper is a definition: its id and version, the inputs Tokama collects for it (a closed list, each with a label and a size cap), its instructions and how long a call may take. The shape of its answer is part of the engine API, so a definition cannot change it.
 `readAnswer` finds the one JSON object in the agent's reply and checks it against that shape and the helper's own rule; `retryNote` says what was wrong without repeating what the agent wrote.
-The built-in list is empty until the first helper is written.
-Must not call an agent, read the repo or build prompts: `workflow-engine` composes the helper with its agent and its inputs.
+The built-in list holds `suggest-checks`: from a folder's file names and build files it proposes up to four checks. Its rule turns an answer away unless each command is one simple command (`simpleCommandProblem`) that does not start with a program such as `rm`, `sudo` or `curl`; that is a speed bump, since the person still reads each command before it runs.
+`gather/` collects a helper's inputs, and is the only place a helper reads a repo: a file only through fs-safe (a regular file, no link, a size cap), a name only when it is not a secret file's (`.env*`, `.npmrc`, keys, `credentials*`, ...), and never a folder inside, or holding, Tokama's own folder or the user's home folder. A file that does not fit is named as not included, never cut.
+Must not call an agent or build prompts: `workflow-engine` composes the helper with its agent and its inputs.

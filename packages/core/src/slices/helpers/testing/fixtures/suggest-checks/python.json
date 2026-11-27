@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "files": {
+    "pyproject.toml": "[project]\nname = \"orders\"\n\n[tool.pytest.ini_options]\ntestpaths = [\"tests\"]\n\n[tool.ruff]\nline-length = 100\n",
+    "tox.ini": "[tox]\nenvlist = py312\n",
+    "src/orders/__init__.py": "",
+    "tests/test_orders.py": "def test_orders():\n    assert True\n"
+  },
+  "answer": {
+    "checks": [
+      {
+        "command": "pytest",
+        "why": "Runs the unit tests in tests/, as set by testpaths in pyproject.toml.",
+        "minutes": 1
+      },
+      {
+        "command": "ruff check .",
+        "why": "Lints the code against the rules and 100-character line length set in pyproject.toml.",
+        "minutes": 1
+      }
+    ],
+    "note": "Found from the [tool.pytest.ini_options] and [tool.ruff] sections of pyproject.toml. tox.ini is not used because tox installs packages, and there is no type or build check in the files."
+  }
+}

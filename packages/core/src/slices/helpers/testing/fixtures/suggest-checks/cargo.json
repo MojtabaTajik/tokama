@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "files": {
+    "Cargo.toml": "[package]\nname = \"orders\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    "Cargo.lock": "# lock\n",
+    "src/main.rs": "fn main() {}\n",
+    "README.md": "# orders\n"
+  },
+  "answer": {
+    "checks": [
+      {
+        "command": "cargo test",
+        "why": "Runs the crate's unit and doc tests.",
+        "minutes": 1
+      },
+      {
+        "command": "cargo clippy",
+        "why": "Runs the Rust linter over the crate.",
+        "minutes": 1
+      },
+      {
+        "command": "cargo check",
+        "why": "Type-checks the crate without producing a binary.",
+        "minutes": 1
+      }
+    ],
+    "note": "Found from Cargo.toml, which marks this as a Rust crate, and src/main.rs. The standard cargo test, clippy and check subcommands apply; Cargo.toml declares no custom scripts."
+  }
+}

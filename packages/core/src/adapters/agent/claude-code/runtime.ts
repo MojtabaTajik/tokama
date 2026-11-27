@@ -216,6 +216,8 @@ function writeHookFiles(request: AgentCallRequest, hookCommand: readonly string[
 
 type EndEvent = Extract<AgentCallEvent, { type: "end" }>;
 
+const UPDATE_CLAUDE = "Update Claude Code (for example with `claude update`), then try again.";
+
 function endEvent(result: RunResult, parser: StreamParser, stderr: string, signal: AbortSignal, timeoutMs: number, sandboxed: boolean): EndEvent {
   const state = parser.state();
   if (result.kind === "not-started") {
@@ -239,6 +241,8 @@ function endEvent(result: RunResult, parser: StreamParser, stderr: string, signa
   if (result.timedOut) return failed(state, `timed out after ${timeoutMs} ms`, "timeout", durationMs);
   // With `failIfUnavailable` the CLI exits at startup, before any result, when the sandbox cannot start.
   if (sandboxed && mentionsSandbox(stderr)) return failed(state, sandboxStartProblem(parser.scrub(stderr), process.platform), "crash", durationMs);
+  // A CLI too old for a flag Tokama passes (`--safe-mode`, `--restricted`) exits at once with this on stderr.
+  if (/unknown option/i.test(stderr)) return failed(state, UPDATE_CLAUDE, "crash", durationMs);
   const exit = result.exitCode !== null ? `exit code ${result.exitCode}` : `signal ${result.signal ?? "unknown"}`;
   const said = state.assistantError?.text || stderr.trim() || `Claude Code ended without a result (${exit})`;
   return failed(state, parser.scrub(said), classifyFailure(state, stderr), durationMs);

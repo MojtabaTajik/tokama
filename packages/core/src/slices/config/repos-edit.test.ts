@@ -225,6 +225,7 @@ repos:
     };
     expect(await refused({ path, checks: ["pnpm test", "pnpm build && rm -rf /"] })).toBe("The check 'pnpm build && rm -rf /' must be one command, with no &&, ||, ; or |.");
     expect(await refused({ path, checks: ["pnpm test > out"] })).toBe("The check 'pnpm test > out' can't use a redirect (>, <).");
+    expect(await refused({ path, checks: ["pnpmㅤtest"] })).toContain("has a control, invisible or line-break character");
     expect(await refused({ path, baseBranch: "--force" })).toBe("The base branch '--force' must be a branch name, such as main.");
     expect(await refused({ path, id: "Orders API" })).toBe("The id 'Orders API' must be lowercase letters, digits and hyphens (at most 64).");
     expect(() => statSync(reposFile())).toThrow();

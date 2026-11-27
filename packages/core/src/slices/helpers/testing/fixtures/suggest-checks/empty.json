@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "files": {
+    "notes.txt": "nothing to build here\n"
+  },
+  "answer": {
+    "checks": [],
+    "note": "The repository has no build files; the only file is notes.txt. No test, lint, type or build command can be found from the files shown."
+  }
+}

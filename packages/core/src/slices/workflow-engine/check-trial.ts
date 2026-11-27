@@ -23,7 +23,8 @@ import {
   terminalText,
 } from "../../kernel/schemas/index.js";
 import { cutText, scrubPaths } from "../../kernel/text/index.js";
-import { BRANCH, checkProblem, MAX_BRANCH } from "../config/index.js";
+import { simpleCommandProblem } from "../../kernel/command-policy/index.js";
+import { BRANCH, MAX_BRANCH } from "../config/index.js";
 import { checkRunOptions, runCommand, type CheckResult } from "../verification/index.js";
 import { checkTrialFolder, createTrialWorktree, removeTrialWorktree, trialWorktreePath, type WorktreeRepo } from "../worktrees/index.js";
 
@@ -80,14 +81,8 @@ const MAX_CHECK_MINUTES = 20;
 const MIN_CHECK_MINUTES = 2;
 const RAW_OUTPUT_CAP = 8_000;
 const SETUP_TAIL_CHARS = 300;
-// Control characters, invisible and direction-changing characters, and line and paragraph breaks.
-const NOT_PLAIN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u;
-
 /** Why a command or setup cannot run, or undefined: one simple command on one line of plain text. */
-export function trialCommandProblem(command: string): string | undefined {
-  if (NOT_PLAIN.test(command)) return "has a control, invisible or line-break character";
-  return checkProblem(command);
-}
+export const trialCommandProblem = simpleCommandProblem;
 
 /** A check's time limit: three times its minutes, between 2 and 20 minutes; without minutes, 20. */
 export function checkLimitMinutes(minutes: number | undefined): number {

@@ -9,4 +9,5 @@ export {
   type HelperDefinition,
   type HelperInputName,
 } from "./definition.js";
+export { createRepoGatherer, type RepoGatherer, type RepoGathererOptions } from "./gather/repo.js";
 export { BUILTIN_HELPERS, findHelper } from "./registry.js";

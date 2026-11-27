@@ -43,6 +43,13 @@ describe("Claude Code args", () => {
     expect(list(argv, "--disallowedTools")).toEqual(["Read(~/.tokama/**)", "Edit(~/.tokama/**)", "WebFetch", "WebSearch"]);
   });
 
+  it("refuses a plain call that may run commands, because safe mode turns the command-policy hook off", () => {
+    const result = buildArgs(request({ edit: false, commands: ["npm test:*"], web: false }, { plain: true }));
+    expect(result).toEqual({ ok: false, error: "a plain call cannot be allowed to run commands" });
+    expect(buildArgs(request({ edit: false, commands: [], web: false }, { plain: true })).ok).toBe(true);
+    expect(buildArgs(request({ edit: false, commands: ["npm test:*"], web: false })).ok).toBe(true);
+  });
+
   it("denies the file tools an absolute Tokama folder with the double slash, which a single slash would turn project-relative", () => {
     const result = buildArgs(request(), undefined, "/home/northwind-dev/.tokama");
     if (!result.ok) throw new Error(result.error);

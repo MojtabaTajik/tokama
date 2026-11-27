@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "files": {
+    "Makefile": "test:\n\t./run-tests.sh\n\nlint:\n\t./lint.sh\n",
+    "run-tests.sh": "#!/bin/sh\n"
+  },
+  "answer": {
+    "checks": [
+      {
+        "command": "make test",
+        "why": "Runs the repository's test target, which calls ./run-tests.sh.",
+        "minutes": 5
+      },
+      {
+        "command": "make lint",
+        "why": "Runs the repository's lint target, which calls ./lint.sh.",
+        "minutes": 2
+      }
+    ],
+    "note": "Found from the Makefile's test and lint targets. ./lint.sh is not in the file list, so make lint may fail if that script is missing. I did not read run-tests.sh, so I could not confirm what it does."
+  }
+}

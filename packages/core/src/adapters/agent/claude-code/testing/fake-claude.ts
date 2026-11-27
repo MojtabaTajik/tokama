@@ -69,6 +69,11 @@ function run(prompt: string): void {
       process.stderr.write("Error: sandbox.failIfUnavailable is set, but Ubuntu's AppArmor restriction on user namespaces stops bubblewrap here\n");
       process.exitCode = 1;
       return;
+    case "unknown-option":
+      // A CLI older than the flag Tokama passes: exits at once, before any output.
+      process.stderr.write("error: unknown option '--safe-mode'\n");
+      process.exitCode = 1;
+      return;
     case "hang":
       init();
       hang();

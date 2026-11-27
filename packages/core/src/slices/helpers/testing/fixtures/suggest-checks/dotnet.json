@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "files": {
+    "Orders.sln": "Microsoft Visual Studio Solution File, Format Version 12.00\n",
+    "Orders.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net9.0</TargetFramework></PropertyGroup></Project>\n",
+    "Orders.Tests.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"xunit\" Version=\"2.9.0\" /></ItemGroup></Project>\n",
+    "global.json": "{ \"sdk\": { \"version\": \"9.0.100\" } }\n",
+    "Program.cs": "System.Console.WriteLine();\n"
+  },
+  "answer": {
+    "checks": [
+      {
+        "command": "dotnet test Orders.sln --no-restore",
+        "why": "Runs the xunit tests in Orders.Tests.csproj.",
+        "minutes": 2
+      },
+      {
+        "command": "dotnet build Orders.sln --no-restore",
+        "why": "Compiles the solution with the net9.0 SDK pinned in global.json.",
+        "minutes": 1
+      }
+    ],
+    "note": "Found from Orders.sln, Orders.Tests.csproj (xunit) and global.json. Both commands use --no-restore so they do not reach NuGet; the packages must already be restored."
+  }
+}

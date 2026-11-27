@@ -3,7 +3,7 @@
 import { homedir } from "node:os";
 import { isAbsolute, join, normalize, posix, sep } from "node:path";
 import { z } from "zod";
-import { posixSh, type SyntaxRefusalReason } from "../../kernel/command-policy/index.js";
+import { simpleCommandProblem } from "../../kernel/command-policy/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import { MAX_CHECK_CHARS, type RepoId, RepoIdSchema } from "../../kernel/schemas/index.js";
 import { readConfigFile, resolveHomePath } from "./read.js";
@@ -34,25 +34,6 @@ export const MAX_BRANCH = 100;
 // No whitespace and no control characters (NUL included).
 const REMOTE = /^(?!-)[^\s\p{Cc}]+$/u;
 
-const REFUSAL_WORDS: Record<SyntaxRefusalReason, string> = {
-  substitution: "command substitution ($(...) or backticks)",
-  "ansi-c-quote": "$'...' quoting",
-  redirect: "a redirect (>, <)",
-  background: "a background &",
-  subshell: "a subshell ( ... )",
-  newline: "a line break",
-  "unbalanced-quote": "an unclosed quote",
-};
-
-/** Why a check isn't one simple command, or undefined when it is. Parsed as the command policy parses checks. */
-export function checkProblem(command: string): string | undefined {
-  const split = posixSh.split(command);
-  if (!split.ok) return `can't use ${REFUSAL_WORDS[split.error.reason]}`;
-  if (split.value.length !== 1) return "must be one command, with no &&, ||, ; or |";
-  if (split.value[0]!.words.length === 0) return "has no command words";
-  return undefined;
-}
-
 /** A worktree folder must stay inside the repo, not be the repo itself, and stay out of .git. */
 function isWorktreeFolder(folder: string): boolean {
   if (isAbsolute(folder) || folder.startsWith("~")) return false;
@@ -78,7 +59,7 @@ const RepoEntrySchema = z.strictObject({
   checks: z
     .array(
       z.string().max(MAX_CHECK_CHARS).superRefine((command, ctx) => {
-        const problem = checkProblem(command);
+        const problem = simpleCommandProblem(command);
         if (problem !== undefined) ctx.addIssue({ code: "custom", message: problem });
       }),
     )

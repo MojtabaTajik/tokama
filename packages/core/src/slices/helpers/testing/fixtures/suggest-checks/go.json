@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "files": {
+    "go.mod": "module example.com/orders\n\ngo 1.23\n",
+    "main.go": "package main\n\nfunc main() {}\n",
+    "main_test.go": "package main\n"
+  },
+  "answer": {
+    "checks": [
+      {
+        "command": "go test ./...",
+        "why": "Runs all Go unit tests in the module, including main_test.go.",
+        "minutes": 1
+      },
+      {
+        "command": "go vet ./...",
+        "why": "Runs Go's built-in static checks for common mistakes across the module.",
+        "minutes": 1
+      }
+    ],
+    "note": "Found from go.mod (Go module, go 1.23) and the presence of main.go and main_test.go; no lint or build scripts are defined in the repo files shown."
+  }
+}
