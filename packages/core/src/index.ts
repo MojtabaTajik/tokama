@@ -67,7 +67,6 @@ export type { AgentCallRequest, AgentRuntime, AiCliAdapter, AiCliLaunch, LocalUs
 // The AI CLI adapters this build has, in id order. An adapter can be removed, so callers loop over the list.
 import * as adapters from "./composition.js";
 import { collectAiCliAdapters } from "./kernel/ports/index.js";
-export { adapters };
 export const aiCliAdapters = collectAiCliAdapters(Object.values(adapters));
 // The run loop and its commands, for the engine service.
 export {

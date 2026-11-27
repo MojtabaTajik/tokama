@@ -9,17 +9,20 @@
 import { realpath } from "node:fs/promises";
 import { type AiCliAdapter, type AiCliId, aiCliAdapters, type Clock, type LogScan, type LogScanFn, pricedEntry, rangeStart, type RepoId, type RepoOfFn, type RepoPaths, type UsageEntry } from "@tokama/core";
 import type { ItemIndex } from "./item-index.js";
+import { cliName } from "./real/clis.js";
 
 /** The log scan of one AI CLI. */
 export interface LogReader {
   readonly cliId: AiCliId;
+  /** The folder holding the logs, from the user's home folder. */
+  readonly root: (home: string) => string;
   readonly scan: LogScanFn;
   readonly repoOf: RepoOfFn;
 }
 
 /** The reader of the first adapter in `list` that has session logs; undefined when none has. */
 export function logReader(list: readonly AiCliAdapter[] = aiCliAdapters): LogReader | undefined {
-  for (const adapter of list) if (adapter.localUsage !== undefined) return { cliId: adapter.id, scan: adapter.localUsage.scan, repoOf: adapter.localUsage.repoOf };
+  for (const adapter of list) if (adapter.localUsage !== undefined) return { cliId: adapter.id, root: adapter.localUsage.root, scan: adapter.localUsage.scan, repoOf: adapter.localUsage.repoOf };
   return undefined;
 }
 
@@ -69,7 +72,7 @@ export class ClaudeLogs {
   status(): LogScan {
     const base = { filesDone: this.progress.done, filesTotal: this.progress.total, ...(this.endedAt !== undefined && { asOf: this.endedAt }) };
     if (this.running !== undefined || this.endedAt === undefined) return { state: "scanning", ...base };
-    if (!this.found) return { state: "unavailable", ...base, note: "Claude Code has no session logs on this Mac yet." };
+    if (!this.found) return { state: "unavailable", ...base, note: `${cliName(this.deps.reader.cliId)} has no session logs on this Mac yet.` };
     return { state: "ready", ...base, ...(this.note !== undefined && { note: this.note }) };
   }
 
@@ -113,11 +116,12 @@ export class ClaudeLogs {
       index.pruneLocal(result.complete && result.found ? result.fileKeys : undefined, since);
       this.found = result.found;
       this.projects = result.projects;
-      this.note = result.skippedFiles > 0 ? `${result.skippedFiles} of Claude Code's log files could not be read: too large, a link, or unreadable.` : undefined;
+      this.note = result.skippedFiles > 0 ? `${result.skippedFiles} of ${cliName(this.deps.reader.cliId)}'s log files could not be read: too large, a link, or unreadable.` : undefined;
       await this.matchRepos();
     } catch (error) {
-      this.note = "Claude Code's logs could not be read this time.";
-      this.deps.log?.(`reading Claude Code's logs failed: ${error instanceof Error ? error.name : "error"}`);
+      const name = cliName(this.deps.reader.cliId);
+      this.note = `${name}'s logs could not be read this time.`;
+      this.deps.log?.(`reading ${name}'s logs failed: ${error instanceof Error ? error.name : "error"}`);
     } finally {
       this.endedAt = this.deps.clock.now();
     }

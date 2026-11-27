@@ -121,8 +121,13 @@ describe("UsageService", () => {
 
   it("leaves out an adapter without a plan, and keeps its note", async () => {
     const claude = aiCliAdapters.find((adapter) => adapter.id === "claude-code")!;
-    const { usage } = service({ adapters: [claude, fakeAiCli()] });
-    expect((await usage.report(14)).clis.map((cli) => [cli.cliId, cli.note !== undefined])).toEqual([["claude-code", true], ["codex-cli", true], ["ollama", true]]);
+    let asked = 0;
+    const request: PlanSource = async () => (asked++, { ok: true, value: reading(84, NOW) });
+    const { usage } = service({ adapters: [claude, fakeAiCli()], sources: { "codex-cli": { request } } });
+    const report = await usage.report(14);
+    await usage.settled();
+    expect(asked).toBe(0);
+    expect(report.clis.map((cli) => [cli.cliId, cli.note !== undefined])).toEqual([["claude-code", true], ["codex-cli", true], ["ollama", true]]);
   });
 
   it("without a request source never starts the CLI, and reports the other CLIs as unknown", async () => {
