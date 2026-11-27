@@ -45,7 +45,7 @@ import type { HelperCommand } from "../helpers.js";
 import type { MemoryItemStore } from "../store.js";
 import { SampleHelpers } from "./helpers.js";
 import { checksReply, logReply, sampleChecks, sampleLogs } from "./attempts.js";
-import { DIFF_DECISION_ID, failedDiff, finishedDiff, ITEM_IDS, sampleDiff, sampleHistory, sampleItems, sampleOutputs, sampleSetup } from "./data.js";
+import { DIFF_DECISION_ID, failedDiff, finishedDiff, ITEM_IDS, sampleChangedItems, sampleDiff, sampleHistory, sampleItems, sampleOutputs, sampleSetup } from "./data.js";
 
 /** How often the fake engine moves a working item on by one step. */
 export const SAMPLE_TICK_MS = 20_000;
@@ -113,7 +113,8 @@ export class SampleEngine {
     const setup = parseQueryResult("setup", sampleSetup);
     if (!setup.ok) throw new Error(`invalid sample setup: ${JSON.stringify(setup.error.issues)}`);
     this.setup = setup.value;
-    for (const raw of [...(historyOnly && history > 0 ? [] : sampleItems(clock.now())), ...sampleHistory(clock.now(), history)]) {
+    const own = historyOnly && history > 0 ? [] : [...sampleItems(clock.now()), ...sampleChangedItems(clock.now())];
+    for (const raw of [...own, ...sampleHistory(clock.now(), history)]) {
       const item = parseItemRecord(raw);
       if (!item.ok) throw new Error(`invalid sample item ${raw.id}: ${JSON.stringify(item.error.issues)}`);
       store.put(item.value);

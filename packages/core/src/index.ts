@@ -79,6 +79,7 @@ export {
   HELPER_LOCAL_ONLY,
   HELPER_NO_CLI,
   HELPER_TARGETS,
+  itemRisk,
   lastEnded,
   parseVerdict,
   ROUND_TRIPS,
@@ -106,6 +107,7 @@ export {
   type Stopped,
   type Verdict,
 } from "./slices/workflow-engine/index.js";
+export { risk, type RiskFacts } from "./slices/integrity/index.js";
 // The helpers this build has and the shape of one; the engine service lists them and runs them through the helper runner.
 export { BUILTIN_HELPERS, createRepoGatherer, readAnswer, type AnswerProblem, type HelperDefinition, type HelperInputName, type RepoGatherer } from "./slices/helpers/index.js";
 // Usage reports: roll-ups, estimated costs and the plan window choice, for the engine service.
@@ -283,6 +285,10 @@ export {
   type AttemptRecord,
   type AttemptSummary,
   type Said,
+  type ChangeSummary,
+  type Risk,
+  type RiskReason,
+  type TouchKind,
   type AgentCallEvent,
   type CliHealth,
   type Health,

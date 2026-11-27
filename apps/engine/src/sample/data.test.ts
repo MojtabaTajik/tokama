@@ -1,6 +1,6 @@
-import { parseItemRecord } from "@tokama/core";
+import { type ChangeSummary, parseItemRecord, risk } from "@tokama/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ago, sampleHistory, sampleItems } from "./data.js";
+import { ago, sampleChangedItems, sampleHistory, sampleItems } from "./data.js";
 
 const MINUTE = 60_000;
 
@@ -68,6 +68,19 @@ describe("sample items", () => {
     expect(saids.filter((said) => said["source"] === "first_lines")).toHaveLength(1);
     expect(saids.filter((said) => said["source"] === "headline" && (said["points"] as unknown[]).length === 0 && said["readMinutes"] === undefined)).toHaveLength(1);
     expect(saids.filter((said) => (said["points"] as unknown[]).length === 3)).toHaveLength(1);
+  });
+
+  it("seed a change and the risk the engine's rules give it: low, high on dependencies, not rated for binary files", () => {
+    const rated = [...sampleItems(BASE_NOW), ...sampleChangedItems(BASE_NOW)].filter((item) => item["risk"] !== undefined);
+    expect(rated.map((item) => (item["risk"] as { level: string }).level).sort()).toEqual(["high", "low", "not_rated"]);
+    for (const item of rated) {
+      const parsed = parseItemRecord(item);
+      expect(parsed.ok, `${item.id}: ${JSON.stringify(parsed.ok ? [] : parsed.error.issues)}`).toBe(true);
+      // The facts the engine would have stored: every check of the item passed, and the sample has no second agent's review.
+      const checks = item.steps.flatMap((step) => ((step.attempts ?? []) as unknown as { checks: { passed: boolean }[] }[]).flatMap((attempt) => attempt.checks));
+      const facts = { change: item["change"] as ChangeSummary, checked: checks.length > 0 && checks.every((check) => check.passed), lastVerdict: undefined, secondReview: false, lastAttempt: false, protectedApproved: false };
+      expect(risk(facts), item.id).toEqual(item["risk"]);
+    }
   });
 
   it("keep their order and their offsets", () => {

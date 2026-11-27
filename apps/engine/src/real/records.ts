@@ -13,6 +13,7 @@ import {
   explainStop,
   REQUEST_CHANGES_ID,
   hostedRepo,
+  itemRisk,
   type ItemKind,
   type ItemRecord,
   openAttempt,
@@ -158,6 +159,7 @@ export function toItemRecord(item: StoredItem): ItemRecord | undefined {
   // The card of an item that ended on an answer says so in the outcome's words, not "discarded".
   const cardLine = cut((item.outcome?.kind === "no_action_needed" ? undefined : finishLine(finish)) ?? cardLineOf(item, steps, decision?.question), 120);
   const durationMs = itemMs(item);
+  const { change, risk } = itemRisk(item, template);
 
   const record = {
     schemaVersion: 1,
@@ -176,6 +178,8 @@ export function toItemRecord(item: StoredItem): ItemRecord | undefined {
     steps,
     ...(durationMs !== undefined && { durationMs }),
     ...(outcome && { outcome }),
+    ...(change !== undefined && { change }),
+    ...(risk !== undefined && { risk }),
     ...(finish !== undefined && { finish }),
   } satisfies ItemRecord;
   // The record is checked here, so a bad one is logged once instead of failing every board reply.
