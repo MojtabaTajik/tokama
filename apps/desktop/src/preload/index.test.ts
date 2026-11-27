@@ -22,7 +22,7 @@ const [, pushOpenGetStarted] = electron.on.mock.calls.find(([channel]) => channe
 describe("preload bridge", () => {
   it("exposes window.tokama with only the bridge methods", () => {
     expect(exposed).toEqual([["tokama", bridge]]);
-    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "countUsage", "getAboutInfo", "getConnection", "getDesktopState", "getToolsPath", "onConnection", "onEvent", "onOpenGetStarted", "onOpenItem", "openAttemptFile", "openTemplateFile", "pickFolder", "query", "reportError", "restartEngine", "retryConnection", "saveLayout", "saveNotifications", "playSound", "notificationStatus", "sendTestNotification", "openNotificationSettings", "setViewedItem", "showDataFolder", "loadDiagnostics", "sendDiagnostics", "saveDiagnostics", "stopCrashPrompt", "getWhatsNew", "closeWhatsNew", "getUpdate", "onUpdate", "checkForUpdates", "installUpdate", "openUpdateNotes", "openNotices"].sort());
+    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "countUsage", "getAboutInfo", "getConnection", "getDesktopState", "getToolsPath", "onConnection", "onEvent", "onOpenGetStarted", "onOpenItem", "openAttemptFile", "openTemplateFile", "pickFolder", "query", "reportError", "restartEngine", "retryConnection", "saveLayout", "saveNotifications", "playSound", "notificationStatus", "sendTestNotification", "openNotificationSettings", "setViewedItem", "showDataFolder", "loadDiagnostics", "sendDiagnostics", "saveDiagnostics", "stopCrashPrompt", "getWhatsNew", "closeWhatsNew", "getUpdate", "onUpdate", "checkForUpdates", "installUpdate", "openUpdateNotes", "openNotices", "getAway", "onAway", "closeAway"].sort());
   });
 
   it("the release notes calls: one without arguments, and a close that sends only two strings", async () => {
@@ -107,6 +107,13 @@ describe("preload bridge", () => {
     expect(electron.invoke).toHaveBeenLastCalledWith(CHANNELS.installUpdate);
     await bridge.openUpdateNotes();
     expect(electron.invoke).toHaveBeenLastCalledWith(CHANNELS.openUpdateNotes);
+  });
+
+  it("the away calls send no argument, so the window never sends a time", async () => {
+    await bridge.getAway();
+    expect(electron.invoke).toHaveBeenLastCalledWith(CHANNELS.getAway);
+    await bridge.closeAway();
+    expect(electron.invoke).toHaveBeenLastCalledWith(CHANNELS.closeAway);
   });
 
   it("pickFolder invokes its channel with no arguments", async () => {

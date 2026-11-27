@@ -6,7 +6,7 @@ import type { BoardCount, ItemRecord } from "@tokama/core";
 import { act } from "react";
 import { vi } from "vitest";
 import type { AboutInfo, BridgeEvent, ConnectionState, DiagnosticsLoad, DiagnosticsSaveResult, DiagnosticsSendResult, OpenResult, ToolsPathInfo, TokamaBridge, WhatsNewInfo } from "../../shared/bridge.js";
-import { DEFAULT_DESKTOP_STATE, type DesktopState } from "../../shared/desktop-state.js";
+import { type AwayInfo, DEFAULT_DESKTOP_STATE, type DesktopState } from "../../shared/desktop-state.js";
 import type { InstallResult, UpdateState } from "../../shared/update.js";
 import { localDay } from "../format/time.js";
 import { bucketOf, isOpen } from "../model.js";
@@ -30,13 +30,16 @@ export const CONNECTED: ConnectionState = { status: "connected", engineId: "e-1"
 /** What an app remembers once setup is done: the Get started list neither shows nor leaves a line. */
 export const SETUP_DONE: DesktopState = { ...DEFAULT_DESKTOP_STATE, getStarted: { done: true, lineClosed: true } };
 
-export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | Promise<Reply> | undefined; commandReply?: (command: { type: string }) => Reply; pickFolder?: () => Promise<string | null>; openTemplateFile?: () => Promise<OpenResult>; openAttemptFile?: () => Promise<OpenResult>; about?: AboutInfo; toolsPath?: ToolsPathInfo; copyBuildInfo?: () => Promise<void>; showDataFolder?: () => Promise<OpenResult>; openNotices?: () => Promise<OpenResult>; desktopState?: DesktopState; loadDiagnostics?: () => Promise<DiagnosticsLoad>; sendDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSendResult>; saveDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSaveResult>; whatsNew?: WhatsNewInfo | (() => Promise<WhatsNewInfo>); update?: UpdateState; installUpdate?: () => Promise<InstallResult> } = {}) {
+export function fakeBridge(initial: ConnectionState, options: { boardItems?: ItemRecord[]; reply?: (query: { type: string }) => Reply | Promise<Reply> | undefined; commandReply?: (command: { type: string }) => Reply; pickFolder?: () => Promise<string | null>; openTemplateFile?: () => Promise<OpenResult>; openAttemptFile?: () => Promise<OpenResult>; about?: AboutInfo; toolsPath?: ToolsPathInfo; copyBuildInfo?: () => Promise<void>; showDataFolder?: () => Promise<OpenResult>; openNotices?: () => Promise<OpenResult>; desktopState?: DesktopState; loadDiagnostics?: () => Promise<DiagnosticsLoad>; sendDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSendResult>; saveDiagnostics?: (ids: readonly string[]) => Promise<DiagnosticsSaveResult>; whatsNew?: WhatsNewInfo | (() => Promise<WhatsNewInfo>); update?: UpdateState; installUpdate?: () => Promise<InstallResult>; away?: AwayInfo } = {}) {
   let connectionListener: ((state: ConnectionState) => void) | undefined;
   let openListener: ((itemId: string) => void) | undefined;
   let getStartedListener: (() => void) | undefined;
   // The update state the main process would hold; `setUpdate` changes it and tells the listeners.
   let updateState: UpdateState = options.update ?? { status: "idle" };
   const updateListeners = new Set<(state: UpdateState) => void>();
+  // The away state the main process would hold; `setAway` changes it and tells the listeners, and Got it ends it.
+  let awayState: AwayInfo = options.away ?? { seenUntil: 0, due: false };
+  const awayListeners = new Set<(info: AwayInfo) => void>();
   // Every subscriber hears every event: the app and the open drawer both listen.
   const eventListeners = new Set<(event: BridgeEvent) => void>();
   const stops = { connection: vi.fn(), event: vi.fn() };
@@ -107,6 +110,15 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
     checkForUpdates: vi.fn(async () => undefined),
     openUpdateNotes: vi.fn(async () => undefined),
     installUpdate: vi.fn(options.installUpdate ?? (async (): Promise<InstallResult> => ({ ok: true }))),
+    getAway: vi.fn(async () => awayState),
+    onAway: vi.fn((listener: (info: AwayInfo) => void) => {
+      awayListeners.add(listener);
+      return () => void awayListeners.delete(listener);
+    }),
+    closeAway: vi.fn(async () => {
+      awayState = { seenUntil: Date.now(), due: false };
+      for (const listener of awayListeners) listener(awayState);
+    }),
     onEvent: vi.fn((listener: (event: BridgeEvent) => void) => {
       eventListeners.add(listener);
       return () => {
@@ -148,16 +160,24 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
       updateState = state;
       for (const listener of updateListeners) listener(state);
     });
+  const closeAway = bridge.closeAway as unknown as ReturnType<typeof vi.fn>;
+  /** The main process moves to a new away state and tells the window. */
+  const setAway = (info: AwayInfo) =>
+    act(async () => {
+      awayState = info;
+      for (const listener of awayListeners) listener(info);
+    });
   /** A click on a notification: the main process asks the window to open the item. */
   const openItem = (itemId: string) => act(async () => openListener?.(itemId));
   /** Help > Get started: the main process asks the window to open the checklist. */
   const openGetStarted = () => act(async () => getStartedListener?.());
-  return { bridge, openGetStarted, query, saveLayout, saveNotifications, playSound, notificationStatus, sendTestNotification, openNotificationSettings, setViewedItem, getWhatsNew, closeWhatsNew, openItem, copyBuildInfo, showDataFolder, openNotices, command, retryConnection, openTemplateFile, setConnection, pushItem, pushEvent, stops, installUpdate, checkForUpdates, openUpdateNotes, setUpdate };
+  return { bridge, openGetStarted, query, saveLayout, saveNotifications, playSound, notificationStatus, sendTestNotification, openNotificationSettings, setViewedItem, getWhatsNew, closeWhatsNew, openItem, copyBuildInfo, showDataFolder, openNotices, command, retryConnection, openTemplateFile, setConnection, pushItem, pushEvent, stops, installUpdate, checkForUpdates, openUpdateNotes, setUpdate, closeAway, setAway };
 }
 
 export interface ListQuery {
   readonly group: string;
   readonly since?: string;
+  readonly endedAfter?: number;
   readonly repo?: string;
   readonly template?: string;
   readonly q?: string;
@@ -187,6 +207,7 @@ export function itemList(all: readonly ItemRecord[], query: ListQuery) {
   const matching = all
     .filter((item) => groupOf(item) === query.group)
     .filter((item) => !finished || query.since === undefined || localDay(item.createdAt) >= query.since)
+    .filter((item) => !finished || query.endedAfter === undefined || (item.outcome?.at ?? -1) >= query.endedAfter)
     .filter((item) => query.repo === undefined || (item.repoIds as readonly string[]).includes(query.repo))
     .filter((item) => query.template === undefined || item.templateId === query.template)
     .filter((item) => text === "" || item.title.toLowerCase().includes(text))

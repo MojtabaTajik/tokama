@@ -10,6 +10,7 @@ import { buildInfoText } from "../shared/build-info.js";
 import { applyLayoutPatch, applyNotificationsPatch, type NoteKind } from "../shared/desktop-state.js";
 import { aboutInfo, noticesPath } from "./about.js";
 import { engineApi, mainQuery } from "./api.js";
+import { createAway } from "./away.js";
 import { openAttemptFile } from "./attempt-file.js";
 import { type ConnectionWatch, watchConnection } from "./connection.js";
 import { type DesktopStore, desktopStore } from "./desktop-store.js";
@@ -317,6 +318,22 @@ void app.whenReady().then(async () => {
   });
   handle(CHANNELS.getWhatsNew, () => whatsNew.info());
   handle(CHANNELS.closeWhatsNew, (version, what) => whatsNew.close(version, what));
+  // Away: the window losing the front, a lock or a sleep starts it, and the way back ends it. Unlocking
+  // or waking counts as back only when the window is in front, since the user may be in another app.
+  const away = createAway({ store, now: () => Date.now(), onChange: (info) => send(CHANNELS.awayChanged, info) });
+  away.start();
+  const windowInFront = () => BrowserWindow.getAllWindows().some((window) => window.isFocused());
+  const backIfInFront = () => {
+    if (windowInFront()) away.back();
+  };
+  app.on("browser-window-blur", () => away.left());
+  app.on("browser-window-focus", () => away.back());
+  powerMonitor.on("suspend", () => away.left());
+  powerMonitor.on("lock-screen", () => away.left());
+  powerMonitor.on("resume", backIfInFront);
+  powerMonitor.on("unlock-screen", backIfInFront);
+  handle(CHANNELS.getAway, () => away.info());
+  handle(CHANNELS.closeAway, () => away.close());
   // Diagnostics: reports wait for the engine, and go out once it answers. An engine that does not
   // know the command (an older one still running) refuses it, and the report is dropped.
   let engineClient: () => ReturnType<ConnectionWatch["client"]> = () => undefined;
@@ -515,6 +532,8 @@ void app.whenReady().then(async () => {
     quit: () => app.quit(),
     teardown: () => {
       stopSchedule();
+      // Quitting is leaving: the next start measures the time away from here.
+      away.left();
       store.flush();
       marker.clear();
       void watch.close();
