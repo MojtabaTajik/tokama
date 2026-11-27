@@ -229,6 +229,23 @@ describe("Claude Code stream parser", () => {
     expect(state).toEqual({ usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, limitRejected: false });
   });
 
+  it("keeps the events, usage and session id of a run with text lines between its JSON lines", () => {
+    // What `socat -V` and `bwrap --version` print on Linux.
+    const banner = [
+      "socat by Gerhard Rieger and contributors - see www.dest-unreach.org",
+      "socat version 1.8.0.0 on 08 Apr 2024 00:00:00",
+      "   running on Linux version #1 SMP, release 6.8.0, machine x86_64",
+      "bubblewrap 0.9.0",
+    ];
+    const clean = parse(fixture("success"));
+    const mixed = parse(fixture("success").flatMap((text) => [...banner, text]));
+    expect(mixed.events).toEqual(clean.events);
+    expect(mixed.state).toEqual(clean.state);
+    expect(mixed.state.sessionId).toBe("d4bc8b9c-641c-40df-bc38-952463fb9366");
+    expect(mixed.state.usage).toEqual({ input: 5440, output: 213, cacheRead: 10831, cacheWrite: 0 });
+    expect(JSON.stringify(mixed.events)).not.toMatch(/socat|bubblewrap/);
+  });
+
   it("keeps a line whose counts are odd, counting them as absent", () => {
     const { state } = parse([line({ type: "result", is_error: false, usage: { input_tokens: -3, output_tokens: 2.5, cache_read_input_tokens: 4 } })]);
     expect(state.usage).toEqual({ input: 0, output: 0, cacheRead: 4, cacheWrite: 0 });

@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { parseJsonLine } from "../../../kernel/json-line/index.js";
 import { createProcessRunner, type ProcessRunner } from "../../../kernel/process/index.js";
 import type { AgentCallEvent } from "../../../kernel/schemas/index.js";
 import { createClaudeCodeRuntime } from "./index.js";
@@ -73,13 +74,15 @@ describe.skipIf(!enabled)("Claude Code runtime against the real CLI", () => {
       run: (request) => {
         const settings = "argv" in request.command ? request.command.argv.find((arg) => arg.startsWith("--settings=")) : undefined;
         if (settings !== undefined) callDir = dirname(settings.slice("--settings=".length));
+        // Only the call itself prints stream-json. The probes before it (`claude --version`, and on
+        // Linux `bwrap --version` and `socat -V`) print text through the same runner.
+        const isCall = "argv" in request.command && request.command.argv.includes("--output-format=stream-json");
         return base.run({
           ...request,
           ...(request.stdin !== undefined && callDir !== "" && { stdin: request.stdin.replaceAll(CALL_DIR, callDir) }),
           stdout: {
             onLine: (line) => {
-              // The version probe before the call prints text, not stream-json.
-              if (!("argv" in request.command && request.command.argv.includes("--version"))) raw.push(line);
+              if (isCall) raw.push(line);
               request.stdout?.onLine?.(line);
             },
           },
@@ -130,7 +133,12 @@ describe.skipIf(!enabled)("Claude Code runtime against the real CLI", () => {
       )) {
         events.push(event);
       }
-      const lines = raw.map((line) => JSON.parse(line) as Record<string, unknown>);
+      // A line that is not a JSON object is skipped, as the runtime's parser skips it.
+      const lines = raw.flatMap((line) => {
+        const json = parseJsonLine(line);
+        return json.ok && typeof json.value === "object" && json.value !== null && !Array.isArray(json.value) ? [json.value as Record<string, unknown>] : [];
+      });
+      expect(lines.some((line) => line["type"] === "result")).toBe(true);
       const result = lines.find((line) => line["type"] === "result");
       const rateLimits = lines.filter((line) => line["type"] === "rate_limit_event");
       console.log(JSON.stringify({ events, cost: result?.["total_cost_usd"], denials: result?.["permission_denials"], rateLimits }, null, 2));
