@@ -139,6 +139,8 @@ describe.skipIf(!enabled)("Claude Code runtime against the real CLI", () => {
         return json.ok && typeof json.value === "object" && json.value !== null && !Array.isArray(json.value) ? [json.value as Record<string, unknown>] : [];
       });
       expect(lines.some((line) => line["type"] === "result")).toBe(true);
+      // Plain text may be skipped, but a broken JSON line from the CLI is a failure, not a skip.
+      expect(raw.filter((line) => line.trimStart().startsWith("{") && !parseJsonLine(line).ok)).toEqual([]);
       const result = lines.find((line) => line["type"] === "result");
       const rateLimits = lines.filter((line) => line["type"] === "rate_limit_event");
       console.log(JSON.stringify({ events, cost: result?.["total_cost_usd"], denials: result?.["permission_denials"], rateLimits }, null, 2));
