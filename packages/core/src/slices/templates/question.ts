@@ -11,6 +11,8 @@ const NEEDS_AUXILIARY = new Set(["when", "where"]);
 const AUXILIARY = new Set(["is", "are", "does", "do", "did", "can", "could", "will", "would", "should", "was", "were"]);
 const FIRST_PERSON = new Set(["i", "we"]);
 const PRONOUN = new Set(["i", "we", "you", "they"]);
+// After "is", "are" or "does" these start a bug report, not a question: "Does not compile", "Is broken on Linux", "Are failing in CI".
+const REPORT_WORD = /^(?:not|broken|\w{3,}(?:ed|ing))$/;
 
 /**
  * True for one short paragraph that asks something: it ends with a question mark, or starts with a
@@ -32,5 +34,6 @@ export function looksLikeQuestion(text: string): boolean {
   if (first === "can" || first === "should") return FIRST_PERSON.has(second);
   if (first === "do") return PRONOUN.has(second);
   if (NEEDS_AUXILIARY.has(first)) return AUXILIARY.has(second);
+  if (first === "is" || first === "are" || first === "does") return !REPORT_WORD.test(second);
   return QUESTION_WORDS.has(first);
 }

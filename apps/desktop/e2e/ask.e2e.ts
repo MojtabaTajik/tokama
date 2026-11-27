@@ -139,19 +139,21 @@ flow(
     await screenshot("ask-1-picker");
     await page.keyboard.press("Escape");
 
-    // A request is not a question: nothing is suggested.
+    // A question with nothing picked: Ask is the suggestion, and the line says why.
     const trigger = page.locator(".np-trigger", { hasText: "Template" });
     const hint = page.locator(".np-suggest");
-    await text.fill("Can you add CSV export to orders?");
-    await page.waitForTimeout(800);
-    expect(await trigger.innerText()).toContain("Choose…");
-    expect(await hint.count()).toBe(0);
-
-    // A question with nothing picked: Ask is the suggestion, and the line says why.
-    await text.fill("how hard is it to add cars to street?");
+    const QUESTION = "how hard is it to add cars to street?";
+    await text.fill(QUESTION);
     await expect.poll(() => trigger.innerText(), { message: "the suggested template" }).toContain("Ask (suggested)");
     expect(await hint.allInnerTexts()).toEqual(["Reads like a question. Ask answers it and changes no file."]);
     await screenshot("suggest-ask-1-nothing-picked");
+
+    // A request is not a question: the engine's answer for it drops the suggestion, which is the change waited for.
+    await text.fill("Can you add CSV export to orders?");
+    await expect.poll(() => trigger.innerText(), { message: "the suggestion for a request" }).toContain("Choose…");
+    expect(await hint.count()).toBe(0);
+    await text.fill(QUESTION);
+    await expect.poll(() => trigger.innerText(), { message: "the suggested template again" }).toContain("Ask (suggested)");
 
     // A template that changes code picked: it stays, with the same line and a way to switch.
     await trigger.click();
