@@ -16,10 +16,14 @@ describe("parseVerdict", () => {
     expect(parseVerdict("Notes.\nVERDICT: approve\nHEADLINE: Ready.\nPOINT: one thing\nREAD: yes")).toBe("approve");
   });
 
-  it("is no verdict when other text follows it, or the block labels are not written as exact lines", () => {
+  it("reads the verdict above a block written in the forms the headline reader accepts: bold, any case, list marks", () => {
+    expect(parseVerdict("ok\nVERDICT: approve\n**HEADLINE:** Fine.\n**POINT:** x\n- Read: yes")).toBe("approve");
+    expect(parseVerdict("ok\nVERDICT: changes\nHeadline: Fix a.ts.\n> point: one")).toBe("changes");
+  });
+
+  it("is no verdict when other text follows it, or the reply holds only a block", () => {
     expect(parseVerdict("VERDICT: approve\nOne more thing.")).toBeUndefined();
-    expect(parseVerdict("VERDICT: approve\n**HEADLINE:** Ready.")).toBeUndefined();
-    expect(parseVerdict("VERDICT: approve\nHeadline: Ready.")).toBeUndefined();
+    expect(parseVerdict("VERDICT: approve\nHeadlines are fine.")).toBeUndefined();
     expect(parseVerdict("HEADLINE: Ready.\nPOINT: x")).toBeUndefined();
     expect(parseVerdict("")).toBeUndefined();
   });

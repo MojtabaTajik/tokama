@@ -746,7 +746,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       diff = shown.value;
     }
     const feedback = await feedbackFor({ ...ctx, item });
-    // The step's agent also writes its headline, so the prompt shown for approval is the one sent; a reviewer's verdict line stays the last.
+    // The step's agent also writes its headline: the rule is part of the instructions every prompt is built from, so a cloud agent's recorded prompt holds it too. A reviewer's verdict line stays the last.
     const rules = reviewer ? REVIEWER_HEADLINE_RULE + VERDICT_RULE : HEADLINE_RULE;
     const template = { ...ctx.template, steps: ctx.template.steps.map((s) => (s.id === stepId ? { ...s, instructions: { ...s.instructions, text: s.instructions.text + rules } } : s)) };
     const prompt = buildPrompt({

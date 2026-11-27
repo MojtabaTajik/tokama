@@ -3,6 +3,7 @@
 // text, so the reading is tolerant: an unknown shape gives the first lines, never an error.
 import { MAX_HEADLINE_CHARS, MAX_POINT_CHARS, MAX_POINTS, MAX_SUMMARY_ITEMS, MAX_SUMMARY_LINE_CHARS, type OutputSummary } from "../../kernel/schemas/index.js";
 import { cutText } from "../../kernel/text/index.js";
+import { BLOCK_LABEL } from "./headline.js";
 import { parseVerdict } from "./verdict.js";
 
 /** First lines shown for a step without a verdict format; a verdict step that broke it shows more. */
@@ -113,8 +114,6 @@ function itemOf(raw: string): { ref?: string; text: string } | undefined {
 
 /** How many non-empty lines at the end of a reply the headline block is looked for in. */
 const BLOCK_WINDOW = 30;
-// A label at the start of a line, in any letter case, after a list mark, a quote mark or bold marks.
-const BLOCK_LABEL = /^\s*(?:(?:[-*]\s+|>\s*)*)(?:\*\*|__)?(HEADLINE|POINT|READ)(?:\*\*|__)?\s*:(.*)$/i;
 // Control, invisible formatting and line-break characters, as a notification's text drops them.
 const INVISIBLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu;
 

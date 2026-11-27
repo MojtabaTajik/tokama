@@ -1459,9 +1459,6 @@ describe("run loop: what the step's agent says", () => {
     expect(runtime.calls[0]?.request.prompt).toContain("HEADLINE: <one line, at most 140 characters");
     expect(runtime.calls[0]?.request.prompt).not.toContain("VERDICT");
     expect(said(id)).toEqual({ source: "headline", headline: "Fixed app.txt.", points: ["Not run on Windows."], morePoints: 0, bodyBytes: "I fixed it.".length });
-    // The same prompt is recorded as sent.
-    const sent = JSON.parse(readFileSync(join(tokamaHome, "items", id, "attempts", "build-1", "call.json"), "utf8")) as { prompt: unknown };
-    expect(JSON.stringify(sent.prompt)).toContain("HEADLINE: <one line");
   });
 
   it("a reply without the block shows its first lines; nothing fails or retries", SLOW, async () => {

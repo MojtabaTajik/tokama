@@ -16,6 +16,11 @@ READ: yes   <only when the engineer must read your full reply to use this work: 
 export const REVIEWER_HEADLINE_RULE = `${HEADLINE_RULE}
 This block goes above the VERDICT line.`;
 
+// A block label at the start of a line, in any letter case, after a list mark, a quote mark or bold
+// marks; the rest of the line is the value (any character, so a line separator does not end it).
+// The one grammar for the headline parser and the verdict reader.
+export const BLOCK_LABEL = /^\s*(?:(?:[-*]\s+|>\s*)*)(?:\*\*|__)?(HEADLINE|POINT|READ)(?:\*\*|__)?\s*:([\s\S]*)$/i;
+
 /** A reply of at least this many words can be a must-read by the agent's own flag. */
 const READ_FLAG_MIN_WORDS = 150;
 const WORDS_PER_MINUTE = 200;

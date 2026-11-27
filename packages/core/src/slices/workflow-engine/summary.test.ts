@@ -158,6 +158,7 @@ describe("parseHeadline", () => {
     ["bold around the label", "**HEADLINE:** Fixed it.\n**POINT**: One thing.", "Fixed it.", ["One thing."]],
     ["bold and code in the value", "HEADLINE: **Fixed** `it`.\nPOINT: ## One   thing.", "Fixed it.", ["One thing."]],
     ["control and invisible characters", "HEADLINE: Fi\u001b[31mxed‮ it.​\nPOINT: One\tthing.", "Fi [31mxed it.", ["One thing."]],
+    ["a line separator in the value", "HEADLINE: Fixed it.\nPOINT: One thing.", "Fixed it.", ["One thing."]],
     ["Windows line ends", "HEADLINE: Fixed it.\r\nPOINT: One thing.\r\n", "Fixed it.", ["One thing."]],
   ])("reads a block written with %s", (_label, text, headline, points) => {
     expect(parseHeadline(text)).toMatchObject({ source: "headline", headline, points });
