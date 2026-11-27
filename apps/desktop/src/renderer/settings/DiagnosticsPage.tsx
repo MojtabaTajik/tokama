@@ -2,7 +2,7 @@
 // sends for each, and the actions Send all, Clear all, Save as file and the collect switch. The
 // filters change only what shows; Send all and Save as file take every waiting entry. Entry text
 // is rendered as React text only, never as HTML.
-import { useState } from "react";
+import { type ReactElement, useState } from "react";
 import type { ConnectionState, DiagnosticsItem, DiagnosticsSendFailure, DiagnosticsSendResult, TokamaBridge } from "../../shared/bridge.js";
 import { ConnectionFailure } from "../shell/ConnectionStatus.js";
 import { DATE_FILTERS, type DateFilter, failedLine, inDateRange, sendingLine, sendLabel, sentLine, shownType, sizeLabel, summary, TYPE_FILTERS, TYPE_WORD, type TypeFilter, timeLabel, type ShownType } from "./diagnosticsText.js";
@@ -11,6 +11,7 @@ import { Button } from "../ui/Button.js";
 import { ErrorRetry } from "../ui/ErrorRetry.js";
 import { StatusMark } from "../ui/status.js";
 import { EmptyState, Placeholder } from "../ui/EmptyState.js";
+import { ErrorIcon, type IconProps, PulseIcon, UsageIcon, WarningIcon } from "../ui/icons.js";
 
 const TEXT = {
   heading: "Diagnostics",
@@ -39,11 +40,7 @@ const TEXT = {
 } as const;
 
 /** The symbol of each type: a crossed circle, a warning triangle, a bar chart. The word always goes with it. */
-const TYPE_PATH: Record<ShownType, string> = {
-  error: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM9 9l6 6M15 9l-6 6",
-  warning: "M12 3L2 20h20zM12 10v4M12 17h.01",
-  usage: "M4 20V10M10 20V4M16 20v-7M22 20H2",
-};
+const TYPE_ICON: Record<ShownType, (props: IconProps) => ReactElement> = { error: ErrorIcon, warning: WarningIcon, usage: UsageIcon };
 
 type Bar =
   | { readonly status: "idle" }
@@ -144,7 +141,7 @@ export function DiagnosticsPage({ bridge, connection, now: fixedNow }: Diagnosti
     <section className="dg" aria-label={TEXT.heading}>
       {head}
       {empty ? (
-        <EmptyState className="dg-empty" icon={<PulseIcon />} title={TEXT.empty} text={TEXT.emptyHint} />
+        <EmptyState className="dg-empty" icon={<PulseIcon size={20} />} title={TEXT.empty} text={TEXT.emptyHint} />
       ) : (
         <>
           <div className="dg-filters">
@@ -247,10 +244,11 @@ function TypeLabel({ type }: { readonly type: ShownType }) {
 }
 
 function TypeIcon({ type }: { readonly type: ShownType }) {
+  const Icon = TYPE_ICON[type];
   return (
-    <svg className="dg-symbol" data-type={type} aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d={TYPE_PATH[type]} />
-    </svg>
+    <span className="dg-symbol" data-type={type}>
+      <Icon size={13} />
+    </span>
   );
 }
 
@@ -277,13 +275,5 @@ function CollectSwitch({ on, pending, onFlip }: { readonly on: boolean | undefin
         </span>
       </Button>
     </span>
-  );
-}
-
-function PulseIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 12h4l3-8 4 16 3-8h4" />
-    </svg>
   );
 }

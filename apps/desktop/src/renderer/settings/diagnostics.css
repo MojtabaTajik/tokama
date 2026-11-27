@@ -178,6 +178,7 @@
 }
 
 .dg-symbol {
+  display: inline-flex;
   flex: none;
 }
 

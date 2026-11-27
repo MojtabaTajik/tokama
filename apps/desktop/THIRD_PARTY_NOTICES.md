@@ -1,14 +1,13 @@
 # Third-party notices
 
-## Font Awesome Free
+## Lucide
 
-The template icons in the app are icons from Font Awesome Free 7.3.1 (solid style), by Fonticons, Inc.
-Only the icons the app lists in `src/renderer/shell/TemplateIcon.tsx` are bundled, as inline SVG path
-data. The font, the CSS and the brands set are not used.
+Every interface icon in the app (not the Tokama logo or the tool logos) is a Lucide 1.81.0 icon (ISC, Copyright Lucide Icons and Contributors). Only the icons the app
+lists in `src/renderer/ui/icons.tsx` and `src/renderer/shell/TemplateIcon.tsx` are bundled, as inline SVG. No icon
+font and no download at run time.
 
-- Icons: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). No changes were made to the icon shapes.
-- Code in the `@fortawesome/free-solid-svg-icons` package: MIT.
-- Source and licence terms: https://fontawesome.com/license/free
+- Some Lucide icons derive from the Feather project (MIT, Copyright Cole Bemis, 2013-present).
+- The licence texts are in the LICENSE file of the `lucide-react` package. Site: https://lucide.dev
 
 ## Electron
 
