@@ -222,6 +222,24 @@ jobs:
       - uses: ./.github/actions/linux-package
         with:
           rpm-out: ${{ runner.temp }}/smoke-rpm
+      # The release workflow's signing of latest-linux.yml, with a key made for this run: a pull
+      # request reaches no secret. It proves the signing and checking commands on the feed file
+      # this build wrote; the unit tests prove that the app accepts what they sign.
+      - name: Sign and check latest-linux.yml with a throwaway key
+        run: |
+          set -euo pipefail
+          umask 077
+          key="$RUNNER_TEMP/throwaway-key"
+          ssh-keygen -q -t ed25519 -N '' -f "$key"
+          pub=$(awk '{print $1 " " $2}' "$key.pub")
+          cp apps/desktop/release/latest-linux.yml "$RUNNER_TEMP/latest-linux.yml"
+          ssh-keygen -Y sign -f "$key" -n tokama-update "$RUNNER_TEMP/latest-linux.yml"
+          printf 'tokama-update namespaces="tokama-update" %s\n' "$pub" > "$RUNNER_TEMP/allowed_signers"
+          ssh-keygen -Y verify -f "$RUNNER_TEMP/allowed_signers" -I tokama-update -n tokama-update -s "$RUNNER_TEMP/latest-linux.yml.sig" < "$RUNNER_TEMP/latest-linux.yml"
+          # Another namespace, and a changed feed file, must not verify.
+          if ssh-keygen -Y verify -f "$RUNNER_TEMP/allowed_signers" -I tokama-update -n other -s "$RUNNER_TEMP/latest-linux.yml.sig" < "$RUNNER_TEMP/latest-linux.yml"; then echo "a signature passed for the wrong namespace"; exit 1; fi
+          if (cat "$RUNNER_TEMP/latest-linux.yml"; echo "x: 1") | ssh-keygen -Y verify -f "$RUNNER_TEMP/allowed_signers" -I tokama-update -n tokama-update -s "$RUNNER_TEMP/latest-linux.yml.sig"; then echo "a signature passed for a changed feed file"; exit 1; fi
+          rm -f "$key" "$key.pub"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
