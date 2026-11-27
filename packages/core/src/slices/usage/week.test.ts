@@ -27,7 +27,7 @@ function buildItem(endedAt: number, over: Partial<AgentCallUsage> = {}, repoIds:
 }
 
 function report(items: RunItem[], clis: CliPlan[], extra: Partial<NonNullable<SummaryInput["week"]>> = {}, helperCalls: SummaryInput["helperCalls"] = []): UsageReport {
-  const out = summarizeUsage({ rows: [], helperCalls, range: 90, now: NOW, clis, week: { items, past: {}, logs: { "claude-code": logs() }, ...extra } });
+  const out = summarizeUsage({ rows: [], helperCalls, now: NOW, clis, week: { items, past: {}, logs: { "claude-code": logs() }, ...extra } });
   expect(UsageReportSchema.safeParse(out).success).toBe(true);
   return out;
 }
@@ -76,7 +76,7 @@ describe("the week block", () => {
     expect(report([buildItem(NOW - DAY)], [plan(10)]).week?.limits[0]).toHaveProperty("tokamaPercent");
 
     const past = (usedPercent: number): PastWindow => ({ window: "weekly_all", startsAt: WEEK_START - 7 * DAY, endsAt: WEEK_START, usedPercent, weight: { tokama: 4, all: 8 }, pricesAsOf: "2025-10-01" });
-    const before = (usedPercent: number) => summarizeUsage({ rows: [], range: 90, now: NOW, clis: [plan(30)], week: { window: "previous", items: [buildItem(WEEK_START - 3 * DAY)], past: { "claude-code": [past(usedPercent)] } } }).week;
+    const before = (usedPercent: number) => summarizeUsage({ rows: [], now: NOW, clis: [plan(30)], week: { window: "previous", items: [buildItem(WEEK_START - 3 * DAY)], past: { "claude-code": [past(usedPercent)] } } }).week;
     expect(before(9.9)?.limits[0]).not.toHaveProperty("tokamaPercent");
     expect(before(10)?.limits[0]).toMatchObject({ tokamaPercent: 5, outsidePercent: 5 });
   });
@@ -92,7 +92,7 @@ describe("the week block", () => {
   it("covers the window before: its limit and use from the stored list, and its calls from their own time", () => {
     const past: PastWindow = { window: "weekly_all", startsAt: WEEK_START - 7 * DAY, endsAt: WEEK_START + 1000, usedPercent: 40, weight: { tokama: 4, all: 8 }, pricesAsOf: "2025-10-01" };
     const items = [buildItem(WEEK_START - 3 * DAY), buildItem(NOW - DAY)];
-    const { week } = summarizeUsage({ rows: [], range: 90, now: NOW, clis: [plan(60)], week: { window: "previous", items, past: { "claude-code": [past] } } });
+    const { week } = summarizeUsage({ rows: [], now: NOW, clis: [plan(60)], week: { window: "previous", items, past: { "claude-code": [past] } } });
     expect(week?.window).toBe("previous");
     expect(week?.limits).toEqual([{ cliId: "claude-code", window: "weekly_all", startsAt: past.startsAt, endsAt: past.endsAt, usedPercent: 40, tokamaPercent: 20, outsidePercent: 20 }]);
     expect(week?.steps).toHaveLength(1);
@@ -105,7 +105,7 @@ describe("the week block", () => {
     const past: PastWindow = { window: "weekly_all", startsAt: WEEK_START - 7 * DAY, endsAt: WEEK_START, usedPercent: 50, weight: { tokama: 1, all: 2 }, pricesAsOf: "2024-01-01" };
     const cheap = buildItem(WEEK_START - 3 * DAY, { model: "claude-haiku-5-5" });
     const dear = buildItem(WEEK_START - 2 * DAY);
-    const { week } = summarizeUsage({ rows: [], range: 90, now: NOW, clis: [plan(60)], week: { window: "previous", items: [cheap, dear], past: { "claude-code": [past] } } });
+    const { week } = summarizeUsage({ rows: [], now: NOW, clis: [plan(60)], week: { window: "previous", items: [cheap, dear], past: { "claude-code": [past] } } });
     expect(week?.limits[0]).toMatchObject({ tokamaPercent: 25, outsidePercent: 25 });
     // 0.1 and 4 of 4.1: 25% of the limit shared in that proportion.
     const shares = Object.fromEntries((week?.steps ?? []).map((row) => [row.model, row.sharePercent]));
@@ -172,7 +172,7 @@ describe("the week block", () => {
   });
 
   it("is absent without items, and the old blocks stay", () => {
-    const old = summarizeUsage({ rows: [], range: 14, now: NOW, clis: [] });
+    const old = summarizeUsage({ rows: [], now: NOW, clis: [] });
     expect(old).not.toHaveProperty("week");
     expect(old).not.toHaveProperty("stepModels");
     expect(old).not.toHaveProperty("agentModels");
@@ -246,13 +246,71 @@ describe("retries", () => {
       expect.arrayContaining([
         ["check", "pnpm test", "orders-api", "build", 2, 2],
         ["check", "pnpm e2e", undefined, "build", 1, 1],
-        ["review", undefined, "orders-api", "build", 1, 1],
+        ["review", undefined, undefined, "build", 1, 1],
       ]),
     );
     expect(claude?.causes).toHaveLength(3);
     // The unattributed retry is in the total only.
     const causeTokens = claude?.causes.reduce((sum, c) => sum + c.tokens, 0);
     expect((claude?.tokens ?? 0) - (causeTokens ?? 0)).toBe(1_000_000);
+  });
+});
+
+describe("retries sent back by a reviewer", () => {
+  const sentBackIn = (repoIds: RepoId[], base: number) =>
+    item(
+      [step("build", "checks pass", [attempt(1, "passed", base, [["pnpm test", true]]), attempt(2, "passed", base + DAY, [["pnpm test", true]])]), step("review", "reviewer approves", [attempt(1, "failed", base + HOUR)], "reviewer")],
+      [
+        call({ stepId: "build", attempt: 1, endedAt: base, model: "claude-opus-5-5", tokens: MILLION }),
+        call({ stepId: "review", attempt: 1, endedAt: base + HOUR, agentId: "reviewer" as never, model: "claude-opus-5-5", tokens: MILLION }),
+        call({ stepId: "build", attempt: 2, endedAt: base + DAY, model: "claude-opus-5-5", tokens: MILLION }),
+      ],
+      { repoIds },
+    );
+
+  it("is one row, whatever the repos of the items: the repo belongs to a failing check", () => {
+    const { week } = report([sentBackIn(["orders-api" as RepoId], NOW - 5 * DAY), sentBackIn(["checkout-web" as RepoId], NOW - 3 * DAY)], [plan(80)]);
+    expect(week?.retries[0]?.causes).toEqual([expect.objectContaining({ kind: "review", stepId: "build", retries: 2, itemCount: 2 })]);
+    expect(week?.retries[0]?.causes[0]).not.toHaveProperty("repoId");
+  });
+});
+
+describe("what retries cost on a tool billed per use", () => {
+  it("counts every retry, also one under no cause, and marks a price from the table", () => {
+    const base = NOW - 2 * DAY;
+    // Fix ran again after a failure with no check or review behind it: no cause. Build ran again after a failed check: a cause.
+    const noCause = item([step("fix", "agent finishes", [attempt(1, "failed", base), attempt(2, "passed", base + HOUR)])], [call({ stepId: "fix", attempt: 1, endedAt: base, model: "claude-opus-5-5", tokens: MILLION }), call({ stepId: "fix", attempt: 2, endedAt: base + HOUR, model: "claude-opus-5-5", tokens: MILLION })]);
+    const withCause = item(
+      [step("build", "checks pass", [attempt(1, "failed", base, [["pnpm test", false]]), attempt(2, "passed", base + HOUR, [["pnpm test", true]])])],
+      [call({ stepId: "build", attempt: 1, endedAt: base, model: "claude-opus-5-5", tokens: MILLION }), call({ stepId: "build", attempt: 2, endedAt: base + HOUR, model: "claude-opus-5-5", tokens: MILLION })],
+    );
+    const { week } = report([noCause, withCause], [perUse]);
+    const [row] = week?.retries ?? [];
+    // Two retries of one million opus tokens each, priced from the table (the calls carry no figure of their own).
+    expect(row?.costUsd).toBeGreaterThan(0);
+    expect(row?.costEstimated).toBe(true);
+    expect(row?.causes).toHaveLength(1);
+    const causeCost = row?.causes.reduce((sum, cause) => sum + (cause.costUsd ?? 0), 0) ?? 0;
+    expect(row?.costUsd).toBeGreaterThan(causeCost);
+    expect(row?.costUsd).toBeCloseTo(causeCost * 2, 6);
+    // A plan user's retries carry no money at all.
+    expect(report([noCause, withCause], [plan(60)]).week?.retries[0]).not.toHaveProperty("costUsd");
+  });
+});
+
+describe("an item's retry line", () => {
+  it("names the step by its place among the item's steps", () => {
+    const base = NOW - 2 * DAY;
+    const twoSteps = item(
+      [step("plan", "agent finishes", [attempt(1, "passed", base)]), step("build", "checks pass", [attempt(1, "failed", base + HOUR, [["pnpm test", false]]), attempt(2, "passed", base + 2 * HOUR, [["pnpm test", true]])])],
+      [
+        call({ stepId: "plan", attempt: 1, endedAt: base, model: "claude-opus-5-5", tokens: MILLION }),
+        call({ stepId: "build", attempt: 1, endedAt: base + HOUR, model: "claude-opus-5-5", tokens: MILLION }),
+        call({ stepId: "build", attempt: 2, endedAt: base + 2 * HOUR, model: "claude-opus-5-5", tokens: MILLION }),
+      ],
+    );
+    const usage = itemUsageOf({ now: NOW, clis: [plan(60)], items: [twoSteps], helperCalls: [], past: {}, logs: { "claude-code": logs() } }, twoSteps.itemId);
+    expect(usage?.retries).toEqual([expect.objectContaining({ stepIndex: 1, attempts: [2], failingCheck: "pnpm test" })]);
   });
 });
 
@@ -325,7 +383,7 @@ describe("an item's use", () => {
     const input = { now: NOW, clis: [plan(80)], items: [retried, other], helperCalls: [], past: {}, logs: { "claude-code": logs({ totals: () => [{ model: "claude-opus-5-5", tokens: { ...MILLION, input: 5_000_000 } }] }) } };
     const usage = itemUsageOf(input, retried.itemId);
     // 8 of 20 logged weight is this item's: 80% used, so 32%; its part of Tokama's use is 8 of 16.
-    expect(usage).toEqual({ tokens: 2_000_000, shares: [{ cliId: "claude-code", sharePercent: 32 }], retries: [{ stepId: "build", attempts: [2], tokensPercent: 50, failingCheck: "pnpm test" }] });
+    expect(usage).toEqual({ tokens: 2_000_000, shares: [{ cliId: "claude-code", sharePercent: 32 }], retries: [{ stepIndex: 0, attempts: [2], tokensPercent: 50, failingCheck: "pnpm test" }] });
     expect(itemUsageOf(input, "item_0190a000-0000-7000-8000-ffffffffffff" as never)).toBeUndefined();
     expect(itemUsageOf({ ...input, items: [item([], [])] }, input.items[0]!.itemId)).toBeUndefined();
   });

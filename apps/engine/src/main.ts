@@ -51,7 +51,7 @@ async function main(): Promise<number> {
   const root = new AbortController();
   for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => root.abort());
 
-  // An AI CLI's session logs, read only for the "all on this Mac" usage view; never in sample mode.
+  // An AI CLI's session logs, read only to split a plan limit between Tokama and the user's own sessions; never in sample mode.
   const logsRoot = sample ? undefined : logReader()?.root(homedir());
   // Fake engine mode only: TOKAMA_SAMPLE_HISTORY=200 adds a long history of finished items.
   const history = sample ? Math.min(1500, Math.max(0, Number.parseInt(process.env["TOKAMA_SAMPLE_HISTORY"] ?? "0", 10) || 0)) : 0;

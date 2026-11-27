@@ -1,6 +1,6 @@
-// The usage query: recorded calls rolled up by day, workflow and item, and each AI CLI's plan
-// windows from its sources in order: the CLI's answer to a usage request, the last rate-limit
-// event of a call Tokama ran, the CLI's cached copy.
+// The usage query: what used each AI CLI's limit, retries, each model's record, today's calls, and
+// each CLI's plan windows from its sources in order: the CLI's answer to a usage request, the last
+// rate-limit event of a call Tokama ran, the CLI's cached copy.
 //
 // A usage request starts a short-lived CLI process, so it never runs per query: a query that
 // finds the last request older than `requestEveryMs` starts one in the background and answers
@@ -19,24 +19,19 @@ import {
   type ItemUsage,
   itemUsageOf,
   keepPast,
-  type LogScan,
   parseTemplateRecord,
   type PastWindow,
   type PlanCandidate,
   type PlanReading,
   PRICES_AS_OF,
-  rangeStart,
   type Result,
   type RunItem,
   type StoredItem,
   summarizeUsage,
   type TemplateStepDef,
   type TokenUsage,
-  type UsageEntry,
-  type UsageRange,
   type UsageReport,
   type UsageRow,
-  type UsageScope,
   type UsageWindow,
   type WindowReading,
   windowWeight,
@@ -99,13 +94,12 @@ export function usageItemsOf(items: readonly Pick<StoredItem, "id" | "title" | "
  * One row per call that ended at or after `since`, oldest first (equal times by call id). The
  * calls are the ones the item logs hold; a deleted item has none.
  */
-export function usageRowsOf(items: readonly Pick<StoredItem, "id" | "title" | "templateRef" | "repoIds" | "calls" | "deleted">[], since: number): UsageRow[] {
+export function usageRowsOf(items: readonly Pick<StoredItem, "id" | "title" | "templateRef" | "calls" | "deleted">[], since: number): UsageRow[] {
   const rows: UsageRow[] = [];
   for (const item of items) {
     if (item.deleted) continue;
-    const repoId = item.repoIds[0];
     for (const call of item.calls ?? []) {
-      if (call.endedAt >= since) rows.push({ itemId: item.id, title: item.title, templateId: item.templateRef, ...(repoId !== undefined && { repoId }), call });
+      if (call.endedAt >= since) rows.push({ itemId: item.id, title: item.title, call });
     }
   }
   return rows.sort((a, b) => a.call.endedAt - b.call.endedAt || (a.call.callId < b.call.callId ? -1 : a.call.callId > b.call.callId ? 1 : 0));
@@ -139,28 +133,22 @@ export interface UsageDeps {
   readonly clock: Clock;
   readonly onChange: () => void;
   readonly log?: (message: string) => void;
-  /**
-   * Tokama's helper calls that ended at or after `since`: the report counts them in its totals and
-   * lists them in `helpers`. In the `all` scope, Claude Code's logs hold the Claude Code ones too:
-   * the report skips those from `logs.coveredFrom()` on, so they are never counted twice.
-   */
+  /** Tokama's helper calls that ended at or after `since`: they count in today's figures and in the limit's use. */
   readonly helperCalls?: (since: number) => readonly HelperCallRow[];
   /** Default: 5 minutes. */
   readonly requestEveryMs?: number;
   /** The other AI CLIs' plans. Default: each says it has no source yet. */
   readonly otherClis?: (now: number) => readonly CliPlan[];
   /**
-   * An AI CLI's usage from its own logs, for the `all` scope and to split a limit between Tokama and
-   * the user's other sessions. Absent: the logs are not read.
+   * An AI CLI's usage from its own logs, to split a limit between Tokama and the user's other
+   * sessions. Absent: the logs are not read.
    */
   readonly logs?: {
     /** The AI CLI the logs are of. */
     readonly cliId: AiCliId;
     refresh(): void;
-    status(): LogScan;
     /** The last scan that ended read every log and found logs; the split needs it. */
     complete(): boolean;
-    entries(since: number): readonly UsageEntry[];
     /** The tokens the logs hold between two times, per model. */
     totals(from: number, to: number): readonly { readonly model: string; readonly tokens: TokenUsage }[];
     /** From when the logs hold the CLI's calls; undefined while they hold none. */
@@ -177,8 +165,6 @@ export interface UsageDeps {
     save(cliId: AiCliId, windows: readonly PastWindow[]): void;
   };
 }
-
-const NO_LOGS: LogScan = { state: "unavailable", filesDone: 0, filesTotal: 0, note: "This engine does not read Claude Code's logs." };
 
 const REQUEST_EVERY_MS = 5 * 60_000;
 // The cache is a large config file; read it at most this often.
@@ -231,39 +217,24 @@ export class UsageService {
     return state;
   }
 
-  async report(range: UsageRange, scope: UsageScope = "tokama", window: UsageWindow = "current"): Promise<UsageReport> {
-    const { now, rows, clis, helperCalls, week } = await this.read(range);
-    const weekly = week === undefined ? {} : { week: { ...week, window } };
-    if (scope === "tokama") return summarizeUsage({ rows, helperCalls, range, now, clis, scope, ...weekly });
-    const logs = this.deps.logs;
-    const logsFrom = logs?.coveredFrom();
-    return summarizeUsage({
-      rows,
-      helperCalls,
-      range,
-      now,
-      clis,
-      scope,
-      logs: logs?.entries(rangeStart(now, range)) ?? [],
-      ...(logsFrom !== undefined && { logsFrom }),
-      scan: logs?.status() ?? NO_LOGS,
-      ...weekly,
-    });
+  async report(window: UsageWindow = "current"): Promise<UsageReport> {
+    const { now, rows, clis, helperCalls, week } = await this.read();
+    return summarizeUsage({ rows, helperCalls, now, clis, ...(week !== undefined && { week: { ...week, window } }) });
   }
 
   /** What one item used: tokens, its part of each AI CLI's limit, and the steps it ran again. Undefined when the engine has no calls of it. */
   async itemUsage(itemId: ItemId): Promise<ItemUsage | undefined> {
     // Opening an item asks the CLI for nothing, scans nothing and writes nothing: it uses what the usage page last read.
-    const { now, clis, helperCalls, week } = await this.read(90, true);
+    const { now, clis, helperCalls, week } = await this.read(true);
     return week === undefined ? undefined : itemUsageOf({ now, clis, helperCalls, ...week }, itemId);
   }
 
   /** The inputs of a report: the plans, the recorded calls and the weekly windows that ended. */
-  private async read(range: UsageRange, passive = false) {
+  private async read(passive = false) {
     const now = this.deps.clock.now();
     const planned = this.list.filter((adapter) => adapter.plan !== undefined).map((adapter) => adapter.id);
     if (!passive) for (const cliId of planned) this.requestIfDue(cliId, now);
-    const since = Math.min(rangeStart(now, range), now - LOOKBACK_MS);
+    const since = now - LOOKBACK_MS;
     const rows = this.deps.rows(since);
     const plans: CliPlan[] = [];
     for (const cliId of planned) plans.push(choosePlan(cliId, await this.candidates(cliId, rows, now), now, this.stateOf(cliId).version));

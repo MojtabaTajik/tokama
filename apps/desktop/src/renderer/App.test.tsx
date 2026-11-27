@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ConnectionState, ToolsPathInfo, TokamaBridge } from "../shared/bridge.js";
+import { DEFAULT_DESKTOP_STATE } from "../shared/desktop-state.js";
 import { App } from "./App.js";
 import { BACKEND_IDS, backendOf } from "./brand/backends/index.js";
 import { brand } from "./brand/index.js";
@@ -11,7 +12,7 @@ import { TIP_OPEN_MS } from "./shell/Rail.js";
 import { board, CONNECTED, fakeBridge } from "./testing/bridge.js";
 import { ITEMS, items, NOW, setup } from "./testing/sample.js";
 import { machineReport } from "./testing/machine.js";
-import { usageReport } from "./testing/usage.js";
+import { planReport } from "./testing/usage.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -60,13 +61,13 @@ describe("App shell", () => {
   });
 
   it("lists every AI CLI with its windows, reset times and data age in the Insights tooltip, and marks one near its limit", async () => {
-    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
+    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: planReport } : undefined) }).bridge);
     const insights = $('.rail button[aria-label="Insights"]')!;
     const tip = $(".rail .insights-tip")!;
     expect(insights.getAttribute("aria-controls")).toBe(tip.id);
     expect(insights.getAttribute("aria-expanded")).toBe("false");
-    expect([...tip.querySelectorAll('[role="meter"]')].map((meter) => meter.getAttribute("aria-label"))).toEqual(["5-hour window", "Weekly window", "Codex CLI Weekly window"]);
-    expect(tip.querySelector(".it-other .ins-tone")?.textContent).toBe("! near limit");
+    expect([...tip.querySelectorAll('[role="meter"]')].map((meter) => meter.getAttribute("aria-label"))).toEqual(["Session window", "Weekly window", "Fable weekly window", "Codex CLI Weekly window"]);
+    expect(tip.querySelector(".ins-tone")?.textContent).toBe("! near limit");
     expect(tip.querySelector(".it-section-head .it-aside")?.textContent).toBe("as of 14:58");
     // The ! is a symbol on the icon, beside the words in the tooltip.
     expect($$(".rail .badge").map((badge) => [badge.getAttribute("data-tone"), badge.textContent])).toEqual([
@@ -76,7 +77,7 @@ describe("App shell", () => {
   });
 
   it("loads the usage report again when the Insights tooltip opens", async () => {
-    const fake = fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) });
+    const fake = fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: planReport } : undefined) });
     await render(fake.bridge);
     const usageQueries = () => fake.query.mock.calls.filter(([q]) => q.type === "usage").length;
     expect(usageQueries()).toBe(1);
@@ -86,7 +87,7 @@ describe("App shell", () => {
   });
 
   it("opens the AI CLIs settings from the tooltip, and the rail's Settings on its first page again", async () => {
-    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
+    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: planReport } : undefined) }).bridge);
     await click($(".insights-tip .it-link")!);
     expect($(".settings-entry[aria-current='page']")?.textContent).toBe("AI CLIs");
     await click($(".settings-back")!);
@@ -95,7 +96,7 @@ describe("App shell", () => {
   });
 
   it("opens a Today item from the tooltip in the drawer, leaving About so the drawer shows", async () => {
-    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
+    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: planReport } : undefined) }).bridge);
     await click($('.rail-user[aria-label="About Tokama"]')!);
     expect($(".drawer")).toBeNull();
     await click($(".insights-tip .it-title")!);
@@ -109,7 +110,7 @@ describe("App shell", () => {
   });
 
   it("hides the item drawer on Insights, Settings and About, and reopens the same item on the board", async () => {
-    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
+    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: planReport } : undefined) }).bridge);
     await click($(".pl-row")!);
     const title = text(".drawer h2");
     expect($(".drawer")).not.toBeNull();
@@ -129,7 +130,7 @@ describe("App shell", () => {
   });
 
   it("opens the drawer's item in the full view and back, keeps it across Insights, and ends it from the sidebar", async () => {
-    const fake = fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) });
+    const fake = fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: planReport } : undefined) });
     await render(fake.bridge);
     await click($(".pl-row")!);
     const title = text(".drawer h2");
@@ -162,7 +163,7 @@ describe("App shell", () => {
   });
 
   it("opens New work from Insights or the sidebar while an item is in the full view: the list comes back with the composer", async () => {
-    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
+    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: planReport } : undefined) }).bridge);
     await click($(".pl-row")!);
     await click($('.drawer button[aria-label="Open full view"]')!);
     await click($('.rail button[aria-label="Insights"]')!);
@@ -200,7 +201,7 @@ describe("App shell", () => {
   });
 
   it("leaves focus on the rail button that hid the drawer, also after a round trip", async () => {
-    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
+    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: planReport } : undefined) }).bridge);
     await click($(".pl-row")!);
     const insights = $('.rail button[aria-label="Insights"]') as HTMLElement;
     for (let trip = 0; trip < 2; trip++) {
@@ -214,19 +215,36 @@ describe("App shell", () => {
   });
 
   it("opens the Insights page from the rail and goes back with Board", async () => {
-    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: usageReport } : undefined) }).bridge);
+    await render(fakeBridge(CONNECTED, { reply: (q) => (q.type === "usage" ? { ok: true, data: planReport } : undefined) }).bridge);
     await click($('.rail button[aria-label="Insights"]')!);
     expect(text(".main-header h1")).toBe("Insights");
     expect($(".insights")?.hasAttribute("data-open")).toBe(false);
     expect($('.rail button[aria-label="Insights"]')?.getAttribute("aria-current")).toBe("page");
     expect($('.rail button[aria-label="Board"]')?.hasAttribute("aria-current")).toBe(false);
-    expect($$(".ins-card").map((plan) => plan.getAttribute("aria-label"))).toEqual(["Claude Code", "Codex CLI", "Ollama"]);
+    expect($$(".ins-limit-tool").map((tool) => tool.textContent)).toEqual(["Claude CodeMAX", "Codex CLIPLUS", "OLOllama"]);
     await click($('.rail button[aria-label="Board"]')!);
     expect(text(".main-header h1")).toBe("All work");
   });
 
+  it("saves the AI tool picked on the Usage tab, and opens on the one the last run saved", async () => {
+    const reply = (q: { type: string }) => (q.type === "usage" ? { ok: true as const, data: planReport } : undefined);
+    const fake = fakeBridge(CONNECTED, { reply });
+    await render(fake.bridge);
+    await click($('.rail button[aria-label="Insights"]')!);
+    await click($$('[aria-label="AI tool"] [role="radio"]')[2]!);
+    expect(fake.saveLayout).toHaveBeenLastCalledWith({ usageTool: "codex-cli" });
+    await click($$('[aria-label="AI tool"] [role="radio"]')[0]!);
+    expect(fake.saveLayout).toHaveBeenLastCalledWith({ usageTool: undefined });
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    const again = fakeBridge(CONNECTED, { reply });
+    await act(async () => root.render(<App bridge={again.bridge} retryDelayMs={10} now={NOW} initial={{ ...DEFAULT_DESKTOP_STATE, usageTool: "ollama" }} />));
+    await click($('.rail button[aria-label="Insights"]')!);
+    expect($('[aria-label="AI tool"] [aria-checked="true"]')?.getAttribute("aria-label")).toBe("Ollama");
+  });
+
   it("opens the board and its New work composer from the Machine tab's empty state", async () => {
-    const reply = (q: { type: string }) => (q.type === "machine" ? { ok: true as const, data: { ...machineReport, items: [] } } : q.type === "usage" ? { ok: true as const, data: usageReport } : undefined);
+    const reply = (q: { type: string }) => (q.type === "machine" ? { ok: true as const, data: { ...machineReport, items: [] } } : q.type === "usage" ? { ok: true as const, data: planReport } : undefined);
     await render(fakeBridge(CONNECTED, { reply }).bridge);
     await click($('.rail button[aria-label="Insights"]')!);
     await click($$('[role="tab"]').find((tab) => tab.textContent === "Machine")!);
@@ -263,7 +281,7 @@ describe("App shell", () => {
   it("queries the setup and the board", async () => {
     const { bridge, query } = fakeBridge(CONNECTED);
     await render(bridge);
-    expect(query.mock.calls.map(([q]) => q)).toEqual([{ type: "setup" }, { type: "board" }, { type: "usage", range: 14, scope: "tokama" }, { type: "diagnostics_list", limit: 100 }, { type: "diagnostics_settings" }]);
+    expect(query.mock.calls.map(([q]) => q)).toEqual([{ type: "setup" }, { type: "board" }, { type: "usage", window: "current" }, { type: "diagnostics_list", limit: 100 }, { type: "diagnostics_settings" }]);
   });
 
   it("shows the All work header and the list", async () => {

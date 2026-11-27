@@ -1,29 +1,29 @@
 import { describe, expect, it } from "vitest";
 import { NOW, setup } from "../testing/sample.js";
-import { allReport, usageReport } from "../testing/usage.js";
+import { atLimit, noReading, payPerUse, planReport } from "../testing/usage.js";
 import { formatDuration } from "../format/duration.js";
 import { stamp } from "../format/time.js";
 import {
   ageText,
-  cardLabel,
-  chartModel,
+  attemptsText,
   cliAlert,
   formatCost,
   formatTokens,
-  formatUsd,
-  niceMax,
-  railBadge,
-  resetWhen,
-  scanText,
-  share,
-  tickLabel,
-  shareText,
-  windowLabel,
-  windowShort,
-  levelOf,
+  headlineFacts,
+  headlineOf,
   LEVEL_TONE,
   LEVEL_WORD,
-  tokamaTotals,
+  levelOf,
+  limitName,
+  limitShare,
+  railBadge,
+  resetWhen,
+  shareText,
+  toolColour,
+  usageTools,
+  usePercent,
+  windowLabel,
+  windowShort,
   workflowName,
 } from "./usage-model.js";
 
@@ -35,6 +35,12 @@ describe("plan window words", () => {
     const names = ["five_hour", "seven_day", "seven_day_opus", "session", "weekly_all", "weekly_scoped", "monthly_extra"].map((window) => windowLabel({ window }));
     expect(names).toEqual(["5-hour window", "Weekly window", "Weekly · Opus", "Session window", "Weekly window", "Scoped weekly window", "monthly extra"]);
     expect([windowLabel({ window: "weekly_scoped", scope: "Fable" }), windowShort({ window: "weekly_scoped", scope: "Fable" }), windowShort({ window: "session" })]).toEqual(["Fable weekly window", "Fable weekly", "Session"]);
+  });
+
+  it("names each limit as the Limits list shows it", () => {
+    expect(
+      [{ window: "five_hour" }, { window: "session" }, { window: "seven_day" }, { window: "weekly_all" }, { window: "weekly_scoped", scope: "Fable" }, { window: "weekly_scoped" }, { window: "odd_one" }].map(limitName),
+    ).toEqual(["Session · 5 hours", "Session · 5 hours", "Weekly", "Weekly · all models", "Weekly · Fable", "Weekly · scoped", "odd one"]);
   });
 
   it("says how much of the weekly limit a scoped limit may use", () => {
@@ -76,6 +82,8 @@ describe("plan window words", () => {
 });
 
 describe("times and numbers", () => {
+  const MIN = MINUTE;
+
   it("writes a time today as the clock, and another day with its weekday and date", () => {
     expect(stamp(at(20, 17, 10), NOW)).toBe("17:10");
     expect(stamp(at(23, 9), NOW)).toBe("Thu 23 Oct 09:00");
@@ -87,64 +95,18 @@ describe("times and numbers", () => {
     expect(ageText(NOW - 3 * 24 * 60 * MINUTE, NOW)).toBe("data 3 d 00 h old");
   });
 
-  it("formats tokens compactly and costs as estimates, unknown when nothing was priced", () => {
-    expect([formatTokens(950), formatTokens(1234), formatTokens(163_000), formatTokens(2_412_000), formatTokens(24_000_000)]).toEqual(["950", "1.2k", "163k", "2.41M", "24.0M"]);
-    expect([formatCost(3.1), formatCost(0), formatCost(12.1), formatCost(1234.5), formatCost(null)]).toEqual(["≈ $3.10", "≈ $0.00", "≈ $12.10", "≈ $1,235", "unknown"]);
-    expect([share(62, 100), share(0.1, 100), share(0, 100), share(5, 0)]).toEqual([62, 1, 0, 0]);
-  });
-});
-
-describe("chartModel", () => {
-  it("has a column per day with segments in the setup's workflow order, whatever their size", () => {
-    const model = chartModel(usageReport, "tokens", setup);
-    expect(model.columns).toHaveLength(14);
-    expect(model.series).toEqual(["builtin/emergency-investigator", "builtin/plan-and-build"]);
-    const today = model.columns.at(-1)!;
-    expect(today).toMatchObject({ date: "2025-10-20", weekday: "Mon", day: "20", total: 300_000 });
-    expect(today.segments.map((s) => s.templateId)).toEqual(["builtin/emergency-investigator", "builtin/plan-and-build"]);
-    expect(model.max).toBe(500_000);
-    expect(model.ticks).toEqual([0, 125_000, 250_000, 375_000, 500_000]);
-  });
-
-  it("stacks estimated cost the same way, and puts workflows the setup no longer lists last", () => {
-    const cost = chartModel(usageReport, "cost", setup);
-    expect(cost.columns.at(-1)?.total).toBeCloseTo(3.5, 10);
-    expect(cost.max).toBe(5);
-    expect(chartModel(usageReport, "tokens", undefined).series).toEqual(["builtin/emergency-investigator", "builtin/plan-and-build"]);
-    expect(workflowName("orders-api/old-flow", setup)).toBe("old-flow");
-    expect(workflowName("builtin/plan-and-build", setup)).toBe("Plan and build");
-  });
-
-  it("rounds the axis top up to 1, 2, 2.5 or 5 times a power of ten, and labels ticks per measure", () => {
-    expect([niceMax(0), niceMax(3), niceMax(180), niceMax(2_400), niceMax(4_800), niceMax(9_100)]).toEqual([1, 5, 200, 2_500, 5_000, 10_000]);
-    expect([tickLabel(0, "tokens"), tickLabel(250_000, "tokens"), tickLabel(2.5, "cost"), tickLabel(5, "cost")]).toEqual(["0", "250k", "$2.50", "$5"]);
-  });
-});
-
-describe("Usage v2 words and numbers", () => {
-  const MIN = 60_000;
-
   it("writes billions, and picks the unit after rounding so no value reads 1000k or 1000M", () => {
-    expect([999_499, 999_950, 9_999_999, 99_950_000, 420_000_000, 999_999_500, 2_339_500_000, 99_960_000_000].map(formatTokens)).toEqual([
-      "999k",
-      "1.00M",
-      "10.0M",
-      "100M",
-      "420M",
-      "1.00B",
-      "2.34B",
-      "100B",
-    ]);
+    expect([950, 1234, 163_000, 2_412_000, 24_000_000].map(formatTokens)).toEqual(["950", "1.2k", "163k", "2.41M", "24.0M"]);
+    expect([999_499, 999_950, 9_999_999, 99_950_000, 420_000_000, 999_999_500, 2_339_500_000, 99_960_000_000].map(formatTokens)).toEqual(["999k", "1.00M", "10.0M", "100M", "420M", "1.00B", "2.34B", "100B"]);
   });
 
-  it("writes a table cost without the estimate sign, and unknown without a price", () => {
-    expect([formatUsd(3.1), formatUsd(1755), formatUsd(null)]).toEqual(["$3.10", "$1,755", "unknown"]);
+  it("writes money with the estimate sign only when the price came from the table", () => {
+    expect([formatCost(16.1), formatCost(0), formatCost(1234.5), formatCost(2.7, true)]).toEqual(["$16.10", "$0.00", "$1,235", "≈ $2.70"]);
   });
 
-  it("names each limit as its card shows it", () => {
-    expect(
-      [{ window: "five_hour" }, { window: "session" }, { window: "seven_day" }, { window: "weekly_all" }, { window: "weekly_scoped", scope: "Fable" }, { window: "weekly_scoped" }, { window: "odd_one" }].map(cardLabel),
-    ).toEqual(["Session · 5 hours", "Session · 5 hours", "Weekly", "Weekly · all models", "Weekly · Fable", "Weekly · scoped", "odd one"]);
+  it("writes a part of a limit with a tilde, one decimal under 10, and a part of use as a whole percent", () => {
+    expect([27, 5.1, 0.94, 0.02, 99.6, 8, 1.04].map(limitShare)).toEqual(["~27%", "~5.1%", "~0.9%", "<0.1%", "~100%", "~8%", "~1%"]);
+    expect([39, 0.3, 0].map(usePercent)).toEqual(["39%", "<1%", "0%"]);
   });
 
   it("counts down to a reset in minutes, hours or days, and says when it is", () => {
@@ -155,18 +117,50 @@ describe("Usage v2 words and numbers", () => {
     expect(resetWhen(new Date(2025, 9, 29, 9, 0).getTime(), now)).toBe("Wed 29 Oct 09:00");
   });
 
-  it("totals Tokama's own calls in either scope", () => {
-    expect(tokamaTotals(usageReport)).toEqual({ tokens: 896_000, costUsd: 12.1, unpricedCalls: 2 });
-    expect(tokamaTotals(allReport)).toEqual({ tokens: 896_000, costUsd: 12.1, unpricedCalls: 0 });
-    expect(tokamaTotals({ ...allReport, workflows: allReport.workflows.map((w) => ({ ...w, costUsd: null })) })).toMatchObject({ costUsd: null });
+  it("names a workflow by the setup, else by the last part of its key", () => {
+    expect(workflowName("orders-api/old-flow", setup)).toBe("old-flow");
+    expect(workflowName("builtin/plan-and-build", setup)).toBe("Plan and build");
   });
 
-  it("shows the first log scan's progress and why the logs cannot be read, and nothing else", () => {
-    expect(scanText(undefined)).toBeUndefined();
-    expect(scanText({ state: "ready", filesDone: 9, filesTotal: 9 })).toBeUndefined();
-    expect(scanText({ state: "scanning", filesDone: 3, filesTotal: 9 })).toBe("Reading Claude Code logs… 3 of 9 files");
-    expect(scanText({ state: "scanning", filesDone: 3, filesTotal: 9, asOf: 1 })).toBeUndefined();
-    expect(scanText({ state: "unavailable", filesDone: 0, filesTotal: 0, note: "No logs folder." })).toBe("No logs folder.");
-    expect(scanText({ state: "unavailable", filesDone: 0, filesTotal: 0 })).toBeUndefined();
+  it("lists attempts in words", () => {
+    expect([[2], [2, 3], [2, 3, 4]].map(attemptsText)).toEqual(["Attempt 2", "Attempts 2 and 3", "Attempts 2, 3 and 4"]);
+  });
+});
+
+describe("the first sentence", () => {
+  it("is about the limit that runs out first at its pace", () => {
+    const headline = headlineOf(planReport.clis, NOW, undefined);
+    expect(headline).toMatchObject({ kind: "runs_out", plan: { cliId: "claude-code" }, window: { window: "weekly_all" } });
+    expect(headlineFacts(headline!, planReport.clis, NOW)).toBe("Max plan · 82% used with 2 d 18 h to go · resets Thu 09:00 · this week's pace is 19% a day · about 1 d 19 h short · Codex CLI is on pace to stay under");
+  });
+
+  it("is about the picked tool only, and on pace when nothing runs out", () => {
+    expect(headlineOf(planReport.clis, NOW, "codex-cli")).toMatchObject({ kind: "on_pace", plan: { cliId: "codex-cli" } });
+    expect(headlineOf(planReport.clis, NOW, "ollama")).toBeUndefined();
+  });
+
+  it("names a reached limit before one that runs out", () => {
+    expect(headlineOf(atLimit.clis, NOW, undefined)).toMatchObject({ kind: "at_limit", window: { window: "weekly_all" } });
+  });
+
+  it("is none without a reading, and none for a tool billed per use", () => {
+    expect(headlineOf(noReading.clis, NOW, undefined)).toBeUndefined();
+    expect(headlineOf(payPerUse.clis, NOW, undefined)).toBeUndefined();
+  });
+});
+
+describe("AI tools", () => {
+  it("offers the tools the setup finds installed and any that has a reading or runs, in the app's order", () => {
+    expect(usageTools(planReport, setup)).toEqual(["claude-code", "codex-cli", "ollama"]);
+    const quietReport = { ...planReport, clis: planReport.clis.map((cli) => ({ cliId: cli.cliId, windows: [] })), week: { ...planReport.week!, steps: [], helpers: [] } };
+    expect(usageTools(quietReport, setup)).toEqual([]);
+    const installed = { ...setup, health: { ...setup.health, clis: [{ cliId: "claude-code" as const, installed: true, loggedIn: true }, { cliId: "codex-cli" as const, installed: false, loggedIn: false }] } };
+    expect(usageTools(quietReport, installed)).toEqual(["claude-code"]);
+  });
+
+  it("colours a tool by its place in the list, never by an amount", () => {
+    const tools = ["claude-code", "codex-cli", "ollama"] as const;
+    expect(tools.map((id) => toolColour(id, tools))).toEqual(["var(--tag-sky)", "var(--tag-sand)", "var(--tag-clay)"]);
+    expect(toolColour("ollama", ["claude-code"])).toBe("var(--chart-other)");
   });
 });

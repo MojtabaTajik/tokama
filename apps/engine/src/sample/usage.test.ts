@@ -22,7 +22,7 @@ describe("sample usage", () => {
     expect(rows.every((row) => row.call.endedAt <= now && row.call.startedAt <= row.call.endedAt)).toBe(true);
     expect(rows.some((row) => localDate(row.call.endedAt) === localDate(now))).toBe(true);
     expect(sampleUsageRows(setup, [], now)).toEqual(rows);
-    expect(summarizeUsage({ rows, range: 14, now, clis: [] }).days.at(-1)?.workflows.length).toBeGreaterThan(0);
+    expect(summarizeUsage({ rows, now, clis: [] }).today?.itemCount).toBeGreaterThan(0);
   });
 
   describe("the items", () => {

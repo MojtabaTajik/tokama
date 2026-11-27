@@ -13,17 +13,14 @@ import {
   type HelperCallRow,
   type ItemId,
   type ItemRecord,
-  localDate,
   type PastWindow,
   type PlanReading,
-  pricedEntry,
   PRICES_AS_OF,
   type RepoId,
   type RunItem,
   type Setup,
   type StepId,
   type TokenUsage,
-  type UsageEntry,
   type UsageRow,
   withForecast,
 } from "@tokama/core";
@@ -126,6 +123,9 @@ const FLOWS: readonly Flow[] = [
     steps: [{ id: "review", name: "Review", agentId: "reviewer", doneWhen: "reviewer approves", cliId: "codex-cli", pool: only("gpt-5-codex", 6) }],
   },
 ];
+
+/** The parts of the sample system that later items of a workflow are about, so their titles differ. */
+const SCOPES = ["billing", "search", "payments", "notifications", "reports", "auth", "exports", "catalog", "shipping", "returns", "pricing", "audit"] as const;
 
 /** What a failing check is called in each sample repo. */
 const FAILING_CHECK: Readonly<Record<string, string>> = { "orders-api": "pnpm test", "checkout-web": "pnpm e2e" };
@@ -246,7 +246,9 @@ export function sampleUsageItems(setup: Setup, board: readonly ItemRecord[], now
       const scale = daysAgo === 0 ? Math.min(1, ((now - dayStart) * 0.8) / span) : 1;
       let cursor = daysAgo === 0 ? dayStart + next() * (now - dayStart - span * scale) : dayStart + (9 + next() * 7) * HOUR;
 
-      const title = flow.titles[k % flow.titles.length]!;
+      // The first round uses the titles as written; later rounds name another part of the system, so no two items share a title.
+      const round = Math.floor(k / flow.titles.length);
+      const title = `${flow.titles[k % flow.titles.length]!}${round === 0 ? "" : ` · ${SCOPES[(round - 1) % SCOPES.length]!}`}`;
       const known = daysAgo <= 1 ? board.find((item) => item.title === title && !usedIds.has(item.id)) : undefined;
       const itemId = (known?.id ?? `item_5a3e${hex(f, 4)}-${hex(k, 4)}-4000-8000-000000000000`) as ItemId;
       usedIds.add(itemId);
@@ -300,7 +302,7 @@ export function sampleUsageItems(setup: Setup, board: readonly ItemRecord[], now
 /** The sample calls as the report's rows, oldest first. */
 export function sampleUsageRows(setup: Setup, board: readonly ItemRecord[], now: number): UsageRow[] {
   return sampleUsageItems(setup, board, now)
-    .flatMap((item) => item.calls.map((call): UsageRow => ({ itemId: item.itemId, title: item.title, templateId: item.templateId, ...(item.repoIds[0] !== undefined && { repoId: item.repoIds[0] }), call })))
+    .flatMap((item) => item.calls.map((call): UsageRow => ({ itemId: item.itemId, title: item.title, call })))
     .sort((a, b) => a.call.endedAt - b.call.endedAt || (a.call.callId < b.call.callId ? -1 : 1));
 }
 
@@ -412,42 +414,4 @@ export function sampleHistory(calls: readonly AgentCallUsage[], now: number): Pa
   const startsAt = endsAt - 7 * DAY;
   const tokama = claudeCalls(calls, startsAt, endsAt).reduce((sum, call) => sum + (callWeight(call) ?? 0), 0);
   return [{ window: "weekly_all", startsAt, endsAt, usedPercent: 64, ...(tokama > 0 && { weight: { tokama, all: (tokama * 64) / 46 }, pricesAsOf: PRICES_AS_OF }) }];
-}
-
-/**
- * Claude Code's sample usage from its own logs: more than Tokama ran, on three models, in the
- * sample repos and outside them, every day of the last 90.
- */
-export function sampleLogEntries(setup: Setup, now: number): UsageEntry[] {
-  const today = new Date(now);
-  const entries: UsageEntry[] = [];
-  const models = [
-    { model: OPUS, scale: 1 },
-    { model: SONNET, scale: 0.6 },
-    { model: HAIKU, scale: 0.2 },
-  ];
-  for (let daysAgo = DAYS - 1; daysAgo >= 0; daysAgo--) {
-    const next = random(daysAgo * 104_729 + 3);
-    const day = localDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() - daysAgo).getTime());
-    for (const [n, { model, scale }] of models.entries()) {
-      const repoId = n === 2 ? null : (setup.repos[n % Math.max(1, setup.repos.length)]?.id ?? null);
-      const messages = Math.round((40 + next() * 260) * scale);
-      entries.push(
-        pricedEntry({
-          day,
-          model,
-          cliId: "claude-code",
-          repoId,
-          calls: messages,
-          tokens: {
-            input: messages * Math.round(5 + next() * 40),
-            output: messages * Math.round(200 + next() * 900),
-            cacheRead: messages * Math.round(20_000 + next() * 60_000),
-            cacheWrite: messages * Math.round(500 + next() * 3_000),
-          },
-        }),
-      );
-    }
-  }
-  return entries;
 }

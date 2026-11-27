@@ -1,11 +1,12 @@
 // Segmented: a row of options where exactly one is chosen, as a radio group. The chosen option
 // shows a ✓ before its words, so colour is never the only signal. Arrow keys, Home and End move
 // the choice (and the focus with it); only the chosen option is in the Tab order.
-import type { KeyboardEvent } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { Button } from "./Button.js";
 
 export interface SegmentedProps<T extends string> {
-  readonly options: readonly { readonly value: T; readonly label: string }[];
+  /** `icon` is drawn in place of the label, which then names the option for screen readers and as its hover title. */
+  readonly options: readonly { readonly value: T; readonly label: string; readonly icon?: ReactNode }[];
   readonly value: T;
   readonly onChange: (value: T) => void;
   /** The id of the element that names the group; or use `label`. */
@@ -34,13 +35,23 @@ export function Segmented<T extends string>({ options, value, onChange, labelled
       {options.map((option) => {
         const chosen = option.value === value;
         return (
-          <Button key={option.value} variant="plain" className="segmented-option" role="radio" aria-checked={chosen} tabIndex={chosen ? 0 : -1} onClick={() => onChange(option.value)}>
+          <Button
+            key={option.value}
+            variant="plain"
+            className="segmented-option"
+            role="radio"
+            aria-checked={chosen}
+            aria-label={option.icon === undefined ? undefined : option.label}
+            title={option.icon === undefined ? undefined : option.label}
+            tabIndex={chosen ? 0 : -1}
+            onClick={() => onChange(option.value)}
+          >
             {chosen ? (
               <span className="segmented-check" aria-hidden="true">
                 ✓
               </span>
             ) : null}
-            {option.label}
+            {option.icon ?? option.label}
           </Button>
         );
       })}

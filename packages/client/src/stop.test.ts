@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, unlinkSync, writ
 import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { API_VERSION, encodeLine, type Liveness, type ManualClock, manualClock } from "@tokama/core";
+import { API_VERSION, encodeLine, type Liveness, type ManualClock, manualClock, SHUTDOWN_IF_IDLE_SINCE } from "@tokama/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { stopEngine, type StopOptions } from "./stop.js";
 
@@ -140,7 +140,7 @@ describe("stopEngine", () => {
     writeLock(PID, ID);
     const engine = await fakeEngine((_message, socket) => accept(socket));
     const { stop, signals } = setup();
-    expect(await stop({ expectedEngineId: ID, engine: { apiVersion: API_VERSION - 1, runningItems: 3 } })).toEqual({ kind: "refused", runningItems: 3 });
+    expect(await stop({ expectedEngineId: ID, engine: { apiVersion: SHUTDOWN_IF_IDLE_SINCE - 1, runningItems: 3 } })).toEqual({ kind: "refused", runningItems: 3 });
     expect(await stop({ expectedEngineId: ID, engine: { apiVersion: 1 } })).toEqual({ kind: "refused" });
     expect(engine.received).toEqual([]);
     expect(signals).toEqual([]);
@@ -153,7 +153,7 @@ describe("stopEngine", () => {
       void self.stop();
     });
     const { stop, signals } = setup();
-    expect(await stop({ expectedEngineId: ID, engine: { apiVersion: API_VERSION - 1, runningItems: 0 } })).toEqual({ kind: "stopped", forced: false });
+    expect(await stop({ expectedEngineId: ID, engine: { apiVersion: SHUTDOWN_IF_IDLE_SINCE - 1, runningItems: 0 } })).toEqual({ kind: "stopped", forced: false });
     expect(engine.received).toEqual([{ kind: "shutdown", apiVersion: API_VERSION, token: "tok" }]);
     expect(signals).toEqual([]);
   });
@@ -247,7 +247,7 @@ describe("stopEngine", () => {
         void engine.stop();
       },
     });
-    expect(await stop({ expectedEngineId: ID, engine: { apiVersion: API_VERSION - 1, runningItems: 0 } })).toEqual({ kind: "stopped", forced: false });
+    expect(await stop({ expectedEngineId: ID, engine: { apiVersion: SHUTDOWN_IF_IDLE_SINCE - 1, runningItems: 0 } })).toEqual({ kind: "stopped", forced: false });
     expect(signals).toEqual([[PID, "SIGTERM"]]);
   });
 

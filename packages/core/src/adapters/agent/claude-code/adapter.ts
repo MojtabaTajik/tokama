@@ -4,7 +4,7 @@ import type { AiCliAdapter } from "../../../kernel/ports/index.js";
 import { claudeCodeLaunch } from "./launch.js";
 import { readClaudePlanCache, requestClaudePlan } from "./plan-usage.js";
 import { createClaudeCodeRuntime } from "./runtime.js";
-import { repoOfProject, scanClaudeLogs } from "./session-logs.js";
+import { scanClaudeLogs } from "./session-logs.js";
 import { claudeCodeStatus, LOGIN_COMMAND } from "./status.js";
 import { SHELL_CALLS_FROM, UPDATE_COMMAND } from "./version.js";
 
@@ -23,5 +23,5 @@ export const claudeCodeAdapter: AiCliAdapter = {
     request: (signal) => requestClaudePlan(signal === undefined ? {} : { signal }),
     cache: () => readClaudePlanCache(),
   },
-  localUsage: { root: (home) => join(home, ".claude", "projects"), scan: scanClaudeLogs, repoOf: repoOfProject },
+  localUsage: { root: (home) => join(home, ".claude", "projects"), scan: scanClaudeLogs },
 };

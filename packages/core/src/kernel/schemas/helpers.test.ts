@@ -14,7 +14,6 @@ import {
   parseCommandResult,
   parseQueryResult,
   SuggestChecksResultSchema,
-  UsageReportSchema,
 } from "./index.js";
 
 const RUN_ID = "hrun_0b9f3c1e-6a2d-4f7b-9c1a-2e3d4f5a6b7c";
@@ -273,27 +272,6 @@ describe("API messages", () => {
 
   it("has the new command error codes", () => {
     expect(COMMAND_ERROR_CODES).toEqual(expect.arrayContaining(["helper_unavailable", "cloud_not_accepted", "busy"]));
-  });
-});
-
-describe("usage report helpers block", () => {
-  const report = (patch: Record<string, unknown> = {}) => ({
-    range: 14,
-    asOf: 1000,
-    pricesAsOf: "2026-11-01",
-    clis: [],
-    days: [],
-    workflows: [],
-    items: [],
-    totals: { tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, costUsd: null, calls: 0, unpricedCalls: 0 },
-    ...patch,
-  });
-  const helpers = [{ helperId: "suggest-checks", tokens: { input: 100, output: 10, cacheRead: 0, cacheWrite: 0 }, costUsd: 0.04, calls: 6 }];
-
-  it("is optional, so an older engine's report still parses", () => {
-    expect(UsageReportSchema.safeParse(report()).success).toBe(true);
-    expect(UsageReportSchema.safeParse(report({ helpers })).success).toBe(true);
-    expect(UsageReportSchema.safeParse(report({ helpers: [{ ...helpers[0], helperId: "other" }] })).success).toBe(false);
   });
 });
 

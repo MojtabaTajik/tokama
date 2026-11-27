@@ -1,52 +1,29 @@
-// The usage report: the recorded calls of the range rolled up by day, workflow and item, with
-// estimated costs. Days are the engine's local days, the same machine the desktop app runs on.
-import type { AgentCallUsage, CliPlan, HelperId, ItemId, LogScan, RepoId, TokenUsage, UsageRange, UsageReport, UsageScope, UsageWindow } from "../../kernel/schemas/index.js";
-import { breakdown, callEntries, type UsageEntry } from "./breakdown.js";
-import { callCost, PRICES_AS_OF } from "./prices.js";
+// The usage report: each AI CLI's plan, today's calls, what used each limit in a week and each
+// model's record, from the recorded calls. Days are the engine's local days, the same machine the
+// desktop app runs on.
+import type { AgentCallUsage, CliPlan, HelperId, ItemId, TokenUsage, UsageReport, UsageWindow } from "../../kernel/schemas/index.js";
+import { PRICES_AS_OF } from "./prices.js";
 import { buildModels, buildWeek, type WeekInput } from "./week.js";
-
-const weekBlocks = (input: WeekInput, window: UsageWindow): Pick<UsageReport, "week" | "stepModels" | "agentModels"> => ({ week: buildWeek(input, window), ...buildModels(input) });
 
 /** One recorded call with the item it belongs to. */
 export interface UsageRow {
   readonly itemId: ItemId;
   readonly title: string;
-  /** The workflow key exactly as the item record carries it. */
-  readonly templateId: string;
-  /** The item's first repo. */
-  readonly repoId?: RepoId;
   readonly call: AgentCallUsage;
 }
 
 /** One recorded call of a Tokama helper (no item): `call.stepId` is the helper's id. */
 export interface HelperCallRow {
   readonly helperId: HelperId;
-  readonly repoId?: RepoId;
   readonly call: AgentCallUsage;
 }
 
 export interface SummaryInput {
   readonly rows: readonly UsageRow[];
-  /**
-   * Tokama's helper calls. They count in the totals, the per-day figures, the token summary and
-   * the model and repo tables, and are listed by helper in `helpers`; they are in no workflow or
-   * item. In the `all` scope a Claude Code helper call that `logs` already hold (from `logsFrom`
-   * on) is not counted again, like the rows.
-   */
+  /** Tokama's helper calls. They count in today's figures but in no item. */
   readonly helperCalls?: readonly HelperCallRow[];
-  readonly range: UsageRange;
   readonly now: number;
   readonly clis: readonly CliPlan[];
-  /**
-   * With a scope, the report also has per-day totals, the token summary and the model and repo
-   * tables for it. In the `all` scope, `logs` holds Claude Code's usage from its own logs, which
-   * include the Claude Code calls Tokama ran from `logsFrom` on: those rows are not counted again.
-   * Earlier ones (Claude Code deletes old logs), or all of them without `logsFrom`, still count.
-   */
-  readonly scope?: UsageScope;
-  readonly logs?: readonly UsageEntry[];
-  readonly logsFrom?: number;
-  readonly scan?: LogScan;
   /**
    * With it, the report also has the `week` block and the model records. `items` are the items with
    * calls in the last 90 days, `past` the weekly windows that are over, `logs` the AI CLIs' own
@@ -55,10 +32,8 @@ export interface SummaryInput {
   readonly week?: Pick<WeekInput, "items" | "past" | "logs"> & { readonly window?: UsageWindow };
 }
 
-const DAY_ITEMS = 5;
 const TODAY_ITEMS = 5;
 const MAX_AGENTS = 20;
-const TOP_ITEMS = 50;
 const NO_TOKENS: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 const add = (a: TokenUsage, b: TokenUsage): TokenUsage => ({
@@ -67,9 +42,7 @@ const add = (a: TokenUsage, b: TokenUsage): TokenUsage => ({
   cacheRead: a.cacheRead + b.cacheRead,
   cacheWrite: a.cacheWrite + b.cacheWrite,
 });
-export const totalTokens = (t: TokenUsage): number => t.input + t.output + t.cacheRead + t.cacheWrite;
-/** Null stays null only while nothing is known; a known part counts. */
-const addCost = (a: number | null, b: number | null): number | null => (a === null ? b : b === null ? a : a + b);
+const totalTokens = (t: TokenUsage): number => t.input + t.output + t.cacheRead + t.cacheWrite;
 
 /** `YYYY-MM-DD` of the local day `at` falls in. */
 export function localDate(at: number): string {
@@ -77,156 +50,46 @@ export function localDate(at: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-/** Midnight, local time, of the first day of a range that ends today. */
-export function rangeStart(now: number, range: UsageRange): number {
-  const d = new Date(now);
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - (range - 1)).getTime();
-}
-
-export function summarizeUsage({ rows, helperCalls = [], range, now, clis, scope, logs = [], logsFrom, scan, week }: SummaryInput): UsageReport {
-  const start = rangeStart(now, range);
-  const inRange = rows.filter((row) => row.call.endedAt >= start && row.call.endedAt <= now);
-  const helpersInRange = helperCalls.filter((helper) => helper.call.endedAt >= start && helper.call.endedAt <= now);
-
-  // Every day of the range, oldest first, so a quiet day is still a column.
-  const dates: string[] = [];
-  const first = new Date(start);
-  for (let i = 0; i < range; i++) dates.push(localDate(new Date(first.getFullYear(), first.getMonth(), first.getDate() + i).getTime()));
-
-  type Group = { tokens: number; costUsd: number | null; items: Map<ItemId, { title: string; tokens: number }> };
-  const byDay = new Map<string, Map<string, Group>>(dates.map((date) => [date, new Map()]));
-  const byWorkflow = new Map<string, { tokens: number; costUsd: number | null; calls: number }>();
-  type ItemTotal = { itemId: ItemId; title: string; templateId: string; agents: Map<string, AgentCallUsage["cliId"]>; tokens: TokenUsage; durationMs: number; costUsd: number | null; local: boolean };
-  const byItem = new Map<ItemId, ItemTotal>();
+export function summarizeUsage({ rows, helperCalls = [], now, clis, week }: SummaryInput): UsageReport {
   const todayDate = localDate(now);
+  const isToday = (call: AgentCallUsage) => call.endedAt <= now && localDate(call.endedAt) === todayDate;
+
   type TodayItem = { itemId: ItemId; title: string; agents: Map<string, AgentCallUsage["cliId"]>; tokens: number; durationMs: number };
   const todayItems = new Map<ItemId, TodayItem>();
   let todayTokens = NO_TOKENS;
   let todayMs = 0;
-  let tokens = NO_TOKENS;
-  let costUsd: number | null = null;
-  let unpricedCalls = 0;
-
-  for (const { itemId, title, templateId, call } of inRange) {
-    const total = totalTokens(call.tokens);
-    const cost = callCost(call);
-    if (cost === null) unpricedCalls++;
-    tokens = add(tokens, call.tokens);
-    costUsd = addCost(costUsd, cost);
-
-    const day = byDay.get(localDate(call.endedAt));
-    if (day !== undefined) {
-      const group = day.get(templateId) ?? { tokens: 0, costUsd: null, items: new Map() };
-      group.tokens += total;
-      group.costUsd = addCost(group.costUsd, cost);
-      const item = group.items.get(itemId) ?? { title, tokens: 0 };
-      item.tokens += total;
-      group.items.set(itemId, item);
-      day.set(templateId, group);
-    }
-
-    if (localDate(call.endedAt) === todayDate) {
-      const item = todayItems.get(itemId) ?? { itemId, title, agents: new Map(), tokens: 0, durationMs: 0 };
-      if (!item.agents.has(call.agentId)) item.agents.set(call.agentId, call.cliId);
-      item.tokens += total;
-      item.durationMs += call.endedAt - call.startedAt;
-      todayItems.set(itemId, item);
-      todayTokens = add(todayTokens, call.tokens);
-      todayMs += call.endedAt - call.startedAt;
-    }
-
-    const workflow = byWorkflow.get(templateId) ?? { tokens: 0, costUsd: null, calls: 0 };
-    workflow.tokens += total;
-    workflow.costUsd = addCost(workflow.costUsd, cost);
-    workflow.calls++;
-    byWorkflow.set(templateId, workflow);
-
-    const item = byItem.get(itemId) ?? { itemId, title, templateId, agents: new Map(), tokens: NO_TOKENS, durationMs: 0, costUsd: null, local: true };
+  for (const { itemId, title, call } of rows) {
+    if (!isToday(call)) continue;
+    const item = todayItems.get(itemId) ?? { itemId, title, agents: new Map(), tokens: 0, durationMs: 0 };
     if (!item.agents.has(call.agentId)) item.agents.set(call.agentId, call.cliId);
-    item.tokens = add(item.tokens, call.tokens);
+    item.tokens += totalTokens(call.tokens);
     item.durationMs += call.endedAt - call.startedAt;
-    item.costUsd = addCost(item.costUsd, cost);
-    item.local &&= call.cliId === "ollama";
-    byItem.set(itemId, item);
+    todayItems.set(itemId, item);
+    todayTokens = add(todayTokens, call.tokens);
+    todayMs += call.endedAt - call.startedAt;
+  }
+  for (const { call } of helperCalls) {
+    if (!isToday(call)) continue;
+    todayTokens = add(todayTokens, call.tokens);
+    todayMs += call.endedAt - call.startedAt;
   }
 
-  // Helper calls are in the totals and in today's figures, but in no workflow or item.
-  const byHelper = new Map<HelperId, { helperId: HelperId; tokens: TokenUsage; costUsd: number | null; calls: number }>();
-  for (const { helperId, call } of helpersInRange) {
-    const cost = callCost(call);
-    if (cost === null) unpricedCalls++;
-    tokens = add(tokens, call.tokens);
-    costUsd = addCost(costUsd, cost);
-    if (localDate(call.endedAt) === todayDate) {
-      todayTokens = add(todayTokens, call.tokens);
-      todayMs += call.endedAt - call.startedAt;
-    }
-    const helper = byHelper.get(helperId) ?? { helperId, tokens: NO_TOKENS, costUsd: null, calls: 0 };
-    helper.tokens = add(helper.tokens, call.tokens);
-    helper.costUsd = addCost(helper.costUsd, cost);
-    helper.calls++;
-    byHelper.set(helperId, helper);
-  }
-  const helpers = [...byHelper.values()].sort((a, b) => totalTokens(b.tokens) - totalTokens(a.tokens));
-
-  const byTokens = <T extends { tokens: number }>(a: T, b: T) => b.tokens - a.tokens;
-  const totals = { tokens, costUsd, calls: inRange.length + helpersInRange.length, unpricedCalls };
+  const weekInput: WeekInput | undefined = week && { now, clis, helperCalls, items: week.items, past: week.past, ...(week.logs !== undefined && { logs: week.logs }) };
   // The report keeps at most 20 agents per item.
   const agentList = (agents: Map<string, AgentCallUsage["cliId"]>) => [...agents].slice(0, MAX_AGENTS).map(([agentId, cliId]) => ({ agentId: agentId as AgentCallUsage["agentId"], cliId }));
-  const report: UsageReport = {
-    range,
+  return {
     asOf: now,
     pricesAsOf: PRICES_AS_OF,
     clis: [...clis],
-    days: dates.map((date) => ({
-      date,
-      workflows: [...(byDay.get(date) ?? new Map<string, Group>())].map(([templateId, group]) => {
-        const items = [...group.items].map(([itemId, item]) => ({ itemId, ...item })).sort(byTokens);
-        return { templateId, tokens: group.tokens, costUsd: group.costUsd, items: items.slice(0, DAY_ITEMS).map(({ itemId, title }) => ({ itemId, title })), itemCount: items.length };
-      }),
-    })),
-    workflows: [...byWorkflow].map(([templateId, w]) => ({ templateId, ...w })).sort(byTokens),
-    items: [...byItem.values()]
-      .sort((a, b) => totalTokens(b.tokens) - totalTokens(a.tokens))
-      .slice(0, TOP_ITEMS)
-      .map(({ agents, ...item }) => ({ ...item, agents: agentList(agents) })),
     today: {
       items: [...todayItems.values()]
-        .sort(byTokens)
+        .sort((a, b) => b.tokens - a.tokens)
         .slice(0, TODAY_ITEMS)
         .map(({ agents, ...item }) => ({ ...item, agents: agentList(agents) })),
       itemCount: todayItems.size,
       tokens: todayTokens,
       durationMs: todayMs,
     },
-    totals,
-    ...(helpers.length > 0 && { helpers }),
-    ...(week !== undefined && weekBlocks({ now, clis, helperCalls, items: week.items, past: week.past, ...(week.logs !== undefined && { logs: week.logs }) }, week.window ?? "current")),
-  };
-  if (scope === undefined) return report;
-
-  const days = new Set(dates);
-  const counted = (row: { readonly call: AgentCallUsage }) => row.call.cliId !== "claude-code" || logsFrom === undefined || row.call.endedAt < logsFrom;
-  const entries =
-    scope === "tokama"
-      ? [...inRange, ...helpersInRange].flatMap((row) => callEntries(row, localDate(row.call.endedAt)))
-      : [
-          ...logs.filter((entry) => days.has(entry.day)),
-          ...[...inRange, ...helpersInRange].filter(counted).flatMap((row) => callEntries(row, localDate(row.call.endedAt))),
-        ];
-  const parts = breakdown(entries);
-  return {
-    ...report,
-    scope,
-    days: report.days.map((day) => {
-      const part = parts.days.get(day.date);
-      return { ...day, tokens: part?.tokens ?? 0, costUsd: part?.costUsd ?? null };
-    }),
-    // Tokama's own totals keep each call's cost exactly as the call has it.
-    totals: scope === "tokama" ? totals : parts.totals,
-    tokenSummary: parts.tokenSummary,
-    models: parts.models,
-    repos: parts.repos,
-    ...(scan !== undefined && { scan }),
+    ...(weekInput !== undefined && { week: buildWeek(weekInput, week?.window ?? "current"), ...buildModels(weekInput) }),
   };
 }

@@ -1238,6 +1238,13 @@
   gap: var(--space-14);
 }
 
+/* What a step's retries took, under the step's line: "Attempts 2 and 3 used 60% of this item's tokens · failing check: pnpm test". */
+.lg-retries {
+  margin: 0 0 var(--space-6);
+  font-size: var(--text-md);
+  color: var(--muted);
+}
+
 .lg-box {
   border: 1px solid var(--hairline);
   border-radius: var(--radius);

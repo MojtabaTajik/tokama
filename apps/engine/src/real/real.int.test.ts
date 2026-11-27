@@ -184,13 +184,11 @@ describe("real mode", () => {
     expect(board.ok && board.data).toEqual({ items: [], counts: [{ day: expect.any(String), templateId: "builtin/quick-fix", repoIds: ["orders-api"], done: 1, failed: 0 }] });
     const listed = await client.query({ type: "item_list", group: "done", limit: 50 });
     expect(listed.ok && listed.data.items.map((i) => i.id)).toEqual([id]);
-    // The call's usage is in the usage report, by the template's ref. "sonnet" is an alias the price
-    // table never guesses, so the call is unpriced rather than estimated.
-    const usage = await client.query({ type: "usage", range: 14 });
+    // The call's usage is in the usage report: today's items and the weekly step rows.
+    const usage = await client.query({ type: "usage" });
     if (!usage.ok) throw new Error(usage.error.message);
-    expect(usage.data.totals).toMatchObject({ calls: 1, costUsd: null, unpricedCalls: 1 });
-    expect(usage.data.items).toEqual([expect.objectContaining({ itemId: id, title: "Fix the greeting typo", templateId: "builtin/quick-fix", agents: [{ agentId: "builder", cliId: "claude-code" }] })]);
-    expect(usage.data.days.at(-1)?.workflows).toEqual([expect.objectContaining({ templateId: "builtin/quick-fix", itemCount: 1 })]);
+    expect(usage.data.today?.items).toEqual([expect.objectContaining({ itemId: id, title: "Fix the greeting typo", agents: [{ agentId: "builder", cliId: "claude-code" }] })]);
+    expect(usage.data.week?.steps).toEqual([expect.objectContaining({ templateId: "builtin/quick-fix", stepName: "Fix", cliId: "claude-code", runs: 1, itemCount: 1 })]);
   });
 
   it("runs Quick change on a repo with no checks: you see the diff, ask for changes with a note, approve, and get a commit", SLOW, async () => {

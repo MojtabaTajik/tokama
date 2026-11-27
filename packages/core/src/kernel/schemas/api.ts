@@ -16,7 +16,7 @@ import {
   VersionLabelSchema,
 } from "./diagnostics.js";
 import { FinishActionSchema, ItemRecordSchema, OutputSummarySchema } from "./item.js";
-import { ItemUsageSchema, UsageRangeSchema, UsageReportSchema, UsageScopeSchema, UsageWindowSchema } from "./usage.js";
+import { ItemUsageSchema, UsageReportSchema, UsageWindowSchema } from "./usage.js";
 import { ItemActivitySchema } from "./activity.js";
 import { AgentsListSchema } from "./agents.js";
 import { AiCliListSchema } from "./ai-clis.js";
@@ -27,7 +27,7 @@ import { MachineReportSchema } from "./machine.js";
 import { RepoSummarySchema, SetupSchema } from "./setup.js";
 import { MAX_TEMPLATE_ENTRIES, TemplateDetailSchema, TemplateEntrySchema, TemplateFileKeySchema } from "./template-files.js";
 
-export const API_VERSION = 15;
+export const API_VERSION = 16;
 
 /** The first API version whose engine understands `ifIdle` in a shutdown request; an older engine stops whatever it runs. */
 export const SHUTDOWN_IF_IDLE_SINCE = 15;
@@ -226,7 +226,7 @@ export const QuerySchema = z.discriminatedUnion("type", [
    * over the last `range` days. `scope` defaults to `tokama`. `window` picks the weekly window the
    * report's `week` block covers; default `current`.
    */
-  z.strictObject({ type: z.literal("usage"), range: UsageRangeSchema, scope: UsageScopeSchema.optional(), window: UsageWindowSchema.optional() }),
+  z.strictObject({ type: z.literal("usage"), window: UsageWindowSchema.optional() }),
   /**
    * CPU and memory of this machine and of Tokama's processes. Asking is what makes the engine
    * read them: it samples while a client keeps asking and stops soon after.

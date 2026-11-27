@@ -11,11 +11,11 @@ import { join, posix } from "node:path";
 import { listFiles, listFolders, readLinesFrom } from "../../../kernel/fs-safe/index.js";
 import { sha256Hex } from "../../../kernel/hash/index.js";
 import { parseJsonLine } from "../../../kernel/json-line/index.js";
-import type { LocalUsageMessage, LogMark, RepoPaths } from "../../../kernel/ports/index.js";
+import type { LocalUsageMessage, LogMark } from "../../../kernel/ports/index.js";
 
 /** One assistant message's usage; its key is the request id, else the message id. */
 export type LoggedUsage = LocalUsageMessage;
-export type { LogMark, RepoPaths };
+export type { LogMark };
 
 export interface ScanLogsOptions {
   /** Default: `~/.claude/projects`. */
@@ -26,8 +26,6 @@ export interface ScanLogsOptions {
   readonly mark: (fileKey: string) => LogMark | undefined;
   /** Called once per file read, with its new mark and the messages found since the old one. */
   readonly onFile: (fileKey: string, mark: LogMark, messages: readonly LoggedUsage[]) => void;
-  /** Files done of the files found. */
-  readonly onProgress?: (done: number, total: number) => void;
   /** Stops between files and between chunks of a file. */
   readonly signal?: AbortSignal;
   /** Default: 512 MiB. A larger file is skipped. */
@@ -48,8 +46,6 @@ export interface ScanLogsResult {
   readonly complete: boolean;
   /** The key of every log file that exists now; marks of other files can go. */
   readonly fileKeys: readonly string[];
-  /** Project folder names by project hash, to match them to repos. Kept in memory only. */
-  readonly projects: ReadonlyMap<string, string>;
 }
 
 const MAX_FILE_BYTES = 512 * 1024 * 1024;
@@ -66,29 +62,6 @@ const hash = (text: string): string => sha256Hex(text, 32);
 
 /** The hash a project folder is known by; the same for the same folder name. */
 export const projectKey = (folder: string): string => hash(`project:${folder}`);
-
-/**
- * The project folder name Claude Code gives a working folder: every character other than an
- * ASCII letter or digit becomes `-`, so `/Users/someone/orders-api` is `-Users-someone-orders-api`.
- */
-export const claudeProjectFolder = (path: string): string => path.replace(/[^A-Za-z0-9]/g, "-");
-
-/**
- * The repo a project folder belongs to: the repo's own folder, or a worktree in the repo's
- * worktree folder. A folder name cannot be decoded (`-` stands for `/`, `.` and `-` alike), so the
- * repos' paths are encoded and compared. Not a prefix match on the repo alone: that would give
- * `orders-api-v2` to `orders-api`. Undefined for any other folder.
- */
-export function repoOfProject(folder: string, repos: readonly RepoPaths[]): string | undefined {
-  for (const repo of repos) {
-    for (const path of repo.paths) {
-      if (folder === claudeProjectFolder(path)) return repo.id;
-      const worktrees = claudeProjectFolder(join(path, repo.worktreeFolder));
-      if (folder.startsWith(`${worktrees}-`) && folder.length > worktrees.length + 1) return repo.id;
-    }
-  }
-  return undefined;
-}
 
 const count = (value: unknown): number | undefined =>
   value === undefined || value === null ? 0 : typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= MAX_TOKENS ? value : undefined;
@@ -128,8 +101,7 @@ export async function scanClaudeLogs(options: ScanLogsOptions): Promise<ScanLogs
   const root = options.root ?? join(homedir(), ".claude", "projects");
   const maxFiles = options.maxFiles ?? MAX_FILES;
   const folders = await listFolders(root, "", { max: MAX_ENTRIES });
-  const projects = new Map<string, string>();
-  if (!folders.ok) return { found: false, complete: true, files: 0, skippedFiles: 0, skippedLines: 0, fileKeys: [], projects };
+  if (!folders.ok) return { found: false, complete: true, files: 0, skippedFiles: 0, skippedLines: 0, fileKeys: [] };
 
   // Find the files first, so progress has a total.
   const files: { rel: string; project: string }[] = [];
@@ -149,15 +121,11 @@ export async function scanClaudeLogs(options: ScanLogsOptions): Promise<ScanLogs
   };
   for (const folder of folders.value) {
     if (options.signal?.aborted) break;
-    const project = projectKey(folder);
-    projects.set(project, folder);
-    await walk(folder, project, 1);
+    await walk(folder, projectKey(folder), 1);
   }
 
-  let done = 0;
   let skippedLines = 0;
   const fileKeys: string[] = [];
-  options.onProgress?.(0, files.length);
   for (const file of files) {
     if (options.signal?.aborted) break;
     const fileKey = hash(`file:${file.rel}`);
@@ -186,7 +154,6 @@ export async function scanClaudeLogs(options: ScanLogsOptions): Promise<ScanLogs
     } else {
       skippedFiles++;
     }
-    options.onProgress?.(++done, files.length);
   }
-  return { found: true, complete: options.signal?.aborted !== true, files: files.length, skippedFiles, skippedLines, fileKeys, projects };
+  return { found: true, complete: options.signal?.aborted !== true, files: files.length, skippedFiles, skippedLines, fileKeys };
 }

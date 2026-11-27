@@ -237,6 +237,7 @@ export function buildWeek(input: WeekInput, which: UsageWindow): Week {
         title: cut(item.title, 200),
         templateId: cut(item.templateId, 200),
         cliId: plan.cliId,
+        agents: [...new Set(list.map((t) => t.call.agentId))].slice(0, 20),
         runs: spanRuns.filter((run) => run.item === item).length,
         ...itemMeasure(measure(list.map((t) => t.call))),
       });
@@ -245,7 +246,7 @@ export function buildWeek(input: WeekInput, which: UsageWindow): Week {
     // Tokama's own helper calls.
     for (const { head, list } of group(tagged.filter((t) => t.item === undefined), (t) => t.call.model, (t) => t.call.model).values()) {
       const m = measure(list.map((t) => t.call));
-      helpers.push({ cliId: plan.cliId, model: cut(head, 200), calls: list.length, tokens: m.tokens, ...(m.sharePercent !== undefined && { sharePercent: m.sharePercent }), ...(m.costUsd !== undefined && { costUsd: m.costUsd }) });
+      helpers.push({ cliId: plan.cliId, model: cut(head, 200), calls: list.length, tokens: m.tokens, tokamaPercent: m.tokamaPercent, ...(m.sharePercent !== undefined && { sharePercent: m.sharePercent }), ...(m.costUsd !== undefined && { costUsd: m.costUsd }) });
     }
 
     // What repeated attempts took.
@@ -254,17 +255,19 @@ export function buildWeek(input: WeekInput, which: UsageWindow): Week {
       const spent = measure(spanRetries.flatMap((r) => [...r.calls]));
       const causes = group(
         spanRetries.filter((r): r is Retry & { cause: NonNullable<Retry["cause"]> } => r.cause !== undefined),
-        (r) => [r.cause.kind, r.cause.kind === "check" ? r.cause.command : "", r.item.repoIds.length === 1 ? r.item.repoIds[0] : "", r.item.templateId, r.step.id, r.agentId].join("\n"),
+        (r) => [r.cause.kind, r.cause.kind === "check" ? r.cause.command : "", r.cause.kind === "check" && r.item.repoIds.length === 1 ? r.item.repoIds[0] : "", r.item.templateId, r.step.id, r.agentId].join("\n"),
         (r) => r,
       );
       retryRows.push({
         cliId: plan.cliId,
         tokens: spent.tokens,
         ...(spent.sharePercent !== undefined && { sharePercent: spent.sharePercent }),
+        ...(spent.costUsd !== undefined && { costUsd: spent.costUsd, ...(spent.costEstimated === true && { costEstimated: true }) }),
         causes: [...causes.values()]
           .map(({ head: r, list }) => {
             const m = measure(list.flatMap((x) => [...x.calls]));
-            const repoId = r.item.repoIds.length === 1 ? r.item.repoIds[0] : undefined;
+            // The repo belongs to a failing check; a reviewer who asked for changes is one row, whatever the repo.
+            const repoId = r.cause.kind === "check" && r.item.repoIds.length === 1 ? r.item.repoIds[0] : undefined;
             return {
               kind: r.cause.kind,
               ...(r.cause.kind === "check" && { command: cut(r.cause.command, 500) }),
@@ -297,7 +300,7 @@ export function buildWeek(input: WeekInput, which: UsageWindow): Week {
 
 /** The fields an item row takes from a measure. */
 function itemMeasure(m: Measure) {
-  return { tokens: m.tokens, ...(m.sharePercent !== undefined && { sharePercent: m.sharePercent }), ...(m.costUsd !== undefined && { costUsd: m.costUsd }) };
+  return { tokens: m.tokens, tokamaPercent: m.tokamaPercent, ...(m.sharePercent !== undefined && { sharePercent: m.sharePercent }), ...(m.costUsd !== undefined && { costUsd: m.costUsd }) };
 }
 
 type ModelRecord = NonNullable<UsageReport["stepModels"]>[number]["models"][number];
@@ -404,15 +407,20 @@ export function itemUsageOf(input: WeekInput, itemId: ItemId): ItemUsage | undef
   }
 
   const bySteps = group(retriesOf(item), (r) => r.step.id, (r) => r.step.id);
-  const retries = [...bySteps.values()].map(({ head, list }) => {
+  const retries = [...bySteps.values()].flatMap(({ head, list }) => {
+    // A retry whose step the item does not list is left out: it must not read as a retry of the first step.
+    const stepIndex = item.steps.findIndex((step) => step.id === head);
+    if (stepIndex < 0) return [];
     const spent = list.reduce((sum, r) => sum + r.calls.reduce((s, call) => s + total(call.tokens), 0), 0);
     const failing = list.find((r) => r.cause?.kind === "check");
-    return {
-      stepId: head,
-      attempts: list.map((r) => r.attempt).slice(0, 50),
-      tokensPercent: tokens > 0 ? Math.min(100, round2((spent / tokens) * 100)) : 0,
-      ...(failing?.cause?.kind === "check" && { failingCheck: cut(failing.cause.command, 500) }),
-    };
+    return [
+      {
+        stepIndex,
+        attempts: list.map((r) => r.attempt).slice(0, 50),
+        tokensPercent: tokens > 0 ? Math.min(100, round2((spent / tokens) * 100)) : 0,
+        ...(failing?.cause?.kind === "check" && { failingCheck: cut(failing.cause.command, 500) }),
+      },
+    ];
   });
   return {
     tokens,

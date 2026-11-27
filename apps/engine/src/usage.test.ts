@@ -13,7 +13,6 @@ function runRow(usedPercent: number, at: number): UsageRow {
   return {
     itemId: ITEM,
     title: "Add order export",
-    templateId: "plan-and-build",
     call: {
       callId: "call_0190a000-0000-7000-8000-000000000001" as never,
       stepId: "build" as never,
@@ -56,7 +55,7 @@ describe("UsageService", () => {
       return { ok: true, value: { ...reading(36, NOW), version: "2.1.332" } };
     };
     const { usage, changes, saved } = service({ sources: { "claude-code": { request } } });
-    const first = await usage.report(14);
+    const first = await usage.report();
     expect(first.clis[0]).toEqual({ cliId: "claude-code", windows: [], note: expect.any(String) });
     expect(changes).toEqual([]);
     answer();
@@ -64,20 +63,20 @@ describe("UsageService", () => {
     expect(asked).toBe(1);
     expect(changes).toHaveLength(1);
     expect(saved).toHaveLength(1);
-    expect((await usage.report(14)).clis[0]).toMatchObject({ source: "request", version: "2.1.332", windows: [{ usedPercent: 36 }] });
+    expect((await usage.report()).clis[0]).toMatchObject({ source: "request", version: "2.1.332", windows: [{ usedPercent: 36 }] });
   });
 
   it("asks the CLI at most once per interval, however often clients query", async () => {
     let asked = 0;
     const request: PlanSource = async () => (asked++, { ok: true, value: reading(36, NOW) });
     const { usage, clock } = service({ sources: { "claude-code": { request } }, requestEveryMs: 5 * MINUTE });
-    await Promise.all([usage.report(14), usage.report(14), usage.report(30)]);
+    await Promise.all([usage.report(), usage.report(), usage.report("previous")]);
     await usage.settled();
-    await usage.report(14);
+    await usage.report();
     await usage.settled();
     expect(asked).toBe(1);
     clock.advance(5 * MINUTE);
-    await usage.report(14);
+    await usage.report();
     await usage.settled();
     expect(asked).toBe(2);
   });
@@ -86,19 +85,19 @@ describe("UsageService", () => {
     const failed: PlanSource = async () => ({ ok: false, error: "Claude Code is not installed, or `claude` is not on the PATH." });
     const cache: PlanSource = async () => ({ ok: true, value: reading(20, NOW - 10 * MINUTE) });
     const withRun = service({ sources: { "claude-code": { request: failed, cache } }, noSamples: true, rows: () => [runRow(44, NOW - 5 * MINUTE)] });
-    await withRun.usage.report(14);
+    await withRun.usage.report();
     await withRun.usage.settled();
-    expect((await withRun.usage.report(14)).clis[0]).toMatchObject({ source: "run", windows: [{ window: "five_hour", usedPercent: 44 }], asOf: NOW - 5 * MINUTE });
+    expect((await withRun.usage.report()).clis[0]).toMatchObject({ source: "run", windows: [{ window: "five_hour", usedPercent: 44 }], asOf: NOW - 5 * MINUTE });
 
     const cacheOnly = service({ sources: { "claude-code": { request: failed, cache } }, noSamples: true });
-    await cacheOnly.usage.report(14);
+    await cacheOnly.usage.report();
     await cacheOnly.usage.settled();
-    expect((await cacheOnly.usage.report(14)).clis[0]).toMatchObject({ source: "cache", windows: [{ usedPercent: 20 }] });
+    expect((await cacheOnly.usage.report()).clis[0]).toMatchObject({ source: "cache", windows: [{ usedPercent: 20 }] });
 
     const nothing = service({ sources: { "claude-code": { request: failed } }, noSamples: true });
-    await nothing.usage.report(14);
+    await nothing.usage.report();
     await nothing.usage.settled();
-    expect((await nothing.usage.report(14)).clis[0]).toEqual({ cliId: "claude-code", windows: [], note: expect.stringMatching(/not installed/) });
+    expect((await nothing.usage.report()).clis[0]).toEqual({ cliId: "claude-code", windows: [], note: expect.stringMatching(/not installed/) });
   });
 
   it("reports each adapter that has a plan from its own sources and samples, and a note only for the CLIs without one", async () => {
@@ -108,9 +107,9 @@ describe("UsageService", () => {
     let asked = 0;
     const request: PlanSource = async () => (asked++, { ok: true, value: { ...reading(84, NOW), version: "0.169.0" } });
     const { usage } = service({ adapters: [claude, codex], sources: { "codex-cli": { request } }, samples: { get: (cliId) => samples.get(cliId), save: (cliId, value) => void samples.set(cliId, value) } });
-    await usage.report(14);
+    await usage.report();
     await usage.settled();
-    const report = await usage.report(14);
+    const report = await usage.report();
     expect(asked).toBe(1);
     expect([...samples.keys()]).toEqual(["codex-cli"]);
     expect(report.clis.map((cli) => cli.cliId)).toEqual(["claude-code", "codex-cli", "ollama"]);
@@ -124,7 +123,7 @@ describe("UsageService", () => {
     let asked = 0;
     const request: PlanSource = async () => (asked++, { ok: true, value: reading(84, NOW) });
     const { usage } = service({ adapters: [claude, fakeAiCli()], sources: { "codex-cli": { request } } });
-    const report = await usage.report(14);
+    const report = await usage.report();
     await usage.settled();
     expect(asked).toBe(0);
     expect(report.clis.map((cli) => [cli.cliId, cli.note !== undefined])).toEqual([["claude-code", true], ["codex-cli", true], ["ollama", true]]);
@@ -132,7 +131,7 @@ describe("UsageService", () => {
 
   it("without a request source never starts the CLI, and reports the other CLIs as unknown", async () => {
     const { usage, changes } = service();
-    const report = await usage.report(14);
+    const report = await usage.report();
     await usage.settled();
     expect(changes).toEqual([]);
     expect(report.clis.map((cli) => [cli.cliId, cli.windows.length, cli.note !== undefined])).toEqual([
@@ -159,9 +158,7 @@ describe("weekly history", () => {
   const logs = (overrides: Partial<NonNullable<UsageDeps["logs"]>> = {}): NonNullable<UsageDeps["logs"]> => ({
     cliId: "claude-code",
     refresh: () => {},
-    status: () => ({ state: "ready", filesDone: 1, filesTotal: 1 }),
     complete: () => true,
-    entries: () => [],
     totals: () => [{ model: "claude-opus-5-5", tokens: { ...MILLION, input: 2_000_000 } }],
     coveredFrom: () => NOW - 30 * DAY,
     ...overrides,
@@ -179,10 +176,10 @@ describe("weekly history", () => {
       history: { get: () => stored, save: (_cli, windows) => void stored.splice(0, stored.length, ...windows) },
       ...deps,
     });
-    await made.usage.report(14);
+    await made.usage.report();
     await made.usage.settled();
     made.clock.advance(6 * MINUTE);
-    await made.usage.report(14);
+    await made.usage.report();
     await made.usage.settled();
     return { ...made, stored };
   }
@@ -197,19 +194,19 @@ describe("weekly history", () => {
     const { stored, usage } = await twoAnswers({ logs: logs({ complete: () => ready }) });
     expect(stored).toEqual([{ window: "weekly_all", startsAt: NOW - 8 * DAY, endsAt: NOW - DAY, usedPercent: 64 }]);
     ready = true;
-    await usage.report(14);
+    await usage.report();
     expect(stored).toEqual([expect.objectContaining({ usedPercent: 64, weight: { tokama: 4, all: 8 } })]);
     // Nothing more is written when nothing changes.
     const again = [...stored];
-    await usage.report(14);
+    await usage.report();
     expect(stored).toEqual(again);
   });
 
   it("does not close the window that is still running, and does not close one twice", async () => {
     const { stored, usage } = await twoAnswers({});
     expect(stored).toHaveLength(1);
-    await usage.report(14);
-    await usage.report(14);
+    await usage.report();
+    await usage.report();
     expect(stored).toHaveLength(1);
   });
 
@@ -218,12 +215,12 @@ describe("weekly history", () => {
     let n = 0;
     const request: PlanSource = async () => ({ ok: true, value: answers[n++]! });
     const { usage, clock } = service({ sources: { "claude-code": { request } }, items: () => [item()], logs: logs() });
-    await usage.report(14);
+    await usage.report();
     await usage.settled();
     clock.advance(6 * MINUTE);
-    await usage.report(14);
+    await usage.report();
     await usage.settled();
-    const previous = await usage.report(14, "tokama", "previous");
+    const previous = await usage.report("previous");
     expect(previous.week?.limits).toEqual([expect.objectContaining({ cliId: "claude-code", usedPercent: 64, tokamaPercent: 32, outsidePercent: 32 })]);
   });
 
@@ -231,18 +228,18 @@ describe("weekly history", () => {
     const answer = week(60, NOW + 2 * DAY);
     const request: PlanSource = async () => ({ ok: true, value: answer });
     let complete = true;
-    // The status says a scan runs now, as it does for a moment about once a minute.
-    const scanning = logs({ status: () => ({ state: "scanning", filesDone: 1, filesTotal: 3 }), complete: () => complete, coveredFrom: () => NOW - 30 * DAY });
+    // A later scan runs now, as one does for a moment about once a minute: `complete` still holds the last scan that ended.
+    const scanning = logs({ complete: () => complete, coveredFrom: () => NOW - 30 * DAY });
     const { usage } = service({ sources: { "claude-code": { request } }, items: () => [item()], logs: scanning });
-    await usage.report(14);
+    await usage.report();
     await usage.settled();
-    expect((await usage.report(14)).week?.limits[0]).toHaveProperty("tokamaPercent");
+    expect((await usage.report()).week?.limits[0]).toHaveProperty("tokamaPercent");
     complete = false;
-    expect((await usage.report(14)).week?.limits[0]).not.toHaveProperty("tokamaPercent");
+    expect((await usage.report()).week?.limits[0]).not.toHaveProperty("tokamaPercent");
   });
 
   it("has no week block when it is given no items", async () => {
-    const report = await service().usage.report(14);
+    const report = await service().usage.report();
     expect(report.week).toBeUndefined();
     expect(report.stepModels).toBeUndefined();
     expect(await service().usage.itemUsage(ITEM)).toBeUndefined();
@@ -299,7 +296,6 @@ describe("usageRowsOf", () => {
     id: `item_0190a000-0000-7000-8000-${String(n).padStart(12, "0")}` as ItemId,
     title: `Item ${n}`,
     templateRef: "orders-api/quick-fix" as never,
-    repoIds: [],
     deleted: false,
     ...fields,
   });
@@ -307,7 +303,7 @@ describe("usageRowsOf", () => {
   it("gives one row per call that ended since the time, oldest first and by call id when they end together", () => {
     const rows = usageRowsOf(
       [
-        item(1, { repoIds: ["orders-api", "checkout-web"] as never, calls: [call(5, NOW), call(2, NOW - MINUTE)] }),
+        item(1, { calls: [call(5, NOW), call(2, NOW - MINUTE)] }),
         item(2, { calls: [call(3, NOW), call(1, NOW - 2 * MINUTE)] }),
         item(3, {}),
       ],
@@ -318,10 +314,9 @@ describe("usageRowsOf", () => {
     expect(usageRowsOf([item(2, { calls: [call(1, NOW)] })], NOW)).toHaveLength(1);
   });
 
-  it("carries the title, the workflow and the first repo, and leaves the repo key out when the item has none", () => {
-    const [withRepo, without] = usageRowsOf([item(1, { repoIds: ["orders-api", "checkout-web"] as never, calls: [call(1, NOW)] }), item(2, { calls: [call(2, NOW)] })], 0);
-    expect(withRepo).toStrictEqual({ itemId: ITEM.replace(/a$/, "1"), title: "Item 1", templateId: "orders-api/quick-fix", repoId: "orders-api", call: call(1, NOW) });
-    expect(without).toStrictEqual({ itemId: ITEM.replace(/a$/, "2"), title: "Item 2", templateId: "orders-api/quick-fix", call: call(2, NOW) });
+  it("carries the title", () => {
+    const [row] = usageRowsOf([item(1, { calls: [call(1, NOW)] })], 0);
+    expect(row).toStrictEqual({ itemId: ITEM.replace(/a$/, "1"), title: "Item 1", call: call(1, NOW) });
   });
 
   it("leaves out the calls of a deleted item", () => {

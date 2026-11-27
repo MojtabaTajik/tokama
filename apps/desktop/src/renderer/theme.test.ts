@@ -37,6 +37,7 @@ const TOKENS: Record<string, string> = {
   "--tag-clay": "#b9866f",
   "--tag-rose": "#d08ab2",
   "--tag-plum": "#a288c8",
+  "--chart-other": "#5f6b78",
 };
 
 describe("theme.css", () => {

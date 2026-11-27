@@ -164,7 +164,7 @@ async function ended(fixture: Fixture, runId: string): Promise<HelperRun> {
 }
 
 const usage = async (client: EngineClient): Promise<UsageReport> => {
-  const reply = await client.query({ type: "usage", range: 14 });
+  const reply = await client.query({ type: "usage" });
   if (!reply.ok) throw new Error(reply.error.message);
   return reply.data;
 };
@@ -195,9 +195,9 @@ describe("a real engine with no helpers built in", () => {
     expect(await client.query({ type: "check_trial", trialId: TRIAL_ID as never })).toMatchObject(notImplemented);
   });
 
-  it("leaves its usage report without a helpers block", async () => {
+  it("lists no helper calls in its usage report", async () => {
     const { client } = await engine();
-    expect((await usage(client)).helpers).toBeUndefined();
+    expect((await usage(client)).week?.helpers).toEqual([]);
   });
 
   it("makes no folder for helpers until one runs", async () => {
@@ -309,8 +309,7 @@ describe("run_helper", () => {
     const run = await ended(fixture, await startRun(fixture));
     expect(run).toMatchObject({ state: "failed", error: { code: "bad_answer", message: "The helper's answer was not valid twice. Try again." }, usage: { tokens: { input: 2400, output: 160, cacheRead: 0, cacheWrite: 0 } } });
     expect(runtime.requests).toHaveLength(2);
-    const helpersBlock = (await usage(fixture.client)).helpers;
-    expect(helpersBlock).toEqual([{ helperId: "suggest-checks", tokens: { input: 2400, output: 160, cacheRead: 0, cacheWrite: 0 }, costUsd: expect.any(Number), calls: 2 }]);
+    expect((await usage(fixture.client)).week?.helpers).toEqual([expect.objectContaining({ cliId: "claude-code", calls: 2, tokens: 2560 })]);
   });
 
   it("answers a third run at once with busy while two run", async () => {
@@ -373,14 +372,13 @@ describe("what a run leaves behind", () => {
     expect(statSync(join(fixture.home, "helper-runs", "events-2026-11.jsonl")).mode & 0o777).toBe(0o600);
   });
 
-  it("counts its calls in the usage report's totals and helpers block, not in a workflow or an item", async () => {
+  it("counts its calls in the usage report's helpers rows, not in a step or an item", async () => {
     const fixture = await engine({ runtime: scripted(["answers"]), helpers });
     await ended(fixture, await startRun(fixture));
-    const report = await usage(fixture.client);
-    expect(report.helpers).toEqual([{ helperId: "suggest-checks", tokens: TOKENS, costUsd: expect.any(Number), calls: 1 }]);
-    expect(report.totals.calls).toBe(1);
-    expect(report.workflows).toEqual([]);
-    expect(report.items).toEqual([]);
+    const week = (await usage(fixture.client)).week;
+    expect(week?.helpers).toEqual([expect.objectContaining({ cliId: "claude-code", calls: 1, tokens: TOKENS.input + TOKENS.output + TOKENS.cacheRead + TOKENS.cacheWrite })]);
+    expect(week?.steps).toEqual([]);
+    expect(week?.items).toEqual([]);
   });
 
   it("keeps call.json for the newest 20 runs, and nothing older than 7 days", async () => {
@@ -447,11 +445,11 @@ describe("usage from an earlier log", () => {
       },
     });
     // The log is read in the background right after the start.
-    let block: UsageReport["helpers"];
-    for (const deadline = Date.now() + 5_000; block === undefined && Date.now() < deadline; await new Promise((resolve) => setTimeout(resolve, 50))) {
-      block = (await usage(fixture.client)).helpers;
+    let block: NonNullable<UsageReport["week"]>["helpers"] = [];
+    for (const deadline = Date.now() + 5_000; block.length === 0 && Date.now() < deadline; await new Promise((resolve) => setTimeout(resolve, 50))) {
+      block = (await usage(fixture.client)).week?.helpers ?? [];
     }
-    expect(block).toMatchObject([{ helperId: "suggest-checks", tokens: { input: 2400, output: 160, cacheRead: 0, cacheWrite: 0 }, calls: 2 }]);
+    expect(block).toMatchObject([{ cliId: "claude-code", tokens: 2560, calls: 2 }]);
   });
 });
 

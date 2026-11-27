@@ -1,10 +1,11 @@
-// What the Insights page and the rail tooltip derive from the usage report: words for windows and
-// times, alerts per AI CLI, number formats, and the chart's columns. Pure functions that take the
-// clock as an argument, so they are tested without React or a real time.
-import type { CliPlan, LogScan, Setup, TemplateSummary, TokenUsage, UsageReport } from "@tokama/core";
+// What the Insights page, the item header and the rail tooltip derive from the usage report: words
+// for windows and times, alerts per AI CLI, the forecast sentence, number formats and the AI tools'
+// colours. Pure functions that take the clock as an argument, so they are tested without React or a
+// real time.
+import type { AiCliId, CliPlan, Setup, TemplateSummary, UsageReport } from "@tokama/core";
 import { formatDuration } from "../format/duration.js";
 import { clock, sameDay, stamp, weekday } from "../format/time.js";
-import type { CliIssue } from "../model.js";
+import { AI_CLIS, cliName, type CliIssue } from "../model.js";
 import { markOf, type Tone as StatusTone } from "../ui/status.js";
 
 /** A window at or above this share of its limit is high, then near it. */
@@ -25,6 +26,9 @@ const WINDOW_LABELS: Readonly<Record<string, string>> = {
   session: "Session window",
   weekly_all: "Weekly window",
 };
+/** The AI CLI's whole weekly window, not one scoped to a model. */
+const isWeekly = (w: Pick<PlanWindow, "window" | "scope">): boolean => w.scope === undefined && (w.window === "weekly_all" || w.window === "seven_day");
+
 /** "5-hour window", "Session window", "Fable weekly window"; a scoped limit without a name is "Scoped weekly window". */
 export function windowLabel(w: Pick<PlanWindow, "window" | "scope">): string {
   if (w.window === "weekly_scoped") return `${w.scope ?? "Scoped"} weekly window`;
@@ -45,7 +49,7 @@ const FAIL = markOf("failed").symbol;
  */
 export type Level = "ok" | "high" | "near" | "limit";
 export const levelOf = (usedPercent: number): Level => (usedPercent >= 100 ? "limit" : usedPercent >= NEAR_LIMIT ? "near" : usedPercent >= HIGH ? "high" : "ok");
-/** The meter fill's colour token per level. */
+/** The meter fill's tone per level; `pass` draws neutral grey: a normal state has no colour. */
 export const LEVEL_TONE: Readonly<Record<Level, "pass" | Tone>> = { ok: "pass", high: "warn", near: "fail", limit: "fail" };
 /** The word beside the percentage; ok needs none. */
 export const LEVEL_WORD: Readonly<Record<Level, string | undefined>> = { ok: undefined, high: "high", near: `${WARN} near limit`, limit: `${FAIL} at limit` };
@@ -86,9 +90,6 @@ export function railBadge(alerts: readonly (CliAlert | undefined)[]): { readonly
 /** "data 34 m old" once the data is older than a few minutes. */
 export const ageText = (asOf: number, now: number): string | undefined => (now - asOf > SHOW_AGE_AFTER_MS ? `data ${formatDuration(now - asOf, "coarse")} old` : undefined);
 
-/** Every token of a call or item, cached ones included. */
-export const totalOf = (tokens: TokenUsage): number => tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite;
-
 const TOKEN_UNITS = [
   ["k", 1e3],
   ["M", 1e6],
@@ -108,13 +109,24 @@ export function formatTokens(n: number): string {
   return String(n);
 }
 
-/** "≈ $3.10"; unknown when nothing could be priced. */
-export const formatCost = (usd: number | null): string => (usd === null ? "unknown" : `≈ $${usd < 100 ? usd.toFixed(2) : Math.round(usd).toLocaleString("en-US")}`);
+/**
+ * The money a pay-per-use call cost: "$16.10", "$1,755". Only the pay-per-use screens call this: a
+ * plan user sees limit shares, never dollars. `estimated` marks a price from Tokama's price table
+ * (the CLI gave no figure), with "≈".
+ */
+export const formatCost = (usd: number, estimated = false): string => `${estimated ? "≈ " : ""}$${usd < 100 ? usd.toFixed(2) : Math.round(usd).toLocaleString("en-US")}`;
 
-/** "$3.10", "$1,755": a table cell under a "≈ Cost" header; unknown when nothing could be priced. */
-export const formatUsd = (usd: number | null): string => (usd === null ? "unknown" : formatCost(usd).slice(2));
+/** "~27%", "~5.1%", "~8%", "<0.1%": a part of a limit, to one decimal under 10; the tilde says it is an estimate. */
+export function limitShare(percent: number): string {
+  if (percent < 0.05) return "<0.1%";
+  return `~${percent < 10 ? Number(percent.toFixed(1)) : Math.round(percent)}%`;
+}
 
-const CARD_LABELS: Readonly<Record<string, string>> = {
+/** A part of Tokama's own use, a whole percent: "39%". */
+export const usePercent = (percent: number): string => `${percent > 0 && percent < 1 ? "<1" : Math.round(percent)}%`;
+
+/** A limit's name in the Limits list: "Session · 5 hours", "Weekly · all models", "Weekly · Fable". */
+const LIMIT_NAMES: Readonly<Record<string, string>> = {
   five_hour: "Session · 5 hours",
   session: "Session · 5 hours",
   seven_day: "Weekly",
@@ -122,10 +134,9 @@ const CARD_LABELS: Readonly<Record<string, string>> = {
   seven_day_opus: "Weekly · Opus",
   seven_day_sonnet: "Weekly · Sonnet",
 };
-/** A limit's name on its account card: "Session · 5 hours", "Weekly · all models", "Weekly · Fable". */
-export function cardLabel(w: Pick<PlanWindow, "window" | "scope">): string {
+export function limitName(w: Pick<PlanWindow, "window" | "scope">): string {
   if (w.window === "weekly_scoped") return `Weekly · ${w.scope ?? "scoped"}`;
-  return CARD_LABELS[w.window] ?? windowLabel(w);
+  return LIMIT_NAMES[w.window] ?? windowLabel(w);
 }
 
 /** When a reset happens: "at 17:10" today, "Thu 09:00" this week, else the full date. */
@@ -135,92 +146,107 @@ export function resetWhen(resetsAt: number, now: number): string {
   return stamp(resetsAt, now);
 }
 
-export const SOURCE_TEXT: Readonly<Record<NonNullable<CliPlan["source"]>, string>> = {
-  request: "asked of the CLI itself",
-  run: "from the last run's rate-limit event",
-  cache: "the CLI's cached copy of its last answer",
-};
+/** A time the limit runs out, which is a guess: "Wed ~18:00", "~17:10" today. */
+export function approxWhen(at: number, now: number): string {
+  return sameDay(at, now) ? `~${clock(at)}` : `${weekday(at)} ~${clock(at)}`;
+}
 
 /** The template of a usage key: matched like items are, by the id the record carries. */
 export const templateFor = (templateId: string, setup: Setup | undefined): TemplateSummary | undefined => setup?.templates.find((t) => t.id === templateId);
 export const workflowName = (templateId: string, setup: Setup | undefined): string => templateFor(templateId, setup)?.name ?? templateId.split("/").pop() ?? templateId;
 
-export type Metric = "tokens" | "cost";
+/** "Max plan"; undefined when the CLI did not say. */
+export const planName = (plan: CliPlan): string | undefined => (plan.plan === undefined ? undefined : `${plan.plan.charAt(0).toUpperCase()}${plan.plan.slice(1)} plan`);
+
+/** True for an AI CLI that bills per call (an API key): it has no plan limit to run out of. */
+export const isPayPerUse = (plan: CliPlan | undefined): boolean => plan?.billing === "pay_per_use";
 
 /**
- * Tokama's own calls over the range, whatever the report's scope: its totals in the `tokama`
- * scope, else the sum of its workflows (which leaves out how many calls had no price).
+ * The AI tools the filter offers, in the order the app lists them (which is the order they were
+ * added): those the setup finds installed, and any that has a reading or runs in the report.
+ * The engine lists every tool in `clis`, so the list alone says nothing about what is set up.
  */
-export function tokamaTotals(report: UsageReport): { readonly tokens: number; readonly costUsd: number | null; readonly unpricedCalls: number } {
-  if ((report.scope ?? "tokama") === "tokama") return { tokens: totalOf(report.totals.tokens), costUsd: report.totals.costUsd, unpricedCalls: report.totals.unpricedCalls };
-  const priced = report.workflows.filter((w) => w.costUsd !== null);
-  return {
-    tokens: report.workflows.reduce((sum, w) => sum + w.tokens, 0),
-    costUsd: priced.length === 0 ? null : priced.reduce((sum, w) => sum + (w.costUsd ?? 0), 0),
-    unpricedCalls: 0,
-  };
+export function usageTools(report: UsageReport, setup: Setup | undefined): readonly AiCliId[] {
+  const used = new Set<AiCliId>();
+  for (const plan of report.clis) if (plan.windows.length > 0 || plan.billing !== undefined) used.add(plan.cliId);
+  for (const step of report.week?.steps ?? []) used.add(step.cliId);
+  for (const helper of report.week?.helpers ?? []) used.add(helper.cliId);
+  for (const health of setup?.health.clis ?? []) if (health.installed) used.add(health.cliId);
+  return AI_CLIS.map((cli) => cli.id).filter((id) => used.has(id));
 }
 
-/** Where reading Claude Code's logs is: progress while the first read runs, the reason when it cannot, else nothing. */
-export function scanText(scan: LogScan | undefined): string | undefined {
-  // Later scans add a few files in moments; only the first one, with nothing read yet, shows progress.
-  if (scan === undefined || scan.state === "ready" || (scan.state === "scanning" && scan.asOf !== undefined)) return undefined;
-  if (scan.state === "scanning") return `Reading Claude Code logs… ${scan.filesDone} of ${scan.filesTotal} files`;
-  return scan.note;
+/** The colour of an AI tool's bars: by the place the tool has in the list, never by the amount. Further tools stay grey. */
+const TOOL_COLOURS = ["var(--tag-sky)", "var(--tag-sand)", "var(--tag-clay)"] as const;
+export const toolColour = (cliId: AiCliId, tools: readonly AiCliId[]): string => TOOL_COLOURS[tools.indexOf(cliId)] ?? "var(--chart-other)";
+
+/** What the page's first sentence is about: one window of one AI tool. */
+export interface Headline {
+  readonly kind: "at_limit" | "runs_out" | "on_pace";
+  readonly plan: CliPlan;
+  readonly window: PlanWindow;
 }
 
-export interface Segment {
-  readonly templateId: string;
-  readonly value: number;
+const soonest = (windows: readonly Headline[], by: (headline: Headline) => number): Headline | undefined => [...windows].sort((a, b) => by(a) - by(b))[0];
+
+/**
+ * The window the first sentence is about, over the tools shown: a limit already reached, else the
+ * one that runs out first at its pace, else, when every limit holds, the weekly window nearest its
+ * limit at the reset. Nothing when no window has a pace (no reading, or a tool with no plan).
+ */
+export function headlineOf(clis: readonly CliPlan[], now: number, only: AiCliId | undefined): Headline | undefined {
+  const all = clis
+    .filter((plan) => (only === undefined || plan.cliId === only) && !isPayPerUse(plan))
+    .flatMap((plan) => liveWindows(plan, now).map((window): { plan: CliPlan; window: PlanWindow } => ({ plan, window })));
+  const at = soonest(
+    all.filter(({ window }) => window.usedPercent >= 100).map((entry) => ({ ...entry, kind: "at_limit" as const })),
+    ({ window }) => window.resetsAt ?? Infinity,
+  );
+  if (at !== undefined) return at;
+  const runs = soonest(
+    all.filter(({ window }) => window.forecast?.runsOutAt !== undefined).map((entry) => ({ ...entry, kind: "runs_out" as const })),
+    ({ window }) => window.forecast!.runsOutAt!,
+  );
+  if (runs !== undefined) return runs;
+  const paced = all.filter(({ window }) => window.forecast !== undefined);
+  const weekly = paced.filter(({ window }) => isWeekly(window));
+  return soonest(
+    (weekly.length > 0 ? weekly : paced).map((entry) => ({ ...entry, kind: "on_pace" as const })),
+    ({ window }) => -window.forecast!.atResetPercent,
+  );
 }
 
-export interface Column {
-  readonly date: string;
-  /** "Tue", "24": the axis label under the column. */
-  readonly weekday: string;
-  readonly day: string;
-  /** Bottom to top, in series order. */
-  readonly segments: readonly Segment[];
-  readonly total: number;
+/** "this week's pace is 16% a day" for a weekly window with a known start; else nothing. */
+export function paceText(window: PlanWindow, now: number): string | undefined {
+  if (window.startsAt === undefined || !isWeekly(window) || window.usedPercent <= 0) return undefined;
+  const days = Math.max(now - window.startsAt, MINUTE) / DAY;
+  return `this week's pace is ${Math.round(window.usedPercent / days)}% a day`;
 }
 
-export interface ChartModel {
-  /** Workflows with usage in the range, in the setup's order (colour follows the workflow, never its rank), unknown ones last. */
-  readonly series: readonly string[];
-  readonly columns: readonly Column[];
-  /** The top of the axis: a round number at or above the tallest column. */
-  readonly max: number;
-  readonly ticks: readonly number[];
-}
-
-/** A round axis top: 1, 2, 2.5 or 5 times a power of ten. */
-export function niceMax(value: number): number {
-  if (value <= 0) return 1;
-  const power = 10 ** Math.floor(Math.log10(value));
-  for (const step of [1, 2, 2.5, 5, 10]) if (value <= step * power) return step * power;
-  return 10 * power;
-}
-
-export function chartModel(report: UsageReport, metric: Metric, setup: Setup | undefined): ChartModel {
-  const used = new Set(report.workflows.map((w) => w.templateId));
-  const order: string[] = (setup?.templates ?? []).map((t) => t.id).filter((id) => used.has(id));
-  const series = [...order, ...[...used].filter((id) => !order.includes(id)).sort()];
-  const columns = report.days.map((day): Column => {
-    const d = new Date(`${day.date}T12:00:00`);
-    const segments = series.flatMap((templateId): Segment[] => {
-      const group = day.workflows.find((w) => w.templateId === templateId);
-      const value = group === undefined ? 0 : metric === "tokens" ? group.tokens : (group.costUsd ?? 0);
-      return value > 0 ? [{ templateId, value }] : [];
+/** The sentence under the headline's first line: plan, use, time left, reset, pace, how short, and the other tools. */
+export function headlineFacts(headline: Headline, clis: readonly CliPlan[], now: number): string {
+  const { plan, window } = headline;
+  const left = window.resetsAt === undefined ? undefined : window.resetsAt - now;
+  const short = window.forecast?.runsOutAt !== undefined && window.resetsAt !== undefined ? `about ${formatDuration(window.resetsAt - window.forecast.runsOutAt, "coarse")} short` : undefined;
+  const others = clis
+    .filter((other) => other.cliId !== plan.cliId && !isPayPerUse(other))
+    .flatMap((other) => {
+      const forecast = other.windows.find((w) => isWeekly(w) && w.forecast !== undefined)?.forecast ?? other.windows.find((w) => w.forecast !== undefined)?.forecast;
+      if (forecast === undefined) return [];
+      return [forecast.runsOutAt === undefined ? `${cliName(other.cliId)} is on pace to stay under` : `${cliName(other.cliId)} runs out ${approxWhen(forecast.runsOutAt, now)}`];
     });
-    return { date: day.date, weekday: weekday(d.getTime()), day: String(d.getDate()), segments, total: segments.reduce((sum, s) => sum + s.value, 0) };
-  });
-  const max = niceMax(Math.max(0, ...columns.map((c) => c.total)));
-  return { series, columns, max, ticks: [0, 0.25, 0.5, 0.75, 1].map((f) => f * max) };
+  return [
+    [planName(plan), `${Math.round(window.usedPercent)}% used${left === undefined || left <= 0 ? "" : ` with ${formatDuration(left, "coarse")} to go`}`].filter(Boolean).join(" · "),
+    window.resetsAt === undefined ? undefined : `resets ${resetWhen(window.resetsAt, now)}`,
+    paceText(window, now),
+    short,
+    ...others,
+  ]
+    .filter((part) => part !== undefined && part !== "")
+    .join(" · ");
 }
 
-/** An axis label: "200k" tokens, "$4" cost. */
-export const tickLabel = (value: number, metric: Metric): string =>
-  metric === "cost" ? `$${value < 10 && value % 1 !== 0 ? value.toFixed(2) : Math.round(value)}` : value === 0 ? "0" : formatTokens(value);
-
-/** Share of the day as a whole percent, at least 1 when above zero. */
-export const share = (part: number, whole: number): number => (whole <= 0 || part <= 0 ? 0 : Math.max(1, Math.round((part / whole) * 100)));
+/** "Attempt 2", "Attempts 2 and 3", "Attempts 2, 3 and 4". */
+export function attemptsText(attempts: readonly number[]): string {
+  if (attempts.length === 1) return `Attempt ${attempts[0]}`;
+  return `Attempts ${attempts.slice(0, -1).join(", ")} and ${attempts.at(-1)}`;
+}
