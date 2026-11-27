@@ -1,17 +1,18 @@
 name: release
 
-# A v<x.y.z> tag builds, signs, notarizes and verifies the macOS app and ends in a draft release;
-# the owner reads the draft and publishes it. A manual run is a dry run on a tag: the same build
-# and checks, no release. Start one with
-#   gh workflow run release.yml --ref v0.1.0 [-f feed_url=https://example.test/mac/]
+# A v<x.y.z> tag builds, signs, notarizes and verifies the macOS app, builds and verifies the Linux
+# packages, and ends in a draft release; the owner reads the draft and publishes it. A manual run
+# is a dry run on a tag: the same build and checks, no release. Start one with
+#   gh workflow run release.yml --ref v0.1.0 [-f feed_url=https://example.test/updates/]
 # A dry run may also name a local feed, http://127.0.0.1:<port>/, to try an update on one machine.
+# The one feed URL of a dry run is baked into both the macOS app and the Linux packages.
 on:
   push:
     tags: ["v*.*.*"]
   workflow_dispatch:
     inputs:
       feed_url:
-        description: Update feed URL baked into the app (default https://updates.tokama.dev/mac/)
+        description: Update feed URL baked into the apps (default https://updates.tokama.dev/mac/ and https://updates.tokama.dev/linux/)
         required: false
         default: ""
 
@@ -36,7 +37,8 @@ jobs:
       checks: read
     outputs:
       version: ${{ steps.check.outputs.version }}
-      feed_url: ${{ steps.check.outputs.feed_url }}
+      feed_url_mac: ${{ steps.check.outputs.feed_url_mac }}
+      feed_url_linux: ${{ steps.check.outputs.feed_url_linux }}
       min_safe_version: ${{ steps.check.outputs.min_safe_version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -70,7 +72,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # The only job with secrets (the `release` environment accepts v* tags only). They are in the
+  # The only job with secrets (the `release` environment accepts v* tags only; build-linux has
+  # none and no environment). They are in the
   # env of the signing steps only, but this is not a wall: dependency code from the install and
   # build runs on the same VM and could read the key file or use the open keychain. The controls
   # that matter are the frozen lockfile, the release-age and build-script rules in
@@ -145,7 +148,7 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          FEED_URL: ${{ needs.check.outputs.feed_url }}
+          FEED_URL: ${{ needs.check.outputs.feed_url_mac }}
           MIN_SAFE_VERSION: ${{ needs.check.outputs.min_safe_version }}
         run: pnpm exec install-electron && node scripts/package.ts --dmg --signed --feed-url "$FEED_URL" --min-safe-version "$MIN_SAFE_VERSION"
       # Before the smoke test: running the installed app needs neither the keychain nor the key.
@@ -158,7 +161,7 @@ jobs:
         working-directory: apps/desktop
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          FEED_URL: ${{ needs.check.outputs.feed_url }}
+          FEED_URL: ${{ needs.check.outputs.feed_url_mac }}
           VERSION: ${{ needs.check.outputs.version }}
         run: node scripts/smoke-installed.ts --dmg "release/Tokama-$VERSION-arm64.dmg" --signed --team "$APPLE_TEAM_ID" --feed-url "$FEED_URL"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -182,11 +185,58 @@ jobs:
             apps/desktop/smoke-output
             apps/desktop/release/notary-*.json
 
-  # Writes the draft from the files build-mac made: no checkout, no install, no secrets.
-  # A manual run stops before this job, so it never creates a release.
+  # The Linux packages (.deb and .rpm, x86_64). No secret, no environment: nothing here signs
+  # anything. The linux-package action builds and verifies them, installs the .deb on this runner
+  # (under a virtual display, with the Chromium sandbox on) and the .rpm in a Fedora container. No
+  # cache is restored here either.
+  build-linux:
+    name: build (linux)
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test
+      - uses: ./.github/actions/linux-package
+        with:
+          feed-url: ${{ needs.check.outputs.feed_url_linux }}
+          min-safe-version: ${{ needs.check.outputs.min_safe_version }}
+          rpm-out: ${{ runner.temp }}/smoke-rpm
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tokama-linux-${{ needs.check.outputs.version }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            apps/desktop/release/Tokama-${{ needs.check.outputs.version }}-amd64.deb
+            apps/desktop/release/Tokama-${{ needs.check.outputs.version }}-x86_64.rpm
+            apps/desktop/release/latest-linux.yml
+            apps/desktop/release/SHA256SUMS.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: release-linux-failure-logs
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            apps/desktop/smoke-output
+            ${{ runner.temp }}/smoke-rpm
+
+  # Writes the draft from the files build-mac and build-linux made: no checkout, no install, no
+  # secrets. A manual run stops before this job, so it never creates a release.
   publish:
     name: draft release
-    needs: [check, build-mac]
+    needs: [check, build-mac, build-linux]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -196,7 +246,11 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: tokama-mac-${{ needs.check.outputs.version }}
-          path: dist
+          path: mac
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tokama-linux-${{ needs.check.outputs.version }}
+          path: linux
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-notes
@@ -207,7 +261,16 @@ jobs:
           VERSION: ${{ needs.check.outputs.version }}
         run: |
           set -euo pipefail
+          # Each build's files are checked against the sums its own job wrote, then one sums file covers all of them.
+          (cd mac && shasum -a 256 -c SHA256SUMS.txt)
+          (cd linux && shasum -a 256 -c SHA256SUMS.txt)
+          [ "$(find mac -mindepth 1 | wc -l)" -eq 5 ]
+          [ "$(find linux -mindepth 1 | wc -l)" -eq 4 ]
+          mkdir dist
+          cat mac/SHA256SUMS.txt linux/SHA256SUMS.txt > dist/SHA256SUMS.txt
+          find mac linux -type f ! -name SHA256SUMS.txt -exec mv {} dist/ \;
           (cd dist && shasum -a 256 -c SHA256SUMS.txt)
-          [ "$(find dist -mindepth 1 | wc -l)" -eq 5 ]
+          # 4 macOS files, the .deb, the .rpm, latest-linux.yml and the merged sums.
+          [ "$(find dist -mindepth 1 | wc -l)" -eq 8 ]
           # --verify-tag: the workflow never creates or moves a tag. The draft is the owner's to publish.
           gh release create "v$VERSION" --repo "$REPO" --draft --verify-tag --title "Tokama $VERSION" --notes-file notes/notes.md dist/*

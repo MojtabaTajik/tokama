@@ -15,9 +15,9 @@ describe("node-runtime.json", () => {
     expect(readNodeRuntime(pinned).version).toBe(wanted);
   });
 
-  it("has a hash for Apple silicon, and every key and hash is well formed", () => {
+  it("has a hash for Apple silicon and for Linux x86_64, and every key and hash is well formed", () => {
     const { sha256 } = readNodeRuntime(pinned);
-    expect(Object.keys(sha256)).toContain("darwin-arm64");
+    expect(Object.keys(sha256)).toEqual(expect.arrayContaining(["darwin-arm64", "linux-x64"]));
     for (const [key, hash] of Object.entries(sha256)) {
       expect(key).toMatch(/^(darwin|linux|win32)-(arm64|x64)$/);
       expect(hash).toMatch(/^[0-9a-f]{64}$/);

@@ -6,6 +6,8 @@
 // packs the app with electron-builder, and then checks the result: the ad-hoc signature here, and
 // everything else through verify-package.ts. Any failed check ends the script with a message that
 // names it.
+// On Linux (x86_64) the same command builds the .deb and the .rpm, takes `--feed-url` and
+// `--min-safe-version` too, and has no signing: see buildLinux.
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,13 +15,13 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { AfterPackContext } from "electron-builder";
 import { compareVersions } from "../src/shared/whats-new.ts";
-import { type SignedEnv, isFile, signNotarizeDmg, signedEnv, writeSums } from "./package-signed.ts";
+import { type PackagePlatform, type SignedEnv, debName, isFile, rpmName, signNotarizeDmg, signedEnv, writeSums } from "./package-signed.ts";
 
 const appDir = resolve(import.meta.dirname, "..");
 const repoDir = resolve(appDir, "..", "..");
 
-/** The update feed of the packaged app, as electron-builder.yml has it. */
-export const DEFAULT_FEED_URL = "https://updates.tokama.dev/mac/";
+/** The update feed of a platform's packaged app. The macOS one is also what electron-builder.yml has; the Linux build always passes its own. */
+export const defaultFeedUrl = (platform: PackagePlatform): string => `https://updates.tokama.dev/${platform}/`;
 
 /** True for exactly `http://127.0.0.1:<port>/` with a port from 1024 to 65535 and no leading zero: the local server of a rehearsal. */
 function isLoopbackFeed(url: string): boolean {
@@ -56,7 +58,8 @@ export function releaseInfoFor(minSafeVersion: string | undefined): { releaseInf
 
 /** electron-builder's `afterPack` hook: Electron's own demo app archive is never opened (only the app's archive loads), so it does not ship. */
 export function removeDefaultApp(context: AfterPackContext): void {
-  rmSync(join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`, "Contents", "Resources", "default_app.asar"), { force: true });
+  const resources = context.electronPlatformName === "linux" ? join(context.appOutDir, "resources") : join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`, "Contents", "Resources");
+  rmSync(join(resources, "default_app.asar"), { force: true });
 }
 
 /** The app's version: the one source of every version the build writes. It must be plain `x.y.z`, the only form the engine reads back. */
@@ -114,22 +117,29 @@ async function main(): Promise<void> {
     if (needs.value === undefined) fail("environment", needs.problems.join("; "));
     signing = needs.value;
   }
-  if (process.platform !== "darwin" || process.arch !== "arm64") {
-    process.stderr.write("package: only Apple silicon (macOS arm64) packaging exists so far.\n");
+  const platform = hostPlatform(process.platform, process.arch);
+  if (platform === undefined) {
+    process.stderr.write("package: only Apple silicon (macOS arm64) and Linux x86_64 packaging exist so far.\n");
     process.exit(1);
   }
+  if (platform === "linux" && (dmg || values.signed === true)) fail("arguments", "--dmg and --signed are for macOS; the Linux build makes the .deb and the .rpm, unsigned");
 
   const stage = join(appDir, "package-stage", "engine");
   rmSync(stage, { recursive: true, force: true });
   mkdirSync(stage, { recursive: true });
   // Child processes rather than imports: they keep each step's output and exit code apart.
   execFileSync(process.execPath, [join(repoDir, "apps", "engine", "scripts", "bundle.ts"), "--out", join(stage, "dist")], { stdio: "inherit" });
-  execFileSync(process.execPath, [join(appDir, "scripts", "fetch-node.ts"), "--out", stage], { stdio: "inherit" });
+  execFileSync(process.execPath, [join(appDir, "scripts", "fetch-node.ts"), "--out", stage, ...(platform === "linux" ? ["--platform", "linux", "--arch", "x64"] : [])], { stdio: "inherit" });
   writeFileSync(join(stage, "package.json"), engineManifest(appVersion(appDir)));
   checkEngineVersion(appDir, stage);
 
+  if (platform === "linux") {
+    await buildLinux(feedUrl ?? defaultFeedUrl("linux"), minSafeVersion);
+    return;
+  }
+
   if (signing !== undefined) {
-    await buildSigned(signing, feedUrl ?? DEFAULT_FEED_URL, minSafeVersion);
+    await buildSigned(signing, feedUrl ?? defaultFeedUrl("mac"), minSafeVersion);
     return;
   }
 
@@ -164,7 +174,38 @@ async function main(): Promise<void> {
     rmSync(keychainDir, { recursive: true, force: true });
   }
 
-  check(join(appDir, "release"), dmg, feedUrl ?? DEFAULT_FEED_URL, minSafeVersion);
+  check(join(appDir, "release"), dmg, feedUrl ?? defaultFeedUrl("mac"), minSafeVersion);
+}
+
+/** The platform this machine builds packages for, or undefined. */
+export function hostPlatform(platform: string, arch: string): PackagePlatform | undefined {
+  if (platform === "darwin" && arch === "arm64") return "mac";
+  return platform === "linux" && arch === "x64" ? "linux" : undefined;
+}
+
+/**
+ * The Linux build: the .deb and the .rpm, and latest-linux.yml, which lists both. There is nothing
+ * to sign (the update feed file is signed in the release workflow, after the build), so there is no
+ * keychain and no secret in this function. The feed config is always passed, because
+ * electron-builder.yml holds the macOS feed.
+ */
+async function buildLinux(feedUrl: string, minSafeVersion: string | undefined): Promise<void> {
+  const release = join(appDir, "release");
+  const { build, Arch, Platform } = await import("electron-builder");
+  await build({
+    projectDir: appDir,
+    targets: Platform.LINUX.createTarget(["deb", "rpm"], Arch.x64),
+    publish: "never",
+    config: { publish: { provider: "generic", url: feedUrl }, afterPack: removeDefaultApp, ...releaseInfoFor(minSafeVersion) },
+  });
+  const version = appVersion(appDir);
+  writeSums(release, version, "linux");
+  const verified = spawnSync(
+    process.execPath,
+    [join(appDir, "scripts", "verify-package.ts"), "--linux", "--deb", join(release, debName(version)), "--rpm", join(release, rpmName(version)), "--latest", join(release, "latest-linux.yml"), "--version", version, "--feed-url", feedUrl, ...(minSafeVersion !== undefined ? ["--min-safe-version", minSafeVersion] : [])],
+    { stdio: "inherit" },
+  );
+  if (verified.status !== 0) fail("verify", "verify-package.ts reported failed checks, above");
 }
 
 /**
@@ -194,7 +235,7 @@ async function buildSigned(env: SignedEnv, feedUrl: string, minSafeVersion: stri
   const version = appVersion(appDir);
   try {
     signNotarizeDmg(release, join(release, `Tokama-${version}-arm64.dmg`), env);
-    writeSums(release, version);
+    writeSums(release, version, "mac");
   } catch (error) {
     fail("notarize", error instanceof Error ? error.message : String(error));
   }

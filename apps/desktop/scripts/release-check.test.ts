@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { changelogSection, feedUrlFor, minSafeVersionFor, releaseNotesFor, tagVersion } from "./release-check.js";
+import { changelogSection, feedUrlFor, minSafeVersionFor, releaseNotesFor, stepOutputs, tagVersion } from "./release-check.js";
 
 describe("tagVersion", () => {
   it("reads the version of a v<x.y.z> tag", () => {
@@ -73,32 +73,57 @@ One.
 
 describe("feedUrlFor", () => {
   const DEFAULT = "https://updates.tokama.dev/mac/";
+  const DEFAULT_LINUX = "https://updates.tokama.dev/linux/";
 
-  it("is the default for a tag push, whatever the input holds", () => {
-    expect(feedUrlFor("push", undefined)).toBe(DEFAULT);
-    expect(feedUrlFor("push", "https://other.example.test/mac/")).toBe(DEFAULT);
+  it("is the default of the platform for a tag push, whatever the input holds", () => {
+    expect(feedUrlFor("mac", "push", undefined)).toBe(DEFAULT);
+    expect(feedUrlFor("mac", "push", "https://other.example.test/mac/")).toBe(DEFAULT);
+    expect(feedUrlFor("linux", "push", undefined)).toBe(DEFAULT_LINUX);
+    expect(feedUrlFor("linux", "push", "https://other.example.test/mac/")).toBe(DEFAULT_LINUX);
   });
 
   it("is the default for a manual run without an input", () => {
-    expect(feedUrlFor("workflow_dispatch", "")).toBe(DEFAULT);
-    expect(feedUrlFor("workflow_dispatch", undefined)).toBe(DEFAULT);
+    expect(feedUrlFor("mac", "workflow_dispatch", "")).toBe(DEFAULT);
+    expect(feedUrlFor("mac", "workflow_dispatch", undefined)).toBe(DEFAULT);
+    expect(feedUrlFor("linux", "workflow_dispatch", "")).toBe(DEFAULT_LINUX);
+    expect(feedUrlFor("linux", "workflow_dispatch", undefined)).toBe(DEFAULT_LINUX);
   });
 
-  it("takes the input of a manual run", () => {
-    expect(feedUrlFor("workflow_dispatch", "https://example.test/updates/mac/")).toBe("https://example.test/updates/mac/");
+  it("takes the input of a manual run, for both platforms", () => {
+    expect(feedUrlFor("mac", "workflow_dispatch", "https://example.test/updates/")).toBe("https://example.test/updates/");
+    expect(feedUrlFor("linux", "workflow_dispatch", "https://example.test/updates/")).toBe("https://example.test/updates/");
   });
 
   it("takes a local feed on a manual run only", () => {
-    expect(feedUrlFor("workflow_dispatch", "http://127.0.0.1:8765/")).toBe("http://127.0.0.1:8765/");
-    expect(feedUrlFor("push", "http://127.0.0.1:8765/")).toBe(DEFAULT);
+    expect(feedUrlFor("mac", "workflow_dispatch", "http://127.0.0.1:8765/")).toBe("http://127.0.0.1:8765/");
+    expect(feedUrlFor("linux", "workflow_dispatch", "http://127.0.0.1:8765/")).toBe("http://127.0.0.1:8765/");
+    expect(feedUrlFor("mac", "push", "http://127.0.0.1:8765/")).toBe(DEFAULT);
+    expect(feedUrlFor("linux", "push", "http://127.0.0.1:8765/")).toBe(DEFAULT_LINUX);
   });
 
   it.each(["http://localhost/", "http://127.0.0.1/", "http://127.0.0.2:8000/", "http://127.0.0.1:80/"])("refuses the local feed %j", (input) => {
-    expect(() => feedUrlFor("workflow_dispatch", input)).toThrow(/feed URL/);
+    expect(() => feedUrlFor("mac", "workflow_dispatch", input)).toThrow(/feed URL/);
+    expect(() => feedUrlFor("linux", "workflow_dispatch", input)).toThrow(/feed URL/);
   });
 
   it.each(["http://example.test/mac/", "https://example.test/mac", "https://exa mple.test/", "https://example.test/mac/\nx=y/", "file:///etc/", "https://example.test/mac/?a=b"])("refuses the input %j", (input) => {
-    expect(() => feedUrlFor("workflow_dispatch", input)).toThrow(/feed URL/);
+    expect(() => feedUrlFor("mac", "workflow_dispatch", input)).toThrow(/feed URL/);
+    expect(() => feedUrlFor("linux", "workflow_dispatch", input)).toThrow(/feed URL/);
+  });
+});
+
+describe("stepOutputs", () => {
+  it("names a feed URL for each platform and the lowest safe version, as the workflow reads them", () => {
+    expect(stepOutputs({ version: "0.1.0", feedUrlMac: "https://updates.tokama.dev/mac/", feedUrlLinux: "https://updates.tokama.dev/linux/", minSafe: "" })).toBe(
+      "version=0.1.0\nfeed_url_mac=https://updates.tokama.dev/mac/\nfeed_url_linux=https://updates.tokama.dev/linux/\nmin_safe_version=\n",
+    );
+  });
+
+  it("holds the one URL of a manual run twice", () => {
+    const url = "http://127.0.0.1:8765/";
+    const text = stepOutputs({ version: "0.1.0", feedUrlMac: feedUrlFor("mac", "workflow_dispatch", url), feedUrlLinux: feedUrlFor("linux", "workflow_dispatch", url), minSafe: "0.0.9" });
+    expect(text).toContain(`feed_url_mac=${url}\nfeed_url_linux=${url}\n`);
+    expect(text).toContain("min_safe_version=0.0.9\n");
   });
 });
 

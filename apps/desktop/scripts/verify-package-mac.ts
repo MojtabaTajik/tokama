@@ -2,11 +2,11 @@
 // feed and bundled hook in every mode, and in signed mode its signatures, entitlements, stapled
 // ticket and Gatekeeper assessment. Parsers and tables are pure and exported for tests; the
 // runners call codesign, plutil, stapler and spctl and so need macOS.
-import { createHash } from "node:crypto";
-import { accessSync, closeSync, constants, lstatSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, lstatSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join, relative, resolve } from "node:path";
-import { appVersion, run } from "./package.ts";
+import { basename, join, relative } from "node:path";
+import { run } from "./package.ts";
+import { type LatestFeed, Report, engineVersionProblem, feedProblem, fusesProblem, hookProblem, minSafeProblem, nodeVersionProblem, parseLatestFeed, resourcesProblem, sha512Base64 } from "./verify-package-common.ts";
 
 export type Mode = { readonly kind: "unsigned" } | { readonly kind: "signed"; readonly team: string };
 
@@ -24,33 +24,6 @@ export interface VerifyOptions {
   /** The lowest safe version the build was asked to name; latest-mac.yml must then carry it as `vendor.tokama.minSafeVersion`, and otherwise carry no `vendor` key. */
   readonly minSafeVersion?: string;
   readonly mode: Mode;
-}
-
-const appDir = resolve(import.meta.dirname, "..");
-
-/** Collects the outcome of each check: one line per check, and every failure for the summary. */
-export class Report {
-  readonly failures: string[] = [];
-
-  /** Runs one check; its problem text, or an exception, is a failure. The run goes on. */
-  async check(name: string, check: () => string | undefined | Promise<string | undefined>): Promise<void> {
-    let problem: string | undefined;
-    try {
-      problem = await check();
-    } catch (error) {
-      problem = error instanceof Error ? error.message : String(error);
-    }
-    if (problem === undefined) {
-      process.stdout.write(`ok ${name}\n`);
-    } else {
-      process.stdout.write(`FAIL ${name}: ${problem}\n`);
-      this.failures.push(`${name}: ${problem}`);
-    }
-  }
-
-  skip(name: string, reason: string): void {
-    process.stdout.write(`skip ${name} (${reason})\n`);
-  }
 }
 
 // ---- Parsers and tables ----
@@ -119,73 +92,11 @@ export function entitlementProblem(path: string, entitlements: Readonly<Record<s
   return undefined;
 }
 
-/** The top-level `key: value` lines of a small YAML file (app-update.yml, latest-mac.yml), with single quotes removed. */
-export function parseYamlScalars(text: string): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const line of text.split("\n")) {
-    const match = /^([A-Za-z][A-Za-z0-9]*):\s*(.+?)\s*$/.exec(line);
-    if (match?.[1] !== undefined && match[2] !== undefined) map.set(match[1], unquote(match[2]));
-  }
-  return map;
-}
-
-const unquote = (value: string) => (/^'.*'$/.test(value) ? value.slice(1, -1) : value);
-
-export interface LatestMac {
-  readonly version: string | undefined;
-  readonly path: string | undefined;
-  readonly sha512: string | undefined;
-  readonly files: readonly { readonly url?: string; readonly sha512?: string; readonly size?: string }[];
-}
-
-/** Reads latest-mac.yml: its top-level fields and its `files` entries. */
-export function parseLatestMac(text: string): LatestMac {
-  const top = parseYamlScalars(text);
-  const files: { url?: string; sha512?: string; size?: string }[] = [];
-  for (const line of text.split("\n")) {
-    const first = /^ {2}- ([a-z0-9]+):\s*(.+?)\s*$/.exec(line);
-    if (first?.[1] !== undefined && first[2] !== undefined) {
-      files.push({ [first[1]]: unquote(first[2]) });
-      continue;
-    }
-    const next = /^ {4}([a-z0-9]+):\s*(.+?)\s*$/.exec(line);
-    const current = files[files.length - 1];
-    if (next?.[1] !== undefined && next[2] !== undefined && current !== undefined) (current as Record<string, string>)[next[1]] = unquote(next[2]);
-  }
-  return { version: top.get("version"), path: top.get("path"), sha512: top.get("sha512"), files };
-}
-
-/** The `vendor: tokama: minSafeVersion` entry of latest-mac.yml: whether a top-level `vendor` key exists, and the version under `vendor.tokama` if there is one. */
-export function parseVendorMinSafe(text: string): { readonly hasVendor: boolean; readonly minSafeVersion: string | undefined } {
-  const lines = text.split("\n");
-  const start = lines.findIndex((line) => /^vendor:/.test(line));
-  if (start < 0) return { hasVendor: false, minSafeVersion: undefined };
-  let inTokama = false;
-  for (const line of lines.slice(start + 1)) {
-    if (/^\S/.test(line)) break;
-    if (/^ {2}\S/.test(line)) {
-      inTokama = /^ {2}tokama:\s*$/.test(line);
-      continue;
-    }
-    const field = /^ {4}minSafeVersion:\s*(.+?)\s*$/.exec(line);
-    if (inTokama && field?.[1] !== undefined) return { hasVendor: true, minSafeVersion: unquote(field[1]) };
-  }
-  return { hasVendor: true, minSafeVersion: undefined };
-}
-
-/** Why latest-mac.yml does not name the lowest safe version exactly as asked, or undefined. `minSafe` is the version the build was asked to name, or undefined for none, which means no `vendor` key at all. */
-export function minSafeProblem(text: string, minSafe: string | undefined): string | undefined {
-  const { hasVendor, minSafeVersion } = parseVendorMinSafe(text);
-  if (minSafe === undefined) return hasVendor ? "it carries a vendor key, but no lowest safe version was asked for" : undefined;
-  if (minSafeVersion === undefined) return `it has no vendor.tokama.minSafeVersion, but ${minSafe} was asked for`;
-  return minSafeVersion === minSafe ? undefined : `vendor.tokama.minSafeVersion is ${minSafeVersion}, not ${minSafe}`;
-}
-
 /** The zip's name for a version, as the update feed lists it. */
 export const zipName = (version: string) => `Tokama-${version}-arm64-mac.zip`;
 
 /** Why latest-mac.yml does not describe exactly this zip, or undefined. `sha512` is the zip's real digest in base64, `size` its real size. */
-export function latestProblem(latest: LatestMac, version: string, zip: { readonly name: string; readonly sha512: string; readonly size: number }): string | undefined {
+export function latestProblem(latest: LatestFeed, version: string, zip: { readonly name: string; readonly sha512: string; readonly size: number }): string | undefined {
   if (latest.version !== version) return `version is ${latest.version ?? "missing"}, not ${version}`;
   if (zip.name !== zipName(version)) return `the zip is named ${zip.name}, not ${zipName(version)}`;
   if (latest.files.length !== 1) return `it lists ${latest.files.length} files, not 1`;
@@ -196,96 +107,20 @@ export function latestProblem(latest: LatestMac, version: string, zip: { readonl
   return undefined;
 }
 
-export function sha512Base64(file: string): string {
-  return createHash("sha512").update(readFileSync(file)).digest("base64");
-}
-
 // ---- Runners ----
 
-/** The release notes in the repo's whats-new folder, by file name. The packaged app must hold each one: without a note the folder is not packed at all, and a filter that drops notes would go unseen. */
-function repoNotes(): string[] {
-  try {
-    return readdirSync(join(appDir, "..", "..", "whats-new")).filter((name) => /^\d+\.\d+\.\d+\.md$/.test(name));
-  } catch {
-    return [];
-  }
-}
+const resourcesOf = (app: string) => join(app, "Contents", "Resources");
+const engineOf = (app: string) => join(resourcesOf(app), "engine");
 
 export function layoutProblem(app: string, feed: boolean): string | undefined {
-  const resources = join(app, "Contents", "Resources");
-  const engine = join(resources, "engine");
-  const files = [...repoNotes().map((name) => join(resources, "whats-new", name)), join(engine, "tokama-engine"), join(engine, "LICENSE-node"), join(engine, "package.json"), join(engine, "dist", "main.js"), join(engine, "dist", "hook.js"), join(resources, "LICENSE-electron"), join(resources, "LICENSES.chromium.html"), join(resources, "THIRD_PARTY_NOTICES.md"), join(resources, "app.asar"), ...["needs-you", "finished", "failed", "tokay-call"].map((name) => join(resources, `tokama-${name}.wav`))];
-  for (const file of feed ? [...files, join(resources, "app-update.yml")] : files) {
-    try {
-      statSync(file);
-    } catch {
-      return `${file} is missing`;
-    }
-  }
-  const dist = readdirSync(join(engine, "dist")).sort().join(",");
-  if (dist !== "hook.js,main.js") return `engine/dist holds ${dist}`;
-  try {
-    accessSync(join(engine, "tokama-engine"), constants.X_OK);
-  } catch {
-    return "tokama-engine is not executable";
-  }
-  try {
-    statSync(join(resources, "default_app.asar"));
-    return "Electron's default_app.asar ships in the app";
-  } catch {
-    return undefined;
-  }
-}
-
-function nodeVersionProblem(app: string): string | undefined {
-  const expected = (JSON.parse(readFileSync(join(appDir, "packaging", "node-runtime.json"), "utf8")) as { version: string }).version;
-  const reported = run(join(app, "Contents", "Resources", "engine", "tokama-engine"), ["--version"]).stdout.trim();
-  return reported === `v${expected}` ? undefined : `tokama-engine reports ${reported}, not v${expected}`;
+  return resourcesProblem(resourcesOf(app), feed);
 }
 
 function versionProblem(app: string, version: string): string | undefined {
   const plist = (key: string) => run("plutil", ["-extract", key, "raw", "-o", "-", join(app, "Contents", "Info.plist")]).stdout.trim();
   if (plist("CFBundleIdentifier") !== "dev.tokama.app") return `CFBundleIdentifier is ${plist("CFBundleIdentifier")}`;
   if (plist("CFBundleShortVersionString") !== version) return `Info.plist says ${plist("CFBundleShortVersionString")}, not ${version}`;
-  const engine = appVersion(join(app, "Contents", "Resources", "engine"));
-  return engine === version ? undefined : `the engine's package.json says ${engine}, not ${version}`;
-}
-
-async function fusesProblem(app: string): Promise<string | undefined> {
-  const { FuseV1Options, getCurrentFuseWire } = await import("@electron/fuses");
-  const wire = await getCurrentFuseWire(join(app, "Contents", "MacOS", "Tokama"));
-  // The wire holds the characters "0" and "1": 48 is off and 49 is on.
-  const ON = 49;
-  const OFF = 48;
-  const expected = [
-    ["RunAsNode", FuseV1Options.RunAsNode, OFF],
-    ["EnableNodeOptionsEnvironmentVariable", FuseV1Options.EnableNodeOptionsEnvironmentVariable, OFF],
-    ["EnableNodeCliInspectArguments", FuseV1Options.EnableNodeCliInspectArguments, OFF],
-    ["EnableEmbeddedAsarIntegrityValidation", FuseV1Options.EnableEmbeddedAsarIntegrityValidation, ON],
-    ["OnlyLoadAppFromAsar", FuseV1Options.OnlyLoadAppFromAsar, ON],
-  ] as const;
-  const wrong = expected.filter(([, option, state]) => wire[option] !== state).map(([name]) => name);
-  return wrong.length === 0 ? undefined : `fuses not as configured: ${wrong.join(", ")}`;
-}
-
-function feedProblem(app: string, feedUrl: string): string | undefined {
-  const feed = parseYamlScalars(readFileSync(join(app, "Contents", "Resources", "app-update.yml"), "utf8"));
-  if (feed.get("provider") !== "generic") return `app-update.yml provider is ${feed.get("provider") ?? "missing"}`;
-  return feed.get("url") === feedUrl ? undefined : `app-update.yml url is ${feed.get("url") ?? "missing"}, not ${feedUrl}`;
-}
-
-/** The bundled Node runs the bundled hook: a command no rule allows is denied. */
-function hookProblem(app: string): string | undefined {
-  const engine = join(app, "Contents", "Resources", "engine");
-  const scratch = mkdtempSync(join(tmpdir(), "tk-verify-"));
-  try {
-    const rules = join(scratch, "rules.json");
-    writeFileSync(rules, JSON.stringify({ commands: [] }));
-    const hook = run(join(engine, "tokama-engine"), [join(engine, "dist", "hook.js"), rules], JSON.stringify({ tool_name: "Bash", tool_input: { command: "rm -rf /tmp/x" } }));
-    return hook.status === 42 && hook.stdout.includes('"permissionDecision":"deny"') ? undefined : `unexpected reply: ${hook.stdout}${hook.stderr}`;
-  } finally {
-    rmSync(scratch, { recursive: true, force: true });
-  }
+  return engineVersionProblem(engineOf(app), version);
 }
 
 /** Every regular Mach-O file in the bundle, as paths relative to it. Symbolic links are skipped: the file they lead to is listed on its own. */
@@ -371,12 +206,12 @@ async function checkNotarized(report: Report, target: string, kind: "app" | "dmg
 export async function checkApp(report: Report, app: string, options: VerifyOptions, label: string): Promise<void> {
   const feed = options.dirBuild !== true;
   await report.check(`${label} layout`, () => layoutProblem(app, feed));
-  await report.check(`${label} Node version`, () => nodeVersionProblem(app));
+  await report.check(`${label} Node version`, () => nodeVersionProblem(engineOf(app)));
   await report.check(`${label} bundle id and versions`, () => versionProblem(app, options.version));
-  await report.check(`${label} fuses`, () => fusesProblem(app));
-  if (feed) await report.check(`${label} update feed`, () => feedProblem(app, options.feedUrl));
+  await report.check(`${label} fuses`, () => fusesProblem(join(app, "Contents", "MacOS", "Tokama")));
+  if (feed) await report.check(`${label} update feed`, () => feedProblem(resourcesOf(app), options.feedUrl));
   else report.skip(`${label} update feed`, "dir build");
-  await report.check(`${label} bundled hook denies a command`, () => hookProblem(app));
+  await report.check(`${label} bundled hook denies a command`, () => hookProblem(engineOf(app)));
   if (options.mode.kind === "signed") {
     await checkSignatures(report, app, options.mode.team, label);
     await checkNotarized(report, app, "app", label, options.allowGatekeeperOff === true);
@@ -389,7 +224,7 @@ export async function checkApp(report: Report, app: string, options: VerifyOptio
 export async function checkZip(report: Report, options: VerifyOptions, zip: string): Promise<void> {
   if (options.latest !== undefined) {
     const latest = options.latest;
-    await report.check("latest-mac.yml describes the zip", () => latestProblem(parseLatestMac(readFileSync(latest, "utf8")), options.version, { name: basename(zip), sha512: sha512Base64(zip), size: statSync(zip).size }));
+    await report.check("latest-mac.yml describes the zip", () => latestProblem(parseLatestFeed(readFileSync(latest, "utf8")), options.version, { name: basename(zip), sha512: sha512Base64(zip), size: statSync(zip).size }));
     await report.check("latest-mac.yml names the lowest safe version exactly when asked", () => minSafeProblem(readFileSync(latest, "utf8"), options.minSafeVersion));
   }
   const scratch = mkdtempSync(join(tmpdir(), "tk-verify-zip-"));
