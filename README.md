@@ -49,7 +49,7 @@ In the sidebar choose **+ Add repo**, then pick the top folder of a git repo. To
 ## Agents and templates
 
 - Agents are files named `<id>.md` in `~/.tokama/agents/` (yours) or `.tokama/agents/` in a repo (shared with the team): YAML front matter, then the role text. **Settings > Agents** lists them, with the problems of any file that does not load.
-- Templates are YAML files in `.tokama/templates/` in a repo. Three ship with Tokama: Quick fix, Plan and build, and Review only.
+- Templates are YAML files in `.tokama/templates/` in a repo. Five ship with Tokama: Quick fix, Quick change, Plan and build, Ask and Review code. A template that only reads its repo (`repos: read`) cannot change files: its agents get no edit tools, and nothing is committed.
 
 ## Tests
 

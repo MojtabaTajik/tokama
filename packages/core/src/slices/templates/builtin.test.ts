@@ -45,10 +45,24 @@ describe.each([true, false])("built-in templates, every agent in the cloud: %s",
     expect(template.steps.map((step) => [step.id, step.agentId, step.doneWhen, step.checks, step.maxAttempts])).toEqual([["change", "builder", "you approve", undefined, 3]]);
   });
 
-  it("Review only: one reviewer step that reads the repo and leaves findings", async () => {
+  it("Review code: one reviewer step that reads the repo and leaves findings", async () => {
     const { template } = await load("review-only", cloud);
-    expect(template).toMatchObject({ ref: "builtin/review-only", name: "Review only", start: { needs: ["text", "repo"] }, uses: { repos: { picked: "read", named: [] } }, finish: ["findings"] });
+    expect(template).toMatchObject({ ref: "builtin/review-only", name: "Review code", start: { needs: ["text", "repo"] }, uses: { repos: { picked: "read", named: [] } }, finish: ["findings"] });
     expect(template.steps.map((step) => [step.id, step.agentId, step.doneWhen])).toEqual([["review", "reviewer", "agent finishes"]]);
+  });
+
+  it("Ask: one architect step that reads the repo, never waits for you and leaves its answer", async () => {
+    const { template } = await load("ask", cloud);
+    expect(template).toMatchObject({ ref: "builtin/ask", name: "Ask", icon: "circle-question", color: "sand", start: { needs: ["text", "repo"] }, uses: { repos: { picked: "read", named: [] } }, finish: ["findings"] });
+    expect(template.steps.map((step) => [step.id, step.agentId, step.doneWhen])).toEqual([["answer", "architect", "agent finishes"]]);
+  });
+
+  it("Ask: says that evidence outside the repo is a complete answer", async () => {
+    const { template } = await load("ask", cloud);
+    const text = template.steps[0]!.instructions.text.replace(/\s+/g, " ");
+    expect(text).toContain("If the cause is not in this repository, say where the evidence points");
+    expect(text).toContain("That is a complete answer, not a failure.");
+    expect(text).toContain("Do not change any file.");
   });
 });
 

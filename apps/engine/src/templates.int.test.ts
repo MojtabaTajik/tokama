@@ -94,7 +94,7 @@ describe("the templates queries in real mode", () => {
     expect(byFile.get("billing-api:.tokama/templates/docs-fix.yaml")).toMatchObject({ ref: "billing-api/docs-fix", name: "Docs fix", problemCount: 0, openable: true });
     expect(byFile.get("billing-api:.tokama/templates/broken.yaml")).toMatchObject({ problemCount: 1, openable: true });
     // The built-ins ship with Tokama: they load against the built-in agents and never open in an editor.
-    for (const id of ["quick-fix", "plan-and-build", "review-only"]) expect(byFile.get(`builtin:builtin/${id}`), id).toMatchObject({ problemCount: 0, openable: false });
+    for (const id of ["quick-fix", "plan-and-build", "review-only", "ask"]) expect(byFile.get(`builtin:builtin/${id}`), id).toMatchObject({ problemCount: 0, openable: false });
 
     const broken = await engine.query({ type: "template_detail", origin: "billing-api", file: ".tokama/templates/broken.yaml" });
     if (!broken.ok) throw new Error(broken.error.message);

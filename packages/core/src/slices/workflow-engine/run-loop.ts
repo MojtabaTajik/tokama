@@ -245,6 +245,12 @@ export function titleFrom(text: string): string {
 }
 
 /** The steps a reviewer step reviews, as template validation draws them: from the back target, or after the previous reviewer. */
+/** A template that reads its repo and has no repo it may edit: its agents get no edit tools, whatever their agent file says. */
+const readsOnly = (template: TemplateRecord): boolean => template.uses.repos.picked === "read" && !template.uses.repos.named.some((repo) => repo.access === "edit");
+
+/** Only a template that commits or opens a pull request leaves work in the repo. */
+const commitsWork = (template: TemplateRecord): boolean => template.finish.some((word) => word === "commit" || word === "pull-request");
+
 function reviewedSteps(template: TemplateRecord, index: number): TemplateStepDef[] {
   const step = template.steps[index]!;
   const target = step.ifChangesRequested?.action === "back" ? template.steps.findIndex((s) => s.id === (step.ifChangesRequested as { stepId: StepId }).stepId) : -1;
@@ -755,7 +761,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     if (!prompt.ok) return runFailed(item, stepId, attempt, "crash", `The prompt was refused: ${prompt.error.message}`);
 
     const commands = step.doneWhen === "checks pass" ? checkCommands(ctx, step) : [];
-    const limits: ToolLimits = reviewer ? { ...agent.limits, edit: false } : agent.limits;
+    const limits: ToolLimits = reviewer || readsOnly(ctx.template) ? { ...agent.limits, edit: false } : agent.limits;
     let lastText = "";
     // The transcript is written as the agent works, so a running attempt can be read: its
     // messages as written, and one line per tool call.
@@ -1014,6 +1020,30 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     return tipTree.ok && tipTree.value === tree && parent.ok && parent.value === worktree.baseCommit && !second.ok;
   };
 
+  /**
+   * A template that commits nothing ends done with the answer. When the tree still equals the base
+   * the worktree is of no use and the finisher's own discard removes it; files the agent changed
+   * anyway are never committed, and the worktree stays for the engineer to look at.
+   */
+  const finishWithoutCommit = async (ctx: Context, worktree: Worktree, fail: (text: string) => Next): Promise<Next> => {
+    const { item } = ctx;
+    const staged = await stageItem(git, worktree.path);
+    if (!staged.ok) return fail(`Cannot stage the changes: ${staged.error.message}`);
+    const judged = await judgeTree(ctx, worktree, staged.value, undefined, fail);
+    if (judged !== undefined) return judged;
+    const files = await git.diffFiles(worktree.path, worktree.baseCommit, staged.value);
+    if (!files.ok) return fail(`Cannot compare the changes with the base commit: ${files.error.message}`);
+    if (files.value.length > 0) {
+      const count = files.value.length;
+      append(item.id, [{ type: "item_ended", outcome: "done", detail: detail(`${count} ${count === 1 ? "file" : "files"} changed in the worktree; this template commits nothing.`) }]);
+      return WAIT;
+    }
+    append(item.id, [{ type: "item_ended", outcome: "done", detail: "Nothing changed: the answer is the result." }]);
+    const removed = finisher.start(item.id, "discard");
+    if (!removed.ok) deps.log?.(`item ${item.id}: the unused worktree was not removed: ${removed.error.message}`);
+    return WAIT;
+  };
+
   const finish = async (ctx: Context): Promise<Next> => {
     const { item } = ctx;
     const worktree = worktreeOf(ctx);
@@ -1021,6 +1051,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     const gate = await intact(ctx, worktree, { branchMayMove: true });
     if (gate !== undefined) return gate;
     const fail = (text: string) => askRunFailure(item, text);
+    if (!commitsWork(ctx.template)) return finishWithoutCommit(ctx, worktree, fail);
 
     // The tree to commit: the one you approved, when no attempt ran after you were asked (even the
     // base tree, when the step changed nothing); else the last one the checks passed on or a

@@ -94,7 +94,7 @@ describe("fake engine mode", () => {
       "Azure · prod",
       "Grafana · prod",
     ]);
-    expect(setup.templates.length).toBe(6);
+    expect(setup.templates.length).toBe(7);
 
     // Every template step names a known agent, or none for checks run by Tokama.
     const agentIds = new Set(setup.agents.map((agent) => agent.id));
@@ -111,6 +111,7 @@ describe("fake engine mode", () => {
       "builtin/quick-fix/wrench/moss",
       "builtin/quick-change/bolt/rose",
       "builtin/review-only/eye/slate",
+      "builtin/ask/circle-question/sand",
     ]);
     const emergency = setup.templates.find((template) => template.id === "builtin/emergency-investigator");
     expect(emergency?.steps.map((step) => `${step.name}/${step.stage}/${step.agentId ?? "-"}/${step.data}`)).toEqual([
