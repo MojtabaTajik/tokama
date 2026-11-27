@@ -9,6 +9,11 @@
   color: var(--text-2);
 }
 
+/* A tooltip that only repeats its trigger's words: the pointer goes through it to what is under it. */
+.tooltip[data-decorative] {
+  pointer-events: none;
+}
+
 /* A popover tooltip: below its anchor, flipped when there is no room. */
 .tooltip[popover] {
   position: fixed;

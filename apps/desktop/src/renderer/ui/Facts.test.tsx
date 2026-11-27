@@ -58,6 +58,21 @@ describe("Facts", () => {
     vi.useRealTimers();
   });
 
+  it("opens a tooltip that only repeats the line: hidden from screen readers, and closed by Escape before anything else hears it", () => {
+    render(
+      <button type="button" className="host">
+        <Facts facts={FACTS} />
+      </button>,
+    );
+    const host = container.querySelector<HTMLElement>(".host")!;
+    act(() => void host.dispatchEvent(new FocusEvent("focusin", { bubbles: true })));
+    expect(container.querySelector('[role="tooltip"]')?.getAttribute("aria-hidden")).toBe("true");
+    const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    act(() => void document.dispatchEvent(escape));
+    expect(escape.defaultPrevented).toBe(true);
+    expect(container.querySelector('[role="tooltip"]')).toBeNull();
+  });
+
   it("draws the symbol of an exception in its tone, with its word for screen readers", () => {
     render(<Facts facts={[{ text: "checks 1/3", mark: { symbol: "✕", tone: "fail", word: "failed" } }]} />);
     const mark = container.querySelector(".fact-mark")!;

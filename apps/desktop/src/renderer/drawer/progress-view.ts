@@ -74,7 +74,8 @@ export function trackOf(item: Pick<ItemRecord, "state" | "steps">, agents: reado
   });
   const text = steps.map((step) => [step.name, step.mark.word, step.agent?.name].filter((part) => part !== undefined).join(" ")).join(" · ");
   const done = steps.filter((step) => step.mark.word === "done").length;
-  const ahead = steps.filter((step) => step.mark.word === "next" || step.mark.word === "not run").length;
+  // Steps that will not run are not "to go".
+  const ahead = steps.filter((step) => step.mark.word === "next").length;
   return {
     steps,
     label: `Steps: ${steps.map((step) => `${step.name} ${step.mark.word}`).join(", ")}`,

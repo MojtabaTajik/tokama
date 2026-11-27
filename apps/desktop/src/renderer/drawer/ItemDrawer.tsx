@@ -535,17 +535,17 @@ function StateLine({ item }: { readonly item: ItemRecord }) {
 }
 
 /**
- * The activity line while the item runs a step, ticking every second; `fallback` otherwise. Its
+ * The activity line while the item runs a step, ticking every second; nothing otherwise. Its
  * own component, so only this line renders again each second.
  */
-function LiveActivity({ bridge, item, setup, onOpenAgent, fallback = null }: { readonly bridge: TokamaBridge; readonly item: ItemRecord; readonly setup: Setup | undefined; readonly onOpenAgent: ItemDrawerProps["onOpenAgent"]; readonly fallback?: ReactNode }) {
+function LiveActivity({ bridge, item, setup, onOpenAgent }: { readonly bridge: TokamaBridge; readonly item: ItemRecord; readonly setup: Setup | undefined; readonly onOpenAgent: ItemDrawerProps["onOpenAgent"] }) {
   const at = item.state === "running" ? item.steps.findIndex((step) => step.state === "running") : -1;
   const running = at >= 0;
   const activity = useActivity(bridge, item.id, running);
   const now = useNow(running);
   // Tokama's own step (the checks) has no agent, so no badge: the line starts with ◐.
   const info = running ? agentInfo(item, at, setup) : undefined;
-  return running ? <ActivityLine item={item} activity={activity} agents={setup?.agents ?? []} info={info} onOpenAgent={onOpenAgent} now={now} /> : fallback;
+  return running ? <ActivityLine item={item} activity={activity} agents={setup?.agents ?? []} info={info} onOpenAgent={onOpenAgent} now={now} /> : null;
 }
 
 function Missing({ error, onRetry }: { readonly error: { code: string; message: string } | undefined; readonly onRetry: () => void }) {

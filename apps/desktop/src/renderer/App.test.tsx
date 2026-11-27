@@ -426,7 +426,7 @@ describe("App engine failure", () => {
 
   it("shows the reason, the log path and the log tail in the board area, as text", async () => {
     await render(fakeBridge(failed).bridge);
-    expect(text(".engine-line .health-word")).toBe("engine stopped");
+    expect(text(".engine-line .health-word")).toBe("not available");
     const board = $(".board")!;
     expect(board.querySelector(".failure-kicker")?.textContent).toBe("✕ Engine not running");
     expect(board.querySelector(".failure-title")?.textContent).toBe("The engine is not available");

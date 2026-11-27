@@ -55,6 +55,32 @@ describe("StatusCounts", () => {
     expect(counts.map((el) => el.hasAttribute("title"))).toEqual([false, false]);
   });
 
+  it("lets go of the pointer and the focus when the counts go, so no tooltip opens later by itself", () => {
+    vi.useFakeTimers();
+    const some = [{ kind: "needs", symbol: "⏸", count: 2, word: "need you" }] as const;
+    render(
+      <button type="button" className="host">
+        <StatusCounts counts={some} />
+      </button>,
+    );
+    const host = container.querySelector<HTMLElement>(".host")!;
+    act(() => void host.dispatchEvent(new FocusEvent("focusin", { bubbles: true })));
+    expect(container.querySelector('[role="tooltip"]')).not.toBeNull();
+    render(
+      <button type="button" className="host">
+        <StatusCounts counts={[]} />
+      </button>,
+    );
+    act(() => void vi.advanceTimersByTime(TIP_CLOSE_MS + 10));
+    render(
+      <button type="button" className="host">
+        <StatusCounts counts={some} />
+      </button>,
+    );
+    expect(container.querySelector('[role="tooltip"]')).toBeNull();
+    vi.useRealTimers();
+  });
+
   it("opens the tooltip with the words while the pointer is on the row's button or the focus is in it, and not otherwise", () => {
     vi.useFakeTimers();
     render(

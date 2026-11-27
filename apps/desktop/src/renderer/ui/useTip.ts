@@ -71,7 +71,8 @@ export function useTip(onShown: ((shown: boolean) => void) | undefined, suppress
  */
 export function useHostTip(active = true) {
   const ref = useRef<HTMLElement>(null);
-  const { open, hold } = useTip(undefined);
+  const { open, hold, dismiss } = useTip(undefined);
+  useEscapeDismiss(open, dismiss);
   useEffect(() => {
     const host = active ? (ref.current?.closest("button") ?? ref.current?.parentElement) : null;
     if (host === null || host === undefined) return;
@@ -93,7 +94,24 @@ export function useHostTip(active = true) {
     for (const [type, handler] of handlers) host.addEventListener(type, handler);
     return () => {
       for (const [type, handler] of handlers) host.removeEventListener(type, handler);
+      // Nobody hears the pointer leave any more: let go, so the tooltip does not stay open or open later by itself.
+      hold("hover", false);
+      hold("focus", false);
     };
   }, [active, hold]);
   return { ref, open };
+}
+
+/** While a tooltip is open, Escape closes it before anything else handles the key, so an open drawer stays open. */
+export function useEscapeDismiss(open: boolean, dismiss: () => void): void {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      dismiss();
+    };
+    document.addEventListener("keydown", onKey, { capture: true });
+    return () => document.removeEventListener("keydown", onKey, { capture: true });
+  }, [open, dismiss]);
 }

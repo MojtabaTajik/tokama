@@ -12,7 +12,7 @@ const TEXT = {
     starting: "starting",
     connected: "engine connected",
     reconnecting: "reconnecting",
-    failed: "engine stopped",
+    failed: "not available",
     updating: "updating engine",
   },
   log: "Log",

@@ -786,9 +786,6 @@
 /* A done or failed row's facts, in the column of the steps, on the title's line and right-aligned
    so rows compare. What does not fit is cut with an ellipsis. */
 .pl-facts {
-  /* Above the row's cover, so its tooltip shows on hover. */
-  position: relative;
-  z-index: 1;
   align-self: start;
   /* The title's line box, so both texts sit on one baseline. */
   line-height: 19.5px;
@@ -900,11 +897,19 @@
   min-width: 4ch;
 }
 
-.pl-where,
 .pl-for,
 .pl-sep,
 .pl-meta .agent-name {
   flex: none;
+  white-space: nowrap;
+}
+
+/* A long step name is cut before the time and the agent are. */
+.pl-where {
+  flex: 0 1 auto;
+  min-width: 4ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -1092,10 +1097,6 @@
   gap: var(--space-6);
   font-size: var(--text-sm);
   color: var(--muted);
-}
-
-.card-meta svg {
-  flex: none;
 }
 
 .card-privacy {

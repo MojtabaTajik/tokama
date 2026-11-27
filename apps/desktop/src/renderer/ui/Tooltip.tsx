@@ -9,10 +9,12 @@ export interface TooltipProps {
   readonly anchor: string;
   /** The screen's class for the tooltip's width and layout. */
   readonly className?: string | undefined;
+  /** Text that the trigger's own name already says (a row's facts or counts): hidden from screen readers and never takes the pointer, so it can open inside its button. */
+  readonly decorative?: boolean;
   readonly children: ReactNode;
 }
 
-export function Tooltip({ id, anchor, className, children }: TooltipProps) {
+export function Tooltip({ id, anchor, className, decorative = false, children }: TooltipProps) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const element = ref.current;
@@ -20,7 +22,7 @@ export function Tooltip({ id, anchor, className, children }: TooltipProps) {
     element.showPopover();
   }, []);
   return (
-    <div ref={ref} id={id} role="tooltip" popover="manual" className={["tooltip", className].filter(Boolean).join(" ")} style={{ positionAnchor: anchor } as CSSProperties}>
+    <div ref={ref} id={id} role="tooltip" popover="manual" aria-hidden={decorative || undefined} data-decorative={decorative || undefined} className={["tooltip", className].filter(Boolean).join(" ")} style={{ positionAnchor: anchor } as CSSProperties}>
       {children}
     </div>
   );

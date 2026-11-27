@@ -38,7 +38,7 @@ export function Facts({ facts, className }: { readonly facts: readonly Fact[]; r
         ))}
       </span>
       {open && (
-        <Tooltip id={`${anchor.slice(2)}-tip`} anchor={anchor} className="facts-tip">
+        <Tooltip id={`${anchor.slice(2)}-tip`} anchor={anchor} className="facts-tip" decorative>
           {factsText(facts)}
         </Tooltip>
       )}

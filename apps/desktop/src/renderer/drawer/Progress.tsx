@@ -10,7 +10,7 @@ import type { AgentTarget } from "../settings/describe.js";
 import { AgentName } from "../ui/agent.js";
 import { markOf, StatusMark } from "../ui/status.js";
 import { Tooltip } from "../ui/Tooltip.js";
-import { useTip } from "../ui/useTip.js";
+import { useEscapeDismiss, useTip } from "../ui/useTip.js";
 import { activityView, type TrackStep, trackOf } from "./progress-view.js";
 
 function TrackSteps({ steps }: { readonly steps: readonly TrackStep[] }) {
@@ -38,6 +38,7 @@ function TrackSteps({ steps }: { readonly steps: readonly TrackStep[] }) {
 export function StepTrack({ item, agents }: { readonly item: Pick<ItemRecord, "state" | "steps">; readonly agents: readonly AgentSummary[] }) {
   const track = trackOf(item, agents);
   const tip = useTip(undefined);
+  useEscapeDismiss(tip.open, tip.dismiss);
   const tipId = useId();
   const anchor = `--track-${tipId.replace(/[^a-zA-Z0-9]/g, "")}`;
   if (track.steps.length === 0) return null;

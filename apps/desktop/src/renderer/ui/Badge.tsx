@@ -49,7 +49,7 @@ export function StatusCounts({ counts, className }: { readonly counts: readonly 
         </span>
       ))}
       {open && (
-        <Tooltip id={`${anchor.slice(2)}-tip`} anchor={anchor} className="counts-tip">
+        <Tooltip id={`${anchor.slice(2)}-tip`} anchor={anchor} className="counts-tip" decorative>
           {counts.map((count) => `${count.count} ${count.word}`).join(" · ")}
         </Tooltip>
       )}
