@@ -34,6 +34,7 @@ import type { AgentTarget } from "../settings/describe.js";
 import { SearchIcon } from "../ui/icons.js";
 import { StatusFilter } from "../shell/StatusFilter.js";
 import type { Layout } from "../useViewState.js";
+import { AwayStrip } from "./AwayStrip.js";
 import { ItemList } from "./ItemList.js";
 import { type GroupPage, type ListRequest, PAGE_SIZE, useWorkList } from "./useWorkList.js";
 import { Button } from "../ui/Button.js";
@@ -222,6 +223,20 @@ export function WorkArea(props: WorkAreaProps) {
         rangeRef={rangeRef}
         hidden={searching || hiddenAll ? undefined : { count: hidden, onShow: showAll }}
       />
+      {view.kind === "all" && (
+        <AwayStrip
+          bridge={bridge}
+          connected={connected}
+          setup={setup}
+          open={scoped}
+          now={now}
+          onSelectItem={props.onSelectItem}
+          onFilter={onFilter}
+          onFinish={props.onFinish}
+          onDiscard={props.onDiscard}
+          onOpenAgent={props.onOpenAgent}
+        />
+      )}
       {board ? (
         <Board items={boardItems} notLoaded={notLoaded} agents={setup.agents} template={template} selectedItemId={props.selectedItemId} onSelect={props.onSelectItem} now={now} />
       ) : hiddenAll && emptyTitle !== undefined ? (

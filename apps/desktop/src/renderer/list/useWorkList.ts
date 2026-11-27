@@ -20,6 +20,8 @@ export interface ListRequest {
   readonly group: GroupKey;
   /** The first local day of done and failed items; undefined for all time. */
   readonly since?: string | undefined;
+  /** Only done and failed items that ended at or after this time (epoch ms), whenever they started. */
+  readonly endedAfter?: number | undefined;
   readonly repo?: string | undefined;
   readonly template?: string | undefined;
   /** The search text; undefined or empty for none. */
@@ -50,7 +52,7 @@ export interface WorkList {
   readonly retry: (group: GroupKey) => void;
 }
 
-const keyOf = (request: ListRequest) => JSON.stringify([request.group, request.since, request.repo, request.template, request.q ?? ""]);
+const keyOf = (request: ListRequest) => JSON.stringify([request.group, request.since, request.endedAfter, request.repo, request.template, request.q ?? ""]);
 
 const empty = (request: ListRequest): GroupPage => ({ request, items: [], total: undefined, days: new Map(), cursor: undefined, loading: "first", failed: undefined });
 
@@ -94,6 +96,7 @@ export function useWorkList(bridge: TokamaBridge, connected: boolean, requests: 
           group,
           limit,
           ...(request.since !== undefined && { since: request.since }),
+          ...(request.endedAfter !== undefined && { endedAfter: request.endedAfter }),
           ...(request.repo !== undefined && { repo: request.repo }),
           ...(request.template !== undefined && { template: request.template }),
           ...(request.q !== undefined && request.q !== "" && { q: request.q }),

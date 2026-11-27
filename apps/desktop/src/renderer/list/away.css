@@ -1,0 +1,182 @@
+/* The "While you were away" strip at the top of All work. Colours come from theme.css tokens only. */
+.away {
+  display: flex;
+  flex-direction: column;
+  margin: var(--space-4) 0 var(--space-12);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+}
+
+.away-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8) var(--space-16);
+  padding: var(--space-10) var(--space-14);
+}
+
+.away-title {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.away-for {
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.away-count {
+  color: var(--text-2);
+}
+
+.away-count[data-tone="warn"] {
+  color: var(--warn);
+}
+
+.away-count[data-tone="pass"] {
+  color: var(--pass);
+}
+
+.away-count[data-tone="fail"] {
+  color: var(--fail);
+}
+
+.away-actions {
+  display: flex;
+  gap: var(--space-8);
+  margin-left: auto;
+}
+
+.away-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.away-group {
+  border-top: 1px solid var(--hairline);
+}
+
+.away-group-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin: 0;
+  padding: var(--space-12) var(--space-14) var(--space-6);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.away-group-count {
+  font-weight: 400;
+}
+
+/* The symbol carries the colour; its word is spoken to screen readers or printed beside it. */
+.away-mark[data-tone="warn"] {
+  color: var(--warn);
+}
+
+.away-mark[data-tone="pass"] {
+  color: var(--pass);
+}
+
+.away-mark[data-tone="fail"] {
+  color: var(--fail);
+}
+
+.away-lines {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.away-line {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-2) var(--space-12);
+  padding: var(--space-10) var(--space-14);
+  border-top: 1px solid var(--hairline);
+}
+
+.away-line:first-child {
+  border-top: 0;
+}
+
+.away-line-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.away-line-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-4) var(--space-12);
+}
+
+.away-line-title {
+  font-weight: 500;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.away-line-src {
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.away-line-text {
+  margin: 0;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+/* The facts line wraps under the sentence rather than hiding its end. */
+.away-line-facts {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.away-line-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+/* The finish split of a row sits in the line, always shown, instead of over a hovered row. */
+.away-line .finish-split[data-variant="row"] {
+  position: static;
+  display: flex;
+  transform: none;
+}
+
+.away-group-more {
+  /* Under the text: the line's padding, mark column and gap. */
+  padding: 0 var(--space-14) var(--space-10) var(--space-44);
+}
+
+.away-running {
+  margin: 0;
+  padding: var(--space-12) var(--space-14);
+  border-top: 1px solid var(--hairline);
+  color: var(--text-2);
+}
+
+.away-run {
+  display: inline;
+}
+
+.away-badge {
+  margin-right: var(--space-6);
+  vertical-align: middle;
+}
+
+.away-run-title {
+  color: var(--text);
+}
