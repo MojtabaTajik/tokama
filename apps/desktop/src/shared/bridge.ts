@@ -72,6 +72,9 @@ export const CHANNELS = {
   countUsage: "tokama:diagnostics:count-usage",
   saveNotifications: "tokama:notifications:save",
   playSound: "tokama:sounds:play",
+  notificationStatus: "tokama:notifications:status",
+  sendTestNotification: "tokama:notifications:test",
+  openNotificationSettings: "tokama:notifications:open-settings",
   viewedItem: "tokama:notifications:viewed",
   openItem: "tokama:notifications:open-item",
   openGetStarted: "tokama:help:get-started",
@@ -91,6 +94,14 @@ export const CHANNELS = {
 /** The usage actions only the window sees. The main process counts no other name from the window. */
 export const RENDERER_USAGE_ACTIONS = ["expand_view"] as const satisfies readonly UsageAction[];
 export type RendererUsageAction = (typeof RENDERER_USAGE_ACTIONS)[number];
+
+/** What the page of notifications knows of how the system treats them. */
+export interface NotificationStatus {
+  /** The system turned the last notification down (or has no notification service). False until one was tried. */
+  readonly blocked: boolean;
+  /** The app can open the system's notification settings: macOS. */
+  readonly canOpenSettings: boolean;
+}
 
 /** What About shows about this build. The main process fills it; every field is plain text or a number. */
 export interface AboutInfo {
@@ -241,6 +252,12 @@ export interface TokamaBridge {
   saveNotifications(patch: Partial<NotificationSettings>): Promise<void>;
   /** Plays a sound now, from `set`, whatever the mode of its kind and whatever Focus says: the user asked for it. The main process ignores a name or set it does not know. */
   playSound(name: SoundName, set: SoundSet): Promise<void>;
+  /** Whether the system turned the app's last notification down, and whether the app can open the system's notification settings. */
+  notificationStatus(): Promise<NotificationStatus>;
+  /** Shows one sample banner and plays the Needs you sound the way a real event does, whatever the modes say. */
+  sendTestNotification(): Promise<void>;
+  /** Opens the system's notification settings (macOS only; a no-op elsewhere). The address is fixed in the main process. */
+  openNotificationSettings(): Promise<void>;
   /**
    * Tells the main process which item the window shows in the drawer or the full view now (none:
    * undefined), so it shows no notification for that item while the window is in front.

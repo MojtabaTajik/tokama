@@ -4,7 +4,7 @@
 // settings file; the main process shows the notifications and plays the sounds. The preview texts
 // are samples, rendered as React text.
 import { useEffect, useRef, useState } from "react";
-import type { TokamaBridge } from "../../shared/bridge.js";
+import type { NotificationStatus, TokamaBridge } from "../../shared/bridge.js";
 import { DEFAULT_DESKTOP_STATE, NOTE_KINDS, type NoteKind, type NoteMode, type NotificationSettings, type SoundSet } from "../../shared/desktop-state.js";
 import { failureLine, finishedLine } from "../../shared/item-facts.js";
 import { brand } from "../brand/index.js";
@@ -24,7 +24,16 @@ const TEXT = {
   now: "now",
   playing: "Playing",
   silent: "Silent. No kind plays a sound.",
+  testName: "Test",
+  testHelp: "Shows one banner and plays the Needs you sound, the way a real event does. A locked screen keeps the sound quiet. After you allow notifications in System Settings, send a test to check.",
+  testButton: "Send a test notification",
+  blockedMac: "macOS is not showing Tokama's notifications.",
+  blockedOpen: "Open System Settings › Notifications",
+  blockedOther: "Tokama's notifications are not showing. Check that a notification service is running and that Do Not Disturb is off.",
 } as const;
+
+/** How long after a test the page asks again whether the system turned the banner down: the refusal comes a moment later. */
+const STATUS_RECHECK_MS = 1_000;
 
 const MODES: readonly { readonly value: NoteMode; readonly label: string }[] = [
   { value: "both", label: "Banner + sound" },
@@ -92,6 +101,27 @@ export function NotificationsPage({ bridge }: NotificationsPageProps) {
   }, [bridge]);
   useEffect(() => () => clearTimeout(timer.current), []);
 
+  // Whether the system turned the last notification down. The system cannot be asked, so this only
+  // changes when a banner is tried: by an event, or by the test button.
+  const [status, setStatus] = useState<NotificationStatus | undefined>(undefined);
+  const recheck = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    void bridge
+      .notificationStatus()
+      .then((next) => live && setStatus(next))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+      clearTimeout(recheck.current);
+    };
+  }, [bridge]);
+  const sendTest = () => {
+    void bridge.sendTestNotification().catch(() => undefined);
+    clearTimeout(recheck.current);
+    recheck.current = setTimeout(() => void bridge.notificationStatus().then(setStatus).catch(() => undefined), STATUS_RECHECK_MS);
+  };
+
   const choose = (patch: Partial<NotificationSettings>) => {
     if (values === undefined) return;
     setValues({ ...values, ...patch });
@@ -115,6 +145,19 @@ export function NotificationsPage({ bridge }: NotificationsPageProps) {
           {TEXT.heading}
         </h1>
         <p className="notes-intro">{TEXT.intro}</p>
+        {status?.blocked && (
+          <div className="notes-blocked" role="status">
+            <span className="notes-glyph notes-warn" aria-hidden="true">
+              !
+            </span>
+            <span className="notes-blocked-text">{status.canOpenSettings ? TEXT.blockedMac : TEXT.blockedOther}</span>
+            {status.canOpenSettings && (
+              <Button variant="secondary" onClick={() => void bridge.openNotificationSettings().catch(() => undefined)}>
+                {TEXT.blockedOpen}
+              </Button>
+            )}
+          </div>
+        )}
         {values !== undefined && (
           <>
             {ROWS.map((row) => (
@@ -140,7 +183,7 @@ export function NotificationsPage({ bridge }: NotificationsPageProps) {
                 </div>
               </div>
             ))}
-            <div className="notes-row notes-row-last">
+            <div className="notes-row">
               <div className="notes-text">
                 <span id="notes-sounds" className="notes-name">
                   <span className="notes-glyph notes-quiet" aria-hidden="true">
@@ -151,6 +194,20 @@ export function NotificationsPage({ bridge }: NotificationsPageProps) {
                 <span className="notes-help">{TEXT.soundsHelp}</span>
               </div>
               <Segmented options={SOUND_SETS} value={values.sounds} onChange={(sounds) => choose({ sounds })} labelledBy="notes-sounds" />
+            </div>
+            <div className="notes-row notes-row-last">
+              <div className="notes-text">
+                <span className="notes-name">
+                  <span className="notes-glyph notes-quiet" aria-hidden="true">
+                    ✉
+                  </span>
+                  {TEXT.testName}
+                </span>
+                <span className="notes-help">{TEXT.testHelp}</span>
+              </div>
+              <Button variant="secondary" onClick={sendTest}>
+                {TEXT.testButton}
+              </Button>
             </div>
             <div className="notes-info">
               <span className="notes-i" aria-hidden="true">

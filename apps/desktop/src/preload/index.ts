@@ -2,7 +2,7 @@
 // `electron`. It exposes `window.tokama` (TokamaBridge) and nothing else: no ipcRenderer, no
 // channel names, no Node.
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
-import { type AboutInfo, type BridgeEvent, CHANNELS, type ConnectionState, type DiagnosticsLoad, type DiagnosticsSaveResult, type DiagnosticsSendResult, type OpenResult, type ToolsPathInfo, type TokamaBridge, type WhatsNewInfo } from "../shared/bridge.js";
+import { type AboutInfo, type BridgeEvent, CHANNELS, type ConnectionState, type DiagnosticsLoad, type DiagnosticsSaveResult, type DiagnosticsSendResult, type NotificationStatus, type OpenResult, type ToolsPathInfo, type TokamaBridge, type WhatsNewInfo } from "../shared/bridge.js";
 import type { DesktopState } from "../shared/desktop-state.js";
 import type { InstallResult, UpdateState } from "../shared/update.js";
 
@@ -60,6 +60,9 @@ export const bridge: TokamaBridge = {
   saveNotifications: (patch) => ipcRenderer.invoke(CHANNELS.saveNotifications, patch) as Promise<void>,
   // Only the two names cross, as strings.
   playSound: (name, set) => ipcRenderer.invoke(CHANNELS.playSound, String(name), String(set)) as Promise<void>,
+  notificationStatus: () => ipcRenderer.invoke(CHANNELS.notificationStatus) as Promise<NotificationStatus>,
+  sendTestNotification: () => ipcRenderer.invoke(CHANNELS.sendTestNotification) as Promise<void>,
+  openNotificationSettings: () => ipcRenderer.invoke(CHANNELS.openNotificationSettings) as Promise<void>,
   setViewedItem: (itemId) => ipcRenderer.invoke(CHANNELS.viewedItem, itemId) as Promise<void>,
   onOpenItem: (listener) => {
     openListener = listener;

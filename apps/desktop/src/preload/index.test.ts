@@ -22,7 +22,7 @@ const [, pushOpenGetStarted] = electron.on.mock.calls.find(([channel]) => channe
 describe("preload bridge", () => {
   it("exposes window.tokama with only the bridge methods", () => {
     expect(exposed).toEqual([["tokama", bridge]]);
-    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "countUsage", "getAboutInfo", "getConnection", "getDesktopState", "getToolsPath", "onConnection", "onEvent", "onOpenGetStarted", "onOpenItem", "openAttemptFile", "openTemplateFile", "pickFolder", "query", "reportError", "restartEngine", "retryConnection", "saveLayout", "saveNotifications", "playSound", "setViewedItem", "showDataFolder", "loadDiagnostics", "sendDiagnostics", "saveDiagnostics", "stopCrashPrompt", "getWhatsNew", "closeWhatsNew", "getUpdate", "onUpdate", "checkForUpdates", "installUpdate", "openUpdateNotes"].sort());
+    expect(Object.keys(bridge).sort()).toEqual(["command", "copyBuildInfo", "countUsage", "getAboutInfo", "getConnection", "getDesktopState", "getToolsPath", "onConnection", "onEvent", "onOpenGetStarted", "onOpenItem", "openAttemptFile", "openTemplateFile", "pickFolder", "query", "reportError", "restartEngine", "retryConnection", "saveLayout", "saveNotifications", "playSound", "notificationStatus", "sendTestNotification", "openNotificationSettings", "setViewedItem", "showDataFolder", "loadDiagnostics", "sendDiagnostics", "saveDiagnostics", "stopCrashPrompt", "getWhatsNew", "closeWhatsNew", "getUpdate", "onUpdate", "checkForUpdates", "installUpdate", "openUpdateNotes"].sort());
   });
 
   it("the release notes calls: one without arguments, and a close that sends only two strings", async () => {
@@ -172,6 +172,14 @@ describe("preload bridge", () => {
     await bridge.setViewedItem("item_1");
     await bridge.setViewedItem(undefined);
     expect(electron.invoke.mock.calls).toEqual([[CHANNELS.saveNotifications, { finished: "off" }], [CHANNELS.viewedItem, "item_1"], [CHANNELS.viewedItem, undefined]]);
+  });
+
+  it("the notification status, test and settings calls send no arguments", async () => {
+    electron.invoke.mockResolvedValue(undefined);
+    await bridge.notificationStatus();
+    await bridge.sendTestNotification();
+    await bridge.openNotificationSettings();
+    expect(electron.invoke.mock.calls).toEqual([[CHANNELS.notificationStatus], [CHANNELS.sendTestNotification], [CHANNELS.openNotificationSettings]]);
   });
 
   it("playSound sends only the two names, as strings", async () => {

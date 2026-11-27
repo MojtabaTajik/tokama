@@ -14,10 +14,11 @@ export type { NoteKind };
 /**
  * How a banner with a sound gets its sound. "bundled": the banner is not silent and names the
  * sound file in the app, so macOS plays it. "player": the banner is silent and the app plays the
- * same sound itself. One constant, so a Mac that ignores a bundled sound is a one-word change.
+ * same sound itself, unless a locked screen (or Focus, where it can be read) asks for quiet. The
+ * app's own player is the way on macOS, which does not play a bundled sound for every build.
  */
 export type BannerSound = "bundled" | "player";
-export const BANNER_SOUND: BannerSound = "bundled";
+export const BANNER_SOUND: BannerSound = "player";
 
 /** Whether Sound only plays when Focus cannot be read, which it cannot on any platform now. */
 export const PLAY_WHEN_FOCUS_UNKNOWN = true;
@@ -150,7 +151,12 @@ export interface Notifier {
   onEvent(event: BridgeEvent["event"]): void;
   /** The item the window shows now, or undefined. */
   setViewedItem(itemId: string | undefined): void;
+  /** Shows one sample banner and plays the Needs you sound, the way a real event does, whatever the modes say. */
+  sendTest(): Promise<void>;
 }
+
+/** The sample the test button shows. */
+export const TEST_NOTE = { title: "Needs you: Test notification", body: "This is how a Tokama notification looks and sounds.\nSettings → Notifications" } as const;
 
 export function createNotifier(deps: NotifierDeps): Notifier {
   const tracker = createTracker();
@@ -162,23 +168,26 @@ export function createNotifier(deps: NotifierDeps): Notifier {
 
   const bannerSound = deps.bannerSound ?? BANNER_SOUND;
 
-  // A banner, with its sound when `withSound`. The hint line goes on the first banner only.
+  // The app plays the sound itself unless Focus or a locked screen asks for quiet. Sound only and "player" banners share it.
+  const playUnlessQuiet = async (kind: NoteKind, set: SoundSet) => {
+    const focus = await deps.focus();
+    const quiet = focus === "on" || focus === "locked" || (focus === "unknown" && !PLAY_WHEN_FOCUS_UNKNOWN);
+    if (!quiet) deps.play(kind, set);
+  };
+  // One banner, with its sound when `withSound`. The hint line goes on the first banner only.
+  const deliver = async (kind: NoteKind, text: Pick<Note, "title" | "body">, withSound: boolean, set: SoundSet, onClick: () => void, hinted: boolean) => {
+    const sound = withSound && bannerSound === "bundled" ? deps.bundledSound(kind, set) : undefined;
+    const shown = deps.show({ ...text, silent: !withSound || bannerSound === "player", ...(sound === undefined ? {} : { sound }) }, onClick);
+    // The hint is used up only by a banner that appeared; the next one carries it otherwise.
+    if (hinted && shown) deps.hint.markShown();
+    if (withSound && bannerSound === "player") await playUnlessQuiet(kind, set);
+  };
   const present = async (kind: NoteKind, item: ItemRecord, withSound: boolean, set: SoundSet) => {
     const setup = await deps.setup().catch(() => undefined);
     const text = noteText(kind, item, { ...(setup === undefined ? {} : { setup }), now: deps.now(), platform: deps.platform });
     const hinted = !deps.hint.shown();
     const body = hinted ? `${text.body}\n${plainText(HINT_LINE, BODY_MAX, deps.platform)}` : text.body;
-    const sound = withSound && bannerSound === "bundled" ? deps.bundledSound(kind, set) : undefined;
-    const shown = deps.show({ title: text.title, body, silent: !withSound || bannerSound === "player", ...(sound === undefined ? {} : { sound }) }, () => deps.open(item.id));
-    // The hint is used up only by a banner that appeared; the next one carries it otherwise.
-    if (hinted && shown) deps.hint.markShown();
-    if (withSound && bannerSound === "player") deps.play(kind, set);
-  };
-  // Sound only: no banner, so the app plays the sound itself unless Focus or a locked screen asks for quiet.
-  const soundOnly = async (kind: NoteKind, set: SoundSet) => {
-    const focus = await deps.focus();
-    const quiet = focus === "on" || focus === "locked" || (focus === "unknown" && !PLAY_WHEN_FOCUS_UNKNOWN);
-    if (!quiet) deps.play(kind, set);
+    await deliver(kind, { title: text.title, body }, withSound, set, () => deps.open(item.id), hinted);
   };
   const handle = (item: ItemRecord, loud: boolean) => {
     const kind = tracker.observe(item, loud);
@@ -186,7 +195,7 @@ export function createNotifier(deps: NotifierDeps): Notifier {
     const settings = deps.settings();
     const mode = settings[kind];
     if (mode === "off" || isSuppressed(deps.windowFocused(), viewed, item.id)) return;
-    const run = mode === "sound" ? soundOnly(kind, settings.sounds) : present(kind, item, mode === "both", settings.sounds);
+    const run = mode === "sound" ? playUnlessQuiet(kind, settings.sounds) : present(kind, item, mode === "both", settings.sounds);
     void run.catch(() => undefined);
   };
 
@@ -213,5 +222,6 @@ export function createNotifier(deps: NotifierDeps): Notifier {
     setViewedItem(itemId) {
       viewed = itemId;
     },
+    sendTest: () => deliver("needsYou", TEST_NOTE, true, deps.settings().sounds, () => undefined, false),
   };
 }

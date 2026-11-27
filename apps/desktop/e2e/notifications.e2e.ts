@@ -21,7 +21,9 @@ interface Played {
 }
 type Hooked = { __tokamaNotifications?: (Recorded & { click: () => void })[]; __tokamaSounds?: Played[] };
 
-const HINT = "Change how Tokama notifies you in Settings → Notifications";
+/** Banners get their sound from the app's own player on macOS only. */
+const PLAYER_WAY = process.platform === "darwin";
+const HINT ="Change how Tokama notifies you in Settings → Notifications";
 
 const recorded = (app: ElectronApplication): Promise<Recorded[]> =>
   app.evaluate(() => ((globalThis as Hooked).__tokamaNotifications ?? []).map(({ title, body, silent, sound }) => ({ title, body, silent, ...(sound === undefined ? {} : { sound }) })));
@@ -87,6 +89,16 @@ flow("the play buttons play a kind's sound with the chosen set, whatever the mod
   await expect.poll(() => sounds(app)).toEqual([{ name: "failed", set: "tokama" }, { name: "needsYou", set: "macos" }]);
 });
 
+flow("the test button shows one banner and plays the Needs you sound, even when every kind is off", async ({ page, app }) => {
+  await openPage(page);
+  await choose(page, "notes-needsYou", "Off");
+  await page.getByRole("button", { name: "Send a test notification" }).click();
+  await expect.poll(() => recorded(app)).toEqual([{ title: "Needs you: Test notification", body: expect.stringContaining("Settings → Notifications"), silent: PLAYER_WAY }]);
+  await expect.poll(() => sounds(app)).toEqual(PLAYER_WAY ? [{ name: "needsYou", set: "tokama" }] : []);
+  // A test run's system never turns a notification down, so the warning stays away.
+  expect(await page.locator(".notes-blocked").count()).toBe(0);
+});
+
 flow("the mark in About is a button that plays the call of the Tokay", async ({ page, app }) => {
   await page.getByRole("button", { name: "About Tokama" }).click();
   await page.getByRole("button", { name: "Play the Tokay call" }).click();
@@ -102,10 +114,10 @@ flow("an item that needs you shows a notification with the hint on the first one
   await expect.poll(needsYouCount(app, text), { timeout: 60_000, message: "a Needs you notification for the new item" }).toBe(1);
   const note = (await recorded(app)).find((candidate) => candidate.title === `Needs you: ${text}`)!;
   expect(note.body).toMatch(new RegExp(`^Send the repo and the diff to .+\\?\\nPlan and build · orders-api\\n${HINT}$`));
-  // The default for Needs you is Banner + sound; a test run is not packaged, so the system's own sound plays.
-  expect(note.silent).toBe(false);
+  // The default for Needs you is Banner + sound. On macOS that is a silent banner and the app plays the sound itself; elsewhere there is no player, so the system's banner sound stays.
+  expect(note.silent).toBe(PLAYER_WAY);
   expect(note.sound).toBeUndefined();
-  expect(await sounds(app)).toEqual([]);
+  expect(await sounds(app)).toEqual(PLAYER_WAY ? [{ name: "needsYou", set: "tokama" }] : []);
 
   // The second banner of the run has no hint.
   const second = "Notify me about the second endpoint";
@@ -142,7 +154,7 @@ flow(
     await expect.poll(needsYouCount(app, text), { timeout: 60_000, message: "a Needs you notification" }).toBe(1);
     const note = (await recorded(app)).find((candidate) => candidate.title === `Needs you: ${text}`)!;
     expect(note.body).not.toContain("Settings");
-    expect(note.silent).toBe(false);
+    expect(note.silent).toBe(PLAYER_WAY);
   },
   "sample",
   seedDesktop({ needsYou: true, finished: false, failed: true, sound: true }),

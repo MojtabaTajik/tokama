@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { connect, type EngineInfo, stopEngine, type StopResult } from "@tokama/client";
 import { API_VERSION, createProcessRunner, defaultEngineDir, engineEndpoint, engineLockPath, err, pidAlive, posixEngineProcesses, probeSocket, readEngineLock, resolveToolsPath, type ToolsPath } from "@tokama/core";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, screen, session, shell } from "electron";
-import { type BridgeEvent, CHANNELS } from "../shared/bridge.js";
+import { type BridgeEvent, CHANNELS, type NotificationStatus } from "../shared/bridge.js";
 import { buildInfoText } from "../shared/build-info.js";
 import { applyLayoutPatch, applyNotificationsPatch, type NoteKind } from "../shared/desktop-state.js";
 import { aboutInfo } from "./about.js";
@@ -31,18 +31,18 @@ import { runningNow } from "./update/running.js";
 import { realTimers, startSchedule } from "./update/schedule.js";
 import { bakedFeedUrl, lockDownUpdaterSession } from "./update/session.js";
 import { pickRepoFolder } from "./folder.js";
-import { createNotifier } from "./notifier.js";
+import { BANNER_SOUND, createNotifier } from "./notifier.js";
 import { runSoundCheck } from "./sound-check.js";
 import { createFocusProbe } from "./sound/focus.js";
 import { soundFileName, soundsDir } from "./sound/files.js";
 import { playRequestHandler } from "./sound/play-request.js";
 import { playerFor, recordingPlayer, type SoundPlayer } from "./sound/player.js";
 import { appIcons } from "./icon.js";
-import { recordingShow, systemShow } from "./system-notification.js";
+import { recordingShow, systemNotifications } from "./system-notification.js";
 import { openTemplateFile } from "./template-file.js";
 import { notesDir, pathExists, whatsNewService } from "./whats-new.js";
 import { fitBounds, trackWindow } from "./window-state.js";
-import { backgroundModeEnabled, DOCS_URL, devServerUrl, diagnosticsUrl, e2eEnabled, guardedHandler, isAppUrl, isDevToolsUrl, sampleEngineEnabled, secureWebPreferences, websiteHref } from "./policy.js";
+import { backgroundModeEnabled, DOCS_URL, devServerUrl, diagnosticsUrl, e2eEnabled, guardedHandler, isAppUrl, isDevToolsUrl, notificationSettingsUrl, sampleEngineEnabled, secureWebPreferences, websiteHref } from "./policy.js";
 import type { UpdateState } from "../shared/update.js";
 
 const rendererDir = join(import.meta.dirname, "..", "renderer");
@@ -277,7 +277,7 @@ void app.whenReady().then(async () => {
     app.dock?.hide();
     const player = soundPlayer();
     await runSoundCheck({
-      show: systemShow(),
+      show: systemNotifications().show,
       play: (kind) => player.play(kind, "tokama"),
       bundledName: bundledSoundName,
       wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
@@ -348,8 +348,11 @@ void app.whenReady().then(async () => {
   const focusProbe = createFocusProbe({ idleState: () => powerMonitor.getSystemIdleState(1) });
   handle(CHANNELS.playSound, playRequestHandler(player, rateLimit(20, 10_000)));
   // Notifications: told about every item update, and it learns the open items again on each connect.
+  const system = recordNotifications ? undefined : systemNotifications();
   const notifier = createNotifier({
     play: (kind, set) => player.play(kind, set),
+    // Only macOS has a player; elsewhere the system's own banner sound is the only sound there is.
+    bannerSound: process.platform === "darwin" ? BANNER_SOUND : "bundled",
     bundledSound: (kind, set) => (app.isPackaged && process.platform === "darwin" && set === "tokama" ? bundledSoundName(kind) : undefined),
     // A test run has no screen to lock, and the real probe would make its result depend on the machine.
     focus: recordNotifications ? async () => "unknown" : () => focusProbe.state(),
@@ -364,10 +367,17 @@ void app.whenReady().then(async () => {
       const reply = await engineClient()?.query({ type: "setup" });
       return reply?.ok ? reply.data : undefined;
     },
-    show: recordNotifications ? recordingShow() : systemShow(),
+    show: system?.show ?? recordingShow(),
     open: (itemId) => openItem(itemId),
     now: () => Date.now(),
     platform: process.platform,
+  });
+  handle(CHANNELS.notificationStatus, (): NotificationStatus => ({ blocked: system?.blocked() ?? false, canOpenSettings: notificationSettingsUrl(process.platform) !== undefined }));
+  const testAllowed = rateLimit(5, 10_000);
+  handle(CHANNELS.sendTestNotification, () => (testAllowed() ? notifier.sendTest() : undefined));
+  handle(CHANNELS.openNotificationSettings, async () => {
+    const url = notificationSettingsUrl(process.platform);
+    if (url !== undefined && !recordNotifications) await shell.openExternal(url);
   });
   // A click on a notification or on Help > Get started: the window comes to the front (made again
   // if it was closed, as on macOS) and is told what to open. The renderer is told once its page has loaded.

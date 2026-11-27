@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { backgroundModeEnabled, DOCS_URL, devServerUrl, e2eEnabled, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, secureWebPreferences, sampleEngineEnabled, websiteHref } from "./policy.js";
+import { backgroundModeEnabled, DOCS_URL, devServerUrl, e2eEnabled, guardedHandler, isAppUrl, isDevToolsUrl, isWebsiteUrl, MACOS_NOTIFICATION_SETTINGS_URL, notificationSettingsUrl, secureWebPreferences, sampleEngineEnabled, websiteHref } from "./policy.js";
 
 describe("secureWebPreferences", () => {
   it("isolates and sandboxes the renderer, with no Node", () => {
@@ -141,6 +141,18 @@ describe("sampleEngineEnabled", () => {
     ["0", false, false],
   ] as const)("TOKAMA_SAMPLE=%s, packaged %s: %s", (value, isPackaged, expected) => {
     expect(sampleEngineEnabled(value, isPackaged)).toBe(expected);
+  });
+});
+
+describe("notificationSettingsUrl", () => {
+  it("is the Notifications pane of System Settings on macOS and nothing elsewhere", () => {
+    expect(notificationSettingsUrl("darwin")).toBe("x-apple.systempreferences:com.apple.preference.notifications");
+    expect(notificationSettingsUrl("linux")).toBeUndefined();
+    expect(notificationSettingsUrl("win32")).toBeUndefined();
+  });
+
+  it("is not a website address, so a website check never lets it through", () => {
+    expect(isWebsiteUrl(MACOS_NOTIFICATION_SETTINGS_URL)).toBe(false);
   });
 });
 
