@@ -110,6 +110,7 @@ describe.skipIf(!enabled)("real mode against the real Claude Code CLI", () => {
       maxTimeMs: 90_000,
       agentId: "helper" as HelperDefinition["agentId"],
       instructions: "Propose the commands that prove a change to this repository is correct. Use only commands that the build files show.",
+      example: { checks: [{ command: "pnpm test", why: "Runs the unit tests.", minutes: 5 }] },
     };
     const gatherers = { "suggest-checks": async () => ok({ "repo-file-names": "package.json\nsrc/orders.ts\n", "repo-build-files": '{ "name": "orders-api", "scripts": { "test": "vitest run", "lint": "eslint ." } }' }) };
     try {

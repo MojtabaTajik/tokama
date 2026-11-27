@@ -1,7 +1,7 @@
 // What a helper is: its id and version, the inputs Tokama collects for it, its instructions and
 // how long one call may take. The answer's shape is not here: it is part of the engine API
 // (`HelperResultSchemas`), so a definition can never change it.
-import type { AgentId, HelperId, HelperResult } from "../../kernel/schemas/index.js";
+import { type AgentId, type HelperId, type HelperResult, HelperResultSchemas } from "../../kernel/schemas/index.js";
 
 /**
  * The inputs a helper can ask for. Each has a plain-word label for the line that says what is
@@ -31,6 +31,11 @@ export interface HelperDefinition {
   readonly agentId: AgentId;
   readonly instructions: string;
   /**
+   * One answer, shown to the agent as the shape to follow (a model asked for "JSON of this schema"
+   * tends to answer with the schema). It must pass the shape and the helper's own rule.
+   */
+  readonly example: HelperResult;
+  /**
    * What the answer's shape cannot say, e.g. that a command is one simple command. Returns what is
    * wrong, or undefined. The text goes back to the agent as a hint, so it must not repeat the answer.
    */
@@ -50,6 +55,9 @@ export function definitionProblem(definition: HelperDefinition): string | undefi
   const unknown = definition.inputs.find((name) => !(name in HELPER_INPUTS));
   if (unknown !== undefined) return `${id}: unknown input ${unknown}`;
   if (new Set(definition.inputs).size !== definition.inputs.length) return `${id}: an input is listed twice`;
+  if (!HelperResultSchemas[id].safeParse(definition.example).success) return `${id}: the example does not match the answer's shape`;
+  const rule = definition.check?.(definition.example);
+  if (rule !== undefined) return `${id}: the example breaks the helper's own rule`;
   return undefined;
 }
 

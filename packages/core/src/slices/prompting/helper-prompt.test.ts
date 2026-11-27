@@ -11,7 +11,7 @@ const MARK = "a".repeat(32);
 
 const input = (change: Partial<HelperPromptInput> = {}): HelperPromptInput => ({
   instructions: "Propose the checks.",
-  answerShape: { type: "object", properties: { checks: { type: "array" } } },
+  answerExample: { checks: [{ command: "pnpm test", why: "Runs the unit tests.", minutes: 5 }] },
   inputs: [names, builds],
   agent: cloudAgent,
   drawMark: () => MARK,
@@ -34,7 +34,11 @@ describe("buildHelperPrompt", () => {
     const { system, user } = built();
     expect(system).toBe(HELPER_RULES);
     expect(user).toContain("Propose the checks.");
-    expect(user).toContain('"properties"');
+    // An example answer, never a schema: a model shown a schema answers with it.
+    expect(user).toContain('"command": "pnpm test"');
+    expect(user).toContain("not a schema");
+    expect(user).not.toContain("$schema");
+    expect(user).not.toContain('"properties"');
     expect(user).toContain(`<<<tokama-data name="repo-file-names" mark="${MARK}"\npackage.json\nsrc/index.ts\ntokama-data-end mark="${MARK}">>>`);
     expect(user).toContain(`<<<tokama-data name="repo-build-files" mark="${MARK}"`);
     expect(user.indexOf("Propose the checks.")).toBeLessThan(user.indexOf("<<<tokama-data"));

@@ -11,7 +11,6 @@
 // answer. A bad answer gets one more try with a note of what was wrong; both tries are recorded.
 import { lstat, chmod, mkdir, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { z } from "zod";
 import type { Clock } from "../../kernel/clock/index.js";
 import { hasCode } from "../../kernel/errno/index.js";
 import { READ_ONLY, type AgentRuntime } from "../../kernel/ports/index.js";
@@ -26,7 +25,6 @@ import {
   type HelperId,
   type HelperInput,
   type HelperResult,
-  HelperResultSchemas,
   type HelperRunPhase,
   type HelperRunRequest,
   type HelperSummary,
@@ -237,14 +235,13 @@ export function createHelperRunner(deps: HelperRunnerDeps): HelperRunner {
         const inputs = definition.inputs.map((name) => ({ name, text: gathered.value[name], maxBytes: HELPER_INPUTS[name].maxBytes }));
         const missing = inputs.find((input) => input.text === undefined);
         if (missing !== undefined) return failed("crash", `The helper's inputs did not include ${missing.name}.`);
-        const answerShape = z.toJSONSchema(HelperResultSchemas[definition.id]);
 
         let note: string | undefined;
         for (let attempt = 1; attempt <= MAX_TRIES; attempt++) {
           hooks.onPhase?.(attempt === 1 ? "asking" : "retrying");
           const built = buildHelperPrompt({
             instructions: definition.instructions,
-            answerShape,
+            answerExample: definition.example,
             inputs: inputs.map((input) => ({ name: input.name, text: input.text ?? "", maxBytes: input.maxBytes })),
             agent: { id: target.id, cliId: target.cliId, role: target.role },
             localOnly: deps.localOnly(),

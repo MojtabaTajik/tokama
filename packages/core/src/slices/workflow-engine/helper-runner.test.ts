@@ -132,12 +132,41 @@ describe("a helper run", () => {
     expect(request.prompt).toContain(BUILDS);
   });
 
-  it("shows the agent the answer's shape with every rule the engine checks: required keys, no other keys, whole minutes from 1 to 120, at most 4 checks", async () => {
+  it("shows the agent one example answer, not a schema", async () => {
     const { runtime } = await run();
     const prompt = runtime.calls[0]!.request.prompt;
-    const shape = JSON.parse(prompt.slice(prompt.indexOf("{\n"), prompt.indexOf("\n}\n\n") + 2)) as Record<string, unknown>;
-    expect(JSON.stringify(shape)).toContain('"additionalProperties":false');
-    expect(shape).toMatchObject({ type: "object", required: ["checks"], properties: { checks: { type: "array", maxItems: 4, items: { required: ["command", "why", "minutes"], properties: { minutes: { type: "integer", minimum: 1, maximum: 120 }, why: { maxLength: 200 } } } } } });
+    expect(prompt).toContain(JSON.stringify(testSuggestChecks.example, null, 2));
+    expect(prompt).not.toContain("$schema");
+    expect(prompt).not.toContain("additionalProperties");
+  });
+
+  // What Claude Code (haiku) really answered in the owner's run: the schema, then the answer with a `$schema` key.
+  const SCHEMA_REPLY = JSON.stringify({ $schema: "https://json-schema.org/draft/2020-12/schema", type: "object", properties: { checks: { type: "array", maxItems: 4, items: { type: "object" } } }, required: ["checks"], additionalProperties: false }, null, 2);
+  const WITH_META = JSON.stringify({
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    checks: [
+      { command: "npm run test", why: "Runs the test script of package.json.", minutes: 5 },
+      { command: "npm run lint", why: "Runs the lint script of package.json.", minutes: 3 },
+    ],
+  });
+
+  it("takes an answer that carries the $schema key of the schema the agent saw", async () => {
+    const { outcome, runtime } = await run({ script: [replies(WITH_META)] });
+    expect(outcome).toMatchObject({ state: "done", result: { checks: [{ command: "npm run test" }, { command: "npm run lint" }] } });
+    expect(runtime.calls).toHaveLength(1);
+  });
+
+  it("asks again, with its own note, when the agent answers with the schema, and takes the answer that follows", async () => {
+    const { outcome, runtime, hooks } = await run({ script: [replies(SCHEMA_REPLY), replies(WITH_META)] });
+    expect(outcome).toMatchObject({ state: "done" });
+    expect(hooks.phases).toEqual(["asking", "retrying"]);
+    expect(runtime.calls[1]!.request.prompt).toContain("You replied with the schema. Reply with the answer object, like the example, not the schema.");
+  });
+
+  it("still refuses a stray key other than $schema", async () => {
+    const stray = JSON.stringify({ ...JSON.parse(WITH_META), extra: true });
+    const { runtime } = await run({ script: [replies(stray), answers()] });
+    expect(runtime.calls[1]!.request.prompt).toContain("(answer)");
   });
 
   it("keeps read-only limits for a personal agent file that allows edits, commands and the web, and uses the file's model", async () => {

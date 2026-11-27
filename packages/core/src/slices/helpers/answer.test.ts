@@ -64,6 +64,17 @@ describe("readAnswer", () => {
     expect(many.kind === "wrong_shape" && many.paths.length).toBeLessThanOrEqual(5);
   });
 
+  it("drops a top-level $schema key and keeps every other key strict", () => {
+    expect(read(JSON.stringify({ $schema: "https://json-schema.org/draft/2020-12/schema", ...GOOD_ANSWER }))).toEqual({ ok: true, value: GOOD_ANSWER });
+    expect(problem(JSON.stringify({ $schema: "x", ...GOOD_ANSWER, extra: 1 }))).toEqual({ kind: "wrong_shape", paths: ["(answer)"] });
+  });
+
+  it("says schema_echo for a reply that is a JSON Schema, with or without a fence or $schema", () => {
+    const schema = { type: "object", properties: { checks: { type: "array" } }, required: ["checks"] };
+    expect(problem(JSON.stringify(schema))).toEqual({ kind: "schema_echo" });
+    expect(problem(`\`\`\`json\n${JSON.stringify({ $schema: "x", ...schema }, null, 2)}\n\`\`\``)).toEqual({ kind: "schema_echo" });
+  });
+
   it("says rule when the helper's own rule fails", () => {
     expect(problem(JSON.stringify({ checks: [{ command: "pnpm lint && pnpm test", why: "Both.", minutes: 2 }] }))).toEqual({ kind: "rule", message: "a check holds more than one command." });
   });
@@ -74,6 +85,7 @@ describe("retryNote", () => {
     expect(retryNote({ kind: "too_long" })).toContain("too long");
     expect(retryNote({ kind: "no_json" })).toContain("no JSON object");
     expect(retryNote({ kind: "many_json" })).toContain("more than one");
+    expect(retryNote({ kind: "schema_echo" })).toContain("replied with the schema");
     expect(retryNote({ kind: "wrong_shape", paths: ["checks.0.minutes", "note"] })).toContain("checks.0.minutes, note");
     expect(retryNote({ kind: "rule", message: "a check holds more than one command." })).toContain("a check holds more than one command.");
   });
@@ -103,6 +115,8 @@ describe("definitions", () => {
     [{ inputs: [] }, "no inputs"],
     [{ inputs: ["repo-file-names", "repo-file-names"] as const }, "twice"],
     [{ inputs: ["secrets"] as never }, "unknown input"],
+    [{ example: { checks: [] } as never, check: () => "no" }, "own rule"],
+    [{ example: { checks: [{ command: "x" }] } as never }, "example"],
   ])("refuses %j", (change, word) => {
     expect(definitionProblem({ ...testSuggestChecks, ...change })).toContain(word);
   });

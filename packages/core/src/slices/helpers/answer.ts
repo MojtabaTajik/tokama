@@ -17,6 +17,8 @@ export type AnswerProblem =
   | { readonly kind: "too_long" }
   | { readonly kind: "no_json" }
   | { readonly kind: "many_json" }
+  /** The agent answered with a JSON Schema (the shape it was shown) instead of an answer. */
+  | { readonly kind: "schema_echo" }
   /** `paths` are places in the answer's shape, e.g. `checks.0.minutes`; `(answer)` is the object itself. */
   | { readonly kind: "wrong_shape"; readonly paths: readonly string[] }
   | { readonly kind: "rule"; readonly message: string };
@@ -86,7 +88,12 @@ export function readAnswer(definition: HelperDefinition, reply: string): Result<
   const objects = objectsIn(reply);
   if (objects.length === 0) return err({ kind: "no_json" });
   if (objects.length > 1) return err({ kind: "many_json" });
-  const parsed = HelperResultSchemas[definition.id].safeParse(objects[0]);
+  const object = { ...objects[0] };
+  // A JSON Schema has `type` and `properties` at the top, and no helper's answer has those keys.
+  if ("type" in object && "properties" in object) return err({ kind: "schema_echo" });
+  // `$schema` is a meta key a model copies from the schema it saw: harmless, so it is dropped; every other key stays strict.
+  delete object["$schema"];
+  const parsed = HelperResultSchemas[definition.id].safeParse(object);
   if (!parsed.success) {
     const paths = [...new Set(parsed.error.issues.map((issue) => pathText(issue.path)))].slice(0, MAX_PATHS);
     return err({ kind: "wrong_shape", paths });
@@ -104,6 +111,8 @@ export function retryNote(problem: AnswerProblem): string {
       return "Your last answer held no JSON object. Answer with exactly one JSON object and nothing else.";
     case "many_json":
       return "Your last answer held more than one JSON object. Answer with exactly one JSON object and nothing else.";
+    case "schema_echo":
+      return "You replied with the schema. Reply with the answer object, like the example, not the schema.";
     case "wrong_shape":
       return `Your last answer did not match the shape. These parts were wrong: ${problem.paths.join(", ")}. Answer again with one JSON object that matches the shape.`;
     case "rule":

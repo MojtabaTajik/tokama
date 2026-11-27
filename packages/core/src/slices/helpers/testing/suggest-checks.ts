@@ -15,6 +15,7 @@ export const testSuggestChecks: HelperDefinition = {
   maxTimeMs: 90_000,
   agentId: "helper" as AgentId,
   instructions: "Propose the commands that prove a change to this repository is correct.",
+  example: { checks: [{ command: "pnpm test", why: "Runs the unit tests.", minutes: 5 }] },
   check: noAndAnd,
 };
 

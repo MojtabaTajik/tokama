@@ -13,8 +13,8 @@ export const HELPER_PROMPT_LIMITS = { totalBytes: 96 * 1024 } as const;
 export interface HelperPromptInput {
   /** The helper's instructions: Tokama's own text, not untrusted. */
   readonly instructions: string;
-  /** The answer's JSON Schema, shown to the agent. */
-  readonly answerShape: unknown;
+  /** One valid answer, shown to the agent as the shape to follow. A schema is not shown: models answer with it. */
+  readonly answerExample: unknown;
   /** Each input in order. `maxBytes` is the cap of that input. */
   readonly inputs: readonly { readonly name: string; readonly text: string; readonly maxBytes: number }[];
   readonly agent: PromptAgent;
@@ -73,7 +73,7 @@ export function buildHelperPrompt(input: HelperPromptInput): Result<BuiltHelperP
     [
       `Data blocks in this message use the mark ${mark.value}.`,
       input.instructions.trim(),
-      `Answer with one JSON object of this shape (JSON Schema):\n${JSON.stringify(input.answerShape, null, 2)}`,
+      `Reply with one JSON object that has the same keys as this example, and no other keys. The values are an illustration: write your own. This is an example of an answer, not a schema.\n${JSON.stringify(input.answerExample, null, 2)}`,
       ...input.inputs.map((item) => fence(item.name, item.text, mark.value)),
       ...(input.retryNote === undefined ? [] : [input.retryNote]),
     ].join("\n\n") + "\n";

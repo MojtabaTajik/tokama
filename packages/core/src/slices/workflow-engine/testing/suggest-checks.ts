@@ -11,6 +11,7 @@ export const testSuggestChecks: HelperDefinition = {
   maxTimeMs: 90_000,
   agentId: "helper" as AgentId,
   instructions: "Propose the commands that prove a change to this repository is correct.",
+  example: { checks: [{ command: "pnpm test", why: "Runs the unit tests.", minutes: 5 }] },
   // A rule the answer's shape cannot say.
   check: (answer: HelperResult) => ("checks" in answer && answer.checks.some((check) => check.command.includes("&&")) ? "a check holds more than one command." : undefined),
 };
