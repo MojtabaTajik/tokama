@@ -84,7 +84,7 @@ flow("a plan approval shows the plan: a preview on Needs you, the whole plan as 
   await expect.poll(() => waiting.locator(".nr-preview").innerText(), { message: "the row's plan preview" }).toContain("Plan: reserve stock when an order is placed");
   await screenshot("17-plan-row");
 
-  await waiting.getByRole("button", { name: `Read the plan: ${PLAN_APPROVAL}` }).click();
+  await waiting.locator(".nr-title").click();
   const card = drawer(page).locator(".needs-you");
   await drawer(page).getByRole("heading", { name: PLAN_APPROVAL }).waitFor();
   const plan = card.getByRole("region", { name: "Plan · what Architect wrote" });
@@ -118,13 +118,15 @@ flow("a plan approval shows the plan: a preview on Needs you, the whole plan as 
   expect(box !== null && box.y + box.height <= 700, "Approve is inside the window").toBe(true);
   await screenshot("19-plan-drawer-700");
 
+  // Show full plan opens the reader in the full view, with no tab to pick and Approve pinned on top.
   await more.click();
-  const output = drawer(page).getByRole("tab", { name: "Output" });
-  expect(await output.getAttribute("aria-selected")).toBe("true");
-  expect(await drawer(page).locator(".ot .step-output-text").innerText()).toContain("Release the reservation in OrderService.cancel");
+  const full = page.locator(".expanded");
+  const reader = full.getByRole("region", { name: "Reader" });
+  await expect.poll(() => reader.locator(".step-output-text").innerText(), { message: "the plan in the reader" }).toContain("Release the reservation in OrderService.cancel");
+  expect(await full.getByRole("tab").count()).toBe(0);
 
-  await approve.click();
-  await card.waitFor({ state: "detached" });
+  await full.locator(".ex-decision").getByRole("button", { name: "Approve and start Build", exact: true }).click();
+  await full.locator(".ex-decision").waitFor({ state: "detached" });
 });
 
 flow("keeps list rows readable and apart with the drawer open", async ({ page, resize }) => {

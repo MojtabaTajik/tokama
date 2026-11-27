@@ -3,7 +3,7 @@
 // headings as an outline and the agent that wrote it beside it. The text is shown with StepOutput
 // (React text only); the outline holds the headings' own words as text.
 import type { ItemRecord, Setup, StepRecord } from "@tokama/core";
-import { useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
 import { AgentLabel } from "../agent/AgentLabel.js";
 import { agentInfo } from "../agent/agent-info.js";
@@ -55,18 +55,21 @@ export function OutputTab({ bridge, item, setup, full, onOpenAgent, focus }: Out
   return (
     <div className="ot" data-full={full ? "true" : undefined}>
       {shown.map(({ index, attempt }) => (
-        <StepSection key={`${index} ${attempt}`} bridge={bridge} item={item} setup={setup} index={index} attempt={attempt} full={full} onOpenAgent={onOpenAgent} focus={focus} />
+        <OutputDoc key={`${index} ${attempt}`} bridge={bridge} item={item} setup={setup} index={index} attempt={attempt} full={full} onOpenAgent={onOpenAgent} focus={focus} />
       ))}
     </div>
   );
 }
 
-interface StepSectionProps extends OutputTabProps {
+export interface OutputDocProps extends OutputTabProps {
   readonly index: number;
   readonly attempt: number;
+  /** Links under the outline, for the reader. */
+  readonly also?: ReactNode;
 }
 
-function StepSection({ bridge, item, setup, index, attempt, full, onOpenAgent, focus }: StepSectionProps) {
+/** One step's output as a document: the text, and in the full view its outline and agent beside it. */
+export function OutputDoc({ bridge, item, setup, index, attempt, full, onOpenAgent, focus, also }: OutputDocProps) {
   const step = item.steps[index]!;
   const output = useStepOutput(bridge, item.id, index, attempt, `${index} ${attempt}`);
   const section = useRef<HTMLElement>(null);
@@ -105,6 +108,7 @@ function StepSection({ bridge, item, setup, index, attempt, full, onOpenAgent, f
             <span className="ot-label">{TEXT.writtenBy}</span>
             <AgentLabel info={info} onOpen={onOpenAgent} />
           </div>
+          {also !== undefined && <div className="ot-group">{also}</div>}
         </aside>
       )}
     </section>

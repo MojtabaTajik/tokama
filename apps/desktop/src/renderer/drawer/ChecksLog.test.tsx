@@ -111,7 +111,7 @@ const click = (element: Element | undefined) => act(async () => (element as HTML
 const tab = (name: string) => $$('[role="tab"]').find((el) => el.textContent === name);
 
 async function open(bridge: TokamaBridge, item: ItemRecord, name: string, options: { full?: boolean; setupData?: Setup } = {}) {
-  const expanded = options.full === true ? { back: "All work", wide: true, onCollapse: vi.fn() } : undefined;
+  const expanded = options.full === true ? { back: "All work", wide: true, onCollapse: vi.fn(), onShowAll: vi.fn() } : undefined;
   await act(async () => root.render(<ItemDrawer bridge={bridge} itemId={item.id} setup={options.setupData ?? setup} onClose={vi.fn()} expanded={expanded} />));
   await click(tab(name));
 }

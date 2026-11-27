@@ -30,6 +30,7 @@ import { useItemDiff } from "./useItemDiff.js";
 import { Finish } from "./Finish.js";
 import { LogTab } from "./LogTab.js";
 import { OutputTab, shownAttempt } from "./OutputTab.js";
+import { Reader } from "./Reader.js";
 import { StepOutput, useStepOutput } from "./StepOutput.js";
 import { StoppedCard } from "./StoppedCard.js";
 import { finishState, isDiscarded } from "./finish-view.js";
@@ -130,6 +131,8 @@ export interface ItemDrawerProps {
   readonly request?: { readonly seq: number; readonly discard?: true; readonly notice?: string } | undefined;
   /** ⤢: shows the item in the whole main area. Without it the drawer has no ⤢ buttons. */
   readonly onExpand?: (() => void) | undefined;
+  /** "Show full plan": the full view on that step's document. Without it the card has no such link. */
+  readonly onRead?: ((stepIndex: number) => void) | undefined;
   /** Set while the item fills the main area instead of the drawer. */
   readonly expanded?: Expanded | undefined;
 }
@@ -141,9 +144,13 @@ export interface Expanded {
   readonly wide: boolean;
   /** ⤡, Escape and ← back: the list again, with the drawer on the same item and tab. */
   readonly onCollapse: () => void;
+  /** Set while one step's document is shown in place of the tabs. */
+  readonly reader?: { readonly stepIndex: number } | undefined;
+  /** "All of this item": leaves the reader for the tabs. */
+  readonly onShowAll: () => void;
 }
 
-export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckAgain, onOpenAgent, request, onExpand, expanded }: ItemDrawerProps) {
+export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckAgain, onOpenAgent, request, onExpand, onRead, expanded }: ItemDrawerProps) {
   const { item, error, refresh } = useItem(bridge, itemId);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<Notice | undefined>(undefined);
@@ -269,7 +276,9 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
   const approval = item?.state === "needs_you" && item.decision?.kind === "plan_approval" ? item.decision : undefined;
   // The full view's decision bar has no room for the output: each new question to approve one,
   // and each entry into the full view with one waiting, shows the Output tab (unless it has changed files to show on Diff).
-  const outputAsked = full && approval !== undefined && !carriesDiff(diff) ? approval.id : undefined;
+  // While the reader shows the document the tabs are not on screen: "All of this item" then lands on Output.
+  const reading = expanded?.reader !== undefined;
+  const outputAsked = full && !reading && approval !== undefined && !carriesDiff(diff) ? approval.id : undefined;
   const outputShownFor = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (outputAsked !== undefined && outputShownFor.current !== outputAsked) setTab("Output");
@@ -384,7 +393,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
         <StoppedCard bridge={bridge} item={item} setup={setup} decision={stoppedDecision} busy={busy} full={full} onChoose={resolve} onShow={showStopped} />
       )}
       {item?.state === "needs_you" && stoppedDecision === undefined && (
-        <NeedsYou item={item} setup={setup} decision={item.decision} busy={busy} output={full ? undefined : output} full={full} changedFiles={changedFiles} onShowOutput={showTab("Output")} onShowDiff={showTab("Diff")} onChoose={resolve} />
+        <NeedsYou item={item} setup={setup} decision={item.decision} busy={busy} output={full ? undefined : output} full={full} changedFiles={changedFiles} onRead={onRead} onShowDiff={showTab("Diff")} onChoose={resolve} />
       )}
       {item !== undefined && item.state !== "needs_you" && <After item={item} setup={setup} />}
 
@@ -402,35 +411,41 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
 
       {item && (
         <>
-          <Tabs className="drawer-tabs" tabs={tabs} selected={shown} onSelect={setTab} label={TEXT.views} idOf={tabId} panelIdOf={panelId} />
-          <div className="drawer-panel" role="tabpanel" id={panelId(shown)} aria-labelledby={tabId(shown)} data-tab={shown}>
-            {shown === "Steps" ? (
-              <Steps bridge={bridge} item={item} setup={setup} onOpenAgent={onOpenAgent} unfold={stoppedDecision?.stepIndex} />
-            ) : shown === "Output" ? (
-              <OutputTab bridge={bridge} item={item} setup={setup} full={full} onOpenAgent={onOpenAgent} focus={notesOf} />
-            ) : shown === "Checks" ? (
-              <ChecksTab bridge={bridge} item={item} setup={setup} full={full} />
-            ) : shown === "Log" ? (
-              <LogTab bridge={bridge} item={item} setup={setup} full={full} onOpenAgent={onOpenAgent} />
-            ) : change !== undefined ? (
-              <ItemDiffTab
-                item={item}
-                state={change}
-                baseBranch={setup?.repos.find((repo) => repo.id === item.repoIds[0])?.baseBranch}
-                layout={expanded === undefined ? "drawer" : expanded.wide ? "wide" : "narrow"}
-                onExpand={expandTo?.("Diff")}
-              />
-            ) : diff !== undefined ? (
-              <DiffTab
-                key={item.decision?.id}
-                state={diff}
-                baseBranch={setup?.repos.find((repo) => repo.id === item.repoIds[0])?.baseBranch}
-                layout={expanded === undefined ? "drawer" : expanded.wide ? "wide" : "narrow"}
-                onExpand={expandTo?.("Diff")}
-                by={full && decisionInfo !== undefined ? <AgentLabel info={decisionInfo} onOpen={onOpenAgent} /> : undefined}
-              />
-            ) : null}
-          </div>
+          {expanded?.reader !== undefined ? (
+            <Reader bridge={bridge} item={item} setup={setup} stepIndex={expanded.reader.stepIndex} onShowAll={expanded.onShowAll} onOpenAgent={onOpenAgent} />
+          ) : (
+            <>
+              <Tabs className="drawer-tabs" tabs={tabs} selected={shown} onSelect={setTab} label={TEXT.views} idOf={tabId} panelIdOf={panelId} />
+              <div className="drawer-panel" role="tabpanel" id={panelId(shown)} aria-labelledby={tabId(shown)} data-tab={shown}>
+                {shown === "Steps" ? (
+                  <Steps bridge={bridge} item={item} setup={setup} onOpenAgent={onOpenAgent} unfold={stoppedDecision?.stepIndex} />
+                ) : shown === "Output" ? (
+                  <OutputTab bridge={bridge} item={item} setup={setup} full={full} onOpenAgent={onOpenAgent} focus={notesOf} />
+                ) : shown === "Checks" ? (
+                  <ChecksTab bridge={bridge} item={item} setup={setup} full={full} />
+                ) : shown === "Log" ? (
+                  <LogTab bridge={bridge} item={item} setup={setup} full={full} onOpenAgent={onOpenAgent} />
+                ) : change !== undefined ? (
+                  <ItemDiffTab
+                    item={item}
+                    state={change}
+                    baseBranch={setup?.repos.find((repo) => repo.id === item.repoIds[0])?.baseBranch}
+                    layout={expanded === undefined ? "drawer" : expanded.wide ? "wide" : "narrow"}
+                    onExpand={expandTo?.("Diff")}
+                  />
+                ) : diff !== undefined ? (
+                  <DiffTab
+                    key={item.decision?.id}
+                    state={diff}
+                    baseBranch={setup?.repos.find((repo) => repo.id === item.repoIds[0])?.baseBranch}
+                    layout={expanded === undefined ? "drawer" : expanded.wide ? "wide" : "narrow"}
+                    onExpand={expandTo?.("Diff")}
+                    by={full && decisionInfo !== undefined ? <AgentLabel info={decisionInfo} onOpen={onOpenAgent} /> : undefined}
+                  />
+                ) : null}
+              </div>
+            </>
+          )}
           {confirmingStop ? (
             <ConfirmStop busy={busy} onStop={stop} onCancel={cancelStop} />
           ) : (

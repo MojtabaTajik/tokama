@@ -124,3 +124,63 @@ flow("shows a done item with Finish and its steps' outputs folded", async ({ pag
   await output.locator("summary").click();
   await expect.poll(() => output.locator(".step-output-text").innerText(), { message: "the unfolded output" }).toContain("Fixed the null check");
 });
+
+flow("reads a plan in the reader from Read the plan and from Show full plan: Esc goes back to where it was, and Approve works from the bar", async ({ page, resize, screenshot }) => {
+  const full = page.locator(".expanded");
+  const reader = full.getByRole("region", { name: "Reader" });
+  const readerText = () => reader.locator(".step-output-text").innerText();
+
+  // From the Needs you page: the reader replaces the list; Esc brings the list back with focus on the button.
+  await resize(1200, 900);
+  await page.getByRole("navigation", { name: "App" }).getByRole("button", { name: /^Needs you/ }).click();
+  const read = page.getByRole("button", { name: `Read the plan: ${PLAN_APPROVAL}` });
+  await read.click();
+  await expect.poll(readerText, { message: "the plan in the reader" }).toContain("Release the reservation in OrderService.cancel");
+  expect(await full.locator(".ex-back").innerText()).toBe("← Needs you");
+  expect(await full.getByRole("tab").count()).toBe(0);
+  await screenshot("9-reader-from-needs-you");
+  await page.keyboard.press("Escape");
+  await full.waitFor({ state: "detached" });
+  expect(await drawer(page).count()).toBe(0);
+  await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("aria-label")), { message: "focus on the Read button" }).toBe(`Read the plan: ${PLAN_APPROVAL}`);
+
+  // From the drawer: the card's link; the Output tab is not selected under it, and Esc returns to the same tab.
+  await page.getByRole("navigation", { name: "App" }).getByRole("button", { name: "Board" }).click();
+  await resize(1200, 700);
+  await segment(page, "Needs you").click();
+  await openRow(page, PLAN_APPROVAL);
+  await drawer(page).getByRole("button", { name: "Show full plan" }).click();
+  await expect.poll(readerText, { message: "the plan in the reader" }).toContain("Release the reservation in OrderService.cancel");
+  expect(await full.getByRole("tab").count()).toBe(0);
+  expect(await full.locator(".ex-back").innerText()).toBe("← All work");
+  // About 72 characters a line at the reading size.
+  const doc = reader.locator(".ot-doc");
+  expect(await doc.evaluate((el) => getComputedStyle(el.querySelector(".step-text")!).fontSize)).toBe("15px");
+  expect(await doc.evaluate((el) => el.getBoundingClientRect().width)).toBeLessThanOrEqual(820);
+  await resize(1200, 1024);
+  await screenshot("9-reader");
+  await resize(1024, 800);
+  expect(await doc.evaluate((el) => el.getBoundingClientRect().right <= window.innerWidth), "the document fits the window").toBe(true);
+  await screenshot("9-reader-1024");
+
+  await full.getByRole("button", { name: "All of this item: Steps, Output, Log →" }).click();
+  await expect.poll(() => full.getByRole("tab", { name: "Output" }).getAttribute("aria-selected"), { message: "the Output tab after All of this item" }).toBe("true");
+  await page.keyboard.press("Escape");
+  await drawer(page).getByRole("heading", { name: PLAN_APPROVAL }).waitFor();
+
+  await drawer(page).getByRole("tab", { name: "Steps" }).click();
+  await resize(1200, 700);
+  await drawer(page).getByRole("button", { name: "Show full plan" }).click();
+  await reader.waitFor();
+  await page.keyboard.press("Escape");
+  await drawer(page).getByRole("heading", { name: PLAN_APPROVAL }).waitFor();
+  expect(await drawer(page).getByRole("tab", { name: "Steps" }).getAttribute("aria-selected")).toBe("true");
+  expect(await drawer(page).getByRole("tab", { name: "Output" }).getAttribute("aria-selected")).toBe("false");
+
+  // Approve from the pinned bar; the document stays.
+  await drawer(page).getByRole("button", { name: "Show full plan" }).click();
+  await reader.waitFor();
+  await full.locator(".ex-decision").getByRole("button", { name: "Approve and start Build", exact: true }).click();
+  await full.locator(".ex-decision").waitFor({ state: "detached" });
+  expect(await readerText()).toContain("Release the reservation in OrderService.cancel");
+});
