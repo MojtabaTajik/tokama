@@ -11,7 +11,13 @@ export interface ItemSaid {
 
 const isReviewer = (step: Pick<StepRecord, "doneWhen">): boolean => step.doneWhen === "reviewer approves";
 
-/** The latest attempt of the step that has something said, or undefined. */
+/** What the step's last attempt said: of a passed step, the attempt that passed; an earlier attempt's words describe work that was not kept. */
+function lastSaid(step: Pick<StepRecord, "attempts">): { said: Said; attempt: number } | undefined {
+  const last = step.attempts?.at(-1);
+  return last?.said === undefined ? undefined : { said: last.said, attempt: last.attempt };
+}
+
+/** The latest attempt of the step that said something, for a step that did not pass. */
 function latestSaid(step: Pick<StepRecord, "attempts">): { said: Said; attempt: number } | undefined {
   const found = step.attempts?.findLast((attempt) => attempt.said !== undefined);
   return found?.said === undefined ? undefined : { said: found.said, attempt: found.attempt };
@@ -19,20 +25,22 @@ function latestSaid(step: Pick<StepRecord, "attempts">): { said: Said; attempt: 
 
 /**
  * The words the item is known by: those of the last step that passed and is not a reviewer's
- * (the worker said what was done; the reviewer judged it), else those of the last step that said
- * anything. Undefined when no step said anything, as for an item from before this existed.
+ * (the worker said what was done; the reviewer judged it), from its last attempt only, else those
+ * of the last step that said anything. Undefined when no step said anything, as for an item from
+ * before this existed.
  */
 export function saidOf(item: Pick<ItemRecord, "steps">): ItemSaid | undefined {
-  const pick = (accept: (step: StepRecord) => boolean): ItemSaid | undefined => {
+  const pick = (accept: (step: StepRecord) => boolean, find: typeof lastSaid): ItemSaid | undefined => {
     for (let stepIndex = item.steps.length - 1; stepIndex >= 0; stepIndex--) {
       const step = item.steps[stepIndex]!;
       if (!accept(step)) continue;
-      const found = latestSaid(step);
+      const found = find(step);
       if (found !== undefined) return { ...found, stepIndex };
     }
     return undefined;
   };
-  return pick((step) => step.state === "passed" && !isReviewer(step)) ?? pick(() => true);
+  const worked = (step: StepRecord) => step.state === "passed" && !isReviewer(step);
+  return pick(worked, lastSaid) ?? pick((step) => !worked(step), latestSaid);
 }
 
 /** The tag of a must-read: "read · 6 min". */

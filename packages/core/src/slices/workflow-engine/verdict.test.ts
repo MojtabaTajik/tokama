@@ -24,6 +24,10 @@ describe("parseVerdict", () => {
   it("is no verdict when other text follows it, or the reply holds only a block", () => {
     expect(parseVerdict("VERDICT: approve\nOne more thing.")).toBeUndefined();
     expect(parseVerdict("VERDICT: approve\nHeadlines are fine.")).toBeUndefined();
+    // A READ line that is not the yes/no flag is free text, as the headline reader also takes it.
+    expect(parseVerdict("VERDICT: approve\nRead: the notes")).toBeUndefined();
+    expect(parseVerdict("Must fix.\nVERDICT: approve\n- Read: the diff above again")).toBeUndefined();
+    expect(parseVerdict("VERDICT: approve\n- Read: yes")).toBe("approve");
     expect(parseVerdict("HEADLINE: Ready.\nPOINT: x")).toBeUndefined();
     expect(parseVerdict("")).toBeUndefined();
   });

@@ -13,9 +13,16 @@ describe("saidOf", () => {
     expect(saidOf(item)).toEqual({ said: said("Built it."), stepIndex: 1, attempt: 1 });
   });
 
-  it("takes the latest attempt of that step that said something", () => {
-    const item = { steps: [step("Build", "passed", [{ said: said("First.") }, { said: said("Second.") }, {}])] };
+  it("takes the last attempt of that step, the one that passed", () => {
+    const item = { steps: [step("Build", "passed", [{ said: said("First.") }, { said: said("Second.") }])] };
     expect(saidOf(item)).toEqual({ said: said("Second."), stepIndex: 0, attempt: 2 });
+  });
+
+  it("never shows an earlier attempt's words when the attempt that passed said nothing", () => {
+    const item = { steps: [step("Build", "passed", [{ said: said("First try."), result: "failed" }, {}])] };
+    expect(saidOf(item)).toBeUndefined();
+    // A step before it that said something still stands for the item.
+    expect(saidOf({ steps: [step("Plan", "passed", [{ said: said("A plan.") }]), ...item.steps] })?.said.headline).toBe("A plan.");
   });
 
   it("skips a passed step that said nothing, then falls back to any step that said something", () => {

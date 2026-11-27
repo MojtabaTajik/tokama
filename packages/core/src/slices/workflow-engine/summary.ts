@@ -3,7 +3,7 @@
 // text, so the reading is tolerant: an unknown shape gives the first lines, never an error.
 import { MAX_HEADLINE_CHARS, MAX_POINT_CHARS, MAX_POINTS, MAX_SUMMARY_ITEMS, MAX_SUMMARY_LINE_CHARS, type OutputSummary } from "../../kernel/schemas/index.js";
 import { cutText } from "../../kernel/text/index.js";
-import { BLOCK_LABEL } from "./headline.js";
+import { labelOf, plain } from "./headline.js";
 import { parseVerdict } from "./verdict.js";
 
 /** First lines shown for a step without a verdict format; a verdict step that broke it shows more. */
@@ -114,30 +114,6 @@ function itemOf(raw: string): { ref?: string; text: string } | undefined {
 
 /** How many non-empty lines at the end of a reply the headline block is looked for in. */
 const BLOCK_WINDOW = 30;
-// Control, invisible formatting and line-break characters, as a notification's text drops them.
-const INVISIBLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu;
-
-/** One line of plain text: no control characters, no Markdown marks, spaces folded. */
-const plain = (text: string): string =>
-  text
-    .replace(INVISIBLE, " ")
-    .replace(/\*\*|__|`/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/^#{1,6}\s+/, "");
-
-/**
- * The label of a headline block line and its plain value. `block` is false for a `READ:` line
- * that says something other than yes or no: such a line is part of the reply.
- */
-function labelOf(line: string): { label: "HEADLINE" | "POINT" | "READ"; value: string; block: boolean } | undefined {
-  const match = BLOCK_LABEL.exec(line);
-  if (match === null) return undefined;
-  const label = match[1]!.toUpperCase() as "HEADLINE" | "POINT" | "READ";
-  const value = plain(match[2]!);
-  return { label, value, block: label !== "READ" || /^(?:yes|no)\b/i.test(value) };
-}
-
 /** What `parseHeadline` reads from a reply. `words` and `bodyBytes` count the reply without the block. */
 export interface ParsedHeadline {
   readonly source: "headline" | "first_lines";

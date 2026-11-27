@@ -19,7 +19,34 @@ This block goes above the VERDICT line.`;
 // A block label at the start of a line, in any letter case, after a list mark, a quote mark or bold
 // marks; the rest of the line is the value (any character, so a line separator does not end it).
 // The one grammar for the headline parser and the verdict reader.
-export const BLOCK_LABEL = /^\s*(?:(?:[-*]\s+|>\s*)*)(?:\*\*|__)?(HEADLINE|POINT|READ)(?:\*\*|__)?\s*:([\s\S]*)$/i;
+const BLOCK_LABEL = /^\s*(?:(?:[-*]\s+|>\s*)*)(?:\*\*|__)?(HEADLINE|POINT|READ)(?:\*\*|__)?\s*:([\s\S]*)$/i;
+// Control, invisible formatting and line-break characters, as a notification's text drops them.
+const INVISIBLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu;
+
+/** One line of plain text: no control characters, no Markdown marks, spaces folded. */
+export const plain = (text: string): string =>
+  text
+    .replace(INVISIBLE, " ")
+    .replace(/\*\*|__|`/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^#{1,6}\s+/, "");
+
+/**
+ * The label of a headline block line and its plain value. `block` is true for a `HEADLINE:` or
+ * `POINT:` line, and for a `READ:` line that says yes or no; any other `READ:` line is part of
+ * the reply. Both the headline reader and the verdict reader decide by this flag.
+ */
+export function labelOf(line: string): { label: "HEADLINE" | "POINT" | "READ"; value: string; block: boolean } | undefined {
+  const match = BLOCK_LABEL.exec(line);
+  if (match === null) return undefined;
+  const label = match[1]!.toUpperCase() as "HEADLINE" | "POINT" | "READ";
+  const value = plain(match[2]!);
+  return { label, value, block: label !== "READ" || /^(?:yes|no)\b/i.test(value) };
+}
+
+/** Whether the line is a line of the headline block. */
+export const isBlockLine = (line: string): boolean => labelOf(line)?.block === true;
 
 /** A reply of at least this many words can be a must-read by the agent's own flag. */
 const READ_FLAG_MIN_WORDS = 150;

@@ -307,6 +307,28 @@ const SAID_MUST_READ = {
   readMinutes: 4,
 };
 
+/** What the Architect said of the stock reservation plan: a must-read with two points. */
+const SAID_PLAN = {
+  source: "headline",
+  headline: "Reserve stock at checkout and release it when an order is cancelled: 6 files, one reversible migration.",
+  points: ["The reserve call adds a network hop to checkout; it times out after 2 s and checkout then fails safe.", "Nothing is changed until Build runs."],
+  morePoints: 0,
+  bodyBytes: 1_480,
+  readMinutes: 2,
+};
+
+/** A one-line headline: no points, a small reply. */
+export const SAID_ONE_LINE = { source: "headline", headline: "Added a /healthz route that returns 200 once the database answers.", points: [], morePoints: 0, bodyBytes: 90 };
+
+/** A reply that had no headline block: its first lines stand in. */
+export const SAID_FIRST_LINES = {
+  source: "first_lines",
+  headline: "Renamed the status enum values to match the API docs.",
+  points: ["Updated the two call sites in the orders service.", "Left the old names in the migration history."],
+  morePoints: 0,
+  bodyBytes: 310,
+};
+
 /** The sample items, created minutes before `now`. */
 export function sampleItems(now: number) {
   return rawItems(now).map((item) => withTimes(item, now, item.id === ITEM_IDS.finished ? { 0: SAMPLE_WAIT_MS } : {}));
@@ -533,7 +555,8 @@ function rawItems(now: number): RawItem[] {
           { id: "stop", label: "Stop" },
         ],
       },
-      steps: steps(templates.planAndBuild, ["needs_you"], { 0: "waits for you" }).map((step, index) => (index === 0 ? { ...step, runs: 1, maxAttempts: 3, attempts: [{ attempt: 1, result: "passed", checks: [] }] } : step)),
+      // The plan changed no file, so what the Architect says of it is a must-read.
+      steps: steps(templates.planAndBuild, ["needs_you"], { 0: "waits for you" }).map((step, index) => (index === 0 ? { ...step, runs: 1, maxAttempts: 3, attempts: [{ attempt: 1, result: "passed", checks: [], said: SAID_PLAN }] } : step)),
     },
     {
       ...base,
@@ -838,7 +861,11 @@ export function sampleHistory(now: number, count: number) {
       privacy: "local_and_cloud",
       state,
       createdAt,
-      steps: steps(template, states),
+      // The first two finished items show the other two sizes of what an agent said.
+      steps: steps(template, states).map((step, at) => {
+        const said = at === 0 && state === "done" ? (n === 1 ? SAID_ONE_LINE : n === 2 ? SAID_FIRST_LINES : undefined) : undefined;
+        return said === undefined ? step : { ...step, attempts: [{ attempt: 1, result: "passed", checks: [], said }] };
+      }),
     };
   });
 }
