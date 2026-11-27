@@ -41,6 +41,7 @@
 
 .about-logo {
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: var(--space-14);
 }
@@ -68,8 +69,8 @@
 }
 
 .about-calling {
-  min-width: 9ch;
-  text-align: left;
+  min-height: 1lh;
+  text-align: center;
   font-size: var(--text-md);
   color: var(--text-2);
 }

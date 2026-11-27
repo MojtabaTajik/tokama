@@ -87,7 +87,7 @@ export function About({ bridge, connection, onClose, whatsNew, openVersion, runn
           <section className="about-id" aria-label={brand.name}>
             <div className="about-logo">
               <Button variant="plain" className="about-call" aria-label={CALL_LABEL} title={CALL_LABEL} data-playing={calling || undefined} onClick={callTokay}>
-                <img src={brand.markUrl} alt="" width={56} height={56} />
+                <img src={brand.iconUrl} alt="" width={120} height={120} />
               </Button>
               <img className="about-wordmark" src={brand.wordmarkUrl} alt={brand.name} height={28} />
               <span className="about-calling" aria-live="polite">

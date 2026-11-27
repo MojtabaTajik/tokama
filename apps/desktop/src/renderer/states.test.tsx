@@ -412,7 +412,7 @@ describe("About", () => {
   it("takes the logo from the brand assets folder", async () => {
     await open();
     const [mark, wordmark] = $$(".about-logo img");
-    expect([mark?.getAttribute("src"), wordmark?.getAttribute("src")]).toEqual([brand.markUrl, brand.wordmarkUrl]);
+    expect([mark?.getAttribute("src"), wordmark?.getAttribute("src")]).toEqual([brand.iconUrl, brand.wordmarkUrl]);
   });
 
   it("replaces the board and the drawer, and the way back is the button, the Board icon, the avatar or a sidebar row", async () => {
