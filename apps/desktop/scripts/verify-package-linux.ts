@@ -3,12 +3,15 @@
 // the layout under /opt/Tokama, the files electron-builder adds (launcher entry, icons, AppArmor
 // profile), the pinned Node, the fuses, the feed in app-update.yml, and latest-linux.yml. Parsers
 // and tables are pure and exported for tests; the runners call dpkg-deb, rpm, rpm2cpio and cpio.
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
+import { readNodeRuntime, sha256File, tarballName } from "./fetch-node.ts";
 import { run } from "./package.ts";
 import { debName, rpmName } from "./package-signed.ts";
 import { type LatestFeed, Report, engineVersionProblem, feedProblem, fusesProblem, hookProblem, minSafeProblem, nodeVersionProblem, parseLatestFeed, resourcesProblem, sha512Base64 } from "./verify-package-common.ts";
+
+const appDir = resolve(import.meta.dirname, "..");
 
 export type PackageKind = "deb" | "rpm";
 
@@ -29,9 +32,9 @@ export const PACKAGE_NAME = "tokama";
 export const MAINTAINER = "Tokama <hello@tokama.dev>";
 export const INSTALL_DIR = "opt/Tokama";
 
-/** Electron's libraries, then what Tokama runs: git, and bubblewrap and socat for the agents' sandbox. */
-export const DEB_DEPENDS: readonly string[] = ["libgtk-3-0", "libnotify4", "libnss3", "libxss1", "libxtst6", "xdg-utils", "libatspi2.0-0", "libuuid1", "libsecret-1-0", "git", "bubblewrap", "socat"];
-export const RPM_DEPENDS: readonly string[] = ["gtk3", "libnotify", "nss", "libXScrnSaver", "(libXtst or libXtst6)", "xdg-utils", "at-spi2-core", "(libuuid or libuuid1)", "git", "bubblewrap", "socat"];
+/** Electron's libraries, then what Tokama runs: the library of the engine's Node (it links libatomic), git, and bubblewrap and socat for the agents' sandbox. */
+export const DEB_DEPENDS: readonly string[] = ["libgtk-3-0", "libnotify4", "libnss3", "libxss1", "libxtst6", "xdg-utils", "libatspi2.0-0", "libuuid1", "libsecret-1-0", "libatomic1", "git", "bubblewrap", "socat"];
+export const RPM_DEPENDS: readonly string[] = ["gtk3", "libnotify", "nss", "libXScrnSaver", "(libXtst or libXtst6)", "xdg-utils", "at-spi2-core", "(libuuid or libuuid1)", "libatomic", "git", "bubblewrap", "socat"];
 
 /** What rpmbuild adds to the requirements of every package whatever the spec says: the RPM features it uses, and the shell of the install scripts. */
 export const RPM_AUTO_REQUIRES =/^(rpmlib\(.+\)(\s.*)?|\/bin\/(ba)?sh)$/;
@@ -190,6 +193,29 @@ export function metadataProblem(kind: PackageKind, fields: ReadonlyMap<string, s
   return undefined;
 }
 
+/** The tarball of the pinned Node that the build downloaded (packaging/node-runtime.json names its hash), or undefined when this machine has not built the package. */
+function pinnedNodeTarball(): { readonly path: string; readonly sha256: string } | undefined {
+  const runtime = readNodeRuntime(join(appDir, "packaging", "node-runtime.json"));
+  const sha256 = runtime.sha256["linux-x64"];
+  const path = join(appDir, "package-cache", "node", tarballName(runtime.version, "linux", "x64"));
+  return sha256 !== undefined && existsSync(path) ? { path, sha256 } : undefined;
+}
+
+/** Why the packaged `tokama-engine` is not byte for byte the `bin/node` of the pinned tarball, or undefined. The tarball is hashed again first: a cached file that no longer matches the pin proves nothing. */
+async function nodeBinaryProblem(node: string, tarball: { readonly path: string; readonly sha256: string }): Promise<string | undefined> {
+  const actual = await sha256File(tarball.path);
+  if (actual !== tarball.sha256) return `${tarball.path} has SHA-256 ${actual}, the pin is ${tarball.sha256}`;
+  const scratch = mkdtempSync(join(tmpdir(), "tk-verify-node-"));
+  try {
+    const member = `${basename(tarball.path, ".tar.xz")}/bin/node`;
+    const unpacked = run("tar", ["-xJf", tarball.path, "-C", scratch, member]);
+    if (unpacked.status !== 0) return `tar: ${unpacked.stderr.trim()}`;
+    return readFileSync(join(scratch, member)).equals(readFileSync(node)) ? undefined : "tokama-engine is not the Node binary of the pinned tarball";
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
 /** The checks on the files of an unpacked package, `root` being the folder the package's paths are relative to. */
 export async function checkTree(report: Report, root: string, kind: PackageKind, options: LinuxVerifyOptions, label: string): Promise<void> {
   const install = join(root, INSTALL_DIR);
@@ -213,6 +239,9 @@ export async function checkTree(report: Report, root: string, kind: PackageKind,
     return type === kind ? undefined : `resources/package-type says ${JSON.stringify(type)}, the updater would install a ${kind} as a ${type}`;
   });
   await report.check(`${label} Node version`, () => nodeVersionProblem(join(resources, "engine")));
+  const tarball = pinnedNodeTarball();
+  if (tarball === undefined) report.skip(`${label} Node binary is the pinned tarball's`, "the tarball is not in package-cache/node on this machine");
+  else await report.check(`${label} Node binary is the pinned tarball's`, () => nodeBinaryProblem(join(resources, "engine", "tokama-engine"), tarball));
   await report.check(`${label} engine version`, () => engineVersionProblem(join(resources, "engine"), options.version));
   await report.check(`${label} fuses`, () => fusesProblem(join(install, "tokama")));
   await report.check(`${label} update feed`, () => feedProblem(resources, options.feedUrl));

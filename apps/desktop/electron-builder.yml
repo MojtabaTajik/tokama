@@ -96,15 +96,16 @@ linux:
       # Electron names its window class after the product, so the launcher groups the window with this entry.
       StartupWMClass: Tokama
 # The package names and dependencies repeat electron-builder's defaults (Electron's libraries) and add what
-# Tokama runs: git, and bubblewrap and socat for the agents' sandbox. scripts/verify-package-linux.ts holds
-# the same lists and fails when a built package differs.
+# Tokama runs: the library of the engine's own Node (the official build links libatomic), git, and
+# bubblewrap and socat for the agents' sandbox. scripts/verify-package-linux.ts holds the same lists and
+# fails when a built package differs.
 deb:
   packageName: tokama
-  depends: [libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libuuid1, libsecret-1-0, git, bubblewrap, socat]
+  depends: [libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libuuid1, libsecret-1-0, libatomic1, git, bubblewrap, socat]
   fpm: ["--license=Apache-2.0"]
 rpm:
   packageName: tokama
-  depends: [gtk3, libnotify, nss, libXScrnSaver, "(libXtst or libXtst6)", xdg-utils, at-spi2-core, "(libuuid or libuuid1)", git, bubblewrap, socat]
+  depends: [gtk3, libnotify, nss, libXScrnSaver, "(libXtst or libXtst6)", xdg-utils, at-spi2-core, "(libuuid or libuuid1)", libatomic, git, bubblewrap, socat]
   fpm: ["--license=Apache-2.0"]
 dmg:
   sign: true

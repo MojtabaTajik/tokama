@@ -24,7 +24,7 @@ runs:
     # rpmbuild, which fpm needs for the .rpm; rpm2cpio and cpio, which the verify script unpacks it with.
     - name: Tools for the .rpm
       shell: bash
-      run: sudo apt-get update && sudo apt-get install -y rpm cpio
+      run: sudo apt-get update && sudo apt-get install -y rpm rpm2cpio cpio
     - name: Package and verify
       shell: bash
       working-directory: apps/desktop
@@ -32,6 +32,14 @@ runs:
         FEED_URL: ${{ inputs.feed-url }}
         MIN_SAFE_VERSION: ${{ inputs.min-safe-version }}
       run: pnpm exec install-electron && node scripts/package.ts --feed-url "$FEED_URL" --min-safe-version "$MIN_SAFE_VERSION"
+    - name: What the build made
+      if: always()
+      shell: bash
+      working-directory: apps/desktop
+      run: |
+        ls -la release || true
+        cat release/latest-linux.yml || true
+        cat release/SHA256SUMS.txt || true
     # The Chromium sandbox must stay on: this runner has the AppArmor restriction on user namespaces, so the
     # test only passes through the profile the package installs. Nothing lifts the restriction here.
     - name: Install the .deb and run it
@@ -52,12 +60,12 @@ runs:
         mkdir -p "$RPM_OUT"
         version=$(node -p "require('./apps/desktop/package.json').version")
         # The engine's own Node runs the scripts: Fedora has none of its own, and the test must not need one.
-        # cpio and procps-ng are the tools of the test, not of the package; its own dependencies come with dnf.
+        # cpio, procps-ng, tar and xz are the tools of the test, not of the package; its own dependencies come with dnf.
         docker run --rm \
           -e VERSION="$version" -e FEED_URL="$FEED_URL" -e MIN_SAFE_VERSION="$MIN_SAFE_VERSION" \
           -v "$GITHUB_WORKSPACE:/work:ro" -v "$RPM_OUT:/out" -w /work/apps/desktop \
           fedora:latest bash -euxo pipefail -c '
-            dnf install -y "./release/Tokama-$VERSION-x86_64.rpm" cpio procps-ng
+            dnf install -y "./release/Tokama-$VERSION-x86_64.rpm" cpio procps-ng tar xz
             node=/opt/Tokama/resources/engine/tokama-engine
             "$node" scripts/verify-package.ts --linux --rpm "release/Tokama-$VERSION-x86_64.rpm" --version "$VERSION" --feed-url "$FEED_URL" ${MIN_SAFE_VERSION:+--min-safe-version "$MIN_SAFE_VERSION"}
             "$node" scripts/smoke-installed.ts --rpm-engine-only --out /out

@@ -82,8 +82,8 @@ describe("dependsProblem", () => {
   });
 
   it("names the Debian and the Fedora spelling of the same libraries", () => {
-    expect(DEB_DEPENDS).toEqual(expect.arrayContaining(["git", "bubblewrap", "socat", "libgtk-3-0", "libuuid1"]));
-    expect(RPM_DEPENDS).toEqual(expect.arrayContaining(["git", "bubblewrap", "socat", "gtk3", "(libXtst or libXtst6)", "(libuuid or libuuid1)"]));
+    expect(DEB_DEPENDS).toEqual(expect.arrayContaining(["git", "bubblewrap", "socat", "libgtk-3-0", "libuuid1", "libatomic1"]));
+    expect(RPM_DEPENDS).toEqual(expect.arrayContaining(["git", "bubblewrap", "socat", "gtk3", "(libXtst or libXtst6)", "(libuuid or libuuid1)", "libatomic"]));
   });
 });
 
