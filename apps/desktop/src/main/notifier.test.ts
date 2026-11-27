@@ -302,9 +302,9 @@ describe("createNotifier", () => {
     });
 
     it("Sound only shows no banner and plays the sound of the kind from the set", async () => {
-      const { shown, played } = await transition(kind, { settings: { [kind]: "sound", sounds: "macos" } });
+      const { shown, played } = await transition(kind, { settings: { [kind]: "sound", sounds: "system" } });
       expect(shown).toEqual([]);
-      expect(played).toEqual([[kind, "macos"]]);
+      expect(played).toEqual([[kind, "system"]]);
     });
 
     it("Off shows and plays nothing", async () => {
@@ -318,7 +318,7 @@ describe("createNotifier", () => {
   });
 
   it("with the bundled switch, the macOS default set, or where no bundled sound applies, leaves the sound to the system", async () => {
-    for (const options of [{ settings: { needsYou: "both", sounds: "macos" }, bannerSound: "bundled" }, { settings: { needsYou: "both" }, packagedMac: false, bannerSound: "bundled" }] as const) {
+    for (const options of [{ settings: { needsYou: "both", sounds: "system" }, bannerSound: "bundled" }, { settings: { needsYou: "both" }, packagedMac: false, bannerSound: "bundled" }] as const) {
       const { shown } = await transition("needsYou", options);
       expect(shown.map(({ note }) => [note.silent, note.sound])).toEqual([[false, undefined]]);
     }
@@ -346,10 +346,10 @@ describe("createNotifier", () => {
 
   describe("the test notification", () => {
     it("shows one silent banner and plays the Needs you sound from the set, whatever the modes say", async () => {
-      const { notifier, shown, played } = setupNotifier({ settings: { needsYou: "off", finished: "off", failed: "off", sounds: "macos" } });
+      const { notifier, shown, played } = setupNotifier({ settings: { needsYou: "off", finished: "off", failed: "off", sounds: "system" } });
       await notifier.sendTest();
       expect(shown.map(({ note }) => [note.title, note.silent, note.sound])).toEqual([[TEST_NOTE.title, true, undefined]]);
-      expect(played).toEqual([["needsYou", "macos"]]);
+      expect(played).toEqual([["needsYou", "system"]]);
     });
 
     it("keeps the hint line for a real banner, and follows the quiet rules for the sound", async () => {

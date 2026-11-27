@@ -47,7 +47,7 @@ describe("Settings > Notifications", () => {
     await openPage(fakeBridge(CONNECTED).bridge);
     expect($('nav[aria-label="Settings"] [aria-current="page"]')?.textContent).toBe("Notifications");
     expect($("h1")?.textContent).toBe("Notifications");
-    expect($(".notes-intro")?.textContent).toBe("macOS notifications about your items. Click one to open its item in Tokama.");
+    expect($(".notes-intro")?.textContent).toBe("Notifications about your items. Click one to open its item in Tokama.");
     expect($$(".notes-name").map((el) => el.textContent)).toEqual(["⏸Needs you", "✓Finished", "✕Failed", "♪Sounds", "✉Test"]);
     expect($$(".notes-help").map((el) => el.textContent)).toEqual([
       "An item waits for your decision, like approving a plan or a change.",
@@ -58,11 +58,11 @@ describe("Settings > Notifications", () => {
     ]);
     expect(groups().map((group) => group.getAttribute("aria-labelledby"))).toEqual(["notes-needsYou", "notes-finished", "notes-failed", "notes-sounds"]);
     expect([...groups()[0]!.querySelectorAll('[role="radio"]')].map((radio) => radio.textContent?.replace("✓", ""))).toEqual(["Banner + sound", "Banner only", "Sound only", "Off"]);
-    expect([...groups()[3]!.querySelectorAll('[role="radio"]')].map((radio) => radio.textContent?.replace("✓", ""))).toEqual(["Tokama sounds", "macOS default"]);
+    expect([...groups()[3]!.querySelectorAll('[role="radio"]')].map((radio) => radio.textContent?.replace("✓", ""))).toEqual(["Tokama sounds", "System sound"]);
     expect(checks()).toEqual(["✓Banner + sound", "✓Banner only", "✓Banner + sound", "✓Tokama sounds"]);
     expect($$(".notes-info-text span").map((el) => el.textContent)).toEqual([
       "No notification while you are looking at that item: Tokama is in front and the item is open in the drawer or the full view.",
-      "Sound only: macOS cannot play a sound without a banner, so Tokama plays it itself while the app is running. Sounds play even during Focus, but not while your Mac is locked. Choose Banner only for a row if that bothers you. The ▶ buttons always play.",
+      "Sound only: Tokama plays the sound itself while the app is running, with no banner. Sounds play even during Focus or Do Not Disturb, but not while your computer is locked. Choose Banner only for a row if that bothers you. The ▶ buttons always play.",
     ]);
     expect($(".notes-preview-hint")?.textContent).toBe("How each one looks in the top-right corner of the screen. Plain text, no formatting.");
   });
@@ -106,7 +106,7 @@ describe("Settings > Notifications", () => {
 
     it("on macOS names the problem and opens the Notifications pane from a button", async () => {
       const fake = fakeBridge(CONNECTED);
-      fake.notificationStatus.mockResolvedValue({ blocked: true, canOpenSettings: true });
+      fake.notificationStatus.mockResolvedValue({ blocked: true, canOpenSettings: true, soundPlayerMissing: false });
       await openPage(fake.bridge);
       expect($(".notes-blocked-text")?.textContent).toBe("macOS is not showing Tokama's notifications.");
       await click(button("Open System Settings › Notifications"));
@@ -115,7 +115,7 @@ describe("Settings > Notifications", () => {
 
     it("elsewhere gives a short hint and no button", async () => {
       const fake = fakeBridge(CONNECTED);
-      fake.notificationStatus.mockResolvedValue({ blocked: true, canOpenSettings: false });
+      fake.notificationStatus.mockResolvedValue({ blocked: true, canOpenSettings: false, soundPlayerMissing: false });
       await openPage(fake.bridge);
       expect($(".notes-blocked-text")?.textContent).toBe("No notification service answered. Check that one is running.");
       expect($$(".notes-blocked button")).toHaveLength(0);
@@ -127,7 +127,7 @@ describe("Settings > Notifications", () => {
       const fake = fakeBridge(CONNECTED);
       await openPage(fake.bridge);
       const asked = fake.notificationStatus.mock.calls.length;
-      fake.notificationStatus.mockResolvedValue({ blocked: true, canOpenSettings: true });
+      fake.notificationStatus.mockResolvedValue({ blocked: true, canOpenSettings: true, soundPlayerMissing: false });
       await click(button("Send a test notification"));
       expect(fake.sendTestNotification).toHaveBeenCalledTimes(1);
       expect($(".notes-blocked")).toBeNull();
@@ -140,15 +140,15 @@ describe("Settings > Notifications", () => {
   it("saves the sound set and names it in the lines and the note", async () => {
     const fake = fakeBridge(CONNECTED, { desktopState: withNotifications({ finished: "sound" }) });
     await openPage(fake.bridge);
-    await click(option(3, "macOS default"));
-    expect(fake.saveNotifications).toHaveBeenLastCalledWith({ sounds: "macos" });
-    expect(previews()[1]).toBe("Finished is sound only: no banner, the macOS default sound plays.");
-    expect($(".notes-sound-note")?.textContent).toBe("♪ Plays the macOS default sound for 3 of 3 kinds.");
+    await click(option(3, "System sound"));
+    expect(fake.saveNotifications).toHaveBeenLastCalledWith({ sounds: "system" });
+    expect(previews()[1]).toBe("Finished is sound only: no banner, the system sound plays.");
+    expect($(".notes-sound-note")?.textContent).toBe("♪ Plays the system sound for 3 of 3 kinds.");
   });
 
   it("shows the saved choices, not the defaults", async () => {
-    await openPage(fakeBridge(CONNECTED, { desktopState: withNotifications({ needsYou: "off", finished: "sound", sounds: "macos" }) }).bridge);
-    expect(checks()).toEqual(["✓Off", "✓Sound only", "✓Banner + sound", "✓macOS default"]);
+    await openPage(fakeBridge(CONNECTED, { desktopState: withNotifications({ needsYou: "off", finished: "sound", sounds: "system" }) }).bridge);
+    expect(checks()).toEqual(["✓Off", "✓Sound only", "✓Banner + sound", "✓System sound"]);
     expect(previews()[0]).toBe("Needs you is off, so this one never shows.");
   });
 
@@ -163,9 +163,21 @@ describe("Settings > Notifications", () => {
     expect($$(".notes-playing").map((el) => [el.getAttribute("aria-live"), el.textContent])).toEqual([["polite", "Playing"], ["polite", ""], ["polite", ""]]);
     await act(async () => vi.advanceTimersByTime(1500));
     expect($$(".notes-playing").map((el) => el.textContent)).toEqual(["", "", ""]);
-    await click(option(3, "macOS default"));
+    await click(option(3, "System sound"));
     await click(playButton("Failed"));
-    expect(fake.playSound).toHaveBeenLastCalledWith("failed", "macos");
+    expect(fake.playSound).toHaveBeenLastCalledWith("failed", "system");
+  });
+
+  it("says nothing about PulseAudio or ALSA while a player program is there", async () => {
+    await openPage(fakeBridge(CONNECTED).bridge);
+    expect(container.textContent).not.toContain("PulseAudio");
+  });
+
+  it("says Tokama sounds need PulseAudio or ALSA when the player program is missing", async () => {
+    const missing = fakeBridge(CONNECTED);
+    missing.notificationStatus.mockResolvedValue({ blocked: false, canOpenSettings: false, soundPlayerMissing: true });
+    await openPage(missing.bridge);
+    expect(container.textContent).toContain("Tokama sounds need PulseAudio or ALSA on this computer.");
   });
 
   it("clears the Playing timer when the page goes away", async () => {

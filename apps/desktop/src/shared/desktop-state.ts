@@ -38,8 +38,8 @@ export interface WindowBounds {
 /** How one kind of notification reaches the user: a banner with a sound, a banner alone, a sound alone, or nothing. */
 export const NOTE_MODES = ["both", "banner", "sound", "off"] as const;
 export type NoteMode = (typeof NOTE_MODES)[number];
-/** Which sounds play: the ones Tokama ships, or the system's default. */
-export const SOUND_SETS = ["tokama", "macos"] as const;
+/** Which sounds play: the ones Tokama ships, or the system's own. A file saved by an older version calls the second one "macos"; reading maps that name. */
+export const SOUND_SETS = ["tokama", "system"] as const;
 export type SoundSet = (typeof SOUND_SETS)[number];
 export const NOTE_KINDS = ["needsYou", "finished", "failed"] as const;
 export type NoteKind = (typeof NOTE_KINDS)[number];
@@ -203,7 +203,8 @@ function notifications(value: unknown): NotificationSettings {
     if (typeof saved === "boolean") return !saved ? "off" : record["sound"] === true ? "both" : "banner";
     return oneOf(NOTE_MODES, saved) ?? defaults[kind];
   };
-  return { needsYou: mode("needsYou"), finished: mode("finished"), failed: mode("failed"), sounds: oneOf(SOUND_SETS, record["sounds"]) ?? defaults.sounds };
+  const savedSounds = record["sounds"] === "macos" ? "system" : record["sounds"];
+  return { needsYou: mode("needsYou"), finished: mode("finished"), failed: mode("failed"), sounds: oneOf(SOUND_SETS, savedSounds) ?? defaults.sounds };
 }
 
 /** Whether the notification hint counts as seen: as saved, or true for a file an older version wrote (a user who has used the app). */

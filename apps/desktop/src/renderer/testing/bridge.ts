@@ -80,7 +80,7 @@ export function fakeBridge(initial: ConnectionState, options: { boardItems?: Ite
     countUsage: vi.fn(async () => undefined),
     saveNotifications: vi.fn(async () => undefined),
     playSound: vi.fn(async () => undefined),
-    notificationStatus: vi.fn(async () => ({ blocked: false, canOpenSettings: true })),
+    notificationStatus: vi.fn(async () => ({ blocked: false, canOpenSettings: true, soundPlayerMissing: false })),
     sendTestNotification: vi.fn(async () => undefined),
     openNotificationSettings: vi.fn(async () => undefined),
     setViewedItem: vi.fn(async () => undefined),

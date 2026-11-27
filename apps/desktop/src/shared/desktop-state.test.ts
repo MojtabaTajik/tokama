@@ -42,7 +42,7 @@ describe("parseDesktopState", () => {
       lastFilter: { status: "done", range: "7d" },
       getStarted: { done: true, lineClosed: false, firstItemId: "item_1" },
       lastRepoFolder: "/code/orders-api",
-      notifications: { needsYou: "off", finished: "banner", failed: "sound", sounds: "macos" },
+      notifications: { needsYou: "off", finished: "banner", failed: "sound", sounds: "system" },
       notificationHintShown: true,
       askAfterCrash: false,
       lastRunVersion: "0.2.0",
@@ -178,8 +178,12 @@ describe("notifications", () => {
     expect(state.notifications).toEqual({ needsYou: "banner", finished: "banner", failed: "banner", sounds: "tokama" });
   });
 
+  it("reads the sound set an older version saved as macos as the system sound, and saves the new name", () => {
+    expect(parseDesktopState({ notifications: { needsYou: "both", finished: "banner", failed: "both", sounds: "macos" } }).notifications.sounds).toBe("system");
+  });
+
   it("read each kind on its own: a mode is kept next to an old boolean, and junk falls back to that kind's default", () => {
-    expect(parseDesktopState({ notifications: { needsYou: "off", finished: false, failed: "loud", sounds: "macos", sound: true } }).notifications).toEqual({ needsYou: "off", finished: "off", failed: "both", sounds: "macos" });
+    expect(parseDesktopState({ notifications: { needsYou: "off", finished: false, failed: "loud", sounds: "system", sound: true } }).notifications).toEqual({ needsYou: "off", finished: "off", failed: "both", sounds: "system" });
     expect(parseDesktopState({ notifications: { needsYou: 3, finished: null, failed: [], sounds: "other" } }).notifications).toEqual(DEFAULT_DESKTOP_STATE.notifications);
     for (const bad of [null, 5, "x", [], {}]) expect(parseDesktopState({ notifications: bad }).notifications).toEqual(DEFAULT_DESKTOP_STATE.notifications);
   });
@@ -202,8 +206,8 @@ describe("applyNotificationsPatch", () => {
   const base = parseDesktopState({ drawer: { width: 500 }, notifications: { failed: "off" } });
 
   it("changes the modes and sound set named and leaves everything else alone", () => {
-    const next = applyNotificationsPatch(base, { sounds: "macos", needsYou: "banner", drawer: { width: 340 }, extra: true });
-    expect(next.notifications).toEqual({ needsYou: "banner", finished: "banner", failed: "off", sounds: "macos" });
+    const next = applyNotificationsPatch(base, { sounds: "system", needsYou: "banner", drawer: { width: 340 }, extra: true });
+    expect(next.notifications).toEqual({ needsYou: "banner", finished: "banner", failed: "off", sounds: "system" });
     expect(next.drawer).toEqual({ width: 500 });
   });
 
