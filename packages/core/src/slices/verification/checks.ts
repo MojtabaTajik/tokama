@@ -43,9 +43,21 @@ export interface RunCommandOptions {
   readonly outputCap?: number;
   /** Receives the full raw output (mode 0600). Never inside the worktree. */
   readonly outputFile?: string;
+  /** Called with the shell's pid (and process group id) right after it started. */
+  readonly onSpawn?: (pid: number) => void;
 }
 
 export const DEFAULT_OUTPUT_CAP = 16_000;
+
+const firstWord = (command: string) => command.trim().split(/\s+/)[0] ?? "";
+
+/**
+ * How Tokama runs a check or setup command it was given as text: the rule lets this one command
+ * through (its pipe helpers too), and `CI=1` is set. Item steps and Try checks both use it.
+ */
+export function checkRunOptions(command: string, options: Pick<RunCommandOptions, "cwd" | "timeoutMs" | "signal" | "outputFile" | "outputCap" | "onSpawn">): RunCommandOptions {
+  return { ...options, rules: [firstWord(command)], env: { CI: "1" } };
+}
 
 function refusal(decision: Exclude<CommandDecision, { allowed: true }>): string {
   return `refused by the command policy (${decision.reason}): ${decision.part}`;
@@ -89,6 +101,7 @@ export async function runCommand(runner: ProcessRunner, command: string, options
     stdout: sink,
     ...(options.env === undefined ? {} : { env: options.env }),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
+    ...(options.onSpawn === undefined ? {} : { onSpawn: options.onSpawn }),
   });
   if (result.kind === "not-started") {
     const outcome = result.reason === "aborted" ? "aborted" : "not-started";

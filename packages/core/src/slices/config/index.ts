@@ -9,7 +9,7 @@ export {
   type LoadedAgents,
   type ModelDriverId,
 } from "./agents.js";
-export { DEFAULT_WORKTREE_FOLDER, loadRepos, type LoadReposOptions, type Repo } from "./repos.js";
+export { BRANCH, checkProblem, DEFAULT_WORKTREE_FOLDER, MAX_BRANCH, loadRepos, type LoadReposOptions, type Repo } from "./repos.js";
 export { CONFIG_FORMAT, formatProblem, type ConfigError, type ConfigProblem } from "./yaml-file.js";
 export {
   addRepo,

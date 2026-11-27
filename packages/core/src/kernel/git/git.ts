@@ -262,6 +262,11 @@ export interface Git {
    */
   worktreeAdd(repo: string, path: string, branch: string, startPoint: string): Promise<GitResult<void>>;
   /**
+   * `worktree add --no-checkout --detach <path> <commit>`, then `reset --hard` inside the new
+   * worktree, as `worktreeAdd` does; no branch is made. `commit` is a full object id.
+   */
+  worktreeAddDetached(repo: string, path: string, commit: string): Promise<GitResult<void>>;
+  /**
    * Without `force`: refuses a worktree with changes or untracked files (checked by `status`
    * inside it). Then `worktree remove --force <path>`; a locked worktree is still refused.
    */
@@ -634,6 +639,16 @@ export function createGit(options: GitOptions): Git {
       const args = ["worktree", "add", "-q", "--no-checkout", "-b", branch, "--", path, startPoint];
       const refused = refuseOption(args, path, branch, startPoint);
       if (refused !== undefined) return refused;
+      const added = await git(repo, args);
+      if (!added.ok) return added;
+      // The checkout runs in the new worktree, with overrides for the config it sees.
+      return map(git(path, ["reset", "-q", "--hard"]), none);
+    },
+    async worktreeAddDetached(repo, path, commit) {
+      const args = ["worktree", "add", "-q", "--no-checkout", "--detach", "--", path, commit];
+      const refused = refuseOption(args, path, commit);
+      if (refused !== undefined) return refused;
+      if (!/^[0-9a-f]{40,64}$/.test(commit)) return err({ reason: "invalid-argument", args, exitCode: null, message: `refused commit: ${JSON.stringify(commit)}` });
       const added = await git(repo, args);
       if (!added.ok) return added;
       // The checkout runs in the new worktree, with overrides for the config it sees.

@@ -69,6 +69,7 @@ import {
   type HelperRunQueryResult,
   type HelpersResult,
   type RunHelperResult,
+  type TryChecksResult,
   type Command,
   createGit,
   createMachineSource,
@@ -136,6 +137,7 @@ import { boardCounts, COUNTS_BUDGET, groupOf, listPage, nameHits } from "./item-
 import { type HealthChecks, machineChecks } from "./real/health.js";
 import { runningGroups } from "./machine.js";
 import type { HelperRuns } from "./real/helpers.js";
+import type { CheckTrials } from "./real/trials.js";
 import { RealEngine, type RealEngineOptions } from "./real/real.js";
 import { SampleEngine } from "./sample/sample.js";
 import { agentsFor, loadConfig, startProblem, stepProblems } from "./real/config.js";
@@ -273,6 +275,8 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   let helperEvent: (event: EngineEvent) => void = () => {};
   // Set once a real engine exists: the helper runs a stop that waits for idle must not interrupt.
   let helperRuns: HelperRuns | undefined;
+  // Likewise the Try checks trial that is going.
+  let trialRuns: CheckTrials | undefined;
   const releaseStorage = () => {
     storage?.close();
     diagnostics?.close();
@@ -413,6 +417,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   // Before any command waits on the engine, so a stop that waits for idle always sees the helper runs.
   void realEngine.then((created) => {
     helperRuns = created?.helpers;
+    trialRuns = created?.trials;
   });
   const clock = options.clock ?? systemClock;
   const usageChanged = () => broadcast({ type: "usage_changed" });
@@ -571,8 +576,6 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   };
 
   const noHelpers: ReplyResult = { ok: false, error: { code: "not_implemented" satisfies CommandErrorCode, message: "helpers are not built into this engine yet" } };
-  // A real engine runs helpers; only Try checks is missing there.
-  const noTryChecks: ReplyResult = { ok: false, error: { code: "not_implemented" satisfies CommandErrorCode, message: "Try checks is not in this engine yet." } };
   const noDiagnostics: ReplyResult = { ok: false, error: { code: "not_implemented" satisfies CommandErrorCode, message: "this engine keeps no diagnostics" } };
 
   /** The crash flag for the setup's health, when the engine keeps diagnostics. */
@@ -629,7 +632,14 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
           const result = await real.command(command);
           return result.ok ? { ok: true, data: result.value } : { ok: false, error: result.error };
         }
-        // Try checks is not built into a real engine yet; its commands fall through to `noHelpers`.
+        if (command.type === "try_checks") {
+          const started = await real.trials.start({ path: command.path, baseBranch: command.baseBranch, checks: command.checks, setup: command.setup });
+          return started.ok ? { ok: true, data: started.value satisfies TryChecksResult } : { ok: false, error: started.error };
+        }
+        if (command.type === "cancel_check_trial") {
+          const cancelled = real.trials.cancel(command.trialId);
+          return cancelled.ok ? { ok: true, data: null } : { ok: false, error: cancelled.error };
+        }
         if (command.type === "run_helper") {
           const started = await real.helpers.start(command.run, command.cloud);
           return started.ok ? { ok: true, data: started.value satisfies RunHelperResult } : { ok: false, error: started.error };
@@ -640,6 +650,9 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
         }
       } else if (message.query.type === "helpers") {
         return { ok: true, data: (await real.helpers.helpers()) satisfies HelpersResult };
+      } else if (message.query.type === "check_trial") {
+        const trial = real.trials.get(message.query.trialId);
+        return trial.ok ? { ok: true, data: { trial: trial.value } satisfies CheckTrialResult } : { ok: false, error: trial.error };
       } else if (message.query.type === "helper_run") {
         const run = real.helpers.get(message.query.runId);
         return run.ok ? { ok: true, data: { run: run.value } satisfies HelperRunQueryResult } : { ok: false, error: run.error };
@@ -677,7 +690,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       if (isRepoCommand(command)) return repoCommand(command);
       if (isDiagnosticsCommand(command)) return diagnostics?.command(command) ?? noDiagnostics;
       if (isHelperCommand(command)) {
-        if (sample === undefined) return real === undefined ? noHelpers : noTryChecks;
+        if (sample === undefined) return noHelpers;
         const result = sample.helpers.command(command);
         return result.ok ? { ok: true, data: result.value } : { ok: false, error: result.error };
       }
@@ -813,7 +826,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
         return run.ok ? { ok: true, data: { run: run.value } satisfies HelperRunQueryResult } : { ok: false, error: run.error };
       }
       case "check_trial": {
-        if (sample === undefined) return real === undefined ? noHelpers : noTryChecks;
+        if (sample === undefined) return noHelpers;
         const trial = sample.helpers.checkTrial(query.trialId);
         return trial.ok ? { ok: true, data: { trial: trial.value } satisfies CheckTrialResult } : { ok: false, error: trial.error };
       }
@@ -842,7 +855,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   let commandsInFlight = 0;
   const busyItems = (): number | undefined => {
     try {
-      return commandsInFlight + (helperRuns?.running() ?? 0) + store.list().filter((item) => item.state === "running" || item.state === "queued" || item.finish?.running !== undefined).length;
+      return commandsInFlight + (helperRuns?.running() ?? 0) + (trialRuns?.running() ?? 0) + store.list().filter((item) => item.state === "running" || item.state === "queued" || item.finish?.running !== undefined).length;
     } catch {
       return undefined;
     }
