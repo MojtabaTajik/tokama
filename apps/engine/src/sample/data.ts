@@ -30,6 +30,8 @@ export const ITEM_IDS = {
   planApproval: "item_1a2b3c4d-0012-4a1b-8c1d-000000000012",
   /** A Plan and build task whose Review step stopped at its limit after Build fixed what it asked for. */
   reviewLimit: "item_1a2b3c4d-0013-4a1b-8c1d-000000000013",
+  /** An Ask item that ended done: the answer is the result, nothing was committed and its worktree is gone. */
+  ask: "item_1a2b3c4d-0014-4a1b-8c1d-000000000014",
 } as const;
 
 const agents = {
@@ -158,14 +160,25 @@ const templates = {
   },
   reviewOnly: {
     id: "builtin/review-only",
-    name: "Review only",
-    kind: "task",
+    name: "Review code",
+    kind: "investigation",
     icon: "eye",
     color: "slate",
     connections: [],
     start: { needs: ["text", "repo"], askBeforeCloud: false },
     warnings: [],
     steps: [{ name: "Review", stage: "review", agentId: "reviewer", data: "repo-and-diff" }],
+  },
+  ask: {
+    id: "builtin/ask",
+    name: "Ask",
+    kind: "investigation",
+    icon: "circle-question",
+    color: "sand",
+    connections: [],
+    start: { needs: ["text", "repo"], askBeforeCloud: false },
+    warnings: [],
+    steps: [{ name: "Answer", stage: "review", agentId: "architect", data: "repo-and-diff" }],
   },
 };
 
@@ -194,7 +207,7 @@ export const sampleSetup = {
     { id: "grafana-prod", name: "Grafana · prod", type: "MCP server" },
   ],
   agents: [agents.architect, agents.investigator, agents.reviewer, agents.builder, agents.repoBuilder],
-  templates: [templates.emergency, templates.slowQuery, templates.planAndBuild, templates.quickFix, templates.quickChange, templates.reviewOnly].map(withAccess),
+  templates: [templates.emergency, templates.slowQuery, templates.planAndBuild, templates.quickFix, templates.quickChange, templates.reviewOnly, templates.ask].map(withAccess),
   health: { git: { ok: true, version: "git version 2.54.0" }, clis: [{ cliId: "claude-code", installed: true, loggedIn: true, version: "2.1.331" }], gh: { installed: true, loggedIn: true }, config: [] },
 };
 
@@ -208,6 +221,7 @@ const DONE_WHEN: Readonly<Record<string, readonly string[]>> = {
   [templates.quickFix.id]: ["agent finishes", "checks pass"],
   [templates.quickChange.id]: ["you approve"],
   [templates.reviewOnly.id]: ["reviewer approves"],
+  [templates.ask.id]: ["agent finishes"],
 };
 
 /** The template's steps with these states and detail lines (a passed step without one says "passed"). */
@@ -327,6 +341,16 @@ const SAID_PLAN = {
   morePoints: 0,
   bodyBytes: 1_480,
   readMinutes: 2,
+};
+
+/** What the Architect answered to a question: a must-read answer with two points. */
+const SAID_ANSWER = {
+  source: "headline",
+  headline: "About half a day: the list query already streams, so export is one new endpoint and one test file.",
+  points: ["4 files in orders-api would change, no database change.", "Main risk: memory on ranges over 31 days."],
+  morePoints: 0,
+  bodyBytes: 1_020,
+  readMinutes: 1,
 };
 
 /** A one-line headline: no points, a small reply. */
@@ -626,6 +650,25 @@ function rawItems(now: number): RawItem[] {
     },
     {
       ...base,
+      id: ITEM_IDS.ask,
+      kind: "investigation",
+      templateId: templates.ask.id,
+      title: "How hard is it to add CSV export to orders?",
+      text: "How hard is it to add CSV export to orders?",
+      repoIds: ["orders-api"],
+      privacy: "local_and_cloud",
+      state: "done",
+      createdAt: ago(now, 95),
+      cardLine: SAID_ANSWER.headline,
+      steps: steps(templates.ask, ["passed"]).map((step) => ({
+        ...step,
+        attempts: [{ attempt: 1, result: "passed", checks: [], said: SAID_ANSWER }],
+      })),
+      outcome: { kind: "done", detail: "Nothing changed: the output is the result." },
+      finish: { worktreeRemoved: true },
+    },
+    {
+      ...base,
       id: ITEM_IDS.flaky,
       kind: "task",
       templateId: templates.quickFix.id,
@@ -690,6 +733,22 @@ export const sampleOutputs: Readonly<Record<string, Readonly<Record<number, read
         "",
         "- `src/cart/total.ts` reads `line.price ?? 0`.",
         "- `src/cart/total.test.ts` adds a case for a line with no price.",
+      ].join("\n"),
+    ],
+  },
+  [ITEM_IDS.ask]: {
+    0: [
+      [
+        "About half a day. The order list query already streams its rows, so export is one new endpoint and one test file.",
+        "",
+        "- `src/orders/list.ts` returns a cursor; the export can write each row as it arrives.",
+        "- `src/orders/routes.ts` gets `GET /orders/export.csv`, next to the list route.",
+        "- `src/orders/export.test.ts` is new. `src/orders/csv.ts` is new too, for quoting.",
+        "- Main risk: a date range over 31 days holds many rows; stream them, never build the file in memory.",
+        "",
+        "HEADLINE: About half a day: the list query already streams, so export is one new endpoint and one test file.",
+        "POINT: 4 files in orders-api would change, no database change.",
+        "POINT: Main risk: memory on ranges over 31 days.",
       ].join("\n"),
     ],
   },

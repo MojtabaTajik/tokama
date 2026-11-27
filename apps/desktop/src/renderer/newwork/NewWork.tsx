@@ -5,7 +5,7 @@
 import type { ItemRecord, Setup } from "@tokama/core";
 import { type FormEvent, type KeyboardEvent, type Ref, useEffect, useId, useImperativeHandle, useRef, useState } from "react";
 import { BRIDGE_ERROR_CODES, type TokamaBridge } from "../../shared/bridge.js";
-import { agentLines, commandsOf, KIND_GROUPS, missing, needsRepo, noChecks, reposFor, stepsLine, usesOf } from "./needs.js";
+import { agentLines, commandsOf, KIND_GROUPS, missing, needsRepo, noChecks, noteOf, reposFor, stepsLine, usesOf } from "./needs.js";
 import { Picker } from "./Picker.js";
 import { useSuggestion } from "./useSuggestion.js";
 import { Button } from "../ui/Button.js";
@@ -57,6 +57,8 @@ export interface NewWorkPrefill {
   readonly templateId?: string;
   readonly repoId?: string;
   readonly text?: string;
+  /** The text is not a sample the user may keep or replace (an answer to carry on from): the box does not say so. */
+  readonly sample?: false;
 }
 
 export interface NewWorkProps {
@@ -108,7 +110,7 @@ export function NewWork({ bridge, setup, ref, repoId, onStarted }: NewWorkProps)
       if (prefill?.repoId !== undefined) setPicks([prefill.repoId]);
       if (prefill?.text !== undefined) {
         setText(prefill.text);
-        setSample(prefill.text);
+        setSample(prefill.sample === false ? undefined : prefill.text);
         setSelectAsked((count) => count + 1);
       }
       setExpanded(true);
@@ -207,7 +209,9 @@ export function NewWork({ bridge, setup, ref, repoId, onStarted }: NewWorkProps)
                 selected={new Set(shown ? [shown.id] : [])}
                 groups={KIND_GROUPS.map(({ kind, heading }) => ({
                   heading,
-                  options: setup.templates.filter((candidate) => candidate.kind === kind).map((candidate) => ({ id: candidate.id, label: candidate.name, tag: candidate.id === suggestedId ? TEXT.suggested : undefined })),
+                  options: setup.templates
+                    .filter((candidate) => candidate.kind === kind)
+                    .map((candidate) => ({ id: candidate.id, label: candidate.name, tag: [noteOf(candidate), candidate.id === suggestedId ? TEXT.suggested : undefined].filter(Boolean).join(" · ") })),
                 }))}
                 onPick={setPicked}
               />

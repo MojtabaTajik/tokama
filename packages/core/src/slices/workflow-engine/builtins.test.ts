@@ -23,7 +23,7 @@ describe("built-in templates with the built-in agents", async () => {
   });
 
   it("loads every built-in template with no problem and no warning", () => {
-    expect(loads).toHaveLength(4);
+    expect(loads).toHaveLength(5);
     for (const load of loads) {
       if (!load.ok) throw new Error(JSON.stringify(load));
       expect(load.warnings).toEqual([]);
@@ -41,7 +41,7 @@ describe("built-in templates with the built-in agents", async () => {
     }
   });
 
-  it.each(["quick-fix", "quick-change", "plan-and-build", "review-only"])("%s: each step builds a prompt that leaves nothing out", (id) => {
+  it.each(["quick-fix", "quick-change", "plan-and-build", "review-only", "ask"])("%s: each step builds a prompt that leaves nothing out", (id) => {
     const load = loads.find((candidate) => candidate.ok && candidate.template.id === id);
     if (!load?.ok) throw new Error(`no ${id}`);
     const { template } = load;

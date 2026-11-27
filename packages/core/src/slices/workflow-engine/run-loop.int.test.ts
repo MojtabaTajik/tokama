@@ -1544,3 +1544,96 @@ describe("run loop: what the step's agent says", () => {
   });
 
 });
+
+describe("run loop: a template that reads its repo and commits nothing", () => {
+  const READ = { uses: { repos: { picked: "read", named: [] }, connections: [], commands: [] }, finish: ["findings"] };
+  const ask = () => template([{ id: "answer" }], READ);
+  const mainTip = () => plain(repo.path, "rev-parse", "main");
+  const said = (id: ItemId) => item(id).steps[0]?.attempts[0]?.said;
+
+  it("takes the edit tools from the agent whatever its agent file says", SLOW, async () => {
+    expect(AGENTS["builder"]?.limits.edit).toBe(true);
+    const runtime = fakeRuntime([says("It rounds down.\nHEADLINE: It rounds down.")]);
+    await start(engine(runtime), ask());
+    expect(runtime.calls[0]?.request.limits?.edit).toBe(false);
+  });
+
+  it("a template that edits keeps the edit tools of the agent", SLOW, async () => {
+    const runtime = fakeRuntime([edits(FIXED)]);
+    await start(engine(runtime), template([{ id: "build" }]));
+    expect(runtime.calls[0]?.request.limits?.edit).toBe(true);
+  });
+
+  it("ends done with the answer, no commit, and removes the worktree it did not need", SLOW, async () => {
+    const before = await mainTip();
+    const id = await start(engine(fakeRuntime([says("Rounding is in total.ts.\nHEADLINE: Totals round down.\nPOINT: total.ts:12")])), ask());
+    const done = item(id);
+    expect(done.state).toBe("done");
+    expect(done.outcome).toMatchObject({ kind: "done", detail: "Nothing changed: the output is the result." });
+    expect(done.outcome?.commits).toBeUndefined();
+    expect(said(id)).toMatchObject({ headline: "Totals round down.", points: ["total.ts:12"], readMinutes: 1 });
+    expect(story(id).slice(-3)).toEqual(["item_ended done", "finish_started", "discarded"]);
+    expect(done.finish?.worktreeRemoved).toBe(true);
+    expect(existsSync(worktreeDir(id))).toBe(false);
+    expect(await plain(repo.path, "branch", "--list", done.worktrees[0]!.branch)).toBe("");
+    expect(await mainTip()).toBe(before);
+  });
+
+  it("a cause outside the repo is a complete answer, not a failure", SLOW, async () => {
+    const reply = "The text is not cut here.\nHEADLINE: The text already arrives cut from billing-api.\nPOINT: nothing in this repo shortens it";
+    const id = await start(engine(fakeRuntime([says(reply)])), ask());
+    expect(item(id).state).toBe("done");
+    expect(item(id).outcome?.kind).toBe("done");
+    expect(said(id)).toMatchObject({ headline: "The text already arrives cut from billing-api." });
+    expect(story(id)).not.toContain("decision_opened");
+  });
+
+  it("a file the agent wrote anyway is never committed, and the worktree stays", SLOW, async () => {
+    const before = await mainTip();
+    const id = await start(engine(fakeRuntime([edits({ "notes.txt": "wrote\n" }, "Done.\nHEADLINE: Wrote a note.")])), ask());
+    const done = item(id);
+    expect(done.state).toBe("done");
+    expect(done.outcome).toMatchObject({ kind: "done", detail: "1 file changed in the worktree; this template commits nothing." });
+    expect(done.outcome?.commits).toBeUndefined();
+    expect(story(id)).not.toContain("finish_started");
+    expect(existsSync(join(worktreeDir(id), "notes.txt"))).toBe(true);
+    expect(await plain(repo.path, "rev-parse", done.worktrees[0]!.branch)).toBe(before);
+  });
+
+  it("follows the picked repo: a template that names another repo with edit access gets no edit tools and commits nothing", SLOW, async () => {
+    const named = template([{ id: "build" }], { uses: { repos: { picked: "read", named: [{ repoId: "billing-api", access: "edit" }] }, connections: [], commands: [] }, finish: ["commit"] });
+    const runtime = fakeRuntime([edits(FIXED)]);
+    const before = await mainTip();
+    const id = await start(engine(runtime), named);
+    expect(runtime.calls[0]?.request.limits?.edit).toBe(false);
+    expect(item(id).outcome).toMatchObject({ kind: "done", detail: "1 file changed in the worktree; this template commits nothing." });
+    expect(item(id).outcome?.commits).toBeUndefined();
+    expect(await plain(repo.path, "rev-parse", item(id).worktrees[0]!.branch)).toBe(before);
+  });
+
+  it("an agent that commits on the item branch stops the item; the worktree and the branch stay", SLOW, async () => {
+    const commits: Behavior = async function* ({ request }) {
+      writeFileSync(join(request.cwd, "notes.txt"), "committed by the agent\n");
+      await plain(request.cwd, "add", "-A");
+      await plain(request.cwd, "commit", "-q", "-m", "agent commit");
+      yield* says("Done.\nHEADLINE: Committed.")({ request, signal: new AbortController().signal });
+    };
+    const id = await start(engine(fakeRuntime([commits])), ask());
+    expect(item(id).state).toBe("failed");
+    expect(item(id).outcome?.detail).toContain("moved off its base commit");
+    expect(story(id)).not.toContain("finish_started");
+    expect(existsSync(worktreeDir(id))).toBe(true);
+    expect(await plain(repo.path, "branch", "--list", item(id).worktrees[0]!.branch)).not.toBe("");
+  });
+
+  it("a template that may edit still commits, whatever its finish words", SLOW, async () => {
+    const id = await start(engine(fakeRuntime([edits(FIXED)])), template([{ id: "build" }], { finish: ["findings"] }));
+    expect(item(id).outcome?.commits).toHaveLength(1);
+  });
+
+  it("the prompt carries the headline rule", SLOW, async () => {
+    const runtime = fakeRuntime([says("Yes.\nHEADLINE: Yes.")]);
+    await start(engine(runtime), ask());
+    expect(runtime.calls[0]?.request.prompt).toContain("HEADLINE: <one line");
+  });
+});

@@ -60,7 +60,7 @@ flow(
     const detail = page.locator("main.tp-detail");
     await detail.getByRole("heading", { name: /^✕ \d+ problems?$/ }).waitFor();
     expect(await detail.locator(".tp-problems").textContent()).toContain('"buildr"');
-    for (const name of [/Quick fix.*✓ valid.*built-in/, /Plan and build.*✓ valid.*built-in/, /Review only.*✓ valid.*built-in/]) await list.getByRole("button", { name }).waitFor();
+    for (const name of [/Quick fix.*✓ valid.*built-in/, /Plan and build.*✓ valid.*built-in/, /Ask.*✓ valid.*built-in/, /Review code.*✓ valid.*built-in/]) await list.getByRole("button", { name }).waitFor();
 
     await detail.getByRole("button", { name: "Open in editor" }).click();
     await expect.poll(() => app.evaluate(() => (globalThis as { opened?: string[] }).opened ?? [])).toEqual([realpathSync(file)]);

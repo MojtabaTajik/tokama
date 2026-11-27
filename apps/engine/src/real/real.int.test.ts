@@ -157,7 +157,7 @@ describe("real mode", () => {
     expect(reply.data.repos).toEqual([{ id: "orders-api", baseBranch: "main", checks: ["sh check.sh"], path: repoPath }]);
     expect(reply.data.agents).toContainEqual({ id: "builder", name: "Builder", cliId: "claude-code", model: "sonnet", runsOn: "cloud", icon: "hammer" });
     expect(reply.data.agents.find((agent) => agent.id === "architect")?.icon).toBe("compass");
-    expect(reply.data.templates.map((t) => t.id)).toEqual(["orders-api/careful-fix", "builtin/quick-fix", "builtin/quick-change", "builtin/plan-and-build", "builtin/review-only"]);
+    expect(reply.data.templates.map((t) => t.id)).toEqual(["orders-api/careful-fix", "builtin/quick-fix", "builtin/quick-change", "builtin/plan-and-build", "builtin/ask", "builtin/review-only"]);
     expect(reply.data.templates[1]).toMatchObject({
       kind: "task",
       start: { needs: ["text", "repo"], askBeforeCloud: false },
@@ -557,7 +557,7 @@ finish: [commit]
       file: "repos.yaml",
       message: 'The repo id "builtin" is reserved: template names start with builtin/ and personal/, so this repo\'s templates are not loaded. Rename the repo in repos.yaml.',
     });
-    expect(setup.data.templates.map((t) => t.id)).toEqual(["builtin/quick-fix", "builtin/quick-change", "builtin/plan-and-build", "builtin/review-only"]);
+    expect(setup.data.templates.map((t) => t.id)).toEqual(["builtin/quick-fix", "builtin/quick-change", "builtin/plan-and-build", "builtin/ask", "builtin/review-only"]);
   });
 
   it("refuses what D0 cannot run, with a reason, and starts nothing", SLOW, async () => {

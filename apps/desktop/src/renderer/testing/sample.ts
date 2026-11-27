@@ -45,7 +45,7 @@ export const setup = {
       steps: [tplStep("Plan", "working", "architect"), tplStep("Build", "working", "local-builder"), tplStep("Run checks", "verifying"), tplStep("Review", "review", "reviewer")],
     },
     { id: "builtin/quick-fix", name: "Quick fix", icon: "wrench", color: "moss", kind: "task", start: { needs: ["text", "repo"], askBeforeCloud: false }, warnings: [], connections: [], steps: [tplStep("Fix", "working", "local-builder"), tplStep("Run checks", "verifying")] },
-    { id: "builtin/review-only", name: "Review only", icon: "eye", color: "slate", kind: "task", start: { needs: ["text", "repo"], askBeforeCloud: false }, warnings: [], connections: [], steps: [tplStep("Review", "review", "reviewer")] },
+    { id: "builtin/review-only", name: "Review code", icon: "eye", color: "slate", kind: "investigation", start: { needs: ["text", "repo"], askBeforeCloud: false }, warnings: [], connections: [], steps: [tplStep("Review", "review", "reviewer")] },
   ],
   health: { git: { ok: true }, clis: [], config: [] },
 } as unknown as Setup;

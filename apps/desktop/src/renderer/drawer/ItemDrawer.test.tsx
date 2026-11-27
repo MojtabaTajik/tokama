@@ -1286,6 +1286,42 @@ describe("item drawer: the result card of an ended item", () => {
     expect(button("Read the write-up")?.className).toContain("btn-primary");
   });
 
+  describe("an Ask answer", () => {
+    const answer = withSaid(said({ headline: "About half a day: one new endpoint and one test file.", points: ["4 files would change."], bodyBytes: 1020, readMinutes: 1 }), {
+      templateId: "builtin/ask",
+      kind: "investigation",
+      title: "How hard is it to add CSV export?",
+      text: "How hard is it to add CSV export to orders?",
+      repoIds: ["orders-api"],
+      outcome: { kind: "done", detail: "Nothing changed: the output is the result." },
+      finish: { worktreeRemoved: true },
+    });
+
+    it("offers the answer and a quiet link that opens New work with the question, the answer and the repo", async () => {
+      const onStartFrom = vi.fn();
+      await act(async () => root.render(<ItemDrawer bridge={fakeBridge([answer]).bridge} itemId={answer.id} setup={setup} onClose={vi.fn()} onRead={vi.fn()} onStartFrom={onStartFrom} />));
+      // Nothing is committed and nothing is offered to finish: the answer button is the filled one.
+      expect(button("Read the answer")?.className).toContain("btn-primary");
+      expect(button("Read the write-up")).toBeUndefined();
+      expect(button("Start work from this…")?.className).toContain("btn-link");
+      await click(button("Start work from this…"));
+      expect(onStartFrom).toHaveBeenCalledWith({ repoId: "orders-api", text: "How hard is it to add CSV export to orders?\n\nThe answer: About half a day: one new endpoint and one test file.\n- 4 files would change." });
+    });
+
+    it("says the worktree was removed with nothing committed, and has no Discard", async () => {
+      await renderDrawer(fakeBridge([answer]).bridge, answer.id);
+      expect(text(".finish-ended-title")).toBe("done: Nothing committed");
+      expect(button("Discard…")).toBeUndefined();
+    });
+
+    it("an item of another template has no such link", async () => {
+      const other = { ...answer, templateId: "builtin/review-only" } as ItemRecord;
+      await act(async () => root.render(<ItemDrawer bridge={fakeBridge([other]).bridge} itemId={other.id} setup={setup} onClose={vi.fn()} onRead={vi.fn()} onStartFrom={vi.fn()} />));
+      expect(button("Start work from this…")).toBeUndefined();
+      expect(button("Read the write-up")).toBeDefined();
+    });
+  });
+
   it("an agent with no headline shows the first lines the engine kept, and an old item asks for the first lines of its output", async () => {
     const lines = withSaid(said({ source: "first_lines", headline: "I updated the tax helper.", points: ["All tests pass now."], bodyBytes: 310 }));
     await renderDrawer(fakeBridge([lines]).bridge, lines.id);

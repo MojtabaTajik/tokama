@@ -96,8 +96,34 @@ steps:
 finish: [commit]
 `;
 
+const ASK = `# Answers a question about the repo and changes no file: the agent reads, and nothing is committed.
+format: 1
+name: Ask
+icon: circle-question
+color: sand
+uses:
+  repos: read
+start:
+  needs: [text, repo]
+steps:
+  - id: answer
+    name: Answer
+    agent: architect
+    instructions: |
+      Answer the question below about this repository. Read the code you need. Do not change any file.
+      Start with the answer in one or two sentences. Then give the reasons, each with a file and line.
+      If the question is "how hard" or "how long", name the files that would change and the main risk.
+      If you could not find something, say so. Do not guess, and do not write a plan unless asked.
+      If the cause is not in this repository, say where the evidence points: which service or boundary,
+      and what you saw there (for example "the text already arrives cut from billing-api"). Then stop.
+      That is a complete answer, not a failure.
+    done_when: agent finishes
+    data: repo-and-diff
+finish: [findings]
+`;
+
 const REVIEW_ONLY = `format: 1
-name: Review only
+name: Review code
 icon: eye
 color: plum
 uses:
@@ -121,5 +147,6 @@ export const BUILTIN_TEMPLATES: ReadonlyMap<string, string> = new Map([
   ["quick-fix", QUICK_FIX],
   ["quick-change", QUICK_CHANGE],
   ["plan-and-build", PLAN_AND_BUILD],
+  ["ask", ASK],
   ["review-only", REVIEW_ONLY],
 ]);

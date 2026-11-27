@@ -2,7 +2,7 @@
 // keep next to a test. The golden file holds the answers that the earlier SQLite list gave.
 import { type BoardCount, type ItemRecord, parseItemRecord } from "@tokama/core";
 import { type CountsBudget, type ListPage, type ListQuery, nameHits } from "../item-list.js";
-import { sampleHistory, sampleItems, sampleSetup } from "../sample/data.js";
+import { ITEM_IDS, sampleHistory, sampleItems, sampleSetup } from "../sample/data.js";
 
 /** The days are local days; this zone has a daylight-saving change inside the history. */
 export const FIXTURE_TZ = "Europe/Berlin";
@@ -26,7 +26,8 @@ export function fixtureItems(): ItemRecord[] {
     record({ ...base, id: `item_00000000-0000-4000-a000-${String(n).padStart(12, "0")}`, ...fields });
   const sameMs = new Date(2026, 10, 20, 10, 30).getTime();
   return [
-    ...sampleItems(NOW).map(record),
+    // The golden file was made before the Ask item was seeded: it stays out, so the positions hold.
+    ...sampleItems(NOW).filter((item) => item.id !== ITEM_IDS.ask).map(record),
     ...history,
     ...[1, 2, 3, 4, 5].map((n) => extra(n, { createdAt: sameMs, title: `Same millisecond ${n}` })),
     extra(6, { repoIds: [], title: "No repos at all", createdAt: sameMs }),

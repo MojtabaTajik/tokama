@@ -191,6 +191,24 @@ function sentRow(item: ItemRecord, setup: Setup | undefined): ResultRow {
   return { key: "sent", label, mark: MARKS.sent, text: parts.join(" · ") };
 }
 
+/** The longest text New work takes. */
+const NEW_WORK_MAX = 4000;
+
+/**
+ * What "Start work from this…" puts in New work: the question, then the headline and the points
+ * of the answer. Undefined when the item has no headline to carry.
+ */
+export function followUpText(item: ItemRecord): string | undefined {
+  const said = saidOf(item)?.said;
+  if (said === undefined) return undefined;
+  const text = [item.text.trim(), "", `The answer: ${said.headline}`, ...said.points.map((point) => `- ${point}`)].join("\n");
+  if (text.length <= NEW_WORK_MAX) return text;
+  // The limit counts UTF-16 units; a cut between the two halves of an emoji drops the first half.
+  const cut = text.slice(0, NEW_WORK_MAX);
+  const last = cut.charCodeAt(cut.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
+}
+
 /** The card of an item that has ended: done, failed or stopped. */
 export function resultView(item: ItemRecord, setup: Setup | undefined): ResultView {
   // Without the template's own words for its steps (a record the snapshot does not describe), what a template lacks cannot be said.

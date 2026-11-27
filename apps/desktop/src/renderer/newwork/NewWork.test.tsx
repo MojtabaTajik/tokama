@@ -92,12 +92,12 @@ describe("New work input", () => {
     expect(suggests[0]![0]).toEqual({ type: "suggest_template", text: "add retry to the payment client" });
     expect(trigger("Template").textContent).toBe("TemplatePlan and build (suggested)▾");
     await click(trigger("Template"));
-    expect($$('[role="option"]').filter((el) => el.querySelector(".np-tag")).map((el) => el.textContent)).toEqual(["✓Plan and buildsuggested"]);
+    expect($$('[role="option"]').filter((el) => el.querySelector(".np-tag")?.textContent?.includes("suggested")).map((el) => el.textContent)).toEqual(["✓Plan and buildchanges code · suggested"]);
     // Picking another template wins over the suggestion; the mark stays on the suggested one.
     await click($$('[role="option"]').find((el) => el.textContent?.includes("Quick fix"))!);
     expect(trigger("Template").textContent).toBe("TemplateQuick fix▾");
     await click(trigger("Template"));
-    expect($$(".np-tag").map((el) => el.parentElement?.textContent)).toEqual(["Plan and buildsuggested"]);
+    expect($$(".np-tag").filter((el) => el.textContent?.includes("suggested")).map((el) => el.parentElement?.textContent)).toEqual(["Plan and buildchanges code · suggested"]);
   });
 
   it("counts a suggestion only for the text it was made for, whatever order the replies arrive in", async () => {
@@ -165,16 +165,38 @@ describe("New work input", () => {
     expect(trigger("Template").textContent).toBe("TemplateChoose…▾");
   });
 
+  it("lists Ask first among the read-only templates, and says what each template does to code; a suggested one says both", async () => {
+    const ask = { id: "builtin/ask", name: "Ask", icon: "circle-question", color: "sand", kind: "investigation", start: { needs: ["text", "repo"], askBeforeCloud: false }, warnings: [], connections: [], steps: [] };
+    const withAsk = { ...setup, templates: [ask, ...setup.templates] } as unknown as Setup;
+    await mount({ setup: withAsk, suggest: "builtin/ask" });
+    await focusInput();
+    await type(input(), "how hard is it to add cars to street?");
+    await wait(300);
+    expect(trigger("Template").textContent).toBe("TemplateAsk (suggested)▾");
+    await click(trigger("Template"));
+    expect(options()).toEqual(["Askread-only · suggested", "Emergency investigatorread-only", "DB slow query checkread-only", "Review coderead-only", "Plan and buildchanges code", "Quick fixchanges code"]);
+  });
+
+  it("shows no read-only tag on a template whose step agent may run commands", async () => {
+    const access = { name: "Local runner", owner: "personal", edit: false, commands: ["node"], web: false };
+    const runner = { id: "builtin/runner", name: "Runner", icon: "terminal", color: "slate", kind: "investigation", start: { needs: ["text", "repo"], askBeforeCloud: false }, warnings: [], connections: [], steps: [{ name: "Run", stage: "working", agentId: "local-runner", data: "none", agentAccess: access }] };
+    await mount({ setup: { ...setup, templates: [runner, ...setup.templates] } as unknown as Setup });
+    await focusInput();
+    await click(trigger("Template"));
+    expect(options()[0]).toBe("Runner");
+    expect(options()).toContain("Review coderead-only");
+  });
+
   it("groups the templates as Investigate and Build", async () => {
     await mount();
     await focusInput();
     await click(trigger("Template"));
     expect($$('.np-list [role="group"]').map((group) => [group.getAttribute("aria-label"), [...group.querySelectorAll('[role="option"]')].map((el) => el.textContent)])).toEqual([
-      ["Investigate", ["Emergency investigator", "DB slow query check"]],
-      ["Build", ["Plan and build", "Quick fix", "Review only"]],
+      ["Investigate", ["Emergency investigatorread-only", "DB slow query checkread-only", "Review coderead-only"]],
+      ["Build", ["Plan and buildchanges code", "Quick fixchanges code"]],
     ]);
     await type(search(), "slow");
-    expect(options()).toEqual(["DB slow query check"]);
+    expect(options()).toEqual(["DB slow query checkread-only"]);
   });
 
   it("keeps Start disabled with a short reason until the needs are met", async () => {
@@ -207,7 +229,7 @@ describe("New work input", () => {
     await focusInput();
     await type(input(), "Log the warehouse id");
     await click(trigger("Template"));
-    await click($$('[role="option"]').find((el) => el.textContent === "Quick fix")!);
+    await click($$('[role="option"]').find((el) => el.textContent?.startsWith("Quick fix"))!);
     await click(trigger("Repos"));
     await click($$('[role="option"]').find((el) => el.textContent?.includes("inventory-service"))!);
     expect(reason()).toBe("Quick fix runs the repo's checks, and inventory-service lists none, so it can't run there.");
@@ -303,12 +325,13 @@ describe("New work input", () => {
     expect(document.activeElement).toBe(search());
     await press(search(), "ArrowDown");
     await press(search(), "ArrowDown");
-    expect($('[role="option"][data-active]')?.textContent).toBe("Plan and build");
+    await press(search(), "ArrowDown");
+    expect($('[role="option"][data-active]')?.textContent).toBe("Plan and buildchanges code");
     expect(search().getAttribute("aria-activedescendant")).toBe($('[role="option"][data-active]')?.id);
     await press(search(), "ArrowUp");
     await press(search(), "Enter");
     expect($('[role="listbox"]')).toBeNull();
-    expect(trigger("Template").textContent).toBe("TemplateDB slow query check▾");
+    expect(trigger("Template").textContent).toBe("TemplateReview code▾");
     expect(document.activeElement).toBe(trigger("Template"));
   });
 
@@ -349,7 +372,7 @@ describe("New work input", () => {
     await focusInput();
     await type(input(), "Review the diff");
     await click(trigger("Template"));
-    await click($$('[role="option"]').find((el) => el.textContent?.includes("Review only"))!);
+    await click($$('[role="option"]').find((el) => el.textContent?.includes("Review code"))!);
     expect(document.body.textContent).not.toContain("Ask before cloud steps");
     await click(trigger("Repos"));
     await click($$('[role="option"]')[1]);
@@ -449,8 +472,8 @@ describe("New work input", () => {
 
   it("shows the new item in All work when the current view would hide it", async () => {
     const fake = await mount({ suggest: null });
-    await click($$(".sb-main").find((el) => el.querySelector(".ellipsis")?.textContent === "Review only")!);
-    expect($("main h1")?.textContent).toBe("Review only");
+    await click($$(".sb-main").find((el) => el.querySelector(".ellipsis")?.textContent === "Review code")!);
+    expect($("main h1")?.textContent).toBe("Review code");
     await focusInput();
     await click(trigger("Template"));
     await click($$('[role="option"]').find((el) => el.textContent?.includes("Quick fix"))!);

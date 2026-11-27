@@ -64,7 +64,8 @@ describe("loadTemplates", () => {
       ["builtin/quick-fix", "quick-fix", "Quick fix", { kind: "builtin" }],
       ["builtin/quick-change", "quick-change", "Quick change", { kind: "builtin" }],
       ["builtin/plan-and-build", "plan-and-build", "Plan and build", { kind: "builtin" }],
-      ["builtin/review-only", "review-only", "Review only", { kind: "builtin" }],
+      ["builtin/ask", "ask", "Ask", { kind: "builtin" }],
+      ["builtin/review-only", "review-only", "Review code", { kind: "builtin" }],
     ]);
   });
 
@@ -152,7 +153,7 @@ finish: [findings]
     expect(failures(loads)).toEqual([
       { ok: false, origin: "builtin", file: ".tokama/templates", problems: [{ line: 1, message: expect.stringContaining('cannot be named "builtin"') }] },
     ]);
-    expect(loaded(loads).map((t) => t.name)).toEqual(["Quick fix", "Quick change", "Plan and build", "Review only"]);
+    expect(loaded(loads).map((t) => t.name)).toEqual(["Quick fix", "Quick change", "Plan and build", "Ask", "Review code"]);
   });
 
   it("refuses a repo named personal, so personal/<id> is kept for personal templates", async () => {
@@ -161,7 +162,7 @@ finish: [findings]
     expect(failures(loads)).toEqual([
       { ok: false, origin: "personal", file: ".tokama/templates", problems: [{ line: 1, message: expect.stringContaining('cannot be named "personal"') }] },
     ]);
-    expect(loaded(loads).map((t) => t.name)).toEqual(["Quick fix", "Quick change", "Plan and build", "Review only"]);
+    expect(loaded(loads).map((t) => t.name)).toEqual(["Quick fix", "Quick change", "Plan and build", "Ask", "Review code"]);
   });
 
   describe("files refused by the safe reads", () => {

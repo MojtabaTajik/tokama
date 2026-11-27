@@ -2,7 +2,7 @@ import { parseQueryResult, ROUND_TRIPS as ENGINE_ROUND_TRIPS, type TemplateStepV
 import { describe, expect, it } from "vitest";
 import { setup } from "../testing/sample.js";
 import { builtinEntry, flakyDetail, flakyEntry, planAndBuild, planDetail } from "../testing/templates.js";
-import { agentPhrase, andList, budgetText, FINISH, placeOf, startSentence, statusOf, stepSentence, titleOf, usesOf } from "./describe.js";
+import { accessNote, agentPhrase, andList, budgetText, FINISH, placeOf, startSentence, statusOf, stepSentence, titleOf, usesOf } from "./describe.js";
 import { ROUND_TRIPS } from "./limits.js";
 
 const agents = setup.agents;
@@ -104,7 +104,7 @@ describe("usesOf", () => {
     } as TemplateView;
     expect(usesOf(template, setup.connections as never)).toEqual({
       repos: [
-        { name: "the repo you pick", detail: "read · no worktree" },
+        { name: "the repo you pick", detail: "read · nothing committed" },
         { name: "orders-api", detail: "edit" },
       ],
       connections: [
@@ -113,6 +113,23 @@ describe("usesOf", () => {
       ],
       commands: ["gh"],
     });
+  });
+});
+
+describe("accessNote", () => {
+  const uses = (picked: "read" | "edit" | undefined, named: { repoId: string; access: "read" | "edit" }[] = [], commands: string[] = [], stepCommands: string[] = []) =>
+    ({ uses: { repos: { picked, named }, connections: [], commands }, steps: [{ commands: stepCommands }] }) as unknown as TemplateView;
+  it("follows the picked repo, as the engine does: read-only for read, changes code for edit", () => {
+    expect(accessNote(uses("read"))).toBe("read-only");
+    expect(accessNote(uses("edit"))).toBe("changes code");
+    // The engine works only in the picked repo, so a named edit repo does not change the answer.
+    expect(accessNote(uses("read", [{ repoId: "billing-api", access: "edit" }]))).toBe("read-only");
+  });
+
+  it("makes no read-only promise when the template gives its agents commands", () => {
+    expect(accessNote(uses("read", [], ["node"]))).toBeUndefined();
+    expect(accessNote(uses("read", [], [], ["node"]))).toBeUndefined();
+    expect(accessNote(uses("edit", [], ["node"]))).toBe("changes code");
   });
 });
 

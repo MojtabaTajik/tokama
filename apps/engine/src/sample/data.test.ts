@@ -62,8 +62,9 @@ describe("sample items", () => {
       for (const step of steps) for (const attempt of step.attempts ?? []) if (attempt.said !== undefined) found.push(attempt.said);
       return found;
     });
-    expect(saids.map((said) => said["headline"])).toHaveLength(5);
-    expect(saids.filter((said) => said["readMinutes"] !== undefined)).toHaveLength(2);
+    expect(saids.map((said) => said["headline"])).toHaveLength(6);
+    // The plan, the write-up and the Ask answer.
+    expect(saids.filter((said) => said["readMinutes"] !== undefined)).toHaveLength(3);
     expect(saids.filter((said) => said["source"] === "first_lines")).toHaveLength(1);
     expect(saids.filter((said) => said["source"] === "headline" && (said["points"] as unknown[]).length === 0 && said["readMinutes"] === undefined)).toHaveLength(1);
     expect(saids.filter((said) => (said["points"] as unknown[]).length === 3)).toHaveLength(1);

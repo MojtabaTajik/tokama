@@ -60,8 +60,8 @@ flow("a workflow with only finished items shows each live group as empty, and a 
   expect(await page.locator(".pl-empty").allTextContents()).toEqual(["Nothing waiting", "Nothing running"]);
   await screenshot("8-no-live-items");
 
-  // "Review only" has no items at all.
-  await sidebarRow(page, "Review only").click();
+  // "Review code" has no items at all.
+  await sidebarRow(page, "Review code").click();
   await page.locator(".board .state").getByRole("heading", { name: "No work yet" }).waitFor();
   expect(await page.locator(".pl-row").count()).toBe(0);
 });

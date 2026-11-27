@@ -139,6 +139,20 @@ export function stepSentence(step: TemplateStepView, template: Pick<TemplateView
   ]);
 }
 
+/** What a template does to code, in two words: the same notes the New work list shows by item kind. */
+export const READ_ONLY_NOTE = "read-only";
+export const CHANGES_CODE_NOTE = "changes code";
+
+/**
+ * "changes code" when Start picks the repo to edit, "read-only" when it picks one to read; the
+ * engine works only in the picked repo. Commands the template gives its agents can write files, so
+ * then no promise is made (undefined).
+ */
+export function accessNote(template: Pick<TemplateView, "uses" | "steps">): string | undefined {
+  if (template.uses.repos.picked === "edit") return CHANGES_CODE_NOTE;
+  return template.uses.commands.length > 0 || template.steps.some((step) => step.commands.length > 0) ? undefined : READ_ONLY_NOTE;
+}
+
 export interface UseLine {
   readonly name: string;
   readonly detail: string;
@@ -148,7 +162,7 @@ export interface UseLine {
 export function usesOf(template: Pick<TemplateView, "uses" | "steps">, connections: readonly ConnectionSummary[] = []): { readonly repos: UseLine[]; readonly connections: UseLine[]; readonly commands: string[] } {
   const { picked, named } = template.uses.repos;
   const repos: UseLine[] = [];
-  if (picked !== undefined) repos.push({ name: "the repo you pick", detail: picked === "edit" ? "edit · gets a worktree" : "read · no worktree" });
+  if (picked !== undefined) repos.push({ name: "the repo you pick", detail: picked === "edit" ? "edit · gets a worktree" : "read · nothing committed" });
   for (const repo of named) repos.push({ name: repo.repoId, detail: repo.access });
   return {
     repos,

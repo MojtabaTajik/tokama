@@ -371,7 +371,7 @@ describe("List and Board", () => {
     await mount();
     await click(sidebarRow("Quick fix"));
     await click(byText('[aria-label="Layout"] button', "Board"));
-    await click(sidebarRow("Review only"));
+    await click(sidebarRow("Review code"));
     expect(layout()[0]).toEqual(["List", "true"]);
     await click(sidebarRow("Quick fix"));
     expect(layout()[1]).toEqual(["Board", "true"]);
@@ -400,7 +400,7 @@ describe("sidebar", () => {
       "DB slow query check",
       "Plan and build",
       "Quick fix",
-      "Review only",
+      "Review code",
       "Repos",
       "orders-api",
       "checkout-web",
@@ -429,7 +429,7 @@ describe("sidebar", () => {
 
   it("leaves out zero counts and rows without any badge", async () => {
     await mount();
-    expect(sidebarRow("Review only").querySelector(".status-counts")).toBeNull();
+    expect(sidebarRow("Review code").querySelector(".status-counts")).toBeNull();
     // Only queued: counts nowhere.
     expect(sidebarRow("Plan and build").querySelector(".status-counts")).toBeNull();
     expect(sidebarRow("DB slow query check").querySelector(".status-counts")).toBeNull();
@@ -608,7 +608,7 @@ describe("template icons", () => {
     ["DB slow query check", "builtin/db-slow-query", "database", "clay"],
     ["Plan and build", "builtin/plan-and-build", "hammer", "sky"],
     ["Quick fix", "builtin/quick-fix", "wrench", "moss"],
-    ["Review only", "builtin/review-only", "eye", "slate"],
+    ["Review code", "builtin/review-only", "eye", "slate"],
   ] as const;
   const iconOf = (el: Element | null | undefined) => [el?.querySelector(".tpl-icon")?.getAttribute("data-icon"), el?.querySelector(".tpl-icon")?.getAttribute("data-tag")];
 
