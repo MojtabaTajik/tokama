@@ -125,7 +125,7 @@ flow("a plan approval shows the plan: a preview on Needs you, the whole plan as 
   await expect.poll(() => reader.locator(".step-output-text").innerText(), { message: "the plan in the reader" }).toContain("Release the reservation in OrderService.cancel");
   expect(await full.getByRole("tab").count()).toBe(0);
 
-  await full.locator(".ex-decision").getByRole("button", { name: "Approve", exact: true }).click();
+  await full.locator(".ex-decision").getByRole("button", { name: "Approve and start Build", exact: true }).click();
   await full.locator(".ex-decision").waitFor({ state: "detached" });
 });
 

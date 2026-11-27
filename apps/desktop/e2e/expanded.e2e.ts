@@ -180,7 +180,7 @@ flow("reads a plan in the reader from Read the plan and from Show full plan: Esc
   // Approve from the pinned bar; the document stays.
   await drawer(page).getByRole("button", { name: "Show full plan" }).click();
   await reader.waitFor();
-  await full.locator(".ex-decision").getByRole("button", { name: "Approve", exact: true }).click();
+  await full.locator(".ex-decision").getByRole("button", { name: "Approve and start Build", exact: true }).click();
   await full.locator(".ex-decision").waitFor({ state: "detached" });
   expect(await readerText()).toContain("Release the reservation in OrderService.cancel");
 });
