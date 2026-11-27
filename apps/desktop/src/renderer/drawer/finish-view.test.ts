@@ -108,6 +108,20 @@ describe("finishView: how the item ended", () => {
   });
 });
 
+describe("an item with no commit whose worktree was removed (an Ask answer)", () => {
+  const nothing = withFinish({ worktreeRemoved: true, at: AT }, { outcome: { kind: "done", detail: "Nothing changed: the answer is the result." } });
+
+  it("says nothing was committed instead of Discarded, with a done mark", () => {
+    const view = ended(finishView(nothing, setup));
+    expect([view.mark.symbol, view.mark.word, view.title, flat(view.detail), view.removable]).toEqual(["✓", "done", "Nothing committed", "Worktree removed · 14:58 · the log is kept", false]);
+  });
+
+  it("is not a discarded item, and its row has no finish note", () => {
+    expect(isDiscarded(nothing)).toBe(false);
+    expect(finishNote(nothing)).toBeUndefined();
+  });
+});
+
 it("finishState, isDiscarded and prName", () => {
   expect(finishState(finishable)).toBeUndefined();
   expect(finishState(withFinish({ merged: { baseBranch: "main", commit: "a".repeat(40) } }))).toBe("merged");

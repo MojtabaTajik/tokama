@@ -2,7 +2,7 @@ import { parseQueryResult, ROUND_TRIPS as ENGINE_ROUND_TRIPS, type TemplateStepV
 import { describe, expect, it } from "vitest";
 import { setup } from "../testing/sample.js";
 import { builtinEntry, flakyDetail, flakyEntry, planAndBuild, planDetail } from "../testing/templates.js";
-import { agentPhrase, andList, budgetText, FINISH, placeOf, startSentence, statusOf, stepSentence, titleOf, usesOf } from "./describe.js";
+import { accessNote, agentPhrase, andList, budgetText, FINISH, placeOf, startSentence, statusOf, stepSentence, titleOf, usesOf } from "./describe.js";
 import { ROUND_TRIPS } from "./limits.js";
 
 const agents = setup.agents;
@@ -104,7 +104,7 @@ describe("usesOf", () => {
     } as TemplateView;
     expect(usesOf(template, setup.connections as never)).toEqual({
       repos: [
-        { name: "the repo you pick", detail: "read · no worktree" },
+        { name: "the repo you pick", detail: "read · nothing committed" },
         { name: "orders-api", detail: "edit" },
       ],
       connections: [
@@ -113,6 +113,16 @@ describe("usesOf", () => {
       ],
       commands: ["gh"],
     });
+  });
+});
+
+describe("accessNote", () => {
+  const uses = (picked: "read" | "edit" | undefined, named: { repoId: string; access: "read" | "edit" }[] = []) => ({ uses: { repos: { picked, named }, connections: [], commands: [] } }) as unknown as TemplateView;
+  it("says read-only unless the template may edit a repo, picked or named", () => {
+    expect(accessNote(uses("read"))).toBe("read-only");
+    expect(accessNote(uses(undefined, [{ repoId: "orders-api", access: "read" }]))).toBe("read-only");
+    expect(accessNote(uses("edit"))).toBe("changes code");
+    expect(accessNote(uses("read", [{ repoId: "orders-api", access: "edit" }]))).toBe("changes code");
   });
 });
 

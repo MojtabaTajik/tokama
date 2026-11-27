@@ -6,7 +6,7 @@ import type { ConnectionSummary, AgentSummary, TemplateDetail, TemplateEntry, Te
 import { useId, useMemo, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
-import { budgetText, FINISH, placeOf, startSentence, statusOf, stepSentence, titleOf, usesOf } from "./describe.js";
+import { accessNote, budgetText, FINISH, placeOf, startSentence, statusOf, stepSentence, titleOf, usesOf } from "./describe.js";
 import { flowOf } from "./flow.js";
 import { FlowDiagram } from "./FlowDiagram.js";
 import { keyId, useReload, useTemplateDetail, useTemplateList } from "./useTemplates.js";
@@ -169,6 +169,7 @@ function Detail({ bridge, detail, agents, connections }: DetailProps) {
         </span>
         <div className="tp-head-text">
           <h1>{titleOf(entry)}</h1>
+          {template !== null && <span className="tp-quiet">{accessNote(template)}</span>}
           {template?.budget !== undefined && (
             <span className="tp-quiet">
               {TEXT.budget} <span className="mono">{budgetText(template.budget.timeMinutes)}</span>

@@ -74,6 +74,8 @@ export function finishActions(item: Pick<ItemRecord, "outcome" | "finish">): Fin
 export const baseBranchOf = (item: Pick<ItemRecord, "repoIds">, setup: Setup | undefined): string =>
   setup?.repos.find((repo) => repo.id === item.repoIds[0])?.baseBranch ?? "the base branch";
 
+const hasCommit = (item: Pick<ItemRecord, "outcome">): boolean => (item.outcome?.commits?.length ?? 0) > 0;
+
 const branchOf = (item: Pick<ItemRecord, "outcome">): string => item.outcome?.commits?.[0]?.branch ?? "the item branch";
 
 /** "PR #12" from its URL. */
@@ -135,10 +137,12 @@ export function finishView(item: Pick<ItemRecord, "outcome" | "finish" | "repoId
         ...failed,
       };
     }
+    // Without a commit nothing was lost: an Ask answer, or an item that changed nothing.
+    if (!hasCommit(item)) return { kind: "ended", mark: markOf("done"), title: "Nothing committed", detail: [`${withTime("Worktree removed", finish.at)} · the log is kept`], removable: false };
     return { kind: "ended", mark: markOf("discarded"), title: "Discarded", detail: [`${withTime("Worktree and branch deleted", finish.at)} · the log is kept`], removable: false };
   }
 
-  const committed = (item.outcome.commits?.length ?? 0) > 0;
+  const committed = hasCommit(item);
   const running = finish.running;
   const busy = running !== undefined;
   const repo = setup?.repos.find((entry) => entry.id === item.repoIds[0]);
@@ -204,18 +208,18 @@ export function finishState(item: Pick<ItemRecord, "finish">): string | undefine
   return undefined;
 }
 
-/** A discarded item: its work is gone, so it reads as discarded rather than done. */
-export const isDiscarded = (item: Pick<ItemRecord, "finish">): boolean =>
-  item.finish !== undefined && item.finish.worktreeRemoved && item.finish.merged === undefined && item.finish.pullRequest === undefined;
+/** A discarded item: its commit is gone, so it reads as discarded rather than done. An item that never had a commit lost no work. */
+export const isDiscarded = (item: Pick<ItemRecord, "finish" | "outcome">): boolean =>
+  item.finish !== undefined && item.finish.worktreeRemoved && item.finish.merged === undefined && item.finish.pullRequest === undefined && hasCommit(item);
 
 /** How a finished row ends in the list, with its mark; undefined before any finish action ran. */
-export function finishNote(item: Pick<ItemRecord, "finish">): { readonly mark: Mark; readonly text: string } | undefined {
+export function finishNote(item: Pick<ItemRecord, "finish" | "outcome">): { readonly mark: Mark; readonly text: string } | undefined {
   const finish = item.finish;
   if (finish === undefined) return undefined;
   if (finish.running !== undefined) return { mark: markOf("running"), text: `${ACTION_WORD[finish.running]} running` };
   if (finish.merged !== undefined) return { mark: markOf("done", "merged"), text: `Merged into ${finish.merged.baseBranch} · ${finish.merged.commit.slice(0, 7)}` };
   if (finish.pullRequest !== undefined) return { mark: markOf("pull_request"), text: `${prName(finish.pullRequest.url)} open` };
-  if (finish.worktreeRemoved) return { mark: markOf("discarded"), text: "Discarded" };
+  if (finish.worktreeRemoved) return hasCommit(item) ? { mark: markOf("discarded"), text: "Discarded" } : undefined;
   if (finish.failed !== undefined) return { mark: markOf("warning", "refused"), text: `${ACTION_WORD[finish.failed.action]} did not finish` };
   return undefined;
 }

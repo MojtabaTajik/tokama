@@ -674,6 +674,7 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
             setExpanded({ itemId: selectedItemId, page: page === "needs-you" ? "needs-you" : "board" });
           }}
           onRead={(stepIndex) => openReader(selectedItemId, stepIndex, "drawer")}
+          onStartFrom={(prefill) => openComposer({ ...prefill, sample: false })}
           expanded={
             full
               ? {

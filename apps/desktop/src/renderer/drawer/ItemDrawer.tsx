@@ -137,6 +137,8 @@ export interface ItemDrawerProps {
   readonly onExpand?: (() => void) | undefined;
   /** "Show full plan": the full view on that step's document. Without it the card has no such link. */
   readonly onRead?: ((stepIndex: number) => void) | undefined;
+  /** An Ask answer's "Start work from this…": opens New work with the question and the answer. Without it the card has no such link. */
+  readonly onStartFrom?: ((prefill: { readonly repoId?: string; readonly text: string }) => void) | undefined;
   /** Set while the item fills the main area instead of the drawer. */
   readonly expanded?: Expanded | undefined;
 }
@@ -154,7 +156,7 @@ export interface Expanded {
   readonly onShowAll: () => void;
 }
 
-export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckAgain, onOpenAgent, request, onExpand, onRead, expanded }: ItemDrawerProps) {
+export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckAgain, onOpenAgent, request, onExpand, onRead, onStartFrom, expanded }: ItemDrawerProps) {
   const { item, usage, error, refresh } = useItem(bridge, itemId);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<Notice | undefined>(undefined);
@@ -455,6 +457,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
           columns={expanded?.wide === true}
           onReadMore={(stepIndex) => showStopped("Output", stepIndex)}
           onRead={(stepIndex) => (onRead === undefined ? showStopped("Output", stepIndex) : onRead(stepIndex))}
+          onStartFrom={onStartFrom}
         />
       )}
 

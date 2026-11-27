@@ -10,7 +10,8 @@ import { Pill } from "../ui/Pill.js";
 import { finishView } from "./finish-view.js";
 import { sizeOf } from "./OutputTab.js";
 import type { Mark as MarkData } from "../ui/status.js";
-import { type FetchWords, type LinesWords, MARKS, type ResultRow, type SaidWords, resultView } from "./result-view.js";
+import { ASK_ID } from "../newwork/needs.js";
+import { type FetchWords, followUpText, type LinesWords, MARKS, type ResultRow, type SaidWords, resultView } from "./result-view.js";
 import { useStepOutput } from "./StepOutput.js";
 
 const TEXT = {
@@ -20,6 +21,8 @@ const TEXT = {
   firstLines: (agent: string) => `First lines of ${agent}'s output`,
   readMore: (size: string) => `Read more · ${size} →`,
   readWriteUp: "Read the write-up",
+  readAnswer: "Read the answer",
+  startFrom: "Start work from this…",
   morePoints: (count: number) => `+${count} more in the output`,
 } as const;
 
@@ -33,12 +36,20 @@ export interface ResultCardProps {
   readonly onReadMore: (stepIndex: number) => void;
   /** "Read the write-up": the reader on that step's document. */
   readonly onRead: (stepIndex: number) => void;
+  /** An Ask answer's "Start work from this…": New work opens with the question and the answer, and no template. Without it the card has no such link. */
+  readonly onStartFrom?: ((prefill: { readonly repoId?: string; readonly text: string }) => void) | undefined;
 }
 
-export function ResultCard({ bridge, item, setup, columns, onReadMore, onRead }: ResultCardProps) {
+export function ResultCard({ bridge, item, setup, columns, onReadMore, onRead, onStartFrom }: ResultCardProps) {
   const { failure, words, rows } = resultView(item, setup);
   // The item's one filled button is Finish while it is offered; the write-up button is then plain.
-  const finishOffered = finishView(item, setup)?.kind === "offer";
+  // Without a commit only Discard is offered, and that is never the item's main action.
+  const offered = finishView(item, setup);
+  const finishOffered = offered?.kind === "offer" && offered.ahead !== undefined;
+  const answer = item.templateId === ASK_ID;
+  const text = answer ? followUpText(item) : undefined;
+  const repoId = item.repoIds[0];
+  const startFrom = onStartFrom === undefined || text === undefined ? undefined : () => onStartFrom({ ...(repoId !== undefined && { repoId }), text });
   return (
     <section className="result-card" aria-label={TEXT.label} data-columns={columns || undefined}>
       <div className="rc-main">
@@ -52,7 +63,7 @@ export function ResultCard({ bridge, item, setup, columns, onReadMore, onRead }:
             {words?.kind === "said" && <p className="rc-agent-said">{TEXT.said(words.agent, words.headline)}</p>}
           </>
         )}
-        {failure === undefined && words?.kind === "said" && <Said words={words} filled={!finishOffered} onReadMore={onReadMore} onRead={onRead} />}
+        {failure === undefined && words?.kind === "said" && <Said words={words} filled={!finishOffered} answer={answer} onReadMore={onReadMore} onRead={onRead} onStartFrom={startFrom} />}
         {failure === undefined && words?.kind === "lines" && <Lines words={words} onReadMore={onReadMore} />}
         {failure === undefined && words?.kind === "fetch" && <FetchedLines bridge={bridge} itemId={item.id} words={words} onReadMore={onReadMore} />}
       </div>
@@ -67,7 +78,21 @@ export function ResultCard({ bridge, item, setup, columns, onReadMore, onRead }:
   );
 }
 
-function Said({ words, filled, onReadMore, onRead }: { readonly words: SaidWords; readonly filled: boolean; readonly onReadMore: (stepIndex: number) => void; readonly onRead: (stepIndex: number) => void }) {
+function Said({
+  words,
+  filled,
+  answer,
+  onReadMore,
+  onRead,
+  onStartFrom,
+}: {
+  readonly words: SaidWords;
+  readonly filled: boolean;
+  readonly answer: boolean;
+  readonly onReadMore: (stepIndex: number) => void;
+  readonly onRead: (stepIndex: number) => void;
+  readonly onStartFrom: (() => void) | undefined;
+}) {
   return (
     <>
       <p className="rc-who">
@@ -86,13 +111,18 @@ function Said({ words, filled, onReadMore, onRead }: { readonly words: SaidWords
       {words.read !== undefined && (
         <div className="rc-action">
           <Button variant={filled ? "primary" : "secondary"} onClick={() => onRead(words.stepIndex)}>
-            {TEXT.readWriteUp}
+            {answer ? TEXT.readAnswer : TEXT.readWriteUp}
           </Button>
         </div>
       )}
       {words.more !== undefined && (
         <Button variant="link" className="rc-action" onClick={() => onReadMore(words.stepIndex)}>
           {TEXT.readMore(words.more)}
+        </Button>
+      )}
+      {onStartFrom !== undefined && (
+        <Button variant="link" className="rc-action" onClick={onStartFrom}>
+          {TEXT.startFrom}
         </Button>
       )}
     </>

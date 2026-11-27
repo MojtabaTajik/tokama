@@ -139,6 +139,14 @@ export function stepSentence(step: TemplateStepView, template: Pick<TemplateView
   ]);
 }
 
+/** What a template does to code, in two words: the same notes the New work list shows by item kind. */
+export const READ_ONLY_NOTE = "read-only";
+export const CHANGES_CODE_NOTE = "changes code";
+
+/** "read-only" unless the template may edit a repo, the one it picks at Start or one it names. */
+export const accessNote = (template: Pick<TemplateView, "uses">): string =>
+  template.uses.repos.picked === "edit" || template.uses.repos.named.some((repo) => repo.access === "edit") ? CHANGES_CODE_NOTE : READ_ONLY_NOTE;
+
 export interface UseLine {
   readonly name: string;
   readonly detail: string;
@@ -148,7 +156,7 @@ export interface UseLine {
 export function usesOf(template: Pick<TemplateView, "uses" | "steps">, connections: readonly ConnectionSummary[] = []): { readonly repos: UseLine[]; readonly connections: UseLine[]; readonly commands: string[] } {
   const { picked, named } = template.uses.repos;
   const repos: UseLine[] = [];
-  if (picked !== undefined) repos.push({ name: "the repo you pick", detail: picked === "edit" ? "edit · gets a worktree" : "read · no worktree" });
+  if (picked !== undefined) repos.push({ name: "the repo you pick", detail: picked === "edit" ? "edit · gets a worktree" : "read · nothing committed" });
   for (const repo of named) repos.push({ name: repo.repoId, detail: repo.access });
   return {
     repos,

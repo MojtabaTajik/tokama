@@ -3,6 +3,7 @@
 // one, and always starts from a description. Pure functions of the setup and the form, so the rules are testable without the screen.
 import type { AgentSummary, ConnectionSummary, ItemKind, RepoSummary, TemplateSummary } from "@tokama/core";
 import { stepAgent } from "../drawer/describe.js";
+import { CHANGES_CODE_NOTE, READ_ONLY_NOTE } from "../templates/describe.js";
 
 export const NEEDS = {
   template: "Choose a template",
@@ -72,6 +73,9 @@ export const KIND_GROUPS: readonly { readonly kind: ItemKind; readonly heading: 
   { kind: "task", heading: "Build" },
 ];
 
+/** What a template does to code, from its kind: an investigation reads, a task changes the repo. */
+export const noteOfKind = (kind: ItemKind): string => (kind === "investigation" ? READ_ONLY_NOTE : CHANGES_CODE_NOTE);
+
 /** The template's steps on one line: "Plan · Architect (cloud) → Build · Local builder → Run checks · Tokama". */
 export function stepsLine(template: TemplateSummary, agents: readonly AgentSummary[]): string {
   return template.steps
@@ -90,6 +94,7 @@ export function usesOf(template: TemplateSummary, connections: readonly Connecti
 
 /** The built-in template for repos without checks: the engineer approves the diff instead. */
 export const QUICK_CHANGE_ID = "builtin/quick-change";
+export const ASK_ID = "builtin/ask";
 
 export interface NoChecks {
   /** Why the template cannot run on the chosen repo. */
