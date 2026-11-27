@@ -735,7 +735,8 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       case "item": {
         const item = store.get(query.itemId);
         if (!item) return { ok: false, error: { code: "not_found", message: `no item ${query.itemId}` } };
-        const itemUsage = await usage.itemUsage(query.itemId);
+        // What the item used is an extra: if it cannot be told, the item still opens.
+        const itemUsage = await usage.itemUsage(query.itemId).catch(() => undefined);
         return { ok: true, data: { item, ...(itemUsage !== undefined && { usage: itemUsage }) } satisfies ItemResult };
       }
       case "activity":

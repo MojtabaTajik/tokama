@@ -251,15 +251,16 @@ export class UsageService {
 
   /** What one item used: tokens, its part of each AI CLI's limit, and the steps it ran again. Undefined when the engine has no calls of it. */
   async itemUsage(itemId: ItemId): Promise<ItemUsage | undefined> {
-    const { now, clis, helperCalls, week } = await this.read(90);
+    // Opening an item asks the CLI for nothing, scans nothing and writes nothing: it uses what the usage page last read.
+    const { now, clis, helperCalls, week } = await this.read(90, true);
     return week === undefined ? undefined : itemUsageOf({ now, clis, helperCalls, ...week }, itemId);
   }
 
   /** The inputs of a report: the plans, the recorded calls and the weekly windows that ended. */
-  private async read(range: UsageRange) {
+  private async read(range: UsageRange, passive = false) {
     const now = this.deps.clock.now();
     const planned = this.list.filter((adapter) => adapter.plan !== undefined).map((adapter) => adapter.id);
-    for (const cliId of planned) this.requestIfDue(cliId, now);
+    if (!passive) for (const cliId of planned) this.requestIfDue(cliId, now);
     const since = Math.min(rangeStart(now, range), now - LOOKBACK_MS);
     const rows = this.deps.rows(since);
     const plans: CliPlan[] = [];
@@ -267,10 +268,10 @@ export class UsageService {
     const clis = [...plans, ...(this.deps.otherClis?.(now) ?? NOT_YET.filter((plan) => !planned.includes(plan.cliId)))];
     const helperCalls = this.deps.helperCalls?.(since) ?? [];
     // A scan of the logs starts when the last one is old; a query never waits for it.
-    this.deps.logs?.refresh();
+    if (!passive) this.deps.logs?.refresh();
     const items = this.deps.items?.(since);
     if (items === undefined) return { now, rows, clis, helperCalls, week: undefined };
-    for (const cliId of planned) this.recordHistory(cliId, [...this.readingsOf(cliId), ...rows.flatMap((row) => (row.call.cliId === cliId && row.call.plan !== undefined ? [{ at: row.call.plan.at, windows: row.call.plan.windows }] : []))], now, { items, helperCalls });
+    if (!passive) for (const cliId of planned) this.recordHistory(cliId, [...this.readingsOf(cliId), ...rows.flatMap((row) => (row.call.cliId === cliId && row.call.plan !== undefined ? [{ at: row.call.plan.at, windows: row.call.plan.windows }] : []))], now, { items, helperCalls });
     const logs = this.callLogs();
     return {
       now,
@@ -308,7 +309,9 @@ export class UsageService {
     const items = data?.items ?? this.deps.items?.(now - LOOKBACK_MS);
     if (items === undefined) return;
     const known = this.history(cliId);
-    const waiting = [...closedWindows(readings, known), ...known.filter((window) => window.weight === undefined)];
+    const logsFrom = this.callLogs()?.[cliId]?.coveredFrom;
+    // A window the logs do not reach back to can never be weighed: it is not tried again.
+    const waiting = [...closedWindows(readings, known), ...known.filter((window) => window.weight === undefined && (logsFrom === undefined || logsFrom <= window.startsAt))];
     if (waiting.length === 0) return;
     const helperCalls = data?.helperCalls ?? this.deps.helperCalls?.(now - LOOKBACK_MS) ?? [];
     const calls = [...items.flatMap((item) => item.calls), ...helperCalls.map((helper) => helper.call)].filter((call) => call.cliId === cliId);
@@ -317,7 +320,7 @@ export class UsageService {
       const weight = windowWeight(calls.filter((call) => call.endedAt >= window.startsAt && call.endedAt <= window.endsAt), logs, window.startsAt, window.endsAt);
       return weight === undefined ? window : { ...window, weight, pricesAsOf: PRICES_AS_OF };
     });
-    const next = keepPast([...known.filter((window) => window.weight !== undefined), ...weighed]);
+    const next = keepPast([...known.filter((window) => !waiting.includes(window)), ...weighed]);
     if (JSON.stringify(next) === JSON.stringify(keepPast(known))) return;
     if (this.deps.history !== undefined) this.deps.history.save(cliId, next);
     else this.stateOf(cliId).memoryHistory = next;

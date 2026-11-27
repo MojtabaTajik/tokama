@@ -409,26 +409,6 @@
           "stepId": "build",
           "stepName": "Build",
           "agentId": "builder",
-          "cliId": "ollama",
-          "model": "local-model",
-          "runs": 0,
-          "itemCount": 1,
-          "tokens": 1226500,
-          "tokamaPercent": 100,
-          "items": [
-            {
-              "itemId": "item-3",
-              "title": "Triage the login errors",
-              "runs": 0,
-              "tokens": 1226500
-            }
-          ]
-        },
-        {
-          "templateId": "northwind/triage",
-          "stepId": "build",
-          "stepName": "Build",
-          "agentId": "builder",
           "cliId": "codex-cli",
           "model": "gpt-5",
           "runs": 0,
@@ -443,6 +423,26 @@
               "tokens": 892000
             }
           ]
+        },
+        {
+          "templateId": "northwind/triage",
+          "stepId": "build",
+          "stepName": "Build",
+          "agentId": "builder",
+          "cliId": "ollama",
+          "model": "local-model",
+          "runs": 0,
+          "itemCount": 1,
+          "tokens": 1226500,
+          "tokamaPercent": 100,
+          "items": [
+            {
+              "itemId": "item-3",
+              "title": "Triage the login errors",
+              "runs": 0,
+              "tokens": 1226500
+            }
+          ]
         }
       ],
       "items": [
@@ -455,18 +455,18 @@
           "cliId": "claude-code"
         },
         {
-          "itemId": "item-3",
-          "title": "Triage the login errors",
-          "runs": 0,
-          "tokens": 1226500,
-          "templateId": "northwind/triage",
-          "cliId": "ollama"
-        },
-        {
           "itemId": "item-1",
           "title": "Raise the retry limit",
           "runs": 0,
           "tokens": 1115000,
+          "templateId": "orders-api/quick-fix",
+          "cliId": "claude-code"
+        },
+        {
+          "itemId": "item-0",
+          "title": "Fix the checkout timeout",
+          "runs": 0,
+          "tokens": 334500,
           "templateId": "orders-api/quick-fix",
           "cliId": "claude-code"
         },
@@ -479,12 +479,12 @@
           "cliId": "codex-cli"
         },
         {
-          "itemId": "item-0",
-          "title": "Fix the checkout timeout",
+          "itemId": "item-3",
+          "title": "Triage the login errors",
           "runs": 0,
-          "tokens": 334500,
-          "templateId": "orders-api/quick-fix",
-          "cliId": "claude-code"
+          "tokens": 1226500,
+          "templateId": "northwind/triage",
+          "cliId": "ollama"
         }
       ],
       "helpers": [],
@@ -1019,26 +1019,6 @@
           "stepId": "build",
           "stepName": "Build",
           "agentId": "builder",
-          "cliId": "ollama",
-          "model": "local-model",
-          "runs": 0,
-          "itemCount": 1,
-          "tokens": 1226500,
-          "tokamaPercent": 100,
-          "items": [
-            {
-              "itemId": "item-3",
-              "title": "Triage the login errors",
-              "runs": 0,
-              "tokens": 1226500
-            }
-          ]
-        },
-        {
-          "templateId": "northwind/triage",
-          "stepId": "build",
-          "stepName": "Build",
-          "agentId": "builder",
           "cliId": "codex-cli",
           "model": "gpt-5",
           "runs": 0,
@@ -1053,6 +1033,26 @@
               "tokens": 892000
             }
           ]
+        },
+        {
+          "templateId": "northwind/triage",
+          "stepId": "build",
+          "stepName": "Build",
+          "agentId": "builder",
+          "cliId": "ollama",
+          "model": "local-model",
+          "runs": 0,
+          "itemCount": 1,
+          "tokens": 1226500,
+          "tokamaPercent": 100,
+          "items": [
+            {
+              "itemId": "item-3",
+              "title": "Triage the login errors",
+              "runs": 0,
+              "tokens": 1226500
+            }
+          ]
         }
       ],
       "items": [
@@ -1065,18 +1065,18 @@
           "cliId": "claude-code"
         },
         {
-          "itemId": "item-3",
-          "title": "Triage the login errors",
-          "runs": 0,
-          "tokens": 1226500,
-          "templateId": "northwind/triage",
-          "cliId": "ollama"
-        },
-        {
           "itemId": "item-1",
           "title": "Raise the retry limit",
           "runs": 0,
           "tokens": 1115000,
+          "templateId": "orders-api/quick-fix",
+          "cliId": "claude-code"
+        },
+        {
+          "itemId": "item-0",
+          "title": "Fix the checkout timeout",
+          "runs": 0,
+          "tokens": 334500,
           "templateId": "orders-api/quick-fix",
           "cliId": "claude-code"
         },
@@ -1089,12 +1089,12 @@
           "cliId": "codex-cli"
         },
         {
-          "itemId": "item-0",
-          "title": "Fix the checkout timeout",
+          "itemId": "item-3",
+          "title": "Triage the login errors",
           "runs": 0,
-          "tokens": 334500,
-          "templateId": "orders-api/quick-fix",
-          "cliId": "claude-code"
+          "tokens": 1226500,
+          "templateId": "northwind/triage",
+          "cliId": "ollama"
         }
       ],
       "helpers": [],
@@ -2002,26 +2002,6 @@
           "stepId": "build",
           "stepName": "Build",
           "agentId": "builder",
-          "cliId": "ollama",
-          "model": "local-model",
-          "runs": 0,
-          "itemCount": 1,
-          "tokens": 1226500,
-          "tokamaPercent": 100,
-          "items": [
-            {
-              "itemId": "item-3",
-              "title": "Triage the login errors",
-              "runs": 0,
-              "tokens": 1226500
-            }
-          ]
-        },
-        {
-          "templateId": "northwind/triage",
-          "stepId": "build",
-          "stepName": "Build",
-          "agentId": "builder",
           "cliId": "codex-cli",
           "model": "gpt-5",
           "runs": 0,
@@ -2036,6 +2016,26 @@
               "tokens": 892000
             }
           ]
+        },
+        {
+          "templateId": "northwind/triage",
+          "stepId": "build",
+          "stepName": "Build",
+          "agentId": "builder",
+          "cliId": "ollama",
+          "model": "local-model",
+          "runs": 0,
+          "itemCount": 1,
+          "tokens": 1226500,
+          "tokamaPercent": 100,
+          "items": [
+            {
+              "itemId": "item-3",
+              "title": "Triage the login errors",
+              "runs": 0,
+              "tokens": 1226500
+            }
+          ]
         }
       ],
       "items": [
@@ -2048,18 +2048,18 @@
           "cliId": "claude-code"
         },
         {
-          "itemId": "item-3",
-          "title": "Triage the login errors",
-          "runs": 0,
-          "tokens": 1226500,
-          "templateId": "northwind/triage",
-          "cliId": "ollama"
-        },
-        {
           "itemId": "item-1",
           "title": "Raise the retry limit",
           "runs": 0,
           "tokens": 1115000,
+          "templateId": "orders-api/quick-fix",
+          "cliId": "claude-code"
+        },
+        {
+          "itemId": "item-0",
+          "title": "Fix the checkout timeout",
+          "runs": 0,
+          "tokens": 334500,
           "templateId": "orders-api/quick-fix",
           "cliId": "claude-code"
         },
@@ -2072,12 +2072,12 @@
           "cliId": "codex-cli"
         },
         {
-          "itemId": "item-0",
-          "title": "Fix the checkout timeout",
+          "itemId": "item-3",
+          "title": "Triage the login errors",
           "runs": 0,
-          "tokens": 334500,
-          "templateId": "orders-api/quick-fix",
-          "cliId": "claude-code"
+          "tokens": 1226500,
+          "templateId": "northwind/triage",
+          "cliId": "ollama"
         }
       ],
       "helpers": [],
@@ -2497,26 +2497,6 @@
           "stepId": "build",
           "stepName": "Build",
           "agentId": "builder",
-          "cliId": "ollama",
-          "model": "local-model",
-          "runs": 0,
-          "itemCount": 1,
-          "tokens": 1226500,
-          "tokamaPercent": 100,
-          "items": [
-            {
-              "itemId": "item-3",
-              "title": "Triage the login errors",
-              "runs": 0,
-              "tokens": 1226500
-            }
-          ]
-        },
-        {
-          "templateId": "northwind/triage",
-          "stepId": "build",
-          "stepName": "Build",
-          "agentId": "builder",
           "cliId": "codex-cli",
           "model": "gpt-5",
           "runs": 0,
@@ -2531,6 +2511,26 @@
               "tokens": 892000
             }
           ]
+        },
+        {
+          "templateId": "northwind/triage",
+          "stepId": "build",
+          "stepName": "Build",
+          "agentId": "builder",
+          "cliId": "ollama",
+          "model": "local-model",
+          "runs": 0,
+          "itemCount": 1,
+          "tokens": 1226500,
+          "tokamaPercent": 100,
+          "items": [
+            {
+              "itemId": "item-3",
+              "title": "Triage the login errors",
+              "runs": 0,
+              "tokens": 1226500
+            }
+          ]
         }
       ],
       "items": [
@@ -2543,18 +2543,18 @@
           "cliId": "claude-code"
         },
         {
-          "itemId": "item-3",
-          "title": "Triage the login errors",
-          "runs": 0,
-          "tokens": 1226500,
-          "templateId": "northwind/triage",
-          "cliId": "ollama"
-        },
-        {
           "itemId": "item-1",
           "title": "Raise the retry limit",
           "runs": 0,
           "tokens": 1115000,
+          "templateId": "orders-api/quick-fix",
+          "cliId": "claude-code"
+        },
+        {
+          "itemId": "item-0",
+          "title": "Fix the checkout timeout",
+          "runs": 0,
+          "tokens": 334500,
           "templateId": "orders-api/quick-fix",
           "cliId": "claude-code"
         },
@@ -2567,12 +2567,12 @@
           "cliId": "codex-cli"
         },
         {
-          "itemId": "item-0",
-          "title": "Fix the checkout timeout",
+          "itemId": "item-3",
+          "title": "Triage the login errors",
           "runs": 0,
-          "tokens": 334500,
-          "templateId": "orders-api/quick-fix",
-          "cliId": "claude-code"
+          "tokens": 1226500,
+          "templateId": "northwind/triage",
+          "cliId": "ollama"
         }
       ],
       "helpers": [],
@@ -3108,26 +3108,6 @@
           "stepId": "build",
           "stepName": "Build",
           "agentId": "builder",
-          "cliId": "ollama",
-          "model": "local-model",
-          "runs": 0,
-          "itemCount": 1,
-          "tokens": 1226500,
-          "tokamaPercent": 100,
-          "items": [
-            {
-              "itemId": "item-3",
-              "title": "Triage the login errors",
-              "runs": 0,
-              "tokens": 1226500
-            }
-          ]
-        },
-        {
-          "templateId": "northwind/triage",
-          "stepId": "build",
-          "stepName": "Build",
-          "agentId": "builder",
           "cliId": "codex-cli",
           "model": "gpt-5",
           "runs": 0,
@@ -3142,6 +3122,26 @@
               "tokens": 892000
             }
           ]
+        },
+        {
+          "templateId": "northwind/triage",
+          "stepId": "build",
+          "stepName": "Build",
+          "agentId": "builder",
+          "cliId": "ollama",
+          "model": "local-model",
+          "runs": 0,
+          "itemCount": 1,
+          "tokens": 1226500,
+          "tokamaPercent": 100,
+          "items": [
+            {
+              "itemId": "item-3",
+              "title": "Triage the login errors",
+              "runs": 0,
+              "tokens": 1226500
+            }
+          ]
         }
       ],
       "items": [
@@ -3154,18 +3154,18 @@
           "cliId": "claude-code"
         },
         {
-          "itemId": "item-3",
-          "title": "Triage the login errors",
-          "runs": 0,
-          "tokens": 1226500,
-          "templateId": "northwind/triage",
-          "cliId": "ollama"
-        },
-        {
           "itemId": "item-1",
           "title": "Raise the retry limit",
           "runs": 0,
           "tokens": 1115000,
+          "templateId": "orders-api/quick-fix",
+          "cliId": "claude-code"
+        },
+        {
+          "itemId": "item-0",
+          "title": "Fix the checkout timeout",
+          "runs": 0,
+          "tokens": 334500,
           "templateId": "orders-api/quick-fix",
           "cliId": "claude-code"
         },
@@ -3178,12 +3178,12 @@
           "cliId": "codex-cli"
         },
         {
-          "itemId": "item-0",
-          "title": "Fix the checkout timeout",
+          "itemId": "item-3",
+          "title": "Triage the login errors",
           "runs": 0,
-          "tokens": 334500,
-          "templateId": "orders-api/quick-fix",
-          "cliId": "claude-code"
+          "tokens": 1226500,
+          "templateId": "northwind/triage",
+          "cliId": "ollama"
         }
       ],
       "helpers": [],
@@ -4092,26 +4092,6 @@
           "stepId": "build",
           "stepName": "Build",
           "agentId": "builder",
-          "cliId": "ollama",
-          "model": "local-model",
-          "runs": 0,
-          "itemCount": 1,
-          "tokens": 1226500,
-          "tokamaPercent": 100,
-          "items": [
-            {
-              "itemId": "item-3",
-              "title": "Triage the login errors",
-              "runs": 0,
-              "tokens": 1226500
-            }
-          ]
-        },
-        {
-          "templateId": "northwind/triage",
-          "stepId": "build",
-          "stepName": "Build",
-          "agentId": "builder",
           "cliId": "codex-cli",
           "model": "gpt-5",
           "runs": 0,
@@ -4126,6 +4106,26 @@
               "tokens": 892000
             }
           ]
+        },
+        {
+          "templateId": "northwind/triage",
+          "stepId": "build",
+          "stepName": "Build",
+          "agentId": "builder",
+          "cliId": "ollama",
+          "model": "local-model",
+          "runs": 0,
+          "itemCount": 1,
+          "tokens": 1226500,
+          "tokamaPercent": 100,
+          "items": [
+            {
+              "itemId": "item-3",
+              "title": "Triage the login errors",
+              "runs": 0,
+              "tokens": 1226500
+            }
+          ]
         }
       ],
       "items": [
@@ -4138,18 +4138,18 @@
           "cliId": "claude-code"
         },
         {
-          "itemId": "item-3",
-          "title": "Triage the login errors",
-          "runs": 0,
-          "tokens": 1226500,
-          "templateId": "northwind/triage",
-          "cliId": "ollama"
-        },
-        {
           "itemId": "item-1",
           "title": "Raise the retry limit",
           "runs": 0,
           "tokens": 1115000,
+          "templateId": "orders-api/quick-fix",
+          "cliId": "claude-code"
+        },
+        {
+          "itemId": "item-0",
+          "title": "Fix the checkout timeout",
+          "runs": 0,
+          "tokens": 334500,
           "templateId": "orders-api/quick-fix",
           "cliId": "claude-code"
         },
@@ -4162,12 +4162,12 @@
           "cliId": "codex-cli"
         },
         {
-          "itemId": "item-0",
-          "title": "Fix the checkout timeout",
+          "itemId": "item-3",
+          "title": "Triage the login errors",
           "runs": 0,
-          "tokens": 334500,
-          "templateId": "orders-api/quick-fix",
-          "cliId": "claude-code"
+          "tokens": 1226500,
+          "templateId": "northwind/triage",
+          "cliId": "ollama"
         }
       ],
       "helpers": [],

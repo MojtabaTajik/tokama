@@ -118,13 +118,15 @@ export function keepPast(windows: readonly PastWindow[]): PastWindow[] {
 export function readPast(value: unknown): PastWindow[] {
   if (!Array.isArray(value)) return [];
   const finite = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
+  // The report holds times as whole milliseconds, so a stored time that is not one is left out.
+  const epoch = (n: unknown): n is number => typeof n === "number" && Number.isSafeInteger(n) && n >= 0;
   const past: PastWindow[] = [];
   for (const entry of value as unknown[]) {
     if (typeof entry !== "object" || entry === null) continue;
     const e = entry as Record<string, unknown>;
-    if (typeof e.window !== "string" || !finite(e.startsAt) || !finite(e.endsAt) || !finite(e.usedPercent) || e.endsAt <= e.startsAt) continue;
+    if (typeof e.window !== "string" || e.window === "" || !epoch(e.startsAt) || !epoch(e.endsAt) || !finite(e.usedPercent) || e.endsAt <= e.startsAt) continue;
     const w = e.weight as Record<string, unknown> | undefined;
-    const weight = typeof w === "object" && w !== null && finite(w.tokama) && finite(w.all) && w.all > 0 ? { tokama: w.tokama, all: w.all } : undefined;
+    const weight = typeof w === "object" && w !== null && finite(w.tokama) && finite(w.all) && w.tokama >= 0 && w.tokama <= w.all && w.all > 0 && w.all < 1e9 ? { tokama: w.tokama, all: w.all } : undefined;
     past.push({
       window: e.window.slice(0, 64),
       startsAt: e.startsAt,

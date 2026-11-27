@@ -77,5 +77,7 @@ describe("the split of a window", () => {
     expect(splitLimit(50, { tokama: 9, all: 4 })).toEqual({ tokamaPercent: 50, outsidePercent: 0 });
     expect(splitLimit(50, undefined)).toBeUndefined();
     expect(splitLimit(50, { tokama: 0, all: 0 })).toBeUndefined();
+    expect(splitLimit(50, { tokama: 1, all: Number.POSITIVE_INFINITY })).toBeUndefined();
+    expect(splitLimit(50, { tokama: Number.POSITIVE_INFINITY, all: 1 })).toBeUndefined();
   });
 });

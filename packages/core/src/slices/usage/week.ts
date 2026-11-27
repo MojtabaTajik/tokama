@@ -134,7 +134,8 @@ function measurer(span: Span, spanCalls: readonly AgentCallUsage[], perUse: bool
       }
     }
     const tokamaPercent = whole > 0 ? Math.min(1000, round2((part / whole) * 100)) : 0;
-    const share = span.split !== undefined && weight.priced && whole > 0 ? Math.min(1000, round2((span.split.tokamaPercent * part) / whole)) : undefined;
+    const rawShare = span.split !== undefined && weight.priced && whole > 0 ? (span.split.tokamaPercent * part) / whole : undefined;
+    const share = rawShare !== undefined && Number.isFinite(rawShare) ? Math.min(1000, round2(rawShare)) : undefined;
     return {
       tokens,
       tokamaPercent,
@@ -146,6 +147,21 @@ function measurer(span: Span, spanCalls: readonly AgentCallUsage[], perUse: bool
 }
 
 const bySize = (a: { sharePercent?: number | undefined; tokens: number }, b: { sharePercent?: number | undefined; tokens: number }): number => (b.sharePercent ?? 0) - (a.sharePercent ?? 0) || b.tokens - a.tokens;
+
+/**
+ * The rows cut to `max`, largest first within each AI CLI. The cut takes the rows of each CLI in
+ * turn, so a CLI with many rows never pushes another one out (their shares are parts of different limits).
+ */
+function capPerCli<T extends { cliId: AiCliId; sharePercent?: number | undefined; tokens: number }>(rows: readonly T[], max: number): T[] {
+  const byCli = new Map<AiCliId, T[]>();
+  for (const row of rows) byCli.set(row.cliId, [...(byCli.get(row.cliId) ?? []), row]);
+  const lists = [...byCli.values()].map((list) => list.sort(bySize));
+  const kept = new Set<T>();
+  for (let rank = 0; kept.size < max && lists.some((list) => rank < list.length); rank++) {
+    for (const list of lists) if (rank < list.length && kept.size < max) kept.add(list[rank]!);
+  }
+  return lists.flatMap((list) => list.filter((row) => kept.has(row)));
+}
 
 function group<T, K>(list: readonly T[], key: (value: T) => string, make: (value: T) => K): Map<string, { head: K; list: T[] }> {
   const groups = new Map<string, { head: K; list: T[] }>();
@@ -272,9 +288,9 @@ export function buildWeek(input: WeekInput, which: UsageWindow): Week {
   return {
     window: which,
     limits: limits.slice(0, 10),
-    steps: steps.sort(bySize).slice(0, MAX_STEPS),
-    items: items.sort(bySize).slice(0, MAX_ITEMS),
-    helpers: helpers.sort(bySize).slice(0, MAX_HELPERS),
+    steps: capPerCli(steps, MAX_STEPS),
+    items: capPerCli(items, MAX_ITEMS),
+    helpers: capPerCli(helpers, MAX_HELPERS),
     retries: retryRows.slice(0, 10),
   };
 }
@@ -364,12 +380,17 @@ export function itemUsageOf(input: WeekInput, itemId: ItemId): ItemUsage | undef
   for (const plan of input.clis) {
     const calls = item.calls.filter((call) => call.cliId === plan.cliId);
     if (calls.length === 0) continue;
+    // A part of the limit is told for one window: the latest one the item ran in. Parts of two windows are parts of two limits.
     let share: number | undefined;
+    let latest = -1;
     for (const span of splitSpans(input, all, plan)) {
       const inSpan = calls.filter((call) => call.endedAt >= span.from && call.endedAt <= span.to);
-      if (inSpan.length === 0) continue;
+      if (inSpan.length === 0 || span.to <= latest) continue;
       const part = measurer(span, callsIn(all, plan.cliId, span.from, span.to).map((t) => t.call), false)(inSpan).sharePercent;
-      if (part !== undefined) share = (share ?? 0) + part;
+      if (part !== undefined) {
+        share = part;
+        latest = span.to;
+      }
     }
     if (share !== undefined) shares.push({ cliId: plan.cliId, sharePercent: Math.min(1000, round2(share)) });
     if (plan.billing === "pay_per_use") {

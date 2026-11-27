@@ -162,6 +162,15 @@ describe("the week block", () => {
     expect(forward?.steps.map((row) => row.templateId)).toEqual(["builtin/quick-fix", "builtin/quick-change"]);
   });
 
+  it("cuts the item list per CLI, so many rows of one CLI never push the rows of another out", () => {
+    const many = Array.from({ length: 60 }, (_, n) => buildItem(NOW - DAY - n * HOUR));
+    const codex = item([step("review", "reviewer approves", [attempt(1, "passed", NOW - HOUR)], "reviewer")], [call({ stepId: "review", attempt: 1, endedAt: NOW - HOUR, cliId: "codex-cli", agentId: "reviewer" as never, model: "gpt-5-codex" })]);
+    const codexPlan: CliPlan = { cliId: "codex-cli", windows: [{ window: "seven_day", usedPercent: 41, resetsAt: NOW + 3 * DAY }], billing: "plan", source: "request", asOf: NOW };
+    const { week } = report([...many, codex], [plan(60), codexPlan]);
+    expect(week?.items).toHaveLength(50);
+    expect(week?.items.filter((i) => i.cliId === "codex-cli")).toHaveLength(1);
+  });
+
   it("is absent without items, and the old blocks stay", () => {
     const old = summarizeUsage({ rows: [], range: 14, now: NOW, clis: [] });
     expect(old).not.toHaveProperty("week");
@@ -319,6 +328,17 @@ describe("an item's use", () => {
     expect(usage).toEqual({ tokens: 2_000_000, shares: [{ cliId: "claude-code", sharePercent: 32 }], retries: [{ stepId: "build", attempts: [2], tokensPercent: 50, failingCheck: "pnpm test" }] });
     expect(itemUsageOf(input, "item_0190a000-0000-7000-8000-ffffffffffff" as never)).toBeUndefined();
     expect(itemUsageOf({ ...input, items: [item([], [])] }, input.items[0]!.itemId)).toBeUndefined();
+  });
+
+  it("tells the part of the limit for the latest window only: parts of two windows are parts of two limits", () => {
+    const past: PastWindow = { window: "weekly_all", startsAt: WEEK_START - 7 * DAY, endsAt: WEEK_START, usedPercent: 40, weight: { tokama: 4, all: 8 }, pricesAsOf: "2025-10-01" };
+    const across = item(
+      [step("build", "checks pass", [attempt(1, "passed", NOW - DAY, [["pnpm test", true]]), attempt(2, "passed", WEEK_START - DAY, [["pnpm test", true]])])],
+      [call({ stepId: "build", attempt: 1, endedAt: NOW - DAY, model: "claude-opus-5-5", tokens: MILLION }), call({ stepId: "build", attempt: 2, endedAt: WEEK_START - DAY, model: "claude-opus-5-5", tokens: MILLION })],
+    );
+    const usage = itemUsageOf({ now: NOW, clis: [plan(60)], items: [across], helperCalls: [], past: { "claude-code": [past] }, logs: { "claude-code": logs() } }, across.itemId);
+    // This window: weight 4 of 16 logged, 60% used: 15 points. The window before would add 20 more.
+    expect(usage?.shares).toEqual([{ cliId: "claude-code", sharePercent: 15 }]);
   });
 
   it("says the cost for a CLI billed per use, estimated when the CLI gave none", () => {

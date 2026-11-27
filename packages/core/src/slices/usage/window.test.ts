@@ -94,7 +94,7 @@ describe("a stored list of past windows", () => {
   });
 
   it("reads a damaged record as no history, never throws, and drops only the entries that are wrong", () => {
-    for (const value of [undefined, null, 5, "x", {}, [null], [5], [{}], [{ window: "w", startsAt: "a", endsAt: 1, usedPercent: 1 }], [{ ...past, endsAt: T0 }]]) expect(readPast(value)).toEqual([]);
+    for (const value of [undefined, null, 5, "x", {}, [null], [5], [{}], [{ window: "w", startsAt: "a", endsAt: 1, usedPercent: 1 }], [{ ...past, endsAt: T0 }], [{ ...past, startsAt: T0 + 0.5 }], [{ ...past, window: "" }], [{ ...past, usedPercent: Number.NaN }]]) expect(readPast(value)).toEqual([]);
     expect(readPast([null, past, { ...past, weight: { tokama: "x", all: 1 } }])).toEqual([past, { window: "weekly_all", startsAt: T0, endsAt: T0 + 7 * DAY, usedPercent: 64 }]);
   });
 });

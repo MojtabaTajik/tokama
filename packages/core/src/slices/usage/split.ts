@@ -86,8 +86,8 @@ export function windowWeight(calls: readonly AgentCallUsage[], logs: CallLogs | 
  * percent of a few points says too little), without a weight, or when nothing was weighed.
  */
 export function splitLimit(usedPercent: number, weight: Weight | undefined): Split | undefined {
-  if (weight === undefined || usedPercent < SPLIT_FROM_PERCENT || !(weight.all > 0)) return undefined;
-  const tokama = round2((usedPercent * Math.min(weight.tokama, weight.all)) / weight.all);
+  if (weight === undefined || usedPercent < SPLIT_FROM_PERCENT || !Number.isFinite(usedPercent) || !Number.isFinite(weight.tokama) || !Number.isFinite(weight.all) || !(weight.all > 0)) return undefined;
+  const tokama = round2((usedPercent * Math.min(Math.max(0, weight.tokama), weight.all)) / weight.all);
   return { tokamaPercent: tokama, outsidePercent: round2(Math.max(0, usedPercent - tokama)) };
 }
 

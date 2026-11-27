@@ -348,7 +348,7 @@ export const QueryResultSchemas = {
     /** For each local day of a done or failed item on this page: how many items of that day match, on all pages. */
     days: z.array(z.strictObject({ day: LocalDaySchema, count: z.int().min(1) })).max(MAX_LIST_PAGE),
   }),
-  /** `usage`: what the item used; absent when the engine has no calls of it. */
+  /** `usage`: what the item used; absent when the engine has no calls of it in the last 90 days. */
   item: z.strictObject({ item: ItemRecordSchema, usage: ItemUsageSchema.optional() }),
   activity: z.strictObject({ activity: ItemActivitySchema.nullable() }),
   decision_diff: ItemDiffSchema,
