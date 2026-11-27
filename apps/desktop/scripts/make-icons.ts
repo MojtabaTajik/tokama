@@ -1,6 +1,6 @@
 // Makes the app icon files from the icon art in src/renderer/brand, so replacing the icon is a file
 // swap followed by `pnpm --filter @tokama/desktop icons`. Each icon file is a whole icon (tile and
-// head) on a 1024 unit canvas, drawn by hand for a range of sizes: icon-512.svg (full art) for 128 px
+// head) on the 1024 unit grid, drawn by hand for a range of sizes: icon-512.svg (full art) for 128 px
 // and up, icon-64.svg (reduced, no scales) for 48 and 64 px, icon-32.svg (flat) for 24 and 32 px, and
 // icon-16.svg (flat, the tile fills the canvas) for 16 px. The art is rendered at the output size, never
 // scaled from a larger PNG. The output is committed (Linux CI and the window icon need it) and goes to

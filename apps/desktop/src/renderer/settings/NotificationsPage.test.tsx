@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vite
 import type { TokamaBridge } from "../../shared/bridge.js";
 import { DEFAULT_DESKTOP_STATE, type DesktopState } from "../../shared/desktop-state.js";
 import { App } from "../App.js";
+import { brand } from "../brand/index.js";
 import { CONNECTED, fakeBridge } from "../testing/bridge.js";
 import { items, NOW } from "../testing/sample.js";
 
@@ -75,7 +76,7 @@ describe("Settings > Notifications", () => {
     ]);
     expect($(".notes-sound-note")?.textContent).toBe("♪ Plays the Tokama sound for 3 of 3 kinds.");
     expect($(".notes-card")?.getAttribute("aria-label")).toBe("Notification preview. Needs you: Add order export endpoint. Build it this way?");
-    expect($(".notes-icon")?.getAttribute("src")).toBeTruthy();
+    expect($(".notes-icon")?.getAttribute("src")).toBe(brand.mark32Url);
   });
 
   it("saves a mode, changes the preview line, and keeps the sound note in step", async () => {
