@@ -94,7 +94,8 @@ const $$ = (selector: string) => [...container.querySelectorAll(selector)];
 const text = (selector: string) => $(selector)?.textContent;
 const button = (label: string) => $$("button").find((el) => el.textContent === label || el.getAttribute("aria-label") === label) as HTMLButtonElement | undefined;
 const click = (el: Element | undefined) => act(async () => (el as HTMLElement).click());
-const key = (name: string) => act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true })));
+const showTab = (name: string) => click($$('[role="tab"]').find((el) => el.textContent === name));
+const key =(name: string) => act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true })));
 const deferred = () => {
   let resolve!: (reply: Reply) => void;
   const promise = new Promise<Reply>((done) => (resolve = done));
@@ -435,6 +436,22 @@ describe("ItemDrawer step output", () => {
   };
   const outputCalls = (query: ReturnType<typeof vi.fn>) => query.mock.calls.filter(([q]) => (q as { type: string }).type === "step_output").map(([q]) => q as unknown);
 
+  it("opens the waiting step in the Output tab for each new question, also after the engineer closed it", async () => {
+    const fake = withOutput(() => ({ ok: true, data: { attempt: 1, text: PLAN, truncated: false } }));
+    await renderDrawer(fake.bridge, waiting.id);
+    await showTab("Output");
+    const line = () => $(".ot .sec-head");
+    expect(line()?.getAttribute("aria-expanded")).toBe("true");
+    await click(line() ?? undefined);
+    expect(line()?.getAttribute("aria-expanded")).toBe("false");
+    // Leaving and coming back does not open it again: it is the same question.
+    await showTab("Steps");
+    await showTab("Output");
+    expect(line()?.getAttribute("aria-expanded")).toBe("false");
+    await fake.push({ ...waiting, decision: { ...waiting.decision!, id: "decision_00000000-0000-4000-8000-0000000000e2" } } as ItemRecord);
+    expect(line()?.getAttribute("aria-expanded")).toBe("true");
+  });
+
   it("shows the plan as text above Approve and Request changes, in a preview region", async () => {
     const { bridge, query } = withOutput(() => ({ ok: true, data: { attempt: 1, text: PLAN, truncated: false } }));
     await renderDrawer(bridge, waiting.id);
@@ -600,15 +617,14 @@ describe("ItemDrawer step output", () => {
     } as unknown as ItemRecord;
     const { bridge, query } = withOutput((q) => ({ ok: true, data: { attempt: q.attempt, text: `plan ${String(q.attempt)}`, truncated: false } }), [ran]);
     await renderDrawer(bridge, ran.id);
-    const details = $$(".attempt-output") as HTMLDetailsElement[];
-    expect(details.map((el) => el.querySelector("summary")?.getAttribute("aria-label"))).toEqual(["Plan, attempt 1: Output", "Plan, attempt 2: Output"]);
+    const lines = $$(".attempt-output > .sec-h > button");
+    expect(lines.map((el) => el.textContent)).toEqual(["Output, Plan, attempt 1: Output", "Output, Plan, attempt 2: Output"]);
+    expect(lines.map((el) => el.getAttribute("aria-expanded"))).toEqual(["false", "false"]);
     expect(outputCalls(query)).toEqual([]);
-    await act(async () => {
-      details[1]!.open = true;
-      details[1]!.dispatchEvent(new Event("toggle"));
-    });
+    await click(lines[1]);
     expect(outputCalls(query)).toEqual([{ type: "step_output", itemId: ran.id, stepIndex: 0, attempt: 2 }]);
-    expect(details[1]!.querySelector(".step-output-text")?.textContent).toBe("plan 2");
+    expect($$(".attempt-output")[1]!.querySelector(".step-output-text")?.textContent).toBe("plan 2");
+    expect($$(".attempt-output")[0]!.querySelector(".step-output-text")).toBeNull();
   });
 });
 
@@ -868,6 +884,9 @@ describe("item drawer with real-mode records", () => {
   it("lists each step's attempts and shows the commit the item made", async () => {
     const fake = fakeBridge([committed]);
     await renderDrawer(fake.bridge, committed.id);
+    // An item that has ended opens on its output.
+    expect($('[role="tab"][aria-selected="true"]')?.textContent).toBe("Output");
+    await showTab("Steps");
     expect($$(".step-attempt > .mono").map((el) => el.textContent)).toEqual(["✕attempt 1 · failed · sh check.sh exit 1", "✓attempt 2 · passed · 1 check passed"]);
     expect(text(".drawer-state")).toContain("commit 3f2a9c1 on tokama/0b9f3c1e");
   });
@@ -1627,10 +1646,32 @@ describe("the card of a step that stopped", () => {
   it("See Reviewer’s notes opens the Output tab; the stopped step's output starts unfolded in Steps", async () => {
     const { bridge } = withOutput({ ok: true, data: { attempt: 1, text: REVIEW, truncated: false, summary } });
     await renderDrawer(bridge, stoppedReview.id);
-    const unfolded = $$(".step").map((li) => li.querySelector("details")?.open ?? null);
-    expect(unfolded).toEqual([false, false, null, true]);
+    const unfolded = $$(".step").map((li) => li.querySelector(".attempt-output button")?.getAttribute("aria-expanded") ?? null);
+    expect(unfolded).toEqual(["false", "false", null, "true"]);
     await click(button("See Reviewer’s notes →"));
     expect(tab("Output")?.getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("opens the notes once: a step the engineer closed stays closed when the tab is visited again", async () => {
+    const { bridge } = withOutput({ ok: true, data: { attempt: 1, text: REVIEW, truncated: false, summary } });
+    await renderDrawer(bridge, stoppedReview.id);
+    await click(button("See Reviewer’s notes →"));
+    const line = () => $$(".ot .sec-head").find((el) => el.textContent?.startsWith("Review"));
+    expect(line()?.getAttribute("aria-expanded")).toBe("true");
+    await click(line());
+    await showTab("Steps");
+    await showTab("Output");
+    expect(line()?.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("opens the stopped step's output when the stop arrives after the attempt's end", async () => {
+    const quiet = { ...stoppedReview, state: "running", decision: undefined } as unknown as ItemRecord;
+    const fake = withOutput({ ok: true, data: { attempt: 1, text: REVIEW, truncated: false, summary } }, quiet);
+    await renderDrawer(fake.bridge, quiet.id);
+    const review = () => $$(".step")[3]?.querySelector(".attempt-output button");
+    expect(review()?.getAttribute("aria-expanded")).toBe("false");
+    await fake.push(stoppedReview);
+    expect(review()?.getAttribute("aria-expanded")).toBe("true");
   });
 
   it("answers with the choice", async () => {
@@ -1650,8 +1691,22 @@ describe("the card of a step that stopped", () => {
       ["Then", "–Nothing ran after it."],
       ["Why it stopped", "The agent call ran for 20 m (the limit)."],
     ]);
+    const scrolled = vi.fn();
+    (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView = scrolled;
     await click(button("See the log →"));
     expect(tab("Log")?.getAttribute("aria-selected")).toBe("true");
+    // The stopped step's line is open at its latest attempt, scrolled to the top and focused; the other steps stay closed.
+    const lines = $$(".lg > .sec-wrap > .sec-list > .sec > .sec-h > .sec-head");
+    expect(lines.map((line) => line.getAttribute("aria-expanded"))).toEqual(["false", "false", "true"]);
+    expect(document.activeElement).toBe(lines[2]);
+    expect(scrolled).toHaveBeenCalledWith({ block: "start" });
+    expect($$(".lg .sec-sub > .sec-h > .sec-head").map((line) => line.getAttribute("aria-expanded"))).toEqual(["true"]);
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    // Leaving the tab and coming back does not ask again: the line is only open, not focused.
+    await showTab("Steps");
+    (document.activeElement as HTMLElement | null)?.blur();
+    await showTab("Log");
+    expect(document.activeElement).not.toBe($$(".lg .sec-head")[2]);
   });
 
   it("an output in an unknown format shows its first lines as written", async () => {
@@ -1755,8 +1810,66 @@ describe("ItemDrawer live progress", () => {
     } as ItemRecord;
     const { bridge } = fakeBridge([done]);
     await renderDrawer(bridge, done.id);
+    await showTab("Steps");
     expect($$(".step")[0]?.querySelector(".step-detail")?.textContent).toMatch(/ · 4 m 12 s · waited 6 m for you$/);
     expect($$(".step")[0]?.querySelector(".step-attempt .mono")?.textContent).toBe("✓attempt 1 · passed · 4 m 12 s");
+  });
+});
+
+describe("the Output tab folds per step", () => {
+  const TEXT_OF_PLAN = "# Plan\nAdd GET /orders/export <script>alert(1)</script>";
+  const withOutput = (items: ItemRecord[], summary: unknown = { kind: "lines", format: "none", lines: ["Add GET /orders/export."] }) => {
+    const fake = fakeBridge(items);
+    const base = fake.query.getMockImplementation()!;
+    fake.query.mockImplementation(async (q: { type: string; itemId?: string; attempt?: number }) => (q.type === "step_output" ? { ok: true as const, data: { attempt: q.attempt ?? 1, text: TEXT_OF_PLAN, truncated: false, summary } } : base(q)));
+    return fake;
+  };
+  const stepLines = () => $$(".ot > .sec-wrap > .sec-list > .sec > .sec-h > .sec-head");
+
+  it("opens an ended item on Output, with each step one closed line, its summary under it and none of the agent's text", async () => {
+    const { bridge } = withOutput([committed]);
+    await renderDrawer(bridge, committed.id);
+    expect($('[role="tab"][aria-selected="true"]')?.textContent).toBe("Output");
+    expect(stepLines().map((line) => [line.querySelector(".sec-name")?.textContent, line.querySelector(".sec-agent")?.textContent, line.getAttribute("aria-expanded"), line.closest(".sec")?.querySelector(".sec-sum")?.textContent])).toEqual([
+      ["Plan", "Architect", "false", "Add GET /orders/export."],
+    ]);
+    expect(text(".ot")).not.toContain("alert(1)");
+    expect($(".step-output-text")).toBeNull();
+    expect(stepLines()[0]?.querySelector(".sec-facts")?.textContent).toBe("2 attempts · 55 B");
+    await click(stepLines()[0]);
+    expect($(".step-output-text")?.textContent).toContain("Add GET /orders/export <script>alert(1)</script>");
+    expect($(".ot script")).toBeNull();
+    expect($(".ot .sec-sum")).toBeNull();
+  });
+
+  it("asks for each step's output once, for the line and the document together", async () => {
+    const { bridge, query } = withOutput([committed]);
+    await renderDrawer(bridge, committed.id);
+    await click(stepLines()[0]);
+    expect(query.mock.calls.filter(([q]) => (q as { type: string }).type === "step_output")).toHaveLength(1);
+  });
+
+  it("keeps a change approval on Diff, and a running item on Steps", async () => {
+    const { bridge } = withOutput([needsYou]);
+    await renderDrawer(bridge, needsYou.id);
+    expect($('[role="tab"][aria-selected="true"]')?.textContent).toBe("Steps");
+    const running = { ...committed, id: "item_1a2b3c4d-0030-4a1b-8c1d-000000000030", state: "running" } as ItemRecord;
+    await renderDrawer(withOutput([running]).bridge, running.id);
+    expect($('[role="tab"][aria-selected="true"]')?.textContent).toBe("Steps");
+  });
+
+  it("opens only once per item: an item that ends while it is open stays on its tab", async () => {
+    const running = { ...committed, id: "item_1a2b3c4d-0031-4a1b-8c1d-000000000031", state: "running" } as ItemRecord;
+    const fake = withOutput([running]);
+    await renderDrawer(fake.bridge, running.id);
+    await fake.push({ ...running, state: "done" } as ItemRecord);
+    expect($('[role="tab"][aria-selected="true"]')?.textContent).toBe("Steps");
+  });
+
+  it("reaches every step line with Tab: each is a button", async () => {
+    const { bridge } = withOutput([committed]);
+    await renderDrawer(bridge, committed.id);
+    expect(stepLines().every((line) => line.tagName === "BUTTON" && (line as HTMLButtonElement).tabIndex === 0)).toBe(true);
   });
 });
 

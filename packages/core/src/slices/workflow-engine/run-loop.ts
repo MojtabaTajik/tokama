@@ -12,7 +12,7 @@
 // before checks run on it and before it is committed; protected changes the engineer has not
 // approved ask. One tree flows through: the checks pass on it, the reviewer sees its diff, Finish
 // commits it. For `checks pass`: remove ignored files, run setup again, stage, judge, then check.
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Clock } from "../../kernel/clock/index.js";
@@ -311,8 +311,24 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
   // ---- writing ----------------------------------------------------------------------------
 
   /** Appends events; a refused or failed write throws, and the loop's catch records it. */
+  /** An ended attempt records whether its transcript was saved and how large it is, so the Log tab can say so without reading it. */
+  const withTranscript = (itemId: ItemId, event: ItemEventBody): ItemEventBody => {
+    if (event.type !== "attempt_ended") return event;
+    let bytes: number | undefined;
+    try {
+      const stat = lstatSync(itemPath(itemId, `${attemptDir(event.stepId, event.attempt)}/transcript.txt`));
+      if (stat.isFile()) bytes = stat.size;
+    } catch {
+      // No such file: the attempt saved no transcript.
+    }
+    return { ...event, transcriptSaved: bytes !== undefined, ...(bytes !== undefined && { transcriptBytes: bytes }) };
+  };
+
   const append = (itemId: ItemId, events: readonly ItemEventBody[]): StoredItem => {
-    const appended = store.append(itemId, events);
+    const appended = store.append(
+      itemId,
+      events.map((event) => withTranscript(itemId, event)),
+    );
     if (!appended.ok) throw new Error(`cannot record ${events.map((e) => e.type).join(", ")}: ${appended.error.message}`);
     return appended.value;
   };

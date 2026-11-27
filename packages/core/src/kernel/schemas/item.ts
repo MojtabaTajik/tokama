@@ -92,6 +92,9 @@ export const AttemptSummarySchema = z.strictObject({
   result: AttemptResultSchema.optional(),
   failure: RunFailureSchema.optional(),
   detail: z.string().min(1).max(500).optional(),
+  /** Once it ended: whether its transcript was saved, and how large it is. Absent while it runs and on attempts recorded before these existed. */
+  transcriptSaved: z.boolean().optional(),
+  transcriptBytes: z.int().nonnegative().optional(),
   checks: z.array(z.strictObject({ command: z.string().min(1).max(500), passed: z.boolean(), exitCode: z.int().nullable() })).max(20),
 });
 

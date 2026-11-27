@@ -43,6 +43,7 @@ import { Button, CloseButton } from "../ui/Button.js";
 import { ErrorRetry } from "../ui/ErrorRetry.js";
 import { markOf } from "../ui/status.js";
 import { AgentChip } from "../ui/agent.js";
+import { Section } from "../ui/Section.js";
 import { Tabs } from "../ui/Tabs.js";
 import { Placeholder } from "../ui/EmptyState.js";
 
@@ -175,6 +176,8 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
     setConfirmingStop(false);
     setBusy(false);
     setTab("Steps");
+    setLogOf(undefined);
+    setNotesOf(undefined);
   }, [itemId]);
   // Focus follows the item into the full view and back into the drawer when the button that
   // switched it went away; focus elsewhere (the rail button that changed the page) stays.
@@ -182,6 +185,23 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
   useLayoutEffect(() => {
     if (document.activeElement === null || document.activeElement === document.body) drawer.current?.focus();
   }, [full]);
+  // In the full view the decision is a bar pinned at the top; an open section's line sticks, and a line scrolled to
+  // stops, just under it: its height is `--sec-top` for the page.
+  useLayoutEffect(() => {
+    const page = drawer.current;
+    if (page === null) return;
+    const bar = full ? page.querySelector<HTMLElement>(".ex-decision") : null;
+    if (bar === null) {
+      page.style.removeProperty("--sec-top");
+      return;
+    }
+    const measure = () => page.style.setProperty("--sec-top", `${bar.offsetHeight}px`);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const watcher = new ResizeObserver(measure);
+    watcher.observe(bar);
+    return () => watcher.disconnect();
+  });
   // A refusal of a command the list sent for this item, in the engine's words.
   useEffect(() => {
     if (request?.notice !== undefined) setNotice({ tone: "warn", text: request.notice });
@@ -284,6 +304,14 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
     if (outputAsked !== undefined && outputShownFor.current !== outputAsked) setTab("Output");
     outputShownFor.current = outputAsked;
   }, [outputAsked]);
+  // An item that has ended opens on what its agents wrote, once each time it is opened and loaded:
+  // the engineer reads the results, not the steps. A change approval is not an ended item and keeps Diff.
+  const endedOn = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (item === undefined || item.id !== itemId || endedOn.current === itemId) return;
+    endedOn.current = itemId;
+    if (hasEnded(item) && item.steps.some((step) => shownAttempt(step) !== undefined)) setTab("Output");
+  }, [item, itemId]);
   const output = useStepOutput(bridge, itemId, approval?.stepIndex ?? 0, undefined, approval?.id);
   const showTab = (to: Tab) => () => {
     setTab(to);
@@ -291,8 +319,11 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
   };
   // A stopped step's "See the notes": the Output tab, scrolled to that step's section.
   const [notesOf, setNotesOf] = useState<{ readonly stepIndex: number; readonly seq: number } | undefined>(undefined);
+  // Its "See the log": the Log tab with that step open at its latest attempt, its line focused.
+  const [logOf, setLogOf] = useState<{ readonly stepIndex: number; readonly seq: number } | undefined>(undefined);
   const showStopped = (to: "Output" | "Log", stepIndex: number) => {
     if (to === "Output") setNotesOf((last) => ({ stepIndex, seq: (last?.seq ?? 0) + 1 }));
+    else setLogOf((last) => ({ stepIndex, seq: (last?.seq ?? 0) + 1 }));
     showTab(to)();
   };
   const stoppedDecision = item?.state === "needs_you" && item.decision?.stopped !== undefined ? { ...item.decision, stopped: item.decision.stopped } : undefined;
@@ -303,6 +334,11 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
   const template = item && templateOf(item, setup);
   const tabs = item ? tabsOf(item, diff, change) : [];
   const shown = tabs.includes(tab) ? tab : "Steps";
+  // An ask belongs to one visit: coming back to Log or Output later does not jump again.
+  useEffect(() => {
+    if (shown !== "Log") setLogOf(undefined);
+    if (shown !== "Output") setNotesOf(undefined);
+  }, [shown]);
   // ⤢ on the diff inside the drawer: the full view on the Diff tab.
   const expandTo = onExpand === undefined || full ? undefined : (to: Tab) => () => {
     setTab(to);
@@ -424,7 +460,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
                 ) : shown === "Checks" ? (
                   <ChecksTab bridge={bridge} item={item} setup={setup} full={full} />
                 ) : shown === "Log" ? (
-                  <LogTab bridge={bridge} item={item} setup={setup} full={full} onOpenAgent={onOpenAgent} />
+                  <LogTab bridge={bridge} item={item} setup={setup} full={full} focus={logOf} />
                 ) : change !== undefined ? (
                   <ItemDiffTab
                     item={item}
@@ -596,13 +632,31 @@ function AttemptOutput({
   /** Starts open: the output of the step that stopped. */
   readonly unfolded: boolean;
 }) {
+  const [open, setOpen] = useState(unfolded);
+  // Once opened, the answer stays when it is folded again.
   const [opened, setOpened] = useState(unfolded);
   const output = useStepOutput(bridge, itemId, stepIndex, attempt, opened ? `${stepIndex} ${attempt}` : undefined);
+  // The stop decision can arrive after the attempt's end: the output then opens as it comes.
+  useEffect(() => {
+    if (unfolded) {
+      setOpen(true);
+      setOpened(true);
+    }
+  }, [unfolded]);
   return (
-    <details className="attempt-output" open={unfolded || undefined} onToggle={(event) => event.currentTarget.open && setOpened(true)}>
-      <summary aria-label={label}>{TEXT.output}</summary>
-      {output !== undefined && <StepOutput state={output} label={label} />}
-    </details>
+    <Section
+      level="attempt"
+      className="attempt-output"
+      title={TEXT.output}
+      spokenFacts={label}
+      open={open}
+      onToggle={() => {
+        setOpen(!open);
+        setOpened(true);
+      }}
+    >
+      {() => output !== undefined && <StepOutput state={output} label={label} />}
+    </Section>
   );
 }
 

@@ -228,6 +228,8 @@ function toAttempt(item: StoredItem, attempt: AttemptRecord): AttemptSummary {
     ...(attempt.result !== undefined && { result: attempt.result }),
     ...(attempt.failure !== undefined && { failure: attempt.failure }),
     ...(detail !== undefined && { detail }),
+    ...(attempt.transcriptSaved !== undefined && { transcriptSaved: attempt.transcriptSaved }),
+    ...(attempt.transcriptBytes !== undefined && { transcriptBytes: attempt.transcriptBytes }),
     checks: attempt.checks.slice(-MAX_CHECKS_SHOWN).map(({ command, passed, exitCode }) => ({ command, passed, exitCode })),
   };
 }

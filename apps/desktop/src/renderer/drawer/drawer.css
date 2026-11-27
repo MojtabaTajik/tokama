@@ -326,22 +326,24 @@
   color: var(--warn);
 }
 
-.attempt-output summary {
-  width: fit-content;
-  color: var(--link);
+/* An attempt's output on the Steps tab: a folded line under the attempt, with no rules of its own. */
+.step-attempt .attempt-output {
+  border: 0;
+}
+
+.step-attempt .attempt-output .sec-head {
+  min-height: var(--control-sm);
   font-size: var(--text-md);
-  cursor: pointer; /* pointer: not a button */
 }
 
-.attempt-output summary:focus-visible {
-  outline: var(--focus-ring);
+.step-attempt .attempt-output .sec-name {
+  min-width: 0;
+  font-weight: 400;
+  color: var(--link);
 }
 
-.attempt-output[open] {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  padding-bottom: var(--space-4);
+.step-attempt .attempt-output .sec-body {
+  padding: 0 0 var(--space-4);
 }
 
 .choices {
@@ -1025,125 +1027,27 @@
   flex-direction: column;
 }
 
-.ck-attempt {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-8) 0;
-  border-bottom: 1px solid var(--hairline);
-}
-
-.ck-attempt-head,
-.lg-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-2) var(--space-8);
-  margin: 0;
-  color: var(--text);
-}
-
-.ck-attempt-head .mark,
-.lg-head .mark {
-  flex: none;
-  width: 14px;
-  text-align: center;
-}
-
-.ck-attempt-word {
-  font-size: var(--text-md);
-  color: var(--text-2);
-}
-
-.ck-columns {
-  display: none;
-}
-
 .ck-list {
   margin: 0;
-  padding: 0 0 0 var(--space-22);
+  padding: 0;
   list-style: none;
 }
 
-.ck-row {
-  display: grid;
-  grid-template-columns: 10px auto auto minmax(0, 1fr) auto;
-  grid-template-areas:
-    "chev cmd cmd cmd dur"
-    ". result exit sum sum";
-  gap: 0 var(--space-8);
-  align-items: baseline;
-  padding: var(--space-2) 0;
-  font-size: var(--text-md);
-  line-height: var(--leading-text);
-  list-style: none;
-}
-
-summary.ck-row {
-  cursor: pointer; /* pointer: not a button */
-}
-
-summary.ck-row::-webkit-details-marker {
-  display: none;
-}
-
-summary.ck-row:focus-visible {
-  outline: var(--focus-ring);
-}
-
-.ck-chev {
-  grid-area: chev;
-  color: var(--muted);
-  font-size: 10px;
-}
-
-.ck-details[open] > summary .ck-chev {
-  transform: rotate(90deg);
-}
-
-.ck-result {
-  grid-area: result;
-  white-space: nowrap;
-}
-
-.ck-cmd {
-  grid-area: cmd;
+/* A check command's line: the command in mono, the way a terminal shows it. */
+.ck-line .sec-name {
+  min-width: 0;
   overflow: hidden;
-  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.ck-exit {
-  grid-area: exit;
-  color: var(--text-2);
-  font-size: var(--text-sm);
-  white-space: nowrap;
-}
-
-.ck-dur {
-  grid-area: dur;
-  color: var(--muted);
-  font-size: var(--text-sm);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.ck-sum {
-  grid-area: sum;
-  min-width: 0;
-  color: var(--text-2);
-  overflow-wrap: anywhere;
-}
-
-.ck-check[data-state="waiting"] .ck-sum {
-  color: var(--muted);
 }
 
 .ck-out {
   display: flex;
   flex-direction: column;
-  margin: var(--space-4) 0 var(--space-8) var(--space-18);
+  margin: var(--space-4) 0 var(--space-8);
   border: 1px solid var(--hairline);
   border-radius: var(--radius);
   background: var(--input);
@@ -1216,7 +1120,7 @@ summary.ck-row:focus-visible {
 }
 
 .ck-none p {
-  padding: var(--space-2) 0 0 var(--space-22);
+  padding: var(--space-2) 0 0;
   overflow-wrap: anywhere;
 }
 
@@ -1247,72 +1151,8 @@ summary.ck-row:focus-visible {
   color: var(--warn);
 }
 
-.ck[data-full] .ck-attempt {
-  gap: 0;
-  padding: 0 0 var(--space-22);
-  border-bottom: 0;
-}
-
-.ck[data-full] .ck-attempt-head {
-  gap: var(--space-10);
-  padding-bottom: var(--space-8);
-}
-
-.ck[data-full] .ck-attempt-title,
-.lg[data-full] .lg-title {
-  font-weight: 600;
-}
-
-.ck[data-full] .ck-attempt-word {
-  font-size: var(--text-base);
-}
-
-.ck[data-full] .ck-columns,
-.ck[data-full] .ck-row {
-  grid-template-columns: 14px 96px minmax(0, 1fr) 64px 96px minmax(0, 1.2fr);
-  gap: 0 var(--space-12);
-}
-
-.ck[data-full] .ck-columns {
-  display: grid;
-  padding: 0 0 var(--space-6);
-  border-bottom: 1px solid var(--hairline);
-  font-size: var(--text-xs);
-  letter-spacing: 0.7px;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.ck[data-full] .ck-list {
-  padding: 0;
-}
-
-.ck[data-full] .ck-check {
-  border-bottom: 1px solid var(--hairline);
-}
-
-.ck[data-full] .ck-row {
-  grid-template-areas: "chev result cmd exit dur sum";
-  padding: var(--space-8) 0;
-  font-size: var(--text-body);
-}
-
-.ck[data-full] .ck-cmd {
-  color: var(--text);
-  font-size: var(--text-base);
-}
-
-.ck[data-full] .ck-exit-word {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
 .ck[data-full] .ck-out {
-  margin: 0 0 var(--space-12) var(--space-26);
+  margin: 0 0 var(--space-12);
 }
 
 .ck[data-full] .ck-lines {
@@ -1328,23 +1168,6 @@ summary.ck-row:focus-visible {
   display: flex;
   flex-direction: column;
   gap: var(--space-14);
-}
-
-.lg-attempt {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-  min-width: 0;
-}
-
-.lg-title {
-  min-width: 0;
-}
-
-.lg-meta {
-  margin-left: auto;
-  font-size: var(--text-sm);
-  color: var(--muted);
 }
 
 .lg-box {
@@ -1416,14 +1239,6 @@ summary.ck-row:focus-visible {
   line-height: var(--leading-text);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-.lg[data-full] {
-  gap: var(--space-22);
-}
-
-.lg[data-full] .lg-head {
-  gap: var(--space-10);
 }
 
 .lg[data-full] .lg-body {

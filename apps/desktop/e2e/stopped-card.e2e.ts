@@ -40,4 +40,21 @@ flow("a step that stopped at its limit explains itself: what the reviewer said, 
   expect(labels!.x).toBeLessThan(buttons!.x);
   expect(labels!.y).toBeGreaterThan(buttons!.y - 60);
   await screenshot("71-stopped-card-full");
+
+  // A line the page scrolls to, as the deep link of "See the log" does, stops below the pinned bar, not under it.
+  // (The sample's stopped item links to the notes; the line is scrolled to the same way.)
+  await page.locator(".expanded").getByRole("tab", { name: "Log" }).click();
+  const stopped = page.locator(".expanded .lg > .sec-wrap > .sec-list > .sec").filter({ hasText: "Review" }).locator(":scope > .sec-h > .sec-head");
+  await stopped.click();
+  const barHeight = (await bar.boundingBox())!.height;
+  expect(await page.locator(".expanded").evaluate((el) => el.style.getPropertyValue("--sec-top"))).toBe(`${barHeight}px`);
+  await stopped.evaluate((el) => el.scrollIntoView({ block: "start" }));
+  await expect
+    .poll(async () => {
+      const line = await stopped.boundingBox();
+      const pinned = await bar.boundingBox();
+      return line !== null && pinned !== null && line.y >= pinned.y + pinned.height - 1;
+    }, { message: "the line is below the pinned bar" })
+    .toBe(true);
+  await screenshot("72-stopped-log-full");
 });

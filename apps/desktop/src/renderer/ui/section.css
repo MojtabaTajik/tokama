@@ -1,0 +1,188 @@
+/* A section that folds, and the bar above a list of them (ui/Section.tsx). */
+
+.sec-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+}
+
+.sec-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-12);
+  font-size: var(--text-base);
+  color: var(--text-2);
+}
+
+.sec-bar-actions {
+  display: inline-flex;
+  gap: var(--space-6);
+  margin-left: auto;
+}
+
+.sec-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.sec {
+  min-width: 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.sec-h {
+  margin: 0;
+  font: inherit;
+}
+
+/* A line scrolled to stops below whatever the page pins at its top (--sec-top). */
+.sec-h,
+.sec-head {
+  scroll-margin-top: var(--sec-top, 0);
+}
+
+/* The tab's own width, not the window's, decides when the facts wrap under the name. */
+.drawer-panel {
+  container: tab / inline-size;
+}
+
+.sec-head {
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-12);
+  width: 100%;
+  min-height: var(--control-lg);
+  padding: var(--space-6) var(--space-8) var(--space-6) var(--space-4);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-body);
+  text-align: left;
+}
+
+button.sec-head:hover {
+  background: var(--panel);
+}
+
+button.sec-head:focus-visible {
+  outline: var(--focus-ring-wide);
+  outline-offset: -2px;
+}
+
+.sec-head[data-plain] {
+  color: var(--text-2);
+}
+
+.sec-chev {
+  display: block;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+  transition: transform var(--motion-turn) ease;
+}
+
+.sec-chev svg {
+  display: block;
+}
+
+.sec[data-open] > .sec-h .sec-chev {
+  transform: rotate(90deg);
+}
+
+.sec-head[data-plain] .sec-chev {
+  visibility: hidden;
+}
+
+.sec-name {
+  min-width: 84px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.sec-head[data-plain] .sec-name {
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.sec-agent {
+  min-width: 96px;
+  font-weight: 500;
+}
+
+.sec-state {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-6);
+  color: var(--text);
+}
+
+.sec-facts {
+  margin-left: auto;
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.sec-sum {
+  padding: 0 var(--space-8) var(--space-10) var(--space-30);
+  font-size: var(--text-base);
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.sec-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0 0 var(--space-14) var(--space-30);
+}
+
+/* An attempt: one size smaller, inside its step. */
+.sec-sub {
+  border-top: 1px solid var(--hairline);
+  border-bottom: 0;
+}
+
+.sec-sub .sec-head {
+  min-height: var(--control);
+  font-size: var(--text-base);
+}
+
+.sec-sub .sec-name {
+  min-width: 0;
+  font-weight: 500;
+}
+
+.sec-sub .sec-body {
+  padding: var(--space-2) 0 var(--space-12) var(--space-30);
+}
+
+/* An open step's line stays at the top of the scroll area, so it can be closed from anywhere in a long body. */
+.sec:not(.sec-sub)[data-open] > .sec-h {
+  position: sticky;
+  top: var(--sec-top, 0);
+  z-index: 1;
+  background: var(--ground);
+}
+
+@container tab (max-width: 519px) {
+  .sec-facts {
+    flex-basis: 100%;
+    margin-left: var(--space-26);
+    white-space: normal;
+  }
+
+  .sec-name,
+  .sec-agent {
+    min-width: 0;
+  }
+}

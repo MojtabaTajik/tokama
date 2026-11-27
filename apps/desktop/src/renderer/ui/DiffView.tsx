@@ -8,7 +8,7 @@
 // character is shown quoted, so a line cannot read differently from what it does. Binary files,
 // files over the engine's line limit and anything else left out say so and name the worktree.
 import type { DiffFile, ItemDiff, TreeDiff } from "@tokama/core";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Button } from "./Button.js";
 import { Placeholder } from "./EmptyState.js";
 import { ExpandButton } from "./ExpandButton.js";
@@ -215,6 +215,13 @@ export interface DiffTabProps {
 export function DiffTab({ state, baseBranch, layout = "drawer", onExpand, by, header, columns, where }: DiffTabProps) {
   const [picked, setPicked] = useState(0);
   const [split, setSplit] = useState(true);
+  // The drawer's file list scrolls on its own: the file you pick stays in view in it.
+  const list = useRef<HTMLUListElement>(null);
+  const firstPick = useRef(true);
+  useEffect(() => {
+    if (firstPick.current) firstPick.current = false;
+    else list.current?.querySelector('[aria-pressed="true"]')?.scrollIntoView?.({ block: "nearest" });
+  }, [picked]);
   if (state.kind !== "loaded") return <Status state={state} />;
   const { diff } = state;
   if (diff.files.length === 0 && diff.moreFiles === 0) return <Placeholder>{TEXT.none}</Placeholder>;
@@ -250,7 +257,7 @@ export function DiffTab({ state, baseBranch, layout = "drawer", onExpand, by, he
           )}
         </p>
       )}
-      <ul className="dv-files" aria-label={TEXT.changedFiles}>
+      <ul className="dv-files" aria-label={TEXT.changedFiles} ref={list}>
         {diff.files.map((candidate, index) => {
           const status = STATUS[candidate.status];
           return (

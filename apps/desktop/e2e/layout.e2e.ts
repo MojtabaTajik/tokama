@@ -134,6 +134,8 @@ flow("the drawer's content has the same gap to its right edge as to its left, at
   await openRow(page, "Fix the null check in cart totals");
   await drawer(page).getByRole("heading", { name: "Fix the null check in cart totals" }).waitFor();
   await drawer(page).locator(".finish").waitFor();
+  // A done item opens on Output; the Steps tab has the step lines this test measures.
+  await drawer(page).getByRole("tab", { name: "Steps" }).click();
 
   // A short window: the drawer scrolls, so a classic scroll bar (always shown on Linux, and with a mouse on macOS) takes room.
   const scrolls = () => page.locator(".drawer").evaluate((panel) => panel.scrollHeight > panel.clientHeight);

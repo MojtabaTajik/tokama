@@ -43,6 +43,7 @@ const render = async (fake: ReturnType<typeof fakeBridge>) => {
 const $ = (selector: string) => container.querySelector(selector);
 const $$ = (selector: string) => [...container.querySelectorAll(selector)];
 const click = (el: Element) => act(async () => (el as HTMLElement).click());
+const fileLine = () => $$("button[aria-expanded]").find((el) => el.textContent?.startsWith("File"));
 const button = (label: string) => $$("button").find((el) => el.textContent === label);
 const settle = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
 
@@ -92,7 +93,7 @@ describe("TemplatesPage", () => {
     expect(lines).toHaveLength(5);
     expect(lines.filter((line) => line.hasAttribute("data-problem")).map((line) => line.textContent)).toEqual(["3✕    agent: reviewr", "5✕      back: buld"]);
     expect($('.tp-file-line[data-mark] .tp-file-n')?.textContent).toBe("5");
-    expect(button("Hide file")?.getAttribute("aria-expanded")).toBe("true");
+    expect(fileLine()?.getAttribute("aria-expanded")).toBe("true");
   });
 
   it("shows a warning of a template that loads, with its line, under Worth knowing", async () => {
@@ -101,11 +102,14 @@ describe("TemplatesPage", () => {
     expect($('section[aria-label="Worth knowing"]')?.textContent).toContain(warning);
   });
 
-  it("toggles the file with Show file", async () => {
+  it("folds the file under a File line: closed to start with, not in the page until it is opened", async () => {
     await render(bridgeWith());
-    await click(button("Show file")!);
+    expect(fileLine()?.getAttribute("aria-expanded")).toBe("false");
+    expect($(".tp-file")).toBeNull();
+    await click(fileLine()!);
     expect($(".tp-file")?.textContent).toContain("name: Plan and build");
-    await click(button("Hide file")!);
+    expect(fileLine()?.getAttribute("aria-expanded")).toBe("true");
+    await click(fileLine()!);
     expect($(".tp-file")).toBeNull();
   });
 
@@ -145,7 +149,7 @@ describe("TemplatesPage", () => {
     await render(bridgeWith({ entries: [flakyEntry], detail: () => ({ ok: true, data: big }) }));
     expect($$(".tp-problems li")).toHaveLength(2);
     expect(button("line 3")).toBeUndefined();
-    expect(button("Show file")).toBeUndefined();
+    expect(fileLine()).toBeUndefined();
     expect($(".tp-actions")?.textContent).toContain("The file is too large to show here");
   });
 
