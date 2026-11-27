@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { engineAction, olderBuild } from "./version.js";
+import { engineAction, engineStale, olderBuild } from "./version.js";
 
 describe("olderBuild", () => {
   it("is true only when both are plain releases and the engine's is lower", () => {
@@ -63,6 +63,36 @@ describe("engineAction", () => {
     expect(engineAction({ apiVersion: 15, engineVersion: "0.1.0", runningItems: 0 }, { apiVersion: 15, appVersion: "0.0.0" })).toBe("use");
     expect(engineAction({ apiVersion: 15, engineVersion: "0.0.0", runningItems: 0 }, app)).toBe("use");
     expect(engineAction({ apiVersion: 15, engineVersion: "dev", runningItems: 0 }, app)).toBe("use");
+  });
+
+  describe("a dev app that has built files (newest at 2000)", () => {
+    const dev = { apiVersion: 15, newestBuildAt: 2000 };
+    const devEngine = (startedAt: number | undefined, runningItems: number | undefined) => ({ apiVersion: 15, engineVersion: "0.0.0", ...(startedAt !== undefined && { startedAt }), ...(runningItems !== undefined && { runningItems }) });
+
+    it("replaces an idle dev engine that started before the build, and uses a busy one", () => {
+      expect(engineAction(devEngine(1999, 0), dev)).toBe("replace");
+      expect(engineAction(devEngine(1999, 2), dev)).toBe("use");
+      expect(engineAction(devEngine(1999, undefined), dev)).toBe("use");
+      expect(engineStale(devEngine(1999, 2), dev)).toBe(true);
+    });
+
+    it("uses a dev engine that started at or after the build", () => {
+      expect(engineAction(devEngine(2000, 0), dev)).toBe("use");
+      expect(engineAction(devEngine(2001, 0), dev)).toBe("use");
+      expect(engineStale(devEngine(2001, 0), dev)).toBe(false);
+    });
+
+    it("leaves alone an engine it cannot compare: an installed release, an odd label, or one with no start time", () => {
+      expect(engineAction({ apiVersion: 15, engineVersion: "0.1.0", startedAt: 1, runningItems: 0 }, dev)).toBe("use");
+      expect(engineAction({ apiVersion: 15, engineVersion: "dev", startedAt: 1, runningItems: 0 }, dev)).toBe("use");
+      expect(engineAction({ apiVersion: 15, startedAt: 1, runningItems: 0 }, dev)).toBe("use");
+      expect(engineAction(devEngine(undefined, 0), dev)).toBe("use");
+    });
+
+    it("never compares start times without built files, or for another API", () => {
+      expect(engineAction(devEngine(1, 0), { apiVersion: 15 })).toBe("use");
+      expect(engineStale({ apiVersion: 14, engineVersion: "0.0.0", startedAt: 1 }, dev)).toBe(false);
+    });
   });
 
   it("still replaces an older API engine in a dev build, which has no build to compare", () => {

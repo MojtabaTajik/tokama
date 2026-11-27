@@ -175,6 +175,19 @@
   color: var(--fail);
 }
 
+.engine-note {
+  display: flex;
+  gap: var(--space-8);
+  margin: 0 0 var(--space-6);
+  padding: 0 var(--space-10);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.engine-note .symbol {
+  color: var(--live);
+}
+
 .stale {
   display: flex;
   gap: var(--space-8);

@@ -10,7 +10,8 @@ import type { Note } from "./whats-new.js";
 export type ConnectionState =
   /** `updating`: an older engine is being stopped, and this version's starts next. */
   | { readonly status: "starting"; readonly updating?: true }
-  | { readonly status: "connected"; readonly engineId: string }
+  /** `staleEngine`: the engine runs older code and items, so it is used until it is idle, then replaced. */
+  | { readonly status: "connected"; readonly engineId: string; readonly staleEngine?: true }
   | { readonly status: "reconnecting" }
   | {
       readonly status: "failed";

@@ -169,6 +169,19 @@ describe("an older engine still running", () => {
   });
 });
 
+describe("an engine that runs older code and items", () => {
+  it("says it restarts when idle, in a note under the engine line, and says nothing otherwise", async () => {
+    await mount(fakeBridge({ status: "connected", engineId: "e-1", staleEngine: true }));
+    expect(text(".engine-note")).toContain("The engine is from an older version and restarts when idle");
+    expect($(".engine-note .symbol")?.textContent).not.toBe("");
+  });
+
+  it("shows no note for a current engine", async () => {
+    await mount(fakeBridge(CONNECTED));
+    expect($(".engine-note")).toBeNull();
+  });
+});
+
 describe("no live items", () => {
   it("keeps the groups and says in each that it is empty", async () => {
     await mount(fakeBridge(CONNECTED, { boardItems: [ITEMS.done, ITEMS.failed] }));

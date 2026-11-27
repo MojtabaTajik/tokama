@@ -1,7 +1,7 @@
 // How the desktop app starts the engine service: absolute node and entry paths and an explicit
 // engine dir. Its reduced environment comes from core's buildEnv.
-import { accessSync, closeSync, constants, fstatSync, openSync, readSync, statSync } from "node:fs";
-import { delimiter, isAbsolute, join, resolve } from "node:path";
+import { accessSync, closeSync, constants, fstatSync, openSync, readdirSync, readSync, statSync } from "node:fs";
+import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import type { EngineCommand } from "@tokama/client";
 import { buildEnv, err, ok, type Result, type ToolsPath } from "@tokama/core";
 import type { ToolsPathInfo } from "../shared/bridge.js";
@@ -45,6 +45,34 @@ export function engineRuntime(input: EngineRuntimeInput): EngineRuntime {
   if (!input.isPackaged) return { node: findExecutable("node", input.path), entry: resolve(input.appPath, "..", "engine", "dist", "main.js") };
   const engine = join(input.resourcesPath, "engine");
   return { node: join(engine, input.platform === "win32" ? "tokama-engine.exe" : "tokama-engine"), entry: join(engine, "dist", "main.js") };
+}
+
+/** The built folders a dev engine runs from, given its entry `<checkout>/apps/engine/dist/main.js`: its own, and core's. */
+export function devEngineBuildDirs(entry: string): string[] {
+  const engineDist = dirname(entry);
+  return [engineDist, resolve(engineDist, "..", "..", "..", "packages", "core", "dist")];
+}
+
+/**
+ * The newest modification time (ms since the Unix epoch) of a `.js` file under `dirs`, which a dev
+ * app takes for when the engine's code was last built; undefined when there is none or a folder
+ * cannot be read. A dev engine that started before it runs older code.
+ */
+export function newestBuildAt(dirs: readonly string[]): number | undefined {
+  let newest: number | undefined;
+  const visit = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) visit(path);
+      else if (entry.isFile() && entry.name.endsWith(".js")) newest = Math.max(newest ?? 0, statSync(path).mtimeMs);
+    }
+  };
+  try {
+    for (const dir of dirs) visit(dir);
+  } catch {
+    return undefined;
+  }
+  return newest;
 }
 
 /**

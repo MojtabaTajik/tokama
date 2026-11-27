@@ -69,7 +69,7 @@ async function handshaken(handle: EngineHandle) {
   const raw = await rawConnect(handle.endpoint.socketPath);
   cleanups.push(() => raw.destroy());
   raw.send({ kind: "hello", apiVersion: API_VERSION, token: readFileSync(handle.endpoint.tokenPath, "utf8") });
-  expect(await raw.next()).toEqual({ kind: "welcome", apiVersion: API_VERSION, engineId: handle.engineId, engineVersion: "0.0.0", pid: process.pid, runningItems: 0 });
+  expect(await raw.next()).toEqual({ kind: "welcome", apiVersion: API_VERSION, engineId: handle.engineId, engineVersion: "0.0.0", startedAt: expect.any(Number), pid: process.pid, runningItems: 0 });
   return raw;
 }
 
@@ -263,6 +263,24 @@ describe("engine service", () => {
     raw.send({ kind: "hello", apiVersion: API_VERSION - 1, token: readFileSync(handle.endpoint.tokenPath, "utf8") });
     expect(await raw.next()).toMatchObject({ kind: "connection_error", apiVersion: API_VERSION, code: "unsupported_version" });
     await raw.closed;
+  });
+
+  it("says when it started in the welcome, as it was at the start and not at each hello", async () => {
+    const dir = tempEngineDir(cleanups);
+    const before = Date.now();
+    const handle = await engine(dir);
+    const token = readFileSync(handle.endpoint.tokenPath, "utf8");
+    const startedAts: unknown[] = [];
+    for (let round = 0; round < 2; round++) {
+      const raw = await rawConnect(handle.endpoint.socketPath);
+      cleanups.push(() => raw.destroy());
+      raw.send({ kind: "hello", apiVersion: API_VERSION, token });
+      startedAts.push(((await raw.next()) as { startedAt?: unknown }).startedAt);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    expect(startedAts[0]).toBe(startedAts[1]);
+    expect(startedAts[0]).toBeGreaterThanOrEqual(before);
+    expect(startedAts[0]).toBeLessThanOrEqual(Date.now());
   });
 
   it("says its build version, in the welcome and in the version refusal", async () => {

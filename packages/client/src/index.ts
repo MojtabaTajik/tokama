@@ -16,4 +16,4 @@ export {
   type SocketFiles,
 } from "./client.js";
 export { stopEngine, type StopOptions, type StopResult } from "./stop.js";
-export { engineAction, olderBuild, type EngineAction } from "./version.js";
+export { engineAction, engineStale, olderBuild, type EngineAction, type EngineApp } from "./version.js";

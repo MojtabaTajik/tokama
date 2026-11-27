@@ -500,6 +500,11 @@ describe("handshake messages", () => {
     expect(parseHandshakeReply({ kind: "welcome", apiVersion: 1, engineId: "e1", runningItems: -1 }).ok).toBe(false);
   });
 
+  it("reads startedAt in a welcome, and refuses a zero, a fraction or a text", () => {
+    expect(parseHandshakeReply({ kind: "welcome", apiVersion: 1, engineId: "e1", startedAt: 1_764_000_000_000 })).toMatchObject({ ok: true, value: { startedAt: 1_764_000_000_000 } });
+    for (const bad of [0, -1, 1.5, "1764000000000"]) expect(parseHandshakeReply({ kind: "welcome", apiVersion: 1, engineId: "e1", startedAt: bad }).ok).toBe(false);
+  });
+
   it("reads engineVersion in a welcome and a version refusal, and refuses an empty or oversized one", () => {
     expect(parseHandshakeReply({ kind: "welcome", apiVersion: 1, engineId: "e1", engineVersion: "0.3.1" })).toMatchObject({ ok: true, value: { engineVersion: "0.3.1" } });
     expect(parseHandshakeReply({ kind: "connection_error", apiVersion: 1, code: "unsupported_version", message: "m", engineVersion: "0.3.1" })).toMatchObject({ ok: true, value: { engineVersion: "0.3.1" } });

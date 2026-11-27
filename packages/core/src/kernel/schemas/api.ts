@@ -483,6 +483,9 @@ const runningItems = z.int().nonnegative().optional();
 /** The engine's build version, as written in its package.json. Any text: only the client decides whether it can compare it. */
 const engineVersion = z.string().min(1).max(128).optional();
 
+/** When the engine process started, in ms since the Unix epoch. A dev app whose built engine files are newer than this knows the engine runs older code. */
+const startedAt = z.int().positive().optional();
+
 const engineIdField = z.string().min(1).max(128).optional();
 const enginePid = z.int().positive().optional();
 
@@ -492,6 +495,7 @@ export const WelcomeMessageSchema = z.object({
   apiVersion: z.int(),
   engineId: z.string().min(1).max(128),
   engineVersion,
+  startedAt,
   runningItems,
   /** The engine's process id; an engine older than the lock rewrite does not send it. */
   pid: enginePid,

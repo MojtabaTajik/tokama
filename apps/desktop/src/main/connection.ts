@@ -2,11 +2,12 @@
 //
 // What happens with an engine that already runs is decided by `engineAction` in `@tokama/client`.
 // An older engine that runs nothing is replaced at once. An older engine of the same API version
-// that runs items is used as it is, and replaced at the watch's next connect when it is idle. An
+// that runs items is used as it is, marked `staleEngine`, and replaced as soon as an item event
+// finds it idle (a second connection reads its running count; the stop is `ifIdle`). An
 // older engine of another API version that runs items stays until the user picks Restart engine
 // now (the running steps stop and wait at Retry step / Stop) or Try again. A newer engine of
 // another API version is never stopped.
-import { type ConnectError, type EngineClient, type EngineInfo, engineAction, type StopResult } from "@tokama/client";
+import { type ConnectError, type EngineApp, type EngineClient, type EngineInfo, engineAction, engineStale, type StopResult } from "@tokama/client";
 import type { Result } from "@tokama/core";
 import type { BridgeEvent, ConnectionState, OlderEngine } from "../shared/bridge.js";
 
@@ -41,6 +42,11 @@ export interface WatchOptions {
    * whose build is lower is replaced like an engine of an older API version.
    */
   readonly appVersion?: string;
+  /**
+   * A dev app's way to tell when the engine's files were built last (read at each check). A dev
+   * engine of the same API version that started before is replaced like an older one.
+   */
+  readonly newestBuildAt?: () => number | undefined;
 }
 
 export interface ConnectionWatch {
@@ -91,7 +97,13 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
   };
   const fail = (reason: string, older?: OlderEngine) =>
     set({ status: "failed", reason, logPath: options.logPath, logTail: options.readLogTail(options.logPath), ...(older !== undefined && { older }) });
-  const action = (engine: EngineInfo) => engineAction(engine, { apiVersion: options.apiVersion, ...(options.appVersion !== undefined && { appVersion: options.appVersion }) });
+  const app = (): EngineApp => {
+    const newestBuildAt = options.newestBuildAt?.();
+    return { apiVersion: options.apiVersion, ...(options.appVersion !== undefined && { appVersion: options.appVersion }), ...(newestBuildAt !== undefined && { newestBuildAt }) };
+  };
+  const action = (engine: EngineInfo) => engineAction(engine, app());
+  // True while a second connection reads the running count of a stale engine.
+  let rechecking = false;
 
   /** A refused connection: an engine of another API version is replaced, asked about or left alone; anything else is a failure. */
   const refused = async (error: ConnectError, mine: number, mode: Mode, replaced: boolean): Promise<void> => {
@@ -162,13 +174,45 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
     // A killed engine left its crash marker; that stop was this app's, not a crash.
     if (forced) await client.command({ type: "diagnostics_settings", crashSeen: true }).catch(() => undefined);
     if (closed || mine !== attempt) return;
-    set({ status: "connected", engineId: client.engineId });
+    // Used as it is although it runs older code (it runs items, or did not say): the connection says
+    // so, and an item event that may mean it went idle checks again. Not after a replace attempt,
+    // so an engine that refuses the stop is not asked again at every event.
+    const engineId = client.engineId;
+    let stale = stopEngine !== undefined && !replaced && engineStale(connected.engine, app());
+    set({ status: "connected", engineId, ...(stale && { staleEngine: true as const }) });
     for await (const event of events) {
       if (mine !== attempt) break;
       if (event.kind === "disconnected") set({ status: "reconnecting" });
-      else if (event.kind === "reconnected") set({ status: "connected", engineId: event.engineId });
-      else if (event.kind === "failed") fail(event.error.message);
-      else options.onEvent(event);
+      else if (event.kind === "reconnected") {
+        // Another engine id is an engine this client started, which runs this build.
+        stale = stale && event.engineId === engineId;
+        set({ status: "connected", engineId: event.engineId, ...(stale && { staleEngine: true as const }) });
+      } else if (event.kind === "failed") fail(event.error.message);
+      else {
+        options.onEvent(event);
+        // A running item's own updates say nothing new; one that left "running" may have been the last.
+        if (stale && event.event.type === "item_updated" && event.event.item.state !== "running") void recheck(mine);
+      }
+    }
+  };
+
+  /**
+   * An engine that runs older code and items: reads its running count on a second connection, and
+   * starts the replace when it is idle. The stop is `ifIdle`, so a race with a new item leaves it be.
+   */
+  const recheck = async (mine: number): Promise<void> => {
+    if (rechecking) return;
+    rechecking = true;
+    try {
+      const result = await options.connect();
+      if (!result.ok) return;
+      await result.value.close();
+      if (closed || mine !== attempt || action(result.value.engine) !== "replace") return;
+      again("ask");
+    } catch {
+      // The check is only a hope of replacing early; the next connect looks again.
+    } finally {
+      rechecking = false;
     }
   };
   const start = (mode: Mode = "ask") => {
