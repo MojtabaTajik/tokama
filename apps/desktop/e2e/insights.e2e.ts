@@ -52,6 +52,13 @@ flow("shows plan usage in the Insights tooltip, then the Usage tab: forecast, li
   // Grouping and the week.
   await page.getByRole("radio", { name: "Workflow" }).click();
   await expect.poll(() => page.locator(".ins-rank-name").allInnerTexts()).toContain("Plan and build");
+  // The Item view: each agent once as an icon in its ring and a name, the AI tool once per row, no "≈ $" for a plan user.
+  await page.getByRole("radio", { name: "Item" }).click();
+  await expect.poll(() => page.locator(".ins-rank-agents .ag-ring").count()).toBeGreaterThan(0);
+  expect(await page.locator('.ins-rank [role="row"] .ins-model').evaluateAll((marks) => marks.length)).toBe(await page.locator('.ins-rank [role="row"]:not(.ins-rank-head)').count());
+  expect(await page.locator(".ins-rank").innerText()).not.toMatch(/≈|\$/);
+  await page.mouse.move(0, 0);
+  await screenshot("9-insights-usage-item-view");
   await page.getByRole("radio", { name: "Step" }).click();
   await page.getByRole("radio", { name: /Last week/ }).click();
   await expect.poll(() => page.locator("#ins-use-title + .muted").innerText()).toMatch(/^last week/);

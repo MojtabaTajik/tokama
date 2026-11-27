@@ -135,8 +135,10 @@ export function rankingOf(week: Week, clis: readonly CliPlan[], group: Group, on
   if (group === "workflow") rows.push(...workflowRows(week.steps.filter((step) => shown(step.cliId)), plans, setup));
   if (group === "item") {
     for (const item of week.items.filter((entry) => shown(entry.cliId))) {
+      // Without a split, an item's part of Tokama's use of its tool is its part of the tokens.
+      const toolTokens = week.steps.filter((step) => step.cliId === item.cliId).reduce((total, step) => total + step.tokens, 0);
       rows.push({
-        ...measure({ cliId: item.cliId, tokens: item.tokens, sharePercent: item.sharePercent, costUsd: item.costUsd }, plans.get(item.cliId)),
+        ...measure({ cliId: item.cliId, tokens: item.tokens, sharePercent: item.sharePercent, costUsd: item.costUsd, tokamaPercent: toolTokens > 0 ? (item.tokens / toolTokens) * 100 : 0 }, plans.get(item.cliId)),
         key: `item:${item.itemId}:${item.cliId}`,
         kind: "item",
         cliId: item.cliId,
