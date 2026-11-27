@@ -355,9 +355,18 @@ describe("toItemRecord", () => {
       expect(toItemRecord(item)!.decision).toMatchObject({ question: "Fix could not run. Run Fix again?", choices: [{ label: "Run Fix again" }, { label: "Stop" }] });
     });
 
+    it("a run failure with no step of its own (setup, Finish) names no step and keeps its button", () => {
+      const item = append(created(), [{ type: "decision_opened", decisionId: DECISION, kind: "run_failure", choices: [{ id: "retry_step", label: "Check again" }, { id: "stop", label: "Stop" }], detail: "Cannot commit." }]);
+      expect(toItemRecord(item)!.decision).toMatchObject({ question: "The run failed. Retry the step, or stop?", choices: [{ label: "Check again" }, { label: "Stop" }] });
+    });
+
+    it("a plan approval whose log kept neither a tree nor a count asks the general question", () => {
+      expect(approval({}, FIX, {}).decision!.question).toBe("Go on with this result?");
+    });
+
     it("the time budget asks to continue for the same time, and falls back when the template has none", () => {
       const open = (shape: Shape) => toItemRecord(append(created(shape), [{ type: "step_started", stepId: FIX }, { type: "decision_opened", decisionId: DECISION, kind: "budget", stepId: FIX, choices: [{ id: "continue", label: "Continue" }, { id: "stop", label: "Stop" }], detail: "The item used its time budget." }]))!;
-      expect(open({ budget: 60 }).decision!.question).toBe("The item used its 60 min budget. Continue for 60 more min?");
+      expect(open({ budget: 60 }).decision!.question).toBe("The item used its time budget. Continue for 60 more min?");
       expect(open({}).decision!.question).toBe("The item used its time budget. Continue?");
     });
 
@@ -368,8 +377,8 @@ describe("toItemRecord", () => {
       expect(ask("outside_change")).toBe("Allow this change outside the worktree?");
     });
 
-    it("no kind asks \"Approve this step's result?\"", () => {
-      const all = [approval({}, FIX, { tree: TREE, change: { files: 0 } }), approval({}, FIX, { tree: TREE }), approval({}, FIX, {}), approval({}, REVIEW, { tree: TREE, change: { files: 1 } })];
+    it("a plan approval that has a tree or a count never asks \"Approve this step's result?\"", () => {
+      const all = [approval({}, FIX, { tree: TREE, change: { files: 0 } }), approval({}, FIX, { tree: TREE }), approval({}, REVIEW, { tree: TREE, change: { files: 1 } })];
       for (const record of all) expect(record.decision!.question).not.toContain("Approve this step");
     });
   });

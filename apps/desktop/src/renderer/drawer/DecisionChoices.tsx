@@ -29,7 +29,8 @@ export const cardOffersStop = (decision: Decision): boolean => shownChoices(deci
 
 const TEXT = {
   note: "What should change?",
-  hint: (agent: string | undefined, run: string | undefined) => `Goes into ${agent === undefined ? "the step" : `${agent}'s`} next run with the current diff.${run === undefined ? "" : ` ${run}.`}`,
+  hint: (agent: string | undefined, run: string | undefined, diff: boolean) =>
+    `Goes into ${agent === undefined ? "the step" : `${agent}'s`} next run${diff ? " with the current diff" : ""}.${run === undefined ? "" : ` ${run}.`}`,
   send: (agent: string | undefined) => (agent === undefined ? "Send and run again" : `Send to ${agent}`),
   cancel: "Cancel",
 } as const;
@@ -93,7 +94,7 @@ export function DecisionChoices({ decision, busy, onChoose, context, agent, run,
           onChange={(event) => setNote(event.target.value)}
         />
         <span id={hintId} className="decision-note-hint">
-          {TEXT.hint(agent, run)}
+          {TEXT.hint(agent, run, decision.hasDiff === true)}
         </span>
         <div className="choices">
           <Button variant="primary" type="submit" disabled={busy} aria-label={named(TEXT.send(agent))}>

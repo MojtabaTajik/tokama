@@ -20,6 +20,8 @@ export interface NeedsYouRow {
   readonly sinceTitle: string;
   /** How long the question has waited ("41 m"), from the end of the step's latest attempt; undefined when the step records none. */
   readonly waits: string | undefined;
+  /** The same wait in ms, to find the longest one. */
+  readonly waitMs: number | undefined;
 }
 
 /** When the step stopped to ask: the latest end among its attempts. */
@@ -64,6 +66,7 @@ export function needsYouRows(items: readonly ItemRecord[], setup: Setup | undefi
         since: ago(now - item.createdAt),
         sinceTitle: time.title,
         waits: asked === undefined ? undefined : formatDuration(now - asked, "minutes"),
+        waitMs: asked === undefined ? undefined : Math.max(0, now - asked),
       };
     });
 }

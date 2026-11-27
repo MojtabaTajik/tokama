@@ -85,7 +85,8 @@ export function NeedsYou(props: NeedsYouProps) {
   };
 
   const loaded = setup !== undefined;
-  const oldest = rows[0];
+  // The question that waited longest, which is not always the oldest item's.
+  const oldest = rows.reduce<NeedsYouRow | undefined>((best, row) => (row.waitMs !== undefined && (best?.waitMs === undefined || row.waitMs > best.waitMs) ? row : best), undefined) ?? rows[0];
   return (
     <main className="main" tabIndex={-1} ref={page} onFocus={track}>
       <header className="main-header">

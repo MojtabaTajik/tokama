@@ -87,8 +87,9 @@ describe("the Needs you page", () => {
     expect($$(".nr-row .btn-primary").map((el) => el.closest(".nr-row")?.getAttribute("data-row"))).toEqual(["0"]);
     // The quiet link is not a button of the row's own row of buttons, and still answers.
     expect($$(".nr-row")[0]?.querySelector(".btn-link")?.textContent).toBe("End: no action needed");
-    expect(container.textContent).not.toContain("Approve this step's result?");
-    expect(container.textContent).not.toContain("changed 0 files");
+    // A plan has no diff, so the note does not promise one.
+    await click(choiceButtons($$(".nr-row")[0]!)[1]);
+    expect(text(".decision-note-hint")).toBe("Goes into Architect's next run.");
   });
 
   it("says how long the oldest question has waited, from the end of the step's latest attempt", async () => {

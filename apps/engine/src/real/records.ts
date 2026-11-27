@@ -33,7 +33,7 @@ const MAX_CHECKS_SHOWN = 20;
 
 /** What each kind of decision asks when the template and the step are not known; the decision's own detail says why. */
 const QUESTIONS: Readonly<Record<DecisionKind, string>> = {
-  plan_approval: "Approve this step's result?",
+  plan_approval: "Go on with this result?",
   cloud_summary: "Send this summary to the cloud agent?",
   outside_change: "Allow this change outside the worktree?",
   after_failure: "The step failed. Retry it, or end the item?",
@@ -57,13 +57,15 @@ function approvalOf(open: StoredDecision, template: TemplateRecord | undefined) 
 }
 
 /** What the decision asks, in the words of the step it is about: the engineer reads the question, not the kind. */
-export function questionOf(open: StoredDecision, template: TemplateRecord | undefined, stepIndex: number, runLimit?: number): string {
-  const step = template?.steps.find((s) => s.id === open.stepId) ?? template?.steps[stepIndex];
+export function questionOf(open: StoredDecision, template: TemplateRecord | undefined, runLimit?: number): string {
+  // A question with no step of its own (setup, Finish) names none.
+  const step = template?.steps.find((s) => s.id === open.stepId);
   const name = step?.name;
   switch (open.kind) {
     case "plan_approval": {
       const { next, commits, files } = approvalOf(open, template);
-      if (step === undefined) return QUESTIONS.plan_approval;
+      // No step, or a log from before both the tree and the count were kept: nothing tells what the approval covers.
+      if (step === undefined || (files === undefined && open.tree === undefined)) return QUESTIONS.plan_approval;
       if (files === 0) {
         if (next === undefined) return "Accept this result and finish?";
         return COMMAND_VERBS.has(next.name.toLowerCase()) ? `${next.name} it this way?` : `Go on to ${next.name} this way?`;
@@ -81,7 +83,8 @@ export function questionOf(open: StoredDecision, template: TemplateRecord | unde
     case "run_failure":
       return name === undefined ? QUESTIONS.run_failure : `${name} could not run. Run ${name} again?`;
     case "budget":
-      return template?.budget === undefined ? QUESTIONS.budget : `The item used its ${template.budget.timeMinutes} min budget. Continue for ${template.budget.timeMinutes} more min?`;
+      // After a Continue the item has used more than one budget, so the question names only the time that is added.
+      return template?.budget === undefined ? QUESTIONS.budget : `The item used its time budget. Continue for ${template.budget.timeMinutes} more min?`;
     default:
       return QUESTIONS[open.kind];
   }
@@ -270,7 +273,7 @@ function toDecision(item: StoredItem, template: TemplateRecord | undefined): Dec
     id: open.id,
     kind: open.kind,
     stepIndex,
-    question: questionOf(open, template, stepIndex, runLimit),
+    question: questionOf(open, template, runLimit),
     ...(why !== undefined && { why }),
     // A step that changed no files has nothing to diff; a log from before the count was kept shows the diff of its tree.
     ...(open.kind === "plan_approval" && open.tree !== undefined && (open.change?.files ?? 1) > 0 && { hasDiff: true }),
