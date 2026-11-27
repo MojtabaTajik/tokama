@@ -70,7 +70,7 @@ describe("Settings > Notifications", () => {
     expect(previews()).toEqual([
       "Needs you: Add order export endpointnowThe plan is ready. Approve it to start Build.Plan and build · orders-api",
       "Finished is sound only: no banner, the Tokama sound plays.",
-      "Failed: Upgrade the Postgres drivernowBuild failed 3 times: pnpm test, 4 failing.Plan and build · orders-api",
+      "Failed: Upgrade the Postgres drivernowStopped at Build, step 2 of 3: pnpm test failed 3 timesPlan and build · orders-api",
     ]);
     expect($(".notes-sound-note")?.textContent).toBe("♪ Plays the Tokama sound for 3 of 3 kinds.");
     expect($(".notes-card")?.getAttribute("aria-label")).toBe("Notification preview. Needs you: Add order export endpoint. The plan is ready. Approve it to start Build.");
@@ -87,7 +87,7 @@ describe("Settings > Notifications", () => {
     expect($(".notes-sound-note")?.textContent).toBe("♪ Plays the Tokama sound for 2 of 3 kinds.");
     await click(option(1, "Banner only"));
     expect(fake.saveNotifications).toHaveBeenLastCalledWith({ finished: "banner" });
-    expect(previews()[1]).toContain("Done in 9 min");
+    expect(previews()[1]).toContain("Done in 9 min · checks 3/3 passed. Ready to merge or open a PR.");
     expect($(".notes-sound-note")?.textContent).toBe("♪ Plays the Tokama sound for 2 of 3 kinds.");
     await click(option(0, "Off"));
     await click(option(2, "Banner only"));

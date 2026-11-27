@@ -1,6 +1,6 @@
 import type { ItemRecord } from "@tokama/core";
 import { describe, expect, it } from "vitest";
-import { checksOf, checksWords, doneFacts, factsOf, failedFacts, failureLine } from "./item-facts.js";
+import { checksOf, checksWords, doneFacts, factsOf, failedFacts, failureLine, finishedLine } from "./item-facts.js";
 
 const check = (command: string, passed = true) => ({ command, passed, exitCode: passed ? 0 : 1 });
 const attempt = (n: number, checks: ReturnType<typeof check>[], fields: Record<string, unknown> = {}) => ({ attempt: n, result: checks.every((c) => c.passed) ? "passed" : "failed", checks, ...fields });
@@ -95,6 +95,17 @@ describe("failedFacts and failureLine", () => {
   it("leaves out the checks when they all passed", () => {
     const failed = crashed([step("Build", "failed", { detail: "timed out", attempts: [attempt(1, THREE)] })]);
     expect(failedFacts(failed).map((fact) => fact.text)).toEqual(["timed out", "stopped at Build, step 1 of 1"]);
+  });
+});
+
+describe("finishedLine", () => {
+  const checked = item({ steps: [step("Build", "passed", { attempts: [attempt(1, THREE)] })] });
+  it("says the time and the checks, then what can be done", () => {
+    expect(finishedLine(checked, "9 min", true)).toBe("Done in 9 min · checks 3/3 passed. Ready to merge or open a PR.");
+    expect(finishedLine(checked, "9 min", false)).toBe("Done in 9 min · checks 3/3 passed.");
+  });
+  it("leaves the checks out when there were none, and ends with the outcome's own line", () => {
+    expect(finishedLine(item({ outcome: { kind: "no_action_needed", detail: "Nothing to change." } }), "1 h", false)).toBe("Done in 1 h. Nothing to change.");
   });
 });
 

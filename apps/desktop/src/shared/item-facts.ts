@@ -51,6 +51,16 @@ export function checksWords(item: Pick<ItemRecord, "steps">): string | undefined
   return checks === undefined ? undefined : `${checksText(checks)} passed`;
 }
 
+/**
+ * A done item in words, for a banner: "Done in 9 min · checks 3/3 passed. Ready to merge or open a PR."
+ * `took` is the time already worded; `ready` is whether Merge is offered.
+ */
+export function finishedLine(item: Pick<ItemRecord, "steps" | "outcome">, took: string, ready: boolean): string {
+  const checks = checksWords(item);
+  const next = ready ? " Ready to merge or open a PR." : item.outcome?.detail === undefined ? "" : ` ${item.outcome.detail}`;
+  return `Done in ${took}${checks === undefined ? "" : ` · ${checks}`}.${next}`;
+}
+
 /** The part for the checks: plain when all passed, with a ✕ when some did not. */
 function checksFact(checks: Checks): Fact {
   return checks.passed === checks.total ? { text: checksText(checks) } : { text: checksText(checks), mark: FAILED_MARK };

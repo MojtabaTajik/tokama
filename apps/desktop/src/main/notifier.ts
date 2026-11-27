@@ -6,7 +6,7 @@
 import { cutText, finishActions, type ItemRecord, type Setup } from "@tokama/core";
 import type { BridgeEvent } from "../shared/bridge.js";
 import type { NoteKind, NotificationSettings, SoundSet } from "../shared/desktop-state.js";
-import { checksWords, failureLine } from "../shared/item-facts.js";
+import { failureLine, finishedLine } from "../shared/item-facts.js";
 import type { FocusState } from "./sound/focus.js";
 
 export type { NoteKind };
@@ -96,17 +96,10 @@ export function durationText(ms: number): string {
 
 const TITLE: Record<NoteKind, string> = { needsYou: "Needs you", finished: "Finished", failed: "Failed" };
 
-/** "Done in 9 min · checks 3/3 passed. Ready to merge or open a PR." */
-function finishedLine(item: ItemRecord, now: number): string {
-  const checks = checksWords(item);
-  const next = finishActions(item).includes("merge") ? " Ready to merge or open a PR." : item.outcome?.detail === undefined ? "" : ` ${item.outcome.detail}`;
-  return `Done in ${durationText(now - item.createdAt)}${checks === undefined ? "" : ` · ${checks}`}.${next}`;
-}
-
 function bodyLine(kind: NoteKind, item: ItemRecord, now: number): string {
   if (kind === "needsYou") return item.decision?.question ?? "Waiting for your decision.";
   if (kind === "failed") return failureLine(item);
-  return finishedLine(item, now);
+  return finishedLine(item, durationText(now - item.createdAt), finishActions(item).includes("merge"));
 }
 
 export interface Note {
