@@ -54,6 +54,18 @@ describe("the rule for a proposed command", () => {
     expect(checksProblem(answer(command))).toMatch(/not a check/);
   });
 
+  it.each(["${X:-rm} -rf build", "/bin/r? -rf build", "/???/r[m] -rf build", "$SHELL -c id", "~/bin/tool test"])("refuses %j: a first word the shell would expand", (command) => {
+    expect(checksProblem(answer(command))).toBe("check 1's command starts with a name the shell would expand. Give the program's plain name.");
+  });
+
+  it.each(["command rm x", "exec rm x", "timeout 9 make", "nice make", "busybox rm x", "dash -c id"])("refuses %j: a wrapper", (command) => {
+    expect(checksProblem(answer(command))).toMatch(/not a check/);
+  });
+
+  it("accepts a first word such as ./gradlew", () => {
+    expect(checksProblem(answer("./gradlew test"))).toBeUndefined();
+  });
+
   it("refuses a variable assignment in front of the command", () => {
     expect(checksProblem(answer("CI=1 pnpm test"))).toBe("check 1's command starts with a variable assignment. Give only the command.");
   });

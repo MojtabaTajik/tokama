@@ -182,6 +182,14 @@ describe("the folder", () => {
     expect((await gatherUpper({ path: home }, signal)).ok).toBe(false);
   });
 
+  // On macOS the same folder is also reached under /System/Volumes/Data, which `realpath` leaves as it is.
+  it.skipIf(process.platform !== "darwin")("refuses the Tokama home and the home folder by another spelling of their path", async () => {
+    expect(await refusal(`/System/Volumes/Data${home}`)).toMatch(/Tokama's own/);
+    expect(await refusal(`/System/Volumes/Data${user}`)).toMatch(/holds Tokama's own/);
+    const elsewhere = createRepoGatherer({ tokamaHome: join(root, "elsewhere", ".tokama"), userHome: user, worktreeFolders: () => [] });
+    expect(await elsewhere({ path: `/System/Volumes/Data${user}` }, signal)).toMatchObject({ ok: false, error: expect.stringMatching(/home folder/) });
+  });
+
   it("reads a folder through a link to it, by its real path", async () => {
     put(join(repo, "package.json"), "{}");
     symlinkSync(repo, join(root, "alias"));

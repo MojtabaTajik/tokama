@@ -77,6 +77,20 @@ function within(parent: string, child: string): boolean {
   return !isAbsolute(rel) && rel.split(sep)[0] !== "..";
 }
 
+/** The disk identity (`device:inode`) of `path` and each of its parents, nearest first; a part that cannot be read is left out, and an unreadable `path` gives an empty list. */
+async function identities(path: string): Promise<string[]> {
+  const ids: string[] = [];
+  for (let current = path; ; current = dirname(current)) {
+    try {
+      const info = await stat(current, { bigint: true });
+      ids.push(`${info.dev}:${info.ino}`);
+    } catch {
+      if (current === path) return [];
+    }
+    if (dirname(current) === current) return ids;
+  }
+}
+
 /** The folder's real path, or why a helper must not read it. */
 async function usableFolder(path: string, options: RepoGathererOptions): Promise<Result<string, string>> {
   if (path === "" || path.includes("\0") || !isAbsolute(path)) return err("The folder must be a full path, such as /home/me/code/orders-api.");
@@ -88,9 +102,13 @@ async function usableFolder(path: string, options: RepoGathererOptions): Promise
     return err("The folder does not exist or cannot be read.");
   }
   const [home, user] = await Promise.all([realish(resolve(options.tokamaHome)), realish(resolve(options.userHome))]);
-  if (within(home, real)) return err("This folder is Tokama's own, and a helper does not read it.");
-  if (within(real, home)) return err("This folder holds Tokama's own folder, and a helper does not read it. Pick the project's folder.");
-  if (within(real, user)) return err("This is the home folder, not a project's. Pick the project's folder.");
+  // Two spellings of one folder (macOS firmlinks such as /System/Volumes/Data, bind mounts) have different
+  // real paths but the same disk identity, so the folders are also compared by it, along the whole chain of parents.
+  const [chosenIds, homeIds, userIds] = await Promise.all([identities(real), identities(home), identities(user)]);
+  const chosenId = chosenIds[0];
+  if (within(home, real) || (homeIds.length > 0 && chosenIds.includes(homeIds[0]!))) return err("This folder is Tokama's own, and a helper does not read it.");
+  if (within(real, home) || (chosenId !== undefined && homeIds.includes(chosenId))) return err("This folder holds Tokama's own folder, and a helper does not read it. Pick the project's folder.");
+  if (within(real, user) || (chosenId !== undefined && userIds.includes(chosenId))) return err("This is the home folder, not a project's. Pick the project's folder.");
   return ok(real);
 }
 

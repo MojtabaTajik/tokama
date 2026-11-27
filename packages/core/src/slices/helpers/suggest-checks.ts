@@ -7,7 +7,9 @@ import type { AgentId, HelperResult } from "../../kernel/schemas/index.js";
 import type { HelperDefinition } from "./definition.js";
 
 /** Commands that are never a check. A speed bump for a steered answer, not a boundary: a person still reads the command before it runs. */
-const NOT_A_CHECK = new Set(["rm", "sudo", "su", "curl", "wget", "ssh", "scp", "dd", "chmod", "chown", "mv", "eval", "sh", "bash", "zsh", "env", "xargs", "osascript"]);
+const NOT_A_CHECK = new Set(["rm", "sudo", "su", "curl", "wget", "ssh", "scp", "dd", "chmod", "chown", "mv", "eval", "sh", "bash", "zsh", "env", "xargs", "osascript", "command", "exec", "nohup", "nice", "time", "timeout", "busybox", "dash", "ksh", "fish", "pwsh"]);
+/** A program name the shell would still expand (`${X:-rm}`, `r?`, `~`): what runs is not what the person reads. */
+const EXPANDS = /[$*?[\]{}~]/;
 
 /** The first word of a command as a program name: `/bin/RM` is `rm`. */
 const programOf = (word: string): string => (word.split("/").at(-1) ?? word).toLowerCase();
@@ -22,6 +24,7 @@ export function checksProblem(answer: HelperResult): string | undefined {
     const first = posixSh.split(command);
     const word = first.ok ? (first.value[0]?.words[0] ?? "") : "";
     if (word.includes("=")) return `${label}'s command starts with a variable assignment. Give only the command.`;
+    if (EXPANDS.test(word)) return `${label}'s command starts with a name the shell would expand. Give the program's plain name.`;
     if (NOT_A_CHECK.has(programOf(word))) return `${label}'s command is not a check: it starts with a program that does not test anything.`;
   }
   return undefined;
