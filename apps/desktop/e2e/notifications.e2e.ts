@@ -99,10 +99,12 @@ flow("the test button shows one banner and plays the Needs you sound, even when 
   expect(await page.locator(".notes-blocked").count()).toBe(0);
 });
 
-flow("the mark in About is a button that plays the call of the Tokay", async ({ page, app }) => {
+flow("the mark in About is a button that plays the call of the Tokay", async ({ page, app, screenshot }) => {
   await page.getByRole("button", { name: "About Tokama" }).click();
   await page.getByRole("button", { name: "Play the Tokay call" }).click();
   await page.getByText("♪ Playing").waitFor();
+  await page.waitForTimeout(300);
+  await screenshot("about-playing");
   await expect.poll(() => sounds(app)).toEqual([{ name: "tokayCall", set: "tokama" }]);
 });
 

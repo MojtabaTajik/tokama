@@ -315,7 +315,9 @@ describe("About", () => {
       expect(call?.getAttribute("title")).toBe("Play the Tokay call");
       expect(call?.querySelector("img")?.getAttribute("alt")).toBe("");
       expect(text(".about-calling")).toBe("");
+      expect($(".about-calling")?.hasAttribute("data-playing")).toBe(false);
       await click(call);
+      expect($(".about-calling")?.hasAttribute("data-playing")).toBe(true);
       expect(fake.playSound).toHaveBeenCalledWith("tokayCall", "tokama");
       expect(text(".about-calling")).toBe("♪ Playing");
       expect($(".about-calling")?.getAttribute("aria-live")).toBe("polite");
@@ -412,7 +414,7 @@ describe("About", () => {
   it("takes the logo from the brand assets folder", async () => {
     await open();
     const [mark, wordmark] = $$(".about-logo img");
-    expect([mark?.getAttribute("src"), wordmark?.getAttribute("src")]).toEqual([brand.markUrl, brand.wordmarkUrl]);
+    expect([mark?.getAttribute("src"), wordmark?.getAttribute("src")]).toEqual([brand.iconUrl, brand.wordmarkUrl]);
   });
 
   it("replaces the board and the drawer, and the way back is the button, the Board icon, the avatar or a sidebar row", async () => {

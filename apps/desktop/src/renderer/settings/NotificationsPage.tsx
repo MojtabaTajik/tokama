@@ -231,7 +231,7 @@ export function NotificationsPage({ bridge }: NotificationsPageProps) {
                   <div key={preview.key} className="notes-slot">
                     {mode === "both" || mode === "banner" ? (
                       <div className="notes-card" role="img" aria-label={`Notification preview. ${preview.title}. ${preview.body}`}>
-                        <img className="notes-icon" src={brand.markUrl} alt="" />
+                        <img className="notes-icon" src={brand.mark32Url} alt="" />
                         <span className="notes-card-text">
                           <span className="notes-card-top">
                             <b className="notes-card-title">{preview.title}</b>

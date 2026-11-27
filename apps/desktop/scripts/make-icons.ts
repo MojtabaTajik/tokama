@@ -1,9 +1,10 @@
-// Makes the app icon files from the brand marks in src/renderer/brand (mark.svg, and the pixel
-// glyphs mark-32.svg and mark-16.svg for the small sizes), so replacing the logo is a file swap
-// followed by `pnpm --filter @tokama/desktop icons`. Each size is the mark on a night rounded-square
-// tile: the master mark from 128 px up, the 32 px glyph at 33 to 64 px, the 16 px glyph below that,
-// and at 16 px a full-bleed tile, because a tile would leave a glyph of only 8 px. The output is committed
-// (Linux CI and the window icon need it) and goes to `build/`, where a packager looks:
+// Makes the app icon files from the icon art in src/renderer/brand, so replacing the icon is a file
+// swap followed by `pnpm --filter @tokama/desktop icons`. Each icon file is a whole icon (tile and
+// head) on the 1024 unit grid, drawn by hand for a range of sizes: icon-512.svg (full art) for 128 px
+// and up, icon-64.svg (reduced, no scales) for 48 and 64 px, icon-32.svg (flat) for 24 and 32 px, and
+// icon-16.svg (flat, the tile fills the canvas) for 16 px. The art is rendered at the output size, never
+// scaled from a larger PNG. The output is committed (Linux CI and the window icon need it) and goes to
+// `build/`, where a packager looks:
 //   build/icon.png            1024 px, the dock icon in dev
 //   build/icon.icns           macOS, PNG entries 16 to 1024 px
 //   build/icon.ico            Windows, PNG entries 16 to 256 px
@@ -35,34 +36,16 @@ const ICNS_TYPES = [
 ] as const;
 
 const brand = join(appDir, "src", "renderer", "brand");
-/** The inside of an SVG file: its shapes, without the outer `<svg>` element. */
-const inner = (file: string): string => readFileSync(join(brand, file), "utf8").replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "");
-const master = inner("mark.svg");
-// The pixel glyphs only look right with hard edges.
-const glyph32 = `<g shape-rendering="crispEdges">${inner("mark-32.svg")}</g>`;
-const glyph16 = `<g shape-rendering="crispEdges">${inner("mark-16.svg")}</g>`;
+/** The icon art that is drawn for `size` px. */
+const artFile = (size: number): string => (size >= 128 ? "icon-512.svg" : size >= 48 ? "icon-64.svg" : size >= 24 ? "icon-32.svg" : "icon-16.svg");
 
-const NIGHT = "#0B0F17";
-const TILE_EDGE = "#2A3443";
-
-/** The app icon at `size` px as SVG: the tile and the mark that belongs to that size. */
-function iconSvg(size: number): string {
-  const open = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"`;
-  if (size >= 128) {
-    // Tile and mark on the 1024 grid; the mark's 64 unit box sits at 256 to 768.
-    return `${open} viewBox="0 0 1024 1024"><rect x="100" y="100" width="824" height="824" rx="185" fill="${NIGHT}" stroke="${TILE_EDGE}" stroke-width="6"/><g transform="translate(256 256) scale(8)">${master}</g></svg>`;
-  }
-  // A pixel glyph is drawn at 1:1 (whole pixels only, a fraction would drop cells) and centred; the tile is 0.8125 of the icon.
-  const glyphSize = size > 32 ? 32 : 16;
-  const glyph = glyphSize === 32 ? glyph32 : glyph16;
-  if (size === 16) {
-    return `${open} viewBox="0 0 16 16"><rect width="16" height="16" rx="3.5" fill="${NIGHT}"/>${glyph}</svg>`;
-  }
-  const inset = (size * 3) / 32;
-  return `${open} viewBox="0 0 ${size} ${size}"><rect x="${inset}" y="${inset}" width="${size - 2 * inset}" height="${size - 2 * inset}" rx="${(size * 3) / 16}" fill="${NIGHT}"/><g transform="translate(${(size - glyphSize) / 2} ${(size - glyphSize) / 2})">${glyph}</g></svg>`;
-}
-
-const png = new Map<number, Buffer>(SIZES.map((size) => [size, Buffer.from(new Resvg(iconSvg(size), { font: { loadSystemFonts: false } }).render().asPng())]));
+// The art has no text, so no fonts are loaded; the output must not depend on the machine.
+const png = new Map<number, Buffer>(
+  SIZES.map((size) => [
+    size,
+    Buffer.from(new Resvg(readFileSync(join(brand, artFile(size)), "utf8"), { fitTo: { mode: "width", value: size }, font: { loadSystemFonts: false } }).render().asPng()),
+  ]),
+);
 const pngOf = (size: number): Buffer => {
   const found = png.get(size);
   if (found === undefined) throw new Error(`no ${size} px render`);

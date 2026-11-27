@@ -191,7 +191,7 @@ export function Rail({ panelOpen, panelId, onTogglePanel, needsYou, issues, prob
   const needsYouLabel = needsYou === undefined ? `${TEXT.needsYou} · ${TEXT.outOfDate}` : withCount(TEXT.needsYou, needsYou);
   return (
     <nav className="rail" aria-label={TEXT.rail}>
-      <img className="rail-mark" src={brand.markUrl} alt={brand.name} width={22} height={22} />
+      <img className="rail-mark" src={brand.mark32Url} alt={brand.name} width={22} height={22} />
       <Button
         variant="plain"
         className="rail-button"
