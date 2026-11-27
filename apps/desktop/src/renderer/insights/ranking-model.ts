@@ -1,10 +1,11 @@
-// The rows of "What uses the weekly limits": the report's steps, grouped as the person chose, each
-// measured in the one thing that means something for its AI tool: a part of the tool's own limit,
-// a part of Tokama's use (no split known), money (pay per use) or tokens (a local model, which has
-// no limit). Shares of different tools are never added: a workflow that ran on two tools is two rows.
+// The lists of "What uses the weekly limits": one list per AI tool, each with its own measure, bar
+// scale and order, because a bar and a sort only mean something inside one measure. A tool's rows
+// (the report's steps, grouped as the person chose) are measured in the one thing that means
+// something for the tool: a part of its own limit, a part of Tokama's use (no split known), money
+// (pay per use) or tokens (a local model, which has no limit). Rows of two tools never share a list.
 import type { AiCliId, CliPlan, Setup, UsageReport } from "@tokama/core";
 import { cliName } from "../model.js";
-import { formatCost, formatTokens, isPayPerUse, limitShare, usePercent, workflowName } from "./usage-model.js";
+import { formatCost, formatTokens, isPayPerUse, limitShare, liveWindows, usePercent, workflowName } from "./usage-model.js";
 
 type Week = NonNullable<UsageReport["week"]>;
 type StepRow = Week["steps"][number];
@@ -12,6 +13,9 @@ type StepRow = Week["steps"][number];
 export type Group = "step" | "workflow" | "item";
 /** What a row is measured in. */
 export type Unit = "limit" | "use" | "cost" | "tokens";
+
+/** A list shows this many rows, then "Show all". */
+export const LIST_ROWS = 8;
 
 export interface Measure {
   readonly unit: Unit;
@@ -33,6 +37,7 @@ export interface Row extends Measure {
   readonly name: string;
   /** The agents of the row, each once: one for a step, several for a workflow or an item. */
   readonly agentIds?: readonly string[];
+  /** The model's full id, for a step or helpers row. */
   readonly model?: string;
   readonly itemId?: string;
   readonly facts: string;
@@ -41,16 +46,23 @@ export interface Row extends Measure {
   readonly more?: { readonly count: number; readonly text: string };
 }
 
-export interface Ranking {
-  readonly header: string;
-  readonly rows: readonly Row[];
-  /** The longest bar of each kind of row: shares, money and tokens are never on one scale. */
-  readonly scale: { readonly percent: number; readonly cost: number; readonly tokens: number };
-}
+/** What the heading line of a list says: where the limit stands, or why there is none. */
+export type Heading =
+  | { readonly kind: "split"; readonly tokama: number; readonly outside: number; readonly left: number }
+  | { readonly kind: "text"; readonly text: string };
 
-/** A share of a limit and a part of use are both percents; money and tokens are each their own kind. */
-export const kindOf = (unit: Unit): "percent" | "cost" | "tokens" => (unit === "limit" || unit === "use" ? "percent" : unit);
-const KIND_ORDER = { percent: 0, cost: 1, tokens: 2 } as const;
+export interface ToolList {
+  readonly cliId: AiCliId;
+  readonly heading: Heading;
+  /** The column head of the measure: "Weekly limit", "Of Tokama's use", "Tokens", "Cost". */
+  readonly header: string;
+  /** Every row of the tool, most first; the list shows the first `LIST_ROWS` until asked for all. */
+  readonly rows: readonly Row[];
+  /** "Outside Tokama": the last row, on the list's bar scale. */
+  readonly outside?: Row;
+  /** The longest bar of the list, outside row included. */
+  readonly scale: number;
+}
 
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" : "s"}`;
 const runsFacts = (runs: number, itemCount: number): string => `${plural(runs, "run")} · ${plural(itemCount, "item")}`;
@@ -98,9 +110,9 @@ function stepRow(step: StepRow, plan: CliPlan | undefined, setup: Setup | undefi
   };
 }
 
-function workflowRows(steps: readonly StepRow[], plans: ReadonlyMap<AiCliId, CliPlan>, setup: Setup | undefined): Row[] {
+function workflowRows(steps: readonly StepRow[], plan: CliPlan | undefined, setup: Setup | undefined): Row[] {
   const groups = new Map<string, StepRow[]>();
-  for (const step of steps) groups.set(`${step.templateId}\n${step.cliId}`, [...(groups.get(`${step.templateId}\n${step.cliId}`) ?? []), step]);
+  for (const step of steps) groups.set(step.templateId, [...(groups.get(step.templateId) ?? []), step]);
   return [...groups.values()].map((group): Row => {
     const first = group[0]!;
     const own = measure(
@@ -112,7 +124,7 @@ function workflowRows(steps: readonly StepRow[], plans: ReadonlyMap<AiCliId, Cli
         costUsd: known(group.map((step) => step.costUsd)),
         costEstimated: group.some((step) => step.costEstimated === true),
       },
-      plans.get(first.cliId),
+      plan,
     );
     return {
       ...own,
@@ -126,60 +138,84 @@ function workflowRows(steps: readonly StepRow[], plans: ReadonlyMap<AiCliId, Cli
   });
 }
 
-/** The ranking for the picked AI tool (all tools when `only` is undefined) and grouping. */
-export function rankingOf(week: Week, clis: readonly CliPlan[], group: Group, only: AiCliId | undefined, setup: Setup | undefined): Ranking {
+/** The heading of a tool's list: the split bar when Tokama knows its part of the limit, else one sentence saying why not. */
+function headingOf(plan: CliPlan | undefined, cliId: AiCliId, limit: Week["limits"][number] | undefined): Heading {
+  if (limit?.tokamaPercent !== undefined && limit.outsidePercent !== undefined) {
+    return { kind: "split", tokama: limit.tokamaPercent, outside: limit.outsidePercent, left: Math.max(0, 100 - limit.usedPercent) };
+  }
+  if (cliId === "ollama") return { kind: "text", text: "no plan limits · rows count tokens" };
+  if (isPayPerUse(plan)) return { kind: "text", text: "billed per use · rows show what each call cost" };
+  const used = limit?.usedPercent ?? liveWindows(plan, Number.MIN_SAFE_INTEGER).find((w) => w.window === "weekly_all" || w.window === "seven_day")?.usedPercent;
+  const where = used === undefined ? "no limit reading yet" : `weekly limit ${Math.round(used)}% used`;
+  return { kind: "text", text: `${where} · Tokama's part of it is not known for this tool, so rows are a share of what Tokama used on it` };
+}
+
+const HEADERS: Readonly<Record<Unit, string>> = { limit: "Weekly limit", use: "Of Tokama's use", cost: "Cost", tokens: "Tokens" };
+
+/** How soon a tool's limit runs out: a limit already reached first, then the earliest run-out, then the rest; tools without a limit last. */
+function urgency(plan: CliPlan | undefined, cliId: AiCliId, now: number): number {
+  if (cliId === "ollama") return 3e15;
+  if (isPayPerUse(plan)) return 2e15;
+  const windows = liveWindows(plan, now);
+  if (windows.some((w) => w.usedPercent >= 100)) return -1;
+  const runsOut = windows.flatMap((w) => (w.forecast?.runsOutAt === undefined ? [] : [w.forecast.runsOutAt]));
+  return runsOut.length > 0 ? Math.min(...runsOut) : 1e15;
+}
+
+/** The lists for the picked AI tool (all tools when `only` is undefined), most urgent tool first. */
+export function listsOf(week: Week, clis: readonly CliPlan[], group: Group, only: AiCliId | undefined, setup: Setup | undefined, now: number): ToolList[] {
   const plans = new Map(clis.map((plan) => [plan.cliId, plan]));
-  const shown = (cliId: AiCliId) => only === undefined || cliId === only;
-  const rows: Row[] = [];
-  if (group === "step") rows.push(...week.steps.filter((step) => shown(step.cliId)).map((step) => stepRow(step, plans.get(step.cliId), setup)));
-  if (group === "workflow") rows.push(...workflowRows(week.steps.filter((step) => shown(step.cliId)), plans, setup));
-  if (group === "item") {
-    for (const item of week.items.filter((entry) => shown(entry.cliId))) {
-      // Without a split, an item's part of Tokama's use of its tool is its part of the tokens.
-      const toolTokens = week.steps.filter((step) => step.cliId === item.cliId).reduce((total, step) => total + step.tokens, 0);
+  const cliIds = new Set<AiCliId>([...week.steps.map((s) => s.cliId), ...week.items.map((i) => i.cliId), ...week.helpers.map((h) => h.cliId)]);
+  const lists: ToolList[] = [];
+  for (const cliId of [...cliIds].filter((id) => only === undefined || id === only)) {
+    const plan = plans.get(cliId);
+    const steps = week.steps.filter((step) => step.cliId === cliId);
+    const toolTokens = sum([...steps.map((step) => step.tokens), ...week.helpers.filter((h) => h.cliId === cliId).map((h) => h.tokens)]);
+    // Without a split, a part of Tokama's use is a part of the tokens it used on this tool.
+    const byTokens = (tokens: number) => (toolTokens > 0 ? (tokens / toolTokens) * 100 : 0);
+    const rows: Row[] = [];
+    if (group === "step") rows.push(...steps.map((step) => stepRow(step, plan, setup)));
+    if (group === "workflow") rows.push(...workflowRows(steps, plan, setup));
+    if (group === "item") {
+      for (const item of week.items.filter((entry) => entry.cliId === cliId)) {
+        rows.push({
+          ...measure({ cliId, tokens: item.tokens, sharePercent: item.sharePercent, costUsd: item.costUsd, tokamaPercent: byTokens(item.tokens) }, plan),
+          key: `item:${item.itemId}`,
+          kind: "item",
+          cliId,
+          name: item.title,
+          itemId: item.itemId,
+          agentIds: item.agents,
+          facts: plural(item.runs, "run"),
+        });
+      }
+    }
+    for (const helper of week.helpers.filter((entry) => entry.cliId === cliId)) {
       rows.push({
-        ...measure({ cliId: item.cliId, tokens: item.tokens, sharePercent: item.sharePercent, costUsd: item.costUsd, tokamaPercent: toolTokens > 0 ? (item.tokens / toolTokens) * 100 : 0 }, plans.get(item.cliId)),
-        key: `item:${item.itemId}:${item.cliId}`,
-        kind: "item",
-        cliId: item.cliId,
-        name: item.title,
-        itemId: item.itemId,
-        agentIds: item.agents,
-        facts: plural(item.runs, "run"),
+        ...measure({ cliId, tokens: helper.tokens, sharePercent: helper.sharePercent, costUsd: helper.costUsd, tokamaPercent: byTokens(helper.tokens) }, plan),
+        key: `helpers:${cliId}:${helper.model}`,
+        kind: "helpers",
+        cliId,
+        name: "Tokama helpers",
+        model: helper.model,
+        facts: plural(helper.calls, "call"),
       });
     }
-  }
-  for (const helper of week.helpers.filter((entry) => shown(entry.cliId))) {
-    const own = measure({ cliId: helper.cliId, tokens: helper.tokens, sharePercent: helper.sharePercent, costUsd: helper.costUsd }, plans.get(helper.cliId));
-    // Helpers have no part of Tokama's use told: tokens say what they took.
-    const text = own.unit === "use" ? { unit: "tokens" as const, value: 0, text: formatTokens(helper.tokens) } : own;
-    rows.push({ ...text, key: `helpers:${helper.cliId}:${helper.model}`, kind: "helpers", cliId: helper.cliId, name: "Tokama helpers", model: helper.model, facts: plural(helper.calls, "call") });
-  }
-  // Shares of a limit first, then money, then tokens (a local model has no limit): a number is only ranked against numbers of its own kind.
-  rows.sort((a, b) => KIND_ORDER[kindOf(a.unit)] - KIND_ORDER[kindOf(b.unit)] || b.value - a.value || (a.key < b.key ? -1 : 1));
-  const outside = week.limits.filter((limit) => shown(limit.cliId) && limit.outsidePercent !== undefined && !isPayPerUse(plans.get(limit.cliId)));
-  for (const limit of outside) {
-    rows.push({
-      unit: "limit",
-      value: limit.outsidePercent!,
-      text: limitShare(limit.outsidePercent!),
-      key: `outside:${limit.cliId}`,
-      kind: "outside",
-      cliId: limit.cliId,
-      name: `Outside Tokama · ${cliName(limit.cliId)}`,
-      facts: "your own sessions",
+    rows.sort((a, b) => b.value - a.value || (a.key < b.key ? -1 : 1));
+    const limit = week.limits.find((entry) => entry.cliId === cliId);
+    const outside: Row | undefined =
+      limit?.outsidePercent === undefined || isPayPerUse(plan)
+        ? undefined
+        : { unit: "limit", value: limit.outsidePercent, text: limitShare(limit.outsidePercent), key: `outside:${cliId}`, kind: "outside", cliId, name: "Outside Tokama", facts: "your own sessions" };
+    if (rows.length === 0 && outside === undefined) continue;
+    lists.push({
+      cliId,
+      heading: headingOf(plan, cliId, limit),
+      header: HEADERS[(rows[0] ?? outside)!.unit],
+      rows,
+      ...(outside !== undefined && { outside }),
+      scale: Math.max(0, ...rows.map((row) => row.value), outside?.value ?? 0),
     });
   }
-  const measured = rows.filter((row) => row.kind !== "outside");
-  const limited = measured.some((row) => row.unit !== "tokens") || outside.length > 0;
-  const has = (unit: Unit) => measured.some((row) => row.unit === unit);
-  const header = (has("limit") || outside.length > 0) && has("cost") ? "Used" : has("limit") || outside.length > 0 ? "Weekly limit" : has("cost") ? "Cost" : has("use") ? "Of Tokama's use" : "Tokens";
-  const shownRows = rows.map((row): Row => {
-    // Next to rows with a limit, a row without one says so instead of showing tokens; a part of use says "of use".
-    if (limited && row.unit === "tokens" && row.cliId === "ollama") return { ...row, text: "no limit" };
-    if (header === "Weekly limit" && row.unit === "use") return { ...row, text: `${row.text} of use` };
-    return row;
-  });
-  const max = (kind: "percent" | "cost" | "tokens") => Math.max(0, ...rows.filter((row) => kindOf(row.unit) === kind).map((row) => row.value));
-  return { header, rows: shownRows, scale: { percent: max("percent"), cost: max("cost"), tokens: max("tokens") } };
+  return lists.sort((a, b) => urgency(plans.get(a.cliId), a.cliId, now) - urgency(plans.get(b.cliId), b.cliId, now) || cliName(a.cliId).localeCompare(cliName(b.cliId)));
 }

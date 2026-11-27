@@ -5,6 +5,7 @@
 import type { AgentDetail, AgentsListResult, BrokenAgentDetail, Setup, UsageReport } from "@tokama/core";
 import { type ReactNode, useState } from "react";
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
+import { shortModel } from "../format/model.js";
 import { firstTry, perRunOf } from "../insights/model-record.js";
 import { useUsage } from "../insights/useUsage.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
@@ -152,7 +153,7 @@ function ModelRecords({ agentId, report }: { readonly agentId: string; readonly 
           const first = firstTry(record);
           return (
             <li key={`${record.cliId}:${record.model}`}>
-              <span className="mono agent-record-model">{record.model}</span>
+              <span className="mono agent-record-model" title={record.model}>{shortModel(record.model)}</span>
               <span>{record.runs} runs</span>
               <span>{first === undefined ? "" : `${first.percent} first try`}</span>
               <span>

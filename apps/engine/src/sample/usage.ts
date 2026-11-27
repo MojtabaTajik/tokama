@@ -124,6 +124,9 @@ const FLOWS: readonly Flow[] = [
   },
 ];
 
+/** The parts of the sample system that later items of a workflow are about, so their titles differ. */
+const SCOPES = ["billing", "search", "payments", "notifications", "reports", "auth", "exports", "catalog", "shipping", "returns", "pricing", "audit"] as const;
+
 /** What a failing check is called in each sample repo. */
 const FAILING_CHECK: Readonly<Record<string, string>> = { "orders-api": "pnpm test", "checkout-web": "pnpm e2e" };
 
@@ -243,7 +246,9 @@ export function sampleUsageItems(setup: Setup, board: readonly ItemRecord[], now
       const scale = daysAgo === 0 ? Math.min(1, ((now - dayStart) * 0.8) / span) : 1;
       let cursor = daysAgo === 0 ? dayStart + next() * (now - dayStart - span * scale) : dayStart + (9 + next() * 7) * HOUR;
 
-      const title = flow.titles[k % flow.titles.length]!;
+      // The first round uses the titles as written; later rounds name another part of the system, so no two items share a title.
+      const round = Math.floor(k / flow.titles.length);
+      const title = `${flow.titles[k % flow.titles.length]!}${round === 0 ? "" : ` · ${SCOPES[(round - 1) % SCOPES.length]!}`}`;
       const known = daysAgo <= 1 ? board.find((item) => item.title === title && !usedIds.has(item.id)) : undefined;
       const itemId = (known?.id ?? `item_5a3e${hex(f, 4)}-${hex(k, 4)}-4000-8000-000000000000`) as ItemId;
       usedIds.add(itemId);

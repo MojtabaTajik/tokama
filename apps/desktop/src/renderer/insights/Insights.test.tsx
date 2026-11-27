@@ -49,9 +49,14 @@ function render(overrides: Partial<InsightsProps> = {}, report: UsageReport | un
   act(() => root.render(<Insights {...props} />));
 }
 
-const rankRows = () => $$('.ins-rank [role="row"]:not(.ins-rank-head)');
+// Every row of every tool's list, in page order; a step's items are sub rows and not counted.
+const rankRows = () => $$('.ins-rank [role="row"]:not(.ins-rank-head):not(.ins-rank-sub)');
 const rankNames = () => rankRows().map((row) => row.querySelector(".ins-rank-name")?.textContent);
 const rankValue = (row: Element | undefined) => row?.querySelector(".ins-rank-value")?.textContent;
+const listOf = (tool: string) => $$(".ins-list").find((el) => el.getAttribute("aria-label")?.startsWith(`${tool}:`))!;
+const rowsIn = (list: Element) => [...list.querySelectorAll('.ins-rank [role="row"]:not(.ins-rank-head):not(.ins-rank-sub)')];
+const valuesIn = (list: Element) => rowsIn(list).map(rankValue);
+const namesIn = (list: Element) => rowsIn(list).map((row) => row.querySelector(".ins-rank-name")?.textContent);
 const meters = () => $$('.ins-limits [role="meter"]').map((meter) => [meter.getAttribute("aria-label"), meter.getAttribute("aria-valuetext")]);
 
 describe("Insights: the first sentence", () => {
@@ -91,6 +96,10 @@ describe("Insights: limits", () => {
     expect(rows[0]).toContain("Claude CodeMAX");
     expect(rows[0]).toContain("resets at 17:10 · on pace for about 64%");
     expect(rows[1]).toContain("! near limit · resets Thu 09:00 · ! runs out Tue ~13:23 at this pace");
+    // A scoped limit says what the others say: its reset and its pace, nothing more.
+    expect(rows[2]).toContain("Weekly · Fable");
+    expect(rows[2]).toContain("resets Thu 09:00 · on pace for about 77%");
+    expect(rows[2]).not.toContain("share of the weekly limit");
     expect(rows[3]).toContain("Codex CLIPLUS");
     expect(rows[4]).toBe("OLOllamaLocal models have no plan limits.");
     expect($$(".meter-fill").map((fill) => fill.getAttribute("data-tone"))).toEqual(["pass", "fail", "pass", "pass"]);
@@ -98,21 +107,58 @@ describe("Insights: limits", () => {
 });
 
 describe("Insights: what uses the weekly limits", () => {
-  it("splits each tool's limit between Tokama, outside Tokama and what is left, never across tools", () => {
+  it("makes one list per AI tool, the one that runs out first on top and the tool without limits last, each with its own heading", () => {
     render();
-    expect($$(".ins-split-row").map((row) => row.textContent)).toEqual(["Claude CodeTokama~62%Outside Tokama~20%Left18%", "Codex CLITokama~22%Outside Tokama~8%Left70%"]);
+    expect($$(".ins-list").map((list) => list.getAttribute("aria-label"))).toEqual(["Claude Code: what uses its weekly limit", "Codex CLI: what uses its weekly limit", "Ollama: what uses its weekly limit"]);
     expect($$(".ins-split-bar").map((bar) => bar.getAttribute("aria-label"))).toEqual([
       "Claude Code weekly limit: Tokama ~62%, Outside Tokama ~20%, Left 18%",
       "Codex CLI weekly limit: Tokama ~22%, Outside Tokama ~8%, Left 70%",
     ]);
+    expect(listOf("Ollama").querySelector(".ins-list-text")?.textContent).toBe("no plan limits · rows count tokens");
+    expect($$(".ins-list .ins-rank-head").map((head) => head.textContent?.match(/Weekly limit|Of Tokama's use|Tokens/)?.[0])).toEqual(["Weekly limit", "Weekly limit", "Tokens"]);
   });
 
-  it("ranks steps with their agent, model and share of their own tool's limit, then helpers, tokens-only rows and outside rows", () => {
+  it("ranks each tool's steps by its own measure, with the outside row last on the same scale and shares of two tools never in one list", () => {
     render();
-    expect(rankNames()).toEqual(["Plan and build · Build", "Plan and build · Plan", "Plan and build · Review", "Tokama helpers", "Emergency investigator · Triage", "Outside Tokama · Claude Code", "Outside Tokama · Codex CLI"]);
-    expect(rankRows().map(rankValue)).toEqual(["~25%", "~19%", "~15%", "~1%", "no limit", "~20%", "~8%"]);
-    expect(rankRows()[0]?.textContent).toContain("Local builder");
-    expect(rankRows()[0]?.textContent).toContain("19 runs · 12 items");
+    const claude = listOf("Claude Code");
+    expect(namesIn(claude)).toEqual(["Plan and build · Build", "Plan and build · Plan", "Tokama helpers", "Outside Tokama"]);
+    expect(valuesIn(claude)).toEqual(["~25%", "~19%", "~1%", "~20%"]);
+    expect(rowsIn(claude)[0]?.textContent).toContain("Local builder");
+    expect(rowsIn(claude)[0]?.textContent).toContain("19 runs · 12 items");
+    expect(namesIn(listOf("Codex CLI"))).toEqual(["Plan and build · Review", "Outside Tokama"]);
+    expect(valuesIn(listOf("Codex CLI"))).toEqual(["~15%", "~8%"]);
+    expect(valuesIn(listOf("Ollama"))).toEqual(["404k"]);
+    // The outside row is on the list's scale: ~20% against a longest bar of ~25% is 81% of the longest.
+    expect(rowsIn(claude)[3]?.querySelector(".ins-bar > span")?.getAttribute("style")).toMatch(/width: 80\.6\d*%/);
+  });
+
+  it("says why a tool's rows are a share of Tokama's use when its split is not known", () => {
+    const unknown = {
+      ...planReport,
+      week: {
+        ...planReport.week!,
+        limits: planReport.week!.limits.map((limit) => (limit.cliId === "codex-cli" ? { cliId: limit.cliId, window: limit.window, startsAt: limit.startsAt, endsAt: limit.endsAt, usedPercent: limit.usedPercent } : limit)),
+        steps: planReport.week!.steps.map((step) => (step.cliId === "codex-cli" ? { ...step, sharePercent: undefined } : step)),
+      },
+    } as UsageReport;
+    render({}, unknown);
+    const codex = listOf("Codex CLI");
+    expect(codex.querySelector(".ins-list-text")?.textContent).toBe("weekly limit 30% used · Tokama's part of it is not known for this tool, so rows are a share of what Tokama used on it");
+    expect(codex.querySelector(".ins-rank-head")?.textContent).toContain("Of Tokama's use");
+    expect(valuesIn(codex)).toEqual(["66%"]);
+  });
+
+  it("shows the top 8 rows of a list, then Show all", async () => {
+    const many = {
+      ...planReport,
+      week: { ...planReport.week!, steps: Array.from({ length: 10 }, (_, n) => ({ ...planReport.week!.steps[1]!, stepId: `step-${n}`, stepName: `Step ${n}`, sharePercent: 10 - n * 0.5, items: [] })), helpers: [] },
+    } as unknown as UsageReport;
+    render({}, many);
+    const claude = () => listOf("Claude Code");
+    expect(rowsIn(claude())).toHaveLength(9);
+    await click(claude().querySelector(".ins-rank-more .btn"));
+    expect(rowsIn(claude())).toHaveLength(11);
+    expect(namesIn(claude()).at(-1)).toBe("Outside Tokama");
   });
 
   it("opens a step to its items, with the rest in one line, and an item opens", async () => {
@@ -132,41 +178,33 @@ describe("Insights: what uses the weekly limits", () => {
   it("groups by workflow with a row per workflow and tool, and by item", async () => {
     render();
     await click($$('[role="radio"]').find((radio) => radio.textContent?.includes("Workflow")) ?? null);
-    // Plan and build ran on two tools: two rows, whose shares are never added.
-    expect(rankNames()).toContain("Plan and build");
-    expect(rankNames().filter((name) => name === "Plan and build")).toHaveLength(2);
-    expect(rankRows().filter((row) => row.querySelector(".ins-rank-name")?.textContent === "Plan and build").map(rankValue)).toEqual(["~43%", "~15%"]);
+    // Plan and build ran on two tools: a row in each tool's list, whose shares are never added.
+    expect(valuesIn(listOf("Claude Code"))[0]).toBe("~43%");
+    expect(namesIn(listOf("Claude Code"))[0]).toBe("Plan and build");
+    expect(valuesIn(listOf("Codex CLI"))[0]).toBe("~15%");
+    expect(listOf("Claude Code").querySelector(".ins-rank")?.getAttribute("data-group")).toBe("workflow");
+    expect(listOf("Claude Code").querySelector(".ins-rank-head")?.textContent).not.toContain("Model");
     await click($$('[role="radio"]').find((radio) => radio.textContent?.includes("Item")) ?? null);
-    expect(rankNames().slice(0, 2)).toEqual([ITEMS.verifying.title, "Tokama helpers"]);
-    // Each agent once, as an icon in its ring and a name; the AI tool once per row, never after every agent.
-    const first = rankRows()[0]!;
-    expect($$(".ins-rank-agents")[0]?.textContent).toBe("ArchitectLocal builder");
+    expect(namesIn(listOf("Claude Code"))).toEqual([ITEMS.verifying.title, "Tokama helpers", "Outside Tokama"]);
+    expect(listOf("Claude Code").querySelector(".ins-rank-head")?.textContent).toMatch(/^Item/);
+    // One row per item: each agent once as an icon in its ring and a name, side by side, and no Model column.
+    const first = rowsIn(listOf("Claude Code"))[0]!;
+    expect(first.querySelector(".ins-rank-agents")?.textContent).toBe("ArchitectLocal builder");
     expect(first.querySelectorAll(".ag-ring")).toHaveLength(2);
-    expect(first.querySelectorAll(".ins-model")).toHaveLength(1);
+    expect(first.querySelectorAll(".ins-model")).toHaveLength(0);
+    expect(listOf("Claude Code").querySelector(".ins-rank-head")?.textContent).not.toContain("Model");
     expect(first.textContent).not.toContain("≈");
-    for (const row of rankRows()) expect(row.querySelectorAll(".ins-model").length).toBeLessThanOrEqual(1);
   });
 
-  it("shows a workflow's agents once each in its row, with the tool once", async () => {
-    render();
-    await click($$('[role="radio"]').find((radio) => radio.textContent?.includes("Workflow")) ?? null);
-    const claude = rankRows().find((row) => row.querySelector(".ins-rank-name")?.textContent === "Plan and build" && row.querySelector(".ins-model")?.getAttribute("title") === "Claude Code")!;
-    expect(claude.querySelector(".ins-rank-agents")?.textContent).toBe("Local builderArchitect");
-    expect(claude.querySelectorAll(".ins-model")).toHaveLength(1);
-  });
-
-  it("colours a bar by its AI tool and always draws the tool's icon in the same row", () => {
+  it("colours a bar by its AI tool, with the outside row grey, and names the model short with its full id as the title", () => {
     render();
     const colourOf = (row: Element) => /var\((--[a-z-]+)\)/.exec(row.querySelector(".ins-bar > span")?.getAttribute("style") ?? "")?.[1];
-    expect(rankRows().map((row) => [colourOf(row), row.querySelector(".ins-model")?.getAttribute("title")])).toEqual([
-      ["--tag-sky", "Claude Code"],
-      ["--tag-sky", "Claude Code"],
-      ["--tag-sand", "Codex CLI"],
-      ["--tag-sky", "Claude Code"],
-      ["--tag-clay", "Ollama"],
-      ["--chart-other", "Claude Code"],
-      ["--chart-other", "Codex CLI"],
+    expect(["Claude Code", "Codex CLI", "Ollama"].map((tool) => rowsIn(listOf(tool)).map(colourOf))).toEqual([
+      ["--tag-sky", "--tag-sky", "--tag-sky", "--chart-other"],
+      ["--tag-sand", "--chart-other"],
+      ["--tag-clay"],
     ]);
+    expect(rowsIn(listOf("Codex CLI"))[0]?.querySelector(".ins-model")?.getAttribute("title")).toBe("gpt-5");
   });
 
   it("says when nothing ran this week, and offers new work", async () => {
@@ -184,7 +222,7 @@ describe("Insights: what uses the weekly limits", () => {
     expect(onWindow).toHaveBeenCalledWith("previous");
     render({ window: "previous" });
     expect($(".ins-rank")).toBeNull();
-    expect(text("#ins-use-title + .muted")).toBe("last week · each share is of that tool's own limit");
+    expect(text("#ins-use-title + .muted")).toBe("last week · one list per AI tool, each with its own measure");
     expect(container.textContent).toContain("Loading usage");
   });
 });
@@ -205,31 +243,41 @@ describe("Insights: a plan, an API key, no reading", () => {
     expect(rankRows().map(rankValue)).toEqual(["$16.10", "$11.40", "≈ $2.70"]);
     expect(container.textContent).toContain("≈ marks a call the CLI gave no cost for");
     expect(container.textContent).toContain("prices as of 2026-11-03");
-    expect($(".ins-split")).toBeNull();
+    expect($(".ins-split-bar")).toBeNull();
+    expect($(".ins-list-text")?.textContent).toBe("billed per use · rows show what each call cost");
     expect(container.textContent).not.toContain("Outside Tokama");
     expect(container.textContent).not.toMatch(/~\d/);
   });
 
-  it("keeps money apart from limit shares when one tool is on a plan and another bills per use: own order, own bar scale, a neutral header", () => {
+  it("lists a plan tool and a pay-per-use tool apart: each its own measure, scale and column head", () => {
     const mixed = {
       ...planReport,
       clis: planReport.clis.map((cli) => (cli.cliId === "codex-cli" ? { cliId: "codex-cli", windows: [], billing: "pay_per_use" } : cli)),
       week: { ...planReport.week!, limits: planReport.week!.limits.filter((limit) => limit.cliId === "claude-code"), steps: planReport.week!.steps.map((step) => (step.cliId === "codex-cli" ? { ...step, sharePercent: undefined, costUsd: 16.1 } : step)) },
     } as UsageReport;
     render({}, mixed);
-    expect($(".ins-rank-head")?.textContent).toContain("Used");
-    expect(rankNames().slice(0, 4)).toEqual(["Plan and build · Build", "Plan and build · Plan", "Tokama helpers", "Plan and build · Review"]);
-    // The $16.10 row is not ranked against the percents, and its bar is its own longest bar.
-    expect(rankValue(rankRows()[3])).toBe("$16.10");
-    expect(rankRows()[3]?.querySelector(".ins-bar > span")?.getAttribute("style")).toContain("width: 100%");
-    expect(rankRows()[0]?.querySelector(".ins-bar > span")?.getAttribute("style")).toContain("width: 100%");
+    expect(valuesIn(listOf("Claude Code"))).toEqual(["~25%", "~19%", "~1%", "~20%"]);
+    expect(valuesIn(listOf("Codex CLI"))).toEqual(["$16.10"]);
+    expect(listOf("Codex CLI").querySelector(".ins-rank-head")?.textContent).toContain("Cost");
+    expect(listOf("Claude Code").querySelector(".ins-rank-head")?.textContent).toContain("Weekly limit");
+    expect(rowsIn(listOf("Codex CLI"))[0]?.querySelector(".ins-bar > span")?.getAttribute("style")).toContain("width: 100%");
   });
 
   it("shows shares of Tokama's own use, and no split, when no limit reading is there", () => {
     render({}, noReading);
-    expect($(".ins-split")).toBeNull();
-    expect($(".ins-rank-head")?.textContent).toContain("Of Tokama's use");
-    expect(rankRows().map(rankValue)).toEqual(["66%", "40%", "30%", "no limit", "120k"]);
+    expect($(".ins-split-bar")).toBeNull();
+    expect(listOf("Claude Code").querySelector(".ins-list-text")?.textContent).toBe("no limit reading yet · Tokama's part of it is not known for this tool, so rows are a share of what Tokama used on it");
+    expect(listOf("Claude Code").querySelector(".ins-rank-head")?.textContent).toContain("Of Tokama's use");
+    expect(valuesIn(listOf("Claude Code"))).toEqual(["40%", "30%", "2%"]);
+    expect(valuesIn(listOf("Codex CLI"))).toEqual(["66%"]);
+    expect(valuesIn(listOf("Ollama"))).toEqual(["404k"]);
+  });
+
+  it("reads a share under 1% as <1%, never 0%", () => {
+    const tiny = { ...noReading, week: { ...noReading.week!, helpers: [{ ...noReading.week!.helpers[0]!, tokens: 1_000 }] } } as UsageReport;
+    render({}, tiny);
+    expect(valuesIn(listOf("Claude Code"))).toContain("<1%");
+    expect(container.textContent).not.toContain("0% of use");
   });
 });
 
@@ -290,8 +338,8 @@ describe("Insights: the AI tool filter", () => {
     expect(filter().map(([, checked]) => checked)).toEqual(["false", "false", "true", "false"]);
     expect(text(".ins-forecast-line")).toBe("At this pace you stay under your Codex CLI weekly limit: about 88% at the reset Sat 06:00");
     expect(meters()).toEqual([["Weekly", "30%, ok"]]);
-    expect($$(".ins-split-row")).toHaveLength(1);
-    expect(rankNames()).toEqual(["Plan and build · Review", "Outside Tokama · Codex CLI"]);
+    expect($$(".ins-list")).toHaveLength(1);
+    expect(rankNames()).toEqual(["Plan and build · Review", "Outside Tokama"]);
     expect($(".ins-sentence")).toBeNull();
     expect($(".ins-models")).toBeNull();
   });
@@ -322,7 +370,7 @@ describe("Insights: states around the page", () => {
   it("asks for a new reading from the Refresh button, and shows when the limits were last read", async () => {
     const refresh = vi.fn<() => void>();
     render({ usage: { report: planReport, error: undefined, refresh } });
-    expect(text(".ins-section-head .muted")).toBe("refreshes every 5 min · as of 14:58");
+    expect(text(".ins-section-head .muted")).toBe("as of 14:58 · refreshes every 5 min");
     await click($(".ins-refresh"));
     expect(refresh).toHaveBeenCalled();
   });

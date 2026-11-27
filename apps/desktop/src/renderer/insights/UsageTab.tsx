@@ -39,7 +39,7 @@ export function UsageTab({ report, window, onWindow, tool, onTool, onRefresh, se
         <Forecast report={report} only={only} now={now} />
       </div>
       <Limits report={report} tools={shown} issues={issues} now={now} onRefresh={onRefresh} />
-      <WeeklyUse report={report} only={only} tools={tools} setup={setup} window={window} onWindow={onWindow} onSelectItem={onSelectItem} onNewWork={onNewWork} />
+      <WeeklyUse report={report} only={only} tools={tools} setup={setup} now={now} window={window} onWindow={onWindow} onSelectItem={onSelectItem} onNewWork={onNewWork} />
       {report.week?.window === window && <Retries report={report} only={only} setup={setup} />}
       <ModelTable report={report} only={only} setup={setup} />
     </>

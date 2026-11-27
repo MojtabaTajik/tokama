@@ -5,7 +5,7 @@
 import type { AiCliId, Setup, UsageReport } from "@tokama/core";
 import { AgentRing } from "../agent/AgentRing.js";
 import { formatDuration } from "../format/duration.js";
-import { cliName } from "../model.js";
+import { shortModel } from "../format/model.js";
 import { BackendMark } from "../ui/agent.js";
 import { firstTry, perRunOf } from "./model-record.js";
 import { workflowName } from "./usage-model.js";
@@ -76,9 +76,9 @@ export function ModelTable({ report, only, setup }: ModelTableProps) {
                   const first = firstTry(record);
                   return (
                     <div key={`${record.cliId}:${record.model}`} role="row" className="ins-model-row">
-                      <span role="cell" className="ins-model" title={cliName(record.cliId)}>
+                      <span role="cell" className="ins-model" title={record.model}>
                         <BackendMark cliId={record.cliId} size={12} />
-                        <span className="mono ins-model-name">{record.model}</span>
+                        <span className="mono ins-model-name">{shortModel(record.model)}</span>
                       </span>
                       <span role="cell" className="mono ins-rank-num muted">
                         {record.runs}

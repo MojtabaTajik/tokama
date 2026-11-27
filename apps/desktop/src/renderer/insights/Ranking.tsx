@@ -1,29 +1,30 @@
-// What uses the weekly limits: per AI tool one line with Tokama, outside Tokama and what is left of
-// its limit, then the ranking of Tokama's own use by step, workflow or item, each row's bar in its
-// tool's colour (the tool's icon is in the same row, so colour is never the only signal). A share is
-// always a part of that row's own tool's limit. Engine text (titles, names) is React text only.
+// What uses the weekly limits: one list per AI tool, each with its own heading line (the Tokama /
+// outside Tokama / left bar when Tokama knows its part of the limit, else one sentence saying why
+// not), column head, bar scale and order. A tool's list ranks Tokama's own use by step, workflow or
+// item, its bars in the tool's colour; it shows the top 8 rows, then "Show all". A share is always
+// a part of that tool's own limit, and rows of two tools never share a list. Engine text (titles,
+// names) is React text only.
 import type { AiCliId, Setup, UsageReport, UsageWindow } from "@tokama/core";
 import { useState } from "react";
 import { AgentRing } from "../agent/AgentRing.js";
+import { shortModel } from "../format/model.js";
 import { cliName } from "../model.js";
 import { BackendMark } from "../ui/agent.js";
 import { Button } from "../ui/Button.js";
 import { Segmented } from "../ui/Segmented.js";
-import { type Group, kindOf, type Ranking as RankingData, rankingOf, type Row, type SubRow } from "./ranking-model.js";
+import { type Group, LIST_ROWS, listsOf, type Row, type SubRow, type ToolList } from "./ranking-model.js";
 import { limitShare, toolColour } from "./usage-model.js";
 
 const TEXT = {
   title: "What uses the weekly limits",
-  note: (previous: boolean) => `${previous ? "last week" : "this week"} · each share is of that tool's own limit`,
+  note: (previous: boolean) => `${previous ? "last week" : "this week"} · one list per AI tool, each with its own measure`,
   window: "Week",
   group: "Group by",
-  split: "Weekly limit by AI tool",
   tokama: "Tokama",
   outside: "Outside Tokama",
   left: "Left",
-  table: "What uses the weekly limits",
-  step: "Step",
   agent: "Agent",
+  agents: "Agents",
   model: "Model",
   runs: "Runs",
   empty: "No Tokama runs this week.",
@@ -32,6 +33,8 @@ const TEXT = {
   estimate: "~ is an estimate from what ran on this machine and how far the limit moved. Outside Tokama is the same tool, run by you here.",
   priced: (date: string) => `≈ marks a call the CLI gave no cost for: priced from Tokama's price table, prices as of ${date}.`,
   more: (count: number) => `${count} more ${count === 1 ? "item" : "items"}`,
+  showAll: (count: number) => `Show all ${count}`,
+  showLess: "Show fewer",
   loading: "Loading usage",
   thisWeek: "This week",
   lastWeek: "Last week",
@@ -43,6 +46,7 @@ export interface RankingProps {
   readonly only: AiCliId | undefined;
   readonly tools: readonly AiCliId[];
   readonly setup: Setup | undefined;
+  readonly now: number;
   /** The week asked for. While the report is still of the other one, its rows are not shown under this label. */
   readonly window: UsageWindow;
   readonly onWindow: (window: UsageWindow) => void;
@@ -50,48 +54,32 @@ export interface RankingProps {
   readonly onNewWork: () => void;
 }
 
-export function WeeklyUse({ report, only, tools, setup, window, onWindow, onSelectItem, onNewWork }: RankingProps) {
+export function WeeklyUse({ report, only, tools, setup, now, window, onWindow, onSelectItem, onNewWork }: RankingProps) {
   const [group, setGroup] = useState<Group>("step");
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  const [all, setAll] = useState<ReadonlySet<AiCliId>>(new Set());
   const week = report.week;
   if (week === undefined) return null;
   const stale = week.window !== window;
-  const ranking = rankingOf(week, report.clis, group, only, setup);
-  const previous = window === "previous";
-  const split = week.limits.filter((limit) => (only === undefined || limit.cliId === only) && limit.tokamaPercent !== undefined && limit.outsidePercent !== undefined);
-  const toggle = (key: string) =>
-    setOpen((keys) => {
-      const next = new Set(keys);
-      if (!next.delete(key)) next.add(key);
-      return next;
-    });
+  const lists = listsOf(week, report.clis, group, only, setup, now);
+  const toggle = <T,>(set: ReadonlySet<T>, value: T, update: (next: ReadonlySet<T>) => void) => {
+    const next = new Set(set);
+    if (!next.delete(value)) next.add(value);
+    update(next);
+  };
   return (
     <section className="ins-section" aria-labelledby="ins-use-title">
       <header className="ins-section-head">
         <h2 id="ins-use-title" className="ins-h2">
           {TEXT.title}
         </h2>
-        <span className="muted">{TEXT.note(previous)}</span>
+        <span className="muted">{TEXT.note(window === "previous")}</span>
         <Segmented className="ins-use-week" label={TEXT.window} options={[{ value: "current", label: TEXT.thisWeek }, { value: "previous", label: TEXT.lastWeek }]} value={window} onChange={onWindow} />
-        <Segmented
-          label={TEXT.group}
-          options={(["step", "workflow", "item"] as const).map((value) => ({ value, label: TEXT.by[value] }))}
-          value={group}
-          onChange={setGroup}
-        />
+        <Segmented label={TEXT.group} options={(["step", "workflow", "item"] as const).map((value) => ({ value, label: TEXT.by[value] }))} value={group} onChange={setGroup} />
       </header>
       {stale ? (
         <p className="placeholder">{TEXT.loading}</p>
-      ) : (
-        <>
-      {split.length > 0 && (
-        <div className="ins-split" role="list" aria-label={TEXT.split}>
-          {split.map((limit) => (
-            <SplitLine key={limit.cliId} cliId={limit.cliId} tokama={limit.tokamaPercent!} outside={limit.outsidePercent!} used={limit.usedPercent} tools={tools} />
-          ))}
-        </div>
-      )}
-      {ranking.rows.length === 0 ? (
+      ) : lists.length === 0 ? (
         <div className="ins-empty">
           <span>{TEXT.empty}</span>
           <span className="muted">{TEXT.emptyHint}</span>
@@ -100,50 +88,95 @@ export function WeeklyUse({ report, only, tools, setup, window, onWindow, onSele
           </Button>
         </div>
       ) : (
-        <div className="ins-scroll">
-          <div className="ins-rank" role="table" aria-label={TEXT.table}>
-            <div className="ins-rank-row ins-rank-head" role="row">
-              <span />
-              <span role="columnheader">{TEXT.step}</span>
-              <span role="columnheader">{TEXT.agent}</span>
-              <span role="columnheader">{TEXT.model}</span>
-              <span role="columnheader" aria-label="Share, as a bar" />
-              <span role="columnheader" className="ins-rank-num">
-                {ranking.header}
-              </span>
-              <span role="columnheader" className="ins-rank-num">
-                {TEXT.runs}
-              </span>
-            </div>
-            {ranking.rows.map((row) => (
-              <RankRow key={row.key} row={row} ranking={ranking} tools={tools} setup={setup} open={open.has(row.key)} onToggle={() => toggle(row.key)} onSelectItem={onSelectItem} />
-            ))}
-          </div>
-        </div>
-      )}
-      {ranking.rows.some((row) => row.unit === "limit") && <p className="muted ins-note">{TEXT.estimate}</p>}
-      {ranking.rows.some((row) => row.text.startsWith("≈")) && <p className="muted ins-note">{TEXT.priced(report.pricesAsOf)}</p>}
+        <>
+          {lists.map((list) => (
+            <ToolListView
+              key={list.cliId}
+              list={list}
+              group={group}
+              tools={tools}
+              setup={setup}
+              open={open}
+              onToggle={(key) => toggle(open, key, setOpen)}
+              showAll={all.has(list.cliId)}
+              onShowAll={() => toggle(all, list.cliId, setAll)}
+              onSelectItem={onSelectItem}
+            />
+          ))}
+          {lists.some((list) => list.heading.kind === "split" || list.rows.some((row) => row.unit === "limit")) && <p className="muted ins-note">{TEXT.estimate}</p>}
+          {lists.some((list) => list.rows.some((row) => row.text.startsWith("≈"))) && <p className="muted ins-note">{TEXT.priced(report.pricesAsOf)}</p>}
         </>
       )}
     </section>
   );
 }
 
-function SplitLine({ cliId, tokama, outside, used, tools }: { readonly cliId: AiCliId; readonly tokama: number; readonly outside: number; readonly used: number; readonly tools: readonly AiCliId[] }) {
-  const left = Math.max(0, 100 - used);
-  const whole = tokama + outside + left || 1;
-  const name = cliName(cliId);
+interface ToolListViewProps {
+  readonly list: ToolList;
+  readonly group: Group;
+  readonly tools: readonly AiCliId[];
+  readonly setup: Setup | undefined;
+  readonly open: ReadonlySet<string>;
+  readonly onToggle: (key: string) => void;
+  readonly showAll: boolean;
+  readonly onShowAll: () => void;
+  readonly onSelectItem: (itemId: string) => void;
+}
+
+function ToolListView({ list, group, tools, setup, open, onToggle, showAll, onShowAll, onSelectItem }: ToolListViewProps) {
+  const name = cliName(list.cliId);
+  const colour = toolColour(list.cliId, tools);
+  const shown = showAll ? list.rows : list.rows.slice(0, LIST_ROWS);
+  return (
+    <section className="ins-list" aria-label={`${name}: what uses its weekly limit`}>
+      <div className="ins-list-head">
+        <span className="ins-list-tool">
+          <BackendMark cliId={list.cliId} size={16} />
+          <b className="ins-limit-name">{name}</b>
+        </span>
+        {list.heading.kind === "split" ? <SplitLine name={name} heading={list.heading} colour={colour} /> : <span className="ins-list-text">{list.heading.text}</span>}
+      </div>
+      <div className="ins-scroll">
+        <div className="ins-rank" role="table" aria-label={`${name}: ${list.header}`} data-group={group}>
+          <div className="ins-rank-row ins-rank-head" role="row">
+            <span />
+            <span role="columnheader">{TEXT.by[group]}</span>
+            <span role="columnheader">{group === "step" ? TEXT.agent : TEXT.agents}</span>
+            {group === "step" && <span role="columnheader">{TEXT.model}</span>}
+            <span role="columnheader" aria-label="Share, as a bar" />
+            <span role="columnheader" className="ins-rank-num">
+              {list.header}
+            </span>
+            <span role="columnheader" className="ins-rank-num">
+              {TEXT.runs}
+            </span>
+          </div>
+          {shown.map((row) => (
+            <RankRow key={row.key} row={row} group={group} scale={list.scale} colour={colour} setup={setup} open={open.has(row.key)} onToggle={() => onToggle(row.key)} onSelectItem={onSelectItem} />
+          ))}
+          {list.rows.length > LIST_ROWS && (
+            <div className="ins-rank-more">
+              <Button variant="link" aria-expanded={showAll} onClick={onShowAll}>
+                {showAll ? TEXT.showLess : TEXT.showAll(list.rows.length)}
+              </Button>
+            </div>
+          )}
+          {list.outside !== undefined && <RankRow row={list.outside} group={group} scale={list.scale} colour="var(--chart-other)" setup={setup} open={false} onToggle={() => undefined} onSelectItem={onSelectItem} />}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SplitLine({ name, heading, colour }: { readonly name: string; readonly heading: Extract<ToolList["heading"], { kind: "split" }>; readonly colour: string }) {
+  const whole = heading.tokama + heading.outside + heading.left || 1;
   const parts = [
-    { label: TEXT.tokama, value: limitShare(tokama), size: tokama, colour: toolColour(cliId, tools) },
-    { label: TEXT.outside, value: limitShare(outside), size: outside, colour: "var(--chart-other)" },
-    { label: TEXT.left, value: `${Math.round(left)}%`, size: left, colour: "var(--hairline)" },
+    { label: TEXT.tokama, value: limitShare(heading.tokama), size: heading.tokama, colour },
+    { label: TEXT.outside, value: limitShare(heading.outside), size: heading.outside, colour: "var(--chart-other)" },
+    { label: TEXT.left, value: `${Math.round(heading.left)}%`, size: heading.left, colour: "var(--hairline)" },
   ];
   return (
-    <div role="listitem" className="ins-split-row">
-      <span className="ins-split-tool">
-        <BackendMark cliId={cliId} size={16} />
-        <span className="ins-limit-name">{name}</span>
-      </span>
+    <>
       <span className="ins-split-bar" role="img" aria-label={`${name} weekly limit: ${parts.map((part) => `${part.label} ${part.value}`).join(", ")}`}>
         {parts.filter((part) => part.size > 0).map((part) => (
           <span key={part.label} style={{ flex: `${part.size / whole} 1 0`, background: part.colour }} />
@@ -158,16 +191,7 @@ function SplitLine({ cliId, tokama, outside, used, tools }: { readonly cliId: Ai
           </span>
         ))}
       </span>
-    </div>
-  );
-}
-
-function ToolMark({ cliId, text }: { readonly cliId: AiCliId; readonly text: string }) {
-  return (
-    <span className="ins-model" title={cliName(cliId)}>
-      <BackendMark cliId={cliId} size={12} />
-      <span className="mono ins-model-name">{text}</span>
-    </span>
+    </>
   );
 }
 
@@ -182,40 +206,48 @@ function Bar({ value, scale, colour, thin = false }: { readonly value: number; r
 
 interface RankRowProps {
   readonly row: Row;
-  readonly ranking: RankingData;
-  readonly tools: readonly AiCliId[];
+  readonly group: Group;
+  readonly scale: number;
+  readonly colour: string;
   readonly setup: Setup | undefined;
   readonly open: boolean;
   readonly onToggle: () => void;
   readonly onSelectItem: (itemId: string) => void;
 }
 
-function RankRow({ row, ranking, tools, setup, open, onToggle, onSelectItem }: RankRowProps) {
-  const scale = ranking.scale[kindOf(row.unit)];
-  const colour = row.kind === "outside" ? "var(--chart-other)" : toolColour(row.cliId, tools);
+function RankRow({ row, group, scale, colour, setup, open, onToggle, onSelectItem }: RankRowProps) {
   const expandable = row.items !== undefined && (row.items.length > 0 || row.more !== undefined);
   const cells = (
     <>
       <span className="ins-chevron" aria-hidden="true">
         {expandable ? (open ? "⌄" : "›") : ""}
       </span>
-      <span className="ins-rank-name">{row.itemId === undefined ? row.name : (
-        <Button variant="quiet" onClick={() => onSelectItem(row.itemId!)}>
-          {row.name}
-        </Button>
-      )}</span>
+      <span className="ins-rank-name">
+        {row.itemId === undefined ? (
+          row.name
+        ) : (
+          <Button variant="quiet" onClick={() => onSelectItem(row.itemId!)}>
+            {row.name}
+          </Button>
+        )}
+      </span>
       <span className="ins-rank-cell ins-rank-agents">
         {(row.agentIds ?? []).map((agentId) => (
           <AgentRing key={agentId} agentId={agentId} agents={setup?.agents ?? []} />
         ))}
       </span>
-      <span className="ins-rank-cell">
-        <ToolMark cliId={row.cliId} text={row.kind === "outside" ? "" : (row.model ?? cliName(row.cliId))} />
-      </span>
+      {group === "step" && (
+        <span className="ins-rank-cell">
+          {row.model !== undefined && (
+            <span className="ins-model" title={row.model}>
+              <BackendMark cliId={row.cliId} size={12} />
+              <span className="mono ins-model-name">{shortModel(row.model)}</span>
+            </span>
+          )}
+        </span>
+      )}
       <Bar value={row.value} scale={scale} colour={colour} />
-      <span className="mono ins-rank-num ins-rank-value" title={row.unit === "tokens" && row.text === "no limit" ? "Local models have no plan limit" : undefined}>
-        {row.text}
-      </span>
+      <span className="mono ins-rank-num ins-rank-value">{row.text}</span>
       <span className="ins-rank-num ins-rank-facts">{row.facts}</span>
     </>
   );

@@ -9,11 +9,12 @@ import { cliName } from "../model.js";
 import { BackendMark } from "../ui/agent.js";
 import { Button } from "../ui/Button.js";
 import { MeterBar } from "./Meter.js";
-import { ageText, ALERT_TEXT, approxWhen, isPayPerUse, LEVEL_TONE, LEVEL_WORD, levelOf, limitName, liveWindows, resetWhen, shareText } from "./usage-model.js";
+import { ageText, ALERT_TEXT, approxWhen, isPayPerUse, LEVEL_TONE, LEVEL_WORD, levelOf, limitName, liveWindows, resetWhen } from "./usage-model.js";
 
 const TEXT = {
   title: "Limits",
-  refreshes: "refreshes every 5 min · as of",
+  asOf: "as of",
+  refreshes: "refreshes every 5 min",
   refresh: "Refresh",
   list: "Plan limits",
   local: "Local models have no plan limits.",
@@ -44,7 +45,7 @@ export function Limits({ report, tools, issues, now, onRefresh }: LimitsProps) {
           {TEXT.title}
         </h2>
         <span className="muted">
-          {TEXT.refreshes} <span className="mono">{stamp(asOf, now)}</span>
+          {TEXT.asOf} <span className="mono">{stamp(asOf, now)}</span> · {TEXT.refreshes}
         </span>
         <Button variant="secondary" size="sm" className="ins-refresh" onClick={onRefresh}>
           <span aria-hidden="true">↻</span> {TEXT.refresh}
@@ -92,7 +93,6 @@ function Tool({ plan, issue, now }: { readonly plan: CliPlan; readonly issue: Cl
         const level = levelOf(shown);
         const word = LEVEL_WORD[level];
         const runsOut = w.forecast?.runsOutAt;
-        const share = shareText(w);
         return (
           <div key={`${w.window}:${w.scope ?? ""}:${index}`} role="listitem" className="ins-limit-row">
             {index === 0 ? <ToolCell plan={plan} /> : <span />}
@@ -114,7 +114,6 @@ function Tool({ plan, issue, now }: { readonly plan: CliPlan; readonly issue: Cl
               ) : (
                 w.forecast !== undefined && ` · ${TEXT.onPace(Math.round(w.forecast.atResetPercent))}`
               )}
-              {share !== undefined && ` · ${share}`}
               {age !== undefined && index === 0 && ` · ${age}`}
             </span>
           </div>

@@ -31,13 +31,13 @@ flow("shows plan usage in the Insights tooltip, then the Usage tab: forecast, li
   await expect.poll(() => page.locator(".ins-forecast-line").innerText(), { message: "the first sentence" }).toMatch(/^!\s*At this pace your Claude Code weekly limit runs out \w{3} ~\d\d:\d\d$/);
   await expect.poll(() => page.locator('.ins-limits [role="meter"]').count(), { message: "a meter per window" }).toBe(4);
   await expect.poll(() => page.locator('.ins-limits [role="meter"]').evaluateAll((meters) => meters.map((meter) => meter.getAttribute("aria-valuetext")))).toContain("82%, near limit");
-  await expect.poll(() => page.locator(".ins-split-row").first().innerText(), { message: "Tokama, outside Tokama and what is left" }).toMatch(/Claude Code[\s\S]*Tokama\s*~\d+%[\s\S]*Outside Tokama\s*~\d+%[\s\S]*Left\s*\d+%/);
+  await expect.poll(() => page.locator(".ins-list-head").first().innerText(), { message: "Tokama, outside Tokama and what is left" }).toMatch(/Claude Code[\s\S]*Tokama\s*~\d+%[\s\S]*Outside Tokama\s*~\d+%[\s\S]*Left\s*\d+%/);
   // The ranking: steps with their agent and model; a plan user sees shares of a limit, never dollars.
   await expect.poll(() => page.locator('.ins-rank [role="row"]').count(), { message: "ranking rows" }).toBeGreaterThan(5);
-  await expect.poll(() => page.locator(".ins-rank").innerText()).toMatch(/Plan and build · Build[\s\S]*Local builder/);
+  await expect.poll(() => page.locator(".ins-list").first().innerText()).toMatch(/Plan and build · Build[\s\S]*Local builder/);
   expect(await page.locator(".ins-body").innerText()).not.toMatch(/\$\d/);
   await expect.poll(() => page.locator(".ins-sentence").first().innerText(), { message: "what retries took" }).toMatch(/^Retries took about \d+(\.\d)?% of the Claude Code weekly limit/);
-  await expect.poll(() => page.locator(".ins-models").innerText(), { message: "the model table" }).toMatch(/Plan and build · Build[\s\S]*claude-sonnet-5-5[\s\S]*claude-opus-5-5/);
+  await expect.poll(() => page.locator(".ins-models").innerText(), { message: "the model table" }).toMatch(/Plan and build · Build[\s\S]*sonnet 5\.5[\s\S]*opus 5\.5/);
   await page.mouse.move(0, 0);
   await screenshot("7-insights-usage-1440");
 
@@ -55,8 +55,10 @@ flow("shows plan usage in the Insights tooltip, then the Usage tab: forecast, li
   // The Item view: each agent once as an icon in its ring and a name, the AI tool once per row, no "≈ $" for a plan user.
   await page.getByRole("radio", { name: "Item" }).click();
   await expect.poll(() => page.locator(".ins-rank-agents .ag-ring").count()).toBeGreaterThan(0);
-  expect(await page.locator('.ins-rank [role="row"] .ins-model').evaluateAll((marks) => marks.length)).toBe(await page.locator('.ins-rank [role="row"]:not(.ins-rank-head)').count());
-  expect(await page.locator(".ins-rank").innerText()).not.toMatch(/≈|\$/);
+  // One row per item, no Model column, one list per AI tool.
+  expect(await page.locator(".ins-rank .ins-model").count()).toBe(0);
+  expect(await page.locator(".ins-list").count()).toBeGreaterThan(1);
+  expect(await page.locator(".ins-list").first().innerText()).not.toMatch(/≈|\$/);
   await page.mouse.move(0, 0);
   await screenshot("9-insights-usage-item-view");
   await page.getByRole("radio", { name: "Step" }).click();

@@ -89,6 +89,9 @@ describe("usage query", () => {
     expect(report.clis[1]?.windows[0]?.usedPercent).toBe(41);
     expect(report.today?.itemCount).toBeGreaterThan(0);
     expect(report.week?.items.length).toBeGreaterThan(3);
+    // The sample's generated items have a title each: no two of one AI CLI share one.
+    const titles = (report.week?.items ?? []).filter((item) => item.cliId === "claude-code").map((item) => item.title);
+    expect(new Set(titles).size).toBe(titles.length);
     await waitFor(() => usageChanged(events) > 0, 5_000, "usage_changed");
     const again = await engineClient.query({ type: "usage" });
     expect(again.ok && again.data.clis[0]).toMatchObject({ source: "request", windows: [

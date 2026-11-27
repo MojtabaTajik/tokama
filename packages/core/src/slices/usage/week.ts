@@ -255,7 +255,7 @@ export function buildWeek(input: WeekInput, which: UsageWindow): Week {
       const spent = measure(spanRetries.flatMap((r) => [...r.calls]));
       const causes = group(
         spanRetries.filter((r): r is Retry & { cause: NonNullable<Retry["cause"]> } => r.cause !== undefined),
-        (r) => [r.cause.kind, r.cause.kind === "check" ? r.cause.command : "", r.item.repoIds.length === 1 ? r.item.repoIds[0] : "", r.item.templateId, r.step.id, r.agentId].join("\n"),
+        (r) => [r.cause.kind, r.cause.kind === "check" ? r.cause.command : "", r.cause.kind === "check" && r.item.repoIds.length === 1 ? r.item.repoIds[0] : "", r.item.templateId, r.step.id, r.agentId].join("\n"),
         (r) => r,
       );
       retryRows.push({
@@ -265,7 +265,8 @@ export function buildWeek(input: WeekInput, which: UsageWindow): Week {
         causes: [...causes.values()]
           .map(({ head: r, list }) => {
             const m = measure(list.flatMap((x) => [...x.calls]));
-            const repoId = r.item.repoIds.length === 1 ? r.item.repoIds[0] : undefined;
+            // The repo belongs to a failing check; a reviewer who asked for changes is one row, whatever the repo.
+            const repoId = r.cause.kind === "check" && r.item.repoIds.length === 1 ? r.item.repoIds[0] : undefined;
             return {
               kind: r.cause.kind,
               ...(r.cause.kind === "check" && { command: cut(r.cause.command, 500) }),

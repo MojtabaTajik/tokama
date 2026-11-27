@@ -246,13 +246,32 @@ describe("retries", () => {
       expect.arrayContaining([
         ["check", "pnpm test", "orders-api", "build", 2, 2],
         ["check", "pnpm e2e", undefined, "build", 1, 1],
-        ["review", undefined, "orders-api", "build", 1, 1],
+        ["review", undefined, undefined, "build", 1, 1],
       ]),
     );
     expect(claude?.causes).toHaveLength(3);
     // The unattributed retry is in the total only.
     const causeTokens = claude?.causes.reduce((sum, c) => sum + c.tokens, 0);
     expect((claude?.tokens ?? 0) - (causeTokens ?? 0)).toBe(1_000_000);
+  });
+});
+
+describe("retries sent back by a reviewer", () => {
+  const sentBackIn = (repoIds: RepoId[], base: number) =>
+    item(
+      [step("build", "checks pass", [attempt(1, "passed", base, [["pnpm test", true]]), attempt(2, "passed", base + DAY, [["pnpm test", true]])]), step("review", "reviewer approves", [attempt(1, "failed", base + HOUR)], "reviewer")],
+      [
+        call({ stepId: "build", attempt: 1, endedAt: base, model: "claude-opus-5-5", tokens: MILLION }),
+        call({ stepId: "review", attempt: 1, endedAt: base + HOUR, agentId: "reviewer" as never, model: "claude-opus-5-5", tokens: MILLION }),
+        call({ stepId: "build", attempt: 2, endedAt: base + DAY, model: "claude-opus-5-5", tokens: MILLION }),
+      ],
+      { repoIds },
+    );
+
+  it("is one row, whatever the repos of the items: the repo belongs to a failing check", () => {
+    const { week } = report([sentBackIn(["orders-api" as RepoId], NOW - 5 * DAY), sentBackIn(["checkout-web" as RepoId], NOW - 3 * DAY)], [plan(80)]);
+    expect(week?.retries[0]?.causes).toEqual([expect.objectContaining({ kind: "review", stepId: "build", retries: 2, itemCount: 2 })]);
+    expect(week?.retries[0]?.causes[0]).not.toHaveProperty("repoId");
   });
 });
 
