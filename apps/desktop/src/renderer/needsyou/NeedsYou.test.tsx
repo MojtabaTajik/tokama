@@ -324,12 +324,13 @@ describe("the Needs you page", () => {
     await fake.pushItem({ ...plan, state: "running", decision: undefined } as unknown as ItemRecord);
     await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
     await wait(10);
-    const composer = $(".new-work textarea, .new-work input") as HTMLElement | null;
-    composer?.focus();
+    const composer = $(".np-text") as HTMLElement;
+    composer.focus();
+    expect(document.activeElement).toBe(composer);
     await fake.pushItem({ ...plan, decision: { ...plan.decision!, id: "decision_aaaaaaaa-0000-4000-8000-0000000000e5" } } as unknown as ItemRecord);
     await wait(10);
     expect($(".nr-read")).not.toBeNull();
-    expect(document.activeElement).not.toBe($(".nr-read"));
+    expect(document.activeElement).toBe(composer);
   });
 
   it("Show full plan in the drawer opens the reader, and Esc returns to the drawer on the same item and tab", async () => {
