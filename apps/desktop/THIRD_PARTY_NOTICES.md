@@ -2,7 +2,7 @@
 
 ## Lucide
 
-Every icon in the app is a Lucide 1.81.0 icon (ISC, Copyright Lucide Icons and Contributors). Only the icons the app
+Every interface icon in the app (not the Tokama logo or the tool logos) is a Lucide 1.81.0 icon (ISC, Copyright Lucide Icons and Contributors). Only the icons the app
 lists in `src/renderer/ui/icons.tsx` and `src/renderer/shell/TemplateIcon.tsx` are bundled, as inline SVG. No icon
 font and no download at run time.
 

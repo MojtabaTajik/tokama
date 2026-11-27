@@ -197,7 +197,7 @@ describe("TemplateIcon", () => {
 describe("Lucide licence and dependency", () => {
   const desktop = join(import.meta.dirname, "..", "..", "..");
 
-  it("is credited in the notices file that ships with the app", () => {
+  it("is credited in the repo's third-party notices", () => {
     const notices = readFileSync(join(desktop, "THIRD_PARTY_NOTICES.md"), "utf8");
     expect(notices).toContain("## Lucide");
     expect(notices).toContain("ISC");

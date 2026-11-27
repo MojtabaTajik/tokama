@@ -21,7 +21,7 @@ export function notices(electronVersion: string): ReadonlyArray<Notice & { reado
   const inElectron = `in Electron ${electronVersion.split(".")[0] ?? electronVersion}`;
   return [
     { id: "lucide", name: "Lucide", version: "1.81.0", role: "icons", licence: "ISC · MIT", site: "lucide.dev", copyright: "Copyright Lucide Icons and Contributors; Copyright Cole Bemis (Feather)",
-      text: "Every icon in the app is a Lucide icon. Only the icons the app lists are bundled, as inline SVG; no icon font and no download at run time. Licence: ISC. Some Lucide icons derive from the Feather project, under the MIT licence." },
+      text: "Every interface icon in the app (not the Tokama logo or the tool logos) is a Lucide icon. Only the icons the app lists are bundled, as inline SVG; no icon font and no download at run time. Licence: ISC. Some Lucide icons derive from the Feather project, under the MIT licence." },
     { id: "electron", name: "Electron", version: electronVersion, role: "desktop shell", licence: "MIT", site: "electronjs.org", copyright: "Copyright Electron contributors, Copyright GitHub Inc.",
       text: "Electron runs the desktop app. It bundles Chromium and Node.js, which carry their own licences, listed below." },
     { id: "chromium", name: "Chromium", version: inElectron, role: "renders the window", licence: "BSD-3-Clause and others", site: "chromium.org", copyright: "Copyright The Chromium Authors",
