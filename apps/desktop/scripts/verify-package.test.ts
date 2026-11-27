@@ -2,8 +2,9 @@ import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, wr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { entitlementProblem, isMachO, latestProblem, layoutProblem, machOFiles, parseLatestMac, parseSignature, parseYamlScalars, minSafeProblem, signatureProblem, zipName } from "./verify-package-mac.js";
-import { parseVerifyArgs } from "./verify-package.js";
+import { minSafeProblem, parseLatestFeed, parseYamlScalars } from "./verify-package-common.js";
+import { entitlementProblem, isMachO, latestProblem, layoutProblem, machOFiles, parseSignature, signatureProblem, zipName } from "./verify-package-mac.js";
+import { parseLinuxVerifyArgs, parseVerifyArgs } from "./verify-package.js";
 
 let root: string;
 beforeEach(() => void (root = mkdtempSync(join(tmpdir(), "tk-verify-test-"))));
@@ -140,7 +141,7 @@ describe("parseYamlScalars", () => {
   });
 });
 
-describe("parseLatestMac and latestProblem", () => {
+describe("parseLatestFeed and latestProblem", () => {
   const sha = "1ALtL0WgiZgYZRuIO64LPwaMqZSzuEvz23/p81KDMXjArkujviBd+IruL0bpe/dcgtQ1NBOFXj4SakvAi2Qkew==";
   const text = (over: { version?: string; name?: string; extra?: string } = {}) => `version: ${over.version ?? "0.1.0"}
 files:
@@ -154,7 +155,7 @@ releaseDate: '2026-11-26T08:37:12.137Z'
   const zip = { name: "Tokama-0.1.0-arm64-mac.zip", sha512: sha, size: 1234 };
 
   it("reads the fields and the file entries", () => {
-    expect(parseLatestMac(text())).toEqual({
+    expect(parseLatestFeed(text())).toEqual({
       version: "0.1.0",
       path: "Tokama-0.1.0-arm64-mac.zip",
       sha512: sha,
@@ -163,7 +164,7 @@ releaseDate: '2026-11-26T08:37:12.137Z'
   });
 
   it("accepts the feed file of exactly this zip", () => {
-    expect(latestProblem(parseLatestMac(text()), "0.1.0", zip)).toBeUndefined();
+    expect(latestProblem(parseLatestFeed(text()), "0.1.0", zip)).toBeUndefined();
   });
 
   it("names the zip the way the updater expects", () => {
@@ -171,11 +172,11 @@ releaseDate: '2026-11-26T08:37:12.137Z'
   });
 
   it("refuses another version, another digest, another size, a second file and a dmg entry", () => {
-    expect(latestProblem(parseLatestMac(text({ version: "0.1.1" })), "0.1.0", zip)).toMatch(/version is 0\.1\.1/);
-    expect(latestProblem(parseLatestMac(text()), "0.1.0", { ...zip, sha512: "other" })).toMatch(/sha512/);
-    expect(latestProblem(parseLatestMac(text()), "0.1.0", { ...zip, size: 99 })).toMatch(/size is 1234/);
-    expect(latestProblem(parseLatestMac(text({ extra: "  - url: Tokama-0.1.0-arm64.dmg\n    sha512: x\n    size: 1\n" })), "0.1.0", zip)).toMatch(/lists 2 files/);
-    expect(latestProblem(parseLatestMac(text({ name: "Tokama-0.1.0-arm64.dmg" })), "0.1.0", { ...zip, name: "Tokama-0.1.0-arm64.dmg" })).toMatch(/is named/);
+    expect(latestProblem(parseLatestFeed(text({ version: "0.1.1" })), "0.1.0", zip)).toMatch(/version is 0\.1\.1/);
+    expect(latestProblem(parseLatestFeed(text()), "0.1.0", { ...zip, sha512: "other" })).toMatch(/sha512/);
+    expect(latestProblem(parseLatestFeed(text()), "0.1.0", { ...zip, size: 99 })).toMatch(/size is 1234/);
+    expect(latestProblem(parseLatestFeed(text({ extra: "  - url: Tokama-0.1.0-arm64.dmg\n    sha512: x\n    size: 1\n" })), "0.1.0", zip)).toMatch(/lists 2 files/);
+    expect(latestProblem(parseLatestFeed(text({ name: "Tokama-0.1.0-arm64.dmg" })), "0.1.0", { ...zip, name: "Tokama-0.1.0-arm64.dmg" })).toMatch(/is named/);
   });
 });
 
@@ -269,5 +270,37 @@ describe("parseVerifyArgs", () => {
     ["a version that is not x.y.z", ["--app", "a", "--version", "0.1", "--feed-url", "https://x.test/", "--unsigned"], /--version/],
     ["a feed URL that is not https", ["--app", "a", "--version", "0.1.0", "--feed-url", "http://x.test/", "--unsigned"], /feed URL/],
     ["--latest without --zip", [...base, "--unsigned", "--latest", "latest-mac.yml"], /--zip/],
+    ["--linux, which is for Linux", [...base, "--unsigned", "--linux"], /--linux/],
   ])("refuses %s", (_name, argv, message) => expect(() => parseVerifyArgs(argv)).toThrow(message));
+});
+
+describe("parseLinuxVerifyArgs", () => {
+  const base = ["--linux", "--version", "0.1.0", "--feed-url", "https://updates.example.test/linux/"];
+
+  it("reads one package, or both and the feed file", () => {
+    expect(parseLinuxVerifyArgs([...base, "--deb", "a.deb"])).toEqual({ version: "0.1.0", feedUrl: "https://updates.example.test/linux/", deb: "a.deb" });
+    expect(parseLinuxVerifyArgs([...base, "--rpm", "a.rpm", "--deb", "a.deb", "--latest", "latest-linux.yml", "--min-safe-version", "0.0.9"])).toEqual({
+      version: "0.1.0",
+      feedUrl: "https://updates.example.test/linux/",
+      minSafeVersion: "0.0.9",
+      deb: "a.deb",
+      rpm: "a.rpm",
+      latest: "latest-linux.yml",
+    });
+  });
+
+  it("takes the local feed of a trial build", () => {
+    expect(parseLinuxVerifyArgs(["--linux", "--version", "0.1.0", "--feed-url", "http://127.0.0.1:8765/", "--rpm", "a.rpm"])).toMatchObject({ feedUrl: "http://127.0.0.1:8765/" });
+  });
+
+  it.each([
+    ["no package", base, /--deb or --rpm/],
+    ["--latest with one package", [...base, "--deb", "a.deb", "--latest", "latest-linux.yml"], /needs --deb and --rpm/],
+    ["no version", ["--linux", "--feed-url", "https://x.test/", "--deb", "a"], /--version/],
+    ["a version that is not x.y.z", ["--linux", "--version", "0.1", "--feed-url", "https://x.test/", "--deb", "a"], /--version/],
+    ["no feed URL", ["--linux", "--version", "0.1.0", "--deb", "a"], /--feed-url/],
+    ["a feed URL that is not https", ["--linux", "--version", "0.1.0", "--feed-url", "http://x.test/", "--deb", "a"], /feed URL/],
+    ["a lowest safe version above the build's", [...base, "--deb", "a", "--min-safe-version", "0.1.1"], /above this build/],
+    ["a macOS option", [...base, "--deb", "a", "--app", "Tokama.app"], /--app/],
+  ])("refuses %s", (_name, argv, message) => expect(() => parseLinuxVerifyArgs(argv)).toThrow(message));
 });

@@ -2,6 +2,10 @@
 
 One section per version, written for people who use Tokama.
 
+## Unreleased
+
+- Tokama now also comes for Linux on x86_64, as a `.deb` for Ubuntu 24.04 or newer and an `.rpm` for Fedora. Install with `sudo apt install ./Tokama-<version>-amd64.deb` or `sudo dnf install ./Tokama-<version>-x86_64.rpm`. The package brings `git`, `bubblewrap` and `socat` with it.
+
 ## 0.0.1 (2026-11-26)
 
 Signing test build. Not for general use.

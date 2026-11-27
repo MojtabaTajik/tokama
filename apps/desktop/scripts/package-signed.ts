@@ -1,7 +1,7 @@
 // The release half of `package.ts --signed`: what the signing run needs from its environment, and
 // the steps after electron-builder has signed and notarized the app: sign the dmg with a secure
-// timestamp, notarize and staple it, and write SHA256SUMS.txt. Nothing here prints a secret; the
-// key is only ever a file path.
+// timestamp, notarize and staple it, and write SHA256SUMS.txt (the Linux build writes its own
+// with the same function). Nothing here prints a secret; the key is only ever a file path.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
@@ -112,9 +112,22 @@ export function signNotarizeDmg(release: string, dmg: string, env: SignedEnv): v
   if (stapled.status !== 0) throw new Error(`stapler staple: ${stapled.stdout}${stapled.stderr}`.trim());
 }
 
-/** Writes release/SHA256SUMS.txt over the dmg, the zip, the zip's blockmap and latest-mac.yml, in that order. */
-export function writeSums(release: string, version: string): void {
-  const names = [`Tokama-${version}-arm64.dmg`, `Tokama-${version}-arm64-mac.zip`, `Tokama-${version}-arm64-mac.zip.blockmap`, "latest-mac.yml"];
+export type PackagePlatform = "mac" | "linux";
+
+/** The Linux packages' file names: electron-builder's `${productName}-${version}-${arch}.${ext}`, with the architecture as dpkg and rpm name it. */
+export const debName = (version: string) => `Tokama-${version}-amd64.deb`;
+export const rpmName = (version: string) => `Tokama-${version}-x86_64.rpm`;
+
+/** The files a platform's release holds, in the order SHA256SUMS.txt lists them. The Linux packages have no blockmaps. */
+export function releaseFileNames(platform: PackagePlatform, version: string): string[] {
+  return platform === "mac"
+    ? [`Tokama-${version}-arm64.dmg`, `Tokama-${version}-arm64-mac.zip`, `Tokama-${version}-arm64-mac.zip.blockmap`, "latest-mac.yml"]
+    : [debName(version), rpmName(version), "latest-linux.yml"];
+}
+
+/** Writes release/SHA256SUMS.txt over the files of `releaseFileNames`. */
+export function writeSums(release: string, version: string, platform: PackagePlatform): void {
+  const names = releaseFileNames(platform, version);
   const entries = names.map((name) => ({ name, sha256: createHash("sha256").update(readFileSync(join(release, name))).digest("hex") }));
   writeFileSync(join(release, "SHA256SUMS.txt"), sha256Sums(entries));
 }

@@ -1,0 +1,64 @@
+name: linux-package
+description: >
+  Builds the Linux .deb and .rpm of the desktop app, verifies them, installs the .deb on this
+  Ubuntu runner and runs it under a virtual display, and installs the .rpm in a Fedora container
+  and starts its engine. Used by the release workflow and by the ci workflow, so the CI job proves
+  the exact steps of a release. It needs the checkout, pnpm, Node and a finished `pnpm build`.
+  It uses no secret and no input is a secret: nothing here may ever need one.
+inputs:
+  feed-url:
+    description: The update feed URL baked into the packages
+    required: false
+    default: https://updates.tokama.dev/linux/
+  min-safe-version:
+    description: The lowest safe version the feed names, or empty for none
+    required: false
+    default: ""
+  rpm-out:
+    description: A folder for the logs of the engine-only run in the Fedora container
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # rpmbuild, which fpm needs for the .rpm; rpm2cpio and cpio, which the verify script unpacks it with.
+    - name: Tools for the .rpm
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y rpm rpm2cpio cpio
+    - name: Package and verify
+      shell: bash
+      working-directory: apps/desktop
+      env:
+        FEED_URL: ${{ inputs.feed-url }}
+        MIN_SAFE_VERSION: ${{ inputs.min-safe-version }}
+      run: pnpm exec install-electron && node scripts/package.ts --feed-url "$FEED_URL" --min-safe-version "$MIN_SAFE_VERSION"
+    # The Chromium sandbox must stay on: this runner has the AppArmor restriction on user namespaces, so the
+    # test only passes through the profile the package installs. Nothing lifts the restriction here.
+    - name: Install the .deb and run it
+      shell: bash
+      working-directory: apps/desktop
+      run: |
+        set -euo pipefail
+        version=$(node -p "require('./package.json').version")
+        xvfb-run --auto-servernum node scripts/smoke-installed.ts --deb "release/Tokama-$version-amd64.deb"
+    - name: Install the .rpm in Fedora and start its engine
+      shell: bash
+      env:
+        FEED_URL: ${{ inputs.feed-url }}
+        MIN_SAFE_VERSION: ${{ inputs.min-safe-version }}
+        RPM_OUT: ${{ inputs.rpm-out }}
+      run: |
+        set -euo pipefail
+        mkdir -p "$RPM_OUT"
+        version=$(node -p "require('./apps/desktop/package.json').version")
+        # The engine's own Node runs the scripts: Fedora has none of its own, and the test must not need one.
+        # cpio, procps-ng, tar and xz are the tools of the test, not of the package; its own dependencies come with dnf.
+        docker run --rm \
+          -e VERSION="$version" -e FEED_URL="$FEED_URL" -e MIN_SAFE_VERSION="$MIN_SAFE_VERSION" \
+          -v "$GITHUB_WORKSPACE:/work:ro" -v "$RPM_OUT:/out" -w /work/apps/desktop \
+          fedora:latest bash -euxo pipefail -c '
+            dnf install -y "./release/Tokama-$VERSION-x86_64.rpm" cpio procps-ng tar xz
+            node=/opt/Tokama/resources/engine/tokama-engine
+            "$node" scripts/verify-package.ts --linux --rpm "release/Tokama-$VERSION-x86_64.rpm" --version "$VERSION" --feed-url "$FEED_URL" ${MIN_SAFE_VERSION:+--min-safe-version "$MIN_SAFE_VERSION"}
+            "$node" scripts/smoke-installed.ts --rpm-engine-only --out /out
+          '

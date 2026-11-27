@@ -3,16 +3,17 @@
 // The ref must be a v<x.y.z> tag, the tag must name the version in apps/desktop/package.json, and
 // the release must have notes: `whats-new/<version>.md` when that file exists (it must parse, and
 // becomes the notes), else the CHANGELOG.md section for the version. With
-// --github-output the version, the feed URL and the lowest safe version (empty when no note up to
-// this version says `security: true`; see minSafeVersionFor) are appended there as `version=`,
-// `feed_url=` and `min_safe_version=`.
-// The feed URL is the default, or on a manual run the one in FEED_URL_INPUT; GITHUB_EVENT_NAME
-// tells the two apart. Any problem ends the script with a message that names it.
+// --github-output the version, the feed URLs of both platforms and the lowest safe version (empty
+// when no note up to this version says `security: true`; see minSafeVersionFor) are appended there
+// as `version=`, `feed_url_mac=`, `feed_url_linux=` and `min_safe_version=`.
+// A feed URL is the platform's default, or on a manual run the one in FEED_URL_INPUT (for both
+// platforms); GITHUB_EVENT_NAME tells the two apart. Any problem ends the script with a message that names it.
 import { appendFileSync, lstatSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { compareVersions, isVersion, MAX_NOTE_BYTES, parseNote, releaseNotes } from "../src/shared/whats-new.ts";
-import { DEFAULT_FEED_URL, appVersion, feedUrlProblem } from "./package.ts";
+import type { PackagePlatform } from "./package-signed.ts";
+import { appVersion, defaultFeedUrl, feedUrlProblem } from "./package.ts";
 
 const appDir = resolve(import.meta.dirname, "..");
 const repoDir = resolve(appDir, "..", "..");
@@ -92,13 +93,18 @@ export function minSafeVersionFor(repoDir: string, version: string): string | un
   return newest;
 }
 
-/** The feed URL baked into the app: the default for a tag push, the input (when given) for a manual run. Throws when the input is not a valid feed URL. */
-export function feedUrlFor(event: string | undefined, input: string | undefined): string {
-  if (event !== "workflow_dispatch" || input === undefined || input === "") return DEFAULT_FEED_URL;
+/** The feed URL baked into the app of `platform`: the default for a tag push, the input (when given, for both platforms) for a manual run. Throws when the input is not a valid feed URL. */
+export function feedUrlFor(platform: PackagePlatform, event: string | undefined, input: string | undefined): string {
+  if (event !== "workflow_dispatch" || input === undefined || input === "") return defaultFeedUrl(platform);
   // A manual run may bake in a local test feed; a tag push never reaches this line.
   const problem = feedUrlProblem(input, true);
   if (problem !== undefined) throw new Error(problem);
   return input;
+}
+
+/** What `--github-output` appends: the step outputs the workflow reads. */
+export function stepOutputs(outputs: { readonly version: string; readonly feedUrlMac: string; readonly feedUrlLinux: string; readonly minSafe: string }): string {
+  return `version=${outputs.version}\nfeed_url_mac=${outputs.feedUrlMac}\nfeed_url_linux=${outputs.feedUrlLinux}\nmin_safe_version=${outputs.minSafe}\n`;
 }
 
 function main(): void {
@@ -110,10 +116,11 @@ function main(): void {
   if (version !== packaged) throw new Error(`the tag names ${version}, apps/desktop/package.json says ${packaged}`);
   const { notes, source } = releaseNotesFor(repoDir, version);
   const minSafe = minSafeVersionFor(repoDir, version) ?? "";
-  const feedUrl = feedUrlFor(process.env["GITHUB_EVENT_NAME"], process.env["FEED_URL_INPUT"]);
+  const feedUrlMac = feedUrlFor("mac", process.env["GITHUB_EVENT_NAME"], process.env["FEED_URL_INPUT"]);
+  const feedUrlLinux = feedUrlFor("linux", process.env["GITHUB_EVENT_NAME"], process.env["FEED_URL_INPUT"]);
   writeFileSync(notesOut, `${notes}\n`);
-  if (githubOutput !== undefined) appendFileSync(githubOutput, `version=${version}\nfeed_url=${feedUrl}\nmin_safe_version=${minSafe}\n`);
-  process.stdout.write(`release-check: ${version}, feed ${feedUrl}, ${notes.split("\n").length} lines of notes from ${source}, lowest safe version ${minSafe === "" ? "none" : minSafe}\n`);
+  if (githubOutput !== undefined) appendFileSync(githubOutput, stepOutputs({ version, feedUrlMac, feedUrlLinux, minSafe }));
+  process.stdout.write(`release-check: ${version}, feeds ${feedUrlMac} and ${feedUrlLinux}, ${notes.split("\n").length} lines of notes from ${source}, lowest safe version ${minSafe === "" ? "none" : minSafe}\n`);
 }
 
 if (import.meta.main) {

@@ -1,8 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AfterPackContext } from "electron-builder";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { appVersion, checkEngineVersion, engineManifest, feedUrlProblem, minSafeVersionProblem, releaseInfoFor } from "./package.js";
+import { appVersion, checkEngineVersion, defaultFeedUrl, engineManifest, feedUrlProblem, hostPlatform, minSafeVersionProblem, releaseInfoFor, removeDefaultApp } from "./package.js";
 
 let root: string;
 beforeEach(() => void (root = mkdtempSync(join(tmpdir(), "tk-package-test-"))));
@@ -71,6 +72,55 @@ describe("feedUrlProblem with a local feed", () => {
 
   it("still accepts https with the flag", () => {
     expect(feedUrlProblem("https://updates.tokama.dev/mac/", true)).toBeUndefined();
+  });
+});
+
+describe("defaultFeedUrl", () => {
+  it("is the platform's folder of the update feed, and a valid feed URL", () => {
+    expect(defaultFeedUrl("mac")).toBe("https://updates.tokama.dev/mac/");
+    expect(defaultFeedUrl("linux")).toBe("https://updates.tokama.dev/linux/");
+    expect(feedUrlProblem(defaultFeedUrl("mac"))).toBeUndefined();
+    expect(feedUrlProblem(defaultFeedUrl("linux"))).toBeUndefined();
+  });
+});
+
+describe("hostPlatform", () => {
+  it("builds for Apple silicon and Linux x86_64 only", () => {
+    expect(hostPlatform("darwin", "arm64")).toBe("mac");
+    expect(hostPlatform("linux", "x64")).toBe("linux");
+  });
+
+  it.each([
+    ["darwin", "x64"],
+    ["linux", "arm64"],
+    ["win32", "x64"],
+    ["freebsd", "x64"],
+  ])("builds nothing for %s %s", (platform, arch) => expect(hostPlatform(platform, arch)).toBeUndefined());
+});
+
+describe("removeDefaultApp", () => {
+  const context = (electronPlatformName: string, appOutDir: string) => ({ electronPlatformName, appOutDir, packager: { appInfo: { productFilename: "Tokama" } } }) as unknown as AfterPackContext;
+
+  it("removes the demo app's archive from the Linux resources folder", () => {
+    mkdirSync(join(root, "resources"));
+    for (const name of ["default_app.asar", "app.asar"]) writeFileSync(join(root, "resources", name), "");
+    removeDefaultApp(context("linux", root));
+    expect(existsSync(join(root, "resources", "default_app.asar"))).toBe(false);
+    expect(existsSync(join(root, "resources", "app.asar"))).toBe(true);
+  });
+
+  it("removes it from the macOS app's Resources folder", () => {
+    const resources = join(root, "Tokama.app", "Contents", "Resources");
+    mkdirSync(resources, { recursive: true });
+    for (const name of ["default_app.asar", "app.asar"]) writeFileSync(join(resources, name), "");
+    removeDefaultApp(context("darwin", root));
+    expect(existsSync(join(resources, "default_app.asar"))).toBe(false);
+    expect(existsSync(join(resources, "app.asar"))).toBe(true);
+  });
+
+  it("does nothing when there is none", () => {
+    mkdirSync(join(root, "resources"));
+    expect(() => removeDefaultApp(context("linux", root))).not.toThrow();
   });
 });
 

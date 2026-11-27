@@ -52,6 +52,8 @@ publish:
 # single-instance lock); development keeps @tokama/desktop.
 extraMetadata:
   productName: Tokama
+  # The Linux packages' URL field; electron-builder reads it from the package metadata.
+  homepage: https://tokama.dev
 electronFuses:
   runAsNode: false
   enableNodeOptionsEnvironmentVariable: false
@@ -75,6 +77,36 @@ mac:
   binaries:
     - Contents/Resources/engine/tokama-engine
   notarize: false
+linux:
+  target:
+    - target: deb
+      arch: [x64]
+    - target: rpm
+      arch: [x64]
+  # The launcher in /opt/Tokama and the link /usr/bin/tokama; the .desktop entry and the icons use it too.
+  executableName: tokama
+  category: Development
+  icon: build/icons
+  maintainer: "Tokama <hello@tokama.dev>"
+  vendor: Tokama
+  synopsis: Agent workbench for engineers
+  description: Tokama runs AI coding agents one step at a time, following templates you write. Each step says when it is done - the checks pass, a reviewer approves, or you approve.
+  desktop:
+    entry:
+      # Electron names its window class after the product, so the launcher groups the window with this entry.
+      StartupWMClass: Tokama
+# The package names and dependencies repeat electron-builder's defaults (Electron's libraries) and add what
+# Tokama runs: the library of the engine's own Node (the official build links libatomic), git, and
+# bubblewrap and socat for the agents' sandbox. scripts/verify-package-linux.ts holds the same lists and
+# fails when a built package differs.
+deb:
+  packageName: tokama
+  depends: [libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libuuid1, libsecret-1-0, libatomic1, git, bubblewrap, socat]
+  fpm: ["--license=Apache-2.0"]
+rpm:
+  packageName: tokama
+  depends: [gtk3, libnotify, nss, libXScrnSaver, "(libXtst or libXtst6)", xdg-utils, at-spi2-core, "(libuuid or libuuid1)", libatomic, git, bubblewrap, socat]
+  fpm: ["--license=Apache-2.0"]
 dmg:
   sign: true
   artifactName: ${productName}-${version}-${arch}.${ext}

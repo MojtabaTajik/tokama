@@ -1,5 +1,9 @@
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { findIdentityHash, notaryOutcome, sha256Sums, signedEnv } from "./package-signed.js";
+import { findIdentityHash, notaryOutcome, releaseFileNames, sha256Sums, signedEnv, writeSums } from "./package-signed.js";
 
 const exists = () => true;
 const GOOD = {
@@ -76,6 +80,35 @@ describe("notaryOutcome", () => {
 
   it.each(["", "not json", "{}", '{"status":1}'])("finds nothing in %j", (text) => {
     expect(notaryOutcome(text).status).toBeUndefined();
+  });
+});
+
+describe("releaseFileNames and writeSums", () => {
+  it("lists the files of each platform's release, the Linux one without blockmaps", () => {
+    expect(releaseFileNames("mac", "0.1.0")).toEqual(["Tokama-0.1.0-arm64.dmg", "Tokama-0.1.0-arm64-mac.zip", "Tokama-0.1.0-arm64-mac.zip.blockmap", "latest-mac.yml"]);
+    expect(releaseFileNames("linux", "0.1.0")).toEqual(["Tokama-0.1.0-amd64.deb", "Tokama-0.1.0-x86_64.rpm", "latest-linux.yml"]);
+  });
+
+  it("writes one hash line for each file of the platform, in order", () => {
+    const dir = mkdtempSync(join(tmpdir(), "tk-sums-test-"));
+    try {
+      for (const name of releaseFileNames("linux", "0.1.0")) writeFileSync(join(dir, name), name);
+      writeSums(dir, "0.1.0", "linux");
+      const lines = readFileSync(join(dir, "SHA256SUMS.txt"), "utf8").trimEnd().split("\n");
+      expect(lines.map((line) => line.slice(66))).toEqual(releaseFileNames("linux", "0.1.0"));
+      expect(lines[2]).toBe(`${createHash("sha256").update("latest-linux.yml").digest("hex")}  latest-linux.yml`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a platform whose file is missing", () => {
+    const dir = mkdtempSync(join(tmpdir(), "tk-sums-test-"));
+    try {
+      expect(() => writeSums(dir, "0.1.0", "mac")).toThrow(/ENOENT/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
