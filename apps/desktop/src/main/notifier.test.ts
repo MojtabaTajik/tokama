@@ -164,12 +164,12 @@ describe("noteText", () => {
   });
 
   it("says where a failed item stopped and what failed", () => {
-    const build = { name: "Build", stage: "working", state: "failed", data: "none", runs: 3, attempts: [{ attempt: 3, result: "failed", checks: [{ command: "pnpm test", passed: false, exitCode: 1 }] }] };
+    const build = { name: "Build", stage: "working", state: "failed", data: "none", runs: 3, attempts: [1, 2, 3].map((n) => ({ attempt: n, result: "failed", checks: [{ command: "pnpm test", passed: false, exitCode: 1 }] })) };
     expect(noteText("failed", failed({ steps: [{ name: "Plan", state: "passed" }, build, { name: "Review", state: "pending" }] }), context).body).toBe("Stopped at Build, step 2 of 3: pnpm test failed 3 times\nPlan and build · orders-api");
     expect(noteText("failed", failed({ steps: [{ name: "Build", state: "failed", detail: "the agent crashed" }] }), context).body).toBe("Stopped at Build, step 1 of 1: the agent crashed\nPlan and build · orders-api");
     expect(noteText("failed", failed({ steps: [{ name: "Build", state: "failed" }] }), context).body).toBe("Stopped at Build, step 1 of 1\nPlan and build · orders-api");
     expect(noteText("failed", failed({ outcome: { kind: "failed", detail: "The engine stopped." } }), context).body).toBe("The engine stopped.\nPlan and build · orders-api");
-    expect(noteText("failed", failed(), context).body).not.toContain("A step failed");
+    expect(noteText("failed", failed(), context).body).toBe("Stopped.\nPlan and build · orders-api");
   });
 
   it("escapes the failing check on Linux", () => {

@@ -83,8 +83,9 @@ function failureOf(item: FactItem): Failure {
   const at = `${step.name}, step ${index + 1} of ${item.steps.length}`;
   const check = step.attempts?.at(-1)?.checks.find((candidate) => !candidate.passed)?.command;
   if (check === undefined) return { at, cause: step.detail ?? item.outcome?.detail };
-  const runs = step.runs ?? step.attempts?.filter((attempt) => attempt.result !== "run_failed").length ?? 0;
-  return { at, cause: `${check} failed${runs > 1 ? ` ${runs} times` : ""}` };
+  // How often this check failed, not how often the step ran: another check may have failed in an earlier attempt.
+  const times = step.attempts?.filter((attempt) => attempt.checks.some((candidate) => candidate.command === check && !candidate.passed)).length ?? 0;
+  return { at, cause: `${check} failed${times > 1 ? ` ${times} times` : ""}` };
 }
 
 /** The facts of a failed item: why, where it stopped, and its checks when one did not pass. */

@@ -12,7 +12,6 @@ import { Button } from "../ui/Button.js";
 import { AgentChip } from "../ui/agent.js";
 import { Facts } from "../ui/Facts.js";
 import { factsOf } from "../../shared/item-facts.js";
-import { finishNote } from "../drawer/finish-view.js";
 
 export interface CardProps {
   readonly item: ItemRecord;
@@ -27,8 +26,10 @@ export interface CardProps {
 export function Card({ item, agents, template, selected, onSelect, now }: CardProps) {
   const status = cardStatus(item, now);
   const agent = rowAgent(item, agents);
-  // Until Merge or Open PR, a done card and a failed card say what was measured in place of the engine's line.
-  const facts = finishNote(item) === undefined ? factsOf(item) : [];
+  // Until a Merge, a pull request or a discard has ended it, a done card and a failed card say what
+  // was measured in place of the engine's line (which names the commit). A refused or running action ends nothing.
+  const finish = item.finish;
+  const facts = finish !== undefined && (finish.merged !== undefined || finish.pullRequest !== undefined || finish.worktreeRemoved) ? [] : factsOf(item);
   return (
     <Button variant="plain" className="card" data-item-id={item.id} data-state={item.state} data-live={status?.live === true} aria-current={selected ? "true" : undefined} onClick={() => onSelect(item.id)}>
       {status?.live === true && <span className="card-edge" aria-hidden="true" />}

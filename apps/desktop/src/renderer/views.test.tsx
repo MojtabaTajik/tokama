@@ -102,7 +102,7 @@ describe("pipeline list", () => {
     await mount();
     await click(segment("Done"));
     const done = row("Bump the Postgres driver");
-    expect(done.textContent).not.toMatch(/[0-9a-f]{7}/);
+    expect(done.textContent).not.toContain("3f2a9c1");
     expect(done.querySelector(".pl-mark")?.textContent).toBe("✓done: ");
     expect(done.querySelectorAll("[data-tone]")).toHaveLength(1);
   });

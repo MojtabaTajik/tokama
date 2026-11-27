@@ -22,7 +22,7 @@ flow("a failed row names the failing check and a done row its checks, without th
   const failed = await factsOf(page, FAILED).innerText();
   expect(failed).toContain("pnpm test failed 3 times");
   expect(failed).toMatch(/stopped at .+, step 2 of 2/);
-  expect(failed).toMatch(/✕\s+failed:\s+checks 1\/2|✕[\s\S]*checks 1\/2/);
+  expect(failed).toMatch(/✕\s+failed:\s+checks 1\/2/);
   expect(await factsOf(page, DONE).innerText()).toContain("checks 3/3");
   expect(await row(page, DONE).innerText()).not.toContain("3f2a9c1");
   expect(await page.locator(".pipeline-list").innerText()).not.toContain("A step failed");

@@ -50,7 +50,8 @@ describe("doneFacts", () => {
 });
 
 describe("failedFacts and failureLine", () => {
-  const build = (fields: Record<string, unknown> = {}) => step("Build", "failed", { runs: 3, attempts: [attempt(3, [check("pnpm lint"), check("pnpm test", false), check("pnpm typecheck")])], ...fields });
+  const failing = () => attempt(3, [check("pnpm lint"), check("pnpm test", false), check("pnpm typecheck")]);
+  const build = (fields: Record<string, unknown> = {}) => step("Build", "failed", { runs: 3, attempts: [failing(), failing(), failing()], ...fields });
   const crashed = (steps: unknown[], fields: Record<string, unknown> = {}) => item({ state: "failed", steps, ...fields });
 
   it("names the failing check, its runs, where it stopped and the checks that did not pass", () => {
@@ -59,10 +60,12 @@ describe("failedFacts and failureLine", () => {
     expect(failureLine(failed)).toBe("Stopped at Build, step 2 of 3: pnpm test failed 3 times");
   });
 
-  it("counts the runs from the attempts when the step has no count, and says nothing for one run", () => {
+  it("counts the attempts in which that check failed, not the runs of the step", () => {
     const attempts = [attempt(1, [check("pnpm test", false)]), attempt(2, [], { result: "run_failed" }), attempt(3, [check("pnpm test", false)])];
-    expect(failureLine(crashed([step("Build", "failed", { attempts })]))).toBe("Stopped at Build, step 1 of 1: pnpm test failed 2 times");
-    expect(failureLine(crashed([step("Build", "failed", { runs: 1, attempts: [attempt(1, [check("pnpm test", false)])] })]))).toBe("Stopped at Build, step 1 of 1: pnpm test failed");
+    expect(failureLine(crashed([step("Build", "failed", { runs: 2, attempts })]))).toBe("Stopped at Build, step 1 of 1: pnpm test failed 2 times");
+    // Another check failed first: pnpm test failed once in two runs.
+    const other = [attempt(1, [check("pnpm lint", false), check("pnpm test")]), attempt(2, [check("pnpm lint"), check("pnpm test", false)])];
+    expect(failureLine(crashed([step("Build", "failed", { runs: 2, attempts: other })]))).toBe("Stopped at Build, step 1 of 1: pnpm test failed");
   });
 
   it("gives the step's own line when no check failed, as for a crash", () => {

@@ -99,7 +99,7 @@ export const ITEMS = {
     state: "running",
     steps: [step("Fix", "working", "passed", "local-builder"), step("Run checks", "verifying", "running")],
   }),
-  done: item(5, 120, { title: "Bump the Postgres driver", state: "done", steps: [step("Fix", "working", "passed", "local-builder"), step("Run checks", "verifying", "passed")] }),
+  done: item(5, 120, { title: "Bump the Postgres driver", state: "done", cardLine: "commit 3f2a9c1 · tokama/00000011", steps: [step("Fix", "working", "passed", "local-builder"), step("Run checks", "verifying", "passed")] }),
   failed: item(6, 130, { title: "Flaky checkout test", repoIds: ["checkout-web"], state: "failed", steps: [step("Fix", "working", "failed", "local-builder"), step("Run checks", "verifying", "pending")] }),
   stock: item(7, 6, {
     repoIds: ["inventory-service"],
