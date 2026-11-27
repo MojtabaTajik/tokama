@@ -798,7 +798,9 @@
   white-space: nowrap;
 }
 
+/* Positioned, so the screen-reader words in its marks are cut with the line's ellipsis. */
 .pl-finish {
+  position: relative;
   font-size: var(--text-base);
   color: var(--text-2);
 }

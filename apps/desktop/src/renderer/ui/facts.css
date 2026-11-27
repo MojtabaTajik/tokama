@@ -1,6 +1,8 @@
 /* A facts line (ui/Facts.tsx): one line that is cut with an ellipsis; the screen that places it
-   says where it wraps instead. */
+   says where it wraps instead. It is positioned so the screen-reader words inside it (absolute)
+   are clipped with the line and do not reach past it into the page's scroller. */
 .facts {
+  position: relative;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
