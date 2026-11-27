@@ -1,4 +1,4 @@
-import { copyFile, mkdtemp, open, readFile, realpath, rm } from "node:fs/promises";
+import { copyFile, lstat, mkdtemp, open, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { hasCode } from "../errno/index.js";
@@ -268,7 +268,7 @@ export interface Git {
   worktreeAddDetached(repo: string, path: string, commit: string): Promise<GitResult<void>>;
   /**
    * Without `force`: refuses a worktree with changes or untracked files (checked by `status`
-   * inside it). Then `worktree remove --force <path>`; a locked worktree is still refused.
+   * inside it) or with a checked-out nested repo. Then `worktree remove --force <path>`; a locked worktree is still refused.
    */
   worktreeRemove(repo: string, path: string, options?: { readonly force?: boolean }): Promise<GitResult<void>>;
   /** `worktree list --porcelain -z`. */
@@ -665,6 +665,18 @@ export function createGit(options: GitOptions): Git {
         if (!status.ok) return status;
         if (status.value !== "") {
           return err({ reason: "failed", args, exitCode: null, message: `worktree has changes or untracked files: ${path}` });
+        }
+        // A checked-out nested repo (submodule) is refused as plain `worktree remove` refuses it:
+        // its work (an untracked file, a commit on another branch, a stash) lives in its own git
+        // data, which `status` here may not show (ignore settings, a global status config) and
+        // which the removal deletes. Discarding it needs `force`.
+        const staged = await git(path, ["ls-files", "--stage", "-z"]);
+        if (!staged.ok) return staged;
+        for (const entry of staged.value.split("\0")) {
+          const nested = /^160000 [0-9a-f]+ 0\t(.+)$/s.exec(entry)?.[1];
+          if (nested !== undefined && (await lstat(join(path, ...nested.split("/"), ".git")).then(() => true, () => false))) {
+            return err({ reason: "failed", args, exitCode: null, message: `worktree has a nested repo with its own git data: ${nested}` });
+          }
         }
       }
       // One --force skips the clean check done above; a locked worktree still needs two.

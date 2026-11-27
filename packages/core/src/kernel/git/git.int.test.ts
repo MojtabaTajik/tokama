@@ -529,6 +529,52 @@ describe("API on a real repo", () => {
     expect(value(await git.writeTree(repo))).toBe(tree);
   });
 
+  it("worktreeRemove without force refuses a checked-out nested repo, whatever status shows of its work", SLOW, async () => {
+    const source = join(root, "inner-src");
+    mkdirSync(source);
+    await plain(source, "init", "-q", "-b", "main");
+    await plain(source, "config", "user.name", "Test");
+    await plain(source, "config", "user.email", "test@example.com");
+    write(join(source, "f"), "1\n");
+    await plain(source, "add", "-A");
+    await plain(source, "commit", "-q", "-m", "1");
+    await plain(repo, "clone", "-q", source, "inner");
+    write(join(repo, ".gitmodules"), '[submodule "inner"]\n\tpath = inner\n\turl = ./inner\n\tignore = all\n');
+    await plain(repo, "add", "-A");
+    await plain(repo, "commit", "-q", "-m", "gitlink");
+    await plain(repo, "config", "submodule.inner.ignore", "all");
+    await plain(repo, "config", "diff.ignoreSubmodules", "all");
+    // A nested repo that is not checked out (an empty folder) has no work to lose.
+    const bare = join(root, "wt-bare");
+    value(await git.worktreeAdd(repo, bare, "bare", "main"));
+    value(await git.worktreeRemove(repo, bare));
+    expect(existsSync(bare)).toBe(false);
+
+    const path = join(root, "wt");
+    value(await git.worktreeAdd(repo, path, "feature", "main"));
+    const nested = join(path, "inner");
+    await plain(path, "clone", "-q", source, nested);
+    await plain(nested, "config", "user.name", "Test");
+    await plain(nested, "config", "user.email", "test@example.com");
+
+    const refused = async () => expect(await git.worktreeRemove(repo, path)).toMatchObject({ ok: false, error: { reason: "failed", message: expect.stringContaining("nested repo") } });
+    // Clean as far as status can tell: still refused.
+    await refused();
+    // Work that status does not show, with ignore settings or without them: a commit on a branch that is not checked out, a stash.
+    await plain(nested, "switch", "-q", "-c", "side");
+    write(join(nested, "f"), "2\n");
+    await plain(nested, "commit", "-q", "-am", "2");
+    await plain(nested, "switch", "-q", "main");
+    await refused();
+    write(join(nested, "f"), "3\n");
+    await plain(nested, "stash", "-q");
+    await refused();
+    expect(existsSync(nested)).toBe(true);
+    // Discarding it is the person's call: force removes it.
+    value(await git.worktreeRemove(repo, path, { force: true }));
+    expect(existsSync(path)).toBe(false);
+  });
+
   it("worktree add, list and remove", SLOW, async () => {
     const path = join(root, "wt");
     value(await git.worktreeAdd(repo, path, "feature", "main"));
