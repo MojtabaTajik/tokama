@@ -223,6 +223,23 @@ describe("file names", () => {
     expect(names.endsWith("... (more names are not listed)\n")).toBe(true);
     expect(lines(names)[0]).toBe("some-quite-long-file-name-00000.ts");
   });
+
+  it("lists every name when they fit the cap exactly, even within the room kept for the closing line", async () => {
+    // 63 names of 255 bytes and one of 241: 16,370 bytes with their line breaks, under 16,384.
+    for (let i = 0; i < 63; i++) writeFileSync(join(repo, `${String(i).padStart(3, "0")}${"n".repeat(252)}`), "x");
+    writeFileSync(join(repo, `zzz${"n".repeat(238)}`), "x");
+    const { names } = await gather();
+    expect(bytes(names)).toBe(16_370);
+    expect(names).not.toContain("not listed");
+    expect(lines(names)).toHaveLength(64);
+  });
+
+  it("leaves out a worktree folder written with a `..` in it", async () => {
+    put(join(repo, "wt", "item-1", "a.ts"), "x");
+    put(join(repo, "src", "a.ts"), "x");
+    worktreeFolders = ["x/../wt"];
+    expect(lines((await gather()).names)).toEqual(["src/", "src/a.ts"]);
+  });
 });
 
 describe("build files", () => {
@@ -263,7 +280,9 @@ describe("build files", () => {
 
   it("stops at 80 KiB in all, skips what does not fit and names it", async () => {
     const big = "y".repeat(14 * 1024);
-    for (const name of ["package.json", "Makefile", "Cargo.toml", "go.mod", "pyproject.toml", "pom.xml", "Gemfile"]) put(join(repo, name), `${name}\n${big}`);
+    for (const name of ["package.json", "Makefile", "Cargo.toml", "go.mod", "pyproject.toml", "Gemfile"]) put(join(repo, name), `${name}\n${big}`);
+    // Fits under 80 KiB after the five above, but not under the room kept for the "not included" list.
+    put(join(repo, "pom.xml"), "z".repeat(8 * 1024));
     const { builds } = await gather();
     expect(bytes(builds)).toBeLessThanOrEqual(BUILD_CAP);
     const [included, left] = builds.split("--- not included ---\n") as [string, string];

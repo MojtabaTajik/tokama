@@ -4,7 +4,7 @@
 // Whatever the repo holds is untrusted: a name or a file can be planted to steer the agent or to
 // pull a secret into the prompt, so nothing is read by a name the repo chose except as listed here.
 import { realpath, stat } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import { listFiles, listFolders, readTextFileInside, readTextHead, type ReadFailureReason } from "../../../kernel/fs-safe/index.js";
 import { err, ok, type Result } from "../../../kernel/result/index.js";
 import type { HelperInput } from "../../../kernel/schemas/index.js";
@@ -103,7 +103,10 @@ async function entries(root: string, rel: string): Promise<{ files: string[]; fo
 }
 
 /** `.tokama/wt` as a key to compare with a listed path, whatever the folder's own spelling (`./`, `\`, trailing `/`). */
-const folderKey = (folder: string): string => key(folder.replaceAll("\\", "/").split("/").filter((part) => part !== "" && part !== ".").join("/"));
+const folderKey = (folder: string): string => {
+  const normal = posix.normalize(folder.replaceAll("\\", "/")).split("/").filter((part) => part !== "" && part !== ".");
+  return key(normal.join("/"));
+};
 
 /** The names two levels deep, folders with a closing `/`, in the order depth one then depth two. Never more than the cap. */
 async function fileNames(root: string, skipFolders: ReadonlySet<string>, signal: AbortSignal): Promise<string> {
@@ -121,14 +124,16 @@ async function fileNames(root: string, skipFolders: ReadonlySet<string>, signal:
     lines.push(...sorted([...shown(inner.files, folder), ...shown(inner.folders, folder).map((name) => `${name}/`)]).map((name) => `${folder}/${name}`));
   }
   if (lines.length === 0) return "(no files)\n";
+  const all = `${lines.join("\n")}\n`;
+  if (bytesOf(all) <= NAMES_BYTES) return all;
   let text = "";
   let size = 0;
   for (const line of lines) {
     size += bytesOf(line) + 1;
-    if (size > NAMES_BYTES - bytesOf(MORE_NAMES)) return `${text}${MORE_NAMES}`;
+    if (size > NAMES_BYTES - bytesOf(MORE_NAMES)) break;
     text += `${line}\n`;
   }
-  return text;
+  return `${text}${MORE_NAMES}`;
 }
 
 /** The first of `names` whose lower-case form is `lower`; names are sorted, so the choice is stable. */

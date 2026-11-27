@@ -263,6 +263,7 @@ describe("suggest-checks on a folder, with the built-in helper and its gatherer"
     // The repo's configured worktree folder is left out of the names, its other content is not.
     expect(prompt).toContain(".work/keep.md");
     expect(prompt).not.toContain("item-1");
+    expect(prompt).not.toContain(".work/trees");
     // The log and the record of the call hold no file name or text of the folder.
     expect(everythingIn(join(fixture.home, "helper-runs"))).not.toContain("orders-api");
     expect(everythingIn(join(fixture.home, "helper-runs"))).not.toContain("vitest");
