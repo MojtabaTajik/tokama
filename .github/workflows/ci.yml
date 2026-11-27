@@ -89,10 +89,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Linux on every pull request and push to main. macOS only on the nightly run, on a
-        # manual run, and on pull requests that carry the ci:macos label. The label is read
-        # when the run starts: add it, then push (or run the workflow by hand on the branch).
-        os: ${{ fromJSON(github.event_name == 'schedule' && '["macos-latest"]' || github.event_name == 'workflow_dispatch' && '["ubuntu-latest", "macos-latest"]' || contains(github.event.pull_request.labels.*.name, 'ci:macos') && '["ubuntu-latest", "macos-latest"]' || '["ubuntu-latest"]') }}
+        # Linux and macOS on every pull request and on a manual run. Linux only on push to
+        # main. macOS only on the nightly run.
+        os: ${{ fromJSON(github.event_name == 'schedule' && '["macos-latest"]' || (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "macos-latest"]' || '["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     # The macOS job also packages the app and runs it installed.
     timeout-minutes: ${{ matrix.os == 'macos-latest' && 40 || 20 }}
