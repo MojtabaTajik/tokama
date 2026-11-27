@@ -2291,7 +2291,7 @@ describe("ItemDrawer: an answer that needs no change", () => {
     expect(text(".rc-headline")).toBe(noChangeDone.steps[0]!.attempts![0]!.said!.headline);
     expect($$(".rc-points li").map((el) => el.textContent)).toHaveLength(2);
     expect($$(".rc-row").map((el) => el.textContent)).toEqual([
-      "Changed0 files · nothing committed · the worktree is removed",
+      "Changednone · 0 files changed, nothing committed · the worktree is removed",
       "RanPlan only · Build and Review did not run",
       expect.stringMatching(/^Sent out/),
     ]);
