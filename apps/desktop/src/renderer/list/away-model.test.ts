@@ -23,6 +23,11 @@ describe("awayModel", () => {
     expect(model.news).toBe(true);
   });
 
+  it("counts a question asked at the very time of seenUntil, as the engine counts an item that ended then", () => {
+    const model = awayModel({ seenUntil: SEEN, open: [{ ...ITEMS.needsYou, decision: { ...ITEMS.needsYou.decision!, askedAt: SEEN } } as ItemRecord], done: undefined, failed: undefined });
+    expect(model.needs.count).toBe(1);
+  });
+
   it("caps each group at five lines and keeps the full count", () => {
     const many = Array.from({ length: 8 }, (_, n) => asked(ITEMS.needsYou, 90 - n, id(n + 1)));
     const finished = Array.from({ length: 7 }, (_, n) => ended(ITEMS.done, 50, id(100 + n)));

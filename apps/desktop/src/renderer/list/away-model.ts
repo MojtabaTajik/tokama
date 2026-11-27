@@ -40,7 +40,8 @@ const askedAt = (item: ItemRecord): number => item.decision?.askedAt ?? 0;
 export function awayModel(input: { readonly seenUntil: number; readonly open: readonly ItemRecord[]; readonly done: AwayPage | undefined; readonly failed: AwayPage | undefined }): AwayModel {
   const { seenUntil, open, done, failed } = input;
   const asking = open
-    .filter((item) => item.state === "needs_you" && askedAt(item) > seenUntil)
+    // At or after `seenUntil`, as the engine counts ended items; a question with no time is not news.
+    .filter((item) => item.state === "needs_you" && item.decision?.askedAt !== undefined && askedAt(item) >= seenUntil)
     .sort((a, b) => askedAt(a) - askedAt(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   // The engine's done group holds stopped items too; the count leaves out those on the page.
   const ended = (done?.items ?? []).filter((item) => item.state === "done");

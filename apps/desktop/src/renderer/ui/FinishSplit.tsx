@@ -19,7 +19,8 @@ const TEXT = {
 export type FinishPick = FinishAction | "accept_git_changes";
 
 export interface FinishSplitProps {
-  readonly variant: "row" | "filled";
+  /** `row`: over a hovered list row; `filled`: the drawer's primary action; `outlined`: in a line, always shown, not the screen's primary action. */
+  readonly variant: "row" | "filled" | "outlined";
   /** The base branch: "main". */
   readonly base: string;
   /** Why Open PR is off; undefined when it can run. */

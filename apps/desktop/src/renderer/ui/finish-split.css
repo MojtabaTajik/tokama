@@ -1,7 +1,8 @@
 /* The finish split button (ui/FinishSplit): the main part, the arrow and the menu. A list row places the `row`
    variant itself (app.css); the `filled` one sits where it is put and is always visible. */
 
-.finish-split[data-variant="filled"] {
+.finish-split[data-variant="filled"],
+.finish-split[data-variant="outlined"] {
   position: relative;
   display: inline-flex;
   flex: none;
@@ -11,6 +12,14 @@
 .finish-split[data-variant="filled"] .finish-menu {
   right: auto;
   left: 0;
+}
+
+/* Outlined: the same split without the primary fill, for a screen whose primary action is another button. */
+.finish-split[data-variant="outlined"] .finish-split-main,
+.finish-split[data-variant="outlined"] .finish-split-more {
+  border-color: var(--hairline);
+  background: transparent;
+  color: var(--text-2);
 }
 
 .finish-split-main,

@@ -44,6 +44,13 @@ flow(
     expect(words(await lines.first().innerText())).toContain("Orders API returns 500 after deploy");
     expect(await strip(page).locator(".btn-primary").count()).toBe(1);
     expect(await lines.first().locator(".btn-primary").count()).toBe(1);
+    // The Merge split is outlined: no fill from the primary colours, in its main part or its arrow.
+    const merge = strip(page).locator(".finish-split");
+    expect(await merge.count()).toBe(1);
+    expect(await merge.getAttribute("data-variant")).toBe("outlined");
+    for (const part of [".finish-split-main", ".finish-split-more"]) {
+      expect(await merge.locator(part).evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+    }
     expect(words(await strip(page).locator(".away-running").innerText())).toContain("Paginate the orders list");
     expect(await strip(page).locator(".away-running .ag-badge").count()).toBeGreaterThan(0);
     await screenshot("away-open");

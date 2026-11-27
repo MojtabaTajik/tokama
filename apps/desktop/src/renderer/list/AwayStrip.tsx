@@ -219,7 +219,7 @@ function Line({ item, mark, setup, primary, onSelectItem, onFinish, onDiscard }:
       </div>
       <div className="away-line-actions">
         {merge ? (
-          <RowFinish item={item} setup={setup} onFinish={onFinish} onDiscard={onDiscard} />
+          <RowFinish item={item} setup={setup} onFinish={onFinish} onDiscard={onDiscard} variant="outlined" />
         ) : (
           <Button variant={asking && primary ? "primary" : "secondary"} onClick={() => onSelectItem(item.id)} aria-label={`${asking ? TEXT.openQuestion : TEXT.open}: ${item.title}`}>
             {asking ? TEXT.openQuestion : TEXT.open}
