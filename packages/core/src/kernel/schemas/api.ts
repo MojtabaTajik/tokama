@@ -16,7 +16,7 @@ import {
   VersionLabelSchema,
 } from "./diagnostics.js";
 import { FinishActionSchema, ItemRecordSchema, OutputSummarySchema } from "./item.js";
-import { UsageRangeSchema, UsageReportSchema, UsageScopeSchema } from "./usage.js";
+import { ItemUsageSchema, UsageRangeSchema, UsageReportSchema, UsageScopeSchema, UsageWindowSchema } from "./usage.js";
 import { ItemActivitySchema } from "./activity.js";
 import { AgentsListSchema } from "./agents.js";
 import { AiCliListSchema } from "./ai-clis.js";
@@ -223,9 +223,10 @@ export const QuerySchema = z.discriminatedUnion("type", [
   TemplateFileKeySchema.extend({ type: z.literal("template_detail") }),
   /**
    * Plan windows per AI CLI, and tokens and estimated cost by day, workflow, item, model and repo
-   * over the last `range` days. `scope` defaults to `tokama`.
+   * over the last `range` days. `scope` defaults to `tokama`. `window` picks the weekly window the
+   * report's `week` block covers; default `current`.
    */
-  z.strictObject({ type: z.literal("usage"), range: UsageRangeSchema, scope: UsageScopeSchema.optional() }),
+  z.strictObject({ type: z.literal("usage"), range: UsageRangeSchema, scope: UsageScopeSchema.optional(), window: UsageWindowSchema.optional() }),
   /**
    * CPU and memory of this machine and of Tokama's processes. Asking is what makes the engine
    * read them: it samples while a client keeps asking and stops soon after.
@@ -347,7 +348,8 @@ export const QueryResultSchemas = {
     /** For each local day of a done or failed item on this page: how many items of that day match, on all pages. */
     days: z.array(z.strictObject({ day: LocalDaySchema, count: z.int().min(1) })).max(MAX_LIST_PAGE),
   }),
-  item: z.strictObject({ item: ItemRecordSchema }),
+  /** `usage`: what the item used; absent when the engine has no calls of it. */
+  item: z.strictObject({ item: ItemRecordSchema, usage: ItemUsageSchema.optional() }),
   activity: z.strictObject({ activity: ItemActivitySchema.nullable() }),
   decision_diff: ItemDiffSchema,
   item_diff: ItemChangeSchema,

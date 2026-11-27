@@ -163,6 +163,21 @@ export const PlanWindowSchema = z.strictObject({
   active: z.boolean().optional(),
   /** A scoped limit's allowance as a share of the whole weekly limit, 0 to 100. */
   sharePercent: z.number().min(0).max(100).optional(),
+  /** When the window started: its reset time less its length. Absent when the length is unknown. */
+  startsAt: EpochMsSchema.optional(),
+  /**
+   * Where the window ends up at the pace since it started, read at the reading's time. Absent while
+   * less than 5% of the window has passed, while nothing is used, once the limit is reached, and
+   * when the window's length is unknown.
+   */
+  forecast: z
+    .strictObject({
+      /** The use at the reset time if the pace holds; above 100 when it would pass the limit. */
+      atResetPercent: z.number().min(0).max(100_000),
+      /** When the limit is reached at that pace; only when that is before the reset. */
+      runsOutAt: EpochMsSchema.optional(),
+    })
+    .optional(),
 });
 
 /** One AI CLI's plan usage as the engine last read it. Absent values are unknown, never guessed. */
@@ -180,6 +195,8 @@ export const CliPlanSchema = z.strictObject({
   version: z.string().min(1).max(100).optional(),
   /** Extra usage beyond the plan: on, off, or absent when unknown. */
   extraUsage: z.enum(["on", "off"]).optional(),
+  /** `plan`: the CLI has plan limits. `pay_per_use`: it bills per call (an API key). Absent when unknown. */
+  billing: z.enum(["plan", "pay_per_use"]).optional(),
   /** Why the windows are unknown or old, in plain words. */
   note: z.string().min(1).max(500).optional(),
 });
@@ -241,6 +258,90 @@ export const UsageItemSchema = z.strictObject({
   costUsd: cost,
   /** Every call ran on a local model: it cost nothing. */
   local: z.boolean(),
+});
+
+/** Which weekly window a report's `week` block covers: the one running now, or the one before it. */
+export const UsageWindowSchema = z.enum(["current", "previous"]);
+
+/** A part of a limit in percent. It can pass 100 when the limit was passed. */
+const limitPercent = z.number().min(0).max(1000);
+const usd = z.number().nonnegative();
+const text = (max: number) => z.string().min(1).max(max);
+
+const ItemRowShape = {
+  itemId: ItemIdSchema,
+  title: text(200),
+  runs: count,
+  tokens,
+  sharePercent: limitPercent.optional(),
+  costUsd: usd.optional(),
+};
+
+/**
+ * One AI CLI's weekly window, with how it splits. `tokamaPercent` and `outsidePercent` are parts
+ * of the limit (they add up to `usedPercent`); both are absent when the split is not known.
+ */
+const WeekLimitSchema = z.strictObject({
+  cliId: AiCliIdSchema,
+  window: text(64),
+  startsAt: EpochMsSchema,
+  endsAt: EpochMsSchema,
+  usedPercent: limitPercent,
+  tokamaPercent: limitPercent.optional(),
+  outsidePercent: limitPercent.optional(),
+});
+
+const RetryCauseSchema = z.strictObject({
+  kind: z.enum(["check", "review"]),
+  /** For `check`: the first check that failed. */
+  command: text(500).optional(),
+  /** The item's repo, when it has one. */
+  repoId: RepoIdSchema.optional(),
+  templateId,
+  /** The step that ran again. */
+  stepId: StepIdSchema,
+  agentId: AgentIdSchema,
+  retries: count,
+  itemCount: count,
+  tokens,
+  sharePercent: limitPercent.optional(),
+  costUsd: usd.optional(),
+});
+
+const ModelRecordSchema = z.strictObject({
+  model: modelName,
+  cliId: AiCliIdSchema,
+  runs: count,
+  /** Runs that passed their checks on the first attempt; only for a step with checks. */
+  firstTryPassed: count.optional(),
+  avgAttempts: z.number().min(0),
+  tokensPerRun: tokens,
+  /** Part of the limit one run took, on average. */
+  sharePerRun: limitPercent.optional(),
+  costPerRun: usd.optional(),
+  durationMsPerRun: z.int().nonnegative(),
+});
+
+/** What an item used: tokens, its part of each AI CLI's limit, and the attempts that repeated a step. */
+export const ItemUsageSchema = z.strictObject({
+  tokens,
+  shares: z.array(z.strictObject({ cliId: AiCliIdSchema, sharePercent: limitPercent })).max(3).optional(),
+  costUsd: usd.optional(),
+  /** The cost is the price table's estimate, not the CLI's figure. */
+  costEstimated: z.boolean().optional(),
+  retries: z
+    .array(
+      z.strictObject({
+        stepId: StepIdSchema,
+        /** The attempts that ran the step again. */
+        attempts: z.array(z.int().min(1)).max(50),
+        /** Their tokens as a share of the item's tokens. */
+        tokensPercent: z.number().min(0).max(100),
+        failingCheck: text(500).optional(),
+      }),
+    )
+    .max(20)
+    .optional(),
 });
 
 export const UsageReportSchema = z.strictObject({
@@ -343,6 +444,58 @@ export const UsageReportSchema = z.strictObject({
    * `days[].workflows` list workflows and their items only.
    */
   helpers: z.array(z.strictObject({ helperId: HelperIdSchema, tokens: TokenUsageSchema, costUsd: cost, calls: z.int().nonnegative() })).max(20).optional(),
+  /**
+   * What used each AI CLI's limit in its weekly window (the one running now, or the one before):
+   * Tokama's use by step, item, helper and retry cause. An AI CLI without a weekly window counts its
+   * last 7 days. A share is a part of that CLI's own limit; shares of different CLIs are never added.
+   * `costUsd` appears only for a CLI billed per use. Absent from older engines.
+   */
+  week: z
+    .strictObject({
+      window: UsageWindowSchema,
+      limits: z.array(WeekLimitSchema).max(10),
+      /** Per workflow, step, agent and model, most used first. */
+      steps: z
+        .array(
+          z.strictObject({
+            templateId,
+            stepId: StepIdSchema,
+            stepName: text(100),
+            agentId: AgentIdSchema,
+            cliId: AiCliIdSchema,
+            model: modelName,
+            /** Passed attempts: the step done once on an item. */
+            runs: count,
+            itemCount: count,
+            tokens,
+            /** Part of Tokama's use of this CLI in the window. */
+            tokamaPercent: limitPercent,
+            sharePercent: limitPercent.optional(),
+            costUsd: usd.optional(),
+            /** The cost is the price table's estimate, not the CLI's figure. */
+            costEstimated: z.boolean().optional(),
+            /** The items that used most, at most five. */
+            items: z.array(z.strictObject(ItemRowShape)).max(5),
+          }),
+        )
+        .max(100),
+      /** The items that used most, at most 50, one row per item and AI CLI. */
+      items: z.array(z.strictObject({ ...ItemRowShape, templateId, cliId: AiCliIdSchema })).max(50),
+      /** Tokama's own helper calls. */
+      helpers: z.array(z.strictObject({ cliId: AiCliIdSchema, model: modelName, calls: count, tokens, sharePercent: limitPercent.optional(), costUsd: usd.optional() })).max(20),
+      /** What repeated attempts took, per AI CLI. `tokens` holds every retry, also those under no cause. */
+      retries: z
+        .array(z.strictObject({ cliId: AiCliIdSchema, tokens, sharePercent: limitPercent.optional(), causes: z.array(RetryCauseSchema).max(20) }))
+        .max(10),
+    })
+    .optional(),
+  /**
+   * Per step, how each model did over the last 90 days. A model has a row from 5 runs, and a step
+   * only when at least two models have one.
+   */
+  stepModels: z.array(z.strictObject({ templateId, stepId: StepIdSchema, stepName: text(100), models: z.array(ModelRecordSchema).min(2).max(20) })).max(100).optional(),
+  /** The same per agent over the last 90 days: from 5 runs per model, one model is enough. */
+  agentModels: z.array(z.strictObject({ agentId: AgentIdSchema, models: z.array(ModelRecordSchema).min(1).max(20) })).max(100).optional(),
 });
 
 export type TokenUsage = z.output<typeof TokenUsageSchema>;
@@ -369,3 +522,5 @@ export type UsageScope = z.output<typeof UsageScopeSchema>;
 export type TokenSummary = z.output<typeof TokenSummarySchema>;
 export type LogScan = z.output<typeof LogScanSchema>;
 export type UsageReport = z.output<typeof UsageReportSchema>;
+export type UsageWindow = z.output<typeof UsageWindowSchema>;
+export type ItemUsage = z.output<typeof ItemUsageSchema>;
