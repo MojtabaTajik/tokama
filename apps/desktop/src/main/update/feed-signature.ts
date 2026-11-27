@@ -199,7 +199,10 @@ async function readCapped(response: Response, max: number): Promise<Buffer | und
  */
 export async function fetchFeedFiles(fetcher: Fetcher, feedUrl: string, allowed: (url: string) => boolean, timeoutMs = 30_000): Promise<{ readonly yml: Buffer; readonly sig: string }> {
   const get = async (name: string, max: number): Promise<Buffer> => {
-    const url = new URL(name, feedUrl).toString();
+    // The updater's own feed request carries a cache-busting query as well: a cache that still holds the last release's file would refuse a good update.
+    const target = new URL(name, feedUrl);
+    target.searchParams.set("noCache", Date.now().toString(36));
+    const url = target.toString();
     if (!allowed(url)) throw new Error(`${name} is not on an allowed address`);
     // A redirect is checked by the session's own request filter: the url of a session.fetch response is not reliable.
     const response = await fetcher(url, { signal: AbortSignal.timeout(timeoutMs) });

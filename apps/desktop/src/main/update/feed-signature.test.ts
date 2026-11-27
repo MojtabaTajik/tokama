@@ -265,7 +265,8 @@ describe("fetchFeedFiles", () => {
     const files = await fetchFeedFiles(serving({ "latest-linux.yml": answer("yml"), "latest-linux.yml.sig": answer("sig") }, asked), FEED, allowAll);
     expect(files.yml.toString()).toBe("yml");
     expect(files.sig).toBe("sig");
-    expect(asked.sort()).toEqual([`${FEED}latest-linux.yml`, `${FEED}latest-linux.yml.sig`]);
+    expect(asked.map((url) => url.replace(/\?noCache=[a-z0-9]+$/, "")).sort()).toEqual([`${FEED}latest-linux.yml`, `${FEED}latest-linux.yml.sig`]);
+    expect(asked.every((url) => /\?noCache=[a-z0-9]+$/.test(url))).toBe(true);
   });
 
   it("fails when the signature is missing (404) or the feed file is", async () => {
