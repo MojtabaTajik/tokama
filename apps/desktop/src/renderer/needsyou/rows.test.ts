@@ -1,7 +1,7 @@
 import type { ItemRecord } from "@tokama/core";
 import { describe, expect, it } from "vitest";
 import { ITEMS, items, NOW, setup } from "../testing/sample.js";
-import { KIND_CLOUD, KIND_OTHER, needsYouRows } from "./rows.js";
+import { needsYouRows } from "./rows.js";
 
 const MINUTE = 60_000;
 const waiting = (id: string, minutesAgo: number, fields: Record<string, unknown> = {}): ItemRecord => ({ ...ITEMS.needsYou, id, createdAt: NOW - minutesAgo * MINUTE, ...fields }) as ItemRecord;
@@ -17,7 +17,6 @@ describe("needsYouRows", () => {
     const cloud = waiting("item_k", 41, { steps: ITEMS.needsYou.steps.map((step, index) => (index === 2 ? { ...step, data: "summary-after-approval" } : step)) });
     const [row] = needsYouRows([cloud], setup, NOW);
     expect(row).toMatchObject({
-      kind: KIND_CLOUD,
       stepLine: "step 3 of 3 · Propose a fix",
       agent: { name: "Architect", runsOn: "cloud" },
       cli: "Claude Code",
@@ -26,18 +25,15 @@ describe("needsYouRows", () => {
     });
   });
 
-  it("calls a decision about a local step a plain decision, and a cloud step with data leaving a cloud-step approval", () => {
-    const local = waiting("item_l", 5, { decision: { ...ITEMS.needsYou.decision, stepIndex: 0 } });
-    expect(needsYouRows([local], setup, NOW)[0]?.kind).toBe(KIND_OTHER);
-    const cloud = waiting("item_k", 5, { steps: ITEMS.needsYou.steps.map((step, index) => (index === 2 ? { ...step, data: "summary-after-approval" } : step)) });
-    expect(needsYouRows([cloud], setup, NOW)[0]?.kind).toBe(KIND_CLOUD);
+  it("counts the wait from the end of the latest attempt of the step that asks, and says nothing when it has none", () => {
+    const steps = ITEMS.needsYou.steps.map((step, index) => (index === 2 ? { ...step, attempts: [{ attempt: 1, startedAt: NOW - 50 * MINUTE, endedAt: NOW - 30 * MINUTE, checks: [] }, { attempt: 2, startedAt: NOW - 29 * MINUTE, endedAt: NOW - 12 * MINUTE, checks: [] }] } : step));
+    expect(needsYouRows([waiting("item_w", 90, { steps })], setup, NOW)[0]?.waits).toBe("12 m");
+    expect(needsYouRows([waiting("item_v", 90)], setup, NOW)[0]?.waits).toBeUndefined();
   });
 
-  it("names the decision by the kind the engine sends, over any guess", () => {
-    const failed = waiting("item_r", 5, { decision: { ...ITEMS.needsYou.decision, kind: "run_failure", summaryText: undefined } });
-    expect(needsYouRows([failed], setup, NOW)[0]?.kind).toBe("Run failed");
-    const cloud = waiting("item_s", 5, { decision: { ...ITEMS.needsYou.decision, kind: "cloud_summary" } });
-    expect(needsYouRows([cloud], setup, NOW)[0]?.kind).toBe(KIND_CLOUD);
+  it("does not say \"you approve\" in the step line of a change approval", () => {
+    const change = waiting("item_d", 5, { decision: { ...ITEMS.needsYou.decision, hasDiff: true } });
+    expect(needsYouRows([change], setup, NOW)[0]?.stepLine).toBe("step 3 of 3 · Propose a fix");
   });
 
   it("falls back to the step that waits when the decision's index points nowhere, and to no step when none waits", () => {

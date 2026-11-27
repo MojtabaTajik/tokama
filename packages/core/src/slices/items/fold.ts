@@ -202,6 +202,7 @@ function applyTo(next: StoredItem, event: ItemEvent): FoldError | undefined {
         ...(event.detail !== undefined && { detail: event.detail }),
         ...(event.covers !== undefined && { covers: event.covers }),
         ...(event.tree !== undefined && { tree: event.tree }),
+        ...(event.change !== undefined && { change: event.change }),
       });
       if (step !== undefined && step.state === "running") step.state = "needs_you";
       break;

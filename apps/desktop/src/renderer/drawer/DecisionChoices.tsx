@@ -18,6 +18,8 @@ export const inTextField = (target: EventTarget | null): boolean => target insta
 const APPROVE_ID = "approve";
 /** The engine's choice id for Stop. */
 const STOP_ID = "stop";
+/** The engine's choice id for End: no action needed, shown as a quiet link after the buttons. */
+const NO_ACTION_ID = "no_action_needed";
 
 /** The choices a decision's card shows: a change approval shows its two answers only. */
 const shownChoices = (decision: Decision) => (decision.hasDiff === true ? decision.choices.filter((choice) => choice.id === APPROVE_ID || choice.id === REQUEST_CHANGES_ID) : decision.choices);
@@ -27,7 +29,8 @@ export const cardOffersStop = (decision: Decision): boolean => shownChoices(deci
 
 const TEXT = {
   note: "What should change?",
-  hint: (agent: string | undefined, run: string | undefined) => `Goes into ${agent === undefined ? "the step" : `${agent}'s`} next run with the current diff.${run === undefined ? "" : ` ${run}.`}`,
+  hint: (agent: string | undefined, run: string | undefined, diff: boolean) =>
+    `Goes into ${agent === undefined ? "the step" : `${agent}'s`} next run${diff ? " with the current diff" : ""}.${run === undefined ? "" : ` ${run}.`}`,
   send: (agent: string | undefined) => (agent === undefined ? "Send and run again" : `Send to ${agent}`),
   cancel: "Cancel",
 } as const;
@@ -46,9 +49,11 @@ export interface DecisionChoicesProps {
   readonly extra?: ReactNode;
   /** The choice drawn as a danger button, e.g. Stop. */
   readonly danger?: string;
+  /** The first button is filled; false draws it outlined, so one question among several holds the only filled button. Default true. */
+  readonly primary?: boolean;
 }
 
-export function DecisionChoices({ decision, busy, onChoose, context, agent, run, extra, danger }: DecisionChoicesProps) {
+export function DecisionChoices({ decision, busy, onChoose, context, agent, run, extra, danger, primary = true }: DecisionChoicesProps) {
   const [noting, setNoting] = useState(false);
   const [note, setNote] = useState("");
   const noteId = useId();
@@ -89,7 +94,7 @@ export function DecisionChoices({ decision, busy, onChoose, context, agent, run,
           onChange={(event) => setNote(event.target.value)}
         />
         <span id={hintId} className="decision-note-hint">
-          {TEXT.hint(agent, run)}
+          {TEXT.hint(agent, run, decision.hasDiff === true)}
         </span>
         <div className="choices">
           <Button variant="primary" type="submit" disabled={busy} aria-label={named(TEXT.send(agent))}>
@@ -102,12 +107,14 @@ export function DecisionChoices({ decision, busy, onChoose, context, agent, run,
       </form>
     );
   }
+  const buttons = choices.filter((choice) => choice.id !== NO_ACTION_ID);
+  const quiet = choices.find((choice) => choice.id === NO_ACTION_ID);
   return (
     <div className="choices">
-      {choices.map((choice, position) => (
+      {buttons.map((choice, position) => (
         <Button
           key={choice.id}
-          variant={position === 0 ? "primary" : choice.id === danger ? "danger" : "secondary"}
+          variant={position === 0 && primary ? "primary" : choice.id === danger ? "danger" : "secondary"}
           disabled={busy}
           aria-label={named(choice.label)}
           onClick={() => (choice.id === REQUEST_CHANGES_ID ? setNoting(true) : onChoose(choice.id))}
@@ -115,6 +122,11 @@ export function DecisionChoices({ decision, busy, onChoose, context, agent, run,
           {choice.label}
         </Button>
       ))}
+      {quiet !== undefined && (
+        <Button variant="link" disabled={busy} aria-label={named(quiet.label)} onClick={() => onChoose(quiet.id)}>
+          {quiet.label}
+        </Button>
+      )}
       {extra}
     </div>
   );

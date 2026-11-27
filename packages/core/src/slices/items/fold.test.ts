@@ -246,6 +246,16 @@ describe("foldItem", () => {
     expect(plan).toEqual({ id: PLAN, state: "passed", attempts: [expect.anything()] });
   });
 
+  it("decision_opened: keeps the tree and the count of changed files of a step you approve, also when it is 0", () => {
+    const tree = "a".repeat(40);
+    const open = (change?: { files: number }) =>
+      fold([...startBuild, { type: "decision_opened", decisionId, kind: "plan_approval", stepId: BUILD, choices: [{ id: "approve", label: "Approve" }], tree, ...(change && { change }) }]);
+    expect(open({ files: 0 }).decisions[0]).toMatchObject({ tree, change: { files: 0 } });
+    expect(open({ files: 3 }).decisions[0]?.change).toEqual({ files: 3 });
+    // A log from before the count was kept has none.
+    expect(open().decisions[0]?.change).toBeUndefined();
+  });
+
   it("decision_opened and decision_resolved: needs you while open, with kind and askedAt", () => {
     const asked: ItemEventBody[] = [
       ...startBuild,

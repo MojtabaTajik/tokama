@@ -322,7 +322,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     stepId: StepId | undefined,
     choices: readonly DecisionChoice[],
     text: string,
-    extra: { covers?: readonly CoveredPath[]; tree?: string } = {},
+    extra: { covers?: readonly CoveredPath[]; tree?: string; change?: { files: number } } = {},
   ): ItemEventBody => ({
     type: "decision_opened",
     decisionId: DecisionIdSchema.parse(newId("decision", clock.now())),
@@ -332,6 +332,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     detail: detail(text),
     ...(extra.covers !== undefined && { covers: extra.covers.map(({ path, mode, blob }) => ({ path, mode, blob })) }),
     ...(extra.tree !== undefined && { tree: extra.tree }),
+    ...(extra.change !== undefined && { change: extra.change }),
   });
 
   const attemptEnded = (
@@ -866,17 +867,27 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     if (!files.ok) return fail(`Cannot compare the changes with the base commit: ${files.error.message}`);
     const found = deps.agent(ctx.repo, step.agentId, ctx.template);
     const agent = found !== undefined && "name" in found ? found.name : step.agentId;
-    const changed = `${files.value.length} file${files.value.length === 1 ? "" : "s"}`;
+    // The tree decides whether anything changed; the file list only says how much it can show.
+    const baseTree = await git.revParse(worktree.path, `${worktree.baseCommit}^{tree}`);
+    if (!baseTree.ok) return fail(`Cannot read the base commit's tree: ${baseTree.error.message}`);
+    const unchanged = staged.value === baseTree.value;
+    const shown = unchanged ? 0 : Math.max(1, files.value.length);
+    const changed = files.value.length === 0 ? "files the file list cannot show" : `${files.value.length} file${files.value.length === 1 ? "" : "s"}`;
     // Approve ends the item with a commit when this is the last step and the template commits.
     const commits = ctx.template.steps.at(-1)?.id === step.id && ctx.template.finish.includes("commit");
-    const text = commits
+    const stepAt = ctx.template.steps.findIndex((s) => s.id === step.id);
+    const next = ctx.template.steps[stepAt + 1];
+    // A step that changed nothing asks for a plan approval: nothing to review, only whether to go on.
+    const text = unchanged
+      ? `${agent} finished step ${step.name}. ${next === undefined ? "The item ends" : `${next.name} starts`} after you approve.`
+      : commits
       ? `${agent} changed ${changed} in a worktree of ${ctx.repo.id}. Nothing is committed until you approve. Request changes sends your note to ${agent} for another run.`
       : `${agent} finished step ${step.name} and changed ${changed}. Approve to go on. Request changes sends your note to ${agent} for another run.`;
     // Only the question carries the tree: Finish commits it when nothing ran after the approval,
     // and a later step's work is committed as before.
     append(item.id, [
       attemptEnded(step.id, attempt, "passed"),
-      decision("plan_approval", step.id, [commits ? APPROVE_AND_COMMIT : APPROVE, REQUEST_CHANGES, NO_ACTION, STOP], text, { tree: staged.value }),
+      decision("plan_approval", step.id, [commits ? APPROVE_AND_COMMIT : APPROVE, REQUEST_CHANGES, NO_ACTION, STOP], text, { tree: staged.value, change: { files: shown } }),
     ]);
     return WAIT;
   };

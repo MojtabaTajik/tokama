@@ -141,7 +141,7 @@ describe("fake engine mode", () => {
     const { client } = await sampleEngine();
     const needsYou = await item(client, ITEM_IDS.needsYou);
 
-    expect(needsYou.decision).toMatchObject({ id: DECISION_ID, stepIndex: 3, choices: [{ id: "approve" }, { id: "stop" }] });
+    expect(needsYou.decision).toMatchObject({ id: DECISION_ID, stepIndex: 3, question: "Send this summary to Claude Code?", choices: [{ id: "approve" }, { id: "stop" }] });
     expect(needsYou.decision?.why).toContain("cloud agent");
     expect(needsYou.decision?.summaryText).toContain("redacted");
     expect(needsYou.steps[3]).toEqual({
@@ -247,7 +247,9 @@ describe("fake engine mode", () => {
   it("serves the plan the Plan approval item's question is about, and no output for steps that have not run", async () => {
     const { client } = await sampleEngine();
     const waiting = await item(client, ITEM_IDS.planApproval);
-    expect(waiting.decision).toMatchObject({ kind: "plan_approval", stepIndex: 0 });
+    expect(waiting.decision).toMatchObject({ kind: "plan_approval", stepIndex: 0, question: "Build it this way?", choices: [{ label: "Approve and start Build" }, { label: "Change the plan…" }, { id: "stop" }] });
+    expect(waiting.cardLine).toBe("Build it this way?");
+    expect(waiting.decision?.why).not.toContain("changed 0 files");
     expect(waiting.decision?.hasDiff).toBeUndefined();
     const plan = await client.query({ type: "step_output", itemId: ITEM_IDS.planApproval, stepIndex: 0 });
     expect(plan).toMatchObject({ ok: true, data: { attempt: 1, text: expect.stringContaining("## Plan: reserve stock"), truncated: false } });

@@ -1,6 +1,6 @@
 // What the item drawer says about an item and its steps. Pure functions, tested without React.
 // Every state comes as a symbol and a word, so colour is never the only signal.
-import type { AgentSummary, AiCliId, AttemptSummary, ConnectionSummary, Decision, DecisionKind, ItemKind, ItemRecord, ItemState, Privacy, StepRecord, StepState, Setup } from "@tokama/core";
+import type { AgentSummary, AiCliId, AttemptSummary, ConnectionSummary, ItemKind, ItemRecord, ItemState, Privacy, StepRecord, StepState, Setup } from "@tokama/core";
 import { type Mark, markOf } from "../ui/status.js";
 import { type AgentDot, agentDot } from "../ui/agent.js";
 
@@ -15,23 +15,6 @@ export const KIND: Record<ItemKind, { readonly symbol: string; readonly word: st
 };
 
 export const PRIVACY: Record<Privacy, string> = { local_only: "local only", local_and_cloud: "local + cloud" };
-
-/** Why the engine asks, as a short label above the question. */
-export const DECISION_KIND: Record<DecisionKind, string> = {
-  plan_approval: "Approval",
-  cloud_summary: "Cloud-step approval",
-  outside_change: "Change outside the worktree",
-  after_failure: "Step failed",
-  run_failure: "Run failed",
-  budget: "Time budget used",
-  tamper: "Protected files changed",
-};
-
-/** The kind of a decision in a word: an approval that shows a diff is a change approval. */
-export function decisionKind(decision: Pick<Decision, "kind" | "hasDiff">): string | undefined {
-  if (decision.hasDiff === true) return "Change approval";
-  return decision.kind === undefined ? undefined : DECISION_KIND[decision.kind];
-}
 
 /**
  * "Run 2 of 3": the run Request changes would start, as the engine counts it; at the limit, that

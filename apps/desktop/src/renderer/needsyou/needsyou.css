@@ -19,7 +19,6 @@
   min-width: 0;
   padding: var(--space-10) var(--space-12);
   border: 1px solid var(--hairline);
-  border-left: 2px solid var(--warn);
   border-radius: var(--radius);
   background: var(--panel);
   cursor: default;
@@ -41,7 +40,8 @@
   font-size: var(--text-md);
 }
 
-.nr-kind {
+/* Amber is on the ⏸ mark only. */
+.nr-mark {
   color: var(--warn);
 }
 
