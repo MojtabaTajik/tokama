@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DEFAULT_DESKTOP_STATE } from "../../shared/desktop-state.js";
 import { App } from "../App.js";
-import { CONNECTED, fakeBridge, SETUP_DONE } from "../testing/bridge.js";
+import { CONNECTED, fakeBridge, itemList, SETUP_DONE } from "../testing/bridge.js";
 import { ITEMS, NOW } from "../testing/sample.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -63,6 +63,20 @@ describe("the While you were away strip", () => {
     expect($$(".away-line")).toHaveLength(0);
     // The stopped item is not news, and the item from last week ended before the user left.
     expect(text(section)).not.toContain("2 finished");
+  });
+
+  it("waits for the finished and failed lists, so its counts never grow after it shows", async () => {
+    let release = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await mount({
+      boardItems: NEWS,
+      away: DUE,
+      reply: (q) => (q.type === "item_list" && (q as { group?: string }).group === "done" ? held.then(() => ({ ok: true as const, data: itemList(NEWS, q as unknown as Parameters<typeof itemList>[1]) })) : undefined),
+    });
+    // The question is on the board already, but the finished list has not answered.
+    expect(strip()).toBeNull();
+    await act(async () => release());
+    for (const count of ["⏸ 1 needs you", "✓ 1 finished", "✕ 1 failed"]) expect(text(strip())).toContain(count);
   });
 
   it("shows nothing when the user was not away", async () => {

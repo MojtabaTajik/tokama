@@ -2,7 +2,7 @@
 import type { ItemRecord } from "@tokama/core";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConnectionState, ToolsPathInfo, TokamaBridge } from "../shared/bridge.js";
 import { DEFAULT_DESKTOP_STATE } from "../shared/desktop-state.js";
 import { App } from "./App.js";
@@ -492,12 +492,19 @@ describe("App failed loads", () => {
   it("retries a failed load once after a short delay", async () => {
     const { fake, control, setupQueries } = failing();
     control.failNext = 1;
-    await render(fake.bridge, 20);
-    expect(text(".board .failure")).toContain("the engine did not answer (1)");
-    await wait(40);
-    expect(setupQueries()).toBe(2);
-    expect($(".board .failure")).toBeNull();
-    expect($$(".sb-row")).toHaveLength(SIDEBAR_ROWS);
+    // The delay runs on a fake clock: on a slow machine a real 20 ms could pass before the failure is read.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      await render(fake.bridge, 20);
+      expect(text(".board .failure")).toContain("the engine did not answer (1)");
+      expect(setupQueries()).toBe(1);
+      await act(async () => vi.advanceTimersByTimeAsync(20));
+      expect(setupQueries()).toBe(2);
+      expect($(".board .failure")).toBeNull();
+      expect($$(".sb-row")).toHaveLength(SIDEBAR_ROWS);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("shows the failure and offers Retry when the setup loads but the board fails", async () => {

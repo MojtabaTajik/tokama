@@ -93,7 +93,9 @@ function Strip({ bridge, connected, setup, open: openItems, now, onSelectItem, o
   useEffect(() => {
     if (empty) onGotIt();
   }, [empty, onGotIt]);
-  if (!model.news) return null;
+  // Closed, the strip is one line of counts: it waits for both lists so the counts never grow while it is read.
+  const settled = [done, failed].every((page) => page !== undefined && page.loading === undefined);
+  if (!settled || !model.news) return null;
   const away = formatDuration(backAt - seenUntil, "coarse");
   const oldest = model.needs.shown[0]?.id;
   const counts = [
