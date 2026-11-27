@@ -161,6 +161,43 @@ describe("repo config, hooks and attributes never run code", () => {
     );
   });
 
+  it("post-checkout hook and smudge filter on a detached worktree add", SLOW, async () => {
+    write(join(repo, ".git", "hooks", "post-checkout"), `#!/bin/sh\ntouch '${join(markers, "detached-checkout")}'\n`, 0o755);
+    write(join(repo, ".gitattributes"), "* filter=evil\n");
+    await plain(repo, "add", "-A");
+    await plain(repo, "commit", "-q", "-m", "attributes");
+    await plain(repo, "config", "filter.evil.smudge", trap("detached-smudge"));
+    const commit = (await plain(repo, "rev-parse", "HEAD")).trim();
+    await provesBlocked(
+      "detached-checkout",
+      () => plain(repo, "worktree", "add", "-q", "--detach", join(root, "wt-control"), commit),
+      async () => value(await git.worktreeAddDetached(repo, join(root, "wt"), commit)),
+    );
+    clearMarker("detached-smudge");
+    await plain(repo, "worktree", "remove", "--force", join(root, "wt-control"));
+    await provesBlocked(
+      "detached-smudge",
+      () => plain(repo, "worktree", "add", "-q", "--detach", join(root, "wt-control"), commit),
+      async () => {
+        value(await git.worktreeRemove(repo, join(root, "wt"), { force: true }));
+        value(await git.worktreeAddDetached(repo, join(root, "wt"), commit));
+      },
+    );
+    const entry = value(await git.worktreeList(repo)).find((candidate) => candidate.path === join(root, "wt"));
+    expect(entry?.branch).toBeUndefined();
+    expect(entry?.head).toBe(commit);
+  });
+
+  it("worktreeAddDetached refuses option-like and short arguments", SLOW, async () => {
+    const commit = (await plain(repo, "rev-parse", "HEAD")).trim();
+    const wt = join(root, "wt");
+    expect(await git.worktreeAddDetached(repo, "--force", commit)).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
+    expect(await git.worktreeAddDetached(repo, wt, "--detach")).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
+    expect(await git.worktreeAddDetached(repo, wt, "main")).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
+    expect(await git.worktreeAddDetached(repo, wt, commit.slice(0, 12))).toMatchObject({ ok: false, error: { reason: "invalid-argument" } });
+    expect(existsSync(wt)).toBe(false);
+  });
+
   it("diff.external", SLOW, async () => {
     await plain(repo, "config", "diff.external", trap("external"));
     write(join(repo, "a.txt"), "two\n");

@@ -6,6 +6,7 @@
 // templates apply without a restart. Commands wait until restart recovery is done (the run loop
 // holds them).
 import { realpathSync } from "node:fs";
+import { realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
@@ -19,10 +20,13 @@ import {
   type AttemptFileResult,
   type AttemptLogResult,
   BUILTIN_HELPERS,
+  type CheckTrialDeps,
   type Clock,
   type Command,
   type CommandError,
+  createCheckTrialRunner,
   createHelperRunner,
+  DEFAULT_WORKTREE_FOLDER,
   type DecisionId,
   type EngineEvent,
   type HelperDefinition,
@@ -42,6 +46,7 @@ import {
   type ProcessRunner,
   type ProcessTable,
   type RecoveredItem,
+  type Repo,
   type Result,
   type RunLoop,
   type RunLoopDeps,
@@ -49,6 +54,7 @@ import {
   type StepOutputResult,
   type StoredItem,
   parseTemplateRecord,
+  suggestRepo,
   summarizeOutput,
   supportsNoLazyFetch,
 } from "@tokama/core";
@@ -57,6 +63,7 @@ import { agentsFor, type Config, findTemplate, loadConfig, resolveAgent, startPr
 import { cachedChecks, type HealthChecks } from "./health.js";
 import { cliName, cliReadiness } from "./clis.js";
 import { HelperRuns } from "./helpers.js";
+import { CheckTrials } from "./trials.js";
 import { toItemRecord } from "./records.js";
 
 export interface RealEngineOptions {
@@ -114,6 +121,8 @@ export class RealEngine {
   private readonly unsubscribe: () => void;
   /** The helper runs: asking, cancelling, the log and the usage rows. */
   readonly helpers: HelperRuns;
+  /** Try checks: the trial runs and the open-trials file. */
+  readonly trials: CheckTrials;
 
   private constructor(
     private readonly options: RealEngineOptions,
@@ -179,6 +188,42 @@ export class RealEngine {
       emit: options.emit ?? (() => {}),
       log,
     });
+    this.trials = new CheckTrials({
+      runner: createCheckTrialRunner({
+        git: this.git,
+        runner: options.runner,
+        clock: options.clock,
+        resolveRepo: (path, baseBranch) => this.resolveTrialRepo(path, baseBranch),
+        folders: [...homes.map((path) => [path, "~/.tokama"] as const), ...forms(homedir()).map((path) => [path, "~"] as const)],
+      }),
+      git: this.git,
+      home,
+      clock: options.clock,
+      processes: options.processes,
+      ...(options.recoveryGraceMs !== undefined && { recoveryGraceMs: options.recoveryGraceMs }),
+      emit: options.emit ?? (() => {}),
+      log,
+    });
+  }
+
+  /**
+   * The repo a Try checks request names: a configured repo with its own base branch and worktree
+   * folder, or any other git repo with commits, with the branch `suggest_repo` proposes.
+   */
+  private async resolveTrialRepo(path: string, baseBranch: string | undefined): ReturnType<CheckTrialDeps["resolveRepo"]> {
+    const config = await this.reload();
+    const suggested = await suggestRepo({ tokamaHome: this.options.home, git: this.git }, path);
+    if (!suggested.ok) return fail(suggested.error.code === "not_found" ? "not_found" : "invalid_request", suggested.error.message);
+    const folder = suggested.value;
+    if (!folder.gitRepo) return fail("invalid_request", folder.problem ?? "This folder is not a git repo.");
+    if (!folder.hasCommits) return fail("invalid_state", "This repo has no commits yet. Make a first commit, then try the checks.");
+    let configured: Repo | undefined;
+    for (const repo of config.repos) {
+      if ((await realpath(repo.path).catch(() => repo.path)) === folder.path) configured = repo;
+    }
+    const branch = baseBranch ?? configured?.baseBranch ?? folder.defaultBranch ?? folder.branch;
+    if (branch === undefined) return fail("invalid_request", "Tokama cannot tell which branch to start from. Give a base branch, such as main.");
+    return ok({ path: folder.path, baseBranch: branch, worktreeFolder: configured?.worktreeFolder ?? DEFAULT_WORKTREE_FOLDER });
   }
 
   /** Reads the config first: the run loop picks up items as soon as it exists, and needs the repos. */
@@ -305,6 +350,7 @@ export class RealEngine {
   /** Stops running agents and checks without recording an end; the next start asks Retry step / Stop. */
   async close(): Promise<void> {
     await this.helpers.close();
+    await this.trials.close();
     await this.loop.close();
     this.unsubscribe();
   }

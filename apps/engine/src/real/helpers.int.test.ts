@@ -187,12 +187,11 @@ describe("a real engine with no helpers built in", () => {
     expect(await client.query({ type: "helper_run", runId: RUN_ID as never })).toMatchObject({ ok: false, error: { code: "not_found" } });
   });
 
-  it("still answers Try checks with not_implemented", async () => {
+  it("answers Try checks for real: an unknown trial is not found, a folder that is not there is refused", async () => {
     const { client } = await engine();
-    const notImplemented = { ok: false, error: { code: "not_implemented", message: "Try checks is not in this engine yet." } };
-    expect(await client.command({ type: "try_checks", path: "/work/orders-api", checks: [{ command: "pnpm test" }] })).toMatchObject(notImplemented);
-    expect(await client.command({ type: "cancel_check_trial", trialId: TRIAL_ID as never })).toMatchObject(notImplemented);
-    expect(await client.query({ type: "check_trial", trialId: TRIAL_ID as never })).toMatchObject(notImplemented);
+    expect(await client.command({ type: "try_checks", path: "/work/orders-api", checks: [{ command: "pnpm test" }] })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
+    expect(await client.command({ type: "cancel_check_trial", trialId: TRIAL_ID as never })).toMatchObject({ ok: false, error: { code: "not_found" } });
+    expect(await client.query({ type: "check_trial", trialId: TRIAL_ID as never })).toMatchObject({ ok: false, error: { code: "not_found" } });
   });
 
   it("leaves its usage report without a helpers block", async () => {

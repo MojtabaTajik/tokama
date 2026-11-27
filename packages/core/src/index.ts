@@ -72,6 +72,7 @@ export const aiCliAdapters = collectAiCliAdapters(Object.values(adapters));
 export {
   attemptLimit,
   cleanCliText,
+  createCheckTrialRunner,
   createHelperRunner,
   createRunLoop,
   explainStop,
@@ -84,6 +85,11 @@ export {
   summarizeOutput,
   titleFrom,
   VERDICT_RULE,
+  type CheckTrialDeps,
+  type CheckTrialError,
+  type CheckTrialHooks,
+  type CheckTrialRequest,
+  type CheckTrialRunner,
   type CliStatus,
   type CommandError,
   type HelperCallRecord,
@@ -92,6 +98,7 @@ export {
   type HelperOutcome,
   type HelperRunHooks,
   type HelperRunner,
+  type PreparedCheckTrial,
   type PreparedHelperRun,
   type RunLoop,
   type RunLoopDeps,
@@ -144,9 +151,12 @@ export { createProcessRunner, findOnPath, type ProcessRunner } from "./kernel/pr
 export { createGit, type Git } from "./kernel/git/index.js";
 // Open PR's gh check, for the engine service's startup checks.
 export { ghStatus, hostedRepo, type GhStatus, type HostedRepo } from "./slices/worktrees/index.js";
+// Try checks: the engine's start-up cleanup removes the worktrees a stopped engine left.
+export { removeTrialWorktree } from "./slices/worktrees/index.js";
 // repos.yaml: load it, and the changes the engine makes to it.
 export {
   addRepo,
+  DEFAULT_WORKTREE_FOLDER,
   formatProblem,
   loadRepos,
   removeRepo,

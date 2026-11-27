@@ -34,6 +34,8 @@ export type WorktreeErrorReason =
   /** The item branch exists already; it is never deleted or reused. */
   | "exists"
   | "exclude"
+  /** The worktree folder is, or passes through, a link or something that is not a folder. */
+  | "folder"
   | "add"
   | "remove"
   | "branch-delete";
@@ -50,13 +52,13 @@ export const shortItemId = (itemId: ItemId): string => itemId.slice(-8);
 
 export const itemBranch = (itemId: ItemId): string => `tokama/${shortItemId(itemId)}`;
 
-const normalizeFolder = (folder: string) => posix.normalize(folder.replaceAll("\\", "/")).replace(/^\.\/|\/+$/g, "");
+export const normalizeFolder = (folder: string) => posix.normalize(folder.replaceAll("\\", "/")).replace(/^\.\/|\/+$/g, "");
 
 /** Absolute path of an item's worktree on this machine. */
 export const worktreePath = (repoPath: string, worktree: Pick<ItemWorktree, "folder">): string => join(repoPath, ...worktree.folder.split("/"));
 
 /** Adds `/<folder>/` to the repo's shared `info/exclude` unless that line is there already. */
-async function excludeFolder(git: Git, repo: WorktreeRepo): Promise<Result<void, WorktreeError>> {
+export async function excludeFolder(git: Git, repo: WorktreeRepo): Promise<Result<void, WorktreeError>> {
   const dirs = await git.gitDirs(repo.path);
   if (!dirs.ok) return fail("exclude", dirs.error);
   const line = `/${normalizeFolder(repo.worktreeFolder)}/`;
@@ -82,7 +84,7 @@ async function excludeFolder(git: Git, repo: WorktreeRepo): Promise<Result<void,
 }
 
 /** The real path, or the path itself when it does not exist. */
-const real = (path: string) => realpath(path).catch(() => path);
+export const real = (path: string) => realpath(path).catch(() => path);
 
 /** The listed worktree entries at `path` or on `branch`. */
 async function entriesFor(git: Git, repoPath: string, path: string, branch: string): Promise<Result<WorktreeEntry[], WorktreeError>> {
@@ -97,7 +99,7 @@ async function entriesFor(git: Git, repoPath: string, path: string, branch: stri
 }
 
 /** Removes listed entries: pruned when the folder is gone, else removed (with `force`, changes too). */
-async function removeEntries(git: Git, repoPath: string, entries: readonly WorktreeEntry[], force: boolean): Promise<Result<void, WorktreeError>> {
+export async function removeEntries(git: Git, repoPath: string, entries: readonly WorktreeEntry[], force: boolean): Promise<Result<void, WorktreeError>> {
   for (const entry of entries) {
     const gone = await realpath(entry.path).then(
       () => false,

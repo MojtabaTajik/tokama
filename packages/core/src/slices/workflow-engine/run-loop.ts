@@ -63,7 +63,7 @@ import { type ActivityState, callUsage, agentCliGuardDefaults, labelText, redact
 import { protectedSet, sharedGitSettings, type ProtectedSet } from "../integrity/index.js";
 import { countedAttempts, openAttempt, openDecisions, recoverItems, RUN_FAILURE_CHOICES, type ItemStore, type RecoveredItem } from "../items/index.js";
 import { buildPrompt, type StepResults } from "../prompting/index.js";
-import { checksPass, runCommand, type CheckResult } from "../verification/index.js";
+import { checkRunOptions, checksPass, runCommand, type CheckResult } from "../verification/index.js";
 import { commitItem, createWorktree, findItemWorktree, originPushUrl, stageItem, treeDiff, worktreePath, worktreeSnapshot, type ItemWorktree } from "../worktrees/index.js";
 import { attemptChecks, attemptLog, toolLine } from "./attempt-files.js";
 import { minutes } from "./explain.js";
@@ -480,16 +480,8 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
   const firstWord = (command: string) => command.trim().split(/\s+/)[0] ?? "";
 
   const runOne = (runner: ProcessRunner, command: string, cwd: string, signal: AbortSignal, outputFile?: string): Promise<CheckResult> =>
-    runCommand(runner, command, {
-      // Tokama runs these itself, as the template or the repo config gives them: the rule only has
-      // to let this one command through (its pipe helpers too).
-      rules: [firstWord(command)],
-      cwd,
-      timeoutMs: commandTimeoutMs,
-      env: { CI: "1" },
-      signal,
-      ...(outputFile !== undefined && { outputFile }),
-    });
+    // Tokama runs these itself, as the template or the repo config gives them.
+    runCommand(runner, command, checkRunOptions(command, { cwd, timeoutMs: commandTimeoutMs, signal, ...(outputFile !== undefined && { outputFile }) }));
 
   /** In Tokama's words only: the output stays in the item's files. */
   const commandFailure = (result: CheckResult) =>
