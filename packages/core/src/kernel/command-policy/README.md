@@ -2,6 +2,7 @@
 
 Decides whether a check or step command may run: `checkCommand(command, rules, grammar)`.
 One grammar per shell behind `ShellGrammar` (POSIX `sh` now, PowerShell later). A guardrail, not a full shell parser.
+`simpleCommandProblem(command)` says why a text is not one simple command (no `&&`, `||`, `;`, `|`, redirect, substitution or line break); repos.yaml and the helpers share it.
 Owns the allowlist decision only; it never runs anything.
 
 Notes for the check runner:

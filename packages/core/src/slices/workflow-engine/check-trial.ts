@@ -23,7 +23,8 @@ import {
   terminalText,
 } from "../../kernel/schemas/index.js";
 import { cutText, scrubPaths } from "../../kernel/text/index.js";
-import { BRANCH, checkProblem, MAX_BRANCH } from "../config/index.js";
+import { simpleCommandProblem } from "../../kernel/command-policy/index.js";
+import { BRANCH, MAX_BRANCH } from "../config/index.js";
 import { checkRunOptions, runCommand, type CheckResult } from "../verification/index.js";
 import { checkTrialFolder, createTrialWorktree, removeTrialWorktree, trialWorktreePath, type WorktreeRepo } from "../worktrees/index.js";
 
@@ -86,7 +87,7 @@ const NOT_PLAIN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u;
 /** Why a command or setup cannot run, or undefined: one simple command on one line of plain text. */
 export function trialCommandProblem(command: string): string | undefined {
   if (NOT_PLAIN.test(command)) return "has a control, invisible or line-break character";
-  return checkProblem(command);
+  return simpleCommandProblem(command);
 }
 
 /** A check's time limit: three times its minutes, between 2 and 20 minutes; without minutes, 20. */

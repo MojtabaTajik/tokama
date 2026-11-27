@@ -19,7 +19,8 @@ import { displayPath } from "../../kernel/text/index.js";
 import { DEFAULT_GITIGNORE, type FirstCommitPreview, GITIGNORE_FILE, previewFirstCommit } from "./first-commit.js";
 import { MAX_CONFIG_BYTES } from "./read.js";
 import { type BranchChoice, type BranchChoices, NO_BRANCH_CHOICES, readBranchChoices } from "./branches.js";
-import { BRANCH, MAX_BRANCH, checkProblem, DEFAULT_WORKTREE_FOLDER, type LoadReposOptions, type Repo, readReposFile, REPOS_FILE, type ReposFile, ReposFileSchema } from "./repos.js";
+import { simpleCommandProblem } from "../../kernel/command-policy/index.js";
+import { BRANCH, MAX_BRANCH, DEFAULT_WORKTREE_FOLDER, type LoadReposOptions, type Repo, readReposFile, REPOS_FILE, type ReposFile, ReposFileSchema } from "./repos.js";
 import { clean, CONFIG_FORMAT, formatProblem, parseYaml, quote, type ConfigProblem } from "./yaml-file.js";
 import { errnoCode } from "../../kernel/errno/index.js";
 
@@ -303,7 +304,7 @@ function checkSettings(baseBranch: string, input: readonly string[]): Result<{ c
   const checks = input.map((command) => command.trim()).filter((command) => command !== "");
   for (const command of checks) {
     if (command.length > MAX_CHECK_CHARS) return invalid(`The check ${quote(command)} must be at most ${MAX_CHECK_CHARS} characters.`);
-    const problem = checkProblem(command);
+    const problem = simpleCommandProblem(command);
     if (problem !== undefined) return invalid(`The check ${quote(command)} ${problem}.`);
   }
   return ok({ checks });

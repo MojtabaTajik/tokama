@@ -11,3 +11,4 @@ export {
   type SyntaxRefusalReason,
 } from "./policy.js";
 export { posixSh } from "./posix.js";
+export { simpleCommandProblem } from "./simple.js";
