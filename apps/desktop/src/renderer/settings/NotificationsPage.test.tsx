@@ -68,12 +68,12 @@ describe("Settings > Notifications", () => {
   it("previews a banner for the kinds that show one, a line for the sound-only kind, and the sound note", async () => {
     await openPage(fakeBridge(CONNECTED, { desktopState: withNotifications({ finished: "sound" }) }).bridge);
     expect(previews()).toEqual([
-      "Needs you: Add order export endpointnowThe plan is ready. Approve it to start Build.Plan and build · orders-api",
+      "Needs you: Add order export endpointnowBuild it this way?Plan and build · orders-api",
       "Finished is sound only: no banner, the Tokama sound plays.",
       "Failed: Upgrade the Postgres drivernowStopped at Build, step 2 of 3: pnpm test failed 3 timesPlan and build · orders-api",
     ]);
     expect($(".notes-sound-note")?.textContent).toBe("♪ Plays the Tokama sound for 3 of 3 kinds.");
-    expect($(".notes-card")?.getAttribute("aria-label")).toBe("Notification preview. Needs you: Add order export endpoint. The plan is ready. Approve it to start Build.");
+    expect($(".notes-card")?.getAttribute("aria-label")).toBe("Notification preview. Needs you: Add order export endpoint. Build it this way?");
     expect($(".notes-icon")?.getAttribute("src")).toBeTruthy();
   });
 

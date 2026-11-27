@@ -23,7 +23,7 @@ const item = (fields: Record<string, unknown> = {}): ItemRecord =>
     ...fields,
   }) as unknown as ItemRecord;
 
-const decision = (id: string, question = "The plan is ready. Approve it to start Build.") => ({ id, stepIndex: 0, question, choices: [{ id: "approve", label: "Approve" }] });
+const decision = (id: string, question = "Build it this way?") => ({ id, stepIndex: 0, question, choices: [{ id: "approve", label: "Approve" }] });
 const asking = (id = "d1", fields: Record<string, unknown> = {}) => item({ state: "needs_you", decision: decision(id), ...fields });
 const done = (fields: Record<string, unknown> = {}) => item({ state: "done", outcome: { kind: "done" }, ...fields });
 const failed = (fields: Record<string, unknown> = {}) => item({ state: "failed", ...fields });
@@ -145,7 +145,7 @@ const context = { setup, now: NOW, platform: "darwin" as const };
 
 describe("noteText", () => {
   it("names a decision with its question, and the template and repo", () => {
-    expect(noteText("needsYou", asking(), context)).toEqual({ title: "Needs you: Add order export endpoint", body: "The plan is ready. Approve it to start Build.\nPlan and build · orders-api" });
+    expect(noteText("needsYou", asking(), context)).toEqual({ title: "Needs you: Add order export endpoint", body: "Build it this way?\nPlan and build · orders-api" });
   });
 
   it("says how long a finished item took, and what can be done with it", () => {
@@ -178,14 +178,14 @@ describe("noteText", () => {
   });
 
   it("falls back to the template id without a setup, and leaves out the repos when there are none", () => {
-    expect(noteText("needsYou", asking("d1", { repoIds: [], templateId: "builtin/other" }), { now: NOW, platform: "darwin" }).body).toBe("The plan is ready. Approve it to start Build.\nbuiltin/other");
+    expect(noteText("needsYou", asking("d1", { repoIds: [], templateId: "builtin/other" }), { now: NOW, platform: "darwin" }).body).toBe("Build it this way?\nbuiltin/other");
     expect(noteText("needsYou", asking("d1", { repoIds: ["a", "b"] }), context).body).toMatch(/\nPlan and build · a, b$/);
   });
 
   it("escapes every part on Linux, and keeps a long title short", () => {
     const note = noteText("needsYou", asking("d1", { title: "Fix <img> & more", repoIds: ["a&b"] }), { ...context, platform: "linux" });
     expect(note.title).toBe("Needs you: Fix &lt;img&gt; &amp; more");
-    expect(note.body).toBe("The plan is ready. Approve it to start Build.\nPlan and build · a&amp;b");
+    expect(note.body).toBe("Build it this way?\nPlan and build · a&amp;b");
     expect(noteText("needsYou", asking("d1", { title: "t".repeat(200) }), context).title.length).toBeLessThanOrEqual(100);
   });
 });
@@ -338,7 +338,7 @@ describe("createNotifier", () => {
       run.notifier.onEvent(event(asking()));
       run.notifier.onEvent(event(done({ id: "item_2" })));
       await settle();
-      expect(run.shown[0]?.note.body).toBe("The plan is ready. Approve it to start Build.\nPlan and build · orders-api\nChange how Tokama notifies you in Settings → Notifications");
+      expect(run.shown[0]?.note.body).toBe("Build it this way?\nPlan and build · orders-api\nChange how Tokama notifies you in Settings → Notifications");
       expect(run.shown[1]?.note.body).not.toContain("Settings");
       expect(run.hint.marked).toBe(1);
     });
@@ -473,7 +473,7 @@ describe("createNotifier", () => {
     await noSetup.notifier.resync();
     noSetup.notifier.onEvent(event(asking()));
     await settle();
-    expect(noSetup.shown[0]?.note.body).toBe("The plan is ready. Approve it to start Build.\nbuiltin/plan-and-build · orders-api");
+    expect(noSetup.shown[0]?.note.body).toBe("Build it this way?\nbuiltin/plan-and-build · orders-api");
   });
 
   it("an error while showing the note or reading the setup never escapes", async () => {

@@ -162,6 +162,8 @@ const DecisionOpenedSchema = z.strictObject({
    * step you approve: that tree.
    */
   tree: GIT_ID.optional(),
+  /** For a step you approve: how many files the tree changes against the base commit. Absent in older logs. */
+  change: z.strictObject({ files: z.int().nonnegative() }).optional(),
 });
 const DecisionResolvedSchema = z.strictObject({
   type: z.literal("decision_resolved"),
@@ -332,6 +334,7 @@ export const StoredDecisionSchema = z.strictObject({
   detail: z.string().optional(),
   covers: z.array(CoveredPathSchema).optional(),
   tree: GIT_ID.optional(),
+  change: z.strictObject({ files: z.int().nonnegative() }).optional(),
   resolved: z.strictObject({ choice: z.string(), note: z.string().optional(), at: EpochMsSchema }).optional(),
 });
 

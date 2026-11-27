@@ -19,8 +19,9 @@ import { ExpandButton } from "../ui/ExpandButton.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { changesRepo } from "./attempt-view.js";
 import { ChecksTab } from "./ChecksTab.js";
-import { attemptLine, decisionKind, hasEnded, nextRunLine, runLine, itemMark, KIND, outcomeLine, PRIVACY, stepAgent, stepMark, stepPosition, templateOf, whereLine } from "./describe.js";
-import { cardOffersStop, DecisionChoices, inTextField } from "./DecisionChoices.js";
+import { attemptLine, hasEnded, itemMark, KIND, outcomeLine, PRIVACY, stepAgent, stepMark, stepPosition, templateOf, whereLine } from "./describe.js";
+import { cardOffersStop, inTextField } from "./DecisionChoices.js";
+import { After, NeedsYou } from "./DecisionCard.js";
 import { DiffTab, type DiffState } from "../ui/DiffView.js";
 import { useDecisionDiff } from "./useDecisionDiff.js";
 import { ItemDiffTab } from "./ItemDiffTab.js";
@@ -29,7 +30,7 @@ import { useItemDiff } from "./useItemDiff.js";
 import { Finish } from "./Finish.js";
 import { LogTab } from "./LogTab.js";
 import { OutputTab, shownAttempt } from "./OutputTab.js";
-import { StepOutput, StepPreview, type OutputState, useStepOutput } from "./StepOutput.js";
+import { StepOutput, useStepOutput } from "./StepOutput.js";
 import { StoppedCard } from "./StoppedCard.js";
 import { finishState, isDiscarded } from "./finish-view.js";
 import { useItem } from "./useItem.js";
@@ -39,7 +40,7 @@ import { attemptTime, stepTimes } from "./progress-view.js";
 import { useNow } from "../useNow.js";
 import { Button, CloseButton } from "../ui/Button.js";
 import { ErrorRetry } from "../ui/ErrorRetry.js";
-import { markOf, StatusMark } from "../ui/status.js";
+import { markOf } from "../ui/status.js";
 import { AgentChip } from "../ui/agent.js";
 import { Tabs } from "../ui/Tabs.js";
 import { Placeholder } from "../ui/EmptyState.js";
@@ -50,10 +51,6 @@ const TEXT = {
   loading: "Loading the item",
   gone: "This item no longer exists.",
   loadFailed: "Could not load the item",
-  needsYou: "Needs you",
-  noQuestion: "This item waits for you, but the engine sent no question yet.",
-  willBeSent: "Will be sent",
-  notSentYet: "Nothing has been sent yet",
   views: "Views",
   noSteps: "This item has no steps.",
   attempts: "Attempts",
@@ -67,13 +64,7 @@ const TEXT = {
   alreadyEnded: "The item had already ended. The drawer shows the item as it is now.",
   notConnected: "Not connected to the engine. Try again when it is back.",
   failed: (message: string) => `Could not send it: ${message}`,
-  committed: (commit: string) => `Committed · ${commit}`,
-  committedLine: (title: string, branch: string | undefined) => `${title}${branch === undefined ? "" : ` · on ${branch}`} · Done`,
-  makingChanges: (agent: string, run: string | undefined) => `${agent} is making your changes${run === undefined ? "" : ` · ${run}`}`,
-  yourNote: (note: string) => `Your note: "${note}"`,
-  wrote: (step: string, agent: string | undefined) => `${step} · what ${agent ?? "the agent"} wrote`,
   attempt: (attempt: number) => `attempt ${attempt}`,
-  seeDiff: "See the changed files in the Diff tab",
   output: "Output",
   expand: "Open full view",
   collapse: "Close full view, back to the list with the drawer open (Esc)",
@@ -492,107 +483,6 @@ function Missing({ error, onRetry }: { readonly error: { code: string; message: 
   if (!error) return <Placeholder>{TEXT.loading}</Placeholder>;
   if (error.code === "not_found") return <Placeholder>{TEXT.gone}</Placeholder>;
   return <ErrorRetry title={TEXT.loadFailed} detail={error.message} onRetry={onRetry} />;
-}
-
-interface NeedsYouProps {
-  readonly item: ItemRecord;
-  readonly setup: Setup | undefined;
-  readonly decision: Decision | undefined;
-  readonly busy: boolean;
-  /** What the step's agent wrote, for a step you approve; the full view shows it on the Output tab instead. */
-  readonly output: OutputState | undefined;
-  /** The full view: the decision as a bar pinned at the top, its buttons beside the question. */
-  readonly full: boolean;
-  /** The step changed files: the card links to the Diff tab. */
-  readonly changedFiles: boolean;
-  /** Show full plan: the Output tab. */
-  readonly onShowOutput: () => void;
-  readonly onShowDiff: () => void;
-  readonly onChoose: (decision: Decision, choice: string, note?: string) => void;
-}
-
-function NeedsYou({ item, setup, decision, busy, output, full, changedFiles, onShowOutput, onShowDiff, onChoose }: NeedsYouProps) {
-  const step = decision === undefined ? undefined : item.steps[decision.stepIndex];
-  const agent = step?.agentId === undefined ? undefined : stepAgent(step, setup?.agents ?? []).name;
-  const kind = decision === undefined ? undefined : decisionKind(decision);
-  return (
-    <section className={full ? "needs-you ex-decision" : "needs-you"} aria-label={TEXT.needsYou}>
-      {decision ? (
-        <>
-          {kind !== undefined && <p className="needs-you-kind">{kind}</p>}
-          <p className="needs-you-question">
-            <StatusMark status="needs_you" />
-            {decision.question}
-          </p>
-          {decision.why !== undefined && <p className="needs-you-why">{decision.why}</p>}
-          {decision.summaryText !== undefined && (
-            <div className="cloud-summary">
-              <p className="cloud-summary-label">
-                <span>{TEXT.willBeSent}</span>
-                <span className="muted">{TEXT.notSentYet}</span>
-              </p>
-              {/* Focusable, so a long summary can be scrolled with the keyboard. */}
-              <pre className="cloud-summary-text mono" tabIndex={0} aria-label={TEXT.willBeSent}>
-                {decision.summaryText}
-              </pre>
-            </div>
-          )}
-          {output !== undefined && step !== undefined && (
-            <div className="step-output">
-              <p className="step-output-label">
-                <span>{TEXT.wrote(step.name, agent)}</span>
-                {output.kind === "loaded" && <span className="muted mono">{TEXT.attempt(output.output.attempt)}</span>}
-                {changedFiles && (
-                  <Button variant="link" onClick={onShowDiff}>
-                    {TEXT.seeDiff}
-                  </Button>
-                )}
-              </p>
-              <StepPreview state={output} label={TEXT.wrote(step.name, agent)} isPlan={step.name.toLowerCase() === "plan"} onShowFull={onShowOutput} />
-            </div>
-          )}
-          <DecisionChoices key={decision.id} decision={decision} busy={busy} agent={agent} run={nextRunLine(step)} onChoose={(choice, note) => onChoose(decision, choice, note)} />
-        </>
-      ) : (
-        <p className="needs-you-question">
-          <StatusMark status="needs_you" />
-          {TEXT.noQuestion}
-        </p>
-      )}
-    </section>
-  );
-}
-
-/**
- * What happened after a decision: the commit an approval made, or the step running again with the
- * note of Request changes.
- */
-function After({ item, setup }: { readonly item: ItemRecord; readonly setup: Setup | undefined }) {
-  const commit = item.outcome?.commits?.[0];
-  // After a merge the branch is gone: the Merged card in Finish says it all.
-  if (item.state === "done" && commit !== undefined && item.finish?.merged === undefined) {
-    return (
-      <section className="after" data-tone="pass" aria-label={TEXT.committed(commit.commit.slice(0, 7))}>
-        <StatusMark status="passed" />
-        <div className="after-body">
-          <p className="after-head">{TEXT.committed(commit.commit.slice(0, 7))}</p>
-          <p className="after-text">{TEXT.committedLine(item.title, commit.branch)}</p>
-        </div>
-      </section>
-    );
-  }
-  const step = item.steps.find((candidate) => candidate.state === "running" && candidate.changesNote !== undefined);
-  if (step?.changesNote === undefined) return null;
-  const line = TEXT.makingChanges(stepAgent(step, setup?.agents ?? []).name, runLine(step));
-  return (
-    <section className="after" data-tone="live" aria-label={line}>
-      <StatusMark status="running" />
-      <div className="after-body">
-        <p className="after-head">{line}</p>
-        <p className="after-text">{TEXT.yourNote(step.changesNote)}</p>
-      </div>
-    </section>
-  );
 }
 
 const tabId = (tab: Tab) => `drawer-tab-${tab.toLowerCase()}`;

@@ -31,8 +31,8 @@ import { attemptMs, itemMs, stepTimes } from "./timing.js";
 const MAX_ATTEMPTS_SHOWN = 50;
 const MAX_CHECKS_SHOWN = 20;
 
-/** What each kind of decision asks; the decision's own detail says why. */
-export const QUESTIONS: Readonly<Record<DecisionKind, string>> = {
+/** What each kind of decision asks when the template and the step are not known; the decision's own detail says why. */
+const QUESTIONS: Readonly<Record<DecisionKind, string>> = {
   plan_approval: "Approve this step's result?",
   cloud_summary: "Send this summary to the cloud agent?",
   outside_change: "Allow this change outside the worktree?",
@@ -41,6 +41,51 @@ export const QUESTIONS: Readonly<Record<DecisionKind, string>> = {
   budget: "The item used its time budget. Continue?",
   tamper: "Files that steer Tokama changed. Approve them?",
 };
+
+/** Step names that read as a command, so "Build it this way?" makes sense; any other name is asked as "Go on to <name> this way?". */
+const COMMAND_VERBS = new Set(["build", "implement", "fix", "write", "refactor", "migrate", "update", "add", "create", "draft", "document", "deploy", "release"]);
+
+const plural = (count: number, word: string): string => `${count} ${word}${count === 1 ? "" : "s"}`;
+
+/** The step a plan approval comes from, the step after it, and what approving it does. */
+function approvalOf(open: StoredDecision, template: TemplateRecord | undefined) {
+  const at = template?.steps.findIndex((step) => step.id === open.stepId) ?? -1;
+  const step = template?.steps[at];
+  const next = at < 0 ? undefined : template?.steps[at + 1];
+  const last = step !== undefined && next === undefined;
+  return { step, next, commits: last && template!.finish.includes("commit"), files: open.change?.files };
+}
+
+/** What the decision asks, in the words of the step it is about: the engineer reads the question, not the kind. */
+export function questionOf(open: StoredDecision, template: TemplateRecord | undefined, stepIndex: number, runLimit?: number): string {
+  const step = template?.steps.find((s) => s.id === open.stepId) ?? template?.steps[stepIndex];
+  const name = step?.name;
+  switch (open.kind) {
+    case "plan_approval": {
+      const { next, commits, files } = approvalOf(open, template);
+      if (step === undefined) return QUESTIONS.plan_approval;
+      if (files === 0) {
+        if (next === undefined) return "Accept this result and finish?";
+        return COMMAND_VERBS.has(next.name.toLowerCase()) ? `${next.name} it this way?` : `Go on to ${next.name} this way?`;
+      }
+      if (next === undefined) return commits ? "Commit this change?" : "Accept this result and finish?";
+      return `Go on to ${next.name} with this change?`;
+    }
+    case "after_failure": {
+      if (name === undefined) return QUESTIONS.after_failure;
+      const choices = new Set(open.choices.map((c) => c.id));
+      if (choices.has("one_more_attempt")) return `${name} used its ${plural(runLimit ?? step!.maxAttempts, "run")}. Run it once more?`;
+      if (choices.has("one_more_round")) return `${name} sent the work back too often. Run one more round?`;
+      return `${name} failed. Run ${name} again?`;
+    }
+    case "run_failure":
+      return name === undefined ? QUESTIONS.run_failure : `${name} could not run. Run ${name} again?`;
+    case "budget":
+      return template?.budget === undefined ? QUESTIONS.budget : `The item used its ${template.budget.timeMinutes} min budget. Continue for ${template.budget.timeMinutes} more min?`;
+    default:
+      return QUESTIONS[open.kind];
+  }
+}
 
 const cut = (text: string | undefined, max: number): string | undefined => {
   const line = text?.replace(/\s+/g, " ").trim();
@@ -104,7 +149,7 @@ export function toItemRecord(item: StoredItem): ItemRecord | undefined {
     }),
   };
   const finish = toFinish(item);
-  const cardLine = cut(finishLine(finish) ?? cardLineOf(item, steps, decision?.kind), 120);
+  const cardLine = cut(finishLine(finish) ?? cardLineOf(item, steps, decision?.question), 120);
   const durationMs = itemMs(item);
 
   const record = {
@@ -216,16 +261,19 @@ function toDecision(item: StoredItem, template: TemplateRecord | undefined): Dec
   const at = [open.stepId, item.currentStepId].map((id) => item.steps.findIndex((step) => step.id === id)).find((index) => index >= 0);
   const pending = item.steps.findIndex((step) => step.state !== "passed");
   const why = cut(open.detail, 500);
-  // Approving a change of the last step commits it.
-  const commits = open.kind === "plan_approval" && open.tree !== undefined && template !== undefined && template.steps.at(-1)?.id === open.stepId && template.finish.includes("commit");
   const stopped = explainStop(item, open, template);
+  const stepIndex = at ?? (pending >= 0 ? pending : item.steps.length - 1);
+  const stored = item.steps.find((step) => step.id === open.stepId);
+  const def = template?.steps.find((step) => step.id === open.stepId);
+  const runLimit = stored !== undefined && def !== undefined ? attemptLimit(item, stored, def.maxAttempts) : undefined;
   return {
     id: open.id,
     kind: open.kind,
-    stepIndex: at ?? (pending >= 0 ? pending : item.steps.length - 1),
-    question: commits ? "Approve this change and commit it?" : QUESTIONS[open.kind],
+    stepIndex,
+    question: questionOf(open, template, stepIndex, runLimit),
     ...(why !== undefined && { why }),
-    ...(open.kind === "plan_approval" && open.tree !== undefined && { hasDiff: true }),
+    // A step that changed no files has nothing to diff; a log from before the count was kept shows the diff of its tree.
+    ...(open.kind === "plan_approval" && open.tree !== undefined && (open.change?.files ?? 1) > 0 && { hasDiff: true }),
     ...(stopped !== undefined && { stopped }),
     choices: choicesOf(open, template).slice(0, 5),
   };
@@ -234,21 +282,33 @@ function toDecision(item: StoredItem, template: TemplateRecord | undefined): Dec
 /** Choices that run a stopped step again name it ("Run Review again"), in logs written before they did too. */
 const RUN_AGAIN = new Set(["retry_step", "one_more_attempt"]);
 
+/** A label the question's words explain; a name too long for a label leaves the stored one. */
+const relabel = (choice: DecisionChoice, label: string): DecisionChoice => (label.length <= 64 ? { ...choice, label } : choice);
+
 function choicesOf(open: StoredDecision, template: TemplateRecord | undefined): DecisionChoice[] {
   const name = template?.steps.find((step) => step.id === open.stepId)?.name;
-  if (name === undefined || (open.kind !== "after_failure" && open.kind !== "run_failure")) return open.choices;
+  if (name === undefined) return open.choices;
+  if (open.kind === "plan_approval") {
+    const { next, commits, files } = approvalOf(open, template);
+    return open.choices.map((choice) => {
+      if (choice.id === "approve") return relabel(choice, next !== undefined ? `Approve and start ${next.name}` : commits && files !== 0 ? "Approve and commit" : "Approve and finish");
+      if (choice.id === REQUEST_CHANGES_ID) return relabel(choice, files === 0 ? "Change the plan…" : "Request changes…");
+      return choice;
+    });
+  }
+  if (open.kind !== "after_failure" && open.kind !== "run_failure") return open.choices;
   const label = `Run ${name} again`;
-  return open.choices.map((choice) => (RUN_AGAIN.has(choice.id) && label.length <= 64 ? { ...choice, label } : choice));
+  return open.choices.map((choice) => (RUN_AGAIN.has(choice.id) ? relabel(choice, label) : choice));
 }
 
-function cardLineOf(item: StoredItem, steps: readonly StepRecord[], asked: DecisionKind | undefined): string | undefined {
+function cardLineOf(item: StoredItem, steps: readonly StepRecord[], question: string | undefined): string | undefined {
   const commit = item.outcome?.commits?.[0];
   if (commit !== undefined) {
     const branch = item.worktrees.find((w) => w.repoId === commit.repoId)?.branch;
     return `commit ${commit.commit.slice(0, 7)}${branch === undefined ? "" : ` · ${branch}`}`;
   }
   if (item.outcome !== undefined) return item.outcome.detail;
-  if (asked !== undefined) return QUESTIONS[asked];
+  if (question !== undefined) return question;
   const at = steps.findIndex((step) => step.state !== "passed");
   const step = steps[at];
   if (step === undefined || step.state === "pending") return item.state === "queued" ? "starting" : undefined;

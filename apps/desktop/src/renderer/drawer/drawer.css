@@ -102,7 +102,8 @@
   flex-direction: column;
   gap: var(--space-8);
   padding: var(--space-10) var(--space-12);
-  border-left: 2px solid var(--warn);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
   background: var(--panel);
 }
 
@@ -112,11 +113,6 @@
 }
 
 .needs-you-question .mark {
-  color: var(--warn);
-}
-
-.needs-you-kind {
-  font-size: var(--text-sm);
   color: var(--warn);
 }
 
@@ -891,7 +887,9 @@
   align-items: center;
   gap: var(--space-2) var(--space-24);
   padding: var(--space-12) var(--space-28) var(--space-12) var(--space-26);
+  border: 0;
   border-bottom: 1px solid var(--hairline);
+  border-radius: 0;
 }
 
 .ex-decision > * {

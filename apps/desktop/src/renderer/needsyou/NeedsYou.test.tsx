@@ -77,11 +77,34 @@ describe("the Needs you page", () => {
     expect($(".nr-row b")).toBeNull();
   });
 
+  it("with three questions waiting, only the oldest has a filled button, and no question reads \"Approve this step's result?\"", async () => {
+    const plan = { ...older.decision!, question: "Build it this way?", choices: [{ id: "approve", label: "Approve and start Build" }, { id: "request_changes", label: "Change the plan…" }, { id: "no_action_needed", label: "End: no action needed" }, { id: "stop", label: "Stop" }] };
+    const third = { ...older, id: "item_1a2b3c4d-0096-4a1b-8c1d-000000000096", title: "Add order export endpoint", createdAt: NOW - 30 * MINUTE, decision: plan } as ItemRecord;
+    const oldest = { ...older, decision: plan } as ItemRecord;
+    await render(fakeBridge(CONNECTED, { boardItems: [...items.filter((item) => item !== ITEMS.needsYou), cloud, oldest, third] }).bridge);
+    await openPage();
+    expect($$(".nr-row")).toHaveLength(3);
+    expect($$(".nr-row .btn-primary").map((el) => el.closest(".nr-row")?.getAttribute("data-row"))).toEqual(["0"]);
+    // The quiet link is not a button of the row's own row of buttons, and still answers.
+    expect($$(".nr-row")[0]?.querySelector(".btn-link")?.textContent).toBe("End: no action needed");
+    expect(container.textContent).not.toContain("Approve this step's result?");
+    expect(container.textContent).not.toContain("changed 0 files");
+  });
+
+  it("says how long the oldest question has waited, from the end of the step's latest attempt", async () => {
+    const asked = { ...older, steps: older.steps.map((step, index) => (index === 0 ? { ...step, attempts: [{ attempt: 1, startedAt: NOW - 60 * MINUTE, endedAt: NOW - 41 * MINUTE, result: "passed", checks: [] }] } : step)) } as unknown as ItemRecord;
+    await render(fakeBridge(CONNECTED, { boardItems: [...items.filter((item) => item !== ITEMS.needsYou), asked] }).bridge);
+    await openPage();
+    expect(text(".summary")).toBe("1 waiting · oldest waits 41 m");
+    expect(text(".nr-time")).toBe("waits 41 m");
+  });
+
   it("shows the kind, workflow, step, agent, age, question and choices of a row", async () => {
     await render(fakeBridge(CONNECTED, { boardItems: withOlder }).bridge);
     await openPage();
     const [plan, cloudRow] = $$(".nr-row");
-    expect(plan?.querySelector(".nr-kind")?.textContent).toBe("⏸ Decision");
+    expect(plan?.querySelector(".nr-kind")).toBeNull();
+    expect(plan?.querySelector(".nr-mark")?.textContent).toBe("⏸Needs you");
     expect(plan?.querySelector(".nr-workflow")?.textContent).toBe("Plan and build");
     expect(plan?.querySelector(".nr-where")?.textContent).toBe("step 1 of 2 · PlanArchitectClaude Code");
     expect(plan?.querySelector(".nr-time")?.textContent).toBe("started 1 h 10 m ago");
@@ -92,7 +115,6 @@ describe("the Needs you page", () => {
     expect(mark?.hasAttribute("title")).toBe(false);
     expect(choiceButtons(plan!).map((button) => button.textContent)).toEqual(["Yes", "No"]);
     expect(choiceButtons(plan!)[0]?.className).toBe("btn btn-primary");
-    expect(cloudRow?.querySelector(".nr-kind")?.textContent).toBe("⏸ Cloud-step approval");
     expect(cloudRow?.querySelector(".nr-time")?.textContent).toBe("started 41 m ago");
     expect(cloudRow?.querySelector(".nr-question")?.textContent).toBe(DECISION.question);
     expect(choiceButtons(cloudRow!).map((button) => button.getAttribute("aria-label"))).toEqual(["Approve and send: Orders API returns 500 after deploy"]);
@@ -183,7 +205,7 @@ describe("the Needs you page", () => {
         id: "decision_aaaaaaaa-0000-4000-8000-0000000000c1",
         kind: "plan_approval",
         stepIndex: 0,
-        question: "Approve this change and commit it?",
+        question: "Commit this change?",
         hasDiff: true,
         choices: [
           { id: "approve", label: "Approve and commit" },
@@ -208,8 +230,10 @@ describe("the Needs you page", () => {
     await render(fake.bridge);
     await openPage();
     const row = $(".nr-row")!;
-    expect(text(".nr-kind")).toContain("Change approval");
-    expect(text(".nr-where")).toContain("step 1 of 1 · Change · you approve");
+    expect($(".nr-kind")).toBeNull();
+    expect(text(".nr-question")).toBe("Commit this change?");
+    expect(text(".nr-where")).toContain("step 1 of 1 · Change");
+    expect(text(".nr-where")).not.toContain("you approve");
     expect(text(".dv-changed-head")).toBe("Changed3 files · nothing committed yet");
     expect($$(".dv-changed-list li").map((el) => el.textContent)).toEqual(["src/receipt/format.js+10−2", "assets/logo.png · package-lock.jsonbinary · too large"]);
     expect(choiceButtons(row).map((el) => el.textContent)).toEqual(["Approve and commit", "Request changes"]);

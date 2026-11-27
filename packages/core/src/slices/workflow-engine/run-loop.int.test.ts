@@ -367,6 +367,7 @@ describe("run loop: done_when", () => {
     // The question says what Approve does: this last step commits.
     expect(asked).toMatchObject({ detail: "builder changed 2 files in a worktree of orders-api. Nothing is committed until you approve. Request changes sends your note to builder for another run." });
     expect(asked.choices[0]?.label).toBe("Approve and commit");
+    expect(asked.change).toEqual({ files: 2 });
     expect(diff.value.files.map((f) => [f.path, f.status, f.added, f.removed])).toEqual([
       ["app.txt", "modified", 1, 1],
       ["notes.txt", "added", 1, 0],
@@ -406,6 +407,11 @@ describe("run loop: done_when", () => {
     const asked = openDecision(id)!;
     const diff = await loop.decisionDiff(id, asked.id);
     expect(diff).toMatchObject({ ok: true, value: { files: [], moreFiles: 0, cut: false } });
+    // A plan approval: it records that no file changed, keeps the tree it approves, and names the step that starts.
+    expect(asked.change).toEqual({ files: 0 });
+    expect(asked.tree).toBe(await plain(repo.path, "rev-parse", "main^{tree}"));
+    expect(asked.detail).toMatch(/^builder finished step .+\. .+ starts after you approve\.$/);
+    expect(asked.detail).not.toContain("changed 0 files");
     expect(item(id).steps[0]?.attempts[0]?.tree).toBeUndefined();
     await answer(loop, id, "approve");
     expect(item(id).state).toBe("done");

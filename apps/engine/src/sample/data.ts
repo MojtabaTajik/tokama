@@ -353,7 +353,7 @@ function rawItems(now: number): RawItem[] {
       decision: {
         id: DECISION_ID,
         stepIndex: 3,
-        question: "Send the redacted findings summary (1.2 KB) to Architect on Claude Code?",
+        question: "Send this summary to Claude Code?",
         why: "Propose a fix runs on a cloud agent; its data rule sends a summary after your approval.",
         summaryText:
           "orders-api returns 500 on POST /orders since the 14:02 deploy. Cause: customers without a region " +
@@ -463,17 +463,17 @@ function rawItems(now: number): RawItem[] {
       privacy: "local_only",
       state: "needs_you",
       createdAt: ago(now, 9),
-      cardLine: "Approve this step's result?",
+      cardLine: "Commit this change?",
       decision: {
         id: DIFF_DECISION_ID,
         kind: "plan_approval",
         stepIndex: 0,
-        question: "Approve this change and commit it?",
+        question: "Commit this change?",
         why: "Local builder changed 4 files in a worktree of inventory-service. Nothing is committed until you approve. Request changes sends your note to Local builder for another run.",
         hasDiff: true,
         choices: [
           { id: "approve", label: "Approve and commit" },
-          { id: "request_changes", label: "Request changes" },
+          { id: "request_changes", label: "Request changes…" },
           { id: "no_action_needed", label: "End: no action needed" },
           { id: "stop", label: "Stop" },
         ],
@@ -491,16 +491,16 @@ function rawItems(now: number): RawItem[] {
       privacy: "local_and_cloud",
       state: "needs_you",
       createdAt: ago(now, 12),
-      cardLine: "Approve this step's result?",
+      cardLine: "Build it this way?",
       decision: {
         id: PLAN_DECISION_ID,
         kind: "plan_approval",
         stepIndex: 0,
-        question: "Approve this step's result?",
-        why: "Architect wrote a plan and changed 0 files. Build starts after you approve. Request changes sends your note to Architect for another run.",
+        question: "Build it this way?",
+        why: "Architect finished step Plan. Build starts after you approve.",
         choices: [
-          { id: "approve", label: "Approve" },
-          { id: "request_changes", label: "Request changes" },
+          { id: "approve", label: "Approve and start Build" },
+          { id: "request_changes", label: "Change the plan…" },
           { id: "stop", label: "Stop" },
         ],
       },
@@ -517,12 +517,12 @@ function rawItems(now: number): RawItem[] {
       privacy: "local_and_cloud",
       state: "needs_you",
       createdAt: ago(now, 18),
-      cardLine: "The step failed. Retry it, or end the item?",
+      cardLine: "Review used its 1 run. Run it once more?",
       decision: {
         id: LIMIT_DECISION_ID,
         kind: "after_failure",
         stepIndex: 3,
-        question: "The step failed. Retry it, or end the item?",
+        question: "Review used its 1 run. Run it once more?",
         why: "Step Review reached its limit of 1 attempts.",
         stopped: {
           limit: true,

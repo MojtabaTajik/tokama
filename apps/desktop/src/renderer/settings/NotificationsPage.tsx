@@ -60,7 +60,7 @@ const SAMPLE_FAILED = {
 } as unknown as Parameters<typeof failureLine>[0];
 
 const PREVIEWS: readonly { readonly key: NoteKind; readonly title: string; readonly body: string; readonly meta: string }[] = [
-  { key: "needsYou", title: "Needs you: Add order export endpoint", body: "The plan is ready. Approve it to start Build.", meta: "Plan and build · orders-api" },
+  { key: "needsYou", title: "Needs you: Add order export endpoint", body: "Build it this way?", meta: "Plan and build · orders-api" },
   { key: "finished", title: "Finished: Fix the null check in cart totals", body: finishedLine(SAMPLE_DONE, "9 min", true), meta: "Quick fix · checkout-web" },
   { key: "failed", title: "Failed: Upgrade the Postgres driver", body: failureLine(SAMPLE_FAILED), meta: "Plan and build · orders-api" },
 ];

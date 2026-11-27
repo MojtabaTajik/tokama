@@ -235,7 +235,7 @@ describe("ItemDrawer change to approve", () => {
       id: DIFF_DECISION,
       kind: "plan_approval",
       stepIndex: 0,
-      question: "Approve this change and commit it?",
+      question: "Commit this change?",
       why: "Local builder changed 4 files in a worktree of orders-api. Nothing is committed until you approve.",
       hasDiff: true,
       choices: [
@@ -274,8 +274,8 @@ describe("ItemDrawer change to approve", () => {
     await renderDrawer(bridge, waiting.id);
     expect(tab("Diff")?.getAttribute("aria-selected")).toBe("true");
     expect(query).toHaveBeenCalledWith({ type: "decision_diff", itemId: waiting.id, decisionId: DIFF_DECISION });
-    expect(text(".needs-you-kind")).toBe("Change approval");
-    expect(text(".needs-you-question")).toBe("⏸Approve this change and commit it?");
+    expect($(".needs-you-kind")).toBeNull();
+    expect(text(".needs-you-question")).toBe("⏸Commit this change?");
     expect($$(".needs-you .choices .btn").map((el) => el.textContent)).toEqual(["Approve and commit", "Request changes"]);
     expect(text(".dv-summary")).toBe("6 files+1,221 −314·tokama/abcfrom main 85a75e3");
   });
@@ -858,7 +858,7 @@ describe("item drawer with real-mode records", () => {
     expect(text(".drawer-state")).toContain("commit 3f2a9c1 on tokama/0b9f3c1e");
   });
 
-  it("labels a decision by its kind and offers its own choices", async () => {
+  it("asks the question with no kind label above it and offers its own choices", async () => {
     const asked = {
       ...task,
       state: "needs_you",
@@ -866,7 +866,7 @@ describe("item drawer with real-mode records", () => {
     } as unknown as ItemRecord;
     const fake = fakeBridge([asked]);
     await renderDrawer(fake.bridge, asked.id);
-    expect(text(".needs-you-kind")).toBe("Run failed");
+    expect($(".needs-you-kind")).toBeNull();
     expect($$(".needs-you .choices .btn").map((el) => el.textContent)).toEqual(["Retry step", "Stop"]);
     expect($(".drawer-actions")).toBeNull();
     await act(async () => ($$(".needs-you .choices .btn")[0] as HTMLButtonElement).click());
@@ -1545,8 +1545,8 @@ describe("the card of a step that stopped", () => {
     expect($$(".stopped-items code").map((el) => el.textContent)).toEqual(["src/start-card.css:31", "src/a.ts:2"]);
     expect($$(".stopped .choices .btn").map((el) => [el.textContent, el.className])).toEqual([
       ["Run Review again", "btn btn-primary"],
-      ["End: no action needed", "btn btn-secondary"],
       ["Stop", "btn btn-danger"],
+      ["End: no action needed", "btn btn-link"],
     ]);
     expect($(".needs-you-kind")).toBeNull();
   });

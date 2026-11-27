@@ -32,12 +32,15 @@ const TEXT = {
   reconnecting: "Reconnecting to the engine",
   loadFailed: "Could not load the setup and items",
   staleFailed: "Could not refresh the list. It may be out of date",
+  needsYou: "Needs you",
   noQuestion: "This item waits for you, but the engine sent no question yet.",
   willBeSent: "Will be sent",
   notSentYet: "Nothing has been sent yet",
   waiting: (count: number) => `${count} waiting`,
-  oldest: (since: string) => `oldest item started ${since}`,
+  oldestStarted: (since: string) => `oldest item started ${since}`,
+  oldestWaits: (waits: string) => `oldest waits ${waits}`,
   started: (since: string) => `started ${since}`,
+  waits: (waits: string) => `waits ${waits}`,
   review: "Review the diff",
   readPlan: "Read the plan",
   readOutput: "Read the output",
@@ -88,7 +91,7 @@ export function NeedsYou(props: NeedsYouProps) {
       <header className="main-header">
         <h1 className="ellipsis">{TEXT.title}</h1>
         {loaded && (
-          <span className="summary mono">{oldest === undefined ? TEXT.waiting(0) : `${TEXT.waiting(rows.length)} · ${TEXT.oldest(oldest.since)}`}</span>
+          <span className="summary mono">{oldest === undefined ? TEXT.waiting(0) : `${TEXT.waiting(rows.length)} · ${oldest.waits === undefined ? TEXT.oldestStarted(oldest.since) : TEXT.oldestWaits(oldest.waits)}`}</span>
         )}
       </header>
       <section className="board" aria-label={TEXT.title}>
@@ -173,15 +176,16 @@ function Row({ row, index, bridge, selected, onSelect, onReviewDiff, onRefresh }
     // The title button is the keyboard way in; the click on the row is a convenience for the pointer.
     <li className="nr-row" data-row={index} aria-current={selected ? "true" : undefined} onClick={onRowClick}>
       <p className="nr-top">
-        <span className="nr-kind">
-          <span aria-hidden="true">{markOf("needs_you").symbol}</span> {row.kind}
+        <span className="nr-mark">
+          <span aria-hidden="true">{markOf("needs_you").symbol}</span>
+          <span className="visually-hidden">{TEXT.needsYou}</span>
         </span>
         <span className="nr-workflow">
           <TemplateIcon icon={row.workflow.icon} color={row.workflow.color} />
           <span className="ellipsis">{row.workflow.name}</span>
         </span>
         <span className="nr-time mono" title={row.sinceTitle}>
-          {TEXT.started(row.since)}
+          {row.waits === undefined ? TEXT.started(row.since) : TEXT.waits(row.waits)}
         </span>
       </p>
       <Button variant="plain" className="nr-title" data-item-id={item.id} aria-current={selected ? "true" : undefined} onClick={() => onSelect(item.id)}>
@@ -230,6 +234,7 @@ function Row({ row, index, bridge, selected, onSelect, onReviewDiff, onRefresh }
           key={decision.id}
           decision={decision}
           busy={busy}
+          primary={index === 0}
           context={item.title}
           agent={row.agent?.name}
           run={nextRunLine(item.steps[decision.stepIndex])}

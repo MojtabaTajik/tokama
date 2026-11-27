@@ -1,16 +1,14 @@
 // What the Needs you page lists: every item that waits for the engineer, oldest first, with what
 // its row says about the decision. Pure functions that take the clock as an argument.
 import type { Decision, ItemRecord, Setup, StepRecord } from "@tokama/core";
-import { decisionKind, stepAgent, type StepAgent, templateOf } from "../drawer/describe.js";
-import { ago } from "../format/duration.js";
+import { stepAgent, type StepAgent, templateOf } from "../drawer/describe.js";
+import { ago, formatDuration } from "../format/duration.js";
 import { cliName, timeOf } from "../model.js";
 
 export interface NeedsYouRow {
   readonly item: ItemRecord;
   /** Undefined while the engine has sent no question for the waiting item. */
   readonly decision: Decision | undefined;
-  /** What kind of decision it is, in a word: the engine's kind, or, from an engine that sends none, a guess from the record. */
-  readonly kind: string;
   /** "step 4 of 4 · Propose a fix"; undefined when the item has no step that waits. */
   readonly stepLine: string | undefined;
   readonly agent: StepAgent | undefined;
@@ -20,10 +18,15 @@ export interface NeedsYouRow {
   /** How long ago the item started ("41 m ago"). The engine records no time for the question, so this is the best known lower bound of the wait. */
   readonly since: string;
   readonly sinceTitle: string;
+  /** How long the question has waited ("41 m"), from the end of the step's latest attempt; undefined when the step records none. */
+  readonly waits: string | undefined;
 }
 
-export const KIND_CLOUD = "Cloud-step approval";
-export const KIND_OTHER = "Decision";
+/** When the step stopped to ask: the latest end among its attempts. */
+const askedAt = (step: StepRecord | undefined): number | undefined => {
+  const ends = step?.attempts?.flatMap((attempt) => (attempt.endedAt === undefined ? [] : [attempt.endedAt])) ?? [];
+  return ends.length === 0 ? undefined : Math.max(...ends);
+};
 
 /** The step the decision is about: its own index, or the first step that waits when the index points nowhere. */
 function waitingStep(item: ItemRecord, decision: Decision | undefined): { readonly step: StepRecord; readonly index: number } | undefined {
@@ -49,18 +52,18 @@ export function needsYouRows(items: readonly ItemRecord[], setup: Setup | undefi
       const agent = at === undefined ? undefined : stepAgent(at.step, agents);
       const template = templateOf(item, setup);
       const time = timeOf(item, now);
-      const cloud = decision?.summaryText !== undefined || (agent?.runsOn === "cloud" && at?.step.data !== "none");
+      const asked = askedAt(at?.step);
       const cliId = at?.step.agentId === undefined ? undefined : agents.find((candidate) => candidate.id === at.step.agentId)?.cliId;
       return {
         item,
         decision,
-        kind: (decision === undefined ? undefined : decisionKind(decision)) ?? (cloud ? KIND_CLOUD : KIND_OTHER),
-        stepLine: at === undefined ? undefined : `step ${at.index + 1} of ${item.steps.length} · ${at.step.name}${decision?.hasDiff === true ? " · you approve" : ""}`,
+        stepLine: at === undefined ? undefined : `step ${at.index + 1} of ${item.steps.length} · ${at.step.name}`,
         agent,
         cli: cliId === undefined ? undefined : cliName(cliId),
         workflow: { name: template?.name ?? item.templateId, icon: template?.icon, color: template?.color },
         since: ago(now - item.createdAt),
         sinceTitle: time.title,
+        waits: asked === undefined ? undefined : formatDuration(now - asked, "minutes"),
       };
     });
 }

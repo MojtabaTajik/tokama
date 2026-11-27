@@ -35,7 +35,7 @@ flow("opens an item and approves its decision", async ({ page }) => {
   await openRow(page, NEEDS_YOU);
   const note = drawer(page).locator(".needs-you");
   await drawer(page).getByRole("heading", { name: NEEDS_YOU }).waitFor();
-  await expect.poll(() => note.innerText(), { message: "the drawer shows the decision" }).toContain("Send the redacted findings summary");
+  await expect.poll(() => note.innerText(), { message: "the drawer shows the decision" }).toContain("Send this summary to Claude Code?");
 
   await note.getByRole("button", { name: "Approve and send" }).click();
 
@@ -47,15 +47,24 @@ flow("opens an item and approves its decision", async ({ page }) => {
   await group(page, "Running").locator(".pl-title", { hasText: NEEDS_YOU }).waitFor({ state: "visible" });
 });
 
-flow("answers a decision on the Needs you page and the row leaves the list", async ({ page, screenshot }) => {
+flow("answers a decision on the Needs you page and the row leaves the list", async ({ page, resize, screenshot }) => {
   const rail = page.getByRole("navigation", { name: "App" });
   await rail.getByRole("button", { name: /^Needs you/ }).click();
   await page.getByRole("heading", { name: "Needs you", level: 1 }).waitFor();
   const waiting = page.locator(".nr-row", { hasText: NEEDS_YOU });
   await waiting.waitFor();
-  expect(await waiting.locator(".nr-kind").innerText()).toContain("Cloud-step approval");
-  await expect.poll(() => page.locator(".summary").innerText(), { message: "the page header" }).toMatch(/^4 waiting/);
+  // The question names the thing; the oldest question holds the only filled button; no kind label.
+  expect(await waiting.locator(".nr-question").innerText()).toBe("Send this summary to Claude Code?");
+  expect(await page.locator(".nr-kind").count()).toBe(0);
+  expect(await page.locator(".nr-row .btn-primary").count()).toBe(1);
+  expect(await page.locator(".nr-row").first().locator(".btn-primary").count()).toBe(1);
+  expect(await page.locator(".nr-list").innerText()).not.toContain("Approve this step's result?");
+  await expect.poll(() => page.locator(".summary").innerText(), { message: "the page header" }).toMatch(/^4 waiting · oldest (waits|item started) /);
   await screenshot("6-needs-you");
+  await screenshot("7-needs-you-questions");
+  await resize(1024, 700);
+  await screenshot("7-needs-you-questions-1024");
+  await resize(1200, 700);
 
   // The title opens the drawer next to the page.
   await waiting.locator(".nr-title").click();
@@ -87,14 +96,24 @@ flow("a plan approval shows the plan: a preview on Needs you, the whole plan as 
   expect(await plan.locator("a, script, img").count()).toBe(0);
   await screenshot("18-plan-drawer");
 
+  // A plan changed no file: the card asks what the plan is for, names what Approve starts, and has no Diff tab.
+  await expect.poll(() => card.locator(".needs-you-question").innerText(), { message: "the plan's question" }).toContain("Build it this way?");
+  expect(await card.locator(".needs-you-kind").count()).toBe(0);
+  expect(await card.innerText()).not.toContain("changed 0 files");
+  expect(await drawer(page).getByRole("tab", { name: "Diff" }).count()).toBe(0);
+  expect(await card.locator(".choices .btn").allInnerTexts()).toEqual(["Approve and start Build", "Change the plan…", "Stop"]);
+  await screenshot("7-drawer-plan-question");
+  await resize(1024, 700);
+  await screenshot("7-drawer-plan-question-1024");
+
   // The card shows a faded preview with Show full plan; Approve stays on screen and reachable by Tab.
   await resize(1200, 700);
   expect(await plan.getAttribute("data-cut")).toBe("true");
   const more = card.getByRole("button", { name: "Show full plan" });
   await more.focus();
   await page.keyboard.press("Tab");
-  expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Approve");
-  const approve = card.getByRole("button", { name: "Approve", exact: true });
+  expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Approve and start Build");
+  const approve = card.getByRole("button", { name: "Approve and start Build", exact: true });
   const box = await approve.boundingBox();
   expect(box !== null && box.y + box.height <= 700, "Approve is inside the window").toBe(true);
   await screenshot("19-plan-drawer-700");

@@ -208,8 +208,8 @@ describe("real mode", () => {
       return { waiting, diff: reply.data };
     };
     const first = await diffOf();
-    expect(first.waiting.decision?.choices.map((c) => c.label)).toEqual(["Approve and commit", "Request changes", "End: no action needed", "Stop"]);
-    expect(first.waiting.decision).toMatchObject({ question: "Approve this change and commit it?", why: "Builder changed 1 file in a worktree of orders-api. Nothing is committed until you approve. Request changes sends your note to Builder for another run." });
+    expect(first.waiting.decision?.choices.map((c) => c.label)).toEqual(["Approve and commit", "Request changes…", "End: no action needed", "Stop"]);
+    expect(first.waiting.decision).toMatchObject({ question: "Commit this change?", why: "Builder changed 1 file in a worktree of orders-api. Nothing is committed until you approve. Request changes sends your note to Builder for another run." });
     expect(first.waiting.steps[0]).toMatchObject({ maxAttempts: 3, attempts: [{ attempt: 1, result: "passed" }] });
     expect(first.diff.files).toMatchObject([{ path: "greeting.txt", status: "modified", added: 1, removed: 1, hunks: [{ lines: ["-helo world", "+hello wrld"] }] }]);
     expect(first.diff.worktree).toMatchObject({ repoId: "orders-api", branch: expect.stringMatching(/^tokama\//) });

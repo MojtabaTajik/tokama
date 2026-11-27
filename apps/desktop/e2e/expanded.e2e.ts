@@ -68,7 +68,7 @@ flow("approves a plan from the expanded view: the plan reads as a document and A
   // On a short window the page scrolls under the decision bar, which stays at the top.
   await resize(1440, 640);
   await full.evaluate((el) => el.scrollTo(0, el.scrollHeight));
-  const approve = full.locator(".ex-decision").getByRole("button", { name: "Approve", exact: true });
+  const approve = full.locator(".ex-decision").getByRole("button", { name: "Approve and start Build", exact: true });
   const box = await approve.boundingBox();
   expect(box !== null && box.y >= 0 && box.y + box.height <= 640, "Approve is inside the window").toBe(true);
   await screenshot("33-expanded-plan-scrolled");
