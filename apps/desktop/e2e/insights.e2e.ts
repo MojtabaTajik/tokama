@@ -6,8 +6,9 @@ import { flow } from "./harness.js";
 
 flow("shows plan usage in the Insights tooltip, then the Usage tab: forecast, limits, what uses each limit, retries and models", async ({ page, screenshot, resize }) => {
   const insights = page.locator('.rail button[aria-label="Insights"]');
-  // Claude Code is near its weekly limit in the sample: a ! on the icon, words in the tooltip.
-  await expect.poll(() => page.locator(".rail .insights .badge").innerText(), { message: "the Insights badge" }).toBe("!");
+  // Claude Code is near its weekly limit in the sample: the words are in the tooltip, and the icon has no mark (near is not at).
+  await insights.waitFor();
+  expect(await page.locator(".rail .insights .badge").count()).toBe(0);
   await insights.hover();
   const tip = page.locator(".insights-tip");
   await tip.waitFor({ state: "visible" });

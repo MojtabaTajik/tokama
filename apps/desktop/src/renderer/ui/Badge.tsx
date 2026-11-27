@@ -1,22 +1,25 @@
-// Counts. Badge: a small count on an icon button, or a symbol when the kind matters more than how
-// many (the button's label says it in words). StatusCounts: a row of symbol-and-count badges, such
-// as a sidebar row's "⏸ 2 ✕ 1", with their words for screen readers and in a tooltip.
+// Counts. Badge: a small mark on an icon button that says the user has to do something: a count, or
+// one "!" when the cause matters more than how many (the button's label says it in words).
+// StatusCounts: a row of symbol-and-count badges, such as a sidebar row's "⏸ 2 ✕ 1", with their
+// words for screen readers and in a tooltip.
 import { type CSSProperties, useId } from "react";
 import { Tooltip } from "./Tooltip.js";
 import { useHostTip } from "./useTip.js";
 
 export interface BadgeProps {
   readonly count: number;
-  readonly tone: "warn" | "fail" | "neutral";
-  readonly symbol?: string | undefined;
+  /** Every mark is the one amber look. */
+  readonly tone: "warn";
+  /** "!" in place of the count. */
+  readonly symbol?: "!" | undefined;
 }
 
-/** Nothing at zero; 99+ above 99. Hidden from screen readers: the button's label carries the count. */
+/** Nothing at zero; 1 to 9, then 9+. Hidden from screen readers: the button's label carries the exact count. */
 export function Badge({ count, tone, symbol }: BadgeProps) {
   if (count <= 0) return null;
   return (
     <span className="badge" data-tone={tone} aria-hidden="true">
-      {symbol ?? (count > 99 ? "99+" : count)}
+      {symbol ?? (count > 9 ? "9+" : count)}
     </span>
   );
 }

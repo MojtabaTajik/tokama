@@ -54,8 +54,15 @@ async function openDiagnostics(page: Page): Promise<void> {
 const rows = (page: Page) => page.locator(".dg-entry").allInnerTexts();
 const statusLine = (page: Page) => page.locator(".dg-status").innerText();
 
-flow("reads an entry, counts waiting entries on Settings, and clears them all", async ({ page, screenshot }) => {
-  await expect.poll(() => settingsButton(page).getAttribute("aria-label")).toBe(`Settings · ${SAMPLE_COUNT} diagnostics waiting`);
+flow("reads an entry, marks Settings for the waiting crash report only, and clears them all", async ({ page, screenshot }) => {
+  // Six entries wait, and one is a crash report: the gear says that one, never the count.
+  await expect.poll(() => settingsButton(page).getAttribute("aria-label")).toBe("Settings · Tokama stopped unexpectedly. Send the report?");
+  expect(await settingsButton(page).locator(".badge").allInnerTexts()).toEqual(["!"]);
+  await screenshot("14-diagnostics-rail-mark", page.locator("nav.rail"));
+  // With the mark, a click opens Settings on Diagnostics.
+  await settingsButton(page).click();
+  await page.locator(".dg-entry").first().waitFor();
+  await page.locator(".settings-back").click();
   await openDiagnostics(page);
   expect(await rows(page)).toHaveLength(SAMPLE_COUNT);
   await page.locator(".dg-entry").filter({ hasText: "TypeError" }).click();

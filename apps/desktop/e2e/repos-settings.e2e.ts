@@ -11,7 +11,7 @@ import { chooseBranch } from "./base-branch.js";
 import { flow } from "./harness.js";
 
 const openRepos = async (page: Page) => {
-  await page.getByRole("button", { name: /^Settings(?: · \d+\+? diagnostics waiting)?$/ }).click();
+  await page.getByRole("button", { name: /^Settings(?: · .+)?$/ }).click();
   await page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Repos" }).click();
 };
 

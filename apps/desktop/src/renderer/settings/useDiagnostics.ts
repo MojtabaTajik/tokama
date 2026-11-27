@@ -1,5 +1,5 @@
 // The waiting diagnostics entries and the collect switch, loaded when the page opens and again on
-// a diagnostics_changed or setup_changed event. Also the waiting count for the rail badge.
+// a diagnostics_changed or setup_changed event. Also whether a crash entry waits, for the rail's mark.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConnectionState, DiagnosticsItem, TokamaBridge } from "../../shared/bridge.js";
 
@@ -32,25 +32,25 @@ export function useDiagnostics(bridge: TokamaBridge, connection: ConnectionState
   return { state, reload };
 }
 
-/** The most entries the badge counts; more show as "99+". */
-const BADGE_LIMIT = 100;
-
-/** How many diagnostics entries wait, for the rail badge; 0 without an engine. */
-export function useDiagnosticsWaiting(bridge: TokamaBridge, connection: ConnectionState): number {
-  const [count, setCount] = useState(0);
+/**
+ * Whether a crash entry waits to be sent or deleted, for the rail's mark on Settings; false without an
+ * engine. A kept entry counts also while collecting is off: it still waits for the user's answer.
+ */
+export function useDiagnosticsWaiting(bridge: TokamaBridge, connection: ConnectionState): boolean {
+  const [waiting, setWaiting] = useState(false);
   const [reloads, setReloads] = useState(0);
   const connected = connection.status === "connected";
   useEffect(() => bridge.onEvent(({ event }) => event.type === "diagnostics_changed" && setReloads((n) => n + 1)), [bridge]);
   useEffect(() => {
-    if (!connected) return setCount(0);
+    if (!connected) return setWaiting(false);
     let current = true;
     bridge
-      .query({ type: "diagnostics_list", limit: BADGE_LIMIT })
-      .then((reply) => current && setCount(reply.ok ? reply.data.entries.length : 0))
-      .catch(() => current && setCount(0));
+      .query({ type: "diagnostics_list", types: ["crash"], limit: 1 })
+      .then((reply) => current && setWaiting(reply.ok && reply.data.entries.length > 0))
+      .catch(() => current && setWaiting(false));
     return () => {
       current = false;
     };
   }, [bridge, connected, reloads]);
-  return count;
+  return waiting;
 }

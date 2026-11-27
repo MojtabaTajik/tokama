@@ -160,21 +160,32 @@ describe("UpdateRailIcon", () => {
   };
   const button = () => container.querySelector<HTMLButtonElement>("button")!;
 
-  it("is the download icon with a ↓ badge, no bare dot, named like the chip", () => {
+  it("is the download icon alone, with no badge and no bare dot, named like the chip", () => {
     const onActivate = rail(READY);
     expect(button().getAttribute("aria-label")).toBe("Update: Tokama 0.2.0 is ready. Click to update, then confirm the restart.");
     expect(container.querySelector(".up-dot")).toBeNull();
-    expect(container.querySelector(".badge")?.textContent).toBe("↓");
-    expect(container.querySelector(".badge")?.getAttribute("data-tone")).toBe("neutral");
+    expect(container.querySelector(".badge")).toBeNull();
+    expect(button().hasAttribute("data-critical")).toBe(false);
     act(() => button().click());
     expect(onActivate).toHaveBeenCalledTimes(1);
   });
 
-  it("is the warning icon with a ! badge for an important update", () => {
+  it("is the same download icon in the warn colour with a ! badge for an important update", () => {
+    rail(READY);
+    const normal = button().querySelector("svg")?.innerHTML;
     rail(CRITICAL);
     expect(button().getAttribute("aria-label")).toBe("Important update: Tokama 0.2.2. This update fixes a security problem. Click to update, then confirm the restart.");
+    expect(button().hasAttribute("data-critical")).toBe(true);
+    expect(button().querySelector("svg")?.innerHTML).toBe(normal);
     expect(container.querySelector(".badge")?.textContent).toBe("!");
+    expect(container.querySelector(".badge")?.getAttribute("data-tone")).toBe("warn");
     expect(container.querySelector(".up-dot")).toBeNull();
+  });
+
+  it("marks an update that did not install with the ! badge too", () => {
+    rail({ status: "stalled", version: "0.2.0" });
+    expect(container.querySelector(".badge")?.textContent).toBe("!");
+    expect(button().hasAttribute("data-critical")).toBe(true);
   });
 
   it("opens the same tooltip as the chip", () => {

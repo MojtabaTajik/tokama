@@ -3,35 +3,22 @@
 /* A count on an icon button, at its top right corner. */
 .badge {
   position: absolute;
-  top: 5px;
+  top: 4px;
   right: 4px;
-  min-width: 15px;
-  height: 15px;
+  min-width: 16px;
+  height: 16px;
   padding: 0 var(--space-4);
   box-sizing: border-box;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-pill);
   color: var(--ground);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 700;
-  line-height: 15px;
+  line-height: 16px;
   text-align: center;
 }
 
 .badge[data-tone="warn"] {
   background: var(--warn);
-}
-
-.badge[data-tone="fail"] {
-  background: var(--fail);
-}
-
-.badge[data-tone="neutral"] {
-  border: 1px solid var(--hairline);
-  background: var(--panel);
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-weight: 400;
-  line-height: 13px;
 }
 
 /* Symbol-and-count badges at the end of a row. */

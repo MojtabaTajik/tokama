@@ -9,7 +9,7 @@ import { expect } from "vitest";
 import { flow } from "./harness.js";
 
 flow("shows templates with their flow, steps and problems in Settings", async ({ page, screenshot }) => {
-  await page.getByRole("button", { name: /^Settings(?: · \d+\+? diagnostics waiting)?$/ }).click();
+  await page.getByRole("button", { name: /^Settings(?: · .+)?$/ }).click();
   await page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Templates" }).click();
   const list = page.getByRole("list", { name: "Template files" });
   await list.getByRole("button", { name: /Plan and build.*orders-api/ }).waitFor();
@@ -53,7 +53,7 @@ flow(
       (shell as { openPath: unknown }).openPath = async (path: string) => (opened.push(path), "");
     });
 
-    await page.getByRole("button", { name: /^Settings(?: · \d+\+? diagnostics waiting)?$/ }).click();
+    await page.getByRole("button", { name: /^Settings(?: · .+)?$/ }).click();
     await page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Templates" }).click();
     const list = page.getByRole("list", { name: "Template files" });
     await list.getByRole("button", { name: /docs-fix\.yaml.*✕ \d+ problems?/ }).click();
@@ -79,7 +79,7 @@ flow(
     writeFileSync(join(dir, "newer.yaml"), "format: 2\nname: Newer\n");
     writeFileSync(join(home, ".tokama", "repos.yaml"), `format: 1\nrepos:\n  - id: billing-api\n    path: ${realpathSync(repo)}\n    base_branch: main\n    checks: []\n`);
 
-    await page.getByRole("button", { name: /^Settings(?: · \d+\+? diagnostics waiting)?$/ }).click();
+    await page.getByRole("button", { name: /^Settings(?: · .+)?$/ }).click();
     await page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Templates" }).click();
     const list = page.getByRole("list", { name: "Template files" });
     const detail = page.locator("main.tp-detail");

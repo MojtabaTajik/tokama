@@ -15,6 +15,7 @@ flow("lists the built-in and personal agents, and a file that does not load with
   writeFileSync(join(agents, "triager.md"), agentFile("Triager", "claud-code"));
 
   await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Agents" }).click();
   const rows = page.locator(".agents-list .agent-row");
   await rows.first().waitFor();
   expect(await rows.locator(".agent-row-name").allInnerTexts()).toEqual(["Architect", "Builder", "Helper", "Reviewer", "Scribe", "✕ brokentriager"]);
