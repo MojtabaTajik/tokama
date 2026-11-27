@@ -15,7 +15,6 @@ import { workflowName } from "./usage-model.js";
 import { Button } from "../ui/Button.js";
 import { AgentChip } from "../ui/agent.js";
 import { Placeholder } from "../ui/EmptyState.js";
-import { markOf } from "../ui/status.js";
 
 const TEXT = {
   panel: "Machine",
@@ -260,9 +259,6 @@ function ItemRows({ group, item, setup, cpu, onSelectItem }: { readonly group: G
       <tr className="mc-item">
         <td colSpan={3}>
           <span className="mc-item-title">
-            <span className="mc-live" aria-hidden="true">
-              {markOf("running").symbol}
-            </span>
             {item === undefined ? (
               <span>{title}</span>
             ) : (

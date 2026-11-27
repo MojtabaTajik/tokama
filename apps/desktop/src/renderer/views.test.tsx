@@ -70,7 +70,7 @@ describe("pipeline list", () => {
 
   it("gives a needs-you row one amber line with the question, and no other row", async () => {
     await mount();
-    expect($$(".pl-ask").map((el) => el.textContent)).toEqual(["⏸ Send the redacted findings summary to Architect on Claude Code?"]);
+    expect($$(".pl-ask").map((el) => el.textContent)).toEqual(["Send the redacted findings summary to Architect on Claude Code?"]);
     expect(row("Orders API returns 500 after deploy").contains($(".pl-ask"))).toBe(true);
   });
 

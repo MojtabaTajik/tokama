@@ -55,6 +55,11 @@
   margin-right: var(--space-4);
 }
 
+/* A running item's time is one piece: the line may wrap before it, never inside "14 m 02 s". */
+.drawer-time {
+  white-space: nowrap;
+}
+
 .drawer-close {
   margin-left: auto;
 }

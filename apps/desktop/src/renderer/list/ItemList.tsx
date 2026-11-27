@@ -18,7 +18,6 @@ import type { AgentTarget } from "../settings/describe.js";
 import { FinishSplit } from "./FinishSplit.js";
 import { useFocusFollow } from "./useFocusFollow.js";
 import { Button } from "../ui/Button.js";
-import { markOf } from "../ui/status.js";
 import { AgentName } from "../ui/agent.js";
 import { Facts } from "../ui/Facts.js";
 import { factsOf } from "../../shared/item-facts.js";
@@ -154,7 +153,7 @@ function Row({ item, setup, now, selected, onSelect, onFinish, onDiscard, onOpen
               </>
             )}
           </span>
-          {ask !== undefined && <span className="pl-ask ellipsis">{markOf("needs_you").symbol} {ask}</span>}
+          {ask !== undefined && <span className="pl-ask ellipsis">{ask}</span>}
         </span>
         {finished !== undefined ? (
           // A finished row says how it ended where the steps were.

@@ -245,11 +245,6 @@
   gap: var(--space-6);
 }
 
-.mc-live {
-  font-size: 10px;
-  color: var(--live);
-}
-
 .mc-child {
   padding-left: var(--space-22);
 }

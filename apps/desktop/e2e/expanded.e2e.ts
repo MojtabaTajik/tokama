@@ -187,3 +187,23 @@ flow("reads a plan in the reader from Read the plan and from Show full plan: Esc
   await full.locator(".ex-decision").waitFor({ state: "detached" });
   expect(await readerText()).toContain("Release the reservation in OrderService.cancel");
 });
+
+flow("shows a running item's header in the full view: the agent's badge, the state line in words and the step track", async ({ page, resize, screenshot }) => {
+  await resize(1440, 900);
+  await openRow(page, "Paginate the orders list");
+  await drawer(page).getByRole("button", { name: "Open full view" }).click();
+  const full = page.locator(".expanded");
+  await full.locator(".activity .ag-badge").waitFor();
+  // The badge is the header's only running mark; the state line says it in words, with the time in one piece.
+  expect(await full.locator("[data-breathe='true']").count()).toBe(1);
+  await expect.poll(() => full.locator(".drawer-state").innerText()).toMatch(/^running · Build, step 2 of \d · \d+ m \d\d s$/);
+  expect(await full.locator(".drawer-state .mark").count()).toBe(0);
+  expect(
+    await full.locator(".drawer-state .drawer-time").evaluate((el) => {
+      const range = document.createRange();
+      range.selectNodeContents(el.lastChild!);
+      return range.getClientRects().length;
+    }),
+  ).toBe(1);
+  await screenshot("37-expanded-running-header");
+});

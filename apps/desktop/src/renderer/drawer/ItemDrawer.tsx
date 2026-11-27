@@ -528,7 +528,7 @@ function StateLine({ item }: { readonly item: ItemRecord }) {
         </>
       )}
       {position && <span className="drawer-position"> · {position}</span>}
-      {working && <span className="drawer-position mono"> · {timeOf(item, now).text}</span>}
+      {working && <span className="drawer-position drawer-time mono"> · {timeOf(item, now).text}</span>}
       {outcome && <span className="drawer-position mono"> · {outcome}</span>}
     </p>
   );

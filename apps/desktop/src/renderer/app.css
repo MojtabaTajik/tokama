@@ -992,6 +992,21 @@
     grid-area: main;
   }
 
+  /* Line two wraps, so the step's place is never cut: the parts that do not fit go to a second line. */
+  .pl-meta {
+    flex-wrap: wrap;
+    overflow: visible;
+    gap: 0 var(--space-6);
+  }
+
+  .pl-workflow,
+  .pl-repos,
+  .pl-where {
+    min-width: 0;
+    max-width: 100%;
+    flex: 0 1 auto;
+  }
+
   .pl-finish,
   .pl-facts {
     grid-area: pipe;

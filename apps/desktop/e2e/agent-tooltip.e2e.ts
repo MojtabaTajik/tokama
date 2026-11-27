@@ -187,6 +187,22 @@ flow(
       expect(overlap((await label.boundingBox())!, data)).toBe(false);
       expect(await step.locator(":scope > span").last().innerText()).toMatch(/^· (local|cloud)/);
     }
+    // The header at the drawer's minimum width: the running time is one line, "quiet for" is in view with the
+    // action giving way before it, and nothing scrolls the drawer sideways.
+    const time = panel.locator(".drawer-state .drawer-time");
+    await time.waitFor();
+    // The duration's own text ("14 m 02 s") sits on one line: one line box in its range.
+    expect(await time.evaluate((el) => {
+      const range = document.createRange();
+      range.selectNodeContents(el.lastChild!);
+      return range.getClientRects().length;
+    }), "the running time is on one line").toBe(1);
+    const quiet = panel.locator(".activity-quiet");
+    await quiet.waitFor();
+    const drawerBox = (await panel.boundingBox())!;
+    const quietBox = (await quiet.boundingBox())!;
+    expect(quietBox.x + quietBox.width, "the quiet note is inside the drawer").toBeLessThanOrEqual(drawerBox.x + drawerBox.width);
+    expect(await panel.evaluate((el) => el.scrollWidth <= el.clientWidth), "the drawer does not scroll sideways").toBe(true);
     await screenshot("16-agent-drawer-narrow");
     // The dotted underline still marks the target, and the tooltip still opens.
     const first = steps.first().locator(".al-button");
@@ -219,6 +235,10 @@ flow(
         const part = await row.locator(other).first().boundingBox();
         if (part !== null) expect(overlap(box, part), `the badge does not overlap ${other}`).toBe(false);
       }
+    }
+    // Line two wraps in the narrow list: the step's place is never cut.
+    for (const where of await page.locator(".pl-where").all()) {
+      expect(await where.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), `step text is whole: ${await where.innerText()}`).toBe(true);
     }
     await screenshot("17-agent-list-narrow");
     // The badge may sit below the fold: scroll it into view with the pointer out of the list, so

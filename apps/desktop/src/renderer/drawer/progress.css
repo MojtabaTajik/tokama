@@ -65,12 +65,13 @@
   white-space: normal;
 }
 
-/* One line that never wraps: who and the time stay whole, the action gives way in its middle. */
+/* Who, the time and "quiet for" stay whole; the action gives way first, in its middle. Only when they alone
+   do not fit (the narrowest drawer) the rest goes to a second line, so nothing is hidden and nothing scrolls. */
 .activity {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   min-width: 0;
-  margin: 0;
   font-size: var(--text-md);
   color: var(--muted);
   white-space: nowrap;
@@ -98,8 +99,12 @@
   padding: 0 var(--space-6);
 }
 
+/* The action gives way first, down to nothing, so the time and "quiet for" stay with their separators. */
 .activity-head {
-  min-width: 2ch;
+  /* A small basis, so the line wraps only when the fixed parts do not fit; it then takes what is left. */
+  flex: 1 1 8ch;
+  max-width: max-content;
+  min-width: 0;
   overflow: hidden;
   color: var(--text-2);
   text-overflow: ellipsis;
@@ -125,10 +130,7 @@
 
 /* Quiet is grey words, never a warning colour: a long test run sends nothing while it works. */
 .activity-quiet {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex: none;
   color: var(--muted);
 }
 
