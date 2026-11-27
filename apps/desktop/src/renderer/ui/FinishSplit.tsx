@@ -1,35 +1,48 @@
-// The split button on a Done row: the main part merges into the base branch, ▾ opens a menu with
-// all three ways to finish. Discard… opens the item with its question; nothing is thrown away from
-// the list. Shown while the row is hovered or has focus; a sibling of the row's own button.
-import type { FinishAction, ItemRecord, Setup } from "@tokama/core";
+// The split button that finishes a done item's work: the main part merges into the base branch (or
+// says what to do after a refusal), ▾ opens a menu with all three ways to finish. Discard… only
+// asks; nothing is thrown away from the button. `row` is the small button of a list row, shown
+// while the row is hovered or has focus, a sibling of the row's own button; `filled` is the item's
+// one Finish button, always visible.
+import type { FinishAction } from "@tokama/core";
 import { type FocusEvent, type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
-import { baseBranchOf, finishActions, prUnavailable } from "../drawer/finish-view.js";
-import { Button } from "../ui/Button.js";
+import { Button } from "./Button.js";
 
 const TEXT = {
-  more: (title: string) => `More ways to finish ${title}`,
   merge: "local merge, then clean up",
   pr: "push and open with gh",
   openPr: "Open PR",
   discard: "Discard…",
 } as const;
 
+/** What a pick sends: a way to finish, or the engineer saying they made the listed git changes. */
+export type FinishPick = FinishAction | "accept_git_changes";
+
 export interface FinishSplitProps {
-  readonly item: ItemRecord;
-  readonly setup: Setup | undefined;
-  readonly onFinish: (itemId: string, action: FinishAction) => void | Promise<void>;
-  /** Opens the item with its Discard question. */
-  readonly onDiscard: (itemId: string) => void;
+  readonly variant: "row" | "filled";
+  /** The base branch: "main". */
+  readonly base: string;
+  /** Why Open PR is off; undefined when it can run. */
+  readonly prOff: string | undefined;
+  /** For screen readers: what the arrow opens. */
+  readonly moreLabel: string;
+  /** What the main part says and does when it is not Merge: a retry, or taking the git changes. */
+  readonly main?: { readonly label: string; readonly action: FinishPick; readonly disabled?: boolean | undefined } | undefined;
+  readonly disabled?: boolean | undefined;
+  /** Runs a pick; the split waits for its promise before it can be used again (Discard… only asks, so it does not wait). */
+  readonly onPick: (pick: FinishPick) => void | Promise<void>;
+  /** A pick goes ahead, before it runs; `from` is the arrow button, for moving focus to where the split goes away. */
+  readonly onPicked?: ((from: HTMLElement | null) => void) | undefined;
 }
 
-export function FinishSplit({ item, setup, onFinish, onDiscard }: FinishSplitProps) {
+export function FinishSplit({ variant, base, prOff, moreLabel, main, disabled = false, onPick, onPicked }: FinishSplitProps) {
   const [open, setOpen] = useState(false);
   // A command on its way: the buttons wait for its reply, so a double click sends one.
   const [sending, setSending] = useState(false);
   const toggle = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const menuId = useId();
-  const actions = finishActions(item);
+  const off = disabled || sending;
+  const mainPick = main ?? { label: `Merge into ${base}`, action: "merge" as const, disabled: false };
 
   // A click anywhere else closes the menu.
   useEffect(() => {
@@ -43,20 +56,16 @@ export function FinishSplit({ item, setup, onFinish, onDiscard }: FinishSplitPro
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  if (!actions.includes("merge")) return null;
-  const base = baseBranchOf(item, setup);
-  const off = prUnavailable(item, setup);
   const close = () => {
     setOpen(false);
     toggle.current?.focus();
   };
-  const pick = (action: FinishAction) => {
+  const pick = (action: FinishPick) => {
     setOpen(false);
-    // The split goes once the action starts: focus stays on the row.
-    (toggle.current?.closest(".pl-row-wrap")?.querySelector(".pl-row") as HTMLElement | null)?.focus();
-    if (action === "discard") return onDiscard(item.id);
+    onPicked?.(toggle.current);
+    if (action === "discard") return void onPick(action);
     setSending(true);
-    void Promise.resolve(onFinish(item.id, action)).finally(() => setSending(false));
+    void Promise.resolve(onPick(action)).finally(() => setSending(false));
   };
   // Focus that leaves the split closes the menu.
   const onBlur = (event: FocusEvent<HTMLDivElement>) => {
@@ -79,19 +88,19 @@ export function FinishSplit({ item, setup, onFinish, onDiscard }: FinishSplitPro
   };
 
   return (
-    <div className="finish-split" data-open={open || undefined} onBlur={onBlur}>
-      <Button variant="plain" className="finish-split-main" disabled={sending} onClick={() => pick("merge")}>
-        Merge into {base}
+    <div className="finish-split" data-variant={variant} data-open={open || undefined} onBlur={onBlur}>
+      <Button variant="plain" className="finish-split-main" disabled={off || mainPick.disabled === true} onClick={() => pick(mainPick.action)}>
+        {mainPick.label}
       </Button>
       <Button
         variant="plain"
         className="finish-split-more"
         ref={toggle}
-        aria-label={TEXT.more(item.title)}
+        aria-label={moreLabel}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        disabled={sending}
+        disabled={off}
         onClick={() => setOpen((was) => !was)}
       >
         <span aria-hidden="true">▾</span>
@@ -103,9 +112,9 @@ export function FinishSplit({ item, setup, onFinish, onDiscard }: FinishSplitPro
             <span className="finish-menu-note">{TEXT.merge}</span>
           </Button>
           {/* Off, but still reachable by the arrow keys, so its reason is read out. */}
-          <Button variant="plain" role="menuitem" tabIndex={-1} aria-disabled={off !== undefined || undefined} onClick={() => off === undefined && pick("pull_request")}>
+          <Button variant="plain" role="menuitem" tabIndex={-1} aria-disabled={prOff !== undefined || undefined} onClick={() => prOff === undefined && pick("pull_request")}>
             <span className="finish-menu-title">{TEXT.openPr}</span>
-            <span className="finish-menu-note">{off ?? TEXT.pr}</span>
+            <span className="finish-menu-note">{prOff ?? TEXT.pr}</span>
           </Button>
           <Button variant="plain" role="menuitem" tabIndex={-1} className="danger" onClick={() => pick("discard")}>
             <span className="finish-menu-title">{TEXT.discard}</span>

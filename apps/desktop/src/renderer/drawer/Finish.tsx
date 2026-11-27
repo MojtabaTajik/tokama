@@ -1,15 +1,17 @@
-// The drawer's Finish section for a done item. Before a finish: the item branch and three rows
-// (Merge into the base branch, Open PR, Discard), each with what it does, its button, and in place
-// its refusal or why it is off; Discard asks in place first. After a finish: how the item ended.
+// The drawer's Finish section for a done item. Before a finish: the one Finish button (Merge into
+// the base branch, with Open PR and Discard… under its arrow), the item branch, and in place a
+// refusal or why Open PR is off; Discard asks in place first. After a finish: how the item ended.
 // Each action is a change outside the worktree that the engine runs on this click; its result
 // comes back as item updates. Engine and repo text (paths, branches, URLs, git's words) is text only.
 import type { FinishAction, ItemRecord, Setup } from "@tokama/core";
-import { type ReactNode, useEffect, useRef, useState } from "react";
-import { finishView, type FinishRow, type Rich } from "./finish-view.js";
+import { useEffect, useRef, useState } from "react";
+import { baseBranchOf, finishView, type FinishRow, prUnavailable, type Rich } from "./finish-view.js";
 import { Button } from "../ui/Button.js";
+import { FinishSplit } from "../ui/FinishSplit.js";
 import { StatusMark } from "../ui/status.js";
 
 const TEXT = {
+  more: (title: string) => `More ways to finish ${title}`,
   finish: "Finish",
   checkAgain: "Check again",
   removeWorktree: "Remove worktree",
@@ -38,6 +40,8 @@ export interface FinishProps {
   readonly onAcceptChanges?: () => void;
   /** Opens the Discard question (Discard… from the list); each new value asks again. */
   readonly askDiscard?: number | undefined;
+  /** The full view draws the Finish button in its header (`FinishButton`): the section leaves it out. */
+  readonly buttonElsewhere?: boolean | undefined;
 }
 
 /** Text with code parts (branches, commits) in mono; `codeClass` styles the code parts. */
@@ -57,7 +61,7 @@ export function Text({ parts, codeClass = "mono" }: { readonly parts: Rich; read
   );
 }
 
-export function Finish({ item, setup, busy, onFinish, onCheckAgain, onAcceptChanges, askDiscard }: FinishProps) {
+export function Finish({ item, setup, busy, onFinish, onCheckAgain, onAcceptChanges, askDiscard, buttonElsewhere }: FinishProps) {
   const [confirming, setConfirming] = useState(askDiscard !== undefined);
   const keep = useRef<HTMLButtonElement>(null);
   const view = finishView(item, setup);
@@ -144,104 +148,99 @@ export function Finish({ item, setup, busy, onFinish, onCheckAgain, onAcceptChan
     );
   }
 
+  const pr = view.rows.find((row) => row.action === "pull_request");
   return (
     <section className="finish" aria-label={TEXT.finish}>
-      <p className="finish-head">
-        <span className="finish-label">{TEXT.finish}</span>
-        <code className="mono">{view.branch}</code>
-        {view.ahead !== undefined && <span> · {view.ahead}</span>}
-      </p>
+      <div className="finish-bar">
+        {buttonElsewhere !== true && <FinishButton item={item} setup={setup} busy={busy} onFinish={onFinish} onAcceptChanges={onAcceptChanges} onAskDiscard={() => setConfirming(true)} />}
+        <p className="finish-head">
+          <span className="finish-label">{TEXT.finish}</span>
+          <code className="mono">{view.branch}</code>
+          {view.ahead !== undefined && <span> · {view.ahead}</span>}
+        </p>
+      </div>
       {view.running !== undefined && (
         <p className="finish-running" role="status">
           <StatusMark status="running" />{" "}
           {view.running}
         </p>
       )}
-      {view.rows.map((row) => (
-        <Row key={row.action} row={row} busy={busy} onFinish={onFinish} onDiscard={() => setConfirming(true)} onCheckAgain={onCheckAgain} onAcceptChanges={onAcceptChanges}>
-          {row.action === "discard" && confirm}
-        </Row>
-      ))}
+      {pr?.off !== undefined && (
+        <p className="finish-off">
+          <Text parts={pr.off.status} />
+          {pr.off.recheck && onCheckAgain !== undefined && (
+            <Button variant="link" onClick={onCheckAgain}>
+              {TEXT.checkAgain}
+            </Button>
+          )}
+        </p>
+      )}
+      {view.rows.map((row) => row.notice !== undefined && <Notice key={row.action} row={row} notice={row.notice} />)}
+      {confirm}
     </section>
   );
 }
 
-interface RowProps {
-  readonly row: FinishRow;
-  readonly busy: boolean;
-  readonly onFinish: (action: FinishAction) => void;
-  readonly onDiscard: () => void;
-  readonly onCheckAgain: (() => void) | undefined;
-  readonly onAcceptChanges: (() => void) | undefined;
-  readonly children?: ReactNode;
+/**
+ * The one Finish button of a done item that still has a worktree: Merge (or what a refusal asks
+ * for instead) with ▾ for Open PR and Discard…; just Discard… when there is no commit to merge.
+ * Nothing for an item that is finished already.
+ */
+export function FinishButton({ item, setup, busy, onFinish, onAcceptChanges, onAskDiscard }: Pick<FinishProps, "item" | "setup" | "busy" | "onFinish"> & { readonly onAcceptChanges: (() => void) | undefined; readonly onAskDiscard: () => void }) {
+  const view = finishView(item, setup);
+  if (view?.kind !== "offer") return null;
+  const waiting = busy || view.running !== undefined;
+  if (view.main.action === "discard") {
+    return (
+      <Button variant="danger" disabled={waiting} onClick={onAskDiscard}>
+        {view.main.label}
+      </Button>
+    );
+  }
+  return (
+    <FinishSplit
+      variant="filled"
+      base={baseBranchOf(item, setup)}
+      prOff={prUnavailable(item, setup)}
+      moreLabel={TEXT.more(item.title)}
+      main={view.main}
+      disabled={waiting}
+      onPick={(pick) => (pick === "discard" ? onAskDiscard() : pick === "accept_git_changes" ? onAcceptChanges?.() : onFinish(pick))}
+    />
+  );
 }
 
-function Row({ row, busy, onFinish, onDiscard, onCheckAgain, onAcceptChanges, children }: RowProps) {
-  const { button } = row;
-  const variant = button.tone === "primary" ? "primary" : button.tone === "danger" ? "danger" : "secondary";
+/** A refusal or failure of a way to finish, said in place with the engine's words. */
+function Notice({ row, notice }: { readonly row: FinishRow; readonly notice: NonNullable<FinishRow["notice"]> }) {
   return (
-    <div className="finish-row" data-action={row.action}>
-      <div className="finish-row-main">
-        <div className="finish-row-body">
-          <p className="finish-title">{row.title}</p>
-          <p className="finish-text">
-            <Text parts={row.text} />
-          </p>
-          {row.off !== undefined && (
-            <p className="finish-off">
-              <Text parts={row.off.status} />
-              {row.off.recheck && onCheckAgain !== undefined && (
-                <Button variant="link" onClick={onCheckAgain}>
-                  {TEXT.checkAgain}
-                </Button>
+    <div className="finish-notice" role="status">
+      <p className="finish-notice-title">
+        <span className="mark" data-tone="warn" aria-hidden="true">
+          !
+        </span>{" "}
+        {notice.headline}
+      </p>
+      <p className="finish-notice-body">{notice.body}</p>
+      {notice.changes !== undefined && notice.changes.length > 0 && (
+        <ul className="finish-changes" aria-label={TEXT.changes}>
+          {notice.changes.map((change, index) => (
+            <li key={index}>
+              <span className="finish-change-what mono">{change.what}</span>
+              {change.before !== undefined && (
+                <span className="finish-change-value">
+                  {TEXT.before} <code className="mono">{change.before}</code>
+                </span>
               )}
-            </p>
-          )}
-          {row.notice !== undefined && (
-            <div className="finish-notice" role="status">
-              <p className="finish-notice-title">
-                <span className="mark" data-tone="warn" aria-hidden="true">
-                  !
-                </span>{" "}
-                {row.notice.headline}
-              </p>
-              <p className="finish-notice-body">{row.notice.body}</p>
-              {row.notice.changes !== undefined && row.notice.changes.length > 0 && (
-                <ul className="finish-changes" aria-label={TEXT.changes}>
-                  {row.notice.changes.map((change, index) => (
-                    <li key={index}>
-                      <span className="finish-change-what mono">{change.what}</span>
-                      {change.before !== undefined && (
-                        <span className="finish-change-value">
-                          {TEXT.before} <code className="mono">{change.before}</code>
-                        </span>
-                      )}
-                      {change.after !== undefined && (
-                        <span className="finish-change-value">
-                          {TEXT.after} <code className="mono">{change.after}</code>
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
+              {change.after !== undefined && (
+                <span className="finish-change-value">
+                  {TEXT.after} <code className="mono">{change.after}</code>
+                </span>
               )}
-              {row.button.action === "accept_git_changes" && <p className="finish-notice-body">{TEXT.notYou}</p>}
-            </div>
-          )}
-        </div>
-        <Button
-          variant={variant}
-          disabled={busy || button.disabled === true}
-          onClick={() => {
-            if (button.action === "accept_git_changes") onAcceptChanges?.();
-            else if (button.action === "discard") onDiscard();
-            else onFinish(button.action);
-          }}
-        >
-          {button.label}
-        </Button>
-      </div>
-      {children}
+            </li>
+          ))}
+        </ul>
+      )}
+      {row.button.action === "accept_git_changes" && <p className="finish-notice-body">{TEXT.notYou}</p>}
     </div>
   );
 }

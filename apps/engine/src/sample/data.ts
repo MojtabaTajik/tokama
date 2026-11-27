@@ -200,15 +200,26 @@ export const sampleSetup = {
 
 type StepState = "pending" | "running" | "needs_you" | "passed" | "failed";
 
+/** What ends each step of a sample template, as the engine records it on an item's steps (the template summary does not carry it). */
+const DONE_WHEN: Readonly<Record<string, readonly string[]>> = {
+  [templates.emergency.id]: ["agent finishes", "agent finishes", "agent finishes", "you approve"],
+  [templates.slowQuery.id]: ["agent finishes", "agent finishes", "you approve"],
+  [templates.planAndBuild.id]: ["you approve", "agent finishes", "checks pass", "reviewer approves"],
+  [templates.quickFix.id]: ["agent finishes", "checks pass"],
+  [templates.quickChange.id]: ["you approve"],
+  [templates.reviewOnly.id]: ["reviewer approves"],
+};
+
 /** The template's steps with these states and detail lines (a passed step without one says "passed"). */
-function steps(template: { steps: readonly object[] }, states: readonly StepState[], details: Record<number, string> = {}) {
+function steps(template: { id: string; steps: readonly object[] }, states: readonly StepState[], details: Record<number, string> = {}) {
   return template.steps.map((templateStep: { checks?: unknown }, index) => {
     // Item steps carry no checks; the template summary does.
     const step = { ...templateStep };
     delete step.checks;
     const state = states[index] ?? "pending";
     const detail = details[index] ?? (state === "passed" ? "passed" : undefined);
-    return { ...step, state, ...(detail ? { detail } : {}) };
+    const doneWhen = DONE_WHEN[template.id]?.[index];
+    return { ...step, ...(doneWhen !== undefined && { doneWhen }), state, ...(detail ? { detail } : {}) };
   });
 }
 

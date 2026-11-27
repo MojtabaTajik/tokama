@@ -108,6 +108,8 @@ describe("ItemDrawer sections", () => {
     expect(text(".drawer-kind")).toBe("◎ Investigation · Emergency investigator · local + cloud");
     expect(text(".drawer h2")).toBe("Orders API returns 500 after deploy");
     expect(text(".drawer-state")).toBe("⏸needs you · step 4 of 4 · Propose a fix");
+    // "step 4 of 4" wraps as one piece.
+    expect(text(".drawer-position .nowrap")).toBe("step 4 of 4");
     expect($(".drawer-state .mark")?.getAttribute("aria-hidden")).toBe("true");
     expect($(".drawer")?.getAttribute("aria-labelledby")).toBe($(".drawer h2")?.id);
   });
@@ -390,25 +392,28 @@ describe("ItemDrawer change to approve", () => {
     expect(tab("Steps")?.getAttribute("aria-selected")).toBe("true");
   });
 
-  it("after the decision: the step running again with your note, then the commit", async () => {
+  it("after the decision: the step running again with your note, then the result card in place of a commit note", async () => {
     const again = { ...waiting, state: "running", decision: undefined, steps: [{ ...waiting.steps[0]!, state: "running", changesNote: "Keep the old name.", runs: 2, attempts: [{ attempt: 1, result: "passed", checks: [] }, { attempt: 2, checks: [] }] }] } as unknown as ItemRecord;
     const { bridge, push } = withDiff({ ok: true, data: diff }, [again]);
     await renderDrawer(bridge, again.id);
     expect(text(".after")).toBe("●Local builder is making your changes · run 2 of 3Your note: \"Keep the old name.\"");
     await push({ ...again, state: "done", steps: [{ ...again.steps[0]!, state: "passed" }], outcome: { kind: "done", commits: [{ repoId: "orders-api", commit: "3f9c2e1d4e5f60718293a4b5c6d7e8f901234567", branch: "tokama/abc" }] } } as unknown as ItemRecord);
-    expect(text(".after")).toBe("✓Committed · 3f9c2e1Paginate the orders list · on tokama/abc · Done");
-    // The second line sits in a body beside the mark, as in the Merged card.
-    expect($(".after > .mark + .after-body > .after-head + .after-text")).not.toBeNull();
+    // The note that said "Committed" is gone: the card says what the work produced, the commit is in the state line.
+    expect($(".after")).toBeNull();
+    expect($(".result-card")).not.toBeNull();
+    expect(document.body.textContent).not.toContain("Committed");
+    expect(text(".drawer-state")).toContain("commit 3f9c2e1 on tokama/abc");
   });
 
-  it("after a merge shows the Merged card alone: the Committed card is gone with its branch", async () => {
+  it("after a merge shows the card and the Merged card: the branch is gone, what the work produced is not", async () => {
     const commit = { repoId: "orders-api", commit: "3f9c2e1d4e5f60718293a4b5c6d7e8f901234567", branch: "tokama/abc" };
     const done = { ...task, state: "done", outcome: { kind: "done", commits: [commit] }, finish: undefined } as unknown as ItemRecord;
     const { bridge, push } = fakeBridge([done]);
     await renderDrawer(bridge, done.id);
-    expect(text(".after")).toContain("Committed · 3f9c2e1");
+    expect($$(".result-card")).toHaveLength(1);
     await push({ ...done, finish: { worktreeRemoved: true, at: Date.UTC(2026, 10, 25, 14, 58), merged: { baseBranch: "main", commit: commit.commit } } } as unknown as ItemRecord);
     expect($(".after")).toBeNull();
+    expect($$(".result-card")).toHaveLength(1);
     expect($$(".finish-ended")).toHaveLength(1);
     expect(text(".finish-ended-body")).toMatch(/^merged: Merged into main · 3f9c2e1 · \d\d:\d\dWorktree and branch removed$/);
   });
@@ -917,7 +922,12 @@ describe("item drawer with real-mode records", () => {
 describe("item drawer: Finish", () => {
   const button = (label: string) => $$(".finish .btn, .finish-ended .btn-link").find((el) => el.textContent === label) as HTMLButtonElement;
   const key = (name: string) => act(async () => void document.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true })));
-  const rows = () => $$(".finish-row").map((el) => [el.querySelector(".finish-title")?.textContent, el.querySelector(".btn")?.textContent, (el.querySelector(".btn") as HTMLButtonElement).disabled]);
+  const openMenu = () => act(async () => ($(".finish-split-more") as HTMLButtonElement).click());
+  const menuItem = (label: string) => $$("[role=menuitem]").find((el) => el.textContent?.startsWith(label)) as HTMLButtonElement;
+  const discardFromMenu = async () => {
+    await openMenu();
+    await act(async () => menuItem("Discard…").click());
+  };
 
   it("shows no Finish section for items that are not done or have no worktree", async () => {
     await renderDrawer(fakeBridge([committed]).bridge, committed.id);
@@ -926,21 +936,25 @@ describe("item drawer: Finish", () => {
     expect($(".finish")).toBeNull();
   });
 
-  it("offers the three rows under the item branch; Merge and Open PR send finish_item, with the push target shown first", async () => {
+  it("offers one filled Finish button beside the item branch; Merge, Open PR and Discard… are its menu, and Merge and Open PR send finish_item", async () => {
     const fake = fakeBridge([finishable]);
     await renderDrawer(fake.bridge, finishable.id);
     expect(text(".finish-head")).toBe("Finishtokama/0b9f3c1e · 1 commit ahead of main");
-    expect(rows()).toEqual([
-      ["Merge into main", "Merge into main", false],
-      ["Open PR", "Open PR", false],
-      ["Discard", "Discard…", false],
-    ]);
-    expect($$(".finish-row .finish-text")[1]?.textContent).toContain("to github.com/northwind/orders-api and opens a pull request with gh");
+    expect($$(".finish-split")).toHaveLength(1);
+    expect($(".finish-split")?.getAttribute("data-variant")).toBe("filled");
+    expect($(".finish-row")).toBeNull();
+    expect(text(".finish-split-main")).toBe("Merge into main");
+    expect($(".finish-split-more")?.getAttribute("aria-label")).toBe(`More ways to finish ${finishable.title}`);
+    await openMenu();
+    expect($$("[role=menuitem]").map((el) => el.textContent)).toEqual(["Merge into mainlocal merge, then clean up", "Open PRpush and open with gh", "Discard…"]);
+    await act(async () => menuItem("Open PR").click());
+    expect(fake.command).toHaveBeenCalledWith({ type: "finish_item", itemId: finishable.id, action: "pull_request" });
     await act(async () => button("Merge into main").click());
     expect(fake.command).toHaveBeenCalledWith({ type: "finish_item", itemId: finishable.id, action: "merge" });
     await fake.push({ ...finishable, finish: { ...finishable.finish!, running: "merge" } });
     expect(text(".finish-running")).toContain("Merging into main");
-    expect(rows().every(([, , disabled]) => disabled)).toBe(true);
+    expect(($(".finish-split-main") as HTMLButtonElement).disabled).toBe(true);
+    expect(($(".finish-split-more") as HTMLButtonElement).disabled).toBe(true);
     await fake.push({ ...finishable, finish: { worktreeRemoved: true, merged: { baseBranch: "main", commit: "abcdef1234567890abcdef1234567890abcdef12" } } });
     expect($(".finish")).toBeNull();
     expect(text(".finish-ended-title")).toBe("merged: Merged into main · abcdef1");
@@ -960,17 +974,17 @@ describe("item drawer: Finish", () => {
   it("asks before Discard, in place; Keep and Escape cancel without closing the drawer, Discard sends it", async () => {
     const fake = fakeBridge([finishable]);
     const onClose = await renderDrawer(fake.bridge, finishable.id);
-    await act(async () => button("Discard…").click());
+    await discardFromMenu();
     expect(text(".finish-confirm-title")).toBe("Discard this work?");
     expect(text(".finish-confirm .finish-text")).toBe("Deletes the worktree and the branch tokama/0b9f3c1e with its 1 commit. The item and its log stay. This can't be undone.");
     expect(fake.command).not.toHaveBeenCalled();
     await key("Escape");
     expect($(".finish-confirm")).toBeNull();
     expect(onClose).not.toHaveBeenCalled();
-    await act(async () => button("Discard…").click());
+    await discardFromMenu();
     await act(async () => ($$(".finish-confirm .btn").find((el) => el.textContent === "Keep") as HTMLButtonElement).click());
     expect(fake.command).not.toHaveBeenCalled();
-    await act(async () => button("Discard…").click());
+    await discardFromMenu();
     await act(async () => ($$(".finish-confirm .btn").find((el) => el.textContent === "Discard") as HTMLButtonElement).click());
     expect(fake.command).toHaveBeenCalledWith({ type: "finish_item", itemId: finishable.id, action: "discard" });
   });
@@ -985,7 +999,9 @@ describe("item drawer: Finish", () => {
     const onCheckAgain = vi.fn();
     const loggedOut = { ...setup, health: { ...setup.health, gh: { installed: true, loggedIn: false } } } as Setup;
     await act(async () => root.render(<ItemDrawer bridge={fake.bridge} itemId={finishable.id} setup={loggedOut} onClose={vi.fn()} onCheckAgain={onCheckAgain} />));
-    expect(button("Open PR").disabled).toBe(true);
+    await openMenu();
+    expect(menuItem("Open PR").getAttribute("aria-disabled")).toBe("true");
+    expect(menuItem("Open PR").textContent).toBe("Open PRgh is installed but not logged in.");
     expect(text(".finish-off")).toBe("✕ logged out · run gh auth login in a terminalCheck again");
     await act(async () => ($(".finish-off .btn-link") as HTMLButtonElement).click());
     expect(onCheckAgain).toHaveBeenCalledTimes(1);
@@ -1085,7 +1101,8 @@ describe("Finish: review fixes", () => {
   it("the Discard question goes when an action starts, and does not come back once nothing is left to discard", async () => {
     const fake = fakeBridge([finishable]);
     await renderDrawer(fake.bridge, finishable.id);
-    await act(async () => ($$(".finish .btn").find((el) => el.textContent === "Discard…") as HTMLButtonElement).click());
+    await act(async () => ($(".finish-split-more") as HTMLButtonElement).click());
+    await act(async () => ($$("[role=menuitem]").find((el) => el.textContent === "Discard…") as HTMLButtonElement).click());
     expect($(".finish-confirm")).not.toBeNull();
     await fake.push({ ...finishable, finish: { ...finishable.finish!, running: "merge" } });
     expect($(".finish-confirm")).toBeNull();
@@ -1170,10 +1187,111 @@ describe("Finish: git config or hooks changed", () => {
     expect(text(".finish-notice-title")).toBe("! The repo's git config or hooks changed.");
     expect($$(".finish-changes li").map((el) => el.textContent)).toEqual(["setting core.sshcommandwas sshnow <b>touch pwned</b>; ssh", "hook pre-push addednow #!/bin/sh exit 0"]);
     expect($(".finish-changes b")).toBeNull();
-    const accept = $$(".finish-row .btn").find((el) => el.textContent === "I made this change") as HTMLButtonElement;
-    expect(accept.closest(".finish-row")?.getAttribute("data-action")).toBe("merge");
+    // Taking the changes is the Finish button itself until it is done; Open PR and Discard… stay in its menu.
+    const accept = $$(".finish .btn").find((el) => el.textContent === "I made this change") as HTMLButtonElement;
+    expect(accept.classList.contains("finish-split-main")).toBe(true);
     await act(async () => accept.click());
     expect(fake.command).toHaveBeenCalledWith({ type: "accept_git_changes", itemId: refused.id });
+  });
+});
+
+describe("item drawer: the result card of an ended item", () => {
+  const said = (over: Record<string, unknown> = {}) => ({ source: "headline", headline: "GET /orders/export now streams all orders of a date range as CSV.", points: [], morePoints: 0, bodyBytes: 90, ...over });
+  /** A finished task whose Plan step (agent Architect) wrote `said` in its only attempt. */
+  const withSaid = (words: unknown, over: Record<string, unknown> = {}) =>
+    ({
+      ...finishable,
+      steps: [{ ...finishable.steps[0]!, doneWhen: "agent finishes", attempts: [{ attempt: 1, result: "passed", checks: [], said: words }] }],
+      ...over,
+    }) as unknown as ItemRecord;
+  const rows = () => $$(".rc-row").map((row) => [row.querySelector("dt")?.textContent, row.querySelector("dd")?.textContent]);
+
+  it("replaces the Committed note: what was checked and what was sent out, grey, then the one Finish button", async () => {
+    await renderDrawer(fakeBridge([finishable]).bridge, finishable.id);
+    expect($(".after")).toBeNull();
+    expect($$(".result-card")).toHaveLength(1);
+    expect(rows()).toEqual([
+      ["Checked", "✓passed: 1 of 1 check passed, on attempt 2sh check.sh"],
+      ["Sent out", "↗sent out: Code and diffs to Claude Code"],
+    ]);
+    // Only an exception has a colour.
+    expect($$(".rc-mark").map((el) => el.getAttribute("data-tone"))).toEqual([null, null]);
+    expect($$(".finish-split")).toHaveLength(1);
+    expect($$(".finish .btn-primary, .result-card .btn-primary")).toHaveLength(0);
+  });
+
+  it("is on every ended item: failed and stopped say where they stopped, and the card shows after a merge", async () => {
+    const failedItem = withSaid(said({ headline: "I could not make the retry test pass." }), {
+      state: "failed",
+      outcome: undefined,
+      finish: undefined,
+      steps: [{ ...finishable.steps[0]!, state: "failed", doneWhen: "agent finishes", attempts: [{ attempt: 1, result: "failed", checks: [{ command: "pnpm test", passed: false, exitCode: 1 }], said: said({ headline: "I could not make the retry test pass." }) }] }],
+    });
+    await renderDrawer(fakeBridge([failedItem]).bridge, failedItem.id);
+    expect(text(".rc-headline")).toBe("✕failed: Stopped at Plan, step 1 of 1: pnpm test failed");
+    expect(text(".rc-agent-said")).toBe("Architect said: I could not make the retry test pass.");
+    expect(rows()[0]).toEqual(["Checked", "✕failed: 0 of 1 check passedpnpm test exit 1"]);
+    expect($(".rc-mark[data-tone=fail]")).not.toBeNull();
+    expect($(".finish")).toBeNull();
+    const stopped = { ...failedItem, state: "stopped" } as ItemRecord;
+    await renderDrawer(fakeBridge([stopped]).bridge, stopped.id);
+    expect(text(".rc-headline")).toContain("Stopped at Plan");
+  });
+
+  it("says the agent's headline with its points and a Read more that opens that step's output", async () => {
+    const item = withSaid(said({ points: ["Streams row by row.", "Not done: the column order."], bodyBytes: 2450 }));
+    await renderDrawer(fakeBridge([item]).bridge, item.id);
+    expect(text(".rc-who")).toBe("Architect says");
+    expect(text(".rc-headline")).toBe("GET /orders/export now streams all orders of a date range as CSV.");
+    expect($$(".rc-points li").map((el) => el.textContent)).toEqual(["Streams row by row.", "Not done: the column order."]);
+    await showTab("Steps");
+    await click(button("Read more · 2.4 KB →"));
+    expect($('[role="tab"][aria-selected="true"]')?.textContent).toBe("Output");
+    expect($(".sec-head[aria-expanded=true]")).not.toBeNull();
+  });
+
+  it("is one line when the output is the headline: no points, no Read more", async () => {
+    const item = withSaid(said());
+    await renderDrawer(fakeBridge([item]).bridge, item.id);
+    expect($(".rc-points")).toBeNull();
+    expect($$(".rc-action")).toHaveLength(0);
+  });
+
+  it("shows a must-read with its reading time and a button to the reader, and does not shorten it", async () => {
+    const item = withSaid(said({ headline: "Three ways to split the orders table by customer; I recommend a schema per customer.", bodyBytes: 3480, readMinutes: 6 }));
+    const onRead = vi.fn();
+    await act(async () => root.render(<ItemDrawer bridge={fakeBridge([item]).bridge} itemId={item.id} setup={setup} onClose={vi.fn()} onRead={onRead} />));
+    expect(text(".rc-who")).toBe("Architect saysread · 6 min");
+    expect(text(".rc-headline")).toBe("Three ways to split the orders table by customer; I recommend a schema per customer.");
+    expect(button("Read more · 3.4 KB →")).toBeUndefined();
+    await click(button("Read the write-up"));
+    expect(onRead).toHaveBeenCalledWith(0);
+  });
+
+  it("an agent with no headline shows the first lines the engine kept, and an old item asks for the first lines of its output", async () => {
+    const lines = withSaid(said({ source: "first_lines", headline: "I updated the tax helper.", points: ["All tests pass now."], bodyBytes: 310 }));
+    await renderDrawer(fakeBridge([lines]).bridge, lines.id);
+    expect(text(".rc-who")).toBe("First lines of Architect's output");
+    expect($$(".rc-lines span").map((el) => el.textContent)).toEqual(["I updated the tax helper.", "All tests pass now."]);
+    expect(button("Read more · 310 B →")).toBeDefined();
+
+    const fake = fakeBridge([finishable]);
+    const base = fake.query.getMockImplementation()!;
+    fake.query.mockImplementation(async (q: { type: string; itemId?: string; attempt?: number }) =>
+      q.type === "step_output" ? { ok: true as const, data: { attempt: q.attempt ?? 2, text: "x".repeat(1500), truncated: false, summary: { kind: "lines", format: "none", lines: ["Added GET /orders/export.", "Checked the date range."] } } } : base(q),
+    );
+    await renderDrawer(fake.bridge, finishable.id);
+    expect(text(".rc-who")).toBe("First lines of Architect's output");
+    expect($$(".rc-lines span").map((el) => el.textContent)).toEqual(["Added GET /orders/export.", "Checked the date range."]);
+    expect(button("Read more · 1.5 KB →")).toBeDefined();
+  });
+
+  it("shows agent text as text only", async () => {
+    const item = withSaid(said({ headline: "<img src=x onerror=alert(1)> done", points: ["<b>bold</b>"], bodyBytes: 900 }));
+    await renderDrawer(fakeBridge([item]).bridge, item.id);
+    expect($(".result-card img")).toBeNull();
+    expect($(".result-card b")).toBeNull();
+    expect(text(".rc-headline")).toBe("<img src=x onerror=alert(1)> done");
   });
 });
 
@@ -1231,6 +1349,26 @@ describe("ItemDrawer full view", () => {
   const selected = () => text('[role="tab"][aria-selected="true"]');
   const tab = (name: string) => $$('[role="tab"]').find((el) => el.textContent === name);
   const cells = (row: Element) => [...row.querySelectorAll('[role="cell"]')].map((cell) => cell.textContent).join("|");
+
+  it("puts the one Finish button in the header row beside the card, which has two columns when there is room; Discard… opens its question below", async () => {
+    const { bridge } = bridgeFor([finishable]);
+    await show(bridge, finishable.id, full());
+    expect($$(".finish-split")).toHaveLength(1);
+    expect($(".ex-header .finish-split")).not.toBeNull();
+    expect($(".finish .finish-split")).toBeNull();
+    expect($(".result-card")?.getAttribute("data-columns")).toBe("true");
+    await click($(".finish-split-more") ?? undefined);
+    await click($$("[role=menuitem]").find((el) => el.textContent === "Discard…"));
+    expect(text(".finish-confirm-title")).toBe("Discard this work?");
+    // Asking again after Keep opens it again.
+    await click($$(".finish-confirm .btn").find((el) => el.textContent === "Keep"));
+    expect($(".finish-confirm")).toBeNull();
+    await click($(".finish-split-more") ?? undefined);
+    await click($$("[role=menuitem]").find((el) => el.textContent === "Discard…"));
+    expect(text(".finish-confirm-title")).toBe("Discard this work?");
+    await show(bridge, finishable.id, full(vi.fn(), false));
+    expect($(".result-card")?.hasAttribute("data-columns")).toBe(false);
+  });
 
   it("has the drawer's tabs: Steps, Output, Checks and Log, and Diff while a decision carries a diff or an ended item changed a repo", async () => {
     const { bridge } = bridgeFor([task, change]);
@@ -1936,8 +2074,12 @@ describe("the Output tab folds per step", () => {
   it("asks for each step's output once, for the line and the document together", async () => {
     const { bridge, query } = withOutput([committed]);
     await renderDrawer(bridge, committed.id);
+    const asked = () => query.mock.calls.filter(([q]) => (q as { type: string }).type === "step_output").length;
+    // The line asked for the output (and the result card above for its first lines); opening the step asks for nothing more.
+    const before = asked();
+    expect(before).toBe(2);
     await click(stepLines()[0]);
-    expect(query.mock.calls.filter(([q]) => (q as { type: string }).type === "step_output")).toHaveLength(1);
+    expect(asked()).toBe(before);
   });
 
   it("keeps a change approval on Diff, and a running item on Steps", async () => {

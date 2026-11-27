@@ -49,6 +49,16 @@ describe("finishView: the offer", () => {
     expect(pr).toMatchObject({ notice: { headline: "Open PR did not finish.", body: "gh said no" }, button: { label: "Try again" } });
   });
 
+  it("has one main button: Merge, or what a refusal asks for instead; taking the git changes comes first, whichever way was refused; only Discard… without a commit", () => {
+    expect(offer(finishView(finishable, setup)).main).toMatchObject({ label: "Merge into main", action: "merge", tone: "primary" });
+    expect(offer(finishView(withFinish({ failed: { action: "merge", reason: "dirty_checkout", detail: "x" } }), setup)).main).toMatchObject({ label: "Try again", action: "merge" });
+    expect(offer(finishView(withFinish({ failed: { action: "merge", reason: "conflict", detail: "x" } }), setup)).main).toMatchObject({ label: "Open PR instead", action: "pull_request" });
+    // A refused Open PR leaves Merge as the button; its retry is Open PR in the menu.
+    expect(offer(finishView(withFinish({ failed: { action: "pull_request", detail: "gh said no" } }), setup)).main).toMatchObject({ label: "Merge into main", action: "merge" });
+    expect(offer(finishView(withFinish({ failed: { action: "pull_request", reason: "steering_changed", detail: "x" } }), setup)).main).toMatchObject({ label: "I made this change", action: "accept_git_changes" });
+    expect(offer(finishView({ ...finishable, outcome: { kind: "done" } }, setup)).main).toMatchObject({ label: "Discard…", action: "discard", tone: "danger" });
+  });
+
   it("turns Open PR off with the reason and the fix: gh missing, logged out, no origin, local only", () => {
     const pr = (item: ItemRecord, s: Setup) => offer(finishView(item, s)).rows[1]!;
     const missing = pr(finishable, withGh({ installed: false, loggedIn: false }));

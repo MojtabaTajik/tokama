@@ -56,6 +56,9 @@ export function checkedStepName(item: Pick<ItemRecord, "steps">, index: number):
 /** "4.2 s", "14 s", "1 m 52 s"; "–" when not known. */
 export const durationText = (ms: number | null): string => (ms === null ? "–" : formatDuration(ms, "fine"));
 
+/** "512 B", "1.9 KB": one decimal in KB, for the size of one output. */
+export const bytesText = (bytes: number): string => (bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`);
+
 /** "512 B", "96 KB", "212.4 MB". */
 export function sizeText(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

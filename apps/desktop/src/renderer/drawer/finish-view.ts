@@ -34,6 +34,12 @@ export type FinishView =
       readonly branch: string;
       /** "1 commit ahead of main", or undefined without a commit. */
       readonly ahead?: string;
+      /**
+       * The one Finish button: Merge, or what a refusal asks for instead (try again, open a PR,
+       * take the engineer's git changes); only Discard… for an item with no commit.
+       */
+      readonly main: FinishButton;
+      /** The ways to finish, each with its refusal or why it is off; the button and its menu are drawn from them. */
       readonly rows: readonly FinishRow[];
       /** The running action, e.g. "Merging into main". */
       readonly running?: string;
@@ -183,6 +189,8 @@ export function finishView(item: Pick<ItemRecord, "outcome" | "finish" | "repoId
     kind: "offer",
     branch,
     ...(committed && { ahead: `1 commit ahead of ${base}` }),
+    // Taking the git changes comes first, whichever way was refused; else the first way (Merge, or Discard… without a commit).
+    main: rows.find((row) => row.button.action === "accept_git_changes")?.button ?? rows[0]!.button,
     rows,
     ...(runningText !== undefined && { running: runningText }),
   };

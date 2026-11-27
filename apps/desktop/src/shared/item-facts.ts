@@ -2,7 +2,7 @@
 // failed item stopped and why. The list rows and kanban cards show the facts as parts, with a
 // symbol for what is not normal; the notifier says the same in words only. Type imports only: the
 // renderer and the main process both use this file.
-import type { ItemRecord } from "@tokama/core";
+import type { AttemptSummary, ItemRecord, StepRecord } from "@tokama/core";
 
 type FactItem = Pick<ItemRecord, "kind" | "steps" | "outcome">;
 
@@ -26,21 +26,21 @@ export interface Checks {
   readonly total: number;
 }
 
+/** For each step, its latest attempt that ran checks, with the step. An earlier attempt of a step is not listed. */
+export function checkAttempts(item: Pick<ItemRecord, "steps">): { readonly step: StepRecord; readonly attempt: AttemptSummary }[] {
+  return item.steps.flatMap((step) => {
+    const latest = step.attempts?.findLast((attempt) => attempt.checks.length > 0);
+    return latest === undefined ? [] : [{ step, attempt: latest }];
+  });
+}
+
 /**
- * The checks of an item: for each step the latest attempt that ran checks, added up. An earlier
- * attempt of a step is not counted again. Undefined when no step recorded a check, as for an item
- * from before checks were recorded.
+ * The checks of an item: the checks of each step's latest attempt that ran any, added up.
+ * Undefined when no step recorded a check, as for an item from before checks were recorded.
  */
 export function checksOf(item: Pick<ItemRecord, "steps">): Checks | undefined {
-  let passed = 0;
-  let total = 0;
-  for (const step of item.steps) {
-    const latest = step.attempts?.findLast((attempt) => attempt.checks.length > 0);
-    if (latest === undefined) continue;
-    total += latest.checks.length;
-    passed += latest.checks.filter((check) => check.passed).length;
-  }
-  return total === 0 ? undefined : { passed, total };
+  const latest = checkAttempts(item).flatMap(({ attempt }) => attempt.checks);
+  return latest.length === 0 ? undefined : { passed: latest.filter((check) => check.passed).length, total: latest.length };
 }
 
 const checksText = (checks: Checks): string => `checks ${checks.passed}/${checks.total}`;
