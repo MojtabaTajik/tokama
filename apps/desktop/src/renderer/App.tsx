@@ -141,7 +141,8 @@ export function App({ bridge, retryDelayMs = RETRY_DELAY_MS, now: fixedNow, init
   const closeReader = () => {
     const reader = expanded?.reader;
     if (reader?.from === "page") {
-      setReturnToRead(expanded?.itemId);
+      // An item answered in the reader has no row to return to; a later question of it must not take focus.
+      setReturnToRead(items.find((item) => item.id === expanded?.itemId)?.state === "needs_you" ? expanded?.itemId : undefined);
       setSelectedItemId(undefined);
     }
     setExpanded(undefined);

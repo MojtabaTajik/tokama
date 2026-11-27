@@ -159,9 +159,11 @@ function Row({ row, index, bridge, selected, onSelect, onReviewDiff, onRead, ret
   const readShown = preview !== "";
   useEffect(() => {
     if (!returnFocus || !readShown) return;
-    readButton.current?.focus();
+    // Free focus, or the item's own title that the closing drawer fell back to, moves to the button; focus the engineer put elsewhere (the composer) stays.
+    const active = document.activeElement as HTMLElement | null;
+    if (active === null || active === document.body || active.dataset["itemId"] === item.id) readButton.current?.focus();
     onFocusReturned?.();
-  }, [returnFocus, readShown, onFocusReturned]);
+  }, [returnFocus, readShown, onFocusReturned, item.id]);
   const [notice, setNotice] = useState<Notice | undefined>(undefined);
   // The row can be gone when the reply arrives (the answer worked and the item moved on).
   const mounted = useRef(true);

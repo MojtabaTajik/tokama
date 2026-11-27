@@ -302,6 +302,36 @@ describe("the Needs you page", () => {
     expect(document.activeElement).toBe($(".nr-read"));
   });
 
+  it("an item answered in the reader leaves no focus claim: its next question does not take focus from the composer", async () => {
+    const plan = {
+      ...older,
+      id: "item_1a2b3c4d-0094-4a1b-8c1d-000000000094",
+      title: "Reserve stock when an order is placed",
+      decision: { id: "decision_aaaaaaaa-0000-4000-8000-0000000000e4", kind: "plan_approval", stepIndex: 0, question: "Approve this step's result?", choices: [{ id: "approve", label: "Approve" }] },
+      steps: [{ ...older.steps[0]!, attempts: [{ attempt: 1, result: "passed", checks: [] }] }, older.steps[1]!],
+    } as unknown as ItemRecord;
+    const fake = fakeBridge(CONNECTED, {
+      boardItems: [...withoutWaiting, plan],
+      reply: (q) =>
+        q.type === "step_output" ? { ok: true, data: { attempt: 1, text: "## Plan\n\n- Add a table", truncated: false } } : q.type === "item" && (q as { itemId?: string }).itemId === plan.id ? { ok: true, data: { item: plan } } : undefined,
+    });
+    await render(fake.bridge);
+    await openPage();
+    await wait(0);
+    await click($(".nr-read"));
+    await wait(10);
+    // The answer is taken: the item runs on, then asks again.
+    await fake.pushItem({ ...plan, state: "running", decision: undefined } as unknown as ItemRecord);
+    await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+    await wait(10);
+    const composer = $(".new-work textarea, .new-work input") as HTMLElement | null;
+    composer?.focus();
+    await fake.pushItem({ ...plan, decision: { ...plan.decision!, id: "decision_aaaaaaaa-0000-4000-8000-0000000000e5" } } as unknown as ItemRecord);
+    await wait(10);
+    expect($(".nr-read")).not.toBeNull();
+    expect(document.activeElement).not.toBe($(".nr-read"));
+  });
+
   it("Show full plan in the drawer opens the reader, and Esc returns to the drawer on the same item and tab", async () => {
     const plan = {
       ...older,
