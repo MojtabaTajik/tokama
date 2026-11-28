@@ -7,12 +7,25 @@ import { readJsonFile, replaceTextSync } from "../../kernel/fs-safe/index.js";
 
 export const STOPPED_BY_APP_FILE = "engine.stopped-by-app";
 
-/** How long a note counts: an update may take minutes to install and start again. */
-export const STOPPED_BY_APP_MAX_AGE_MS = 10 * 60_000;
+/**
+ * How long a note counts. Long, because an update that installs on quit does not start the app
+ * again until the user opens it, maybe days later. The pid match and the single use bind a note to
+ * one dead engine; the limit only keeps a stray note from lasting for ever.
+ */
+export const STOPPED_BY_APP_MAX_AGE_MS = 30 * 24 * 60 * 60_000;
 
 /** Writes the note for the engine with this pid. Returns false when it could not be written; the kill then goes ahead as a crash. */
 export function markStoppedByApp(dir: string, pid: number, now: number): boolean {
   return replaceTextSync(join(dir, STOPPED_BY_APP_FILE), `${JSON.stringify({ pid, at: now })}\n`).ok;
+}
+
+/** Removes the note again, when the kill it was written for did not happen. */
+export function unmarkStoppedByApp(dir: string): void {
+  try {
+    unlinkSync(join(dir, STOPPED_BY_APP_FILE));
+  } catch {
+    // Not there.
+  }
 }
 
 /**

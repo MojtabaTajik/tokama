@@ -201,6 +201,23 @@ describe("stopEngine", () => {
     expect(order).toEqual([`SIGTERM ${PID}`, `note ${PID}`, `SIGKILL ${PID}`]);
   });
 
+  it("takes the note back when SIGKILL cannot be sent", async () => {
+    writeLock(PID, ID);
+    await fakeEngine((_message, socket) => bad(socket));
+    const order: string[] = [];
+    const { stop } = setup({
+      beforeKill: () => {
+        order.push("note");
+        return () => void order.push("undo");
+      },
+      signal: (_pid, signal) => {
+        if (signal === "SIGKILL") throw new Error("EPERM");
+      },
+    });
+    expect(await stop({ ifIdle: false, expectedEngineId: ID })).toEqual({ kind: "still_running", pid: PID });
+    expect(order).toEqual(["note", "undo"]);
+  });
+
   it("does not call beforeKill when SIGTERM is enough", async () => {
     writeLock(PID, ID);
     const engine = await fakeEngine((_message, socket) => bad(socket));

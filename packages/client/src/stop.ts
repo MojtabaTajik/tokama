@@ -49,9 +49,10 @@ export interface StopOptions {
   /**
    * Called with the engine's pid right before SIGKILL, the one signal after which the engine
    * cannot end cleanly. The desktop app leaves the note there that tells the next engine this
-   * was not a crash. It must not throw; the kill goes ahead whether or not it worked.
+   * was not a crash. It must not throw (a throw cancels the kill). The function it returns, if
+   * any, is called when the signal could not be sent, to take the note back.
    */
-  readonly beforeKill?: (pid: number) => void;
+  readonly beforeKill?: (pid: number) => (() => void) | void;
   /** Default: the system clock. */
   readonly clock?: Clock;
   /** How long each step waits for the engine to stop. Default 15 s. */
@@ -128,10 +129,11 @@ export async function stopEngine(options: StopOptions): Promise<StopResult> {
     }
     // The lock must read the same as when this began, right before the signal.
     if (named()?.text !== lock.text) return { kind: "replaced" };
+    const undo = signal === "SIGKILL" ? options.beforeKill?.(lock.pid) : undefined;
     try {
-      if (signal === "SIGKILL") options.beforeKill?.(lock.pid);
       options.signal(lock.pid, signal);
     } catch {
+      undo?.();
       // A signal that cannot be sent (no right to it) leaves the engine running.
       return stillRunning();
     }
