@@ -6,8 +6,10 @@ import { BWRAP_BLOCKED_HINT, CREDENTIAL_PATHS, type NetworkPolicy, type SandboxS
 import { permissionPath } from "./args.js";
 
 export interface SandboxSettingsOptions {
-  /** The folders holding this call's `rules.json` and `settings.json`, closed to commands. */
+  /** The folders holding this call's `rules.json` and `settings.json`: closed to writes, so commands add and change nothing there. */
   readonly callDirs: readonly string[];
+  /** The files in those folders: closed to reads. Listed one by one, never as a folder (see `sandboxSettings`). */
+  readonly callFiles: readonly string[];
   /** Tokama's folder, `~/.tokama` or absolute: closed to commands. */
   readonly tokamaHome: string;
   /** More folders closed to commands: the engine's socket and token folder. */
@@ -22,13 +24,18 @@ export interface SandboxSettingsOptions {
  * the sandbox is set false in words, so a user or repo default cannot change it. Nothing here is
  * ever written to the user's own settings.
  *
+ * - The call's folder is closed to writes as a folder and to reads file by file. On Linux a folder in
+ *   `denyRead` is replaced by an empty, writable scratch folder: a write into it seems to work (and
+ *   is lost when the command ends) and a read finds nothing. A denied file is refused for real on
+ *   both systems. The folder itself is kept unwritable by `denyWrite`, which mounts it read-only
+ *   even when its parent (such as the temp folder) is writable.
  * - `failIfUnavailable`: a sandbox that cannot start ends the call; it never runs unsandboxed.
  * - `allowUnsandboxedCommands: false` and the deny rule: the agent cannot retry outside it.
  * - `strictAllowlist`: a host outside `network.allow` is refused in every permission mode.
  * - `autoAllowBashIfSandboxed: false`: Tokama's rules and hook still decide each command.
  */
 export function sandboxSettings(spec: SandboxSpec, options: SandboxSettingsOptions): { permissions: unknown; sandbox: unknown } {
-  const closed = [...new Set([options.tokamaHome, ...(options.closedDirs ?? []), ...options.callDirs])];
+  const closed = [...new Set([options.tokamaHome, ...(options.closedDirs ?? [])])];
   return {
     permissions: {
       deny: ["Bash(dangerouslyDisableSandbox:true)", ...spec.readOnlyRoots.map((root) => `Edit(${permissionPath(root)}/**)`)],
@@ -45,8 +52,8 @@ export function sandboxSettings(spec: SandboxSpec, options: SandboxSettingsOptio
       allowAppleEvents: false,
       filesystem: {
         allowWrite: [...options.cacheDirs],
-        denyWrite: [...closed, ...spec.readOnlyRoots],
-        denyRead: [...closed, ...CREDENTIAL_PATHS],
+        denyWrite: [...closed, ...options.callDirs, ...spec.readOnlyRoots],
+        denyRead: [...closed, ...options.callFiles, ...CREDENTIAL_PATHS],
       },
       network: {
         allowedDomains: [...spec.network.allow],

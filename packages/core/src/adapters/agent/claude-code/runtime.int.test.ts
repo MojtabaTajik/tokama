@@ -321,7 +321,9 @@ describe("Claude Code runtime", SLOW, () => {
       const settings = JSON.parse(echo.settings.text) as { sandbox: { filesystem: { denyRead: string[]; denyWrite: string[] } } };
       const folder = (echo.argv.find((arg) => arg.startsWith("--settings=")) ?? "").slice("--settings=".length).replace(/\/settings\.json$/, "");
       expect(folder).not.toBe("");
-      expect(settings.sandbox.filesystem.denyRead).toContain(folder);
+      // The folder is closed to writes; only its two files are closed to reads (Linux would hide a denied folder behind a writable empty one).
+      expect(settings.sandbox.filesystem.denyRead).toEqual(expect.arrayContaining([join(folder, "rules.json"), join(folder, "settings.json")]));
+      expect(settings.sandbox.filesystem.denyRead).not.toContain(folder);
       expect(settings.sandbox.filesystem.denyWrite).toEqual(expect.arrayContaining([folder, tokamaHome]));
       // An absolute home in a permission rule needs the double slash.
       expect(echo.argv).toEqual(expect.arrayContaining([`Read(/${tokamaHome}/**)`, `Edit(/${tokamaHome}/**)`]));

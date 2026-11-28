@@ -113,7 +113,7 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): AgentR
         yield refused(`could not write the call's settings: ${String(error)}`);
         return;
       }
-      const args = buildArgs(request, callDir === undefined ? undefined : join(callDir, "settings.json"), customHome);
+      const args = buildArgs(request, callDir === undefined ? undefined : join(callDir, SETTINGS_FILE), customHome);
       if (!args.ok) {
         if (callDir !== undefined) rmSync(callDir, { recursive: true, force: true });
         yield { type: "end", outcome: "failed", usage: NO_TOKENS, error: args.error, errorKind: "crash" };
@@ -174,6 +174,10 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): AgentR
   };
 }
 
+const RULES_FILE = "rules.json";
+const SETTINGS_FILE = "settings.json";
+const CALL_FILES = [RULES_FILE, SETTINGS_FILE] as const;
+
 /** What the sandbox part of a call's settings is made from, once the call is allowed to run commands. */
 interface SandboxPlan {
   readonly spec: SandboxSpec;
@@ -191,20 +195,24 @@ interface SandboxPlan {
 function writeHookFiles(request: AgentCallRequest, hookCommand: readonly string[], sandbox: SandboxPlan): string {
   const dir = mkdtempSync(join(tmpdir(), "tokama-claude-call-"));
   chmodSync(dir, 0o700);
-  const rules = join(dir, "rules.json");
+  const rules = join(dir, RULES_FILE);
   try {
+    const callDirs = [...new Set([dir, realpathSync(dir)])];
     const { permissions, sandbox: sandboxPart } = sandboxSettings(sandbox.spec, {
-      callDirs: [...new Set([dir, realpathSync(dir)])],
+      callDirs,
+      callFiles: callDirs.flatMap((callDir) => CALL_FILES.map((name) => join(callDir, name))),
       tokamaHome: sandbox.tokamaHome,
       closedDirs: sandbox.closedDirs,
       cacheDirs: sandbox.cacheDirs,
     });
     const settings = { ...(hookSettings([...hookCommand, rules]) as object), permissions, sandbox: sandboxPart };
-    for (const [path, text] of [
-      [rules, JSON.stringify({ commands: request.limits?.commands ?? [] })],
-      [join(dir, "settings.json"), JSON.stringify(settings)],
-    ] as const) {
-      const written = replaceTextSync(path, text, 0o600);
+    // The record needs a text for every name in CALL_FILES, so no file is written without being closed to reads.
+    const texts: Record<(typeof CALL_FILES)[number], string> = {
+      [RULES_FILE]: JSON.stringify({ commands: request.limits?.commands ?? [] }),
+      [SETTINGS_FILE]: JSON.stringify(settings),
+    };
+    for (const name of CALL_FILES) {
+      const written = replaceTextSync(join(dir, name), texts[name], 0o600);
       if (!written.ok) throw new Error(written.error.message);
     }
   } catch (error) {
