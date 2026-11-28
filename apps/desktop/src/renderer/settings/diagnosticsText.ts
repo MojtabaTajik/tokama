@@ -3,7 +3,7 @@
 // entry's typed fields only; the entry's text is shown as it is elsewhere.
 import type { DiagnosticEntry } from "@tokama/core";
 import type { DiagnosticsSendFailure } from "../../shared/bridge.js";
-import { clock, dayLabel, localDay, monthName } from "../format/time.js";
+import { clock, dayLabel, dayStart, localDay, monthName } from "../format/time.js";
 
 /** The type filters. A crash counts as an error: the filter has no type of its own for it. */
 export type ShownType = "error" | "warning" | "usage";
@@ -56,12 +56,6 @@ const CRASH_WORD = {
   memory_eviction: "was closed to free memory",
 } as const;
 const CRASH_SUBJECT = { engine: "Engine", desktop: "Tokama", renderer: "Window" } as const;
-const DAY_MS = 24 * 60 * 60 * 1000;
-const startOfDay = (time: number) => {
-  const date = new Date(time);
-  date.setHours(0, 0, 0, 0);
-  return date.getTime();
-};
 
 /** One line about the entry, from its typed fields. */
 export function summary(entry: DiagnosticEntry): string {
@@ -97,11 +91,11 @@ export function inDateRange(at: number, filter: DateFilter, now: number): boolea
     case "all":
       return true;
     case "today":
-      return at >= startOfDay(now);
+      return at >= dayStart(now);
     case "7d":
-      return at >= startOfDay(now) - 6 * DAY_MS;
+      return at >= dayStart(now, 6);
     case "30d":
-      return at >= startOfDay(now) - 29 * DAY_MS;
+      return at >= dayStart(now, 29);
   }
 }
 

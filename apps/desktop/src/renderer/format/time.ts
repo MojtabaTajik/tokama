@@ -47,11 +47,14 @@ export function localDay(at: number): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-/** The local day `days` calendar days before the day of `now`. */
-export function daysBefore(now: number, days: number): string {
+/** Local midnight at the start of the day `days` calendar days before the day of `now`. */
+export function dayStart(now: number, days = 0): number {
   const date = new Date(now);
-  return localDay(new Date(date.getFullYear(), date.getMonth(), date.getDate() - days).getTime());
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() - days).getTime();
 }
+
+/** The local day `days` calendar days before the day of `now`. */
+export const daysBefore = (now: number, days: number): string => localDay(dayStart(now, days));
 
 /** A day header: "Today", "Yesterday", then "Sun 22 Nov". */
 export function dayLabel(day: string, now: number): string {
