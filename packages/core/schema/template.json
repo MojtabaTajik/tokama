@@ -69,15 +69,6 @@
               "write"
             ]
           }
-        },
-        "commands": {
-          "maxItems": 50,
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          }
         }
       },
       "additionalProperties": false
@@ -257,15 +248,6 @@
                     "read",
                     "write"
                   ]
-                }
-              },
-              "commands": {
-                "maxItems": 50,
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 200
                 }
               }
             },

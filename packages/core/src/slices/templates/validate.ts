@@ -145,7 +145,10 @@ function issueProblems(issue: Issue, prefix: Path, data: unknown, lineOf: (path:
       const known = knownFields(path);
       return issue.keys.map((key) => ({
         line: lineOf(path, key),
-        message: `${capitalize(ownerOf(path, subject))} has an unknown field ${quote(key)}.${didYouMean(key, known)}`,
+        message:
+          key === "commands" && path.at(-1) === "uses"
+            ? `${capitalize(ownerOf(path, subject))} lists commands, which Tokama does not read, so they would never reach an agent. Remove it; the commands an agent may run are set in its agent file.`
+            : `${capitalize(ownerOf(path, subject))} has an unknown field ${quote(key)}.${didYouMean(key, known)}`,
       }));
     }
     case "invalid_union": {
@@ -286,7 +289,6 @@ async function buildRecord(file: TemplateFile, ctx: ValidateContext, report: Rep
     indexOf,
     backTargets,
     templateConnections: new Map(Object.entries(file.uses?.connections ?? {})),
-    templateCommands: file.uses?.commands ?? [],
     report,
     warn,
   };
@@ -304,7 +306,7 @@ async function buildRecord(file: TemplateFile, ctx: ValidateContext, report: Rep
     uses: {
       repos: { ...(picked ? { picked } : {}), named },
       connections: [...scope.templateConnections].map(([connectionId, access]) => ({ connectionId: connectionId as ConnectionId, access })),
-      commands: [...scope.templateCommands],
+      commands: [],
     },
     start: { needs, askBeforeCloud: file.start?.ask_before_cloud ?? false, notify: file.start?.notify ?? false },
     steps,
@@ -324,7 +326,6 @@ interface StepScope {
   readonly indexOf: ReadonlyMap<string, number>;
   readonly backTargets: ReadonlySet<string>;
   readonly templateConnections: ReadonlyMap<string, string>;
-  readonly templateCommands: readonly string[];
   readonly report: Report;
   readonly warn: Report;
 }
@@ -334,7 +335,7 @@ const isCloud = (scope: StepScope, step: StepFile) => scope.ctx.agents.get(step.
 const sendsRepo = (scope: StepScope, step: StepFile) => isCloud(scope, step) && step.data === "repo-and-diff";
 
 async function buildStep(step: StepFile, i: number, scope: StepScope): Promise<TemplateStepDef> {
-  const { ctx, stepIds, indexOf, templateConnections, templateCommands, report } = scope;
+  const { ctx, stepIds, indexOf, templateConnections, report } = scope;
   const at = (...rest: PropertyKey[]): Path => ["steps", i, ...rest];
   const name = `Step ${quote(step.id)}`;
 
@@ -386,12 +387,6 @@ async function buildStep(step: StepFile, i: number, scope: StepScope): Promise<T
       );
     }
   }
-  for (const [j, command] of (step.uses?.commands ?? []).entries()) {
-    if (!templateCommands.includes(command)) {
-      report(at("uses", "commands", j), `${name} uses command ${quote(command)}, which the template does not list in uses.commands.${didYouMean(command, templateCommands)}`);
-    }
-  }
-
   for (const [j, seen] of (step.sees ?? []).entries()) {
     const index = indexOf.get(seen);
     if (index === undefined) report(at("sees", j), `${name} sees ${quote(seen)}, which is not a step in this template.${didYouMean(seen, stepIds)}`);
@@ -415,8 +410,7 @@ async function buildStep(step: StepFile, i: number, scope: StepScope): Promise<T
     // Cloud steps see only what they declare; local steps see every earlier step by default.
     sees: step.sees ?? (cloud ? [] : (stepIds.slice(0, i) as StepId[])),
     connections: stepConnections.map(([connectionId, access]) => ({ connectionId: connectionId as ConnectionId, access })),
-    // A step that sends the repo out gets only the commands it lists itself.
-    commands: step.uses?.commands ?? (sendsRepo(scope, step) ? [] : [...templateCommands]),
+    commands: [],
   };
   if (checks !== undefined) def.checks = checks;
   if (doneWhen === "reviewer approves") {

@@ -142,7 +142,7 @@ budget: { time: 1h30m }
     expect(template.budget).toEqual({ timeMinutes: 90 });
   });
 
-  it("takes named repos, commands, setup, run options, icon and colour", async () => {
+  it("takes named repos, setup, run options, icon and colour", async () => {
     const template = await record(`format: 1
 name: Refine
 icon: list-check
@@ -150,7 +150,6 @@ color: teal
 uses:
   repos: { orders-api: read }
   connections: { azure-boards: write }
-  commands: [az boards]
 start: { needs: [text], ask_before_cloud: true, notify: true }
 setup: pnpm install
 steps:
@@ -166,7 +165,7 @@ finish: [document, outside-changes]
       icon: "list-check",
       color: "teal",
       setup: "pnpm install",
-      uses: { repos: { named: [{ repoId: "orders-api", access: "read" }] }, commands: ["az boards"] },
+      uses: { repos: { named: [{ repoId: "orders-api", access: "read" }] } },
       start: { askBeforeCloud: true, notify: true },
       finish: ["document", "outside-changes"],
     });
@@ -562,7 +561,6 @@ name: Investigate
 uses:
   repos: edit
   connections: { app-insights: read }
-  commands: [gh, az boards]
 start:
   needs: [text, repo]
 steps:
@@ -600,28 +598,31 @@ ${cloud}finish: [commit]
     const text = investigate(cloudStep("repo-and-diff", "    sees: [plain]\n", '"Use {{ plain.notes }} and {{ dig.findings }}."'));
     const result = await validate(text, TEAM);
     expect(result.ok ? [] : result.error).toEqual([
-      { line: 27, message: 'Step "fix" uses {{ dig... }} in its instructions, but does not list "dig" in sees.' },
+      { line: 26, message: 'Step "fix" uses {{ dig... }} in its instructions, but does not list "dig" in sees.' },
     ]);
     expect(await teamProblems(investigate(cloudStep("summary-after-approval", "    sees: [plain]\n", '"Use {{ dig.findings }}."')))).toEqual([]);
   });
 
-  it("gives template commands only to steps that do not send the repo, unless the step lists them", async () => {
-    const commandsOf = async (data: string, extra = "") =>
-      (await teamRecord(investigate(cloudStep(data, extra)))).steps.map((s) => [s.id, s.commands]);
-    expect(await commandsOf("repo-and-diff")).toEqual([
-      ["query", ["gh", "az boards"]],
-      ["dig", ["gh", "az boards"]],
-      ["plain", ["gh", "az boards"]],
-      ["fix", []],
+});
+
+describe("uses.commands", () => {
+  const AGENT_FILE = "Remove it; the commands an agent may run are set in its agent file.";
+
+  it("refuses a template that lists commands, with the line of the field", async () => {
+    expect(await problems(edit("  repos: edit\n", "  repos: edit\n  commands: [gh, az boards]\n"))).toEqual([
+      { line: 5, message: `"uses" lists commands, which Tokama does not read, so they would never reach an agent. ${AGENT_FILE}` },
     ]);
-    expect((await commandsOf("repo-and-diff", "    uses: { commands: [gh] }\n")).at(-1)).toEqual(["fix", ["gh"]]);
-    expect((await commandsOf("summary-after-approval")).at(-1)).toEqual(["fix", ["gh", "az boards"]]);
   });
 
-  it("refuses a step command the template does not list", async () => {
-    expect(await teamProblems(investigate(cloudStep("repo-and-diff", "    uses: { commands: [ghh] }\n")))).toEqual([
-      'Step "fix" uses command "ghh", which the template does not list in uses.commands. Did you mean "gh"?',
+  it("refuses a step that lists commands", async () => {
+    expect(await problems(edit("    data: repo-and-diff\n  - id: review", "    data: repo-and-diff\n    uses: { commands: [gh] }\n  - id: review"))).toEqual([
+      { line: 16, message: `Step "build": "uses" lists commands, which Tokama does not read, so they would never reach an agent. ${AGENT_FILE}` },
     ]);
+  });
+
+  it("gives every step an empty command list", async () => {
+    expect((await record(BASE)).uses.commands).toEqual([]);
+    expect((await record(BASE)).steps.map((step) => step.commands)).toEqual([[], []]);
   });
 });
 
