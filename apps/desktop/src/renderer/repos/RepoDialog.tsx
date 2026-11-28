@@ -40,7 +40,7 @@ const TEXT = {
   typeBranch: "Type a branch name to use one that isn't listed.",
   branchKeys: "↑ ↓ move · Enter choose · Esc close",
   checks: "Checks",
-  checksHint: "One command per line, run in the repo after each change. No &&, | or redirects.",
+  checksHint: "One command per line, run in the repo after each change. No &&, | or redirects. Check commands and their output can go to a cloud agent whose step sends the repo and diff.",
   checksFound: (scripts: string) => `Found in package.json scripts: ${scripts}.`,
   suggested: "suggested",
   noneFound: "none found",
