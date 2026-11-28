@@ -3,7 +3,8 @@
 // engineer's own command, and Tokama runs it itself, never inside an agent call.
 //
 // The log is the state: `finish_started` is written before anything is touched, and a result
-// event (merged, pr_opened, discarded or finish_failed) after. A start that finds an action
+// event (merged, pr_opened, discarded or finish_failed) after; Open PR writes branch_pushed
+// between its push and gh. A start that finds an action
 // recorded as running (the engine stopped during it) records it as interrupted; every action can
 // simply run again. Actions on one repo run one at a time, since a merge moves the engineer's
 // checkout. Details never hold this machine's paths or a remote's user info.
@@ -20,7 +21,7 @@ import { sharedGitHashes, sharedGitSettings, type GitSetting, type TamperChange 
 import type { ItemStore } from "../items/index.js";
 import { digestOf, steeringChanges, steeringEntries, type SteeringEntry } from "./protect.js";
 import { branchRef } from "./moved-refs.js";
-import { discardWorktree, ghStatus, hostedRepo, mergeItem, openPullRequest, pushItem, withoutUserInfo, type ItemWorktree } from "../worktrees/index.js";
+import { discardWorktree, ghStatus, hostedRepo, mergeItem, openPullRequest, pushItem, pushTarget, withoutUserInfo, type ItemWorktree } from "../worktrees/index.js";
 
 export interface FinishDeps {
   readonly store: ItemStore;
@@ -276,10 +277,12 @@ export function createFinisher(deps: FinishDeps): Finisher {
           ...(deps.sshAuthSock !== undefined && { sshAuthSock: deps.sshAuthSock }),
         });
         if (!pushed.ok) return failed(pushed.error);
-        // The branch is out now, whatever gh says next: the item's record says so.
-        append(item.id, [{ type: "branch_pushed", repoId: repo.id }]);
+        // The branch is out now, whatever gh says next: the item's record says so. A record that
+        // cannot be written does not stop the pull request; it is said if gh fails too.
+        const pushRecord = store.append(item.id, [{ type: "branch_pushed", repoId: repo.id }]);
         const opened = await openPullRequest(gh, { repo: hosted, itemId: item.id, title: item.title, head: worktree.branch, base: repo.baseBranch });
-        return opened.ok ? { type: "pr_opened", repoId: repo.id, url: opened.value } : failed(opened.error);
+        if (opened.ok) return { type: "pr_opened", repoId: repo.id, url: opened.value };
+        return failed(pushRecord.ok ? opened.error : `${opened.error} The branch was pushed to ${pushTarget(hosted)}, but Tokama could not record it: ${pushRecord.error.message}`);
       }
       case "discard": {
         const write = () => discardWorktree(git, repo.path, worktree);
