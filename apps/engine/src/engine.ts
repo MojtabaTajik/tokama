@@ -201,6 +201,8 @@ export interface EngineOptions {
   readonly clock?: Clock;
   /** The build version diagnostics entries and the handshake carry. Default "0.0.0". */
   readonly engineVersion?: string;
+  /** When this engine started, ms since the Unix epoch, as the handshake says it. Default: now. */
+  readonly startedAt?: number;
   /** Folders that hold this engine's own code; their built files show as `<app>/…` in diagnostics. Default: none. */
   readonly codeRoots?: readonly string[];
   /** The user's home folder, cleaned from diagnostics as a path. Default: this process's home. */
@@ -254,6 +256,8 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
   if (!dir.ok) return dir;
   const engineId = randomUUID();
   const version = options.engineVersion ?? "0.0.0";
+  // Taken now, before any of the work below, and sent in every welcome.
+  const startedAt = options.startedAt ?? Date.now();
   // This run's own socket and token; the lock names the socket.
   const socketPath = newSocketPath(endpoint.value.dir);
   const tokenPath = tokenPathOf(socketPath);
@@ -894,7 +898,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       fail(socket, "unsupported_version", `engine speaks API version ${API_VERSION}, client sent ${hello.value.apiVersion}`, { ...runningItems(), engineVersion: version });
       return false;
     }
-    const welcome = encodeLine({ kind: "welcome", apiVersion: API_VERSION, engineId, engineVersion: version, pid: process.pid, ...runningItems() });
+    const welcome = encodeLine({ kind: "welcome", apiVersion: API_VERSION, engineId, engineVersion: version, startedAt, pid: process.pid, ...runningItems() });
     if (welcome.ok) write(socket, welcome.value);
     ready.add(socket);
     return true;

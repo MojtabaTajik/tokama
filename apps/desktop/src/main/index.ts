@@ -17,7 +17,7 @@ import { type ConnectionWatch, watchConnection } from "./connection.js";
 import { type DesktopStore, desktopStore } from "./desktop-store.js";
 import { DIAGNOSTICS_URL, diagnosticsService, saveToFile } from "./diagnostics-send.js";
 import { createReporter, mainErrorReport, rateLimit, rendererErrorReport, rendererGoneKind, rendererUsageReport, type Reporter, runMarker } from "./diagnostics.js";
-import { attachTracker, engineCommand, engineDirFor, engineEnv, engineRuntime, readLogTail, toolsPathInfo } from "./engine.js";
+import { attachTracker, devEngineBuildDirs, engineCommand, engineDirFor, engineEnv, engineRuntime, newestBuildAt, readLogTail, toolsPathInfo } from "./engine.js";
 import { showMainWindow } from "./main-window.js";
 import { menuTemplate } from "./menu.js";
 import { itemsRunningIn, offerMove, shouldOfferMove } from "./move-to-applications.js";
@@ -163,8 +163,9 @@ function startWatch(onConnected: () => void, onItemEvent: (event: BridgeEvent["e
       return connect({ dir, lockPath, start: command.value });
     },
     apiVersion: API_VERSION,
-    // Only a packaged app compares builds; a dev build is 0.0.0 and never replaces an engine for it.
-    ...(app.isPackaged && { appVersion: app.getVersion() }),
+    // A packaged app compares releases. A dev app (0.0.0) compares when the engine's files were built,
+    // with a dev engine only; the sample engine is built from the same files.
+    ...(app.isPackaged ? { appVersion: app.getVersion() } : { newestBuildAt: () => newestBuildAt(devEngineBuildDirs(runtime.entry)) }),
     // Only this app's own engine for this dir is stopped.
     stopEngine: stopAppEngine,
     olderLock: () => {

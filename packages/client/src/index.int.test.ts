@@ -155,11 +155,11 @@ describe("@tokama/client", () => {
   });
 
   it("reports the engine's build version and running items from its welcome", async () => {
-    const fake = await fakeEngine(answering(welcome("e1", { engineVersion: "0.3.1", runningItems: 2 })));
+    const fake = await fakeEngine(answering(welcome("e1", { engineVersion: "0.3.1", startedAt: 1_764_000_000_000, runningItems: 2 })));
     const connected = await open(fake);
     if (!connected.ok) throw new Error(connected.error.message);
     cleanups.push(() => connected.value.close());
-    expect(connected.value.engine).toEqual({ apiVersion: API_VERSION, engineVersion: "0.3.1", runningItems: 2 });
+    expect(connected.value.engine).toEqual({ apiVersion: API_VERSION, engineVersion: "0.3.1", startedAt: 1_764_000_000_000, runningItems: 2 });
   });
 
   it("reports only the API version from a welcome that says no more", async () => {

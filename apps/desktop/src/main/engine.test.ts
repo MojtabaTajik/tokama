@@ -1,8 +1,8 @@
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { attachTracker, engineCommand, engineDirFor, engineEnv, engineRuntime, findExecutable, readLogTail, toolsPathInfo } from "./engine.js";
+import { attachTracker, devEngineBuildDirs, engineCommand, engineDirFor, engineEnv, engineRuntime, findExecutable, newestBuildAt, readLogTail, toolsPathInfo } from "./engine.js";
 
 let dir: string;
 beforeEach(() => {
@@ -10,6 +10,37 @@ beforeEach(() => {
 });
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
+});
+
+describe("devEngineBuildDirs", () => {
+  it("names the engine's dist and core's dist of the same checkout", () => {
+    expect(devEngineBuildDirs("/work/tokama/apps/engine/dist/main.js")).toEqual(["/work/tokama/apps/engine/dist", "/work/tokama/packages/core/dist"]);
+  });
+});
+
+describe("newestBuildAt", () => {
+  const touch = (path: string, seconds: number) => {
+    mkdirSync(join(path, ".."), { recursive: true });
+    writeFileSync(path, "");
+    utimesSync(path, seconds, seconds);
+  };
+
+  it("is the newest .js file under all the folders, however deep, and ignores other files", () => {
+    touch(join(dir, "engine", "main.js"), 100);
+    touch(join(dir, "engine", "deep", "er", "x.js"), 300);
+    touch(join(dir, "core", "index.js"), 200);
+    touch(join(dir, "core", "index.d.ts"), 900);
+    touch(join(dir, "core", "tsconfig.tsbuildinfo"), 900);
+    expect(newestBuildAt([join(dir, "engine"), join(dir, "core")])).toBe(300_000);
+  });
+
+  it("is undefined with no .js file, and when a folder cannot be read", () => {
+    touch(join(dir, "core", "index.d.ts"), 900);
+    expect(newestBuildAt([join(dir, "core")])).toBeUndefined();
+    expect(newestBuildAt([join(dir, "missing")])).toBeUndefined();
+    touch(join(dir, "engine", "main.js"), 100);
+    expect(newestBuildAt([join(dir, "engine"), join(dir, "missing")])).toBeUndefined();
+  });
 });
 
 describe("findExecutable", () => {

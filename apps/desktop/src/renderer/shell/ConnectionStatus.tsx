@@ -15,6 +15,7 @@ const TEXT = {
     failed: "not available",
     updating: "updating engine",
   },
+  staleEngine: "The engine is from an older version and restarts when idle",
   log: "Log",
   tryAgain: "Try again",
   lock: "lock",
@@ -65,6 +66,19 @@ export function EngineHealth({ state }: { readonly state: ConnectionState }) {
       </span>
       <span className="health-word">{state.status === "starting" && state.updating === true ? TEXT.health.updating : TEXT.health[state.status]}</span>
     </span>
+  );
+}
+
+/** A quiet note under the engine line while the engine in use runs older code and items, and restarts when idle. Nothing otherwise. */
+export function StaleEngineNote({ state }: { readonly state: ConnectionState }) {
+  if (state.status !== "connected" || state.staleEngine !== true) return null;
+  return (
+    <p className="engine-note" role="status">
+      <span className="symbol" aria-hidden="true">
+        {SYMBOL.starting}
+      </span>
+      {TEXT.staleEngine}
+    </p>
   );
 }
 

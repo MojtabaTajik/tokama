@@ -8,7 +8,7 @@ import type { ConnectionState } from "../../shared/bridge.js";
 import { RepoMenu } from "../repos/RepoMenu.js";
 import { ALL_WORK, type Badge, badgesOf, inView, needsYouCount, runningCount, sameView, type View, viewKey } from "../model.js";
 import type { Section } from "../useViewState.js";
-import { EngineHealth } from "./ConnectionStatus.js";
+import { EngineHealth, StaleEngineNote } from "./ConnectionStatus.js";
 import { pickChip, type SidebarChipCandidate } from "./sidebar-chip.js";
 import { AllWorkIcon, RepoIcon } from "../ui/icons.js";
 import { TemplateIcon } from "./TemplateIcon.js";
@@ -105,6 +105,7 @@ export function Sidebar(props: SidebarProps) {
         {TEXT.thisMachine}
         <EngineHealth state={connection} />
       </p>
+      <StaleEngineNote state={connection} />
       {stale && (
         <p className="stale" role="status">
           <span className="symbol" aria-hidden="true">

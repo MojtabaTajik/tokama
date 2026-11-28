@@ -46,6 +46,7 @@ function watch(
   logTail: string[] = [],
   stopEngine: (request: StopRequest) => Promise<StopResult> = async () => STOPPED,
   appVersion?: string,
+  newestBuildAt?: number,
 ) {
   const states: ConnectionState[] = [];
   const events: BridgeEvent[] = [];
@@ -59,6 +60,7 @@ function watch(
     onEvent: (e) => events.push(e),
     apiVersion: APP_API,
     ...(appVersion !== undefined && { appVersion }),
+    ...(newestBuildAt !== undefined && { newestBuildAt: () => newestBuildAt }),
     stopEngine: stop,
     olderLock: () => ({ lockPath: "/run/tokama/engine.lock", pid: 4821, engineId: "e-lock" }),
   });
@@ -263,13 +265,13 @@ describe("watchConnection", () => {
       expect(states).toEqual([]);
     });
 
-    it("is used as it is when it runs items: connected, no screen, nothing stopped", async () => {
+    it("is used as it is when it runs items: connected and marked stale, no screen, nothing stopped", async () => {
       for (const runningItems of [3, undefined]) {
         const busy = sameApi("e-old", "0.1.0", runningItems);
         const { watcher, states, stop } = watch(async () => ok(busy), [], undefined, APP);
         await settle();
-        expect(watcher.state()).toEqual({ status: "connected", engineId: "e-old" });
-        expect(states).toEqual([{ status: "connected", engineId: "e-old" }]);
+        expect(watcher.state()).toEqual({ status: "connected", engineId: "e-old", staleEngine: true });
+        expect(states).toEqual([{ status: "connected", engineId: "e-old", staleEngine: true }]);
         expect(stop).not.toHaveBeenCalled();
         expect(busy.close).not.toHaveBeenCalled();
       }
@@ -299,7 +301,7 @@ describe("watchConnection", () => {
       await settle();
       await settle();
       expect(stop).toHaveBeenCalledOnce();
-      expect(watcher.state()).toEqual({ status: "connected", engineId: "e-old" });
+      expect(watcher.state()).toEqual({ status: "connected", engineId: "e-old", staleEngine: true });
       expect(states.map((s) => s.status)).toEqual(["starting", "connected"]);
     });
 
@@ -327,6 +329,184 @@ describe("watchConnection", () => {
       expect(watcher.state()).toEqual({ status: "connected", engineId: "engine-1" });
       expect(stop).not.toHaveBeenCalled();
       expect(client.close).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("an engine of the same API version that runs older code and items", () => {
+    const APP = "0.2.0";
+    const BUILT = 2000;
+    const engineOf = (info: Partial<EngineInfo>): EngineInfo => ({ apiVersion: APP_API, ...info });
+    /** Updates of an item that is in `state`, as the engine pushes them. */
+    const itemUpdated = (state: string): ClientEvent => ({ kind: "event", seq: 1, event: { type: "item_updated", item: { id: "item_1", state } } } as unknown as ClientEvent);
+    const fresh = () => fakeClient("engine-new", engineOf({ engineVersion: APP, runningItems: 0 })).client;
+
+    it("shows the note, and replaces it when an item that stopped running leaves it idle", async () => {
+      const busy = fakeClient("e-old", engineOf({ engineVersion: "0.1.0", runningItems: 1 }));
+      const probe = fakeClient("e-old", engineOf({ engineVersion: "0.1.0", runningItems: 0 })).client;
+      const idle = fakeClient("e-old", engineOf({ engineVersion: "0.1.0", runningItems: 0 })).client;
+      const connect = vi.fn<Connect>().mockResolvedValueOnce(ok(busy.client)).mockResolvedValueOnce(ok(probe)).mockResolvedValueOnce(ok(idle)).mockResolvedValueOnce(ok(fresh()));
+      const { watcher, states, stop } = watch(connect, [], undefined, APP);
+      await settle();
+      expect(watcher.state()).toEqual({ status: "connected", engineId: "e-old", staleEngine: true });
+      busy.push(itemUpdated("done"));
+      await vi.waitFor(() => expect(watcher.state()).toEqual({ status: "connected", engineId: "engine-new" }));
+      // The probe was closed at once and was never used; the stop is only for an idle engine.
+      expect(probe.close).toHaveBeenCalledOnce();
+      expect(busy.client.close).toHaveBeenCalledOnce();
+      expect(stop).toHaveBeenCalledExactlyOnceWith({ engineId: "e-old", engine: engineOf({ engineVersion: "0.1.0", runningItems: 0 }), ifIdle: true });
+      expect(states.map((s) => s.status)).toEqual(["connected", "starting", "starting", "connected"]);
+    });
+
+    it("checks again at an item that left running, and not at one that still runs", async () => {
+      const busy = fakeClient("e-old", engineOf({ engineVersion: "0.1.0", runningItems: 2 }));
+      const connect = vi.fn<Connect>().mockResolvedValueOnce(ok(busy.client)).mockImplementation(async () => ok(fakeClient("e-old", engineOf({ engineVersion: "0.1.0", runningItems: 2 })).client));
+      const { watcher, stop } = watch(connect, [], undefined, APP);
+      await settle();
+      busy.push(itemUpdated("running"));
+      busy.push({ kind: "event", seq: 2, event: { type: "usage_changed" } });
+      await settle();
+      expect(connect).toHaveBeenCalledOnce();
+      busy.push(itemUpdated("needs_you"));
+      await vi.waitFor(() => expect(connect).toHaveBeenCalledTimes(2));
+      await settle();
+      // Still busy: nothing is stopped, the screen stays, the note stays.
+      expect(stop).not.toHaveBeenCalled();
+      expect(watcher.state()).toEqual({ status: "connected", engineId: "e-old", staleEngine: true });
+    });
+
+    it("runs one check at a time, and once more when an event came during it (it may have been the last item)", async () => {
+      const busy = fakeClient("e-old", engineOf({ engineVersion: "0.1.0", runningItems: 2 }));
+      let release: (result: Awaited<ReturnType<Connect>>) => void = () => {};
+      const connect = vi
+        .fn<Connect>()
+        .mockResolvedValueOnce(ok(busy.client))
+        .mockImplementationOnce(() => new Promise((resolve) => (release = resolve)))
+        .mockResolvedValueOnce(ok(fakeClient("e-old", engineOf({ engineVersion: "0.1.0", runningItems: 0 })).client))
+        .mockResolvedValueOnce(ok(fakeClient("e-old", engineOf({ engineVersion: "0.1.0", runningItems: 0 })).client))
+        .mockResolvedValueOnce(ok(fresh()));
+      const { watcher, stop } = watch(connect, [], undefined, APP);
+      await settle();
+      busy.push(itemUpdated("done"));
+      busy.push(itemUpdated("stopped"));
+      await settle();
+      // The second event opened no second connection while the first check waits.
+      expect(connect).toHaveBeenCalledTimes(2);
+      // The first check read 1 (one item was still running then); the repeat reads 0.
+      release(ok(fakeClient("e-old", engineOf({ engineVersion: "0.1.0", runningItems: 1 })).client));
+      await vi.waitFor(() => expect(watcher.state()).toEqual({ status: "connected", engineId: "engine-new" }));
+      expect(stop).toHaveBeenCalledOnce();
+    });
+
+    it("keeps the note when the stop is refused (item B is queued while A ends), and replaces it once B is done", async () => {
+      const busy = fakeClient("e-old", engineOf({ engineVersion: "0.1.0", runningItems: 1 }));
+      const idleOld = () => fakeClient("e-old", engineOf({ engineVersion: "0.1.0", runningItems: 0 })).client;
+      const afterRefusal = fakeClient("e-old", engineOf({ engineVersion: "0.1.0", runningItems: 0 }));
+      const connect = vi
+        .fn<Connect>()
+        .mockResolvedValueOnce(ok(busy.client))
+        // A is done: the probe reads 0 (a queued item is not counted), the replace is tried and refused.
+        .mockResolvedValueOnce(ok(idleOld()))
+        .mockResolvedValueOnce(ok(idleOld()))
+        .mockResolvedValueOnce(ok(afterRefusal.client))
+        // B is done: the probe, the replace and the new engine.
+        .mockResolvedValueOnce(ok(idleOld()))
+        .mockResolvedValueOnce(ok(idleOld()))
+        .mockResolvedValueOnce(ok(fresh()));
+      const stopOutcomes: StopResult[] = [{ kind: "refused", runningItems: 1 }, STOPPED];
+      const { watcher, stop } = watch(connect, [], async () => stopOutcomes.shift() ?? STOPPED, APP);
+      await settle();
+      busy.push(itemUpdated("done"));
+      await vi.waitFor(() => expect(stop).toHaveBeenCalledOnce());
+      await settle();
+      await settle();
+      expect(watcher.state()).toEqual({ status: "connected", engineId: "e-old", staleEngine: true });
+      expect(connect).toHaveBeenCalledTimes(4);
+      // B's own updates while it sets up (queued) or runs start no check; its end does.
+      afterRefusal.push(itemUpdated("queued"));
+      afterRefusal.push(itemUpdated("running"));
+      await settle();
+      expect(connect).toHaveBeenCalledTimes(4);
+      afterRefusal.push(itemUpdated("done"));
+      await vi.waitFor(() => expect(watcher.state()).toEqual({ status: "connected", engineId: "engine-new" }));
+      expect(stop).toHaveBeenCalledTimes(2);
+    });
+
+    it("keeps the note when the same engine is reached again, and drops it for an engine that started since", async () => {
+      const busy = fakeClient("e-old", engineOf({ engineVersion: "0.1.0", runningItems: 1 }));
+      const { watcher } = watch(async () => ok(busy.client), [], undefined, APP);
+      await settle();
+      busy.push({ kind: "disconnected" });
+      await settle();
+      expect(watcher.state()).toEqual({ status: "reconnecting" });
+      busy.push({ kind: "reconnected", engineId: "e-old" });
+      await settle();
+      expect(watcher.state()).toEqual({ status: "connected", engineId: "e-old", staleEngine: true });
+      busy.push({ kind: "reconnected", engineId: "e-started-by-the-client" });
+      await settle();
+      expect(watcher.state()).toEqual({ status: "connected", engineId: "e-started-by-the-client" });
+    });
+
+    it("does nothing when the watcher closes while a check is open", async () => {
+      const busy = fakeClient("e-old", engineOf({ engineVersion: "0.1.0", runningItems: 1 }));
+      let release: (result: Awaited<ReturnType<Connect>>) => void = () => {};
+      const connect = vi.fn<Connect>().mockResolvedValueOnce(ok(busy.client)).mockImplementationOnce(() => new Promise((resolve) => (release = resolve)));
+      const { watcher, stop } = watch(connect, [], undefined, APP);
+      await settle();
+      busy.push(itemUpdated("done"));
+      await settle();
+      await watcher.close();
+      release(ok(fakeClient("e-old", engineOf({ engineVersion: "0.1.0", runningItems: 0 })).client));
+      await settle();
+      await settle();
+      expect(stop).not.toHaveBeenCalled();
+      expect(connect).toHaveBeenCalledTimes(2);
+    });
+
+    it("leaves it alone, with no note, when the app cannot tell (an unpackaged app that has no built files, or a release engine)", async () => {
+      for (const [engine, built] of [
+        [engineOf({ engineVersion: "0.1.0", runningItems: 1 }), undefined],
+        [engineOf({ engineVersion: "0.1.0", startedAt: 1, runningItems: 1 }), BUILT],
+      ] as const) {
+        const { watcher, stop } = watch(async () => ok(fakeClient("e-1", engine).client), [], undefined, undefined, built);
+        await settle();
+        expect(watcher.state()).toEqual({ status: "connected", engineId: "e-1" });
+        expect(stop).not.toHaveBeenCalled();
+      }
+    });
+
+    describe("in a dev app whose engine files were built at 2000", () => {
+      const devEngine = (startedAt: number, runningItems: number) => engineOf({ engineVersion: "0.0.0", startedAt, runningItems });
+
+      it("replaces an idle dev engine that started before, at once", async () => {
+        const old = fakeClient("e-old", devEngine(1500, 0)).client;
+        const connect = vi.fn<Connect>().mockResolvedValueOnce(ok(old)).mockResolvedValueOnce(ok(fakeClient("engine-new", devEngine(2500, 0)).client));
+        const { watcher, stop } = watch(connect, [], undefined, undefined, BUILT);
+        await vi.waitFor(() => expect(watcher.state()).toEqual({ status: "connected", engineId: "engine-new" }));
+        expect(stop).toHaveBeenCalledExactlyOnceWith({ engineId: "e-old", engine: devEngine(1500, 0), ifIdle: true });
+      });
+
+      it("uses a busy one with the note, then replaces it once an item leaves it idle", async () => {
+        const busy = fakeClient("e-old", devEngine(1500, 1));
+        const connect = vi
+          .fn<Connect>()
+          .mockResolvedValueOnce(ok(busy.client))
+          .mockResolvedValueOnce(ok(fakeClient("e-old", devEngine(1500, 0)).client))
+          .mockResolvedValueOnce(ok(fakeClient("e-old", devEngine(1500, 0)).client))
+          .mockResolvedValueOnce(ok(fakeClient("engine-new", devEngine(2500, 0)).client));
+        const { watcher, stop } = watch(connect, [], undefined, undefined, BUILT);
+        await settle();
+        expect(watcher.state()).toEqual({ status: "connected", engineId: "e-old", staleEngine: true });
+        busy.push(itemUpdated("done"));
+        await vi.waitFor(() => expect(watcher.state()).toEqual({ status: "connected", engineId: "engine-new" }));
+        expect(stop).toHaveBeenCalledOnce();
+      });
+
+      it("uses an engine that started after the build", async () => {
+        const { watcher, stop } = watch(async () => ok(fakeClient("e-1", devEngine(2000, 0)).client), [], undefined, undefined, BUILT);
+        await settle();
+        expect(watcher.state()).toEqual({ status: "connected", engineId: "e-1" });
+        expect(stop).not.toHaveBeenCalled();
+      });
     });
   });
 

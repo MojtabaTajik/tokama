@@ -96,6 +96,8 @@ export interface EngineInfo {
   readonly apiVersion: number;
   /** Its build version; absent from an engine too old to say. */
   readonly engineVersion?: string;
+  /** When its process started, ms since the Unix epoch; absent from an engine too old to say. */
+  readonly startedAt?: number;
   /** How many items it ran at that moment; absent from an engine too old to say. */
   readonly runningItems?: number;
 }
@@ -555,6 +557,7 @@ function openSession(files: SocketFiles, timeoutMs: number, handlers: SessionHan
         const engine: EngineInfo = {
           apiVersion: reply.value.apiVersion,
           ...(reply.value.engineVersion !== undefined && { engineVersion: reply.value.engineVersion }),
+          ...(reply.value.kind === "welcome" && reply.value.startedAt !== undefined && { startedAt: reply.value.startedAt }),
           ...(reply.value.runningItems !== undefined && { runningItems: reply.value.runningItems }),
         };
         if (reply.value.kind === "connection_error") {
