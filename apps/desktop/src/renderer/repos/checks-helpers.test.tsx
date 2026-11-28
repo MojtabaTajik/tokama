@@ -531,6 +531,10 @@ describe("Setup command", () => {
     expect(text()).toContain("✓ suggested");
     expect(text()).toContain("Found pnpm-lock.yaml. Runs once in every new worktree, before the checks.");
     expect(text()).toContain("A template's own setup command replaces it.");
+    // Once the user changes it, it is no longer the suggestion: the mark and "Found" go.
+    await type(setupField(), "");
+    expect(text()).not.toContain("Found pnpm-lock.yaml.");
+    expect(document.querySelectorAll(".rd-suggested")).toHaveLength(1);
   });
 
   it("is saved with the repo, and left out of add_repo when empty", async () => {

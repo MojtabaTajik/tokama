@@ -36,6 +36,7 @@ async function openAdd(app: ElectronApplication, page: Page, folder: string): Pr
 }
 
 const checksOf = (dialog: Locator) => dialog.getByRole("textbox", { name: /^Checks/ });
+const setupOf = (dialog: Locator) => dialog.getByRole("textbox", { name: /^Setup command/ });
 
 flow(
   "suggests checks with AI, adds one and edits one by hand, tries them, and adds the repo",
@@ -61,7 +62,9 @@ flow(
     const card = add.getByRole("region", { name: "Suggested checks" });
     await card.waitFor();
     expect(await checksOf(add).inputValue()).toBe("pnpm test");
-    expect(await card.textContent()).toContain("3 checks · 2 new");
+    expect(await card.textContent()).toContain("1 setup · 3 checks · 2 new");
+    // The folder's pnpm-lock.yaml filled the field, and the answer's setup row is the same command.
+    expect(await setupOf(add).inputValue()).toBe("pnpm install --frozen-lockfile");
     await screenshot("repo-helpers-i-answer", add);
 
     await card.getByRole("button", { name: "Add pnpm lint" }).click();
@@ -82,12 +85,12 @@ flow(
 
     // Try checks: every check runs, the lint one fails, its output is plain text.
     await add.getByRole("button", { name: "Try checks" }).click();
-    await add.getByText("Trying 3 checks").waitFor();
+    await add.getByText("Trying setup, then 3 checks").waitFor();
     await screenshot("repo-helpers-k-trying", add);
     const results = add.getByRole("region", { name: "Try checks results" });
     await results.waitFor();
     expect(await results.locator(".ch-card-title").textContent()).toContain("1 of 3 checks failed");
-    expect(await results.locator(".ch-trial-word").allInnerTexts()).toEqual(["Passed", "Failed, exit 1", "Passed"]);
+    expect(await results.locator(".ch-trial-word").allInnerTexts()).toEqual(["Done", "Passed", "Failed, exit 1", "Passed"]);
     await results.getByRole("button", { name: "Output" }).click();
     expect(await results.locator(".ch-output-text").textContent()).toContain("prefer-const");
     await screenshot("repo-helpers-l-results", add);
@@ -99,6 +102,7 @@ flow(
     expect(yaml).toContain("- pnpm test");
     expect(yaml).toContain("- pnpm lint");
     expect(yaml).toContain("- pnpm typecheck");
+    expect(yaml).toContain("setup: pnpm install --frozen-lockfile");
 
     // The agreement is remembered: the next folder sends at once, and the app wrote it down.
     await expect.poll(() => (JSON.parse(readFileSync(join(home, ".tokama", "desktop.json"), "utf8")) as { helperConsent?: string[] }).helperConsent).toEqual(["claude-code"]);
@@ -154,6 +158,8 @@ flow(
     await resize(1200, 1700);
     const folder = makeRepo(tmp, "billing-api", { "ok.js": "console.log(1);\n", "broken.js": "const = ;\n" });
     const add = await openAdd(app, page, folder);
+    // This test is about the checks: the lockfile's setup command would need a real pnpm and registry.
+    await setupOf(add).fill("");
     await checksOf(add).fill("node --check ok.js\nnode --check broken.js");
     await add.getByRole("button", { name: "Try checks" }).click();
     const results = add.getByRole("region", { name: "Try checks results" });

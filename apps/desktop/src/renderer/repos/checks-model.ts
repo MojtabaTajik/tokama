@@ -41,7 +41,8 @@ export function breaksRule(command: string): boolean {
 
 /** Why Try checks is off for these lines and the setup command, naming the first line that breaks the rule; undefined when it can run. */
 export function tryProblem(lines: readonly string[], setup = ""): string | undefined {
-  if (setup !== "" && breaksRule(setup)) return `The setup command is more than one command. ${SETUP_RULE_TEXT}`;
+  // The field says the rule itself, under its own box.
+  if (setup !== "" && breaksRule(setup)) return "The setup command is more than one command.";
   if (lines.length > MAX_CHECKS) return `Try checks runs at most ${MAX_CHECKS} checks.`;
   const bad = lines.findIndex(breaksRule);
   return bad === -1 ? undefined : `Line ${bad + 1} is more than one command. ${RULE_TEXT}`;

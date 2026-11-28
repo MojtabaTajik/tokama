@@ -391,8 +391,10 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
     </Field>
   );
   const setupBroken = setupCommand !== "" && breaksRule(setupCommand);
-  const foundFrom = !editing ? suggestion?.setupFrom : undefined;
-  const setupHint = editing ? `${TEXT.setupWhy} ${TEXT.setupRule} ${TEXT.setupEditEnd}` : foundFrom != null ? `${TEXT.setupFound(foundFrom)} ${TEXT.setupWhy} ${TEXT.setupRule}` : `${TEXT.setupNoneFound} ${TEXT.setupRule}`;
+  // "Found <file>" and "✓ suggested" hold only while the field still has the command that file gave.
+  const foundFrom = !editing && suggestion?.setup != null && setupCommand === suggestion.setup ? suggestion.setupFrom : undefined;
+  const hadSuggestion = !editing && suggestion?.setup != null;
+  const setupHint = editing ? `${TEXT.setupWhy} ${TEXT.setupRule} ${TEXT.setupEditEnd}` : foundFrom != null ? `${TEXT.setupFound(foundFrom)} ${TEXT.setupWhy} ${TEXT.setupRule}` : hadSuggestion ? `${TEXT.setupWhy} ${TEXT.setupRule} ${TEXT.setupEditEnd}` : `${TEXT.setupNoneFound} ${TEXT.setupRule}`;
   const setupField = (
     <Field
       label={TEXT.setup}
