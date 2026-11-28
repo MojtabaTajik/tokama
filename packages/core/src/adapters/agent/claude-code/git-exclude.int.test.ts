@@ -56,10 +56,17 @@ describe("placeholderExcludeEnv", () => {
     expect(git(main, ["status", "--porcelain"])).toBe("?? .bashrc");
   });
 
-  it("keeps a tracked file of the same name tracked", async () => {
+  it("keeps a tracked file in .claude tracked: its change still stages beside an untracked placeholder", async () => {
     const env = await exclude();
     writeFileSync(join(item, ".claude", "settings.json"), '{"a":1}\n');
     expect(git(item, ["status", "--porcelain"], env)).toBe(" M .claude/settings.json");
+    writeFileSync(join(item, ".claude", "hooks"), "");
+    writeFileSync(join(item, ".claude", "future-path"), "");
+    git(item, ["add", "-A"], env);
+    expect(git(item, ["status", "--porcelain"], env)).toBe("M  .claude/settings.json");
+    // Tokama's own staging has no exclude: a real new file there is committed.
+    git(item, ["add", "-A"]);
+    expect(git(item, ["status", "--porcelain"])).toContain("A  .claude/future-path");
   });
 
   it("keeps what the engineer ignores globally ignored: the default file, and a configured one", async () => {

@@ -41,7 +41,9 @@ export async function placeholderExcludeEnv(cwd: string, options: PlaceholderExc
     if (!lstatSync(dirname(file)).isDirectory()) return undefined;
     const own = await ownExcludes(cwd, options);
     if (own === undefined) return undefined;
-    const lines = SANDBOX_PLACEHOLDER_PATHS.map((path) => `/${path}`).join("\n");
+    // The whole `.claude/` folder, so a path the sandbox adds there later is covered too. An
+    // exclude never hides a tracked file: a tracked `.claude/settings.json` still shows and stages.
+    const lines = [...new Set(SANDBOX_PLACEHOLDER_PATHS.map((path) => (path.startsWith(".claude/") ? "/.claude/" : `/${path}`)))].join("\n");
     const written = replaceTextSync(file, `${own === "" || own.endsWith("\n") ? own : `${own}\n`}${lines}\n`, 0o644);
     if (!written.ok) return undefined;
     // Added after any setting the caller's environment already carries.
