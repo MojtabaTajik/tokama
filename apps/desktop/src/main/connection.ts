@@ -132,17 +132,18 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
 
   const replace = async (stopEngine: NonNullable<WatchOptions["stopEngine"]>, mine: number, request: StopRequest): Promise<void> => {
     set({ status: "starting", updating: true });
+    const stopStartedAt = Date.now();
     const outcome = await stopEngine(request);
     if (closed || mine !== attempt) return;
     switch (outcome.kind) {
       // Connect again: the new engine starts, or the older one that is busy again is used or asked about.
       case "stopped":
-        return run(mine, "ask", true, outcome.forced);
+        return run(mine, "ask", true, outcome.forced ? stopStartedAt : undefined);
       case "replaced":
         return run(mine, "ask", true);
       // The engine is idle by its count but has a queued item (or another command): it is kept, and stays stale.
       case "refused":
-        return run(mine, "ask", true, false, true);
+        return run(mine, "ask", true, undefined, true);
       case "still_running":
         return fail(
           outcome.pid === undefined
@@ -152,7 +153,24 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
     }
   };
 
-  const run = async (mine: number, mode: Mode, replaced = false, forced = false, kept = false): Promise<void> => {
+  /**
+   * Deletes the crash entry that the new engine recorded from the marker of the engine this app
+   * killed: the oldest engine entry of kind unclean_exit made since the stop began. Any other crash stays.
+   */
+  const forgetKill = async (connected: EngineClient, since: number): Promise<void> => {
+    try {
+      const listed = await connected.query({ type: "diagnostics_list", types: ["crash"], since, limit: 20 });
+      // A cut list may have lost the oldest entry, the kill's own; the newest left would be a real crash.
+      if (!listed.ok || listed.data.truncated) return;
+      // Newest first, so the last match is the oldest: the kill's own. A newer one is a real crash.
+      const mine = listed.data.entries.filter((e) => e.type === "crash" && e.source === "engine" && e.kind === "unclean_exit" && e.at >= since).at(-1);
+      if (mine !== undefined) await connected.command({ type: "diagnostics_delete", ids: [mine.id] });
+    } catch {
+      // The entry stays; the user can delete it in Diagnostics.
+    }
+  };
+
+  const run = async (mine: number, mode: Mode, replaced = false, killedSince?: number, kept = false): Promise<void> => {
     const result = await options.connect();
     if (closed || mine !== attempt) {
       if (result.ok) await result.value.close();
@@ -176,7 +194,7 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
     // events() is called in the same tick as the connect result, so no event is missed.
     const events = client.events();
     // A killed engine left its crash marker; that stop was this app's, not a crash.
-    if (forced) await client.command({ type: "diagnostics_settings", crashSeen: true }).catch(() => undefined);
+    if (killedSince !== undefined) await forgetKill(client, killedSince);
     if (closed || mine !== attempt) return;
     // Used as it is although it runs older code (it runs items, or did not say): the connection says
     // so, and an item event that may mean it went idle checks again. After a replace attempt only an
