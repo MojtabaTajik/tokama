@@ -70,6 +70,21 @@ describe("SplitBar", () => {
     expect([...bar.querySelectorAll("rect")].map((rect) => rect.getAttribute("data-tone"))).toEqual(["tokama", "other"]);
   });
 
+  it("draws a part in its own colour when it has one, and the others in their tones'", () => {
+    render(
+      <SplitBar
+        label="Weekly limit"
+        parts={[
+          { tone: "tokama", value: 6, colour: "var(--tag-sky)" },
+          { tone: "other", value: 2 },
+        ]}
+      />,
+    );
+    const [own, plain] = [...container.querySelectorAll("rect")] as SVGElement[];
+    expect(own!.style.fill).toBe("var(--tag-sky)");
+    expect(plain!.style.fill).toBe("");
+  });
+
   it("draws the legend swatch of a tone as a hidden square", () => {
     render(<SplitSwatch tone="other" />);
     const swatch = container.querySelector(".split-swatch")!;

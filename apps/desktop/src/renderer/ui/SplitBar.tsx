@@ -10,6 +10,8 @@ export type SplitTone = "tokama" | "other" | "rest";
 export interface SplitPart {
   readonly tone: SplitTone;
   readonly value: number;
+  /** A colour of the theme (`var(--…)`) for a part whose colour is not its tone's, such as an AI tool's own. */
+  readonly colour?: string | undefined;
 }
 
 const HEIGHT = 8;
@@ -71,7 +73,9 @@ export function SplitBar({ label, parts, total }: SplitBarProps) {
     <svg ref={svg} className="split-bar" width="100%" height={HEIGHT} role="img" aria-label={label}>
       {parts.map((part, index) => {
         const at = placed[index];
-        return at === undefined ? null : <rect key={part.tone} className="split-part" data-tone={part.tone} x={at.x} y={0} width={at.width} height={HEIGHT} rx={HEIGHT / 2} />;
+        return at === undefined ? null : (
+          <rect key={part.tone} className="split-part" data-tone={part.tone} x={at.x} y={0} width={at.width} height={HEIGHT} rx={HEIGHT / 2} {...(part.colour !== undefined && { style: { fill: part.colour } })} />
+        );
       })}
     </svg>
   );

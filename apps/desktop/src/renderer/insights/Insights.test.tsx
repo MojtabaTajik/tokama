@@ -110,10 +110,14 @@ describe("Insights: what uses the weekly limits", () => {
   it("makes one list per AI tool, the one that runs out first on top and the tool without limits last, each with its own heading", () => {
     render();
     expect($$(".ins-list").map((list) => list.getAttribute("aria-label"))).toEqual(["Claude Code: what uses its weekly limit", "Codex CLI: what uses its weekly limit", "Ollama: what uses its weekly limit"]);
-    expect($$(".ins-split-bar").map((bar) => bar.getAttribute("aria-label"))).toEqual([
+    expect($$(".ins-list .split-bar").map((bar) => bar.getAttribute("aria-label"))).toEqual([
       "Claude Code weekly limit: Tokama ~62%, Outside Tokama ~20%, Left 18%",
       "Codex CLI weekly limit: Tokama ~22%, Outside Tokama ~8%, Left 70%",
     ]);
+    // Three parts in order; Tokama's part is in the tool's colour, the others in their tones'.
+    const parts = [...listOf("Claude Code").querySelectorAll(".split-part")] as SVGElement[];
+    expect(parts.map((part) => part.getAttribute("data-tone"))).toEqual(["tokama", "other", "rest"]);
+    expect(parts.map((part) => part.style.fill !== "")).toEqual([true, false, false]);
     expect(listOf("Ollama").querySelector(".ins-list-text")?.textContent).toBe("no plan limits · rows count tokens");
     expect($$(".ins-list .ins-rank-head").map((head) => head.textContent?.match(/Weekly limit|Of Tokama's use|Tokens/)?.[0])).toEqual(["Weekly limit", "Weekly limit", "Tokens"]);
   });
@@ -271,7 +275,7 @@ describe("Insights: a plan, an API key, no reading", () => {
     expect(rankRows().map(rankValue)).toEqual(["$16.10", "$11.40", "≈ $2.70"]);
     expect(container.textContent).toContain("≈ marks a call the CLI gave no cost for");
     expect(container.textContent).toContain("prices as of 2026-11-03");
-    expect($(".ins-split-bar")).toBeNull();
+    expect($(".ins-list .split-bar")).toBeNull();
     expect($(".ins-list-text")?.textContent).toBe("billed per use · rows show what each call cost");
     expect(container.textContent).not.toContain("Outside Tokama");
     expect(container.textContent).not.toMatch(/~\d/);
@@ -309,7 +313,7 @@ describe("Insights: a plan, an API key, no reading", () => {
 
   it("shows shares of Tokama's own use, and no split, when no limit reading is there", () => {
     render({}, noReading);
-    expect($(".ins-split-bar")).toBeNull();
+    expect($(".ins-list .split-bar")).toBeNull();
     expect(listOf("Claude Code").querySelector(".ins-list-text")?.textContent).toBe("no limit reading yet · Tokama's part of it is not known for this tool, so rows are a share of what Tokama used on it");
     expect(listOf("Claude Code").querySelector(".ins-rank-head")?.textContent).toContain("Of Tokama's use");
     expect(valuesIn(listOf("Claude Code"))).toEqual(["40%", "30%", "2%"]);

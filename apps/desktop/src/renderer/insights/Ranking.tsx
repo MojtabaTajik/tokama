@@ -12,6 +12,7 @@ import { cliName } from "../model.js";
 import { BackendMark } from "../ui/agent.js";
 import { Button } from "../ui/Button.js";
 import { Segmented } from "../ui/Segmented.js";
+import { SplitBar } from "../ui/SplitBar.js";
 import { type Group, LIST_ROWS, listsOf, type Row, type SubRow, type ToolList } from "./ranking-model.js";
 import { limitShare, toolColour } from "./usage-model.js";
 
@@ -170,18 +171,18 @@ function ToolListView({ list, group, tools, setup, open, onToggle, showAll, onSh
 }
 
 function SplitLine({ name, heading, colour }: { readonly name: string; readonly heading: Extract<ToolList["heading"], { kind: "split" }>; readonly colour: string }) {
-  const whole = heading.tokama + heading.outside + heading.left || 1;
   const parts = [
-    { label: TEXT.tokama, value: limitShare(heading.tokama), size: heading.tokama, colour },
-    { label: TEXT.outside, value: limitShare(heading.outside), size: heading.outside, colour: "var(--chart-other)" },
-    { label: TEXT.left, value: `${Math.round(heading.left)}%`, size: heading.left, colour: "var(--hairline)" },
+    { label: TEXT.tokama, value: limitShare(heading.tokama), size: heading.tokama, colour, tone: "tokama" as const },
+    { label: TEXT.outside, value: limitShare(heading.outside), size: heading.outside, colour: "var(--chart-other)", tone: "other" as const },
+    { label: TEXT.left, value: `${Math.round(heading.left)}%`, size: heading.left, colour: "var(--hairline)", tone: "rest" as const },
   ];
   return (
     <>
-      <span className="ins-split-bar" role="img" aria-label={`${name} weekly limit: ${parts.map((part) => `${part.label} ${part.value}`).join(", ")}`}>
-        {parts.filter((part) => part.size > 0).map((part) => (
-          <span key={part.label} style={{ flex: `${part.size / whole} 1 0`, background: part.colour }} />
-        ))}
+      <span className="ins-list-bar">
+        <SplitBar
+          label={`${name} weekly limit: ${parts.map((part) => `${part.label} ${part.value}`).join(", ")}`}
+          parts={parts.map((part) => ({ tone: part.tone, value: part.size, ...(part.tone === "tokama" && { colour: part.colour }) }))}
+        />
       </span>
       <span className="ins-split-figs">
         {parts.map((part) => (
