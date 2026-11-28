@@ -152,6 +152,10 @@ function accessOf(agent: ReturnType<typeof resolveAgent>): { agentAccess?: Templ
   };
 }
 
+/** Whether the agent of some step may run commands: the fact the "read-only" tag on both screens depends on. */
+export const agentsRunCommands = (template: TemplateRecord, agents: LoadedAgents): boolean =>
+  template.steps.some((step) => (accessOf(resolveAgent(agents, step.agentId)).agentAccess?.commands.length ?? 0) > 0);
+
 /** The first non-blank line of a role text, cut to the length the setup allows. */
 export function roleLine(role: string): string | undefined {
   const line = role.split("\n").find((candidate) => candidate.trim() !== "")?.trim();

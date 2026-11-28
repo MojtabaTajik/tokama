@@ -56,6 +56,8 @@ export const TemplateDetailSchema = z.strictObject({
   problems: z.array(TemplateProblemSchema).max(100),
   /** Things the template does that the engineer may not expect. */
   warnings: z.array(message).max(50),
+  /** True when the agent of some step may run commands, which can change files; absent for a template that does not load or when the engine did not check. */
+  agentsRunCommands: z.boolean().optional(),
   /** The file as read; null when it could not be read or is too large to send. */
   text: z.string().max(MAX_TEMPLATE_FILE_BYTES).nullable(),
   /** The file was read but left out: with it, the reply would be larger than a message may be. */

@@ -111,4 +111,36 @@ describe("the templates queries in real mode", () => {
     expect(fixed.ok && fixed.data.problems).toEqual([]);
     expect(fixed.ok && fixed.data.template?.steps.map((step) => step.doneWhen)).toEqual(["checks pass"]);
   });
+
+  it("says a read template's agent may run commands when its agent file gives it commands, as the setup's step access does", async () => {
+    const dir = tempEngineDir(cleanups);
+    const root = realpathSync(dirname(dir));
+    const home = join(root, "tokama");
+    const repo = join(root, "billing-api");
+    mkdirSync(join(repo, ".tokama", "templates"), { recursive: true });
+    mkdirSync(join(home, "agents"), { recursive: true });
+    execFileSync("git", ["init", "-q", "-b", "main"], { cwd: repo });
+    const readTemplate = (agent: string) => GOOD.replace("repos: edit", "repos: read").replace("agent: builder", `agent: ${agent}`).replace("finish: [commit]", "finish: [findings]").replace("done_when: checks pass\n    checks: from-repo\n    if_failed: retry\n    max_attempts: 2", "done_when: agent finishes\n    if_failed: ask");
+    writeFileSync(join(repo, ".tokama", "templates", "with-commands.yaml"), readTemplate("runner"));
+    writeFileSync(join(repo, ".tokama", "templates", "no-commands.yaml"), readTemplate("architect"));
+    writeFileSync(join(home, "agents", "runner.md"), "---\nformat: 1\nname: Runner\nruns_on: claude-code\nmodel: sonnet\ntools: read-only\ncommands: [node]\n---\nRun the script.\n");
+    writeFileSync(join(home, "repos.yaml"), `format: 1\nrepos:\n  - id: billing-api\n    path: ${repo}\n    base_branch: main\n    checks: ["true"]\n`);
+    const engine = await client({ dir, home });
+
+    const detail = async (file: string) => {
+      const reply = await engine.query({ type: "template_detail", origin: "billing-api", file: `.tokama/templates/${file}.yaml` });
+      if (!reply.ok) throw new Error(reply.error.message);
+      return reply.data;
+    };
+    expect((await detail("with-commands")).problems).toEqual([]);
+    expect((await detail("with-commands")).agentsRunCommands).toBe(true);
+    expect((await detail("no-commands")).agentsRunCommands).toBe(false);
+
+    // New work reads the same fact from the step's agent access.
+    const setup = await engine.query({ type: "setup" });
+    if (!setup.ok) throw new Error(setup.error.message);
+    const commandsOf = (ref: string) => setup.data.templates.find((template) => template.id === ref)?.steps.map((step) => step.agentAccess?.commands ?? []);
+    expect(commandsOf("billing-api/with-commands")).toEqual([["node"]]);
+    expect(commandsOf("billing-api/no-commands")).toEqual([[]]);
+  });
 });

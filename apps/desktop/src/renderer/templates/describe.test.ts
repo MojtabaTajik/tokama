@@ -117,19 +117,26 @@ describe("usesOf", () => {
 });
 
 describe("accessNote", () => {
-  const uses = (picked: "read" | "edit" | undefined, named: { repoId: string; access: "read" | "edit" }[] = [], commands: string[] = [], stepCommands: string[] = []) =>
-    ({ uses: { repos: { picked, named }, connections: [], commands }, steps: [{ commands: stepCommands }] }) as unknown as TemplateView;
+  const uses = (picked: "read" | "edit" | undefined, named: { repoId: string; access: "read" | "edit" }[] = [], commands: string[] = []) =>
+    ({ uses: { repos: { picked, named }, connections: [], commands } }) as unknown as TemplateView;
   it("follows the picked repo, as the engine does: read-only for read, changes code for edit", () => {
-    expect(accessNote(uses("read"))).toBe("read-only");
-    expect(accessNote(uses("edit"))).toBe("changes code");
+    expect(accessNote(uses("read"), false)).toBe("read-only");
+    expect(accessNote(uses("edit"), false)).toBe("changes code");
     // The engine works only in the picked repo, so a named edit repo does not change the answer.
-    expect(accessNote(uses("read", [{ repoId: "billing-api", access: "edit" }]))).toBe("read-only");
+    expect(accessNote(uses("read", [{ repoId: "billing-api", access: "edit" }]), false)).toBe("read-only");
   });
 
-  it("makes no read-only promise when the template gives its agents commands", () => {
-    expect(accessNote(uses("read", [], ["node"]))).toBeUndefined();
-    expect(accessNote(uses("read", [], [], ["node"]))).toBeUndefined();
-    expect(accessNote(uses("edit", [], ["node"]))).toBe("changes code");
+  it("makes no read-only promise when a step's agent may run commands", () => {
+    expect(accessNote(uses("read"), true)).toBeUndefined();
+    expect(accessNote(uses("edit"), true)).toBe("changes code");
+  });
+
+  it("ignores the commands the template lists: its agents never get them", () => {
+    expect(accessNote(uses("read", [], ["node"]), false)).toBe("read-only");
+  });
+
+  it("says read-only when the engine does not say (an engine that sends no answer)", () => {
+    expect(accessNote(uses("read"), undefined)).toBe("read-only");
   });
 });
 
