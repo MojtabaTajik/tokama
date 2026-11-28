@@ -160,7 +160,8 @@ export function watchConnection(options: WatchOptions): ConnectionWatch {
   const forgetKill = async (connected: EngineClient, since: number): Promise<void> => {
     try {
       const listed = await connected.query({ type: "diagnostics_list", types: ["crash"], since, limit: 20 });
-      if (!listed.ok) return;
+      // A cut list may have lost the oldest entry, the kill's own; the newest left would be a real crash.
+      if (!listed.ok || listed.data.truncated) return;
       // Newest first, so the last match is the oldest: the kill's own. A newer one is a real crash.
       const mine = listed.data.entries.filter((e) => e.type === "crash" && e.source === "engine" && e.kind === "unclean_exit" && e.at >= since).at(-1);
       if (mine !== undefined) await connected.command({ type: "diagnostics_delete", ids: [mine.id] });

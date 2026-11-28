@@ -211,6 +211,16 @@ describe("watchConnection", () => {
       expect(client.command).toHaveBeenCalledWith({ type: "diagnostics_delete", ids: ["d-kill"] });
     });
 
+    it("deletes nothing when the crash list is cut: the kill's own entry may be missing from it", async () => {
+      const { client } = fakeClient("engine-new");
+      client.query.mockResolvedValue({ ok: true, data: { truncated: true, entries: [{ type: "crash", id: "d-real", at: Date.now() + 9, source: "engine", kind: "unclean_exit" }] } });
+      const connect = vi.fn<Connect>().mockResolvedValueOnce(err(versionRefusal(APP_API - 1, 0))).mockResolvedValueOnce(ok(client));
+      const { watcher } = watch(connect, [], async () => ({ kind: "stopped", forced: true }));
+      await vi.waitFor(() => expect(watcher.state().status).toBe("connected"));
+      expect(client.query).toHaveBeenCalled();
+      expect(client.command).not.toHaveBeenCalled();
+    });
+
     it("still connects when the crash entry cannot be listed or deleted", async () => {
       for (const fail of ["query", "command"] as const) {
         const { client } = fakeClient("engine-new");

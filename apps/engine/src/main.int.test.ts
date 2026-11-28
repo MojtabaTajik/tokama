@@ -93,6 +93,7 @@ describe("engine process", () => {
     if (!first.ok) throw new Error(first.error.message);
     expect(await first.value.query({ type: "diagnostics_settings" })).toMatchObject({ ok: true, data: { collect: true, crashWaiting: false } });
     const dead = readEngineLock(lockOf(dir));
+    const stopStartedAt = Date.now();
     process.kill(lockPid(dir) ?? 0, "SIGKILL");
     await first.value.close();
     // Killed: its lock and socket file stay behind.
@@ -108,7 +109,9 @@ describe("engine process", () => {
     expect(setup.ok && setup.data.health.crashWaiting).toBe(true);
 
     // What the app does after it killed an engine itself: lists the new entry by time and deletes it.
-    const listed = await second.query({ type: "diagnostics_list", types: ["crash"], since: 0 });
+    const listed = await second.query({ type: "diagnostics_list", types: ["crash"], since: stopStartedAt });
+    // The time filter works: nothing is listed from after now.
+    expect(await second.query({ type: "diagnostics_list", types: ["crash"], since: Date.now() + 60_000 })).toMatchObject({ ok: true, data: { entries: [] } });
     const ids = listed.ok ? listed.data.entries.map((entry) => entry.id) : [];
     expect(ids).toHaveLength(1);
     expect(await second.command({ type: "diagnostics_delete", ids })).toEqual({ ok: true, data: { deleted: 1 } });
