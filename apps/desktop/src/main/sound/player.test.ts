@@ -156,18 +156,18 @@ describe("the Linux player", () => {
     expect(working.beep).not.toHaveBeenCalled();
   });
 
-  it("falls back to aplay when paplay rejects, and plays again after both fail", async () => {
-    const { deps, requests } = setup({ installed: ["paplay", "aplay"], result: () => Promise.reject(new Error("boom")) });
+  it("falls back down the list when a program rejects, and plays again after all fail", async () => {
+    const { deps, requests } = setup({ installed: ["pw-play", "paplay", "aplay"], result: () => Promise.reject(new Error("boom")) });
     const player = playerFor("linux", deps);
     expect(() => player.play("needsYou", "tokama")).not.toThrow();
     await tick();
-    expect(requests).toHaveLength(2);
+    expect(requests).toHaveLength(3);
     player.play("needsYou", "tokama");
     await tick();
-    expect(requests).toHaveLength(4);
+    expect(requests).toHaveLength(6);
   });
 
-  it("beeps for every sound, and runs nothing, when neither program is installed", () => {
+  it("beeps for every sound, and runs nothing, when no program is installed", () => {
     const { deps, requests, beep } = setup({ installed: [] });
     const player = playerFor("linux", deps);
     player.play("needsYou", "tokama");

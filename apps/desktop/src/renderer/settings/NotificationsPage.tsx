@@ -18,7 +18,7 @@ const TEXT = {
   soundsName: "Sounds",
   soundsHelp: "Used by Banner + sound and Sound only. The ▶ buttons play it too, whatever a row is set to.",
   infoLooking: "No notification while you are looking at that item: Tokama is in front and the item is open in the drawer or the full view.",
-  soundsMissing: "Tokama sounds need PulseAudio or ALSA on this computer.",
+  soundsMissing: "Tokama sounds need PipeWire, PulseAudio or ALSA on this computer.",
   infoSoundOnly: "Sound only: Tokama plays the sound itself while the app is running, with no banner. Sounds play even during Focus or Do Not Disturb, but not while your computer is locked. Choose Banner only for a row if that bothers you. The ▶ buttons always play.",
   preview: "Preview",
   previewHint: "How each one looks as a notification. Plain text, no formatting.",

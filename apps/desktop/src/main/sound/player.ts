@@ -36,7 +36,7 @@ export interface PlayerDeps {
 const AFPLAY = "/usr/bin/afplay";
 /** The Linux programs, in the order they are tried: PipeWire (the default on current Ubuntu and Fedora), PulseAudio, then ALSA. Only `aplay` cannot decode Ogg. */
 const LINUX_PROGRAMS = ["pw-play", "paplay", "aplay"] as const;
-const LINUX_OGG_PROGRAMS = LINUX_PROGRAMS.slice(0, 2);
+const LINUX_OGG_PROGRAMS = LINUX_PROGRAMS.filter((program) => program !== "aplay");
 const PLAY_TIMEOUT_MS = 5_000;
 
 /** The sound of the desktop theme that stands for each kind on Linux, in the freedesktop sound theme. The call of the Tokay has none. */

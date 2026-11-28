@@ -168,16 +168,16 @@ describe("Settings > Notifications", () => {
     expect(fake.playSound).toHaveBeenLastCalledWith("failed", "system");
   });
 
-  it("says nothing about PulseAudio or ALSA while a player program is there", async () => {
+  it("says nothing about PipeWire, PulseAudio or ALSA while a player program is there", async () => {
     await openPage(fakeBridge(CONNECTED).bridge);
-    expect(container.textContent).not.toContain("PulseAudio");
+    expect(container.textContent).not.toContain("PipeWire");
   });
 
-  it("says Tokama sounds need PulseAudio or ALSA when the player program is missing", async () => {
+  it("says Tokama sounds need PipeWire, PulseAudio or ALSA when the player program is missing", async () => {
     const missing = fakeBridge(CONNECTED);
     missing.notificationStatus.mockResolvedValue({ blocked: false, canOpenSettings: false, soundPlayerMissing: true });
     await openPage(missing.bridge);
-    expect(container.textContent).toContain("Tokama sounds need PulseAudio or ALSA on this computer.");
+    expect(container.textContent).toContain("Tokama sounds need PipeWire, PulseAudio or ALSA on this computer.");
   });
 
   it("clears the Playing timer when the page goes away", async () => {
