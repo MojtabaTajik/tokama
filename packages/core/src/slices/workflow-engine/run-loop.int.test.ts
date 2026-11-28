@@ -683,6 +683,19 @@ describe("run loop: counters", () => {
     });
   });
 
+  it("a token in a check command or its output never reaches the retry prompt, and the recorded output keeps it", SLOW, async () => {
+    const command = "API_KEY=hunter2value sh -c 'echo GITHUB_TOKEN=abcd1234efgh; exit 3'";
+    const runtime = fakeRuntime([edits(WRONG), edits(WRONG)]);
+    const loop = engine(runtime);
+    const id = await start(loop, template([{ ...BUILD_CHECKED, checks: { commands: [command] }, maxAttempts: 2 }]));
+    const prompt = runtime.calls[1]!.request.prompt;
+    expect(prompt).toContain("API_KEY=<redacted> sh -c");
+    expect(prompt).toContain("GITHUB_TOKEN=<redacted>");
+    expect(prompt).not.toContain("hunter2value");
+    expect(prompt).not.toContain("abcd1234efgh");
+    expect(readFileSync(join(tokamaHome, "items", id, "attempts", "build-1", "check-1.log"), "utf8")).toContain("abcd1234efgh");
+  });
+
   it("the same failure twice stops early and asks; then the limit asks; Retry once more grants one attempt", SLOW, async () => {
     const loop = engine(fakeRuntime([edits(WRONG), edits(WRONG), edits(WRONG), edits(FIXED)]));
     const id = await start(loop, template([BUILD_CHECKED]));

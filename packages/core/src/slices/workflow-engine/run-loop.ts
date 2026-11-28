@@ -58,7 +58,7 @@ import {
   type TemplateStepDef,
   type RunFailure,
 } from "../../kernel/schemas/index.js";
-import { cutText, scrubPaths } from "../../kernel/text/index.js";
+import { cutText, scrubPaths, scrubTokens } from "../../kernel/text/index.js";
 import type { Agent, Repo } from "../config/index.js";
 import { type ActivityState, callUsage, agentCliGuardDefaults, labelText, redactPaths, runGuardedCall, type LoopGuardSettings } from "../execution/index.js";
 import { protectedSet, readChange, sharedGitSettings, summarizeChange, type ProtectedSet } from "../integrity/index.js";
@@ -1051,7 +1051,8 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     const checkRefs = await refsMoved(item, stepId, attempt);
     if (checkRefs !== undefined) return checkRefs;
     if (failures.length === 0) return passStep(item, stepId, [attemptEnded(stepId, attempt, "passed", { tree: tree.value, said })]);
-    const feedback = failures.map((f) => `$ ${f.command} (${f.outcome === "failed" ? `exit ${f.exitCode}` : f.outcome})\n${f.output}`).join("\n\n");
+    // Scrubbed before the feedback is cut to its last part, so a cut inside a secret cannot leave the rest of it.
+    const feedback = scrubTokens(failures.map((f) => `$ ${f.command} (${f.outcome === "failed" ? `exit ${f.exitCode}` : f.outcome})\n${f.output}`).join("\n\n"));
     return workFailed({ ...ctx, item: store.get(item.id)! }, stepId, attempt, feedback, failures.map(commandFailure).join(" "), said);
   };
 
