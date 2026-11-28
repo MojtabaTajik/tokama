@@ -85,7 +85,7 @@ import {
   type SteeringEntry,
 } from "./protect.js";
 import { HEADLINE_RULE, NO_CHANGE_RULE, REVIEWER_HEADLINE_RULE, saidOf } from "./headline.js";
-import { parseHeadline } from "./summary.js";
+import { parseHeadline, parseHeadlineOfTail, type ParsedHeadline } from "./summary.js";
 import { parseVerdict, VERDICT_RULE } from "./verdict.js";
 
 export interface RunLoopDeps {
@@ -209,6 +209,8 @@ const failureRule = (step: TemplateStepDef) => (step.doneWhen === "reviewer appr
 const DEFAULT_COMMAND_TIMEOUT_MS = 20 * 60_000;
 const DETAIL_MAX = 500;
 const FEEDBACK_MAX_BYTES = 64 * 1024;
+/** The most of an item file the loop reads whole: a longer reply is read from its end for the headline block. */
+const ITEM_FILE_MAX_BYTES = FEEDBACK_MAX_BYTES * 4;
 /** How much of the end of a cut step output the loop reads for its verdict. */
 const OUTPUT_TAIL_BYTES = 16 * 1024;
 const TITLE_MAX = 200;
@@ -431,8 +433,14 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
   };
 
   const readItemFile = async (itemId: ItemId, rel: string): Promise<string | undefined> => {
-    const read = await readTextFile(itemPath(itemId, rel), { maxBytes: FEEDBACK_MAX_BYTES * 4 });
+    const read = await readTextFile(itemPath(itemId, rel), { maxBytes: ITEM_FILE_MAX_BYTES });
     return read.ok ? read.value : undefined;
+  };
+
+  /** The headline of a reply too long for `readItemFile`, read from its end; undefined for any other unreadable file. */
+  const headlineOfLongReply = async (itemId: ItemId, rel: string): Promise<ParsedHeadline | undefined> => {
+    const read = await readTextTail(itemPath(itemId, rel), { maxBytes: FEEDBACK_MAX_BYTES, maxLines: Number.MAX_SAFE_INTEGER, countLinesUpTo: 0 });
+    return read.ok && read.value.totalBytes > ITEM_FILE_MAX_BYTES ? parseHeadlineOfTail(read.value.text, read.value.totalBytes) : undefined;
   };
 
   // ---- item context -----------------------------------------------------------------------
@@ -923,8 +931,10 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     const { item } = ctx;
     const step = stepDef(ctx.template, stepId);
     // Read here, not kept from the call, so an attempt that resumes after a restart has it too.
-    const reply = (await readItemFile(item.id, `${attemptDir(stepId, attempt)}/agent.txt`)) ?? "";
-    const parsed = parseHeadline(reply);
+    const replyFile = `${attemptDir(stepId, attempt)}/agent.txt`;
+    const whole = await readItemFile(item.id, replyFile);
+    const reply = whole ?? "";
+    const parsed = whole === undefined ? await headlineOfLongReply(item.id, replyFile) : parseHeadline(whole);
     const document = ctx.template.steps.at(-1)?.id === stepId && ctx.template.finish.some((finish) => finish === "findings" || finish === "document");
     const said = (approvesText = false, noChangeOffered = false): Said | undefined => saidOf(parsed, { approvesText, lastOfDocument: document, noChangeOffered });
     switch (step.doneWhen) {

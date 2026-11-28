@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { OutputSummarySchema, SaidSchema } from "../../kernel/schemas/index.js";
-import { parseHeadline, summarizeOutput } from "./summary.js";
+import { parseHeadline, parseHeadlineOfTail, summarizeOutput } from "./summary.js";
 
 // The shape a real reviewer wrote: a bold lead per item, a long paragraph after it, sections that
 // are not must-fix with file:line items of their own, and the verdict last.
@@ -219,5 +219,23 @@ describe("parseHeadline", () => {
       expect(summarizeOutput(review, true)).toMatchObject({ kind: "verdict", mustFix: [{ ref: "a.ts:3", text: "add the test" }] });
       expect(summarizeOutput("Fine.\nVERDICT: approve\nHEADLINE: ok\nNO_CHANGE: yes", true)).toMatchObject({ kind: "verdict", verdict: "approve" });
     });
+  });
+});
+
+describe("parseHeadlineOfTail", () => {
+  const tail = "end of the body\nHEADLINE: A long design.\nPOINT: One thing.\nREAD: yes";
+
+  it("reads the block from the end; the body is the file less the block, with words at the tail's rate", () => {
+    const own = parseHeadline(tail)!;
+    const blockBytes = new TextEncoder().encode(tail).length - own.bodyBytes;
+    const long = parseHeadlineOfTail(tail, 400_000)!;
+    expect(long).toMatchObject({ source: "headline", headline: "A long design.", points: ["One thing."], readFlag: true });
+    expect(long.bodyBytes).toBe(400_000 - blockBytes);
+    expect(long.words).toBe(Math.round((own.words * long.bodyBytes) / own.bodyBytes));
+  });
+
+  it("gives nothing for a tail without a block: the first lines of a tail are not the start of the reply", () => {
+    expect(parseHeadlineOfTail("middle of the reply\nmore of it", 400_000)).toBeUndefined();
+    expect(parseHeadlineOfTail("", 400_000)).toBeUndefined();
   });
 });

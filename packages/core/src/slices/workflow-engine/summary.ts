@@ -141,6 +141,19 @@ export function parseHeadline(text: string): ParsedHeadline | undefined {
   }
 }
 
+/**
+ * The headline of a reply too long to read whole, from its last whole lines (`tail`) and the size
+ * of the file. Only a block counts: without one the first lines would be a piece from the middle
+ * of the reply, so there is none. The size of the body is the file's size less the block; its words follow at the tail's rate.
+ */
+export function parseHeadlineOfTail(tail: string, totalBytes: number): ParsedHeadline | undefined {
+  const parsed = parseHeadline(tail);
+  if (parsed?.source !== "headline") return undefined;
+  // Everything the tail does not hold is body, so the size is exact; the words follow at the tail's rate.
+  const bodyBytes = Math.max(parsed.bodyBytes, totalBytes - (new TextEncoder().encode(tail).length - parsed.bodyBytes));
+  return { ...parsed, bodyBytes, words: Math.round((parsed.words * bodyBytes) / Math.max(1, parsed.bodyBytes)) };
+}
+
 function parse(text: string): ParsedHeadline | undefined {
   const lines = text.split(/\r?\n/);
   const window = lines.flatMap((line, index) => (line.trim() === "" ? [] : [index])).slice(-BLOCK_WINDOW);
