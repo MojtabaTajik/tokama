@@ -2,11 +2,29 @@
 
 Agent workbench for engineers. Your steps. Its checks. Your OK.
 
-Tokama runs AI coding agents (Claude Code and Codex CLI) one step at a time, following templates you write. Each step names the agent that runs it and says when the step is done: the checks pass, a reviewer approves, or you approve. Tokama is a desktop app with its own local engine.
+Tokama runs AI coding agents one step at a time, following templates you write. Each step names the agent that runs it and says when the step is done: the checks pass, a reviewer approves, or you approve. Tokama is a desktop app with its own local engine.
 
 ## Status
 
-Early and pre-release. The first alpha download is planned for 6 December 2026 (macOS, Apple silicon). Until then, build it from source as described below. Expect rough edges and changes between commits.
+Alpha. Version 0.1.0 is the first release and has rough edges. Tokama works with Claude Code only for now. Codex CLI and local models come later.
+
+| Platform | Download |
+| --- | --- |
+| macOS, Apple silicon | signed and notarized `.dmg`. Intel Macs are not supported yet. |
+| Linux, x86_64 | `.deb` for Ubuntu 24.04 or newer and Debian 12 or newer; `.rpm` for the current and previous Fedora |
+| Windows | later |
+
+## Install
+
+Download the file for your system from [tokama.dev/download](https://tokama.dev/download).
+
+- macOS: open the `.dmg` and drag Tokama to Applications.
+- Debian or Ubuntu: `sudo apt install ./Tokama-<version>-amd64.deb`
+- Fedora: `sudo dnf install ./Tokama-<version>-x86_64.rpm`
+
+Each release has a `SHA256SUMS.txt` with the SHA-256 hash of every file. On Linux, check a download with `sha256sum --ignore-missing -c SHA256SUMS.txt` in the folder that holds both files. On macOS, run `shasum -a 256` on the file and compare the result with its line in the list.
+
+Tokama checks for updates by itself and shows a chip in the sidebar when one is ready. It installs the update only when you choose Restart now, never when you quit. On Linux the system asks for your password at that point, because it installs the package as root.
 
 ## Safety
 
@@ -22,19 +40,36 @@ Check commands and their output can go to a cloud agent whose step sends the rep
 
 Review templates and check commands before you run them, especially ones you did not write.
 
+To report a security problem, see [SECURITY.md](SECURITY.md).
+
 ## Requirements
 
-- Node 22.18 or newer
-- pnpm, at the version in `packageManager` in `package.json`. Node 25 and later do not bundle corepack, so install it with the Node you use (`npm install -g corepack@latest`) and then run `corepack enable`. You can also install pnpm directly at that version.
+- Claude Code 2.1.315 or newer, installed and logged in
 - git 2.38 or newer (a repo that is a partial clone needs git 2.44 or newer)
-- Claude Code 2.1.315 or newer, installed and logged in, to run real agent steps
-- Linux only: `bubblewrap` and `socat`, for steps that run commands (Ubuntu or Debian: `sudo apt install bubblewrap socat`; Fedora: `sudo dnf install bubblewrap socat`). On Ubuntu 24.04 an AppArmor rule can also stop bubblewrap, and the health check then reports it as blocked; Claude Code's sandbox documentation has the profile, or run `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` until the next reboot.
+- Linux only: `bubblewrap` and `socat`. The package installs them. On Ubuntu 24.04 an AppArmor rule can still stop bubblewrap, and the health check then reports it as blocked. Claude Code's sandbox documentation has the profile, or run `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` until the next reboot.
 
-macOS and Linux are supported. Windows is not yet.
+## Add a repo
 
-## Build and run
+In the sidebar choose **+ Add repo**, then pick the top folder of a git repo. Tokama suggests an id, the base branch and the check commands it finds (for example `pnpm test`); change them if you want, then confirm. The repo is saved in `~/.tokama/repos.yaml`, and removing it from the sidebar never touches the folder itself.
 
-Clone this repository, then from its top folder:
+## Built-in workflows
+
+Five templates ship with Tokama:
+
+- **Quick fix**: a builder makes the change, Tokama runs the repo's checks and sends back what fails, up to three attempts. Then it commits.
+- **Quick change**: for repos without checks. You read the diff and approve it or ask for changes. Then it commits.
+- **Plan and build**: an architect writes a plan and you approve it. A builder implements it until the checks pass, and a reviewer checks the change against the plan. Then it commits.
+- **Ask**: an agent answers a question about the repo. It changes no file.
+- **Review code**: a reviewer reads the code you point at and reports findings. It changes no file.
+
+## Agents and templates
+
+- Agents are files named `<id>.md` in `~/.tokama/agents/` (yours) or `.tokama/agents/` in a repo (shared with the team): YAML front matter, then the role text. **Settings > Agents** lists them, with the problems of any file that does not load.
+- Templates are YAML files in `.tokama/templates/` in a repo. You can write your own or copy the built-in ones as a start. A template whose repo is `repos: read` gets no edit tools for its agents, and nothing is committed.
+
+## Build from source
+
+You need Node 22.18 or newer, and pnpm at the version in `packageManager` in `package.json`. Node 25 and later do not bundle corepack, so install it with the Node you use (`npm install -g corepack@latest`) and then run `corepack enable`. Clone this repository, then from its top folder:
 
 ```sh
 pnpm install
@@ -42,16 +77,9 @@ pnpm build
 pnpm dev
 ```
 
-`pnpm dev` starts the desktop app with its own engine process, in real mode: work you start runs real agents on your repos, so Claude Code must be installed and logged in. To look around first, run `pnpm dev:sample`. It uses sample repos and items that are not saved, and starts no agent.
+`pnpm dev` starts the desktop app with its own engine process, in real mode: work you start runs real agents on your repos. To look around first, run `pnpm dev:sample`. It uses sample repos and items that are not saved, and starts no agent.
 
-## Add a repo
-
-In the sidebar choose **+ Add repo**, then pick the top folder of a git repo. Tokama suggests an id, the base branch and the check commands it finds (for example `pnpm test`); change them if you want, then confirm. The repo is saved in `~/.tokama/repos.yaml`, and removing it from the sidebar never touches the folder itself.
-
-## Agents and templates
-
-- Agents are files named `<id>.md` in `~/.tokama/agents/` (yours) or `.tokama/agents/` in a repo (shared with the team): YAML front matter, then the role text. **Settings > Agents** lists them, with the problems of any file that does not load.
-- Templates are YAML files in `.tokama/templates/` in a repo. Five ship with Tokama: Quick fix, Quick change, Plan and build, Ask and Review code. A template whose repo is `repos: read` gets no edit tools for its agents, and nothing is committed.
+On Linux, use a Node version manager that reads `.node-version`, for example fnm with `--use-on-cd`, and check that `which node` points to it and not to the distro Node. With the distro Node, `corepack enable` and a global `npm install` fail with `EACCES`.
 
 ## Tests
 
@@ -65,13 +93,6 @@ pnpm e2e:real                          # local only, needs a real Claude Code lo
 On Linux the end-to-end tests need a display: run them under `xvfb-run --auto-servernum`. Screenshots go to `apps/desktop/e2e-output`.
 
 `pnpm typecheck`, `pnpm lint` and `pnpm removal-test` are the other checks CI runs.
-
-## Platform notes
-
-- macOS: nothing else to install.
-- Linux, Node: use a Node version manager that reads `.node-version`, for example fnm with `--use-on-cd`. Check that `which node` points to it and not to the distro Node. With the distro Node, `corepack enable` and a global `npm install` fail with `EACCES` (permission denied on system folders).
-- Linux, git: Ubuntu 24.04 ships git 2.43, which works except for partial clones. Ubuntu 22.04 ships git 2.34, which is too old. The git-core PPA has a newer one.
-- Linux: Electron needs the usual desktop libraries (GTK 3, NSS, ALSA). On Ubuntu 24.04 the Chromium sandbox needs unprivileged user namespaces; if the app will not start, see the Electron documentation on `kernel.apparmor_restrict_unprivileged_userns`.
 
 ## Licence
 
