@@ -39,8 +39,9 @@ export function breaksRule(command: string): boolean {
   return false;
 }
 
-/** Why Try checks is off for these lines, naming the first line that breaks the rule; undefined when it can run. */
-export function tryProblem(lines: readonly string[]): string | undefined {
+/** Why Try checks is off for these lines and the setup command, naming the first line that breaks the rule; undefined when it can run. */
+export function tryProblem(lines: readonly string[], setup = ""): string | undefined {
+  if (setup !== "" && breaksRule(setup)) return `The setup command is more than one command. ${SETUP_RULE_TEXT}`;
   if (lines.length > MAX_CHECKS) return `Try checks runs at most ${MAX_CHECKS} checks.`;
   const bad = lines.findIndex(breaksRule);
   return bad === -1 ? undefined : `Line ${bad + 1} is more than one command. ${RULE_TEXT}`;
@@ -128,12 +129,59 @@ export function lineOf(check: CheckTrial["checks"][number]): CheckLine {
   }
 }
 
-/** The header of a finished run: `✓ 3 checks passed`, `✕ 1 of 3 checks failed`, `■ Stopped`. */
+/** The setup line of a trial: its word, tone and time as a check line has them; Done, not Passed, for the good end. */
+export function setupLineOf(setup: NonNullable<CheckTrial["setupResult"]>, now: number): CheckLine {
+  const output = setup.outputTail !== undefined && setup.outputTail.trim() !== "";
+  const time = setup.durationMs !== undefined ? formatDuration(setup.durationMs, "fine") : setup.state === "running" && setup.startedAt !== undefined ? formatDuration(Math.max(0, now - setup.startedAt), "fine") : undefined;
+  switch (setup.state) {
+    case "passed":
+      return { word: "Done", tone: "pass", hasOutput: false, time };
+    case "failed":
+      return { word: setup.couldNotStart !== undefined || setup.exitCode === undefined ? "Could not start" : `Failed, exit ${setup.exitCode}`, tone: "fail", hasOutput: output, time };
+    case "timed_out":
+      return { word: "Timed out", tone: "fail", hasOutput: output, time };
+    case "running":
+      return { word: "Running", tone: "live", hasOutput: false, time };
+    case "waiting":
+      return { word: "Waiting", tone: "waiting", hasOutput: false, time: undefined };
+    case "skipped":
+      return { word: "Not run", tone: "skipped", hasOutput: false, time: undefined };
+  }
+}
+
+/** The sentence under a setup command that was not found: what runs it differs from the user's terminal. */
+export const couldNotStartText = (word: string): string => `${word} was not found. Tokama runs commands with the PATH of its background service, which can differ from your terminal.`;
+
+/** The setup ended without passing: it failed, timed out or could not start. */
+export const setupFailed = (trial: CheckTrial): boolean => trial.setupResult?.state === "failed" || trial.setupResult?.state === "timed_out";
+
+/** The checks a setup that did not pass left unstarted. */
+export const checksNotRun = (trial: CheckTrial): number => trial.checks.filter((check) => check.state === "skipped").length;
+
+const countChecks = (count: number) => `${count} ${count === 1 ? "check" : "checks"}`;
+
+/** The header of a finished run: `✓ 3 checks passed`, `✓ Setup and 3 checks passed`, `✕ Setup failed · 3 checks not run`, `■ Stopped`. */
 export function summaryOf(trial: CheckTrial): { readonly tone: "pass" | "fail" | "stopped"; readonly text: string } {
   const total = trial.checks.length;
   const failed = trial.checks.filter((check) => check.state === "failed" || check.state === "timed_out").length;
   if (trial.state === "cancelled") return { tone: "stopped", text: "Stopped" };
+  if (setupFailed(trial)) {
+    const what = trial.setupResult?.state === "timed_out" ? "Setup timed out" : trial.setupResult?.couldNotStart !== undefined ? "Setup could not start" : "Setup failed";
+    return { tone: "fail", text: total === 0 ? what : `${what} · ${countChecks(total)} not run` };
+  }
   if (trial.state === "failed") return { tone: "fail", text: "The checks could not be tried" };
   if (failed > 0) return { tone: "fail", text: `${failed} of ${total} ${total === 1 ? "check" : "checks"} failed` };
+  if (trial.setup !== undefined) return { tone: "pass", text: total === 0 ? "Setup done" : `Setup and ${countChecks(total)} passed` };
   return { tone: "pass", text: `${total} ${total === 1 ? "check" : "checks"} passed` };
 }
+
+/** Whether a finished trial ran without a setup command and a check did not pass: the run may have failed on a missing package. */
+export const failedWithoutSetup = (trial: CheckTrial): boolean => trial.setup === undefined && trial.checks.some((check) => check.state === "failed" || check.state === "timed_out");
+
+/** What Try checks is asked to run: the setup command, then the checks; its text is the one line of the field. */
+export const trialTitle = (hasSetup: boolean, checks: number): string => (hasSetup ? (checks === 0 ? "Trying setup" : `Trying setup, then ${countChecks(checks)}`) : `Trying ${countChecks(checks)}`);
+
+/** The Setup command field's text as one command: line breaks become spaces, ends trimmed. */
+export const setupText = (text: string): string => text.replace(/\s*[\r\n]+\s*/g, " ").trim();
+
+export const SETUP_RULE_TEXT = "One command only. Put the second command in Checks, or in a script that the setup command runs.";

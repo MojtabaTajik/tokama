@@ -13,7 +13,7 @@ import { Button } from "../ui/Button.js";
 import { Combobox, type ComboboxGroup } from "../ui/Combobox.js";
 import { markOf, StatusMark } from "../ui/status.js";
 import { ChecksHelpersRow, SuggestInBox } from "./ChecksHelpers.js";
-import { checkLines } from "./checks-model.js";
+import { breaksRule, checkLines, SETUP_RULE_TEXT, setupText } from "./checks-model.js";
 import { useChecksHelpers } from "./useChecksHelpers.js";
 
 const TEXT = {
@@ -39,6 +39,14 @@ const TEXT = {
   branchesCut: (shown: number, all: number) => `Showing the first ${shown} of ${all} branches.`,
   typeBranch: "Type a branch name to use one that isn't listed.",
   branchKeys: "↑ ↓ move · Enter choose · Esc close",
+  setup: "Setup command",
+  setupWhy: "Runs once in every new worktree, before the checks. A new worktree holds only what is in git, so installed packages are missing.",
+  setupRule: "One command; no &&, | or redirects. A template's own setup command replaces it.",
+  setupFound: (file: string) => `Found ${file}.`,
+  setupNoneFound: "Nothing found to suggest. Leave it empty when the checks need nothing installed.",
+  setupEditEnd: "Leave it empty when the checks need nothing installed.",
+  setupPlaceholder: "pnpm install",
+  optional: "optional",
   checks: "Checks",
   checksHint: "One command per line, run in the repo after each change. No &&, | or redirects. Check commands and their output can go to a cloud agent whose step sends the repo and diff.",
   checksFound: (scripts: string) => `Found in package.json scripts: ${scripts}.`,
@@ -120,6 +128,7 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
   const [id, setId] = useState(repo?.id ?? "");
   const [baseBranch, setBaseBranch] = useState(repo?.baseBranch ?? "");
   const [checks, setChecks] = useState(repo?.checks.join("\n") ?? "");
+  const [setup, setSetup] = useState(repo?.setup ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const [phase, setPhase] = useState<Phase | undefined>(undefined);
@@ -156,6 +165,7 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
         setId(reply.data.id ?? "");
         setBaseBranch(reply.data.defaultBranch ?? reply.data.branch ?? (reply.data.firstCommit === null ? "" : "main"));
         setChecks(reply.data.checks.join("\n"));
+        setSetup(reply.data.setup ?? "");
       });
     return () => {
       live = false;
@@ -177,6 +187,7 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
     path: editing ? repo.path : suggestion?.path,
     baseBranch,
     checks,
+    setup,
     canTry: editing || (suggestion?.gitRepo === true && suggestion.hasCommits),
   });
   /** Suggested commands go on new lines at the end of the field, where they stay editable. */
@@ -188,19 +199,21 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
       return fresh.length === 0 ? before : `${kept === "" ? "" : `${kept}\n`}${fresh.join("\n")}`;
     });
   // With nothing in the field and nothing asked yet, Suggest with AI sits in the "No checks found" box, where Try checks would have nothing to run.
-  const suggestInBox = lines.length === 0 && helpers.suggest.kind === "idle" && helpers.trial.kind === "idle";
+  const setupCommand = setupText(setup);
+  const suggestInBox = lines.length === 0 && setupCommand === "" && helpers.suggest.kind === "idle" && helpers.trial.kind === "idle";
   const helpersOffered = helpers.canTry || (helpers.loaded && helpers.availability !== undefined) || helpers.suggest.kind !== "idle" || helpers.trial.kind !== "idle";
 
   /** The add_repo or update_repo command for what the fields hold now. */
   const saveCommand = (): CommandInput =>
     repo !== undefined
-      ? { type: "update_repo", repoId: repo.id, baseBranch: baseBranch.trim(), checks: lines }
+      ? { type: "update_repo", repoId: repo.id, baseBranch: baseBranch.trim(), checks: lines, setup: setupCommand }
       : {
           type: "add_repo",
           path: suggestion!.path,
           ...(id.trim() === "" ? {} : { id: id.trim() }),
           ...(baseBranch.trim() === "" ? {} : { baseBranch: baseBranch.trim() }),
           checks: lines,
+          ...(setupCommand === "" ? {} : { setup: setupCommand }),
         };
 
   const submit = async (event: FormEvent) => {
@@ -377,13 +390,56 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
       )}
     </Field>
   );
+  const setupBroken = setupCommand !== "" && breaksRule(setupCommand);
+  const foundFrom = !editing ? suggestion?.setupFrom : undefined;
+  const setupHint = editing ? `${TEXT.setupWhy} ${TEXT.setupRule} ${TEXT.setupEditEnd}` : foundFrom != null ? `${TEXT.setupFound(foundFrom)} ${TEXT.setupWhy} ${TEXT.setupRule}` : `${TEXT.setupNoneFound} ${TEXT.setupRule}`;
+  const setupField = (
+    <Field
+      label={TEXT.setup}
+      hint={setupBroken ? "" : setupHint}
+      after={
+        setupBroken ? (
+          <p className="ch-problem" role="alert">
+            <StatusMark status="failed" /> {SETUP_RULE_TEXT}
+          </p>
+        ) : undefined
+      }
+      tag={!editing && foundFrom != null ? <span className="rd-suggested"><span aria-hidden="true">{markOf("passed").symbol} </span>{TEXT.suggested}</span> : <span className="rd-dim">{TEXT.optional}</span>}
+    >
+      {(props) => (
+        <textarea
+          {...props}
+          className="mono rd-setup"
+          rows={1}
+          value={setup}
+          placeholder={TEXT.setupPlaceholder}
+          aria-invalid={setupBroken || undefined}
+          spellCheck={false}
+          // One command: a line break is refused, typed or pasted.
+          onChange={(event) => setSetup(event.target.value.replace(/[\r\n]+/g, " "))}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.preventDefault();
+          }}
+        />
+      )}
+    </Field>
+  );
   const checksField = (
     <Field
       label={TEXT.checks}
       hint={lines.length === 0 && !editing ? "" : editing ? TEXT.checksHint : checksHint}
       after={
         helpersOffered && !suggestInBox ? (
-          <ChecksHelpersRow h={helpers} lines={lines} onAdd={addChecks} baseBranch={baseBranch} editing={editing} onOpenGetStarted={onOpenGetStarted} />
+          <ChecksHelpersRow
+            h={helpers}
+            lines={lines}
+            onAdd={addChecks}
+            setup={setupCommand}
+            onUseSetup={setSetup}
+            baseBranch={baseBranch}
+            editing={editing}
+            onOpenGetStarted={onOpenGetStarted}
+          />
         ) : undefined
       }
       tag={editing ? undefined : hadChecks ? <span className="rd-suggested"><span aria-hidden="true">{markOf("passed").symbol} </span>{TEXT.suggested}</span> : <span className="rd-dim">{TEXT.noneFound}</span>}
@@ -514,6 +570,7 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
           </div>
         )}
         {idField}
+        {suggestion.gitRepo && setupField}
         {suggestion.gitRepo && checksField}
         {suggestion.gitRepo && noChecks}
         {error !== undefined && <Problem text={error} alert />}
@@ -543,6 +600,7 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
       <>
         {idField}
         {branchField}
+        {setupField}
         {checksField}
         {noChecks}
         {error !== undefined && <Problem text={error} alert />}

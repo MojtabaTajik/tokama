@@ -40,6 +40,11 @@ export interface HelperDefinition {
    * wrong, or undefined. The text goes back to the agent as a hint, so it must not repeat the answer.
    */
   readonly check?: (answer: HelperResult) => string | undefined;
+  /**
+   * Drops the parts of a valid answer that cannot be used, so the rest is still shown, before
+   * `check` looks at it. Without it the answer is used as it came.
+   */
+  readonly normalize?: (answer: HelperResult) => HelperResult;
 }
 
 /** What is wrong with a definition, or undefined. A wrong one is a mistake in Tokama, not in a user file. */

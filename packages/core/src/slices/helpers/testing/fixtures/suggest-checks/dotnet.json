@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "files": {
     "Orders.sln": "Microsoft Visual Studio Solution File, Format Version 12.00\n",
     "Orders.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net9.0</TargetFramework></PropertyGroup></Project>\n",

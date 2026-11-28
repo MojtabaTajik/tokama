@@ -36,7 +36,7 @@ const type = (el: HTMLInputElement | HTMLTextAreaElement, value: string) =>
   });
 
 const REPOS = [
-  { id: "orders-api", baseBranch: "main", checks: ["pnpm test", "pnpm lint"], path: "~/code/orders-api" },
+  { id: "orders-api", baseBranch: "main", checks: ["pnpm test", "pnpm lint"], setup: "pnpm install --frozen-lockfile", path: "~/code/orders-api" },
   { id: "checkout-web", baseBranch: "main", checks: ["pnpm test"], path: "~/code/checkout-web" },
   { id: "inventory-service", baseBranch: "develop", checks: [], path: "~/code/inventory-service" },
 ];
@@ -139,6 +139,9 @@ describe("Repos page", () => {
     expect(text(".rp-head-text p")).toBe("1 needs you · 1 running · 2 done this week");
     expect(detail()).toContain("Path~/code/orders-api");
     expect(detail()).toContain("Base branchWork branches start from it.main");
+    // The setup command is above the checks, read-only, and shown whole.
+    expect(detail()).toContain("Setup commandRuns once in every new worktree, before the checks. A template's own setup command replaces it.pnpm install --frozen-lockfile");
+    expect(detail().indexOf("Setup command")).toBeLessThan(detail().indexOf("Checks 2 checks"));
     expect(detail()).toContain("Checks 2 checksTokama runs these in order after each change. A change passes when every one exits with 0.");
     expect($$(".rp-checks li").map((el) => el.textContent)).toEqual(["1pnpm test", "2pnpm lint"]);
     expect($(".rp-note")).toBeNull();
@@ -155,7 +158,10 @@ describe("Repos page", () => {
     expect(text(".rp-head-text h2")).toBe("inventory-service");
     expect($(".rp-head-text p")).toBeNull();
     expect(detail()).toContain("Checks no checks");
-    expect(text(".rp-note")).toBe("Quick fix needs at least one check. Templates where you approve the change, like Quick change, work without checks.");
+    expect($$(".rp-note").map((el) => el.textContent)).toEqual([
+      "None. The checks run in the worktree as it comes from git.",
+      "Quick fix needs at least one check. Templates where you approve the change, like Quick change, work without checks.",
+    ]);
     expect($(".rp-checks")).toBeNull();
   });
 
@@ -245,11 +251,12 @@ describe("Add, Edit and Remove", () => {
     await click(rows()[1]!);
     await click(buttonByText("Edit…"));
     expect(text("dialog.modal h2")).toBe("Edit repo");
-    const checks = $("dialog.modal textarea") as HTMLTextAreaElement;
+    expect(($("dialog.modal textarea.rd-setup") as HTMLTextAreaElement).value).toBe("");
+    const checks = $("dialog.modal textarea:not(.rd-setup)") as HTMLTextAreaElement;
     expect(checks.value).toBe("pnpm test");
     await type(checks, "pnpm test\npnpm lint");
     await click($$("dialog.modal button").find((el) => el.textContent === "Save"));
-    expect(fake.command).toHaveBeenCalledWith({ type: "update_repo", repoId: "checkout-web", baseBranch: "main", checks: ["pnpm test", "pnpm lint"] });
+    expect(fake.command).toHaveBeenCalledWith({ type: "update_repo", repoId: "checkout-web", baseBranch: "main", checks: ["pnpm test", "pnpm lint"], setup: "" });
     expect($("dialog.modal")).toBeNull();
   });
 

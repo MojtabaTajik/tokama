@@ -86,18 +86,22 @@ export const CommandSchema = z.discriminatedUnion("type", [
     id: z.string().max(100).optional(),
     baseBranch: z.string().max(255).optional(),
     checks: z.array(checkCommand).max(20).optional(),
+    /** One command that runs in every new worktree before the checks. Default: none. */
+    setup: checkCommand.optional(),
   }),
   // First step of making a folder ready to add: git init (branch `baseBranch`, default main) when
   // it is no repo, and a default .gitignore when it has none. Does nothing for a repo with commits.
   z.strictObject({ type: z.literal("init_repo"), path: folderPath, baseBranch: z.string().max(255).optional() }),
   // Second step: a first commit of what git does not ignore, in a repo that has none.
   z.strictObject({ type: z.literal("first_commit"), path: folderPath }),
-  // Replaces a repo's base branch and checks in repos.yaml, by the add_repo rules. An empty list removes the checks.
+  // Replaces a repo's base branch and checks in repos.yaml, by the add_repo rules. An empty list
+  // removes the checks. `setup`: absent keeps the repo's setup command, empty removes it.
   z.strictObject({
     type: z.literal("update_repo"),
     repoId: RepoIdSchema,
     baseBranch: z.string().max(255),
     checks: z.array(checkCommand).max(20),
+    setup: checkCommand.optional(),
   }),
   // Removes a repo from repos.yaml. Its items and worktrees are kept.
   z.strictObject({ type: z.literal("remove_repo"), repoId: RepoIdSchema }),
@@ -127,14 +131,17 @@ export const CommandSchema = z.discriminatedUnion("type", [
   // the trial id; progress comes in check_trial_updated. `minutes` is the time the command is
   // expected to take (a suggestion has it): each command's time limit is three times it, at least
   // 2 and at most 20 minutes; a command without it gets the usual check limit. `setup` is one
-  // command that runs once before the checks (installing dependencies, say).
-  z.strictObject({
-    type: z.literal("try_checks"),
-    path: folderPath,
-    baseBranch: z.string().min(1).max(255).optional(),
-    checks: z.array(z.strictObject({ command: checkCommand.min(1), minutes: z.int().min(1).max(120).optional() })).min(1).max(MAX_TRIAL_CHECKS),
-    setup: checkCommand.min(1).optional(),
-  }),
+  // command that runs once before the checks (installing dependencies, say); with a setup command
+  // the list of checks may be empty ("Try setup").
+  z
+    .strictObject({
+      type: z.literal("try_checks"),
+      path: folderPath,
+      baseBranch: z.string().min(1).max(255).optional(),
+      checks: z.array(z.strictObject({ command: checkCommand.min(1), minutes: z.int().min(1).max(120).optional() })).max(MAX_TRIAL_CHECKS),
+      setup: checkCommand.min(1).optional(),
+    })
+    .refine((command) => command.checks.length > 0 || command.setup !== undefined, { message: "give at least one check or a setup command", path: ["checks"] }),
   z.strictObject({ type: z.literal("cancel_check_trial"), trialId: CheckTrialIdSchema }),
 ]);
 
@@ -299,6 +306,10 @@ export const RepoSuggestionSchema = z.strictObject({
   /** From the folder name; null when it gives no valid id. */
   id: RepoIdSchema.nullable(),
   checks: z.array(checkCommand).max(20),
+  /** From one known file in the top folder, such as `npm ci` for package-lock.json; null when there is none or more than one kind. */
+  setup: checkCommand.nullable(),
+  /** The file name `setup` comes from; null with it. */
+  setupFrom: z.string().max(255).nullable(),
   /** Set when a first commit can be made here (no git repo yet, or a repo without commits): what it would hold. */
   firstCommit: z
     .strictObject({

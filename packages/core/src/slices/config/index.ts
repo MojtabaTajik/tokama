@@ -18,6 +18,7 @@ export {
   makeFirstCommit,
   repoBranches,
   suggestRepo,
+  suggestSetup,
   updateRepo,
   type AddRepoInput,
   type RepoEditError,

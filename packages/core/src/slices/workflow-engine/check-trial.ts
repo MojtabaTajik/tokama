@@ -24,8 +24,8 @@ import {
 } from "../../kernel/schemas/index.js";
 import { cutText, scrubPaths } from "../../kernel/text/index.js";
 import { simpleCommandProblem } from "../../kernel/command-policy/index.js";
-import { BRANCH, MAX_BRANCH } from "../config/index.js";
-import { checkRunOptions, runCommand, type CheckResult } from "../verification/index.js";
+import { BRANCH, MAX_BRANCH, suggestSetup } from "../config/index.js";
+import { checkRunOptions, runCommand, SETUP_LIMIT_MINUTES, type CheckResult } from "../verification/index.js";
 import { checkWorktreeFolder, createTrialWorktree, removeTrialWorktree, trialWorktreePath, type WorktreeRepo } from "../worktrees/index.js";
 
 /** What `try_checks` asks for. */
@@ -76,7 +76,6 @@ export interface CheckTrialRunner {
   run(prepared: PreparedCheckTrial, hooks: CheckTrialHooks, signal: AbortSignal): Promise<void>;
 }
 
-const SETUP_MINUTES = 20;
 const MAX_CHECK_MINUTES = 20;
 const MIN_CHECK_MINUTES = 2;
 const RAW_OUTPUT_CAP = 8_000;
@@ -126,7 +125,7 @@ export function createCheckTrialRunner(deps: CheckTrialDeps): CheckTrialRunner {
       trialId,
       state: "running",
       startedAt,
-      ...(request.setup !== undefined && { setup: request.setup }),
+      ...(request.setup !== undefined && { setup: request.setup, setupResult: { state: "waiting" as const } }),
       checks: request.checks.map((check) => ({ command: check.command, state: "waiting" as const })),
     };
     const publish = (next: CheckTrial) => {
@@ -135,7 +134,8 @@ export function createCheckTrialRunner(deps: CheckTrialDeps): CheckTrialRunner {
     };
     const end = (state: "done" | "failed" | "cancelled", extra: Partial<CheckTrial> = {}) => {
       const skipped = trial.checks.map((check) => (check.state === "waiting" || check.state === "running" ? { command: check.command, state: "skipped" as const } : check));
-      publish({ ...trial, ...extra, state, endedAt: Math.max(startedAt, clock.now()), checks: skipped });
+      const setupResult = trial.setupResult !== undefined && (trial.setupResult.state === "waiting" || trial.setupResult.state === "running") ? { state: "skipped" as const } : trial.setupResult;
+      publish({ ...trial, ...extra, state, endedAt: Math.max(startedAt, clock.now()), checks: skipped, ...(setupResult !== undefined && { setupResult }) });
     };
     const worktreePath = trialWorktreePath(repo, trialId);
     publish(trial);
@@ -158,10 +158,21 @@ export function createCheckTrialRunner(deps: CheckTrialDeps): CheckTrialRunner {
       const execute = (command: string, minutes: number): Promise<CheckResult> =>
         runCommand(deps.runner, command, checkRunOptions(command, { cwd, timeoutMs: minutes * minuteMs, signal, outputCap: RAW_OUTPUT_CAP, onSpawn: hooks.onProcess }));
 
-      if (request.setup !== undefined) {
-        const setup = await execute(request.setup, SETUP_MINUTES);
+      if (request.setup === undefined) {
+        // Only a hint: nothing runs because of it.
+        const hint = await suggestSetup(cwd);
+        if (hint !== undefined) publish({ ...trial, setupHint: hint });
+      } else {
+        const setupStartedAt = clock.now();
+        publish({ ...trial, setupResult: { state: "running", startedAt: setupStartedAt } });
+        const setup = await execute(request.setup, SETUP_LIMIT_MINUTES);
+        if (setup.outcome === "aborted") {
+          final = () => end("cancelled");
+          return;
+        }
+        publish({ ...trial, setupResult: { ...setupLine(setup, folders), startedAt: setupStartedAt } });
         if (setup.outcome !== "passed") {
-          final = setup.outcome === "aborted" ? () => end("cancelled") : () => end("failed", { error: { code: "setup_failed", message: setupMessage(setup, folders) } });
+          final = () => end("failed", { error: { code: "setup_failed", message: setupMessage(setup, folders) } });
           return;
         }
       }
@@ -198,12 +209,25 @@ function finished(result: CheckResult, folders: readonly (readonly [string, stri
   return { ...base, state, outputTail: tidyOutput(result.output, folders) };
 }
 
+/**
+ * The setup's own line. Exit 127 and a shell that did not start mean the command was not found: the
+ * line names its first word. A refused command shows the refusal as its output.
+ */
+function setupLine(result: CheckResult, folders: readonly (readonly [string, string])[]): NonNullable<CheckTrial["setupResult"]> {
+  const base = { durationMs: result.durationMs, ...(result.exitCode !== null && { exitCode: result.exitCode }) };
+  if (result.outcome === "refused") return { ...base, state: "failed", outputTail: tidyOutput(`could not start: ${result.output}`, folders) };
+  const state = result.outcome === "passed" ? "passed" : result.outcome === "timed-out" ? "timed_out" : "failed";
+  const notFound = result.outcome === "not-started" || result.exitCode === 127;
+  const word = result.command.trim().split(/\s+/)[0] ?? "";
+  return { ...base, state, outputTail: tidyOutput(result.output, folders), ...(notFound && word !== "" && { couldNotStart: { word: cutText(word, 100) } }) };
+}
+
 /** Why the setup failed, in Tokama's words with a short cleaned end of its output; at most 1 000 characters. */
 function setupMessage(result: CheckResult, folders: readonly (readonly [string, string])[]): string {
   const tail = cutText(tidyOutput(result.output, folders), SETUP_TAIL_CHARS, { keep: "tail" });
   const what =
     result.outcome === "timed-out"
-      ? `did not finish in ${SETUP_MINUTES} minutes`
+      ? `did not finish in ${SETUP_LIMIT_MINUTES} minutes`
       : result.outcome === "failed"
         ? `exited with code ${String(result.exitCode)}`
         : "could not start";

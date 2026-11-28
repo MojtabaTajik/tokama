@@ -198,6 +198,12 @@
   color: var(--text-2);
 }
 
+/* A command is shown whole: it wraps, it is never cut. */
+.rp-whole {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .rp-note {
   margin: 0;
   font-size: var(--text-base);

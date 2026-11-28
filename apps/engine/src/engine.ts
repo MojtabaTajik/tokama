@@ -561,9 +561,10 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
             ...(command.id === undefined ? {} : { id: command.id }),
             ...(command.baseBranch === undefined ? {} : { baseBranch: command.baseBranch }),
             ...(command.checks === undefined ? {} : { checks: command.checks }),
+            ...(command.setup === undefined ? {} : { setup: command.setup }),
           })
         : command.type === "update_repo"
-          ? updateRepo(repoOptions(home), { repoId: command.repoId, baseBranch: command.baseBranch, checks: command.checks })
+          ? updateRepo(repoOptions(home), { repoId: command.repoId, baseBranch: command.baseBranch, checks: command.checks, ...(command.setup === undefined ? {} : { setup: command.setup }) })
           : removeRepo(repoOptions(home), command.repoId),
     );
     repoChanges = change.catch(() => undefined);
@@ -575,7 +576,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
     broadcast({ type: "setup_changed" });
     log(`${{ add_repo: "added", update_repo: "updated", remove_repo: "removed" }[command.type]} repo ${result.value.id}`);
     if (command.type === "remove_repo") return { ok: true, data: null };
-    const repo = { id: result.value.id, baseBranch: result.value.baseBranch, checks: [...result.value.checks] };
+    const repo = { id: result.value.id, baseBranch: result.value.baseBranch, checks: [...result.value.checks], ...(result.value.setup === undefined ? {} : { setup: result.value.setup }) };
     return { ok: true, data: command.type === "add_repo" ? ({ repo } satisfies AddRepoResult) : ({ repo } satisfies UpdateRepoResult) };
   };
 
@@ -601,7 +602,7 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       return base;
     }
     const added = loaded.value.filter((repo) => !base.repos.some((known) => known.id === repo.id));
-    return { ...base, repos: [...base.repos, ...added.map((repo) => ({ id: repo.id, baseBranch: repo.baseBranch, checks: [...repo.checks], path: displayPath(repo.path) }))] };
+    return { ...base, repos: [...base.repos, ...added.map((repo) => ({ id: repo.id, baseBranch: repo.baseBranch, checks: [...repo.checks], ...(repo.setup === undefined ? {} : { setup: repo.setup }), path: displayPath(repo.path) }))] };
   };
 
   /** Every template file, read again on each query so the page shows the files as they are now. */
@@ -791,8 +792,8 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
         if (options.home === undefined) return { ok: false, error: { code: "not_implemented", message: "this engine has no Tokama home folder for repos.yaml" } };
         const suggested = await suggestRepo(repoOptions(options.home), query.path);
         if (!suggested.ok) return { ok: false, error: suggested.error };
-        const { path, displayPath, gitRepo, hasCommits, branch, id, checks, checksFrom, defaultBranch, branches, moreBranches, fallbackCheck, fallbackFromPackage, firstCommit, problem } = suggested.value;
-        return { ok: true, data: { path, displayPath, gitRepo, hasCommits, branch: branch ?? null, id: id ?? null, checks: [...checks], checksFrom: [...checksFrom], defaultBranch: defaultBranch ?? null, branches: branches.map((entry) => ({ ...entry })), moreBranches, fallbackCheck: fallbackCheck ?? null, fallbackFromPackage, firstCommit: firstCommit === undefined ? null : { files: firstCommit.files, bytes: firstCommit.bytes, sample: firstCommit.sample.map((file) => ({ ...file })), more: [...firstCommit.more], addsGitignore: firstCommit.addsGitignore, leftOut: firstCommit.leftOut.map((entry) => ({ ...entry })), refusal: firstCommit.refusal ?? null }, problem: problem ?? null } satisfies SuggestRepoResult };
+        const { path, displayPath, gitRepo, hasCommits, branch, id, checks, checksFrom, setup, setupFrom, defaultBranch, branches, moreBranches, fallbackCheck, fallbackFromPackage, firstCommit, problem } = suggested.value;
+        return { ok: true, data: { path, displayPath, gitRepo, hasCommits, branch: branch ?? null, id: id ?? null, checks: [...checks], checksFrom: [...checksFrom], setup: setup ?? null, setupFrom: setupFrom ?? null, defaultBranch: defaultBranch ?? null, branches: branches.map((entry) => ({ ...entry })), moreBranches, fallbackCheck: fallbackCheck ?? null, fallbackFromPackage, firstCommit: firstCommit === undefined ? null : { files: firstCommit.files, bytes: firstCommit.bytes, sample: firstCommit.sample.map((file) => ({ ...file })), more: [...firstCommit.more], addsGitignore: firstCommit.addsGitignore, leftOut: firstCommit.leftOut.map((entry) => ({ ...entry })), refusal: firstCommit.refusal ?? null }, problem: problem ?? null } satisfies SuggestRepoResult };
       }
       case "repo_branches": {
         // A sample repo has no folder: its base branch is the only choice.

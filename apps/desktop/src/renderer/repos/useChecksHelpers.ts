@@ -7,7 +7,7 @@
 import type { AiCliId, CheckTrial, HelperRun, HelperSummary, SuggestChecksResult } from "@tokama/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
-import { type Availability, availability, checkLines, type Failure, failureOf, tryProblem } from "./checks-model.js";
+import { type Availability, availability, checkLines, type Failure, failureOf, setupText, tryProblem } from "./checks-model.js";
 
 /** How often a running run or trial is asked for, in case its end was not heard. */
 export const POLL_MS = 5_000;
@@ -23,8 +23,8 @@ export type SuggestState =
 
 export type TrialState =
   | { readonly kind: "idle" }
-  /** `trial` is absent until the engine's first update; the lines are what was asked. */
-  | { readonly kind: "running"; readonly lines: readonly string[]; readonly trial: CheckTrial | undefined }
+  /** `trial` is absent until the engine's first update; the lines and the setup command are what was asked. */
+  | { readonly kind: "running"; readonly lines: readonly string[]; readonly setup: string; readonly trial: CheckTrial | undefined }
   | { readonly kind: "ended"; readonly trial: CheckTrial }
   | { readonly kind: "error"; readonly message: string };
 
@@ -35,6 +35,8 @@ export interface ChecksHelpersArgs {
   readonly baseBranch: string;
   /** The Checks field's text. */
   readonly checks: string;
+  /** The Setup command field's text; empty when none. */
+  readonly setup: string;
   /** Try checks needs a commit. */
   readonly canTry: boolean;
 }
@@ -47,6 +49,8 @@ export interface ChecksHelpers {
   readonly suggest: SuggestState;
   readonly trial: TrialState;
   readonly canTry: boolean;
+  /** Try checks has a setup command or a check to run. */
+  readonly hasWork: boolean;
   /** Why Try checks is off for the lines in the field, or undefined. */
   readonly tryProblem: string | undefined;
   readonly startSuggest: () => void;
@@ -63,7 +67,8 @@ const gone = (code: string) => code === "not_found";
 /** The tools of every list, each once, in the order first seen. */
 const mergeTools = (...lists: ReadonlyArray<readonly AiCliId[]>): AiCliId[] => [...new Set(lists.flat())];
 
-export function useChecksHelpers({ bridge, path, baseBranch, checks, canTry }: ChecksHelpersArgs): ChecksHelpers {
+export function useChecksHelpers({ bridge, path, baseBranch, checks, setup: setupField, canTry }: ChecksHelpersArgs): ChecksHelpers {
+  const setup = setupText(setupField);
   const [summary, setSummary] = useState<HelperSummary | undefined>(undefined);
   const [loaded, setLoaded] = useState(false);
   // The AI tools the user already agreed to send to, remembered by the app.
@@ -113,7 +118,8 @@ export function useChecksHelpers({ bridge, path, baseBranch, checks, canTry }: C
   const applyTrial = useCallback((next: CheckTrial) => {
     if (next.state === "running") return setTrial((now) => (now.kind === "running" ? { ...now, trial: next } : now));
     trialId.current = undefined;
-    if (next.state === "failed") setTrial({ kind: "error", message: next.error?.message ?? "The checks could not be tried." });
+    // A setup that did not pass is a result with its own line, not an error of the trial.
+    if (next.state === "failed" && next.error?.code !== "setup_failed") setTrial({ kind: "error", message: next.error?.message ?? "The checks could not be tried." });
     else setTrial({ kind: "ended", trial: next });
   }, []);
 
@@ -222,9 +228,9 @@ export function useChecksHelpers({ bridge, path, baseBranch, checks, canTry }: C
   };
 
   const startTrial = async () => {
-    if (path === undefined || lines.length === 0) return;
+    if (path === undefined || (lines.length === 0 && setup === "")) return;
     const asked = lines;
-    setTrial({ kind: "running", lines: asked, trial: undefined });
+    setTrial({ kind: "running", lines: asked, setup, trial: undefined });
     startingTrial.current = true;
     const mine = { stop: false };
     pendingTrial.current = mine;
@@ -236,6 +242,7 @@ export function useChecksHelpers({ bridge, path, baseBranch, checks, canTry }: C
         path,
         ...(baseBranch.trim() === "" ? {} : { baseBranch: baseBranch.trim() }),
         checks: asked.map((command) => ({ command, ...(minutes.has(command) ? { minutes: minutes.get(command)! } : {}) })),
+        ...(setup === "" ? {} : { setup }),
       })
       .catch((cause: unknown) => ({ ok: false as const, error: { code: "bridge_error", message: String(cause) } }));
     startingTrial.current = false;
@@ -257,7 +264,8 @@ export function useChecksHelpers({ bridge, path, baseBranch, checks, canTry }: C
     suggest,
     trial,
     canTry: canTry && path !== undefined,
-    tryProblem: tryProblem(lines),
+    hasWork: lines.length > 0 || setup !== "",
+    tryProblem: tryProblem(lines, setup),
     startSuggest: () => {
       if (path === undefined) return;
       if (summary?.agent?.runsOn === "cloud" && (tool === undefined || !consent.includes(tool))) setSuggest({ kind: "consent" });
