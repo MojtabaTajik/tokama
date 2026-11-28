@@ -101,6 +101,25 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
+describe("the base commit", () => {
+  for (const how of ["refs/main", "$GIT_DIR/main"] as const) {
+    it(`is the base branch's, whatever a planted ${how} says`, SLOW, async () => {
+      const seed = await plain(repo.path, "rev-parse", "main");
+      writeFileSync(join(repo.path, "b.txt"), "planted\n");
+      await plain(repo.path, "add", "-A");
+      await plain(repo.path, "commit", "-q", "-m", "planted");
+      const planted = await plain(repo.path, "rev-parse", "HEAD");
+      await plain(repo.path, "update-ref", "refs/heads/main", seed);
+      if (how === "refs/main") await plain(repo.path, "update-ref", "refs/main", planted);
+      else writeFileSync(join(repo.path, ".git", "main"), `${planted}\n`);
+      // Git's own short-name lookup does take the planted one, so the test can tell.
+      expect((await plain(repo.path, "rev-parse", "main^{commit}")).trim()).toBe(planted);
+      const prepared = await runner().prepare({ path: repo.path, checks: [{ command: "true" }] });
+      expect(prepared).toMatchObject({ ok: true, value: { commit: seed } });
+    });
+  }
+});
+
 describe("what runs", () => {
   it("only accepts one simple command of plain text, and creates nothing for a bad one", SLOW, async () => {
     const bad = ["a && b", "x | sh", "rm -rf build; ls", "echo $(whoami)", "echo `id`", "ls > out", "sleep 1 &", "echo hi\nrm -rf x", "ls​", "ls‮", "ls rm x", "ls\u0000", "lsㅤ", "ls͏", "ls️", ""];

@@ -156,8 +156,8 @@ export async function removeEntries(git: Git, repoPath: string, entries: readonl
 
 /** Creates the item's branch from the base branch and checks it out in a new worktree. */
 export async function createWorktree(git: Git, repo: WorktreeRepo, itemId: ItemId): Promise<Result<ItemWorktree, WorktreeError>> {
-  const base = await git.revParse(repo.path, `${repo.baseBranch}^{commit}`);
-  if (!base.ok) return fail("base-branch", base.error);
+  const base = await git.revParse(repo.path, `refs/heads/${repo.baseBranch}^{commit}`);
+  if (!base.ok) return err({ reason: "base-branch", message: `The base branch ${repo.baseBranch} was not found in this repo.` });
   const branch = itemBranch(itemId);
   if ((await git.revParse(repo.path, `refs/heads/${branch}`)).ok) {
     return err({ reason: "exists", message: `branch ${branch} exists already` });

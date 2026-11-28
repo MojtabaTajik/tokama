@@ -161,12 +161,40 @@ describe("createWorktree", () => {
     });
   });
 
+  describe("a planted ref or file named like the base branch", () => {
+    /** `main` is back at the seed commit; the planting writes a later commit under the same short name. */
+    const plant = async (how: "refs/main" | "$GIT_DIR/main") => {
+      const seed = await plain(repo.path, "rev-parse", "main");
+      writeFileSync(join(repo.path, "b.txt"), "planted\n");
+      await plain(repo.path, "add", "-A");
+      await plain(repo.path, "commit", "-q", "-m", "planted");
+      const planted = await plain(repo.path, "rev-parse", "HEAD");
+      await plain(repo.path, "update-ref", "refs/heads/main", seed);
+      if (how === "refs/main") await plain(repo.path, "update-ref", "refs/main", planted);
+      else writeFileSync(join(repo.path, ".git", "main"), `${planted}\n`);
+      // Git's own short-name lookup does take the planted one, so the test can tell.
+      expect((await plain(repo.path, "rev-parse", "main^{commit}")).trim()).toBe(planted);
+      return seed;
+    };
+    for (const how of ["refs/main", "$GIT_DIR/main"] as const) {
+      it(`${how} does not change the item's base`, SLOW, async () => {
+        const seed = await plant(how);
+        const worktree = value(await createWorktree(git, repo, ITEM_A));
+        expect(worktree.baseCommit).toBe(seed);
+        expect(existsSync(join(worktreePath(repo.path, worktree), "b.txt"))).toBe(false);
+      });
+    }
+  });
+
   it("takes the short id from the random tail of the item id", () => {
     expect([shortItemId(ITEM_A), shortItemId(ITEM_B)]).toEqual(["0b9f12ab", "7e6d5c4b"]);
   });
 
   it("returns errors as values: a missing base branch, an item that already has a worktree", SLOW, async () => {
-    expect(await createWorktree(git, { ...repo, baseBranch: "develop" }, ITEM_A)).toMatchObject({ ok: false, error: { reason: "base-branch" } });
+    expect(await createWorktree(git, { ...repo, baseBranch: "develop" }, ITEM_A)).toMatchObject({
+      ok: false,
+      error: { reason: "base-branch", message: "The base branch develop was not found in this repo." },
+    });
     value(await createWorktree(git, repo, ITEM_A));
     expect(await createWorktree(git, repo, ITEM_A)).toMatchObject({ ok: false, error: { reason: "exists" } });
   });

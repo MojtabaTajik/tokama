@@ -114,7 +114,7 @@ export function createCheckTrialRunner(deps: CheckTrialDeps): CheckTrialRunner {
     if (!BRANCH.test(repo.value.baseBranch) || repo.value.baseBranch.length > MAX_BRANCH) return refuse("invalid_request", `The base branch ${shown(repo.value.baseBranch)} must be a branch name, such as main.`);
     const folder = await checkWorktreeFolder(repo.value, { create: false });
     if (!folder.ok) return refuse("invalid_request", `Tokama will not use this worktree folder: ${folder.error.message}.`);
-    const commit = await git.revParse(repo.value.path, `${repo.value.baseBranch}^{commit}`);
+    const commit = await git.revParse(repo.value.path, `refs/heads/${repo.value.baseBranch}^{commit}`);
     if (!commit.ok) return refuse("invalid_request", `The base branch ${shown(repo.value.baseBranch)} was not found in this repo.`);
     return ok({ trialId: CheckTrialIdSchema.parse(newId("trial", clock.now())), request, repo: repo.value, commit: commit.value });
   };
