@@ -1,7 +1,8 @@
 // A whole cut into parts on one thin bar: how much of the memory Tokama, the other apps and nothing
 // use. Each part is a rounded rect with a gap to the next; the length is the share and the colour
 // only repeats the words beside the bar, so `label` must say every number. Drawn in SVG at the
-// measured width, since the page allows no inline styles and the gap is 2 px at any width.
+// measured width, since the gap is 2 px at any width. The page allows no inline style attributes,
+// so a part's own colour is set through the DOM (a `style` prop), never as markup.
 import { useEffect, useRef, useState } from "react";
 
 /** Tokama's own part, the other apps' part, and what is left over. */
@@ -10,6 +11,8 @@ export type SplitTone = "tokama" | "other" | "rest";
 export interface SplitPart {
   readonly tone: SplitTone;
   readonly value: number;
+  /** A colour of the theme (`var(--…)`) for a part whose colour is not its tone's, such as an AI tool's own. */
+  readonly colour?: string | undefined;
 }
 
 const HEIGHT = 8;
@@ -71,7 +74,9 @@ export function SplitBar({ label, parts, total }: SplitBarProps) {
     <svg ref={svg} className="split-bar" width="100%" height={HEIGHT} role="img" aria-label={label}>
       {parts.map((part, index) => {
         const at = placed[index];
-        return at === undefined ? null : <rect key={part.tone} className="split-part" data-tone={part.tone} x={at.x} y={0} width={at.width} height={HEIGHT} rx={HEIGHT / 2} />;
+        return at === undefined ? null : (
+          <rect key={part.tone} className="split-part" data-tone={part.tone} x={at.x} y={0} width={at.width} height={HEIGHT} rx={HEIGHT / 2} {...(part.colour !== undefined && { style: { fill: part.colour } })} />
+        );
       })}
     </svg>
   );
