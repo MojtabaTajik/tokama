@@ -4,14 +4,10 @@ import type { ItemProcessSetUsage, MachinePoint, MachineReport } from "@tokama/c
 import { clock } from "../format/time.js";
 
 export const WINDOW_MS = 30 * 60_000;
-const MIB = 1024 ** 2;
 const GIB = 1024 ** 3;
 const MINUTE = 60_000;
 
-/** `20.4 GB` from one GB up, else whole MB. */
-export function formatBytes(bytes: number): string {
-  return bytes >= GIB ? `${(bytes / GIB).toFixed(1)} GB` : `${Math.round(bytes / MIB)} MB`;
-}
+export { formatBytes } from "../format/bytes.js";
 
 /** The machine's size, which is a round number: `32 GB`. */
 export function formatSize(bytes: number): string {

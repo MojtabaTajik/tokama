@@ -9,6 +9,7 @@
 // files over the engine's line limit and anything else left out say so and name the worktree.
 import type { DiffFile, ItemDiff, TreeDiff } from "@tokama/core";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { formatBytes } from "../format/bytes.js";
 import { Button } from "./Button.js";
 import { Placeholder } from "./EmptyState.js";
 import { ExpandButton } from "./ExpandButton.js";
@@ -25,6 +26,8 @@ const TEXT = {
   from: (branch: string) => `from ${branch}`,
   changedFiles: "Changed files",
   more: (count: number) => `${count} more file${count === 1 ? "" : "s"} not listed`,
+  skipped: (why: "big" | "many" | "unread", path: string, bytes: number) =>
+    why === "big" ? `big file, not shown: ${path} ${formatBytes(bytes)}` : why === "many" ? `new file, not shown (too many new files): ${path}` : `new file, not shown (could not be read): ${path}`,
   where: (repoId: string, path: string) => `In repo ${repoId}: ${path}`,
   binary: "binary",
   tooLarge: "too large",
@@ -156,7 +159,7 @@ export function totals(diff: Pick<ItemDiff, "files">): { readonly added: number;
 export const count = (value: number) => value.toLocaleString("en");
 
 /** A diff to draw: an open decision's (with its worktree), or an ended item's. */
-export type ShownDiff = TreeDiff & { readonly worktree?: ItemDiff["worktree"] };
+export type ShownDiff = TreeDiff & { readonly worktree?: ItemDiff["worktree"]; readonly skipped?: ItemDiff["skipped"] };
 
 export type DiffState = { readonly kind: "loading" } | { readonly kind: "failed"; readonly message: string } | { readonly kind: "loaded"; readonly diff: ShownDiff };
 
@@ -275,7 +278,12 @@ export function DiffTab({ state, baseBranch, layout = "drawer", onExpand, by, he
             </li>
           );
         })}
-        {diff.moreFiles > 0 && <li className="dv-more">{TEXT.more(diff.moreFiles)}</li>}
+        {diff.moreFiles - (diff.skipped?.length ?? 0) > 0 && <li className="dv-more">{TEXT.more(diff.moreFiles - (diff.skipped?.length ?? 0))}</li>}
+        {diff.skipped?.map((skip) => (
+          <li key={skip.path} className="dv-more mono">
+            {TEXT.skipped(skip.why, shownPath(skip.path), skip.bytes)}
+          </li>
+        ))}
       </ul>
       {file !== undefined && <FilePanel file={file} where={at} columns={heads} layout={layout} split={split} onSplit={setSplit} onExpand={onExpand} />}
     </div>

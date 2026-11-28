@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync,existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -6,6 +6,7 @@ import { createProcessRunner, type ProcessRunner, type RunRequest, type RunResul
 import {
   DIFF_SAFE,
   GIT_SAFE_CONFIG,
+  SNAPSHOT_LIMITS,
   createGit,
   parseGitVersion,
   parseNumstat,
@@ -519,7 +520,8 @@ describe("API on a real repo", () => {
     write(join(repo, "new.txt"), "new\n");
     write(join(repo, "ignored.txt"), "secret\n");
     const before = await plain(repo, "status", "--porcelain");
-    const tree = value(await git.snapshotTree(repo));
+    const { tree, skipped } = value(await git.snapshotTree(repo));
+    expect(skipped).toEqual({ listed: [], count: 0 });
     expect(await plain(repo, "status", "--porcelain")).toBe(before);
     expect(await plain(repo, "diff", "--cached", "--name-only")).toBe("");
     expect(await plain(repo, "ls-tree", "--name-only", tree)).toBe(".gitignore\na.txt\nnew.txt\n");
@@ -527,6 +529,62 @@ describe("API on a real repo", () => {
     // The same tree add -A and write-tree give.
     value(await git.addAll(repo));
     expect(value(await git.writeTree(repo))).toBe(tree);
+  });
+
+  it("snapshotTree gives the tree add -A gives for deletions and awkward names, within the limits", SLOW, async () => {
+    rmSync(join(repo, "a.txt"));
+    for (const name of ["-n", "a b.txt", "[x]*.txt", "ünï.txt", ":(top)y"]) write(join(repo, name), `${name}\n`);
+    const { tree, skipped } = value(await git.snapshotTree(repo));
+    expect(skipped.count).toBe(0);
+    value(await git.addAll(repo));
+    expect(value(await git.writeTree(repo))).toBe(tree);
+    expect(await plain(repo, "ls-tree", "--name-only", tree)).not.toContain("a.txt\n");
+  });
+
+  it("snapshotTree leaves out an untracked file over the size limit without hashing it, and reports it", SLOW, async () => {
+    // Sparse: it costs no disk, and hashing it would still read every byte.
+    const huge = join(repo, "dist", "app.bin");
+    mkdirSync(join(repo, "dist"));
+    writeFileSync(huge, "");
+    truncateSync(huge, SNAPSHOT_LIMITS.fileBytes + 1);
+    const objects = await plain(repo, "count-objects", "-v");
+    const { tree, skipped } = value(await git.snapshotTree(repo));
+    expect(skipped).toEqual({ listed: [{ path: "dist/app.bin", bytes: SNAPSHOT_LIMITS.fileBytes + 1, why: "big" }], count: 1 });
+    expect(await plain(repo, "ls-tree", "-r", "--name-only", tree)).toBe("a.txt\n");
+    expect(await plain(repo, "count-objects", "-v")).toBe(objects);
+  });
+
+  it("snapshotTree reports an untracked file it cannot examine, as it would be committed", SLOW, async () => {
+    // A relative path that fits the OS limit, while the absolute one (with the repo's folder in front) does not.
+    const deep = Array.from({ length: process.platform === "darwin" ? 5 : 20 }, () => "d".repeat(200)).join("/");
+    const made = await createProcessRunner({ parentEnv: { PATH: process.env["PATH"] } }).run({ command: { argv: ["sh", "-c", `mkdir -p ${deep} && echo x > ${deep}/y.js`] }, cwd: repo });
+    expect(made.kind === "finished" && made.exitCode === 0).toBe(true);
+    const { tree, skipped } = value(await git.snapshotTree(repo));
+    expect(skipped).toEqual({ listed: [{ path: `${deep}/y.js`, bytes: 0, why: "unread" }], count: 1 });
+    expect(await plain(repo, "ls-tree", "-r", "--name-only", tree)).toBe("a.txt\n");
+  });
+
+  it("snapshotTree takes untracked files only up to the count limit, also under a folder named node_modules", SLOW, async () => {
+    mkdirSync(join(repo, "foo", "node_modules"), { recursive: true });
+    for (let i = 1; i <= 5; i++) write(join(repo, "foo", "node_modules", `f${i}.js`), `${i}\n`);
+    const { tree, skipped } = value(await git.snapshotTree(repo, { ...SNAPSHOT_LIMITS, files: 2 }));
+    expect(skipped.count).toBe(3);
+    expect(skipped.listed.map((skip) => [skip.path, skip.why])).toEqual([
+      ["foo/node_modules/f3.js", "many"],
+      ["foo/node_modules/f4.js", "many"],
+      ["foo/node_modules/f5.js", "many"],
+    ]);
+    expect(await plain(repo, "ls-tree", "-r", "--name-only", tree)).toBe("a.txt\nfoo/node_modules/f1.js\nfoo/node_modules/f2.js\n");
+  });
+
+  it("snapshotTree names only the first skipped files but counts them all, and stops at a total size limit", SLOW, async () => {
+    for (let i = 0; i < 25; i++) write(join(repo, `n${String(i).padStart(2, "0")}.txt`), "12345678");
+    const { skipped } = value(await git.snapshotTree(repo, { fileBytes: 100, files: 1, totalBytes: 100 }));
+    expect(skipped.count).toBe(24);
+    expect(skipped.listed).toHaveLength(20);
+    const total = value(await git.snapshotTree(repo, { fileBytes: 100, files: 100, totalBytes: 20 }));
+    expect(total.skipped.count).toBe(23);
+    expect(await plain(repo, "ls-tree", "-r", "--name-only", total.tree)).toBe("a.txt\nn00.txt\nn01.txt\n");
   });
 
   it("worktreeRemove without force refuses a checked-out nested repo, whatever status shows of its work", SLOW, async () => {

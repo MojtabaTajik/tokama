@@ -1,4 +1,4 @@
-import { copyFile, lstat, mkdtemp, open, readFile, realpath, rm } from "node:fs/promises";
+import { copyFile, lstat, mkdtemp, open, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { hasCode } from "../errno/index.js";
@@ -164,6 +164,34 @@ export interface WorktreeEntry {
   readonly bare: boolean;
 }
 
+export interface SnapshotLimits {
+  /** An untracked file larger than this is left out. */
+  readonly fileBytes: number;
+  /** Untracked files taken into the tree; the rest are left out. */
+  readonly files: number;
+  /** Bytes of the untracked files taken into the tree; a file that would pass it is left out. */
+  readonly totalBytes: number;
+}
+
+export const SNAPSHOT_LIMITS: SnapshotLimits = { fileBytes: 100 * 1024 ** 2, files: 10_000, totalBytes: 1024 ** 3 };
+
+/** Untracked files `snapshotTree` left out: `big` is over the size limit, `many` is past the count or total limit, `unread` could not be examined (its size is 0). */
+export interface SnapshotSkip {
+  readonly path: string;
+  readonly bytes: number;
+  readonly why: "big" | "many" | "unread";
+}
+
+export interface SnapshotSkips {
+  /** The first few, in git's order. */
+  readonly listed: readonly SnapshotSkip[];
+  /** All left out, listed or not. */
+  readonly count: number;
+}
+
+/** Skipped files named one by one in `SnapshotSkips.listed`. */
+const SNAPSHOT_LISTED = 20;
+
 export interface Git {
   /** `status --porcelain -z --untracked-files=all`. */
   status(repo: string): Promise<GitResult<StatusEntry[]>>;
@@ -212,9 +240,11 @@ export interface Git {
   writeTree(repo: string): Promise<GitResult<string>>;
   /**
    * The tree `add -A` then `write-tree` would give, uncommitted and untracked files included,
-   * built in a copy of the index in a temp folder: the repo's own index is never written.
+   * built in a copy of the index in a temp folder: the repo's own index is never written. An
+   * untracked file over `limits.fileBytes`, or past `limits.files` files or `limits.totalBytes`,
+   * is left out of the tree and reported in `skipped`, so no file of any size or count is hashed.
    */
-  snapshotTree(repo: string): Promise<GitResult<string>>;
+  snapshotTree(repo: string, limits?: SnapshotLimits): Promise<GitResult<{ tree: string; skipped: SnapshotSkips }>>;
   /** `commit -q --no-verify -m <message>` of the index; returns the new commit id. */
   commit(repo: string, message: string): Promise<GitResult<string>>;
   /**
@@ -317,6 +347,38 @@ export interface GitOptions {
 }
 
 const STDERR_CAP = 4_000;
+
+/**
+ * The untracked `paths` (relative to `repo`) to take into a snapshot, and what is left out. A
+ * file's size is read only while it can still be taken or named, so past the limits files cost a
+ * count each. A file that is gone by now is neither.
+ */
+async function withinLimits(repo: string, paths: readonly string[], limits: SnapshotLimits): Promise<{ keep: string[]; skipped: SnapshotSkips }> {
+  const keep: string[] = [];
+  const listed: SnapshotSkip[] = [];
+  let count = 0;
+  let total = 0;
+  for (const path of paths) {
+    if ((keep.length >= limits.files || total >= limits.totalBytes) && listed.length >= SNAPSHOT_LISTED) {
+      count++;
+      continue;
+    }
+    // Only a file that is gone is left out silently. One that cannot be read (a path too long
+    // for the OS, or a name that is not UTF-8, which reads back as U+FFFD) is still in the
+    // worktree, and a commit would take it: it is reported.
+    const stat = await lstat(join(repo, path)).catch((cause: unknown) => (hasCode(cause, "ENOENT") && !path.includes("�") ? undefined : null));
+    if (stat === undefined) continue;
+    const why = stat === null ? "unread" : stat.size > limits.fileBytes ? "big" : keep.length >= limits.files || total + stat.size > limits.totalBytes ? "many" : undefined;
+    if (why === undefined) {
+      keep.push(path);
+      total += stat!.size;
+      continue;
+    }
+    count++;
+    if (listed.length < SNAPSHOT_LISTED) listed.push({ path, bytes: stat?.size ?? 0, why });
+  }
+  return { keep, skipped: { listed, count } };
+}
 
 export function createGit(options: GitOptions): Git {
   const gitPath = options.gitPath ?? "git";
@@ -542,7 +604,7 @@ export function createGit(options: GitOptions): Git {
       return map(git(repo, args), none);
     },
     writeTree: (repo) => map(git(repo, ["write-tree"]), trimmed),
-    async snapshotTree(repo) {
+    async snapshotTree(repo, limits = SNAPSHOT_LIMITS) {
       const index = await git(repo, ["rev-parse", "--path-format=absolute", "--git-path", "index"]);
       if (!index.ok) return index;
       const dir = await mkdtemp(join(tmpdir(), "tokama-index-"));
@@ -552,9 +614,29 @@ export function createGit(options: GitOptions): Git {
         await copyFile(index.value.trim(), env.GIT_INDEX_FILE).catch((cause: unknown) => {
           if (!hasCode(cause, "ENOENT")) throw cause;
         });
-        const added = await git(repo, ["add", "-A"], env);
-        if (!added.ok) return added;
-        return await map(git(repo, ["write-tree"], env), trimmed);
+        // `add -A` would hash every untracked file, of any size and count: tracked changes go in
+        // with `add -u`, and only the untracked files within the limits are named to `add`.
+        // A file that vanishes between the listing and `add` (an editor's temp file) fails the
+        // whole `add`: the listing is made again once.
+        let staged: GitResult<SnapshotSkips> = err({ reason: "failed", args: [], exitCode: null, message: "not staged" });
+        for (let tries = 0; tries < 2 && !staged.ok; tries++) {
+          const untracked = await git(repo, ["ls-files", "--others", "--exclude-standard", "-z"], env);
+          if (!untracked.ok) return untracked;
+          const { keep, skipped } = await withinLimits(repo, untracked.value.split("\0").filter((path) => path !== ""), limits);
+          const updated = await git(repo, ["add", "-u"], env);
+          if (!updated.ok) return updated;
+          if (keep.length === 0) {
+            staged = ok(skipped);
+            continue;
+          }
+          const list = join(dir, "paths");
+          await writeFile(list, keep.join("\0"));
+          const added = await git(repo, ["add", `--pathspec-from-file=${list}`, "--pathspec-file-nul"], { ...env, GIT_LITERAL_PATHSPECS: "1" });
+          staged = added.ok ? ok(skipped) : added;
+        }
+        if (!staged.ok) return staged;
+        const { value: skipped } = staged;
+        return await map(git(repo, ["write-tree"], env), (out) => ({ tree: out.trim(), skipped }));
       } finally {
         await rm(dir, { recursive: true, force: true });
       }

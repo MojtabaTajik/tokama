@@ -60,7 +60,19 @@ export const TreeDiffSchema = z.strictObject({
   cut: z.boolean(),
 });
 
+/** An untracked file of the worktree that was not read: too big, or past the limit on files read. */
+export const SkippedFileSchema = z.strictObject({
+  path: z.string().min(1).max(4096),
+  bytes: z.int().nonnegative(),
+  why: z.enum(["big", "many", "unread"]),
+});
+
 export const ItemDiffSchema = TreeDiffSchema.extend({
+  /**
+   * The first untracked files the worktree's diff left out, without reading them. All of them are
+   * also counted in `moreFiles`; absent when none was left out.
+   */
+  skipped: z.array(SkippedFileSchema).max(20).optional(),
   /** Where to see all of it: the item's worktree, as a folder relative to its repo. */
   worktree: z.strictObject({
     repoId: RepoIdSchema,

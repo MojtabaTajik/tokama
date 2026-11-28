@@ -1514,11 +1514,14 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
         return failure("invalid_state", "The git config, hooks or attributes of the item's worktree changed since it started, so Tokama does not read it.");
       }
       // A temp index: the worktree's own index is left as it is.
-      const tree = await git.snapshotTree(worktree.path);
-      if (!tree.ok) return cannot("Cannot read the worktree", tree.error.message);
-      const diff = await treeDiff(git, worktree.path, worktree.baseCommit, tree.value);
+      const snapshot = await git.snapshotTree(worktree.path);
+      if (!snapshot.ok) return cannot("Cannot read the worktree", snapshot.error.message);
+      const diff = await treeDiff(git, worktree.path, worktree.baseCommit, snapshot.value.tree);
       if (!diff.ok) return cannot("Cannot read the change", diff.error.message);
-      return ok({ kind: "worktree", ...diff.value, worktree: { repoId: repo.id, dir: item.worktrees[0]!.dir, branch: worktree.branch, baseCommit: worktree.baseCommit } });
+      // Files left out of the snapshot still changed: they count as files the diff does not list.
+      const { listed, count } = snapshot.value.skipped;
+      const left = count === 0 ? {} : { moreFiles: diff.value.moreFiles + count, cut: true, ...(listed.length > 0 && { skipped: listed }) };
+      return ok({ kind: "worktree", ...diff.value, ...left, worktree: { repoId: repo.id, dir: item.worktrees[0]!.dir, branch: worktree.branch, baseCommit: worktree.baseCommit } });
     },
 
     async stepOutput(itemId, stepIndex, attempt) {
