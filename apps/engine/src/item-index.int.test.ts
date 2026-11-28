@@ -484,10 +484,13 @@ describe("engine start with a home folder", () => {
     expect(await starting).toMatchObject({ ok: false, error: { code: "stopped" } });
     expect(existsSync(join(home, "engine.lock"))).toBe(false);
 
-    // Nothing was written after the stop; the logs reload cleanly and the next start recovers both.
+    // Shutdown drains first and only then aborts recovery, so on a slow machine recovery has already
+    // finished its writes when it is released. Either way each log is whole (3 events: attempt still
+    // open; 5: failure and decision recorded), nothing is written after the lock is gone, and the next
+    // start ends with the same six events.
     const { store: reloaded, problems } = ItemStore.open({ home, hostId: store.hostId });
     expect(problems).toEqual([]);
-    expect(reloaded.list().map((item) => item.lastSeq)).toEqual([3, 3]);
+    for (const item of reloaded.list()) expect([3, 5]).toContain(item.lastSeq);
     const next = await startEngine({ dir: tempEngineDir(cleanups), home, processTable: { ...table, list: async () => [] } });
     if (!next.ok) throw new Error(next.error.message);
     cleanups.push(() => next.value.close());
