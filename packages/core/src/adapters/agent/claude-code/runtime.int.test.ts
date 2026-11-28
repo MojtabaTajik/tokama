@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -127,6 +127,32 @@ describe("Claude Code runtime", SLOW, () => {
     });
     expect(echo.env).not.toContain("SSH_AUTH_SOCK");
     expect(echo.env.every((name) => ["PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "TMPDIR", "TERM", "EXTRA_VAR", "__CF_USER_TEXT_ENCODING"].includes(name))).toBe(true);
+  });
+
+  describe("the exclude for the sandbox's placeholders", () => {
+    const envNames = async (extra: Partial<ClaudeCodeOptions>, call: Partial<AgentCallRequest>) => {
+      const events = await collect(runtime(undefined, extra).launch(request("echo", { limits: { edit: true, commands: ["npm test:*"], web: false }, ...call }), new AbortController().signal));
+      const said = events.find((event) => event.type === "text");
+      if (said?.type !== "text") throw new Error("no text event");
+      return (JSON.parse(said.text) as { env: string[] }).env;
+    };
+    // A linked worktree's `.git` file points at its own folder in the main repo.
+    const linked = () => {
+      mkdirSync(join(dir, "gitdir"));
+      writeFileSync(join(dir, ".git"), `gitdir: ${join(dir, "gitdir")}\n`);
+    };
+
+    it("is passed to a sandboxed call in a linked worktree on Linux", SLOW, async () => {
+      linked();
+      expect(await envNames({ platform: "linux" }, {})).toContain("GIT_CONFIG_VALUE_0");
+      expect(existsSync(join(dir, "gitdir", "tokama-exclude"))).toBe(true);
+    });
+
+    it("is not passed on macOS, or to a call without the shell", SLOW, async () => {
+      linked();
+      expect(await envNames({ platform: "darwin" }, {})).not.toContain("GIT_CONFIG_COUNT");
+      expect(await envNames({ platform: "linux" }, { limits: { edit: true, commands: [], web: false } })).not.toContain("GIT_CONFIG_COUNT");
+    });
   });
 
   it.each([

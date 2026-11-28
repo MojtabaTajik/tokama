@@ -5,7 +5,7 @@ import { BWRAP_BLOCKED_HINT, createLinuxSupport, NESTED_BLOCKED_HINT, LINUX_CACH
 import { createMacosSupport, MACOS_CACHE_DIRS } from "./macos.js";
 import type { SandboxSupport } from "./support.js";
 
-export { CREDENTIAL_PATHS, checkSandboxSpec, isWithin, PACKAGE_REGISTRY_HOSTS, usableCacheDirs, type NetworkPolicy, type SandboxContext, type SandboxSpec } from "./spec.js";
+export { CREDENTIAL_PATHS, checkSandboxSpec, isWithin, PACKAGE_REGISTRY_HOSTS, SANDBOX_PLACEHOLDER_PATHS, usableCacheDirs, type NetworkPolicy, type SandboxContext, type SandboxSpec } from "./spec.js";
 export type { SandboxCheck, SandboxSupport } from "./support.js";
 export { BWRAP_BLOCKED_HINT, NESTED_BLOCKED_HINT };
 
