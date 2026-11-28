@@ -22,9 +22,9 @@ describe("the suggest-checks definition", () => {
 
   // The recorded answers are made for one text of the instructions and the example. A change to either
   // needs a new `version` and new recordings; then put the new digest here.
-  it("has the instructions and example that version 1 was recorded for", () => {
-    expect(suggestChecks.version).toBe(1);
-    expect(sha256Hex(`${suggestChecks.instructions}\n${JSON.stringify(suggestChecks.example)}`)).toBe("7c0e2c9046c07d7f51b39d344f123b82e5675025a9896c735835adbb2a817b37");
+  it("has the instructions and example that version 2 was recorded for", () => {
+    expect(suggestChecks.version).toBe(2);
+    expect(sha256Hex(`${suggestChecks.instructions}\n${JSON.stringify(suggestChecks.example)}`)).toBe("ebe26dcc2d6412f350be86398dedb31ef40f2caa5424370b6a98d1fe0937d068");
   });
 
   it("asks for the file names and the build files, and nothing else", () => {
@@ -76,6 +76,19 @@ describe("the rule for a proposed command", () => {
 
   it.each(["npmㅤtest", "npm test️", "npm​test", "npm ‮test"])("refuses %j: an invisible character, which the answer's shape lets through", (command) => {
     expect(checksProblem(answer(command))).toBe("check 1's command is not one simple command: it has a control, invisible or line-break character. Give one command, with no && or pipe.");
+  });
+
+  it.each([
+    ["dotnet test Orders.sln --no-restore", "--no-restore"],
+    ["dotnet test Orders.sln --no-build", "--no-build"],
+    ["cargo test --offline", "--offline"],
+    ["cargo build --workspace --frozen", "--frozen"],
+  ])("refuses %j: a flag that skips the fetch a fresh worktree needs", (command, flag) => {
+    expect(checksProblem(answer(command))).toBe(`check 1's command has ${flag}. It runs in a fresh worktree with nothing installed: leave the flag out so the tool fetches and builds what it needs.`);
+  });
+
+  it.each(["dotnet test Orders.sln", "cargo test --locked", "pnpm test -- --offline-mode"])("accepts %j", (command) => {
+    expect(checksProblem(answer(command))).toBeUndefined();
   });
 
   it("refuses a variable assignment in front of the command", () => {

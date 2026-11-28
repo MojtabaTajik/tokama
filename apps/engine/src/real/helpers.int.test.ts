@@ -184,7 +184,7 @@ describe("a real engine with the built-in helpers", () => {
     const { client } = await engine();
     expect(await client.query({ type: "helpers" })).toMatchObject({
       ok: true,
-      data: { helpers: [{ helperId: "suggest-checks", name: "Suggest checks", version: 1, available: true, agent: { agentId: "helper", cliId: "claude-code", model: "haiku", runsOn: "cloud" }, sends: ["file names", "build files"] }] },
+      data: { helpers: [{ helperId: "suggest-checks", name: "Suggest checks", version: 2, available: true, agent: { agentId: "helper", cliId: "claude-code", model: "haiku", runsOn: "cloud" }, sends: ["file names", "build files"] }] },
     });
   });
 
@@ -253,7 +253,7 @@ describe("suggest-checks on a folder, with the built-in helper and its gatherer"
     const reply = await runOn(fixture.client, repo);
     if (!reply.ok) throw new Error(reply.error.message);
     const run = await ended(fixture, reply.data.runId);
-    expect(run).toMatchObject({ state: "done", helperVersion: 1, result: { helperId: "suggest-checks", value: ANSWER } });
+    expect(run).toMatchObject({ state: "done", helperVersion: 2, result: { helperId: "suggest-checks", value: ANSWER } });
     const { prompt } = runtime.requests[0]!;
     expect(prompt).toContain('"test": "vitest run"');
     expect(prompt).toContain("src/index.ts");

@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "files": {
     "package.json": "{ \"name\": \"orders-api\", \"scripts\": { \"test\": \"vitest run\" } }\n",
     "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",

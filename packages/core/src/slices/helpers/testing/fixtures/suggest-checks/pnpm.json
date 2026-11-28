@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "files": {
     "package.json": "{\n  \"name\": \"orders-api\",\n  \"scripts\": { \"test\": \"vitest run\", \"lint\": \"eslint .\", \"typecheck\": \"tsc --noEmit\", \"build\": \"tsc\" }\n}\n",
     "pnpm-workspace.yaml": "packages:\n  - packages/*\n",
