@@ -39,7 +39,7 @@ export interface Row {
   readonly word: string;
   readonly done: boolean;
   readonly detail: readonly Part[];
-  /** What the engine wrote about the problem, exactly as sent: shown as text, with no link and no Copy. */
+  /** What the engine wrote about the problem, exactly as sent: shown as text, with no Copy; only the address of a known site page in it becomes a link. */
   readonly engineText?: string;
   /** A command to run in a terminal, shown with Copy. */
   readonly command?: string;

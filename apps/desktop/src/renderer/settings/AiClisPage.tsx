@@ -11,6 +11,7 @@ import { BackendMark } from "../ui/agent.js";
 import { Button } from "../ui/Button.js";
 import { ErrorRetry } from "../ui/ErrorRetry.js";
 import { Placeholder } from "../ui/EmptyState.js";
+import { LinkedText } from "../ui/LinkedText.js";
 
 const TEXT = {
   heading: "AI CLIs",
@@ -141,7 +142,7 @@ function Detail({ cli, checking, onCheck }: { readonly cli: AiCli; readonly chec
               {TEXT.login}: run <code className="mono">{cli.loginCommand}</code> in a terminal, then check again.
             </p>
           )}
-          {cli.supported && cli.state !== "not_logged_in" && cli.message !== undefined && <p className="ai-cli-login">{cli.message}</p>}
+          {cli.supported && cli.state !== "not_logged_in" && cli.message !== undefined && <p className="ai-cli-login"><LinkedText text={cli.message} /></p>}
         </div>
       </header>
       {cli.supported ? <Settings cli={cli} /> : <p className="ai-cli-unsupported">{TEXT.unsupported}</p>}
