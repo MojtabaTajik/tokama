@@ -27,10 +27,10 @@ describe("fileUnder", () => {
 });
 
 describe("soundFileName", () => {
-  it("prefixes the name in a packaged app only", () => {
-    expect(soundFileName("needsYou", true)).toBe("tokama-needs-you.wav");
-    expect(soundFileName("tokayCall", true)).toBe("tokama-tokay-call.wav");
-    expect(soundFileName("failed", false)).toBe("failed.wav");
+  it("gives each sound a file with the `tokama-` prefix", () => {
+    expect(soundFileName("needsYou")).toBe("tokama-needs-you.wav");
+    expect(soundFileName("tokayCall")).toBe("tokama-tokay-call.wav");
+    expect(soundFileName("failed")).toBe("tokama-failed.wav");
   });
 });
 
@@ -42,6 +42,6 @@ describe("soundsDir", () => {
 
   it("finds every development file in the repo", () => {
     const appPath = join(import.meta.dirname, "..", "..", "..");
-    for (const name of SOUND_NAMES) expect(existsSync(join(soundsDir({ packaged: false, resourcesPath: "", appPath }), soundFileName(name, false)))).toBe(true);
+    for (const name of SOUND_NAMES) expect(existsSync(join(soundsDir({ packaged: false, resourcesPath: "", appPath }), soundFileName(name)))).toBe(true);
   });
 });

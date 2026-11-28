@@ -60,12 +60,26 @@ describe("patternCategory", () => {
     ["src/.gitattributes", "git"],
     ["PNPM-LOCK.YAML", "lockfile"],
     ["Cargo.lock", "lockfile"],
+    ["azure-pipelines.yml", "ci"],
+    ["services/api/azure-pipelines-release.yaml", "ci"],
+    ["packages.lock.json", "lockfile"],
+    ["src/Api/packages.lock.json", "lockfile"],
+    ["Directory.Packages.props", "package"],
+    ["src/Directory.Packages.props", "package"],
+    ["go.mod", "package"],
+    ["services/x/go.mod", "package"],
+    ["Cargo.toml", "package"],
+    ["crates/api/Cargo.toml", "package"],
+    ["pom.xml", "package"],
+    ["modules/web/pom.xml", "package"],
+    ["services/x/go.sum", "lockfile"],
+    ["crates/api/Cargo.lock", "lockfile"],
     [".GitHub/Workflows/ci.yml", "ci"],
   ])("%s is %s", (path, category) => {
     expect(patternCategory(path)).toBe(category);
   });
 
-  it.each(["src/index.ts", "vitest.config.json", "tsconfig.json", ".gitignore", "package.json.bak", ".github/CODEOWNERS", "docs/.tokama-notes.md", "sub/.gitlab-ci.yml"])(
+  it.each(["src/index.ts", "vitest.config.json", "tsconfig.json", ".gitignore", "package.json.bak", ".github/CODEOWNERS", "docs/.tokama-notes.md", "sub/.gitlab-ci.yml", "azure-pipelines.txt", "my-azure-pipelines.yml", "pom.xml.bak", "go.mod.old"])(
     "%s is not protected",
     (path) => {
       expect(patternCategory(path)).toBeUndefined();

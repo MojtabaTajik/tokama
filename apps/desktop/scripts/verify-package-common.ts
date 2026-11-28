@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { accessSync, constants, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { SOUND_FILES } from "../src/main/sound/files.ts";
 import { appVersion, run } from "./package.ts";
 
 const appDir = resolve(import.meta.dirname, "..");
@@ -116,7 +117,7 @@ function repoNotes(): string[] {
 /** Why the resources folder of a packaged app lacks a file every platform ships, or undefined. `feed` says whether the build has an update feed (app-update.yml). */
 export function resourcesProblem(resources: string, feed: boolean): string | undefined {
   const engine = join(resources, "engine");
-  const files = [...repoNotes().map((name) => join(resources, "whats-new", name)), join(engine, "tokama-engine"), join(engine, "LICENSE-node"), join(engine, "package.json"), join(engine, "dist", "main.js"), join(engine, "dist", "hook.js"), join(resources, "LICENSE-electron"), join(resources, "LICENSES.chromium.html"), join(resources, "THIRD_PARTY_NOTICES.md"), join(resources, "app.asar"), ...["needs-you", "finished", "failed", "tokay-call"].map((name) => join(resources, `tokama-${name}.wav`))];
+  const files = [...repoNotes().map((name) => join(resources, "whats-new", name)), join(engine, "tokama-engine"), join(engine, "LICENSE-node"), join(engine, "package.json"), join(engine, "dist", "main.js"), join(engine, "dist", "hook.js"), join(resources, "LICENSE-electron"), join(resources, "LICENSES.chromium.html"), join(resources, "THIRD_PARTY_NOTICES.md"), join(resources, "app.asar"), ...Object.values(SOUND_FILES).map((file) => join(resources, file))];
   for (const file of feed ? [...files, join(resources, "app-update.yml")] : files) {
     try {
       statSync(file);

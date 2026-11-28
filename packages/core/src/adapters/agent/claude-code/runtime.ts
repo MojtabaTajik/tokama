@@ -13,7 +13,7 @@ import { hookSettings } from "./permission-hook.js";
 import { mentionsSandbox, sandboxSettings, sandboxStartProblem } from "./sandbox.js";
 import { classifyFailure, createStreamParser, type StreamParser, type StreamState } from "./stream.js";
 import { CLAUDE_CODE_COMMAND } from "./command.js";
-import { readClaudeVersion, shellCallsProblem } from "./version.js";
+import { readClaudeVersion, shellCallsProblem, UPDATE_COMMAND } from "./version.js";
 
 export interface ClaudeCodeOptions {
   /** argv that starts the CLI. Default: `[CLAUDE_CODE_COMMAND]`, found on the allowlisted PATH. */
@@ -224,7 +224,7 @@ function writeHookFiles(request: AgentCallRequest, hookCommand: readonly string[
 
 type EndEvent = Extract<AgentCallEvent, { type: "end" }>;
 
-const UPDATE_CLAUDE = "Update Claude Code (for example with `claude update`), then try again.";
+const UPDATE_CLAUDE = `Update Claude Code (for example with \`${UPDATE_COMMAND}\`), then try again.`;
 
 function endEvent(result: RunResult, parser: StreamParser, stderr: string, signal: AbortSignal, timeoutMs: number, sandboxed: boolean): EndEvent {
   const state = parser.state();

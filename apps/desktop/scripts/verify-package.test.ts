@@ -2,6 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, wr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { SOUND_FILES } from "../src/main/sound/files.js";
 import { minSafeProblem, parseLatestFeed, parseYamlScalars, resourcesProblem } from "./verify-package-common.js";
 import { entitlementProblem, isMachO, latestProblem, layoutProblem, machOFiles, parseSignature, signatureProblem, zipName } from "./verify-package-mac.js";
 import { parseLinuxVerifyArgs, parseVerifyArgs } from "./verify-package.js";
@@ -212,7 +213,7 @@ describe("layoutProblem", () => {
     for (const note of readdirSync(join(import.meta.dirname, "..", "..", "..", "whats-new")).filter((name) => /^\d+\.\d+\.\d+\.md$/.test(name))) writeFileSync(join(resources(), "whats-new", note), "");
     for (const file of ["LICENSE-node", "package.json", "dist/main.js", "dist/hook.js", "tokama-engine"]) writeFileSync(join(engine, file), "");
     chmodSync(join(engine, "tokama-engine"), 0o755);
-    for (const file of ["LICENSE-electron", "LICENSES.chromium.html", "THIRD_PARTY_NOTICES.md", "app.asar", ...["needs-you", "finished", "failed", "tokay-call"].map((name) => `tokama-${name}.wav`)]) writeFileSync(join(resources(), file), "");
+    for (const file of ["LICENSE-electron", "LICENSES.chromium.html", "THIRD_PARTY_NOTICES.md", "app.asar", ...Object.values(SOUND_FILES)]) writeFileSync(join(resources(), file), "");
   };
 
   it("accepts a layout that holds the licence texts", () => {

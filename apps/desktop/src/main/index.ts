@@ -300,13 +300,12 @@ function soundPlayer(): SoundPlayer {
     themeFile: (path) => fileUnder("/usr/share/sounds", path),
     audioEnv: Object.fromEntries(["XDG_RUNTIME_DIR", "PULSE_SERVER"].flatMap((name) => (process.env[name] === undefined ? [] : [[name, process.env[name]]]))),
     soundsDir: soundsFolder,
-    packaged,
     beep: () => shell.beep(),
   });
 }
 
 /** The name of the bundled sound file of a kind, for a packaged Mac; the system plays it from the app bundle. */
-const bundledSoundName = (kind: NoteKind): string => soundFileName(kind, true);
+const bundledSoundName = (kind: NoteKind): string => soundFileName(kind);
 
 void app.whenReady().then(async () => {
   if (!primary) return;

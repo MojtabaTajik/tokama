@@ -20,15 +20,11 @@ extraResources:
   - from: package-stage/engine
     to: engine
   # The sounds sit at the top of Resources: macOS looks a notification's sound up by file name in the
-  # app bundle, and the app's own player reads the same files.
-  - from: src/renderer/brand/sounds/needs-you.wav
-    to: tokama-needs-you.wav
-  - from: src/renderer/brand/sounds/finished.wav
-    to: tokama-finished.wav
-  - from: src/renderer/brand/sounds/failed.wav
-    to: tokama-failed.wav
-  - from: src/renderer/brand/sounds/tokay-call.wav
-    to: tokama-tokay-call.wav
+  # app bundle, and the app's own player reads the same files. Their names carry the `tokama-` prefix.
+  - from: src/renderer/brand/sounds
+    to: .
+    filter:
+      - "*.wav"
   # The release notes ship with the app, so About lists them without a network.
   - from: ../../whats-new
     to: whats-new

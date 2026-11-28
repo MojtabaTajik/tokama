@@ -4,7 +4,7 @@
 // - by pattern, at any time: test config, package manifests and package-manager config, CI
 //   files, lockfiles, `.gitattributes` and `.tokama/`. A new `vitest.config.ts` or workflow file
 //   is tamper too.
-// JS/TS first, with the obvious Go and Python names. Paths are repo-relative with "/" separators;
+// JS/TS first, with the manifests and lockfiles of Python, .NET, Go, Rust and Java. Paths are repo-relative with "/" separators;
 // names match in lowercase (macOS and Windows file systems ignore case).
 
 export type ProtectedCategory =
@@ -15,7 +15,7 @@ export type ProtectedCategory =
   | "test"
   | "snapshot"
   | "test-config"
-  /** package.json and package-manager config: they choose what `npm test` and an install run. */
+  /** package.json, the manifests of other ecosystems (`go.mod`, `Cargo.toml`, `pom.xml`, `Directory.Packages.props`) and package-manager config: they choose what a test run and an install run. */
   | "package"
   | "ci"
   | "lockfile";
@@ -43,7 +43,17 @@ const TEST_CONFIG = [
   /^conftest\.py$/,
 ];
 
-const PACKAGE_CONFIG = [/^package\.json$/, /^pnpm-workspace\.yaml$/, /^\.pnpmfile\.[cm]js$/, /^\.npmrc$/, /^\.yarnrc(?:\..+)?$/];
+const PACKAGE_CONFIG = [
+  /^package\.json$/,
+  /^pnpm-workspace\.yaml$/,
+  /^\.pnpmfile\.[cm]js$/,
+  /^\.npmrc$/,
+  /^\.yarnrc(?:\..+)?$/,
+  /^directory\.packages\.props$/,
+  /^go\.mod$/,
+  /^cargo\.toml$/,
+  /^pom\.xml$/,
+];
 
 const LOCKFILES = new Set([
   "pnpm-lock.yaml",
@@ -57,16 +67,20 @@ const LOCKFILES = new Set([
   "poetry.lock",
   "uv.lock",
   "pipfile.lock",
+  "packages.lock.json",
 ]);
 
 /** Root-level CI folders and files. */
 export const CI_DIRS: readonly string[] = [".github/workflows", ".github/actions", ".circleci", ".buildkite"];
-const CI_FILES = new Set([".gitlab-ci.yml", "azure-pipelines.yml", "jenkinsfile", ".travis.yml"]);
+const CI_FILES = new Set([".gitlab-ci.yml", "jenkinsfile", ".travis.yml"]);
 
 export const TOKAMA_DIR = ".tokama";
 
 const basename = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 const under = (path: string, dir: string) => path.startsWith(`${dir}/`);
+
+/** Whether a lowercase path is a CI file: a root CI file, a file in a CI folder, or an Azure Pipelines file in any folder. */
+export const isCiPath = (path: string): boolean => CI_FILES.has(path) || CI_DIRS.some((dir) => under(path, dir)) || /(?:^|\/)azure-pipelines[^/]*\.ya?ml$/.test(path);
 
 /** The category of a file that existed in the base commit, or undefined when only its pattern counts. */
 export function baseCategory(original: string): "test" | "snapshot" | undefined {
@@ -81,7 +95,7 @@ export function baseCategory(original: string): "test" | "snapshot" | undefined 
 export function patternCategory(original: string): "tokama" | "git" | "test-config" | "package" | "ci" | "lockfile" | undefined {
   const path = original.toLowerCase();
   if (under(path, TOKAMA_DIR)) return "tokama";
-  if (CI_FILES.has(path) || CI_DIRS.some((dir) => under(path, dir))) return "ci";
+  if (isCiPath(path)) return "ci";
   const name = basename(path);
   if (LOCKFILES.has(name)) return "lockfile";
   if (name === ".gitattributes") return "git";
