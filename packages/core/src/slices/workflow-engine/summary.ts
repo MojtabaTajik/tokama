@@ -142,6 +142,8 @@ export interface ParsedHeadline {
   readonly noChange: boolean;
   /** The plan lines of the block; empty when there are none. */
   readonly plan: PlanSummary;
+  /** The step was asked for the plan lines and plan labels stand in its last lines, yet none was read. */
+  readonly planUnread: boolean;
 }
 
 /**
@@ -149,18 +151,20 @@ export interface ParsedHeadline {
  * lines, with the `POINT:` and `READ:` lines after it. Without one the first lines of the reply
  * stand in. Undefined when the reply says nothing. Never throws.
  */
-export function parseHeadline(text: string): ParsedHeadline | undefined {
+export function parseHeadline(text: string, planAsked = false): ParsedHeadline | undefined {
   try {
-    return parse(text);
+    return parse(text, planAsked);
   } catch {
     return undefined;
   }
 }
 
-function parse(text: string): ParsedHeadline | undefined {
+function parse(text: string, planAsked: boolean): ParsedHeadline | undefined {
   const lines = text.split(/\r?\n/);
-  const planLines = planLineIndices(lines);
+  // Only a step that was asked for the plan lines reads them; for any other step they are text of the reply.
+  const planLines = planAsked ? planLineIndices(lines) : [];
   const plan = parsePlan(planLines.map((index) => planLabelOf(lines[index]!)!));
+  const planUnread = planAsked && planLines.length === 0 && planLabelsUnread(lines);
   // The plan lines do not count toward the window the headline is looked for in.
   const window = lines.flatMap((line, index) => (line.trim() === "" || planLines.includes(index) ? [] : [index])).slice(-BLOCK_WINDOW);
   const head = window.findLast((index) => labelOf(lines[index]!)?.label === "HEADLINE");
@@ -181,6 +185,7 @@ function parse(text: string): ParsedHeadline | undefined {
       readFlag: after.some((found) => found?.label === "READ" && /^yes\b/i.test(found.value)),
       noChange: after.some((found) => found?.label === "NO_CHANGE" && found.block),
       plan,
+      planUnread,
     };
   }
   const said = body.flatMap((line) => (VERDICT_LINE.test(line.trim()) || labelOf(line)?.block === true ? [] : [plain(line)])).filter((line) => line !== "");
@@ -194,6 +199,7 @@ function parse(text: string): ParsedHeadline | undefined {
     readFlag: false,
     noChange: false,
     plan,
+    planUnread,
   };
 }
 
@@ -202,8 +208,11 @@ function parse(text: string): ParsedHeadline | undefined {
 /** How many non-empty lines at the end of a reply the plan lines are looked for in. */
 const PLAN_WINDOW = 40;
 const FENCE_LINE = /^\s*(?:`{3,}|~{3,})[\w+-]*\s*$/;
-// "none", "None.", "nothing", "No new dependencies": the agent says there is none.
-const NONE = /^(?:none|nothing|n\/a|-|–|—|no(?:\s+\S+){0,3})[.!]?$/i;
+// Only the exact words of "there is none": anything longer is a value, because a card that says
+// "none" for a secret or a service the plan needs is worse than one that shows its words.
+const NONE_WORDS = /^(?:none|nothing|n\/a|-|–|—)[.!]?$/i;
+// A reach line also says "no" and "no new <kind>".
+const NONE_REACH = /^(?:no|none needed|no new (?:files?|dependenc(?:y|ies)|deps?|(?:outside )?services?|secrets?|keys?))[.!]?$/i;
 const UNSURE = /^unsure\s*:\s*/i;
 const REACH_KINDS: Readonly<Record<string, ReachKind>> = {
   file: "files",
@@ -221,26 +230,47 @@ const REACH_KINDS: Readonly<Record<string, ReachKind>> = {
 };
 
 /**
- * The plan lines of the trailing run: the last lines that are all block or plan lines, read
- * backwards from the end, at most 40, with no empty line between them. The run counts only when
- * it holds the headline; a plan label anywhere else in the reply is prose, so a reply without the
- * block, or a step that was not asked for it, reads as it always did.
+ * The plan lines of the block: those after the last `HEADLINE:` line, up to the end of the reply,
+ * where every line is a block or plan line (empty lines and code fences are stepped over), and
+ * those directly above it with no empty line between. A reply that goes on in prose after the
+ * block has none, and a plan label anywhere else in the reply is prose.
  */
 function planLineIndices(lines: readonly string[]): number[] {
+  const head = lastHeadline(lines);
+  if (head === undefined) return [];
   const found: number[] = [];
   let seen = 0;
-  let headline = false;
-  for (let index = lines.length - 1; index >= 0 && seen < PLAN_WINDOW; index--) {
+  for (let index = head + 1; index < lines.length; index++) {
     const line = lines[index]!;
-    // A code fence around the block (``` or ```text) is no part of the run and does not end it. Empty lines after the last line do not either.
-    if (FENCE_LINE.test(line) || (line.trim() === "" && seen === 0)) continue;
-    if (line.trim() === "") break;
-    seen++;
+    if (line.trim() === "" || FENCE_LINE.test(line)) continue;
+    if (++seen > PLAN_WINDOW) return [];
     if (planLabelOf(line) !== undefined) found.push(index);
-    else if (!isBlockLine(line)) break;
-    else if (labelOf(line)?.label === "HEADLINE") headline = true;
+    else if (!isBlockLine(line)) return [];
   }
-  return headline ? found.reverse() : [];
+  const above: number[] = [];
+  for (let index = head - 1; index >= 0 && above.length < PLAN_WINDOW; index--) {
+    const line = lines[index]!;
+    if (FENCE_LINE.test(line)) continue;
+    if (planLabelOf(line) !== undefined) above.push(index);
+    else if (line.trim() === "" || !isBlockLine(line)) break;
+  }
+  return [...above.reverse(), ...found];
+}
+
+/** The last `HEADLINE:` line among the last 80 non-empty lines. */
+function lastHeadline(lines: readonly string[]): number | undefined {
+  let seen = 0;
+  for (let index = lines.length - 1; index >= 0 && seen < 2 * PLAN_WINDOW; index--) {
+    if (lines[index]!.trim() === "") continue;
+    seen++;
+    if (labelOf(lines[index]!)?.label === "HEADLINE") return index;
+  }
+  return undefined;
+}
+
+/** Plan labels sit in the last lines of the reply, yet none was read: the agent wrote them in a shape the reader does not know. */
+function planLabelsUnread(lines: readonly string[]): boolean {
+  return lines.filter((line) => line.trim() !== "").slice(-PLAN_WINDOW).some((line) => planLabelOf(line) !== undefined);
 }
 
 /** The parts of a line, split on `|`: at most three, the rest joined into the last. */
@@ -269,7 +299,7 @@ function reachOf(value: string): PlanReach | undefined {
   const written = part(said);
   if (known === undefined || written === undefined) return undefined;
   const noted = part(note);
-  return { kind: known, ...(NONE.test(written) ? { none: true as const } : { value: written }), ...(noted !== undefined && { note: noted }) };
+  return { kind: known, ...(NONE_WORDS.test(written) || NONE_REACH.test(written) ? { none: true as const } : { value: written }), ...(noted !== undefined && { note: noted }) };
 }
 
 /** The plan lines read in order: each reach kind once (the first wins), 7 choices and 3 risks, the rest counted. */
@@ -277,7 +307,7 @@ function parsePlan(found: readonly { label: "CHOICE" | "REACH" | "RISK"; value: 
   const choices = found.flatMap((line) => (line.label === "CHOICE" ? [choiceOf(line.value)] : [])).filter((choice) => choice !== undefined);
   const risks = found.flatMap((line) => {
     const risk = line.label === "RISK" ? part(line.value) : undefined;
-    return risk === undefined || NONE.test(risk) ? [] : [risk];
+    return risk === undefined || NONE_WORDS.test(risk) ? [] : [risk];
   });
   const reach: PlanReach[] = [];
   for (const line of found) {

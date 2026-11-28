@@ -6,6 +6,23 @@ import { parseHeadline } from "./summary.js";
 const words = (count: number) => Array.from({ length: count }, (_, i) => `w${i}`).join(" ");
 const none = { approvesText: false, lastOfDocument: false };
 
+// The literal texts the agents are told. They are pinned here, not read from the constants, so a
+// change to what every agent step is asked fails a test.
+describe("the rules as written", () => {
+  it("HEADLINE_RULE", () => {
+    expect(HEADLINE_RULE).toBe(`
+
+End your reply with this block, exactly in this form:
+HEADLINE: <one line, at most 140 characters: the most important thing you did or found>
+POINT: <optional; up to 3 such lines, each at most 160 characters: what else the engineer must know, such as what is not done, what you assumed, what you are unsure about>
+READ: yes   <only when the engineer must read your full reply to use this work: a design, findings, a plan with choices>`);
+  });
+
+  it("NO_CHANGE_RULE", () => {
+    expect(NO_CHANGE_RULE).toBe("\nNO_CHANGE: yes   <only when nothing needs to be changed or built and your reply is the answer, and you changed no files; leave the line out otherwise>");
+  });
+});
+
 describe("HEADLINE_RULE", () => {
   it("asks for the block with the caps of the schema", () => {
     expect(HEADLINE_RULE).toContain("HEADLINE: <one line, at most 140 characters");
@@ -60,7 +77,7 @@ describe("planLabelOf", () => {
 
 describe("saidOf: the plan", () => {
   const reply = "Text.\nHEADLINE: Plan.\nCHOICE: Port | 8080\nRISK: slow";
-  const said = (context: Partial<Parameters<typeof saidOf>[1]>) => saidOf(parseHeadline(reply), { ...none, ...context });
+  const said = (context: Partial<Parameters<typeof saidOf>[1]>) => saidOf(parseHeadline(reply, true), { ...none, ...context });
 
   it("carries the plan only when it was asked for and the step changed nothing", () => {
     expect(said({ planAsked: true, approvesText: true })).toMatchObject({ plan: { choices: [{ open: "Port", picked: "8080" }], risks: ["slow"] } });
@@ -70,7 +87,7 @@ describe("saidOf: the plan", () => {
   });
 
   it("carries an empty plan when the agent wrote none, in the stored shape", () => {
-    const written = saidOf(parseHeadline("Text.\nHEADLINE: Plan."), { ...none, planAsked: true, approvesText: true });
+    const written = saidOf(parseHeadline("Text.\nHEADLINE: Plan.", true), { ...none, planAsked: true, approvesText: true });
     expect(written?.plan).toEqual({ choices: [], moreChoices: 0, reach: [], risks: [], moreRisks: 0 });
     expect(SaidSchema.safeParse(written).success).toBe(true);
   });
@@ -82,7 +99,17 @@ describe("saidOf: the plan", () => {
 
 describe("planCoverage", () => {
   const ask = { ...none, planAsked: true, approvesText: true };
-  const coverage = (reply: string) => planCoverage(saidOf(parseHeadline(reply), ask));
+  const coverage = (reply: string) => {
+    const parsed = parseHeadline(reply, true);
+    return planCoverage(saidOf(parsed, ask), parsed?.planUnread);
+  };
+
+  it("tells a table or a sign-off line (labels not read) from a reply that left the lines out, and a no-change answer from both", () => {
+    expect(coverage("HEADLINE: P.\nRISK: slow\nLet me know if you want changes.")).toBe("unread");
+    expect(coverage("Text.\nHEADLINE: P.\nNO_CHANGE: yes")).toBe("headline_only");
+    const parsed = parseHeadline("Text.\nHEADLINE: P.\nNO_CHANGE: yes", true);
+    expect(planCoverage(saidOf(parsed, { ...ask, noChangeOffered: true }))).toBe("no_change");
+  });
 
   it("tells full, partial, headline only and missing apart", () => {
     const full = "HEADLINE: P.\nCHOICE: a | b\nREACH: files | x\nREACH: deps | none\nREACH: services | none\nREACH: secrets | none\nRISK: r";

@@ -929,14 +929,14 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     const step = stepDef(ctx.template, stepId);
     // Read here, not kept from the call, so an attempt that resumes after a restart has it too.
     const reply = (await readItemFile(item.id, `${attemptDir(stepId, attempt)}/agent.txt`)) ?? "";
-    const parsed = parseHeadline(reply);
+    const parsed = parseHeadline(reply, plansWanted(ctx.template, step));
     const document = ctx.template.steps.at(-1)?.id === stepId && ctx.template.finish.some((finish) => finish === "findings" || finish === "document");
     const said = (approvesText = false, noChangeOffered = false): Said | undefined => saidOf(parsed, { approvesText, lastOfDocument: document, noChangeOffered, planAsked: plansWanted(ctx.template, step) });
     switch (step.doneWhen) {
       case "agent finishes":
         return passStep(item, stepId, [attemptEnded(stepId, attempt, "passed", { said: said() })]);
       case "you approve":
-        return askApproval(ctx, step, attempt, said);
+        return askApproval(ctx, step, attempt, said, parsed?.planUnread === true);
       case "reviewer approves": {
         const verdict = parseVerdict(reply);
         if (verdict === undefined) return runFailed(item, stepId, attempt, "crash", "The reviewer's reply did not end with VERDICT: approve or VERDICT: changes.");
@@ -953,7 +953,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
    * The engineer approves one tree, and Finish commits that tree: it is staged and judged before
    * the question, and the question carries it, so the diff shown is the change committed.
    */
-  const askApproval = async (ctx: Context, step: TemplateStepDef, attempt: number, said: (approvesText: boolean, noChangeOffered: boolean) => Said | undefined): Promise<Next> => {
+  const askApproval = async (ctx: Context, step: TemplateStepDef, attempt: number, said: (approvesText: boolean, noChangeOffered: boolean) => Said | undefined, planUnread: boolean): Promise<Next> => {
     const { item } = ctx;
     const fail = (text: string) => runFailed(item, step.id, attempt, "crash", text);
     const worktree = worktreeOf(ctx);
@@ -987,7 +987,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     // tree and a step follows; otherwise the line is ignored and the usual question comes.
     const spoken = said(unchanged, unchanged && next !== undefined && mayProposeNoChange(item, ctx.template, step));
     // How often agents leave the plan block out is read from the log; nothing is asked again.
-    if (unchanged && plansWanted(ctx.template, step)) deps.log?.(`item ${item.id}: plan block of step ${step.id}: ${planCoverage(spoken)}`);
+    if (unchanged && plansWanted(ctx.template, step)) deps.log?.(`item ${item.id}: plan block of step ${step.id}: ${planCoverage(spoken, planUnread)}`);
     if (spoken?.noChange === true) {
       append(item.id, [
         attemptEnded(step.id, attempt, "passed", { said: spoken }),

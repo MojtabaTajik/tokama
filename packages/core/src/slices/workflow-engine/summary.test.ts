@@ -130,6 +130,7 @@ describe("parseHeadline", () => {
       readFlag: true,
       noChange: false,
       plan: { choices: [], moreChoices: 0, reach: [], risks: [], moreRisks: 0 },
+      planUnread: false,
     });
   });
 

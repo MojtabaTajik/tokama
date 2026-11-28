@@ -98,11 +98,14 @@ export interface ReadContext {
 
 /**
  * How much of the plan block a plan's reply had, for the log: `full` has a choice, all four reach
- * lines and a risk; `headline_only` and `missing` have none of it, with and without a headline.
+ * lines and a risk; `headline_only` and `missing` have none of it, with and without a headline;
+ * `unread` says plan labels stood in the reply and none could be read; `no_change` is an answer
+ * that needs no plan.
  */
-export function planCoverage(said: Said | undefined): "full" | "partial" | "headline_only" | "missing" {
+export function planCoverage(said: Said | undefined, unread = false): "full" | "partial" | "headline_only" | "missing" | "unread" | "no_change" {
+  if (said?.noChange === true) return "no_change";
   const plan = said?.plan;
-  if (plan === undefined || (plan.choices.length === 0 && plan.reach.length === 0 && plan.risks.length === 0)) return said?.source === "headline" ? "headline_only" : "missing";
+  if (plan === undefined || (plan.choices.length === 0 && plan.reach.length === 0 && plan.risks.length === 0)) return unread ? "unread" : said?.source === "headline" ? "headline_only" : "missing";
   return plan.choices.length > 0 && plan.reach.length === 4 && plan.risks.length > 0 ? "full" : "partial";
 }
 
