@@ -39,6 +39,10 @@ export const RPM_DEPENDS: readonly string[] = ["gtk3", "libnotify", "nss", "libX
 /** What rpmbuild adds to the requirements of every package whatever the spec says: the RPM features it uses, and the shell of the install scripts. */
 export const RPM_AUTO_REQUIRES =/^(rpmlib\(.+\)(\s.*)?|\/bin\/(ba)?sh)$/;
 
+/** The desktop entry's file name, which is `desktopName` of package.json: Electron sets the Wayland app_id and the X11 WM_CLASS to it without ".desktop", and the desktop matches the window to the entry by that. */
+export const DESKTOP_FILE = "tokama.desktop";
+export const APP_ID = "tokama";
+
 /** The icon sizes that must be installed, from build/icons. */
 const ICON_SIZES = [16, 32, 48, 64, 128, 256, 512];
 
@@ -107,7 +111,7 @@ export function desktopProblem(entry: ReadonlyMap<string, string>): string | und
   if (entry.get("Type") !== "Application") return `Type is ${entry.get("Type") ?? "missing"}`;
   if (entry.get("Name") !== "Tokama") return `Name is ${entry.get("Name") ?? "missing"}`;
   if (entry.get("Icon") !== PACKAGE_NAME) return `Icon is ${entry.get("Icon") ?? "missing"}, not ${PACKAGE_NAME}`;
-  if (entry.get("StartupWMClass") !== "Tokama") return `StartupWMClass is ${entry.get("StartupWMClass") ?? "missing"}, not Tokama`;
+  if (entry.get("StartupWMClass") !== APP_ID) return `StartupWMClass is ${entry.get("StartupWMClass") ?? "missing"}, not ${APP_ID}`;
   if (!(entry.get("Categories") ?? "").split(";").includes("Development")) return `Categories is ${entry.get("Categories") ?? "missing"}, without Development`;
   return undefined;
 }
@@ -129,6 +133,18 @@ export function latestLinuxProblem(latest: LatestFeed, version: string, files: r
   if (main === undefined) return `its path is ${latest.path ?? "missing"}, which is neither package`;
   if (latest.sha512 !== main.sha512) return "its top-level sha512 is not the sha512 of its path";
   return undefined;
+}
+
+/** Why `png` is not a PNG of `size` by `size` pixels (the size in its name), or undefined. */
+export function pngSizeProblem(png: Buffer, size: number): string | undefined {
+  if (png.length < 24 || png.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a") return `the ${size}x${size} icon is not a PNG`;
+  const [width, height] = [png.readUInt32BE(16), png.readUInt32BE(20)];
+  return width === size && height === size ? undefined : `the ${size}x${size} icon is ${width}x${height} pixels`;
+}
+
+/** Why the app archive's package.json does not name the desktop entry the package installs, or undefined. The archive stores its files as they are, so a pattern search finds the field. */
+export function desktopNameProblem(asar: Buffer): string | undefined {
+  return new RegExp(`"desktopName"\\s*:\\s*"${DESKTOP_FILE.replace(".", "\\.")}"`).test(asar.toString("latin1")) ? undefined : `app.asar's package.json has no "desktopName": "${DESKTOP_FILE}", so the window would not match the launcher entry`;
 }
 
 /** Why the app archive does not hold the update key of `packaging/linux-update.pub`, or undefined. The archive stores its files as they are, so the key's base64 is found by a byte search. */
@@ -234,6 +250,7 @@ export async function checkTree(report: Report, root: string, kind: PackageKind,
       [`${INSTALL_DIR}/chrome-sandbox`, false],
       [`${INSTALL_DIR}/resources/apparmor-profile`, false],
       [`${INSTALL_DIR}/resources/package-type`, false],
+      [`${INSTALL_DIR}/resources/tokama.png`, false],
     ] as const) {
       const problem = fileProblem(root, path, executable);
       if (problem !== undefined) return problem;
@@ -254,13 +271,15 @@ export async function checkTree(report: Report, root: string, kind: PackageKind,
   await report.check(`${label} update feed`, () => feedProblem(resources, options.feedUrl));
   await report.check(`${label} update signing key`, () => updateKeyProblem(readFileSync(join(resources, "app.asar")), readFileSync(join(appDir, "packaging", "linux-update.pub"), "utf8")));
   await report.check(`${label} bundled hook denies a command`, () => hookProblem(join(resources, "engine")));
+  await report.check(`${label} window matches the launcher entry (desktopName)`, () => desktopNameProblem(readFileSync(join(resources, "app.asar"))));
   await report.check(`${label} launcher entry`, () => {
-    const path = "usr/share/applications/tokama.desktop";
+    const path = `usr/share/applications/${DESKTOP_FILE}`;
     return fileProblem(root, path) ?? desktopProblem(parseDesktopEntry(readFileSync(join(root, path), "utf8")));
   });
   await report.check(`${label} icons`, () => {
     for (const size of ICON_SIZES) {
-      const problem = fileProblem(root, `usr/share/icons/hicolor/${size}x${size}/apps/${PACKAGE_NAME}.png`);
+      const path = `usr/share/icons/hicolor/${size}x${size}/apps/${PACKAGE_NAME}.png`;
+      const problem = fileProblem(root, path) ?? pngSizeProblem(readFileSync(join(root, path)), size);
       if (problem !== undefined) return problem;
     }
     return undefined;
