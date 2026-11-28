@@ -72,6 +72,20 @@ describe("patternCategory", () => {
     ["crates/api/Cargo.toml", "package"],
     ["pom.xml", "package"],
     ["modules/web/pom.xml", "package"],
+    ["Directory.Build.props", "package"],
+    ["src/Directory.Build.targets", "package"],
+    ["DIRECTORY.BUILD.PROPS", "package"],
+    ["NuGet.Config", "package"],
+    ["src/nuget.config", "package"],
+    [".cargo/config.toml", "package"],
+    ["crates/api/.cargo/config", "package"],
+    [".CARGO/Config.toml", "package"],
+    ["build.rs", "package"],
+    ["crates/api/build.rs", "package"],
+    ["build.gradle", "package"],
+    ["app/build.gradle.kts", "package"],
+    ["settings.gradle", "package"],
+    ["Settings.Gradle.kts", "package"],
     ["services/x/go.sum", "lockfile"],
     ["crates/api/Cargo.lock", "lockfile"],
     [".GitHub/Workflows/ci.yml", "ci"],
@@ -79,7 +93,7 @@ describe("patternCategory", () => {
     expect(patternCategory(path)).toBe(category);
   });
 
-  it.each(["src/index.ts", "vitest.config.json", "tsconfig.json", ".gitignore", "package.json.bak", ".github/CODEOWNERS", "docs/.tokama-notes.md", "sub/.gitlab-ci.yml", "azure-pipelines.txt", "my-azure-pipelines.yml", "pom.xml.bak", "go.mod.old"])(
+  it.each(["src/index.ts", "vitest.config.json", "tsconfig.json", ".gitignore", "package.json.bak", ".github/CODEOWNERS", "docs/.tokama-notes.md", "sub/.gitlab-ci.yml", "azure-pipelines.txt", "my-azure-pipelines.yml", "pom.xml.bak", "go.mod.old", "build.rs.bak", "src/build.rs/main.rs", "config.toml", "docs/config.toml", "cargo/config.toml", ".cargo/config.toml.bak", ".cargo/other.toml", "settings.gradle.bak", "build.gradle.old", "Directory.Build.props.user", "nuget.config.sample"])(
     "%s is not protected",
     (path) => {
       expect(patternCategory(path)).toBeUndefined();

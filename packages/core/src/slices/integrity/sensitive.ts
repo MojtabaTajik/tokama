@@ -51,7 +51,7 @@ const kindsAny = (kinds: ReadonlySet<RepoKind>, ...wanted: RepoKind[]) => wanted
 function isDependency(path: string, name: string): boolean {
   const category = patternCategory(path);
   if (category === "package" || category === "lockfile") return true;
-  return /\.(?:cs|fs|vb)proj$/.test(name) || /^requirements.*\.txt$/.test(name) || /^build\.gradle/.test(name) || ["global.json", "pyproject.toml", "pipfile"].includes(name);
+  return /\.(?:cs|fs|vb)proj$/.test(name) || /^requirements.*\.txt$/.test(name) || ["global.json", "pyproject.toml", "pipfile"].includes(name);
 }
 
 function isMigration(path: string, name: string, kinds: ReadonlySet<RepoKind>): boolean {

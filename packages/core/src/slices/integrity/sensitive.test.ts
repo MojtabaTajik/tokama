@@ -48,6 +48,13 @@ describe("touchOf: kinds that hold in any repo", () => {
     ["crates/api/Cargo.toml", "dependencies"],
     ["pom.xml", "dependencies"],
     ["app/build.gradle.kts", "dependencies"],
+    ["build.gradle", "dependencies"],
+    ["settings.gradle.kts", "dependencies"],
+    ["src/Directory.Build.props", "dependencies"],
+    ["Directory.Build.targets", "dependencies"],
+    ["NuGet.Config", "dependencies"],
+    [".cargo/config.toml", "dependencies"],
+    ["crates/api/build.rs", "dependencies"],
     ["src/Api/appsettings.Production.json", "secrets"],
   ])("%s is %s, with no repo kind known (a .NET repo with only a .sln, a monorepo)", (path, kind) => {
     expect(touchOf(path, false, NONE)).toBe(kind);

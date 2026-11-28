@@ -2,7 +2,7 @@
 // - from the base commit only: test files and snapshots that existed when the item started. An
 //   agent may add tests; changing or deleting the ones the checks were written against is tamper.
 // - by pattern, at any time: test config, package manifests and package-manager config, CI
-//   files, lockfiles, `.gitattributes` and `.tokama/`. A new `vitest.config.ts` or workflow file
+//   files, build config, lockfiles, `.gitattributes` and `.tokama/`. A new `vitest.config.ts` or workflow file
 //   is tamper too.
 // JS/TS first, with the manifests and lockfiles of Python, .NET, Go, Rust and Java. Paths are repo-relative with "/" separators;
 // names match in lowercase (macOS and Windows file systems ignore case).
@@ -15,7 +15,7 @@ export type ProtectedCategory =
   | "test"
   | "snapshot"
   | "test-config"
-  /** package.json, the manifests of other ecosystems (`go.mod`, `Cargo.toml`, `pom.xml`, `Directory.Packages.props`) and package-manager config: they choose what a test run and an install run. */
+  /** package.json, the manifests of other ecosystems (`go.mod`, `Cargo.toml`, `pom.xml`, `Directory.Packages.props`), package-manager config and build config (`Directory.Build.props`, `NuGet.Config`, `.cargo/config.toml`, `build.rs`, Gradle build and settings files): they choose what a test run and an install run. */
   | "package"
   | "ci"
   | "lockfile";
@@ -53,7 +53,14 @@ const PACKAGE_CONFIG = [
   /^go\.mod$/,
   /^cargo\.toml$/,
   /^pom\.xml$/,
+  // Build config: files that choose what a build runs and which sources it takes packages from.
+  /^directory\.build\.(?:props|targets)$/,
+  /^nuget\.config$/,
+  /^build\.rs$/,
+  /^(?:build|settings)\.gradle(?:\.kts)?$/,
 ];
+/** Package config that is named by its folder too: Cargo reads `.cargo/config.toml` (or the older `.cargo/config`) in any parent folder. */
+const PACKAGE_PATHS = [/(?:^|\/)\.cargo\/config(?:\.toml)?$/];
 
 const LOCKFILES = new Set([
   "pnpm-lock.yaml",
@@ -100,6 +107,6 @@ export function patternCategory(original: string): "tokama" | "git" | "test-conf
   if (LOCKFILES.has(name)) return "lockfile";
   if (name === ".gitattributes") return "git";
   if (TEST_CONFIG.some((pattern) => pattern.test(name))) return "test-config";
-  if (PACKAGE_CONFIG.some((pattern) => pattern.test(name))) return "package";
+  if (PACKAGE_CONFIG.some((pattern) => pattern.test(name)) || PACKAGE_PATHS.some((pattern) => pattern.test(path))) return "package";
   return undefined;
 }
