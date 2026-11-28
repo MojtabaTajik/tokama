@@ -46,7 +46,7 @@ describe("placeholderExcludeEnv", () => {
     const env = await exclude();
     if (env === undefined) throw new Error("no environment");
     // Placeholders as the sandbox shows them to the agent: files git has not seen before.
-    for (const name of [".bashrc", ".gitconfig", ".vscode", ".claude/commands", ".claude/agents"]) writeFileSync(join(item, name), "");
+    for (const name of [".bashrc", ".gitconfig", ".vscode", ".claude/commands", ".claude/agents", ".claude/hooks", ".claude/settings.local.json", ".claude/skills"]) writeFileSync(join(item, name), "");
     writeFileSync(join(item, "work.txt"), "work\n");
     git(item, ["add", "-A"], env);
     expect(git(item, ["status", "--porcelain"], env)).toBe("A  work.txt");

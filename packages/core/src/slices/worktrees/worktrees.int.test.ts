@@ -412,7 +412,7 @@ describe("the placeholders of Claude Code's Linux sandbox", () => {
       writeFileSync(join(path, ...name.split("/")), "", { mode: 0o444 });
     }
   };
-  const NAMES = [".bash_profile", ".bashrc", ".claude/agents", ".claude/commands", ".gitconfig", ".gitmodules", ".idea", ".mcp.json", ".profile", ".ripgreprc", ".vscode", ".zprofile", ".zshrc"];
+  const NAMES = [".bash_profile", ".bashrc", ".claude/agents", ".claude/commands", ".claude/hooks", ".claude/settings.json", ".claude/settings.local.json", ".claude/skills", ".gitconfig", ".gitmodules", ".idea", ".mcp.json", ".profile", ".ripgreprc", ".vscode", ".zprofile", ".zshrc"];
 
   it("removes the empty untracked placeholders and keeps every other file", SLOW, async () => {
     const worktree = value(await createWorktree(git, repo, ITEM_A));
@@ -425,7 +425,7 @@ describe("the placeholders of Claude Code's Linux sandbox", () => {
     unlinkSync(join(path, ".zshrc"));
     symlinkSync("a.txt", join(path, ".zshrc"));
     leave(path, ["src/.bashrc"]);
-    expect(await removeSandboxPlaceholders(git, path, "linux")).toBe(11);
+    expect(await removeSandboxPlaceholders(git, path, "linux")).toBe(15);
     expect(await plain(path, "status", "--porcelain", "--untracked-files=all")).toBe("?? .profile\n?? .zshrc\n?? src/.bashrc\n?? work.txt");
   });
 
@@ -441,13 +441,14 @@ describe("the placeholders of Claude Code's Linux sandbox", () => {
   });
 
   it("keeps a tracked placeholder name, even when the file is empty", SLOW, async () => {
-    leave(repo.path, [".gitmodules"]);
-    await plain(repo.path, "add", ".gitmodules");
-    await plain(repo.path, "commit", "-q", "-m", "empty .gitmodules");
+    leave(repo.path, [".gitmodules", ".claude/settings.json"]);
+    await plain(repo.path, "add", ".gitmodules", ".claude/settings.json");
+    await plain(repo.path, "commit", "-q", "-m", "empty files");
     const worktree = value(await createWorktree(git, repo, ITEM_A));
     const path = worktreePath(repo.path, worktree);
     expect(await removeSandboxPlaceholders(git, path, "linux")).toBe(0);
     expect(existsSync(join(path, ".gitmodules"))).toBe(true);
+    expect(existsSync(join(path, ".claude", "settings.json"))).toBe(true);
   });
 
   it("does nothing on another OS", SLOW, async () => {
