@@ -12,16 +12,18 @@ const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\/]/g, "\
 // An address counts only as a whole word: not inside a longer one, and not followed by more path.
 const ADDRESS = new RegExp(`(?<=^|[\\s("'\`])(${LINKABLE_URLS.map(escape).join("|")})(?![\\w/?#%@~:=&+-])(?!\\.\\w)`, "g");
 
-/** `text` split into plain pieces and the known addresses in it, in order. */
-export function splitLinkable(text: string): readonly { readonly text: string; readonly link: boolean }[] {
-  const pieces: { text: string; link: boolean }[] = [];
+/** `text` split into plain pieces and the known addresses in it, in order; a link piece carries the listed address as `href`. */
+export function splitLinkable(text: string): readonly { readonly text: string; readonly href?: string }[] {
+  const pieces: { text: string; href?: string }[] = [];
   let from = 0;
   for (const match of text.matchAll(ADDRESS)) {
-    if (match.index > from) pieces.push({ text: text.slice(from, match.index), link: false });
-    pieces.push({ text: match[0], link: true });
+    const href = LINKABLE_URLS.find((url) => url === match[0]);
+    if (href === undefined) continue;
+    if (match.index > from) pieces.push({ text: text.slice(from, match.index) });
+    pieces.push({ text: href, href });
     from = match.index + match[0].length;
   }
-  if (from < text.length) pieces.push({ text: text.slice(from), link: false });
+  if (from < text.length) pieces.push({ text: text.slice(from) });
   return pieces;
 }
 
@@ -29,7 +31,7 @@ export function LinkedText({ text }: { readonly text: string }) {
   return (
     <>
       {splitLinkable(text).map((piece, index) => (
-        <Fragment key={index}>{piece.link ? <ExternalLink href={piece.text}>{piece.text}</ExternalLink> : piece.text}</Fragment>
+        <Fragment key={index}>{piece.href === undefined ? piece.text : <ExternalLink href={piece.href}>{piece.text}</ExternalLink>}</Fragment>
       ))}
     </>
   );

@@ -16,6 +16,7 @@ import type { AgentTarget } from "../settings/describe.js";
 import { itemElement } from "../list/useFocusFollow.js";
 import { CollapseIcon, RepoIcon } from "../ui/icons.js";
 import { ExpandButton } from "../ui/ExpandButton.js";
+import { LinkedText } from "../ui/LinkedText.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
 import { changesRepo } from "./attempt-view.js";
 import { ChecksTab } from "./ChecksTab.js";
@@ -639,7 +640,7 @@ function Steps({ bridge, item, setup, onOpenAgent, unfold }: StepsProps) {
                 )}{" "}
                 <span>· {whereLine(step, agents, connections)}</span>
               </div>
-              {(step.detail !== undefined || stepTimes(step).length > 0) && <p className="step-detail mono">{[...(step.detail === undefined ? [] : [step.detail]), ...stepTimes(step)].join(" · ")}</p>}
+              {(step.detail !== undefined || stepTimes(step).length > 0) && <p className="step-detail mono"><LinkedText text={[...(step.detail === undefined ? [] : [step.detail]), ...stepTimes(step)].join(" · ")} /></p>}
               {step.attempts !== undefined && step.attempts.length > 0 && (
                 <ol className="step-attempts" aria-label={`${step.name}: ${TEXT.attempts}`}>
                   {step.attempts.map((attempt) => {
@@ -654,7 +655,7 @@ function Steps({ bridge, item, setup, onOpenAgent, unfold }: StepsProps) {
                               {line.mark.symbol}
                             </span>
                           )}
-                          {took === undefined ? line.text : `${line.text} · ${took}`}
+                          <LinkedText text={took === undefined ? line.text : `${line.text} · ${took}`} />
                         </span>
                         {/* Only an ended attempt of an agent's step has an output. */}
                         {step.agentId !== undefined && attempt.result !== undefined && (

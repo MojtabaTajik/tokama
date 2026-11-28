@@ -905,6 +905,15 @@ describe("item drawer with real-mode records", () => {
     expect(text(".drawer-state")).toContain("commit 3f2a9c1 on tokama/0b9f3c1e");
   });
 
+  it("links the sandbox help page in a failed attempt's line on the Steps tab", async () => {
+    const page = "https://tokama.dev/docs/linux-sandbox";
+    const detail = `Claude Code could not start its sandbox: x. How to allow it: ${page} Then check again.`;
+    const failed = { ...committed, steps: [{ ...committed.steps[0]!, state: "failed", attempts: [{ attempt: 1, result: "run_failed", detail, checks: [] }] }] } as unknown as ItemRecord;
+    await renderDrawer(fakeBridge([failed]).bridge, failed.id);
+    await showTab("Steps");
+    expect($$(".step-attempt a").map((a) => a.getAttribute("href"))).toEqual([page]);
+  });
+
   it("asks the question with no kind label above it and offers its own choices", async () => {
     const asked = {
       ...task,

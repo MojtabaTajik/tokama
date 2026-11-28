@@ -53,7 +53,9 @@ export {
   type RecoveryOptions,
   type StoreError,
 } from "./slices/items/index.js";
-export { killLeftoverTree, posixProcessTable, type LeftoverOutcome, type ProcessInfo, type ProcessTable } from "./kernel/process/leftover.js";
+// The Linux sandbox hints and their help page, so the desktop app's tests hold its link list to them.
+export { BWRAP_BLOCKED_HINT, LINUX_SANDBOX_DOCS_URL, NESTED_BLOCKED_HINT } from "./kernel/sandbox/index.js";
+export { killLeftoverTree,posixProcessTable, type LeftoverOutcome, type ProcessInfo, type ProcessTable } from "./kernel/process/leftover.js";
 // The engine's lock and the per-OS process parts around it.
 export { posixEngineProcesses, probeSocket, readEngineLock, type EngineLock, type EngineProcesses, type Liveness } from "./kernel/process/own-engine.js";
 // Config, templates and the cloud rule, for the engine service's real mode.

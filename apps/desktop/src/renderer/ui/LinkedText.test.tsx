@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { BWRAP_BLOCKED_HINT, LINUX_SANDBOX_DOCS_URL, NESTED_BLOCKED_HINT } from "@tokama/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it } from "vitest";
@@ -31,11 +32,14 @@ describe("LinkedText", () => {
   });
 
   it("links the address before a final full stop", () => {
-    expect(splitLinkable(`See ${SANDBOX}.`)).toEqual([
-      { text: "See ", link: false },
-      { text: SANDBOX, link: true },
-      { text: ".", link: false },
-    ]);
+    expect(splitLinkable(`See ${SANDBOX}.`)).toEqual([{ text: "See " }, { text: SANDBOX, href: SANDBOX }, { text: "." }]);
+  });
+
+  it("is held to core's sandbox help page: the list has it, and both hints link to it", () => {
+    expect(LINKABLE_URLS).toContain(LINUX_SANDBOX_DOCS_URL);
+    for (const hint of [BWRAP_BLOCKED_HINT, NESTED_BLOCKED_HINT]) {
+      expect(splitLinkable(hint).filter((piece) => piece.href !== undefined)).toEqual([{ text: LINUX_SANDBOX_DOCS_URL, href: LINUX_SANDBOX_DOCS_URL }]);
+    }
   });
 
   it.each([

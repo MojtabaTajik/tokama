@@ -20,7 +20,9 @@ export const LINUX_CACHE_DIRS: readonly string[] = [
   "~/.gradle/wrapper",
 ];
 
-const DOCS = "https://tokama.dev/docs/linux-sandbox";
+/** The help page both hints end with; the desktop app turns this address into a link. */
+export const LINUX_SANDBOX_DOCS_URL = "https://tokama.dev/docs/linux-sandbox";
+const DOCS = LINUX_SANDBOX_DOCS_URL;
 
 /** Bubblewrap cannot start a sandbox at all (Ubuntu 24.04 with AppArmor's user namespace restriction). */
 export const BWRAP_BLOCKED_HINT = `Ubuntu's AppArmor can stop bubblewrap from creating a user namespace. How to allow it: ${DOCS}`;

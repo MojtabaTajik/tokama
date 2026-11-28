@@ -211,6 +211,15 @@ describe("Checks tab", () => {
     expect(asked(query, "attempt_checks")).toEqual([]);
   });
 
+  it("links the sandbox help page in the reason an attempt did not run", async () => {
+    const page = "https://tokama.dev/docs/linux-sandbox";
+    const detail = `Claude Code could not start its sandbox: x. How to allow it: ${page} Then check again.`;
+    const stopped = { ...built, steps: [{ ...built.steps[0]!, state: "failed", attempts: [{ attempt: 1, result: "run_failed", detail, checks: [] }] }] } as unknown as ItemRecord;
+    const { bridge } = fakeBridge([stopped]);
+    await open(bridge, stopped, "Checks");
+    expect([...lines(".ck")[0]!.closest(".sec")!.querySelectorAll(":scope > .sec-sum a")].map((a) => a.getAttribute("href"))).toEqual([page]);
+  });
+
   it("says when a command did not run or its output was not saved", async () => {
     const refused = { ...built, steps: [{ ...built.steps[0]!, state: "failed", attempts: [{ attempt: 1, result: "run_failed", detail: "The check could not run. `pnpm lint` was refused by the command policy.", checks: [{ command: "pnpm test", passed: true, exitCode: 0 }] }] }] } as unknown as ItemRecord;
     const withRow = fakeBridge([refused], {
