@@ -255,6 +255,8 @@ export async function checkTree(report: Report, root: string, kind: PackageKind,
       const problem = fileProblem(root, path, executable);
       if (problem !== undefined) return problem;
     }
+    const window = pngSizeProblem(readFileSync(join(resources, "tokama.png")), 512);
+    if (window !== undefined) return `resources/tokama.png: ${window}`;
     const profile = readFileSync(join(resources, "apparmor-profile"), "utf8");
     return profile.includes("userns") && profile.includes(`/${INSTALL_DIR}/tokama`) ? undefined : "the AppArmor profile does not allow user namespaces for /opt/Tokama/tokama";
   });

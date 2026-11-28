@@ -52,4 +52,4 @@ function main(): void {
   console.log(`Wrote ${file}. Start pnpm dev again to see the icon.`);
 }
 
-if (import.meta.filename === process.argv[1]) main();
+if (import.meta.main) main();
