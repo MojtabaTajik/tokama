@@ -206,7 +206,7 @@ describe("Claude Code stream parser", () => {
   });
 
   it("records an apply-seccomp refusal, with or without Claude Code's `Exit code` line before it", () => {
-    const refused = "apply-seccomp: write /proc/self/setgroups (nested userns is capability-restricted): Permission denied";
+    const refused = "apply-seccomp: write /proc/self/setgroups (nested userns is capability-restricted; caller must provide CAP_SYS_ADMIN)";
     const result = (content: unknown, extra: object = {}) => line({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", is_error: true, content }] }, ...extra });
     expect(parse([result(`Exit code 1\n${refused}`)]).state.sandboxFailure).toBe(refused);
     expect(parse([result(refused)]).state.sandboxFailure).toBe(refused);
@@ -219,6 +219,10 @@ describe("Claude Code stream parser", () => {
     expect(parse([result("Exit code 1\nmake: apply-seccomp: not found", true)]).state.sandboxFailure).toBeUndefined();
     expect(parse([result("Exit code 1\nthe docs say apply-seccomp: is needed", true)]).state.sandboxFailure).toBeUndefined();
     expect(parse([result("apply-seccomp: printed by cat", false)]).state.sandboxFailure).toBeUndefined();
+    // The helper's non-fatal warning comes with a command that ran and failed on its own.
+    const warning = "apply-seccomp: could not set user.max_user_namespaces (Permission denied); the seccomp filter alone keeps the command from making namespaces";
+    expect(parse([result(`Exit code 1\n${warning}`, true)]).state.sandboxFailure).toBeUndefined();
+    expect(parse([result(warning, true)]).state.sandboxFailure).toBeUndefined();
     // The `Exit code` line protects the older text from a failing command's own output.
     expect(parse([result("Exit code 1\nSandbox is required for the build", true)]).state.sandboxFailure).toBeUndefined();
   });

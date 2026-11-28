@@ -250,7 +250,7 @@ export function createStreamParser(cwd: string, home: string = homedir()): Strea
           // Only a refused command: a command's own output may say anything, a file's first line included.
           if (block.type !== "tool_result" || block.is_error !== true || sandboxFailure !== undefined) continue;
           // A failed command's result begins with Claude Code's own `Exit code N` line; the helper's error follows it.
-          const first = resultText(block.content).trimStart().replace(/^Exit code \d+\r?\n(?=apply-seccomp:)/, "").split("\n", 1)[0] ?? "";
+          const first = resultText(block.content).trimStart().replace(/^Exit code \d+\r?\n(?=apply-seccomp: (?!could not set ))/, "").split("\n", 1)[0] ?? "";
           if (SANDBOX_REQUIRED.test(first)) sandboxFailure = first.slice(0, SANDBOX_LINE_CHARS);
         }
         // A subagent's tool results are not the parent's, as its tool calls are not.

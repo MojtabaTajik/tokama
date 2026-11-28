@@ -80,6 +80,6 @@ export const mentionsSandbox = (stderr: string): boolean => /sandbox/i.test(stde
 /**
  * The start of a tool result that says the sandbox is not working: it stopped in the middle of
  * the session, or its `apply-seccomp` helper failed (Ubuntu's AppArmor stops it from making a user
- * namespace).
+ * namespace). Its `could not set` line is a warning: the command still ran.
  */
-export const SANDBOX_REQUIRED = /^(?:Sandbox is required|apply-seccomp:)/;
+export const SANDBOX_REQUIRED = /^(?:Sandbox is required|apply-seccomp: (?!could not set ))/;

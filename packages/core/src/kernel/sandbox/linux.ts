@@ -26,7 +26,7 @@ const DOCS = "https://tokama.dev/docs/linux-sandbox";
 export const BWRAP_BLOCKED_HINT = `Ubuntu's AppArmor can stop bubblewrap from creating a user namespace. How to allow it: ${DOCS}`;
 
 /** Bubblewrap starts, but the helper Claude Code's sandbox runs inside it cannot (Ubuntu 25.04 and newer). */
-export const NESTED_BLOCKED_HINT = `Ubuntu's AppArmor profile for bubblewrap stops the helper that Claude Code's sandbox starts inside it. How to allow it: ${DOCS}`;
+export const NESTED_BLOCKED_HINT = `Ubuntu's AppArmor profile for bubblewrap may stop the helper that Claude Code's sandbox starts inside it. How to check and allow it: ${DOCS}`;
 
 const PROBE_TIMEOUT_MS = 5_000;
 // The programs the sandbox is built from: bubblewrap isolates, socat carries the proxied network.
@@ -36,7 +36,7 @@ const TOOLS: readonly (readonly [name: string, argv: readonly [string, ...string
 ];
 // The sandbox Claude Code builds. The probes use the same options: `--version` passes where the
 // kernel or AppArmor refuses these.
-const BWRAP = ["bwrap", "--new-session", "--die-with-parent", "--unshare-user", "--unshare-pid", "--unshare-net", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"] as const;
+const BWRAP = ["bwrap", "--new-session", "--die-with-parent", "--unshare-user", "--unshare-pid", "--unshare-net", "--cap-drop", "ALL", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"] as const;
 // Claude Code's `apply-seccomp` helper makes a user namespace of its own inside the sandbox.
 const NESTED = [...BWRAP, "--", "unshare", "--user", "--map-root-user", "true"] as const;
 // The AppArmor profile the sandbox's processes run under; Ubuntu's restricted one is `unpriv_bwrap`.
@@ -91,7 +91,7 @@ export function createLinuxSupport(runner: ProcessRunner, env?: Readonly<Record<
       const restricted = (await probe(PROFILE, signal)).stdout.includes("unpriv_bwrap");
       return {
         ok: false,
-        problem: `Steps that run commands need bubblewrap, which starts here but blocks the helper that Claude Code's sandbox runs inside it${restricted ? " (the AppArmor profile `unpriv_bwrap` is active)" : ""}, so every command would fail.`,
+        problem: `Steps that run commands need bubblewrap, which starts here but blocks the helper that Claude Code's sandbox runs inside it${restricted ? " (the cause: Ubuntu's AppArmor profile `unpriv_bwrap` confines it)" : ""}, so every command would fail.`,
         fix: NESTED_BLOCKED_HINT,
       };
     },

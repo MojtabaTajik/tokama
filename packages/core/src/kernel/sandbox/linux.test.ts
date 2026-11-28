@@ -11,7 +11,7 @@ const isNested = (request: RunRequest): boolean => argvOf(request).includes("uns
 const isProfile = (request: RunRequest): boolean => argvOf(request).includes("cat");
 const isOuter = (request: RunRequest): boolean => argvOf(request).includes("--unshare-user") && !isNested(request) && !isProfile(request);
 
-const SANDBOX = ["bwrap", "--new-session", "--die-with-parent", "--unshare-user", "--unshare-pid", "--unshare-net", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"];
+const SANDBOX = ["bwrap", "--new-session", "--die-with-parent", "--unshare-user", "--unshare-pid", "--unshare-net", "--cap-drop", "ALL", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"];
 
 interface Answer {
   readonly result: RunResult;
@@ -80,7 +80,7 @@ describe("Linux sandbox support: bubblewrap must start the sandbox Claude Code b
     const { runner, requests } = runnerWith({
       ...tools, outer: ok, nested: answer(finished({ exitCode: 1 })), profile: answer(finished(), { stdout: "unpriv_bwrap (enforce)" }),
     });
-    expect(await createLinuxSupport(runner).check(signal)).toEqual(nestedBlocked(" (the AppArmor profile `unpriv_bwrap` is active)"));
+    expect(await createLinuxSupport(runner).check(signal)).toEqual(nestedBlocked(" (the cause: Ubuntu's AppArmor profile `unpriv_bwrap` confines it)"));
     expect(requests.map(argvOf).at(-1)).toEqual([...SANDBOX, "--", "cat", "/proc/self/attr/current"]);
   });
 
@@ -125,6 +125,6 @@ describe("Linux sandbox support: bubblewrap must start the sandbox Claude Code b
 
   it("gives both hints as full strings that point at the docs page", () => {
     expect(BWRAP_BLOCKED_HINT).toBe("Ubuntu's AppArmor can stop bubblewrap from creating a user namespace. How to allow it: https://tokama.dev/docs/linux-sandbox");
-    expect(NESTED_BLOCKED_HINT).toBe("Ubuntu's AppArmor profile for bubblewrap stops the helper that Claude Code's sandbox starts inside it. How to allow it: https://tokama.dev/docs/linux-sandbox");
+    expect(NESTED_BLOCKED_HINT).toBe("Ubuntu's AppArmor profile for bubblewrap may stop the helper that Claude Code's sandbox starts inside it. How to check and allow it: https://tokama.dev/docs/linux-sandbox");
   });
 });

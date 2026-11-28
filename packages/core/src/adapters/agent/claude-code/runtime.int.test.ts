@@ -360,7 +360,7 @@ describe("Claude Code runtime", SLOW, () => {
       expect(end(events)).toMatchObject({
         outcome: "failed",
         errorKind: "crash",
-        error: `Claude Code's sandbox stopped working during the step: apply-seccomp: write /proc/self/setgroups (nested userns is capability-restricted): Permission denied. Fix that, then retry the step. ${NESTED_BLOCKED_HINT}`,
+        error: `Claude Code's sandbox stopped working during the step: apply-seccomp: write /proc/self/setgroups (nested userns is capability-restricted; caller must provide CAP_SYS_ADMIN). Fix that, then retry the step. ${NESTED_BLOCKED_HINT}`,
       });
     });
 

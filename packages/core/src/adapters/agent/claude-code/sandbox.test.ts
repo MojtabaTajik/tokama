@@ -139,7 +139,9 @@ describe("what says the sandbox is the problem", () => {
   });
 
   it("matches the apply-seccomp error at its start, and not output that only contains it", () => {
-    expect(SANDBOX_REQUIRED.test("apply-seccomp: write /proc/self/setgroups (nested userns is capability-restricted): Permission denied")).toBe(true);
+    expect(SANDBOX_REQUIRED.test("apply-seccomp: write /proc/self/setgroups (nested userns is capability-restricted; caller must provide CAP_SYS_ADMIN)")).toBe(true);
+    // The helper's non-fatal warning: the command still runs.
+    expect(SANDBOX_REQUIRED.test("apply-seccomp: could not set user.max_user_namespaces (Permission denied); the seccomp filter alone keeps the command from making namespaces")).toBe(false);
     expect(SANDBOX_REQUIRED.test("make: apply-seccomp: not found")).toBe(false);
     expect(SANDBOX_REQUIRED.test("the apply-seccomp: helper")).toBe(false);
   });

@@ -69,7 +69,7 @@ function run(prompt: string): void {
       init();
       emit({
         type: "user",
-        message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_seccomp", is_error: true, content: "Exit code 1\napply-seccomp: write /proc/self/setgroups (nested userns is capability-restricted): Permission denied" }] },
+        message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_seccomp", is_error: true, content: "Exit code 1\napply-seccomp: write /proc/self/setgroups (nested userns is capability-restricted; caller must provide CAP_SYS_ADMIN)" }] },
         session_id: SESSION,
       });
       text("I could not run it");
