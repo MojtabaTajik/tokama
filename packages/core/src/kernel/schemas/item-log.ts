@@ -214,6 +214,8 @@ const MergedSchema = z.strictObject({
   worktreeRemoved: z.boolean(),
   detail: z.string().min(1).max(500).optional(),
 });
+/** Open PR's push succeeded: the item's branch is on the remote, whatever the pull request step does next. */
+const BranchPushedSchema = z.strictObject({ type: z.literal("branch_pushed"), repoId: RepoIdSchema });
 const PrOpenedSchema = z.strictObject({ type: z.literal("pr_opened"), repoId: RepoIdSchema, url: PullRequestUrlSchema });
 /** The worktree and the branch are gone. */
 const DiscardedSchema = z.strictObject({ type: z.literal("discarded"), repoId: RepoIdSchema });
@@ -252,6 +254,7 @@ export const ItemEventBodySchema = z.discriminatedUnion("type", [
   UsageRecordedSchema,
   FinishStartedSchema,
   MergedSchema,
+  BranchPushedSchema,
   PrOpenedSchema,
   DiscardedSchema,
   FinishFailedSchema,
@@ -285,6 +288,7 @@ export const ItemEventSchema = z.discriminatedUnion("type", [
   UsageRecordedSchema.extend(envelope),
   FinishStartedSchema.extend(envelope),
   MergedSchema.extend(envelope),
+  BranchPushedSchema.extend(envelope),
   PrOpenedSchema.extend(envelope),
   DiscardedSchema.extend(envelope),
   FinishFailedSchema.extend(envelope),
@@ -360,6 +364,8 @@ export const StoredFinishSchema = z.strictObject({
   running: FinishActionSchema.optional(),
   merged: z.strictObject({ baseBranch: z.string(), commit: GIT_ID, at: EpochMsSchema }).optional(),
   pullRequest: z.strictObject({ url: PullRequestUrlSchema, at: EpochMsSchema }).optional(),
+  /** The branch went to the remote (the last time), with or without a pull request after it. */
+  pushed: z.strictObject({ at: EpochMsSchema }).optional(),
   /** The worktree and branch are gone: discarded, or removed after a merge. */
   worktreeRemoved: z.boolean(),
   /** The last action that did not succeed, until the next one starts. */

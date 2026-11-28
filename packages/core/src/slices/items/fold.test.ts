@@ -428,6 +428,9 @@ describe("finish events", () => {
     const opened = fold([...done, start("merge"), { type: "finish_failed", action: "merge", detail: "dirty" }, start("pull_request"), { type: "pr_opened", repoId: "orders-api" as never, url: "https://github.com/acme/orders-api/pull/7" }]);
     expect(opened.finish).toMatchObject({ pullRequest: { url: "https://github.com/acme/orders-api/pull/7" }, worktreeRemoved: false });
     expect(opened.finish?.failed).toBeUndefined();
+    const pushedOnly = fold([...done, start("pull_request"), { type: "branch_pushed", repoId: "orders-api" as never }, { type: "finish_failed", action: "pull_request", detail: "gh said no" }]);
+    expect(pushedOnly.finish).toMatchObject({ pushed: { at: expect.any(Number) }, failed: { action: "pull_request" } });
+    expect(pushedOnly.finish?.pullRequest).toBeUndefined();
     const merged = fold([...done, start("merge"), { type: "merged", repoId: "orders-api" as never, baseBranch: "main", commit: COMMIT, worktreeRemoved: false, detail: "kept" }]);
     expect(merged.finish).toMatchObject({ merged: { baseBranch: "main", commit: COMMIT }, worktreeRemoved: false, detail: "kept" });
     expect(fold([...done, start("merge"), { type: "merged", repoId: "orders-api" as never, baseBranch: "main", commit: COMMIT, worktreeRemoved: false }, start("discard"), { type: "discarded", repoId: "orders-api" as never }]).finish?.worktreeRemoved).toBe(true);
@@ -474,6 +477,8 @@ describe("finish events", () => {
     expect(foldError([...done, start("merge"), { type: "finish_failed", action: "discard", detail: "x" }])).toMatch(/without a running discard/);
     expect(foldError([...done, start("discard"), { type: "discarded", repoId: "orders-api" as never }, start("discard")])).toMatch(/worktree is gone/);
     expect(foldError([...done, start("pull_request"), { type: "pr_opened", repoId: "orders-api" as never, url: "https://github.com/acme/orders-api/pull/7" }, start("merge")])).toMatch(/pull request/);
+    expect(foldError([...done, { type: "branch_pushed", repoId: "orders-api" as never }])).toMatch(/without a running pull_request/);
+    expect(foldError([...done, start("merge"), { type: "branch_pushed", repoId: "orders-api" as never }])).toMatch(/without a running pull_request/);
     expect(foldError([...done, start("discard"), { type: "tombstone" }])).toMatch(/still running/);
     expect(foldError([...done, { type: "step_started", stepId: BUILD }])).toMatch(/has ended/);
   });
@@ -500,7 +505,7 @@ describe("folding a whole log on one working copy", () => {
       { type: "item_ended", outcome: "done", commits: [{ repoId, commit: COMMIT }] },
     ];
     const refused: ItemEventBody[] = [...ran, { type: "finish_started", action: "merge" }, { type: "finish_failed", action: "merge", reason: "steering_changed", detail: "changed", gitDigest: "2".repeat(64) }, { type: "git_changes_accepted", repoId, protectedDigest: "2".repeat(64) }];
-    const opened: ItemEventBody[] = [...refused, { type: "finish_started", action: "pull_request" }, { type: "pr_opened", repoId, url: "https://github.com/acme/orders-api/pull/7" }, { type: "finish_started", action: "discard" }, { type: "discarded", repoId }, { type: "tombstone" }];
+    const opened: ItemEventBody[] = [...refused, { type: "finish_started", action: "pull_request" }, { type: "branch_pushed", repoId }, { type: "pr_opened", repoId, url: "https://github.com/acme/orders-api/pull/7" }, { type: "finish_started", action: "discard" }, { type: "discarded", repoId }, { type: "tombstone" }];
     const merged: ItemEventBody[] = [...ran, { type: "finish_started", action: "merge" }, { type: "merged", repoId, baseBranch: "main", commit: COMMIT, worktreeRemoved: false }];
     fold(opened);
     fold(merged);

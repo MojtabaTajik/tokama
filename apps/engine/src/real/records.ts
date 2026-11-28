@@ -202,6 +202,7 @@ function toFinish(item: StoredItem): ItemRecord["finish"] {
     ...(stored?.running !== undefined && { running: stored.running }),
     ...(stored?.merged !== undefined && { merged: { baseBranch: stored.merged.baseBranch, commit: stored.merged.commit } }),
     ...(stored?.pullRequest !== undefined && { pullRequest: { url: stored.pullRequest.url } }),
+    ...(stored?.pushed !== undefined && { pushed: true as const }),
     worktreeRemoved: stored?.worktreeRemoved ?? false,
     ...(stored?.failed !== undefined &&
       failed !== undefined && {

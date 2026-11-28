@@ -424,6 +424,8 @@ describe("Open PR", () => {
     const missing = await run(await doneItem(), "pull_request", { ghCommand: [join(root, "no-such-gh")] });
     expect(missing.finish?.failed?.detail).toMatch(/^Nothing was pushed\. The GitHub CLI \(gh\) is not installed/);
     expect(await plain(bare, "for-each-ref", "refs/heads/")).toBe("");
+    expect(out.finish?.pushed).toBeUndefined();
+    expect(missing.finish?.pushed).toBeUndefined();
   });
 
   it("records gh's own refusal after the push", SLOW, async () => {
@@ -431,6 +433,9 @@ describe("Open PR", () => {
     writeFileSync(join(ghDir, "gh"), STUB_GH.replace(`echo "${PR_URL}"; exit 0 ;;`, `echo "gh: Resource not accessible (HTTP 403)" >&2; exit 1 ;;`));
     const done = await run(item, "pull_request");
     expect(done.finish?.failed?.detail).toBe("gh could not open the pull request on github.com/acme/orders-api: gh: Resource not accessible (HTTP 403)");
+    // The branch left the machine, so the record says so although no pull request exists.
+    expect(done.finish).toMatchObject({ pushed: { at: expect.any(Number) } });
+    expect(done.finish?.pullRequest).toBeUndefined();
   });
 
   it("refuses to push when origin points somewhere else than when the item started", SLOW, async () => {

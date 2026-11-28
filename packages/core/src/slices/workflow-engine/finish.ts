@@ -276,6 +276,8 @@ export function createFinisher(deps: FinishDeps): Finisher {
           ...(deps.sshAuthSock !== undefined && { sshAuthSock: deps.sshAuthSock }),
         });
         if (!pushed.ok) return failed(pushed.error);
+        // The branch is out now, whatever gh says next: the item's record says so.
+        append(item.id, [{ type: "branch_pushed", repoId: repo.id }]);
         const opened = await openPullRequest(gh, { repo: hosted, itemId: item.id, title: item.title, head: worktree.branch, base: repo.baseBranch });
         return opened.ok ? { type: "pr_opened", repoId: repo.id, url: opened.value } : failed(opened.error);
       }
