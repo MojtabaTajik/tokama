@@ -30,6 +30,7 @@ describe("scrubTokens", () => {
     expect(scrubTokens("AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCY pnpm test")).toBe(`AWS_SECRET_ACCESS_KEY=${REDACTED} pnpm test`);
     expect(scrubTokens("STRIPE_KEY=rk_abc pnpm test")).toBe(`STRIPE_KEY=${REDACTED} pnpm test`);
     expect(scrubTokens("//registry.npmjs.org/:_authToken=abcdef123456")).toBe(`//registry.npmjs.org/:_authToken=${REDACTED}`);
+    expect(scrubTokens("//registry.npmjs.org/:_auth=dXNlcjpwYXNz")).toBe(`//registry.npmjs.org/:_auth=${REDACTED}`);
   });
 
   it("hides JSON and flag forms", () => {
@@ -72,6 +73,10 @@ describe("scrubTokens", () => {
     const body = "MIIEvQIBADANBgkqhkiG9w0BAQEFAASC";
     expect(scrubTokens(`before\n-----BEGIN PRIVATE KEY-----\n${body}\n-----END PRIVATE KEY-----\nafter`)).toBe(`before\n${REDACTED}\nafter`);
     expect(scrubTokens(`x\n-----BEGIN RSA PRIVATE KEY-----\n${body}`)).toBe(`x\n${REDACTED}`);
+    // A message that only quotes the header keeps the output after it.
+    const quoted = 'Error: missing "-----BEGIN PRIVATE KEY-----" header\n  at parse (src/pem.ts:3)\nFAIL 3 tests';
+    expect(scrubTokens(quoted)).toBe(quoted.replace("-----BEGIN PRIVATE KEY-----", REDACTED));
+    expect(scrubTokens(`-----BEGIN PRIVATE KEY-----\n${body}\nFAIL 3 tests`)).toBe(`${REDACTED}\nFAIL 3 tests`);
   });
 
   it("leaves normal output alone", () => {
@@ -83,6 +88,7 @@ describe("scrubTokens", () => {
       "token_count=5 author=moji keyboard=us tokens: 12 passwordless login ok",
       "Property 'token' is missing; token: string; password: string;",
       "Bearer authentication is required",
+      '"auth": "^1.2.3" AUTH=1 auth=basic',
       "--password-stdin --token-count 5 npm login",
       "API_KEY=$API_KEY GITHUB_TOKEN=${GITHUB_TOKEN} PASSWORD=",
       "secret=<redacted> token=***",
@@ -103,7 +109,7 @@ describe("scrubTokens", () => {
   });
 
   // A run the size of a failed check's output (64 Ki): each of these made an unanchored pattern quadratic.
-  it.each(["-", "x-", "a.", "a_", "A_", "x:", "token ", "-----BEGIN PRIVATE KEY-----", "--token-", "Bearer ", "KEY_", "a=", "://"])("stays fast on a long run of %j", (unit) => {
+  it.each(["-", "x-", "a.", "a_", "A_", "x:", "token ", "-----BEGIN PRIVATE KEY-----", "--token-", "Bearer ", "KEY_", "a=", "://", "sk-", "eyJ-", "-----BEGIN PRIVATE KEY-----\n", "_auth"])("stays fast on a long run of %j", (unit) => {
     const input = unit.repeat(Math.ceil(65_536 / unit.length));
     const started = performance.now();
     scrubTokens(input);

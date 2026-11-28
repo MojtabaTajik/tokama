@@ -13,7 +13,7 @@ const LOOKS_SECRET = /^(?=.*\d)(?=.*[A-Za-z])\S{8,}$/;
 const PLAIN_KEY = /^(?:PRIMARY|SORT|CACHE|PUBLIC|FOREIGN|PARTITION|SHARD|ROW|MAP)_KEY$/;
 
 const KNOWN_SHAPES: readonly RegExp[] = [
-  /\bsk-(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{16,}/g, // OpenAI, Anthropic; a digit keeps out names such as `sk-loading-placeholder-component`
+  /(?<![A-Za-z0-9_-])sk-(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{16,}/g, // OpenAI, Anthropic; a digit keeps out names such as `sk-loading-placeholder-component`
   /\bgh[pousr]_[A-Za-z0-9]{20,}/g, // GitHub
   /\bgithub_pat_[A-Za-z0-9_]{20,}/g,
   /\bglpat-[A-Za-z0-9_-]{20,}/g, // GitLab
@@ -22,9 +22,10 @@ const KNOWN_SHAPES: readonly RegExp[] = [
   /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, // AWS access key id
   /\bAIza[A-Za-z0-9_-]{35}\b/g, // Google API key
   /\b[sr]k_(?:live|test)_[A-Za-z0-9]{16,}/g, // Stripe
-  /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, // JWT
-  // A private key block (also PGP); one that never ends is taken to the end of the text.
-  /-----BEGIN [A-Z ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY(?: BLOCK)?-----|$)/g,
+  /(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, // JWT
+  // A private key block (also PGP): the header, the base64 lines below it, and the END line when there is one.
+  // A header with no body or END line (a message that quotes it) goes alone; the output after it stays.
+  /-----BEGIN [A-Z ]*PRIVATE KEY(?: BLOCK)?-----(?:\r?\n[A-Za-z0-9+/=]{20,})*(?:\r?\n[A-Za-z0-9+/=]+(?=\r?\n-----END))?(?:\r?\n-----END [A-Z ]*PRIVATE KEY(?: BLOCK)?-----)?/g,
 ];
 
 // `scheme://user:password@host`: the password goes, the user and host stay.
@@ -39,7 +40,7 @@ const BEARER = /\bBearer[ \t]+[A-Za-z0-9._~+/=-]{20,}/gi;
 // `"client_secret": "..."`, `--api-key=...`, `_authToken=...`. The word must end the key, so
 // `token_count=5` and `author=x` stay. A quoted value goes whole, spaces too. Not `==`, `=>`, `!=`.
 const ASSIGNMENT =
-  /(?<![A-Za-z0-9_.-])([A-Za-z0-9_.-]*(?:password|passwd|secret|token|api[_-]?key|apikey|access[_-]?key|account[_-]?key|shared[_-]?access[_-]?key|private[_-]?key|credentials?|auth)["']?)([ \t]*(?:=(?![=>])|:)[ \t]*)("[^"\n]*"|'[^'\n]*'|[^\s'",;&})]+)/gi;
+  /(?<![A-Za-z0-9_.-])([A-Za-z0-9_.-]*(?:password|passwd|secret|token|api[_-]?key|apikey|access[_-]?key|account[_-]?key|shared[_-]?access[_-]?key|private[_-]?key|credentials?|[_.-]auth)["']?)([ \t]*(?:=(?![=>])|:)[ \t]*)("[^"\n]*"|'[^'\n]*'|[^\s'",;&})]+)/gi;
 // An upper-case environment variable that ends in `_KEY`, `_PASS`, `_PWD` or `_KEY_BASE`: `STRIPE_KEY=...`, `DB_PASS=...`.
 const KEY_VARIABLE = /(?<![A-Za-z0-9_.-])([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*_(?:KEY|PASS|PWD|KEY_BASE))(=)(?![=>])("[^"\n]*"|'[^'\n]*'|[^\s'",;&})]+)/g;
 // `curl -u user:password`, `--user user:password`. Not `-u 1000:1000`, a user and group id.
