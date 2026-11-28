@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, wr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { minSafeProblem, parseLatestFeed, parseYamlScalars } from "./verify-package-common.js";
+import { minSafeProblem, parseLatestFeed, parseYamlScalars, resourcesProblem } from "./verify-package-common.js";
 import { entitlementProblem, isMachO, latestProblem, layoutProblem, machOFiles, parseSignature, signatureProblem, zipName } from "./verify-package-mac.js";
 import { parseLinuxVerifyArgs, parseVerifyArgs } from "./verify-package.js";
 
@@ -224,6 +224,19 @@ describe("layoutProblem", () => {
     build();
     rmSync(join(resources(), "THIRD_PARTY_NOTICES.md"));
     expect(layoutProblem(root, false)).toMatch(/THIRD_PARTY_NOTICES\.md is missing/);
+  });
+
+  it("is the same check the Linux package gets: its resources folder needs the notices and the licence files too", () => {
+    build();
+    writeFileSync(join(resources(), "app-update.yml"), "");
+    expect(resourcesProblem(resources(), true)).toBeUndefined();
+    for (const file of ["THIRD_PARTY_NOTICES.md", "LICENSE-electron", "LICENSES.chromium.html"]) {
+      rmSync(join(resources(), file));
+      expect(resourcesProblem(resources(), true)).toMatch(new RegExp(`${file.replace(".", "\\.")} is missing`));
+      writeFileSync(join(resources(), file), "");
+    }
+    rmSync(join(resources(), "engine", "LICENSE-node"));
+    expect(resourcesProblem(resources(), true)).toMatch(/LICENSE-node is missing/);
   });
 });
 

@@ -11,20 +11,22 @@ font and no download at run time.
 
 ## Electron
 
-Electron 45 runs the desktop app (MIT, Copyright Electron contributors, Copyright GitHub Inc.). It bundles
-Chromium and Node.js, which carry their own licences.
+Electron 45 runs the desktop app (MIT, Copyright Electron contributors, Copyright GitHub Inc.). Its licence
+text is not repeated below: it ships with the app as `LICENSE-electron`. Electron bundles Chromium and
+Node.js, which carry their own licences (see the next two sections).
 
 ## Chromium
 
 Chromium renders the window. It includes many third-party components under their own licences (BSD-3-Clause
-and others); the full list ships with the app as `LICENSES.chromium.html`. Copyright The Chromium Authors.
+and others); the full list ships with the app as `LICENSES.chromium.html`, in the resources folder. Copyright The Chromium Authors.
 
 ## Node.js
 
-The packaged app ships the official Node.js 26.13.1 binary for macOS (arm64), unchanged except for its
-file name and code signature, as `Contents/Resources/engine/tokama-engine`. It runs the Tokama engine as a
+The packaged app ships the official Node.js 26.13.1 binary for macOS (arm64) and Linux (x64), unchanged except
+for its file name (and, on macOS, its code signature), as `engine/tokama-engine` in the app's resources folder
+(`Contents/Resources` on macOS, `/opt/Tokama/resources` on Linux). It runs the Tokama engine as a
 background service (MIT, Copyright Node.js contributors). Node's licence file, which also lists the licences
-of the parts Node bundles (V8, OpenSSL, libuv and others), ships beside it as `LICENSE-node`. In development
+of the parts Node bundles (V8, OpenSSL, libuv and others), ships beside it as `engine/LICENSE-node`. In development
 the engine runs on the Node found on PATH.
 
 ## React and React DOM
@@ -34,7 +36,7 @@ is built in with it, under the same licence.
 
 ## electron-updater and its dependencies
 
-electron-updater 6.8.12 checks the update feed, downloads a new version and hands it to macOS to install
+electron-updater 6.8.12 checks the update feed, downloads a new version and hands it to the system to install
 (MIT, Copyright Loopline Systems and the authors of the packages listed). It is built into the app's main
 process with the packages it needs:
 
@@ -55,8 +57,9 @@ and into the app's main process.
 
 # Licence texts
 
-The licence text of every package built into the app, copied unchanged from the licence file the package
-itself ships. The same file ships with the app as `THIRD_PARTY_NOTICES.md`, and About opens it.
+The licence text of every package built into the app's code, copied unchanged from the licence file the
+package itself ships. Electron, Chromium and Node.js are not built into that code: their licence files ship
+as `LICENSE-electron`, `LICENSES.chromium.html` and `engine/LICENSE-node`, as named above. The same file ships with the app as `THIRD_PARTY_NOTICES.md`, and About opens it.
 
 ### react 19.3.1
 
