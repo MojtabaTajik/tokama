@@ -7,6 +7,7 @@ import { DecisionChoices } from "./DecisionChoices.js";
 import { nextRunLine, runLine, stepAgent } from "./describe.js";
 import { NoChangeFacts } from "./NoChangeFacts.js";
 import { SaidLine } from "./SaidBlock.js";
+import { SetupFailedFacts } from "./SetupFailedFacts.js";
 import { type OutputState, StepPreview } from "./StepOutput.js";
 
 const TEXT = {
@@ -35,10 +36,14 @@ interface NeedsYouProps {
   /** Show full plan: the reader on this step's document; undefined hides the link. */
   readonly onRead: ((stepIndex: number) => void) | undefined;
   readonly onShowDiff: () => void;
+  /** A failed setup's "See the whole output": the Checks tab. Undefined hides the link. */
+  readonly onShowChecks?: (() => void) | undefined;
+  /** A failed setup's "Edit the setup command…": Edit repo on the item's repo. Undefined hides the link. */
+  readonly onEditSetup?: (() => void) | undefined;
   readonly onChoose: (decision: Decision, choice: string, note?: string) => void;
 }
 
-export function NeedsYou({ item, setup, decision, busy, output, full, changedFiles, onRead, onShowDiff, onChoose }: NeedsYouProps) {
+export function NeedsYou({ item, setup, decision, busy, output, full, changedFiles, onRead, onShowDiff, onShowChecks, onEditSetup, onChoose }: NeedsYouProps) {
   const step = decision === undefined ? undefined : item.steps[decision.stepIndex];
   const agent = step?.agentId === undefined ? undefined : stepAgent(step, setup?.agents ?? []).name;
   // What the agent says of the work you are asked to approve: the latest attempt's headline, never an earlier attempt's.
@@ -51,6 +56,7 @@ export function NeedsYou({ item, setup, decision, busy, output, full, changedFil
             <StatusMark status="needs_you" />
             {decision.question}
           </p>
+          {decision.setupFailed !== undefined && <SetupFailedFacts failed={decision.setupFailed} onSeeOutput={onShowChecks} onEdit={onEditSetup} />}
           {decision.why !== undefined && <p className="needs-you-why">{decision.why}</p>}
           {decision.summaryText !== undefined && (
             <div className="cloud-summary">

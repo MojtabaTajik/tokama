@@ -18,6 +18,7 @@ import { CollapseIcon, RepoIcon } from "../ui/icons.js";
 import { ExpandButton } from "../ui/ExpandButton.js";
 import { LinkedText } from "../ui/LinkedText.js";
 import { TemplateIcon } from "../shell/TemplateIcon.js";
+import { RepoDialog } from "../repos/RepoDialog.js";
 import { changesRepo } from "./attempt-view.js";
 import { ChecksTab } from "./ChecksTab.js";
 import { attemptLine, hasEnded, KIND, outcomeLine, PRIVACY, stepAgent, stepPosition, templateOf, whereLine } from "./describe.js";
@@ -342,6 +343,11 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
     showTab(to)();
   };
   const stoppedDecision = item?.state === "needs_you" && item.decision?.stopped !== undefined ? { ...item.decision, stopped: item.decision.stopped } : undefined;
+  // A failed setup's "Edit the setup command…" opens Edit repo on the item's repo, unless it is a sample repo or the
+  // command that failed is not the repo's (a template's own setup replaces it, and Edit repo cannot change that).
+  const [editingSetup, setEditingSetup] = useState(false);
+  const failedSetup = item?.decision?.setupFailed;
+  const editableRepo = failedSetup === undefined ? undefined : setup?.repos.find((repo) => repo.id === item?.repoIds[0] && repo.sample !== true && repo.setup === failedSetup.command);
   // The card of a question that offers Stop has its own Stop button; the action row's would be a second one.
   const cardHasStop = item?.state === "needs_you" && item.decision !== undefined && cardOffersStop(item.decision);
   const changedFiles = diff?.kind === "loaded" && diff.diff.files.length + diff.diff.moreFiles > 0;
@@ -446,7 +452,20 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
         <StoppedCard bridge={bridge} item={item} setup={setup} decision={stoppedDecision} busy={busy} full={full} onChoose={resolve} onShow={showStopped} />
       )}
       {item?.state === "needs_you" && stoppedDecision === undefined && (
-        <NeedsYou item={item} setup={setup} decision={item.decision} busy={busy} output={full ? undefined : output} full={full} changedFiles={changedFiles} onRead={onRead} onShowDiff={showTab("Diff")} onChoose={resolve} />
+        <NeedsYou
+          item={item}
+          setup={setup}
+          decision={item.decision}
+          busy={busy}
+          output={full ? undefined : output}
+          full={full}
+          changedFiles={changedFiles}
+          onRead={onRead}
+          onShowDiff={showTab("Diff")}
+          onShowChecks={item.decision?.setupFailed?.when === "checks" ? showTab("Checks") : undefined}
+          onEditSetup={editableRepo === undefined ? undefined : () => setEditingSetup(true)}
+          onChoose={resolve}
+        />
       )}
       {item !== undefined && item.state !== "needs_you" && <After item={item} setup={setup} />}
 
@@ -527,6 +546,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
           )}
         </>
       )}
+      {editingSetup && editableRepo !== undefined && <RepoDialog bridge={bridge} repo={editableRepo} onClose={() => setEditingSetup(false)} />}
     </section>
   );
 }

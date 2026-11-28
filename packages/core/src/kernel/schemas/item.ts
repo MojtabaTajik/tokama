@@ -160,6 +160,8 @@ export const AttemptSummarySchema = z.strictObject({
   /** What the step's agent said, once its attempt ended; absent when the agent said nothing and on attempts recorded before this existed. */
   said: SaidSchema.optional(),
   checks: z.array(z.strictObject({ command: z.string().min(1).max(500), passed: z.boolean(), exitCode: z.int().nullable() })).max(20),
+  /** The setup that ran before this attempt's checks (the latest run); never counted among `checks`. */
+  setup: z.strictObject({ command: z.string().min(1).max(500), passed: z.boolean(), exitCode: z.int().nullable() }).optional(),
 });
 
 export const StepRecordSchema = z.strictObject({
@@ -232,6 +234,22 @@ export const StopThenSchema = z.discriminatedUnion("kind", [
   }),
 ]);
 
+/**
+ * A setup command that did not pass: what ran, how it ended and what it said last, as the card
+ * for it shows. `when` is `start` before the first step, `checks` before a step's checks (the
+ * checks were not started: `checksNotRun` of them).
+ */
+export const SetupFailedSchema = z.strictObject({
+  when: z.enum(["start", "checks"]),
+  command: z.string().min(1).max(500),
+  ended: z.enum(["failed", "timed_out", "could_not_start"]),
+  exitCode: z.int().optional(),
+  durationMs: z.int().nonnegative(),
+  /** The last line of its output, as text; empty when it printed nothing. */
+  lastLine: z.string().max(300),
+  checksNotRun: z.int().nonnegative(),
+});
+
 /** A question put to the engineer. Present only while the item's state is `needs_you`. */
 export const DecisionSchema = z.strictObject({
   id: DecisionIdSchema,
@@ -248,6 +266,8 @@ export const DecisionSchema = z.strictObject({
   hasDiff: z.boolean().optional(),
   /** For a step you approve whose agent said no change is needed: ending the item with its answer is what the question proposes. */
   proposes: z.literal("no_change").optional(),
+  /** For a setup command that did not pass, at the start or before a step's checks. */
+  setupFailed: SetupFailedSchema.optional(),
   /**
    * For a step that failed or reached a limit: whether it was a limit, what ran after its last
    * ended attempt, and why Tokama stopped, in plain words. What the agent said comes with the
@@ -342,6 +362,7 @@ export type AttemptResult = z.output<typeof AttemptResultSchema>;
 export type RunFailure = z.output<typeof RunFailureSchema>;
 export type AttemptSummary = z.output<typeof AttemptSummarySchema>;
 export type Said = z.output<typeof SaidSchema>;
+export type SetupFailed = z.output<typeof SetupFailedSchema>;
 export type TouchKind = z.output<typeof TouchKindSchema>;
 export type ChangeSummary = z.output<typeof ChangeSummarySchema>;
 export type RiskReason = z.output<typeof RiskReasonSchema>;

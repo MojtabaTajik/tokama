@@ -125,6 +125,11 @@ function wordsOf(item: ItemRecord, setup: Setup | undefined): ResultWords | unde
 
 function checkedRow(item: ItemRecord, described: boolean): ResultRow | undefined {
   const label = "Checked";
+  // The item waits on a setup that failed before the checks: they were not run, which is neither passed nor failed.
+  const notRun = item.decision?.setupFailed;
+  if (notRun?.when === "checks") {
+    return { key: "checked", label, mark: MARKS.warn, text: `Not checked · setup failed, ${notRun.checksNotRun} ${notRun.checksNotRun === 1 ? "check" : "checks"} did not run` };
+  }
   const checks = checksOf(item);
   const latest = checkAttempts(item);
   if (checks !== undefined) {

@@ -23,6 +23,7 @@ import type { Agent, Repo } from "../config/index.js";
 import { EVENTS_FILE, foldItem, ItemStore, openDecisions, readLog } from "../items/index.js";
 import { createWorktree } from "../worktrees/index.js";
 import { createRunLoop, parseVerdict, type RunLoop, type RunLoopDeps } from "./index.js";
+import { mayHandOverCheckOutput } from "./run-loop.js";
 import { after, type Behavior, crashes, edits, editsThenCrashes, editsThenHangs, FAKE_PID, fakeRuntime, hangs, loops, says } from "./testing/fake-runtime.js";
 
 const SLOW = { timeout: 60_000 };
@@ -2025,5 +2026,223 @@ describe("run loop: a step you approve says no change is needed", () => {
     // Its worktree holds changes: the discard command refuses it.
     expect(await current.finishItem(id, "discard")).toMatchObject({ ok: false, error: { code: "invalid_state" } });
     expect(existsSync(worktreeDir(id))).toBe(true);
+  });
+});
+
+describe("the repo's setup command", () => {
+  /** A setup script in the repo that counts its runs outside the worktree and fails on the runs named. */
+  async function countingSetup(failOn: readonly number[], message = "lockfile is out of date"): Promise<string> {
+    const counter = join(root, "setup-runs");
+    writeFileSync(join(repo.path, "count-setup.sh"), `n=$(cat '${counter}' 2>/dev/null || echo 0)\nn=$((n + 1))\necho $n > '${counter}'\nmkdir -p node_modules\ntouch node_modules/installed\n${failOn.map((run) => `[ "$n" = ${run} ] && { echo '${message}'; exit 1; }`).join("\n")}\nexit 0\n`);
+    await plain(repo.path, "add", "-A");
+    await plain(repo.path, "commit", "-q", "-m", "setup script");
+    repo = { ...repo, setup: "sh count-setup.sh" };
+    return counter;
+  }
+  const runsOf = (counter: string) => Number(readFileSync(counter, "utf8").trim());
+
+  it("runs at Start and before each checks run, and stays out of the checks: it is the attempt's setup", SLOW, async () => {
+    const counter = await countingSetup([]);
+    const id = await start(engine(fakeRuntime([edits(FIXED)])), template([BUILD_CHECKED]));
+    expect(item(id).state).toBe("done");
+    expect(runsOf(counter)).toBe(2);
+    const attempt = item(id).steps[0]!.attempts[0]!;
+    expect(attempt.setup).toMatchObject({ command: "sh count-setup.sh", passed: true, exitCode: 0, outputFile: "attempts/build-1/setup.log" });
+    // Only the real check is a check: counts, risk and repeats never see the setup.
+    expect(attempt.checks.map((check) => check.command)).toEqual(["sh check.sh"]);
+    expect(story(id).filter((line) => line.startsWith("check "))).toEqual(["check sh count-setup.sh passed", "check sh check.sh passed"]);
+  });
+
+  it("is the template's own setup when the template has one: the template replaces the repo's", SLOW, async () => {
+    repo = { ...repo, setup: "sh does-not-exist.sh" };
+    const id = await start(engine(fakeRuntime([edits(FIXED)])), template([BUILD_CHECKED], { setup: "sh setup.sh" }));
+    expect(item(id).state).toBe("done");
+    expect(item(id).steps[0]!.attempts[0]!.setup?.command).toBe("sh setup.sh");
+  });
+
+  it("is read as it is now: a fix to the repo's command applies to Run setup again at Start", SLOW, async () => {
+    const counter = await countingSetup([1]);
+    const loop = engine(fakeRuntime([edits(FIXED)]));
+    const id = await start(loop, template([BUILD_CHECKED]));
+    expect(openDecision(id)).toMatchObject({
+      kind: "run_failure",
+      setupFailed: { when: "start", command: "sh count-setup.sh", ended: "failed", exitCode: 1, lastLine: "lockfile is out of date", checksNotRun: 0 },
+      choices: [{ id: "retry_step", label: "Run setup again" }, { id: "stop" }],
+      detail: expect.stringContaining("Setup failed before build started."),
+    });
+    // No attempt exists yet, and no baseline was taken.
+    expect(item(id).steps.every((step) => step.attempts.length === 0)).toBe(true);
+    expect(item(id).worktrees[0]?.protectedDigest).toBeUndefined();
+    repo = { ...repo, setup: "sh setup.sh" };
+    await answer(loop, id, "retry_step");
+    expect(item(id).state).toBe("done");
+    expect(runsOf(counter)).toBe(1);
+  });
+
+  it("a failed setup before the checks keeps the attempt open and asks; the checks are not started and count as nothing", SLOW, async () => {
+    const counter = await countingSetup([2]);
+    const runtime = fakeRuntime([edits(FIXED)]);
+    const loop = engine(runtime);
+    const id = await start(loop, template([BUILD_CHECKED]));
+    expect(runtime.calls).toHaveLength(1);
+    expect(openDecision(id)).toMatchObject({
+      kind: "run_failure",
+      stepId: "build",
+      setupFailed: { when: "checks", ended: "failed", exitCode: 1, lastLine: "lockfile is out of date", checksNotRun: 1 },
+      choices: [{ id: "rerun_setup", label: "Run setup and checks again" }, { id: "send_to_agent", label: "Send the output to builder" }, { id: "stop" }],
+    });
+    const attempt = item(id).steps[0]!.attempts[0]!;
+    expect(attempt.endedAt).toBeUndefined();
+    expect(attempt.checks).toEqual([]);
+    expect(attempt.setup).toMatchObject({ passed: false, exitCode: 1 });
+    expect(story(id)).not.toContain("check sh check.sh passed");
+    expect(story(id).some((line) => line.startsWith("check sh check.sh"))).toBe(false);
+    expect(runsOf(counter)).toBe(2);
+  });
+
+  it("Run setup and checks again runs both in the same worktree with no agent call, and the item finishes", SLOW, async () => {
+    const counter = await countingSetup([2]);
+    const runtime = fakeRuntime([edits(FIXED)]);
+    const loop = engine(runtime);
+    const id = await start(loop, template([BUILD_CHECKED]));
+    await answer(loop, id, "rerun_setup");
+    expect(item(id).state).toBe("done");
+    expect(runtime.calls).toHaveLength(1);
+    expect(runsOf(counter)).toBe(3);
+    const attempts = item(id).steps[0]!.attempts;
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0]).toMatchObject({ result: "passed", setup: { passed: true } });
+    expect(attempts[0]!.checks.map((check) => check.passed)).toEqual([true]);
+  });
+
+  it("a setup that fails again asks again", SLOW, async () => {
+    await countingSetup([2, 3]);
+    const loop = engine(fakeRuntime([edits(FIXED)]));
+    const id = await start(loop, template([BUILD_CHECKED]));
+    await answer(loop, id, "rerun_setup");
+    expect(openDecision(id)).toMatchObject({ kind: "run_failure", setupFailed: { when: "checks" } });
+    expect(item(id).steps[0]!.attempts).toHaveLength(1);
+  });
+
+  it("Send the output to the agent ends the attempt as a counted failure and hands the output to the next attempt", SLOW, async () => {
+    await countingSetup([2]);
+    const runtime = fakeRuntime([edits(FIXED), edits(FIXED)]);
+    const loop = engine(runtime);
+    const id = await start(loop, template([{ ...BUILD_CHECKED, ifFailed: { action: "ask" } }]));
+    await answer(loop, id, "send_to_agent");
+    expect(item(id).state).toBe("done");
+    const attempts = item(id).steps[0]!.attempts;
+    expect(attempts.map((a) => a.result)).toEqual(["failed", "passed"]);
+    expect(attempts[0]!.detail).toContain("output went to the agent");
+    // The next prompt carries the setup's command, exit code and output, like a failed check's.
+    expect(runtime.calls).toHaveLength(2);
+    expect(runtime.calls[1]?.request.prompt).toContain("$ sh count-setup.sh (exit 1)");
+    expect(runtime.calls[1]?.request.prompt).toContain("lockfile is out of date");
+    // The failed attempt counted: it is a failed one, not a run failure.
+    expect(story(id)).toContain("attempt_ended build#1 failed");
+  });
+
+  it("Send the output is limited like any retry: at the attempt limit the usual question comes", SLOW, async () => {
+    await countingSetup([2]);
+    const loop = engine(fakeRuntime([edits(FIXED)]));
+    const id = await start(loop, template([{ ...BUILD_CHECKED, maxAttempts: 1 }]));
+    await answer(loop, id, "send_to_agent");
+    expect(openDecision(id)).toMatchObject({ kind: "after_failure", stepId: "build" });
+  });
+
+  it("redacts the machine's folders from the output it sends", SLOW, async () => {
+    await countingSetup([2], `failed in ${root}/orders-api`);
+    const runtime = fakeRuntime([edits(FIXED), edits(FIXED)]);
+    const loop = engine(runtime);
+    const id = await start(loop, template([BUILD_CHECKED]));
+    await answer(loop, id, "send_to_agent");
+    const prompt = runtime.calls[1]!.request.prompt;
+    expect(prompt).not.toContain(root);
+    expect(prompt).toContain("failed in");
+  });
+
+  it("offers Send to a cloud agent only when the step's data rule sends the repo", SLOW, async () => {
+    await countingSetup([2]);
+    const cloud: Agent = { ...AGENTS["builder"]!, cliId: "claude-code" };
+    const loop = engine(fakeRuntime([edits(FIXED)]), { agent: () => cloud });
+    const id = await start(loop, template([{ ...BUILD_CHECKED, data: "repo-and-diff" }]));
+    expect(openDecision(id)?.choices.map((c) => c.id)).toEqual(["rerun_setup", "send_to_agent", "stop"]);
+  });
+
+  it("hands check output to a local agent always, and to a cloud agent only when the step's data rule sends the repo and the run is not local-only", () => {
+    expect(mayHandOverCheckOutput(false, "none", false)).toBe(true);
+    expect(mayHandOverCheckOutput(false, "summary-after-approval", true)).toBe(true);
+    expect(mayHandOverCheckOutput(true, "repo-and-diff", false)).toBe(true);
+    expect(mayHandOverCheckOutput(true, "summary-after-approval", false)).toBe(false);
+    expect(mayHandOverCheckOutput(true, "none", false)).toBe(false);
+    expect(mayHandOverCheckOutput(true, "repo-and-diff", true)).toBe(false);
+  });
+
+  it("after a restart the question still holds: Run setup and checks again runs with no agent call", SLOW, async () => {
+    const counter = await countingSetup([2]);
+    const id = await start(engine(fakeRuntime([edits(FIXED)])), template([BUILD_CHECKED]));
+    expect(openDecisions(item(id))).toHaveLength(1);
+    store = ItemStore.open({ home: tokamaHome, hostId: HOST, clock }).store;
+    const runtime = fakeRuntime([edits(FIXED)]);
+    const loop = engine(runtime);
+    await loop.ready;
+    // Recovery leaves the attempt and its question alone: nothing was running.
+    expect(openDecisions(item(id))).toHaveLength(1);
+    expect(openDecision(id)).toMatchObject({ kind: "run_failure", setupFailed: { when: "checks" } });
+    expect(item(id).steps[0]!.attempts[0]!.endedAt).toBeUndefined();
+    await answer(loop, id, "rerun_setup");
+    expect(item(id).state).toBe("done");
+    expect(runtime.calls).toHaveLength(0);
+    expect(runsOf(counter)).toBe(3);
+  });
+
+  it("after a restart, Send the output still hands the output to the next attempt", SLOW, async () => {
+    await countingSetup([2]);
+    const id = await start(engine(fakeRuntime([edits(FIXED)])), template([BUILD_CHECKED]));
+    store = ItemStore.open({ home: tokamaHome, hostId: HOST, clock }).store;
+    const runtime = fakeRuntime([edits(FIXED)]);
+    const loop = engine(runtime);
+    await loop.ready;
+    await answer(loop, id, "send_to_agent");
+    expect(item(id).state).toBe("done");
+    expect(runtime.calls).toHaveLength(1);
+    expect(runtime.calls[0]?.request.prompt).toContain("lockfile is out of date");
+  });
+
+  it("a setup removed from the repo before Run setup and checks again leaves no failed setup on the attempt", SLOW, async () => {
+    await countingSetup([2]);
+    const loop = engine(fakeRuntime([edits(FIXED)]));
+    const id = await start(loop, template([BUILD_CHECKED]));
+    expect(item(id).steps[0]!.attempts[0]!.setup?.passed).toBe(false);
+    repo = { id: repo.id, path: repo.path, baseBranch: repo.baseBranch, worktreeFolder: repo.worktreeFolder, checks: repo.checks };
+    await answer(loop, id, "rerun_setup");
+    expect(item(id).state).toBe("done");
+    expect(item(id).steps[0]!.attempts[0]!.setup).toBeUndefined();
+  });
+
+  it("a change to the files that steer Tokama stops the item before the setup before the checks runs", SLOW, async () => {
+    const counter = await countingSetup([]);
+    const hook = () => writeFileSync(join(repo.path, ".git", "hooks", "pre-commit"), "#!/bin/sh\ntouch pwned\n");
+    const id = await start(engine(fakeRuntime([after(hook, edits(FIXED))])), template([BUILD_CHECKED]));
+    expect(item(id)).toMatchObject({ state: "failed", outcome: { detail: expect.stringContaining("added git:hooks/pre-commit (git)") } });
+    // Only the run at Start happened.
+    expect(runsOf(counter)).toBe(1);
+  });
+
+  it("Stop on a failed setup ends the item as stopped", SLOW, async () => {
+    await countingSetup([2]);
+    const loop = engine(fakeRuntime([edits(FIXED)]));
+    const id = await start(loop, template([BUILD_CHECKED]));
+    await answer(loop, id, "stop");
+    expect(item(id).outcome?.kind).toBe("stopped");
+  });
+
+  it("a setup that does not start (not found) asks like one that failed, and a timeout says so", SLOW, async () => {
+    repo = { ...repo, setup: "tokama-no-such-tool --install" };
+    const id = await start(engine(fakeRuntime([edits(FIXED)])), template([BUILD_CHECKED]));
+    expect(openDecision(id)?.setupFailed).toMatchObject({ when: "start", ended: "could_not_start", exitCode: 127 });
+    repo = { ...repo, setup: "sleep 30" };
+    const slow = await start(engine(fakeRuntime([edits(FIXED)]), { commandTimeoutMs: 300 }), template([BUILD_CHECKED]));
+    expect(openDecision(slow)?.setupFailed).toMatchObject({ when: "start", ended: "timed_out" });
   });
 });

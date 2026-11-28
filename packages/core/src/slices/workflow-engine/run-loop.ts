@@ -57,14 +57,16 @@ import {
   type TemplateRecord,
   type TemplateStepDef,
   type RunFailure,
+  type SetupFailed,
+  terminalText,
 } from "../../kernel/schemas/index.js";
 import { cutText, scrubPaths } from "../../kernel/text/index.js";
 import type { Agent, Repo } from "../config/index.js";
 import { type ActivityState, callUsage, agentCliGuardDefaults, labelText, redactPaths, runGuardedCall, type LoopGuardSettings } from "../execution/index.js";
 import { protectedSet, readChange, sharedGitSettings, summarizeChange, type ProtectedSet } from "../integrity/index.js";
 import { countedAttempts, openAttempt, openDecisions, recoverItems, RUN_FAILURE_CHOICES, type ItemStore, type RecoveredItem } from "../items/index.js";
-import { buildPrompt, type StepResults } from "../prompting/index.js";
-import { checkRunOptions, checksPass, runCommand, type CheckResult } from "../verification/index.js";
+import { buildPrompt, runsInCloud, type StepResults } from "../prompting/index.js";
+import { checkRunOptions, checksPass, runCommand, SETUP_LIMIT_MINUTES, type CheckResult } from "../verification/index.js";
 import { commitItem, createWorktree, findItemWorktree, itemBranch, originPushUrl, stageItem, treeDiff, worktreePath, worktreeSnapshot, type ItemWorktree } from "../worktrees/index.js";
 import { attemptChecks, attemptLog, toolLine } from "./attempt-files.js";
 import { minutes } from "./explain.js";
@@ -189,6 +191,9 @@ export interface RunLoop {
 const choice = (id: string, label: string): DecisionChoice => ({ id, label });
 const STOP = choice("stop", "Stop");
 const RETRY = choice(RUN_FAILURE_CHOICES[0].id, RUN_FAILURE_CHOICES[0].label);
+/** After a setup that failed before a step's checks: run it, and the checks, again; or hand its output to the step's agent. */
+const RERUN_SETUP = choice("rerun_setup", "Run setup and checks again");
+const SEND_SETUP_OUTPUT_ID = "send_to_agent";
 const ONE_MORE = choice(ONE_MORE_ID, "Retry once more");
 const ONE_MORE_ROUND = choice(ONE_MORE_ROUND_ID, "Run one more round");
 const NO_ACTION = choice("no_action_needed", "End: no action needed");
@@ -203,10 +208,17 @@ const USE_RECORDED = choice("use_recorded_tree", "Review the checked tree");
 const COMMIT_CHECKED = choice("commit_checked_tree", "Commit the checked tree");
 const COMMIT_ANYWAY = choice("commit_anyway", "Commit anyway");
 
+/**
+ * Check output reaches an agent only through the next prompt: a local agent always gets it; a
+ * cloud agent only where the step's data rule sends the repo, and never in local-only mode.
+ */
+export const mayHandOverCheckOutput = (cloud: boolean, data: TemplateStepDef["data"], localOnly: boolean): boolean => !cloud || (data === "repo-and-diff" && !localOnly);
+
 /** What a work failure of the step leads to: `if_changes_requested` for a reviewer, else `if_failed`. */
 const failureRule = (step: TemplateStepDef) => (step.doneWhen === "reviewer approves" ? (step.ifChangesRequested ?? { action: "ask" as const }) : step.ifFailed);
 
-const DEFAULT_COMMAND_TIMEOUT_MS = 20 * 60_000;
+/** Setup and every check get the same limit unless a test shortens it. */
+const DEFAULT_COMMAND_TIMEOUT_MS = SETUP_LIMIT_MINUTES * 60_000;
 const DETAIL_MAX = 500;
 const FEEDBACK_MAX_BYTES = 64 * 1024;
 /** How much of the end of a cut step output the loop reads for its verdict. */
@@ -366,7 +378,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     stepId: StepId | undefined,
     choices: readonly DecisionChoice[],
     text: string,
-    extra: { covers?: readonly CoveredPath[]; tree?: string; change?: ChangeSummary; proposes?: "no_change" } = {},
+    extra: { covers?: readonly CoveredPath[]; tree?: string; change?: ChangeSummary; proposes?: "no_change"; setupFailed?: SetupFailed } = {},
   ): ItemEventBody => ({
     type: "decision_opened",
     decisionId: DecisionIdSchema.parse(newId("decision", clock.now())),
@@ -378,6 +390,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     ...(extra.tree !== undefined && { tree: extra.tree }),
     ...(extra.change !== undefined && { change: extra.change }),
     ...(extra.proposes !== undefined && { proposes: extra.proposes }),
+    ...(extra.setupFailed !== undefined && { setupFailed: extra.setupFailed }),
   });
 
   const attemptEnded = (
@@ -406,6 +419,27 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
   const askRunFailure = (item: StoredItem, text: string, retryLabel = RETRY.label): Next => {
     append(item.id, [decision("run_failure", undefined, [choice(RETRY.id, retryLabel), STOP], text)]);
     return WAIT;
+  };
+
+  /** The command that gets a new worktree ready: the template's own replaces the repo's, which is read as it is now. */
+  const setupOf = (ctx: { readonly template: TemplateRecord; readonly repo: Repo }): string | undefined => ctx.template.setup ?? ctx.repo.setup;
+
+  /** How a setup ended, for the card: exit code, time, and the last line it printed as text. */
+  const setupFailureOf = (result: CheckResult, when: "start" | "checks", checksNotRun: number): SetupFailed => {
+    const lastLine = terminalText(result.output)
+      .split("\n")
+      .map((line) => line.trim())
+      .findLast((line) => line !== "");
+    const couldNotStart = result.outcome === "refused" || result.outcome === "not-started" || result.exitCode === 127 || result.exitCode === 126;
+    return {
+      when,
+      command: result.command,
+      ended: result.outcome === "timed-out" ? "timed_out" : couldNotStart ? "could_not_start" : "failed",
+      ...(result.exitCode !== null && { exitCode: result.exitCode }),
+      durationMs: Math.max(0, Math.round(result.durationMs)),
+      lastLine: cutText(scrub(lastLine ?? ""), 300),
+      checksNotRun,
+    };
   };
 
   const endItem = (itemId: ItemId, outcome: ItemOutcome, text: string): void => {
@@ -664,14 +698,20 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       const before = await intact(current, worktree);
       if (before !== undefined) return before;
     }
-    if (template.setup !== undefined) {
-      const setup = await runOne(deps.runner, template.setup, worktree.path, signal, itemPath(item.id, "setup.log"));
+    const setupCommand = setupOf(current);
+    if (setupCommand !== undefined) {
+      const setup = await runOne(deps.runner, setupCommand, worktree.path, signal, itemPath(item.id, "setup.log"));
       if (signal.aborted) return WAIT;
       if (recorded) {
         const after = await intact(current, worktree);
         if (after !== undefined) return after;
       }
-      if (setup.outcome !== "passed") return askRunFailure(current.item, `The setup command failed: ${commandFailure(setup)} Its output is in the item's setup.log.`);
+      if (setup.outcome !== "passed") {
+        // Before any step ran: no attempt exists, so only Run setup again (which begins again) and Stop are offered.
+        const text = `Setup failed before ${template.steps[0]!.name} started. ${commandFailure(setup)} Its output is in the item's setup.log.`;
+        append(item.id, [decision("run_failure", undefined, [choice(RETRY.id, "Run setup again"), STOP], text, { setupFailed: setupFailureOf(setup, "start", 0) })]);
+        return WAIT;
+      }
     }
     if (!recorded) {
       // After setup, so what setup writes (husky's core.hooksPath, an install's files) is part of it.
@@ -1002,6 +1042,27 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     return WAIT;
   };
 
+  /**
+   * A setup that did not pass before a step's checks: the checks are not started and the attempt
+   * stays open while the engineer decides. Tokama cannot tell a wrong command from a change that
+   * broke it, so it asks: run it again, hand the output to the step's agent (only where the step's
+   * data rule lets check output go there), or stop.
+   */
+  const askAfterSetupFailed = (ctx: Context, stepId: StepId, setup: CheckResult): Next => {
+    const step = stepDef(ctx.template, stepId);
+    const notRun = checkCommands(ctx, step).length;
+    const agent = deps.agent(ctx.repo, step.agentId, ctx.template);
+    const who = agent === undefined || "problem" in agent ? undefined : agent;
+    const cloud = who !== undefined && runsInCloud(who.cliId);
+    const allowed = who !== undefined && mayHandOverCheckOutput(cloud, step.data, deps.localOnly === true);
+    const label = who === undefined ? undefined : cutText(`Send the output to ${who.name}`, 64);
+    const choices = [RERUN_SETUP, ...(allowed && label !== undefined ? [choice(SEND_SETUP_OUTPUT_ID, label)] : []), STOP];
+    const why = who !== undefined && !allowed ? ` ${who.name} runs on a cloud agent whose data rule doesn't send check output.` : "";
+    const text = `Setup failed, so the checks did not run. Run them again? ${commandFailure(setup)}${why}`;
+    append(ctx.item.id, [decision("run_failure", stepId, choices, text, { setupFailed: setupFailureOf(setup, "checks", notRun) })]);
+    return WAIT;
+  };
+
   const runChecksOf = async (ctx: Context, stepId: StepId, attempt: number, signal: AbortSignal, said: Said | undefined): Promise<Next> => {
     const { item } = ctx;
     const worktree = worktreeOf(ctx)!;
@@ -1014,15 +1075,21 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     const cleaned = await git.cleanIgnored(worktree.path);
     if (!cleaned.ok) return fail(`Cannot remove ignored files before the checks: ${cleaned.error.message}`);
     mkdirSync(itemPath(item.id, dir), { recursive: true, mode: 0o700 });
-    if (ctx.template.setup !== undefined) {
-      reportActivity(item, stepId, attempt, "tokama", commandActivity(ctx.template.setup));
-      const setup = await runOne(runner, ctx.template.setup, worktree.path, signal, itemPath(item.id, `${dir}/setup.log`)).finally(() => reportActivity(item, stepId, attempt, "tokama", undefined));
+    const setupCommand = setupOf(ctx);
+    if (setupCommand !== undefined) {
+      // A changed lockfile or install script stops the item before the install runs it.
+      const before = await intact(ctx, worktree);
+      if (before !== undefined) return before;
+      reportActivity(item, stepId, attempt, "tokama", commandActivity(setupCommand));
+      const setup = await runOne(runner, setupCommand, worktree.path, signal, itemPath(item.id, `${dir}/setup.log`)).finally(() => reportActivity(item, stepId, attempt, "tokama", undefined));
       if (signal.aborted) return WAIT;
+      // Kept apart from the checks: it shows as the setup line of the attempt and counts as no check.
+      append(item.id, [{ type: "check_result", stepId, attempt, command: setupCommand, exitCode: setup.exitCode, passed: setup.outcome === "passed", outputFile: `${dir}/setup.log`, durationMs: Math.max(0, Math.round(setup.durationMs)), setup: true }]);
       const gate = await intact(ctx, worktree);
       if (gate !== undefined) return gate;
       const setupRefs = await refsMoved(item, stepId, attempt);
       if (setupRefs !== undefined) return setupRefs;
-      if (setup.outcome !== "passed") return fail(`The setup command failed before the checks. ${commandFailure(setup)}`);
+      if (setup.outcome !== "passed") return askAfterSetupFailed(ctx, stepId, setup);
     }
     const tree = await stageItem(git, worktree.path);
     if (!tree.ok) return fail(`Cannot stage the changes: ${tree.error.message}`);
@@ -1312,6 +1379,24 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
   };
 
   /**
+   * "Send the output to the agent": the attempt whose setup failed ends as a failed one (it counts),
+   * and the setup's output becomes the feedback of the step's next attempt, like a failed check's.
+   * When the attempt is no longer open (a restart ended it), nothing is written and the answer
+   * carries on like Retry step.
+   */
+  const closeAttemptWithSetupOutput = async (item: StoredItem, asked: StoredDecision): Promise<StoredItem> => {
+    const open = openAttempt(item);
+    if (open === undefined || asked.stepId === undefined || open.step.id !== asked.stepId || asked.setupFailed === undefined) return item;
+    const { stepId } = asked;
+    const attempt = open.attempt.attempt;
+    const failed = asked.setupFailed;
+    const output = (await readItemFile(item.id, `${attemptDir(stepId, attempt)}/setup.log`)) ?? "";
+    const head = `$ ${failed.command} (${failed.exitCode === undefined ? failed.ended.replaceAll("_", " ") : `exit ${failed.exitCode}`})`;
+    writeItemFile(item.id, `${attemptDir(stepId, attempt)}/feedback.txt`, scrub(`${head}\n${terminalText(output)}`).slice(-FEEDBACK_MAX_BYTES));
+    return append(item.id, [attemptEnded(stepId, attempt, "failed", { detail: "The setup failed before the checks; its output went to the agent." })]);
+  };
+
+  /**
    * What an answer means, read from the item as the log has it once no question is open. A
    * restart can leave a question and a run failure open together; whichever is answered last, an
    * answer whose attempt has ended carries on like Retry step.
@@ -1339,7 +1424,14 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       case "after_failure":
         // Run one more round: the step that asked sends the work back once more.
         return chosen === ONE_MORE_ROUND.id && asked.stepId !== undefined && asked.stepId === item.currentStepId ? { kind: "back", stepId: asked.stepId } : carryOn();
-      case "run_failure":
+      case "run_failure": {
+        // A setup that failed before a step's checks left its attempt open: run it, and the checks, again, with no agent call.
+        const open = openAttempt(item);
+        if (asked.setupFailed?.when === "checks" && chosen === RERUN_SETUP.id && open !== undefined && open.step.id === asked.stepId) {
+          return { kind: "after_agent", stepId: open.step.id, attempt: open.attempt.attempt };
+        }
+        return carryOn();
+      }
       case "budget":
       case "cloud_summary":
       case "outside_change":
@@ -1438,7 +1530,9 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       if (words === "" && chosen === REQUEST_CHANGES.id && asked.proposes === "no_change") return failure("invalid_request", "Build anyway needs a note that says what should be built.");
       const appended = store.append(itemId, [{ type: "decision_resolved", decisionId: asked.id, choice: chosen, ...(words !== "" && { note: words }) }]);
       if (!appended.ok) return failure("invalid_state", appended.error.message);
-      const next = nextAfter(appended.value, asked, chosen);
+      let latest = appended.value;
+      if (chosen === SEND_SETUP_OUTPUT_ID && asked.setupFailed !== undefined && openDecisions(latest).length === 0) latest = await closeAttemptWithSetupOutput(latest, asked);
+      const next = nextAfter(latest, asked, chosen);
       if (next.kind !== "wait") void drive(itemId, next);
       return ok(null);
     },
@@ -1587,9 +1681,12 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       if (!found.ok) return found;
       const { item, step, record } = found.value;
       const files = filesOf(item.id, step.id, record.attempt);
-      const outputFile = file === "transcript" ? undefined : record.checks[file - 1]?.outputFile;
-      const path = file === "transcript" ? files.path("transcript.txt") : outputFile !== undefined ? files.itemPath(outputFile) : files.path(`check-${file}.log`);
-      if (!existsSync(path)) return failure("not_found", file === "transcript" ? `Attempt ${record.attempt} has no saved transcript.` : `Check ${file} of attempt ${record.attempt} has no saved output.`);
+      const outputFile = typeof file === "number" ? record.checks[file - 1]?.outputFile : undefined;
+      const path =
+        file === "transcript" ? files.path("transcript.txt") : file === "setup" ? files.path("setup.log") : outputFile !== undefined ? files.itemPath(outputFile) : files.path(`check-${file}.log`);
+      if (!existsSync(path)) {
+        return failure("not_found", file === "transcript" ? `Attempt ${record.attempt} has no saved transcript.` : file === "setup" ? `Attempt ${record.attempt} has no saved setup output.` : `Check ${file} of attempt ${record.attempt} has no saved output.`);
+      }
       return ok({ path });
     },
 

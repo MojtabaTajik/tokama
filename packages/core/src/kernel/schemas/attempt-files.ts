@@ -45,6 +45,8 @@ export const AttemptCheckSchema = z.strictObject({
 /** Each check command of one attempt, in the order they run. */
 export const AttemptChecksSchema = z.strictObject({
   attempt: z.int().min(1),
+  /** The setup command that ran before the checks of this attempt, as a line of its own; absent when none ran. */
+  setup: AttemptCheckSchema.optional(),
   checks: z.array(AttemptCheckSchema).max(MAX_ATTEMPT_CHECKS),
 });
 
@@ -61,7 +63,7 @@ export const AttemptLogSchema = z.strictObject({
 });
 
 /** One saved file of an attempt: its transcript, or the output of check number `n` (from 1). */
-export const AttemptFileSchema = z.union([z.literal("transcript"), z.int().min(1).max(MAX_ATTEMPT_CHECKS)]);
+export const AttemptFileSchema = z.union([z.literal("transcript"), z.literal("setup"), z.int().min(1).max(MAX_ATTEMPT_CHECKS)]);
 
 // ESC sequences: CSI (colours, cursor moves), OSC (titles, links) ended by BEL or ST, and the
 // short ones (charset picks, keypad modes). CSI also as the one-byte C1 form.

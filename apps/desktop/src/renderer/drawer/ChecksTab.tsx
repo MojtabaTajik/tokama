@@ -18,6 +18,11 @@ import { Section, SectionList, useOpenSections } from "../ui/Section.js";
 import { type Mark, markOf, StatusMark } from "../ui/status.js";
 
 const TEXT = {
+  setupGroup: "Setup",
+  checksGroup: "Checks",
+  setupFailed: "Setup failed",
+  notRun: (count: number) => `${count} ${count === 1 ? "check" : "checks"} not run`,
+  done: "Done",
   noChecks: "This item's steps run no checks.",
   noAttempts: (step: string) => `No attempts yet. Tokama runs the checks after each ${step} attempt.`,
   attempt: (n: number, fresh: boolean) => `Attempt ${n}${fresh ? " · fresh session" : ""}`,
@@ -64,7 +69,7 @@ export interface ChecksTabProps {
 const keyOf = ({ index, attempt }: StepAttempt) => `${index}:${attempt.attempt}`;
 
 /** An attempt has checks to show, or runs them now; one that ended without running any is only a line. */
-const hasChecks = ({ attempt }: StepAttempt): boolean => attempt.checks.length > 0 || attempt.result === undefined;
+const hasChecks = ({ attempt }: StepAttempt): boolean => attempt.checks.length > 0 || attempt.setup !== undefined || attempt.result === undefined;
 
 export function ChecksTab({ bridge, item, setup, full }: ChecksTabProps) {
   const steps = checkSteps(item, setup);
@@ -116,10 +121,15 @@ interface AttemptChecksProps {
 
 function AttemptChecks({ bridge, item, setup, entry, named, open, onToggle }: AttemptChecksProps) {
   const { index, step, attempt } = entry;
-  const result = RESULT[attempt.result ?? "running"]!;
+  // An attempt that waits on a setup that did not pass has not ended, and its checks never ran.
+  const setupDown = attempt.setup?.passed === false;
+  const notRun = item.decision?.setupFailed?.when === "checks" ? item.decision.setupFailed.checksNotRun : undefined;
+  const result = setupDown && attempt.result === undefined ? markOf("failed") : RESULT[attempt.result ?? "running"]!;
   const failedCount = attempt.checks.filter((check) => !check.passed).length;
   const word =
-    attempt.result === "failed" && failedCount > 0
+    setupDown && attempt.result === undefined
+      ? `${TEXT.setupFailed}${notRun === undefined ? "" : ` · ${TEXT.notRun(notRun)}`}`
+      : attempt.result === "failed" && failedCount > 0
       ? `${result.word} · ${TEXT.checkCount(failedCount, attempt.checks.length)}`
       : attempt.result === "passed" && attempt.checks.length > 0
         ? `${result.word} · ${TEXT.passedCount(attempt.checks.length)}`
@@ -149,7 +159,7 @@ function AttemptChecks({ bridge, item, setup, entry, named, open, onToggle }: At
 function AttemptBody({ bridge, item, entry }: { readonly bridge: TokamaBridge; readonly item: ItemRecord; readonly entry: StepAttempt }) {
   const { index, attempt } = entry;
   const running = attempt.result === undefined;
-  const reply = useAttemptReply(bridge, "attempt_checks", { itemId: item.id, stepIndex: index, attempt: attempt.attempt }, `${attempt.result ?? ""} ${attempt.checks.length}`, running);
+  const reply = useAttemptReply(bridge, "attempt_checks", { itemId: item.id, stepIndex: index, attempt: attempt.attempt }, `${attempt.result ?? ""} ${attempt.checks.length} ${attempt.setup === undefined ? "" : String(attempt.setup.passed)}`, running);
   const checked = checkedStepName(item, index);
   if (reply.kind === "loading") return <Placeholder>{TEXT.loading}</Placeholder>;
   if (reply.kind !== "loaded") {
@@ -160,7 +170,8 @@ function AttemptBody({ bridge, item, entry }: { readonly bridge: TokamaBridge; r
       </p>
     );
   }
-  if (reply.data.checks.length === 0) {
+  const { setup } = reply.data;
+  if (reply.data.checks.length === 0 && setup === undefined) {
     return (
       <div className="ck-none">
         <p>{running ? TEXT.noneYet(checked) : TEXT.noneRan}</p>
@@ -168,26 +179,63 @@ function AttemptBody({ bridge, item, entry }: { readonly bridge: TokamaBridge; r
       </div>
     );
   }
-  return (
+  // A check the failed setup kept from starting is "Not run": grey, and never counted as failed or passed.
+  const notRun = setup?.state === "failed";
+  const list = (
     <ol className="ck-list">
       {reply.data.checks.map((check, at) => (
         <li key={at} className="ck-check" data-state={check.state}>
-          <CheckRow bridge={bridge} check={check} name={{ itemId: item.id, stepIndex: index, attempt: attempt.attempt, file: at + 1 }} waitingFor={checked} />
+          <CheckRow
+            bridge={bridge}
+            check={check}
+            name={{ itemId: item.id, stepIndex: index, attempt: attempt.attempt, file: at + 1 }}
+            waitingFor={checked}
+            {...(notRun && check.state === "not_run" ? { mark: markOf("unknown", "Not run") } : {})}
+          />
         </li>
       ))}
     </ol>
+  );
+  // With a setup command the attempt reads as two groups, Setup first; without one it is the list as it was.
+  if (setup === undefined) return list;
+  return (
+    <>
+      <p className="ck-group">{TEXT.setupGroup}</p>
+      <ol className="ck-list">
+        <li className="ck-check" data-state={setup.state}>
+          <CheckRow
+            bridge={bridge}
+            check={setup}
+            name={{ itemId: item.id, stepIndex: index, attempt: attempt.attempt, file: "setup" }}
+            waitingFor={checked}
+            mark={setup.state === "passed" ? markOf("passed", TEXT.done) : undefined}
+            whole
+          />
+        </li>
+      </ol>
+      {reply.data.checks.length > 0 && (
+        <>
+          <p className="ck-group">{TEXT.checksGroup}</p>
+          {list}
+        </>
+      )}
+    </>
   );
 }
 
 interface CheckRowProps {
   readonly bridge: TokamaBridge;
   readonly check: AttemptCheck;
-  readonly name: { readonly itemId: string; readonly stepIndex: number; readonly attempt: number; readonly file: number };
+  readonly name: { readonly itemId: string; readonly stepIndex: number; readonly attempt: number; readonly file: number | "setup" };
   readonly waitingFor: string;
+  /** Draws the line with this mark and word in the place of the state's own. */
+  readonly mark?: Mark | undefined;
+  /** The command is shown whole, wrapping onto more lines, never cut. */
+  readonly whole?: boolean;
 }
 
 /** One command: a failed one starts open with the end of its output, a passed one folded, one that waits is only a line. */
-function CheckRow({ bridge, check, name, waitingFor }: CheckRowProps) {
+function CheckRow({ bridge, check, name, waitingFor, mark, whole }: CheckRowProps) {
   // Until the engineer folds or unfolds it, it is open exactly while it is failed.
   const [chosen, setChosen] = useState<boolean | undefined>(undefined);
   const open = chosen ?? check.state === "failed";
@@ -200,9 +248,9 @@ function CheckRow({ bridge, check, name, waitingFor }: CheckRowProps) {
   return (
     <Section
       level="attempt"
-      className="ck-line"
+      className={whole === true ? "ck-line ck-whole" : "ck-line"}
       title={`$ ${check.command}`}
-      state={STATE[check.state]}
+      state={mark ?? STATE[check.state]}
       facts={facts === "" ? undefined : facts}
       spokenFacts={spoken === "" ? undefined : spoken}
       summary={summary}

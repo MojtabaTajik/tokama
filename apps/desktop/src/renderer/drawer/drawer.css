@@ -121,6 +121,20 @@
   color: var(--warn);
 }
 
+/* A failed setup's command and last line: shown whole, wrapping, never cut. */
+.sf-command {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.sf-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-4) var(--space-12);
+  margin: 0;
+}
+
 .needs-you-why {
   font-size: var(--text-base);
   color: var(--muted);
@@ -1185,6 +1199,24 @@
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/* "Setup" and "Checks": the two groups of an attempt that has a setup command. */
+.ck-group {
+  margin: 0;
+  padding: var(--space-8) var(--space-12) var(--space-4);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* The setup command is shown whole: it wraps, it is never cut with an ellipsis. */
+.ck-whole .sec-name {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: pre-wrap;
 }
 
 /* A check command's line: the command in mono, the way a terminal shows it. */

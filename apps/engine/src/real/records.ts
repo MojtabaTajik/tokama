@@ -83,6 +83,9 @@ export function questionOf(open: StoredDecision, template: TemplateRecord | unde
       return `${name} failed. Run ${name} again?`;
     }
     case "run_failure":
+      // A setup that did not pass: before the first step it names that step; before a step's checks the checks did not start.
+      if (open.setupFailed?.when === "checks") return "Setup failed, so the checks did not run. Run them again?";
+      if (open.setupFailed?.when === "start") return `Setup failed before ${template?.steps[0]?.name ?? "the first step"} started. Run setup again?`;
       return name === undefined ? QUESTIONS.run_failure : `${name} could not run. Run ${name} again?`;
     case "budget":
       // After a Continue the item has used more than one budget, so the question names only the time that is added.
@@ -157,7 +160,7 @@ export function toItemRecord(item: StoredItem): ItemRecord | undefined {
   };
   const finish = toFinish(item);
   // The card of an item that ended on an answer says so in the outcome's words, not "discarded".
-  const cardLine = cut((item.outcome?.kind === "no_action_needed" ? undefined : finishLine(finish)) ?? cardLineOf(item, steps, decision?.question), 120);
+  const cardLine = cut((item.outcome?.kind === "no_action_needed" ? undefined : finishLine(finish)) ?? cardLineOf(item, steps, setupLine(decision) ?? decision?.question), 120);
   const durationMs = itemMs(item);
   const { change, risk } = itemRisk(item, template);
 
@@ -242,6 +245,7 @@ function toAttempt(item: StoredItem, attempt: AttemptRecord): AttemptSummary {
     ...(attempt.transcriptBytes !== undefined && { transcriptBytes: attempt.transcriptBytes }),
     ...(attempt.said !== undefined && { said: attempt.said }),
     checks: attempt.checks.slice(-MAX_CHECKS_SHOWN).map(({ command, passed, exitCode }) => ({ command, passed, exitCode })),
+    ...(attempt.setup !== undefined && { setup: { command: attempt.setup.command, passed: attempt.setup.passed, exitCode: attempt.setup.exitCode } }),
   };
 }
 
@@ -276,7 +280,8 @@ function toDecision(item: StoredItem, template: TemplateRecord | undefined): Dec
   if (open === undefined) return undefined;
   const at = [open.stepId, item.currentStepId].map((id) => item.steps.findIndex((step) => step.id === id)).find((index) => index >= 0);
   const pending = item.steps.findIndex((step) => step.state !== "passed");
-  const why = cut(open.detail, 500);
+  // A failed setup's card has its own rows for what ran and how it ended: only the data-rule sentence is a reason.
+  const why = open.setupFailed !== undefined && !/cloud agent/.test(open.detail ?? "") ? undefined : cut(open.detail, 500);
   const stopped = explainStop(item, open, template);
   const stepIndex = at ?? (pending >= 0 ? pending : item.steps.length - 1);
   const stored = item.steps.find((step) => step.id === open.stepId);
@@ -292,6 +297,7 @@ function toDecision(item: StoredItem, template: TemplateRecord | undefined): Dec
     // A step that changed no files has nothing to diff; a log from before the count was kept shows the diff of its tree.
     ...(open.kind === "plan_approval" && open.tree !== undefined && (open.change?.files ?? 1) > 0 && { hasDiff: true }),
     ...(open.kind === "plan_approval" && open.proposes !== undefined && { proposes: open.proposes }),
+    ...(open.setupFailed !== undefined && { setupFailed: open.setupFailed }),
     ...(stopped !== undefined && { stopped }),
     choices: choicesOf(open, template).slice(0, 5),
   };
@@ -308,6 +314,8 @@ const NO_CHANGE_LABELS: Readonly<Record<string, string>> = { no_action_needed: "
 
 function choicesOf(open: StoredDecision, template: TemplateRecord | undefined): DecisionChoice[] {
   if (open.kind === "plan_approval" && open.proposes === "no_change") return open.choices.map((choice) => relabel(choice, NO_CHANGE_LABELS[choice.id] ?? choice.label));
+  // The choices of a failed setup are worded when they are made.
+  if (open.setupFailed !== undefined) return open.choices;
   const name = template?.steps.find((step) => step.id === open.stepId)?.name;
   if (name === undefined) return open.choices;
   if (open.kind === "plan_approval") {
@@ -321,6 +329,14 @@ function choicesOf(open: StoredDecision, template: TemplateRecord | undefined): 
   if (open.kind !== "after_failure" && open.kind !== "run_failure") return open.choices;
   const label = `Run ${name} again`;
   return open.choices.map((choice) => (RUN_AGAIN.has(choice.id) ? relabel(choice, label) : choice));
+}
+
+/** The list row of an item that waits on a failed setup: what ran and how it ended. */
+function setupLine(decision: Decision | undefined): string | undefined {
+  const failed = decision?.setupFailed;
+  if (failed === undefined) return undefined;
+  const ended = failed.exitCode !== undefined ? `exit ${failed.exitCode}` : failed.ended === "timed_out" ? "timed out" : "could not start";
+  return failed.when === "checks" ? `Setup failed, checks not run: ${failed.command} · ${ended}` : `Setup failed before the first step: ${failed.command} · ${ended}`;
 }
 
 function cardLineOf(item: StoredItem, steps: readonly StepRecord[], question: string | undefined): string | undefined {

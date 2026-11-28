@@ -44,8 +44,8 @@ import type { ActivityFeed } from "../activity-feed.js";
 import type { HelperCommand } from "../helpers.js";
 import type { MemoryItemStore } from "../store.js";
 import { SampleHelpers } from "./helpers.js";
-import { checksReply, logReply, sampleChecks, sampleLogs } from "./attempts.js";
-import { DIFF_DECISION_ID, failedDiff, finishedDiff, ITEM_IDS, sampleChangedItems, sampleDiff, sampleHistory, sampleItems, sampleOutputs, sampleSetup } from "./data.js";
+import { checksReply, logReply, sampleChecks, sampleLogs, sampleSetups } from "./attempts.js";
+import { DIFF_DECISION_ID, failedDiff, finishedDiff, ITEM_IDS, sampleChangedItems, sampleDiff, sampleHistory, sampleItems, sampleOutputs, sampleSetup, sampleSetupItems } from "./data.js";
 
 /** How often the fake engine moves a working item on by one step. */
 export const SAMPLE_TICK_MS = 20_000;
@@ -113,7 +113,7 @@ export class SampleEngine {
     const setup = parseQueryResult("setup", sampleSetup);
     if (!setup.ok) throw new Error(`invalid sample setup: ${JSON.stringify(setup.error.issues)}`);
     this.setup = setup.value;
-    const own = historyOnly && history > 0 ? [] : [...sampleItems(clock.now()), ...sampleChangedItems(clock.now())];
+    const own = historyOnly && history > 0 ? [] : [...sampleItems(clock.now()), ...sampleChangedItems(clock.now()), ...sampleSetupItems(clock.now())];
     for (const raw of [...own, ...sampleHistory(clock.now(), history)]) {
       const item = parseItemRecord(raw);
       if (!item.ok) throw new Error(`invalid sample item ${raw.id}: ${JSON.stringify(item.error.issues)}`);
@@ -301,7 +301,8 @@ export class SampleEngine {
       this.live.add(item.id);
       return ok(null);
     }
-    if (command.choice === ONE_MORE) {
+    // Run setup again, or hand its output to the agent: the step runs again.
+    if (command.choice === ONE_MORE || command.choice === "rerun_setup" || command.choice === "send_to_agent") {
       this.store.put(this.run(withoutDecision(item), item.decision.stepIndex, "runs again · "));
       this.live.add(item.id);
       return ok(null);
@@ -363,7 +364,7 @@ export class SampleEngine {
   attemptChecks(itemId: ItemId, stepIndex: number, attempt: number): Result<AttemptChecksResult, CommandError> {
     const found = this.attempt(itemId, stepIndex, attempt);
     if (!found.ok) return found;
-    return ok(checksReply(attempt, sampleChecks[itemId]?.[stepIndex]?.[attempt - 1] ?? []));
+    return ok(checksReply(attempt, sampleChecks[itemId]?.[stepIndex]?.[attempt - 1] ?? [], sampleSetups[itemId]?.[stepIndex]?.[attempt - 1]));
   }
 
   /** The canned transcript of a sample step's attempt; an attempt without one has none saved. */

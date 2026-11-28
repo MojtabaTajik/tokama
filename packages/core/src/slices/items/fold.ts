@@ -154,14 +154,21 @@ function applyTo(next: StoredItem, event: ItemEvent): FoldError | undefined {
     case "check_result": {
       const running = runningAttempt(must(step), event.attempt);
       if (running === undefined) return fail(`attempt ${event.attempt} of ${event.stepId} is not running`);
-      running.checks.push({
+      const record = {
         command: event.command,
         exitCode: event.exitCode,
         passed: event.passed,
         ...(event.outputFile !== undefined && { outputFile: event.outputFile }),
         ...(event.durationMs !== undefined && { durationMs: event.durationMs }),
         at: event.at,
-      });
+      };
+      // The setup before the checks is kept apart: it is never a check, so counts and risk never see it.
+      if (event.setup === true) running.setup = record;
+      else {
+        // A check that ran after a failed setup means that setup no longer stands (its command was removed before the rerun).
+        if (running.setup?.passed === false) delete running.setup;
+        running.checks.push(record);
+      }
       break;
     }
 
@@ -207,6 +214,7 @@ function applyTo(next: StoredItem, event: ItemEvent): FoldError | undefined {
         ...(event.tree !== undefined && { tree: event.tree }),
         ...(event.change !== undefined && { change: event.change }),
         ...(event.proposes !== undefined && { proposes: event.proposes }),
+        ...(event.setupFailed !== undefined && { setupFailed: event.setupFailed }),
       });
       if (step !== undefined && step.state === "running") step.state = "needs_you";
       break;

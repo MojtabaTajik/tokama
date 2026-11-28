@@ -5,7 +5,7 @@ import { type CommandInput, type EngineEvent, type ItemRecord, itemStage, manual
 import { afterEach, describe, expect, it } from "vitest";
 import { startEngine } from "../engine.js";
 import { tempEngineDir, waitFor } from "../testing/helpers.js";
-import { DECISION_ID, DIFF_DECISION_ID, ITEM_IDS, LIMIT_DECISION_ID, sampleHistory } from "./data.js";
+import { DECISION_ID, DIFF_DECISION_ID, ITEM_IDS, LIMIT_DECISION_ID, sampleHistory, SETUP_DECISION_ID } from "./data.js";
 import { SAMPLE_TICK_MS } from "./sample.js";
 
 const NOW = 1_780_000_000_000;
@@ -129,7 +129,7 @@ describe("fake engine mode", () => {
     expect(new Set(items.map(itemStage))).toEqual(new Set(["queued", "working", "verifying", "review", "done"]));
     expect(new Set(items.map((entry) => entry.kind))).toEqual(new Set(["task", "investigation"]));
     expect(new Set(items.map((entry) => entry.privacy))).toEqual(new Set(["local_only", "local_and_cloud"]));
-    expect(items.filter((entry) => entry.state === "needs_you").map((entry) => entry.id)).toEqual([ITEM_IDS.needsYou, ITEM_IDS.quickChange, ITEM_IDS.planApproval, ITEM_IDS.reviewLimit]);
+    expect(items.filter((entry) => entry.state === "needs_you").map((entry) => entry.id)).toEqual([ITEM_IDS.needsYou, ITEM_IDS.quickChange, ITEM_IDS.planApproval, ITEM_IDS.reviewLimit, ITEM_IDS.setupFailed]);
     expect(items.filter((entry) => entry.state === "failed").map((entry) => entry.id)).toEqual([ITEM_IDS.failed]);
     // Every card has its line, and every step that has started has a detail line.
     expect(items.every((entry) => entry.cardLine !== undefined)).toBe(true);
@@ -268,6 +268,28 @@ describe("fake engine mode", () => {
     // Run Review again runs the step that stopped.
     expect(await client.command({ type: "resolve_decision", itemId: ITEM_IDS.reviewLimit, decisionId: LIMIT_DECISION_ID, choice: "one_more_attempt" })).toMatchObject({ ok: true });
     expect((await item(client, ITEM_IDS.reviewLimit)).steps[3]).toMatchObject({ state: "running" });
+  });
+
+  it("serves the Setup failed item: the decision with how the setup ended, its setup line first and the checks as not run", async () => {
+    const { client } = await sampleEngine();
+    const waiting = await item(client, ITEM_IDS.setupFailed);
+    expect(waiting.cardLine).toBe("Setup failed, checks not run: pnpm install --frozen-lockfile · exit 1");
+    expect(waiting.decision).toMatchObject({
+      kind: "run_failure",
+      stepIndex: 1,
+      question: "Setup failed, so the checks did not run. Run them again?",
+      setupFailed: { when: "checks", command: "pnpm install --frozen-lockfile", ended: "failed", exitCode: 1, checksNotRun: 3 },
+      choices: [{ id: "rerun_setup" }, { id: "send_to_agent" }, { id: "stop" }],
+    });
+    expect(waiting.steps[1]!.attempts?.[0]).toMatchObject({ checks: [], setup: { passed: false, exitCode: 1 } });
+    const checks = await client.query({ type: "attempt_checks", itemId: ITEM_IDS.setupFailed, stepIndex: 1, attempt: 1 });
+    if (!checks.ok) throw new Error(checks.error.message);
+    expect(checks.data.setup).toMatchObject({ command: "pnpm install --frozen-lockfile", state: "failed", exitCode: 1, durationMs: 12_000 });
+    expect(checks.data.setup?.output?.text).toContain("ERR_PNPM_OUTDATED_LOCKFILE");
+    expect(checks.data.checks.map((check) => [check.command, check.state])).toEqual([["pnpm test", "not_run"], ["pnpm lint", "not_run"], ["pnpm typecheck", "not_run"]]);
+    // Run setup and checks again runs the step again.
+    expect(await client.command({ type: "resolve_decision", itemId: ITEM_IDS.setupFailed, decisionId: SETUP_DECISION_ID, choice: "rerun_setup" })).toMatchObject({ ok: true });
+    expect((await item(client, ITEM_IDS.setupFailed)).steps[1]).toMatchObject({ state: "running" });
   });
 
   it("serves the failed item's checks and transcripts as cleaned, cut text, and no file to open", async () => {

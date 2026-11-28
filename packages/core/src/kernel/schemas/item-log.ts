@@ -26,6 +26,7 @@ import {
   PushUrlSchema,
   RunFailureSchema,
   SaidSchema,
+  SetupFailedSchema,
   StepStateSchema,
 } from "./item.js";
 
@@ -136,6 +137,8 @@ const CheckResultSchema = z.strictObject({
   outputFile: ItemFileSchema.optional(),
   /** How long it ran; absent in records written before durations were. */
   durationMs: z.int().min(0).optional(),
+  /** The result is of the setup command that ran before the checks, not of a check. */
+  setup: z.literal(true).optional(),
 });
 const AttemptEndedSchema = z.strictObject({
   type: z.literal("attempt_ended"),
@@ -173,6 +176,8 @@ const DecisionOpenedSchema = z.strictObject({
   change: ChangeSummarySchema.optional(),
   /** For a step you approve that said no change is needed: the answer the question proposes. Absent in older logs. */
   proposes: z.literal("no_change").optional(),
+  /** For a setup command that did not pass: how it ended, for the card. */
+  setupFailed: SetupFailedSchema.optional(),
 });
 const DecisionResolvedSchema = z.strictObject({
   type: z.literal("decision_resolved"),
@@ -325,6 +330,8 @@ export const AttemptRecordSchema = z.strictObject({
   said: SaidSchema.optional(),
   processes: z.array(ProcessRecordSchema),
   checks: z.array(CheckRecordSchema),
+  /** The latest setup run before the checks; kept apart so counts, risk and repeats read only real checks. */
+  setup: CheckRecordSchema.optional(),
 });
 
 export const StoredStepSchema = z.strictObject({
@@ -351,6 +358,7 @@ export const StoredDecisionSchema = z.strictObject({
   tree: GIT_ID.optional(),
   change: ChangeSummarySchema.optional(),
   proposes: z.literal("no_change").optional(),
+  setupFailed: SetupFailedSchema.optional(),
   resolved: z.strictObject({ choice: z.string(), note: z.string().optional(), at: EpochMsSchema }).optional(),
 });
 

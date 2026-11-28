@@ -9,7 +9,7 @@ import { systemClock, type Clock } from "../../kernel/clock/index.js";
 // leftover.js, not the process index, so the public entry does not load the runner.
 import { killLeftoverTree, type LeftoverOutcome, type ProcessTable } from "../../kernel/process/leftover.js";
 import { DecisionIdSchema, newId, type ItemEventBody, type ItemId, type StepId } from "../../kernel/schemas/index.js";
-import { openAttempt } from "./fold.js";
+import { openAttempt, openDecisions } from "./fold.js";
 import type { ItemStore, StoreError } from "./store.js";
 
 export const RUN_FAILURE_CHOICES = [
@@ -65,6 +65,12 @@ export async function recoverItems(store: ItemStore, options: RecoveryOptions): 
       kills.push({ pid: proc.pid, outcome });
     }
 
+    // An attempt that waits on a failed setup has no process running: the open question still
+    // holds, and its answers (run again, send the output) work after a restart as before it.
+    if (open !== undefined && openDecisions(item).some((d) => d.setupFailed !== undefined && d.stepId === open.step.id)) {
+      recovered.push({ itemId: item.id, stepId: step.id, kills });
+      continue;
+    }
     const events: ItemEventBody[] = [];
     if (open !== undefined) {
       events.push({

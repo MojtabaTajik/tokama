@@ -57,20 +57,32 @@ export async function attemptChecks(attempt: AttemptRecord, files: AttemptFiles,
       output,
     });
   }
+  const setup = attempt.setup === undefined ? {} : { setup: await setupLine(attempt.setup, files) };
+  // A setup that did not pass: the checks were never started, however the attempt stands (it may wait for the engineer).
+  if (attempt.setup?.passed === false) {
+    for (const command of (planned ?? []).slice(recorded.length, MAX_ATTEMPT_CHECKS)) checks.push({ command, state: "not_run", exitCode: null, durationMs: null, summary: "", output: null });
+    return { attempt: attempt.attempt, ...setup, checks };
+  }
   const next = planned?.[recorded.length];
-  if (planned === undefined || next === undefined || recorded.length >= MAX_ATTEMPT_CHECKS) return { attempt: attempt.attempt, checks };
+  if (planned === undefined || next === undefined || recorded.length >= MAX_ATTEMPT_CHECKS) return { attempt: attempt.attempt, ...setup, checks };
   const nextLog = files.path(`check-${recorded.length + 1}.log`);
   if (attempt.endedAt !== undefined) {
     const output = await checkTail(nextLog);
     const named = attempt.detail?.includes(`\`${next}\``) === true;
     if (output !== null || named) checks.push({ command: next, state: "not_run", exitCode: null, durationMs: null, summary: cut(attempt.detail ?? "") || summaryOf(output), output });
-    return { attempt: attempt.attempt, checks };
+    return { attempt: attempt.attempt, ...setup, checks };
   }
   for (const [offset, command] of planned.slice(recorded.length, MAX_ATTEMPT_CHECKS).entries()) {
     const output = offset === 0 ? await checkTail(nextLog) : null;
     checks.push(output === null ? { command, state: "waiting", exitCode: null, durationMs: null, summary: "", output: null } : { command, state: "running", exitCode: null, durationMs: null, summary: summaryOf(output), output });
   }
-  return { attempt: attempt.attempt, checks };
+  return { attempt: attempt.attempt, ...setup, checks };
+}
+
+/** The setup line of an attempt: the setup command's result and the end of its output, shaped like a check. */
+async function setupLine(setup: NonNullable<AttemptRecord["setup"]>, files: AttemptFiles): Promise<AttemptCheck> {
+  const output = await checkTail(setup.outputFile === undefined ? undefined : files.itemPath(setup.outputFile));
+  return { command: setup.command, state: setup.passed ? "passed" : "failed", exitCode: setup.exitCode, durationMs: setup.durationMs ?? null, summary: summaryOf(output), output };
 }
 
 /** The end of the attempt's transcript and the agent's final message. */

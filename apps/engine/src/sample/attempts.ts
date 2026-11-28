@@ -88,6 +88,24 @@ export const sampleChecks: Readonly<Record<string, Readonly<Record<number, reado
   },
 };
 
+const SETUP_FAILURE = [
+  "Lockfile is up to date, resolution step is skipped",
+  ' ERR_PNPM_OUTDATED_LOCKFILE  Cannot install with "frozen-lockfile" because pnpm-lock.yaml is not up to date with package.json',
+  "",
+  "Note that in CI environments this setting is true by default.",
+  "",
+  "  Failure reason:",
+  "  specifiers in the lockfile don't match specifiers in package.json:",
+  "* 1 dependencies were added: csv-stringify@^6.5.0",
+].join("\n");
+
+/** The setup that failed before an attempt's checks, with the checks that did not run, by item and step index, oldest attempt first. */
+export const sampleSetups: Readonly<Record<string, Readonly<Record<number, readonly { readonly setup: SampleCheck; readonly notRun: readonly string[] }[]>>>> = {
+  [ITEM_IDS.setupFailed]: {
+    1: [{ setup: { command: "pnpm install --frozen-lockfile", passed: false, exitCode: 1, durationMs: 12_000, output: SETUP_FAILURE }, notRun: ["pnpm test", "pnpm lint", "pnpm typecheck"] }],
+  },
+};
+
 const longTranscript = [
   "Attempt 3: the pool test still fails. I'll read every caller of pool.connect before I change it again.",
   ...Array.from({ length: 440 }, (_, i) => `→ Read src/db/callers/caller-${String(i + 1).padStart(3, "0")}.ts`),
@@ -128,21 +146,24 @@ function tailOf(raw: string, maxLines: number, maxBytes: number) {
   return { text: terminalText(lines.join("\n")), truncated: lines.length < all.length, totalBytes: Buffer.byteLength(raw), totalLines: all.length };
 }
 
-export function checksReply(attempt: number, checks: readonly SampleCheck[]): AttemptChecksResult {
+const checkLine = (check: SampleCheck) => {
+  const output = tailOf(check.output, MAX_CHECK_TAIL_LINES, MAX_CHECK_TAIL_BYTES);
   return {
-    attempt,
-    checks: checks.map((check) => {
-      const output = tailOf(check.output, MAX_CHECK_TAIL_LINES, MAX_CHECK_TAIL_BYTES);
-      return {
-        command: check.command,
-        state: check.passed ? "passed" : "failed",
-        exitCode: check.exitCode,
-        durationMs: check.durationMs ?? null,
-        summary: output.text.split("\n").findLast((line: string) => line.trim() !== "")?.trim() ?? "",
-        output,
-      };
-    }),
+    command: check.command,
+    state: check.passed ? ("passed" as const) : ("failed" as const),
+    exitCode: check.exitCode,
+    durationMs: check.durationMs ?? null,
+    summary: output.text.split("\n").findLast((line: string) => line.trim() !== "")?.trim() ?? "",
+    output,
   };
+};
+
+export function checksReply(attempt: number, checks: readonly SampleCheck[], failedSetup?: { readonly setup: SampleCheck; readonly notRun: readonly string[] }): AttemptChecksResult {
+  if (failedSetup !== undefined) {
+    const notRun = failedSetup.notRun.map((command) => ({ command, state: "not_run" as const, exitCode: null, durationMs: null, summary: "", output: null }));
+    return { attempt, setup: checkLine(failedSetup.setup), checks: notRun };
+  }
+  return { attempt, checks: checks.map(checkLine) };
 }
 
 export function logReply(attempt: number, log: SampleLog): AttemptLogResult {
