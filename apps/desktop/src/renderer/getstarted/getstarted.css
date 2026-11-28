@@ -145,7 +145,7 @@
   color: var(--text-2);
 }
 
-/* The engine's own words about a problem, as they came: a block under the line, text only. */
+/* The engine's own words about a problem, as they came: a block under the line, text only (a known help page address in it is a link). */
 .gs-engine-text {
   display: block;
   padding-top: var(--space-4);
