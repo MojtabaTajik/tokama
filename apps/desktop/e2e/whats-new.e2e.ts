@@ -16,6 +16,12 @@ const seedUpdate = (home: string) => {
   writeFileSync(join(home, ".tokama", "desktop.json"), JSON.stringify({ lastRunVersion: "0.0.0" }));
 };
 const saved = (home: string) => JSON.parse(readFileSync(join(home, ".tokama", "desktop.json"), "utf8")) as { lastRunVersion?: string; whatsNewDue?: { card?: string; chip?: string } };
+/**
+ * The app saves desktop.json 400 ms after its last change (each change restarts the wait), so a
+ * check of the file waits for the state itself. `expect.poll` stops after 1 s unless told: a busy
+ * machine can pass that before the write, and the check then reads the seeded 0.0.0.
+ */
+const written = <T>(home: string, read: (state: ReturnType<typeof saved>) => T, message: string) => expect.poll(() => read(saved(home)), { message, timeout: 15_000 });
 const options = (folder: "highlights" | "fixes") => ({ env: { TOKAMA_E2E_WHATS_NEW_DIR: whatsNewFixture(folder) } });
 
 /** Fails with the way out when a version bump has left the fixtures behind. */
@@ -41,8 +47,8 @@ flow(
     await card(page).getByRole("button", { name: "Got it" }).click();
     await card(page).waitFor({ state: "detached" });
     // The seeded file has no due card either: wait for the app's own write first (it is saved a moment after the last change).
-    await expect.poll(() => saved(home).lastRunVersion, { message: "the version is recorded" }).toBe(FIXTURE_VERSION);
-    await expect.poll(() => saved(home).whatsNewDue, { message: "desktop.json no longer holds a due card" }).toBeUndefined();
+    await written(home, (state) => state.lastRunVersion, "the version is recorded").toBe(FIXTURE_VERSION);
+    await written(home, (state) => state.whatsNewDue, "desktop.json no longer holds a due card").toBeUndefined();
 
     const next = await session.restart();
     await next.page.locator(".panel").waitFor();
@@ -73,7 +79,9 @@ flow(
     expect((await chip(page).innerText()).replace(/\s+/g, " ")).toBe(`Updated to ${FIXTURE_VERSION} · fixes`);
     expect(await card(page).count()).toBe(0);
     await screenshot("whats-new-chip");
-    await expect.poll(() => saved(home).whatsNewDue, { message: "the chip is marked as seen as it shows" }).toBeUndefined();
+    // The seeded file holds no due chip either: wait for the app's own write first.
+    await written(home, (state) => state.lastRunVersion, "the version is recorded").toBe(FIXTURE_VERSION);
+    await written(home, (state) => state.whatsNewDue, "the chip is marked as seen as it shows").toBeUndefined();
 
     await chip(page).click();
     await expect.poll(() => page.locator(".wn-head").first().getAttribute("aria-expanded")).toBe("true");
@@ -96,7 +104,7 @@ flow(
     const { page, home } = session;
     expect(await due(page)).toBeUndefined();
     expect([await card(page).count(), await chip(page).count()]).toEqual([0, 0]);
-    await expect.poll(() => saved(home).lastRunVersion, { message: "the version is recorded at the first start" }).toBe(FIXTURE_VERSION);
+    await written(home, (state) => state.lastRunVersion, "the version is recorded at the first start").toBe(FIXTURE_VERSION);
     await page.getByRole("button", { name: "About Tokama" }).click();
     expect(await page.locator(".wn-head").count()).toBe(2);
   },
