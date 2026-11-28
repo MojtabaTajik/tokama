@@ -154,6 +154,22 @@ describe("foldItem", () => {
     expect(foldError([...startBuild, { type: "attempt_ended", stepId: BUILD, attempt: 1, result: "failed" }, { type: "check_result", stepId: BUILD, attempt: 1, command: "x", exitCode: 0, passed: true, setup: true }])).toMatch(/not running/);
   });
 
+  it("a check after a failed setup ends that setup's standing: it was removed before the rerun", () => {
+    const item = fold([
+      ...startBuild,
+      { type: "check_result", stepId: BUILD, attempt: 1, command: "pnpm install", exitCode: 1, passed: false, setup: true },
+      { type: "check_result", stepId: BUILD, attempt: 1, command: "pnpm test", exitCode: 0, passed: true },
+    ]);
+    expect(item.steps[0]?.attempts[0]?.setup).toBeUndefined();
+    // A setup that passed stays.
+    const kept = fold([
+      ...startBuild,
+      { type: "check_result", stepId: BUILD, attempt: 1, command: "pnpm install", exitCode: 0, passed: true, setup: true },
+      { type: "check_result", stepId: BUILD, attempt: 1, command: "pnpm test", exitCode: 0, passed: true },
+    ]);
+    expect(kept.steps[0]?.attempts[0]?.setup?.passed).toBe(true);
+  });
+
   it("decision_opened with setupFailed: the decision keeps how the setup ended", () => {
     const setupFailed = { when: "checks", command: "pnpm install", ended: "failed", exitCode: 1, durationMs: 12_000, lastLine: "ERR_PNPM_OUTDATED_LOCKFILE", checksNotRun: 3 } as const;
     const item = fold([...startBuild, { type: "decision_opened", decisionId, kind: "run_failure", stepId: BUILD, choices: [{ id: "rerun_setup", label: "Run setup and checks again" }, { id: "stop", label: "Stop" }], setupFailed }]);

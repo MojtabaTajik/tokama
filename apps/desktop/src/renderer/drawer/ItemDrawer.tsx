@@ -343,9 +343,11 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
     showTab(to)();
   };
   const stoppedDecision = item?.state === "needs_you" && item.decision?.stopped !== undefined ? { ...item.decision, stopped: item.decision.stopped } : undefined;
-  // A failed setup's "Edit the setup command…" opens Edit repo on the item's repo, unless it is a sample repo.
+  // A failed setup's "Edit the setup command…" opens Edit repo on the item's repo, unless it is a sample repo or the
+  // command that failed is not the repo's (a template's own setup replaces it, and Edit repo cannot change that).
   const [editingSetup, setEditingSetup] = useState(false);
-  const editableRepo = item?.decision?.setupFailed === undefined ? undefined : setup?.repos.find((repo) => repo.id === item.repoIds[0] && repo.sample !== true);
+  const failedSetup = item?.decision?.setupFailed;
+  const editableRepo = failedSetup === undefined ? undefined : setup?.repos.find((repo) => repo.id === item?.repoIds[0] && repo.sample !== true && repo.setup === failedSetup.command);
   // The card of a question that offers Stop has its own Stop button; the action row's would be a second one.
   const cardHasStop = item?.state === "needs_you" && item.decision !== undefined && cardOffersStop(item.decision);
   const changedFiles = diff?.kind === "loaded" && diff.diff.files.length + diff.diff.moreFiles > 0;

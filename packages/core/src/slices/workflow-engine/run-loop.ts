@@ -208,6 +208,12 @@ const USE_RECORDED = choice("use_recorded_tree", "Review the checked tree");
 const COMMIT_CHECKED = choice("commit_checked_tree", "Commit the checked tree");
 const COMMIT_ANYWAY = choice("commit_anyway", "Commit anyway");
 
+/**
+ * Check output reaches an agent only through the next prompt: a local agent always gets it; a
+ * cloud agent only where the step's data rule sends the repo, and never in local-only mode.
+ */
+export const mayHandOverCheckOutput = (cloud: boolean, data: TemplateStepDef["data"], localOnly: boolean): boolean => !cloud || (data === "repo-and-diff" && !localOnly);
+
 /** What a work failure of the step leads to: `if_changes_requested` for a reviewer, else `if_failed`. */
 const failureRule = (step: TemplateStepDef) => (step.doneWhen === "reviewer approves" ? (step.ifChangesRequested ?? { action: "ask" as const }) : step.ifFailed);
 
@@ -1048,8 +1054,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     const agent = deps.agent(ctx.repo, step.agentId, ctx.template);
     const who = agent === undefined || "problem" in agent ? undefined : agent;
     const cloud = who !== undefined && runsInCloud(who.cliId);
-    // Check output reaches the agent only through the next prompt: not on a cloud agent whose data rule sends no repo, and not in local-only mode.
-    const allowed = who !== undefined && (!cloud || (step.data === "repo-and-diff" && deps.localOnly !== true));
+    const allowed = who !== undefined && mayHandOverCheckOutput(cloud, step.data, deps.localOnly === true);
     const label = who === undefined ? undefined : cutText(`Send the output to ${who.name}`, 64);
     const choices = [RERUN_SETUP, ...(allowed && label !== undefined ? [choice(SEND_SETUP_OUTPUT_ID, label)] : []), STOP];
     const why = who !== undefined && !allowed ? ` ${who.name} runs on a cloud agent whose data rule doesn't send check output.` : "";
@@ -1072,6 +1077,9 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     mkdirSync(itemPath(item.id, dir), { recursive: true, mode: 0o700 });
     const setupCommand = setupOf(ctx);
     if (setupCommand !== undefined) {
+      // A changed lockfile or install script stops the item before the install runs it.
+      const before = await intact(ctx, worktree);
+      if (before !== undefined) return before;
       reportActivity(item, stepId, attempt, "tokama", commandActivity(setupCommand));
       const setup = await runOne(runner, setupCommand, worktree.path, signal, itemPath(item.id, `${dir}/setup.log`)).finally(() => reportActivity(item, stepId, attempt, "tokama", undefined));
       if (signal.aborted) return WAIT;
@@ -1383,7 +1391,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     const attempt = open.attempt.attempt;
     const failed = asked.setupFailed;
     const output = (await readItemFile(item.id, `${attemptDir(stepId, attempt)}/setup.log`)) ?? "";
-    const head = `$ ${failed.command} (${failed.exitCode === undefined ? failed.ended.replace("_", " ") : `exit ${failed.exitCode}`})`;
+    const head = `$ ${failed.command} (${failed.exitCode === undefined ? failed.ended.replaceAll("_", " ") : `exit ${failed.exitCode}`})`;
     writeItemFile(item.id, `${attemptDir(stepId, attempt)}/feedback.txt`, scrub(`${head}\n${terminalText(output)}`).slice(-FEEDBACK_MAX_BYTES));
     return append(item.id, [attemptEnded(stepId, attempt, "failed", { detail: "The setup failed before the checks; its output went to the agent." })]);
   };

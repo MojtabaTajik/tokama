@@ -23,6 +23,7 @@ import type { Agent, Repo } from "../config/index.js";
 import { EVENTS_FILE, foldItem, ItemStore, openDecisions, readLog } from "../items/index.js";
 import { createWorktree } from "../worktrees/index.js";
 import { createRunLoop, parseVerdict, type RunLoop, type RunLoopDeps } from "./index.js";
+import { mayHandOverCheckOutput } from "./run-loop.js";
 import { after, type Behavior, crashes, edits, editsThenCrashes, editsThenHangs, FAKE_PID, fakeRuntime, hangs, loops, says } from "./testing/fake-runtime.js";
 
 const SLOW = { timeout: 60_000 };
@@ -2166,6 +2167,66 @@ describe("the repo's setup command", () => {
     const loop = engine(fakeRuntime([edits(FIXED)]), { agent: () => cloud });
     const id = await start(loop, template([{ ...BUILD_CHECKED, data: "repo-and-diff" }]));
     expect(openDecision(id)?.choices.map((c) => c.id)).toEqual(["rerun_setup", "send_to_agent", "stop"]);
+  });
+
+  it("hands check output to a local agent always, and to a cloud agent only when the step's data rule sends the repo and the run is not local-only", () => {
+    expect(mayHandOverCheckOutput(false, "none", false)).toBe(true);
+    expect(mayHandOverCheckOutput(false, "summary-after-approval", true)).toBe(true);
+    expect(mayHandOverCheckOutput(true, "repo-and-diff", false)).toBe(true);
+    expect(mayHandOverCheckOutput(true, "summary-after-approval", false)).toBe(false);
+    expect(mayHandOverCheckOutput(true, "none", false)).toBe(false);
+    expect(mayHandOverCheckOutput(true, "repo-and-diff", true)).toBe(false);
+  });
+
+  it("after a restart the question still holds: Run setup and checks again runs with no agent call", SLOW, async () => {
+    const counter = await countingSetup([2]);
+    const id = await start(engine(fakeRuntime([edits(FIXED)])), template([BUILD_CHECKED]));
+    expect(openDecisions(item(id))).toHaveLength(1);
+    store = ItemStore.open({ home: tokamaHome, hostId: HOST, clock }).store;
+    const runtime = fakeRuntime([edits(FIXED)]);
+    const loop = engine(runtime);
+    await loop.ready;
+    // Recovery leaves the attempt and its question alone: nothing was running.
+    expect(openDecisions(item(id))).toHaveLength(1);
+    expect(openDecision(id)).toMatchObject({ kind: "run_failure", setupFailed: { when: "checks" } });
+    expect(item(id).steps[0]!.attempts[0]!.endedAt).toBeUndefined();
+    await answer(loop, id, "rerun_setup");
+    expect(item(id).state).toBe("done");
+    expect(runtime.calls).toHaveLength(0);
+    expect(runsOf(counter)).toBe(3);
+  });
+
+  it("after a restart, Send the output still hands the output to the next attempt", SLOW, async () => {
+    await countingSetup([2]);
+    const id = await start(engine(fakeRuntime([edits(FIXED)])), template([BUILD_CHECKED]));
+    store = ItemStore.open({ home: tokamaHome, hostId: HOST, clock }).store;
+    const runtime = fakeRuntime([edits(FIXED)]);
+    const loop = engine(runtime);
+    await loop.ready;
+    await answer(loop, id, "send_to_agent");
+    expect(item(id).state).toBe("done");
+    expect(runtime.calls).toHaveLength(1);
+    expect(runtime.calls[0]?.request.prompt).toContain("lockfile is out of date");
+  });
+
+  it("a setup removed from the repo before Run setup and checks again leaves no failed setup on the attempt", SLOW, async () => {
+    await countingSetup([2]);
+    const loop = engine(fakeRuntime([edits(FIXED)]));
+    const id = await start(loop, template([BUILD_CHECKED]));
+    expect(item(id).steps[0]!.attempts[0]!.setup?.passed).toBe(false);
+    repo = { id: repo.id, path: repo.path, baseBranch: repo.baseBranch, worktreeFolder: repo.worktreeFolder, checks: repo.checks };
+    await answer(loop, id, "rerun_setup");
+    expect(item(id).state).toBe("done");
+    expect(item(id).steps[0]!.attempts[0]!.setup).toBeUndefined();
+  });
+
+  it("a change to the files that steer Tokama stops the item before the setup before the checks runs", SLOW, async () => {
+    const counter = await countingSetup([]);
+    const hook = () => writeFileSync(join(repo.path, ".git", "hooks", "pre-commit"), "#!/bin/sh\ntouch pwned\n");
+    const id = await start(engine(fakeRuntime([after(hook, edits(FIXED))])), template([BUILD_CHECKED]));
+    expect(item(id)).toMatchObject({ state: "failed", outcome: { detail: expect.stringContaining("added git:hooks/pre-commit (git)") } });
+    // Only the run at Start happened.
+    expect(runsOf(counter)).toBe(1);
   });
 
   it("Stop on a failed setup ends the item as stopped", SLOW, async () => {

@@ -2379,12 +2379,23 @@ describe("a setup that failed before the checks", () => {
     const { bridge } = fakeBridge([waitingOnSetup]);
     // The dialog reads what the app remembers about helpers.
     Object.assign(bridge, { getDesktopState: async () => ({}) });
-    await renderDrawer(bridge, waitingOnSetup.id);
+    const withSetup = { ...setup, repos: setup.repos.map((repo) => ({ ...repo, setup: "pnpm install --frozen-lockfile" })) } as Setup;
+    await renderDrawer(bridge, waitingOnSetup.id, vi.fn(), withSetup);
     await click(button("See the whole output →"));
     expect($$('[role="tab"]').find((el) => el.textContent === "Checks")?.getAttribute("aria-selected")).toBe("true");
     await click(button("Edit the setup command…"));
     expect(document.querySelector("dialog.modal h2")?.textContent).toBe("Edit repo");
-    expect((document.querySelector("dialog.modal textarea.rd-setup") as HTMLTextAreaElement | null)?.value).toBe("");
+    expect((document.querySelector("dialog.modal textarea.rd-setup") as HTMLTextAreaElement | null)?.value).toBe("pnpm install --frozen-lockfile");
+  });
+
+  it("leaves out Edit the setup command when the command that failed is not the repo's, as when the template's own setup replaced it", async () => {
+    const other = { ...setup, repos: setup.repos.map((repo) => ({ ...repo, setup: "npm ci" })) } as Setup;
+    await renderDrawer(fakeBridge([waitingOnSetup]).bridge, waitingOnSetup.id, vi.fn(), other);
+    expect(button("Edit the setup command…")).toBeUndefined();
+    act(() => root.unmount());
+    root = createRoot(container);
+    await renderDrawer(fakeBridge([waitingOnSetup]).bridge, waitingOnSetup.id);
+    expect(button("Edit the setup command…")).toBeUndefined();
   });
 
   it("leaves out Edit the setup command for a sample repo, which cannot be edited, and the output link for a failure at Start", async () => {

@@ -164,7 +164,11 @@ function applyTo(next: StoredItem, event: ItemEvent): FoldError | undefined {
       };
       // The setup before the checks is kept apart: it is never a check, so counts and risk never see it.
       if (event.setup === true) running.setup = record;
-      else running.checks.push(record);
+      else {
+        // A check that ran after a failed setup means that setup no longer stands (its command was removed before the rerun).
+        if (running.setup?.passed === false) delete running.setup;
+        running.checks.push(record);
+      }
       break;
     }
 

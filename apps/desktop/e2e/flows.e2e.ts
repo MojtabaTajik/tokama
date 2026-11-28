@@ -11,6 +11,7 @@ const FAILED = "Upgrade the Postgres driver in orders-api";
 const QUICK_CHANGE = "Log the warehouse id on sync failures";
 const PLAN_APPROVAL = "Reserve stock when an order is placed";
 const REVIEW_LIMIT = "Keep the start card still while it fades";
+const SETUP_FAILED = "Add order export endpoint";
 
 flow("connects to the sample engine and selects list rows with Enter and Space", async ({ page, connection, engine }) => {
   expect((await connection()).status).toBe("connected");
@@ -40,7 +41,7 @@ flow("opens an item and approves its decision", async ({ page }) => {
   await note.getByRole("button", { name: "Approve and send" }).click();
 
   await note.waitFor({ state: "detached" });
-  await expect.poll(() => segment(page, "Needs you").innerText(), { message: "the Needs you count" }).toMatch(/3$/);
+  await expect.poll(() => segment(page, "Needs you").innerText(), { message: "the Needs you count" }).toMatch(/4$/);
   await row(page, NEEDS_YOU).waitFor({ state: "detached" });
   // The item runs on: it is in Running under Active.
   await segment(page, "Active").click();
@@ -59,7 +60,7 @@ flow("answers a decision on the Needs you page and the row leaves the list", asy
   expect(await page.locator(".nr-row .btn-primary").count()).toBe(1);
   expect(await page.locator(".nr-row").first().locator(".btn-primary").count()).toBe(1);
   expect(await page.locator(".nr-list").innerText()).not.toContain("Approve this step's result?");
-  await expect.poll(() => page.locator(".summary").innerText(), { message: "the page header" }).toMatch(/^4 waiting · oldest (waits|item started) /);
+  await expect.poll(() => page.locator(".summary").innerText(), { message: "the page header" }).toMatch(/^5 waiting · oldest (waits|item started) /);
   await screenshot("6-needs-you");
   await screenshot("7-needs-you-questions");
   await resize(1024, 700);
@@ -193,7 +194,7 @@ flow("stops an item after its confirmation", async ({ page }) => {
 flow("switches status filters, workflow and repo views, and List and Board", async ({ page }) => {
   // Status filters on All work.
   await segment(page, "Needs you").click();
-  await expect.poll(() => titles(page)).toEqual([NEEDS_YOU, QUICK_CHANGE, PLAN_APPROVAL, REVIEW_LIMIT]);
+  await expect.poll(() => titles(page)).toEqual([NEEDS_YOU, QUICK_CHANGE, PLAN_APPROVAL, REVIEW_LIMIT, SETUP_FAILED]);
   await segment(page, "Done").click();
   await page.locator(".range").selectOption("30d");
   await expect.poll(() => titles(page)).toContain(DONE);
@@ -272,7 +273,7 @@ flow("reconnects after the engine restarts and loads its state again", async ({ 
   expect(seen, "the connection states the renderer saw").toContain("reconnecting");
   expect(seen.at(-1)).toBe("connected");
   // State reloaded from the new engine: the decision is waiting again.
-  await expect.poll(() => titles(page), { message: "the Needs you list after the restart" }).toEqual([NEEDS_YOU, QUICK_CHANGE, PLAN_APPROVAL, REVIEW_LIMIT]);
+  await expect.poll(() => titles(page), { message: "the Needs you list after the restart" }).toEqual([NEEDS_YOU, QUICK_CHANGE, PLAN_APPROVAL, REVIEW_LIMIT, SETUP_FAILED]);
   expect(await drawer(page).locator(".needs-you").count(), "the open drawer follows").toBe(1);
 });
 
