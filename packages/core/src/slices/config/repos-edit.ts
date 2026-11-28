@@ -500,7 +500,8 @@ export async function suggestSetup(folder: string): Promise<{ command: string; f
   }
   const found: { command: string; from: string }[] = [];
   for (const [file, command] of SETUP_FILES) if (names.includes(file)) found.push({ command, from: file });
-  const dotnet = names.find((name) => /\.(sln|csproj)$/i.test(name));
+  // The name is shown to the user: a name with control, invisible or direction characters is not offered.
+  const dotnet = names.find((name) => /\.(sln|csproj)$/i.test(name) && name.length <= 255 && !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(name));
   if (dotnet !== undefined) found.push({ command: "dotnet restore", from: dotnet });
   return found.length === 1 ? found[0] : undefined;
 }

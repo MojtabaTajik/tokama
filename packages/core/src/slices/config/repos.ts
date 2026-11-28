@@ -20,7 +20,7 @@ export interface Repo {
   readonly worktreeFolder: string;
   /** The repo's default check commands, each one simple command; empty when none are set. */
   readonly checks: readonly string[];
-  /** One simple command that runs in every new worktree before the checks; a template's own setup replaces it. */
+  /** One simple command for new worktrees of this repo, run before the checks; a template's own setup replaces it. */
   readonly setup?: string;
 }
 

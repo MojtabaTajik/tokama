@@ -703,6 +703,11 @@ describe("suggestRepo", () => {
     }
   });
 
+  it("does not offer a project file whose name has invisible or direction characters", async () => {
+    const path = repo("odd", { "Ord‮ers.sln": "" });
+    expect(await suggestRepo(options(), path)).toMatchObject({ ok: true, value: { setup: undefined, setupFrom: undefined } });
+  });
+
   it("counts two .sln or .csproj files as one kind", async () => {
     const path = repo("net", { "A.sln": "", "B.csproj": "" });
     expect(await suggestRepo(options(), path)).toMatchObject({ ok: true, value: { setup: "dotnet restore", setupFrom: "A.sln" } });
