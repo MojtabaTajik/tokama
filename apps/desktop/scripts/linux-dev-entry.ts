@@ -7,7 +7,7 @@
 //   pnpm --filter @tokama/desktop linux:dev-entry --remove   remove
 // The entry goes to $XDG_DATA_HOME/applications, ~/.local/share/applications by default. Start
 // `pnpm dev` after the entry is there; a running window does not pick it up.
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { LINUX_DEV_DESKTOP_NAME } from "../src/main/icon.ts";
@@ -16,6 +16,8 @@ const appDir = join(import.meta.dirname, "..");
 
 /** The text of the dev launcher entry; `iconPath` is absolute. */
 export function devEntry(iconPath: string): string {
+  // A backslash or a control character (a newline would add a key) would need escaping in a Desktop Entry value; no real checkout path has one.
+  if ([...iconPath].some((char) => char === "\\" || char < " " || char === "\u007f")) throw new Error(`The checkout path has a backslash or a control character: ${JSON.stringify(iconPath)}`);
   return [
     "[Desktop Entry]",
     "Type=Application",
@@ -36,12 +38,22 @@ export function applicationsDir(env: NodeJS.ProcessEnv, home: string): string {
   return join(data !== undefined && data.startsWith("/") ? data : join(home, ".local", "share"), "applications");
 }
 
+/** Whether `file` is a symbolic link (a missing file is not one). */
+export function isSymlink(file: string): boolean {
+  try {
+    return lstatSync(file).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
 function main(): void {
   if (process.platform !== "linux") throw new Error("This helper is for Linux only.");
   const args = process.argv.slice(2);
   if (args.some((arg) => arg !== "--remove")) throw new Error("Usage: linux:dev-entry [--remove]");
   const dir = applicationsDir(process.env, homedir());
   const file = join(dir, LINUX_DEV_DESKTOP_NAME);
+  if (isSymlink(file)) throw new Error(`${file} is a symbolic link; remove it yourself first.`);
   if (args.length > 0) {
     rmSync(file, { force: true });
     console.log(`Removed ${file}`);

@@ -1,5 +1,8 @@
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { applicationsDir, devEntry } from "./linux-dev-entry.js";
+import { applicationsDir, devEntry, isSymlink } from "./linux-dev-entry.js";
 import { parseDesktopEntry } from "./verify-package-linux.js";
 
 describe("devEntry", () => {
@@ -14,6 +17,27 @@ describe("devEntry", () => {
     expect(entry.get("Exec")).toBe("true");
     expect(entry.get("NoDisplay")).toBe("true");
     expect(entry.get("Type")).toBe("Application");
+  });
+});
+
+describe("devEntry paths", () => {
+  it.each([["a backslash", "/work/a\\b.png"], ["a newline", "/work/a\nExec=evil.png"]])("refuses an icon path with %s", (_name, path) => {
+    expect(() => devEntry(path)).toThrow(/backslash or a control character/);
+  });
+});
+
+describe("isSymlink", () => {
+  it("is true for a symbolic link, false for a file and for a missing path", () => {
+    const dir = mkdtempSync(join(tmpdir(), "tk-dev-entry-"));
+    try {
+      writeFileSync(join(dir, "real"), "");
+      symlinkSync(join(dir, "real"), join(dir, "link"));
+      expect(isSymlink(join(dir, "link"))).toBe(true);
+      expect(isSymlink(join(dir, "real"))).toBe(false);
+      expect(isSymlink(join(dir, "none"))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
