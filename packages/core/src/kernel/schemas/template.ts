@@ -59,7 +59,7 @@ export const TemplateStepDefSchema = z.strictObject({
   sees: z.array(StepIdSchema).max(20),
   /** The template connections this step may use. */
   connections: z.array(ConnectionUseSchema).max(20),
-  /** The template commands this step's agent may run. */
+  /** Always empty: a template that lists commands is refused. Kept so stored records still load. */
   commands: z.array(z.string().min(1).max(200)).max(50),
   icon: IconNameSchema.optional(),
   color: TagColorSchema.optional(),
@@ -87,7 +87,7 @@ export const TemplateRecordSchema = z.strictObject({
       named: z.array(z.strictObject({ repoId: RepoIdSchema, access: RepoAccessSchema })).max(20),
     }),
     connections: z.array(ConnectionUseSchema).max(20),
-    /** Allowlisted CLI commands the agents may run, e.g. `gh`, `az boards`. */
+    /** Always empty: a template that lists commands is refused. Kept so stored records still load. */
     commands: z.array(z.string().min(1).max(200)).max(50),
   }),
   start: z.strictObject({

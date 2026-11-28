@@ -77,7 +77,7 @@ describe("TemplatesPage", () => {
     const section = (name: string) => $(`section[aria-label="${name}"]`)?.textContent ?? "";
     expect(section("Start")).toContain("Needs a task description and one repo.");
     expect(section("Can use")).toContain("the repo you pick · edit · gets a worktree");
-    expect(section("Can use")).toContain("pnpm test");
+    expect(section("Can use")).not.toContain("Commands");
     expect($('[role="img"]')?.getAttribute("aria-label")).toContain("Start → Plan → Build → Review → Finish");
     expect($$(".tp-loop-label").map((el) => el.textContent)).toEqual(["checks fail · retry, up to 3", "changes · back to Build"]);
     expect($$(".tp-steps li").map((li) => li.textContent)).toEqual([

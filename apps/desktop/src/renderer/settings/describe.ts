@@ -20,7 +20,7 @@ export function limitsNotes(agent: AgentDetail): string[] {
   const { commands, web, edit } = agent.limits;
   return [
     edit ? "Can edit files inside the item's worktree only. Never the base checkout." : "Reads files. Cannot edit or write anywhere.",
-    commands.length > 0 ? `May run: ${commands.join(", ")}` : "Runs no shell commands of its own; each template step lists the commands it allows.",
+    commands.length > 0 ? `May run: ${commands.join(", ")}` : "Runs no shell commands of its own.",
     web ? "May search and fetch from the web." : "No web access.",
   ];
 }

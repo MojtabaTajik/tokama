@@ -14,7 +14,7 @@ export const planAndBuild = {
   name: "Plan and build",
   icon: "hammer",
   color: "sky",
-  uses: { repos: { picked: "edit", named: [] }, connections: [], commands: ["pnpm test"] },
+  uses: { repos: { picked: "edit", named: [] }, connections: [], commands: [] },
   start: { needs: ["text", "repo"], askBeforeCloud: false, notify: false },
   budget: { timeMinutes: 90 },
   finish: ["commit", "pull-request"],

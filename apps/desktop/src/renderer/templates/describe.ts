@@ -159,8 +159,8 @@ export interface UseLine {
   readonly detail: string;
 }
 
-/** The repos, connections and commands the template may use, each with its access. */
-export function usesOf(template: Pick<TemplateView, "uses" | "steps">, connections: readonly ConnectionSummary[] = []): { readonly repos: UseLine[]; readonly connections: UseLine[]; readonly commands: string[] } {
+/** The repos and connections the template may use, each with its access. */
+export function usesOf(template: Pick<TemplateView, "uses" | "steps">, connections: readonly ConnectionSummary[] = []): { readonly repos: UseLine[]; readonly connections: UseLine[] } {
   const { picked, named } = template.uses.repos;
   const repos: UseLine[] = [];
   if (picked !== undefined) repos.push({ name: "the repo you pick", detail: picked === "edit" ? "edit · gets a worktree" : "read · nothing committed" });
@@ -172,7 +172,6 @@ export function usesOf(template: Pick<TemplateView, "uses" | "steps">, connectio
       const name = connections.find((connection) => connection.id === use.connectionId)?.name ?? use.connectionId;
       return { name, detail: usedBy.length > 0 ? `${use.access} · used by ${andList(usedBy)}` : use.access };
     }),
-    commands: [...template.uses.commands],
   };
 }
 

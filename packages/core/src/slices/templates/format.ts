@@ -40,7 +40,7 @@ export const StepFileSchema = z.strictObject({
   max_attempts: z.int().min(1).max(10).optional(),
   data: DataRuleSchema.optional(),
   sees: z.array(StepIdSchema).max(20).optional(),
-  uses: z.strictObject({ connections: connections.optional(), commands: z.array(z.string().min(1).max(200)).max(50).optional() }).optional(),
+  uses: z.strictObject({ connections: connections.optional() }).optional(),
   icon: IconNameSchema.optional(),
   color: TagColorSchema.optional(),
 });
@@ -58,7 +58,6 @@ export const TemplateFileSchema = z.strictObject({
       /** A word gives that access to the repos picked at Start; a map names repos. */
       repos: z.union([RepoAccessSchema, z.record(RepoIdSchema, RepoAccessSchema).refine(fewEntries, tooMany)]).optional(),
       connections: connections.optional(),
-      commands: z.array(z.string().min(1).max(200)).max(50).optional(),
     })
     .optional(),
   start: z
@@ -96,11 +95,11 @@ export function knownFields(path: readonly PropertyKey[]): readonly string[] {
   const shape = (schema: z.ZodObject) => Object.keys(schema.shape);
   const [first, , third] = path;
   if (path.length === 0) return shape(TemplateFileSchema);
-  if (first === "uses" && path.length === 1) return ["repos", "connections", "commands"];
+  if (first === "uses" && path.length === 1) return ["repos", "connections"];
   if (first === "start" && path.length === 1) return ["needs", "ask_before_cloud", "notify"];
   if (first === "budget" && path.length === 1) return ["time"];
   if (first === "steps" && path.length === 2) return shape(StepFileSchema);
-  if (first === "steps" && path.length === 3 && third === "uses") return ["connections", "commands"];
+  if (first === "steps" && path.length === 3 && third === "uses") return ["connections"];
   if (first === "steps" && path.length === 3) return ["back"];
   return [];
 }

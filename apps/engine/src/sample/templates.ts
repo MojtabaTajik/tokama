@@ -14,7 +14,6 @@ icon: hammer
 color: sky
 uses:
   repos: edit
-  commands: [pnpm test]
 start:
   needs: [text, repo]
 budget:

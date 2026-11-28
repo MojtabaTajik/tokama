@@ -96,10 +96,10 @@ describe("startSentence", () => {
 });
 
 describe("usesOf", () => {
-  it("lists repos, connections with the steps that use them, and commands", () => {
+  it("lists repos and connections with the steps that use them", () => {
     const template = {
       ...planAndBuild,
-      uses: { repos: { picked: "read", named: [{ repoId: "orders-api", access: "edit" }] }, connections: [{ connectionId: "app-insights-prod", access: "query" }, { connectionId: "gone", access: "read" }], commands: ["gh"] },
+      uses: { repos: { picked: "read", named: [{ repoId: "orders-api", access: "edit" }] }, connections: [{ connectionId: "app-insights-prod", access: "query" }, { connectionId: "gone", access: "read" }], commands: [] as string[] },
       steps: [{ ...plan, connections: [{ connectionId: "app-insights-prod", access: "query" }] }, build],
     } as TemplateView;
     expect(usesOf(template, setup.connections as never)).toEqual({
@@ -111,7 +111,6 @@ describe("usesOf", () => {
         { name: "App Insights · prod", detail: "query · used by Plan" },
         { name: "gone", detail: "read" },
       ],
-      commands: ["gh"],
     });
   });
 });
