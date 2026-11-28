@@ -146,7 +146,7 @@ function accessOf(agent: ReturnType<typeof resolveAgent>): { agentAccess?: Templ
       model: agent.model,
       ...(role !== undefined && { role }),
       edit: limits.edit,
-      commands: limits.commands.filter((c) => c.length <= 200).slice(0, 50),
+      commands: limits.commands.slice(0, 50).map((c) => cutText(c, 200)),
       web: limits.web,
     },
   };

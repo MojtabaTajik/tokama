@@ -135,8 +135,9 @@ describe("accessNote", () => {
     expect(accessNote(uses("read", [], ["node"]), false)).toBe("read-only");
   });
 
-  it("says read-only when the engine does not say (an engine that sends no answer)", () => {
-    expect(accessNote(uses("read"), undefined)).toBe("read-only");
+  it("makes no promise when the engine does not say", () => {
+    expect(accessNote(uses("read"), undefined)).toBeUndefined();
+    expect(accessNote(uses("edit"), undefined)).toBe("changes code");
   });
 });
 

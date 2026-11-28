@@ -127,6 +127,9 @@ describe("the templates queries in real mode", () => {
     mkdirSync(join(repo, ".tokama", "agents"), { recursive: true });
     writeFileSync(join(repo, ".tokama", "agents", "shared-runner.md"), "---\nformat: 1\nname: Shared runner\nruns_on: claude-code\nmodel: sonnet\ntools: read-only\ncommands: [node]\n---\nRun the script.\n");
     writeFileSync(join(repo, ".tokama", "templates", "with-shared.yaml"), readTemplate("shared-runner"));
+    // One rule longer than the 200 characters the setup carries: it is cut, not dropped.
+    writeFileSync(join(home, "agents", "long-runner.md"), `---\nformat: 1\nname: Long runner\nruns_on: claude-code\nmodel: sonnet\ntools: read-only\ncommands: ["node ${"x".repeat(210)}"]\n---\nRun the script.\n`);
+    writeFileSync(join(repo, ".tokama", "templates", "with-long-rule.yaml"), readTemplate("long-runner"));
     writeFileSync(join(home, "agents", "runner.md"), "---\nformat: 1\nname: Runner\nruns_on: claude-code\nmodel: sonnet\ntools: read-only\ncommands: [node]\n---\nRun the script.\n");
     writeFileSync(join(home, "repos.yaml"), `format: 1\nrepos:\n  - id: billing-api\n    path: ${repo}\n    base_branch: main\n    checks: ["true"]\n`);
     const engine = await client({ dir, home });
@@ -140,6 +143,7 @@ describe("the templates queries in real mode", () => {
     expect((await detail("with-commands")).agentsRunCommands).toBe(true);
     expect((await detail("no-commands")).agentsRunCommands).toBe(false);
     expect((await detail("with-shared")).agentsRunCommands).toBe(true);
+    expect((await detail("with-long-rule")).agentsRunCommands).toBe(true);
 
     // New work reads the same fact from the step's agent access.
     const setup = await engine.query({ type: "setup" });
@@ -148,5 +152,9 @@ describe("the templates queries in real mode", () => {
     expect(commandsOf("billing-api/with-commands")).toEqual([["node"]]);
     expect(commandsOf("billing-api/no-commands")).toEqual([[]]);
     expect(commandsOf("billing-api/with-shared")).toEqual([["node"]]);
+    const long = commandsOf("billing-api/with-long-rule");
+    expect(long).toHaveLength(1);
+    expect(long?.[0]).toHaveLength(1);
+    expect(long?.[0]?.[0]?.length).toBeLessThanOrEqual(200);
   });
 });
