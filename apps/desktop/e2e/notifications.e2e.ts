@@ -21,8 +21,8 @@ interface Played {
 }
 type Hooked = { __tokamaNotifications?: (Recorded & { click: () => void })[]; __tokamaSounds?: Played[] };
 
-/** Banners get their sound from the app's own player on macOS only. */
-const PLAYER_WAY = process.platform === "darwin";
+/** Banners get their sound from the app's own player on macOS and Linux. */
+const PLAYER_WAY = process.platform === "darwin" || process.platform === "linux";
 const HINT = "Change how Tokama notifies you in Settings → Notifications";
 
 const recorded = (app: ElectronApplication): Promise<Recorded[]> =>
@@ -68,15 +68,15 @@ flow("the page shows a mode per kind and the sound set, and a restart finds the 
 
   await choose(page, "notes-finished", "Off");
   await choose(page, "notes-needsYou", "Banner only");
-  await choose(page, "notes-sounds", "macOS default");
+  await choose(page, "notes-sounds", "System sound");
   await page.getByText("Finished is off, so this one never shows.").waitFor();
-  await page.getByText("♪ Plays the macOS default sound for 1 of 3 kinds.").waitFor();
+  await page.getByText("♪ Plays the system sound for 1 of 3 kinds.").waitFor();
   await screenshot("notifications-changed");
 
   const next = await session.restart();
   await openPage(next.page);
-  expect(await choices(next.page)).toEqual([["notes-needsYou", "✓Banner only"], ["notes-finished", "✓Off"], ["notes-failed", "✓Banner + sound"], ["notes-sounds", "✓macOS default"]]);
-  expect(savedNotifications(home)).toEqual({ needsYou: "banner", finished: "off", failed: "both", sounds: "macos" });
+  expect(await choices(next.page)).toEqual([["notes-needsYou", "✓Banner only"], ["notes-finished", "✓Off"], ["notes-failed", "✓Banner + sound"], ["notes-sounds", "✓System sound"]]);
+  expect(savedNotifications(home)).toEqual({ needsYou: "banner", finished: "off", failed: "both", sounds: "system" });
 });
 
 flow("the play buttons play a kind's sound with the chosen set, whatever the mode", async ({ page, app }) => {
@@ -84,9 +84,9 @@ flow("the play buttons play a kind's sound with the chosen set, whatever the mod
   await choose(page, "notes-failed", "Off");
   await page.getByRole("button", { name: "Play the Failed sound" }).click();
   await page.getByText("Playing").waitFor();
-  await choose(page, "notes-sounds", "macOS default");
+  await choose(page, "notes-sounds", "System sound");
   await page.getByRole("button", { name: "Play the Needs you sound" }).click();
-  await expect.poll(() => sounds(app)).toEqual([{ name: "failed", set: "tokama" }, { name: "needsYou", set: "macos" }]);
+  await expect.poll(() => sounds(app)).toEqual([{ name: "failed", set: "tokama" }, { name: "needsYou", set: "system" }]);
 });
 
 flow("the test button shows one banner and plays the Needs you sound, even when every kind is off", async ({ page, app }) => {
@@ -116,7 +116,7 @@ flow("an item that needs you shows a notification with the hint on the first one
   await expect.poll(needsYouCount(app, text), { timeout: 60_000, message: "a Needs you notification for the new item" }).toBe(1);
   const note = (await recorded(app)).find((candidate) => candidate.title === `Needs you: ${text}`)!;
   expect(note.body).toMatch(new RegExp(`^Send the repo and the diff to .+\\?\\nPlan and build · orders-api\\n${HINT}$`));
-  // The default for Needs you is Banner + sound. On macOS that is a silent banner and the app plays the sound itself; elsewhere there is no player, so the system's banner sound stays.
+  // The default for Needs you is Banner + sound. On macOS and Linux that is a silent banner and the app plays the sound itself; elsewhere there is no player, so the system's banner sound stays.
   expect(note.silent).toBe(PLAYER_WAY);
   expect(note.sound).toBeUndefined();
   expect(await sounds(app)).toEqual(PLAYER_WAY ? [{ name: "needsYou", set: "tokama" }] : []);

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import { connect, type EngineInfo, stopEngine, type StopResult } from "@tokama/client";
-import { API_VERSION, createProcessRunner, defaultEngineDir, engineEndpoint, engineLockPath, err, pidAlive, posixEngineProcesses, probeSocket, readEngineLock, resolveToolsPath, type ToolsPath } from "@tokama/core";
+import { API_VERSION, createProcessRunner, defaultEngineDir, engineEndpoint, engineLockPath, err, findOnPath, pidAlive, posixEngineProcesses, probeSocket, readEngineLock, resolveToolsPath, type ToolsPath } from "@tokama/core";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, screen, session, shell } from "electron";
 import { type BridgeEvent, CHANNELS, type NotificationStatus } from "../shared/bridge.js";
 import { buildInfoText } from "../shared/build-info.js";
@@ -36,7 +36,7 @@ import { pickRepoFolder } from "./folder.js";
 import { BANNER_SOUND, createNotifier } from "./notifier.js";
 import { runSoundCheck } from "./sound-check.js";
 import { createFocusProbe } from "./sound/focus.js";
-import { soundFileName, soundsDir } from "./sound/files.js";
+import { fileUnder, soundFileName, soundsDir } from "./sound/files.js";
 import { playRequestHandler } from "./sound/play-request.js";
 import { playerFor, recordingPlayer, type SoundPlayer } from "./sound/player.js";
 import { appIcons } from "./icon.js";
@@ -275,11 +275,19 @@ function updateSetup(): { readonly engine?: UpdateEngine; readonly reason: Extra
   }
 }
 
-/** The folder of the sound files and the player that plays them; the player is silent off macOS. */
+/** The folder of the sound files and the player that plays them; the player is silent on Windows. */
 function soundPlayer(): SoundPlayer {
   const packaged = app.isPackaged;
   const soundsFolder = soundsDir({ packaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() });
-  return playerFor(process.platform, { makeRunner: () => createProcessRunner(), soundsDir: soundsFolder, packaged, beep: () => shell.beep() });
+  return playerFor(process.platform, {
+    makeRunner: () => createProcessRunner(),
+    findProgram: (name) => findOnPath(name, process.env),
+    themeFile: (path) => fileUnder("/usr/share/sounds", path),
+    audioEnv: Object.fromEntries(["XDG_RUNTIME_DIR", "PULSE_SERVER"].flatMap((name) => (process.env[name] === undefined ? [] : [[name, process.env[name]]]))),
+    soundsDir: soundsFolder,
+    packaged,
+    beep: () => shell.beep(),
+  });
 }
 
 /** The name of the bundled sound file of a kind, for a packaged Mac; the system plays it from the app bundle. */
@@ -381,8 +389,8 @@ void app.whenReady().then(async () => {
   const system = recordNotifications ? undefined : systemNotifications();
   const notifier = createNotifier({
     play: (kind, set) => player.play(kind, set),
-    // Only macOS has a player; elsewhere the system's own banner sound is the only sound there is.
-    bannerSound: process.platform === "darwin" ? BANNER_SOUND : "bundled",
+    // macOS and Linux have a player; elsewhere the system's own banner sound is the only sound there is.
+    bannerSound: process.platform === "darwin" || process.platform === "linux" ? BANNER_SOUND : "bundled",
     bundledSound: (kind, set) => (app.isPackaged && process.platform === "darwin" && set === "tokama" ? bundledSoundName(kind) : undefined),
     // A test run has no screen to lock, and the real probe would make its result depend on the machine.
     focus: recordNotifications ? async () => "unknown" : () => focusProbe.state(),
@@ -402,7 +410,11 @@ void app.whenReady().then(async () => {
     now: () => Date.now(),
     platform: process.platform,
   });
-  handle(CHANNELS.notificationStatus, (): NotificationStatus => ({ blocked: system?.blocked() ?? false, canOpenSettings: notificationSettingsUrl(process.platform) !== undefined }));
+  handle(CHANNELS.notificationStatus, (): NotificationStatus => ({
+    blocked: system?.blocked() ?? false,
+    canOpenSettings: notificationSettingsUrl(process.platform) !== undefined,
+    soundPlayerMissing: player.playerMissing(),
+  }));
   const testAllowed = rateLimit(5, 10_000);
   handle(CHANNELS.sendTestNotification, () => (testAllowed() ? notifier.sendTest() : undefined));
   handle(CHANNELS.openNotificationSettings, async () => {

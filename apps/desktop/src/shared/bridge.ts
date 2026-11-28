@@ -105,6 +105,8 @@ export interface NotificationStatus {
   readonly blocked: boolean;
   /** The app can open the system's notification settings: macOS. */
   readonly canOpenSettings: boolean;
+  /** Linux has neither `paplay` nor `aplay`, so Tokama's own sounds cannot play and every play beeps. */
+  readonly soundPlayerMissing: boolean;
 }
 
 /** What About shows about this build. The main process fills it; every field is plain text or a number. */

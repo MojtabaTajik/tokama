@@ -6,7 +6,7 @@ import { playerFor, type SoundPlayer } from "./player.js";
 
 function recorder() {
   const plays: unknown[][] = [];
-  const player: SoundPlayer = { play: (...args) => void plays.push(args) };
+  const player: SoundPlayer = { play: (...args) => void plays.push(args), playerMissing: () => false };
   return { plays, player };
 }
 
@@ -15,8 +15,8 @@ describe("playRequestHandler", () => {
     const { plays, player } = recorder();
     const handle = playRequestHandler(player, () => true);
     handle("needsYou", "tokama");
-    handle("tokayCall", "macos");
-    expect(plays).toEqual([["needsYou", "tokama"], ["tokayCall", "macos"]]);
+    handle("tokayCall", "system");
+    expect(plays).toEqual([["needsYou", "tokama"], ["tokayCall", "system"]]);
   });
 
   it("drops a bad name or set without asking the rate limit", () => {
@@ -45,7 +45,7 @@ describe("playRequestHandler", () => {
   it("drops a request while a sound still plays", () => {
     const requests: RunRequest[] = [];
     const runner = { run: (request: RunRequest) => (requests.push(request), new Promise<RunResult>(() => undefined)) };
-    const player = playerFor("darwin", { makeRunner: () => runner, soundsDir: "/res", packaged: true, beep: () => undefined });
+    const player = playerFor("darwin", { makeRunner: () => runner, findProgram: () => undefined, themeFile: () => undefined, audioEnv: {}, soundsDir: "/res", packaged: true, beep: () => undefined });
     const handle = playRequestHandler(player, () => true);
     handle("needsYou", "tokama");
     handle("failed", "tokama");

@@ -1,8 +1,30 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { SOUND_NAMES } from "../../shared/desktop-state.js";
-import { soundFileName, soundsDir } from "./files.js";
+import { fileUnder, soundFileName, soundsDir } from "./files.js";
+
+describe("fileUnder", () => {
+  it("returns the real path of a file inside the root, and nothing for a missing file, the root itself or a link that leaves the root", () => {
+    const base = realpathSync(mkdtempSync(join(tmpdir(), "tokama-theme-")));
+    try {
+      const root = join(base, "theme");
+      mkdirSync(root);
+      writeFileSync(join(root, "a.oga"), "x");
+      writeFileSync(join(base, "outside.oga"), "x");
+      symlinkSync(join(base, "outside.oga"), join(root, "out.oga"));
+      symlinkSync(join(root, "a.oga"), join(root, "in.oga"));
+      expect(fileUnder(root, join(root, "a.oga"))).toBe(join(root, "a.oga"));
+      expect(fileUnder(root, join(root, "in.oga"))).toBe(join(root, "a.oga"));
+      expect(fileUnder(root, join(root, "out.oga"))).toBeUndefined();
+      expect(fileUnder(root, join(root, "missing.oga"))).toBeUndefined();
+      expect(fileUnder(root, root)).toBeUndefined();
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("soundFileName", () => {
   it("prefixes the name in a packaged app only", () => {

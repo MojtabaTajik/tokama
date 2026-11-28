@@ -14,13 +14,14 @@ import { markOf, type Tone } from "../ui/status.js";
 
 const TEXT = {
   heading: "Notifications",
-  intro: "macOS notifications about your items. Click one to open its item in Tokama.",
+  intro: "Notifications about your items. Click one to open its item in Tokama.",
   soundsName: "Sounds",
   soundsHelp: "Used by Banner + sound and Sound only. The ▶ buttons play it too, whatever a row is set to.",
   infoLooking: "No notification while you are looking at that item: Tokama is in front and the item is open in the drawer or the full view.",
-  infoSoundOnly: "Sound only: macOS cannot play a sound without a banner, so Tokama plays it itself while the app is running. Sounds play even during Focus, but not while your Mac is locked. Choose Banner only for a row if that bothers you. The ▶ buttons always play.",
+  soundsMissing: "Tokama sounds need PulseAudio or ALSA on this computer.",
+  infoSoundOnly: "Sound only: Tokama plays the sound itself while the app is running, with no banner. Sounds play even during Focus or Do Not Disturb, but not while your computer is locked. Choose Banner only for a row if that bothers you. The ▶ buttons always play.",
   preview: "Preview",
-  previewHint: "How each one looks in the top-right corner of the screen. Plain text, no formatting.",
+  previewHint: "How each one looks as a notification. Plain text, no formatting.",
   now: "now",
   playing: "Playing",
   silent: "Silent. No kind plays a sound.",
@@ -44,10 +45,10 @@ const MODES: readonly { readonly value: NoteMode; readonly label: string }[] = [
 ];
 const SOUND_SETS: readonly { readonly value: SoundSet; readonly label: string }[] = [
   { value: "tokama", label: "Tokama sounds" },
-  { value: "macos", label: "macOS default" },
+  { value: "system", label: "System sound" },
 ];
 /** How the chosen sound set is named in the preview lines. */
-const SOUND_NAME: Record<SoundSet, string> = { tokama: "Tokama sound", macos: "macOS default sound" };
+const SOUND_NAME: Record<SoundSet, string> = { tokama: "Tokama sound", system: "system sound" };
 
 const ROWS: readonly { readonly key: NoteKind; readonly name: string; readonly glyph: string; readonly tone: Tone | "quiet"; readonly help: string }[] = [
   { key: "needsYou", name: "Needs you", glyph: markOf("needs_you").symbol, tone: "warn", help: "An item waits for your decision, like approving a plan or a change." },
@@ -193,6 +194,11 @@ export function NotificationsPage({ bridge }: NotificationsPageProps) {
                   {TEXT.soundsName}
                 </span>
                 <span className="notes-help">{TEXT.soundsHelp}</span>
+                {status?.soundPlayerMissing && (
+                  <span className="notes-help" role="status">
+                    {TEXT.soundsMissing}
+                  </span>
+                )}
               </div>
               <Segmented options={SOUND_SETS} value={values.sounds} onChange={(sounds) => choose({ sounds })} labelledBy="notes-sounds" />
             </div>
