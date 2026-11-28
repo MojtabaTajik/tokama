@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SaidSchema } from "../../kernel/schemas/index.js";
-import { HEADLINE_RULE, NO_CHANGE_RULE, readMinutesOf, saidOf } from "./headline.js";
+import { HEADLINE_RULE, labelOf, NO_CHANGE_RULE, PLAN_RULE, planCoverage, planLabelOf, readMinutesOf, saidOf } from "./headline.js";
 import { parseHeadline } from "./summary.js";
 
 const words = (count: number) => Array.from({ length: count }, (_, i) => `w${i}`).join(" ");
@@ -29,6 +29,69 @@ describe("saidOf: no change needed", () => {
     expect(saidOf(parseHeadline(reply), none)).not.toHaveProperty("noChange");
     expect(saidOf(parseHeadline("Text.\nHEADLINE: Half a day."), { ...none, noChangeOffered: true })).not.toHaveProperty("noChange");
     expect(SaidSchema.safeParse(saidOf(parseHeadline(reply), { ...none, noChangeOffered: true })).success).toBe(true);
+  });
+});
+
+describe("PLAN_RULE", () => {
+  it("asks for the plan lines with the caps of the schema, and no Markdown", () => {
+    expect(PLAN_RULE).toContain("CHOICE: <what was open> | <what you picked> | <what that means, optional>");
+    expect(PLAN_RULE).toContain("up to 7 lines");
+    expect(PLAN_RULE).toContain('start the second part with "Unsure: "');
+    for (const kind of ["files", "deps", "services", "secrets"]) expect(PLAN_RULE).toContain(`REACH: ${kind} |`);
+    expect(PLAN_RULE).toContain("up to 3 such lines");
+    expect(PLAN_RULE).toContain("Each part at most 160 characters");
+    expect(PLAN_RULE).not.toMatch(/[*`#]/);
+    expect(HEADLINE_RULE).not.toContain("CHOICE");
+  });
+});
+
+describe("planLabelOf", () => {
+  it("reads the three labels in any case, after list, quote and bold marks", () => {
+    expect(planLabelOf("CHOICE: a | b")).toEqual({ label: "CHOICE", value: "a | b" });
+    expect(planLabelOf("- **reach**: files | a")).toEqual({ label: "REACH", value: "files | a" });
+    expect(planLabelOf("> Risk: slow")).toEqual({ label: "RISK", value: "slow" });
+  });
+
+  it("does not read the block labels or prose", () => {
+    for (const line of ["HEADLINE: x", "POINT: x", "The risk: x", "RISKS: x", "CHOICES: x", "Choice x"]) expect(planLabelOf(line), line).toBeUndefined();
+    expect(labelOf("CHOICE: a")).toBeUndefined();
+  });
+});
+
+describe("saidOf: the plan", () => {
+  const reply = "Text.\nHEADLINE: Plan.\nCHOICE: Port | 8080\nRISK: slow";
+  const said = (context: Partial<Parameters<typeof saidOf>[1]>) => saidOf(parseHeadline(reply), { ...none, ...context });
+
+  it("carries the plan only when it was asked for and the step changed nothing", () => {
+    expect(said({ planAsked: true, approvesText: true })).toMatchObject({ plan: { choices: [{ open: "Port", picked: "8080" }], risks: ["slow"] } });
+    expect(said({ planAsked: true, approvesText: false })).not.toHaveProperty("plan");
+    expect(said({ planAsked: false, approvesText: true })).not.toHaveProperty("plan");
+    expect(said({})).not.toHaveProperty("plan");
+  });
+
+  it("carries an empty plan when the agent wrote none, in the stored shape", () => {
+    const written = saidOf(parseHeadline("Text.\nHEADLINE: Plan."), { ...none, planAsked: true, approvesText: true });
+    expect(written?.plan).toEqual({ choices: [], moreChoices: 0, reach: [], risks: [], moreRisks: 0 });
+    expect(SaidSchema.safeParse(written).success).toBe(true);
+  });
+
+  it("does not turn a plan into a must-read by itself", () => {
+    expect(said({ planAsked: true })).not.toHaveProperty("readMinutes");
+  });
+});
+
+describe("planCoverage", () => {
+  const ask = { ...none, planAsked: true, approvesText: true };
+  const coverage = (reply: string) => planCoverage(saidOf(parseHeadline(reply), ask));
+
+  it("tells full, partial, headline only and missing apart", () => {
+    const full = "HEADLINE: P.\nCHOICE: a | b\nREACH: files | x\nREACH: deps | none\nREACH: services | none\nREACH: secrets | none\nRISK: r";
+    expect(coverage(full)).toBe("full");
+    expect(coverage("HEADLINE: P.\nCHOICE: a | b")).toBe("partial");
+    expect(coverage("HEADLINE: P.\nREACH: files | x\nREACH: deps | none\nREACH: services | none\nREACH: secrets | none\nRISK: r")).toBe("partial");
+    expect(coverage("Text.\nHEADLINE: P.")).toBe("headline_only");
+    expect(coverage("Only text.")).toBe("missing");
+    expect(coverage("")).toBe("missing");
   });
 });
 

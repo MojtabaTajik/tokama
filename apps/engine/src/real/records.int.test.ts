@@ -143,7 +143,8 @@ describe("toItemRecord", () => {
   });
 
   it("sends what the agent said on its ended attempt; an attempt recorded without it sends none", () => {
-    const said = { source: "headline" as const, headline: "Fixed the greeting.", points: ["Not run on Windows."], morePoints: 0, bodyBytes: 240, readMinutes: 2 };
+    const plan = { choices: [{ open: "Port", picked: "8080" }], moreChoices: 0, reach: [{ kind: "deps" as const, none: true as const }], risks: ["Slow."], moreRisks: 0 };
+    const said = { source: "headline" as const, headline: "Fixed the greeting.", points: ["Not run on Windows."], morePoints: 0, bodyBytes: 240, readMinutes: 2, plan };
     const record = toItemRecord(
       append(created(), [
         { type: "step_started", stepId: FIX },

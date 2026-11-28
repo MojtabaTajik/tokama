@@ -337,7 +337,7 @@ const SAID_MUST_READ = {
   readMinutes: 4,
 };
 
-/** What the Architect said of the stock reservation plan: a must-read with two points. */
+/** What the Architect said of the stock reservation plan: a must-read with two points, and its choices, reach and risks. */
 const SAID_PLAN = {
   source: "headline",
   headline: "Reserve stock at checkout and release it when an order is cancelled: 6 files, one reversible migration.",
@@ -345,6 +345,42 @@ const SAID_PLAN = {
   morePoints: 0,
   bodyBytes: 1_480,
   readMinutes: 2,
+  plan: {
+    choices: [
+      { open: "Hold time", picked: "30 minutes, then released", means: "an abandoned cart blocks stock for half an hour" },
+      { open: "When to reserve", picked: "at checkout, before the payment step", means: "an unpaid order holds stock until it expires" },
+      { open: "Inventory service down", picked: "checkout fails with \"out of stock\"", means: "no order is taken without a reservation" },
+      { open: "Cancelled order", picked: "release at once", unsure: true },
+    ],
+    moreChoices: 0,
+    reach: [
+      { kind: "files", value: "6 files: 4 in inventory-service, 2 in orders-api" },
+      { kind: "deps", none: true },
+      { kind: "services", value: "inventory-service POST /reservations", note: "called by orders-api when an order is placed" },
+      { kind: "secrets", none: true, note: "the call uses the existing service token" },
+    ],
+    risks: ["The reserve call adds a network hop to checkout.", "The migration adds a table; DROP TABLE undoes it."],
+    moreRisks: 0,
+  },
+};
+
+/** The Architect's first plan for the same item: it held stock for 60 minutes, so the second plan marks that row as changed. */
+const SAID_PLAN_FIRST = {
+  ...SAID_PLAN,
+  plan: {
+    ...SAID_PLAN.plan,
+    choices: [{ open: "Hold time", picked: "60 minutes, then released", means: "an abandoned cart blocks stock for an hour" }, ...SAID_PLAN.plan.choices.slice(1)],
+  },
+};
+
+/** What the Architect said of a plan without the choice, reach and risk lines: only the headline, so the cards show the fallback. */
+const SAID_PLAN_NO_LINES = {
+  source: "headline",
+  headline: "Keep the start card's layout while it fades by moving the fade to opacity only.",
+  points: [],
+  morePoints: 0,
+  bodyBytes: 420,
+  plan: { choices: [], moreChoices: 0, reach: [], risks: [], moreRisks: 0 },
 };
 
 /** What the Architect answered to a question: a must-read answer with two points. */
@@ -666,7 +702,20 @@ function rawItems(now: number): RawItem[] {
         ],
       },
       // The plan changed no file, so what the Architect says of it is a must-read.
-      steps: steps(templates.planAndBuild, ["needs_you"], { 0: "waits for you" }).map((step, index) => (index === 0 ? { ...step, runs: 1, maxAttempts: 3, attempts: [{ attempt: 1, result: "passed", checks: [], said: SAID_PLAN }] } : step)),
+      // The first plan was sent back once; the second is the one waiting.
+      steps: steps(templates.planAndBuild, ["needs_you"], { 0: "waits for you" }).map((step, index) =>
+        index === 0
+          ? {
+              ...step,
+              runs: 2,
+              maxAttempts: 3,
+              attempts: [
+                { attempt: 1, result: "passed", checks: [], said: SAID_PLAN_FIRST },
+                { attempt: 2, result: "passed", checks: [], said: SAID_PLAN },
+              ],
+            }
+          : step,
+      ),
     },
     {
       ...base,
@@ -700,7 +749,7 @@ function rawItems(now: number): RawItem[] {
       },
       steps: steps(templates.planAndBuild, ["passed", "passed", "passed", "needs_you"], { 0: "plan approved", 1: "passed on attempt 2", 2: "passed on attempt 2", 3: "waits for you" }).map((step, index) => {
         const attempts = [
-          [{ attempt: 1, result: "passed", checks: [] }],
+          [{ attempt: 1, result: "passed", checks: [], said: SAID_PLAN_NO_LINES }],
           [
             { attempt: 1, result: "passed", checks: [] },
             { attempt: 2, result: "passed", checks: [] },
@@ -760,7 +809,8 @@ export const sampleOutputs: Readonly<Record<string, Readonly<Record<number, read
     ],
   },
   [ITEM_IDS.planApproval]: {
-    0: [
+    // The first plan held stock for 60 minutes; the second, which waits, for 30.
+    0: [60, 30].map((minutes) =>
       [
         "## Plan: reserve stock when an order is placed",
         "",
@@ -771,7 +821,7 @@ export const sampleOutputs: Readonly<Record<string, Readonly<Record<number, read
         "1. Add a `stock_reservations` table to inventory-service, with `order_id`, `sku`, `quantity` and `expires_at`.",
         "2. Add `POST /reservations` and `DELETE /reservations/{orderId}` to inventory-service.",
         "3. Call `POST /reservations` from `OrderService.place` in orders-api, before the payment step. A refusal ends checkout with \"out of stock\".",
-        "4. Release the reservation in `OrderService.cancel`, and in a job that removes reservations older than 30 minutes.",
+        `4. Release the reservation in \`OrderService.cancel\`, and in a job that removes reservations older than ${minutes} minutes.`,
         "",
         "### Tests",
         "",
@@ -790,7 +840,7 @@ export const sampleOutputs: Readonly<Record<string, Readonly<Record<number, read
         "",
         "Files to change: 6. Nothing is changed until Build runs.",
       ].join("\n"),
-    ],
+    ),
   },
   [ITEM_IDS.finished]: {
     0: [
@@ -819,6 +869,7 @@ export const sampleOutputs: Readonly<Record<string, Readonly<Record<number, read
     ],
   },
   [ITEM_IDS.reviewLimit]: {
+    0: ["Plan: keep the start card's layout while it fades. Fade with opacity only and leave `display` alone, so the two lines never jump onto one.\n\nHEADLINE: Keep the start card's layout while it fades by moving the fade to opacity only."],
     3: [
       [
         "**Needs changes.** The change follows the plan, but one visual bug needs fixing first.",

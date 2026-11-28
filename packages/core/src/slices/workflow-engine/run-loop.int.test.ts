@@ -2016,6 +2016,96 @@ describe("run loop: a step you approve says no change is needed", () => {
     expect(runtime.calls[2]?.request.prompt).not.toContain("NO_CHANGE");
   });
 
+  describe("the plan block", () => {
+    const PLAN = [
+      "The plan.",
+      "HEADLINE: Add a CSV export.",
+      "CHOICE: Format | CSV only | no Excel",
+      "REACH: files | src/export.ts (new)",
+      "REACH: deps | none",
+      "REACH: services | none",
+      "REACH: secrets | none",
+      "RISK: Large exports are slow.",
+    ].join("\n");
+    const lines = (messages: string[]) => ({ log: (message: string) => messages.push(message) });
+
+    it("only a step you approve with a step after it is asked for it; every other prompt is as before", SLOW, async () => {
+      const plan = fakeRuntime([says(PLAN)]);
+      await started(plan);
+      expect(plan.calls[0]?.request.prompt).toContain("CHOICE: <what was open>");
+      expect(plan.calls[0]?.request.prompt).toContain("REACH: services |");
+      // The rules come in the order headline, plan, no change.
+      const prompt = plan.calls[0]!.request.prompt;
+      expect(prompt.indexOf("HEADLINE: <one line")).toBeLessThan(prompt.indexOf("CHOICE: <what was open>"));
+      expect(prompt.indexOf("CHOICE: <what was open>")).toBeLessThan(prompt.indexOf("NO_CHANGE: yes"));
+
+      const last = fakeRuntime([says(PLAN)]);
+      await started(last, template([{ id: "plan", doneWhen: "you approve" }]));
+      const first = fakeRuntime([edits(FIXED)]);
+      await started(first, template([{ id: "build" }, { id: "plan", doneWhen: "you approve" }]));
+      const reviewed = fakeRuntime([says("Fine.\nHEADLINE: ok\nVERDICT: approve")]);
+      await started(reviewed, template([{ id: "build" }, { id: "review", agentId: "reviewer", doneWhen: "reviewer approves", ifChangesRequested: { action: "ask" } }]));
+      for (const runtime of [last, first, reviewed]) expect(runtime.calls.every((call) => !call.request.prompt.includes("CHOICE:"))).toBe(true);
+    });
+
+    it("keeps the rule after Build anyway, and drops only the no-change line", SLOW, async () => {
+      const runtime = fakeRuntime([says("The answer.\nHEADLINE: Half a day.\nNO_CHANGE: yes"), says(PLAN)]);
+      const id = await started(runtime);
+      expect(openDecision(id)?.proposes).toBe("no_change");
+      const resolved = await current.resolveDecision(id, openDecision(id)!.id, "request_changes", "Build it anyway.");
+      if (!resolved.ok) throw new Error(resolved.error.message);
+      await current.settled(id);
+      expect(runtime.calls[0]?.request.prompt).toContain("NO_CHANGE: yes");
+      expect(runtime.calls[1]?.request.prompt).toContain("CHOICE: <what was open>");
+      expect(runtime.calls[1]?.request.prompt).not.toContain("NO_CHANGE");
+    });
+
+    it("stores the plan the agent wrote on the attempt of a step that changed nothing", SLOW, async () => {
+      const messages: string[] = [];
+      current = engine(fakeRuntime([says(PLAN)]), lines(messages));
+      const id = await start(current, PLAN_BUILD());
+      expect(item(id).steps[0]?.attempts[0]?.said?.plan).toEqual({
+        choices: [{ open: "Format", picked: "CSV only", means: "no Excel" }],
+        moreChoices: 0,
+        reach: [{ kind: "files", value: "src/export.ts (new)" }, { kind: "deps", none: true }, { kind: "services", none: true }, { kind: "secrets", none: true }],
+        risks: ["Large exports are slow."],
+        moreRisks: 0,
+      });
+      expect(messages).toEqual([expect.stringContaining("plan block of step plan: full")]);
+    });
+
+    it("stores an empty plan when the agent left the lines out, and logs it", SLOW, async () => {
+      const messages: string[] = [];
+      current = engine(fakeRuntime([says("A plan.\nHEADLINE: Do it.")]), lines(messages));
+      const id = await start(current, PLAN_BUILD());
+      expect(item(id).steps[0]?.attempts[0]?.said?.plan).toEqual({ choices: [], moreChoices: 0, reach: [], risks: [], moreRisks: 0 });
+      expect(messages).toEqual([expect.stringContaining("plan block of step plan: headline_only")]);
+      const none: string[] = [];
+      current = engine(fakeRuntime([says("First line.\nSecond.")]), lines(none));
+      await start(current, PLAN_BUILD());
+      expect(none).toEqual([expect.stringContaining("plan block of step plan: missing")]);
+    });
+
+    it("stores no plan when the step changed a file, and says nothing in the log", SLOW, async () => {
+      const messages: string[] = [];
+      current = engine(fakeRuntime([edits(FIXED, PLAN)]), lines(messages));
+      const id = await start(current, PLAN_BUILD());
+      expect(item(id).steps[0]?.attempts[0]?.said).not.toHaveProperty("plan");
+      expect(messages).toEqual([]);
+    });
+
+    it("sends the note of Request changes to the next attempt word for word", SLOW, async () => {
+      const runtime = fakeRuntime([says(PLAN), says(PLAN)]);
+      const id = await started(runtime);
+      const note = ['Plan again with these changes. Keep the first part of every CHOICE line exactly as written below.', "Change:", '- Format: you picked "CSV only". Instead: CSV and JSON', "Also: keep it small"].join("\n");
+      const resolved = await current.resolveDecision(id, openDecision(id)!.id, "request_changes", note);
+      if (!resolved.ok) throw new Error(resolved.error.message);
+      await current.settled(id);
+      expect(runtime.calls[1]?.request.prompt).toContain(`You asked for changes:\n${note}`);
+      expect(item(id).steps[0]?.attempts[1]?.said?.plan?.choices).toHaveLength(1);
+    });
+  });
+
   it("the quiet End: no action needed of an ordinary plan question ends as before and keeps its worktree", SLOW, async () => {
     const id = await started(fakeRuntime([edits(FIXED)]));
     await answer(current, id, "no_action_needed");

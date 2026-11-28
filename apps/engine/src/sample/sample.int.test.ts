@@ -254,8 +254,16 @@ describe("fake engine mode", () => {
     expect(waiting.decision?.why).not.toContain("changed 0 files");
     expect(waiting.decision?.hasDiff).toBeUndefined();
     const plan = await client.query({ type: "step_output", itemId: ITEM_IDS.planApproval, stepIndex: 0 });
-    expect(plan).toMatchObject({ ok: true, data: { attempt: 1, text: expect.stringContaining("## Plan: reserve stock"), truncated: false } });
-    expect(await client.query({ type: "step_output", itemId: ITEM_IDS.planApproval, stepIndex: 0, attempt: 2 })).toMatchObject({ ok: false, error: { code: "not_found" } });
+    // The plan was sent back once: the second plan waits, and the first is still served.
+    expect(plan).toMatchObject({ ok: true, data: { attempt: 2, text: expect.stringContaining("older than 30 minutes"), truncated: false } });
+    expect(await client.query({ type: "step_output", itemId: ITEM_IDS.planApproval, stepIndex: 0, attempt: 1 })).toMatchObject({ ok: true, data: { text: expect.stringContaining("older than 60 minutes") } });
+    expect(await client.query({ type: "step_output", itemId: ITEM_IDS.planApproval, stepIndex: 0, attempt: 3 })).toMatchObject({ ok: false, error: { code: "not_found" } });
+    // Both plans say their choices, and the second differs from the first in one row.
+    const [first, second] = waiting.steps[0]!.attempts!.map((attempt) => attempt.said?.plan);
+    expect(second?.choices.map((choice) => choice.open)).toEqual(first?.choices.map((choice) => choice.open));
+    expect(second?.choices.filter((choice, index) => choice.picked !== first?.choices[index]?.picked).map((choice) => choice.open)).toEqual(["Hold time"]);
+    // A plan whose agent left the lines out carries an empty summary.
+    expect((await item(client, ITEM_IDS.reviewLimit)).steps[0]?.attempts?.[0]?.said?.plan).toEqual({ choices: [], moreChoices: 0, reach: [], risks: [], moreRisks: 0 });
     expect(await client.query({ type: "step_output", itemId: ITEM_IDS.planApproval, stepIndex: 1 })).toMatchObject({ ok: false, error: { code: "not_found" } });
   });
 

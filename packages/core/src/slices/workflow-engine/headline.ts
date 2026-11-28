@@ -1,7 +1,7 @@
 // The headline an agent writes at the end of its reply, and what the run loop makes of it. The
 // rule is added to the instructions of every agent step of a template; helpers and Tokama's own
 // steps never get it. Reading the block back is in summary.ts.
-import { MAX_HEADLINE_CHARS, MAX_POINT_CHARS, MAX_POINTS, type Said } from "../../kernel/schemas/index.js";
+import { MAX_CHOICES, MAX_HEADLINE_CHARS, MAX_PLAN_PART_CHARS, MAX_POINT_CHARS, MAX_POINTS, MAX_RISKS, type Said } from "../../kernel/schemas/index.js";
 import type { ParsedHeadline } from "./summary.js";
 
 /** Added to an agent step's instructions; a reviewer's `VERDICT_RULE` comes after it, so the verdict stays the last line. */
@@ -12,7 +12,22 @@ HEADLINE: <one line, at most ${MAX_HEADLINE_CHARS} characters: the most importan
 POINT: <optional; up to ${MAX_POINTS} such lines, each at most ${MAX_POINT_CHARS} characters: what else the engineer must know, such as what is not done, what you assumed, what you are unsure about>
 READ: yes   <only when the engineer must read your full reply to use this work: a design, findings, a plan with choices>`;
 
-/** Added after `HEADLINE_RULE` on a step you approve that a step follows, unless the engineer chose to build anyway on it. */
+/**
+ * Added after `HEADLINE_RULE` on a step you approve that a step follows: its reply is a plan the
+ * engineer approves, so it also says what it decided, what it reaches and what it risks. It stays
+ * when the engineer chose to build anyway on the step.
+ */
+export const PLAN_RULE = `
+When your reply is a plan the engineer approves, also write these lines in the block, after HEADLINE:
+CHOICE: <what was open> | <what you picked> | <what that means, optional>   <up to ${MAX_CHOICES} lines: each thing the task did not settle that you decided; start the second part with "Unsure: " when you are not sure>
+REACH: files | <files you will change or add, or none>
+REACH: deps | <new dependencies, or none>
+REACH: services | <outside services the built code will call when it runs, or none> | <note, optional>
+REACH: secrets | <keys or secrets the change needs, or none> | <note, optional>
+RISK: <one line; up to ${MAX_RISKS} such lines: what the engineer accepts by approving>
+Each part at most ${MAX_PLAN_PART_CHARS} characters. Write "none" rather than leaving a REACH line out.`;
+
+/** Added after `HEADLINE_RULE` (and `PLAN_RULE`) on a step you approve that a step follows, unless the engineer chose to build anyway on it. */
 export const NO_CHANGE_RULE = `
 NO_CHANGE: yes   <only when nothing needs to be changed or built and your reply is the answer, and you changed no files; leave the line out otherwise>`;
 
@@ -54,6 +69,16 @@ export function labelOf(line: string): { label: "HEADLINE" | "POINT" | "READ" | 
 /** Whether the line is a line of the headline block. */
 export const isBlockLine = (line: string): boolean => labelOf(line)?.block === true;
 
+// The plan labels, read with the same tolerance as the block labels but apart from them: a prose
+// line such as "- Risk: the cache" must stay a line of the reply for the readers of `BLOCK_LABEL`.
+const PLAN_LABEL = /^\s*(?:(?:[-*]\s+|>\s*)*)(?:\*\*|__)?(CHOICE|REACH|RISK)(?:\*\*|__)?\s*:([\s\S]*)$/i;
+
+/** The label of a plan line (`CHOICE:`, `REACH:`, `RISK:`) and its plain value; undefined for any other line. */
+export function planLabelOf(line: string): { label: "CHOICE" | "REACH" | "RISK"; value: string } | undefined {
+  const match = PLAN_LABEL.exec(line);
+  return match === null ? undefined : { label: match[1]!.toUpperCase() as "CHOICE" | "REACH" | "RISK", value: plain(match[2]!) };
+}
+
 /** A reply of at least this many words can be a must-read by the agent's own flag. */
 const READ_FLAG_MIN_WORDS = 150;
 const WORDS_PER_MINUTE = 200;
@@ -67,6 +92,18 @@ export interface ReadContext {
   readonly lastOfDocument: boolean;
   /** The step was told it may say "no change needed", and what it asks you to approve changed nothing. */
   readonly noChangeOffered?: boolean;
+  /** The step was told to write the plan block (`PLAN_RULE`). */
+  readonly planAsked?: boolean;
+}
+
+/**
+ * How much of the plan block a plan's reply had, for the log: `full` has a choice, all four reach
+ * lines and a risk; `headline_only` and `missing` have none of it, with and without a headline.
+ */
+export function planCoverage(said: Said | undefined): "full" | "partial" | "headline_only" | "missing" {
+  const plan = said?.plan;
+  if (plan === undefined || (plan.choices.length === 0 && plan.reach.length === 0 && plan.risks.length === 0)) return said?.source === "headline" ? "headline_only" : "missing";
+  return plan.choices.length > 0 && plan.reach.length === 4 && plan.risks.length > 0 ? "full" : "partial";
 }
 
 /** Minutes to read `words`, rounded up: 1 to 60. */
@@ -88,5 +125,7 @@ export function saidOf(parsed: ParsedHeadline | undefined, context: ReadContext)
     bodyBytes: parsed.bodyBytes,
     ...(mustRead && { readMinutes: readMinutesOf(parsed.words) }),
     ...(context.noChangeOffered === true && parsed.noChange && { noChange: true as const }),
+    // Asked for and nothing changed: an empty summary says the agent left the block out.
+    ...(context.planAsked === true && context.approvesText && { plan: parsed.plan }),
   };
 }

@@ -1,9 +1,23 @@
 // What an agent's output says, read for the card of a step that stopped: the reviewer's verdict
 // with the items of its "Must change" list, or the first lines as written. Agent output is free
 // text, so the reading is tolerant: an unknown shape gives the first lines, never an error.
-import { MAX_HEADLINE_CHARS, MAX_POINT_CHARS, MAX_POINTS, MAX_SUMMARY_ITEMS, MAX_SUMMARY_LINE_CHARS, type OutputSummary } from "../../kernel/schemas/index.js";
+import {
+  MAX_CHOICES,
+  MAX_HEADLINE_CHARS,
+  MAX_PLAN_PART_CHARS,
+  MAX_POINT_CHARS,
+  MAX_POINTS,
+  MAX_RISKS,
+  MAX_SUMMARY_ITEMS,
+  MAX_SUMMARY_LINE_CHARS,
+  type OutputSummary,
+  type PlanChoice,
+  type PlanReach,
+  type PlanSummary,
+  type ReachKind,
+} from "../../kernel/schemas/index.js";
 import { cutText } from "../../kernel/text/index.js";
-import { labelOf, plain } from "./headline.js";
+import { isBlockLine, labelOf, plain, planLabelOf } from "./headline.js";
 import { parseVerdict } from "./verdict.js";
 
 /** First lines shown for a step without a verdict format; a verdict step that broke it shows more. */
@@ -126,6 +140,8 @@ export interface ParsedHeadline {
   readonly readFlag: boolean;
   /** The agent wrote `NO_CHANGE: yes` in its block, after the headline. */
   readonly noChange: boolean;
+  /** The plan lines of the block; empty when there are none. */
+  readonly plan: PlanSummary;
 }
 
 /**
@@ -143,12 +159,14 @@ export function parseHeadline(text: string): ParsedHeadline | undefined {
 
 function parse(text: string): ParsedHeadline | undefined {
   const lines = text.split(/\r?\n/);
+  const planLines = planLineIndices(lines);
+  const plan = parsePlan(planLines.map((index) => planLabelOf(lines[index]!)!));
   const window = lines.flatMap((line, index) => (line.trim() === "" ? [] : [index])).slice(-BLOCK_WINDOW);
   const head = window.findLast((index) => labelOf(lines[index]!)?.label === "HEADLINE");
   const headline = head === undefined ? "" : labelOf(lines[head]!)!.value;
   const after = head === undefined || headline === "" ? [] : window.filter((index) => index > head).map((index) => labelOf(lines[index]!));
-  // Whatever is block text from the headline on is not part of the reply.
-  const body = lines.filter((line, index) => (head === undefined || index < head) || labelOf(line)?.block !== true);
+  // Whatever is block text from the headline on is not part of the reply, and neither are the plan lines.
+  const body = lines.filter((line, index) => !planLines.includes(index) && ((head === undefined || index < head) || labelOf(line)?.block !== true));
   const bodyText = body.join("\n").trim();
   const result = { bodyBytes: new TextEncoder().encode(bodyText).length, words: bodyText === "" ? 0 : bodyText.split(/\s+/).length };
   if (headline !== "") {
@@ -161,6 +179,7 @@ function parse(text: string): ParsedHeadline | undefined {
       ...result,
       readFlag: after.some((found) => found?.label === "READ" && /^yes\b/i.test(found.value)),
       noChange: after.some((found) => found?.label === "NO_CHANGE" && found.block),
+      plan,
     };
   }
   const said = body.flatMap((line) => (VERDICT_LINE.test(line.trim()) || labelOf(line)?.block === true ? [] : [plain(line)])).filter((line) => line !== "");
@@ -173,6 +192,95 @@ function parse(text: string): ParsedHeadline | undefined {
     ...result,
     readFlag: false,
     noChange: false,
+    plan,
+  };
+}
+
+// ---- the plan lines -------------------------------------------------------------------------
+
+/** How many non-empty lines at the end of a reply the plan lines are looked for in. */
+const PLAN_WINDOW = 40;
+const NONE = /^(?:none|no|-|–|—|n\/a)$/i;
+const UNSURE = /^unsure\s*:\s*/i;
+const REACH_KINDS: Readonly<Record<string, ReachKind>> = {
+  file: "files",
+  files: "files",
+  dep: "deps",
+  deps: "deps",
+  dependencies: "deps",
+  "new dependencies": "deps",
+  service: "services",
+  services: "services",
+  "outside services": "services",
+  secret: "secrets",
+  secrets: "secrets",
+  keys: "secrets",
+};
+
+/**
+ * The lines of the trailing run: the last non-empty lines that are all block or plan lines,
+ * read backwards from the end, at most 40. A plan label anywhere else in the reply is prose.
+ */
+function planLineIndices(lines: readonly string[]): number[] {
+  const found: number[] = [];
+  let seen = 0;
+  for (let index = lines.length - 1; index >= 0 && seen < PLAN_WINDOW; index--) {
+    const line = lines[index]!;
+    if (line.trim() === "") continue;
+    seen++;
+    if (planLabelOf(line) !== undefined) found.push(index);
+    else if (!isBlockLine(line)) break;
+  }
+  return found.reverse();
+}
+
+/** The parts of a line, split on `|`: at most three, the rest joined into the last. */
+function partsOf(value: string): string[] {
+  const parts = value.replace(/^\s*\|+\s*|\s*\|+\s*$/g, "").split(/\s*\|\s*/);
+  return parts.length <= 3 ? parts : [parts[0]!, parts[1]!, parts.slice(2).join(" | ")];
+}
+
+const part = (text: string | undefined): string | undefined => (text === undefined || text === "" ? undefined : cutText(text, MAX_PLAN_PART_CHARS));
+
+function choiceOf(value: string): PlanChoice | undefined {
+  const parts = partsOf(value);
+  const [open, picked, means] = parts.length === 1 ? [undefined, parts[0], undefined] : parts;
+  // "Unsure: " leads the open part or the picked part.
+  const unsure = [open, picked].some((p) => p !== undefined && UNSURE.test(p));
+  const answer = part(picked?.replace(UNSURE, "").trim());
+  if (answer === undefined) return undefined;
+  const asked = part(open?.replace(UNSURE, "").trim());
+  const meant = part(means);
+  return { ...(asked !== undefined && { open: asked }), picked: answer, ...(meant !== undefined && { means: meant }), ...(unsure && { unsure: true as const }) };
+}
+
+function reachOf(value: string): PlanReach | undefined {
+  const [kind, said, note] = partsOf(value);
+  const known = REACH_KINDS[(kind ?? "").toLowerCase()];
+  const written = part(said);
+  if (known === undefined || written === undefined) return undefined;
+  const noted = part(note);
+  return { kind: known, ...(NONE.test(written) ? { none: true as const } : { value: written }), ...(noted !== undefined && { note: noted }) };
+}
+
+/** The plan lines read in order: each reach kind once (the first wins), 7 choices and 3 risks, the rest counted. */
+function parsePlan(found: readonly { label: "CHOICE" | "REACH" | "RISK"; value: string }[]): PlanSummary {
+  const choices = found.flatMap((line) => (line.label === "CHOICE" ? [choiceOf(line.value)] : [])).filter((choice) => choice !== undefined);
+  const risks = found.flatMap((line) => {
+    const risk = line.label === "RISK" ? part(line.value) : undefined;
+    return risk === undefined || NONE.test(risk) ? [] : [risk];
+  });
+  const reach: PlanReach[] = [];
+  for (const line of found) {
+    const read = line.label === "REACH" ? reachOf(line.value) : undefined;
+    if (read !== undefined && !reach.some((r) => r.kind === read.kind)) reach.push(read);
+  }
+  return {
+    choices: choices.slice(0, MAX_CHOICES),
+    moreChoices: Math.max(0, choices.length - MAX_CHOICES),
+    reach,
+    risks: risks.slice(0, MAX_RISKS),
+    moreRisks: Math.max(0, risks.length - MAX_RISKS),
   };
 }
 
