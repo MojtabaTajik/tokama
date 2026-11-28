@@ -106,7 +106,11 @@ describe("setup in a trial", () => {
   it("makes the field one line, and names the word that was not found", () => {
     expect(setupText("  npm ci \n")).toBe("npm ci");
     expect(setupText("npm ci\n  --ignore-scripts")).toBe("npm ci --ignore-scripts");
-    expect(couldNotStartText("pnpm")).toBe("pnpm was not found. Tokama runs commands with the PATH of its background service, which can differ from your terminal.");
+    expect(couldNotStartText("pnpm", undefined)).toBe("pnpm was not found. Tokama runs commands with the PATH of its background service, which can differ from your terminal.");
+    expect(couldNotStartText("pnpm", "not_found")).toBe(couldNotStartText("pnpm", undefined));
+    // A path is looked for in the worktree, not on the PATH.
+    expect(couldNotStartText("./scripts/setup.sh", "not_found")).toBe("./scripts/setup.sh was not found in the worktree.");
+    expect(couldNotStartText("./scripts/setup.sh", "not_executable")).toBe("./scripts/setup.sh was found but cannot run. Check that it is executable.");
   });
 
   it("turns Try checks off for a setup that breaks the rule, first", () => {

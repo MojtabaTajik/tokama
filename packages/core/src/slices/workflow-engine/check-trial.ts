@@ -210,17 +210,18 @@ function finished(result: CheckResult, folders: readonly (readonly [string, stri
 }
 
 /**
- * The setup's own line. Exit 127 and a shell that did not start mean the command was not found: the
- * line names its first word. A refused command shows the refusal as its output.
+ * The setup's own line. Exit 127 and a shell that did not start mean the command was not found, and
+ * exit 126 that it was found and cannot run: the line names its first word. A refused command shows
+ * the refusal as its output.
  */
 function setupLine(result: CheckResult, folders: readonly (readonly [string, string])[]): NonNullable<CheckTrial["setupResult"]> {
   const base = { durationMs: result.durationMs, ...(result.exitCode !== null && { exitCode: result.exitCode }) };
   if (result.outcome === "refused") return { ...base, state: "failed", outputTail: tidyOutput(`could not start: ${result.output}`, folders) };
   const state = result.outcome === "passed" ? "passed" : result.outcome === "timed-out" ? "timed_out" : "failed";
   const word = result.command.trim().split(/\s+/)[0] ?? "";
-  // Exit 127 names the command's first word only when the shell said that word was not found: `sh -c 'x'` can exit 127 for x.
-  const notFound = result.outcome === "not-started" || (result.exitCode === 127 && (result.output.includes(`${word}: not found`) || result.output.includes(`${word}: command not found`)));
-  return { ...base, state, outputTail: tidyOutput(result.output, folders), ...(notFound && word !== "" && { couldNotStart: { word: cutText(word, 100) } }) };
+  // Exit 127 is always "not found" and 126 "found but cannot run", whatever the shell prints: bash on macOS and dash on Linux word it differently.
+  const reason = result.exitCode === 126 ? ("not_executable" as const) : result.outcome === "not-started" || result.exitCode === 127 ? ("not_found" as const) : undefined;
+  return { ...base, state, outputTail: tidyOutput(result.output, folders), ...(reason !== undefined && word !== "" && { couldNotStart: { word: cutText(word, 100), ...(reason === "not_executable" && { reason }) } }) };
 }
 
 /** Why the setup failed, in Tokama's words with a short cleaned end of its output; at most 1 000 characters. */

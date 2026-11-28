@@ -65,7 +65,8 @@ const RepoEntrySchema = z.strictObject({
     .refine(isWorktreeFolder, "must be a folder inside the repo and outside .git, such as .tokama/wt")
     .optional(),
   checks: z.array(commandText).max(MAX_CHECKS).optional(),
-  setup: commandText.optional(),
+  // A blank or empty `setup:` is no setup, not a problem with the file.
+  setup: z.preprocess((value) => (value === null || (typeof value === "string" && value.trim() === "") ? undefined : value), commandText.optional()),
 });
 
 export const ReposFileSchema = z
@@ -127,7 +128,7 @@ export async function readReposFile(options: LoadReposOptions): Promise<Result<R
       baseBranch: entry.base_branch,
       worktreeFolder: entry.worktree_folder ?? DEFAULT_WORKTREE_FOLDER,
       checks: entry.checks?.map((command) => command.trim()) ?? [],
-      ...(entry.setup === undefined || entry.setup.trim() === "" ? {} : { setup: entry.setup.trim() }),
+      ...(entry.setup === undefined ? {} : { setup: entry.setup.trim() }),
     })),
   });
 }

@@ -6,12 +6,12 @@
 // file behind it is replaced.
 import { constants } from "node:fs";
 import { homedir } from "node:os";
-import { access, lstat, mkdir, open, readdir, realpath, stat } from "node:fs/promises";
+import { access, lstat, mkdir, readdir, realpath, stat } from "node:fs/promises";
 // eslint-disable-next-line no-restricted-imports -- a new .gitignore is created exclusively (flag wx), so the user's own file is never replaced.
 import { writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { Document, isMap, isScalar, isSeq, parseDocument } from "yaml";
-import { readJsonFile, replaceTextSync } from "../../kernel/fs-safe/index.js";
+import { readJsonFile, readTextHead, replaceTextSync } from "../../kernel/fs-safe/index.js";
 import type { Git, GitError } from "../../kernel/git/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import { MAX_CHECK_CHARS, RESERVED_REPO_IDS, type RepoId, RepoIdSchema } from "../../kernel/schemas/index.js";
@@ -502,27 +502,14 @@ export async function suggestSetup(folder: string): Promise<{ command: string; f
   for (const [file, command] of SETUP_FILES) if (names.includes(file)) found.push({ command, from: file });
   // Yarn 1 does not know --immutable: its lockfile has no __metadata header, and its flag is --frozen-lockfile.
   const yarn = found.find((entry) => entry.from === "yarn.lock");
-  if (yarn !== undefined && !(await readHead(join(folder, "yarn.lock"))).includes("__metadata:")) yarn.command = "yarn install --frozen-lockfile";
+  if (yarn !== undefined) {
+    const head = await readTextHead(join(folder, "yarn.lock"), { maxBytes: 4096, replaceInvalid: true });
+    if (!head.ok || !head.value.text.includes("__metadata:")) yarn.command = "yarn install --frozen-lockfile";
+  }
   // The name is shown to the user: a name with control, invisible or direction characters is not offered.
   const dotnet = names.find((name) => /\.(sln|csproj)$/i.test(name) && name.length <= 255 && !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(name));
   if (dotnet !== undefined) found.push({ command: "dotnet restore", from: dotnet });
   return found.length === 1 ? found[0] : undefined;
-}
-
-/** The first 4 KB of a file as text; empty when it cannot be read. */
-async function readHead(path: string): Promise<string> {
-  try {
-    const file = await open(path, "r");
-    try {
-      const buffer = Buffer.alloc(4096);
-      const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
-      return buffer.toString("utf8", 0, bytesRead);
-    } finally {
-      await file.close();
-    }
-  } catch {
-    return "";
-  }
 }
 
 const SETUP_FILES = [

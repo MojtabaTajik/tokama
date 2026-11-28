@@ -150,8 +150,15 @@ export function setupLineOf(setup: NonNullable<CheckTrial["setupResult"]>, now: 
   }
 }
 
-/** The sentence under a setup command that was not found: what runs it differs from the user's terminal. */
-export const couldNotStartText = (word: string): string => `${word} was not found. Tokama runs commands with the PATH of its background service, which can differ from your terminal.`;
+/**
+ * The sentence under a setup command that could not start. A path is looked for in the worktree; a
+ * plain name on the PATH of the background service, which can differ from the user's terminal.
+ */
+export function couldNotStartText(word: string, reason: "not_found" | "not_executable" | undefined): string {
+  if (reason === "not_executable") return `${word} was found but cannot run. Check that it is executable.`;
+  if (word.includes("/")) return `${word} was not found in the worktree.`;
+  return `${word} was not found. Tokama runs commands with the PATH of its background service, which can differ from your terminal.`;
+}
 
 /** The setup ended without passing: it failed, timed out or could not start. */
 export const setupFailed = (trial: CheckTrial): boolean => trial.setupResult?.state === "failed" || trial.setupResult?.state === "timed_out";

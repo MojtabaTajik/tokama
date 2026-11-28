@@ -132,11 +132,14 @@ flow(
     const folder = makeRepo(tmp, "orders-api", "pnpm-lock.yaml");
     const add = await openAdd(app, page, folder);
     const long = "dotnet restore src/Orders.sln --locked-mode --source https://packages.northwind.example/nuget/v3/index.json";
+    const height = () => setupOf(add).evaluate((el) => ({ scroll: el.scrollHeight, client: el.clientHeight }));
+    await setupOf(add).fill("npm ci");
+    const oneLine = await height();
     await setupOf(add).fill(long);
-    // It grows: no line is cut or scrolled away.
-    const box = await setupOf(add).evaluate((el) => ({ scroll: el.scrollHeight, client: el.clientHeight }));
+    // It grows past one line, and no line is cut or scrolled away; fonts differ by system, so it is compared with a short command, not with pixels.
+    const box = await height();
     expect(box.scroll).toBeLessThanOrEqual(box.client + 1);
-    expect(box.client).toBeGreaterThan(40);
+    expect(box.client).toBeGreaterThan(oneLine.client);
     await screenshot("setup-760-field", add);
     await add.getByRole("button", { name: "Add repo", exact: true }).click();
     await add.waitFor({ state: "detached" });

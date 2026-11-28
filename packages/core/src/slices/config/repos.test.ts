@@ -64,6 +64,15 @@ repos:
     expect(messages(await load())).toEqual(["repos.yaml line 3: setup must be at most 500 characters"]);
   });
 
+  it("takes an empty or blank setup as no setup, and does not refuse the file", async () => {
+    for (const setup of ['""', "'   '", "", "~"]) {
+      write(`format: 1\nrepos:\n  - { id: a, path: /a, base_branch: main, setup: ${setup} }\n`);
+      const loaded = await load();
+      expect(loaded.ok && "setup" in loaded.value[0]!, setup).toBe(false);
+      expect(loaded.ok, setup).toBe(true);
+    }
+  });
+
   it("has no repos without a file, or with an empty list", async () => {
     expect(await loadRepos({ tokamaHome: join(root, "missing") })).toEqual({ ok: true, value: [] });
     write("format: 1\nrepos: []\n");

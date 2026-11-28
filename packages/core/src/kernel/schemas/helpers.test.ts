@@ -201,6 +201,8 @@ describe("check trial record", () => {
   it("takes a setup line with exit code, output, and the word that was not found", () => {
     const failed = { state: "failed", exitCode: 127, durationMs: 60, outputTail: "sh: pnpm: command not found", couldNotStart: { word: "pnpm" } };
     expect(parse(trial({ setup: "pnpm install", setupResult: failed }))).toBe(true);
+    expect(parse(trial({ setup: "pnpm install", setupResult: { ...failed, couldNotStart: { word: "./x.sh", reason: "not_executable" } } }))).toBe(true);
+    expect(parse(trial({ setup: "pnpm install", setupResult: { ...failed, couldNotStart: { word: "./x.sh", reason: "other" } } }))).toBe(false);
     expect(parse(trial({ setup: "pnpm install", setupResult: { ...failed, outputTail: "x".repeat(2001) } }))).toBe(false);
     expect(parse(trial({ setup: "pnpm install", setupResult: { ...failed, state: "bad" } }))).toBe(false);
   });

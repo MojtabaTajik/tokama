@@ -226,10 +226,21 @@ describe("running", () => {
     expect(run.last.checks[0]?.state).toBe("skipped");
   });
 
-  it("exit 127 from inside a command that was found does not name its first word", SLOW, async () => {
-    const run = await trial({ setup: "sh -c 'tokama-inner-missing'", checks: [{ command: "true" }] });
-    expect(run.last.setupResult).toMatchObject({ state: "failed", exitCode: 127 });
-    expect(run.last.setupResult?.couldNotStart).toBeUndefined();
+  it("exit 127 is always could not start, whatever the shell prints, also for a script path", SLOW, async () => {
+    const inner = await trial({ setup: "sh -c 'tokama-inner-missing'", checks: [{ command: "true" }] });
+    expect(inner.last.setupResult).toMatchObject({ state: "failed", exitCode: 127, couldNotStart: { word: "sh" } });
+    const path = await trial({ setup: "./scripts/setup.sh", checks: [{ command: "true" }] });
+    expect(path.last.setupResult).toMatchObject({ state: "failed", exitCode: 127, couldNotStart: { word: "./scripts/setup.sh" } });
+    expect(path.last.setupResult?.couldNotStart?.reason).toBeUndefined();
+  });
+
+  it("exit 126 is could not start, found but not executable", SLOW, async () => {
+    writeFileSync(join(repo.path, "noexec.sh"), "#!/bin/sh\nexit 0\n");
+    await plain(repo.path, "add", "-A");
+    await plain(repo.path, "commit", "-q", "-m", "script without the executable bit");
+    const run = await trial({ setup: "./noexec.sh", checks: [{ command: "true" }] });
+    expect(run.last.setupResult).toMatchObject({ state: "failed", exitCode: 126, couldNotStart: { word: "./noexec.sh", reason: "not_executable" } });
+    expect(run.last.checks[0]?.state).toBe("skipped");
   });
 
   it("a setup that times out is shown as timed out", SLOW, async () => {
