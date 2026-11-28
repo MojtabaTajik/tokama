@@ -422,6 +422,35 @@ describe("buildPrompt: paths", () => {
   });
 });
 
+describe("buildPrompt: tokens in check commands and output", () => {
+  const TOKEN = `ghp_${"a1B2c3D4e5F6g7H8i9J0".repeat(2)}`;
+
+  it("hides tokens in the last check output, and keeps paths, URLs and repo names", () => {
+    const output = `$ NPM_TOKEN=abc123xyz pnpm test (exit 1)\nFAIL /home/dev/orders-api/a.test.ts\nfetch https://registry.npmjs.org/zod failed: ${TOKEN}`;
+    const prompt = built(base("plan", { lastCheckOutput: output }));
+    expect(prompt.user).toContain("$ NPM_TOKEN=<redacted> pnpm test (exit 1)");
+    expect(prompt.user).toContain("FAIL ~/orders-api/a.test.ts");
+    expect(prompt.user).toContain("https://registry.npmjs.org/zod failed: <redacted>");
+    expect(prompt.user).not.toContain("abc123xyz");
+    expect(prompt.user).not.toContain(TOKEN);
+  });
+
+  it("hides tokens in the commands sent to a reviewer", () => {
+    const prompt = built(base("review", { checksRun: "Checks of step build:\n$ curl -H 'Authorization: Bearer abc.def-123' https://u:pw@x.test (passed)" }));
+    expect(prompt.user).toContain("Authorization: Bearer <redacted>");
+    expect(prompt.user).toContain("https://u:<redacted>@x.test");
+    expect(prompt.user).not.toContain("abc.def-123");
+  });
+
+  it("does not leave half a token where the cut falls", () => {
+    // Cut after the scrub, the cut starts inside the token's place; cut before it, the end of the token would stay.
+    const output = `${"-".repeat(100)}${TOKEN}\n${"x".repeat(CHECK_OUTPUT_MAX_BYTES - 21)}`;
+    const prompt = built(base("plan", { lastCheckOutput: output }));
+    expect(prompt.user).toContain("<redacted>\nx");
+    expect(prompt.user).not.toContain(TOKEN.slice(-20));
+  });
+});
+
 describe("buildPrompt: sees, local only and rules", () => {
   it("warns when a step sees a result its instructions never reference", () => {
     const t = template([

@@ -14,7 +14,7 @@ import {
   type TemplateRecord,
   type TemplateStepDef,
 } from "../../kernel/schemas/index.js";
-import { scrubPaths } from "../../kernel/text/index.js";
+import { scrubPaths, scrubTokens } from "../../kernel/text/index.js";
 import { CHECK_OUTPUT_MAX_BYTES, chooseMark, fence, randomMark, tail } from "./fence.js";
 import { TOKAMA_RULES } from "./rules.js";
 
@@ -221,11 +221,11 @@ function build(input: PromptInput): BuiltPrompt {
       blocks.push({ kind: "feedback", name: `feedback from ${fromStepId}`, text: kept, ...(cut.bytes < cut.originalBytes ? { cutFromBytes: bytesOf(whole) } : {}) });
     }
     if (input.lastCheckOutput !== undefined) {
-      const cut = tail(text(input.lastCheckOutput, "The check output"), CHECK_OUTPUT_MAX_BYTES);
+      const cut = tail(scrubTokens(text(input.lastCheckOutput, "The check output")), CHECK_OUTPUT_MAX_BYTES);
       blocks.push({ kind: "check-output", name: "last check output", text: cut.text, ...(cut.bytes < cut.originalBytes ? { cutFromBytes: cut.originalBytes } : {}) });
     }
     if (input.checksRun !== undefined) {
-      const cut = tail(text(input.checksRun, "The checks run"), CHECK_OUTPUT_MAX_BYTES);
+      const cut = tail(scrubTokens(text(input.checksRun, "The checks run")), CHECK_OUTPUT_MAX_BYTES);
       blocks.push({ kind: "check-output", name: "checks run", text: cut.text, ...(cut.bytes < cut.originalBytes ? { cutFromBytes: cut.originalBytes } : {}) });
     }
   }
