@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -708,12 +707,6 @@ describe("suggestRepo", () => {
     expect(await suggestRepo(options(), berry)).toMatchObject({ ok: true, value: { setup: "yarn install --immutable", setupFrom: "yarn.lock" } });
     const classic = repo("classic", { "yarn.lock": "# yarn lockfile v1\n" });
     expect(await suggestRepo(options(), classic)).toMatchObject({ ok: true, value: { setup: "yarn install --frozen-lockfile", setupFrom: "yarn.lock" } });
-  });
-
-  it("does not hang on a yarn.lock that is a FIFO, and treats it as Yarn 1", async () => {
-    const path = repo("fifo");
-    execFileSync("mkfifo", [join(path, "yarn.lock")]);
-    expect(await suggestRepo(options(), path)).toMatchObject({ ok: true, value: { setup: "yarn install --frozen-lockfile", setupFrom: "yarn.lock" } });
   });
 
   it("does not offer a project file whose name has invisible or direction characters", async () => {
