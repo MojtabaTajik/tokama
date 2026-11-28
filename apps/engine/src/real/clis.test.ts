@@ -6,7 +6,7 @@ import { defaultRuntime } from "./real.js";
 
 const claude: CliHealth = { cliId: "claude-code", installed: true, loggedIn: true, version: "2.1.331" };
 const codex: CliHealth = { cliId: "codex-cli", installed: true, loggedIn: true, version: "0.169.0" };
-const both: readonly AiCliAdapter[] = [...aiCliAdapters, fakeAiCli()];
+const both: readonly AiCliAdapter[] = [...aiCliAdapters.filter((adapter) => adapter.id === "claude-code"), fakeAiCli()];
 
 describe("cliState", () => {
   it("maps a health check to how far the CLI can run agents", () => {

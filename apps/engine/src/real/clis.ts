@@ -4,7 +4,7 @@ import { type AiCliAdapter, type AiCliId, aiCliAdapters, type AiCliState, type C
 /** The CLIs Tokama names even when this build has no adapter for them: the AI CLIs page lists them as not supported. */
 export const KNOWN = {
   "claude-code": { name: "Claude Code", description: "Coding agent CLI from Anthropic. Reads code, edits files, runs commands." },
-  "codex-cli": { name: "Codex CLI", description: "Coding agent CLI from OpenAI." },
+  "codex-cli": { name: "Codex CLI", description: "Coding agent CLI from OpenAI. Reads code, edits files, runs commands inside its own sandbox." },
 } as const satisfies Partial<Record<AiCliId, { readonly name: string; readonly description: string }>>;
 
 /** How far a CLI can run agents, from its last health check. */

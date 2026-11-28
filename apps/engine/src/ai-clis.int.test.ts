@@ -13,7 +13,7 @@ afterEach(async () => {
 });
 
 describe("ai_clis query", () => {
-  it("answers Claude Code with its launch arguments and the others as not supported, with no environment value", async () => {
+  it("answers Claude Code and Codex CLI with their launch arguments, with no environment value", async () => {
     process.env["TOKAMA_TEST_API_KEY"] = "sk-sentinel-never-shown";
     const dir = tempEngineDir(cleanups);
     const started = await startEngine({ dir, sample: true });
@@ -29,7 +29,8 @@ describe("ai_clis query", () => {
     expect(claude).toMatchObject({ supported: true, cliId: "claude-code", state: "ready", version: "2.1.331", promptVia: "stdin" });
     expect(claude?.supported && claude.permissionArgs).toContain("--permission-mode=dontAsk");
     expect(claude?.supported && claude.usedBy).toEqual(expect.arrayContaining(["Architect"]));
-    expect(codex?.supported).toBe(false);
+    expect(codex).toMatchObject({ supported: true, cliId: "codex-cli", command: "codex", promptVia: "stdin" });
+    expect(codex?.supported && codex.permissionArgs).toContain('permissions.tokama.network.enabled=false');
     expect(JSON.stringify(reply.data)).not.toContain("sk-sentinel-never-shown");
     expect(claude?.supported && claude.envNames).not.toContain("TOKAMA_TEST_API_KEY");
   });
