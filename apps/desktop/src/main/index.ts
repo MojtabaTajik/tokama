@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import { connect, type EngineInfo, stopEngine, type StopResult } from "@tokama/client";
-import { API_VERSION, createProcessRunner, defaultEngineDir, engineEndpoint, engineLockPath, err, findOnPath, pidAlive, posixEngineProcesses, probeSocket, readEngineLock, resolveToolsPath, type ToolsPath } from "@tokama/core";
+import { API_VERSION, createProcessRunner, defaultEngineDir, engineEndpoint, engineLockPath, err, findOnPath, markStoppedByApp, pidAlive, posixEngineProcesses, probeSocket, readEngineLock, resolveToolsPath, type ToolsPath } from "@tokama/core";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, screen, session, shell } from "electron";
 import { type BridgeEvent, CHANNELS, type NotificationStatus } from "../shared/bridge.js";
 import { buildInfoText } from "../shared/build-info.js";
@@ -142,6 +142,8 @@ function stopAppEngine(request: { readonly engineId: string | undefined; readonl
     ifIdle: request.ifIdle,
     force: true,
     signal: posixEngineProcesses.signal,
+    // A killed engine cannot end cleanly; the note tells the next engine, also after an update restarts the app, that this was no crash.
+    beforeKill: (pid) => void markStoppedByApp(join(sample ? engineLocation().dir : tokamaHome, "diagnostics"), pid, Date.now()),
   });
 }
 

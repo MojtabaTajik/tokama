@@ -1,10 +1,10 @@
-import { lstatSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { manualClock, type ManualClock } from "../../kernel/clock/index.js";
 import { DiagnosticEntrySchema, type DiagnosticId, type MachineFacts, MAX_DIAGNOSTICS_BYTES } from "../../kernel/schemas/index.js";
-import { diagnosticsBody, DiagnosticsStore, ENTRIES_FILE, entryText, RUNNING_FILE, SETTINGS_FILE, type DiagnosticsStoreOptions } from "./index.js";
+import { diagnosticsBody, DiagnosticsStore, ENTRIES_FILE, entryText, markStoppedByApp, RUNNING_FILE, SETTINGS_FILE, STOPPED_BY_APP_FILE, STOPPED_BY_APP_MAX_AGE_MS, type DiagnosticsStoreOptions } from "./index.js";
 import { FORBIDDEN, SENTINEL, SENTINEL_CONTEXT, sentinelStack } from "./testing.js";
 
 const MACHINE: MachineFacts = { os: "linux", osVersion: "24.04", distro: "ubuntu", arch: "x64", cpu: { family: "AMD Ryzen 7", cores: 16 }, ramGb: "16-32", gpu: null };
@@ -208,6 +208,81 @@ describe("DiagnosticsStore", () => {
     const third = await open();
     expect(third.crashedLastTime).toBe(false);
     expect(third.settings().crashWaiting).toBe(false);
+  });
+
+  describe("an engine the app killed", () => {
+    // Every test store writes the pid of this process into the running marker.
+    const killed = async (note: (() => void) | undefined) => {
+      await open();
+      note?.();
+      const next = await open();
+      return next;
+    };
+
+    it("is not a crash when the app left its note, and the note is used once", async () => {
+      const next = await killed(() => expect(markStoppedByApp(dir, process.pid, clock.now())).toBe(true));
+      expect(next.crashedLastTime).toBe(false);
+      expect(next.list({ types: ["crash"] }).entries).toEqual([]);
+      expect(next.settings().crashWaiting).toBe(false);
+      expect(() => lstatSync(join(dir, STOPPED_BY_APP_FILE))).toThrow();
+      // Killed again with no new note: that one is a crash.
+      expect((await open()).list({ types: ["crash"] }).entries).toHaveLength(1);
+    });
+
+    it("is a crash with no note, with a note for another engine, or with an old, future or damaged note", async () => {
+      const cases: Array<() => void> = [
+        () => undefined,
+        () => markStoppedByApp(dir, process.pid + 1, clock.now()),
+        () => markStoppedByApp(dir, process.pid, clock.now() - STOPPED_BY_APP_MAX_AGE_MS - 1),
+        () => markStoppedByApp(dir, process.pid, clock.now() + 60_000),
+        () => writeFileSync(join(dir, STOPPED_BY_APP_FILE), "{not json"),
+        () => writeFileSync(join(dir, STOPPED_BY_APP_FILE), JSON.stringify({ pid: String(process.pid), at: clock.now() })),
+      ];
+      for (const note of cases) {
+        rmSync(dir, { recursive: true, force: true });
+        const next = await killed(note);
+        expect(next.crashedLastTime).toBe(true);
+        expect(next.list({ types: ["crash"] }).entries).toHaveLength(1);
+        // Used or not, the note is gone.
+        expect(() => lstatSync(join(dir, STOPPED_BY_APP_FILE))).toThrow();
+      }
+    });
+
+    it("keeps a note from waiting for a later crash when the last engine stopped cleanly", async () => {
+      const first = await open();
+      first.close();
+      markStoppedByApp(dir, process.pid, clock.now());
+      const second = await open();
+      expect(second.crashedLastTime).toBe(false);
+      expect(() => lstatSync(join(dir, STOPPED_BY_APP_FILE))).toThrow();
+      // A real crash after that is recorded.
+      expect((await open()).crashedLastTime).toBe(true);
+    });
+
+    it("does not follow a link in place of the note, and removes the link", async () => {
+      await open();
+      const target = join(root, "target.json");
+      writeFileSync(target, JSON.stringify({ pid: process.pid, at: clock.now() }));
+      symlinkSync(target, join(dir, STOPPED_BY_APP_FILE));
+      const next = await open();
+      expect(next.crashedLastTime).toBe(true);
+      expect(() => lstatSync(join(dir, STOPPED_BY_APP_FILE))).toThrow();
+      expect(readFileSync(target, "utf8")).toContain("pid");
+    });
+
+    it("writes the note over a link without writing to its target", () => {
+      mkdirSync(dir, { recursive: true });
+      const target = join(root, "target.txt");
+      writeFileSync(target, "keep");
+      symlinkSync(target, join(dir, STOPPED_BY_APP_FILE));
+      expect(markStoppedByApp(dir, 1, clock.now())).toBe(true);
+      expect(readFileSync(target, "utf8")).toBe("keep");
+      expect(lstatSync(join(dir, STOPPED_BY_APP_FILE)).isFile()).toBe(true);
+    });
+
+    it("cannot write a note where there is no folder", () => {
+      expect(markStoppedByApp(join(root, "missing"), 1, clock.now())).toBe(false);
+    });
   });
 
   it("marks only a recorded crash as seen", async () => {

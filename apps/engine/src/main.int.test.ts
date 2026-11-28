@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type ClientEvent, connect, type EngineClient } from "@tokama/client";
-import { readEngineLock, tokenPathOf } from "@tokama/core";
+import { markStoppedByApp, readEngineLock, STOPPED_BY_APP_FILE, tokenPathOf } from "@tokama/core";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { tempEngineDir, waitFor } from "./testing/helpers.js";
 
@@ -93,7 +93,6 @@ describe("engine process", () => {
     if (!first.ok) throw new Error(first.error.message);
     expect(await first.value.query({ type: "diagnostics_settings" })).toMatchObject({ ok: true, data: { collect: true, crashWaiting: false } });
     const dead = readEngineLock(lockOf(dir));
-    const stopStartedAt = Date.now();
     process.kill(lockPid(dir) ?? 0, "SIGKILL");
     await first.value.close();
     // Killed: its lock and socket file stay behind.
@@ -107,17 +106,32 @@ describe("engine process", () => {
     expect(crashes).toMatchObject({ ok: true, data: { entries: [{ type: "crash", source: "engine", kind: "unclean_exit", engineVersion: "0.0.0" }] } });
     const setup = await second.query({ type: "setup" });
     expect(setup.ok && setup.data.health.crashWaiting).toBe(true);
+  });
 
-    // What the app does after it killed an engine itself: lists the new entry by time and deletes it.
-    const listed = await second.query({ type: "diagnostics_list", types: ["crash"], since: stopStartedAt });
-    // The time filter works: nothing is listed from after now.
-    expect(await second.query({ type: "diagnostics_list", types: ["crash"], since: Date.now() + 60_000 })).toMatchObject({ ok: true, data: { entries: [] } });
-    const ids = listed.ok ? listed.data.entries.map((entry) => entry.id) : [];
-    expect(ids).toHaveLength(1);
-    expect(await second.command({ type: "diagnostics_delete", ids })).toEqual({ ok: true, data: { deleted: 1 } });
+  it("records no crash for an engine the app killed and left a note for, and honours that note once", { timeout: 40_000 }, async () => {
+    const dir = tempEngineDir(cleanups);
+    killEngineAfter(dir);
+    const first = await connect({ dir, lockPath: lockOf(dir), start: command(dir), startTimeoutMs: 15_000, reconnect: false });
+    if (!first.ok) throw new Error(first.error.message);
+    const dead = readEngineLock(lockOf(dir));
+    const pid = lockPid(dir) ?? 0;
+    // What the desktop app does right before SIGKILL, and what survives an app relaunch.
+    expect(markStoppedByApp(join(homeOf(dir), "diagnostics"), pid, Date.now())).toBe(true);
+    process.kill(pid, "SIGKILL");
+    await first.value.close();
+
+    const second = await connectStarting(dir);
+    await waitFor(() => !existsSync(dead?.socketPath ?? ""), 10_000, "the dead engine's socket swept");
     expect(await second.query({ type: "diagnostics_list", types: ["crash"] })).toMatchObject({ ok: true, data: { entries: [] } });
-    const after = await second.query({ type: "setup" });
-    expect(after.ok && after.data.health.crashWaiting).toBe(false);
+    const setup = await second.query({ type: "setup" });
+    expect(setup.ok && setup.data.health.crashWaiting).toBe(false);
+    expect(existsSync(join(homeOf(dir), "diagnostics", STOPPED_BY_APP_FILE))).toBe(false);
+
+    // Killed again with no note: a crash.
+    process.kill(lockPid(dir) ?? 0, "SIGKILL");
+    await second.close();
+    const third = await connectStarting(dir);
+    expect(await third.query({ type: "diagnostics_list", types: ["crash"] })).toMatchObject({ ok: true, data: { entries: [{ kind: "unclean_exit" }] } });
   });
 
   it.each(["SIGTERM", "SIGINT"] as const)("counts a stop by %s as clean: the next start has no crash flag and no crash entry", { timeout: 40_000 }, async (signal) => {

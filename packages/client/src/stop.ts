@@ -46,6 +46,12 @@ export interface StopOptions {
   readonly force: boolean;
   /** Sends one signal to one pid, e.g. `posixEngineProcesses.signal`. */
   readonly signal: (pid: number, signal: "SIGTERM" | "SIGKILL") => void;
+  /**
+   * Called with the engine's pid right before SIGKILL, the one signal after which the engine
+   * cannot end cleanly. The desktop app leaves the note there that tells the next engine this
+   * was not a crash. It must not throw; the kill goes ahead whether or not it worked.
+   */
+  readonly beforeKill?: (pid: number) => void;
   /** Default: the system clock. */
   readonly clock?: Clock;
   /** How long each step waits for the engine to stop. Default 15 s. */
@@ -123,6 +129,7 @@ export async function stopEngine(options: StopOptions): Promise<StopResult> {
     // The lock must read the same as when this began, right before the signal.
     if (named()?.text !== lock.text) return { kind: "replaced" };
     try {
+      if (signal === "SIGKILL") options.beforeKill?.(lock.pid);
       options.signal(lock.pid, signal);
     } catch {
       // A signal that cannot be sent (no right to it) leaves the engine running.
