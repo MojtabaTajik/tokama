@@ -20,16 +20,22 @@ describe("cachedChecks", () => {
     expect(checks).toHaveBeenCalledTimes(2);
   });
 
-  it("turns checks that throw into a git problem and an unknown Claude Code, not a failed setup", async () => {
+  it("turns checks that throw into a git problem and an unknown entry for each CLI, not a failed setup", async () => {
     const cached = cachedChecks(async () => Promise.reject(new Error("spawn failed")), () => 0);
     const message = "The checks failed: Error: spawn failed";
-    expect(await cached.get()).toEqual({ git: { ok: false, message }, clis: [{ cliId: "claude-code", installed: false, loggedIn: false, timedOut: true, message }] });
+    expect(await cached.get()).toEqual({
+      git: { ok: false, message },
+      clis: [
+        { cliId: "claude-code", installed: false, loggedIn: false, timedOut: true, message },
+        { cliId: "codex-cli", installed: false, loggedIn: false, timedOut: true, message },
+      ],
+    });
   });
 
   it("leaves one unknown entry per adapter when the checks throw, and none without adapters", async () => {
     const message = "The checks failed: Error: spawn failed";
     const failing = async () => Promise.reject(new Error("spawn failed"));
-    const both = await cachedChecks(failing, () => 0, 5_000, [...aiCliAdapters, fakeAiCli()]).get();
+    const both = await cachedChecks(failing, () => 0, 5_000, [...aiCliAdapters.filter((adapter) => adapter.id === "claude-code"), fakeAiCli()]).get();
     expect(both.clis).toEqual([
       { cliId: "claude-code", installed: false, loggedIn: false, timedOut: true, message },
       { cliId: "codex-cli", installed: false, loggedIn: false, timedOut: true, message },
@@ -60,7 +66,7 @@ describe("machineChecks: git", () => {
   });
 
   it("checks every adapter in the list, in its order, and none without adapters", async () => {
-    const list = [...aiCliAdapters, fakeAiCli({ health: { loggedIn: false, message: "Not logged in." } })];
+    const list = [...aiCliAdapters.filter((adapter) => adapter.id === "claude-code"), fakeAiCli({ health: { loggedIn: false, message: "Not logged in." } })];
     const health = await machineChecks(runnerWithGit("git version 2.47.1"), undefined, list)();
     expect(health.clis.map((cli) => cli.cliId)).toEqual(["claude-code", "codex-cli"]);
     expect(health.clis[0]).toMatchObject({ installed: false });

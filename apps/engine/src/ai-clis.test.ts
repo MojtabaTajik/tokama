@@ -28,9 +28,9 @@ const claudeOf = (clis: readonly CliHealth[], env: Record<string, string | undef
 };
 
 describe("aiClis", () => {
-  it("lists Claude Code, then Codex as not supported yet", () => {
+  it("lists Claude Code, then Codex CLI, both supported", () => {
     const result = aiClis({ clis: [READY], agents: [], env: {} });
-    expect(result.clis.map((cli) => [cli.cliId, cli.supported])).toEqual([["claude-code", true], ["codex-cli", false]]);
+    expect(result.clis.map((cli) => [cli.cliId, cli.supported])).toEqual([["claude-code", true], ["codex-cli", true]]);
   });
 
   it("shows the real launch arguments, how instructions are passed and the login command", () => {
@@ -79,14 +79,14 @@ describe("aiClis", () => {
 
   it("lists one supported row for each adapter, and no not-supported row for a CLI that has one", () => {
     const codex: CliHealth = { cliId: "codex-cli", installed: true, loggedIn: false, version: "0.169.0" };
-    const result = aiClis({ clis: [READY, codex], agents: [{ name: "Reviewer", cliId: "codex-cli" }], env: {} }, [...aiCliAdapters, fakeAiCli({ name: "Codex CLI" })]);
+    const result = aiClis({ clis: [READY, codex], agents: [{ name: "Reviewer", cliId: "codex-cli" }], env: {} }, [...aiCliAdapters.filter((adapter) => adapter.id === "claude-code"), fakeAiCli({ name: "Codex CLI" })]);
     expect(result.clis.map((cli) => [cli.cliId, cli.supported])).toEqual([["claude-code", true], ["codex-cli", true]]);
     expect(result.clis[1]).toMatchObject({ name: "Codex CLI", state: "not_logged_in", version: "0.169.0", loginCommand: "fake-cli login", command: "fake-cli", promptVia: "argument", usedBy: ["Reviewer"] });
   });
 
   it("names the adapters the same as the CLIs it lists without one", () => {
-    const [claude] = aiCliAdapters;
-    expect(claude).toMatchObject({ id: "claude-code", name: KNOWN["claude-code"].name, description: KNOWN["claude-code"].description });
+    expect(aiCliAdapters.map((adapter) => adapter.id)).toEqual(["claude-code", "codex-cli"]);
+    for (const adapter of aiCliAdapters) expect(adapter).toMatchObject(KNOWN[adapter.id as keyof typeof KNOWN]);
     expect(aiClis({ clis: [], agents: [], env: {} }, []).clis).toEqual([{ supported: false, cliId: "claude-code", ...KNOWN["claude-code"] }, { supported: false, cliId: "codex-cli", ...KNOWN["codex-cli"] }]);
   });
 

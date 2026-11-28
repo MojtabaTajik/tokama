@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ProcessRunner, RunRequest, RunResult } from "../../../kernel/process/index.js";
-import { compareVersions, parseVersion, readClaudeVersion, shellCallsProblem } from "./version.js";
+import { parseVersion, readClaudeVersion, shellCallsProblem } from "./version.js";
 
 const finished = (extra: Partial<Extract<RunResult, { kind: "finished" }>> = {}): RunResult => ({
   kind: "finished", pid: 2, exitCode: 0, signal: null, timedOut: false, aborted: false, startedAt: 0, endedAt: 0, durationMs: 0, ...extra,
@@ -37,14 +37,6 @@ describe("readClaudeVersion", () => {
   it("reports a stop, whether the process started or not", async () => {
     expect(await readClaudeVersion(options(recordingRunner({ kind: "not-started", reason: "aborted", message: "aborted before start" }).runner))).toEqual({ kind: "aborted" });
     expect(await readClaudeVersion(options(recordingRunner(finished({ aborted: true })).runner))).toEqual({ kind: "aborted" });
-  });
-});
-
-describe("compareVersions", () => {
-  it("orders versions by number, not by text", () => {
-    expect(compareVersions("2.1.331", "2.1.331")).toBe(0);
-    expect(compareVersions("2.1.40", "2.1.331")).toBeLessThan(0);
-    expect(compareVersions("2.10.0", "2.9.9")).toBeGreaterThan(0);
   });
 });
 
