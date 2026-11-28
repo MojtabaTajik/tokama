@@ -13,6 +13,36 @@ describe("notices", () => {
     expect(notices("45.4.1").map((notice) => notice.name)).toEqual(headings);
   });
 
+  /** The body of one `## ` section of the Markdown file, above the licence texts. */
+  const section = (name: string) => (file.split(/^# Licence texts$/m)[0] ?? "").split(/^## /m).find((part) => part.startsWith(`${name}\n`)) ?? "";
+  const text = (id: string) => notices("45.4.1").find((notice) => notice.id === id)?.text ?? "";
+
+  it("names every file and folder that the Markdown file puts in backticks for Electron, Chromium and Node.js", () => {
+    for (const [id, name] of [["electron", "Electron"], ["chromium", "Chromium"], ["node", "Node.js"]] as const) {
+      const names = [...section(name).matchAll(/`([^`]+)`/g)].map((match) => match[1] ?? "");
+      expect(names.length, name).toBeGreaterThan(0);
+      for (const entry of names) expect(text(id), `${name}: ${entry}`).toContain(entry);
+    }
+  });
+
+  it("says for Node.js and the updater what the Markdown file says: macOS and Linux, and the system installs the update", () => {
+    expect(section("Node.js")).toContain("macOS (arm64) and Linux (x64)");
+    expect(text("node")).toContain("macOS (arm64) and Linux (x64)");
+    for (const words of [section("electron-updater and its dependencies"), text("electron-updater")]) {
+      expect(words).toContain("hands it to the system to install");
+      expect(words).not.toContain("hands it to macOS");
+    }
+  });
+
+  it("lists the dependencies of electron-updater that the Markdown file lists", () => {
+    const body = section("electron-updater and its dependencies");
+    const inMarkdown = [...body.matchAll(/^- (?:MIT|ISC|BlueOak-1\.0\.0): ([\s\S]*?)\.$/gm)].flatMap((match) => (match[1] ?? "").split(/,\s+/)).map((name) => name.trim());
+    const listed = /main process with: (.*?)\. Licences:/.exec(text("electron-updater"))?.[1] ?? "";
+    const inApp = listed.split(/,\s+|\s+and\s+/).map((name) => name.trim());
+    expect(inMarkdown.length).toBeGreaterThan(10);
+    expect([...inApp].sort()).toEqual([...inMarkdown].sort());
+  });
+
   it("takes Electron's and React's versions from the running app", () => {
     const list = notices("45.4.1");
     expect(list.find((notice) => notice.id === "electron")?.version).toBe("45.4.1");

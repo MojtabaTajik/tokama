@@ -71,6 +71,11 @@ describe("noticesDifference", () => {
 });
 
 describe("THIRD_PARTY_NOTICES.md", () => {
+  it("is not given packages outside the bundles: the desktop package.json has no runtime dependencies", () => {
+    const desktop = JSON.parse(readFileSync(join(appDir, "package.json"), "utf8")) as { dependencies?: unknown };
+    expect(desktop.dependencies).toBeUndefined();
+  });
+
   it("names the licence files that Electron, Chromium and Node.js ship next to the app", () => {
     for (const file of ["`LICENSE-electron`", "`LICENSES.chromium.html`", "`engine/LICENSE-node`"]) expect(notices, file).toContain(file);
   });

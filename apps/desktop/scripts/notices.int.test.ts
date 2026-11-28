@@ -26,6 +26,8 @@ function packagesIn(dir: string, mustHold: readonly string[]): PackageVersion[] 
   return found.flatMap(({ packages }) => packages);
 }
 
+// What this cannot see: a package that is not JavaScript in a bundle (a font or a stylesheet has no
+// path comment), and a stale `dist` (CI builds first; locally, run "pnpm build" after a dependency change).
 describe("THIRD_PARTY_NOTICES.md against the built app", () => {
   it("holds a licence text for exactly the packages built into the app, at the versions built in", async () => {
     const engine = join(scratch, "engine");
