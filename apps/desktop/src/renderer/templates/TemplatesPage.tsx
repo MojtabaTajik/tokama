@@ -40,7 +40,6 @@ const TEXT = {
   canUseNote: "Anything outside the item’s own worktree asks you first.",
   repos: "Repos",
   connections: "Connections",
-  commands: "Commands",
   none_: "none",
   flow: "Flow",
   flowNote: "read-only · from the file",
@@ -261,16 +260,6 @@ function Detail({ bridge, detail, agents, connections }: DetailProps) {
               <dd>{uses.repos.length === 0 ? TEXT.none_ : uses.repos.map((repo) => <span key={repo.name}>{`${repo.name} · ${repo.detail}`}</span>)}</dd>
               <dt>{TEXT.connections}</dt>
               <dd>{uses.connections.length === 0 ? TEXT.none_ : uses.connections.map((use) => <span key={use.name}>{`${use.name} · ${use.detail}`}</span>)}</dd>
-              <dt>{TEXT.commands}</dt>
-              <dd>
-                {uses.commands.length === 0
-                  ? TEXT.none_
-                  : uses.commands.map((command) => (
-                      <code key={command} className="mono">
-                        {command}
-                      </code>
-                    ))}
-              </dd>
             </dl>
           </section>
           <section className="tp-section" aria-label={TEXT.flow}>
