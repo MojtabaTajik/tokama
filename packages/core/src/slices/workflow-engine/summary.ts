@@ -161,7 +161,8 @@ function parse(text: string): ParsedHeadline | undefined {
   const lines = text.split(/\r?\n/);
   const planLines = planLineIndices(lines);
   const plan = parsePlan(planLines.map((index) => planLabelOf(lines[index]!)!));
-  const window = lines.flatMap((line, index) => (line.trim() === "" ? [] : [index])).slice(-BLOCK_WINDOW);
+  // The plan lines do not count toward the window the headline is looked for in.
+  const window = lines.flatMap((line, index) => (line.trim() === "" || planLines.includes(index) ? [] : [index])).slice(-BLOCK_WINDOW);
   const head = window.findLast((index) => labelOf(lines[index]!)?.label === "HEADLINE");
   const headline = head === undefined ? "" : labelOf(lines[head]!)!.value;
   const after = head === undefined || headline === "" ? [] : window.filter((index) => index > head).map((index) => labelOf(lines[index]!));
@@ -201,7 +202,8 @@ function parse(text: string): ParsedHeadline | undefined {
 /** How many non-empty lines at the end of a reply the plan lines are looked for in. */
 const PLAN_WINDOW = 40;
 const FENCE_LINE = /^\s*(?:`{3,}|~{3,})[\w+-]*\s*$/;
-const NONE = /^(?:none|no|-|–|—|n\/a)$/i;
+// "none", "None.", "nothing", "No new dependencies": the agent says there is none.
+const NONE = /^(?:none|nothing|n\/a|-|–|—|no(?:\s+\S+){0,3})[.!]?$/i;
 const UNSURE = /^unsure\s*:\s*/i;
 const REACH_KINDS: Readonly<Record<string, ReachKind>> = {
   file: "files",
@@ -219,21 +221,26 @@ const REACH_KINDS: Readonly<Record<string, ReachKind>> = {
 };
 
 /**
- * The lines of the trailing run: the last non-empty lines that are all block or plan lines,
- * read backwards from the end, at most 40. A plan label anywhere else in the reply is prose.
+ * The plan lines of the trailing run: the last lines that are all block or plan lines, read
+ * backwards from the end, at most 40, with no empty line between them. The run counts only when
+ * it holds the headline; a plan label anywhere else in the reply is prose, so a reply without the
+ * block, or a step that was not asked for it, reads as it always did.
  */
 function planLineIndices(lines: readonly string[]): number[] {
   const found: number[] = [];
   let seen = 0;
+  let headline = false;
   for (let index = lines.length - 1; index >= 0 && seen < PLAN_WINDOW; index--) {
     const line = lines[index]!;
-    // A code fence around the block (``` or ```text) is no part of the run and does not end it.
-    if (line.trim() === "" || FENCE_LINE.test(line)) continue;
+    // A code fence around the block (``` or ```text) is no part of the run and does not end it. Empty lines after the last line do not either.
+    if (FENCE_LINE.test(line) || (line.trim() === "" && seen === 0)) continue;
+    if (line.trim() === "") break;
     seen++;
     if (planLabelOf(line) !== undefined) found.push(index);
     else if (!isBlockLine(line)) break;
+    else if (labelOf(line)?.label === "HEADLINE") headline = true;
   }
-  return found.reverse();
+  return headline ? found.reverse() : [];
 }
 
 /** The parts of a line, split on `|`: at most three, the rest joined into the last. */

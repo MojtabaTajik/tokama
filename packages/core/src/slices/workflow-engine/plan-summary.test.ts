@@ -57,7 +57,7 @@ describe("parseHeadline: the plan lines", () => {
     expect(plan("HEADLINE: A.\nCHOICE: Cache | SQLite | fast | maybe").choices).toEqual([{ open: "Cache", picked: "SQLite", means: "fast | maybe" }]);
   });
 
-  it("reads a table row, and drops a choice with no answer", () => {
+  it("trims bars around the parts, and drops a choice with no answer", () => {
     expect(plan("HEADLINE: A.\nCHOICE: | Cache | SQLite | fast |").choices).toEqual([{ open: "Cache", picked: "SQLite", means: "fast" }]);
     expect(plan("HEADLINE: A.\nCHOICE: Cache | | fast").choices).toEqual([]);
     expect(plan("HEADLINE: A.\nCHOICE:").choices).toEqual([]);
@@ -124,6 +124,33 @@ describe("parseHeadline: the plan lines", () => {
     }
     // A fence in the middle of the run does not cut it either.
     expect(plan("HEADLINE: A.\nCHOICE: a | b\n```\nRISK: r\n```").risks).toEqual(["r"]);
+  });
+
+  it("leaves a step that was not asked for the block as it was: plan labels without a headline are prose", () => {
+    const text = "Done the change.\n- Risk: the cache may be stale\n- Choice: used Redis";
+    expect(parseHeadline(text)).toMatchObject({ source: "first_lines", headline: "Done the change.", points: ["- Risk: the cache may be stale", "- Choice: used Redis"], plan: EMPTY });
+    expect(parseHeadline("Risk: the cache may be stale")).toMatchObject({ source: "first_lines", headline: "Risk: the cache may be stale" });
+  });
+
+  it("does not read prose risks above an empty line and the block", () => {
+    const text = ["The risks:", "- Risk: the cache may be stale", "- Risk: second", "", "HEADLINE: A plan.", "CHOICE: Cache | SQLite"].join("\n");
+    const parsed = parseHeadline(text)!;
+    expect(parsed.plan.risks).toEqual([]);
+    expect(parsed.plan.choices).toHaveLength(1);
+    expect(parsed.bodyBytes).toBe(["The risks:", "- Risk: the cache may be stale", "- Risk: second"].join("\n").length);
+  });
+
+  it("keeps the headline when the agent writes far more plan lines than asked", () => {
+    const text = ["Body.", "HEADLINE: A plan.", ...Array.from({ length: 35 }, (_, i) => `CHOICE: Q${i} | A${i}`)].join("\n");
+    expect(parseHeadline(text)).toMatchObject({ source: "headline", headline: "A plan." });
+  });
+
+  it.each(["None.", "none!", "Nothing", "No new dependencies", "No new dependencies."])("reads %s as none", (value) => {
+    expect(plan(`HEADLINE: A.\nREACH: deps | ${value}`).reach).toEqual([{ kind: "deps", none: true }]);
+  });
+
+  it("does not read a real value that starts with no as none", () => {
+    expect(plan("HEADLINE: A.\nREACH: services | Node.js fetch to api.example.com for the forecast").reach).toEqual([{ kind: "services", value: "Node.js fetch to api.example.com for the forecast" }]);
   });
 
   it("reads a reply that ends in prose as having no plan lines", () => {

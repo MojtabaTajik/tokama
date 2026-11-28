@@ -22,6 +22,7 @@ import {
 import type { Agent, Repo } from "../config/index.js";
 import { EVENTS_FILE, foldItem, ItemStore, openDecisions, readLog } from "../items/index.js";
 import { createWorktree } from "../worktrees/index.js";
+import { HEADLINE_RULE, PLAN_RULE } from "./headline.js";
 import { createRunLoop, parseVerdict, type RunLoop, type RunLoopDeps } from "./index.js";
 import { after, type Behavior, crashes, edits, editsThenCrashes, editsThenHangs, FAKE_PID, fakeRuntime, hangs, loops, says } from "./testing/fake-runtime.js";
 
@@ -2045,7 +2046,9 @@ describe("run loop: a step you approve says no change is needed", () => {
       await started(first, template([{ id: "build" }, { id: "plan", doneWhen: "you approve" }]));
       const reviewed = fakeRuntime([says("Fine.\nHEADLINE: ok\nVERDICT: approve")]);
       await started(reviewed, template([{ id: "build" }, { id: "review", agentId: "reviewer", doneWhen: "reviewer approves", ifChangesRequested: { action: "ask" } }]));
-      for (const runtime of [last, first, reviewed]) expect(runtime.calls.every((call) => !call.request.prompt.includes("CHOICE:"))).toBe(true);
+      for (const runtime of [last, first, reviewed]) expect(runtime.calls.every((call) => !call.request.prompt.includes("CHOICE:") && !call.request.prompt.includes(PLAN_RULE))).toBe(true);
+      // The last step's prompt ends with the headline rule alone, as before.
+      expect(last.calls[0]?.request.prompt).toContain(HEADLINE_RULE);
     });
 
     it("keeps the rule after Build anyway, and drops only the no-change line", SLOW, async () => {
