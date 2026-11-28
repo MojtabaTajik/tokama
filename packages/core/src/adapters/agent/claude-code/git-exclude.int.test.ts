@@ -92,6 +92,17 @@ describe("placeholderExcludeEnv", () => {
     expect(readFileSync(join(main, ".git", "info", "exclude"), "utf8")).not.toContain(".bashrc");
   });
 
+  it("adds its setting after the ones the environment already carries", async () => {
+    const runner = createProcessRunner({ parentEnv: { PATH: process.env["PATH"], HOME: home } });
+    const env = await placeholderExcludeEnv(item, { runner, home, platform: "linux", env: { GIT_CONFIG_COUNT: "2", GIT_CONFIG_KEY_0: "a.b", GIT_CONFIG_VALUE_0: "1", GIT_CONFIG_KEY_1: "c.d", GIT_CONFIG_VALUE_1: "2" } });
+    expect(env).toEqual({
+      GIT_CONFIG_COUNT: "3",
+      GIT_CONFIG_KEY_2: "core.excludesFile",
+      GIT_CONFIG_VALUE_2: join(main, ".git", "worktrees", "item", "tokama-exclude"),
+    });
+    expect(await placeholderExcludeEnv(item, { runner, home, platform: "linux", env: { GIT_CONFIG_COUNT: "x" } })).toBeUndefined();
+  });
+
   it("gives nothing on another OS, outside a linked worktree, for a git folder that is not there, or for an ignore file that is too large", async () => {
     const runner = createProcessRunner({ parentEnv: { PATH: process.env["PATH"], HOME: home } });
     expect(await placeholderExcludeEnv(item, { runner, home, platform: "darwin" })).toBeUndefined();

@@ -44,7 +44,11 @@ export async function placeholderExcludeEnv(cwd: string, options: PlaceholderExc
     const lines = SANDBOX_PLACEHOLDER_PATHS.map((path) => `/${path}`).join("\n");
     const written = replaceTextSync(file, `${own === "" || own.endsWith("\n") ? own : `${own}\n`}${lines}\n`, 0o644);
     if (!written.ok) return undefined;
-    return { GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "core.excludesFile", GIT_CONFIG_VALUE_0: file };
+    // Added after any setting the caller's environment already carries.
+    const given = options.env?.["GIT_CONFIG_COUNT"];
+    const index = given === undefined ? 0 : Number(given);
+    if (!Number.isSafeInteger(index) || index < 0) return undefined;
+    return { GIT_CONFIG_COUNT: String(index + 1), [`GIT_CONFIG_KEY_${index}`]: "core.excludesFile", [`GIT_CONFIG_VALUE_${index}`]: file };
   } catch {
     return undefined;
   }

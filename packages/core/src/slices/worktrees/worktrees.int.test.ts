@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -427,6 +427,17 @@ describe("the placeholders of Claude Code's Linux sandbox", () => {
     leave(path, ["src/.bashrc"]);
     expect(await removeSandboxPlaceholders(git, path, "linux")).toBe(11);
     expect(await plain(path, "status", "--porcelain", "--untracked-files=all")).toBe("?? .profile\n?? .zshrc\n?? src/.bashrc\n?? work.txt");
+  });
+
+  it("leaves a special file alone and never opens it (a FIFO stands in for the sandbox's character device)", SLOW, async () => {
+    const worktree = value(await createWorktree(git, repo, ITEM_A));
+    const path = worktreePath(repo.path, worktree);
+    const made = await createProcessRunner().run({ command: { argv: ["mkfifo", join(path, ".bashrc")] }, cwd: path });
+    expect(made.kind === "finished" && made.exitCode).toBe(0);
+    leave(path, [".zshrc"]);
+    expect(await removeSandboxPlaceholders(git, path, "linux")).toBe(1);
+    expect(lstatSync(join(path, ".bashrc")).isFIFO()).toBe(true);
+    expect(existsSync(join(path, ".zshrc"))).toBe(false);
   });
 
   it("keeps a tracked placeholder name, even when the file is empty", SLOW, async () => {
