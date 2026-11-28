@@ -10,7 +10,7 @@ import { createProcessRunner } from "../../kernel/process/index.js";
 import { ok } from "../../kernel/result/index.js";
 import type { CheckTrial } from "../../kernel/schemas/index.js";
 import type { WorktreeRepo } from "../worktrees/index.js";
-import { checkLimitMinutes, createCheckTrialRunner, tidyOutput, trialCommandProblem, type CheckTrialHooks, type CheckTrialRequest } from "./check-trial.js";
+import { checkLimitMinutes, createCheckTrialRunner, notFoundWord, tidyOutput, trialCommandProblem, type CheckTrialHooks, type CheckTrialRequest } from "./check-trial.js";
 
 const SLOW = { timeout: 30_000 };
 
@@ -226,12 +226,33 @@ describe("running", () => {
     expect(run.last.checks[0]?.state).toBe("skipped");
   });
 
-  it("exit 127 is always could not start, whatever the shell prints, also for a script path", SLOW, async () => {
+  it("exit 127 is always could not start; the word is the one the output says was not found, which may be a tool inside the command", SLOW, async () => {
     const inner = await trial({ setup: "sh -c 'tokama-inner-missing'", checks: [{ command: "true" }] });
-    expect(inner.last.setupResult).toMatchObject({ state: "failed", exitCode: 127, couldNotStart: { word: "sh" } });
+    expect(inner.last.setupResult).toMatchObject({ state: "failed", exitCode: 127, couldNotStart: { word: "tokama-inner-missing" } });
     const path = await trial({ setup: "./scripts/setup.sh", checks: [{ command: "true" }] });
     expect(path.last.setupResult).toMatchObject({ state: "failed", exitCode: 127, couldNotStart: { word: "./scripts/setup.sh" } });
     expect(path.last.setupResult?.couldNotStart?.reason).toBeUndefined();
+  });
+
+  it("a script that exists and calls a missing tool names the tool, not the script", SLOW, async () => {
+    writeFileSync(join(repo.path, "call.sh"), "tokama-missing-tool --install\n");
+    await plain(repo.path, "add", "-A");
+    await plain(repo.path, "commit", "-q", "-m", "a script that calls a tool");
+    const run = await trial({ setup: "sh call.sh", checks: [{ command: "true" }] });
+    expect(run.last.setupResult).toMatchObject({ state: "failed", exitCode: 127, couldNotStart: { word: "tokama-missing-tool" } });
+  });
+
+  it("exit 127 whose output names nothing is could not start with no word", SLOW, async () => {
+    const run = await trial({ setup: "sh -c 'exit 127'", checks: [{ command: "true" }] });
+    expect(run.last.setupResult).toMatchObject({ state: "failed", exitCode: 127, couldNotStart: {} });
+    expect(run.last.setupResult?.couldNotStart?.word).toBeUndefined();
+  });
+
+  it("finds the word in bash's and dash's wording", () => {
+    expect(notFoundWord("sh: 1: pnpm: not found")).toBe("pnpm");
+    expect(notFoundWord("./setup.sh: line 3: pnpm: command not found")).toBe("pnpm");
+    expect(notFoundWord("bash: ./scripts/setup.sh: No such file or directory")).toBe("./scripts/setup.sh");
+    expect(notFoundWord("something failed, exit 127")).toBeUndefined();
   });
 
   it("exit 126 is could not start, found but not executable", SLOW, async () => {

@@ -657,7 +657,7 @@ function TrialRows({ trial, now, planned }: { readonly trial: CheckTrial; readon
           check={{ command: trial.setup, outputTail: result.outputTail }}
           line={setupLineOf(result, now)}
           planned={planned}
-          note={result.couldNotStart === undefined ? undefined : couldNotStartText(result.couldNotStart.word, result.couldNotStart.reason)}
+          note={result.couldNotStart?.word === undefined ? undefined : couldNotStartText(result.couldNotStart.word, result.couldNotStart.reason)}
         />
       </ul>
       {trial.checks.length > 0 && (

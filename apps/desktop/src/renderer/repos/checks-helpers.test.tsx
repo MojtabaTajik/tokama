@@ -650,6 +650,24 @@ describe("Setup command", () => {
     expect(text()).toContain("Setup timed out · 1 check not run");
   });
 
+  it("says could not start with no sentence when the output named no word that was not found", async () => {
+    const fake = await mount({ suggestion: PNPM, commandReply: replies(START) });
+    await click(button("Try checks"));
+    await fake.pushEvent({
+      type: "check_trial_updated",
+      trial: trial({
+        state: "failed",
+        endedAt: 3000,
+        error: { code: "setup_failed", message: "x" },
+        setup: PNPM.setup,
+        setupResult: { state: "failed", exitCode: 127, durationMs: 60, outputTail: "setup exited 127", couldNotStart: {} },
+        checks: [{ command: "npm test", state: "skipped" }],
+      }),
+    } as never);
+    expect(words()[0]).toBe("Could not start");
+    expect(text()).not.toContain("was not found");
+  });
+
   it("still shows a trial that could not run for another reason as an error", async () => {
     const fake = await mount({ suggestion: PNPM, commandReply: replies(START) });
     await click(button("Try checks"));

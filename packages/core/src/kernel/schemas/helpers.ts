@@ -153,9 +153,10 @@ export const CheckTrialSchema = z
         outputTail: z.string().max(MAX_TRIAL_OUTPUT_CHARS).optional(),
         /**
          * The shell could not find or start the command (exit 127, or 126 for a file that cannot
-         * run); `word` is its first word. `reason` is `not_found` when absent.
+         * run). `word` is the one it said it did not find, when its output names one: it can be a
+         * tool a script calls. `reason` is `not_found` when absent.
          */
-        couldNotStart: z.strictObject({ word: z.string().min(1).max(MAX_CHECK_CHARS), reason: z.enum(["not_found", "not_executable"]).optional() }).optional(),
+        couldNotStart: z.strictObject({ word: z.string().min(1).max(MAX_CHECK_CHARS).optional(), reason: z.enum(["not_found", "not_executable"]).optional() }).optional(),
       })
       .optional(),
     /** With no `setup` given: the command a known file in the trial's top folder points to, for the "Use as setup" button. */

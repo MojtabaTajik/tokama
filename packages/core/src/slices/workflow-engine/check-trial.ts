@@ -220,8 +220,25 @@ function setupLine(result: CheckResult, folders: readonly (readonly [string, str
   const state = result.outcome === "passed" ? "passed" : result.outcome === "timed-out" ? "timed_out" : "failed";
   const word = result.command.trim().split(/\s+/)[0] ?? "";
   // Exit 127 is always "not found" and 126 "found but cannot run", whatever the shell prints: bash on macOS and dash on Linux word it differently.
-  const reason = result.exitCode === 126 ? ("not_executable" as const) : result.outcome === "not-started" || result.exitCode === 127 ? ("not_found" as const) : undefined;
-  return { ...base, state, outputTail: tidyOutput(result.output, folders), ...(reason !== undefined && word !== "" && { couldNotStart: { word: cutText(word, 100), ...(reason === "not_executable" && { reason }) } }) };
+  const output = tidyOutput(result.output, folders);
+  if (result.exitCode === 126) return { ...base, state, outputTail: output, couldNotStart: { ...(word !== "" && { word: cutText(word, 100) }), reason: "not_executable" } };
+  if (result.outcome === "not-started") return { ...base, state, outputTail: output, couldNotStart: { ...(word !== "" && { word: cutText(word, 100) }) } };
+  // Exit 127 is always could not start. The word is the one the shell said it did not find: it can be a tool a script calls, not the command's own first word.
+  if (result.exitCode === 127) {
+    const named = notFoundWord(result.output);
+    return { ...base, state, outputTail: output, couldNotStart: { ...(named !== undefined && { word: cutText(named, 100) }) } };
+  }
+  return { ...base, state, outputTail: output };
+}
+
+/**
+ * The word a shell said it could not find: `pnpm: not found` (dash), `pnpm: command not found`
+ * (bash), `./setup.sh: No such file or directory`. The first such line wins; undefined when the
+ * output names none.
+ */
+export function notFoundWord(output: string): string | undefined {
+  const found = /([^\s:]+): (?:command not found|not found|No such file(?: or directory)?)/.exec(terminalText(output));
+  return found?.[1];
 }
 
 /** Why the setup failed, in Tokama's words with a short cleaned end of its output; at most 1 000 characters. */
