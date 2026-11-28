@@ -219,6 +219,8 @@ describe("Claude Code stream parser", () => {
     expect(parse([result("Exit code 1\nmake: apply-seccomp: not found", true)]).state.sandboxFailure).toBeUndefined();
     expect(parse([result("Exit code 1\nthe docs say apply-seccomp: is needed", true)]).state.sandboxFailure).toBeUndefined();
     expect(parse([result("apply-seccomp: printed by cat", false)]).state.sandboxFailure).toBeUndefined();
+    // The `Exit code` line protects the older text from a failing command's own output.
+    expect(parse([result("Exit code 1\nSandbox is required for the build", true)]).state.sandboxFailure).toBeUndefined();
   });
 
   it("does not take a command's own output for a sandbox failure", () => {

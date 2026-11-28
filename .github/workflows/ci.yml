@@ -132,15 +132,23 @@ jobs:
         run: pnpm typecheck
       - if: needs.plan.outputs.docs_only != 'true'
         run: pnpm lint
-      # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor, which Chromium's
-      # sandbox and bubblewrap need. Lift it on the runner rather than run the app with
-      # --no-sandbox. The sandbox support test then runs the real probes.
+      # Ubuntu restricts unprivileged user namespaces through AppArmor, which Chromium's sandbox
+      # and bubblewrap need. Lift it on the runner rather than run the app with --no-sandbox.
+      # Ubuntu 25.04 and newer also confine everything bubblewrap starts (`bwrap-userns-restrict`):
+      # replace that profile with an unconfined one for bwrap, so the sandbox support test runs
+      # the real probes against a machine set up the way the Linux sandbox page describes.
       - name: Allow user namespaces and install the sandbox tools
         if: runner.os == 'Linux' && needs.plan.outputs.docs_only != 'true'
         run: |
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends bubblewrap socat
+          if [ -f /etc/apparmor.d/bwrap-userns-restrict ]; then
+            printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile bwrap /usr/bin/bwrap flags=(unconfined) {\n  userns,\n  include if exists <local/bwrap>\n}\n' | sudo tee /etc/apparmor.d/bwrap > /dev/null
+            sudo ln -sf /etc/apparmor.d/bwrap-userns-restrict /etc/apparmor.d/disable/
+            sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict || true
+            sudo apparmor_parser -r /etc/apparmor.d/bwrap
+          fi
       - if: needs.plan.outputs.docs_only != 'true'
         env:
           TOKAMA_REAL_BWRAP: ${{ runner.os == 'Linux' && '1' || '' }}
