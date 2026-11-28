@@ -14,7 +14,7 @@ const worktreeSpec: SandboxSpec = { writableRoot: worktree, readOnlyRoots: [], n
 describe("sandboxSettings", () => {
   it("is exactly this for a worktree on macOS", () => {
     const cacheDirs = toolCacheDirs("darwin");
-    expect(sandboxSettings(worktreeSpec, { callDirs: [callDir], callFiles,tokamaHome: "~/.tokama", cacheDirs })).toEqual({
+    expect(sandboxSettings(worktreeSpec, { callDirs: [callDir], callFiles, tokamaHome: "~/.tokama", cacheDirs })).toEqual({
       permissions: { deny: ["Bash(dangerouslyDisableSandbox:true)"] },
       sandbox: {
         enabled: true,
@@ -38,7 +38,7 @@ describe("sandboxSettings", () => {
 
   it("lists the Linux caches, without the worktree, which is writable as the working directory", () => {
     const cacheDirs = toolCacheDirs("linux");
-    const { sandbox } = sandboxSettings(worktreeSpec, { callDirs: [callDir], callFiles,tokamaHome: "~/.tokama", cacheDirs }) as { sandbox: { filesystem: { allowWrite: string[] } } };
+    const { sandbox } = sandboxSettings(worktreeSpec, { callDirs: [callDir], callFiles, tokamaHome: "~/.tokama", cacheDirs }) as { sandbox: { filesystem: { allowWrite: string[] } } };
     expect(sandbox.filesystem.allowWrite).toEqual(cacheDirs);
     expect(sandbox.filesystem.allowWrite).toContain("~/.local/share/pnpm/store");
     expect(JSON.stringify(sandbox)).not.toContain(worktree);
@@ -47,7 +47,7 @@ describe("sandboxSettings", () => {
   it("closes a read-only repo to writes and to the Edit tool, and passes the hosts, for a scratch folder", () => {
     const scratch = "/home/northwind-dev/.local/share/tokama-scratch/item-0b9f3c1e";
     const spec: SandboxSpec = { writableRoot: scratch, readOnlyRoots: ["/home/northwind-dev/src/orders-api"], network: net("northwind.example.com", "*.blob.example.net:443") };
-    expect(sandboxSettings(spec, { callDirs: [callDir], callFiles,tokamaHome: "/home/northwind-dev/.tokama", cacheDirs: [] })).toEqual({
+    expect(sandboxSettings(spec, { callDirs: [callDir], callFiles, tokamaHome: "/home/northwind-dev/.tokama", cacheDirs: [] })).toEqual({
       permissions: { deny: ["Bash(dangerouslyDisableSandbox:true)", "Edit(//home/northwind-dev/src/orders-api/**)"] },
       sandbox: expect.objectContaining({
         filesystem: {
@@ -61,7 +61,7 @@ describe("sandboxSettings", () => {
   });
 
   it("closes the engine's own folder, which holds its socket and token, to reads and writes", () => {
-    const { sandbox } = sandboxSettings(worktreeSpec, { callDirs: [callDir], callFiles,tokamaHome: "~/.tokama", closedDirs: ["/run/user/1000/tokama"], cacheDirs: [] }) as {
+    const { sandbox } = sandboxSettings(worktreeSpec, { callDirs: [callDir], callFiles, tokamaHome: "~/.tokama", closedDirs: ["/run/user/1000/tokama"], cacheDirs: [] }) as {
       sandbox: { filesystem: { denyRead: string[]; denyWrite: string[] } };
     };
     expect(sandbox.filesystem.denyRead).toContain("/run/user/1000/tokama");
@@ -69,7 +69,7 @@ describe("sandboxSettings", () => {
   });
 
   it("keeps the network closed, and still strict, with no hosts", () => {
-    const { sandbox } = sandboxSettings({ ...worktreeSpec, network: net() }, { callDirs: [callDir], callFiles,tokamaHome: "~/.tokama", cacheDirs: [] }) as { sandbox: { network: unknown } };
+    const { sandbox } = sandboxSettings({ ...worktreeSpec, network: net() }, { callDirs: [callDir], callFiles, tokamaHome: "~/.tokama", cacheDirs: [] }) as { sandbox: { network: unknown } };
     expect(sandbox.network).toEqual({ allowedDomains: [], strictAllowlist: true, allowLocalBinding: false, allowAllUnixSockets: false });
   });
 
@@ -97,7 +97,7 @@ describe("sandboxSettings", () => {
   });
 
   it("sets every weakening key to false in words, and never turns a safeguard off", () => {
-    const { sandbox } = sandboxSettings(worktreeSpec, { callDirs: [callDir], callFiles,tokamaHome: "~/.tokama", cacheDirs: [] }) as { sandbox: Record<string, unknown> & { network: Record<string, unknown> } };
+    const { sandbox } = sandboxSettings(worktreeSpec, { callDirs: [callDir], callFiles, tokamaHome: "~/.tokama", cacheDirs: [] }) as { sandbox: Record<string, unknown> & { network: Record<string, unknown> } };
     for (const key of ["enableWeakerNestedSandbox", "enableWeakerNetworkIsolation", "allowNestedUserNamespaces", "allowAppleEvents", "allowUnsandboxedCommands", "autoAllowBashIfSandboxed"]) {
       expect(sandbox[key], key).toBe(false);
     }

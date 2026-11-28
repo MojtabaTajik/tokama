@@ -176,6 +176,7 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): AgentR
 
 const RULES_FILE = "rules.json";
 const SETTINGS_FILE = "settings.json";
+const CALL_FILES = [RULES_FILE, SETTINGS_FILE] as const;
 
 /** What the sandbox part of a call's settings is made from, once the call is allowed to run commands. */
 interface SandboxPlan {
@@ -199,17 +200,19 @@ function writeHookFiles(request: AgentCallRequest, hookCommand: readonly string[
     const callDirs = [...new Set([dir, realpathSync(dir)])];
     const { permissions, sandbox: sandboxPart } = sandboxSettings(sandbox.spec, {
       callDirs,
-      callFiles: callDirs.flatMap((callDir) => [RULES_FILE, SETTINGS_FILE].map((name) => join(callDir, name))),
+      callFiles: callDirs.flatMap((callDir) => CALL_FILES.map((name) => join(callDir, name))),
       tokamaHome: sandbox.tokamaHome,
       closedDirs: sandbox.closedDirs,
       cacheDirs: sandbox.cacheDirs,
     });
     const settings = { ...(hookSettings([...hookCommand, rules]) as object), permissions, sandbox: sandboxPart };
-    for (const [path, text] of [
-      [rules, JSON.stringify({ commands: request.limits?.commands ?? [] })],
-      [join(dir, SETTINGS_FILE), JSON.stringify(settings)],
-    ] as const) {
-      const written = replaceTextSync(path, text, 0o600);
+    // The record needs a text for every name in CALL_FILES, so no file is written without being closed to reads.
+    const texts: Record<(typeof CALL_FILES)[number], string> = {
+      [RULES_FILE]: JSON.stringify({ commands: request.limits?.commands ?? [] }),
+      [SETTINGS_FILE]: JSON.stringify(settings),
+    };
+    for (const name of CALL_FILES) {
+      const written = replaceTextSync(join(dir, name), texts[name], 0o600);
       if (!written.ok) throw new Error(written.error.message);
     }
   } catch (error) {

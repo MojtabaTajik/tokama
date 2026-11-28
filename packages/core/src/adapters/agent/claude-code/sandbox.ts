@@ -27,8 +27,8 @@ export interface SandboxSettingsOptions {
  * - The call's folder is closed to writes as a folder and to reads file by file. On Linux a folder in
  *   `denyRead` is replaced by an empty, writable scratch folder: a write into it seems to work (and
  *   is lost when the command ends) and a read finds nothing. A denied file is refused for real on
- *   both systems. The folder stays unwritable because Linux mounts everything outside the working
- *   directory and the temp folder read-only, and `denyWrite` keeps this one so.
+ *   both systems. The folder itself is kept unwritable by `denyWrite`, which mounts it read-only
+ *   even when its parent (such as the temp folder) is writable.
  * - `failIfUnavailable`: a sandbox that cannot start ends the call; it never runs unsandboxed.
  * - `allowUnsandboxedCommands: false` and the deny rule: the agent cannot retry outside it.
  * - `strictAllowlist`: a host outside `network.allow` is refused in every permission mode.
