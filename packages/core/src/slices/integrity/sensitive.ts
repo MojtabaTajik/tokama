@@ -51,7 +51,7 @@ const kindsAny = (kinds: ReadonlySet<RepoKind>, ...wanted: RepoKind[]) => wanted
 function isDependency(path: string, name: string): boolean {
   const category = patternCategory(path);
   if (category === "package" || category === "lockfile") return true;
-  return /\.(?:cs|fs|vb)proj$/.test(name) || /^requirements.*\.txt$/.test(name) || /^build\.gradle/.test(name) || ["global.json", "pyproject.toml", "pipfile"].includes(name);
+  return /\.(?:cs|fs|vb)proj$/.test(name) || /^requirements.*\.txt$/.test(name) || ["global.json", "pyproject.toml", "pipfile"].includes(name);
 }
 
 function isMigration(path: string, name: string, kinds: ReadonlySet<RepoKind>): boolean {
@@ -77,9 +77,10 @@ const isSignIn = (path: string) => folders(path).some((folder) => folder === "au
 
 /** The kind of a changed file: a test file is added or edited; any other is sensitive or has none. `added` is whether the change created the file. */
 export function touchOf(original: string, added: boolean, kinds: ReadonlySet<RepoKind>): TouchKind | undefined {
-  if (baseCategory(original) === "test") return added ? "tests_added" : "tests_edited";
   const path = original.toLowerCase();
   const name = basename(path);
+  // A manifest or build config in a test folder (`test/Directory.Build.props`) still changes how everything builds.
+  if (baseCategory(original) === "test" && patternCategory(path) !== "package") return added ? "tests_added" : "tests_edited";
   if (isCiPath(path)) return "ci";
   if (isDependency(path, name)) return "dependencies";
   if (isMigration(path, name, kinds)) return "migrations";
