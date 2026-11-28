@@ -194,7 +194,7 @@ describe.skipIf(!enabled)("Claude Code runtime against the real CLI", () => {
       const sshHidden = new RegExp(`${sandboxStopped.source}|ENOENT|^listed 0$`, "m");
       const probes = ["node probe.js write ../outside-by-node", `node probe.js write ${CALL_DIR}/x`, `node probe.js read ${CALL_DIR}/rules.json`, "node probe.js list-ssh"];
       for (const command of probes) {
-        expect(resultOf(command)?.text, command).toMatch(command.endsWith("list-ssh") ? sshHidden : sandboxStopped);
+        expect(resultOf(command)?.text, command).toMatch(command.endsWith("list-ssh") && process.platform === "linux" ? sshHidden : sandboxStopped);
         expect(resultOf(command)?.text, command).not.toMatch(/Tokama:|don't ask mode/);
       }
       expect(existsSync(join(root, "outside-by-node"))).toBe(false);
