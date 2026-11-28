@@ -64,6 +64,22 @@ async function setUpRepo(opts: RepoEditOptions, input: { path: string }) {
   return second.ok ? ({ ok: true, value: undefined } as const) : second;
 }
 
+describe("the base branch with git", () => {
+  it("takes a local branch such as release/1.2 and refuses a remote name or a full ref, naming the local branch", async () => {
+    const folder = join(root, "base-check");
+    mkdirSync(folder);
+    await run(folder, "init", "-q", "-b", "trunk");
+    await run(folder, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "first");
+    await run(folder, "branch", "release/1.2");
+    await run(folder, "update-ref", "refs/remotes/origin/trunk", "HEAD");
+    const refused = (name: string) => `The base branch '${name}' is not a local branch of this repo.`;
+    expect(await addRepo(options, { path: folder, baseBranch: "origin/trunk" })).toEqual({ ok: false, error: { code: "invalid_request", message: `${refused("origin/trunk")} Use 'trunk' instead.` } });
+    expect(await addRepo(options, { path: folder, baseBranch: "refs/heads/trunk" })).toEqual({ ok: false, error: { code: "invalid_request", message: `${refused("refs/heads/trunk")} Use 'trunk' instead.` } });
+    expect(await addRepo(options, { path: folder, baseBranch: "origin/other" })).toMatchObject({ ok: false, error: { message: `${refused("origin/other")} Pick one of its local branches.` } });
+    expect(await addRepo(options, { path: folder, baseBranch: "release/1.2" })).toMatchObject({ ok: true, value: { baseBranch: "release/1.2" } });
+  });
+});
+
 describe("setUpRepo with git", () => {
   it("makes a plain folder a repo with a first commit that leaves out the default ignores, then adds it", async () => {
     const folder = join(root, "plain-app");

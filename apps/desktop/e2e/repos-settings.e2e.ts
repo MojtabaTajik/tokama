@@ -22,6 +22,7 @@ flow(
     mkdirSync(folder);
     execFileSync("git", ["init", "-q", "-b", "main"], { cwd: folder });
     execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "first"], { cwd: folder });
+    execFileSync("git", ["branch", "develop"], { cwd: folder });
     writeFileSync(join(folder, "package.json"), JSON.stringify({ scripts: { test: "vitest run" } }));
     writeFileSync(join(folder, "pnpm-lock.yaml"), "");
     await app.evaluate(({ dialog }, path) => {
@@ -51,6 +52,11 @@ flow(
     await detail.getByRole("button", { name: "Edit…" }).click();
     const edit = page.getByRole("dialog", { name: "Edit repo" });
     await edit.getByRole("textbox", { name: /^Checks/ }).fill("pnpm test\npnpm lint");
+    await chooseBranch(edit, "origin/main");
+    await edit.getByRole("button", { name: "Save" }).click();
+    await edit.getByText("The base branch 'origin/main' is not a local branch of this repo. Use 'main' instead.").waitFor();
+    expect(await edit.isVisible(), "the dialog stays open on a refusal").toBe(true);
+    await screenshot("410-base-branch-refused", edit);
     await chooseBranch(edit, "develop");
     await edit.getByRole("button", { name: "Save" }).click();
     await edit.waitFor({ state: "detached" });

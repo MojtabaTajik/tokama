@@ -50,7 +50,8 @@ flow(
     expect(await edit.getByRole("textbox", { name: /^Id/ }).isEditable(), "the id is read-only").toBe(false);
     expect(await edit.getByRole("textbox", { name: /^Checks/ }).inputValue()).toBe("pnpm test");
     await edit.getByRole("textbox", { name: /^Checks/ }).fill("pnpm test\npnpm lint");
-    // The repo has no develop branch: typed text is used.
+    // The repo has no develop branch yet: typed text is used, and Save needs the branch to exist.
+    execFileSync("git", ["branch", "develop"], { cwd: folder });
     await chooseBranch(edit, "develop");
     await edit.getByRole("button", { name: "Save" }).click();
     await edit.waitFor({ state: "detached" });

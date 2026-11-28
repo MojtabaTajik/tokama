@@ -27,7 +27,10 @@ let stagedPaths: string[] | undefined;
 let topLevels: Map<string, string>;
 /** What the fake `git commit` answers; undefined: it works. */
 let commitError: GitError | undefined;
+/** Branch names the fake git has no local branch for; every other name resolves. */
+let missingBranches: Set<string>;
 beforeEach(() => {
+  missingBranches = new Set();
   root = realpathSync(mkdtempSync(join(tmpdir(), "tokama-repos-edit-")));
   home = join(root, "tokama-home");
   worktrees = new Map();
@@ -67,7 +70,10 @@ const git: Pick<Git, "worktreeList" | "revParse" | "topLevel" | "branches" | "re
     unborn.delete(repo);
     return ok("a".repeat(40));
   },
-  revParse: async (repo) => (unborn.has(repo) ? err({ reason: "failed", args: [], exitCode: 128, message: "fatal: Needed a single revision" }) : ok("a".repeat(40))),
+  revParse: async (repo, rev) =>
+    unborn.has(repo) || [...missingBranches].some((name) => rev === `refs/heads/${name}^{commit}`)
+      ? err({ reason: "failed", args: [], exitCode: 128, message: "fatal: Needed a single revision" })
+      : ok("a".repeat(40)),
   worktreeList: async (repo) => {
     if (!worktrees.has(repo)) return err(gitError);
     const branch = worktrees.get(repo);
@@ -215,6 +221,27 @@ repos:
     expect(await message()).toBe("Tokama couldn't run git to check this folder (timed-out).");
     gitError = { reason: "failed", args: [], exitCode: 128, message: "fatal: detected dubious ownership in repository at '/x'\nTo add an exception..." };
     expect(await message()).toBe("git can't use this folder: detected dubious ownership in repository at '/x'");
+  });
+
+  it("refuses a base branch that is no local branch, and suggests the local name when it exists", async () => {
+    const path = repo("a");
+    missingBranches = new Set(["origin/main", "refs/heads/main", "origin/gone", "gone"]);
+    const refusal = async (baseBranch: string) => {
+      const result = await addRepo(options(), { path, baseBranch });
+      return result.ok ? "added" : `${result.error.code}: ${result.error.message}`;
+    };
+    expect(await refusal("origin/main")).toBe("invalid_request: The base branch 'origin/main' is not a local branch of this repo. Use 'main' instead.");
+    expect(await refusal("refs/heads/main")).toBe("invalid_request: The base branch 'refs/heads/main' is not a local branch of this repo. Use 'main' instead.");
+    expect(await refusal("origin/gone")).toBe("invalid_request: The base branch 'origin/gone' is not a local branch of this repo. Pick one of its local branches.");
+    expect(await refusal("gone")).toBe("invalid_request: The base branch 'gone' is not a local branch of this repo. Pick one of its local branches.");
+    expect(() => statSync(reposFile())).toThrow();
+    expect(await refusal("release/1.2")).toBe("added");
+  });
+
+  it("does not take a git that cannot run for a missing branch", async () => {
+    const path = repo("a");
+    const broken: RepoEditOptions = { ...options(), git: { ...git, revParse: async (folder, rev) => (rev.startsWith("refs/heads/") ? err({ reason: "timed-out", args: [], exitCode: null, message: "" }) : git.revParse(folder, rev)) } };
+    expect(await addRepo(broken, { path, baseBranch: "main" })).toEqual({ ok: false, error: { code: "invalid_request", message: "Tokama couldn't run git to check the base branch (timed-out)." } });
   });
 
   it("refuses a check that isn't one simple command, a bad branch, and a bad id", async () => {
@@ -514,6 +541,35 @@ repos:
     expect(await updateRepo(options(), { repoId: "a", baseBranch: "main", checks: [] })).toMatchObject({ ok: true, value: { checks: [] } });
     expect(readFileSync(reposFile(), "utf8")).not.toContain("pnpm test");
     expect(await loadRepos({ tokamaHome: home })).toMatchObject({ ok: true, value: [{ checks: [] }, { checks: ["npm test"] }] });
+  });
+
+  it("refuses a base branch that is no local branch, as addRepo does, and writes nothing", async () => {
+    await seed();
+    const before = readFileSync(reposFile(), "utf8");
+    missingBranches = new Set(["origin/main", "refs/heads/main", "develop2"]);
+    const refusal = async (baseBranch: string) => {
+      const result = await updateRepo(options(), { repoId: "a", baseBranch, checks: [] });
+      return result.ok ? "saved" : `${result.error.code}: ${result.error.message}`;
+    };
+    expect(await refusal("origin/main")).toBe("invalid_request: The base branch 'origin/main' is not a local branch of this repo. Use 'main' instead.");
+    expect(await refusal("refs/heads/main")).toBe("invalid_request: The base branch 'refs/heads/main' is not a local branch of this repo. Use 'main' instead.");
+    expect(await refusal("develop2")).toBe("invalid_request: The base branch 'develop2' is not a local branch of this repo. Pick one of its local branches.");
+    expect(readFileSync(reposFile(), "utf8")).toBe(before);
+  });
+
+  it("names a repo folder that is gone instead of blaming git", async () => {
+    await seed();
+    rmSync(join(root, "a"), { recursive: true });
+    expect(await updateRepo(options(), { repoId: "a", baseBranch: "main", checks: [] })).toEqual({
+      ok: false,
+      error: { code: "invalid_request", message: `The repo folder '${join(root, "a")}' can't be found, so the base branch can't be checked. Put the folder back or remove the repo.` },
+    });
+  });
+
+  it("keeps a repos.yaml with a bad base branch loadable", async () => {
+    await seed();
+    writeFileSync(reposFile(), readFileSync(reposFile(), "utf8").replace("base_branch: main", "base_branch: origin/main"));
+    expect(await loadRepos({ tokamaHome: home })).toMatchObject({ ok: true, value: [{ id: "a", baseBranch: "origin/main" }, { id: "b" }] });
   });
 
   it("refuses what addRepo refuses, and writes nothing", async () => {

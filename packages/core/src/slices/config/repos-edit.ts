@@ -138,6 +138,8 @@ export async function addRepo(options: RepoEditOptions, input: AddRepoInput): Pr
   const settings = checkSettings(baseBranch, input.checks ?? []);
   if (!settings.ok) return settings;
   const { checks } = settings.value;
+  const local = await requireLocalBranch(options.git, folder.value.path, baseBranch);
+  if (!local.ok) return local;
 
   const entry = { id, path: folder.value.path, base_branch: baseBranch, ...(checks.length > 0 ? { checks } : {}) };
   const doc = file.value.text === undefined ? newDocument() : parseDocument(file.value.text, { uniqueKeys: true });
@@ -158,7 +160,7 @@ export interface UpdateRepoInput {
 }
 
 /** Changes the base branch and checks of a repo in repos.yaml, by the rules `addRepo` uses. */
-export async function updateRepo(options: LoadReposOptions, input: UpdateRepoInput): Promise<Result<Repo, RepoEditError>> {
+export async function updateRepo(options: LoadReposOptions & { readonly git: Pick<Git, "revParse"> }, input: UpdateRepoInput): Promise<Result<Repo, RepoEditError>> {
   const file = await readCurrent(options);
   if (!file.ok) return file;
   const index = file.value.repos.findIndex((repo) => repo.id === input.repoId);
@@ -168,6 +170,8 @@ export async function updateRepo(options: LoadReposOptions, input: UpdateRepoInp
   const settings = checkSettings(baseBranch, input.checks);
   if (!settings.ok) return settings;
   const { checks } = settings.value;
+  const local = await requireLocalBranch(options.git, current.path, baseBranch);
+  if (!local.ok) return local;
 
   const doc = parseDocument(file.value.text, { uniqueKeys: true });
   const list = doc.get("repos", true);
@@ -308,6 +312,33 @@ function checkSettings(baseBranch: string, input: readonly string[]): Result<{ c
     if (problem !== undefined) return invalid(`The check ${quote(command)} ${problem}.`);
   }
   return ok({ checks });
+}
+
+/**
+ * Items start from `refs/heads/<name>`, so the base branch must be a local branch. A remote name
+ * (`origin/main`) or a full ref (`refs/heads/main`) is refused; when the local branch it points
+ * to exists, the message names it.
+ */
+async function requireLocalBranch(git: Pick<Git, "revParse">, repoPath: string, name: string): Promise<Result<void, RepoEditError>> {
+  // A repo whose folder was moved or deleted: git cannot start there, and the folder is the cause to name.
+  if (!(await exists(repoPath))) return invalid(`The repo folder ${quotePath(repoPath)} can't be found, so the base branch can't be checked. Put the folder back or remove the repo.`);
+  const found = await localBranchExists(git, repoPath, name);
+  if (!found.ok) return found;
+  if (found.value) return ok(undefined);
+  const short = name.replace(/^(?:refs\/heads\/|origin\/)/, "");
+  let instead = "Pick one of its local branches.";
+  if (short !== name && BRANCH.test(short) && short.length <= MAX_BRANCH) {
+    const local = await localBranchExists(git, repoPath, short);
+    if (local.ok && local.value) instead = `Use ${quote(short)} instead.`;
+  }
+  return invalid(`The base branch ${quote(name)} is not a local branch of this repo. ${instead}`);
+}
+
+async function localBranchExists(git: Pick<Git, "revParse">, repoPath: string, name: string): Promise<Result<boolean, RepoEditError>> {
+  const found = await git.revParse(repoPath, `refs/heads/${name}^{commit}`);
+  if (found.ok) return ok(true);
+  // A missing branch is a git failure; a git that cannot run says nothing about the branch.
+  return found.error.reason === "failed" ? ok(false) : invalid(`Tokama couldn't run git to check the base branch (${found.error.reason}).`);
 }
 
 /** A path for a message: escaped like `quote`, but cut only when very long. */
