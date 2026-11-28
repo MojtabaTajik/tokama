@@ -160,6 +160,7 @@ function Detail({ bridge, detail, agents, connections }: DetailProps) {
   };
   const flow = useMemo(() => (template === null ? undefined : flowOf(template)), [template]);
   const uses = template === null ? undefined : usesOf(template, connections);
+  const note = template === null ? undefined : accessNote(template, detail.agentsRunCommands);
 
   return (
     <div className="tp-body">
@@ -169,7 +170,7 @@ function Detail({ bridge, detail, agents, connections }: DetailProps) {
         </span>
         <div className="tp-head-text">
           <h1>{titleOf(entry)}</h1>
-          {template !== null && accessNote(template) !== undefined && <span className="tp-quiet">{accessNote(template)}</span>}
+          {note !== undefined && <span className="tp-quiet">{note}</span>}
           {template?.budget !== undefined && (
             <span className="tp-quiet">
               {TEXT.budget} <span className="mono">{budgetText(template.budget.timeMinutes)}</span>

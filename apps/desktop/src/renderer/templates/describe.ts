@@ -145,12 +145,13 @@ export const CHANGES_CODE_NOTE = "changes code";
 
 /**
  * "changes code" when Start picks the repo to edit, "read-only" when it picks one to read; the
- * engine works only in the picked repo. Commands the template gives its agents can write files, so
- * then no promise is made (undefined).
+ * engine works only in the picked repo. An agent that may run commands can write files, so then no
+ * promise is made (undefined), nor when the engine does not say. The engine says whether any step's agent may, from the agent files:
+ * the same fact New work uses.
  */
-export function accessNote(template: Pick<TemplateView, "uses" | "steps">): string | undefined {
+export function accessNote(template: Pick<TemplateView, "uses">, agentsRunCommands: boolean | undefined): string | undefined {
   if (template.uses.repos.picked === "edit") return CHANGES_CODE_NOTE;
-  return template.uses.commands.length > 0 || template.steps.some((step) => step.commands.length > 0) ? undefined : READ_ONLY_NOTE;
+  return agentsRunCommands === false ? READ_ONLY_NOTE : undefined;
 }
 
 export interface UseLine {

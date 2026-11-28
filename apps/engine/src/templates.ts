@@ -1,7 +1,7 @@
 // The templates and template_detail queries: every template file the engine loaded, as list
 // entries, and one file in full. The caller loads the files; this only shapes the replies.
 import { join } from "node:path";
-import { cutText, MAX_MESSAGE_BYTES, MAX_TEMPLATE_ENTRIES, type TemplateDetail, type TemplateEntry, type TemplateFileKey, type TemplateLoad, type TemplateView } from "@tokama/core";
+import { cutText, MAX_MESSAGE_BYTES, MAX_TEMPLATE_ENTRIES, type TemplateDetail, type TemplateEntry, type TemplateFileKey, type TemplateLoad, type TemplateRecord, type TemplateView } from "@tokama/core";
 
 const MAX_PROBLEMS = 100;
 const MAX_WARNINGS = 50;
@@ -15,6 +15,8 @@ export interface TemplateFiles {
   readonly loads: readonly TemplateLoad[];
   /** A repo's folder on this machine; undefined for a sample repo, which has none. */
   readonly repoPath: (repoId: string) => string | undefined;
+  /** Whether the agent of some step of the template may run commands; absent when agents are not resolved (sample mode). */
+  readonly agentsRunCommands?: (template: TemplateRecord) => boolean;
 }
 
 export function keyOf(load: TemplateLoad): TemplateFileKey {
@@ -37,6 +39,7 @@ export function templateDetail(files: TemplateFiles, key: TemplateFileKey): Temp
     template: load.ok ? viewOf(load.template) : null,
     problems: load.ok ? [] : load.problems.slice(0, MAX_PROBLEMS).map((problem) => ({ line: problem.line, message: cap(problem.message) })),
     warnings: load.ok ? load.warnings.slice(0, MAX_WARNINGS).map(cap) : [],
+    ...(load.ok && files.agentsRunCommands !== undefined && { agentsRunCommands: files.agentsRunCommands(load.template) }),
     text: load.text ?? null,
     textTooLarge: false,
     path: entry.openable ? fullPath(files, entry) : null,

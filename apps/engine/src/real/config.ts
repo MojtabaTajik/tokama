@@ -146,11 +146,15 @@ function accessOf(agent: ReturnType<typeof resolveAgent>): { agentAccess?: Templ
       model: agent.model,
       ...(role !== undefined && { role }),
       edit: limits.edit,
-      commands: limits.commands.filter((c) => c.length <= 200).slice(0, 50),
+      commands: limits.commands.slice(0, 50).map((c) => cutText(c, 200)),
       web: limits.web,
     },
   };
 }
+
+/** Whether the agent of some step may run commands: the fact the "read-only" tag on both screens depends on. */
+export const agentsRunCommands = (template: TemplateRecord, agents: LoadedAgents): boolean =>
+  template.steps.some((step) => (accessOf(resolveAgent(agents, step.agentId)).agentAccess?.commands.length ?? 0) > 0);
 
 /** The first non-blank line of a role text, cut to the length the setup allows. */
 export function roleLine(role: string): string | undefined {

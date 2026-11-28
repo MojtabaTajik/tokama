@@ -140,7 +140,7 @@ import type { HelperRuns } from "./real/helpers.js";
 import type { CheckTrials } from "./real/trials.js";
 import { RealEngine, type RealEngineOptions } from "./real/real.js";
 import { SampleEngine } from "./sample/sample.js";
-import { agentsFor, loadConfig, startProblem, stepProblems } from "./real/config.js";
+import { agentsFor, agentsRunCommands, loadConfig, startProblem, stepProblems } from "./real/config.js";
 import { sampleTemplateLoads } from "./sample/templates.js";
 import { openSampleDiagnostics } from "./sample/diagnostics.js";
 import { sampleMachineReport } from "./sample/machine.js";
@@ -616,7 +616,11 @@ export async function startEngine(options: EngineOptions): Promise<Result<Engine
       const start = startProblem(load.template);
       return { ...load, warnings: [...(start === undefined ? [] : [start]), ...stepProblems(load.template, agentsFor(config, load.template)), ...load.warnings] };
     });
-    return { loads: [...samples, ...loads], repoPath: (id) => config.repos.find((repo) => repo.id === id)?.path };
+    return {
+      loads: [...samples, ...loads],
+      repoPath: (id) => config.repos.find((repo) => repo.id === id)?.path,
+      agentsRunCommands: (template) => agentsRunCommands(template, agentsFor(config, template)),
+    };
   };
 
   const dispatch = async (message: ClientMessage): Promise<ReplyResult> => {

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { OpenResult } from "../../shared/bridge.js";
 import { CONNECTED, fakeBridge, type Reply } from "../testing/bridge.js";
 import { setup } from "../testing/sample.js";
-import { builtinEntry, flakyDetail, flakyEntry, planDetail, planEntry } from "../testing/templates.js";
+import { builtinEntry, flakyDetail, flakyEntry, planAndBuild, planDetail, planEntry } from "../testing/templates.js";
 import { TemplatesPage } from "./TemplatesPage.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -57,6 +57,18 @@ describe("TemplatesPage", () => {
     ]);
     expect($$(".tp-row .tpl-icon")).toHaveLength(3);
     expect($(".tp-list-foot")?.textContent).toContain("3 templates from 2 repos and built-in.");
+  });
+
+  it("tags a read template read-only, unless the engine says a step's agent may run commands", async () => {
+    const readDetail = (agentsRunCommands: boolean) => ({ ...planDetail, agentsRunCommands, template: { ...planAndBuild, uses: { ...planAndBuild.uses, repos: { picked: "read", named: [] } } } });
+    const tagFor = async (agentsRunCommands: boolean) => {
+      await render(bridgeWith({ detail: () => ({ ok: true, data: readDetail(agentsRunCommands) }) }));
+      const tag = $$(".tp-head .tp-quiet").find((el) => el.textContent === "read-only");
+      act(() => root.render(<div />));
+      return tag !== undefined;
+    };
+    expect(await tagFor(false)).toBe(true);
+    expect(await tagFor(true)).toBe(false);
   });
 
   it("shows the first template: Start, what it can use, the flow, a sentence per step and Finish", async () => {

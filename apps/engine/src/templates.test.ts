@@ -54,6 +54,19 @@ describe("templateDetail", () => {
     expect(parseQueryResult("template_detail", detail).ok).toBe(true);
   });
 
+  it("says whether a step's agent may run commands, only when the caller can tell", async () => {
+    const key = { origin: "orders-api", file: ".tokama/templates/plan-and-build.yaml" };
+    expect(templateDetail(await files(), key)).not.toHaveProperty("agentsRunCommands");
+    for (const answer of [true, false]) {
+      const detail = templateDetail({ ...(await files()), agentsRunCommands: () => answer }, key);
+      expect(detail?.agentsRunCommands).toBe(answer);
+      expect(parseQueryResult("template_detail", detail).ok).toBe(true);
+    }
+    // A file that does not load has no template to ask about.
+    const broken = templateDetail({ ...(await files()), agentsRunCommands: () => true }, { origin: "checkout-web", file: ".tokama/templates/flaky-test-fix.yaml" });
+    expect(broken).not.toHaveProperty("agentsRunCommands");
+  });
+
   it("gives the full path of a repo file on this machine", async () => {
     const detail = templateDetail(await files((id) => `/work/${id}`), { origin: "orders-api", file: ".tokama/templates/plan-and-build.yaml" });
     expect(detail?.path).toBe("/work/orders-api/.tokama/templates/plan-and-build.yaml");
