@@ -55,7 +55,7 @@ flow(
 
 flow("a workflow with only finished items shows each live group as empty, and a workflow with no items shows No work yet", async ({ page, screenshot }) => {
   // "DB slow query check" has one finished item in the sample data: nothing is live. The item is
-  // hours old, so after midnight it ended yesterday and the default range, Today, hides it.
+  // hours old, so after midnight it was created yesterday and the default range, Today, hides it.
   await sidebarRow(page, "DB slow query check").click();
   await page.locator(".range").selectOption("30d");
   await page.locator('section.pl-group[aria-label="Running"] .pl-empty').waitFor();
