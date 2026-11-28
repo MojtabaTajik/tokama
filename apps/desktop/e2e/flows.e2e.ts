@@ -74,8 +74,8 @@ flow("answers a decision on the Needs you page and the row leaves the list", asy
   // The choice on the row sends the answer; the item runs on and the row goes.
   await waiting.getByRole("button", { name: /^Approve and send/ }).click();
   await waiting.waitFor({ state: "detached" });
-  await expect.poll(() => page.locator(".summary").innerText(), { message: "the page header" }).toMatch(/^3 waiting/);
-  await expect.poll(() => rail.getByRole("button", { name: /^Needs you/ }).getAttribute("aria-label"), { message: "the rail's Needs you count" }).toBe("Needs you · 3");
+  await expect.poll(() => page.locator(".summary").innerText(), { message: "the page header" }).toMatch(/^4 waiting/);
+  await expect.poll(() => rail.getByRole("button", { name: /^Needs you/ }).getAttribute("aria-label"), { message: "the rail's Needs you count" }).toBe("Needs you · 4");
 });
 
 flow("a plan approval shows the plan: a preview on Needs you, the whole plan as text in the drawer above Approve", async ({ page, resize, screenshot }) => {

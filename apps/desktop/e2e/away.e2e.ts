@@ -30,17 +30,17 @@ flow(
   async (session) => {
     const { page, home, screenshot } = session;
     await strip(page).waitFor();
-    expect(words(await strip(page).innerText())).toMatch(/^While you were away .*\d h \d\d m ⏸ 4 need you ✓ 2 finished ✕ 1 failed 5 still running Show Got it$/);
+    expect(words(await strip(page).innerText())).toMatch(/^While you were away .*\d h \d\d m ⏸ 5 need you ✓ 2 finished ✕ 1 failed 5 still running Show Got it$/);
     expect((await away(page)).due).toBe(true);
     await screenshot("away-closed");
     await screenshot("away-closed-strip", strip(page));
 
     await strip(page).getByRole("button", { name: "Show" }).click();
     // The headings are set in capitals by the style sheet, and their count sits in its own span.
-    await expect.poll(() => strip(page).locator(".away-group-heading").allTextContents()).toEqual(["⏸Needs you4", "✓Finished2", "✕Failed1"]);
+    await expect.poll(() => strip(page).locator(".away-group-heading").allTextContents()).toEqual(["⏸Needs you5", "✓Finished2", "✕Failed1"]);
     // The oldest question first, and its button is the one filled button.
     const lines = strip(page).locator(".away-line");
-    expect(await lines.count()).toBe(7);
+    expect(await lines.count()).toBe(8);
     expect(words(await lines.first().innerText())).toContain("Orders API returns 500 after deploy");
     expect(await strip(page).locator(".btn-primary").count()).toBe(1);
     expect(await lines.first().locator(".btn-primary").count()).toBe(1);
