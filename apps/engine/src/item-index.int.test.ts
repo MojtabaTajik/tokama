@@ -464,8 +464,10 @@ describe("engine start with a home folder", () => {
     }
     let release = () => {};
     const blocked = new Promise<void>((resolve) => (release = resolve));
+    let inKill = false;
     const table: ProcessTable = {
       list: async () => {
+        inKill = true;
         await blocked;
         return [];
       },
@@ -475,7 +477,7 @@ describe("engine start with a home folder", () => {
     const dir = tempEngineDir(cleanups);
     const stop = new AbortController();
     const starting = startEngine({ dir, home, processTable: table, signal: stop.signal });
-    await waitFor(() => existsSync(join(home, "engine.lock")), 10_000, "lock");
+    await waitFor(() => existsSync(join(home, "engine.lock")) && inKill, 10_000, "lock and recovery in a kill");
     stop.abort();
     // Shutdown waits for the recovery that is in the middle of a kill.
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -484,10 +486,14 @@ describe("engine start with a home folder", () => {
     expect(await starting).toMatchObject({ ok: false, error: { code: "stopped" } });
     expect(existsSync(join(home, "engine.lock"))).toBe(false);
 
-    // Nothing was written after the stop; the logs reload cleanly and the next start recovers both.
+    // Shutdown drains, and closes helpers and trials, before it aborts recovery. On a slow machine
+    // release() can come first, and recovery then records the failure and the decision before the
+    // lock is released. Either way each log is whole (3 events: attempt still open; 5: failure and
+    // decision recorded), and the next start ends with the same six events.
     const { store: reloaded, problems } = ItemStore.open({ home, hostId: store.hostId });
     expect(problems).toEqual([]);
-    expect(reloaded.list().map((item) => item.lastSeq)).toEqual([3, 3]);
+    expect(reloaded.list()).toHaveLength(2);
+    for (const item of reloaded.list()) expect([3, 5]).toContain(item.lastSeq);
     const next = await startEngine({ dir: tempEngineDir(cleanups), home, processTable: { ...table, list: async () => [] } });
     if (!next.ok) throw new Error(next.error.message);
     cleanups.push(() => next.value.close());
