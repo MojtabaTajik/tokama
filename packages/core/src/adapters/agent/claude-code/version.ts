@@ -1,4 +1,5 @@
 import type { ProcessRunner } from "../../../kernel/process/index.js";
+import { compareVersions } from "../../../kernel/version/index.js";
 
 /**
  * The first Claude Code version a call that runs commands needs. It is the newest of the versions
@@ -13,17 +14,6 @@ export const UPDATE_COMMAND = "claude update";
 
 const VERSION_TIMEOUT_MS = 10_000;
 const VERSION_LINES = 20;
-
-/** Negative when `a` is older than `b`; versions are `major.minor.patch`. */
-export function compareVersions(a: string, b: string): number {
-  const parts = (version: string) => version.split(".").map((part) => Number.parseInt(part, 10) || 0);
-  const [x, y] = [parts(a), parts(b)];
-  for (let i = 0; i < 3; i++) {
-    const diff = (x[i] ?? 0) - (y[i] ?? 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
-}
 
 /** The leading `major.minor.patch` of `claude --version` output, e.g. `2.1.332` from `2.1.332 (Claude Code)`. */
 export function parseVersion(out: string): string | undefined {

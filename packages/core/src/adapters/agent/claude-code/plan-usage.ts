@@ -17,8 +17,9 @@ import { readTextFile } from "../../../kernel/fs-safe/index.js";
 import { createProcessRunner, type ProcessRunner } from "../../../kernel/process/index.js";
 import { err, ok, type Result } from "../../../kernel/result/index.js";
 import type { PlanWindow } from "../../../kernel/schemas/index.js";
+import { compareVersions } from "../../../kernel/version/index.js";
 import { CLAUDE_CODE_COMMAND } from "./command.js";
-import { compareVersions, parseVersion } from "./version.js";
+import { parseVersion } from "./version.js";
 
 /** The first Claude Code version `get_usage` was checked on. */
 export const GET_USAGE_FROM = "2.1.331";
