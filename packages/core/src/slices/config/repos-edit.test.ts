@@ -557,6 +557,15 @@ repos:
     expect(readFileSync(reposFile(), "utf8")).toBe(before);
   });
 
+  it("names a repo folder that is gone instead of blaming git", async () => {
+    await seed();
+    rmSync(join(root, "a"), { recursive: true });
+    expect(await updateRepo(options(), { repoId: "a", baseBranch: "main", checks: [] })).toEqual({
+      ok: false,
+      error: { code: "invalid_request", message: `The repo folder '${join(root, "a")}' can't be found, so the base branch can't be checked. Put the folder back or remove the repo.` },
+    });
+  });
+
   it("keeps a repos.yaml with a bad base branch loadable", async () => {
     await seed();
     writeFileSync(reposFile(), readFileSync(reposFile(), "utf8").replace("base_branch: main", "base_branch: origin/main"));

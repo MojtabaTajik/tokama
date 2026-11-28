@@ -320,6 +320,8 @@ function checkSettings(baseBranch: string, input: readonly string[]): Result<{ c
  * to exists, the message names it.
  */
 async function requireLocalBranch(git: Pick<Git, "revParse">, repoPath: string, name: string): Promise<Result<void, RepoEditError>> {
+  // A repo whose folder was moved or deleted: git cannot start there, and the folder is the cause to name.
+  if (!(await exists(repoPath))) return invalid(`The repo folder ${quotePath(repoPath)} can't be found, so the base branch can't be checked. Put the folder back or remove the repo.`);
   const found = await localBranchExists(git, repoPath, name);
   if (!found.ok) return found;
   if (found.value) return ok(undefined);
