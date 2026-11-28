@@ -5,6 +5,7 @@ One section per version, written for people who use Tokama.
 ## Unreleased
 
 - Tokama now also comes for Linux on x86_64, as a `.deb` for Ubuntu 24.04 or newer and an `.rpm` for Fedora. Install with `sudo apt install ./Tokama-<version>-amd64.deb` or `sudo dnf install ./Tokama-<version>-x86_64.rpm`. The package brings `git`, `bubblewrap` and `socat` with it.
+- Adding or editing a repo now checks that the base branch is a local branch of the repo. A name such as `origin/main` or `refs/heads/main` is refused with the local name to use instead. Before, every item of that repo stopped at start.
 - In Settings, Diagnostics, the 7 days and 30 days filters now start at midnight of their first day also when the clocks changed inside the range. Before, they started an hour early or late.
 
 ## 0.0.1 (2026-11-26)

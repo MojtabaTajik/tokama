@@ -122,6 +122,7 @@ describe("repo commands", () => {
     const events = collect(client);
     const path = gitRepo(root, "billing-api");
     expect((await client.command({ type: "add_repo", path, checks: ["pnpm test"] })).ok).toBe(true);
+    execFileSync("git", ["branch", "develop"], { cwd: path });
     const file = join(home, "repos.yaml");
     writeFileSync(file, `# mine\n${readFileSync(file, "utf8")}`);
     const before = events.length;
@@ -138,6 +139,10 @@ describe("repo commands", () => {
     const setup = await client.query({ type: "setup" });
     expect(setup.ok && setup.data.repos.find((repo) => repo.id === "billing-api")).toEqual({ id: "billing-api", baseBranch: "develop", checks: ["pnpm test", "pnpm lint"], path: expect.stringMatching(/billing-api$/) });
 
+    expect(await client.command({ type: "update_repo", repoId: "billing-api", baseBranch: "origin/main", checks: [] })).toMatchObject({
+      ok: false,
+      error: { code: "invalid_request", message: "The base branch 'origin/main' is not a local branch of this repo. Use 'main' instead." },
+    });
     expect(await client.command({ type: "update_repo", repoId: "billing-api", baseBranch: "bad branch", checks: [] })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
     expect(await client.command({ type: "update_repo", repoId: "billing-api", baseBranch: "main", checks: ["a | b"] })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
     expect(await client.command({ type: "update_repo", repoId: "nope", baseBranch: "main", checks: [] })).toMatchObject({ ok: false, error: { code: "not_found" } });
