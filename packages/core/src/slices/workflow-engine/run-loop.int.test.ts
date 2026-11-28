@@ -1633,6 +1633,24 @@ describe("run loop: item diff", () => {
     expect(shown(diff.value.files)).toEqual([["draft.txt", "added", 1, 0]]);
     expect(diff.value).toMatchObject({ moreFiles: 1, cut: true, skipped: [{ path: "app.bin", bytes: SNAPSHOT_LIMITS.fileBytes + 1, why: "big" }] });
   });
+
+  it("a tracked file taken out of the index and left big on disk counts once, as left out, not also as deleted", SLOW, async () => {
+    let running!: () => void;
+    const underWay = new Promise<void>((resolve) => (running = resolve));
+    const loop = engine(fakeRuntime([hangs(() => running())]));
+    const started = await loop.startItem({ template: template([BUILD_CHECKED]), repoId: repo.id, text: "Fix it" });
+    if (!started.ok) throw new Error(started.error.message);
+    const id = started.value;
+    await underWay;
+    await loop.stopItem(id);
+    await loop.settled(id);
+    await plain(worktreeDir(id), "rm", "--cached", "-q", "app.txt");
+    truncateSync(join(worktreeDir(id), "app.txt"), SNAPSHOT_LIMITS.fileBytes + 1);
+    const diff = await loop.itemDiff(id);
+    if (!diff.ok || diff.value.kind !== "worktree") throw new Error(JSON.stringify(diff));
+    expect(diff.value.files).toEqual([]);
+    expect(diff.value).toMatchObject({ moreFiles: 1, skipped: [{ path: "app.txt", why: "big" }] });
+  });
 });
 
 describe("run loop: what the step's agent says", () => {

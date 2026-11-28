@@ -4,6 +4,7 @@ import { isAbsolute, join } from "node:path";
 import { hasCode } from "../errno/index.js";
 import { err, ok, type Result } from "../result/index.js";
 import type { ProcessRunner } from "../process/index.js";
+import { DIFF_LIMITS } from "../schemas/diff.js";
 
 // A repo's config, hooks and attributes may be written by an agent or come from a cloned repo.
 // None of them may make Tokama's own git calls run code. Every call gets these settings:
@@ -189,8 +190,8 @@ export interface SnapshotSkips {
   readonly count: number;
 }
 
-/** Skipped files named one by one in `SnapshotSkips.listed`. */
-const SNAPSHOT_LISTED = 20;
+/** Skipped files named one by one in `SnapshotSkips.listed`: as many as the diff reply can name. */
+const SNAPSHOT_LISTED = DIFF_LIMITS.skipped;
 
 export interface Git {
   /** `status --porcelain -z --untracked-files=all`. */
@@ -242,7 +243,8 @@ export interface Git {
    * The tree `add -A` then `write-tree` would give, uncommitted and untracked files included,
    * built in a copy of the index in a temp folder: the repo's own index is never written. An
    * untracked file over `limits.fileBytes`, or past `limits.files` files or `limits.totalBytes`,
-   * is left out of the tree and reported in `skipped`, so no file of any size or count is hashed.
+   * is left out of the tree and reported in `skipped`, so no untracked file over the limits is
+   * hashed. Tracked files that changed are still hashed (`add -u`).
    */
   snapshotTree(repo: string, limits?: SnapshotLimits): Promise<GitResult<{ tree: string; skipped: SnapshotSkips }>>;
   /** `commit -q --no-verify -m <message>` of the index; returns the new commit id. */

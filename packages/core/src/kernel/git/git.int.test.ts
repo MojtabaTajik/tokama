@@ -556,7 +556,8 @@ describe("API on a real repo", () => {
 
   it("snapshotTree reports an untracked file it cannot examine, as it would be committed", SLOW, async () => {
     // A relative path that fits the OS limit, while the absolute one (with the repo's folder in front) does not.
-    const deep = Array.from({ length: process.platform === "darwin" ? 5 : 20 }, () => "d".repeat(200)).join("/");
+    // PATH_MAX is 1024 on macOS and 4096 on Linux; the path with the file is just under it.
+    const deep = (process.platform === "darwin" ? Array.from({ length: 5 }, () => "d".repeat(200)) : Array.from({ length: 22 }, () => "d".repeat(184))).join("/");
     const made = await createProcessRunner({ parentEnv: { PATH: process.env["PATH"] } }).run({ command: { argv: ["sh", "-c", `mkdir -p ${deep} && echo x > ${deep}/y.js`] }, cwd: repo });
     expect(made.kind === "finished" && made.exitCode === 0).toBe(true);
     const { tree, skipped } = value(await git.snapshotTree(repo));

@@ -20,6 +20,8 @@ export const DIFF_LIMITS = {
   lineChars: 1000,
   /** Bytes of the unified diff the engine reads from git. */
   patchBytes: 2 * 1024 * 1024,
+  /** Untracked files the worktree's diff names as left out; the rest are only counted. */
+  skipped: 20,
 } as const;
 
 export const DiffStatusSchema = z.enum(["added", "modified", "deleted", "renamed", "type_changed"]);
@@ -72,7 +74,7 @@ export const ItemDiffSchema = TreeDiffSchema.extend({
    * The first untracked files the worktree's diff left out, without reading them. All of them are
    * also counted in `moreFiles`; absent when none was left out.
    */
-  skipped: z.array(SkippedFileSchema).max(20).optional(),
+  skipped: z.array(SkippedFileSchema).max(DIFF_LIMITS.skipped).optional(),
   /** Where to see all of it: the item's worktree, as a folder relative to its repo. */
   worktree: z.strictObject({
     repoId: RepoIdSchema,

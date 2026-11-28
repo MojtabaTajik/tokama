@@ -1521,7 +1521,11 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       // Files left out of the snapshot still changed: they count as files the diff does not list.
       const { listed, count } = snapshot.value.skipped;
       const left = count === 0 ? {} : { moreFiles: diff.value.moreFiles + count, cut: true, ...(listed.length > 0 && { skipped: listed }) };
-      return ok({ kind: "worktree", ...diff.value, ...left, worktree: { repoId: repo.id, dir: item.worktrees[0]!.dir, branch: worktree.branch, baseCommit: worktree.baseCommit } });
+      // A tracked file that left the index but stays on disk is both "deleted" in the tree and
+      // untracked and left out: it counts once, as left out.
+      const named = new Set(listed.map((skip) => skip.path));
+      const files = diff.value.files.filter((file) => !(file.status === "deleted" && named.has(file.path)));
+      return ok({ kind: "worktree", ...diff.value, files, ...left, worktree: { repoId: repo.id, dir: item.worktrees[0]!.dir, branch: worktree.branch, baseCommit: worktree.baseCommit } });
     },
 
     async stepOutput(itemId, stepIndex, attempt) {
