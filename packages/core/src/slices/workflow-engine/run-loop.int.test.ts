@@ -1426,9 +1426,9 @@ describe("run loop: review fixes", () => {
     expect(openDecision(id)).toBeUndefined();
     expect(item(id).state).toBe("done");
     const prompt = reviewer.calls[0]!.request.prompt;
-    expect(prompt).toContain('name="last check output"');
+    expect(prompt).toContain('name="checks run"');
     expect(prompt).toContain("Checks of step build on the tree you review:\n$ grep -q fixed app.txt (passed)");
-    expect(builder.calls[0]!.request.prompt).not.toContain("last check output");
+    expect(builder.calls[0]!.request.prompt).not.toContain("checks run");
     const sent = JSON.parse(readFileSync(join(tokamaHome, "items", id, "attempts", "review-1", "call.json"), "utf8")) as { prompt: { included: { kind: string }[] } };
     expect(sent.prompt.included.map((entry) => entry.kind)).toContain("check-output");
   });
@@ -1438,7 +1438,32 @@ describe("run loop: review fixes", () => {
     const builder = fakeRuntime([edits(FIXED)]);
     const loop = engine(builder, { runtime: (a) => (a.id === "reviewer" ? reviewer : builder) });
     await start(loop, template([{ id: "build" }, { id: "review", agentId: "reviewer", doneWhen: "reviewer approves" }]));
-    expect(reviewer.calls[0]!.request.prompt).not.toContain("last check output");
+    expect(reviewer.calls[0]!.request.prompt).not.toContain("checks run");
+  });
+
+  it("build, docs, review: a step that changed files after the checks sends the reviewer to the checked tree, so the check block is true of what it reviews", SLOW, async () => {
+    const builder = fakeRuntime([edits(FIXED), edits({ "docs.md": "How it works.\n" })]);
+    const reviewer = fakeRuntime([says("Looks good.\nVERDICT: approve")]);
+    const loop = engine(builder, { runtime: (a) => (a.id === "reviewer" ? reviewer : builder) });
+    const id = await start(loop, template([QUIET_CHECKED, { id: "docs" }, { id: "review", agentId: "reviewer", doneWhen: "reviewer approves" }]));
+    // The engine asks first: the reviewer reviews only the checked tree, never the docs change.
+    expect(openDecision(id)).toMatchObject({ kind: "tamper", stepId: "review", detail: expect.stringContaining("docs.md") });
+    expect(reviewer.calls).toHaveLength(0);
+    await answer(loop, id, "use_recorded_tree");
+    const prompt = reviewer.calls[0]!.request.prompt;
+    expect(prompt).toContain("Checks of step build on the tree you review:");
+    expect(prompt).not.toContain("docs.md");
+  });
+
+  it("a cloud reviewer with summary-after-approval is refused, and no check command is sent", SLOW, async () => {
+    const cloud: Agent = { ...agent("cloud-reviewer"), cliId: "claude-code", model: "haiku" };
+    const agents: Record<string, Agent> = { ...AGENTS, "cloud-reviewer": cloud };
+    const builder = fakeRuntime([edits(FIXED)]);
+    const reviewer = fakeRuntime([says("Looks good.\nVERDICT: approve")]);
+    const loop = engine(builder, { agent: (_r, id) => agents[id], runtime: (a) => (a.id === "cloud-reviewer" ? reviewer : builder) });
+    const id = await start(loop, template([QUIET_CHECKED, { id: "review", agentId: "cloud-reviewer", data: "summary-after-approval", doneWhen: "reviewer approves" }]));
+    expect(reviewer.calls).toHaveLength(0);
+    expect(openDecision(id)).toMatchObject({ kind: "run_failure", stepId: "review" });
   });
 
   it("a cloud reviewer with repo-and-diff gets the check commands in what is sent to the cloud, as it does the diff", SLOW, async () => {

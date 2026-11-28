@@ -18,6 +18,8 @@ Read this before you run a template.
 - The sandbox covers commands only. An agent with web turned on can also open any website with its web tools, and the file tools are limited by Tokama's rules, not by the sandbox.
 - Checks and setup commands that Tokama runs itself (for example `pnpm test`) are not sandboxed yet. They run as you and can do anything your user can do.
 
+Check commands and their output can go to a cloud agent whose step sends the repo and diff.
+
 Review templates and check commands before you run them, especially ones you did not write.
 
 ## Requirements

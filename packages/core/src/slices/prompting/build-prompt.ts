@@ -56,8 +56,10 @@ export interface PromptInput {
   readonly results: StepResults;
   /** What the engineer asked for: the item's text. */
   readonly itemText: string;
-  /** The output of the last failed checks, for a retry; or the commands of the checks a reviewer's step passed. Only its last part is kept. */
+  /** The output of the last failed checks, for a retry. Only its last part is kept. */
   readonly lastCheckOutput?: string;
+  /** For a reviewer: the commands of the checks the reviewed tree passed, with their results. Sent where the diff is. */
+  readonly checksRun?: string;
   /**
    * What a later step said about this step's work (a reviewer's requested changes), for the next
    * attempt. Its first line is kept; the rest keeps its last part. Refused for a cloud agent when
@@ -221,6 +223,10 @@ function build(input: PromptInput): BuiltPrompt {
     if (input.lastCheckOutput !== undefined) {
       const cut = tail(text(input.lastCheckOutput, "The check output"), CHECK_OUTPUT_MAX_BYTES);
       blocks.push({ kind: "check-output", name: "last check output", text: cut.text, ...(cut.bytes < cut.originalBytes ? { cutFromBytes: cut.originalBytes } : {}) });
+    }
+    if (input.checksRun !== undefined) {
+      const cut = tail(text(input.checksRun, "The checks run"), CHECK_OUTPUT_MAX_BYTES);
+      blocks.push({ kind: "check-output", name: "checks run", text: cut.text, ...(cut.bytes < cut.originalBytes ? { cutFromBytes: cut.originalBytes } : {}) });
     }
   }
 
