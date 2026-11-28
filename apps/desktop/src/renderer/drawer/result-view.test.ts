@@ -95,6 +95,13 @@ describe("the facts of a done item", () => {
     expect(rowsOf(pushed).at(-1)).toEqual(["sent", "↗", "The branch to github.com/northwind/orders-api", ""]);
   });
 
+  it("lists the pushed branch when gh then failed and no pull request was opened", () => {
+    const failed = item([{ ...plan, data: "none" }, build], { finish: { worktreeRemoved: false, pushTarget: "github.com/northwind/orders-api", pushed: true, failed: { action: "pull_request", detail: "gh could not open the pull request" } } });
+    expect(rowsOf(failed).at(-1)).toEqual(["sent", "↗", "The branch to github.com/northwind/orders-api", ""]);
+    const notPushed = item([{ ...plan, data: "none" }, build], { finish: { worktreeRemoved: false, pushTarget: "github.com/northwind/orders-api", failed: { action: "pull_request", detail: "Nothing was pushed." } } });
+    expect(rowsOf(notPushed).at(-1)?.[2]).not.toContain("The branch to");
+  });
+
   it("names a step's agent by its id when the setup does not list it", () => {
     const stranger = { ...plan, agentId: "retired-agent" };
     expect(rowsOf(item([stranger])).at(-1)?.[2]).toBe("Code and diffs to retired-agent");

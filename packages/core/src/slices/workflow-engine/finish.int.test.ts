@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createGit, type Git } from "../../kernel/git/index.js";
 import { createProcessRunner } from "../../kernel/process/index.js";
-import { TemplateRecordSchema, type FinishAction, type HostId, type ItemId, type RepoId, type StoredItem } from "../../kernel/schemas/index.js";
+import { TemplateRecordSchema, type FinishAction, type HostId, type ItemEventBody, type ItemId, type RepoId, type StoredItem } from "../../kernel/schemas/index.js";
 import type { Repo } from "../config/index.js";
 import { protectedSet, sharedGitSettings } from "../integrity/index.js";
 import { ItemStore } from "../items/index.js";
@@ -424,6 +424,8 @@ describe("Open PR", () => {
     const missing = await run(await doneItem(), "pull_request", { ghCommand: [join(root, "no-such-gh")] });
     expect(missing.finish?.failed?.detail).toMatch(/^Nothing was pushed\. The GitHub CLI \(gh\) is not installed/);
     expect(await plain(bare, "for-each-ref", "refs/heads/")).toBe("");
+    expect(out.finish?.pushed).toBeUndefined();
+    expect(missing.finish?.pushed).toBeUndefined();
   });
 
   it("records gh's own refusal after the push", SLOW, async () => {
@@ -431,6 +433,22 @@ describe("Open PR", () => {
     writeFileSync(join(ghDir, "gh"), STUB_GH.replace(`echo "${PR_URL}"; exit 0 ;;`, `echo "gh: Resource not accessible (HTTP 403)" >&2; exit 1 ;;`));
     const done = await run(item, "pull_request");
     expect(done.finish?.failed?.detail).toBe("gh could not open the pull request on github.com/acme/orders-api: gh: Resource not accessible (HTTP 403)");
+    // The branch left the machine, so the record says so although no pull request exists.
+    expect(done.finish).toMatchObject({ pushed: { at: expect.any(Number) } });
+    expect(done.finish?.pullRequest).toBeUndefined();
+  });
+
+  it("a record of the push that cannot be written does not stop the pull request, and is said when gh fails too", SLOW, async () => {
+    const refusing = Object.create(store, {
+      append: { value: (id: ItemId, events: readonly ItemEventBody[]) => (events[0]?.type === "branch_pushed" ? { ok: false, error: { reason: "write_failed", message: "disk full" } } : store.append(id, events)) },
+    }) as ItemStore;
+    const opened = await run(await doneItem(), "pull_request", { store: refusing });
+    expect(opened.finish).toMatchObject({ pullRequest: { url: PR_URL } });
+
+    writeFileSync(join(ghDir, "gh"), STUB_GH.replace(`echo "${PR_URL}"; exit 0 ;;`, `echo "gh: Resource not accessible (HTTP 403)" >&2; exit 1 ;;`));
+    const failed = await run(await doneItem(), "pull_request", { store: refusing });
+    expect(failed.finish?.pushed).toBeUndefined();
+    expect(failed.finish?.failed?.detail).toBe("gh could not open the pull request on github.com/acme/orders-api: gh: Resource not accessible (HTTP 403) The branch was pushed to github.com/acme/orders-api, but Tokama could not record it: disk full");
   });
 
   it("refuses to push when origin points somewhere else than when the item started", SLOW, async () => {

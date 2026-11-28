@@ -266,6 +266,12 @@ function applyTo(next: StoredItem, event: ItemEvent): FoldError | undefined {
       break;
     }
 
+    case "branch_pushed": {
+      if (next.finish?.running !== "pull_request") return fail("branch_pushed without a running pull_request");
+      next.finish.pushed = { at: event.at };
+      break;
+    }
+
     case "merged":
     case "pr_opened":
     case "discarded":
@@ -317,7 +323,7 @@ function applyTo(next: StoredItem, event: ItemEvent): FoldError | undefined {
   return undefined;
 }
 
-const FINISH_EVENTS: ReadonlySet<string> = new Set(["finish_started", "merged", "pr_opened", "discarded", "finish_failed", "git_changes_accepted"]);
+const FINISH_EVENTS: ReadonlySet<string> = new Set(["finish_started", "merged", "branch_pushed", "pr_opened", "discarded", "finish_failed", "git_changes_accepted"]);
 /** The finish events of a discard: the only ones that may follow an item that ended with no action needed, whose unused worktree is removed. */
 const isDiscard = (event: ItemEvent): boolean => event.type === "discarded" || ((event.type === "finish_started" || event.type === "finish_failed") && event.action === "discard");
 const RESULT_OF ={ merged: "merge", pr_opened: "pull_request", discarded: "discard" } as const;

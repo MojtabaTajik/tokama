@@ -192,8 +192,8 @@ function sentRow(item: ItemRecord, setup: Setup | undefined): ResultRow {
     to.set(step.data, tools);
   }
   const parts = [...to].map(([rule, tools]) => `${SENT_PHRASE[rule]} ${list.format(tools)}`);
-  // Open PR pushed the branch: that left the machine too.
-  if (item.finish?.pullRequest !== undefined) parts.push(`The branch to ${item.finish.pushTarget ?? "the remote"}`);
+  // Open PR pushed the branch: that left the machine too, even when gh then failed. An item from before the push was recorded has only its pull request.
+  if (item.finish?.pushed === true || item.finish?.pullRequest !== undefined) parts.push(`The branch to ${item.finish.pushTarget ?? "the remote"}`);
   if (parts.length === 0) return { key: "sent", label, text: "Nothing: local only" };
   return { key: "sent", label, mark: MARKS.sent, text: parts.join(" · ") };
 }

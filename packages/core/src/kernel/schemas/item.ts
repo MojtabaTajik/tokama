@@ -311,6 +311,8 @@ export const ItemRecordSchema = z.strictObject({
       running: FinishActionSchema.optional(),
       merged: z.strictObject({ baseBranch: z.string().min(1).max(200), commit: GIT_ID }).optional(),
       pullRequest: z.strictObject({ url: PullRequestUrlSchema }).optional(),
+      /** Open PR pushed the branch, whether or not the pull request was opened after it. */
+      pushed: z.literal(true).optional(),
       /** The worktree and branch are gone: discarded, or removed after a merge. */
       worktreeRemoved: z.boolean(),
       /** The last action that did not succeed, and why, until the next one starts. */
