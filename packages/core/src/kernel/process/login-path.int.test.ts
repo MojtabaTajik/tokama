@@ -2,7 +2,9 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { resolveToolsPath } from "./login-path.js";
+import { manualClock } from "../clock/index.js";
+import { resolveToolsPath, type ToolsPath } from "./login-path.js";
+import { createProcessRunner } from "./runner.js";
 
 // Real runner and real child processes. The "shell" is a script of the test's own, and HOME is a
 // temp folder, so nothing here reads the developer's dotfiles. POSIX only.
@@ -57,9 +59,7 @@ describe.skipIf(process.platform === "win32")("resolveToolsPath with a real runn
     async () => {
       const pidFile = join(dir, "sleep.pid");
       const shell = fakeShell("zsh", `/bin/sleep 60 &\necho $! > "${pidFile}"\nwait`);
-      const started = Date.now();
-      const found = await resolveToolsPath({ platform: process.platform, shell, inheritedPath: "/usr/bin:/bin", home: dir, parentEnv: { HOME: dir }, timeoutMs: 300 });
-      expect(Date.now() - started).toBeLessThan(5_000);
+      const found = await resolveStuck(shell, pidFile, 300);
       expect(found.source).toBe("inherited");
       expect(found.path).toBe("/usr/bin:/bin");
       expect(found.problem).toContain("did not answer within");
@@ -76,9 +76,7 @@ describe.skipIf(process.platform === "win32")("resolveToolsPath with a real runn
     async () => {
       const pidFile = join(dir, "sleep.pid");
       const shell = fakeShell("zsh", `trap '' TERM\n/bin/sleep 60 &\necho $! > "${pidFile}"\nwhile :; do /bin/sleep 1; done`);
-      const started = Date.now();
-      const found = await resolveToolsPath({ platform: process.platform, shell, inheritedPath: "/usr/bin:/bin", home: dir, parentEnv: { HOME: dir }, timeoutMs: 300 });
-      expect(Date.now() - started).toBeLessThan(8_000);
+      const found = await resolveStuck(shell, pidFile, 300);
       expect(found.source).toBe("inherited");
       expect(found.problem).toContain("did not answer within");
       const pid = Number(readFileSync(pidFile, "utf8").trim());
@@ -122,6 +120,34 @@ describe.skipIf(process.platform === "win32")("resolveToolsPath with a real runn
     },
   );
 });
+
+/**
+ * `resolveToolsPath` with a runner on a manual clock: time moves only after the fake shell wrote
+ * its pid file, when its setup is done. A timeout on the real clock can fire while the shell is
+ * still starting under load, before the shell has set its trap or started its child.
+ */
+async function resolveStuck(shell: string, pidFile: string, timeoutMs: number): Promise<ToolsPath> {
+  const base = manualClock();
+  const delays: number[] = [];
+  const clock = { ...base, setTimeout: (callback: () => void, ms: number) => (delays.push(ms), base.setTimeout(callback, ms)) };
+  const runner = createProcessRunner({ clock, parentEnv: { HOME: dir }, drainMs: 200 });
+  let found: ToolsPath | undefined;
+  const run = resolveToolsPath({ platform: process.platform, shell, inheritedPath: "/usr/bin:/bin", home: dir, parentEnv: { HOME: dir }, runner, timeoutMs }).then((result) => (found = result));
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 10));
+  // Bounded: a shell that never writes the file still gets stopped below, and the test then fails on the missing file.
+  const deadline = Date.now() + 10_000;
+  while (found === undefined && Date.now() < deadline && (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "")) await tick();
+  base.advance(timeoutMs);
+  // The stop's SIGKILL grace and the drain after the exit are on the manual clock too.
+  while (found === undefined) {
+    base.advance(2_000);
+    await tick();
+  }
+  await run;
+  // The timeout the caller gave is the one the runner was set to.
+  expect(delays).toContain(timeoutMs);
+  return found;
+}
 
 function alive(pid: number): boolean {
   try {
