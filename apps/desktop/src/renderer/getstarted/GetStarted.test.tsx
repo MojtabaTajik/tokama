@@ -153,6 +153,17 @@ describe("GetStarted", () => {
     expect(aiRow.querySelector(".gs-word")?.textContent).toBe("Needs a fix");
   });
 
+  it("links the sandbox help page in the engine's words, and nothing else in them", () => {
+    const page = "https://tokama.dev/docs/linux-sandbox";
+    const message = `Steps that run commands need bubblewrap, which is installed but blocked. Ubuntu's AppArmor can stop bubblewrap from creating a user namespace. How to allow it: ${page} Then check again. <b>x</b> https://evil.example/`;
+    show({ health: { ...READY, clis: [{ cliId: "claude-code", installed: true, loggedIn: true, version: "2.1.332", message }] }, mac: false });
+    const links = [...row("ai-cli").querySelectorAll(".gs-engine-text a")];
+    expect(links.map((a) => a.getAttribute("href"))).toEqual([page]);
+    expect(isWebsiteUrl(page)).toBe(true);
+    expect(row("ai-cli").querySelector(".gs-engine-text b")).toBeNull();
+    expect(row("ai-cli").querySelector(".gs-engine-text")?.textContent).toBe(message.replace(page, `${page} ↗`));
+  });
+
   it("names the repo's checks as code, and a first run in a quote", () => {
     show({ started: true, firstItem: { text: "Fix typos", repoId: "orders-api" } });
     expect(row("repo").querySelector("code")?.textContent).toBe("~/code/orders-api");

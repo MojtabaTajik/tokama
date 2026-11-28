@@ -132,6 +132,7 @@ export const WEBSITE_URLS: ReadonlySet<string> = new Set([
   "https://tokama.dev/docs/",
   "https://tokama.dev/docs/install-claude-code",
   "https://tokama.dev/docs/install-git",
+  "https://tokama.dev/docs/linux-sandbox",
 ]);
 
 /**

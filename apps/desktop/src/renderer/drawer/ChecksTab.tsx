@@ -13,6 +13,7 @@ import { clock } from "../format/time.js";
 import { attemptsOf, capNote, checkedStepName, checkSteps, durationText, plannedChecks, type StepAttempt, spokenDuration, useAttemptReply } from "./attempt-view.js";
 import { OpenFile } from "./OpenFile.js";
 import { Placeholder } from "../ui/EmptyState.js";
+import { LinkedText } from "../ui/LinkedText.js";
 import { Section, SectionList, useOpenSections } from "../ui/Section.js";
 import { type Mark, markOf, StatusMark } from "../ui/status.js";
 
@@ -134,7 +135,7 @@ function AttemptChecks({ bridge, item, setup, entry, named, open, onToggle }: At
       state={{ ...result, word }}
       facts={facts === "" ? undefined : facts}
       spokenFacts={spoken}
-      summary={ran ? undefined : (attempt.detail ?? TEXT.noneRan)}
+      summary={ran ? undefined : <LinkedText text={attempt.detail ?? TEXT.noneRan} />}
       disabled={!ran}
       open={open}
       onToggle={onToggle}
@@ -163,7 +164,7 @@ function AttemptBody({ bridge, item, entry }: { readonly bridge: TokamaBridge; r
     return (
       <div className="ck-none">
         <p>{running ? TEXT.noneYet(checked) : TEXT.noneRan}</p>
-        {!running && attempt.detail !== undefined && <p className="mono">{attempt.detail}</p>}
+        {!running && attempt.detail !== undefined && <p className="mono"><LinkedText text={attempt.detail} /></p>}
       </div>
     );
   }

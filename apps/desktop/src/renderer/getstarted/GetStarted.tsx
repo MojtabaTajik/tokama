@@ -6,6 +6,7 @@ import { Button } from "../ui/Button.js";
 import { CommandCopy } from "../ui/CommandCopy.js";
 import { ExternalLink } from "../ui/ExternalLink.js";
 import { ShieldNoteIcon } from "../ui/icons.js";
+import { LinkedText } from "../ui/LinkedText.js";
 import { StatusMark } from "../ui/status.js";
 import type { Action, Checklist, Part, Row } from "./checklist.js";
 import { TEXT } from "./words.js";
@@ -92,7 +93,7 @@ function RowView({ row, filled, onCheckAgain, onAddRepo, onStart, onAct }: RowVi
           {row.detail.map((part, index) => (
             <PartView key={index} part={part} onAct={onAct} />
           ))}
-          {row.engineText !== undefined && <span className="gs-engine-text">{row.engineText}</span>}
+          {row.engineText !== undefined && <span className="gs-engine-text"><LinkedText text={row.engineText} /></span>}
           {row.command !== undefined && (
             <span className="gs-command">
               <CommandCopy command={row.command} />

@@ -134,6 +134,13 @@ describe("Settings > AI CLIs", () => {
     expect($$(".ai-cli-login").map((el) => el.textContent)).toEqual([message]);
   });
 
+  it("links the sandbox help page in a CLI's message", async () => {
+    const page = "https://tokama.dev/docs/linux-sandbox";
+    const message = `Ubuntu's AppArmor can stop bubblewrap from creating a user namespace. How to allow it: ${page} Then check again.`;
+    await open(withClis(() => ({ ok: true, data: answer({ ...CLAUDE, state: "ready", message }) })));
+    expect($$(".ai-cli-login a").map((a) => a.getAttribute("href"))).toEqual([page]);
+  });
+
   it("checks again: keeps the answer on screen, then shows the new one", async () => {
     const fake = withClis((n) => ({ ok: true, data: answer(n === 1 ? { ...CLAUDE, state: "not_logged_in" } : CLAUDE) }));
     await open(fake);

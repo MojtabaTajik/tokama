@@ -157,8 +157,23 @@ describe("notificationSettingsUrl", () => {
 });
 
 describe("isWebsiteUrl", () => {
-  it.each(["https://tokama.dev", "https://tokama.dev/", "HTTPS://TOKAMA.DEV/", "https://tokama.dev/docs/", "https://tokama.dev/docs/install-claude-code", "https://tokama.dev/docs/install-git"])("accepts %s", (url) => {
+  it.each(["https://tokama.dev", "https://tokama.dev/", "HTTPS://TOKAMA.DEV/", "https://tokama.dev/docs/", "https://tokama.dev/docs/install-claude-code", "https://tokama.dev/docs/install-git", "https://tokama.dev/docs/linux-sandbox"])("accepts %s", (url) => {
     expect(isWebsiteUrl(url)).toBe(true);
+  });
+
+  it.each([
+    "http://tokama.dev/docs/linux-sandbox",
+    "https://tokama.dev/docs/linux-sandbox/",
+    "https://tokama.dev/docs/linux-sandbox?a=1",
+    "https://tokama.dev/docs/linux-sandbox#x",
+    "https://tokama.dev/docs/linux-sandbox-other",
+    "https://tokama.dev.evil.example/docs/linux-sandbox",
+  ])("refuses %s, near the sandbox page", (url) => {
+    expect(isWebsiteUrl(url)).toBe(false);
+  });
+
+  it("keeps the Help address on the docs index", () => {
+    expect(DOCS_URL).toBe("https://tokama.dev/docs/");
   });
 
   it("gives the parsed, checked address to open, not the string it was given", () => {
