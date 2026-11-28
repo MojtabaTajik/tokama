@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "files": {
     "go.mod": "module example.com/orders\n\ngo 1.23\n",
     "main.go": "package main\n\nfunc main() {}\n",

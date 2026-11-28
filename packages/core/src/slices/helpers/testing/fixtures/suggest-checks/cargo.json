@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "files": {
     "Cargo.toml": "[package]\nname = \"orders\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
     "Cargo.lock": "# lock\n",

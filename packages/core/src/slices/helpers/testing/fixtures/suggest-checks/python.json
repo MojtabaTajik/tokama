@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "files": {
     "pyproject.toml": "[project]\nname = \"orders\"\n\n[tool.pytest.ini_options]\ntestpaths = [\"tests\"]\n\n[tool.ruff]\nline-length = 100\n",
     "tox.ini": "[tox]\nenvlist = py312\n",
