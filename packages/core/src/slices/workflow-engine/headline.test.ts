@@ -96,7 +96,9 @@ describe("MUST_RULE and FINDINGS_RULE", () => {
 describe("saidOf: review and findings", () => {
   const reviewReply = "Notes.\nHEADLINE: Needs work.\nMUST: a.ts:3 | leak\nVERDICT: changes";
   const findingsReply = "Text.\nHEADLINE: The cause.\nEVIDENCE: b.ts:9 | the filter\nNEXT: Remove it.";
-  const said = (reply: string, context: Partial<Parameters<typeof saidOf>[1]>) => saidOf(parseHeadline(reply), { ...none, ...context });
+  // The run loop reads a reply for the kind of block its step was asked for.
+  const said = (reply: string, context: Partial<Parameters<typeof saidOf>[1]>) =>
+    saidOf(parseHeadline(reply, false, context.reviewAsked === true ? "review" : context.findingsAsked === true ? "findings" : undefined), { ...none, ...context });
 
   it("carries the lines only when asked for", () => {
     expect(said(reviewReply, { reviewAsked: true })).toMatchObject({ review: { mustFix: [{ where: "a.ts:3", what: "leak" }], moreMustFix: 0 } });
@@ -118,7 +120,7 @@ describe("saidOf: review and findings", () => {
 });
 
 describe("findingsCoverage", () => {
-  const coverage = (reply: string) => findingsCoverage(saidOf(parseHeadline(reply), { ...none, findingsAsked: true }));
+  const coverage = (reply: string) => findingsCoverage(saidOf(parseHeadline(reply, false, "findings"), { ...none, findingsAsked: true }));
 
   it("tells full, partial, headline only and missing apart", () => {
     expect(coverage("HEADLINE: A.\nEVIDENCE: a | b\nNEXT: c")).toBe("full");

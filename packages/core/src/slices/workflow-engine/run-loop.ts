@@ -941,9 +941,9 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     const step = stepDef(ctx.template, stepId);
     // Read here, not kept from the call, so an attempt that resumes after a restart has it too.
     const reply = (await readItemFile(item.id, `${attemptDir(stepId, attempt)}/agent.txt`)) ?? "";
-    const parsed = parseHeadline(reply, plansWanted(ctx.template, step));
-    const document = ctx.template.steps.at(-1)?.id === stepId && ctx.template.finish.some((finish) => finish === "findings" || finish === "document");
     const kind = blockKindOf(ctx.template, step);
+    const parsed = parseHeadline(reply, plansWanted(ctx.template, step), kind);
+    const document = ctx.template.steps.at(-1)?.id === stepId && ctx.template.finish.some((finish) => finish === "findings" || finish === "document");
     const said = (approvesText = false, noChangeOffered = false): Said | undefined =>
       saidOf(parsed, { approvesText, lastOfDocument: document, noChangeOffered, planAsked: plansWanted(ctx.template, step), reviewAsked: kind === "review", findingsAsked: kind === "findings" });
     switch (step.doneWhen) {

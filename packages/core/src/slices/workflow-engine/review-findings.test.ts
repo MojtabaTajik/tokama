@@ -20,12 +20,30 @@ const FINDINGS = [
   "EVIDENCE: test/export/ | no test has a refunded order",
   "NEXT: Remove the filter and add a test with one refunded order.",
 ].join("\n");
-const review = (text: string) => parseHeadline(text)!.review;
-const findings = (text: string) => parseHeadline(text)!.findings;
+const review = (text: string) => parseHeadline(text, false, "review")!.review;
+const findings = (text: string) => parseHeadline(text, false, "findings")!.findings;
+
+describe("parseHeadline: a step that was not asked for these lines", () => {
+  it("reads its reply as it always did: the lines stay in the body and nothing is stored", () => {
+    for (const reply of ["Body text.\nHEADLINE: Fixed x.\nPOINT: y\nNext: deploy to staging", "Body text.\nHEADLINE: Fixed x.\nMUST: a.ts | b\nVERDICT: changes", "Body text.\nHEADLINE: Fixed x.\nEVIDENCE: a | b"]) {
+      const parsed = parseHeadline(reply)!;
+      expect(parsed.review).toEqual({ mustFix: [], moreMustFix: 0 });
+      expect(parsed.findings).toEqual({ evidence: [], moreEvidence: 0 });
+      expect(parsed.bodyBytes, reply).toBeGreaterThan("Body text.".length);
+    }
+  });
+
+  it("a reviewer's run steps over VERDICT, and the findings step's run does not", () => {
+    expect(parseHeadline("HEADLINE: H.\nMUST: a | b\nVERDICT: changes", false, "review")!.review.mustFix).toHaveLength(1);
+    expect(parseHeadline("HEADLINE: H.\nMUST: a | b\nVERDICT: changes", false, "findings")!.review.mustFix).toHaveLength(0);
+    expect(parseHeadline("HEADLINE: H.\nEVIDENCE: a | b", false, "review")!.findings.evidence).toHaveLength(0);
+    expect(parseHeadline("HEADLINE: H.\nMUST: a | b", false, "findings")!.review.mustFix).toHaveLength(0);
+  });
+});
 
 describe("parseHeadline: MUST lines", () => {
   it("reads the examples, with the VERDICT line stepped over", () => {
-    const parsed = parseHeadline(REVIEW)!;
+    const parsed = parseHeadline(REVIEW, false, "review")!;
     expect(parsed).toMatchObject({ source: "headline", headline: "The fetch works, but a slow reply leaks a timer and the fallback has no test." });
     expect(parsed.review).toEqual({
       mustFix: [
@@ -92,14 +110,14 @@ describe("parseHeadline: MUST lines", () => {
   });
 
   it("keeps the lines out of the reply's size", () => {
-    const parsed = parseHeadline("Prose here.\nHEADLINE: H.\nMUST: a.ts | b\nVERDICT: changes")!;
+    const parsed = parseHeadline("Prose here.\nHEADLINE: H.\nMUST: a.ts | b\nVERDICT: changes", false, "review")!;
     expect(parsed.bodyBytes).toBe("Prose here.\nVERDICT: changes".length);
   });
 });
 
 describe("parseHeadline: EVIDENCE and NEXT lines", () => {
   it("reads the example", () => {
-    const parsed = parseHeadline(FINDINGS)!;
+    const parsed = parseHeadline(FINDINGS, false, "findings")!;
     expect(parsed.points).toEqual(["Unsure: whether finance relied on the old numbers since then"]);
     expect(parsed.findings).toEqual({
       evidence: [
@@ -146,16 +164,15 @@ describe("parseHeadline: EVIDENCE and NEXT lines", () => {
     expect(findings("Next: run it.\n\nmore prose")).toEqual({ evidence: [], moreEvidence: 0 });
   });
 
-  it("reads plan lines and review lines in the same block independently", () => {
-    const got = parseHeadline("HEADLINE: H.\nCHOICE: a | b\nMUST: x | y\nEVIDENCE: p | q\nNEXT: n")!;
+  it("reads plan lines next to the findings lines in the same block", () => {
+    const got = parseHeadline("HEADLINE: H.\nCHOICE: a | b\nEVIDENCE: p | q\nNEXT: n", true, "findings")!;
     expect(got.plan.choices).toHaveLength(1);
-    expect(got.review.mustFix).toHaveLength(1);
     expect(got.findings.evidence).toHaveLength(1);
     expect(got.findings.next).toBe("n");
   });
 
   it("never throws on junk", () => {
-    for (const text of ["", "\n\n", "MUST:", "EVIDENCE: |||", "HEADLINE: H.\nMUST: ||| |\nEVIDENCE:\nNEXT:", "\u0000HEADLINE: H.\nMUST: ‮ | \u0007"]) expect(() => parseHeadline(text)).not.toThrow();
+    for (const text of ["", "\n\n", "MUST:", "EVIDENCE: |||", "HEADLINE: H.\nMUST: ||| |\nEVIDENCE:\nNEXT:", "\u0000HEADLINE: H.\nMUST: ‮ | \u0007"]) for (const asked of [undefined, "review", "findings"] as const) expect(() => parseHeadline(text, true, asked)).not.toThrow();
   });
 
   it("renders an HTML payload as the text it is", () => {
