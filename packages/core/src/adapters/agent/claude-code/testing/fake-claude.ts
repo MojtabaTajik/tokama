@@ -64,6 +64,17 @@ function run(prompt: string): void {
       text("I could not run it");
       hang();
       return;
+    case "sandbox-apply-seccomp":
+      // A command that never ran: Ubuntu's AppArmor stopped the helper that sets up the sandbox.
+      init();
+      emit({
+        type: "user",
+        message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_seccomp", is_error: true, content: "Exit code 1\napply-seccomp: write /proc/self/setgroups (nested userns is capability-restricted): Permission denied" }] },
+        session_id: SESSION,
+      });
+      text("I could not run it");
+      hang();
+      return;
     case "sandbox-start":
       // `failIfUnavailable` makes the CLI exit at startup, before any result.
       process.stderr.write("Error: sandbox.failIfUnavailable is set, but Ubuntu's AppArmor restriction on user namespaces stops bubblewrap here\n");

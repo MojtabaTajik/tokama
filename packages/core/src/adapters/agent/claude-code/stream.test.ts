@@ -205,6 +205,22 @@ describe("Claude Code stream parser", () => {
     expect(parse([result("x".repeat(1_000).replace(/^/, "Sandbox is required "))]).state.sandboxFailure).toHaveLength(300);
   });
 
+  it("records an apply-seccomp refusal, with or without Claude Code's `Exit code` line before it", () => {
+    const refused = "apply-seccomp: write /proc/self/setgroups (nested userns is capability-restricted): Permission denied";
+    const result = (content: unknown, extra: object = {}) => line({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", is_error: true, content }] }, ...extra });
+    expect(parse([result(`Exit code 1\n${refused}`)]).state.sandboxFailure).toBe(refused);
+    expect(parse([result(refused)]).state.sandboxFailure).toBe(refused);
+    expect(parse([result(`Exit code 1\r\n${refused}\nmore`)]).state.sandboxFailure).toBe(refused);
+    expect(parse([result([{ type: "text", text: `Exit code 1\n${refused}` }], { parent_tool_use_id: "toolu_parent" })]).state.sandboxFailure).toBe(refused);
+  });
+
+  it("does not take a command that printed the helper's name for a sandbox failure", () => {
+    const result = (content: string, isError: boolean) => line({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", is_error: isError, content }] } });
+    expect(parse([result("Exit code 1\nmake: apply-seccomp: not found", true)]).state.sandboxFailure).toBeUndefined();
+    expect(parse([result("Exit code 1\nthe docs say apply-seccomp: is needed", true)]).state.sandboxFailure).toBeUndefined();
+    expect(parse([result("apply-seccomp: printed by cat", false)]).state.sandboxFailure).toBeUndefined();
+  });
+
   it("does not take a command's own output for a sandbox failure", () => {
     const result = (content: unknown) => line({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", content }] } });
     expect(parse([result("Read-only file system"), result("echo: Sandbox is required"), result(["no text here"]), result(undefined)]).state.sandboxFailure).toBeUndefined();

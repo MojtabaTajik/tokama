@@ -6,7 +6,7 @@ import { systemClock, type Clock, type TimerHandle } from "../../../kernel/clock
 import { replaceTextSync } from "../../../kernel/fs-safe/index.js";
 import { buildEnv, createProcessRunner, type ProcessRunner, type RunResult } from "../../../kernel/process/index.js";
 import type { AgentCallRequest, AgentRuntime } from "../../../kernel/ports/index.js";
-import { checkSandboxSpec, createSandboxSupport, toolCacheDirs, usableCacheDirs, type SandboxSpec, type SandboxSupport } from "../../../kernel/sandbox/index.js";
+import { checkSandboxSpec, createSandboxSupport, NESTED_BLOCKED_HINT, toolCacheDirs, usableCacheDirs, type SandboxSpec, type SandboxSupport } from "../../../kernel/sandbox/index.js";
 import type { AgentCallErrorKind, AgentCallEvent, TokenUsage } from "../../../kernel/schemas/index.js";
 import { buildArgs, DEFAULT_TOKAMA_HOME, userMessage, usesShell } from "./args.js";
 import { hookSettings } from "./permission-hook.js";
@@ -227,7 +227,9 @@ function endEvent(result: RunResult, parser: StreamParser, stderr: string, signa
   const { durationMs } = result;
   // Commands were refused: the step did not do its work, whatever the agent said after that.
   if (state.sandboxFailure !== undefined) {
-    return failed(state, `Claude Code's sandbox stopped working during the step: ${parser.scrub(state.sandboxFailure)}. Fix that, then retry the step.`, "crash", durationMs);
+    // The helper that failed only exists on Linux, where AppArmor is the usual reason.
+    const hint = state.sandboxFailure.startsWith("apply-seccomp:") ? ` ${NESTED_BLOCKED_HINT}` : "";
+    return failed(state, `Claude Code's sandbox stopped working during the step: ${parser.scrub(state.sandboxFailure)}. Fix that, then retry the step.${hint}`, "crash", durationMs);
   }
   // A result that arrived first wins over a stop or timeout that came after it.
   if (state.result !== undefined) {

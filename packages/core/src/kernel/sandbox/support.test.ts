@@ -31,7 +31,7 @@ describe("createSandboxSupport", () => {
   it("is ready on Linux when bwrap and socat answer, looked up in the call's environment", async () => {
     const { runner, requests } = runnerWith({ bwrap: finished(), socat: finished() });
     expect(await createSandboxSupport(runner, "linux", { PATH: "/opt/tools" }).check(signal)).toEqual({ ok: true });
-    expect(requests.map((request) => ("argv" in request.command ? request.command.argv.slice(0, 2) : []))).toEqual([["bwrap", "--version"], ["socat", "-V"], ["bwrap", "--ro-bind"]]);
+    expect(requests.map((request) => ("argv" in request.command ? request.command.argv.slice(0, 2) : []))).toEqual([["bwrap", "--version"], ["socat", "-V"], ["bwrap", "--new-session"], ["bwrap", "--new-session"]]);
     expect(requests.every((request) => request.env?.["PATH"] === "/opt/tools" && request.timeoutMs === 5_000)).toBe(true);
   });
 

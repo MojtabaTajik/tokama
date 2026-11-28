@@ -7,7 +7,7 @@ import { createProcessRunner, type ProcessRunner } from "../../../kernel/process
 import type { AgentCallRequest, AgentRuntime } from "../../../kernel/ports/index.js";
 import { describeAgentRuntimeContract } from "../../../kernel/ports/testing/contracts.js";
 import type { AgentCallEvent } from "../../../kernel/schemas/index.js";
-import { APPARMOR_HINT, createSandboxSupport, type SandboxSupport } from "../../../kernel/sandbox/index.js";
+import { BWRAP_BLOCKED_HINT, createSandboxSupport, NESTED_BLOCKED_HINT, type SandboxSupport } from "../../../kernel/sandbox/index.js";
 import { createClaudeCodeRuntime, type ClaudeCodeOptions } from "./index.js";
 
 // Runs the adapter against testing/fake-claude.ts through the real process runner. Kill cases
@@ -301,7 +301,7 @@ describe("Claude Code runtime", SLOW, () => {
       };
       const events = await launch({ runner, sandboxSupport: createSandboxSupport(toolRunner, "linux") }, request("echo", withCommands));
       expect(end(events)).toMatchObject({ outcome: "failed", errorKind: "crash", error: expect.stringContaining("installed but blocked") });
-      expect(end(events)).toMatchObject({ error: expect.stringContaining(APPARMOR_HINT) });
+      expect(end(events)).toMatchObject({ error: expect.stringContaining(BWRAP_BLOCKED_HINT) });
       expect(seen).toEqual([[process.execPath, FAKE, "--version"]]);
     });
 
@@ -355,6 +355,15 @@ describe("Claude Code runtime", SLOW, () => {
       expect(end(events).error).not.toContain("more detail");
     });
 
+    it("ends a step whose sandbox helper was refused by AppArmor as a sandbox failure, with the Linux hint", async () => {
+      const events = await launch({}, request("sandbox-apply-seccomp", withCommands));
+      expect(end(events)).toMatchObject({
+        outcome: "failed",
+        errorKind: "crash",
+        error: `Claude Code's sandbox stopped working during the step: apply-seccomp: write /proc/self/setgroups (nested userns is capability-restricted): Permission denied. Fix that, then retry the step. ${NESTED_BLOCKED_HINT}`,
+      });
+    });
+
     it("does not blame a sandbox for the stderr of a call that has none", async () => {
       const result = end(await launch({}, request("sandbox-start", { limits: { edit: false, commands: [], web: false } })));
       expect(result.outcome).toBe("failed");
@@ -364,8 +373,8 @@ describe("Claude Code runtime", SLOW, () => {
     it("explains a CLI that exits at startup because its sandbox cannot start", async () => {
       const result = end(await launch({}, request("sandbox-start", withCommands)));
       expect(result).toMatchObject({ outcome: "failed", errorKind: "crash", error: expect.stringContaining("Claude Code could not start its sandbox: Error: sandbox.failIfUnavailable is set") });
-      if (process.platform === "linux") expect(result.error).toContain("kernel.apparmor_restrict_unprivileged_userns=0");
-      else expect(result.error).not.toContain("apparmor_restrict");
+      if (process.platform === "linux") expect(result.error).toContain(BWRAP_BLOCKED_HINT);
+      else expect(result.error).not.toContain("tokama.dev/docs/linux-sandbox");
     });
   });
 

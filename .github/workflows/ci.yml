@@ -132,7 +132,18 @@ jobs:
         run: pnpm typecheck
       - if: needs.plan.outputs.docs_only != 'true'
         run: pnpm lint
+      # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor, which Chromium's
+      # sandbox and bubblewrap need. Lift it on the runner rather than run the app with
+      # --no-sandbox. The sandbox support test then runs the real probes.
+      - name: Allow user namespaces and install the sandbox tools
+        if: runner.os == 'Linux' && needs.plan.outputs.docs_only != 'true'
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bubblewrap socat
       - if: needs.plan.outputs.docs_only != 'true'
+        env:
+          TOKAMA_REAL_BWRAP: ${{ runner.os == 'Linux' && '1' || '' }}
         run: pnpm test:all
       # The run on the real tree: on pull requests only when the plan job saw a change that can
       # break it; always on push to main, the nightly run and manual runs. test:all already runs
@@ -152,11 +163,6 @@ jobs:
         with:
           path: ${{ runner.temp }}/electron-cache
           key: electron-${{ runner.os }}-${{ runner.arch }}-${{ steps.electron.outputs.version }}
-      # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor, which Chromium's
-      # sandbox needs. Lift it on the runner rather than run the app with --no-sandbox.
-      - name: Allow the Chromium sandbox
-        if: runner.os == 'Linux' && needs.plan.outputs.docs_only != 'true'
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - if: needs.plan.outputs.docs_only != 'true'
         name: Desktop UI flow tests
         env:
