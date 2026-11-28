@@ -55,6 +55,8 @@ describe("touchOf: kinds that hold in any repo", () => {
     ["NuGet.Config", "dependencies"],
     [".cargo/config.toml", "dependencies"],
     ["crates/api/build.rs", "dependencies"],
+    ["tests/Directory.Build.props", "dependencies"],
+    ["src/test/build.gradle", "dependencies"],
     ["src/Api/appsettings.Production.json", "secrets"],
   ])("%s is %s, with no repo kind known (a .NET repo with only a .sln, a monorepo)", (path, kind) => {
     expect(touchOf(path, false, NONE)).toBe(kind);

@@ -77,9 +77,10 @@ const isSignIn = (path: string) => folders(path).some((folder) => folder === "au
 
 /** The kind of a changed file: a test file is added or edited; any other is sensitive or has none. `added` is whether the change created the file. */
 export function touchOf(original: string, added: boolean, kinds: ReadonlySet<RepoKind>): TouchKind | undefined {
-  if (baseCategory(original) === "test") return added ? "tests_added" : "tests_edited";
   const path = original.toLowerCase();
   const name = basename(path);
+  // A manifest or build config in a test folder (`test/Directory.Build.props`) still changes how everything builds.
+  if (baseCategory(original) === "test" && patternCategory(path) !== "package") return added ? "tests_added" : "tests_edited";
   if (isCiPath(path)) return "ci";
   if (isDependency(path, name)) return "dependencies";
   if (isMigration(path, name, kinds)) return "migrations";
