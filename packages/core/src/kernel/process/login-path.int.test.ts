@@ -127,18 +127,25 @@ describe.skipIf(process.platform === "win32")("resolveToolsPath with a real runn
  * still starting under load, before the shell has set its trap or started its child.
  */
 async function resolveStuck(shell: string, pidFile: string, timeoutMs: number): Promise<ToolsPath> {
-  const clock = manualClock();
+  const base = manualClock();
+  const delays: number[] = [];
+  const clock = { ...base, setTimeout: (callback: () => void, ms: number) => (delays.push(ms), base.setTimeout(callback, ms)) };
   const runner = createProcessRunner({ clock, parentEnv: { HOME: dir }, drainMs: 200 });
   let found: ToolsPath | undefined;
   const run = resolveToolsPath({ platform: process.platform, shell, inheritedPath: "/usr/bin:/bin", home: dir, parentEnv: { HOME: dir }, runner, timeoutMs }).then((result) => (found = result));
-  while (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "") await new Promise((resolve) => setTimeout(resolve, 10));
-  clock.advance(timeoutMs);
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 10));
+  // Bounded: a shell that never writes the file still gets stopped below, and the test then fails on the missing file.
+  const deadline = Date.now() + 10_000;
+  while (found === undefined && Date.now() < deadline && (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "")) await tick();
+  base.advance(timeoutMs);
   // The stop's SIGKILL grace and the drain after the exit are on the manual clock too.
   while (found === undefined) {
-    clock.advance(2_000);
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    base.advance(2_000);
+    await tick();
   }
   await run;
+  // The timeout the caller gave is the one the runner was set to.
+  expect(delays).toContain(timeoutMs);
   return found;
 }
 
