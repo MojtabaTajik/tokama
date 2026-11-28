@@ -1,9 +1,23 @@
 // What an agent's output says, read for the card of a step that stopped: the reviewer's verdict
 // with the items of its "Must change" list, or the first lines as written. Agent output is free
 // text, so the reading is tolerant: an unknown shape gives the first lines, never an error.
-import { MAX_HEADLINE_CHARS, MAX_POINT_CHARS, MAX_POINTS, MAX_SUMMARY_ITEMS, MAX_SUMMARY_LINE_CHARS, type OutputSummary } from "../../kernel/schemas/index.js";
+import {
+  MAX_CHOICES,
+  MAX_HEADLINE_CHARS,
+  MAX_PLAN_PART_CHARS,
+  MAX_POINT_CHARS,
+  MAX_POINTS,
+  MAX_RISKS,
+  MAX_SUMMARY_ITEMS,
+  MAX_SUMMARY_LINE_CHARS,
+  type OutputSummary,
+  type PlanChoice,
+  type PlanReach,
+  type PlanSummary,
+  type ReachKind,
+} from "../../kernel/schemas/index.js";
 import { cutText } from "../../kernel/text/index.js";
-import { labelOf, plain } from "./headline.js";
+import { isBlockLine, labelOf, plain, planLabelOf } from "./headline.js";
 import { parseVerdict } from "./verdict.js";
 
 /** First lines shown for a step without a verdict format; a verdict step that broke it shows more. */
@@ -126,6 +140,10 @@ export interface ParsedHeadline {
   readonly readFlag: boolean;
   /** The agent wrote `NO_CHANGE: yes` in its block, after the headline. */
   readonly noChange: boolean;
+  /** The plan lines of the block; empty when there are none. */
+  readonly plan: PlanSummary;
+  /** The step was asked for the plan lines and plan labels stand in its last lines, yet none was read. */
+  readonly planUnread: boolean;
 }
 
 /**
@@ -133,22 +151,27 @@ export interface ParsedHeadline {
  * lines, with the `POINT:` and `READ:` lines after it. Without one the first lines of the reply
  * stand in. Undefined when the reply says nothing. Never throws.
  */
-export function parseHeadline(text: string): ParsedHeadline | undefined {
+export function parseHeadline(text: string, planAsked = false): ParsedHeadline | undefined {
   try {
-    return parse(text);
+    return parse(text, planAsked);
   } catch {
     return undefined;
   }
 }
 
-function parse(text: string): ParsedHeadline | undefined {
+function parse(text: string, planAsked: boolean): ParsedHeadline | undefined {
   const lines = text.split(/\r?\n/);
-  const window = lines.flatMap((line, index) => (line.trim() === "" ? [] : [index])).slice(-BLOCK_WINDOW);
+  // Only a step that was asked for the plan lines reads them; for any other step they are text of the reply.
+  const planLines = planAsked ? planLineIndices(lines) : [];
+  const plan = parsePlan(planLines.map((index) => planLabelOf(lines[index]!)!));
+  const planUnread = planAsked && planLines.length === 0 && planLabelsUnread(lines);
+  // The plan lines do not count toward the window the headline is looked for in.
+  const window = lines.flatMap((line, index) => (line.trim() === "" || planLines.includes(index) ? [] : [index])).slice(-BLOCK_WINDOW);
   const head = window.findLast((index) => labelOf(lines[index]!)?.label === "HEADLINE");
   const headline = head === undefined ? "" : labelOf(lines[head]!)!.value;
   const after = head === undefined || headline === "" ? [] : window.filter((index) => index > head).map((index) => labelOf(lines[index]!));
-  // Whatever is block text from the headline on is not part of the reply.
-  const body = lines.filter((line, index) => (head === undefined || index < head) || labelOf(line)?.block !== true);
+  // Whatever is block text from the headline on is not part of the reply, and neither are the plan lines.
+  const body = lines.filter((line, index) => !planLines.includes(index) && ((head === undefined || index < head) || labelOf(line)?.block !== true));
   const bodyText = body.join("\n").trim();
   const result = { bodyBytes: new TextEncoder().encode(bodyText).length, words: bodyText === "" ? 0 : bodyText.split(/\s+/).length };
   if (headline !== "") {
@@ -161,6 +184,8 @@ function parse(text: string): ParsedHeadline | undefined {
       ...result,
       readFlag: after.some((found) => found?.label === "READ" && /^yes\b/i.test(found.value)),
       noChange: after.some((found) => found?.label === "NO_CHANGE" && found.block),
+      plan,
+      planUnread,
     };
   }
   const said = body.flatMap((line) => (VERDICT_LINE.test(line.trim()) || labelOf(line)?.block === true ? [] : [plain(line)])).filter((line) => line !== "");
@@ -173,6 +198,128 @@ function parse(text: string): ParsedHeadline | undefined {
     ...result,
     readFlag: false,
     noChange: false,
+    plan,
+    planUnread,
+  };
+}
+
+// ---- the plan lines -------------------------------------------------------------------------
+
+/** How many non-empty lines at the end of a reply the plan lines are looked for in. */
+const PLAN_WINDOW = 40;
+const FENCE_LINE = /^\s*(?:`{3,}|~{3,})[\w+-]*\s*$/;
+// Only the exact words of "there is none": anything longer is a value, because a card that says
+// "none" for a secret or a service the plan needs is worse than one that shows its words.
+const NONE_WORDS = /^(?:none|nothing|n\/a|-|–|—)[.!]?$/i;
+// A reach line also says "no" and "no new <kind>".
+const NONE_REACH = /^(?:no|none needed|no new (?:files?|dependenc(?:y|ies)|deps?|(?:outside )?services?|secrets?|keys?))[.!]?$/i;
+const UNSURE = /^unsure\s*:\s*/i;
+const REACH_KINDS: Readonly<Record<string, ReachKind>> = {
+  file: "files",
+  files: "files",
+  dep: "deps",
+  deps: "deps",
+  dependencies: "deps",
+  "new dependencies": "deps",
+  service: "services",
+  services: "services",
+  "outside services": "services",
+  secret: "secrets",
+  secrets: "secrets",
+  keys: "secrets",
+};
+
+/**
+ * The plan lines of the block: those after the last `HEADLINE:` line, up to the end of the reply,
+ * where every line is a block or plan line (empty lines and code fences are stepped over), and
+ * those directly above it with no empty line between. A reply that goes on in prose after the
+ * block has none, and a plan label anywhere else in the reply is prose.
+ */
+function planLineIndices(lines: readonly string[]): number[] {
+  const head = lastHeadline(lines);
+  if (head === undefined) return [];
+  const found: number[] = [];
+  let seen = 0;
+  for (let index = head + 1; index < lines.length; index++) {
+    const line = lines[index]!;
+    if (line.trim() === "" || FENCE_LINE.test(line)) continue;
+    if (++seen > PLAN_WINDOW) return [];
+    if (planLabelOf(line) !== undefined) found.push(index);
+    else if (!isBlockLine(line)) return [];
+  }
+  const above: number[] = [];
+  for (let index = head - 1; index >= 0 && above.length < PLAN_WINDOW; index--) {
+    const line = lines[index]!;
+    if (FENCE_LINE.test(line)) continue;
+    if (planLabelOf(line) !== undefined) above.push(index);
+    else if (line.trim() === "" || !isBlockLine(line)) break;
+  }
+  return [...above.reverse(), ...found];
+}
+
+/** The last `HEADLINE:` line among the last 80 non-empty lines. */
+function lastHeadline(lines: readonly string[]): number | undefined {
+  let seen = 0;
+  for (let index = lines.length - 1; index >= 0 && seen < 2 * PLAN_WINDOW; index--) {
+    if (lines[index]!.trim() === "") continue;
+    seen++;
+    if (labelOf(lines[index]!)?.label === "HEADLINE") return index;
+  }
+  return undefined;
+}
+
+/** Plan labels sit in the last lines of the reply, yet none was read: the agent wrote them in a shape the reader does not know. */
+function planLabelsUnread(lines: readonly string[]): boolean {
+  return lines.filter((line) => line.trim() !== "").slice(-PLAN_WINDOW).some((line) => planLabelOf(line) !== undefined);
+}
+
+/** The parts of a line, split on `|`: at most three, the rest joined into the last. */
+function partsOf(value: string): string[] {
+  const parts = value.replace(/^\s*\|+\s*|\s*\|+\s*$/g, "").split(/\s*\|\s*/);
+  return parts.length <= 3 ? parts : [parts[0]!, parts[1]!, parts.slice(2).join(" | ")];
+}
+
+const part = (text: string | undefined): string | undefined => (text === undefined || text === "" ? undefined : cutText(text, MAX_PLAN_PART_CHARS));
+
+function choiceOf(value: string): PlanChoice | undefined {
+  const parts = partsOf(value);
+  const [open, picked, means] = parts.length === 1 ? [undefined, parts[0], undefined] : parts;
+  // "Unsure: " leads the open part or the picked part.
+  const unsure = [open, picked].some((p) => p !== undefined && UNSURE.test(p));
+  const answer = part(picked?.replace(UNSURE, "").trim());
+  if (answer === undefined) return undefined;
+  const asked = part(open?.replace(UNSURE, "").trim());
+  const meant = part(means);
+  return { ...(asked !== undefined && { open: asked }), picked: answer, ...(meant !== undefined && { means: meant }), ...(unsure && { unsure: true as const }) };
+}
+
+function reachOf(value: string): PlanReach | undefined {
+  const [kind, said, note] = partsOf(value);
+  const known = REACH_KINDS[(kind ?? "").toLowerCase()];
+  const written = part(said);
+  if (known === undefined || written === undefined) return undefined;
+  const noted = part(note);
+  return { kind: known, ...(NONE_WORDS.test(written) || NONE_REACH.test(written) ? { none: true as const } : { value: written }), ...(noted !== undefined && { note: noted }) };
+}
+
+/** The plan lines read in order: each reach kind once (the first wins), 7 choices and 3 risks, the rest counted. */
+function parsePlan(found: readonly { label: "CHOICE" | "REACH" | "RISK"; value: string }[]): PlanSummary {
+  const choices = found.flatMap((line) => (line.label === "CHOICE" ? [choiceOf(line.value)] : [])).filter((choice) => choice !== undefined);
+  const risks = found.flatMap((line) => {
+    const risk = line.label === "RISK" ? part(line.value) : undefined;
+    return risk === undefined || NONE_WORDS.test(risk) ? [] : [risk];
+  });
+  const reach: PlanReach[] = [];
+  for (const line of found) {
+    const read = line.label === "REACH" ? reachOf(line.value) : undefined;
+    if (read !== undefined && !reach.some((r) => r.kind === read.kind)) reach.push(read);
+  }
+  return {
+    choices: choices.slice(0, MAX_CHOICES),
+    moreChoices: Math.max(0, choices.length - MAX_CHOICES),
+    reach,
+    risks: risks.slice(0, MAX_RISKS),
+    moreRisks: Math.max(0, risks.length - MAX_RISKS),
   };
 }
 

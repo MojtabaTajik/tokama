@@ -1,0 +1,218 @@
+import { describe, expect, it } from "vitest";
+import { PlanSummarySchema, SaidSchema } from "../../kernel/schemas/index.js";
+import { parseHeadline, summarizeOutput } from "./summary.js";
+
+const EXAMPLE = [
+  "The plan, in prose.",
+  "",
+  "HEADLINE: Fetch the weather from Open-Meteo and draw it on the sky.",
+  "CHOICE: Weather source | Open-Meteo, no API key | the page calls api.open-meteo.com itself",
+  "CHOICE: Day or night | the local clock, day is 6:00 to 18:00 | not the real sunrise and sunset",
+  "REACH: files | src/main.js, src/weather.js (new), test/weather.test.js (new)",
+  "REACH: deps | none",
+  "REACH: services | api.open-meteo.com | called by the page when it runs",
+  "REACH: secrets | none | the service needs no key",
+  "RISK: Each visitor's browser sends its IP address to Open-Meteo.",
+].join("\n");
+const EMPTY = { choices: [], moreChoices: 0, reach: [], risks: [], moreRisks: 0 };
+/** A reply of a step that was asked for the plan lines. */
+const asked = (text: string) => parseHeadline(text, true);
+const plan = (text: string) => asked(text)!.plan;
+
+describe("parseHeadline: the plan lines", () => {
+  it("reads the design example", () => {
+    const parsed = asked(EXAMPLE)!;
+    expect(parsed.headline).toBe("Fetch the weather from Open-Meteo and draw it on the sky.");
+    expect(parsed.plan).toEqual({
+      choices: [
+        { open: "Weather source", picked: "Open-Meteo, no API key", means: "the page calls api.open-meteo.com itself" },
+        { open: "Day or night", picked: "the local clock, day is 6:00 to 18:00", means: "not the real sunrise and sunset" },
+      ],
+      moreChoices: 0,
+      reach: [
+        { kind: "files", value: "src/main.js, src/weather.js (new), test/weather.test.js (new)" },
+        { kind: "deps", none: true },
+        { kind: "services", value: "api.open-meteo.com", note: "called by the page when it runs" },
+        { kind: "secrets", none: true, note: "the service needs no key" },
+      ],
+      risks: ["Each visitor's browser sends its IP address to Open-Meteo."],
+      moreRisks: 0,
+    });
+    expect(PlanSummarySchema.safeParse(parsed.plan).success).toBe(true);
+    expect(parsed.bodyBytes).toBe("The plan, in prose.".length);
+  });
+
+  it("reads the lines before the headline too, and leaves them out of the reply's size", () => {
+    const text = ["Prose.", "CHOICE: Port | 8080", "RISK: It binds a port.", "HEADLINE: Serve it.", "POINT: x"].join("\n");
+    const parsed = asked(text)!;
+    expect(parsed).toMatchObject({ source: "headline", headline: "Serve it.", points: ["x"], bodyBytes: "Prose.".length, words: 1 });
+    expect(parsed.plan).toMatchObject({ choices: [{ open: "Port", picked: "8080" }], risks: ["It binds a port."] });
+  });
+
+  it("reads any letter case, list marks, quote marks and bold marks", () => {
+    const text = ["HEADLINE: A.", "- **choice**: Port | 8080", "> Reach: Files | a.ts", "* __RISK__: slow"].join("\n");
+    expect(plan(text)).toMatchObject({ choices: [{ open: "Port", picked: "8080" }], reach: [{ kind: "files", value: "a.ts" }], risks: ["slow"] });
+  });
+
+  it("takes a line without | whole as the answer, and joins parts past the third into the last", () => {
+    expect(plan("HEADLINE: A.\nCHOICE: Use SQLite for the cache").choices).toEqual([{ picked: "Use SQLite for the cache" }]);
+    expect(plan("HEADLINE: A.\nCHOICE: Cache | SQLite | fast | maybe").choices).toEqual([{ open: "Cache", picked: "SQLite", means: "fast | maybe" }]);
+  });
+
+  it("trims bars around the parts, and drops a choice with no answer", () => {
+    expect(plan("HEADLINE: A.\nCHOICE: | Cache | SQLite | fast |").choices).toEqual([{ open: "Cache", picked: "SQLite", means: "fast" }]);
+    expect(plan("HEADLINE: A.\nCHOICE: Cache | | fast").choices).toEqual([]);
+    expect(plan("HEADLINE: A.\nCHOICE:").choices).toEqual([]);
+  });
+
+  it("cuts each part to 160 characters", () => {
+    const long = "x".repeat(300);
+    const read = plan(`HEADLINE: A.\nCHOICE: ${long} | ${long} | ${long}\nRISK: ${long}\nREACH: files | ${long}`);
+    expect(read.choices[0]!.open).toHaveLength(160);
+    expect(read.choices[0]!.picked).toHaveLength(160);
+    expect(read.choices[0]!.means).toHaveLength(160);
+    expect(read.risks[0]).toHaveLength(160);
+    expect(read.reach[0]!.value).toHaveLength(160);
+    expect(PlanSummarySchema.safeParse(read).success).toBe(true);
+  });
+
+  it("keeps 7 choices and 3 risks and counts the rest", () => {
+    const lines = [...Array.from({ length: 9 }, (_, i) => `CHOICE: Q${i} | A${i}`), ...Array.from({ length: 5 }, (_, i) => `RISK: r${i}`)];
+    const read = plan(["HEADLINE: A.", ...lines].join("\n"));
+    expect(read.choices).toHaveLength(7);
+    expect(read.choices[6]).toEqual({ open: "Q6", picked: "A6" });
+    expect(read).toMatchObject({ moreChoices: 2, moreRisks: 2, risks: ["r0", "r1", "r2"] });
+  });
+
+  it("reads reach kind aliases and the first line of a kind, and ignores an unknown kind", () => {
+    const text = ["HEADLINE: A.", "REACH: File | a.ts", "REACH: files | b.ts", "REACH: new dependencies | left-pad", "REACH: Outside services | api.example", "REACH: keys | API_KEY", "REACH: network | everything"].join("\n");
+    expect(plan(text).reach).toEqual([
+      { kind: "files", value: "a.ts" },
+      { kind: "deps", value: "left-pad" },
+      { kind: "services", value: "api.example" },
+      { kind: "secrets", value: "API_KEY" },
+    ]);
+  });
+
+  it.each(["none", "None", "no", "-", "n/a", "–"])("reads %s as none", (value) => {
+    expect(plan(`HEADLINE: A.\nREACH: deps | ${value}`).reach).toEqual([{ kind: "deps", none: true }]);
+  });
+
+  it("leaves a reach line with no value out, so it reads as not said", () => {
+    expect(plan("HEADLINE: A.\nREACH: deps").reach).toEqual([]);
+    expect(plan("HEADLINE: A.\nREACH: deps |").reach).toEqual([]);
+  });
+
+  it("takes Unsure: on the first or second part as a flag and removes it", () => {
+    expect(plan("HEADLINE: A.\nCHOICE: Cache | Unsure: SQLite | maybe").choices).toEqual([{ open: "Cache", picked: "SQLite", means: "maybe", unsure: true }]);
+    expect(plan("HEADLINE: A.\nCHOICE: Unsure: Cache | SQLite").choices).toEqual([{ open: "Cache", picked: "SQLite", unsure: true }]);
+    expect(plan("HEADLINE: A.\nCHOICE: unsure: SQLite").choices).toEqual([{ picked: "SQLite", unsure: true }]);
+    expect(plan("HEADLINE: A.\nCHOICE: Cache | SQLite | Unsure: why").choices).toEqual([{ open: "Cache", picked: "SQLite", means: "Unsure: why" }]);
+  });
+
+  it("does not read a plan label inside the body, and keeps it in the first lines", () => {
+    const body = ["The risks:", "- Risk: the cache can go stale", "- Choice: SQLite", "", "More prose."].join("\n");
+    const parsed = asked(`${body}\nHEADLINE: A plan.\nCHOICE: Cache | SQLite`)!;
+    expect(parsed.plan.risks).toEqual([]);
+    expect(parsed.plan.choices).toEqual([{ open: "Cache", picked: "SQLite" }]);
+    expect(parsed.bodyBytes).toBe(body.length);
+    expect(summarizeOutput("- Risk: the cache can go stale\nHEADLINE: A plan.", false)).toMatchObject({ lines: ["- Risk: the cache can go stale"] });
+  });
+
+  it("steps over code fence lines around the block", () => {
+    for (const [open, close] of [["```", "```"], ["```text", "```"], ["~~~", "~~~"]]) {
+      const text = ["The plan.", open, "HEADLINE: A.", "CHOICE: Cache | SQLite", "REACH: deps | none", "RISK: slow", close].join("\n");
+      expect(asked(text)!.plan, open).toMatchObject({ choices: [{ open: "Cache", picked: "SQLite" }], reach: [{ kind: "deps", none: true }], risks: ["slow"] });
+    }
+    // A fence in the middle of the run does not cut it either.
+    expect(plan("HEADLINE: A.\nCHOICE: a | b\n```\nRISK: r\n```").risks).toEqual(["r"]);
+  });
+
+  it("leaves a step that was not asked for the block as it was: plan labels without a headline are prose", () => {
+    const text = "Done the change.\n- Risk: the cache may be stale\n- Choice: used Redis";
+    expect(parseHeadline(text)).toMatchObject({ source: "first_lines", headline: "Done the change.", points: ["- Risk: the cache may be stale", "- Choice: used Redis"], plan: EMPTY });
+    expect(parseHeadline("Risk: the cache may be stale")).toMatchObject({ source: "first_lines", headline: "Risk: the cache may be stale" });
+  });
+
+  it("leaves the reply of a step that was not asked for the plan lines as it was: bytes and words count a trailing RISK line", () => {
+    const withLine = "Built it, all done.\nHEADLINE: Done.\nRISK: x y z w";
+    const without = "Built it, all done.\nHEADLINE: Done.";
+    expect(parseHeadline(withLine)).toMatchObject({ plan: EMPTY, planUnread: false, bodyBytes: "Built it, all done.\nRISK: x y z w".length, words: 9 });
+    expect(parseHeadline(without)!.bodyBytes).toBeLessThan(parseHeadline(withLine)!.bodyBytes);
+    // Asked, the same line is a plan line and is not counted.
+    expect(asked(withLine)).toMatchObject({ bodyBytes: "Built it, all done.".length, words: 4 });
+  });
+
+  it("reads the lines through one empty line between the headline and the plan lines, and inside the block", () => {
+    const text = ["Text.", "HEADLINE: A.", "POINT: p", "", "CHOICE: a | b", "", "REACH: files | x", "", "RISK: r"].join("\n");
+    expect(asked(text)!.plan).toMatchObject({ choices: [{ open: "a", picked: "b" }], reach: [{ kind: "files", value: "x" }], risks: ["r"] });
+    expect(asked(text)).toMatchObject({ points: ["p"], bodyBytes: "Text.".length });
+  });
+
+  it("does not read prose risks above an empty line and the block", () => {
+    const text = ["The risks:", "- Risk: the cache may be stale", "- Risk: second", "", "HEADLINE: A plan.", "CHOICE: Cache | SQLite"].join("\n");
+    const parsed = asked(text)!;
+    expect(parsed.plan.risks).toEqual([]);
+    expect(parsed.plan.choices).toHaveLength(1);
+    expect(parsed.bodyBytes).toBe(["The risks:", "- Risk: the cache may be stale", "- Risk: second"].join("\n").length);
+  });
+
+  it("keeps the headline when the agent writes far more plan lines than asked", () => {
+    const text = ["Body.", "HEADLINE: A plan.", ...Array.from({ length: 35 }, (_, i) => `CHOICE: Q${i} | A${i}`)].join("\n");
+    expect(asked(text)).toMatchObject({ source: "headline", headline: "A plan." });
+  });
+
+  it.each(["None.", "none!", "Nothing", "No new dependencies", "No new dependencies."])("reads %s as none", (value) => {
+    expect(plan(`HEADLINE: A.\nREACH: deps | ${value}`).reach).toEqual([{ kind: "deps", none: true }]);
+  });
+
+  it("keeps a risk or a value that only starts with no: a card must not say none for what the plan needs", () => {
+    expect(plan("HEADLINE: A.\nRISK: No rollback plan\nRISK: No tests yet").risks).toEqual(["No rollback plan", "No tests yet"]);
+    expect(plan("HEADLINE: A.\nREACH: secrets | no key; uses SMTP_PASS").reach).toEqual([{ kind: "secrets", value: "no key; uses SMTP_PASS" }]);
+    expect(plan("HEADLINE: A.\nREACH: services | No — calls api.stripe.com").reach).toEqual([{ kind: "services", value: "No — calls api.stripe.com" }]);
+  });
+
+  it("drops only an exact none-word as a risk", () => {
+    expect(plan("HEADLINE: A.\nRISK: None.\nRISK: nothing\nRISK: n/a\nRISK: -\nRISK: real").risks).toEqual(["real"]);
+  });
+
+  it("reads no, none needed and no new <kind> as none for a reach line", () => {
+    expect(plan("HEADLINE: A.\nREACH: deps | No\nREACH: secrets | None needed.\nREACH: services | No new outside services").reach).toEqual([
+      { kind: "deps", none: true },
+      { kind: "secrets", none: true },
+      { kind: "services", none: true },
+    ]);
+  });
+
+  it("does not read a real value that starts with no as none", () => {
+    expect(plan("HEADLINE: A.\nREACH: services | Node.js fetch to api.example.com for the forecast").reach).toEqual([{ kind: "services", value: "Node.js fetch to api.example.com for the forecast" }]);
+  });
+
+  it("reads a reply that ends in prose as having no plan lines", () => {
+    expect(plan("Text.\nHEADLINE: A.\nCHOICE: Cache | SQLite\nThat is all.")).toEqual(EMPTY);
+  });
+
+  it("gives an empty plan for a reply without the lines, and never throws on junk", () => {
+    expect(plan("Text.\nHEADLINE: A.")).toEqual(EMPTY);
+    for (const junk of ["CHOICE:", "REACH: |||", "RISK: \u0000​", "|||\nCHOICE: |||", `${"CHOICE: a | b\n".repeat(5_000)}HEADLINE: x`]) {
+      expect(() => asked(`Text.\n${junk}`), junk).not.toThrow();
+    }
+  });
+
+  it("reads a 20,000-word reply by its end", () => {
+    const text = `${Array.from({ length: 20_000 }, (_, i) => `w${i}`).join(" ")}\n${EXAMPLE}`;
+    expect(asked(text)!.plan.choices).toHaveLength(2);
+  });
+
+  it("leaves the verdict reader as it was on a reply with Risk: and Choice: lines", () => {
+    const text = ["- Risk: slow", "Choice: x", "**Must change**", "1. `a.ts:3` add the test.", "VERDICT: changes"].join("\n");
+    expect(summarizeOutput(text, true)).toMatchObject({ kind: "verdict", verdict: "changes", mustFix: [{ ref: "a.ts:3", text: "add the test" }] });
+  });
+
+  it("keeps a plan record inside the stored shape", () => {
+    const said = { source: "headline", headline: "x", points: [], morePoints: 0, bodyBytes: 0, plan: asked(EXAMPLE)!.plan };
+    expect(SaidSchema.safeParse(said).success).toBe(true);
+    expect(SaidSchema.safeParse({ ...said, plan: { ...said.plan, extra: 1 } }).success).toBe(false);
+    expect(SaidSchema.safeParse({ ...said, plan: undefined }).success).toBe(true);
+  });
+});

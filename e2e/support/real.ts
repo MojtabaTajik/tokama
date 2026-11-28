@@ -37,6 +37,19 @@ const BUILDER = [
   "",
 ].join("\n");
 
+/** The planning agent of Plan and build, pinned to the cheapest model; a personal agent wins over the built-in one of its id. */
+const ARCHITECT = [
+  "---",
+  "format: 1",
+  "name: Architect",
+  "runs_on: claude-code",
+  "model: haiku",
+  "tools: read-only",
+  "---",
+  "You are Architect. Plan the change the task asks for before anyone edits code. Do not write or change any file.",
+  "",
+].join("\n");
+
 export interface Workspace {
   /** Everything of one test: removed at the end. */
   readonly root: string;
@@ -58,6 +71,7 @@ export function createWorkspace(): Workspace {
   const workspace: Workspace = { root, home, tokamaHome, engineDir: join(root, "e"), repo: join(root, REPO_ID), cleanup: () => rmSync(root, { recursive: true, force: true }) };
   mkdirSync(join(tokamaHome, "agents"), { recursive: true });
   writeFileSync(join(tokamaHome, "agents", "builder.md"), BUILDER);
+  writeFileSync(join(tokamaHome, "agents", "architect.md"), ARCHITECT);
   createFixture(workspace.repo);
   return workspace;
 }

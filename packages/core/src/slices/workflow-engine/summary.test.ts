@@ -129,6 +129,8 @@ describe("parseHeadline", () => {
       words: 5,
       readFlag: true,
       noChange: false,
+      plan: { choices: [], moreChoices: 0, reach: [], risks: [], moreRisks: 0 },
+      planUnread: false,
     });
   });
 

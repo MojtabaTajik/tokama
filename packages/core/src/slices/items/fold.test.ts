@@ -186,6 +186,13 @@ describe("foldItem", () => {
     expect(item.steps[0]?.attempts.map((a) => a.said)).toEqual([said, undefined]);
   });
 
+  it("attempt_ended: carries the plan summary of what the agent said whole", () => {
+    const plan = { choices: [{ open: "Port", picked: "8080" }], moreChoices: 0, reach: [{ kind: "deps" as const, none: true as const }], risks: ["Slow."], moreRisks: 0 };
+    const said = { source: "headline" as const, headline: "A plan.", points: [], morePoints: 0, bodyBytes: 120, plan };
+    const item = fold([...startBuild, { type: "attempt_ended", stepId: BUILD, attempt: 1, result: "passed", said }]);
+    expect(item.steps[0]?.attempts[0]?.said?.plan).toEqual(plan);
+  });
+
   it("attempt_ended and item_ended: the checked tree on a passed attempt, the commits on a done item", () => {
     const tree = "a".repeat(40);
     const commit = "b".repeat(40);

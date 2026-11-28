@@ -147,6 +147,33 @@ describe("item record", () => {
       expect(parseItemRecord(withAttempt({})).ok).toBe(true);
     });
 
+    it("may carry a plan summary, also an empty one; an older record without it is valid", () => {
+      const part = "p".repeat(160);
+      const plan = {
+        choices: Array.from({ length: 7 }, () => ({ open: part, picked: part, means: part, unsure: true })),
+        moreChoices: 3,
+        reach: [{ kind: "files", value: part, note: part }, { kind: "deps", none: true }, { kind: "services", none: true }, { kind: "secrets", none: true }],
+        risks: [part, part, part],
+        moreRisks: 1,
+      };
+      expect(parseItemRecord(withAttempt({ said: { ...said, plan } })).ok).toBe(true);
+      expect(parseItemRecord(withAttempt({ said: { ...said, plan: { choices: [], moreChoices: 0, reach: [], risks: [], moreRisks: 0 } } })).ok).toBe(true);
+    });
+
+    it.each([
+      ["eight choices", { choices: Array.from({ length: 8 }, () => ({ picked: "a" })) }, "choices"],
+      ["a choice with no answer", { choices: [{ open: "a" }] }, "choices.0.picked"],
+      ["a choice part over its cap", { choices: [{ picked: "a".repeat(161) }] }, "choices.0.picked"],
+      ["an unknown choice field", { choices: [{ picked: "a", color: "red" }] }, "choices.0"],
+      ["four risks", { risks: ["a", "b", "c", "d"] }, "risks"],
+      ["an unknown reach kind", { reach: [{ kind: "network", none: true }] }, "reach.0.kind"],
+      ["five reach lines", { reach: ["files", "deps", "services", "secrets", "files"].map((kind) => ({ kind, none: true })) }, "reach"],
+      ["an unknown plan field", { color: "red" }, ""],
+    ])("refuses %s in a plan summary", (_label, patch, path) => {
+      const plan = { choices: [], moreChoices: 0, reach: [], risks: [], moreRisks: 0, ...patch };
+      expect(paths(parseItemRecord(withAttempt({ said: { ...said, plan } })))).toContain(`steps.0.attempts.0.said.plan${path === "" ? "" : `.${path}`}`);
+    });
+
     it.each([
       ["a headline over its cap", { headline: "x".repeat(141) }, "steps.0.attempts.0.said.headline"],
       ["an empty headline", { headline: "" }, "steps.0.attempts.0.said.headline"],

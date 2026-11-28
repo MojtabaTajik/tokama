@@ -87,6 +87,32 @@ export const MAX_POINT_CHARS = 160;
 /** The most points carried; the rest are only counted. */
 export const MAX_POINTS = 3;
 
+/** The longest part of a plan summary line, and the most choices and risks carried; the rest are only counted. */
+export const MAX_PLAN_PART_CHARS = 160;
+export const MAX_CHOICES = 7;
+export const MAX_RISKS = 3;
+
+const planPart = z.string().min(1).max(MAX_PLAN_PART_CHARS);
+
+/** A choice the agent made that the task did not settle: what was open, what it picked, what that means. `unsure` when the agent said so. */
+export const PlanChoiceSchema = z.strictObject({ open: planPart.optional(), picked: planPart, means: planPart.optional(), unsure: z.literal(true).optional() });
+
+export const ReachKindSchema = z.enum(["files", "deps", "services", "secrets"]);
+
+/** One reach line of a plan: the value the agent wrote, or `none` when it wrote none. */
+export const PlanReachSchema = z.strictObject({ kind: ReachKindSchema, value: planPart.optional(), none: z.literal(true).optional(), note: planPart.optional() });
+
+/** What a plan the engineer approves says about its choices, reach and risks; any part can be missing. */
+export const PlanSummarySchema = z.strictObject({
+  choices: z.array(PlanChoiceSchema).max(MAX_CHOICES),
+  /** CHOICE lines past the ones carried. */
+  moreChoices: z.int().nonnegative(),
+  reach: z.array(PlanReachSchema).max(4),
+  risks: z.array(planPart).max(MAX_RISKS),
+  /** RISK lines past the ones carried. */
+  moreRisks: z.int().nonnegative(),
+});
+
 /**
  * What a step's agent said about its own work, as the row and the cards show it: a headline and
  * up to three points it wrote, or (`first_lines`) the first lines of its reply when it wrote
@@ -103,6 +129,8 @@ export const SaidSchema = z.strictObject({
   readMinutes: z.int().min(1).max(60).optional(),
   /** The step changed nothing and its agent said no change is needed: its reply is the answer. Absent otherwise and in older records. */
   noChange: z.literal(true).optional(),
+  /** Present exactly when the plan block was asked for and the step changed nothing: empty when the agent wrote none of it. Absent otherwise and in older records. */
+  plan: PlanSummarySchema.optional(),
 });
 
 /** What a changed file is, for the Changed row and the risk rules; the first six are the sensitive kinds. */
@@ -342,6 +370,10 @@ export type AttemptResult = z.output<typeof AttemptResultSchema>;
 export type RunFailure = z.output<typeof RunFailureSchema>;
 export type AttemptSummary = z.output<typeof AttemptSummarySchema>;
 export type Said = z.output<typeof SaidSchema>;
+export type PlanSummary = z.output<typeof PlanSummarySchema>;
+export type PlanChoice = z.output<typeof PlanChoiceSchema>;
+export type PlanReach = z.output<typeof PlanReachSchema>;
+export type ReachKind = z.output<typeof ReachKindSchema>;
 export type TouchKind = z.output<typeof TouchKindSchema>;
 export type ChangeSummary = z.output<typeof ChangeSummarySchema>;
 export type RiskReason = z.output<typeof RiskReasonSchema>;

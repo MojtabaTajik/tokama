@@ -62,11 +62,13 @@ describe("sample items", () => {
       for (const step of steps) for (const attempt of step.attempts ?? []) if (attempt.said !== undefined) found.push(attempt.said);
       return found;
     });
-    expect(saids.map((said) => said["headline"])).toHaveLength(6);
-    // The plan, the write-up and the Ask answer.
-    expect(saids.filter((said) => said["readMinutes"] !== undefined)).toHaveLength(3);
+    expect(saids.map((said) => said["headline"])).toHaveLength(8);
+    // The plan and the plan it replaced, the write-up and the Ask answer.
+    expect(saids.filter((said) => said["readMinutes"] !== undefined)).toHaveLength(4);
+    // Two plans with their choices, reach and risks, and one plan whose agent left them out.
+    expect(saids.filter((said) => said["plan"] !== undefined)).toHaveLength(3);
     expect(saids.filter((said) => said["source"] === "first_lines")).toHaveLength(1);
-    expect(saids.filter((said) => said["source"] === "headline" && (said["points"] as unknown[]).length === 0 && said["readMinutes"] === undefined)).toHaveLength(1);
+    expect(saids.filter((said) => said["source"] === "headline" && said["plan"] === undefined && (said["points"] as unknown[]).length === 0 && said["readMinutes"] === undefined)).toHaveLength(1);
     expect(saids.filter((said) => (said["points"] as unknown[]).length === 3)).toHaveLength(1);
   });
 

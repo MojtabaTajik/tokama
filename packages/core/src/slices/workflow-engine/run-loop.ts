@@ -84,7 +84,7 @@ import {
   unapproved,
   type SteeringEntry,
 } from "./protect.js";
-import { HEADLINE_RULE, NO_CHANGE_RULE, REVIEWER_HEADLINE_RULE, saidOf } from "./headline.js";
+import { HEADLINE_RULE, NO_CHANGE_RULE, PLAN_RULE, REVIEWER_HEADLINE_RULE, planCoverage, saidOf } from "./headline.js";
 import { parseHeadline } from "./summary.js";
 import { parseVerdict, VERDICT_RULE } from "./verdict.js";
 
@@ -252,14 +252,19 @@ export function titleFrom(text: string): string {
 /** A template whose picked repo is read-only: its agents get no edit tools, whatever their agent file says, and nothing is committed. The loop works only in the picked repo. */
 const readsOnly = (template: TemplateRecord): boolean => template.uses.repos.picked === "read";
 
+/** Whether a step's agent is asked for the plan block: a step you approve with a step after it. It writes the block whatever it changes; the reply is read as a plan only when it changed nothing. */
+const plansWanted = (template: TemplateRecord, step: TemplateStepDef): boolean => {
+  const at = template.steps.findIndex((s) => s.id === step.id);
+  return step.doneWhen === "you approve" && at >= 0 && at < template.steps.length - 1;
+};
+
 /**
  * Whether a step's agent may say that no change is needed: a step you approve with a step after
  * it, until the engineer has chosen "Build anyway" on it. After that the step asks as before, so
  * the answer cannot send the item round in a circle.
  */
 function mayProposeNoChange(item: StoredItem, template: TemplateRecord, step: TemplateStepDef): boolean {
-  const at = template.steps.findIndex((s) => s.id === step.id);
-  if (step.doneWhen !== "you approve" || at < 0 || at === template.steps.length - 1) return false;
+  if (!plansWanted(template, step)) return false;
   return !item.decisions.some((d) => d.stepId === step.id && d.proposes === "no_change" && d.resolved?.choice === REQUEST_CHANGES_ID);
 }
 
@@ -814,7 +819,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     const feedback = await feedbackFor({ ...ctx, item });
     const checks = reviewer ? checkSummaryFor({ ...ctx, item }, step, reviewed) : undefined;
     // The step's agent also writes its headline: the rule is part of the instructions every prompt is built from, so a cloud agent's recorded prompt holds it too. A reviewer's verdict line stays the last.
-    const rules = reviewer ? REVIEWER_HEADLINE_RULE + VERDICT_RULE : HEADLINE_RULE + (mayProposeNoChange(item, ctx.template, step) ? NO_CHANGE_RULE : "");
+    const rules = reviewer ? REVIEWER_HEADLINE_RULE + VERDICT_RULE : HEADLINE_RULE + (plansWanted(ctx.template, step) ? PLAN_RULE : "") + (mayProposeNoChange(item, ctx.template, step) ? NO_CHANGE_RULE : "");
     const template = { ...ctx.template, steps: ctx.template.steps.map((s) => (s.id === stepId ? { ...s, instructions: { ...s.instructions, text: s.instructions.text + rules } } : s)) };
     const prompt = buildPrompt({
       template,
@@ -924,14 +929,14 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     const step = stepDef(ctx.template, stepId);
     // Read here, not kept from the call, so an attempt that resumes after a restart has it too.
     const reply = (await readItemFile(item.id, `${attemptDir(stepId, attempt)}/agent.txt`)) ?? "";
-    const parsed = parseHeadline(reply);
+    const parsed = parseHeadline(reply, plansWanted(ctx.template, step));
     const document = ctx.template.steps.at(-1)?.id === stepId && ctx.template.finish.some((finish) => finish === "findings" || finish === "document");
-    const said = (approvesText = false, noChangeOffered = false): Said | undefined => saidOf(parsed, { approvesText, lastOfDocument: document, noChangeOffered });
+    const said = (approvesText = false, noChangeOffered = false): Said | undefined => saidOf(parsed, { approvesText, lastOfDocument: document, noChangeOffered, planAsked: plansWanted(ctx.template, step) });
     switch (step.doneWhen) {
       case "agent finishes":
         return passStep(item, stepId, [attemptEnded(stepId, attempt, "passed", { said: said() })]);
       case "you approve":
-        return askApproval(ctx, step, attempt, said);
+        return askApproval(ctx, step, attempt, said, parsed?.planUnread === true);
       case "reviewer approves": {
         const verdict = parseVerdict(reply);
         if (verdict === undefined) return runFailed(item, stepId, attempt, "crash", "The reviewer's reply did not end with VERDICT: approve or VERDICT: changes.");
@@ -948,7 +953,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
    * The engineer approves one tree, and Finish commits that tree: it is staged and judged before
    * the question, and the question carries it, so the diff shown is the change committed.
    */
-  const askApproval = async (ctx: Context, step: TemplateStepDef, attempt: number, said: (approvesText: boolean, noChangeOffered: boolean) => Said | undefined): Promise<Next> => {
+  const askApproval = async (ctx: Context, step: TemplateStepDef, attempt: number, said: (approvesText: boolean, noChangeOffered: boolean) => Said | undefined, planUnread: boolean): Promise<Next> => {
     const { item } = ctx;
     const fail = (text: string) => runFailed(item, step.id, attempt, "crash", text);
     const worktree = worktreeOf(ctx);
@@ -981,6 +986,8 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     // The agent's "no change needed" counts only when it was asked for, the tree equals the base
     // tree and a step follows; otherwise the line is ignored and the usual question comes.
     const spoken = said(unchanged, unchanged && next !== undefined && mayProposeNoChange(item, ctx.template, step));
+    // How often agents leave the plan block out is read from the log; nothing is asked again.
+    if (unchanged && plansWanted(ctx.template, step)) deps.log?.(`item ${item.id}: plan block of step ${step.id}: ${planCoverage(spoken, planUnread)}`);
     if (spoken?.noChange === true) {
       append(item.id, [
         attemptEnded(step.id, attempt, "passed", { said: spoken }),
