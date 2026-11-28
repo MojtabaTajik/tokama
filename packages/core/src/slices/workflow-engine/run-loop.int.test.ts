@@ -89,6 +89,8 @@ function template(steps: readonly StepInput[], extra: Record<string, unknown> = 
   });
 }
 const BUILD_CHECKED: StepInput = { id: "build", doneWhen: "checks pass", checks: { from: "repo" }, ifFailed: { action: "retry" }, maxAttempts: 3 };
+/** A check that writes nothing, so a reviewer after it sees the checked tree unchanged. */
+const QUIET_CHECKED: StepInput = { ...BUILD_CHECKED, checks: { commands: ["grep -q fixed app.txt"] } };
 
 function engine(runtime: AgentRuntime, overrides: Partial<RunLoopDeps> = {}): RunLoop {
   return createRunLoop({
@@ -1413,6 +1415,45 @@ describe("run loop: review fixes", () => {
     const id = await start(loop, tpl);
     expect(item(id).steps.map((s) => s.attempts.length)).toEqual([2, 2]);
     expect(openDecision(id)).toMatchObject({ kind: "after_failure", stepId: "verify", detail: expect.stringContaining("twice in a row") });
+  });
+
+  it("a reviewer gets the commands and outcome of the checks of the step it reviews, and a step that is no reviewer does not", SLOW, async () => {
+    const builder = fakeRuntime([edits(FIXED)]);
+    const reviewer = fakeRuntime([says("Looks good.\nVERDICT: approve")]);
+    const loop = engine(builder, { runtime: (a) => (a.id === "reviewer" ? reviewer : builder) });
+    const tpl = template([QUIET_CHECKED, { id: "review", agentId: "reviewer", doneWhen: "reviewer approves" }]);
+    const id = await start(loop, tpl);
+    expect(openDecision(id)).toBeUndefined();
+    expect(item(id).state).toBe("done");
+    const prompt = reviewer.calls[0]!.request.prompt;
+    expect(prompt).toContain('name="last check output"');
+    expect(prompt).toContain("Checks of step build on the tree you review:\n$ grep -q fixed app.txt (passed)");
+    expect(builder.calls[0]!.request.prompt).not.toContain("last check output");
+    const sent = JSON.parse(readFileSync(join(tokamaHome, "items", id, "attempts", "review-1", "call.json"), "utf8")) as { prompt: { included: { kind: string }[] } };
+    expect(sent.prompt.included.map((entry) => entry.kind)).toContain("check-output");
+  });
+
+  it("a reviewer of a step with no checks gets no check block", SLOW, async () => {
+    const reviewer = fakeRuntime([says("Looks good.\nVERDICT: approve")]);
+    const builder = fakeRuntime([edits(FIXED)]);
+    const loop = engine(builder, { runtime: (a) => (a.id === "reviewer" ? reviewer : builder) });
+    await start(loop, template([{ id: "build" }, { id: "review", agentId: "reviewer", doneWhen: "reviewer approves" }]));
+    expect(reviewer.calls[0]!.request.prompt).not.toContain("last check output");
+  });
+
+  it("a cloud reviewer with repo-and-diff gets the check commands in what is sent to the cloud, as it does the diff", SLOW, async () => {
+    const cloud: Agent = { ...agent("cloud-reviewer"), cliId: "claude-code", model: "haiku" };
+    const agents: Record<string, Agent> = { ...AGENTS, "cloud-reviewer": cloud };
+    const builder = fakeRuntime([edits(FIXED)]);
+    const reviewer = fakeRuntime([says("Looks good.\nVERDICT: approve")]);
+    const loop = engine(builder, { agent: (_r, id) => agents[id], runtime: (a) => (a.id === "cloud-reviewer" ? reviewer : builder) });
+    const id = await start(loop, template([QUIET_CHECKED, { id: "review", agentId: "cloud-reviewer", data: "repo-and-diff", doneWhen: "reviewer approves" }]));
+    expect(openDecision(id)).toBeUndefined();
+    expect(item(id).state).toBe("done");
+    expect(reviewer.calls[0]!.request.prompt).toContain("$ grep -q fixed app.txt (passed)");
+    const call = JSON.parse(readFileSync(join(tokamaHome, "items", id, "attempts", "review-1", "call.json"), "utf8")) as { prompt: { cloud: boolean; sentToCloud: { user: string } } };
+    expect(call.prompt.cloud).toBe(true);
+    expect(call.prompt.sentToCloud.user).toContain("$ grep -q fixed app.txt (passed)");
   });
 
   it("a step's final reply reaches the steps that see it as {{ <step>.summary }}", SLOW, async () => {

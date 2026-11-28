@@ -56,7 +56,7 @@ export interface PromptInput {
   readonly results: StepResults;
   /** What the engineer asked for: the item's text. */
   readonly itemText: string;
-  /** The output of the last failed checks, for a retry. Only its last part is kept. */
+  /** The output of the last failed checks, for a retry; or the commands of the checks a reviewer's step passed. Only its last part is kept. */
   readonly lastCheckOutput?: string;
   /**
    * What a later step said about this step's work (a reviewer's requested changes), for the next

@@ -769,6 +769,19 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     return results;
   };
 
+  /**
+   * For a reviewer: each command of the last passed check run of the step it reviews, with its
+   * outcome. Only the command lines, never their output; the prompt builder sends it under the
+   * step's data rule, like the diff.
+   */
+  const checkSummaryFor = (ctx: Context, step: TemplateStepDef): string | undefined => {
+    const checked = reviewedSteps(ctx.template, ctx.template.steps.indexOf(step)).findLast((s) => s.doneWhen === "checks pass");
+    const attempt = checked === undefined ? undefined : storedStep(ctx.item, checked.id).attempts.findLast((a) => a.result === "passed");
+    if (checked === undefined || attempt === undefined || attempt.checks.length === 0) return undefined;
+    const lines = attempt.checks.map((c) => `$ ${c.command} (${c.passed ? "passed" : c.exitCode === null ? "stopped" : `exit ${c.exitCode}`})`);
+    return `Checks of step ${checked.name} on the tree you review:\n${lines.join("\n")}`;
+  };
+
   const runAttempt = async (ctx: Context, stepId: StepId, signal: AbortSignal, reviewed?: string): Promise<Next> => {
     const step = stepDef(ctx.template, stepId);
     const attempt = storedStep(ctx.item, stepId).attempts.length + 1;
@@ -798,6 +811,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       diff = shown.value;
     }
     const feedback = await feedbackFor({ ...ctx, item });
+    const checks = reviewer ? checkSummaryFor({ ...ctx, item }, step) : undefined;
     // The step's agent also writes its headline: the rule is part of the instructions every prompt is built from, so a cloud agent's recorded prompt holds it too. A reviewer's verdict line stays the last.
     const rules = reviewer ? REVIEWER_HEADLINE_RULE + VERDICT_RULE : HEADLINE_RULE + (mayProposeNoChange(item, ctx.template, step) ? NO_CHANGE_RULE : "");
     const template = { ...ctx.template, steps: ctx.template.steps.map((s) => (s.id === stepId ? { ...s, instructions: { ...s.instructions, text: s.instructions.text + rules } } : s)) };
@@ -808,6 +822,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       results: await resultsFor({ ...ctx, item }, step),
       itemText: item.text,
       ...feedback,
+      ...(checks !== undefined && { lastCheckOutput: checks }),
       ...(diff !== undefined && { repoContext: { diff } }),
       worktreeRoot: worktree.path,
       ...(deps.localOnly === true && { localOnly: true }),
