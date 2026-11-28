@@ -40,6 +40,7 @@ import {
 import { z } from "zod";
 import { BODY_OVERHEAD_BYTES, entryBodyBytes } from "./body.js";
 import { cleanStack, describeThrown, fingerprint, nameOfStack, type RedactionContext, redactText } from "./redact.js";
+import { takeStoppedByApp } from "./stopped-by-app.js";
 
 export const ENTRIES_FILE = "entries.jsonl";
 export const SETTINGS_FILE = "settings.json";
@@ -180,13 +181,16 @@ export class DiagnosticsStore {
 
     const marker = join(dir, RUNNING_FILE);
     const crashed = exists(marker);
-    const store = new DiagnosticsStore(options, settings, kept, crashed);
+    // The desktop app may have killed the last engine on purpose (a replace, an update); that note is
+    // taken whether or not there was a marker, so a stale one never waits for a later crash.
+    const killedByApp = await takeStoppedByApp(dir, await runningPid(marker), clock.now());
+    const store = new DiagnosticsStore(options, settings, kept, crashed && !killedByApp);
     if (firstUse) store.saveSettings();
     const pruned = store.prune();
     if (dropped || !pruned) store.rewrite();
     const written = replaceTextSync(marker, `${process.pid}\n`);
     if (!written.ok) log(`cannot write the diagnostics marker: ${written.error.message}`);
-    if (crashed) store.crash("engine", "unclean_exit");
+    if (crashed && !killedByApp) store.crash("engine", "unclean_exit");
     return store;
   }
 
@@ -422,6 +426,13 @@ function parseLine(line: string): DiagnosticEntry | undefined {
   if (!json.ok) return undefined;
   const parsed = DiagnosticEntrySchema.safeParse(json.value);
   return parsed.success ? parsed.data : undefined;
+}
+
+/** The pid the running marker holds, when it holds one. */
+async function runningPid(marker: string): Promise<number | undefined> {
+  const text = await readTextFile(marker, { maxBytes: 64 });
+  const pid = text.ok ? Number(text.value.trim()) : Number.NaN;
+  return Number.isInteger(pid) ? pid : undefined;
 }
 
 function exists(path: string): boolean {
