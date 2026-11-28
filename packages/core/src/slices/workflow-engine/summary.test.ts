@@ -225,12 +225,13 @@ describe("parseHeadline", () => {
 describe("parseHeadlineOfTail", () => {
   const tail = "end of the body\nHEADLINE: A long design.\nPOINT: One thing.\nREAD: yes";
 
-  it("reads the block from the end and scales the body counts to the whole reply", () => {
-    const whole = parseHeadline(tail)!;
-    const scaled = parseHeadlineOfTail(tail, new TextEncoder().encode(tail).length * 10)!;
-    expect(scaled).toMatchObject({ source: "headline", headline: "A long design.", points: ["One thing."], readFlag: true });
-    expect(scaled.bodyBytes).toBe(whole.bodyBytes * 10);
-    expect(scaled.words).toBe(whole.words * 10);
+  it("reads the block from the end; the body is the file less the block, with words at the tail's rate", () => {
+    const own = parseHeadline(tail)!;
+    const blockBytes = new TextEncoder().encode(tail).length - own.bodyBytes;
+    const long = parseHeadlineOfTail(tail, 400_000)!;
+    expect(long).toMatchObject({ source: "headline", headline: "A long design.", points: ["One thing."], readFlag: true });
+    expect(long.bodyBytes).toBe(400_000 - blockBytes);
+    expect(long.words).toBe(Math.round((own.words * long.bodyBytes) / own.bodyBytes));
   });
 
   it("gives nothing for a tail without a block: the first lines of a tail are not the start of the reply", () => {
