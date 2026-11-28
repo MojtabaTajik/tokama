@@ -2,21 +2,35 @@
 // character devices, and `git add -A` stops on the first one. The agent's git gets an exclude file
 // that lists them, through its environment: the repo's own `info/exclude` is shared by every
 // worktree and the engineer's checkout, so it cannot hold them.
-import { lstatSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { lstatSync, readFileSync, statSync } from "node:fs";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { replaceTextSync } from "../../../kernel/fs-safe/index.js";
+import type { ProcessRunner } from "../../../kernel/process/index.js";
 import { SANDBOX_PLACEHOLDER_PATHS } from "../../../kernel/sandbox/index.js";
 
 const EXCLUDE_FILE = "tokama-exclude";
+/** An ignore file larger than this is not copied: the exclude is left out instead of cut. */
+const MAX_IGNORE_BYTES = 256 * 1024;
+
+export interface PlaceholderExcludeOptions {
+  readonly runner: ProcessRunner;
+  /** The home folder the agent starts with: git's default global ignore file is under it. */
+  readonly home: string;
+  /** Variables the runner adds to its allowlisted environment. */
+  readonly env?: Readonly<Record<string, string>>;
+  readonly platform?: NodeJS.Platform;
+}
 
 /**
  * The environment that makes the agent's git skip the placeholders in `cwd`, a linked worktree:
  * its `core.excludesFile` is a file in the worktree's own git folder (removed with the worktree).
- * Undefined, and nothing written, anywhere else, or when the file cannot be written: the call goes
- * on without it. Linux only.
+ * One file is all git reads, so it starts with the engineer's own excludes file (`core.excludesFile`
+ * or `~/.config/git/ignore`) and the placeholders follow: what the engineer ignores stays ignored.
+ * Undefined, and nothing changed, anywhere else, or when any step fails: the call goes on without
+ * it. Linux only.
  */
-export function placeholderExcludeEnv(cwd: string, platform: NodeJS.Platform = process.platform): Record<string, string> | undefined {
-  if (platform !== "linux") return undefined;
+export async function placeholderExcludeEnv(cwd: string, options: PlaceholderExcludeOptions): Promise<Record<string, string> | undefined> {
+  if ((options.platform ?? process.platform) !== "linux") return undefined;
   try {
     const dotGit = join(cwd, ".git");
     if (!lstatSync(dotGit).isFile()) return undefined;
@@ -24,10 +38,38 @@ export function placeholderExcludeEnv(cwd: string, platform: NodeJS.Platform = p
     if (pointer?.[1] === undefined) return undefined;
     const file = join(resolve(cwd, pointer[1].trim()), EXCLUDE_FILE);
     if (!lstatSync(dirname(file)).isDirectory()) return undefined;
-    const written = replaceTextSync(file, `${SANDBOX_PLACEHOLDER_PATHS.map((path) => `/${path}`).join("\n")}\n`, 0o644);
+    const own = await ownExcludes(cwd, options);
+    if (own === undefined) return undefined;
+    const lines = SANDBOX_PLACEHOLDER_PATHS.map((path) => `/${path}`).join("\n");
+    const written = replaceTextSync(file, `${own === "" || own.endsWith("\n") ? own : `${own}\n`}${lines}\n`, 0o644);
     if (!written.ok) return undefined;
     return { GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "core.excludesFile", GIT_CONFIG_VALUE_0: file };
   } catch {
     return undefined;
+  }
+}
+
+/** The text of the excludes file git uses for `cwd` now: "" when there is none, undefined when it cannot be read whole. */
+async function ownExcludes(cwd: string, options: PlaceholderExcludeOptions): Promise<string | undefined> {
+  let configured = "";
+  const run = await options.runner.run({
+    command: { argv: ["git", "config", "--path", "--get", "core.excludesFile"] },
+    cwd,
+    ...(options.env !== undefined && { env: options.env }),
+    timeoutMs: 10_000,
+    stdout: {
+      onLine: (line) => {
+        if (configured === "") configured = line.trim();
+      },
+    },
+  });
+  // Exit 1 is "not set"; anything else (no git, a broken config) means this cannot be known.
+  if (run.kind !== "finished" || (run.exitCode !== 0 && run.exitCode !== 1)) return undefined;
+  const path = configured === "" ? join(options.home, ".config", "git", "ignore") : isAbsolute(configured) ? configured : resolve(cwd, configured);
+  try {
+    const info = statSync(path);
+    return info.isFile() && info.size <= MAX_IGNORE_BYTES ? readFileSync(path, "utf8") : undefined;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT" ? "" : undefined;
   }
 }

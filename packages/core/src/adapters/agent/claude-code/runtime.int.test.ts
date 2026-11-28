@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -131,27 +132,33 @@ describe("Claude Code runtime", SLOW, () => {
 
   describe("the exclude for the sandbox's placeholders", () => {
     const envNames = async (extra: Partial<ClaudeCodeOptions>, call: Partial<AgentCallRequest>) => {
-      const events = await collect(runtime(undefined, extra).launch(request("echo", { limits: { edit: true, commands: ["npm test:*"], web: false }, ...call }), new AbortController().signal));
+      const events = await collect(runtime(undefined, extra).launch(request("echo", { limits: { edit: true, commands: ["npm test:*"], web: false }, ...call, sandbox: { writableRoot: call.cwd ?? dir, readOnlyRoots: [], network: { allow: [], unlisted: "deny" } } }), new AbortController().signal));
       const said = events.find((event) => event.type === "text");
       if (said?.type !== "text") throw new Error("no text event");
       return (JSON.parse(said.text) as { env: string[] }).env;
     };
-    // A linked worktree's `.git` file points at its own folder in the main repo.
+    // A linked worktree of a repo inside the temp folder; returns its path.
     const linked = () => {
-      mkdirSync(join(dir, "gitdir"));
-      writeFileSync(join(dir, ".git"), `gitdir: ${join(dir, "gitdir")}\n`);
+      const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=T", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", ...args], { cwd, stdio: "ignore" });
+      const main = join(dir, "main");
+      mkdirSync(main);
+      git(main, "init", "-q", "-b", "main");
+      git(main, "commit", "-q", "--allow-empty", "-m", "seed");
+      git(main, "worktree", "add", "-q", "-b", "item", join(dir, "item"));
+      return { cwd: join(dir, "item"), exclude: join(main, ".git", "worktrees", "item", "tokama-exclude") };
     };
 
     it("is passed to a sandboxed call in a linked worktree on Linux", SLOW, async () => {
-      linked();
-      expect(await envNames({ platform: "linux" }, {})).toContain("GIT_CONFIG_VALUE_0");
-      expect(existsSync(join(dir, "gitdir", "tokama-exclude"))).toBe(true);
+      const { cwd, exclude } = linked();
+      expect(await envNames({ platform: "linux" }, { cwd })).toContain("GIT_CONFIG_VALUE_0");
+      expect(existsSync(exclude)).toBe(true);
     });
 
     it("is not passed on macOS, or to a call without the shell", SLOW, async () => {
-      linked();
-      expect(await envNames({ platform: "darwin" }, {})).not.toContain("GIT_CONFIG_COUNT");
-      expect(await envNames({ platform: "linux" }, { limits: { edit: true, commands: [], web: false } })).not.toContain("GIT_CONFIG_COUNT");
+      const { cwd, exclude } = linked();
+      expect(await envNames({ platform: "darwin" }, { cwd })).not.toContain("GIT_CONFIG_COUNT");
+      expect(await envNames({ platform: "linux" }, { cwd, limits: { edit: true, commands: [], web: false } })).not.toContain("GIT_CONFIG_COUNT");
+      expect(existsSync(exclude)).toBe(false);
     });
   });
 

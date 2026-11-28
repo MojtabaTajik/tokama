@@ -3,9 +3,11 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createProcessRunner } from "../../../kernel/process/index.js";
 import { placeholderExcludeEnv } from "./git-exclude.js";
 
 let root: string;
+let home: string;
 let main: string;
 let item: string;
 
@@ -13,16 +15,19 @@ const git = (cwd: string, args: string[], env: Record<string, string> = {}) => {
   const run = spawnSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.com", ...args], {
     cwd,
     encoding: "utf8",
-    env: { PATH: process.env["PATH"] ?? "", HOME: root, GIT_CONFIG_NOSYSTEM: "1", ...env },
+    env: { PATH: process.env["PATH"] ?? "", HOME: home, GIT_CONFIG_NOSYSTEM: "1", ...env },
   });
   if (run.status !== 0) throw new Error(`git ${args.join(" ")}: ${run.stderr}`);
   return run.stdout.trimEnd();
 };
+const exclude = (cwd: string = item) => placeholderExcludeEnv(cwd, { runner: createProcessRunner({ parentEnv: { PATH: process.env["PATH"], HOME: home } }), home, platform: "linux" });
 
 beforeEach(() => {
   root = realpathSync(mkdtempSync(join(tmpdir(), "tokama-exclude-test-")));
+  home = join(root, "home");
   main = join(root, "main");
   item = join(root, "item");
+  mkdirSync(home);
   mkdirSync(main);
   git(main, ["init", "-q", "-b", "main"]);
   mkdirSync(join(main, ".claude"));
@@ -37,28 +42,48 @@ afterEach(() => {
 });
 
 describe("placeholderExcludeEnv", () => {
-  it("makes the agent's git skip the placeholders in the worktree, and only there", () => {
-    const env = placeholderExcludeEnv(item, "linux");
+  it("makes the agent's git skip the placeholders in the worktree, and only there", async () => {
+    const env = await exclude();
     if (env === undefined) throw new Error("no environment");
     // Placeholders as the sandbox shows them to the agent: files git has not seen before.
     for (const name of [".bashrc", ".gitconfig", ".vscode", ".claude/commands", ".claude/agents"]) writeFileSync(join(item, name), "");
     writeFileSync(join(item, "work.txt"), "work\n");
     git(item, ["add", "-A"], env);
     expect(git(item, ["status", "--porcelain"], env)).toBe("A  work.txt");
-    // Without it git still sees them, and so does the engineer's checkout and another worktree.
+    // Without it git still sees them, and so does the engineer's checkout.
     expect(git(item, ["status", "--porcelain", "-uall"])).toContain("?? .bashrc");
     writeFileSync(join(main, ".bashrc"), "");
     expect(git(main, ["status", "--porcelain"])).toBe("?? .bashrc");
   });
 
-  it("keeps a tracked file of the same name tracked", () => {
-    const env = placeholderExcludeEnv(item, "linux");
+  it("keeps a tracked file of the same name tracked", async () => {
+    const env = await exclude();
     writeFileSync(join(item, ".claude", "settings.json"), '{"a":1}\n');
     expect(git(item, ["status", "--porcelain"], env)).toBe(" M .claude/settings.json");
   });
 
-  it("puts the exclude file in the worktree's git folder, not in the repo's shared folder", () => {
-    const env = placeholderExcludeEnv(item, "linux");
+  it("keeps what the engineer ignores globally ignored: the default file, and a configured one", async () => {
+    mkdirSync(join(home, ".config", "git"), { recursive: true });
+    writeFileSync(join(home, ".config", "git", "ignore"), ".env\n*.pem");
+    writeFileSync(join(item, ".env"), "SECRET=1\n");
+    writeFileSync(join(item, "key.pem"), "key\n");
+    writeFileSync(join(item, "work.txt"), "work\n");
+    const env = await exclude();
+    git(item, ["add", "-A"], env);
+    expect(git(item, ["status", "--porcelain"], env)).toBe("A  work.txt");
+
+    writeFileSync(join(home, "my-ignore"), "*.log\n");
+    git(item, ["config", "--global", "core.excludesFile", "~/my-ignore"]);
+    writeFileSync(join(item, "run.log"), "log\n");
+    writeFileSync(join(item, "run.txt"), "run\n");
+    const configured = await exclude();
+    git(item, ["add", "-A"], configured);
+    // The configured file replaces the default one, as it does for git itself.
+    expect(git(item, ["status", "--porcelain"], configured)).toBe("A  .env\nA  key.pem\nA  run.txt\nA  work.txt");
+  });
+
+  it("puts the exclude file in the worktree's git folder, not in the repo's shared folder", async () => {
+    const env = await exclude();
     expect(env).toEqual({
       GIT_CONFIG_COUNT: "1",
       GIT_CONFIG_KEY_0: "core.excludesFile",
@@ -67,13 +92,17 @@ describe("placeholderExcludeEnv", () => {
     expect(readFileSync(join(main, ".git", "info", "exclude"), "utf8")).not.toContain(".bashrc");
   });
 
-  it("gives nothing on another OS, outside a linked worktree, or without a git folder to write to", () => {
-    expect(placeholderExcludeEnv(item, "darwin")).toBeUndefined();
-    expect(placeholderExcludeEnv(main, "linux")).toBeUndefined();
-    expect(placeholderExcludeEnv(join(root, "missing"), "linux")).toBeUndefined();
+  it("gives nothing on another OS, outside a linked worktree, for a git folder that is not there, or for an ignore file that is too large", async () => {
+    const runner = createProcessRunner({ parentEnv: { PATH: process.env["PATH"], HOME: home } });
+    expect(await placeholderExcludeEnv(item, { runner, home, platform: "darwin" })).toBeUndefined();
+    expect(await exclude(main)).toBeUndefined();
+    expect(await exclude(join(root, "missing"))).toBeUndefined();
     const stray = join(root, "stray");
     mkdirSync(stray);
     writeFileSync(join(stray, ".git"), "gitdir: ./nowhere\n");
-    expect(placeholderExcludeEnv(stray, "linux")).toBeUndefined();
+    expect(await exclude(stray)).toBeUndefined();
+    mkdirSync(join(home, ".config", "git"), { recursive: true });
+    writeFileSync(join(home, ".config", "git", "ignore"), "x\n".repeat(200_000));
+    expect(await exclude()).toBeUndefined();
   });
 });

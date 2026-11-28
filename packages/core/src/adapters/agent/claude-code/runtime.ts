@@ -124,7 +124,7 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): AgentR
         return;
       }
       // The agent's git skips the placeholders the sandbox makes in the worktree.
-      const excludeEnv = callDir === undefined ? undefined : placeholderExcludeEnv(request.cwd, platform);
+      const excludeEnv = callDir === undefined ? undefined : await placeholderExcludeEnv(request.cwd, { runner, home, platform, ...(options.env !== undefined && { env: options.env }) });
       const runEnv = excludeEnv === undefined ? options.env : { ...options.env, ...excludeEnv };
       // Stops the call when the caller stops reading, and shortly after a result if the CLI
       // lingers, so the process tree never outlives the call.
