@@ -28,7 +28,10 @@ try {
   if (kind === "write") fs.writeFileSync(target, "x");
   else if (kind === "append") fs.appendFileSync(target, "# probe\\n");
   else if (kind === "read") fs.readFileSync(target);
-  else if (kind === "list-ssh") fs.readdirSync(path.join(os.homedir(), ".ssh"));
+  else if (kind === "list-ssh") {
+    console.log("listed " + fs.readdirSync(path.join(os.homedir(), ".ssh")).length);
+    process.exit(0);
+  }
   console.log("done");
 } catch (error) {
   console.error(String(error));
@@ -185,10 +188,13 @@ describe.skipIf(!enabled)("Claude Code runtime against the real CLI", () => {
       // stopped the command first. The sandbox's own error shows the command ran and was stopped.
       // (`touch ../x` never gets that far: Claude Code's own path check denies it first, so the
       // probe script goes through `node`, whose paths Claude Code cannot see.)
-      const sandboxStopped = /EPERM|EROFS|Operation not permitted|Read-only file system/;
+      // A denied file is refused with EPERM on macOS and EACCES on Linux; a write to a read-only mount is EROFS.
+      const sandboxStopped = /EPERM|EROFS|EACCES|Operation not permitted|Read-only file system|permission denied/;
+      // Linux hides a denied folder (`~/.ssh`) behind an empty one, so it is missing or lists nothing.
+      const sshHidden = new RegExp(`${sandboxStopped.source}|ENOENT|^listed 0$`, "m");
       const probes = ["node probe.js write ../outside-by-node", `node probe.js write ${CALL_DIR}/x`, `node probe.js read ${CALL_DIR}/rules.json`, "node probe.js list-ssh"];
       for (const command of probes) {
-        expect(resultOf(command)?.text, command).toMatch(sandboxStopped);
+        expect(resultOf(command)?.text, command).toMatch(command.endsWith("list-ssh") ? sshHidden : sandboxStopped);
         expect(resultOf(command)?.text, command).not.toMatch(/Tokama:|don't ask mode/);
       }
       expect(existsSync(join(root, "outside-by-node"))).toBe(false);
@@ -209,16 +215,19 @@ describe.skipIf(!enabled)("Claude Code runtime against the real CLI", () => {
       }
       expect(existsSync(join(main, ".git", "hooks", "x"))).toBe(false);
       expect(readFileSync(join(main, ".git", "config"), "utf8")).not.toContain("# probe");
-      // The raw refusal texts, kept as fixtures for what shows a blocked attempt later.
-      const folder = join(import.meta.dirname, "testing", "fixtures", "refusals");
-      const scrub = (text: string) => [callDir, root, realpathSync(root), homedir()].reduce((out, path, i) => (path === "" ? out : out.replaceAll(path, ["<call-dir>", "<root>", "<root>", "~"][i] ?? "")), text.replaceAll("/private/var/", "/var/"));
-      mkdirSync(folder, { recursive: true });
-      for (const [name, command] of [
-        ["blocked-host", "curl -sS https://example.com"],
-        ["write-outside", "node probe.js write ../outside-by-node"],
-        ["secret-read", "node probe.js list-ssh"],
-      ] as const) {
-        writeFileSync(join(folder, `${name}.txt`), `${scrub(resultOf(command)?.text ?? "")}\n`);
+      // The raw refusal texts, kept as fixtures for what shows a blocked attempt later. They are
+      // the macOS texts: Linux words them differently and must not overwrite them.
+      if (process.platform === "darwin") {
+        const folder = join(import.meta.dirname, "testing", "fixtures", "refusals");
+        const scrub = (text: string) => [callDir, root, realpathSync(root), homedir()].reduce((out, path, i) => (path === "" ? out : out.replaceAll(path, ["<call-dir>", "<root>", "<root>", "~"][i] ?? "")), text.replaceAll("/private/var/", "/var/"));
+        mkdirSync(folder, { recursive: true });
+        for (const [name, command] of [
+          ["blocked-host", "curl -sS https://example.com"],
+          ["write-outside", "node probe.js write ../outside-by-node"],
+          ["secret-read", "node probe.js list-ssh"],
+        ] as const) {
+          writeFileSync(join(folder, `${name}.txt`), `${scrub(resultOf(command)?.text ?? "")}\n`);
+        }
       }
       // No attempt to leave the sandbox got through.
       for (const id of leaving) expect([...results.entries()].find(([key]) => key === id)?.[1].failed).toBe(true);
