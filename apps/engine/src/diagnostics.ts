@@ -8,6 +8,7 @@ import {
   type Command,
   type CommandErrorCode,
   DiagnosticsStore,
+  diagnosticsDirOf,
   type DiagnosticsListResult,
   type DiagnosticsSettingsResult,
   type Clock,
@@ -66,7 +67,7 @@ export class EngineDiagnostics {
       ...(userName === undefined ? {} : { userName }),
     });
     const store = await DiagnosticsStore.open({
-      dir: `${options.home}/diagnostics`,
+      dir: diagnosticsDirOf(options.home),
       engineVersion: options.engineVersion,
       machine: options.machine ?? (await readMachineFacts()),
       redaction: context,

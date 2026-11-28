@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { manualClock, type ManualClock } from "../../kernel/clock/index.js";
 import { DiagnosticEntrySchema, type DiagnosticId, type MachineFacts, MAX_DIAGNOSTICS_BYTES } from "../../kernel/schemas/index.js";
-import { diagnosticsBody, DiagnosticsStore, ENTRIES_FILE, entryText, markStoppedByApp, RUNNING_FILE, SETTINGS_FILE, STOPPED_BY_APP_FILE, STOPPED_BY_APP_MAX_AGE_MS, type DiagnosticsStoreOptions } from "./index.js";
+import { diagnosticsBody, diagnosticsDirOf, DiagnosticsStore, ENTRIES_FILE, entryText, markStoppedByApp, RUNNING_FILE, SETTINGS_FILE, STOPPED_BY_APP_FILE, STOPPED_BY_APP_MAX_AGE_MS, type DiagnosticsStoreOptions } from "./index.js";
 import { FORBIDDEN, SENTINEL, SENTINEL_CONTEXT, sentinelStack } from "./testing.js";
 
 const MACHINE: MachineFacts = { os: "linux", osVersion: "24.04", distro: "ubuntu", arch: "x64", cpu: { family: "AMD Ryzen 7", cores: 16 }, ramGb: "16-32", gpu: null };
@@ -234,7 +234,7 @@ describe("DiagnosticsStore", () => {
         () => undefined,
         () => markStoppedByApp(dir, process.pid + 1, clock.now()),
         () => markStoppedByApp(dir, process.pid, clock.now() - STOPPED_BY_APP_MAX_AGE_MS - 1),
-        () => markStoppedByApp(dir, process.pid, clock.now() + 60_000),
+        () => markStoppedByApp(dir, process.pid, clock.now() + 10 * 60_000),
         () => writeFileSync(join(dir, STOPPED_BY_APP_FILE), "{not json"),
         () => writeFileSync(join(dir, STOPPED_BY_APP_FILE), JSON.stringify({ pid: String(process.pid), at: clock.now() })),
       ];
@@ -246,6 +246,18 @@ describe("DiagnosticsStore", () => {
         // Used or not, the note is gone.
         expect(() => lstatSync(join(dir, STOPPED_BY_APP_FILE))).toThrow();
       }
+    });
+
+    it("honours a note a minute ahead of the clock, and one days old", async () => {
+      for (const at of [clock.now() + 60_000, clock.now() - 20 * DAY]) {
+        rmSync(dir, { recursive: true, force: true });
+        const next = await killed(() => void markStoppedByApp(dir, process.pid, at));
+        expect(next.crashedLastTime).toBe(false);
+      }
+    });
+
+    it("names the diagnostics folder of a home the same for the app and the engine", () => {
+      expect(diagnosticsDirOf(root)).toBe(dir);
     });
 
     it("keeps a note from waiting for a later crash when the last engine stopped cleanly", async () => {

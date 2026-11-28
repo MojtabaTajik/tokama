@@ -7,6 +7,12 @@ import { readJsonFile, replaceTextSync } from "../../kernel/fs-safe/index.js";
 
 export const STOPPED_BY_APP_FILE = "engine.stopped-by-app";
 
+/** The diagnostics folder of a Tokama home (or, for the sample engine, of its engine dir): the one place the engine and the app both name it. */
+export const diagnosticsDirOf = (home: string): string => join(home, "diagnostics");
+
+/** A clock a few minutes ahead of this one still counts: the app and the engine read the same machine clock, but it may be set back between them. */
+const FUTURE_SLACK_MS = 5 * 60_000;
+
 /**
  * How long a note counts. Long, because an update that installs on quit does not start the app
  * again until the user opens it, maybe days later. The pid match and the single use bind a note to
@@ -30,8 +36,9 @@ export function unmarkStoppedByApp(dir: string): void {
 
 /**
  * Reads and removes the note, always. True when it names `pid`, the engine whose running marker
- * was found, and is not older than the limit (and not from the future): a crash of any other
- * engine, or a late one, is still a crash.
+ * was found, and is not older than the limit (nor more than a few minutes in the future): a crash
+ * of any other engine is still a crash. If the signal found the engine already gone (ESRCH) it
+ * had died on its own just before; that window is a few milliseconds and is accepted.
  */
 export async function takeStoppedByApp(dir: string, pid: number | undefined, now: number): Promise<boolean> {
   const path = join(dir, STOPPED_BY_APP_FILE);
@@ -46,5 +53,5 @@ export async function takeStoppedByApp(dir: string, pid: number | undefined, now
   const note = read.value;
   if (typeof note !== "object" || note === null) return false;
   const { pid: notedPid, at } = note as { pid?: unknown; at?: unknown };
-  return pid !== undefined && notedPid === pid && typeof at === "number" && at <= now && now - at <= STOPPED_BY_APP_MAX_AGE_MS;
+  return pid !== undefined && notedPid === pid && typeof at === "number" && at <= now + FUTURE_SLACK_MS && now - at <= STOPPED_BY_APP_MAX_AGE_MS;
 }
