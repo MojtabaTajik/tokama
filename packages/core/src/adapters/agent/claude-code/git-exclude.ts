@@ -4,6 +4,7 @@
 // worktree and the engineer's checkout, so it cannot hold them.
 import { lstatSync, readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import { hasCode } from "../../../kernel/errno/index.js";
 import { replaceTextSync } from "../../../kernel/fs-safe/index.js";
 import type { ProcessRunner } from "../../../kernel/process/index.js";
 import { SANDBOX_PLACEHOLDER_PATHS } from "../../../kernel/sandbox/index.js";
@@ -70,6 +71,6 @@ async function ownExcludes(cwd: string, options: PlaceholderExcludeOptions): Pro
     const info = statSync(path);
     return info.isFile() && info.size <= MAX_IGNORE_BYTES ? readFileSync(path, "utf8") : undefined;
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "ENOENT" ? "" : undefined;
+    return hasCode(error, "ENOENT") ? "" : undefined;
   }
 }
