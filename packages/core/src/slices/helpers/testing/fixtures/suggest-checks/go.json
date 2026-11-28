@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "files": {
     "go.mod": "module example.com/orders\n\ngo 1.23\n",
     "main.go": "package main\n\nfunc main() {}\n",
@@ -18,6 +18,11 @@
         "minutes": 1
       }
     ],
+    "setup": {
+      "command": "go mod download",
+      "why": "Downloads the modules go.mod lists, which a new worktree does not have in its cache.",
+      "minutes": 1
+    },
     "note": "Found from go.mod (Go module, go 1.23) and the presence of main.go and main_test.go; no lint or build scripts are defined in the repo files shown."
   }
 }

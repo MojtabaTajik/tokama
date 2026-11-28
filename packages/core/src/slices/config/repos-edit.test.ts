@@ -261,6 +261,28 @@ repos:
     expect(readFileSync(reposFile(), "utf8")).toContain("- pnpm test\n");
   });
 
+  it("refuses a setup command that isn't one simple command, before it writes, and takes a good one trimmed", async () => {
+    const path = repo("a");
+    const refused = async (setup: string) => {
+      const result = await addRepo(options(), { path, setup });
+      return result.ok ? "added" : result.error.message;
+    };
+    expect(await refused("pnpm install && pnpm build")).toBe("The setup command 'pnpm install && pnpm build' must be one command, with no &&, ||, ; or |.");
+    expect(await refused("pnpm install | tee log")).toContain("The setup command 'pnpm install | tee log'");
+    expect(await refused("npm ci > out")).toBe("The setup command 'npm ci > out' can't use a redirect (>, <).");
+    expect(await refused("npm ci\nrm -rf /")).toContain("a line break");
+    expect(await refused("x".repeat(501))).toContain("must be at most 500 characters");
+    expect(() => statSync(reposFile())).toThrow();
+    expect(await addRepo(options(), { path, setup: "  npm ci " })).toMatchObject({ ok: true, value: { setup: "npm ci" } });
+    expect(readFileSync(reposFile(), "utf8")).toContain("setup: npm ci\n");
+    expect(await loadRepos({ tokamaHome: home })).toMatchObject({ ok: true, value: [{ setup: "npm ci" }] });
+  });
+
+  it("writes no setup key for a blank setup", async () => {
+    expect(await addRepo(options(), { path: repo("a"), setup: "   " })).toMatchObject({ ok: true });
+    expect(readFileSync(reposFile(), "utf8")).not.toContain("setup");
+  });
+
   it("keeps check commands to 500 characters, as loading does", async () => {
     const path = repo("a");
     const long = `pnpm test ${"x".repeat(491)}`;
@@ -543,6 +565,29 @@ repos:
     expect(await loadRepos({ tokamaHome: home })).toMatchObject({ ok: true, value: [{ checks: [] }, { checks: ["npm test"] }] });
   });
 
+  it("keeps the setup command when none is given, sets it, replaces it, and removes it with an empty one, with comments kept", async () => {
+    const a = repo("a");
+    mkdirSync(home, { recursive: true });
+    writeFileSync(reposFile(), `# Mine.\nformat: 1\nrepos:\n  - id: a\n    path: ${a}\n    base_branch: main\n    setup: npm ci # install\n`);
+    expect(await updateRepo(options(), { repoId: "a", baseBranch: "main", checks: ["npm test"] })).toMatchObject({ ok: true, value: { setup: "npm ci" } });
+    expect(readFileSync(reposFile(), "utf8")).toContain("setup: npm ci # install");
+    expect(await updateRepo(options(), { repoId: "a", baseBranch: "main", checks: [], setup: " pnpm install " })).toMatchObject({ ok: true, value: { setup: "pnpm install" } });
+    const text = readFileSync(reposFile(), "utf8");
+    expect(text).toContain("# Mine.");
+    expect(text).toContain("setup: pnpm install");
+    expect(await loadRepos({ tokamaHome: home })).toMatchObject({ ok: true, value: [{ setup: "pnpm install" }] });
+    const removed = await updateRepo(options(), { repoId: "a", baseBranch: "main", checks: [], setup: "" });
+    expect(removed.ok && "setup" in removed.value).toBe(false);
+    expect(readFileSync(reposFile(), "utf8")).not.toContain("setup");
+  });
+
+  it("refuses a bad setup command and writes nothing", async () => {
+    await seed();
+    const before = readFileSync(reposFile(), "utf8");
+    expect(await updateRepo(options(), { repoId: "a", baseBranch: "main", checks: [], setup: "npm ci && npm run build" })).toMatchObject({ ok: false, error: { code: "invalid_request", message: "The setup command 'npm ci && npm run build' must be one command, with no &&, ||, ; or |." } });
+    expect(readFileSync(reposFile(), "utf8")).toBe(before);
+  });
+
   it("refuses a base branch that is no local branch, as addRepo does, and writes nothing", async () => {
     await seed();
     const before = readFileSync(reposFile(), "utf8");
@@ -634,8 +679,44 @@ describe("suggestRepo", () => {
     const path = repo("Orders_API", { "package.json": JSON.stringify({ scripts: { test: "vitest run", lint: "eslint .", build: "tsc" } }), "pnpm-lock.yaml": "" }, "develop");
     expect(await suggestRepo(options(), path)).toEqual({
       ok: true,
-      value: { path, displayPath: path.replace(root, "~"), gitRepo: true, hasCommits: true, branch: "develop", id: "orders-api", checks: ["pnpm test", "pnpm lint"], checksFrom: ["test", "lint"], defaultBranch: "develop", branches: [{ name: "develop", group: "default" }], moreBranches: 0, firstCommit: undefined, fallbackCheck: undefined, fallbackFromPackage: false, problem: undefined },
+      value: { path, displayPath: path.replace(root, "~"), gitRepo: true, hasCommits: true, branch: "develop", id: "orders-api", checks: ["pnpm test", "pnpm lint"], checksFrom: ["test", "lint"], setup: "pnpm install --frozen-lockfile", setupFrom: "pnpm-lock.yaml", defaultBranch: "develop", branches: [{ name: "develop", group: "default" }], moreBranches: 0, firstCommit: undefined, fallbackCheck: undefined, fallbackFromPackage: false, problem: undefined },
     });
+  });
+
+  it.each([
+    ["package-lock.json", "npm ci"],
+    ["pnpm-lock.yaml", "pnpm install --frozen-lockfile"],
+    ["go.mod", "go mod download"],
+    ["Orders.sln", "dotnet restore"],
+    ["src.csproj", "dotnet restore"],
+  ])("suggests a setup command from %s in the top folder", async (file, command) => {
+    const path = repo("app", { [file]: "" });
+    expect(await suggestRepo(options(), path)).toMatchObject({ ok: true, value: { setup: command, setupFrom: file } });
+  });
+
+  it("suggests no setup command with two kinds of file, with none, or with the file only in a subfolder", async () => {
+    const cases: Record<string, string>[] = [{ "pnpm-lock.yaml": "", "package-lock.json": "" }, { "go.mod": "", "Orders.sln": "" }, {}, { "sub/package-lock.json": "" }];
+    for (const [index, files] of cases.entries()) {
+      const result = await suggestRepo(options(), repo(`app${index}`, files));
+      expect(result).toMatchObject({ ok: true, value: { setup: undefined, setupFrom: undefined } });
+    }
+  });
+
+  it("suggests the yarn command by the lockfile's version: --immutable for Yarn 2 and later, --frozen-lockfile for Yarn 1", async () => {
+    const berry = repo("berry", { "yarn.lock": "__metadata:\n  version: 8\n" });
+    expect(await suggestRepo(options(), berry)).toMatchObject({ ok: true, value: { setup: "yarn install --immutable", setupFrom: "yarn.lock" } });
+    const classic = repo("classic", { "yarn.lock": "# yarn lockfile v1\n" });
+    expect(await suggestRepo(options(), classic)).toMatchObject({ ok: true, value: { setup: "yarn install --frozen-lockfile", setupFrom: "yarn.lock" } });
+  });
+
+  it("does not offer a project file whose name has invisible or direction characters", async () => {
+    const path = repo("odd", { "Ord‮ers.sln": "" });
+    expect(await suggestRepo(options(), path)).toMatchObject({ ok: true, value: { setup: undefined, setupFrom: undefined } });
+  });
+
+  it("counts two .sln or .csproj files as one kind", async () => {
+    const path = repo("net", { "A.sln": "", "B.csproj": "" });
+    expect(await suggestRepo(options(), path)).toMatchObject({ ok: true, value: { setup: "dotnet restore", setupFrom: "A.sln" } });
   });
 
   it("writes the home folder as ~ also when home is given as a link to it", async () => {

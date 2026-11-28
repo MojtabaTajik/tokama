@@ -12,11 +12,27 @@ import { Button, CloseButton } from "../ui/Button.js";
 import { CopyButton, toClipboard } from "../ui/CopyButton.js";
 import { ChevronIcon, CopyIcon, PencilIcon, PlayIcon, StopIcon, SuggestIcon } from "../ui/icons.js";
 import { StatusMark } from "../ui/status.js";
-import { breaksRule, type CheckLine, lineOf, RULE_TEXT, sendsOf, summaryOf, targetOf } from "./checks-model.js";
+import { breaksRule, type CheckLine, checksNotRun, couldNotStartText, failedWithoutSetup, lineOf, RULE_TEXT, SETUP_RULE_TEXT, sendsOf, setupFailed, setupLineOf, summaryOf, targetOf, trialTitle } from "./checks-model.js";
 import type { ChecksHelpers, SuggestState } from "./useChecksHelpers.js";
 
 const TEXT = {
   try: "Try checks",
+  trySetup: "Try setup",
+  setupGroup: "Setup",
+  checksGroup: "Checks",
+  setupCommandGroup: "Setup command",
+  useAsSetup: "Use as setup",
+  replaceSetup: "Replace setup",
+  inSetup: "In Setup command",
+  alreadySetup: "already the setup command",
+  fieldHolds: "The field holds another command: ",
+  aiWroteSetup: "The AI wrote these lines. Tokama has not run them. A setup command usually downloads and runs code from a package registry, so read it before you use it. Nothing runs until you press Try checks or start work.",
+  setupFailedFoot: "The checks need the setup command to pass first. Change the command, or fix what it complains about, and try again.",
+  canStillSave: (editing: boolean) => `You can still ${editing ? "save" : "add"} the repo.`,
+  noSetupSet: "No setup command is set. The run used a new worktree, which has no installed packages. If the output says a command or a package is missing, that is why.",
+  addOneAbove: " Add one above, or use Suggest with AI.",
+  useCommandAsSetup: "as setup",
+  foundIn: (file: string) => `found ${file}`,
   suggest: "Suggest with AI",
   stop: "Stop",
   stopSuggesting: "Stop suggesting",
@@ -57,7 +73,6 @@ const TEXT = {
   already: "already in Checks",
   added: "Added",
   aiWrote: "The AI wrote these lines. Tokama has not run them. Read a command before you add it: nothing runs until you press Try checks or start work.",
-  trying: (count: number) => `Trying ${count} ${count === 1 ? "check" : "checks"}`,
   inWorktree: (branch: string) => (branch === "" ? "in a temporary worktree at the base branch" : `in a temporary worktree at ${branch}`),
   folderUntouched: "Your folder is not touched. The worktree is removed when the run ends.",
   freshWorktree: "The run used a fresh worktree, as every item does. Things that are not in git, such as installed packages or a build folder, can be missing there.",
@@ -76,6 +91,10 @@ export interface ChecksHelpersProps {
   readonly lines: readonly string[];
   /** Puts commands on new lines of the Checks field. */
   readonly onAdd: (commands: readonly string[]) => void;
+  /** The Setup command field as one command; empty when none. */
+  readonly setup: string;
+  /** Puts a command in the Setup command field, in the place of what it holds. */
+  readonly onUseSetup: (command: string) => void;
   readonly baseBranch: string;
   readonly editing: boolean;
   readonly onOpenGetStarted?: (() => void) | undefined;
@@ -245,7 +264,7 @@ function SuggestButton({ h }: { readonly h: ChecksHelpers }) {
 }
 
 /** The two buttons under the Checks field, the line under them, and the lists they open. */
-export function ChecksHelpersRow({ h, lines, onAdd, baseBranch, editing, onOpenGetStarted }: ChecksHelpersProps) {
+export function ChecksHelpersRow({ h, lines, onAdd, setup, onUseSetup, baseBranch, editing, onOpenGetStarted }: ChecksHelpersProps) {
   const suggestShown = h.loaded && h.availability !== undefined;
   const trying = h.trial.kind === "running";
   const answered = h.suggest.kind === "answer";
@@ -263,9 +282,9 @@ export function ChecksHelpersRow({ h, lines, onAdd, baseBranch, editing, onOpenG
                   {TEXT.stop}
                 </Button>
               ) : (
-                <Button disabled={lines.length === 0 || h.tryProblem !== undefined} onClick={h.startTrial}>
+                <Button disabled={!h.hasWork || h.tryProblem !== undefined} onClick={h.startTrial}>
                   <PlayIcon />
-                  {TEXT.try}
+                  {lines.length === 0 && setup !== "" ? TEXT.trySetup : TEXT.try}
                 </Button>
               ))}
             {suggestShown && (h.suggest.kind === "running" ? <Running h={h} state={h.suggest} /> : <SuggestButton h={h} />)}
@@ -275,8 +294,8 @@ export function ChecksHelpersRow({ h, lines, onAdd, baseBranch, editing, onOpenG
           {suggestShown && h.suggest.kind === "running" && <RunningLine h={h} />}
         </>
       )}
-      {h.suggest.kind === "answer" && <Suggestions key={h.suggest.id} h={h} result={h.suggest.result} lines={lines} onAdd={onAdd} />}
-      {h.trial.kind !== "idle" && <Trial h={h} lines={lines} baseBranch={baseBranch} editing={editing} />}
+      {h.suggest.kind === "answer" && <Suggestions key={h.suggest.id} h={h} result={h.suggest.result} lines={lines} onAdd={onAdd} setup={setup} onUseSetup={onUseSetup} />}
+      {h.trial.kind !== "idle" && <Trial h={h} lines={lines} setup={setup} onUseSetup={onUseSetup} baseBranch={baseBranch} editing={editing} />}
     </div>
   );
 }
@@ -292,10 +311,129 @@ interface SuggestionsProps {
   readonly result: SuggestChecksResult;
   readonly lines: readonly string[];
   readonly onAdd: (commands: readonly string[]) => void;
+  readonly setup: string;
+  readonly onUseSetup: (command: string) => void;
 }
 
-/** The answer: one row per suggested check, each added, edited or removed by hand. */
-function Suggestions({ h, result, lines, onAdd }: SuggestionsProps) {
+/**
+ * The answer's setup row, first under its own heading. It goes only into the Setup command field,
+ * by "Use as setup" or "Replace setup"; "Add all new" never takes it.
+ */
+function SetupSuggestion({ row, setup, onUse }: { readonly row: NonNullable<SuggestChecksResult["setup"]>; readonly setup: string; readonly onUse: (command: string) => void }) {
+  const [removed, setRemoved] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [edited, setEdited] = useState("");
+  // The command this row put in the field, so it can say "In Setup command" for it and not "already".
+  const [used, setUsed] = useState<string | undefined>(undefined);
+  if (removed) return null;
+  const command = used ?? row.command;
+  const problem = editing && (edited.trim() === "" || breaksRule(edited));
+  const use = (text: string) => {
+    onUse(text);
+    setUsed(text);
+    setEditing(false);
+  };
+  return (
+    <>
+      <p className="ch-group">{TEXT.setupCommandGroup}</p>
+      <ul className="ch-rows">
+        <li className="ch-row">
+          {editing ? (
+            <>
+              <div className="ch-row-main">
+                <textarea
+                  className="mono ch-edit"
+                  aria-label={`Edit the setup command ${row.command}`}
+                  aria-invalid={problem || undefined}
+                  rows={1}
+                  value={edited}
+                  autoFocus
+                  spellCheck={false}
+                  onChange={(event) => setEdited(event.target.value.replaceAll("\n", " "))}
+                  onKeyDown={(event) => {
+                    // The dialog is a form: Enter here uses the command, it does not save the repo.
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      if (!problem) use(edited.trim());
+                    } else if (event.key === "Escape") {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setEditing(false);
+                    }
+                  }}
+                />
+                <span className="ch-row-actions">
+                  <Button size="sm" disabled={problem} onClick={() => use(edited.trim())}>
+                    {setup === "" ? TEXT.useAsSetup : TEXT.replaceSetup}
+                  </Button>
+                  <Button variant="quiet" size="sm" onClick={() => setEditing(false)}>
+                    {TEXT.cancel}
+                  </Button>
+                </span>
+              </div>
+              <p className="ch-why">{row.why}</p>
+              {problem && edited.trim() !== "" && (
+                <p className="ch-problem">
+                  <StatusMark status="failed" /> {SETUP_RULE_TEXT}
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="ch-row-main">
+                <span className="ch-command" data-dim={setup === command || undefined}>
+                  <span className="mono ch-command-text">{command}</span> <span className="ch-dim">{`about ${row.minutes} min`}</span>
+                </span>
+                <span className="ch-row-actions">
+                  {setup === command ? (
+                    used !== undefined ? (
+                      <span className="ch-added">
+                        <StatusMark status="passed" /> {TEXT.inSetup}
+                      </span>
+                    ) : (
+                      <span className="ch-dim">{TEXT.alreadySetup}</span>
+                    )
+                  ) : (
+                    <>
+                      <Button size="sm" aria-label={`${setup === "" ? TEXT.useAsSetup : TEXT.replaceSetup} ${command}`} onClick={() => use(command)}>
+                        {setup === "" ? TEXT.useAsSetup : TEXT.replaceSetup}
+                      </Button>
+                      <Button
+                        variant="quiet"
+                        size="icon-sm"
+                        aria-label={`Edit ${command}`}
+                        title={TEXT.edit}
+                        onClick={() => {
+                          setEditing(true);
+                          setEdited(command);
+                        }}
+                      >
+                        <PencilIcon />
+                      </Button>
+                      <CloseButton size="icon-sm" label={`Remove ${command}`} onClick={() => setRemoved(true)} />
+                    </>
+                  )}
+                </span>
+              </div>
+              <p className="ch-why" data-dim={setup === command || undefined}>
+                {row.why}
+              </p>
+              {setup !== "" && setup !== command && (
+                <p className="ch-why">
+                  {TEXT.fieldHolds}
+                  <span className="mono">{setup}</span>.
+                </p>
+              )}
+            </>
+          )}
+        </li>
+      </ul>
+    </>
+  );
+}
+
+/** The answer: one row per suggested check, each added, edited or removed by hand; a setup row first when there is one. */
+function Suggestions({ h, result, lines, onAdd, setup, onUseSetup }: SuggestionsProps) {
   const target = (h.summary === undefined ? undefined : targetOf(h.summary)) ?? "the AI tool";
   // Commands the user added from this list, so a row can say "Added" and not "already in Checks".
   const [added, setAdded] = useState<ReadonlySet<string>>(new Set());
@@ -320,7 +458,8 @@ function Suggestions({ h, result, lines, onAdd }: SuggestionsProps) {
     setReplaced(new Map(replaced).set(original, command));
     setEditing(undefined);
   };
-  if (result.checks.length === 0) {
+  const setupRow = result.setup;
+  if (result.checks.length === 0 && setupRow === undefined) {
     return (
       <section className="ch-card" aria-label="Suggested checks">
         <div className="ch-card-head">
@@ -341,7 +480,8 @@ function Suggestions({ h, result, lines, onAdd }: SuggestionsProps) {
     <section className="ch-card" aria-label="Suggested checks">
       <div className="ch-card-head">
         <span className="ch-card-title">
-          {TEXT.suggestedBy(target)} <span className="ch-dim">{`${rows.length} ${rows.length === 1 ? "check" : "checks"} · ${fresh.length} new`}</span>
+          {TEXT.suggestedBy(target)}{" "}
+          <span className="ch-dim">{`${setupRow === undefined ? "" : "1 setup · "}${rows.length} ${rows.length === 1 ? "check" : "checks"} · ${fresh.length} new`}</span>
         </span>
         <span className="ch-card-actions">
           <Button size="sm" disabled={fresh.length === 0} onClick={() => add(fresh.map(shown))}>
@@ -350,6 +490,8 @@ function Suggestions({ h, result, lines, onAdd }: SuggestionsProps) {
           <CloseButton size="icon-sm" label={TEXT.closeNote} onClick={() => setDismissed(true)} />
         </span>
       </div>
+      {setupRow !== undefined && <SetupSuggestion row={setupRow} setup={setup} onUse={onUseSetup} />}
+      {setupRow !== undefined && rows.length > 0 && <p className="ch-group">{TEXT.checksGroup}</p>}
       <ul className="ch-rows">
         {rows.map((check) => {
           const command = shown(check);
@@ -444,13 +586,13 @@ function Suggestions({ h, result, lines, onAdd }: SuggestionsProps) {
           );
         })}
       </ul>
-      <p className="ch-card-foot">{TEXT.aiWrote}</p>
+      <p className="ch-card-foot">{setupRow === undefined ? TEXT.aiWrote : TEXT.aiWroteSetup}</p>
     </section>
   );
 }
 
-/** One line of a trial: mark, command, state and time, and the output of a line that has one. */
-function TrialLine({ check, line, planned }: { readonly check: CheckTrial["checks"][number]; readonly line: CheckLine; readonly planned: boolean }) {
+/** One line of a trial: mark, command, state and time, the output of a line that has one, and a note under the line. */
+function TrialLine({ check, line, planned, note }: { readonly check: { readonly command: string; readonly outputTail?: string | undefined }; readonly line: CheckLine; readonly planned: boolean; readonly note?: string | undefined }) {
   const [open, setOpen] = useState(false);
   const status = line.tone === "pass" ? "passed" : line.tone === "fail" ? "failed" : line.tone === "live" ? "running" : line.tone === "waiting" ? "queued" : "unknown";
   return (
@@ -473,6 +615,7 @@ function TrialLine({ check, line, planned }: { readonly check: CheckTrial["check
           )}
         </span>
       </div>
+      {note !== undefined && <p className="ch-line">{note}</p>}
       {open && check.outputTail !== undefined && (
         <div className="ch-output">
           <div className="ch-output-head">
@@ -489,14 +632,49 @@ function TrialLine({ check, line, planned }: { readonly check: CheckTrial["check
 interface TrialProps {
   readonly h: ChecksHelpers;
   readonly lines: readonly string[];
+  readonly setup: string;
+  readonly onUseSetup: (command: string) => void;
   readonly baseBranch: string;
   readonly editing: boolean;
 }
 
+/** The setup line and the checks of a trial, in two groups when there is a setup command; one list when not. */
+function TrialRows({ trial, now, planned }: { readonly trial: CheckTrial; readonly now: number; readonly planned: boolean }) {
+  const checks = (
+    <ul className="ch-rows">
+      {trial.checks.map((check, index) => (
+        <TrialLine key={index} check={check} line={lineOf(check)} planned={planned} />
+      ))}
+    </ul>
+  );
+  if (trial.setup === undefined) return checks;
+  const result = trial.setupResult ?? { state: "waiting" as const };
+  return (
+    <>
+      <p className="ch-group">{TEXT.setupGroup}</p>
+      <ul className="ch-rows">
+        <TrialLine
+          check={{ command: trial.setup, outputTail: result.outputTail }}
+          line={setupLineOf(result, now)}
+          planned={planned}
+          note={result.couldNotStart?.word === undefined ? undefined : couldNotStartText(result.couldNotStart.word, result.couldNotStart.reason)}
+        />
+      </ul>
+      {trial.checks.length > 0 && (
+        <>
+          <p className="ch-group">{TEXT.checksGroup}</p>
+          {checks}
+        </>
+      )}
+    </>
+  );
+}
+
 /** A Try checks run: its lines while it runs, then the results. Closed with the ✕; never saved. */
-function Trial({ h, lines, baseBranch, editing }: TrialProps) {
+function Trial({ h, lines, setup, onUseSetup, baseBranch, editing }: TrialProps) {
   const state = h.trial;
-  const now = useNow(state.kind === "ended", 15_000);
+  // The clock moves while a run goes (the setup line shows its running time) and slowly after it, for "just now".
+  const now = useNow(state.kind === "running" || state.kind === "ended", state.kind === "running" ? 1_000 : 15_000);
   if (state.kind === "idle") return null;
   if (state.kind === "error") {
     return (
@@ -511,26 +689,32 @@ function Trial({ h, lines, baseBranch, editing }: TrialProps) {
     );
   }
   if (state.kind === "running") {
-    const checks: CheckTrial["checks"] = state.trial?.checks ?? state.lines.map((command) => ({ command, state: "waiting" as const }));
+    // Before the engine's first update, what was asked stands in for the trial.
+    const shown: CheckTrial = state.trial ?? {
+      trialId: "" as CheckTrial["trialId"],
+      state: "running",
+      startedAt: now,
+      ...(state.setup === "" ? {} : { setup: state.setup, setupResult: { state: "waiting" as const } }),
+      checks: state.lines.map((command) => ({ command, state: "waiting" as const })),
+    };
     return (
       <section className="ch-card" aria-label="Try checks">
         <div className="ch-card-head">
           <span className="ch-card-title" role="status">
-            {TEXT.trying(checks.length)} <span className="ch-dim">{TEXT.inWorktree(baseBranch.trim())}</span>
+            {trialTitle(shown.setup !== undefined, shown.checks.length)} <span className="ch-dim">{TEXT.inWorktree(baseBranch.trim())}</span>
           </span>
         </div>
-        <ul className="ch-rows">
-          {checks.map((check, index) => (
-            <TrialLine key={index} check={check} line={lineOf(check)} planned={state.trial === undefined} />
-          ))}
-        </ul>
+        <TrialRows trial={shown} now={now} planned={state.trial === undefined} />
         <p className="ch-card-foot">{TEXT.folderUntouched}</p>
       </section>
     );
   }
   const { trial } = state;
   const summary = summaryOf(trial);
-  const changed = trial.checks.map((check) => check.command).join("\n") !== lines.join("\n");
+  const changed = trial.checks.map((check) => check.command).join("\n") !== lines.join("\n") || (trial.setup ?? "") !== setup;
+  const notRun = checksNotRun(trial);
+  // No setup command and a check did not pass: a missing package may be why. A hint is a known file the trial's worktree held.
+  const noSetupNote = failedWithoutSetup(trial) && setup === "";
   const took = trial.endedAt === undefined ? undefined : formatDuration(trial.endedAt - trial.startedAt);
   const age = trial.endedAt === undefined ? 0 : Math.max(0, now - trial.endedAt);
   return (
@@ -544,15 +728,34 @@ function Trial({ h, lines, baseBranch, editing }: TrialProps) {
         </span>
         <CloseButton size="icon-sm" label={TEXT.closeResults} onClick={h.dismissTrial} />
       </div>
-      <ul className="ch-rows">
-        {trial.checks.map((check, index) => (
-          <TrialLine key={index} check={check} line={lineOf(check)} planned={false} />
-        ))}
-      </ul>
-      <p className="ch-card-foot">
-        {TEXT.freshWorktree}
-        {summary.tone === "fail" && TEXT.failingOk(editing)}
-      </p>
+      <TrialRows trial={trial} now={now} planned={false} />
+      {noSetupNote ? (
+        <div className="ch-card-foot">
+          <p>
+            {TEXT.noSetupSet}
+            {trial.setupHint === undefined && TEXT.addOneAbove}
+            {TEXT.failingOk(editing)}
+          </p>
+          {trial.setupHint !== undefined && (
+            <p className="ch-hint-row">
+              <Button size="sm" onClick={() => onUseSetup(trial.setupHint!.command)}>
+                Use <span className="mono">{trial.setupHint.command}</span> {TEXT.useCommandAsSetup}
+              </Button>
+              <span className="ch-dim">{TEXT.foundIn(trial.setupHint.from)}</span>
+            </p>
+          )}
+        </div>
+      ) : setupFailed(trial) ? (
+        <p className="ch-card-foot">
+          {notRun > 0 && `${TEXT.setupFailedFoot} `}
+          {TEXT.canStillSave(editing)}
+        </p>
+      ) : (
+        <p className="ch-card-foot">
+          {TEXT.freshWorktree}
+          {summary.tone === "fail" && TEXT.failingOk(editing)}
+        </p>
+      )}
     </section>
   );
 }

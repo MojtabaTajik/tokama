@@ -33,6 +33,8 @@ const SUGGESTION = {
   id: "orders-api",
   checks: ["npm test"],
   checksFrom: ["test"],
+  setup: null,
+  setupFrom: null,
   defaultBranch: "main",
   branches: [{ name: "main", group: "default" }],
   moreBranches: 0,
@@ -87,7 +89,8 @@ const $ = <T extends Element = Element>(selector: string) => document.querySelec
 const text = () => $("dialog.modal")?.textContent ?? "";
 const click = (el: Element | null | undefined) => act(async () => (el as HTMLElement).click());
 const button = (name: string | RegExp) => [...document.querySelectorAll("button")].find((el) => (typeof name === "string" ? el.textContent === name : name.test(el.textContent ?? "")) || el.getAttribute("aria-label") === name);
-const checks = () => document.querySelector<HTMLTextAreaElement>('textarea[id]:not(.ch-edit)')!;
+const checks = () => document.querySelector<HTMLTextAreaElement>("textarea[id]:not(.ch-edit):not(.rd-setup)")!;
+const setupField = () => document.querySelector<HTMLTextAreaElement>("textarea.rd-setup")!;
 const type = (el: HTMLTextAreaElement, value: string) =>
   act(async () => {
     Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "value")!.set!.call(el, value);
@@ -448,7 +451,7 @@ describe("Try checks", () => {
     } as never);
     expect(text()).toContain("1 of 3 checks failed");
     expect(text()).toContain("Failed, exit 1");
-    expect(text()).toContain("The run used a fresh worktree");
+    expect(text()).toContain("No setup command is set. The run used a new worktree, which has no installed packages.");
     expect(text()).toContain("You can add the repo with a failing check; Quick fix will stop on it until it passes.");
     expect($(".ch-output-text")).toBeNull();
     await click(button("Output"));
@@ -506,5 +509,291 @@ describe("Try checks", () => {
     await mount({ repo: { id: "orders-api", baseBranch: "main", checks: ["npm test"] } });
     expect(button("Try checks")).toBeUndefined();
     expect(button("Suggest with AI")).toBeUndefined();
+  });
+});
+
+describe("Setup command", () => {
+  const PNPM = { setup: "pnpm install --frozen-lockfile", setupFrom: "pnpm-lock.yaml" };
+  const SETUP = "npm ci";
+  const words = () => [...document.querySelectorAll(".ch-trial-word")].map((el) => el.textContent);
+  const done = (patch: Record<string, unknown>) => trial({ state: "done", endedAt: 175_000, ...patch });
+
+  it("starts empty with nothing to suggest, marked optional, and is filled from a lockfile with where it came from", async () => {
+    await mount();
+    expect(setupField().value).toBe("");
+    expect(setupField().placeholder).toBe("pnpm install");
+    expect(text()).toContain("Nothing found to suggest. Leave it empty when the checks need nothing installed.");
+    expect(text()).toContain("optional");
+    act(() => root.unmount());
+    root = createRoot(container);
+    await mount({ suggestion: PNPM });
+    expect(setupField().value).toBe("pnpm install --frozen-lockfile");
+    expect(text()).toContain("✓ suggested");
+    expect(text()).toContain("Found pnpm-lock.yaml. Runs once in every new worktree, before the checks.");
+    expect(text()).toContain("A template's own setup command replaces it.");
+    // Once the user changes it, it is no longer the suggestion: the mark and "Found" go.
+    await type(setupField(), "");
+    expect(text()).not.toContain("Found pnpm-lock.yaml.");
+    expect(document.querySelectorAll(".rd-suggested")).toHaveLength(1);
+  });
+
+  it("is saved with the repo, and left out of add_repo when empty", async () => {
+    const fake = await mount({ suggestion: PNPM, commandReply: replies({ add_repo: { ok: true, data: { repo: { id: "orders-api", baseBranch: "main", checks: [] } } } }) });
+    await type(setupField(), "  npm ci ");
+    await click(button("Add repo"));
+    expect(fake.command).toHaveBeenCalledWith(expect.objectContaining({ type: "add_repo", setup: "npm ci" }));
+    act(() => root.unmount());
+    root = createRoot(container);
+    const empty = await mount({ commandReply: replies({ add_repo: { ok: true, data: null } }) });
+    await click(button("Add repo"));
+    expect(empty.command.mock.calls[0]![0]).not.toHaveProperty("setup");
+  });
+
+  it("sends setup in update_repo only when it changed, and an empty one to remove it", async () => {
+    const repo = { id: "orders-api", baseBranch: "main", checks: ["npm test"], setup: "npm ci", path: "~/code/orders-api" };
+    const same = await mount({ repo, commandReply: replies({ update_repo: { ok: true, data: { repo } } }) });
+    await click(button("Save"));
+    expect(same.command.mock.calls[0]![0]).toEqual({ type: "update_repo", repoId: "orders-api", baseBranch: "main", checks: ["npm test"] });
+    act(() => root.unmount());
+    root = createRoot(container);
+    const cleared = await mount({ repo, commandReply: replies({ update_repo: { ok: true, data: { repo } } }) });
+    await type(setupField(), "");
+    await click(button("Save"));
+    expect(cleared.command.mock.calls[0]![0]).toEqual({ type: "update_repo", repoId: "orders-api", baseBranch: "main", checks: ["npm test"], setup: "" });
+  });
+
+  it("refuses a line break, typed or pasted, and says when it is more than one command", async () => {
+    await mount({ suggestion: { setup: null, setupFrom: null } });
+    await type(setupField(), "npm ci\nnpm run build");
+    expect(setupField().value).toBe("npm ci npm run build");
+    await type(setupField(), "npm ci && npm run build");
+    expect(text()).toContain("One command only. Put the second command in Checks, or in a script that the setup command runs.");
+    expect(setupField().getAttribute("aria-invalid")).toBe("true");
+    await type(setupField(), "npm ci");
+    expect(setupField().getAttribute("aria-invalid")).toBeNull();
+    expect(text()).not.toContain("One command only.");
+  });
+
+  it("runs the setup first in Try checks, with its own line above the checks", async () => {
+    const fake = await mount({ suggestion: PNPM, commandReply: replies(START) });
+    await click(button("Try checks"));
+    expect(fake.command).toHaveBeenCalledWith({ type: "try_checks", path: FOLDER, baseBranch: "main", checks: [{ command: "npm test" }], setup: "pnpm install --frozen-lockfile" });
+    // Before the first update: the setup and the check wait.
+    expect(text()).toContain("Trying setup, then 1 check");
+    expect(words()).toEqual(["Waiting", "Waiting"]);
+    await fake.pushEvent({
+      type: "check_trial_updated",
+      trial: trial({ setup: PNPM.setup, setupResult: { state: "running", startedAt: Date.now() - 41_000 }, checks: [{ command: "npm test", state: "waiting" }] }),
+    } as never);
+    expect([...document.querySelectorAll(".ch-group")].map((el) => el.textContent)).toEqual(["Setup", "Checks"]);
+    expect(words()).toEqual(["Running", "Waiting"]);
+    expect(text()).toMatch(/Running4\d s/);
+    await fake.pushEvent({
+      type: "check_trial_updated",
+      trial: done({ setup: PNPM.setup, setupResult: { state: "passed", exitCode: 0, durationMs: 48_000 }, checks: [{ command: "npm test", state: "passed", durationMs: 72_000, exitCode: 0 }] }),
+    } as never);
+    // Setup says Done, not Passed: it prepares, it does not test.
+    expect(words()).toEqual(["Done", "Passed"]);
+    expect(text()).toContain("Setup and 1 check passed");
+  });
+
+  it("shows a setup that failed as a result: the checks are Not run and never counted, its output is text, and the repo can still be added", async () => {
+    const fake = await mount({ suggestion: PNPM, commandReply: replies(START) });
+    await type(checks(), "npm test\nnpm run lint");
+    await click(button("Try checks"));
+    const output = "ERR_PNPM_OUTDATED_LOCKFILE <img src=x onerror=alert(1)>";
+    await fake.pushEvent({
+      type: "check_trial_updated",
+      trial: trial({
+        state: "failed",
+        endedAt: 12_000,
+        error: { code: "setup_failed", message: "The setup command exited with code 1." },
+        setup: PNPM.setup,
+        setupResult: { state: "failed", exitCode: 1, durationMs: 12_000, outputTail: output },
+        checks: [{ command: "npm test", state: "skipped" }, { command: "npm run lint", state: "skipped" }],
+      }),
+    } as never);
+    expect(text()).toContain("Setup failed · 2 checks not run");
+    expect(words()).toEqual(["Failed, exit 1", "Not run", "Not run"]);
+    expect(text()).toContain("The checks need the setup command to pass first.");
+    expect(text()).toContain("You can still add the repo.");
+    expect(text()).not.toContain("checks failed");
+    expect($(".ch-output-text")).toBeNull();
+    await click(button("Output"));
+    expect($(".ch-output-text")?.textContent).toBe(output);
+    expect($(".ch-output img")).toBeNull();
+  });
+
+  it("says a setup that was not found could not start, with the PATH sentence, and one that timed out", async () => {
+    const fake = await mount({ suggestion: PNPM, commandReply: replies(START) });
+    await click(button("Try checks"));
+    await fake.pushEvent({
+      type: "check_trial_updated",
+      trial: trial({
+        state: "failed",
+        endedAt: 3000,
+        error: { code: "setup_failed", message: "x" },
+        setup: PNPM.setup,
+        setupResult: { state: "failed", exitCode: 127, durationMs: 60, outputTail: "sh: pnpm: command not found", couldNotStart: { word: "pnpm" } },
+        checks: [{ command: "npm test", state: "skipped" }],
+      }),
+    } as never);
+    expect(words()[0]).toBe("Could not start");
+    expect(text()).toContain("pnpm was not found. Tokama runs commands with the PATH of its background service, which can differ from your terminal.");
+    await click(button("Close the results"));
+    await click(button("Try checks"));
+    await fake.pushEvent({
+      type: "check_trial_updated",
+      trial: trial({ state: "failed", endedAt: 3000, error: { code: "setup_failed", message: "x" }, setup: PNPM.setup, setupResult: { state: "timed_out", durationMs: 1_200_000, outputTail: "" }, checks: [{ command: "npm test", state: "skipped" }] }),
+    } as never);
+    expect(words()[0]).toBe("Timed out");
+    expect(text()).toContain("Setup timed out · 1 check not run");
+  });
+
+  it("says could not start with no sentence when the output named no word that was not found", async () => {
+    const fake = await mount({ suggestion: PNPM, commandReply: replies(START) });
+    await click(button("Try checks"));
+    await fake.pushEvent({
+      type: "check_trial_updated",
+      trial: trial({
+        state: "failed",
+        endedAt: 3000,
+        error: { code: "setup_failed", message: "x" },
+        setup: PNPM.setup,
+        setupResult: { state: "failed", exitCode: 127, durationMs: 60, outputTail: "setup exited 127", couldNotStart: {} },
+        checks: [{ command: "npm test", state: "skipped" }],
+      }),
+    } as never);
+    expect(words()[0]).toBe("Could not start");
+    expect(text()).not.toContain("was not found");
+  });
+
+  it("still shows a trial that could not run for another reason as an error", async () => {
+    const fake = await mount({ suggestion: PNPM, commandReply: replies(START) });
+    await click(button("Try checks"));
+    await fake.pushEvent({ type: "check_trial_updated", trial: trial({ state: "failed", endedAt: 2, error: { code: "worktree_failed", message: "No worktree." }, setup: PNPM.setup, setupResult: { state: "skipped" }, checks: [{ command: "npm test", state: "skipped" }] }) } as never);
+    expect(text()).toContain("No worktree.");
+    expect(text()).not.toContain("Setup failed");
+  });
+
+  it("says what is true when a check fails with no setup command, and offers the command it found", async () => {
+    const fake = await mount({ commandReply: replies(START) });
+    await click(button("Try checks"));
+    await fake.pushEvent({
+      type: "check_trial_updated",
+      trial: done({ setupHint: { command: "npm ci", from: "package-lock.json" }, checks: [{ command: "npm test", state: "failed", exitCode: 127, durationMs: 1000, outputTail: "sh: vitest: command not found" }] }),
+    } as never);
+    expect(text()).toContain("No setup command is set. The run used a new worktree, which has no installed packages. If the output says a command or a package is missing, that is why.");
+    expect(text()).toContain("found package-lock.json");
+    await click(button("Use npm ci as setup"));
+    // It fills the field and runs nothing.
+    expect(setupField().value).toBe("npm ci");
+    expect(fake.command.mock.calls.map(([command]) => command.type)).toEqual(["try_checks"]);
+    // The line goes once the field holds a command.
+    expect(text()).not.toContain("No setup command is set");
+  });
+
+  it("ends the line with where to find a command when no known file was found, and says nothing when the checks pass", async () => {
+    const fake = await mount({ commandReply: replies(START) });
+    await click(button("Try checks"));
+    await fake.pushEvent({ type: "check_trial_updated", trial: done({ checks: [{ command: "npm test", state: "failed", exitCode: 1, durationMs: 1000 }] }) } as never);
+    expect(text()).toContain("that is why. Add one above, or use Suggest with AI.");
+    expect(button(/^Use .* as setup$/)).toBeUndefined();
+    await click(button("Close the results"));
+    await click(button("Try checks"));
+    await fake.pushEvent({ type: "check_trial_updated", trial: done({ checks: [{ command: "npm test", state: "passed", durationMs: 1000, exitCode: 0 }] }) } as never);
+    expect(text()).not.toContain("No setup command is set");
+  });
+
+  it("tries a setup command alone with no checks, and is off with neither", async () => {
+    const fake = await mount({ suggestion: { checks: [] }, commandReply: replies(START) });
+    expect(button("Try checks")).toBeUndefined();
+    await type(setupField(), "npm ci");
+    expect((button("Try setup") as HTMLButtonElement).disabled).toBe(false);
+    await click(button("Try setup"));
+    expect(fake.command).toHaveBeenCalledWith({ type: "try_checks", path: FOLDER, baseBranch: "main", checks: [], setup: "npm ci" });
+    expect(text()).toContain("Trying setup ");
+    await fake.pushEvent({ type: "check_trial_updated", trial: done({ setup: "npm ci", setupResult: { state: "passed", exitCode: 0, durationMs: 4000 }, checks: [] }) } as never);
+    expect(text()).toContain("Setup done");
+    expect([...document.querySelectorAll(".ch-group")].map((el) => el.textContent)).toEqual(["Setup"]);
+  });
+
+  it("turns Try checks off for a setup command that is more than one command", async () => {
+    await mount();
+    await type(setupField(), "npm ci && npm run build");
+    expect((button("Try checks") as HTMLButtonElement).disabled).toBe(true);
+    expect(text()).toContain("The setup command is more than one command.");
+  });
+
+  describe("in Suggest with AI", () => {
+    const WITH_SETUP = { ...ANSWER, setup: { command: SETUP, why: "package-lock.json is here.", minutes: 1 } };
+    const suggest = async (fake: Awaited<ReturnType<typeof mount>>, value: unknown = WITH_SETUP) => {
+      await click(button("Suggest with AI"));
+      await fake.pushEvent({ type: "helper_run_updated", run: run({ state: "done", phase: undefined, endedAt: 2, result: { helperId: "suggest-checks", value } }) } as never);
+    };
+
+    it("lists the setup row first under its own heading, and Use as setup fills only the Setup command field", async () => {
+      const fake = await mount({ consent: ["claude-code"], commandReply: replies(START) });
+      await suggest(fake);
+      const card = $(".ch-card")!;
+      expect([...card.querySelectorAll(".ch-group")].map((el) => el.textContent)).toEqual(["Setup command", "Checks"]);
+      expect(card.textContent).toContain("1 setup · 3 checks · 2 new");
+      expect(card.textContent).toContain("A setup command usually downloads and runs code from a package registry");
+      // Nothing is added or run by the answer.
+      expect(setupField().value).toBe("");
+      await click(button(`Use as setup ${SETUP}`));
+      expect(setupField().value).toBe(SETUP);
+      expect(checks().value).toBe("npm test");
+      expect(card.textContent).toContain("In Setup command");
+      expect(fake.command.mock.calls.map(([command]) => command.type)).toEqual(["run_helper"]);
+    });
+
+    it("does not take the setup row with Add all new", async () => {
+      const fake = await mount({ consent: ["claude-code"], commandReply: replies(START) });
+      await suggest(fake);
+      await click(button("Add all new"));
+      expect(checks().value).toBe("npm test\nnpm run lint\nnpm run build");
+      expect(setupField().value).toBe("");
+    });
+
+    it("says Replace setup when the field holds another command, and already the setup command when it holds this one", async () => {
+      const fake = await mount({ consent: ["claude-code"], commandReply: replies(START) });
+      await type(setupField(), "npm install");
+      await suggest(fake);
+      expect($(".ch-card")!.textContent).toContain("The field holds another command: npm install.");
+      expect(button(`Use as setup ${SETUP}`)).toBeUndefined();
+      await click(button(`Replace setup ${SETUP}`));
+      expect(setupField().value).toBe(SETUP);
+      act(() => root.unmount());
+      root = createRoot(container);
+      const again = await mount({ consent: ["claude-code"], suggestion: { setup: SETUP, setupFrom: "package-lock.json" }, commandReply: replies(START) });
+      await suggest(again);
+      expect($(".ch-card")!.textContent).toContain("already the setup command");
+    });
+
+    it("edits the setup row under the one-command rule before it is used, and removes it", async () => {
+      const fake = await mount({ consent: ["claude-code"], commandReply: replies(START) });
+      await suggest(fake);
+      await click(button(`Edit ${SETUP}`));
+      const edit = $<HTMLTextAreaElement>(".ch-edit")!;
+      await type(edit, "npm ci && npm run build");
+      expect(text()).toContain("One command only.");
+      await type(edit, "npm ci --ignore-scripts");
+      await click(button("Use as setup"));
+      expect(setupField().value).toBe("npm ci --ignore-scripts");
+      act(() => root.unmount());
+      root = createRoot(container);
+      const second = await mount({ consent: ["claude-code"], commandReply: replies(START) });
+      await suggest(second);
+      await click(button(`Remove ${SETUP}`));
+      expect([...document.querySelectorAll(".ch-group")].map((el) => el.textContent)).toEqual(["Checks"]);
+    });
+
+    it("shows an answer that holds only a setup command, and still the empty note when it holds nothing", async () => {
+      const fake = await mount({ consent: ["claude-code"], commandReply: replies(START) });
+      await suggest(fake, { checks: [], setup: { command: SETUP, why: "package-lock.json is here.", minutes: 1 } });
+      expect($(".ch-card")!.textContent).toContain("1 setup · 0 checks · 0 new");
+      expect(button(`Use as setup ${SETUP}`)).toBeDefined();
+    });
   });
 });

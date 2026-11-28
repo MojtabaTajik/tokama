@@ -98,8 +98,9 @@ export function readAnswer(definition: HelperDefinition, reply: string): Result<
     const paths = [...new Set(parsed.error.issues.map((issue) => pathText(issue.path)))].slice(0, MAX_PATHS);
     return err({ kind: "wrong_shape", paths });
   }
-  const rule = definition.check?.(parsed.data);
-  return rule === undefined ? ok(parsed.data) : err({ kind: "rule", message: cutText(rule, 200) });
+  const answer = definition.normalize?.(parsed.data) ?? parsed.data;
+  const rule = definition.check?.(answer);
+  return rule === undefined ? ok(answer) : err({ kind: "rule", message: cutText(rule, 200) });
 }
 
 /** What goes back to the agent for a second try. It says what was wrong, never what the agent wrote. */

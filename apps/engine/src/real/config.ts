@@ -205,7 +205,7 @@ export function toSetup(config: Config, health: Health): Setup {
     return [templateSummary(template, agentsFor(config, template), warnings)];
   });
   return {
-    repos: config.repos.map((repo) => ({ id: repo.id, baseBranch: repo.baseBranch, checks: repo.checks.filter((check) => check.length <= 500).slice(0, 20), path: displayPath(repo.path) })),
+    repos: config.repos.map((repo) => ({ id: repo.id, baseBranch: repo.baseBranch, checks: repo.checks.filter((check) => check.length <= 500).slice(0, 20), ...(repo.setup === undefined ? {} : { setup: repo.setup }), path: displayPath(repo.path) })),
     connections: [],
     agents,
     templates,

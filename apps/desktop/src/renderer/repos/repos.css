@@ -88,6 +88,19 @@
   resize: vertical;
 }
 
+/* The setup command grows with its text and is never cut; it is one command, so no line break. */
+.repo-field textarea.rd-setup {
+  field-sizing: content;
+  min-height: 0;
+  resize: none;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.repo-field textarea.rd-setup[aria-invalid="true"] {
+  border-color: var(--fail);
+}
+
 .repo-field input:focus-visible,
 .repo-field textarea:focus-visible {
   outline: var(--focus-ring);

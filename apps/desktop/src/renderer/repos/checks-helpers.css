@@ -209,6 +209,39 @@
   border-top: 1px solid var(--hairline);
 }
 
+/* A foot that holds a sentence and a button. */
+div.ch-card-foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+div.ch-card-foot p {
+  margin: 0;
+}
+
+.ch-hint-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-10);
+}
+
+/* "Setup" and "Checks": the two groups of a list that has both. */
+.ch-group {
+  margin: 0;
+  padding: var(--space-6) var(--space-12) var(--space-4);
+  border-top: 1px solid var(--hairline);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ch-card-head + .ch-group {
+  border-top: 0;
+}
+
 .ch-rows {
   display: flex;
   flex-direction: column;

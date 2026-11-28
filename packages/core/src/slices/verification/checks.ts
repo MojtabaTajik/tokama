@@ -49,6 +49,9 @@ export interface RunCommandOptions {
 
 export const DEFAULT_OUTPUT_CAP = 16_000;
 
+/** How long a setup command may run, in Try checks and in every item: an install can take a while. */
+export const SETUP_LIMIT_MINUTES = 20;
+
 const firstWord = (command: string) => command.trim().split(/\s+/)[0] ?? "";
 
 /**

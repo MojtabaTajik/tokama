@@ -27,6 +27,7 @@ import {
   parseServerMessage,
   parseTemplateId,
   parseWith,
+  RepoSummarySchema,
   AgentCallUsageSchema,
   UsageReportSchema,
 } from "./index.js";
@@ -560,12 +561,32 @@ describe("check command length", () => {
     expect(parseCommand({ type: "add_repo", path: "/a", checks: [check(501)] }).ok).toBe(false);
     expect(parseCommand({ type: "update_repo", repoId: "a", baseBranch: "main", checks: [check(500)] }).ok).toBe(true);
     expect(parseCommand({ type: "update_repo", repoId: "a", baseBranch: "main", checks: [check(501)] }).ok).toBe(false);
-    const suggestion = { path: "/a", displayPath: "/a", gitRepo: true, hasCommits: true, branch: "main", id: "a", checksFrom: [], defaultBranch: "main", branches: [{ name: "main", group: "default" }], moreBranches: 0, fallbackCheck: null, fallbackFromPackage: false, firstCommit: null, problem: null };
+    const suggestion = { path: "/a", displayPath: "/a", gitRepo: true, hasCommits: true, branch: "main", id: "a", checksFrom: [], setup: null, setupFrom: null, defaultBranch: "main", branches: [{ name: "main", group: "default" }], moreBranches: 0, fallbackCheck: null, fallbackFromPackage: false, firstCommit: null, problem: null };
     expect(parseQueryResult("suggest_repo", { ...suggestion, checks: [check(500)] }).ok).toBe(true);
     expect(parseQueryResult("suggest_repo", { ...suggestion, checks: [check(501)] }).ok).toBe(false);
     expect(parseCommand({ type: "init_repo", path: "/a", baseBranch: "main" }).ok).toBe(true);
     expect(parseCommand({ type: "first_commit", path: "/a" }).ok).toBe(true);
     expect(parseQueryResult("suggest_repo", { ...suggestion, checks: [], firstCommit: { files: 2, bytes: 3, sample: [{ path: "a", bytes: 1 }, { path: "b", bytes: 2 }], more: [], addsGitignore: true, leftOut: [{ name: "node_modules/", files: null }], refusal: null } }).ok).toBe(true);
+  });
+});
+
+describe("setup command in repo messages", () => {
+  it("is optional and at most MAX_CHECK_CHARS long in add_repo and update_repo", () => {
+    expect(parseCommand({ type: "add_repo", path: "/a", setup: "pnpm install" }).ok).toBe(true);
+    expect(parseCommand({ type: "add_repo", path: "/a", setup: "x".repeat(501) }).ok).toBe(false);
+    expect(parseCommand({ type: "update_repo", repoId: "a", baseBranch: "main", checks: [], setup: "" }).ok).toBe(true);
+    expect(parseCommand({ type: "update_repo", repoId: "a", baseBranch: "main", checks: [], setup: "x".repeat(501) }).ok).toBe(false);
+  });
+
+  it("lets try_checks run a setup command with no checks, and nothing with neither", () => {
+    expect(parseCommand({ type: "try_checks", path: "/a", checks: [], setup: "npm ci" }).ok).toBe(true);
+    expect(parseCommand({ type: "try_checks", path: "/a", checks: [] }).ok).toBe(false);
+    expect(parseCommand({ type: "try_checks", path: "/a", checks: [{ command: "npm test" }] }).ok).toBe(true);
+  });
+
+  it("is optional on a repo summary", () => {
+    expect(RepoSummarySchema.safeParse({ id: "orders-api", baseBranch: "main", checks: [] }).success).toBe(true);
+    expect(RepoSummarySchema.safeParse({ id: "orders-api", baseBranch: "main", checks: [], setup: "npm ci" }).success).toBe(true);
   });
 });
 

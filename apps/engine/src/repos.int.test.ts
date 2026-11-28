@@ -59,7 +59,7 @@ describe("repo commands", () => {
 
     expect(await client.query({ type: "suggest_repo", path })).toEqual({
       ok: true,
-      data: { path, displayPath: path, gitRepo: true, hasCommits: true, branch: "main", id: "billing-api", checks: ["pnpm test"], checksFrom: ["test"], defaultBranch: "main", branches: [{ name: "main", group: "default" }], moreBranches: 0, fallbackCheck: null, fallbackFromPackage: false, firstCommit: null, problem: null },
+      data: { path, displayPath: path, gitRepo: true, hasCommits: true, branch: "main", id: "billing-api", checks: ["pnpm test"], checksFrom: ["test"], setup: "pnpm install --frozen-lockfile", setupFrom: "pnpm-lock.yaml", defaultBranch: "main", branches: [{ name: "main", group: "default" }], moreBranches: 0, fallbackCheck: null, fallbackFromPackage: false, firstCommit: null, problem: null },
     });
     expect(await client.command({ type: "add_repo", path, checks: ["pnpm test"] })).toEqual({ ok: true, data: { repo: { id: "billing-api", baseBranch: "main", checks: ["pnpm test"] } } });
     await waitFor(() => events.some((event) => event.kind === "event" && event.event.type === "setup_changed"), 5_000, "setup_changed");
@@ -149,6 +149,28 @@ describe("repo commands", () => {
     // A sample repo is not in repos.yaml: editing it is refused and the file is left alone.
     expect(await client.command({ type: "update_repo", repoId: "orders-api", baseBranch: "main", checks: [] })).toMatchObject({ ok: false, error: { code: "not_found", message: expect.stringContaining("sample repo") } });
     expect(readFileSync(file, "utf8")).toBe(text);
+  });
+
+  it("adds a repo with a setup command, keeps it on an update without one, changes it, and removes it with an empty one", async () => {
+    const { root, home, client } = await setUp();
+    const path = gitRepo(root, "billing-api");
+    const setupOf = async () => {
+      const setup = await client.query({ type: "setup" });
+      return setup.ok ? setup.data.repos.find((repo) => repo.id === "billing-api")?.setup : "query failed";
+    };
+    expect(await client.command({ type: "add_repo", path, setup: "pnpm install --frozen-lockfile" })).toEqual({ ok: true, data: { repo: { id: "billing-api", baseBranch: "main", checks: [], setup: "pnpm install --frozen-lockfile" } } });
+    expect(await setupOf()).toBe("pnpm install --frozen-lockfile");
+    expect(readFileSync(join(home, "repos.yaml"), "utf8")).toContain("setup: pnpm install --frozen-lockfile");
+
+    expect(await client.command({ type: "update_repo", repoId: "billing-api", baseBranch: "main", checks: ["pnpm test"] })).toMatchObject({ ok: true, data: { repo: { setup: "pnpm install --frozen-lockfile" } } });
+    expect(await setupOf()).toBe("pnpm install --frozen-lockfile");
+    expect(await client.command({ type: "update_repo", repoId: "billing-api", baseBranch: "main", checks: [], setup: "npm ci" })).toMatchObject({ ok: true, data: { repo: { setup: "npm ci" } } });
+    expect(await setupOf()).toBe("npm ci");
+    expect(await client.command({ type: "update_repo", repoId: "billing-api", baseBranch: "main", checks: [], setup: "npm ci && npm run build" })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
+    expect(await setupOf()).toBe("npm ci");
+    expect(await client.command({ type: "update_repo", repoId: "billing-api", baseBranch: "main", checks: [], setup: "" })).toMatchObject({ ok: true });
+    expect(await setupOf()).toBeUndefined();
+    expect(readFileSync(join(home, "repos.yaml"), "utf8")).not.toContain("setup");
   });
 
   it("keeps the sample repo ids in sample mode and marks the sample repos", async () => {

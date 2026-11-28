@@ -10,7 +10,7 @@ import { createProcessRunner } from "../../kernel/process/index.js";
 import { ok } from "../../kernel/result/index.js";
 import type { CheckTrial } from "../../kernel/schemas/index.js";
 import type { WorktreeRepo } from "../worktrees/index.js";
-import { checkLimitMinutes, createCheckTrialRunner, tidyOutput, trialCommandProblem, type CheckTrialHooks, type CheckTrialRequest } from "./check-trial.js";
+import { checkLimitMinutes, createCheckTrialRunner, notFoundWord, tidyOutput, trialCommandProblem, type CheckTrialHooks, type CheckTrialRequest } from "./check-trial.js";
 
 const SLOW = { timeout: 30_000 };
 
@@ -193,6 +193,115 @@ describe("running", () => {
     const run = await trial({ setup: "touch ready", checks: [{ command: "test -f ready" }] });
     expect(run.last).toMatchObject({ state: "done", setup: "touch ready" });
     expect(run.last.checks[0]?.state).toBe("passed");
+  });
+
+  it("publishes the setup as its own line: waiting, running, then passed with its time", SLOW, async () => {
+    const run = await trial({ setup: "touch ready", checks: [{ command: "test -f ready" }] });
+    const states = run.updates.map((update) => update.setupResult?.state);
+    expect(states[0]).toBe("waiting");
+    expect(states).toContain("running");
+    expect(states.indexOf("running")).toBeLessThan(states.indexOf("passed"));
+    // Every check is still waiting while the setup runs.
+    expect(run.updates.find((update) => update.setupResult?.state === "running")?.checks.map((check) => check.state)).toEqual(["waiting"]);
+    expect(run.last.setupResult).toMatchObject({ state: "passed", exitCode: 0 });
+    expect(run.last.setupResult?.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("tries a setup command alone when there are no checks", SLOW, async () => {
+    const run = await trial({ setup: "touch ready", checks: [] });
+    expect(run.last).toMatchObject({ state: "done", checks: [], setupResult: { state: "passed" } });
+    expect(await listed()).toEqual([repo.path]);
+  });
+
+  it("a failed setup line holds its exit code and cleaned output; the checks are skipped", SLOW, async () => {
+    const run = await trial({ setup: "sh -c 'echo \"boom in $PWD\"; exit 1'", checks: [{ command: "true" }] });
+    expect(run.last.setupResult).toMatchObject({ state: "failed", exitCode: 1, outputTail: expect.stringContaining("boom in <worktree>") });
+    expect(run.last.setupResult?.couldNotStart).toBeUndefined();
+    expect(run.last.checks.map((check) => check.state)).toEqual(["skipped"]);
+  });
+
+  it("a setup that is not found says which word, so the client can say the PATH may differ", SLOW, async () => {
+    const run = await trial({ setup: "tokama-no-such-tool --install", checks: [{ command: "true" }] });
+    expect(run.last).toMatchObject({ state: "failed", error: { code: "setup_failed" }, setupResult: { state: "failed", exitCode: 127, couldNotStart: { word: "tokama-no-such-tool" } } });
+    expect(run.last.checks[0]?.state).toBe("skipped");
+  });
+
+  it("exit 127 is always could not start; the word is the one the output says was not found, which may be a tool inside the command", SLOW, async () => {
+    const inner = await trial({ setup: "sh -c 'tokama-inner-missing'", checks: [{ command: "true" }] });
+    expect(inner.last.setupResult).toMatchObject({ state: "failed", exitCode: 127, couldNotStart: { word: "tokama-inner-missing" } });
+    const path = await trial({ setup: "./scripts/setup.sh", checks: [{ command: "true" }] });
+    expect(path.last.setupResult).toMatchObject({ state: "failed", exitCode: 127, couldNotStart: { word: "./scripts/setup.sh" } });
+    expect(path.last.setupResult?.couldNotStart?.reason).toBeUndefined();
+  });
+
+  it("a script that exists and calls a missing tool names the tool, not the script", SLOW, async () => {
+    writeFileSync(join(repo.path, "call.sh"), "tokama-missing-tool --install\n");
+    await plain(repo.path, "add", "-A");
+    await plain(repo.path, "commit", "-q", "-m", "a script that calls a tool");
+    const run = await trial({ setup: "sh call.sh", checks: [{ command: "true" }] });
+    expect(run.last.setupResult).toMatchObject({ state: "failed", exitCode: 127, couldNotStart: { word: "tokama-missing-tool" } });
+  });
+
+  it("exit 127 whose output names nothing is could not start with no word", SLOW, async () => {
+    const run = await trial({ setup: "sh -c 'exit 127'", checks: [{ command: "true" }] });
+    expect(run.last.setupResult).toMatchObject({ state: "failed", exitCode: 127, couldNotStart: {} });
+    expect(run.last.setupResult?.couldNotStart?.word).toBeUndefined();
+  });
+
+  it("finds the word in bash's and dash's wording", () => {
+    expect(notFoundWord("sh: 1: pnpm: not found")).toBe("pnpm");
+    expect(notFoundWord("./setup.sh: line 3: pnpm: command not found")).toBe("pnpm");
+    expect(notFoundWord("bash: ./scripts/setup.sh: No such file or directory")).toBe("./scripts/setup.sh");
+    expect(notFoundWord("something failed, exit 127")).toBeUndefined();
+  });
+
+  it("exit 126 is could not start, found but not executable", SLOW, async () => {
+    writeFileSync(join(repo.path, "noexec.sh"), "#!/bin/sh\nexit 0\n");
+    await plain(repo.path, "add", "-A");
+    await plain(repo.path, "commit", "-q", "-m", "script without the executable bit");
+    const run = await trial({ setup: "./noexec.sh", checks: [{ command: "true" }] });
+    expect(run.last.setupResult).toMatchObject({ state: "failed", exitCode: 126, couldNotStart: { word: "./noexec.sh", reason: "not_executable" } });
+    expect(run.last.checks[0]?.state).toBe("skipped");
+  });
+
+  it("a setup that times out is shown as timed out", SLOW, async () => {
+    const run = await trial({ setup: "sleep 30", checks: [{ command: "true" }] });
+    expect(run.last.setupResult).toMatchObject({ state: "timed_out" });
+  });
+
+  it("cancelling during the setup stops it, skips its line and the checks, and removes the worktree", SLOW, async () => {
+    const controller = new AbortController();
+    const trials = runner();
+    const prepared = await trials.prepare({ path: repo.path, setup: "sleep 30", checks: [{ command: "true" }] });
+    if (!prepared.ok) throw new Error("prepare refused");
+    const seen = hooks();
+    await trials.run(prepared.value, { ...seen.hooks, onUpdate: (update) => {
+      seen.updates.push(update);
+      if (update.setupResult?.state === "running") setTimeout(() => controller.abort(), 100);
+    } }, controller.signal);
+    expect(seen.updates.at(-1)).toMatchObject({ state: "cancelled", setupResult: { state: "skipped" } });
+    expect(seen.updates.at(-1)?.checks[0]?.state).toBe("skipped");
+    expect(await listed()).toEqual([repo.path]);
+  });
+
+  it("with no setup command, a known file in the worktree gives a hint and runs nothing", SLOW, async () => {
+    writeFileSync(join(repo.path, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await plain(repo.path, "add", "-A");
+    await plain(repo.path, "commit", "-q", "-m", "lockfile");
+    const run = await trial({ checks: [{ command: "true" }] });
+    expect(run.last).toMatchObject({ state: "done", setupHint: { command: "pnpm install --frozen-lockfile", from: "pnpm-lock.yaml" } });
+    expect(run.last.setupResult).toBeUndefined();
+    // Nothing from the hint ran: no install happened in the worktree.
+    const none = await trial({ checks: [{ command: "test ! -e node_modules" }] });
+    expect(none.last).toMatchObject({ state: "done", setupHint: { command: "pnpm install --frozen-lockfile" }, checks: [{ state: "passed" }] });
+  });
+
+  it("gives no hint when the repo has no known file, or when a setup command was given", SLOW, async () => {
+    expect((await trial({ checks: [{ command: "true" }] })).last.setupHint).toBeUndefined();
+    writeFileSync(join(repo.path, "package-lock.json"), "{}\n");
+    await plain(repo.path, "add", "-A");
+    await plain(repo.path, "commit", "-q", "-m", "lockfile");
+    expect((await trial({ setup: "true", checks: [{ command: "true" }] })).last.setupHint).toBeUndefined();
   });
 
   it("a failed setup fails the trial, with its exit code and a short cleaned tail, and skips the checks", SLOW, async () => {

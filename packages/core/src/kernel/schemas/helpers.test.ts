@@ -184,9 +184,32 @@ describe("check trial record", () => {
     expect(parse(withOutput("x".repeat(2001)))).toBe(false);
   });
 
-  it("takes the setup command it was given", () => {
+  it("takes the setup command it was given, with its result", () => {
+    const setupResult = { state: "waiting" };
+    expect(parse(trial({ setup: "pnpm install", setupResult }))).toBe(true);
+    expect(parse(trial({ setup: "x".repeat(MAX_CHECK_CHARS + 1), setupResult }))).toBe(false);
+    // A result needs its command; a command alone stays readable, as an engine that does not know the setup line sends it.
     expect(parse(trial({ setup: "pnpm install" }))).toBe(true);
-    expect(parse(trial({ setup: "x".repeat(MAX_CHECK_CHARS + 1) }))).toBe(false);
+    expect(parse(trial({ setupResult }))).toBe(false);
+  });
+
+  it("takes no checks only with a setup command (Try setup)", () => {
+    expect(parse(trial({ checks: [], setup: "pnpm install", setupResult: { state: "waiting" } }))).toBe(true);
+    expect(parse(trial({ checks: [] }))).toBe(false);
+  });
+
+  it("takes a setup line with exit code, output, and the word that was not found", () => {
+    const failed = { state: "failed", exitCode: 127, durationMs: 60, outputTail: "sh: pnpm: command not found", couldNotStart: { word: "pnpm" } };
+    expect(parse(trial({ setup: "pnpm install", setupResult: failed }))).toBe(true);
+    expect(parse(trial({ setup: "pnpm install", setupResult: { ...failed, couldNotStart: { word: "./x.sh", reason: "not_executable" } } }))).toBe(true);
+    expect(parse(trial({ setup: "pnpm install", setupResult: { ...failed, couldNotStart: { word: "./x.sh", reason: "other" } } }))).toBe(false);
+    expect(parse(trial({ setup: "pnpm install", setupResult: { ...failed, outputTail: "x".repeat(2001) } }))).toBe(false);
+    expect(parse(trial({ setup: "pnpm install", setupResult: { ...failed, state: "bad" } }))).toBe(false);
+  });
+
+  it("takes a hint for a setup command, with the file it comes from", () => {
+    expect(parse(trial({ setupHint: { command: "npm ci", from: "package-lock.json" } }))).toBe(true);
+    expect(parse(trial({ setupHint: { command: "npm ci" } }))).toBe(false);
   });
 
   it("takes a short commit and a trial error", () => {

@@ -4,7 +4,8 @@
 //   `fail`  the helper fails with a bad answer
 //   `empty` the helper finds no checks
 //   `retry` the helper asks the agent a second time, then answers like the default
-// and in Try checks, a command with `lint` fails and one with `slow` runs 60 s. All timers go
+// and in Try checks, a command with `lint` fails and one with `slow` runs 60 s; a setup command
+// with `fail` fails with exit 1 and one with `nothere` is not found. All timers go
 // through the engine clock. The first update of a run or trial is sent from a timer, so a client
 // has the reply (with the id) before it hears of the run.
 import { randomUUID } from "node:crypto";
@@ -38,6 +39,8 @@ const MAX_RUNNING_RUNS = 2;
 export const SAMPLE_SLOW_MS = 60_000;
 const GATHER_MS = 300;
 const CHECK_MS = 1_200;
+const SETUP_MS = 1_500;
+const SETUP_FAIL_OUTPUT = "ERR_PNPM_OUTDATED_LOCKFILE  Cannot install with \"frozen-lockfile\" because pnpm-lock.yaml is not up to date with package.json";
 
 const AGENT: HelperAgent = { agentId: "helper" as HelperAgent["agentId"], name: "Helper", cliId: "claude-code", model: "haiku", runsOn: "cloud" };
 const SENDS = ["file names", "build files"];
@@ -49,6 +52,7 @@ const DEFAULT_RESULT: HelperResult<"suggest-checks"> = {
     { command: "pnpm lint", why: "Checks code style with the lint script.", minutes: 1 },
     { command: "pnpm typecheck", why: "Finds type errors before review.", minutes: 2 },
   ],
+  setup: { command: "pnpm install --frozen-lockfile", why: "Installs the packages pnpm-lock.yaml lists; a new worktree has none.", minutes: 1 },
 };
 const USAGE = { tokens: { input: 6200, output: 180, cacheRead: 0, cacheWrite: 0 }, costUsd: 0.007 };
 
@@ -123,7 +127,7 @@ export class SampleHelpers {
   }
 
   helpers(): HelpersResult {
-    return { helpers: [{ helperId: "suggest-checks", name: "Suggest checks", version: 1, available: true, agent: AGENT, sends: SENDS }] };
+    return { helpers: [{ helperId: "suggest-checks", name: "Suggest checks", version: 2, available: true, agent: AGENT, sends: SENDS }] };
   }
 
   helperRun(runId: string): Result<HelperRun, CommandError> {
@@ -161,7 +165,7 @@ export class SampleHelpers {
     const runId = `hrun_${randomUUID()}` as HelperRun["runId"];
     const folder = basename(path).toLowerCase();
     const startedAt = this.clock.now();
-    const entry = this.runs.add(runId, { runId, helperId: "suggest-checks", helperVersion: 1, state: "running", phase: "gathering", startedAt, agent: AGENT });
+    const entry = this.runs.add(runId, { runId, helperId: "suggest-checks", helperVersion: 2, state: "running", phase: "gathering", startedAt, agent: AGENT });
     const at = (ms: number, step: () => void) => entry.timers.push(this.clock.setTimeout(step, ms));
     const phase = (next: "asking" | "retrying") => () => this.setRun(runId, { ...entry.value, phase: next });
     const done = (result: HelperResult<"suggest-checks">, usage?: HelperRun["usage"]) => () =>
@@ -209,7 +213,7 @@ export class SampleHelpers {
     this.emit({ type: "helper_run_updated", run: parsed.data });
   }
 
-  /** `setup` is shown on the trial and not run, like every command here. */
+  /** Nothing runs. A setup with `fail` in it fails with exit 1 and `nothere` is not found; a trial with no setup and a `pnpm` check offers the pnpm setup. */
   private tryChecks(commands: readonly string[], setup?: string): Result<{ trialId: CheckTrial["trialId"] }, CommandError> {
     if (this.trials.running() > 0) return err({ code: "busy", message: "Checks are already being tried. Wait for them to end, or cancel them." });
     const trialId = `trial_${randomUUID()}` as CheckTrial["trialId"];
@@ -218,7 +222,8 @@ export class SampleHelpers {
       state: "running",
       startedAt: this.clock.now(),
       commit: "4f9c2ab",
-      ...(setup !== undefined && { setup }),
+      ...(setup !== undefined && { setup, setupResult: { state: "waiting" as const } }),
+      ...(setup === undefined && commands.some((command) => command.startsWith("pnpm")) && { setupHint: { command: "pnpm install --frozen-lockfile", from: "pnpm-lock.yaml" } }),
       checks: commands.map((command) => ({ command, state: "waiting" })),
     });
     // Each check runs for CHECK_MS (a `slow` one for SAMPLE_SLOW_MS), one after the other.
@@ -238,9 +243,29 @@ export class SampleHelpers {
         }, slow ? SAMPLE_SLOW_MS : CHECK_MS),
       ];
     };
+    // The setup runs first: it fails (exit 1 or not found) or passes, and a failed one skips every check.
+    const runSetup = (command: string) => {
+      const startedAt = this.clock.now();
+      this.setTrial(trialId, { ...entry.value, setupResult: { state: "running", startedAt } });
+      entry.timers = [
+        this.clock.setTimeout(() => {
+          const notFound = command.includes("nothere");
+          const failed = notFound || command.includes("fail");
+          if (!failed) {
+            this.setTrial(trialId, { ...entry.value, setupResult: { state: "passed", startedAt, durationMs: SETUP_MS, exitCode: 0 } });
+            return run(0);
+          }
+          const setupResult: NonNullable<CheckTrial["setupResult"]> = notFound
+            ? { state: "failed", startedAt, durationMs: 60, exitCode: 127, outputTail: "sh: nothere: command not found", couldNotStart: { word: "nothere" } }
+            : { state: "failed", startedAt, durationMs: SETUP_MS, exitCode: 1, outputTail: SETUP_FAIL_OUTPUT };
+          this.setTrial(trialId, { ...entry.value, setupResult });
+          this.endTrial(trialId, { state: "failed", skipUnfinished: true, error: { code: "setup_failed", message: `The setup command exited with code ${String(setupResult.exitCode)}.` } });
+        }, SETUP_MS),
+      ];
+    };
     entry.timers = [
       this.clock.setTimeout(() => this.setTrial(trialId, entry.value), 0),
-      this.clock.setTimeout(() => run(0), GATHER_MS),
+      this.clock.setTimeout(() => (setup === undefined ? run(0) : runSetup(setup)), GATHER_MS),
     ];
     return ok({ trialId });
   }
@@ -254,12 +279,14 @@ export class SampleHelpers {
     return ok(null);
   }
 
-  private endTrial(trialId: string, outcome: { state: CheckTrial["state"]; skipUnfinished?: boolean }): void {
+  private endTrial(trialId: string, outcome: { state: CheckTrial["state"]; skipUnfinished?: boolean; error?: NonNullable<CheckTrial["error"]> }): void {
     const entry = this.trials.get(trialId);
     if (entry === undefined) return;
     this.trials.stop(entry);
     const checks = outcome.skipUnfinished === true ? entry.value.checks.map((check) => (check.state === "waiting" || check.state === "running" ? { command: check.command, state: "skipped" as const } : check)) : entry.value.checks;
-    this.setTrial(trialId, { ...entry.value, state: outcome.state, endedAt: this.clock.now(), checks });
+    const { setupResult } = entry.value;
+    const setupEnd = outcome.skipUnfinished === true && setupResult !== undefined && (setupResult.state === "waiting" || setupResult.state === "running") ? { setupResult: { state: "skipped" as const } } : {};
+    this.setTrial(trialId, { ...entry.value, ...setupEnd, state: outcome.state, endedAt: this.clock.now(), checks, ...(outcome.error !== undefined && { error: outcome.error }) });
     this.trials.ended(trialId);
   }
 

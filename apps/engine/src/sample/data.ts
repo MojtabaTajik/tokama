@@ -199,7 +199,7 @@ function withAccess<T extends { steps: readonly { agentId?: string }[] }>(templa
 
 export const sampleSetup = {
   repos: [
-    { id: "orders-api", baseBranch: "main", checks: ["pnpm test", "pnpm lint"], path: "~/code/orders-api" },
+    { id: "orders-api", baseBranch: "main", checks: ["pnpm test", "pnpm lint"], setup: "pnpm install --frozen-lockfile", path: "~/code/orders-api" },
     { id: "checkout-web", baseBranch: "main", checks: ["npm test"] },
     { id: "inventory-service", baseBranch: "develop", checks: [] },
   ],

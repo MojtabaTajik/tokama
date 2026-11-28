@@ -20,6 +20,8 @@ export interface Repo {
   readonly worktreeFolder: string;
   /** The repo's default check commands, each one simple command; empty when none are set. */
   readonly checks: readonly string[];
+  /** One simple command for new worktrees of this repo, run before the checks; a template's own setup replaces it. */
+  readonly setup?: string;
 }
 
 /** The most checks a repo may list: as many as a step runs and the engine API carries. */
@@ -41,6 +43,12 @@ function isWorktreeFolder(folder: string): boolean {
   return parts.length > 0 && !parts.includes("..") && parts[0]!.toLowerCase() !== ".git";
 }
 
+/** A check or setup command: at most MAX_CHECK_CHARS, one simple command on one line. */
+const commandText = z.string().max(MAX_CHECK_CHARS).superRefine((command, ctx) => {
+  const problem = simpleCommandProblem(command);
+  if (problem !== undefined) ctx.addIssue({ code: "custom", message: problem });
+});
+
 const RepoEntrySchema = z.strictObject({
   id: RepoIdSchema,
   path: z
@@ -56,15 +64,9 @@ const RepoEntrySchema = z.strictObject({
     .refine((folder) => !folder.includes("\0"), "can't contain a NUL character")
     .refine(isWorktreeFolder, "must be a folder inside the repo and outside .git, such as .tokama/wt")
     .optional(),
-  checks: z
-    .array(
-      z.string().max(MAX_CHECK_CHARS).superRefine((command, ctx) => {
-        const problem = simpleCommandProblem(command);
-        if (problem !== undefined) ctx.addIssue({ code: "custom", message: problem });
-      }),
-    )
-    .max(MAX_CHECKS)
-    .optional(),
+  checks: z.array(commandText).max(MAX_CHECKS).optional(),
+  // A blank or empty `setup:` is no setup, not a problem with the file.
+  setup: z.preprocess((value) => (value === null || (typeof value === "string" && value.trim() === "") ? undefined : value), commandText.optional()),
 });
 
 export const ReposFileSchema = z
@@ -126,6 +128,7 @@ export async function readReposFile(options: LoadReposOptions): Promise<Result<R
       baseBranch: entry.base_branch,
       worktreeFolder: entry.worktree_folder ?? DEFAULT_WORKTREE_FOLDER,
       checks: entry.checks?.map((command) => command.trim()) ?? [],
+      ...(entry.setup === undefined ? {} : { setup: entry.setup.trim() }),
     })),
   });
 }

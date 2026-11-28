@@ -6,12 +6,12 @@
 // file behind it is replaced.
 import { constants } from "node:fs";
 import { homedir } from "node:os";
-import { access, lstat, mkdir, realpath, stat } from "node:fs/promises";
+import { access, lstat, mkdir, readdir, realpath, stat } from "node:fs/promises";
 // eslint-disable-next-line no-restricted-imports -- a new .gitignore is created exclusively (flag wx), so the user's own file is never replaced.
 import { writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { Document, isMap, isScalar, isSeq, parseDocument } from "yaml";
-import { readJsonFile, replaceTextSync } from "../../kernel/fs-safe/index.js";
+import { readJsonFile, readTextHead, replaceTextSync } from "../../kernel/fs-safe/index.js";
 import type { Git, GitError } from "../../kernel/git/index.js";
 import { err, ok, type Result } from "../../kernel/result/index.js";
 import { MAX_CHECK_CHARS, RESERVED_REPO_IDS, type RepoId, RepoIdSchema } from "../../kernel/schemas/index.js";
@@ -54,6 +54,10 @@ export interface RepoSuggestion {
   readonly checks: readonly string[];
   /** The package.json scripts the checks come from, such as `test` and `lint`. */
   readonly checksFrom: readonly string[];
+  /** From one known file in the top folder, such as `npm ci` for package-lock.json; undefined when none or more than one kind is there. */
+  readonly setup: string | undefined;
+  /** The file name `setup` comes from. */
+  readonly setupFrom: string | undefined;
   /** The default base branch: see `branchChoices`. Undefined when the folder isn't a repo or has none. */
   readonly defaultBranch: string | undefined;
   /** The branches to offer as the base branch, capped; empty when the folder isn't a repo or has none. */
@@ -78,6 +82,8 @@ export interface AddRepoInput {
   readonly baseBranch?: string;
   /** Default: none. */
   readonly checks?: readonly string[];
+  /** Default: none. */
+  readonly setup?: string;
 }
 
 // The placeholder `npm init` writes; it only fails.
@@ -96,7 +102,10 @@ export async function suggestRepo(options: RepoEditOptions, path: string): Promi
   const checks = await suggestChecks(folder.value.path);
   const fallback = checks.commands.length === 0 ? await suggestFallbackCheck(folder.value.path, checks) : undefined;
   const choices = folder.value.gitProblem === undefined ? await readBranchChoices(options.git, folder.value.path, folder.value.branch) : NO_BRANCH_CHOICES;
+  const setup = await suggestSetup(folder.value.path);
   return ok({
+    setup: setup?.command,
+    setupFrom: setup?.from,
     path: folder.value.path,
     displayPath: await realDisplayPath(folder.value.path, options.home),
     gitRepo: folder.value.gitProblem === undefined,
@@ -135,13 +144,13 @@ export async function addRepo(options: RepoEditOptions, input: AddRepoInput): Pr
 
   const baseBranch = input.baseBranch?.trim() || (await readBranchChoices(options.git, folder.value.path, folder.value.branch)).defaultBranch;
   if (baseBranch === undefined) return invalid("The repo has no current branch (its HEAD is detached). Give a base branch, such as main.");
-  const settings = checkSettings(baseBranch, input.checks ?? []);
+  const settings = checkSettings(baseBranch, input.checks ?? [], input.setup);
   if (!settings.ok) return settings;
-  const { checks } = settings.value;
+  const { checks, setup } = settings.value;
   const local = await requireLocalBranch(options.git, folder.value.path, baseBranch);
   if (!local.ok) return local;
 
-  const entry = { id, path: folder.value.path, base_branch: baseBranch, ...(checks.length > 0 ? { checks } : {}) };
+  const entry = { id, path: folder.value.path, base_branch: baseBranch, ...(checks.length > 0 ? { checks } : {}), ...(setup === undefined ? {} : { setup }) };
   const doc = file.value.text === undefined ? newDocument() : parseDocument(file.value.text, { uniqueKeys: true });
   const list = doc.get("repos", true);
   if (!isSeq(list)) return refused("invalid_config", `${REPOS_FILE} has no repos list.`);
@@ -149,7 +158,7 @@ export async function addRepo(options: RepoEditOptions, input: AddRepoInput): Pr
   list.items.push(doc.createNode(entry));
   const written = await write(file.value.path, doc);
   if (!written.ok) return written;
-  return ok({ id: id as RepoId, path: folder.value.path, baseBranch, worktreeFolder: DEFAULT_WORKTREE_FOLDER, checks });
+  return ok({ id: id as RepoId, path: folder.value.path, baseBranch, worktreeFolder: DEFAULT_WORKTREE_FOLDER, checks, ...(setup === undefined ? {} : { setup }) });
 }
 
 export interface UpdateRepoInput {
@@ -157,6 +166,8 @@ export interface UpdateRepoInput {
   readonly baseBranch: string;
   /** Replaces the repo's checks; empty removes them. */
   readonly checks: readonly string[];
+  /** Absent: the setup command stays. Empty: it is removed. Otherwise it replaces the current one. */
+  readonly setup?: string;
 }
 
 /** Changes the base branch and checks of a repo in repos.yaml, by the rules `addRepo` uses. */
@@ -167,9 +178,9 @@ export async function updateRepo(options: LoadReposOptions & { readonly git: Pic
   const current = file.value.repos[index];
   if (current === undefined || file.value.text === undefined) return refused("not_found", `No repo has the id ${quote(input.repoId)}.`);
   const baseBranch = input.baseBranch.trim();
-  const settings = checkSettings(baseBranch, input.checks);
+  const settings = checkSettings(baseBranch, input.checks, input.setup);
   if (!settings.ok) return settings;
-  const { checks } = settings.value;
+  const { checks, setup } = settings.value;
   const local = await requireLocalBranch(options.git, current.path, baseBranch);
   if (!local.ok) return local;
 
@@ -187,8 +198,14 @@ export async function updateRepo(options: LoadReposOptions & { readonly git: Pic
       old.items = checks.map((command) => kept.get(command) ?? doc.createNode(command));
     } else entry.set("checks", doc.createNode(checks));
   }
+  if (input.setup !== undefined) {
+    if (setup === undefined) entry.delete("setup");
+    else entry.set("setup", setup);
+  }
   const written = await write(file.value.path, doc);
-  return written.ok ? ok({ ...current, baseBranch, checks }) : written;
+  if (!written.ok) return written;
+  const kept = input.setup === undefined ? current.setup : setup;
+  return ok({ id: current.id, path: current.path, ...(current.remote === undefined ? {} : { remote: current.remote }), baseBranch, worktreeFolder: current.worktreeFolder, checks, ...(kept === undefined ? {} : { setup: kept }) });
 }
 
 /**
@@ -302,16 +319,17 @@ export async function removeRepo(options: LoadReposOptions, id: string): Promise
   return written.ok ? ok(repo) : written;
 }
 
-/** The base branch and checks a repo may have, trimmed; a bad one is refused in plain words. */
-function checkSettings(baseBranch: string, input: readonly string[]): Result<{ checks: string[] }, RepoEditError> {
+/** The base branch, checks and setup command a repo may have, trimmed; a bad one is refused in plain words. A blank setup is undefined. */
+function checkSettings(baseBranch: string, input: readonly string[], setupInput?: string): Result<{ checks: string[]; setup: string | undefined }, RepoEditError> {
   if (!BRANCH.test(baseBranch) || baseBranch.length > MAX_BRANCH) return invalid(`The base branch ${quote(baseBranch)} must be a branch name, such as main.`);
   const checks = input.map((command) => command.trim()).filter((command) => command !== "");
-  for (const command of checks) {
-    if (command.length > MAX_CHECK_CHARS) return invalid(`The check ${quote(command)} must be at most ${MAX_CHECK_CHARS} characters.`);
+  const setup = setupInput?.trim() || undefined;
+  for (const [label, command] of [...checks.map((check) => ["check", check] as const), ...(setup === undefined ? [] : [["setup command", setup] as const])]) {
+    if (command.length > MAX_CHECK_CHARS) return invalid(`The ${label} ${quote(command)} must be at most ${MAX_CHECK_CHARS} characters.`);
     const problem = simpleCommandProblem(command);
-    if (problem !== undefined) return invalid(`The check ${quote(command)} ${problem}.`);
+    if (problem !== undefined) return invalid(`The ${label} ${quote(command)} ${problem}.`);
   }
-  return ok({ checks });
+  return ok({ checks, setup });
 }
 
 /**
@@ -466,6 +484,39 @@ const LOCKFILES = [
   ["pnpm-lock.yaml", "pnpm"],
   ["yarn.lock", "yarn"],
   ["package-lock.json", "npm"],
+] as const;
+
+/**
+ * The setup command a known file in the top folder points to; the folder is not read deeper. Two
+ * kinds of file at once (a pnpm and an npm lockfile, a .sln and a go.mod) leave it open: no
+ * suggestion.
+ */
+export async function suggestSetup(folder: string): Promise<{ command: string; from: string } | undefined> {
+  let names: string[];
+  try {
+    names = (await readdir(folder)).sort();
+  } catch {
+    return undefined;
+  }
+  const found: { command: string; from: string }[] = [];
+  for (const [file, command] of SETUP_FILES) if (names.includes(file)) found.push({ command, from: file });
+  // Yarn 1 does not know --immutable: its lockfile has no __metadata header, and its flag is --frozen-lockfile.
+  const yarn = found.find((entry) => entry.from === "yarn.lock");
+  if (yarn !== undefined) {
+    const head = await readTextHead(join(folder, "yarn.lock"), { maxBytes: 4096, replaceInvalid: true });
+    if (!head.ok || !head.value.text.includes("__metadata:")) yarn.command = "yarn install --frozen-lockfile";
+  }
+  // The name is shown to the user: a name with control, invisible or direction characters is not offered.
+  const dotnet = names.find((name) => /\.(sln|csproj)$/i.test(name) && name.length <= 255 && !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(name));
+  if (dotnet !== undefined) found.push({ command: "dotnet restore", from: dotnet });
+  return found.length === 1 ? found[0] : undefined;
+}
+
+const SETUP_FILES = [
+  ["package-lock.json", "npm ci"],
+  ["pnpm-lock.yaml", "pnpm install --frozen-lockfile"],
+  ["yarn.lock", "yarn install --immutable"],
+  ["go.mod", "go mod download"],
 ] as const;
 
 /** Fixed commands only, never script bodies: `pnpm test`, then `pnpm lint` (`npm run lint` for npm). */

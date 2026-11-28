@@ -48,6 +48,15 @@ describe("suggestRepo with git", () => {
     expect(await suggestRepo(options, join(root, "detached"))).toMatchObject({ ok: true, value: { gitRepo: true, branch: undefined } });
   });
 
+  it("does not hang on a yarn.lock that is a FIFO, and takes it for Yarn 1", async () => {
+    const folder = join(root, "fifo-repo");
+    mkdirSync(folder);
+    const runner = createProcessRunner({ parentEnv: { PATH: process.env["PATH"], HOME: root } });
+    const made = await runner.run({ command: { argv: ["mkfifo", join(folder, "yarn.lock")] }, cwd: root });
+    expect(made).toMatchObject({ kind: "finished", exitCode: 0 });
+    expect(await suggestRepo(options, folder)).toMatchObject({ ok: true, value: { setup: "yarn install --frozen-lockfile", setupFrom: "yarn.lock" } });
+  });
+
   it("asks for the top folder when given a subfolder", async () => {
     expect(await suggestRepo(options, join(root, "orders-api", "src"))).toMatchObject({
       ok: true,

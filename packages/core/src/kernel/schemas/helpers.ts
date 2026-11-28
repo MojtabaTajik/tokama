@@ -38,6 +38,8 @@ export const SuggestedCheckSchema = z.strictObject({
 
 export const SuggestChecksResultSchema = z.strictObject({
   checks: z.array(SuggestedCheckSchema).max(MAX_SUGGESTED_CHECKS),
+  /** One command that installs what the checks need in a new worktree. Same shape as a check; the engine drops it unless it is one simple command. */
+  setup: SuggestedCheckSchema.optional(),
   /** A line to show with the checks, e.g. why there are none. */
   note: oneLine(500).optional(),
 });
@@ -139,6 +141,26 @@ export const CheckTrialSchema = z
     commit: z.string().regex(/^[0-9a-f]{7,64}$/).optional(),
     /** The setup command the trial was asked to run before its checks, as given. */
     setup: checkCommand.optional(),
+    /** How the setup went; only with `setup`. */
+    setupResult: z
+      .strictObject({
+        state: CheckTrialCheckStateSchema,
+        /** When the setup command started; set while it runs and after. */
+        startedAt: EpochMsSchema.optional(),
+        durationMs: z.int().nonnegative().optional(),
+        exitCode: z.int().optional(),
+        /** The last characters of the output, as text. */
+        outputTail: z.string().max(MAX_TRIAL_OUTPUT_CHARS).optional(),
+        /**
+         * The shell could not find or start the command (exit 127, or 126 for a file that cannot
+         * run). `word` is the one it said it did not find, when its output names one: it can be a
+         * tool a script calls. `reason` is `not_found` when absent.
+         */
+        couldNotStart: z.strictObject({ word: z.string().min(1).max(MAX_CHECK_CHARS).optional(), reason: z.enum(["not_found", "not_executable"]).optional() }).optional(),
+      })
+      .optional(),
+    /** With no `setup` given: the command a known file in the trial's top folder points to, for the "Use as setup" button. */
+    setupHint: z.strictObject({ command: checkCommand.min(1), from: z.string().min(1).max(255) }).optional(),
     checks: z
       .array(
         z.strictObject({
@@ -150,7 +172,6 @@ export const CheckTrialSchema = z
           outputTail: z.string().max(MAX_TRIAL_OUTPUT_CHARS).optional(),
         }),
       )
-      .min(1)
       .max(MAX_TRIAL_CHECKS),
     /** Why the trial could not run (the worktree failed, the repo was not found). Set exactly when failed. */
     error: runError.optional(),
@@ -164,6 +185,9 @@ export const CheckTrialSchema = z
       if (timeProblem !== undefined) problem(timeProblem, "endedAt");
     }
     if ((trial.state === "failed") !== (trial.error !== undefined)) problem("error is set exactly when the trial failed", "error");
+    if (trial.checks.length === 0 && trial.setup === undefined) problem("a trial has a setup command or a check", "checks");
+    // An engine of the same API version that does not know the setup line sends `setup` alone: that stays readable.
+    if (trial.setup === undefined && trial.setupResult !== undefined) problem("setupResult needs setup", "setupResult");
   });
 
 /**

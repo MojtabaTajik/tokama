@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "files": {
     "Orders.sln": "Microsoft Visual Studio Solution File, Format Version 12.00\n",
     "Orders.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net9.0</TargetFramework></PropertyGroup></Project>\n",
@@ -20,6 +20,11 @@
         "minutes": 1
       }
     ],
-    "note": "Found from Orders.sln, Orders.Tests.csproj (xunit) and global.json. Both commands use --no-restore so they do not reach NuGet; the packages must already be restored."
+    "setup": {
+      "command": "dotnet restore Orders.sln",
+      "why": "Restores the NuGet packages the checks need, which a new worktree does not have.",
+      "minutes": 1
+    },
+    "note": "Found from Orders.sln, Orders.Tests.csproj (xunit) and global.json. Both commands use --no-restore so they do not reach NuGet; the setup command restores the packages first."
   }
 }

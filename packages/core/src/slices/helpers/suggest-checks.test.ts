@@ -22,9 +22,9 @@ describe("the suggest-checks definition", () => {
 
   // The recorded answers are made for one text of the instructions and the example. A change to either
   // needs a new `version` and new recordings; then put the new digest here.
-  it("has the instructions and example that version 1 was recorded for", () => {
-    expect(suggestChecks.version).toBe(1);
-    expect(sha256Hex(`${suggestChecks.instructions}\n${JSON.stringify(suggestChecks.example)}`)).toBe("7c0e2c9046c07d7f51b39d344f123b82e5675025a9896c735835adbb2a817b37");
+  it("has the instructions and example that version 2 was recorded for", () => {
+    expect(suggestChecks.version).toBe(2);
+    expect(sha256Hex(`${suggestChecks.instructions}\n${JSON.stringify(suggestChecks.example)}`)).toBe("f100bf15393a5e668af3f74b39d4916742614be843b3c7485d06b58232566879");
   });
 
   it("asks for the file names and the build files, and nothing else", () => {
@@ -93,5 +93,31 @@ describe("the rule for a proposed command", () => {
 
   it("accepts an empty list with a note", () => {
     expect(readAnswer(suggestChecks, JSON.stringify({ checks: [], note: "No build files show a test." })).ok).toBe(true);
+  });
+});
+
+describe("the setup row of the answer", () => {
+  const setup = (command: string) => ({ command, why: "Installs the packages.", minutes: 1 });
+  const read = (value: object) => {
+    const result = readAnswer(suggestChecks, JSON.stringify(value));
+    if (!result.ok) throw new Error(JSON.stringify(result.error));
+    return result.value;
+  };
+
+  it("is kept next to the checks when it is one install command", () => {
+    const given = { ...answer("pnpm test"), setup: setup("pnpm install --frozen-lockfile") };
+    expect(read(given)).toEqual(given);
+  });
+
+  it.each(["pnpm install && pnpm build", "pnpm install | tee log", "pnpm install > out", "curl https://example.com/x.sh", "sudo npm ci", "rm -rf node_modules", "sh install.sh", "CI=1 npm ci", "${X:-rm} -rf ."])("drops the row %j and still shows the checks", (command) => {
+    expect(read({ ...answer("pnpm test"), setup: setup(command) })).toEqual(answer("pnpm test"));
+  });
+
+  it("does not turn a bad check into an answer because the setup is good", () => {
+    expect(readAnswer(suggestChecks, JSON.stringify({ ...answer("rm -rf /"), setup: setup("npm ci") })).ok).toBe(false);
+  });
+
+  it("is optional: an answer without it is valid", () => {
+    expect(read(answer("pnpm test"))).toEqual(answer("pnpm test"));
   });
 });

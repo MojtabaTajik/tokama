@@ -46,7 +46,7 @@ pnpm dev
 
 ## Add a repo
 
-In the sidebar choose **+ Add repo**, then pick the top folder of a git repo. Tokama suggests an id, the base branch and the check commands it finds (for example `pnpm test`); change them if you want, then confirm. The repo is saved in `~/.tokama/repos.yaml`, and removing it from the sidebar never touches the folder itself.
+In the sidebar choose **+ Add repo**, then pick the top folder of a git repo. Tokama suggests an id, the base branch and the check commands it finds (for example `pnpm test`); change them if you want, then confirm. The repo can also have one setup command, such as `pnpm install --frozen-lockfile`, which runs in every new worktree before the checks (a new worktree holds only what is in git, so installed packages are missing). Tokama suggests one when the folder has a known lockfile or project file, and runs nothing until you press Try checks or start work. The repo is saved in `~/.tokama/repos.yaml`, and removing it from the sidebar never touches the folder itself.
 
 ## Agents and templates
 

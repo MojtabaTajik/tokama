@@ -83,7 +83,7 @@ describe("sample helpers", () => {
       {
         helperId: "suggest-checks",
         name: "Suggest checks",
-        version: 1,
+        version: 2,
         available: true,
         agent: { agentId: "helper", name: "Helper", cliId: "claude-code", model: "haiku", runsOn: "cloud" },
         sends: ["file names", "build files"],
@@ -122,6 +122,7 @@ describe("sample helpers", () => {
           { command: "pnpm lint", why: "Checks code style with the lint script.", minutes: 1 },
           { command: "pnpm typecheck", why: "Finds type errors before review.", minutes: 2 },
         ],
+        setup: { command: "pnpm install --frozen-lockfile", why: "Installs the packages pnpm-lock.yaml lists; a new worktree has none.", minutes: 1 },
       },
     });
     expect(last.usage).toEqual({ tokens: { input: 6200, output: 180, cacheRead: 0, cacheWrite: 0 }, costUsd: 0.007 });
@@ -250,15 +251,39 @@ describe("sample Try checks", () => {
     expect(await fixture.client.query({ type: "check_trial", trialId })).toEqual({ ok: true, data: { trial: last } });
   });
 
-  it("shows the setup command it was given on the trial, and has none without one", async () => {
+  it("runs the setup command first as its own line, then the checks; with none it has no setup line", async () => {
     const fixture = await sampleEngine();
     const withSetup = await startTrial(fixture.client, ["pnpm test"], "pnpm install");
-    expect(await fixture.client.query({ type: "check_trial", trialId: withSetup })).toMatchObject({ ok: true, data: { trial: { setup: "pnpm install" } } });
-    await advanceTrial(fixture, withSetup, 300 + 1_200, 3);
-    expect(trialUpdates(fixture.events, withSetup).every((trial) => trial.setup === "pnpm install")).toBe(true);
+    expect(await fixture.client.query({ type: "check_trial", trialId: withSetup })).toMatchObject({ ok: true, data: { trial: { setup: "pnpm install", setupResult: { state: "waiting" } } } });
+    await advanceTrial(fixture, withSetup, 0, 1);
+    let updates = await advanceTrial(fixture, withSetup, 300, 2);
+    expect(updates.at(-1)).toMatchObject({ setupResult: { state: "running" }, checks: [{ state: "waiting" }] });
+    updates = await advanceTrial(fixture, withSetup, 1_500, 4);
+    expect(updates.at(-2)).toMatchObject({ setupResult: { state: "passed", exitCode: 0 } });
+    updates = await advanceTrial(fixture, withSetup, 1_200, 5);
+    expect(updates.at(-1)).toMatchObject({ state: "done", setup: "pnpm install", setupResult: { state: "passed" }, checks: [{ state: "passed" }] });
+    expect(updates.every((trial) => trial.setup === "pnpm install")).toBe(true);
     const without = await startTrial(fixture.client, ["pnpm test"]);
     const trial = await fixture.client.query({ type: "check_trial", trialId: without });
     expect(trial.ok && trial.data.trial.setup).toBeUndefined();
+    expect(trial.ok && trial.data.trial.setupResult).toBeUndefined();
+    // With no setup and a pnpm check, the trial offers the pnpm command; nothing runs.
+    expect(trial.ok && trial.data.trial.setupHint).toEqual({ command: "pnpm install --frozen-lockfile", from: "pnpm-lock.yaml" });
+  });
+
+  it("fails the trial when the setup fails: exit 1 with its output, or not found; the checks are skipped", async () => {
+    const fixture = await sampleEngine();
+    const failing = await startTrial(fixture.client, ["pnpm test", "pnpm lint"], "pnpm install --fail");
+    await advanceTrial(fixture, failing, 0, 1);
+    await advanceTrial(fixture, failing, 300, 2);
+    const failed = (await advanceTrial(fixture, failing, 1_500, 4)).at(-1)!;
+    expect(failed).toMatchObject({ state: "failed", error: { code: "setup_failed" }, setupResult: { state: "failed", exitCode: 1, outputTail: expect.stringContaining("ERR_PNPM_OUTDATED_LOCKFILE") } });
+    expect(failed.checks.map((check) => check.state)).toEqual(["skipped", "skipped"]);
+    const missing = await startTrial(fixture.client, ["pnpm test"], "nothere install");
+    await advanceTrial(fixture, missing, 0, 1);
+    await advanceTrial(fixture, missing, 300, 2);
+    const last = (await advanceTrial(fixture, missing, 1_500, 4)).at(-1)!;
+    expect(last.setupResult).toMatchObject({ state: "failed", exitCode: 127, couldNotStart: { word: "nothere" } });
   });
 
   it("refuses a second trial while one runs, and takes one after it ends", async () => {

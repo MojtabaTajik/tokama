@@ -51,6 +51,28 @@ repos:
     });
   });
 
+  it("loads an optional setup command, trimmed, and refuses one that is not one simple command", async () => {
+    write("format: 1\nrepos:\n  - { id: a, path: /a, base_branch: main, setup: ' pnpm install --frozen-lockfile ' }\n  - { id: b, path: /b, base_branch: main }\n");
+    expect(await load()).toMatchObject({ ok: true, value: [{ id: "a", setup: "pnpm install --frozen-lockfile" }, { id: "b" }] });
+    const loaded = await load();
+    expect(loaded.ok && "setup" in loaded.value[1]!).toBe(false);
+    for (const setup of ["pnpm install && pnpm build", "pnpm install | tee log", "pnpm install > out", "pnpm install\nrm x"]) {
+      write(`format: 1\nrepos:\n  - { id: a, path: /a, base_branch: main, setup: ${JSON.stringify(setup)} }\n`);
+      expect(messages(await load())[0], setup).toMatch(/^repos\.yaml line 3: setup /);
+    }
+    write(`format: 1\nrepos:\n  - { id: a, path: /a, base_branch: main, setup: "${"x".repeat(501)}" }\n`);
+    expect(messages(await load())).toEqual(["repos.yaml line 3: setup must be at most 500 characters"]);
+  });
+
+  it("takes an empty or blank setup as no setup, and does not refuse the file", async () => {
+    for (const setup of ['""', "'   '", "", "~"]) {
+      write(`format: 1\nrepos:\n  - { id: a, path: /a, base_branch: main, setup: ${setup} }\n`);
+      const loaded = await load();
+      expect(loaded.ok && "setup" in loaded.value[0]!, setup).toBe(false);
+      expect(loaded.ok, setup).toBe(true);
+    }
+  });
+
   it("has no repos without a file, or with an empty list", async () => {
     expect(await loadRepos({ tokamaHome: join(root, "missing") })).toEqual({ ok: true, value: [] });
     write("format: 1\nrepos: []\n");

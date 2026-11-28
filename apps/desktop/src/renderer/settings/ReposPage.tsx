@@ -24,6 +24,9 @@ const TEXT = {
   path: "Path",
   baseBranch: "Base branch",
   baseBranchHint: "Work branches start from it.",
+  setup: "Setup command",
+  setupHint: "Runs once in every new worktree, before the checks. A template's own setup command replaces it.",
+  noSetup: "None. The checks run in the worktree as it comes from git.",
   checks: "Checks",
   checksHint: "Tokama runs these in order after each change. A change passes when every one exits with 0.",
   noChecksNote: "Quick fix needs at least one check. Templates where you approve the change, like Quick change, work without checks.",
@@ -224,6 +227,17 @@ function Detail({ repo, line, onEdit, onRemove }: DetailProps) {
         <p className="rp-value mono ellipsis" title={repo.baseBranch}>
           {repo.baseBranch}
         </p>
+      </div>
+      <div className="rp-field">
+        <h3>{TEXT.setup}</h3>
+        {repo.setup !== undefined ? (
+          <>
+            <p className="rp-hint">{TEXT.setupHint}</p>
+            <p className="rp-value rp-whole mono">{repo.setup}</p>
+          </>
+        ) : (
+          <p className="rp-note">{TEXT.noSetup}</p>
+        )}
       </div>
       <div className="rp-field">
         <h3>
