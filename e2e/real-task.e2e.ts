@@ -96,3 +96,53 @@ it("asks a plan for its choices, reach and risks, and plans again after a change
   expect(JSON.stringify(again.prompt), "the note came back word for word").toContain(JSON.stringify(`You asked for changes:\n${note}`).slice(1, -1));
   await engine.client.command({ type: "stop_item", itemId });
 });
+
+it("asks an answer for its evidence and next step", async ({ skip }) => {
+  const workspace = createWorkspace();
+  cleanups.push(() => workspace.cleanup());
+  writeRepos(workspace);
+  const engine = await startEngine(workspace);
+  cleanups.push(() => engine.stop());
+  const problem = await claudeProblem(engine.client);
+  if (problem !== undefined) skip(skipNote(problem));
+
+  const reply = await engine.client.command({ type: "start_item", templateId: "builtin/ask", repoIds: [REPO_ID], text: "Why would lineTotal in src/total.js return the wrong amount?" });
+  if (!reply.ok) throw new Error(`start_item failed: ${reply.error.message}`);
+  const itemId = reply.data.itemId;
+  const { item, timedOut } = await waitForItem(engine.client, itemId);
+  expect(timedOut, `the answer did not end within ${ITEM_DEADLINE_MS} ms and was stopped`).toBe(false);
+  const said = item.steps[0]?.attempts?.[0]?.said;
+  const call = JSON.parse(readFileSync(join(workspace.tokamaHome, "items", itemId, "attempts", "answer-1", "call.json"), "utf8")) as { prompt: unknown };
+  expect(JSON.stringify(call.prompt), "the answer step was asked for the findings lines").toContain("EVIDENCE: <where");
+  expect(said?.findings, "the answer step stored a findings record").toBeDefined();
+  process.stdout.write(`real answer: ${said!.findings!.evidence.length} evidence line(s), next step ${said!.findings!.next === undefined ? "no" : "yes"}; headline source ${said!.source}\n`);
+});
+
+it("asks a reviewer for must-fix lines above its verdict", async ({ skip }) => {
+  const workspace = createWorkspace();
+  cleanups.push(() => workspace.cleanup());
+  writeRepos(workspace);
+  const engine = await startEngine(workspace);
+  cleanups.push(() => engine.stop());
+  const problem = await claudeProblem(engine.client);
+  if (problem !== undefined) skip(skipNote(problem));
+
+  const reply = await engine.client.command({ type: "start_item", templateId: "builtin/plan-and-build", repoIds: [REPO_ID], text: TASK });
+  if (!reply.ok) throw new Error(`start_item failed: ${reply.error.message}`);
+  const itemId = reply.data.itemId;
+  const waiting = await waitForItem(engine.client, itemId);
+  expect(waiting.timedOut, "the plan did not wait for you").toBe(false);
+  const asked = waiting.item.decision;
+  expect(asked, "the plan waits with a question").toBeDefined();
+  const approved = await engine.client.command({ type: "resolve_decision", itemId, decisionId: asked!.id, choice: "approve" });
+  expect(approved.ok, JSON.stringify(approved)).toBe(true);
+  // Build, its checks and the review run; the item stops running when it is done or waits again.
+  const ended = await waitForItem(engine.client, itemId, ITEM_DEADLINE_MS * 2);
+  expect(ended.timedOut, "the review did not end in time").toBe(false);
+  const said = ended.item.steps[2]?.attempts?.[0]?.said;
+  const call = JSON.parse(readFileSync(join(workspace.tokamaHome, "items", itemId, "attempts", "review-1", "call.json"), "utf8")) as { prompt: unknown };
+  expect(JSON.stringify(call.prompt), "the review step was asked for must-fix lines").toContain("MUST: <where");
+  expect(said?.review, "the review step stored a review record").toBeDefined();
+  process.stdout.write(`real review: ${said!.review!.mustFix.length} must-fix line(s); headline source ${said!.source}\n`);
+  await engine.client.command({ type: "stop_item", itemId });
+});

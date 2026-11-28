@@ -1,7 +1,7 @@
 // The headline an agent writes at the end of its reply, and what the run loop makes of it. The
 // rule is added to the instructions of every agent step of a template; helpers and Tokama's own
 // steps never get it. Reading the block back is in summary.ts.
-import { MAX_CHOICES, MAX_HEADLINE_CHARS, MAX_PLAN_PART_CHARS, MAX_POINT_CHARS, MAX_POINTS, MAX_RISKS, type Said } from "../../kernel/schemas/index.js";
+import { MAX_CHOICES, MAX_EVIDENCE, MAX_HEADLINE_CHARS, MAX_MUST_FIX, MAX_PLAN_PART_CHARS, MAX_POINT_CHARS, MAX_POINTS, MAX_RISKS, type Said } from "../../kernel/schemas/index.js";
 import type { ParsedHeadline } from "./summary.js";
 
 /** Added to an agent step's instructions; a reviewer's `VERDICT_RULE` comes after it, so the verdict stays the last line. */
@@ -26,6 +26,19 @@ REACH: services | <outside services the built code will call when it runs, or no
 REACH: secrets | <keys or secrets the change needs, or none> | <note, optional>
 RISK: <one line; up to ${MAX_RISKS} such lines: what the engineer accepts by approving>
 Each part at most ${MAX_PLAN_PART_CHARS} characters. Write "none" rather than leaving a REACH line out.`;
+
+/** Added after `REVIEWER_HEADLINE_RULE` and before `VERDICT_RULE`: what blocks approval, one line each, with its place. */
+export const MUST_RULE = `
+When you ask for changes, also write in the block, after HEADLINE and above the VERDICT line, one line for each change that must be made before the work can be approved:
+MUST: <where: a file:line or a file> | <what is wrong>   <up to ${MAX_MUST_FIX} such lines; only what blocks approval, not suggestions>
+Each part at most ${MAX_PLAN_PART_CHARS} characters. Write no MUST line with VERDICT: approve.`;
+
+/** Added after `HEADLINE_RULE` on the last step of a template that finishes with findings: the answer, its evidence and the next step. */
+export const FINDINGS_RULE = `
+Your reply is the answer or the findings the engineer reads: HEADLINE is the answer, or the cause you found. Also write these lines in the block, after HEADLINE:
+EVIDENCE: <where: a file:line, a log, a commit or a command> | <what it shows there>   <up to ${MAX_EVIDENCE} such lines, the strongest first>
+NEXT: <optional; one line: the next step you recommend>
+Each part at most ${MAX_PLAN_PART_CHARS} characters.`;
 
 /** Added after `HEADLINE_RULE` (and `PLAN_RULE`) on a step you approve that a step follows, unless the engineer chose to build anyway on it. */
 export const NO_CHANGE_RULE = `
@@ -69,14 +82,17 @@ export function labelOf(line: string): { label: "HEADLINE" | "POINT" | "READ" | 
 /** Whether the line is a line of the headline block. */
 export const isBlockLine = (line: string): boolean => labelOf(line)?.block === true;
 
-// The plan labels, read with the same tolerance as the block labels but apart from them: a prose
-// line such as "- Risk: the cache" must stay a line of the reply for the readers of `BLOCK_LABEL`.
-const PLAN_LABEL = /^\s*(?:(?:[-*]\s+|>\s*)*)(?:\*\*|__)?(CHOICE|REACH|RISK)(?:\*\*|__)?\s*:([\s\S]*)$/i;
+// The labels of the lines after the headline (plan, review and findings), read with the same
+// tolerance as the block labels but apart from them: a prose line such as "- Risk: the cache" must
+// stay a line of the reply for the readers of `BLOCK_LABEL`.
+const EXTRA_LABEL = /^\s*(?:(?:[-*]\s+|>\s*)*)(?:\*\*|__)?(CHOICE|REACH|RISK|MUST|EVIDENCE|NEXT)(?:\*\*|__)?\s*:([\s\S]*)$/i;
 
-/** The label of a plan line (`CHOICE:`, `REACH:`, `RISK:`) and its plain value; undefined for any other line. */
-export function planLabelOf(line: string): { label: "CHOICE" | "REACH" | "RISK"; value: string } | undefined {
-  const match = PLAN_LABEL.exec(line);
-  return match === null ? undefined : { label: match[1]!.toUpperCase() as "CHOICE" | "REACH" | "RISK", value: plain(match[2]!) };
+export type ExtraLabel = "CHOICE" | "REACH" | "RISK" | "MUST" | "EVIDENCE" | "NEXT";
+
+/** The label of a plan, review or findings line (`CHOICE:`, `REACH:`, `RISK:`, `MUST:`, `EVIDENCE:`, `NEXT:`) and its plain value; undefined for any other line. */
+export function extraLabelOf(line: string): { label: ExtraLabel; value: string } | undefined {
+  const match = EXTRA_LABEL.exec(line);
+  return match === null ? undefined : { label: match[1]!.toUpperCase() as ExtraLabel, value: plain(match[2]!) };
 }
 
 /** A reply of at least this many words can be a must-read by the agent's own flag. */
@@ -94,6 +110,17 @@ export interface ReadContext {
   readonly noChangeOffered?: boolean;
   /** The step was told to write the plan block (`PLAN_RULE`). */
   readonly planAsked?: boolean;
+  /** The step is a reviewer step and was told to write MUST lines (`MUST_RULE`). */
+  readonly reviewAsked?: boolean;
+  /** The step is the last of a findings template and was told to write EVIDENCE and NEXT lines (`FINDINGS_RULE`). */
+  readonly findingsAsked?: boolean;
+}
+
+/** How much of the findings block a reply had, for the log: `full` has evidence and a next step. */
+export function findingsCoverage(said: Said | undefined): "full" | "partial" | "headline_only" | "missing" {
+  const findings = said?.findings;
+  if (findings === undefined || (findings.evidence.length === 0 && findings.next === undefined)) return said?.source === "headline" ? "headline_only" : "missing";
+  return findings.evidence.length > 0 && findings.next !== undefined ? "full" : "partial";
 }
 
 /**
@@ -130,5 +157,8 @@ export function saidOf(parsed: ParsedHeadline | undefined, context: ReadContext)
     ...(context.noChangeOffered === true && parsed.noChange && { noChange: true as const }),
     // Asked for and nothing changed: an empty summary says the agent left the block out.
     ...(context.planAsked === true && context.approvesText && { plan: parsed.plan }),
+    // Asked for: an empty record says the agent left the lines out.
+    ...(context.reviewAsked === true && { review: parsed.review }),
+    ...(context.findingsAsked === true && { findings: parsed.findings }),
   };
 }

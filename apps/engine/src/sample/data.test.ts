@@ -62,13 +62,17 @@ describe("sample items", () => {
       for (const step of steps) for (const attempt of step.attempts ?? []) if (attempt.said !== undefined) found.push(attempt.said);
       return found;
     });
-    expect(saids.map((said) => said["headline"])).toHaveLength(8);
+    expect(saids.map((said) => said["headline"])).toHaveLength(9);
     // The plan and the plan it replaced, the write-up and the Ask answer.
     expect(saids.filter((said) => said["readMinutes"] !== undefined)).toHaveLength(4);
     // Two plans with their choices, reach and risks, and one plan whose agent left them out.
     expect(saids.filter((said) => said["plan"] !== undefined)).toHaveLength(3);
     expect(saids.filter((said) => said["source"] === "first_lines")).toHaveLength(1);
-    expect(saids.filter((said) => said["source"] === "headline" && said["plan"] === undefined && (said["points"] as unknown[]).length === 0 && said["readMinutes"] === undefined)).toHaveLength(1);
+    expect(saids.filter((said) => said["source"] === "headline" && said["plan"] === undefined && said["review"] === undefined && (said["points"] as unknown[]).length === 0 && said["readMinutes"] === undefined)).toHaveLength(1);
+    // A review that asked for changes with two must-fix lines; an investigation with evidence and a next step; an answer with evidence and no next step.
+    expect(saids.filter((said) => (said["review"] as { mustFix: unknown[] } | undefined)?.mustFix.length === 2)).toHaveLength(1);
+    const found = saids.flatMap((said) => (said["findings"] === undefined ? [] : [said["findings"] as { evidence: unknown[]; next?: string }]));
+    expect(found.map((findings) => [findings.evidence.length, findings.next !== undefined]).sort()).toEqual([[2, false], [3, true]]);
     expect(saids.filter((said) => (said["points"] as unknown[]).length === 3)).toHaveLength(1);
   });
 

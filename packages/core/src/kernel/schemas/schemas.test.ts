@@ -174,6 +174,26 @@ describe("item record", () => {
       expect(paths(parseItemRecord(withAttempt({ said: { ...said, plan } })))).toContain(`steps.0.attempts.0.said.plan${path === "" ? "" : `.${path}`}`);
     });
 
+    it("may carry review and findings records, also empty ones, at their caps", () => {
+      const note = { where: "w".repeat(160), what: "t".repeat(160) };
+      const review = { mustFix: Array.from({ length: 5 }, () => note), moreMustFix: 4 };
+      const findings = { evidence: Array.from({ length: 5 }, () => ({ what: "only what" })), moreEvidence: 1, next: "n".repeat(160) };
+      expect(parseItemRecord(withAttempt({ said: { ...said, review, findings } })).ok).toBe(true);
+      expect(parseItemRecord(withAttempt({ said: { ...said, review: { mustFix: [], moreMustFix: 0 }, findings: { evidence: [], moreEvidence: 0 } } })).ok).toBe(true);
+    });
+
+    it.each([
+      ["six must-fix lines", { review: { mustFix: Array.from({ length: 6 }, () => ({ what: "a" })), moreMustFix: 0 } }, "review.mustFix"],
+      ["a must-fix line with no what", { review: { mustFix: [{ where: "a" }], moreMustFix: 0 } }, "review.mustFix.0.what"],
+      ["a must-fix part over its cap", { review: { mustFix: [{ what: "a".repeat(161) }], moreMustFix: 0 } }, "review.mustFix.0.what"],
+      ["an unknown review field", { review: { mustFix: [], moreMustFix: 0, verdict: "approve" } }, "review"],
+      ["six evidence lines", { findings: { evidence: Array.from({ length: 6 }, () => ({ what: "a" })), moreEvidence: 0 } }, "findings.evidence"],
+      ["a next step over its cap", { findings: { evidence: [], moreEvidence: 0, next: "a".repeat(161) } }, "findings.next"],
+      ["an unknown findings field", { findings: { evidence: [], moreEvidence: 0, color: "red" } }, "findings"],
+    ])("refuses %s", (_label, patch, path) => {
+      expect(paths(parseItemRecord(withAttempt({ said: { ...said, ...patch } })))).toContain(`steps.0.attempts.0.said.${path}`);
+    });
+
     it.each([
       ["a headline over its cap", { headline: "x".repeat(141) }, "steps.0.attempts.0.said.headline"],
       ["an empty headline", { headline: "" }, "steps.0.attempts.0.said.headline"],

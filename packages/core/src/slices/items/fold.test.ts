@@ -193,6 +193,14 @@ describe("foldItem", () => {
     expect(item.steps[0]?.attempts[0]?.said?.plan).toEqual(plan);
   });
 
+  it("attempt_ended: carries the review and findings records of what the agent said whole", () => {
+    const review = { mustFix: [{ where: "a.ts:3", what: "leak" }], moreMustFix: 1 };
+    const findings = { evidence: [{ what: "it streams" }], moreEvidence: 0, next: "Ship it." };
+    const said = { source: "headline" as const, headline: "H.", points: [], morePoints: 0, bodyBytes: 12, review, findings };
+    const item = fold([...startBuild, { type: "attempt_ended", stepId: BUILD, attempt: 1, result: "passed", said }]);
+    expect(item.steps[0]?.attempts[0]?.said).toMatchObject({ review, findings });
+  });
+
   it("attempt_ended and item_ended: the checked tree on a passed attempt, the commits on a done item", () => {
     const tree = "a".repeat(40);
     const commit = "b".repeat(40);

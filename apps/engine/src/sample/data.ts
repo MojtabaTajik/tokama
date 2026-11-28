@@ -331,10 +331,35 @@ const SAID_WITH_POINTS = {
 const SAID_MUST_READ = {
   source: "headline",
   headline: "A missing index on order_items(order_id) is the cause; adding it cuts the query from 900 ms to 4 ms.",
-  points: [],
+  points: ["Unsure: whether finance relied on the old report numbers since the change."],
   morePoints: 0,
   bodyBytes: 3_480,
   readMinutes: 4,
+  findings: {
+    evidence: [
+      { where: "db/schema.sql:212", what: "order_items has no index on order_id, only on its own id" },
+      { where: "EXPLAIN on prod, 25 Nov 09:40", what: "sequential scan over 3.1 million rows, 900 ms" },
+      { where: "the same query on staging with the index", what: "index scan, 4 ms" },
+    ],
+    moreEvidence: 0,
+    next: "Add the index with CREATE INDEX CONCURRENTLY and re-run the query plan.",
+  },
+};
+
+/** What the Reviewer said when Review asked for changes after Build: two must-fix lines with their place in the code. */
+const SAID_REVIEW_MUST = {
+  source: "headline",
+  headline: "The fade is fixed, but the start card still jumps on narrow screens and the new rule has no test.",
+  points: [],
+  morePoints: 0,
+  bodyBytes: 1_320,
+  review: {
+    mustFix: [
+      { where: "src/start-card.css:41", what: "the narrow-screen rule sets display again, so the two lines still jump onto one" },
+      { where: "src/start-card.test.tsx", what: "no test checks that the card keeps its height while it fades" },
+    ],
+    moreMustFix: 0,
+  },
 };
 
 /** What the Architect said of the stock reservation plan: a must-read with two points, and its choices, reach and risks. */
@@ -391,6 +416,14 @@ const SAID_ANSWER = {
   morePoints: 0,
   bodyBytes: 1_020,
   readMinutes: 1,
+  // Two pieces of evidence and no next step: the card says so.
+  findings: {
+    evidence: [
+      { where: "src/orders/query.ts:30", what: "the list query already returns a cursor" },
+      { where: "src/orders/routes.ts", what: "4 routes, none writes a file yet" },
+    ],
+    moreEvidence: 0,
+  },
 };
 
 /** A one-line headline: no points, a small reply. */
@@ -758,7 +791,7 @@ function rawItems(now: number): RawItem[] {
             { attempt: 1, result: "passed", checks: [{ command: "npm test", passed: true, exitCode: 0 }] },
             { attempt: 2, result: "passed", checks: [{ command: "npm test", passed: true, exitCode: 0 }] },
           ],
-          [{ attempt: 1, result: "failed", detail: "The reviewer asked for changes.", checks: [] }],
+          [{ attempt: 1, result: "failed", detail: "The reviewer asked for changes.", checks: [], said: SAID_REVIEW_MUST }],
         ][index];
         return { ...step, attempts, ...(index === 3 && { runs: 1, maxAttempts: 1 }) };
       }),

@@ -131,6 +131,8 @@ describe("parseHeadline", () => {
       noChange: false,
       plan: { choices: [], moreChoices: 0, reach: [], risks: [], moreRisks: 0 },
       planUnread: false,
+      review: { mustFix: [], moreMustFix: 0 },
+      findings: { evidence: [], moreEvidence: 0 },
     });
   });
 
