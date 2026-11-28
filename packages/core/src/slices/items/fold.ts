@@ -233,6 +233,8 @@ function applyTo(next: StoredItem, event: ItemEvent): FoldError | undefined {
         kind: event.outcome,
         ...(event.detail !== undefined && { detail: event.detail }),
         ...(event.commits !== undefined && { commits: event.commits }),
+        ...(event.change !== undefined && { change: event.change }),
+        ...(event.tree !== undefined && { tree: event.tree }),
         at: event.at,
       };
       break;

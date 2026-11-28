@@ -451,6 +451,7 @@ export function ItemDrawer({ bridge, itemId, setup, onClose, diffAsked, onCheckA
 
       {item !== undefined && hasEnded(item) && expanded?.reader === undefined && (
         <ResultCard
+          key={item.id}
           bridge={bridge}
           item={item}
           setup={setup}

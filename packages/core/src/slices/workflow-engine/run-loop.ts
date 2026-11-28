@@ -35,6 +35,7 @@ import {
   type AttemptFile,
   type AttemptLogResult,
   type AttemptRecord,
+  type ChangeSummary,
   type CommandErrorCode,
   type CoveredPath,
   type DecisionChoice,
@@ -60,7 +61,7 @@ import {
 import { cutText, scrubPaths } from "../../kernel/text/index.js";
 import type { Agent, Repo } from "../config/index.js";
 import { type ActivityState, callUsage, agentCliGuardDefaults, labelText, redactPaths, runGuardedCall, type LoopGuardSettings } from "../execution/index.js";
-import { protectedSet, sharedGitSettings, type ProtectedSet } from "../integrity/index.js";
+import { protectedSet, readChange, sharedGitSettings, summarizeChange, type ProtectedSet } from "../integrity/index.js";
 import { countedAttempts, openAttempt, openDecisions, recoverItems, RUN_FAILURE_CHOICES, type ItemStore, type RecoveredItem } from "../items/index.js";
 import { buildPrompt, type StepResults } from "../prompting/index.js";
 import { checkRunOptions, checksPass, runCommand, type CheckResult } from "../verification/index.js";
@@ -365,7 +366,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     stepId: StepId | undefined,
     choices: readonly DecisionChoice[],
     text: string,
-    extra: { covers?: readonly CoveredPath[]; tree?: string; change?: { files: number }; proposes?: "no_change" } = {},
+    extra: { covers?: readonly CoveredPath[]; tree?: string; change?: ChangeSummary; proposes?: "no_change" } = {},
   ): ItemEventBody => ({
     type: "decision_opened",
     decisionId: DecisionIdSchema.parse(newId("decision", clock.now())),
@@ -949,6 +950,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     if (!baseTree.ok) return fail(`Cannot read the base commit's tree: ${baseTree.error.message}`);
     const unchanged = staged.value === baseTree.value;
     const shown = unchanged ? 0 : Math.max(1, files.value.length);
+    const change = unchanged ? { files: 0 } : { ...(await summarizeChange(git, worktree.path, worktree.baseCommit, files.value)), files: shown };
     const changed = files.value.length === 0 ? "files the file list cannot show" : `${files.value.length} file${files.value.length === 1 ? "" : "s"}`;
     // Approve ends the item with a commit when this is the last step and the template commits.
     const commits = ctx.template.steps.at(-1)?.id === step.id && ctx.template.finish.includes("commit");
@@ -979,7 +981,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     append(item.id, [
       // A step that changed nothing asks you to approve its text: that text is a must-read.
       attemptEnded(step.id, attempt, "passed", { said: said(unchanged, false) }),
-      decision("plan_approval", step.id, [commits ? APPROVE_AND_COMMIT : APPROVE, REQUEST_CHANGES, NO_ACTION, STOP], text, { tree: staged.value, change: { files: shown } }),
+      decision("plan_approval", step.id, [commits ? APPROVE_AND_COMMIT : APPROVE, REQUEST_CHANGES, NO_ACTION, STOP], text, { tree: staged.value, change }),
     ]);
     return WAIT;
   };
@@ -1207,8 +1209,9 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
       return WAIT;
     }
 
-    const done = (commit: string): Next => {
-      append(item.id, [{ type: "item_ended", outcome: "done", detail: detail(`Committed ${commit.slice(0, 12)} on ${worktree.branch}.`), commits: [{ repoId: ctx.repo.id, commit }] }]);
+    const done = async (commit: string): Promise<Next> => {
+      const change = await readChange(git, worktree.path, worktree.baseCommit, commit);
+      append(item.id, [{ type: "item_ended", outcome: "done", detail: detail(`Committed ${commit.slice(0, 12)} on ${worktree.branch}.`), commits: [{ repoId: ctx.repo.id, commit }], change, tree }]);
       return WAIT;
     };
     const tip = await git.revParse(worktree.path, `refs/heads/${worktree.branch}`);
@@ -1219,7 +1222,7 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     }
     const commit = await refLedger.around(ctx.repo.path, [branchRef(worktree.branch)], () => commitItem(git, worktree.path, worktree, { id: item.id, title: item.title, text: item.text, tree }));
     if (!commit.ok && commit.error.reason === "nothing-to-commit") {
-      append(item.id, [{ type: "item_ended", outcome: "done", detail: "The item made no changes, so there is nothing to commit." }]);
+      append(item.id, [{ type: "item_ended", outcome: "done", detail: "The item made no changes, so there is nothing to commit.", change: { files: 0 } }]);
       return WAIT;
     }
     if (!commit.ok) return fail(`Cannot commit: ${commit.error.message}`);

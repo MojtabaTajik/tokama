@@ -139,7 +139,7 @@ flow(
     // The worktree is removed right after the item ends: the card says so once that is recorded.
     await expect
       .poll(async () => (await result.locator(".rc-row").allInnerTexts()).slice(0, 2), { message: "the Changed and Ran rows" })
-      .toEqual(["Changed\n0 files · nothing committed · the worktree is removed", "Ran\nPlan only · Build and Review did not run"]);
+      .toEqual(["Changed\nnone · 0 files changed, nothing committed · the worktree is removed", "Ran\nPlan only · Build and Review did not run"]);
     expect((await result.locator(".rc-row").allInnerTexts())[2]).toMatch(/^Sent out/);
     await result.getByRole("button", { name: "Read the answer" }).waitFor();
     await result.getByRole("button", { name: "Start work from this…" }).waitFor();

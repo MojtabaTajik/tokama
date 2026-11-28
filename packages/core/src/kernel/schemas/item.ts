@@ -105,6 +105,42 @@ export const SaidSchema = z.strictObject({
   noChange: z.literal(true).optional(),
 });
 
+/** What a changed file is, for the Changed row and the risk rules; the first six are the sensitive kinds. */
+export const TouchKindSchema = z.enum(["dependencies", "migrations", "ci", "infrastructure", "secrets", "sign_in", "tests_added", "tests_edited"]);
+
+/**
+ * What a change to a repo comes to, as counted from one `git diff --numstat`: files and lines,
+ * and how many files of each kind. Counts only, never paths. `unreadable` says the lines could not
+ * be counted: only binary files, too many files to count, or (`unknown`) git did not give the files.
+ */
+export const ChangeSummarySchema = z.strictObject({
+  files: z.int().nonnegative(),
+  added: z.int().nonnegative().optional(),
+  removed: z.int().nonnegative().optional(),
+  touches: z.array(z.strictObject({ kind: TouchKindSchema, files: z.int().positive() })).max(8).optional(),
+  unreadable: z.enum(["binary_only", "too_large", "unknown"]).optional(),
+});
+
+/** Why an item is rated as it is; the words belong to the clients. */
+export const RiskReasonSchema = z.enum([
+  "no_checks",
+  "review_asked_changes",
+  "no_review_sensitive",
+  "no_review_large",
+  "no_review_last_attempt",
+  "protected_change",
+  "very_large",
+  "small_checked_reviewed",
+  "small_checked",
+  "unreadable_change",
+]);
+
+/** The risk of a change, from fixed rules over measured facts; no AI judges it. */
+export const RiskSchema = z.strictObject({
+  level: z.enum(["low", "high", "not_rated"]),
+  reasons: z.array(RiskReasonSchema).min(1).max(10),
+});
+
 /** One attempt of a step: one agent session plus its checks. */
 export const AttemptSummarySchema = z.strictObject({
   attempt: z.int().min(1),
@@ -264,6 +300,10 @@ export const ItemRecordSchema = z.strictObject({
       at: EpochMsSchema.optional(),
     })
     .optional(),
+  /** What a done task changed, or what the change waiting for approval would change; absent for a done item from before it was recorded. */
+  change: ChangeSummarySchema.optional(),
+  /** Rated from the change and the item's checks and reviews, each time it is read; absent when nothing was changed. */
+  risk: RiskSchema.optional(),
   /** A done item's worktree and what was done with it. Present once a done item has a worktree. */
   finish: z
     .strictObject({
@@ -302,6 +342,10 @@ export type AttemptResult = z.output<typeof AttemptResultSchema>;
 export type RunFailure = z.output<typeof RunFailureSchema>;
 export type AttemptSummary = z.output<typeof AttemptSummarySchema>;
 export type Said = z.output<typeof SaidSchema>;
+export type TouchKind = z.output<typeof TouchKindSchema>;
+export type ChangeSummary = z.output<typeof ChangeSummarySchema>;
+export type RiskReason = z.output<typeof RiskReasonSchema>;
+export type Risk = z.output<typeof RiskSchema>;
 export type Stage = z.output<typeof StageSchema>;
 export type ItemKind = z.output<typeof ItemKindSchema>;
 export type StepState = z.output<typeof StepStateSchema>;

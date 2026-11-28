@@ -1,9 +1,10 @@
 // The result card of an ended item, under its header: what the work produced in its agent's own
 // words (a headline; with points and "Read more"; or a must-read with its reading time and a
-// button to the reader), then what Tokama measured: Checked, Reviewed, Sent out. An item that did
+// button to the reader), then what Tokama measured: Checked, Reviewed, Changed, Sent out and Risk. An item that did
 // not finish says where it stopped first. Agent output, check commands and engine text are
 // rendered as React text only.
 import type { ItemRecord, Setup } from "@tokama/core";
+import { useState } from "react";
 import type { TokamaBridge } from "../../shared/bridge.js";
 import { Button } from "../ui/Button.js";
 import { Pill } from "../ui/Pill.js";
@@ -24,6 +25,7 @@ const TEXT = {
   readAnswer: "Read the answer",
   startFrom: "Start work from this…",
   morePoints: (count: number) => `+${count} more in the output`,
+  more: (count: number) => `+${count} more`,
 } as const;
 
 export interface ResultCardProps {
@@ -170,12 +172,23 @@ function Mark({ mark }: { readonly mark: MarkData }) {
 }
 
 function Row({ row }: { readonly row: ResultRow }) {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const more = row.more ?? [];
   return (
     <div className="rc-row">
-      <dt>{row.label}</dt>
+      <dt title={row.help}>{row.label}</dt>
       <dd>
         {row.mark !== undefined && <Mark mark={row.mark} />}
         {row.text}
+        {more.length > 0 && !moreOpen && (
+          <>
+            {" "}
+            <Button variant="link" inline onClick={() => setMoreOpen(true)}>
+              {TEXT.more(more.length)}
+            </Button>
+          </>
+        )}
+        {moreOpen && <span className="rc-detail">{more.join("; ")}</span>}
         {row.detail !== undefined && <span className="rc-detail mono">{row.detail}</span>}
       </dd>
     </div>

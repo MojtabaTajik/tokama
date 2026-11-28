@@ -118,6 +118,11 @@ flow("shows a done item with Finish and its steps' outputs folded", async ({ pag
   await drawer(page).getByRole("button", { name: "Open full view" }).click();
   const full = page.locator(".expanded");
   await full.getByRole("region", { name: "Finish" }).waitFor();
+  // The card in the full view has the Changed and Risk rows beside the facts.
+  expect(await full.getByRole("region", { name: "Result" }).locator(".rc-row").allInnerTexts().then((rows) => rows.map((row) => row.replace(/\s+/g, " ").trim()).filter((row) => /^(Changed|Risk)/.test(row)))).toEqual([
+    "Changed 2 files +14 −3 · 1 new test file",
+    "Risk Low · small change, checks passed",
+  ]);
   // An item that has ended opens on its output; the Steps tab keeps each attempt's output folded.
   expect(await full.getByRole("tab", { name: "Output" }).getAttribute("aria-selected")).toBe("true");
   await full.getByRole("tab", { name: "Steps" }).click();

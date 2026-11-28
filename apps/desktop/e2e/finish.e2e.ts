@@ -70,7 +70,7 @@ flow("opens a pull request for a done item from the row's menu, then removes its
   expect(await drawer(page).locator(".drawer-state").innerText()).toContain("PR open");
   await expect.poll(() => row(page, SAMPLE_DONE).innerText(), { message: "the list row" }).toContain("PR #128 open");
   // The card now says the branch left the machine too.
-  expect((await drawer(page).locator(".result-card .rc-row").last().innerText()).replace(/\s+/g, " ")).toContain("The branch to github.com/northwind/orders-api");
+  expect((await drawer(page).locator(".result-card .rc-row", { hasText: "Sent out" }).innerText()).replace(/\s+/g, " ")).toContain("The branch to github.com/northwind/orders-api");
   await screenshot("finish-4-pr-open");
 
   await ended.getByRole("button", { name: "Remove worktree" }).click();

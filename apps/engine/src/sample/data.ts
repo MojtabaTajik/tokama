@@ -32,6 +32,10 @@ export const ITEM_IDS = {
   reviewLimit: "item_1a2b3c4d-0013-4a1b-8c1d-000000000013",
   /** An Ask item that ended done: the answer is the result, nothing was committed and its worktree is gone. */
   ask: "item_1a2b3c4d-0014-4a1b-8c1d-000000000014",
+  /** A done task that changed dependencies and no second agent reviewed: its risk is high. */
+  dependencyUpgrade: "item_1a2b3c4d-0015-4a1b-8c1d-000000000015",
+  /** A done task that changed binary files only: its risk is not rated. */
+  imageSwap: "item_1a2b3c4d-0016-4a1b-8c1d-000000000016",
 } as const;
 
 const agents = {
@@ -370,6 +374,65 @@ export function sampleItems(now: number) {
   return rawItems(now).map((item) => withTimes(item, now, item.id === ITEM_IDS.finished ? { 0: SAMPLE_WAIT_MS } : {}));
 }
 
+/** A done Quick fix task with a commit on its branch, its checks passed, and the change and risk the engine would rate for it. */
+function changedItem(now: number, n: number, id: string, repo: string, minutesAgo: number, fields: { title: string; text: string; headline: string; change: object; risk: object }): RawItem {
+  const commit = `${n}${"f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39"}`.slice(0, 40);
+  return withTimes(
+    {
+      schemaVersion: 1,
+      id,
+      kind: "task",
+      templateId: templates.quickFix.id,
+      title: fields.title,
+      text: fields.text,
+      repoIds: [repo],
+      privacy: "local_only",
+      state: "done",
+      createdAt: ago(now, minutesAgo),
+      cardLine: `commit ${commit.slice(0, 7)} · tokama/000000${n}`,
+      steps: steps(templates.quickFix, ["passed", "passed"]).map((step, index) => ({
+        ...step,
+        attempts: [
+          {
+            attempt: 1,
+            result: "passed",
+            checks: index === 0 ? [] : ["pnpm typecheck", "pnpm lint", "pnpm test"].map((command) => ({ command, passed: true, exitCode: 0 })),
+            ...(index === 0 && { said: { source: "headline", headline: fields.headline, points: [], morePoints: 0, bodyBytes: 90 } }),
+          },
+        ],
+      })),
+      outcome: { kind: "done", detail: `Committed ${commit.slice(0, 12)} on tokama/000000${n}.`, commits: [{ repoId: repo, commit, branch: `tokama/000000${n}` }] },
+      change: fields.change,
+      risk: fields.risk,
+      finish: { worktreeRemoved: false },
+    },
+    now,
+  );
+}
+
+/**
+ * Two more done tasks, apart from `sampleItems`: one that changes dependencies and no second agent
+ * reviewed (high), one that replaces binary files, whose lines Tokama cannot count (not rated).
+ */
+export function sampleChangedItems(now: number): RawItem[] {
+  return [
+    changedItem(now, 15, ITEM_IDS.dependencyUpgrade, "orders-api", 210, {
+      title: "Upgrade the HTTP client in orders-api",
+      text: "Upgrade the HTTP client library in orders-api to its latest minor version.",
+      headline: "HTTP client 4.2 to 4.7; the retry option was renamed in 2 files.",
+      change: { files: 5, added: 61, removed: 40, touches: [{ kind: "dependencies", files: 2 }] },
+      risk: { level: "high", reasons: ["no_review_sensitive"] },
+    }),
+    changedItem(now, 16, ITEM_IDS.imageSwap, "checkout-web", 240, {
+      title: "Replace the product images in checkout-web",
+      text: "Convert the product images in checkout-web to WebP.",
+      headline: "All 212 product images are now WebP.",
+      change: { files: 212, unreadable: "binary_only" },
+      risk: { level: "not_rated", reasons: ["unreadable_change"] },
+    }),
+  ];
+}
+
 function rawItems(now: number): RawItem[] {
   const base = { schemaVersion: 1 };
   return [
@@ -521,6 +584,9 @@ function rawItems(now: number): RawItem[] {
         commits: [{ repoId: "orders-api", commit: "3f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39", branch: "tokama/00000011" }],
         at: ago(now, 90),
       },
+      // Small, checked, nothing sensitive and no review step: low.
+      change: { files: 2, added: 14, removed: 3, touches: [{ kind: "tests_added", files: 1 }] },
+      risk: { level: "low", reasons: ["small_checked"] },
       finish: { worktreeRemoved: false, pushTarget: "github.com/northwind/orders-api" },
     },
     {

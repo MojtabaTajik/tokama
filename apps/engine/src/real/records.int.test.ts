@@ -327,6 +327,34 @@ describe("toItemRecord", () => {
     });
   });
 
+  describe("the change and the risk of an item", () => {
+    const TREE = "9f8e7d6c5b4a39281706f5e4d3c2b1a099887766";
+    const CHANGE = { files: 3, added: 40, removed: 8 };
+    const ran = [{ type: "step_started", stepId: FIX }, { type: "attempt_started", stepId: FIX, attempt: 1 }, { type: "attempt_ended", stepId: FIX, attempt: 1, result: "passed", tree: TREE }] as const;
+    const finished = (extra: Record<string, unknown>) =>
+      toItemRecord(append(created(), [...ran, { type: "step_ended", stepId: FIX, result: "passed" }, { type: "item_ended", outcome: "done", commits: [{ repoId: "orders-api" as never, commit: COMMIT }], ...extra }] as never))!;
+
+    it("sends the change a done item recorded, and a risk rated from it: no checks ran, so high", () => {
+      const record = finished({ change: CHANGE, tree: TREE });
+      expect(record.change).toEqual(CHANGE);
+      expect(record.risk).toEqual({ level: "high", reasons: ["no_checks"] });
+      expect(parseItemRecord(record).ok).toBe(true);
+    });
+
+    it("rates an item from before changes were recorded as not rated, with no change", () => {
+      const record = finished({});
+      expect(record.risk).toEqual({ level: "not_rated", reasons: ["unreadable_change"] });
+      expect(record).not.toHaveProperty("change");
+    });
+
+    it("sends the change waiting for approval and its risk, and neither for a plan that changed no file or a failed item", () => {
+      const asked = (change: unknown) => toItemRecord(append(created(), [...ran, { type: "decision_opened", decisionId: DECISION, kind: "plan_approval", stepId: FIX, choices: [{ id: "approve", label: "Approve" }], tree: TREE, change }] as never))!;
+      expect(asked(CHANGE)).toMatchObject({ change: CHANGE, risk: { level: "high" } });
+      expect(asked({ files: 0 })).not.toHaveProperty("risk");
+      expect(toItemRecord(append(created(), [...ran, { type: "item_ended", outcome: "failed", detail: "Stopped." }] as never))).not.toHaveProperty("risk");
+    });
+  });
+
   describe("the question each kind of decision asks", () => {
     const TREE = "9f8e7d6c5b4a39281706f5e4d3c2b1a099887766";
     const BOTH = [{ id: "approve", label: "Approve" }, { id: "request_changes", label: "Request changes" }, { id: "no_action_needed", label: "End: no action needed" }, { id: "stop", label: "Stop" }];

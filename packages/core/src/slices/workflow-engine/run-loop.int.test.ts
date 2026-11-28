@@ -369,7 +369,7 @@ describe("run loop: done_when", () => {
     // The question says what Approve does: this last step commits.
     expect(asked).toMatchObject({ detail: "builder changed 2 files in a worktree of orders-api. Nothing is committed until you approve. Request changes sends your note to builder for another run." });
     expect(asked.choices[0]?.label).toBe("Approve and commit");
-    expect(asked.change).toEqual({ files: 2 });
+    expect(asked.change).toEqual({ files: 2, added: 2, removed: 1 });
     expect(diff.value.files.map((f) => [f.path, f.status, f.added, f.removed])).toEqual([
       ["app.txt", "modified", 1, 1],
       ["notes.txt", "added", 1, 0],
@@ -420,6 +420,40 @@ describe("run loop: done_when", () => {
     expect(await plain(repo.path, "show", `${item(id).outcome?.commits?.[0]?.commit}:app.txt`)).toBe("fixed");
   });
 
+  it("you approve: the question and the item's end carry what the change comes to, as counts without paths", SLOW, async () => {
+    const files = { "app.txt": "fixed\nmore\n", Dockerfile: "FROM node\n", "db/migrations/001.sql": "select 1;\n", "src/total.test.ts": "x\n" };
+    const loop = engine(fakeRuntime([edits(files)]));
+    const id = await start(loop, template([{ id: "change", doneWhen: "you approve", maxAttempts: 3 }]));
+    const asked = openDecision(id)!;
+    const counts = { files: 4, added: 5, removed: 1, touches: [{ kind: "migrations", files: 1 }, { kind: "infrastructure", files: 1 }, { kind: "tests_added", files: 1 }] };
+    expect(asked.change).toEqual(counts);
+    await answer(loop, id, "approve");
+    expect(item(id).outcome?.change).toEqual(counts);
+    expect(item(id).outcome?.tree).toBe(asked.tree);
+    expect(item(id).outcome?.commits).toHaveLength(1);
+  });
+
+  it("you approve: a change of binary files only is recorded as unreadable, and an item that changed nothing as no files", SLOW, async () => {
+    const loop = engine(fakeRuntime([edits({ "logo.bin": "a\0b\n" }), says("Nothing to change.")]));
+    const id = await start(loop, template([{ id: "change", doneWhen: "you approve", maxAttempts: 3 }]));
+    expect(openDecision(id)!.change).toEqual({ files: 1, unreadable: "binary_only" });
+    await answer(loop, id, "approve");
+    expect(item(id).outcome?.change).toEqual({ files: 1, unreadable: "binary_only" });
+    const quiet = await start(loop, template([{ id: "change", doneWhen: "you approve", maxAttempts: 3 }]));
+    expect(openDecision(quiet)!.change).toEqual({ files: 0 });
+    await answer(loop, quiet, "approve");
+    expect(item(quiet).outcome).toMatchObject({ kind: "done", change: { files: 0 } });
+  });
+
+  it("checks pass: the item's end records the change and the tree the checks passed on", SLOW, async () => {
+    const loop = engine(fakeRuntime([edits(FIXED)]));
+    const id = await start(loop, template([BUILD_CHECKED]));
+    const committed = item(id).outcome?.commits?.[0]?.commit;
+    expect(item(id).outcome?.change).toEqual({ files: 1, added: 1, removed: 1 });
+    expect(item(id).outcome?.tree).toBe(await plain(repo.path, "rev-parse", `${committed}^{tree}`));
+    expect(item(id).outcome?.tree).toBe(item(id).steps[0]?.attempts.findLast((a) => a.result === "passed")?.tree);
+  });
+
   it("you approve: a tree that differs from the base is a change with files even when the file list is empty", SLOW, async () => {
     const empty = { ...git, diffFiles: async () => ({ ok: true as const, value: [] }) };
     const loop = engine(fakeRuntime([edits(FIXED)]), { git: empty });
@@ -430,6 +464,10 @@ describe("run loop: done_when", () => {
     expect(asked.detail).toContain("Nothing is committed until you approve");
     expect(asked.detail).not.toContain("changed 0 files");
     expect(asked.choices[0]?.label).toBe("Approve and commit");
+    // The commit differs from the base though no file is listed: the end records an unknown change, not "no files".
+    await answer(loop, id, "approve");
+    expect(item(id).outcome?.commits).toHaveLength(1);
+    expect(item(id).outcome?.change).toEqual({ files: 0, unreadable: "unknown" });
   });
 
   it("you approve: a change reverted after Request changes is not committed; the item ends with nothing to commit", SLOW, async () => {

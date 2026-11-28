@@ -3,7 +3,8 @@
 // that opens the reader. The sample data is in apps/engine/src/sample/data.ts: "Fix the null check in
 // cart totals" is a done task with a headline, three points and a commit on its own branch,
 // "Slow query on order_items" a done investigation whose write-up is a must-read, and the Postgres
-// driver upgrade a failed task.
+// driver upgrade a failed task. Two more done tasks carry a high risk (a dependency change nobody
+// reviewed) and a risk not rated (binary files only).
 import type { Page } from "playwright-core";
 import { expect } from "vitest";
 import { drawer, flow, openRow, segment } from "./harness.js";
@@ -11,6 +12,8 @@ import { drawer, flow, openRow, segment } from "./harness.js";
 const WITH_POINTS = "Fix the null check in cart totals";
 const MUST_READ = "Slow query on order_items";
 const FAILED = "Upgrade the Postgres driver in orders-api";
+const HIGH = "Upgrade the HTTP client in orders-api";
+const NOT_RATED = "Replace the product images in checkout-web";
 
 const showAll = async (page: Page) => {
   await segment(page, "All").click();
@@ -30,7 +33,9 @@ flow("a done item's card says what was produced and what was checked, with the o
   expect((await card.locator(".rc-row").allInnerTexts()).map((line) => line.replace(/\s+/g, " ").trim())).toEqual([
     "Checked ✓ passed: 3 of 3 checks passed pnpm typecheck · pnpm lint · pnpm test",
     "Reviewed – none: Quick fix has no review step",
+    "Changed 2 files +14 −3 · 1 new test file",
     "Sent out ↗ sent out: Code and diffs to Claude Code",
+    "Risk Low · small change, checks passed",
   ]);
   // Grey: no fact of a normal run has a colour.
   expect(await card.locator(".rc-mark[data-tone=fail], .rc-mark[data-tone=warn]").count()).toBe(0);
@@ -55,6 +60,30 @@ flow("a done item's card says what was produced and what was checked, with the o
 
   await resize(1024, 642);
   await screenshot("13-card-done-drawer-1024");
+});
+
+flow("the card says High with a symbol and its reasons, and Not rated with its reason; a low risk is plain text", async ({ page, resize, screenshot }) => {
+  await resize(1200, 800);
+  await showAll(page);
+  const squash = async (locator: ReturnType<Page["locator"]>) => (await locator.innerText()).replace(/\s+/g, " ").trim();
+  await openRow(page, HIGH);
+  const high = drawer(page).getByRole("region", { name: "Result" });
+  await high.waitFor();
+  const highRows = (await high.locator(".rc-row").allInnerTexts()).map((line) => line.replace(/\s+/g, " ").trim());
+  expect(highRows).toContain("Changed 5 files +61 −40 · 2 dependency files");
+  expect(highRows.at(-1)).toBe("Risk ! warning: High · changes dependencies and no second agent reviewed");
+  expect(await high.locator(".rc-mark[data-tone=fail]").count(), "the ! of High is in colour").toBe(1);
+  await screenshot("13-card-risk-high-drawer");
+  await openRow(page, NOT_RATED);
+  const unrated = drawer(page).getByRole("region", { name: "Result" });
+  await unrated.getByText("212 files").waitFor();
+  expect(await squash(unrated.locator(".rc-row").last())).toBe("Risk ? unknown: Not rated · Tokama could not read the change: binary files only");
+  expect(await squash(unrated.locator(".rc-row", { hasText: "Changed" }))).toBe("Changed 212 files · binary, no line counts");
+  expect(await unrated.locator(".rc-mark[data-tone=fail]").count(), "Not rated is not red").toBe(0);
+  await screenshot("13-card-risk-not-rated-drawer");
+  await openRow(page, WITH_POINTS);
+  await drawer(page).getByRole("region", { name: "Result" }).getByText("Low · small change, checks passed").waitFor();
+  await screenshot("13-card-risk-low-drawer");
 });
 
 flow("the full view has the card in two columns and the Finish button in the header row", async ({ page, resize, screenshot }) => {
@@ -98,7 +127,8 @@ flow("a must-read shows its reading time and the button opens the reader on that
   expect(await card.locator(".rc-who").innerText()).toMatch(/^Local investigator says\s+read · 4 min$/);
   expect(await card.locator(".rc-headline").innerText()).toContain("A missing index on order_items(order_id) is the cause");
   // A read-only item: what you approved, and no review.
-  expect(await card.locator(".rc-row dt").allInnerTexts()).toEqual(["Checked", "Sent out"]);
+  expect(await card.locator(".rc-row dt").allInnerTexts()).toEqual(["Checked", "Changed", "Sent out"]);
+  expect(await card.locator(".rc-row").nth(1).innerText()).toMatch(/Nothing: read-only/);
   await screenshot("13-card-must-read-drawer");
   await card.getByRole("button", { name: "Read the write-up" }).click();
   const reader = page.locator(".expanded").getByRole("region", { name: "Reader" });

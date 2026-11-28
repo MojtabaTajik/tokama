@@ -15,6 +15,7 @@ import {
 } from "./ids.js";
 import {
   AttemptResultSchema,
+  ChangeSummarySchema,
   DecisionKindSchema,
   FinishActionSchema,
   FinishRefusalSchema,
@@ -168,8 +169,8 @@ const DecisionOpenedSchema = z.strictObject({
    * step you approve: that tree.
    */
   tree: GIT_ID.optional(),
-  /** For a step you approve: how many files the tree changes against the base commit. Absent in older logs. */
-  change: z.strictObject({ files: z.int().nonnegative() }).optional(),
+  /** For a step you approve: what the tree changes against the base commit. Older logs have only the file count. */
+  change: ChangeSummarySchema.optional(),
   /** For a step you approve that said no change is needed: the answer the question proposes. Absent in older logs. */
   proposes: z.literal("no_change").optional(),
 });
@@ -188,6 +189,9 @@ const ItemEndedSchema = z.strictObject({
   detail: z.string().min(1).max(500).optional(),
   /** The commits the item made, as Tokama recorded them. */
   commits: z.array(ItemCommitSchema).max(20).optional(),
+  /** What the commits changed against the base commit, and the tree they hold; absent in older logs and when nothing was committed. */
+  change: ChangeSummarySchema.optional(),
+  tree: GIT_ID.optional(),
 });
 /**
  * What one agent call of an attempt used. Written when the call ends, also after a stop: it may
@@ -345,7 +349,7 @@ export const StoredDecisionSchema = z.strictObject({
   detail: z.string().optional(),
   covers: z.array(CoveredPathSchema).optional(),
   tree: GIT_ID.optional(),
-  change: z.strictObject({ files: z.int().nonnegative() }).optional(),
+  change: ChangeSummarySchema.optional(),
   proposes: z.literal("no_change").optional(),
   resolved: z.strictObject({ choice: z.string(), note: z.string().optional(), at: EpochMsSchema }).optional(),
 });
@@ -393,7 +397,9 @@ export const StoredItemSchema = z.strictObject({
   currentStepId: StepIdSchema.optional(),
   steps: z.array(StoredStepSchema),
   decisions: z.array(StoredDecisionSchema),
-  outcome: z.strictObject({ kind: ItemOutcomeSchema, detail: z.string().optional(), commits: z.array(ItemCommitSchema).optional(), at: EpochMsSchema }).optional(),
+  outcome: z
+    .strictObject({ kind: ItemOutcomeSchema, detail: z.string().optional(), commits: z.array(ItemCommitSchema).optional(), change: ChangeSummarySchema.optional(), tree: GIT_ID.optional(), at: EpochMsSchema })
+    .optional(),
   deleted: z.boolean(),
   /** What each agent call used, in log order; absent before the first call ends. */
   calls: z.array(AgentCallUsageSchema).optional(),

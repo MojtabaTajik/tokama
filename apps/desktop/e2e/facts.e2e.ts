@@ -7,6 +7,8 @@ import { flow, row, segment, sidebarRow } from "./harness.js";
 
 const DONE = "Fix the null check in cart totals";
 const FAILED = "Upgrade the Postgres driver in orders-api";
+const HIGH = "Upgrade the HTTP client in orders-api";
+const NOT_RATED = "Replace the product images in checkout-web";
 
 /** Done and Failed items never move; the 30 days range keeps them in view at any time of day. */
 async function showEnded(page: Page): Promise<void> {
@@ -24,6 +26,10 @@ flow("a failed row names the failing check and a done row its checks, without th
   expect(failed).toMatch(/stopped at .+, step 2 of 2/);
   expect(failed).toMatch(/✕\s+failed:\s+checks 1\/2/);
   expect(await factsOf(page, DONE).innerText()).toContain("checks 3/3");
+  // What it changed and how risky: a low risk is plain, a high one and one not rated carry a symbol and words.
+  expect((await factsOf(page, DONE).innerText()).replace(/\s+/g, " ")).toContain("2 files +14 −3 · checks 3/3 · risk low");
+  expect((await factsOf(page, HIGH).innerText()).replace(/\s+/g, " ")).toMatch(/5 files \+61 −40 · checks 3\/3 · ! warning: risk high · changes dependencies, no review/);
+  expect((await factsOf(page, NOT_RATED).innerText()).replace(/\s+/g, " ")).toMatch(/212 files · checks 3\/3 · \? unknown: risk not rated/);
   expect(await row(page, DONE).innerText()).not.toContain("3f2a9c1");
   expect(await page.locator(".pipeline-list").innerText()).not.toContain("A step failed");
   // The ended rows are below the open ones: bring them to the top of the list.
