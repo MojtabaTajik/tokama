@@ -1741,6 +1741,20 @@ describe("run loop: what the step's agent says", () => {
     expect(said(id)).toMatchObject({ source: "first_lines", headline: "Fixed app.txt.", points: ["It now says fixed.", "More."] });
   });
 
+  it("a reply over 256 KB gets its headline from the block at its end, and body counts for the whole reply", SLOW, async () => {
+    const body = "one line of a long reply\n".repeat(12_000);
+    const id = await start(engine(fakeRuntime([edits(FIXED, `${body}\nHEADLINE: Fixed app.txt.\nPOINT: Long reply.\nREAD: yes`)])), template([{ id: "build" }]));
+    expect(item(id).state).toBe("done");
+    expect(said(id)).toMatchObject({ source: "headline", headline: "Fixed app.txt.", points: ["Long reply."], readMinutes: expect.any(Number) });
+    expect(said(id)?.bodyBytes).toBeGreaterThan(290_000);
+  });
+
+  it("a reply over 256 KB without a block records no headline, not a piece of its middle", SLOW, async () => {
+    const id = await start(engine(fakeRuntime([edits(FIXED, "one line of a long reply\n".repeat(12_000))])), template([{ id: "build" }]));
+    expect(item(id).state).toBe("done");
+    expect(said(id)).toBeUndefined();
+  });
+
   it("an empty reply records no headline", SLOW, async () => {
     const id = await start(engine(fakeRuntime([edits(FIXED, "")])), template([{ id: "build" }]));
     expect(item(id).state).toBe("done");

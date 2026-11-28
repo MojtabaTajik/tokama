@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { OutputSummarySchema, SaidSchema } from "../../kernel/schemas/index.js";
-import { parseHeadline, summarizeOutput } from "./summary.js";
+import { parseHeadline, parseHeadlineOfTail, summarizeOutput } from "./summary.js";
 
 // The shape a real reviewer wrote: a bold lead per item, a long paragraph after it, sections that
 // are not must-fix with file:line items of their own, and the verdict last.
@@ -219,5 +219,22 @@ describe("parseHeadline", () => {
       expect(summarizeOutput(review, true)).toMatchObject({ kind: "verdict", mustFix: [{ ref: "a.ts:3", text: "add the test" }] });
       expect(summarizeOutput("Fine.\nVERDICT: approve\nHEADLINE: ok\nNO_CHANGE: yes", true)).toMatchObject({ kind: "verdict", verdict: "approve" });
     });
+  });
+});
+
+describe("parseHeadlineOfTail", () => {
+  const tail = "end of the body\nHEADLINE: A long design.\nPOINT: One thing.\nREAD: yes";
+
+  it("reads the block from the end and scales the body counts to the whole reply", () => {
+    const whole = parseHeadline(tail)!;
+    const scaled = parseHeadlineOfTail(tail, new TextEncoder().encode(tail).length * 10)!;
+    expect(scaled).toMatchObject({ source: "headline", headline: "A long design.", points: ["One thing."], readFlag: true });
+    expect(scaled.bodyBytes).toBe(whole.bodyBytes * 10);
+    expect(scaled.words).toBe(whole.words * 10);
+  });
+
+  it("gives nothing for a tail without a block: the first lines of a tail are not the start of the reply", () => {
+    expect(parseHeadlineOfTail("middle of the reply\nmore of it", 400_000)).toBeUndefined();
+    expect(parseHeadlineOfTail("", 400_000)).toBeUndefined();
   });
 });
