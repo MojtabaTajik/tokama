@@ -45,7 +45,7 @@ describe("playRequestHandler", () => {
   it("drops a request while a sound still plays", () => {
     const requests: RunRequest[] = [];
     const runner = { run: (request: RunRequest) => (requests.push(request), new Promise<RunResult>(() => undefined)) };
-    const player = playerFor("darwin", { makeRunner: () => runner, findProgram: () => undefined, themeFile: () => undefined, audioEnv: {}, soundsDir: "/res", packaged: true, beep: () => undefined });
+    const player = playerFor("darwin", { makeRunner: () => runner, findProgram: () => undefined, themeFile: () => undefined, audioEnv: {}, soundsDir: "/res", beep: () => undefined });
     const handle = playRequestHandler(player, () => true);
     handle("needsYou", "tokama");
     handle("failed", "tokama");

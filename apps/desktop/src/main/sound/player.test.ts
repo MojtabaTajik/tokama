@@ -9,7 +9,7 @@ const NOT_STARTED: RunResult = { kind: "not-started", reason: "spawn-error", mes
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-function setup(options: { packaged?: boolean; result?: (request: RunRequest) => Promise<RunResult>; installed?: readonly string[]; themeFiles?: readonly string[] } = {}) {
+function setup(options: { result?: (request: RunRequest) => Promise<RunResult>; installed?: readonly string[]; themeFiles?: readonly string[] } = {}) {
   const requests: RunRequest[] = [];
   const release: Array<() => void> = [];
   const beep = vi.fn();
@@ -25,7 +25,7 @@ function setup(options: { packaged?: boolean; result?: (request: RunRequest) => 
   const findProgram = vi.fn((name: string) => (installed.includes(name) ? `/usr/bin/${name}` : undefined));
   const themeFiles = options.themeFiles ?? [];
   const themeFile = vi.fn((path: string) => (themeFiles.includes(path) ? path : undefined));
-  const deps = { makeRunner, findProgram, themeFile, audioEnv: { XDG_RUNTIME_DIR: "/run/user/1000" }, soundsDir: "/res", packaged: options.packaged ?? true, beep };
+  const deps = { makeRunner, findProgram, themeFile, audioEnv: { XDG_RUNTIME_DIR: "/run/user/1000" }, soundsDir: "/res", beep };
   return { requests, release, beep, deps, makeRunner, findProgram };
 }
 
@@ -36,12 +36,6 @@ describe("the macOS player", () => {
     player.play("needsYou", "tokama");
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({ command: { argv: ["/usr/bin/afplay", "/res/tokama-needs-you.wav"] }, cwd: "/res", timeoutMs: 5000 });
-  });
-
-  it("uses the development file names when not packaged", () => {
-    const { deps, requests } = setup({ packaged: false });
-    playerFor("darwin", deps).play("tokayCall", "tokama");
-    expect(requests[0]?.command).toEqual({ argv: ["/usr/bin/afplay", "/res/tokay-call.wav"] });
   });
 
   it("beeps for the system set and never runs a process", () => {
@@ -116,9 +110,9 @@ describe("the Linux player", () => {
     const withPaplay = setup({ installed: ["paplay", "aplay"] });
     playerFor("linux", withPaplay.deps).play("needsYou", "tokama");
     expect(withPaplay.requests.map((request) => request.command)).toEqual([{ argv: ["/usr/bin/paplay", "/res/tokama-needs-you.wav"] }]);
-    const { deps, requests } = setup({ installed: ["aplay"], packaged: false });
+    const { deps, requests } = setup({ installed: ["aplay"] });
     playerFor("linux", deps).play("failed", "tokama");
-    expect(requests.map((request) => request.command)).toEqual([{ argv: ["/usr/bin/aplay", "/res/failed.wav"] }]);
+    expect(requests.map((request) => request.command)).toEqual([{ argv: ["/usr/bin/aplay", "/res/tokama-failed.wav"] }]);
   });
 
   it("falls back down the list when a program does not start or fails, and stops at the first that works", async () => {

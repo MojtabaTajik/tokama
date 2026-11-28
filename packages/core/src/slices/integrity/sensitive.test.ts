@@ -13,6 +13,7 @@ describe("touchOf: kinds that hold in any repo", () => {
     [".gitlab-ci.yml", "ci"],
     ["azure-pipelines.yml", "ci"],
     ["azure-pipelines-release.yml", "ci"],
+    ["services/api/azure-pipelines.yaml", "ci"],
     ["Jenkinsfile", "ci"],
     ["Dockerfile", "infrastructure"],
     ["api/Dockerfile.prod", "infrastructure"],

@@ -6,7 +6,7 @@
 // one kind of repo; the kinds come from marker files in the base commit and from the extensions
 // of the changed files, and a repo can be several kinds. Paths match in lowercase, as in `protected.ts`.
 import type { TouchKind } from "../../kernel/schemas/index.js";
-import { baseCategory, patternCategory } from "./protected.js";
+import { baseCategory, isCiPath, patternCategory } from "./protected.js";
 
 export type RepoKind = "node" | "dotnet" | "python" | "go" | "rust" | "java";
 
@@ -47,11 +47,11 @@ const basename = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 const folders = (path: string) => path.split("/").slice(0, -1);
 const kindsAny = (kinds: ReadonlySet<RepoKind>, ...wanted: RepoKind[]) => wanted.some((kind) => kinds.has(kind));
 
-/** Dependency files have names that belong to no other use, so they count in any folder of any repo: a monorepo has no marker at its root. */
+/** Dependency files have names that belong to no other use, so they count in any folder of any repo: a monorepo has no marker at its root. The manifests and lockfiles that `protected.ts` guards count; the names below are only risky, not tamper-protected. */
 function isDependency(path: string, name: string): boolean {
   const category = patternCategory(path);
   if (category === "package" || category === "lockfile") return true;
-  return /\.(?:cs|fs|vb)proj$/.test(name) || /^requirements.*\.txt$/.test(name) || /^build\.gradle/.test(name) || ["directory.packages.props", "packages.lock.json", "global.json", "pyproject.toml", "pipfile", "go.mod", "cargo.toml", "pom.xml"].includes(name);
+  return /\.(?:cs|fs|vb)proj$/.test(name) || /^requirements.*\.txt$/.test(name) || /^build\.gradle/.test(name) || ["global.json", "pyproject.toml", "pipfile"].includes(name);
 }
 
 function isMigration(path: string, name: string, kinds: ReadonlySet<RepoKind>): boolean {
@@ -80,7 +80,7 @@ export function touchOf(original: string, added: boolean, kinds: ReadonlySet<Rep
   if (baseCategory(original) === "test") return added ? "tests_added" : "tests_edited";
   const path = original.toLowerCase();
   const name = basename(path);
-  if (patternCategory(path) === "ci" || /(?:^|\/)azure-pipelines[^/]*\.ya?ml$/.test(path)) return "ci";
+  if (isCiPath(path)) return "ci";
   if (isDependency(path, name)) return "dependencies";
   if (isMigration(path, name, kinds)) return "migrations";
   if (isInfrastructure(path, name)) return "infrastructure";

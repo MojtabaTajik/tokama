@@ -5,11 +5,10 @@
 // player read the files).
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { SOUND_FILES } from "../src/main/sound/files.ts";
+import type { SoundName } from "../src/shared/desktop-state.ts";
 
 const RATE = 44100;
-/** The files written, by sound name. */
-export const SOUND_FILES = ["needs-you", "finished", "failed", "tokay-call"] as const;
-export type SoundFile = (typeof SOUND_FILES)[number];
 
 /** 16-bit mono PCM WAV, peak normalized to 0.6. */
 function wav(samples: Float64Array): Buffer {
@@ -61,9 +60,9 @@ function click(dst: Float64Array, start: number, f: number, amp = 1, decay = 0.0
   }
 }
 
-const SOUNDS: Record<SoundFile, () => Float64Array> = {
+const SOUNDS: Record<SoundName, () => Float64Array> = {
   // Two soft rising notes.
-  "needs-you": () => {
+  needsYou: () => {
     const b = buf(0.55);
     blip(b, 0.0, 0.14, 700, 820, 1, 0.5);
     blip(b, 0.2, 0.22, 1100, 1350, 1, 0.5);
@@ -83,7 +82,7 @@ const SOUNDS: Record<SoundFile, () => Float64Array> = {
     return b;
   },
   // The full Tokay call, stylized and loud on purpose.
-  "tokay-call": () => {
+  tokayCall: () => {
     const b = buf(1.6);
     for (let r = 0; r < 2; r++) {
       const o = r * 0.75;
@@ -95,13 +94,13 @@ const SOUNDS: Record<SoundFile, () => Float64Array> = {
 };
 
 /** The bytes of one sound file. */
-export function renderSound(name: SoundFile): Buffer {
+export function renderSound(name: SoundName): Buffer {
   return wav(SOUNDS[name]());
 }
 
 if (import.meta.main) {
   const dir = join(import.meta.dirname, "..", "src", "renderer", "brand", "sounds");
   mkdirSync(dir, { recursive: true });
-  for (const name of SOUND_FILES) writeFileSync(join(dir, `${name}.wav`), renderSound(name));
-  console.log(SOUND_FILES.map((n) => `${n}.wav`).join("\n"));
+  for (const [name, file] of Object.entries(SOUND_FILES) as [SoundName, string][]) writeFileSync(join(dir, file), renderSound(name));
+  console.log(Object.values(SOUND_FILES).join("\n"));
 }

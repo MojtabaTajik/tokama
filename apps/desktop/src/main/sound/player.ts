@@ -28,7 +28,6 @@ export interface PlayerDeps {
   /** The variables a player needs to find the sound server (`XDG_RUNTIME_DIR`, which `pw-play` also reads to find its socket, and `PULSE_SERVER`). The runner drops every other variable of the app. */
   readonly audioEnv: Readonly<Record<string, string>>;
   readonly soundsDir: string;
-  readonly packaged: boolean;
   /** Electron's `shell.beep`. */
   readonly beep: () => void;
 }
@@ -58,7 +57,7 @@ function programPlayer(deps: PlayerDeps, programs: (ogg: boolean) => readonly st
   return {
     play(name, set) {
       const system = set === "system" && name !== "tokayCall";
-      const file = system ? themeFile?.(name) : join(deps.soundsDir, soundFileName(name, deps.packaged));
+      const file = system ? themeFile?.(name) : join(deps.soundsDir, soundFileName(name));
       const found = programs(system);
       if (file === undefined || found.length === 0) {
         deps.beep();

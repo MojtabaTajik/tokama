@@ -126,7 +126,11 @@ export function e2eEnabled(value: string | undefined, isPackaged: boolean): bool
   return !isPackaged && value === "1";
 }
 
-/** The addresses the app opens in the system browser: the product site and its docs pages. Nothing else ever leaves the window. */
+/**
+ * The addresses the window may ask the app to open in the system browser: the product site and its
+ * docs pages. Nothing else from the window ever leaves it. Main also opens the release page of an
+ * update, `https://tokama.dev/releases/v<x.y.z>`, which it builds itself from a checked version.
+ */
 export const WEBSITE_URLS: ReadonlySet<string> = new Set([
   "https://tokama.dev/",
   "https://tokama.dev/docs/",
@@ -136,8 +140,8 @@ export const WEBSITE_URLS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The one system address besides the website that the app opens: the Notifications pane of macOS
- * System Settings. It is a constant the main process opens itself; no address from the window is
+ * The one system address besides the website and the release page that the app opens: the
+ * Notifications pane of macOS System Settings. It is a constant the main process opens itself; no address from the window is
  * ever passed to `shell.openExternal`, and this one is opened on macOS only.
  */
 export const MACOS_NOTIFICATION_SETTINGS_URL = "x-apple.systempreferences:com.apple.preference.notifications";
