@@ -31,6 +31,33 @@ describe("DiffTab for an ended item", () => {
     expect(container.querySelector(".dv-branch")).toBeNull();
   });
 
+  it("names the files the engine left unread, as text, and counts them with the files not listed", () => {
+    show({
+      files: [modified],
+      moreFiles: 4,
+      cut: true,
+      skipped: [
+        { path: "dist/app.bin", bytes: 2.1 * 1024 ** 3, why: "big" },
+        { path: "<b>x</b>.txt", bytes: 5, why: "many" },
+        { path: "deep.js", bytes: 0, why: "unread" },
+      ],
+    });
+    expect(text(".dv-summary")).toBe("5 files+1 −1·");
+    expect(Array.from(container.querySelectorAll(".dv-more"), (el) => el.textContent)).toEqual([
+      "1 more file not listed",
+      "big file, not shown: dist/app.bin 2.1 GB",
+      "new file, not shown (too many new files): <b>x</b>.txt",
+      "new file, not shown (could not be read): deep.js",
+    ]);
+    expect(container.querySelector("b")).toBeNull();
+  });
+
+  it("shows a change that is only an unread file, not the empty state", () => {
+    show({ files: [], moreFiles: 1, cut: true, skipped: [{ path: "dist/app.bin", bytes: 150 * 1024 ** 2, why: "big" }] });
+    expect(container.querySelector(".dv-files")).not.toBeNull();
+    expect(text(".dv-more:last-child")).toBe("big file, not shown: dist/app.bin 150 MB");
+  });
+
   it("puts the given header in place of the summary line", () => {
     show({ files: [modified], moreFiles: 0, cut: false }, { header: <p className="given">Merged as abc1234</p> });
     expect(text(".given")).toBe("Merged as abc1234");

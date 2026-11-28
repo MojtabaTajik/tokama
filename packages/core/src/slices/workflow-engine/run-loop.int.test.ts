@@ -1,9 +1,9 @@
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, truncateSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { systemClock, type Clock } from "../../kernel/clock/index.js";
-import { createGit, type Git } from "../../kernel/git/index.js";
+import { createGit, SNAPSHOT_LIMITS, type Git } from "../../kernel/git/index.js";
 import type { AgentRuntime } from "../../kernel/ports/index.js";
 import { createProcessRunner, type ProcessRunner } from "../../kernel/process/index.js";
 import type { ProcessTable } from "../../kernel/process/leftover.js";
@@ -1677,6 +1677,45 @@ describe("run loop: item diff", () => {
 
     rmSync(worktreeDir(id), { recursive: true, force: true });
     expect(await loop.itemDiff(id)).toEqual({ ok: true, value: { kind: "none" } });
+  });
+
+  it("a stopped item with a file over the size limit: the file is left unread, counted as not listed and named", SLOW, async () => {
+    let running!: () => void;
+    const underWay = new Promise<void>((resolve) => (running = resolve));
+    const loop = engine(fakeRuntime([hangs(() => running())]));
+    const started = await loop.startItem({ template: template([BUILD_CHECKED]), repoId: repo.id, text: "Fix it" });
+    if (!started.ok) throw new Error(started.error.message);
+    const id = started.value;
+    await underWay;
+    await loop.stopItem(id);
+    await loop.settled(id);
+    writeFileSync(join(worktreeDir(id), "draft.txt"), "draft\n");
+    // Sparse: no disk used, but a hash would read all of it.
+    const big = join(worktreeDir(id), "app.bin");
+    writeFileSync(big, "");
+    truncateSync(big, SNAPSHOT_LIMITS.fileBytes + 1);
+    const diff = await loop.itemDiff(id);
+    if (!diff.ok || diff.value.kind !== "worktree") throw new Error(JSON.stringify(diff));
+    expect(shown(diff.value.files)).toEqual([["draft.txt", "added", 1, 0]]);
+    expect(diff.value).toMatchObject({ moreFiles: 1, cut: true, skipped: [{ path: "app.bin", bytes: SNAPSHOT_LIMITS.fileBytes + 1, why: "big" }] });
+  });
+
+  it("a tracked file taken out of the index and left big on disk counts once, as left out, not also as deleted", SLOW, async () => {
+    let running!: () => void;
+    const underWay = new Promise<void>((resolve) => (running = resolve));
+    const loop = engine(fakeRuntime([hangs(() => running())]));
+    const started = await loop.startItem({ template: template([BUILD_CHECKED]), repoId: repo.id, text: "Fix it" });
+    if (!started.ok) throw new Error(started.error.message);
+    const id = started.value;
+    await underWay;
+    await loop.stopItem(id);
+    await loop.settled(id);
+    await plain(worktreeDir(id), "rm", "--cached", "-q", "app.txt");
+    truncateSync(join(worktreeDir(id), "app.txt"), SNAPSHOT_LIMITS.fileBytes + 1);
+    const diff = await loop.itemDiff(id);
+    if (!diff.ok || diff.value.kind !== "worktree") throw new Error(JSON.stringify(diff));
+    expect(diff.value.files).toEqual([]);
+    expect(diff.value).toMatchObject({ moreFiles: 1, skipped: [{ path: "app.txt", why: "big" }] });
   });
 });
 
