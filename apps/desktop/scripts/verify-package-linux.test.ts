@@ -11,11 +11,13 @@ import {
   RPM_DEPENDS,
   dependsProblem,
   debDependsOf,
+  desktopNameProblem,
   desktopProblem,
   latestLinuxProblem,
   metadataProblem,
   parseDebControl,
   parseDesktopEntry,
+  pngSizeProblem,
   rpmRequiresOf,
   updateKeyProblem,
 } from "./verify-package-linux.js";
@@ -147,7 +149,7 @@ Exec=/opt/Tokama/tokama %U
 Terminal=false
 Type=Application
 Icon=tokama
-StartupWMClass=Tokama
+StartupWMClass=tokama
 Comment=Agent workbench for engineers
 Categories=Development;
 
@@ -159,7 +161,7 @@ Exec=/bin/false
   it("reads the keys of the Desktop Entry group only", () => {
     const parsed = parseDesktopEntry(FILE);
     expect(parsed.get("Exec")).toBe("/opt/Tokama/tokama %U");
-    expect(parsed.get("StartupWMClass")).toBe("Tokama");
+    expect(parsed.get("StartupWMClass")).toBe("tokama");
   });
 
   it("accepts the entry electron-builder writes", () => {
@@ -170,10 +172,35 @@ Exec=/bin/false
     ["another executable", { Exec: "/usr/bin/other %U" }, /does not start/],
     ["the sandbox switched off", { Exec: "/opt/Tokama/tokama --no-sandbox %U" }, /sandbox off/],
     ["another icon", { Icon: "other" }, /Icon is other/],
-    ["another window class", { StartupWMClass: "tokama" }, /StartupWMClass is tokama/],
+    ["the product name as window class", { StartupWMClass: "Tokama" }, /StartupWMClass is Tokama, not tokama/],
+    ["no window class", { StartupWMClass: "" }, /StartupWMClass is , not tokama/],
     ["no Development category", { Categories: "Utility;" }, /without Development/],
     ["another type", { Type: "Link" }, /Type is Link/],
   ])("refuses %s", (_name, over, message) => expect(desktopProblem(entry(over))).toMatch(message));
+});
+
+describe("desktopNameProblem", () => {
+  it("accepts an archive whose package.json names tokama.desktop", () => {
+    expect(desktopNameProblem(Buffer.from('{\n  "main": "x",\n  "desktopName": "tokama.desktop"\n}'))).toBeUndefined();
+  });
+
+  it.each([["no desktopName", '{"main":"x"}'], ["another desktop file", '{"desktopName":"Tokama.desktop"}']])("refuses %s", (_name, json) => {
+    expect(desktopNameProblem(Buffer.from(json))).toMatch(/no "desktopName"/);
+  });
+});
+
+describe("pngSizeProblem", () => {
+  const png = (size: number) => {
+    const bytes = Buffer.alloc(33);
+    Buffer.from("89504e470d0a1a0a", "hex").copy(bytes);
+    bytes.writeUInt32BE(size, 16);
+    bytes.writeUInt32BE(size, 20);
+    return bytes;
+  };
+
+  it("accepts a PNG of the named size", () => expect(pngSizeProblem(png(48), 48)).toBeUndefined());
+  it("refuses a PNG of another size", () => expect(pngSizeProblem(png(64), 48)).toMatch(/48x48 icon is 64x64/));
+  it("refuses a file that is not a PNG", () => expect(pngSizeProblem(Buffer.alloc(40), 48)).toMatch(/not a PNG/));
 });
 
 describe("latestLinuxProblem", () => {

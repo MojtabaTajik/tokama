@@ -16,14 +16,19 @@ function pngSize(bytes: Buffer): [number, number] {
 
 describe("appIcons", () => {
   const dir = join("/app", "desktop");
-  it("gives Linux its window icon as a PNG and Windows its as an .ico", () => {
-    expect(appIcons("linux", dir, false)).toEqual({ window: join(dir, "build", "icon.png"), dock: undefined });
-    expect(appIcons("win32", dir, false)).toEqual({ window: join(dir, "build", "icon.ico"), dock: undefined });
+  const resources = join("/opt", "Tokama", "resources");
+  it("gives Linux a 512 px PNG from build/icons in dev and the one in the package's resources when packaged", () => {
+    expect(appIcons("linux", dir, false, resources)).toEqual({ window: join(dir, "build", "icons", "512x512.png"), dock: undefined });
+    expect(appIcons("linux", join(resources, "app.asar"), true, resources)).toEqual({ window: join(resources, "tokama.png"), dock: undefined });
+  });
+
+  it("gives Windows its window icon as an .ico", () => {
+    expect(appIcons("win32", dir, false, resources)).toEqual({ window: join(dir, "build", "icon.ico"), dock: undefined });
   });
 
   it("sets the dock icon on macOS in dev only, with no window icon", () => {
-    expect(appIcons("darwin", dir, false)).toEqual({ window: undefined, dock: join(dir, "build", "icon.png") });
-    expect(appIcons("darwin", dir, true)).toEqual({ window: undefined, dock: undefined });
+    expect(appIcons("darwin", dir, false, resources)).toEqual({ window: undefined, dock: join(dir, "build", "icon.png") });
+    expect(appIcons("darwin", dir, true, resources)).toEqual({ window: undefined, dock: undefined });
   });
 });
 

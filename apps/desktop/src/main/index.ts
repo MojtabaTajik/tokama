@@ -39,7 +39,7 @@ import { createFocusProbe } from "./sound/focus.js";
 import { fileUnder, soundFileName, soundsDir } from "./sound/files.js";
 import { playRequestHandler } from "./sound/play-request.js";
 import { playerFor, recordingPlayer, type SoundPlayer } from "./sound/player.js";
-import { appIcons } from "./icon.js";
+import { appIcons, LINUX_DEV_DESKTOP_NAME } from "./icon.js";
 import { recordingShow, systemNotifications } from "./system-notification.js";
 import { openTemplateFile } from "./template-file.js";
 import { notesDir, pathExists, whatsNewService } from "./whats-new.js";
@@ -197,7 +197,9 @@ function startWatch(onConnected: () => void, onItemEvent: (event: BridgeEvent["e
   });
 }
 
-const icons = appIcons(process.platform, app.getAppPath(), app.isPackaged);
+// A dev run is Electron's own binary with no installed entry; its own name keeps it apart from an installed Tokama.
+if (process.platform === "linux" && !app.isPackaged) app.setDesktopName(LINUX_DEV_DESKTOP_NAME);
+const icons = appIcons(process.platform, app.getAppPath(), app.isPackaged, process.resourcesPath);
 
 const WINDOW = { width: 1200, height: 800, minWidth: 720, minHeight: 480 } as const;
 

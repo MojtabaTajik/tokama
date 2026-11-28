@@ -91,10 +91,14 @@ linux:
   vendor: Tokama
   synopsis: Agent workbench for engineers
   description: Tokama runs AI coding agents one step at a time, following templates you write. Each step says when it is done - the checks pass, a reviewer approves, or you approve.
+  # The window's own icon (a file in the asar cannot be used); the desktop entry and the launcher's icon are the hicolor files.
+  extraResources:
+    - from: build/icons/512x512.png
+      to: tokama.png
   desktop:
     entry:
-      # Electron names its window class after the product, so the launcher groups the window with this entry.
-      StartupWMClass: Tokama
+      # Electron sets the Wayland app_id and the X11 WM_CLASS to desktopName of package.json without ".desktop".
+      StartupWMClass: tokama
 # The package names and dependencies repeat electron-builder's defaults (Electron's libraries) and add what
 # Tokama runs: the library of the engine's own Node (the official build links libatomic), git, and
 # bubblewrap and socat for the agents' sandbox. scripts/verify-package-linux.ts holds the same lists and
