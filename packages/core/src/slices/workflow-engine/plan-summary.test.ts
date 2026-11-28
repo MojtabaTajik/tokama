@@ -117,6 +117,15 @@ describe("parseHeadline: the plan lines", () => {
     expect(summarizeOutput("- Risk: the cache can go stale\nHEADLINE: A plan.", false)).toMatchObject({ lines: ["- Risk: the cache can go stale"] });
   });
 
+  it("steps over code fence lines around the block", () => {
+    for (const [open, close] of [["```", "```"], ["```text", "```"], ["~~~", "~~~"]]) {
+      const text = ["The plan.", open, "HEADLINE: A.", "CHOICE: Cache | SQLite", "REACH: deps | none", "RISK: slow", close].join("\n");
+      expect(parseHeadline(text)!.plan, open).toMatchObject({ choices: [{ open: "Cache", picked: "SQLite" }], reach: [{ kind: "deps", none: true }], risks: ["slow"] });
+    }
+    // A fence in the middle of the run does not cut it either.
+    expect(plan("HEADLINE: A.\nCHOICE: a | b\n```\nRISK: r\n```").risks).toEqual(["r"]);
+  });
+
   it("reads a reply that ends in prose as having no plan lines", () => {
     expect(plan("Text.\nHEADLINE: A.\nCHOICE: Cache | SQLite\nThat is all.")).toEqual(EMPTY);
   });

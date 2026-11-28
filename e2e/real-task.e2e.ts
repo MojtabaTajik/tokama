@@ -76,8 +76,9 @@ it("asks a plan for its choices, reach and risks, and plans again after a change
 
   const first = await waiting(1);
   const said = first.steps[0]?.attempts?.[0]?.said;
-  const call = JSON.parse(readFileSync(join(workspace.tokamaHome, "items", itemId, "attempts", "plan-1", "call.json"), "utf8")) as { prompt: string };
-  expect(call.prompt, "the plan step was asked for the plan lines").toContain("CHOICE: <what was open>");
+  const call = JSON.parse(readFileSync(join(workspace.tokamaHome, "items", itemId, "attempts", "plan-1", "call.json"), "utf8")) as { prompt: unknown };
+  // The record of the prompt as sent; its shape is the engine's, so it is searched as text.
+  expect(JSON.stringify(call.prompt), "the plan step was asked for the plan lines").toContain("CHOICE: <what was open>");
   expect(said?.plan, "the plan step stored a plan summary").toBeDefined();
   const summary = said!.plan!;
   process.stdout.write(`real plan: ${summary.choices.length} choice(s), ${summary.reach.length} reach line(s), ${summary.risks.length} risk(s); headline source ${said!.source}\n`);
@@ -91,7 +92,7 @@ it("asks a plan for its choices, reach and risks, and plans again after a change
   expect(resolved.ok, JSON.stringify(resolved)).toBe(true);
   const second = await waiting(2);
   expect(second.steps[0]?.attempts?.[1]?.said?.plan, "the second plan stored a plan summary").toBeDefined();
-  const again = JSON.parse(readFileSync(join(workspace.tokamaHome, "items", itemId, "attempts", "plan-2", "call.json"), "utf8")) as { prompt: string };
-  expect(again.prompt).toContain(`You asked for changes:\n${note}`);
+  const again = JSON.parse(readFileSync(join(workspace.tokamaHome, "items", itemId, "attempts", "plan-2", "call.json"), "utf8")) as { prompt: unknown };
+  expect(JSON.stringify(again.prompt), "the note came back word for word").toContain(JSON.stringify(`You asked for changes:\n${note}`).slice(1, -1));
   await engine.client.command({ type: "stop_item", itemId });
 });

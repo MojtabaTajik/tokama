@@ -200,6 +200,7 @@ function parse(text: string): ParsedHeadline | undefined {
 
 /** How many non-empty lines at the end of a reply the plan lines are looked for in. */
 const PLAN_WINDOW = 40;
+const FENCE_LINE = /^\s*(?:`{3,}|~{3,})[\w+-]*\s*$/;
 const NONE = /^(?:none|no|-|–|—|n\/a)$/i;
 const UNSURE = /^unsure\s*:\s*/i;
 const REACH_KINDS: Readonly<Record<string, ReachKind>> = {
@@ -226,7 +227,8 @@ function planLineIndices(lines: readonly string[]): number[] {
   let seen = 0;
   for (let index = lines.length - 1; index >= 0 && seen < PLAN_WINDOW; index--) {
     const line = lines[index]!;
-    if (line.trim() === "") continue;
+    // A code fence around the block (``` or ```text) is no part of the run and does not end it.
+    if (line.trim() === "" || FENCE_LINE.test(line)) continue;
     seen++;
     if (planLabelOf(line) !== undefined) found.push(index);
     else if (!isBlockLine(line)) break;
