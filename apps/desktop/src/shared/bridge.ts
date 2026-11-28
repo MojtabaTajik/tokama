@@ -155,12 +155,12 @@ export interface TemplateFileName {
   readonly file: string;
 }
 
-/** A saved file of a step's attempt: its transcript, or the output of check number `file` (from 1). */
+/** A saved file of a step's attempt: its transcript, the output of its setup command, or the output of check number `file` (from 1). */
 export interface AttemptFileName {
   readonly itemId: string;
   readonly stepIndex: number;
   readonly attempt: number;
-  readonly file: "transcript" | number;
+  readonly file: "transcript" | "setup" | number;
 }
 
 /** Whether a file opened; the message says why not, in plain words. */

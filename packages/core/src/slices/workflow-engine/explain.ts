@@ -17,7 +17,8 @@ export const lastEnded = (step: StoredStep): AttemptRecord | undefined => step.a
 
 /** The card for an open question about a step that stopped; undefined for other questions. */
 export function explainStop(item: StoredItem, decision: StoredDecision, template: TemplateRecord | undefined): Stopped | undefined {
-  if (decision.stepId === undefined) return undefined;
+  // A failed setup has its own card: the attempt is open, nothing ended to explain.
+  if (decision.stepId === undefined || decision.setupFailed !== undefined) return undefined;
   const step = item.steps.find((s) => s.id === decision.stepId);
   const def = template?.steps.find((s) => s.id === decision.stepId);
   if (step === undefined) return undefined;

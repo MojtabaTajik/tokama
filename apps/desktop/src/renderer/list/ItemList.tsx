@@ -13,7 +13,7 @@ import { formatDuration } from "../format/duration.js";
 import { useNow } from "../useNow.js";
 import { templateOf } from "../drawer/describe.js";
 import { finishNote } from "../drawer/finish-view.js";
-import { currentStep, type GroupKey, type ItemGroup, listEntries, rowLine, rowMark, timeOf } from "../model.js";
+import { askOf, currentStep, type GroupKey, type ItemGroup, listEntries, rowLine, rowMark, timeOf } from "../model.js";
 import type { AgentTarget } from "../settings/describe.js";
 import { RowFinish } from "./RowFinish.js";
 import { useFocusFollow } from "./useFocusFollow.js";
@@ -113,7 +113,7 @@ function Row({ item, setup, now, selected, onSelect, onFinish, onDiscard, onOpen
   const template = templateOf(item, setup);
   // The working agent's badge is the row's running mark; a step Tokama runs itself (the checks) shows its own mark.
   const info = working && mark.word === "running" ? agentInfo(item, currentStep(item) ?? 0, setup) : undefined;
-  const ask = item.state === "needs_you" ? (item.decision?.question ?? mark.word) : undefined;
+  const ask = item.state === "needs_you" ? (askOf(item.decision) ?? mark.word) : undefined;
   const finished = finishNote(item);
   // Until Merge or Open PR, a done row and a failed row say what was measured where the steps were.
   const facts = finished === undefined ? factsOf(item) : [];

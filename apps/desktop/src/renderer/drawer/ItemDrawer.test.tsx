@@ -2331,3 +2331,71 @@ describe("cardOffersStop", () => {
     expect(cardOffersStop(decision({ choices: [choice("approve"), choice("request_changes")] }))).toBe(false);
   });
 });
+
+describe("a setup that failed before the checks", () => {
+  const FAILED_SETUP = "decision_00000000-0000-4000-8000-0000000000e1";
+  const waitingOnSetup = {
+    ...task,
+    state: "needs_you",
+    decision: {
+      id: FAILED_SETUP,
+      kind: "run_failure",
+      stepIndex: 0,
+      question: "Setup failed, so the checks did not run. Run them again?",
+      setupFailed: { when: "checks", command: "pnpm install --frozen-lockfile", ended: "failed", exitCode: 1, durationMs: 12_000, lastLine: "ERR_PNPM_OUTDATED_LOCKFILE", checksNotRun: 3 },
+      choices: [
+        { id: "rerun_setup", label: "Run setup and checks again" },
+        { id: "send_to_agent", label: "Send the output to Local builder" },
+        { id: "stop", label: "Stop" },
+      ],
+    },
+  } as unknown as ItemRecord;
+
+  it("shows the question, what ran and how it ended, and the three answers, the first filled", async () => {
+    await renderDrawer(fakeBridge([waitingOnSetup]).bridge, waitingOnSetup.id);
+    expect(text(".needs-you-question")).toBe("⏸Setup failed, so the checks did not run. Run them again?");
+    expect($$(".needs-you .rc-row").map((row) => row.textContent)).toEqual([
+      "Setup ranpnpm install --frozen-lockfile",
+      "Ended✕ Failed, exit 1 · after 12 s",
+      "It saidERR_PNPM_OUTDATED_LOCKFILE",
+      "Checks– 3 not run: they need the setup to pass first",
+      "The changekept in the worktree, nothing committed",
+    ]);
+    expect($$(".needs-you .choices .btn").map((el) => [el.textContent, el.className])).toEqual([
+      ["Run setup and checks again", "btn btn-primary"],
+      ["Send the output to Local builder", "btn btn-secondary"],
+      ["Stop", "btn btn-secondary"],
+    ]);
+  });
+
+  it("answers with the engine's choice ids", async () => {
+    const { bridge, command } = fakeBridge([waitingOnSetup]);
+    await renderDrawer(bridge, waitingOnSetup.id);
+    await click(button("Send the output to Local builder"));
+    expect(command).toHaveBeenCalledWith({ type: "resolve_decision", itemId: waitingOnSetup.id, decisionId: FAILED_SETUP, choice: "send_to_agent" });
+  });
+
+  it("See the whole output opens the Checks tab, and Edit the setup command opens Edit repo on the item's repo", async () => {
+    const { bridge } = fakeBridge([waitingOnSetup]);
+    // The dialog reads what the app remembers about helpers.
+    Object.assign(bridge, { getDesktopState: async () => ({}) });
+    await renderDrawer(bridge, waitingOnSetup.id);
+    await click(button("See the whole output →"));
+    expect($$('[role="tab"]').find((el) => el.textContent === "Checks")?.getAttribute("aria-selected")).toBe("true");
+    await click(button("Edit the setup command…"));
+    expect(document.querySelector("dialog.modal h2")?.textContent).toBe("Edit repo");
+    expect((document.querySelector("dialog.modal textarea.rd-setup") as HTMLTextAreaElement | null)?.value).toBe("");
+  });
+
+  it("leaves out Edit the setup command for a sample repo, which cannot be edited, and the output link for a failure at Start", async () => {
+    const sample = { ...setup, repos: setup.repos.map((repo) => ({ ...repo, sample: true as const })) } as Setup;
+    await renderDrawer(fakeBridge([waitingOnSetup]).bridge, waitingOnSetup.id, vi.fn(), sample);
+    expect(button("Edit the setup command…")).toBeUndefined();
+    act(() => root.unmount());
+    root = createRoot(container);
+    const atStart = { ...waitingOnSetup, decision: { ...waitingOnSetup.decision, setupFailed: { ...waitingOnSetup.decision!.setupFailed!, when: "start", checksNotRun: 0 }, choices: [{ id: "retry_step", label: "Run setup again" }, { id: "stop", label: "Stop" }] } } as ItemRecord;
+    await renderDrawer(fakeBridge([atStart]).bridge, atStart.id);
+    expect(button("See the whole output →")).toBeUndefined();
+    expect($$(".needs-you .choices .btn").map((el) => el.textContent)).toEqual(["Run setup again", "Stop"]);
+  });
+});

@@ -13,7 +13,12 @@ export const PLAN_DECISION_ID = "decision_5e1c9a7b-3f2d-4c8e-9a6b-1d2e3f4a5b6e";
 /** The Review limit item's question: Review asked for changes, Build fixed them, and Review may not run again. */
 export const LIMIT_DECISION_ID = "decision_5e1c9a7b-3f2d-4c8e-9a6b-1d2e3f4a5b6f";
 
+/** The Setup failed item's question: the setup command failed before the checks, so they did not run. */
+export const SETUP_DECISION_ID = "decision_5e1c9a7b-3f2d-4c8e-9a6b-1d2e3f4a5b70";
+
 export const ITEM_IDS = {
+  /** A Quick fix task whose setup command failed before its checks: the checks did not run, and it waits for you. */
+  setupFailed: "item_1a2b3c4d-0017-4a1b-8c1d-000000000017",
   queued: "item_1a2b3c4d-0001-4a1b-8c1d-000000000001",
   working: "item_1a2b3c4d-0002-4a1b-8c1d-000000000002",
   needsYou: "item_1a2b3c4d-0003-4a1b-8c1d-000000000003",
@@ -372,6 +377,57 @@ export const SAID_FIRST_LINES = {
 /** The sample items, created minutes before `now`. */
 export function sampleItems(now: number) {
   return rawItems(now).map((item) => withTimes(item, now, item.id === ITEM_IDS.finished ? { 0: SAMPLE_WAIT_MS } : {}));
+}
+
+/**
+ * A Quick fix task whose setup command failed before its checks, apart from `sampleItems`: the
+ * checks did not run, and it waits for you to run setup again, send its output to the agent or stop.
+ */
+export function sampleSetupItems(now: number): RawItem[] {
+  return [
+    withTimes(
+      {
+        schemaVersion: 1,
+        id: ITEM_IDS.setupFailed,
+        kind: "task",
+        templateId: templates.quickFix.id,
+        title: "Add order export endpoint",
+        text: "Add GET /orders/export.csv to orders-api.",
+        repoIds: ["orders-api"],
+        privacy: "local_only",
+        state: "needs_you",
+        createdAt: ago(now, 8),
+        cardLine: "Setup failed, checks not run: pnpm install --frozen-lockfile · exit 1",
+        decision: {
+          id: SETUP_DECISION_ID,
+          askedAt: ago(now, 6),
+          kind: "run_failure",
+          stepIndex: 1,
+          question: "Setup failed, so the checks did not run. Run them again?",
+          setupFailed: {
+            when: "checks",
+            command: "pnpm install --frozen-lockfile",
+            ended: "failed",
+            exitCode: 1,
+            durationMs: 12_000,
+            lastLine: 'ERR_PNPM_OUTDATED_LOCKFILE Cannot install with "frozen-lockfile" because pnpm-lock.yaml is not up to date with package.json',
+            checksNotRun: 3,
+          },
+          choices: [
+            { id: "rerun_setup", label: "Run setup and checks again" },
+            { id: "send_to_agent", label: "Send the output to Local builder" },
+            { id: "stop", label: "Stop" },
+          ],
+        },
+        steps: steps(templates.quickFix, ["passed", "needs_you"], { 0: "2 files changed", 1: "waits for you" }).map((step, index) =>
+          index === 1
+            ? { ...step, runs: 1, maxAttempts: 3, attempts: [{ attempt: 1, checks: [], setup: { command: "pnpm install --frozen-lockfile", passed: false, exitCode: 1 } }] }
+            : { ...step, attempts: [{ attempt: 1, result: "passed", checks: [] }] },
+        ),
+      },
+      now,
+    ),
+  ];
 }
 
 /** A done Quick fix task with a commit on its branch, its checks passed, and the change and risk the engine would rate for it. */

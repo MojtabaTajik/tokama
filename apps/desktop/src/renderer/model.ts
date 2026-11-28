@@ -363,9 +363,20 @@ export function boardColumns(items: readonly ItemRecord[], template: TemplateSum
 
 export type Flag = { readonly mark: Mark; readonly text: string };
 
+/**
+ * What a needs-you row or card says the item waits for: the question, or for a setup that failed
+ * before the checks what ran and how it ended ("Setup failed, checks not run: pnpm install · exit 1").
+ */
+export function askOf(decision: ItemRecord["decision"]): string | undefined {
+  const failed = decision?.setupFailed;
+  if (failed?.when !== "checks") return decision?.question;
+  const ended = failed.exitCode !== undefined ? `exit ${failed.exitCode}` : failed.ended === "timed_out" ? "timed out" : "could not start";
+  return `Setup failed, checks not run: ${failed.command} · ${ended}`;
+}
+
 /** The card's flag line: what a needs-you item asks, where a failed item failed, or that it was stopped. */
 export function flagOf(item: Pick<ItemRecord, "state" | "steps" | "decision">): Flag | undefined {
-  if (item.state === "needs_you") return { mark: markOf("needs_you"), text: item.decision?.question ?? "needs you" };
+  if (item.state === "needs_you") return { mark: markOf("needs_you"), text: askOf(item.decision) ?? "needs you" };
   if (item.state === "failed") {
     const step = item.steps.find((s) => s.state === "failed");
     return { mark: markOf("failed"), text: step ? `failed at ${step.name}` : "failed" };

@@ -9,6 +9,7 @@ import { type MouseEvent, type ReactNode, useEffect, useLayoutEffect, useRef, us
 import type { ConnectionState, TokamaBridge } from "../../shared/bridge.js";
 import { DecisionChoices } from "../drawer/DecisionChoices.js";
 import { NoChangeFacts } from "../drawer/NoChangeFacts.js";
+import { SetupFailedFacts } from "../drawer/SetupFailedFacts.js";
 import { nextRunLine } from "../drawer/describe.js";
 import { useDecisionDiff } from "../drawer/useDecisionDiff.js";
 import { ChangedFiles } from "../ui/DiffView.js";
@@ -221,6 +222,7 @@ function Row({ row, index, bridge, selected, onSelect, onReviewDiff, onRead, ret
         )}
       </p>
       <p className="nr-question">{decision?.question ?? TEXT.noQuestion}</p>
+      {decision?.setupFailed !== undefined && <SetupFailedFacts failed={decision.setupFailed} onSeeOutput={undefined} onEdit={undefined} />}
       {decision?.summaryText !== undefined && (
         <div className="cloud-summary">
           <p className="cloud-summary-label">

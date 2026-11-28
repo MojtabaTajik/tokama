@@ -260,6 +260,19 @@ describe("an item that did not finish", () => {
     expect(resultView(silent, setup).words).toBeUndefined();
   });
 
+  it("says Not checked, with a ! and the number of checks, while the item waits on a setup that failed before them", () => {
+    const waiting = item([plan, build, { ...checks, state: "needs_you", attempts: [attempt({ result: undefined, checks: [], setup: { command: "pnpm install", passed: false, exitCode: 1 } })] }], {
+      state: "needs_you",
+      outcome: undefined,
+      decision: { id: "decision_1", kind: "run_failure", stepIndex: 2, question: "Setup failed, so the checks did not run. Run them again?", choices: [{ id: "stop", label: "Stop" }], setupFailed: { when: "checks", command: "pnpm install", ended: "failed", exitCode: 1, durationMs: 12_000, lastLine: "", checksNotRun: 3 } },
+    });
+    const row = resultView(waiting, setup).rows.find((entry) => entry.key === "checked");
+    expect(row).toMatchObject({ text: "Not checked · setup failed, 3 checks did not run", mark: { symbol: "!" } });
+    // One check reads in the singular, and a setup that failed at Start says nothing about checks.
+    const one = { ...waiting, decision: { ...waiting.decision!, setupFailed: { ...waiting.decision!.setupFailed!, checksNotRun: 1 } } };
+    expect(resultView(one, setup).rows.find((entry) => entry.key === "checked")?.text).toBe("Not checked · setup failed, 1 check did not run");
+  });
+
   it("is the same for a stopped item", () => {
     expect(resultView(stopped({ state: "stopped" }), setup).failure).toContain("Stopped at Build");
   });
