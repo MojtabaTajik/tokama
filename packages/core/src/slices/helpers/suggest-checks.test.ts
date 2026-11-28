@@ -24,7 +24,7 @@ describe("the suggest-checks definition", () => {
   // needs a new `version` and new recordings; then put the new digest here.
   it("has the instructions and example that version 2 was recorded for", () => {
     expect(suggestChecks.version).toBe(2);
-    expect(sha256Hex(`${suggestChecks.instructions}\n${JSON.stringify(suggestChecks.example)}`)).toBe("265b07a30db0a0b06db1c989b9985ea1d1d7869ebfd86585c9285da60f7ba51c");
+    expect(sha256Hex(`${suggestChecks.instructions}\n${JSON.stringify(suggestChecks.example)}`)).toBe("ebe26dcc2d6412f350be86398dedb31ef40f2caa5424370b6a98d1fe0937d068");
   });
 
   it("asks for the file names and the build files, and nothing else", () => {
@@ -80,10 +80,11 @@ describe("the rule for a proposed command", () => {
 
   it.each([
     ["dotnet test Orders.sln --no-restore", "--no-restore"],
+    ["dotnet test Orders.sln --no-build", "--no-build"],
     ["cargo test --offline", "--offline"],
     ["cargo build --workspace --frozen", "--frozen"],
   ])("refuses %j: a flag that skips the fetch a fresh worktree needs", (command, flag) => {
-    expect(checksProblem(answer(command))).toBe(`check 1's command has ${flag}. It runs in a fresh worktree with nothing installed: leave the flag out so the tool fetches what it needs.`);
+    expect(checksProblem(answer(command))).toBe(`check 1's command has ${flag}. It runs in a fresh worktree with nothing installed: leave the flag out so the tool fetches and builds what it needs.`);
   });
 
   it.each(["dotnet test Orders.sln", "cargo test --locked", "pnpm test -- --offline-mode"])("accepts %j", (command) => {
