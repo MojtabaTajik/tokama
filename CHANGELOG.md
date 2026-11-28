@@ -4,6 +4,7 @@ One section per version, written for people who use Tokama.
 
 ## Unreleased
 
+- On Ubuntu 25.04 and newer, Claude Code's sandbox could not start (every command failed with `apply-seccomp: write /proc/self/setgroups`) while the health check still said ready. The check now also runs the helper's nested user namespace inside bubblewrap and reports it as blocked, with a link to the steps (https://tokama.dev/docs/linux-sandbox). A step whose commands fail this way now ends as a sandbox failure with the same link, instead of finishing with every command refused.
 - A reviewer step now gets the check commands of the step it reviews, each with its result, next to the diff. Before, the Reviewer was told to judge the check output but never received it. A cloud reviewer gets them only when its step sends the repo and diff.
 - Tokama now also comes for Linux on x86_64, as a `.deb` for Ubuntu 24.04 or newer and an `.rpm` for Fedora. Install with `sudo apt install ./Tokama-<version>-amd64.deb` or `sudo dnf install ./Tokama-<version>-x86_64.rpm`. The package brings `git`, `bubblewrap` and `socat` with it.
 - Adding or editing a repo now checks that the base branch is a local branch of the repo. A name such as `origin/main` or `refs/heads/main` is refused with the local name to use instead. Before, every item of that repo stopped at start.

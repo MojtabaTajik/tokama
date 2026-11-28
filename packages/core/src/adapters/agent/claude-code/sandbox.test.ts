@@ -101,9 +101,9 @@ describe("sandboxStartProblem", () => {
 
   it("adds the AppArmor fix on Linux only", () => {
     expect(sandboxStartProblem(apparmor, "linux")).toBe(
-      `Claude Code could not start its sandbox: ${apparmor}. On Ubuntu, AppArmor may block bubblewrap: add an AppArmor profile for /usr/bin/bwrap (see Claude Code's sandbox docs), or run \`sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0\` until the next reboot.`,
+      `Claude Code could not start its sandbox: ${apparmor}. Ubuntu's AppArmor can stop bubblewrap from creating a user namespace. How to allow it: https://tokama.dev/docs/linux-sandbox`,
     );
-    expect(sandboxStartProblem(apparmor, "darwin")).not.toContain("sysctl");
+    expect(sandboxStartProblem(apparmor, "darwin")).not.toContain("tokama.dev");
   });
 
   it("cuts a long message", () => {
@@ -136,6 +136,14 @@ describe("what says the sandbox is the problem", () => {
     }
     expect(SANDBOX_REQUIRED.test("The sandbox is required here")).toBe(false);
     expect(SANDBOX_REQUIRED.test("echo Sandbox is required")).toBe(false);
+  });
+
+  it("matches the apply-seccomp error at its start, and not output that only contains it", () => {
+    expect(SANDBOX_REQUIRED.test("apply-seccomp: write /proc/self/setgroups (nested userns is capability-restricted; caller must provide CAP_SYS_ADMIN)")).toBe(true);
+    // The helper's non-fatal warning: the command still runs.
+    expect(SANDBOX_REQUIRED.test("apply-seccomp: could not set user.max_user_namespaces (Permission denied); the seccomp filter alone keeps the command from making namespaces")).toBe(false);
+    expect(SANDBOX_REQUIRED.test("make: apply-seccomp: not found")).toBe(false);
+    expect(SANDBOX_REQUIRED.test("the apply-seccomp: helper")).toBe(false);
   });
 
   it("finds the word in stderr whatever its case", () => {

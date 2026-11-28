@@ -2,7 +2,7 @@
 // It wraps the commands the agent runs and their children. The file tools and the web tools
 // (WebFetch, WebSearch) are not in it: files stay limited by `--restricted` and the permission
 // rules (args.ts), and a step with `web` on can open any website, whatever the host list says.
-import { APPARMOR_HINT, CREDENTIAL_PATHS, type NetworkPolicy, type SandboxSpec } from "../../../kernel/sandbox/index.js";
+import { BWRAP_BLOCKED_HINT, CREDENTIAL_PATHS, type NetworkPolicy, type SandboxSpec } from "../../../kernel/sandbox/index.js";
 import { permissionPath } from "./args.js";
 
 export interface SandboxSettingsOptions {
@@ -71,11 +71,15 @@ const START_CHARS = 300;
 /** The failed-step text for a Claude Code that exited at startup because its sandbox could not start. */
 export function sandboxStartProblem(stderr: string, platform: NodeJS.Platform): string {
   const said = stderr.trim().slice(0, START_CHARS);
-  return `Claude Code could not start its sandbox: ${said}.${platform === "linux" ? ` ${APPARMOR_HINT}` : ""}`;
+  return `Claude Code could not start its sandbox: ${said}.${platform === "linux" ? ` ${BWRAP_BLOCKED_HINT}` : ""}`;
 }
 
 /** True when the CLI's stderr says the sandbox is why it stopped. */
 export const mentionsSandbox = (stderr: string): boolean => /sandbox/i.test(stderr);
 
-/** The text of a tool result that says the sandbox stopped working in the middle of the session. */
-export const SANDBOX_REQUIRED = /^Sandbox is required/;
+/**
+ * The start of a tool result that says the sandbox is not working: it stopped in the middle of
+ * the session, or its `apply-seccomp` helper failed (Ubuntu's AppArmor stops it from making a user
+ * namespace). Its `could not set` line is a warning: the command still ran.
+ */
+export const SANDBOX_REQUIRED = /^(?:Sandbox is required|apply-seccomp: (?!could not set ))/;
