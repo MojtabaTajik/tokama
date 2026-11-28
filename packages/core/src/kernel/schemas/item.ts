@@ -113,6 +113,28 @@ export const PlanSummarySchema = z.strictObject({
   moreRisks: z.int().nonnegative(),
 });
 
+/** The most must-fix lines of a review and evidence lines of findings carried; the rest are only counted. Parts are at most `MAX_PLAN_PART_CHARS`. */
+export const MAX_MUST_FIX = 5;
+export const MAX_EVIDENCE = 5;
+
+/** A line of a review or of findings: where in the code, a log or a commit it is (when the agent said), and what is wrong or shown there. */
+export const PlacedNoteSchema = z.strictObject({ where: planPart.optional(), what: planPart });
+
+/** What a reviewer said must be changed before the work can be approved. */
+export const ReviewSaidSchema = z.strictObject({
+  mustFix: z.array(PlacedNoteSchema).max(MAX_MUST_FIX),
+  /** MUST lines past the ones carried. */
+  moreMustFix: z.int().nonnegative(),
+});
+
+/** What the last step of a findings template said: the evidence behind its answer and the next step it recommends. */
+export const FindingsSaidSchema = z.strictObject({
+  evidence: z.array(PlacedNoteSchema).max(MAX_EVIDENCE),
+  /** EVIDENCE lines past the ones carried. */
+  moreEvidence: z.int().nonnegative(),
+  next: planPart.optional(),
+});
+
 /**
  * What a step's agent said about its own work, as the row and the cards show it: a headline and
  * up to three points it wrote, or (`first_lines`) the first lines of its reply when it wrote
@@ -131,6 +153,10 @@ export const SaidSchema = z.strictObject({
   noChange: z.literal(true).optional(),
   /** Present exactly when the plan block was asked for and the step changed nothing: empty when the agent wrote none of it. Absent otherwise and in older records. */
   plan: PlanSummarySchema.optional(),
+  /** Present exactly when the step is a reviewer step: empty when the agent wrote no MUST line. Absent otherwise and in older records. */
+  review: ReviewSaidSchema.optional(),
+  /** Present exactly when the step is the last of a template that finishes with findings: empty when the agent wrote none. Absent otherwise and in older records. */
+  findings: FindingsSaidSchema.optional(),
 });
 
 /** What a changed file is, for the Changed row and the risk rules; the first six are the sensitive kinds. */
@@ -371,6 +397,9 @@ export type RunFailure = z.output<typeof RunFailureSchema>;
 export type AttemptSummary = z.output<typeof AttemptSummarySchema>;
 export type Said = z.output<typeof SaidSchema>;
 export type PlanSummary = z.output<typeof PlanSummarySchema>;
+export type ReviewSaid = z.output<typeof ReviewSaidSchema>;
+export type FindingsSaid = z.output<typeof FindingsSaidSchema>;
+export type PlacedNote = z.output<typeof PlacedNoteSchema>;
 export type PlanChoice = z.output<typeof PlanChoiceSchema>;
 export type PlanReach = z.output<typeof PlanReachSchema>;
 export type ReachKind = z.output<typeof ReachKindSchema>;

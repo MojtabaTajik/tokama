@@ -50,6 +50,19 @@ const ARCHITECT = [
   "",
 ].join("\n");
 
+/** The reviewer of Plan and build, pinned to the cheapest model. */
+const REVIEWER = [
+  "---",
+  "format: 1",
+  "name: Reviewer",
+  "runs_on: claude-code",
+  "model: haiku",
+  "tools: read-only",
+  "---",
+  "You are Reviewer. Judge the change in this worktree. Do not write or change any file.",
+  "",
+].join("\n");
+
 export interface Workspace {
   /** Everything of one test: removed at the end. */
   readonly root: string;
@@ -72,6 +85,7 @@ export function createWorkspace(): Workspace {
   mkdirSync(join(tokamaHome, "agents"), { recursive: true });
   writeFileSync(join(tokamaHome, "agents", "builder.md"), BUILDER);
   writeFileSync(join(tokamaHome, "agents", "architect.md"), ARCHITECT);
+  writeFileSync(join(tokamaHome, "agents", "reviewer.md"), REVIEWER);
   createFixture(workspace.repo);
   return workspace;
 }

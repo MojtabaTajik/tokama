@@ -22,8 +22,9 @@ import {
 import type { Agent, Repo } from "../config/index.js";
 import { EVENTS_FILE, foldItem, ItemStore, openDecisions, readLog } from "../items/index.js";
 import { createWorktree } from "../worktrees/index.js";
-import { HEADLINE_RULE, PLAN_RULE } from "./headline.js";
+import { FINDINGS_RULE, HEADLINE_RULE, MUST_RULE, NO_CHANGE_RULE, PLAN_RULE, REVIEWER_HEADLINE_RULE } from "./headline.js";
 import { createRunLoop, parseVerdict, type RunLoop, type RunLoopDeps } from "./index.js";
+import { VERDICT_RULE } from "./verdict.js";
 import { after, type Behavior, crashes, edits, editsThenCrashes, editsThenHangs, FAKE_PID, fakeRuntime, hangs, loops, says } from "./testing/fake-runtime.js";
 
 const SLOW = { timeout: 60_000 };
@@ -2106,6 +2107,130 @@ describe("run loop: a step you approve says no change is needed", () => {
       await current.settled(id);
       expect(runtime.calls[1]?.request.prompt).toContain(`You asked for changes:\n${note}`);
       expect(item(id).steps[0]?.attempts[1]?.said?.plan?.choices).toHaveLength(1);
+    });
+  });
+
+  describe("the review and findings blocks", () => {
+    const REVIEWED = [
+      "The fetch leaks a timer.",
+      "HEADLINE: Needs work.",
+      "MUST: src/weather.js:41 | the 5 s timeout is never cleared",
+      "MUST: test/weather.test.js | no test for the fallback",
+      "VERDICT: changes",
+    ].join("\n");
+    const FOUND = ["Write-up.", "HEADLINE: A filter drops refunded orders.", "EVIDENCE: src/export/query.ts:88 | the filter, added in commit 4f1c2aa", "NEXT: Remove the filter."].join("\n");
+    const lines = (messages: string[]) => ({ log: (message: string) => messages.push(message) });
+    const REVIEW_TEMPLATE = () =>
+      template([
+        { id: "build" },
+        { id: "review", agentId: "reviewer", doneWhen: "reviewer approves", ifChangesRequested: { action: "ask" } },
+      ]);
+    const FINDINGS_TEMPLATE = (steps: readonly StepInput[] = [{ id: "investigate" }], finish = ["findings"]) =>
+      template(steps, { finish, uses: { repos: { picked: "read", named: [] }, connections: [], commands: [] } });
+    const withReviewer = (builder: AgentRuntime, reviewer: AgentRuntime, messages: string[] = []) => engine(builder, { runtime: (a) => (a.id === "reviewer" ? reviewer : builder), ...lines(messages) });
+
+    it("a reviewer is asked for MUST lines above the verdict line, and no other step is", SLOW, async () => {
+      const builder = fakeRuntime([edits(FIXED)]);
+      const reviewer = fakeRuntime([says("Fine.\nHEADLINE: ok\nVERDICT: approve")]);
+      await start(withReviewer(builder, reviewer), REVIEW_TEMPLATE());
+      const prompt = reviewer.calls[0]!.request.prompt;
+      expect(prompt).toContain(REVIEWER_HEADLINE_RULE + MUST_RULE + VERDICT_RULE);
+      expect(prompt.indexOf("MUST: <where")).toBeLessThan(prompt.indexOf("VERDICT: approve"));
+      expect(builder.calls[0]!.request.prompt).not.toMatch(/MUST:|EVIDENCE:|NEXT:/);
+    });
+
+    it("the last step of a findings template gets EVIDENCE and NEXT after the headline rule; a document finish and earlier steps get nothing", SLOW, async () => {
+      const last = fakeRuntime([says(FOUND)]);
+      await start(engine(last), FINDINGS_TEMPLATE());
+      expect(last.calls[0]!.request.prompt).toContain(HEADLINE_RULE + FINDINGS_RULE);
+      expect(last.calls[0]!.request.prompt).toContain("EVIDENCE: <where");
+
+      const two = fakeRuntime([says("Looked.\nHEADLINE: x"), says(FOUND)]);
+      await start(engine(two), FINDINGS_TEMPLATE([{ id: "look" }, { id: "answer" }]));
+      expect(two.calls[0]!.request.prompt).not.toMatch(/EVIDENCE:|NEXT:/);
+      expect(two.calls[1]!.request.prompt).toContain(FINDINGS_RULE);
+
+      const document = fakeRuntime([says("Doc.\nHEADLINE: x")]);
+      await start(engine(document), FINDINGS_TEMPLATE([{ id: "write" }], ["document"]));
+      expect(document.calls[0]!.request.prompt).toMatch(/HEADLINE: <one line[^]*$/);
+      expect(document.calls[0]!.request.prompt).not.toMatch(/EVIDENCE:|NEXT:/);
+      expect(document.calls[0]!.request.prompt).toContain(HEADLINE_RULE);
+      expect(document.calls[0]!.request.prompt).not.toContain(FINDINGS_RULE);
+    });
+
+    it("a step that is none of these gets exactly the rules it got before", SLOW, async () => {
+      const builder = fakeRuntime([edits(FIXED)]);
+      await start(engine(builder), template([{ id: "build" }]));
+      expect(builder.calls[0]!.request.prompt).toContain(HEADLINE_RULE);
+      for (const rule of [PLAN_RULE, MUST_RULE, FINDINGS_RULE, NO_CHANGE_RULE]) expect(builder.calls[0]!.request.prompt).not.toContain(rule);
+      const plan = fakeRuntime([says("A plan.\nHEADLINE: x")]);
+      await start(engine(plan), PLAN_BUILD());
+      expect(plan.calls[0]!.request.prompt).toContain(HEADLINE_RULE + PLAN_RULE + NO_CHANGE_RULE);
+      expect(plan.calls[0]!.request.prompt).not.toContain(FINDINGS_RULE);
+    });
+
+    it("stores the MUST lines of a review that asks for changes, and logs the count", SLOW, async () => {
+      const messages: string[] = [];
+      const id = await start(withReviewer(fakeRuntime([edits(FIXED)]), fakeRuntime([says(REVIEWED)]), messages), REVIEW_TEMPLATE());
+      const attempt = item(id).steps.find((s) => s.id === "review")?.attempts[0];
+      expect(attempt?.said?.review).toEqual({
+        mustFix: [
+          { where: "src/weather.js:41", what: "the 5 s timeout is never cleared" },
+          { where: "test/weather.test.js", what: "no test for the fallback" },
+        ],
+        moreMustFix: 0,
+      });
+      expect(messages).toEqual([expect.stringContaining("review block of step review: 2 must-fix, verdict changes")]);
+    });
+
+    it("a MUST line below the VERDICT line is no run failure", SLOW, async () => {
+      const id = await start(withReviewer(fakeRuntime([edits(FIXED)]), fakeRuntime([says("Notes.\nHEADLINE: Needs work.\nVERDICT: changes\nMUST: a.ts:3 | leak")])), REVIEW_TEMPLATE());
+      expect(story(id)).toContain("attempt_ended review#1 failed");
+      expect(story(id).join("\n")).not.toContain("run_failed");
+      expect(item(id).steps.find((s) => s.id === "review")?.attempts[0]?.said?.review?.mustFix).toEqual([{ where: "a.ts:3", what: "leak" }]);
+    });
+
+    it("an approve with MUST lines passes, stores the lines and logs both", SLOW, async () => {
+      const messages: string[] = [];
+      const id = await start(withReviewer(fakeRuntime([edits(FIXED)]), fakeRuntime([says("Fine.\nHEADLINE: Ready.\nMUST: a.ts | a nit\nVERDICT: approve")]), messages), REVIEW_TEMPLATE());
+      expect(story(id)).toContain("attempt_ended review#1 passed");
+      expect(item(id).steps.find((s) => s.id === "review")?.attempts[0]?.said?.review?.mustFix).toEqual([{ where: "a.ts", what: "a nit" }]);
+      expect(messages).toEqual([expect.stringContaining("review block of step review: 1 must-fix, verdict approve")]);
+    });
+
+    it("a review that asks for changes without MUST lines stores an empty record", SLOW, async () => {
+      const messages: string[] = [];
+      const id = await start(withReviewer(fakeRuntime([edits(FIXED)]), fakeRuntime([says("Add a test.\nHEADLINE: Needs a test.\nVERDICT: changes")]), messages), REVIEW_TEMPLATE());
+      expect(item(id).steps.find((s) => s.id === "review")?.attempts[0]?.said?.review).toEqual({ mustFix: [], moreMustFix: 0 });
+      expect(messages).toEqual([expect.stringContaining("0 must-fix, verdict changes")]);
+    });
+
+    it("a step before the reviewer stores no review record", SLOW, async () => {
+      const id = await start(withReviewer(fakeRuntime([edits(FIXED)]), fakeRuntime([says(REVIEWED)])), REVIEW_TEMPLATE());
+      expect(item(id).steps.find((s) => s.id === "build")?.attempts[0]?.said ?? {}).not.toHaveProperty("review");
+    });
+
+    it("stores the evidence and next step the last step of a findings template wrote, and logs the coverage", SLOW, async () => {
+      const messages: string[] = [];
+      const id = await start(engine(fakeRuntime([says(FOUND)]), lines(messages)), FINDINGS_TEMPLATE());
+      expect(item(id).steps[0]?.attempts[0]?.said?.findings).toEqual({ evidence: [{ where: "src/export/query.ts:88", what: "the filter, added in commit 4f1c2aa" }], moreEvidence: 0, next: "Remove the filter." });
+      expect(messages).toEqual([expect.stringContaining("findings block of step investigate: full")]);
+    });
+
+    it("stores an empty findings record when the agent wrote no lines, and logs it", SLOW, async () => {
+      const messages: string[] = [];
+      const id = await start(engine(fakeRuntime([says("Write-up.\nHEADLINE: Answer.")]), lines(messages)), FINDINGS_TEMPLATE());
+      expect(item(id).steps[0]?.attempts[0]?.said?.findings).toEqual({ evidence: [], moreEvidence: 0 });
+      expect(messages).toEqual([expect.stringContaining("findings block of step investigate: headline_only")]);
+      const none: string[] = [];
+      await start(engine(fakeRuntime([says("First line.\nSecond.")]), lines(none)), FINDINGS_TEMPLATE());
+      expect(none).toEqual([expect.stringContaining("findings block of step investigate: missing")]);
+    });
+
+    it("a step of a document finish stores neither record", SLOW, async () => {
+      const id = await start(engine(fakeRuntime([says(FOUND)])), FINDINGS_TEMPLATE([{ id: "write" }], ["document"]));
+      expect(item(id).steps[0]?.attempts[0]?.said).not.toHaveProperty("findings");
+      expect(item(id).steps[0]?.attempts[0]?.said).not.toHaveProperty("review");
     });
   });
 

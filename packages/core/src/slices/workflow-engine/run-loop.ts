@@ -84,7 +84,7 @@ import {
   unapproved,
   type SteeringEntry,
 } from "./protect.js";
-import { HEADLINE_RULE, NO_CHANGE_RULE, PLAN_RULE, REVIEWER_HEADLINE_RULE, planCoverage, saidOf } from "./headline.js";
+import { FINDINGS_RULE, HEADLINE_RULE, MUST_RULE, NO_CHANGE_RULE, PLAN_RULE, REVIEWER_HEADLINE_RULE, findingsCoverage, planCoverage, saidOf } from "./headline.js";
 import { parseHeadline } from "./summary.js";
 import { parseVerdict, VERDICT_RULE } from "./verdict.js";
 
@@ -257,6 +257,15 @@ const plansWanted = (template: TemplateRecord, step: TemplateStepDef): boolean =
   const at = template.steps.findIndex((s) => s.id === step.id);
   return step.doneWhen === "you approve" && at >= 0 && at < template.steps.length - 1;
 };
+
+/**
+ * Which lines after the headline a step's agent is asked for besides the plan: MUST lines on a
+ * reviewer step, EVIDENCE and NEXT lines on the last step of a template that finishes with
+ * findings. A document finish and every other step get none.
+ */
+type BlockKind = "review" | "findings" | undefined;
+const blockKindOf = (template: TemplateRecord, step: TemplateStepDef): BlockKind =>
+  step.doneWhen === "reviewer approves" ? "review" : template.steps.at(-1)?.id === step.id && template.finish.includes("findings") ? "findings" : undefined;
 
 /**
  * Whether a step's agent may say that no change is needed: a step you approve with a step after
@@ -819,7 +828,10 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     const feedback = await feedbackFor({ ...ctx, item });
     const checks = reviewer ? checkSummaryFor({ ...ctx, item }, step, reviewed) : undefined;
     // The step's agent also writes its headline: the rule is part of the instructions every prompt is built from, so a cloud agent's recorded prompt holds it too. A reviewer's verdict line stays the last.
-    const rules = reviewer ? REVIEWER_HEADLINE_RULE + VERDICT_RULE : HEADLINE_RULE + (plansWanted(ctx.template, step) ? PLAN_RULE : "") + (mayProposeNoChange(item, ctx.template, step) ? NO_CHANGE_RULE : "");
+    const kind = blockKindOf(ctx.template, step);
+    const rules = reviewer
+      ? REVIEWER_HEADLINE_RULE + MUST_RULE + VERDICT_RULE
+      : HEADLINE_RULE + (plansWanted(ctx.template, step) ? PLAN_RULE : "") + (kind === "findings" ? FINDINGS_RULE : "") + (mayProposeNoChange(item, ctx.template, step) ? NO_CHANGE_RULE : "");
     const template = { ...ctx.template, steps: ctx.template.steps.map((s) => (s.id === stepId ? { ...s, instructions: { ...s.instructions, text: s.instructions.text + rules } } : s)) };
     const prompt = buildPrompt({
       template,
@@ -931,18 +943,27 @@ export function createRunLoop(deps: RunLoopDeps): RunLoop {
     const reply = (await readItemFile(item.id, `${attemptDir(stepId, attempt)}/agent.txt`)) ?? "";
     const parsed = parseHeadline(reply, plansWanted(ctx.template, step));
     const document = ctx.template.steps.at(-1)?.id === stepId && ctx.template.finish.some((finish) => finish === "findings" || finish === "document");
-    const said = (approvesText = false, noChangeOffered = false): Said | undefined => saidOf(parsed, { approvesText, lastOfDocument: document, noChangeOffered, planAsked: plansWanted(ctx.template, step) });
+    const kind = blockKindOf(ctx.template, step);
+    const said = (approvesText = false, noChangeOffered = false): Said | undefined =>
+      saidOf(parsed, { approvesText, lastOfDocument: document, noChangeOffered, planAsked: plansWanted(ctx.template, step), reviewAsked: kind === "review", findingsAsked: kind === "findings" });
     switch (step.doneWhen) {
-      case "agent finishes":
-        return passStep(item, stepId, [attemptEnded(stepId, attempt, "passed", { said: said() })]);
+      case "agent finishes": {
+        const spoken = said();
+        // How often agents leave the findings lines out is read from the log; nothing is asked again.
+        if (kind === "findings") deps.log?.(`item ${item.id}: findings block of step ${step.id}: ${findingsCoverage(spoken)}`);
+        return passStep(item, stepId, [attemptEnded(stepId, attempt, "passed", { said: spoken })]);
+      }
       case "you approve":
         return askApproval(ctx, step, attempt, said, parsed?.planUnread === true);
       case "reviewer approves": {
         const verdict = parseVerdict(reply);
         if (verdict === undefined) return runFailed(item, stepId, attempt, "crash", "The reviewer's reply did not end with VERDICT: approve or VERDICT: changes.");
+        const spoken = said();
+        // The verdict line decides, whatever the MUST lines say; an approve with must-fix lines is counted here.
+        deps.log?.(`item ${item.id}: review block of step ${step.id}: ${(spoken?.review?.mustFix.length ?? 0) + (spoken?.review?.moreMustFix ?? 0)} must-fix, verdict ${verdict}`);
         // The reviewed tree is recorded: Finish commits only the tree a reviewer approved.
-        if (verdict === "approve") return passStep(item, stepId, [attemptEnded(stepId, attempt, "passed", { ...(reviewed !== undefined && { tree: reviewed }), said: said() })]);
-        return workFailed(ctx, stepId, attempt, `The reviewer asked for changes:\n${reply}`, "The reviewer asked for changes.", said());
+        if (verdict === "approve") return passStep(item, stepId, [attemptEnded(stepId, attempt, "passed", { ...(reviewed !== undefined && { tree: reviewed }), said: spoken })]);
+        return workFailed(ctx, stepId, attempt, `The reviewer asked for changes:\n${reply}`, "The reviewer asked for changes.", spoken);
       }
       case "checks pass":
         return runChecksOf(ctx, stepId, attempt, signal, said());

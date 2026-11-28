@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SaidSchema } from "../../kernel/schemas/index.js";
-import { HEADLINE_RULE, labelOf, NO_CHANGE_RULE, PLAN_RULE, planCoverage, planLabelOf, readMinutesOf, saidOf } from "./headline.js";
+import { extraLabelOf, FINDINGS_RULE, findingsCoverage, HEADLINE_RULE, labelOf, MUST_RULE, NO_CHANGE_RULE, PLAN_RULE, planCoverage, readMinutesOf, REVIEWER_HEADLINE_RULE, saidOf } from "./headline.js";
 import { parseHeadline } from "./summary.js";
 
 const words = (count: number) => Array.from({ length: count }, (_, i) => `w${i}`).join(" ");
@@ -62,16 +62,71 @@ describe("PLAN_RULE", () => {
   });
 });
 
-describe("planLabelOf", () => {
-  it("reads the three labels in any case, after list, quote and bold marks", () => {
-    expect(planLabelOf("CHOICE: a | b")).toEqual({ label: "CHOICE", value: "a | b" });
-    expect(planLabelOf("- **reach**: files | a")).toEqual({ label: "REACH", value: "files | a" });
-    expect(planLabelOf("> Risk: slow")).toEqual({ label: "RISK", value: "slow" });
+describe("extraLabelOf", () => {
+  it("reads the six labels in any case, after list, quote and bold marks", () => {
+    expect(extraLabelOf("CHOICE: a | b")).toEqual({ label: "CHOICE", value: "a | b" });
+    expect(extraLabelOf("- **reach**: files | a")).toEqual({ label: "REACH", value: "files | a" });
+    expect(extraLabelOf("> Risk: slow")).toEqual({ label: "RISK", value: "slow" });
+    expect(extraLabelOf("must: a.ts:3 | leak")).toEqual({ label: "MUST", value: "a.ts:3 | leak" });
+    expect(extraLabelOf("* __Evidence__: log | 3 rows")).toEqual({ label: "EVIDENCE", value: "log | 3 rows" });
+    expect(extraLabelOf("**NEXT:** fix it")).toEqual({ label: "NEXT", value: "fix it" });
   });
 
   it("does not read the block labels or prose", () => {
-    for (const line of ["HEADLINE: x", "POINT: x", "The risk: x", "RISKS: x", "CHOICES: x", "Choice x"]) expect(planLabelOf(line), line).toBeUndefined();
+    for (const line of ["HEADLINE: x", "POINT: x", "The risk: x", "RISKS: x", "CHOICES: x", "Choice x", "MUSTS: x", "Next steps: x", "Evidence x"]) expect(extraLabelOf(line), line).toBeUndefined();
     expect(labelOf("CHOICE: a")).toBeUndefined();
+    expect(labelOf("MUST: a")).toBeUndefined();
+  });
+});
+
+describe("MUST_RULE and FINDINGS_RULE", () => {
+  it("ask for the lines with the caps of the schema, and no Markdown", () => {
+    expect(MUST_RULE).toContain("MUST: <where: a file:line or a file> | <what is wrong>");
+    expect(MUST_RULE).toContain("up to 5 such lines");
+    expect(MUST_RULE).toContain("Each part at most 160 characters. Write no MUST line with VERDICT: approve.");
+    expect(FINDINGS_RULE).toContain("EVIDENCE: <where: a file:line, a log, a commit or a command> | <what it shows there>");
+    expect(FINDINGS_RULE).toContain("up to 5 such lines");
+    expect(FINDINGS_RULE).toContain("NEXT: <optional; one line: the next step you recommend>");
+    expect(FINDINGS_RULE).toContain("Each part at most 160 characters.");
+    expect(MUST_RULE + FINDINGS_RULE).not.toMatch(/[*`#]/);
+    for (const rule of [HEADLINE_RULE, NO_CHANGE_RULE, PLAN_RULE, REVIEWER_HEADLINE_RULE]) expect(rule).not.toMatch(/MUST:|EVIDENCE:|NEXT:/);
+  });
+});
+
+describe("saidOf: review and findings", () => {
+  const reviewReply = "Notes.\nHEADLINE: Needs work.\nMUST: a.ts:3 | leak\nVERDICT: changes";
+  const findingsReply = "Text.\nHEADLINE: The cause.\nEVIDENCE: b.ts:9 | the filter\nNEXT: Remove it.";
+  const said = (reply: string, context: Partial<Parameters<typeof saidOf>[1]>) => saidOf(parseHeadline(reply), { ...none, ...context });
+
+  it("carries the lines only when asked for", () => {
+    expect(said(reviewReply, { reviewAsked: true })).toMatchObject({ review: { mustFix: [{ where: "a.ts:3", what: "leak" }], moreMustFix: 0 } });
+    expect(said(reviewReply, {})).not.toHaveProperty("review");
+    expect(said(reviewReply, { findingsAsked: true })).not.toHaveProperty("review");
+    expect(said(findingsReply, { findingsAsked: true })).toMatchObject({ findings: { evidence: [{ where: "b.ts:9", what: "the filter" }], moreEvidence: 0, next: "Remove it." } });
+    expect(said(findingsReply, {})).not.toHaveProperty("findings");
+    expect(said(findingsReply, { reviewAsked: true })).not.toHaveProperty("findings");
+  });
+
+  it("carries an empty record when the agent wrote none, in the stored shape", () => {
+    const review = said("Text.\nHEADLINE: Fine.\nVERDICT: approve", { reviewAsked: true });
+    expect(review?.review).toEqual({ mustFix: [], moreMustFix: 0 });
+    const findings = said("Text.\nHEADLINE: Fine.", { findingsAsked: true });
+    expect(findings?.findings).toEqual({ evidence: [], moreEvidence: 0 });
+    expect(SaidSchema.safeParse(review).success).toBe(true);
+    expect(SaidSchema.safeParse(findings).success).toBe(true);
+  });
+});
+
+describe("findingsCoverage", () => {
+  const coverage = (reply: string) => findingsCoverage(saidOf(parseHeadline(reply), { ...none, findingsAsked: true }));
+
+  it("tells full, partial, headline only and missing apart", () => {
+    expect(coverage("HEADLINE: A.\nEVIDENCE: a | b\nNEXT: c")).toBe("full");
+    expect(coverage("HEADLINE: A.\nEVIDENCE: a | b")).toBe("partial");
+    expect(coverage("HEADLINE: A.\nNEXT: c")).toBe("partial");
+    expect(coverage("Text.\nHEADLINE: A.")).toBe("headline_only");
+    expect(coverage("Only text.")).toBe("missing");
+    expect(coverage("")).toBe("missing");
   });
 });
 

@@ -3,21 +3,26 @@
 // text, so the reading is tolerant: an unknown shape gives the first lines, never an error.
 import {
   MAX_CHOICES,
+  MAX_EVIDENCE,
   MAX_HEADLINE_CHARS,
+  MAX_MUST_FIX,
   MAX_PLAN_PART_CHARS,
   MAX_POINT_CHARS,
   MAX_POINTS,
   MAX_RISKS,
   MAX_SUMMARY_ITEMS,
   MAX_SUMMARY_LINE_CHARS,
+  type FindingsSaid,
   type OutputSummary,
+  type PlacedNote,
   type PlanChoice,
   type PlanReach,
   type PlanSummary,
   type ReachKind,
+  type ReviewSaid,
 } from "../../kernel/schemas/index.js";
 import { cutText } from "../../kernel/text/index.js";
-import { isBlockLine, labelOf, plain, planLabelOf } from "./headline.js";
+import { extraLabelOf, isBlockLine, labelOf, plain, type ExtraLabel } from "./headline.js";
 import { parseVerdict } from "./verdict.js";
 
 /** First lines shown for a step without a verdict format; a verdict step that broke it shows more. */
@@ -144,6 +149,10 @@ export interface ParsedHeadline {
   readonly plan: PlanSummary;
   /** The step was asked for the plan lines and plan labels stand in its last lines, yet none was read. */
   readonly planUnread: boolean;
+  /** The MUST lines of the block; empty when there are none. */
+  readonly review: ReviewSaid;
+  /** The EVIDENCE and NEXT lines of the block; empty when there are none. */
+  readonly findings: FindingsSaid;
 }
 
 /**
@@ -151,21 +160,24 @@ export interface ParsedHeadline {
  * lines, with the `POINT:` and `READ:` lines after it. Without one the first lines of the reply
  * stand in. Undefined when the reply says nothing. Never throws.
  */
-export function parseHeadline(text: string, planAsked = false): ParsedHeadline | undefined {
+export function parseHeadline(text: string, planAsked = false, asked?: "review" | "findings"): ParsedHeadline | undefined {
   try {
-    return parse(text, planAsked);
+    return parse(text, planAsked, asked);
   } catch {
     return undefined;
   }
 }
 
-function parse(text: string, planAsked: boolean): ParsedHeadline | undefined {
+function parse(text: string, planAsked: boolean, asked: "review" | "findings" | undefined): ParsedHeadline | undefined {
   const lines = text.split(/\r?\n/);
-  // Only a step that was asked for the plan lines reads them; for any other step they are text of the reply.
-  const planLines = planAsked ? planLineIndices(lines) : [];
-  const plan = parsePlan(planLines.map((index) => planLabelOf(lines[index]!)!));
+  // Only a step that was asked for the plan, review or findings lines reads them; for any other step they are text of the reply.
+  const planLines = extraLineIndices(lines, planAsked, asked);
+  const extras = planLines.map((index) => extraLabelOf(lines[index]!)!);
+  const plan = parsePlan(extras);
+  const review = parseReview(extras);
+  const findings = parseFindings(extras);
   const planUnread = planAsked && planLines.length === 0 && planLabelsUnread(lines);
-  // The plan lines do not count toward the window the headline is looked for in.
+  // The plan, review and findings lines do not count toward the window the headline is looked for in.
   const window = lines.flatMap((line, index) => (line.trim() === "" || planLines.includes(index) ? [] : [index])).slice(-BLOCK_WINDOW);
   const head = window.findLast((index) => labelOf(lines[index]!)?.label === "HEADLINE");
   const headline = head === undefined ? "" : labelOf(lines[head]!)!.value;
@@ -186,6 +198,8 @@ function parse(text: string, planAsked: boolean): ParsedHeadline | undefined {
       noChange: after.some((found) => found?.label === "NO_CHANGE" && found.block),
       plan,
       planUnread,
+      review,
+      findings,
     };
   }
   const said = body.flatMap((line) => (VERDICT_LINE.test(line.trim()) || labelOf(line)?.block === true ? [] : [plain(line)])).filter((line) => line !== "");
@@ -200,6 +214,8 @@ function parse(text: string, planAsked: boolean): ParsedHeadline | undefined {
     noChange: false,
     plan,
     planUnread,
+    review,
+    findings,
   };
 }
 
@@ -230,28 +246,38 @@ const REACH_KINDS: Readonly<Record<string, ReachKind>> = {
 };
 
 /**
- * The plan lines of the block: those after the last `HEADLINE:` line, up to the end of the reply,
- * where every line is a block or plan line (empty lines and code fences are stepped over), and
- * those directly above it with no empty line between. A reply that goes on in prose after the
- * block has none, and a plan label anywhere else in the reply is prose.
+ * The plan, review and findings lines of the block: those after the last `HEADLINE:` line, up to
+ * the end of the reply, where every line is a block or such a line (empty lines and code fences
+ * are stepped over, and a reviewer's block steps over one `VERDICT:` line), and those directly
+ * above it with no empty line between. A reply that goes on in prose after the block has none,
+ * and one of these labels anywhere else in the reply is prose. A label counts only for the step
+ * that was asked for it: plan labels for `planAsked`, `MUST:` for a reviewer step (`asked`),
+ * `EVIDENCE:` and `NEXT:` for the findings step.
  */
-function planLineIndices(lines: readonly string[]): number[] {
+function extraLineIndices(lines: readonly string[], planAsked: boolean, asked: "review" | "findings" | undefined): number[] {
+  const counts = (line: string): boolean => {
+    const label = extraLabelOf(line)?.label;
+    if (label === undefined) return false;
+    return label === "MUST" ? asked === "review" : label === "EVIDENCE" || label === "NEXT" ? asked === "findings" : planAsked;
+  };
   const head = lastHeadline(lines);
   if (head === undefined) return [];
   const found: number[] = [];
   let seen = 0;
+  let verdict = false;
   for (let index = head + 1; index < lines.length; index++) {
     const line = lines[index]!;
     if (line.trim() === "" || FENCE_LINE.test(line)) continue;
     if (++seen > PLAN_WINDOW) return [];
-    if (planLabelOf(line) !== undefined) found.push(index);
+    if (counts(line)) found.push(index);
+    else if (asked === "review" && !verdict && VERDICT_LINE.test(line.trim())) verdict = true;
     else if (!isBlockLine(line)) return [];
   }
   const above: number[] = [];
   for (let index = head - 1; index >= 0 && above.length < PLAN_WINDOW; index--) {
     const line = lines[index]!;
     if (FENCE_LINE.test(line)) continue;
-    if (planLabelOf(line) !== undefined) above.push(index);
+    if (counts(line)) above.push(index);
     else if (line.trim() === "" || !isBlockLine(line)) break;
   }
   return [...above.reverse(), ...found];
@@ -270,7 +296,7 @@ function lastHeadline(lines: readonly string[]): number | undefined {
 
 /** Plan labels sit in the last lines of the reply, yet none was read: the agent wrote them in a shape the reader does not know. */
 function planLabelsUnread(lines: readonly string[]): boolean {
-  return lines.filter((line) => line.trim() !== "").slice(-PLAN_WINDOW).some((line) => planLabelOf(line) !== undefined);
+  return lines.filter((line) => line.trim() !== "").slice(-PLAN_WINDOW).some((line) => ["CHOICE", "REACH", "RISK"].includes(extraLabelOf(line)?.label ?? ""));
 }
 
 /** The parts of a line, split on `|`: at most three, the rest joined into the last. */
@@ -303,7 +329,7 @@ function reachOf(value: string): PlanReach | undefined {
 }
 
 /** The plan lines read in order: each reach kind once (the first wins), 7 choices and 3 risks, the rest counted. */
-function parsePlan(found: readonly { label: "CHOICE" | "REACH" | "RISK"; value: string }[]): PlanSummary {
+function parsePlan(found: readonly { label: ExtraLabel; value: string }[]): PlanSummary {
   const choices = found.flatMap((line) => (line.label === "CHOICE" ? [choiceOf(line.value)] : [])).filter((choice) => choice !== undefined);
   const risks = found.flatMap((line) => {
     const risk = line.label === "RISK" ? part(line.value) : undefined;
@@ -321,6 +347,32 @@ function parsePlan(found: readonly { label: "CHOICE" | "REACH" | "RISK"; value: 
     risks: risks.slice(0, MAX_RISKS),
     moreRisks: Math.max(0, risks.length - MAX_RISKS),
   };
+}
+
+// A MUST or EVIDENCE line that says there is none: "none", "n/a", "-". Stricter than `NONE`: "No timeout is cleared" is a finding.
+const NO_NOTE = /^(?:none|nothing|n\/a|-|–|—)[.!]?$/i;
+
+/** `<where> | <what>`: at most two parts, the rest joined into the what; a line without `|` is the what alone. Undefined for an empty line or "none". */
+function placedOf(value: string): PlacedNote | undefined {
+  const trimmed = value.replace(/^\s*\|+\s*|\s*\|+\s*$/g, "");
+  if (NO_NOTE.test(trimmed)) return undefined;
+  const parts = trimmed.split(/\s*\|\s*/);
+  const where = parts.length > 1 ? part(parts[0]) : undefined;
+  const what = part(parts.length > 1 ? parts.slice(1).join(" | ") : parts[0]);
+  return what === undefined ? undefined : { ...(where !== undefined && { where }), what };
+}
+
+/** The MUST lines in order: 5 carried, the rest counted. */
+function parseReview(found: readonly { label: ExtraLabel; value: string }[]): ReviewSaid {
+  const notes = found.flatMap((line) => (line.label === "MUST" ? [placedOf(line.value)] : [])).filter((note) => note !== undefined);
+  return { mustFix: notes.slice(0, MAX_MUST_FIX), moreMustFix: Math.max(0, notes.length - MAX_MUST_FIX) };
+}
+
+/** The EVIDENCE lines in order (5 carried, the rest counted) and the first NEXT line that says something; NEXT is not split on `|`. */
+function parseFindings(found: readonly { label: ExtraLabel; value: string }[]): FindingsSaid {
+  const notes = found.flatMap((line) => (line.label === "EVIDENCE" ? [placedOf(line.value)] : [])).filter((note) => note !== undefined);
+  const next = found.flatMap((line) => (line.label === "NEXT" && !NO_NOTE.test(line.value) ? [part(line.value)] : [])).find((text) => text !== undefined);
+  return { evidence: notes.slice(0, MAX_EVIDENCE), moreEvidence: Math.max(0, notes.length - MAX_EVIDENCE), ...(next !== undefined && { next }) };
 }
 
 /** Markdown emphasis and code marks out, spaces folded. */
