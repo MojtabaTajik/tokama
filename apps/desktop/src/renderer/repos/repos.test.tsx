@@ -452,7 +452,7 @@ describe("Edit repo", () => {
     await chooseBranch(" develop ");
     await type(field("Checks"), "pnpm test\n\npnpm lint");
     await click(buttonByText("Save"));
-    expect(fake.command).toHaveBeenCalledWith({ type: "update_repo", repoId: "orders-api", baseBranch: "develop", checks: ["pnpm test", "pnpm lint"], setup: "" });
+    expect(fake.command).toHaveBeenCalledWith({ type: "update_repo", repoId: "orders-api", baseBranch: "develop", checks: ["pnpm test", "pnpm lint"] });
     expect($("dialog.modal")).toBeNull();
   });
 

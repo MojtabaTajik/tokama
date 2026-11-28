@@ -206,7 +206,8 @@ export function RepoDialog({ bridge, path, repo, onClose, onSetUp, onPickAnother
   /** The add_repo or update_repo command for what the fields hold now. */
   const saveCommand = (): CommandInput =>
     repo !== undefined
-      ? { type: "update_repo", repoId: repo.id, baseBranch: baseBranch.trim(), checks: lines, setup: setupCommand }
+      ? // Left out when unchanged, so a save that does not touch the setup command also works with an engine that does not know it.
+        { type: "update_repo", repoId: repo.id, baseBranch: baseBranch.trim(), checks: lines, ...(setupCommand === (repo.setup ?? "") ? {} : { setup: setupCommand }) }
       : {
           type: "add_repo",
           path: suggestion!.path,

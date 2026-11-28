@@ -217,8 +217,9 @@ function setupLine(result: CheckResult, folders: readonly (readonly [string, str
   const base = { durationMs: result.durationMs, ...(result.exitCode !== null && { exitCode: result.exitCode }) };
   if (result.outcome === "refused") return { ...base, state: "failed", outputTail: tidyOutput(`could not start: ${result.output}`, folders) };
   const state = result.outcome === "passed" ? "passed" : result.outcome === "timed-out" ? "timed_out" : "failed";
-  const notFound = result.outcome === "not-started" || result.exitCode === 127;
   const word = result.command.trim().split(/\s+/)[0] ?? "";
+  // Exit 127 names the command's first word only when the shell said that word was not found: `sh -c 'x'` can exit 127 for x.
+  const notFound = result.outcome === "not-started" || (result.exitCode === 127 && (result.output.includes(`${word}: not found`) || result.output.includes(`${word}: command not found`)));
   return { ...base, state, outputTail: tidyOutput(result.output, folders), ...(notFound && word !== "" && { couldNotStart: { word: cutText(word, 100) } }) };
 }
 

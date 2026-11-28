@@ -226,6 +226,12 @@ describe("running", () => {
     expect(run.last.checks[0]?.state).toBe("skipped");
   });
 
+  it("exit 127 from inside a command that was found does not name its first word", SLOW, async () => {
+    const run = await trial({ setup: "sh -c 'tokama-inner-missing'", checks: [{ command: "true" }] });
+    expect(run.last.setupResult).toMatchObject({ state: "failed", exitCode: 127 });
+    expect(run.last.setupResult?.couldNotStart).toBeUndefined();
+  });
+
   it("a setup that times out is shown as timed out", SLOW, async () => {
     const run = await trial({ setup: "sleep 30", checks: [{ command: "true" }] });
     expect(run.last.setupResult).toMatchObject({ state: "timed_out" });
@@ -253,9 +259,9 @@ describe("running", () => {
     const run = await trial({ checks: [{ command: "true" }] });
     expect(run.last).toMatchObject({ state: "done", setupHint: { command: "pnpm install --frozen-lockfile", from: "pnpm-lock.yaml" } });
     expect(run.last.setupResult).toBeUndefined();
-    // Nothing from the hint ran: the worktree was only made for the check.
-    const none = await trial({ checks: [{ command: "true" }] });
-    expect(none.last.setupHint).toBeDefined();
+    // Nothing from the hint ran: no install happened in the worktree.
+    const none = await trial({ checks: [{ command: "test ! -e node_modules" }] });
+    expect(none.last).toMatchObject({ state: "done", setupHint: { command: "pnpm install --frozen-lockfile" }, checks: [{ state: "passed" }] });
   });
 
   it("gives no hint when the repo has no known file, or when a setup command was given", SLOW, async () => {

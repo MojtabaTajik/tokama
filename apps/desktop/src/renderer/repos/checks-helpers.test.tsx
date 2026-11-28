@@ -549,6 +549,19 @@ describe("Setup command", () => {
     expect(empty.command.mock.calls[0]![0]).not.toHaveProperty("setup");
   });
 
+  it("sends setup in update_repo only when it changed, and an empty one to remove it", async () => {
+    const repo = { id: "orders-api", baseBranch: "main", checks: ["npm test"], setup: "npm ci", path: "~/code/orders-api" };
+    const same = await mount({ repo, commandReply: replies({ update_repo: { ok: true, data: { repo } } }) });
+    await click(button("Save"));
+    expect(same.command.mock.calls[0]![0]).toEqual({ type: "update_repo", repoId: "orders-api", baseBranch: "main", checks: ["npm test"] });
+    act(() => root.unmount());
+    root = createRoot(container);
+    const cleared = await mount({ repo, commandReply: replies({ update_repo: { ok: true, data: { repo } } }) });
+    await type(setupField(), "");
+    await click(button("Save"));
+    expect(cleared.command.mock.calls[0]![0]).toEqual({ type: "update_repo", repoId: "orders-api", baseBranch: "main", checks: ["npm test"], setup: "" });
+  });
+
   it("refuses a line break, typed or pasted, and says when it is more than one command", async () => {
     await mount({ suggestion: { setup: null, setupFrom: null } });
     await type(setupField(), "npm ci\nnpm run build");

@@ -188,8 +188,8 @@ describe("check trial record", () => {
     const setupResult = { state: "waiting" };
     expect(parse(trial({ setup: "pnpm install", setupResult }))).toBe(true);
     expect(parse(trial({ setup: "x".repeat(MAX_CHECK_CHARS + 1), setupResult }))).toBe(false);
-    // The result is there exactly when the setup command is.
-    expect(parse(trial({ setup: "pnpm install" }))).toBe(false);
+    // A result needs its command; a command alone stays readable, as an engine that does not know the setup line sends it.
+    expect(parse(trial({ setup: "pnpm install" }))).toBe(true);
     expect(parse(trial({ setupResult }))).toBe(false);
   });
 

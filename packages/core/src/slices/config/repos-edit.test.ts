@@ -686,7 +686,6 @@ describe("suggestRepo", () => {
   it.each([
     ["package-lock.json", "npm ci"],
     ["pnpm-lock.yaml", "pnpm install --frozen-lockfile"],
-    ["yarn.lock", "yarn install --immutable"],
     ["go.mod", "go mod download"],
     ["Orders.sln", "dotnet restore"],
     ["src.csproj", "dotnet restore"],
@@ -701,6 +700,13 @@ describe("suggestRepo", () => {
       const result = await suggestRepo(options(), repo(`app${index}`, files));
       expect(result).toMatchObject({ ok: true, value: { setup: undefined, setupFrom: undefined } });
     }
+  });
+
+  it("suggests the yarn command by the lockfile's version: --immutable for Yarn 2 and later, --frozen-lockfile for Yarn 1", async () => {
+    const berry = repo("berry", { "yarn.lock": "__metadata:\n  version: 8\n" });
+    expect(await suggestRepo(options(), berry)).toMatchObject({ ok: true, value: { setup: "yarn install --immutable", setupFrom: "yarn.lock" } });
+    const classic = repo("classic", { "yarn.lock": "# yarn lockfile v1\n" });
+    expect(await suggestRepo(options(), classic)).toMatchObject({ ok: true, value: { setup: "yarn install --frozen-lockfile", setupFrom: "yarn.lock" } });
   });
 
   it("does not offer a project file whose name has invisible or direction characters", async () => {

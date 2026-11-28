@@ -307,9 +307,9 @@ export const RepoSuggestionSchema = z.strictObject({
   id: RepoIdSchema.nullable(),
   checks: z.array(checkCommand).max(20),
   /** From one known file in the top folder, such as `npm ci` for package-lock.json; null when there is none or more than one kind. */
-  setup: checkCommand.nullable(),
+  setup: checkCommand.nullable().optional(),
   /** The file name `setup` comes from; null with it. */
-  setupFrom: z.string().max(255).nullable(),
+  setupFrom: z.string().max(255).nullable().optional(),
   /** Set when a first commit can be made here (no git repo yet, or a repo without commits): what it would hold. */
   firstCommit: z
     .strictObject({

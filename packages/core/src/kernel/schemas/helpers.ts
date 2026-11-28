@@ -141,7 +141,7 @@ export const CheckTrialSchema = z
     commit: z.string().regex(/^[0-9a-f]{7,64}$/).optional(),
     /** The setup command the trial was asked to run before its checks, as given. */
     setup: checkCommand.optional(),
-    /** How the setup went; set exactly when `setup` is. */
+    /** How the setup went; only with `setup`. */
     setupResult: z
       .strictObject({
         state: CheckTrialCheckStateSchema,
@@ -182,7 +182,8 @@ export const CheckTrialSchema = z
     }
     if ((trial.state === "failed") !== (trial.error !== undefined)) problem("error is set exactly when the trial failed", "error");
     if (trial.checks.length === 0 && trial.setup === undefined) problem("a trial has a setup command or a check", "checks");
-    if ((trial.setup === undefined) !== (trial.setupResult === undefined)) problem("setupResult is set exactly when setup is", "setupResult");
+    // An engine of the same API version that does not know the setup line sends `setup` alone: that stays readable.
+    if (trial.setup === undefined && trial.setupResult !== undefined) problem("setupResult needs setup", "setupResult");
   });
 
 /**

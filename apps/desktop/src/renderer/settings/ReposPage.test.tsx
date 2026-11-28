@@ -256,7 +256,7 @@ describe("Add, Edit and Remove", () => {
     expect(checks.value).toBe("pnpm test");
     await type(checks, "pnpm test\npnpm lint");
     await click($$("dialog.modal button").find((el) => el.textContent === "Save"));
-    expect(fake.command).toHaveBeenCalledWith({ type: "update_repo", repoId: "checkout-web", baseBranch: "main", checks: ["pnpm test", "pnpm lint"], setup: "" });
+    expect(fake.command).toHaveBeenCalledWith({ type: "update_repo", repoId: "checkout-web", baseBranch: "main", checks: ["pnpm test", "pnpm lint"] });
     expect($("dialog.modal")).toBeNull();
   });
 

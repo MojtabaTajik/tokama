@@ -20,6 +20,11 @@
         "minutes": 1
       }
     ],
-    "note": "Found from Orders.sln, Orders.Tests.csproj (xunit) and global.json. Both commands use --no-restore so they do not reach NuGet; the packages must already be restored."
+    "setup": {
+      "command": "dotnet restore Orders.sln",
+      "why": "Restores the NuGet packages the checks need, which a new worktree does not have.",
+      "minutes": 1
+    },
+    "note": "Found from Orders.sln, Orders.Tests.csproj (xunit) and global.json. Both commands use --no-restore so they do not reach NuGet; the setup command restores the packages first."
   }
 }
