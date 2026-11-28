@@ -192,21 +192,44 @@ describe("watchConnection", () => {
       });
     });
 
-    it("marks the crash seen on the new engine after it had to kill the old one", async () => {
+    it("deletes the crash entry the new engine recorded for the kill, and no other crash", async () => {
       const { client } = fakeClient("engine-new");
-      client.command.mockResolvedValue({ ok: true, data: {} });
+      const crash = (id: string, at: number, source = "engine", kind = "unclean_exit") => ({ type: "crash", id, at, source, kind });
+      client.query.mockResolvedValue({
+        ok: true,
+        data: { truncated: false, entries: [crash("d-real-later", Date.now() + 9), crash("d-kill", Date.now() + 5), crash("d-renderer", Date.now() + 5, "renderer", "crashed"), crash("d-before", 1)] },
+      });
+      client.command.mockResolvedValue({ ok: true, data: { deleted: 1 } });
       const connect = vi.fn<Connect>().mockResolvedValueOnce(err(versionRefusal(APP_API - 1, 0))).mockResolvedValueOnce(ok(client));
-      const { watcher } = watch(connect, [], async () => ({ kind: "stopped", forced: true }));
+      const before = Date.now();
+      const { watcher, stop } = watch(connect, [], async () => ({ kind: "stopped", forced: true }));
       await vi.waitFor(() => expect(watcher.state().status).toBe("connected"));
-      expect(client.command).toHaveBeenCalledWith({ type: "diagnostics_settings", crashSeen: true });
+      // An idle replace (ifIdle) whose engine accepted the stop and then hung is still killed: the kill is the app's too.
+      expect(stop).toHaveBeenCalledWith(expect.objectContaining({ ifIdle: true }));
+      expect(client.query).toHaveBeenCalledWith(expect.objectContaining({ type: "diagnostics_list", types: ["crash"], since: expect.toSatisfy((n: number) => n >= before) }));
+      expect(client.command).toHaveBeenCalledTimes(1);
+      expect(client.command).toHaveBeenCalledWith({ type: "diagnostics_delete", ids: ["d-kill"] });
     });
 
-    it("does not mark a crash after a clean stop, or after another app replaced the engine", async () => {
+    it("still connects when the crash entry cannot be listed or deleted", async () => {
+      for (const fail of ["query", "command"] as const) {
+        const { client } = fakeClient("engine-new");
+        client.query.mockResolvedValue({ ok: true, data: { truncated: false, entries: [{ type: "crash", id: "d-kill", at: Date.now() + 5, source: "engine", kind: "unclean_exit" }] } });
+        client.command.mockResolvedValue({ ok: true, data: {} });
+        client[fail].mockRejectedValue(new Error("gone"));
+        const connect = vi.fn<Connect>().mockResolvedValueOnce(err(versionRefusal(APP_API - 1, 0))).mockResolvedValueOnce(ok(client));
+        const { watcher } = watch(connect, [], async () => ({ kind: "stopped", forced: true }));
+        await vi.waitFor(() => expect(watcher.state().status).toBe("connected"));
+      }
+    });
+
+    it("leaves diagnostics alone after a clean stop, or after another app replaced the engine", async () => {
       for (const outcome of [STOPPED, { kind: "replaced" }] as const) {
         const { client } = fakeClient("engine-new");
         const connect = vi.fn<Connect>().mockResolvedValueOnce(err(versionRefusal(APP_API - 1, 0))).mockResolvedValueOnce(ok(client));
         const { watcher } = watch(connect, [], async () => outcome);
         await vi.waitFor(() => expect(watcher.state().status).toBe("connected"));
+        expect(client.query).not.toHaveBeenCalled();
         expect(client.command).not.toHaveBeenCalled();
       }
     });

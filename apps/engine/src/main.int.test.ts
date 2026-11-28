@@ -106,6 +106,15 @@ describe("engine process", () => {
     expect(crashes).toMatchObject({ ok: true, data: { entries: [{ type: "crash", source: "engine", kind: "unclean_exit", engineVersion: "0.0.0" }] } });
     const setup = await second.query({ type: "setup" });
     expect(setup.ok && setup.data.health.crashWaiting).toBe(true);
+
+    // What the app does after it killed an engine itself: lists the new entry by time and deletes it.
+    const listed = await second.query({ type: "diagnostics_list", types: ["crash"], since: 0 });
+    const ids = listed.ok ? listed.data.entries.map((entry) => entry.id) : [];
+    expect(ids).toHaveLength(1);
+    expect(await second.command({ type: "diagnostics_delete", ids })).toEqual({ ok: true, data: { deleted: 1 } });
+    expect(await second.query({ type: "diagnostics_list", types: ["crash"] })).toMatchObject({ ok: true, data: { entries: [] } });
+    const after = await second.query({ type: "setup" });
+    expect(after.ok && after.data.health.crashWaiting).toBe(false);
   });
 
   it.each(["SIGTERM", "SIGINT"] as const)("counts a stop by %s as clean: the next start has no crash flag and no crash entry", { timeout: 40_000 }, async (signal) => {
