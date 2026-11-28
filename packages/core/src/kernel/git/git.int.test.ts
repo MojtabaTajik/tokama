@@ -558,11 +558,18 @@ describe("API on a real repo", () => {
     // A relative path that fits the OS limit, while the absolute one (with the repo's folder in front) does not.
     // PATH_MAX is 1024 on macOS and 4096 on Linux; the path with the file is just under it.
     const deep = (process.platform === "darwin" ? Array.from({ length: 5 }, () => "d".repeat(200)) : Array.from({ length: 22 }, () => "d".repeat(184))).join("/");
-    const made = await createProcessRunner({ parentEnv: { PATH: process.env["PATH"] } }).run({ command: { argv: ["sh", "-c", `mkdir -p ${deep} && echo x > ${deep}/y.js`] }, cwd: repo });
+    const shell = createProcessRunner({ parentEnv: { PATH: process.env["PATH"] } });
+    const made = await shell.run({ command: { argv: ["sh", "-c", `mkdir -p ${deep} && echo x > ${deep}/y.js`] }, cwd: repo });
     expect(made.kind === "finished" && made.exitCode === 0).toBe(true);
-    const { tree, skipped } = value(await git.snapshotTree(repo));
-    expect(skipped).toEqual({ listed: [{ path: `${deep}/y.js`, bytes: 0, why: "unread" }], count: 1 });
-    expect(await plain(repo, "ls-tree", "-r", "--name-only", tree)).toBe("a.txt\n");
+    try {
+      const { tree, skipped } = value(await git.snapshotTree(repo));
+      expect(skipped).toEqual({ listed: [{ path: `${deep}/y.js`, bytes: 0, why: "unread" }], count: 1 });
+      expect(await plain(repo, "ls-tree", "-r", "--name-only", tree)).toBe("a.txt\n");
+    } finally {
+      // The absolute path is over the OS limit, so the folder's recursive cleanup in afterEach cannot unlink it (Node 22.18 fails with ENAMETOOLONG); rm walks it with relative handles.
+      const removed = await shell.run({ command: { argv: ["rm", "-rf", deep.split("/")[0] ?? "d"] }, cwd: repo });
+      expect(removed.kind === "finished" && removed.exitCode === 0).toBe(true);
+    }
   });
 
   it("snapshotTree takes untracked files only up to the count limit, also under a folder named node_modules", SLOW, async () => {
