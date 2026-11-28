@@ -1,7 +1,8 @@
 // Plays a sound itself, with no window, by running a player program on a bundled file: `afplay` on
-// macOS, `paplay` (then `aplay`) on Linux. The "system" set is the beep on macOS, and a sound of the
-// freedesktop theme through `paplay` on Linux, with the beep when the file or `paplay` is missing or
-// fails; a Linux computer with neither program beeps for every sound. Windows has no player yet, so
+// macOS, `pw-play` (then `paplay`, then `aplay`) on Linux. The "system" set is the beep on macOS, and
+// a sound of the freedesktop theme through `pw-play` or `paplay` on Linux, with the beep when the
+// file or both programs are missing or fail; a Linux computer with none of the programs beeps for
+// every sound. Windows has no player yet, so
 // a play is silent there. The process runner, the program lookup and Electron's beep come
 // in through `deps`, so this is tested with fakes. The argv holds only a program found by name and
 // a path built from a fixed table, never text from a caller.
@@ -24,7 +25,7 @@ export interface PlayerDeps {
   readonly findProgram: (name: string) => string | undefined;
   /** The real path of a sound file of the desktop theme, or undefined when it is missing or is a link that leaves the theme's folder. */
   readonly themeFile: (path: string) => string | undefined;
-  /** The variables a player needs to find the sound server (`XDG_RUNTIME_DIR`, `PULSE_SERVER`). The runner drops every other variable of the app. */
+  /** The variables a player needs to find the sound server (`XDG_RUNTIME_DIR`, which `pw-play` also reads to find its socket, and `PULSE_SERVER`). The runner drops every other variable of the app. */
   readonly audioEnv: Readonly<Record<string, string>>;
   readonly soundsDir: string;
   readonly packaged: boolean;
@@ -33,8 +34,9 @@ export interface PlayerDeps {
 }
 
 const AFPLAY = "/usr/bin/afplay";
-/** The Linux programs, in the order they are tried: PulseAudio (and PipeWire's copy of it), then ALSA. */
-const LINUX_PROGRAMS = ["paplay", "aplay"] as const;
+/** The Linux programs, in the order they are tried: PipeWire (the default on current Ubuntu and Fedora), PulseAudio, then ALSA. Only `aplay` cannot decode Ogg. */
+const LINUX_PROGRAMS = ["pw-play", "paplay", "aplay"] as const;
+const LINUX_OGG_PROGRAMS = LINUX_PROGRAMS.slice(0, 2);
 const PLAY_TIMEOUT_MS = 5_000;
 
 /** The sound of the desktop theme that stands for each kind on Linux, in the freedesktop sound theme. The call of the Tokay has none. */
@@ -46,11 +48,11 @@ const LINUX_THEME_SOUNDS: Partial<Record<SoundName, string>> = {
 
 /**
  * A player that runs the first of `programs` that is found, and the next one when it does not start
- * or fails; when all fail, it beeps. `programs` is read on every play; `paplayOnly` asks for the
+ * or fails; when all fail, it beeps. `programs` is read on every play; `ogg` asks for the
  * programs that can play Ogg files. The "system" set plays the file `themeFile` returns for a name,
  * and beeps when there is none (`themeFile` is absent on macOS, where the system sound is the beep).
  */
-function programPlayer(deps: PlayerDeps, programs: (paplayOnly: boolean) => readonly string[], themeFile?: (name: SoundName) => string | undefined): SoundPlayer {
+function programPlayer(deps: PlayerDeps, programs: (ogg: boolean) => readonly string[], themeFile?: (name: SoundName) => string | undefined): SoundPlayer {
   const runner = deps.makeRunner();
   let playing = false;
   return {
@@ -86,7 +88,7 @@ const silentPlayer: SoundPlayer = { play: () => undefined, playerMissing: () => 
 export function playerFor(platform: NodeJS.Platform, deps: PlayerDeps): SoundPlayer {
   if (platform === "darwin") return programPlayer(deps, () => [AFPLAY]);
   if (platform === "linux") {
-    const programs = (paplayOnly: boolean) => (paplayOnly ? LINUX_PROGRAMS.slice(0, 1) : LINUX_PROGRAMS).flatMap((program) => deps.findProgram(program) ?? []);
+    const programs = (ogg: boolean) => (ogg ? LINUX_OGG_PROGRAMS : LINUX_PROGRAMS).flatMap((program) => deps.findProgram(program) ?? []);
     return programPlayer(deps, programs, (name) => {
       const path = LINUX_THEME_SOUNDS[name];
       return path === undefined ? undefined : deps.themeFile(path);

@@ -104,28 +104,36 @@ describe("the macOS player", () => {
 });
 
 describe("the Linux player", () => {
-  it("runs paplay on the packaged file of the sound, by the path the lookup found", () => {
-    const { deps, requests, beep } = setup({ installed: ["paplay", "aplay"] });
+  it("runs pw-play first on the packaged file of the sound, by the path the lookup found", () => {
+    const { deps, requests, beep } = setup({ installed: ["pw-play", "paplay", "aplay"] });
     playerFor("linux", deps).play("needsYou", "tokama");
     expect(requests).toHaveLength(1);
-    expect(requests[0]).toMatchObject({ command: { argv: ["/usr/bin/paplay", "/res/tokama-needs-you.wav"] }, cwd: "/res", timeoutMs: 5000 });
+    expect(requests[0]).toMatchObject({ command: { argv: ["/usr/bin/pw-play", "/res/tokama-needs-you.wav"] }, cwd: "/res", timeoutMs: 5000 });
     expect(beep).not.toHaveBeenCalled();
   });
 
-  it("runs aplay when paplay is not installed", () => {
+  it("runs paplay when pw-play is not installed, and aplay when neither is", () => {
+    const withPaplay = setup({ installed: ["paplay", "aplay"] });
+    playerFor("linux", withPaplay.deps).play("needsYou", "tokama");
+    expect(withPaplay.requests.map((request) => request.command)).toEqual([{ argv: ["/usr/bin/paplay", "/res/tokama-needs-you.wav"] }]);
     const { deps, requests } = setup({ installed: ["aplay"], packaged: false });
     playerFor("linux", deps).play("failed", "tokama");
     expect(requests.map((request) => request.command)).toEqual([{ argv: ["/usr/bin/aplay", "/res/failed.wav"] }]);
   });
 
-  it("falls back to aplay when paplay does not start or fails, and stops at the first that works", async () => {
-    for (const first of [NOT_STARTED, FAILED]) {
-      const { deps, requests } = setup({ installed: ["paplay", "aplay"], result: (request) => Promise.resolve("argv" in request.command && request.command.argv[0] === "/usr/bin/paplay" ? first : FINISHED) });
+  it("falls back down the list when a program does not start or fails, and stops at the first that works", async () => {
+    const argv0 = (request: RunRequest) => ("argv" in request.command ? request.command.argv[0] : undefined);
+    for (const bad of [NOT_STARTED, FAILED]) {
+      const { deps, requests } = setup({ installed: ["pw-play", "paplay", "aplay"], result: (request) => Promise.resolve(argv0(request) === "/usr/bin/aplay" ? FINISHED : bad) });
       playerFor("linux", deps).play("finished", "tokama");
       await tick();
-      expect(requests.map((request) => ("argv" in request.command ? request.command.argv[0] : undefined))).toEqual(["/usr/bin/paplay", "/usr/bin/aplay"]);
+      expect(requests.map(argv0)).toEqual(["/usr/bin/pw-play", "/usr/bin/paplay", "/usr/bin/aplay"]);
     }
-    const { deps, requests } = setup({ installed: ["paplay", "aplay"], result: () => Promise.resolve(FINISHED) });
+    const second = setup({ installed: ["pw-play", "paplay", "aplay"], result: (request) => Promise.resolve(argv0(request) === "/usr/bin/pw-play" ? FAILED : FINISHED) });
+    playerFor("linux", second.deps).play("finished", "tokama");
+    await tick();
+    expect(second.requests.map(argv0)).toEqual(["/usr/bin/pw-play", "/usr/bin/paplay"]);
+    const { deps, requests } = setup({ installed: ["pw-play", "paplay", "aplay"], result: () => Promise.resolve(FINISHED) });
     playerFor("linux", deps).play("finished", "tokama");
     await tick();
     expect(requests).toHaveLength(1);
@@ -170,15 +178,15 @@ describe("the Linux player", () => {
     expect(player.playerMissing()).toBe(true);
   });
 
-  it("plays the system set from the freedesktop theme file of each kind, through paplay only", async () => {
+  it("plays the system set from the freedesktop theme file of each kind, through pw-play then paplay, never aplay", async () => {
     const THEME = "/usr/share/sounds/freedesktop/stereo";
     const expected = { needsYou: "message-new-instant.oga", finished: "complete.oga", failed: "dialog-warning.oga" } as const;
     for (const [name, file] of Object.entries(expected) as Array<[keyof typeof expected, string]>) {
-      const { deps, requests, beep } = setup({ installed: ["paplay", "aplay"], themeFiles: [`${THEME}/${file}`], result: () => Promise.resolve(FAILED) });
+      const { deps, requests, beep } = setup({ installed: ["pw-play", "paplay", "aplay"], themeFiles: [`${THEME}/${file}`], result: () => Promise.resolve(FAILED) });
       playerFor("linux", deps).play(name, "system");
       await tick();
-      // aplay cannot decode Ogg, so a failing paplay goes straight to the beep.
-      expect(requests.map((request) => request.command)).toEqual([{ argv: ["/usr/bin/paplay", `${THEME}/${file}`] }]);
+      // aplay cannot decode Ogg, so after pw-play and paplay fail it goes straight to the beep.
+      expect(requests.map((request) => request.command)).toEqual([{ argv: ["/usr/bin/pw-play", `${THEME}/${file}`] }, { argv: ["/usr/bin/paplay", `${THEME}/${file}`] }]);
       expect(requests[0]?.env).toEqual({ XDG_RUNTIME_DIR: "/run/user/1000" });
       expect(beep).toHaveBeenCalledTimes(1);
     }
@@ -189,6 +197,12 @@ describe("the Linux player", () => {
     playerFor("linux", deps).play("finished", "system");
     await tick();
     expect(beep).not.toHaveBeenCalled();
+  });
+
+  it("plays the system set through pw-play alone on a stock PipeWire computer", () => {
+    const { deps, requests } = setup({ installed: ["pw-play"], themeFiles: ["/usr/share/sounds/freedesktop/stereo/complete.oga"] });
+    playerFor("linux", deps).play("finished", "system");
+    expect(requests.map((request) => request.command)).toEqual([{ argv: ["/usr/bin/pw-play", "/usr/share/sounds/freedesktop/stereo/complete.oga"] }]);
   });
 
   it("beeps for the system set when the theme file is missing, or when only aplay is installed, and runs nothing", () => {
